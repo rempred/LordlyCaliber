@@ -7,6 +7,14 @@ files — then export a patched ROM.
 No installation, no build step. Open `index.html` in any modern browser, drop
 in your own copy of the US retail `.v64`, and start modding.
 
+> **ROM compatibility:** the editor is built and tested against the North
+> American (USA) retail dump:
+> `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64` (41,943,040 bytes,
+> .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
+> Japanese, European, debug, prototype, or otherwise modified ROMs are not
+> supported and will likely produce wrong offsets, garbled data, or crash on
+> export. Verify your file matches the name and size above before reporting bugs.
+
 ## Features
 
 - **Shops** — modify the inventory of all 35 in-game shops, within the empirical
@@ -77,9 +85,10 @@ save-state decompression.
   hidden behind a feature flag).
 - **Class promotion-tree visualizer** — interactive graph of all promotion
   paths derived from class def `reqClass` (B55).
+- **Neutral encounter rate editing** — tune the per-step random-encounter
+  probability (verified dual-branch patcher already exists; needs a UI surface).
 - **Bulk patches** — apply common community patches (XP rate, encounter rate,
   rare-item drops) as one-click toggles.
-- **Audio replacement** — pending decode of the 20 MB custom audio format.
 
 ## Credits
 
