@@ -419,7 +419,7 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  // Large searchable input (items=278, classes=103). options = {value: label, ...}
+  // Large searchable input (items=277, classes=164). options = {value: label, ...}
   function makeSearchableInput(td, options, currentVal, onCommit) {
     if (td.querySelector('input')) return;
     var prev = td.textContent;
@@ -643,19 +643,12 @@ window.OB64 = window.OB64 || {};
     body: 'Body', expendable: 'Expendable'
   };
 
-  // missionId → scenario label. Only a handful of the 40 missions are
-  // mapped to their canonical world-map location names (verified via the
-  // encounter-table `$s0` dispatch per CLAUDE.md). The rest fall back to
-  // "Mission N" in decimal. The eset mapNodes are LOCAL tactical-map
-  // node IDs (0, 1, 2) rather than world-map nodes, so they can't resolve
-  // via OB64.LOCATION_NAMES directly.
-  // ktenmain mission ID → wiki scene label. Verified by matching each
-  // ktenmain mission's stronghold set against every scene page on
-  // ogrebattle64.net/missions/ via stronghold-overlap (Jaccard score).
-  // See scripts/ob64_scene_match.js for the match run. 34 of 40 ktenmain
-  // mission groups resolve cleanly; missions 1, 41, 46, 47 are likely
-  // cutscene / special-event tactical maps that the fan wiki doesn't
-  // document separately and fall through to "Mission N".
+  // ktenmain mission ID → wiki scene label. Each ktenmain mission's
+  // stronghold set is matched against the ogrebattle64.net scene pages by
+  // stronghold-overlap (Jaccard score). 34 of 40 ktenmain mission groups
+  // resolve cleanly; missions 1, 41, 46, 47 are likely cutscene or
+  // special-event tactical maps that the fan wiki doesn't document
+  // separately and fall through to "Mission N".
   var SCENARIO_NAMES = {
     2:  'Scene 5: Zenobian Border',
     3:  'Scene 3: Crenel Canyon',
@@ -1859,11 +1852,12 @@ window.OB64 = window.OB64 || {};
   // combat multipliers from the H2F Mod class chart CSV against ROM hex data.
   // Every field matches perfectly with offset +1 for all 14+ tested classes.
   // Record 0 = pointer table (header). Record 1 = 0xFFFF terminator (class 0x00 "None").
-  // Records 2-104 = classes 0x01 (Soldier) through 0x66 (Commoner female).
-  // Terminators at records 77 (Stone Golem 0x4C) and 100 (Barkeep 0x63) are intentional.
+  // Records 2-N cover class IDs 0x01 (Soldier) through 0xA4 (Death Bahamut /
+  // Grozz Nuy) per the GameShark mapping — 164 classes total, with intermediate
+  // terminator/sentinel rows that the inner guard skips.
   function buildClassDefMap(classDefs) {
     var map = {}; // classId -> array of def records
-    for (var cid = 0; cid <= 0x66; cid++) {
+    for (var cid = 0; cid <= 0xA4; cid++) {
       var ri = cid + 1;
       if (ri < classDefs.length) {
         var r = classDefs[ri];
@@ -1894,7 +1888,7 @@ window.OB64 = window.OB64 || {};
     // Derive promotions by reversing B55 (reqClass) across all class defs
     var promotions = {}; // classId -> [target classIds]
     var demotions = {};  // classId -> [source classIds]
-    for (var cid = 0; cid <= 0x66; cid++) {
+    for (var cid = 0; cid <= 0xA4; cid++) {
       var defs = defMap[cid];
       if (!defs || defs.length === 0) continue;
       var def = defs[0];
@@ -1989,7 +1983,7 @@ window.OB64 = window.OB64 || {};
     //   Body slot:   armor/robes/clothing (0x10-0x14)
     //   Head slot:   helms/headgear (0x15-0x16)
     //   Accessory:   shields, spellbooks, amulets (0x0E, 0x0F, 0x17, 0x19) —
-    //                the "off-hand" slot in the char struct (+0x2C).
+    //                the "off-hand" slot in the char struct (+0x2F).
     //
     // Every map starts with a "None [0]" entry so users can explicitly clear
     // a slot from the dropdown.
@@ -2990,8 +2984,8 @@ window.OB64 = window.OB64 || {};
 
   // ============================================================
   // ENCOUNTERS TAB — neutral-encounter pool + creature drop table.
-  // One card per scenario row (skipping empty rows). Each card shows
-  // 8 terrain slots with creature chips and inline drop lists. Drops
+  // One card per scenario slice (skipping empty slices). Each card shows
+  // 10 terrain slots with creature chips and inline drop lists. Drops
   // are class-keyed so edits propagate across every scenario using
   // that creature. See docs/neutral-encounters.md for structure.
   // ============================================================

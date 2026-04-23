@@ -488,8 +488,9 @@ OB64.serializeEnemydat = function(squads) {
 
 // ============================================================
 // Class definition serializer — writes all editable fields back to z64
-// Class def table: 166 x 72B at ROM z64 0x5DAD8
-// record_index = class_id + 1, records 2-104 = classes 0x01-0x66
+// Class def table: 166 x 72B at ROM z64 0x5DAD8.
+// record_index = class_id + 1; records 2-N cover class IDs 0x01-0xA4
+// per the GameShark mapping (164 classes plus terminator/sentinel rows).
 // ============================================================
 OB64.serializeClassDefs = function(classDefs, z64) {
   var base = OB64.CLASS_DEF_OFFSET;

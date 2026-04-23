@@ -1202,10 +1202,13 @@ OB64.parseClassGroups = function(z64) {
 // Verified by cross-referencing H2F Mod class chart CSV against ROM hex data:
 // every stat, growth, resistance, and combat multiplier matches perfectly.
 // Record 0 = pointer table header. Record 1 = terminator (class 0x00 "None").
-// Records 2-104 = classes 0x01-0x66.
+// Records 2-N cover the full 164-class set (class IDs 0x01-0xA4) per the
+// authoritative GameShark mapping; intermediate terminators separate categories.
 // Stat order: STR, VIT, INT, MEN, AGI, DEX (6 x [u16 base, u8 growth, u8 pad])
 // B24 = Alignment, B25-31 = 7 resistances (Phys/Air/Fire/Earth/Water/Virtue/Bane)
-// B48-53 = combat mults (B48=atkType, B49=PhysAtk, B50=MagAtk, B51=PhysDef, B52=MagDef, B53=flags)
+// B44 = front attack count, B45 = front atk ID, B46 = mid attack count,
+// B47 = mid atk ID, B48 = rear attack count.
+// B49-B53 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef, flags).
 // ============================================================
 OB64.CLASS_DEF_OFFSET = 0x5DAD8;
 OB64.CLASS_DEF_RECORD_SIZE = 72;
@@ -1407,8 +1410,8 @@ OB64.parseClassDefs = function(z64) {
 };
 
 // ============================================================
-// Parse consumable/quest-item table — stride 12, ROM 0x645CC
-// Located via RAM diff (see docs/consumable-table.md TODO).
+// Parse consumable/quest-item table — stride 12, ROM 0x645CC.
+// 45 records covering the in-game Item menu (Consumable + Treasure tabs).
 // Record layout: [name_ptr:u32BE][flag_hi:u16BE][price:u16BE][flag_lo:u32BE].
 // name_ptr is a RAM address 0x801905xx..0x801906xx pointing at ASCII names
 // in the code-region string block; RAM to ROM delta for these strings is
