@@ -87,6 +87,11 @@ save-state decompression.
   paths derived from class def `reqClass` (B55).
 - **Neutral encounter rate editing** — tune the per-step random-encounter
   probability (verified dual-branch patcher already exists; needs a UI surface).
+- **Combat attack buffer expansion** — lift the hard-coded 28-attack-per-battle
+  cap so high-attack-count classes (e.g. patched Fighters at 10/round) can be
+  combined without crashing battle setup. Requires relocating the 560-byte
+  attack-event log at RAM `0x80220DBC` (adjacent memory is live) and patching
+  the 17 `slti 28` bound-check sites in the combat overlay.
 - **Bulk patches** — apply common community patches (XP rate, encounter rate,
   rare-item drops) as one-click toggles.
 
