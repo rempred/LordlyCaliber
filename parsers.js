@@ -43,6 +43,14 @@ OB64.writeU16BE = function(buf, off, val) {
   buf[off + 1] = val & 0xFF;
 };
 
+OB64.writeU32BE = function(buf, off, val) {
+  val >>>= 0;
+  buf[off] = (val >>> 24) & 0xFF;
+  buf[off + 1] = (val >>> 16) & 0xFF;
+  buf[off + 2] = (val >>> 8) & 0xFF;
+  buf[off + 3] = val & 0xFF;
+};
+
 // ============================================================
 // LZSS decoder for the 7 MB LZSS region (game's ROM-side LZSS format
 // at decompressor ROM 0xA510). Ported from scripts/ob64_lzss_compress.js.
@@ -209,6 +217,18 @@ OB64.NEUTRAL_TERRAIN_RATE_OFFSET = 0x141E80;     // runtime 0x801ED740
 OB64.NEUTRAL_TERRAIN_SLOT_OFFSET = 0x141EA0;     // runtime 0x801ED760
 OB64.NEUTRAL_TERRAIN_TABLE_LEN   = 0x20;
 
+// Global/base neutral roll in the walk-step dispatcher. This is the first
+// probability gate, before the per-unit terrain-rate roll.
+OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET = 0x13C1E8;       // lui $s1, divisor_hi
+OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET = 0x13C1EC;       // ori $s1, $s1, divisor_lo
+OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET = 0x13C1FC;       // addiu $s0, $zero, threshold
+OB64.NEUTRAL_GLOBAL_ALT_OFFSET    = 0x13C200;       // alternate branch threshold
+OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET = 0x13C228;       // fail branch after sltu
+OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // basis-point slider patch
+OB64.NEUTRAL_GLOBAL_BRANCH_CHECK = 0x14600090;      // bne $v1,$zero,exit
+OB64.NEUTRAL_GLOBAL_BRANCH_NEVER = 0x10000090;      // beq $zero,$zero,exit
+OB64.NEUTRAL_GLOBAL_BRANCH_ALWAYS = 0x00000000;     // legacy/nuclear NOP
+
 OB64.TERRAIN_NAMES = {
   0: 'Plains / Roads',
   1: 'Plains',
@@ -241,6 +261,69 @@ OB64.parseNeutralTerrainRates = function(z64) {
     entries: entries,
     rateOffset: OB64.NEUTRAL_TERRAIN_RATE_OFFSET,
     slotOffset: OB64.NEUTRAL_TERRAIN_SLOT_OFFSET
+  };
+};
+
+OB64.parseNeutralGlobalRate = function(z64) {
+  function decodeDivisor() {
+    var hiWord = OB64.readU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET);
+    var loWord = OB64.readU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET);
+    var valid = ((hiWord & 0xFFFF0000) === 0x3C110000) &&
+                ((loWord & 0xFFFF0000) === 0x36310000);
+    return {
+      hiWord: hiWord,
+      loWord: loWord,
+      valid: valid,
+      value: valid ? ((((hiWord & 0xFFFF) << 16) | (loWord & 0xFFFF)) >>> 0) : 0
+    };
+  }
+  function decodeThreshold(off) {
+    var word = OB64.readU32BE(z64, off);
+    var valid = (word & 0xFFFF0000) === 0x24100000; // addiu $s0,$zero,imm
+    var imm = word & 0xFFFF;
+    var signed = imm >= 0x8000 ? imm - 0x10000 : imm;
+    return {
+      word: word,
+      valid: valid && signed >= 0,
+      value: signed
+    };
+  }
+  function passBasisPoints(threshold, divisor) {
+    if (!divisor || threshold < 0) return 0;
+    return Math.max(0, Math.min(10000, Math.round(((threshold + 1) * 10000) / divisor)));
+  }
+
+  var divisor = decodeDivisor();
+  var normal = decodeThreshold(OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET);
+  var alternate = decodeThreshold(OB64.NEUTRAL_GLOBAL_ALT_OFFSET);
+  var branchWord = OB64.readU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET);
+  var mode = 'unknown';
+  var basisPoints = 0;
+  if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_NEVER) {
+    mode = 'never';
+    basisPoints = 0;
+  } else if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_ALWAYS) {
+    mode = 'always';
+    basisPoints = 10000;
+  } else if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_CHECK && divisor.valid && normal.valid) {
+    mode = 'threshold';
+    basisPoints = passBasisPoints(normal.value, divisor.value);
+  }
+
+  return {
+    divisor: divisor.value,
+    divisorValid: divisor.valid,
+    normalThreshold: normal.value,
+    normalValid: normal.valid,
+    alternateThreshold: alternate.value,
+    alternateValid: alternate.valid,
+    branchWord: branchWord,
+    mode: mode,
+    basisPoints: basisPoints,
+    originalBasisPoints: basisPoints,
+    normalBasisPoints: divisor.valid && normal.valid ? passBasisPoints(normal.value, divisor.value) : null,
+    alternateBasisPoints: divisor.valid && alternate.valid ? passBasisPoints(alternate.value, divisor.value) : null,
+    modified: false
   };
 };
 
@@ -278,6 +361,7 @@ OB64.parseNeutralEncounters = function(z64) {
     records: records,
     leadingPad: lead,
     tableStart: tableStart,
+    globalRate: OB64.parseNeutralGlobalRate(z64),
     terrainRates: OB64.parseNeutralTerrainRates(z64)
   };
 };
