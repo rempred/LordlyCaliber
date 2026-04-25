@@ -174,7 +174,7 @@ window.OB64 = window.OB64 || {};
         touched.push('creature drops');
       }
 
-      // Consumable master table at 0x645CC — outside CRC window, no recalc.
+      // Consumable master table at 0x645CC — inside CRC window.
       if (dirty.consumables) {
         OB64.serializeConsumables(rom.consumables, rom.z64);
         touched.push('consumables');
@@ -197,10 +197,10 @@ window.OB64 = window.OB64 || {};
         }
       }
 
-      // CRC must be recalculated whenever we patch inside the first 1 MB
-      // of z64 (items + classDefs are in-region; shop/enemydat archives and
-      // encounter/drop tables live past the CRC window so don't require it).
-      if (dirty.items || dirty.classDefs) {
+      // CRC must be recalculated whenever we patch the CIC-6102 window
+      // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
+      // and stat gates live past that window; items/classes/consumables do not.
+      if (dirty.items || dirty.classDefs || dirty.consumables) {
         OB64.recalcN64CRC(rom.z64);
       }
 

@@ -651,7 +651,7 @@ OB64.serializeCreatureDrops = function(drops, z64) {
 // Consumable master table serializer — 45 × 12 B records at ROM 0x645CC.
 // Editable fields: flagHi (u16BE @+4), price (u16BE @+6), flagLo (u8×4 @+8..+11).
 // name_ptr (u32BE @+0..+3) is READ-ONLY — points into the ROM's name string
-// block, don't touch. Outside CIC-6102 CRC window (0x645CC > 0x101000).
+// block, don't touch. Inside CIC-6102 CRC window; export must recalc CRC.
 // ============================================================
 OB64.serializeConsumables = function(consumables, z64) {
   var base = OB64.CONSUMABLE_TABLE_OFFSET;
