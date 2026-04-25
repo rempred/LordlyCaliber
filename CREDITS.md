@@ -15,7 +15,7 @@ Caliber*. It would not exist without the work below.
   reference site for game data and lore.
 - **Joshua Lindquist** — [OgreBattle64.net](https://ogrebattle64.net/) —
   primary source of the item sprites in [resources/Item Icons/](resources/Item%20Icons/)
-  and the shop-category icons in [resources/scraped sprites/](resources/scraped%20sprites/).
+  and the shop-category icons in [resources/Item Icons/](resources/Item%20Icons/).
 - **Cralex** — author of the *Ogre Battle 64 Person of Lordly Caliber Gameshark
   Class Hacking Guide*, which supplied the authoritative 154-class mapping
   used throughout the editor (Classes tab, character struct decode).

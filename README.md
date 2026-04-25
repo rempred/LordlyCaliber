@@ -25,7 +25,7 @@ in your own copy of the US retail `.v64`, and start modding.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
-  scenario slices (10 globally-consistent terrain slots each).
+  scenario slices and tune per-terrain encounter thresholds.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw)
   or 8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, stats,
   equipment overrides, alignment, element, experience, army inventory
@@ -61,8 +61,9 @@ on the US retail ROM:
 - All 825 LHA archives in the data section catalogued and round-trip-decoded.
 - 56-byte character struct, 72-byte class definition table (166 records),
   32-byte item stat table (295 records), 12-byte consumable master table
-  (45 records), 20-byte neutral-encounter scenario slice, and the 28-byte
-  stronghold record decoded against in-game testing and emulator memory diffs.
+  (45 records), 20-byte neutral-encounter scenario slice, adjacent
+  terrain-rate tables, and the 28-byte stronghold record decoded against
+  in-game testing and emulator memory diffs.
 - Custom LZSS compressor / decompressor for editing the dialogue scripts and
   the stat-gate region.
 - N64 CIC-6102 CRC re-calculation to keep patched ROMs bootable.
