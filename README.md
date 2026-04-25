@@ -25,12 +25,14 @@ in your own copy of the US retail `.v64`, and start modding.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
-  scenario slices and tune per-terrain encounter thresholds.
+  scenario slices, tune per-terrain encounter thresholds, and set the global
+  encounter-roll pass rate with an exact basis-point slider.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw)
   or 8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, stats,
   equipment overrides, alignment, element, experience, army inventory
   (equipment + consumables + treasures), and Goth.
-- **Patches** — save your edits to a portable JSON patch file for sharing or
+- **Patches** — save supported edits (shops, item prices, and the global
+  encounter-roll slider) to a portable JSON patch file for sharing or
   reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 
@@ -86,8 +88,6 @@ save-state decompression.
   hidden behind a feature flag).
 - **Class promotion-tree visualizer** — interactive graph of all promotion
   paths derived from class def `reqClass` (B55).
-- **Neutral encounter rate editing** — tune the per-step random-encounter
-  probability (verified dual-branch patcher already exists; needs a UI surface).
 - **Combat attack buffer expansion** — lift the hard-coded 28-attack-per-battle
   cap so high-attack-count classes (e.g. patched Fighters at 10/round) can be
   combined without crashing battle setup. Requires relocating the 560-byte

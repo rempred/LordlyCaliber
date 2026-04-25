@@ -563,7 +563,37 @@ OB64.serializeClassDefs = function(classDefs, z64) {
 // lives 4 bytes into the table). Outside CIC-6102 CRC window.
 // Also writes adjacent terrain-rate tables at 0x141E80 and 0x141EA0.
 // ============================================================
+OB64.serializeNeutralGlobalRate = function(globalRate, z64) {
+  if (!globalRate || !globalRate.modified) return;
+
+  var basisPoints = parseInt(globalRate.basisPoints, 10);
+  if (!isFinite(basisPoints)) basisPoints = 0;
+  if (basisPoints < 0) basisPoints = 0;
+  if (basisPoints > 10000) basisPoints = 10000;
+
+  // Export edited global rates with a 10,000-step divisor so the UI's
+  // percent/basis-point value is the actual pass count over divisor.
+  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET, 0x3C110000);
+  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET, 0x36310000 | OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR);
+
+  if (basisPoints === 0) {
+    // The comparison is unsigned, so threshold -1 would pass everything.
+    // Use an unconditional branch to the existing fail/exit target instead.
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, 0x24100000);
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, 0x24100000);
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_NEVER);
+  } else {
+    var threshold = basisPoints - 1;
+    var thresholdWord = 0x24100000 | (threshold & 0xFFFF);
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, thresholdWord);
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, thresholdWord);
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_CHECK);
+  }
+};
+
 OB64.serializeNeutralEncounters = function(encounters, z64) {
+  OB64.serializeNeutralGlobalRate(encounters && encounters.globalRate, z64);
+
   var tableStart = OB64.NEUTRAL_ENCOUNTER_OFFSET;
   var lead = OB64.NEUTRAL_ENCOUNTER_LEADING_PAD;
   var stride = OB64.NEUTRAL_ENCOUNTER_STRIDE;

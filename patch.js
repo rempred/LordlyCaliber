@@ -7,15 +7,16 @@
 //
 // See docs/editor.md "JSON Patch Format" for the schema.
 //
-// v1 scope: shops (full replacement of each shop's item list) + item_prices
-// (prices edited via the shop modal's inline editor). Other tabs are stubbed
-// out in the patches object but not yet wired up.
+// v2 scope: shops (full replacement of each shop's item list), item_prices
+// (prices edited via the shop modal's inline editor), and the neutral global
+// encounter-roll slider. Other tabs are stubbed out in the patches object but
+// not yet wired up.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 1;
+  var PATCH_VERSION = 2;
 
   // --------------------------------------------------------------
   // Snapshot pristine state — call once, right after OB64.loadROM().
@@ -34,6 +35,11 @@ window.OB64 = window.OB64 || {};
         rom.original.itemPrices[i] = stat.price;
       }
     }
+    var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
+    rom.original.neutralGlobalRate = globalRate ? {
+      basisPoints: clampBasisPoints(globalRate.basisPoints),
+      mode: globalRate.mode || 'unknown'
+    } : null;
   }
 
   // --------------------------------------------------------------
@@ -63,11 +69,21 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    var globalRateOut = null;
+    var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
+    if (globalRate && globalRate.modified) {
+      var basisPoints = clampBasisPoints(globalRate.basisPoints);
+      globalRateOut = {
+        basis_points: basisPoints,
+        percent: basisPoints / 100
+      };
+    }
+
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-04-19',
+      editor_version: '2026-04-25',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -75,10 +91,12 @@ window.OB64 = window.OB64 || {};
       summary: {
         shops_modified:        Object.keys(shopsOut).length,
         item_prices_modified:  Object.keys(pricesOut).length,
+        neutral_global_rate_modified: globalRateOut ? 1 : 0,
       },
       patches: {
         shops:        shopsOut,
         item_prices:  pricesOut,
+        neutral_global_rate: globalRateOut,
         // Reserved for future tabs — not yet wired
         enemies:      {},
         items:        {},
@@ -120,6 +138,7 @@ window.OB64 = window.OB64 || {};
 
     var shopsApplied = 0;
     var pricesApplied = 0;
+    var neutralGlobalRateApplied = 0;
     var p = patch.patches || {};
 
     // Shops
@@ -151,8 +170,36 @@ window.OB64 = window.OB64 || {};
     }
     if (pricesApplied > 0) dirtyFlags.items = true;
 
+    // Neutral global encounter roll
+    var globalPatch = p.neutral_global_rate || null;
+    if (globalPatch) {
+      if (!rom.neutralEncounters || !rom.neutralEncounters.globalRate) {
+        warnings.push('Patch includes neutral_global_rate, but this ROM parse has no neutral encounter data — skipping.');
+      } else {
+        var basisPoints = null;
+        if (typeof globalPatch.basis_points === 'number') {
+          basisPoints = globalPatch.basis_points;
+        } else if (typeof globalPatch.percent === 'number') {
+          basisPoints = globalPatch.percent * 100;
+        }
+        if (basisPoints == null || !isFinite(basisPoints)) {
+          warnings.push('Patch neutral_global_rate is missing basis_points/percent — skipping.');
+        } else {
+          var globalRate = rom.neutralEncounters.globalRate;
+          globalRate.basisPoints = clampBasisPoints(basisPoints);
+          globalRate.modified = true;
+          neutralGlobalRateApplied = 1;
+          dirtyFlags.encounters = true;
+        }
+      }
+    }
+
     return {
-      applied: { shops: shopsApplied, prices: pricesApplied },
+      applied: {
+        shops: shopsApplied,
+        prices: pricesApplied,
+        neutralGlobalRate: neutralGlobalRateApplied
+      },
       warnings: warnings,
     };
   }
@@ -205,6 +252,14 @@ window.OB64 = window.OB64 || {};
     if (!a || !b || a.length !== b.length) return false;
     for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
     return true;
+  }
+
+  function clampBasisPoints(value) {
+    var n = Math.round(Number(value));
+    if (!isFinite(n)) n = 0;
+    if (n < 0) n = 0;
+    if (n > 10000) n = 10000;
+    return n;
   }
 
   // --------------------------------------------------------------

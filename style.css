@@ -2029,6 +2029,19 @@ td.attack-list {
     0 3px 9px rgba(0,0,0,0.35);
 }
 
+.global-rate-panel {
+  margin: 0 0 18px 0;
+  padding: 14px;
+  background:
+    radial-gradient(ellipse at top right, rgba(34,82,108,0.18), transparent 54%),
+    linear-gradient(180deg, var(--ob-parchment), var(--ob-parchment-2));
+  border: 1px solid var(--ob-wood-dark);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 0 0 2px rgba(49,93,116,0.26),
+    0 3px 9px rgba(0,0,0,0.35);
+}
+
 .terrain-rate-head {
   display: flex;
   align-items: baseline;
@@ -2061,6 +2074,73 @@ td.attack-list {
   color: var(--ob-ink-soft);
   font-family: var(--ob-serif);
   font-size: var(--ob-text-sm);
+}
+
+.terrain-rate-global-note {
+  margin: 0 0 12px 0;
+  padding: 9px 11px;
+  color: var(--ob-ink);
+  background:
+    linear-gradient(180deg, rgba(152,32,24,0.13), rgba(196,143,55,0.13));
+  border: 1px solid rgba(92,45,31,0.45);
+  border-left: 4px solid var(--ob-wax-red);
+  border-radius: 4px;
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+  line-height: 1.45;
+}
+
+.terrain-rate-global-note strong {
+  color: var(--ob-wax-red);
+}
+
+.terrain-rate-global-note code {
+  font-family: var(--ob-mono);
+  color: var(--ob-seal-blue);
+  font-style: normal;
+}
+
+.global-rate-current {
+  margin: 0 0 12px 0;
+  color: var(--ob-ink-soft);
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+  line-height: 1.45;
+}
+
+.global-rate-controls {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(180px, 1fr) 74px 64px minmax(92px, auto);
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px 0;
+  padding: 9px;
+  background: linear-gradient(180deg, var(--ob-parchment-2), var(--ob-parchment-3));
+  border: 1px solid var(--ob-wood-lo);
+  border-radius: 4px;
+}
+
+.global-rate-range {
+  width: 100%;
+  accent-color: var(--ob-seal-blue);
+}
+
+.global-rate-number {
+  width: 74px;
+  padding: 3px 5px;
+  font-family: var(--ob-mono);
+  color: var(--ob-ink);
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-wood-dark);
+  border-radius: 3px;
+}
+
+.global-rate-threshold {
+  font-family: var(--ob-mono);
+  font-size: var(--ob-text-xs);
+  color: var(--ob-ink-dim);
+  text-align: right;
+  white-space: nowrap;
 }
 
 .terrain-rate-grid {
@@ -2137,6 +2217,20 @@ td.attack-list {
   }
 
   .terrain-rate-value {
+    text-align: left;
+  }
+
+  .global-rate-controls {
+    grid-template-columns: minmax(0, 1fr) 74px 64px;
+  }
+
+  .global-rate-controls .terrain-rate-label,
+  .global-rate-range,
+  .global-rate-threshold {
+    grid-column: 1 / -1;
+  }
+
+  .global-rate-threshold {
     text-align: left;
   }
 }

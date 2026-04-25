@@ -232,15 +232,19 @@ window.OB64 = window.OB64 || {};
       var patch = OB64.patch.collectPatch(rom);
       var shopsN = patch.summary.shops_modified;
       var pricesN = patch.summary.item_prices_modified;
-      if (shopsN + pricesN === 0) {
+      var globalRateN = patch.summary.neutral_global_rate_modified || 0;
+      if (shopsN + pricesN + globalRateN === 0) {
         statusBar.textContent = 'No edits to save — patch would be empty.';
         return;
       }
       OB64.patch.downloadPatch(patch);
       lastPatchFilename = 'ob64_patch_' + patch.created_at.replace(/[:.]/g, '-') + '.json';
       updatePatchChip();
-      statusBar.textContent = 'Patch saved (' + shopsN + ' shop' + (shopsN === 1 ? '' : 's') +
-        ', ' + pricesN + ' price' + (pricesN === 1 ? '' : 's') + ' changed).';
+      var parts = [];
+      if (shopsN) parts.push(shopsN + ' shop' + (shopsN === 1 ? '' : 's'));
+      if (pricesN) parts.push(pricesN + ' price' + (pricesN === 1 ? '' : 's'));
+      if (globalRateN) parts.push('global encounter roll');
+      statusBar.textContent = 'Patch saved (' + parts.join(', ') + ' changed).';
     } catch (err) {
       statusBar.textContent = 'Save Patch failed: ' + err.message;
       console.error(err);
@@ -256,14 +260,18 @@ window.OB64 = window.OB64 || {};
         var patch = OB64.patch.parsePatchFile(ev.target.result);
         var result = OB64.patch.applyPatch(rom, patch, dirty);
         // Count applied changes so status + export modal show the right counts
-        changes += result.applied.shops + result.applied.prices;
+        changes += result.applied.shops + result.applied.prices + (result.applied.neutralGlobalRate || 0);
         lastPatchFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
 
+        var loadedParts = [];
+        if (result.applied.shops) loadedParts.push(result.applied.shops + ' shop' + (result.applied.shops === 1 ? '' : 's'));
+        if (result.applied.prices) loadedParts.push(result.applied.prices + ' price' + (result.applied.prices === 1 ? '' : 's'));
+        if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
+        if (!loadedParts.length) loadedParts.push('0 changes');
         var msg = 'Patch loaded: ' + file.name + ' (' +
-          result.applied.shops + ' shop' + (result.applied.shops === 1 ? '' : 's') +
-          ', ' + result.applied.prices + ' price' + (result.applied.prices === 1 ? '' : 's') + ').';
+          loadedParts.join(', ') + ').';
         if (result.warnings.length) {
           console.warn('[patch] warnings:', result.warnings);
           msg += ' (' + result.warnings.length + ' warning' + (result.warnings.length === 1 ? '' : 's') + ' — see console)';
@@ -3026,7 +3034,7 @@ window.OB64 = window.OB64 || {};
     note.innerHTML =
       '<strong>Neutral encounters</strong> — wild creatures that spawn while walking a tactical map. ' +
       'Each card is one scenario slice (20 B, 10 terrain slots) keyed by the dispatcher\u2019s <code>$s0</code> index. ' +
-      'Slot\u2192terrain mapping is globally consistent and confirmed against wiki data for 19 scenes. ' +
+      'Slot\u2192terrain mapping is globally consistent, and all 39 non-empty slices are named. ' +
       '<em>Drops are class-keyed</em>: editing Wyrm\u2019s drops in any card changes them for every scenario using Wyrm. ' +
       'Classes without a drop-table entry still spawn but yield no loot.';
     panel.appendChild(note);
@@ -3035,6 +3043,131 @@ window.OB64 = window.OB64 || {};
     // IDs that appear in ANY slot of any scenario in the current ROM. This is
     // the "Vanilla" tab in the picker modal. Re-computed on each render so it
     // reflects edits the user has made within the session.
+    function renderGlobalRatePanel() {
+      var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
+      if (!globalRate) return null;
+
+      function pct(bp) {
+        return (bp / 100).toFixed(2) + '%';
+      }
+      function exactChance(threshold, divisor) {
+        if (!divisor || threshold == null || threshold < 0) return 'unknown';
+        return (threshold + 1) + ' / ' + divisor + ' = ' + (((threshold + 1) * 100) / divisor).toFixed(4) + '%';
+      }
+      function describeMode() {
+        if (globalRate.mode === 'never') return 'Current ROM: globally disabled by branch patch.';
+        if (globalRate.mode === 'always') return 'Current ROM: global roll always passes by branch patch.';
+        if (globalRate.mode === 'threshold') {
+          var normal = exactChance(globalRate.normalThreshold, globalRate.divisor);
+          var alt = exactChance(globalRate.alternateThreshold, globalRate.divisor);
+          if (globalRate.normalBasisPoints !== globalRate.alternateBasisPoints) {
+            return 'Current normal path: ' + normal + '. Alternate branch: ' + alt + '. Editing writes both branches to the selected rate.';
+          }
+          return 'Current ROM: ' + normal + '. Editing writes both state-bit branches to the selected rate.';
+        }
+        return 'Current ROM pattern is not recognized. Editing will overwrite the known global-roll sites with the standard slider patch.';
+      }
+      function sync(bp, numberInput, rangeInput, valueEl, thresholdEl) {
+        if (!isFinite(bp)) bp = 0;
+        bp = Math.max(0, Math.min(10000, Math.round(bp)));
+        globalRate.basisPoints = bp;
+        numberInput.value = (bp / 100).toFixed(2);
+        rangeInput.value = String(bp);
+        valueEl.textContent = pct(bp);
+        thresholdEl.textContent = bp === 0 ? 'always fail' : ((bp - 1) + ' / 10000');
+      }
+      function commit(bp, numberInput, rangeInput, valueEl, thresholdEl) {
+        sync(bp, numberInput, rangeInput, valueEl, thresholdEl);
+        globalRate.modified = true;
+        dirty.encounters = true;
+        markChanged();
+      }
+
+      var wrap = document.createElement('div');
+      wrap.className = 'global-rate-panel';
+
+      var head = document.createElement('div');
+      head.className = 'terrain-rate-head';
+      var title = document.createElement('div');
+      title.className = 'terrain-rate-title';
+      title.textContent = 'Global encounter roll';
+      head.appendChild(title);
+      var meta = document.createElement('div');
+      meta.className = 'terrain-rate-meta';
+      meta.textContent = 'ROM 0x13C1E8 / 0x13C1FC / 0x13C200';
+      head.appendChild(meta);
+      wrap.appendChild(head);
+
+      var help = document.createElement('div');
+      help.className = 'terrain-rate-help';
+      help.textContent = 'This is the first neutral-encounter gate before unit selection and terrain rates. Use it as the main frequency knob: terrain rates mostly shape where encounters can happen after this global roll passes.';
+      wrap.appendChild(help);
+
+      var current = document.createElement('div');
+      current.className = 'global-rate-current';
+      current.textContent = describeMode();
+      wrap.appendChild(current);
+
+      var controls = document.createElement('div');
+      controls.className = 'global-rate-controls';
+      var startBp = globalRate.basisPoints || 0;
+
+      var label = document.createElement('div');
+      label.className = 'terrain-rate-label';
+      label.textContent = 'Pass rate';
+      controls.appendChild(label);
+
+      var range = document.createElement('input');
+      range.className = 'global-rate-range';
+      range.type = 'range';
+      range.min = '0';
+      range.max = '10000';
+      range.step = '1';
+      range.value = String(startBp);
+      controls.appendChild(range);
+
+      var number = document.createElement('input');
+      number.className = 'global-rate-number';
+      number.type = 'number';
+      number.min = '0';
+      number.max = '100';
+      number.step = '0.01';
+      number.value = (startBp / 100).toFixed(2);
+      controls.appendChild(number);
+
+      var value = document.createElement('div');
+      value.className = 'terrain-rate-value';
+      value.textContent = pct(startBp);
+      controls.appendChild(value);
+
+      var threshold = document.createElement('div');
+      threshold.className = 'global-rate-threshold';
+      threshold.textContent = startBp === 0 ? 'always fail' : ((startBp - 1) + ' / 10000');
+      controls.appendChild(threshold);
+
+      range.addEventListener('input', function() {
+        sync(parseInt(range.value, 10), number, range, value, threshold);
+      });
+      range.addEventListener('change', function() {
+        commit(parseInt(range.value, 10), number, range, value, threshold);
+      });
+      number.addEventListener('change', function() {
+        commit(parseFloat(number.value) * 100, number, range, value, threshold);
+      });
+
+      wrap.appendChild(controls);
+
+      var note = document.createElement('div');
+      note.className = 'terrain-rate-global-note';
+      note.innerHTML =
+        '<strong>Export behavior:</strong> once edited, this slider patches the divisor to <code>10000</code> and writes both state-bit branches to the same selected basis-point rate. ' +
+        '<code>0%</code> uses an always-fail branch; <code>100%</code> uses threshold <code>9999 / 10000</code>. Terrain rates still apply after this gate. ' +
+        'Example: <code>100%</code> global with <code>50%</code> terrain is roughly a <code>50%</code> chance per eligible check, or about <code>2</code> eligible checks on average.';
+      wrap.appendChild(note);
+
+      return wrap;
+    }
+
     function renderTerrainRatePanel() {
       var terrainRates = rom.neutralEncounters && rom.neutralEncounters.terrainRates;
       var entries = terrainRates && terrainRates.entries ? terrainRates.entries : [];
@@ -3059,6 +3192,16 @@ window.OB64 = window.OB64 || {};
       help.className = 'terrain-rate-help';
       help.textContent = 'These are the terrain-byte thresholds for the per-unit rand % 100 check after the global encounter roll. 0 disables that terrain byte; 100 guarantees this local check. Decoy Cap doubles the active terrain rate.';
       wrap.appendChild(help);
+
+      var globalNote = document.createElement('div');
+      globalNote.className = 'terrain-rate-global-note';
+      globalNote.innerHTML =
+        '<strong>Important:</strong> 100% terrain rate does not mean an encounter every step. ' +
+        'The game first passes a global/base roll, then applies this terrain roll. ' +
+        'Vanilla normal play passes <code>51 / 72000</code> attempts before terrain is checked; ' +
+        'use the Global encounter roll panel above to change that first gate. ' +
+        'Terrain rates are best treated as terrain weighting/filter knobs, while the global roll controls overall pacing.';
+      wrap.appendChild(globalNote);
 
       var grid = document.createElement('div');
       grid.className = 'terrain-rate-grid';
@@ -3138,6 +3281,9 @@ window.OB64 = window.OB64 || {};
       wrap.appendChild(grid);
       return wrap;
     }
+
+    var globalRatePanel = renderGlobalRatePanel();
+    if (globalRatePanel) panel.appendChild(globalRatePanel);
 
     var ratePanel = renderTerrainRatePanel();
     if (ratePanel) panel.appendChild(ratePanel);
