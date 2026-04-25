@@ -3047,6 +3047,11 @@ window.OB64 = window.OB64 || {};
       var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
       if (!globalRate) return null;
 
+      var SOFT_MAX_BP = 1000;   // 10.00%: already extremely frequent in-game.
+      var HARD_MAX_BP = 10000;  // 100.00%: useful for diagnostics.
+      var startBp = Math.max(0, Math.min(HARD_MAX_BP, Math.round(globalRate.basisPoints || 0)));
+      var maxBp = startBp > SOFT_MAX_BP ? HARD_MAX_BP : SOFT_MAX_BP;
+
       function pct(bp) {
         return (bp / 100).toFixed(2) + '%';
       }
@@ -3069,7 +3074,7 @@ window.OB64 = window.OB64 || {};
       }
       function sync(bp, numberInput, rangeInput, valueEl, thresholdEl) {
         if (!isFinite(bp)) bp = 0;
-        bp = Math.max(0, Math.min(10000, Math.round(bp)));
+        bp = Math.max(0, Math.min(maxBp, Math.round(bp)));
         globalRate.basisPoints = bp;
         numberInput.value = (bp / 100).toFixed(2);
         rangeInput.value = String(bp);
@@ -3110,7 +3115,6 @@ window.OB64 = window.OB64 || {};
 
       var controls = document.createElement('div');
       controls.className = 'global-rate-controls';
-      var startBp = globalRate.basisPoints || 0;
 
       var label = document.createElement('div');
       label.className = 'terrain-rate-label';
@@ -3121,7 +3125,7 @@ window.OB64 = window.OB64 || {};
       range.className = 'global-rate-range';
       range.type = 'range';
       range.min = '0';
-      range.max = '10000';
+      range.max = String(maxBp);
       range.step = '1';
       range.value = String(startBp);
       controls.appendChild(range);
@@ -3130,7 +3134,7 @@ window.OB64 = window.OB64 || {};
       number.className = 'global-rate-number';
       number.type = 'number';
       number.min = '0';
-      number.max = '100';
+      number.max = (maxBp / 100).toFixed(2);
       number.step = '0.01';
       number.value = (startBp / 100).toFixed(2);
       controls.appendChild(number);
@@ -3157,12 +3161,35 @@ window.OB64 = window.OB64 || {};
 
       wrap.appendChild(controls);
 
+      var unlockWrap = document.createElement('label');
+      unlockWrap.className = 'global-rate-unlock';
+      var unlock = document.createElement('input');
+      unlock.type = 'checkbox';
+      unlock.checked = maxBp === HARD_MAX_BP;
+      unlockWrap.appendChild(unlock);
+      var unlockText = document.createElement('span');
+      unlockText.innerHTML =
+        '<strong>Unlock extreme rates above 10%</strong> for testing. ' +
+        '10% global can already feel close to every step because the game rolls per eligible check, not per visible map step.';
+      unlockWrap.appendChild(unlockText);
+      unlock.addEventListener('change', function() {
+        maxBp = unlock.checked ? HARD_MAX_BP : SOFT_MAX_BP;
+        range.max = String(maxBp);
+        number.max = (maxBp / 100).toFixed(2);
+        if ((globalRate.basisPoints || 0) > maxBp) {
+          commit(maxBp, number, range, value, threshold);
+        } else {
+          sync(globalRate.basisPoints || 0, number, range, value, threshold);
+        }
+      });
+      wrap.appendChild(unlockWrap);
+
       var note = document.createElement('div');
       note.className = 'terrain-rate-global-note';
       note.innerHTML =
         '<strong>Export behavior:</strong> once edited, this slider patches the divisor to <code>10000</code> and writes both state-bit branches to the same selected basis-point rate. ' +
-        '<code>0%</code> uses an always-fail branch; <code>100%</code> uses threshold <code>9999 / 10000</code>. Terrain rates still apply after this gate. ' +
-        'Example: <code>100%</code> global with <code>50%</code> terrain is roughly a <code>50%</code> chance per eligible check, or about <code>2</code> eligible checks on average.';
+        '<code>0%</code> uses an always-fail branch; the normal slider is capped at <code>10%</code> because that is already extremely frequent in live play. ' +
+        'Terrain rates still apply after this gate. Example: <code>50%</code> global with <code>50%</code> terrain is roughly a <code>25%</code> chance per eligible check, or about <code>4</code> eligible checks on average.';
       wrap.appendChild(note);
 
       return wrap;
