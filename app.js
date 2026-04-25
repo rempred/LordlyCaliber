@@ -3047,8 +3047,9 @@ window.OB64 = window.OB64 || {};
       var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
       if (!globalRate) return null;
 
-      var SOFT_MAX_BP = 1000;   // 10.00%: already extremely frequent in-game.
+      var SOFT_MAX_BP = 300;    // 3.00%: practical tuning range for normal play.
       var HARD_MAX_BP = 10000;  // 100.00%: useful for diagnostics.
+      var VANILLA_GLOBAL_BP = (51 * 10000) / 72000; // 0.0708% normal path.
       var startBp = Math.max(0, Math.min(HARD_MAX_BP, Math.round(globalRate.basisPoints || 0)));
       var maxBp = startBp > SOFT_MAX_BP ? HARD_MAX_BP : SOFT_MAX_BP;
 
@@ -3080,6 +3081,10 @@ window.OB64 = window.OB64 || {};
         rangeInput.value = String(bp);
         valueEl.textContent = pct(bp);
         thresholdEl.textContent = bp === 0 ? 'always fail' : ((bp - 1) + ' / 10000');
+      }
+      function updateVanillaMarker(markerEl) {
+        var pos = maxBp ? (VANILLA_GLOBAL_BP / maxBp) * 100 : 0;
+        markerEl.style.left = Math.max(0, Math.min(100, pos)).toFixed(3) + '%';
       }
       function commit(bp, numberInput, rangeInput, valueEl, thresholdEl) {
         sync(bp, numberInput, rangeInput, valueEl, thresholdEl);
@@ -3128,7 +3133,19 @@ window.OB64 = window.OB64 || {};
       range.max = String(maxBp);
       range.step = '1';
       range.value = String(startBp);
-      controls.appendChild(range);
+
+      var rangeWrap = document.createElement('div');
+      rangeWrap.className = 'global-rate-range-wrap';
+      rangeWrap.appendChild(range);
+      var vanillaMarker = document.createElement('div');
+      vanillaMarker.className = 'global-rate-vanilla-marker';
+      vanillaMarker.title = 'Vanilla global normal path: 51 / 72000 = 0.0708%';
+      var vanillaLabel = document.createElement('span');
+      vanillaLabel.textContent = 'Vanilla 0.07%';
+      vanillaMarker.appendChild(vanillaLabel);
+      rangeWrap.appendChild(vanillaMarker);
+      updateVanillaMarker(vanillaMarker);
+      controls.appendChild(rangeWrap);
 
       var number = document.createElement('input');
       number.className = 'global-rate-number';
@@ -3169,13 +3186,14 @@ window.OB64 = window.OB64 || {};
       unlockWrap.appendChild(unlock);
       var unlockText = document.createElement('span');
       unlockText.innerHTML =
-        '<strong>Unlock extreme rates above 10%</strong> for testing. ' +
-        '10% global can already feel close to every step because the game rolls per eligible check, not per visible map step.';
+        '<strong>Unlock extreme rates above 3%</strong> for testing. ' +
+        'Even 5% global can feel close to every couple of steps because the game rolls per eligible check, not per visible map step.';
       unlockWrap.appendChild(unlockText);
       unlock.addEventListener('change', function() {
         maxBp = unlock.checked ? HARD_MAX_BP : SOFT_MAX_BP;
         range.max = String(maxBp);
         number.max = (maxBp / 100).toFixed(2);
+        updateVanillaMarker(vanillaMarker);
         if ((globalRate.basisPoints || 0) > maxBp) {
           commit(maxBp, number, range, value, threshold);
         } else {
@@ -3188,7 +3206,8 @@ window.OB64 = window.OB64 || {};
       note.className = 'terrain-rate-global-note';
       note.innerHTML =
         '<strong>Export behavior:</strong> once edited, this slider patches the divisor to <code>10000</code> and writes both state-bit branches to the same selected basis-point rate. ' +
-        '<code>0%</code> uses an always-fail branch; the normal slider is capped at <code>10%</code> because that is already extremely frequent in live play. ' +
+        '<code>0%</code> uses an always-fail branch; the normal slider is capped at <code>3%</code> because higher values quickly become near-constant in live play. ' +
+        'The red slider marker shows vanilla normal play: <code>51 / 72000 = 0.0708%</code>. ' +
         'Terrain rates still apply after this gate. Example: <code>50%</code> global with <code>50%</code> terrain is roughly a <code>25%</code> chance per eligible check, or about <code>4</code> eligible checks on average.';
       wrap.appendChild(note);
 

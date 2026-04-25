@@ -2120,9 +2120,37 @@ td.attack-list {
   border-radius: 4px;
 }
 
+.global-rate-range-wrap {
+  position: relative;
+  width: 100%;
+  padding-bottom: 18px;
+}
+
 .global-rate-range {
   width: 100%;
   accent-color: var(--ob-seal-blue);
+}
+
+.global-rate-vanilla-marker {
+  position: absolute;
+  top: 21px;
+  width: 0;
+  height: 12px;
+  border-left: 2px solid #b22a1c;
+  filter: drop-shadow(0 1px 0 rgba(255,242,210,0.6));
+  pointer-events: none;
+}
+
+.global-rate-vanilla-marker span {
+  position: absolute;
+  top: 10px;
+  left: 4px;
+  color: #b22a1c;
+  font-family: var(--ob-mono);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(255,242,210,0.8);
 }
 
 .global-rate-number {
@@ -2251,7 +2279,7 @@ td.attack-list {
   }
 
   .global-rate-controls .terrain-rate-label,
-  .global-rate-range,
+  .global-rate-range-wrap,
   .global-rate-threshold {
     grid-column: 1 / -1;
   }
