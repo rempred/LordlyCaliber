@@ -205,6 +205,9 @@ OB64.NEUTRAL_ENCOUNTER_LEADING_PAD = 4;          // first scenario starts 4 B in
 OB64.NEUTRAL_ENCOUNTER_STRIDE = 20;              // 10 slots × 2 B
 OB64.NEUTRAL_ENCOUNTER_SLOTS  = 10;
 OB64.NEUTRAL_ENCOUNTER_COUNT  = 40;              // fits (816 - 4) / 20 = 40.6
+OB64.NEUTRAL_TERRAIN_RATE_OFFSET = 0x141E80;     // runtime 0x801ED740
+OB64.NEUTRAL_TERRAIN_SLOT_OFFSET = 0x141EA0;     // runtime 0x801ED760
+OB64.NEUTRAL_TERRAIN_TABLE_LEN   = 0x20;
 
 OB64.TERRAIN_NAMES = {
   0: 'Plains / Roads',
@@ -217,6 +220,28 @@ OB64.TERRAIN_NAMES = {
   7: 'Snowy Barrens',
   8: 'Snowy Forests',
   9: 'Snowy Highlands'
+};
+
+OB64.parseNeutralTerrainRates = function(z64) {
+  var entries = [];
+  for (var i = 0; i < OB64.NEUTRAL_TERRAIN_TABLE_LEN; i++) {
+    var rate = z64[OB64.NEUTRAL_TERRAIN_RATE_OFFSET + i];
+    var rawLookup = z64[OB64.NEUTRAL_TERRAIN_SLOT_OFFSET + i];
+    var encounterSlot = rawLookup ? rawLookup - 1 : null;
+    entries.push({
+      terrainByte: i,
+      rate: rate,
+      rawLookup: rawLookup,
+      encounterSlot: encounterSlot,
+      terrainName: encounterSlot == null ? 'Disabled' : (OB64.TERRAIN_NAMES[encounterSlot] || ('Slot ' + encounterSlot)),
+      enabled: rawLookup !== 0
+    });
+  }
+  return {
+    entries: entries,
+    rateOffset: OB64.NEUTRAL_TERRAIN_RATE_OFFSET,
+    slotOffset: OB64.NEUTRAL_TERRAIN_SLOT_OFFSET
+  };
 };
 
 OB64.parseNeutralEncounters = function(z64) {
@@ -249,7 +274,12 @@ OB64.parseNeutralEncounters = function(z64) {
       slots: slots
     });
   }
-  return { records: records, leadingPad: lead, tableStart: tableStart };
+  return {
+    records: records,
+    leadingPad: lead,
+    tableStart: tableStart,
+    terrainRates: OB64.parseNeutralTerrainRates(z64)
+  };
 };
 
 // ============================================================

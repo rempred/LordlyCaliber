@@ -561,6 +561,7 @@ OB64.serializeClassDefs = function(classDefs, z64) {
 // Neutral encounter pool serializer — writes 40 × 20 B scenario slices
 // back to ROM 0x141ED0 starting at leading-pad offset (scenario $s0=1
 // lives 4 bytes into the table). Outside CIC-6102 CRC window.
+// Also writes adjacent terrain-rate tables at 0x141E80 and 0x141EA0.
 // ============================================================
 OB64.serializeNeutralEncounters = function(encounters, z64) {
   var tableStart = OB64.NEUTRAL_ENCOUNTER_OFFSET;
@@ -576,6 +577,16 @@ OB64.serializeNeutralEncounters = function(encounters, z64) {
       z64[off + s * 2]     = (slot.classA || 0) & 0xFF;
       z64[off + s * 2 + 1] = (slot.classB || 0) & 0xFF;
     }
+  }
+  var rates = encounters && encounters.terrainRates && encounters.terrainRates.entries
+    ? encounters.terrainRates.entries
+    : [];
+  for (var r = 0; r < rates.length; r++) {
+    var entry = rates[r];
+    var terrainByte = entry.terrainByte;
+    if (terrainByte === undefined || terrainByte < 0 || terrainByte >= OB64.NEUTRAL_TERRAIN_TABLE_LEN) continue;
+    z64[OB64.NEUTRAL_TERRAIN_RATE_OFFSET + terrainByte] = (entry.rate || 0) & 0xFF;
+    z64[OB64.NEUTRAL_TERRAIN_SLOT_OFFSET + terrainByte] = (entry.rawLookup || 0) & 0xFF;
   }
 };
 

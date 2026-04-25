@@ -1033,7 +1033,7 @@ OB64.SAVE = {
   TREASURE_MIN_CONSUMABLE_ID: 25,
 
   // Tab order for the Save Game Editor's inventory section.
-  // Icons from resources/scraped sprites/ (shop-*.png for 8 categories).
+  // Icons from resources/Item Icons/ (shop-*.png for 8 categories).
   INVENTORY_TABS: [
     { id: "head",       label: "Head",       icon: "shop-equipment-head.png" },
     { id: "weapon",     label: "Weapon",     icon: "shop-weapon.png"         },

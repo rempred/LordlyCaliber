@@ -3035,6 +3035,113 @@ window.OB64 = window.OB64 || {};
     // IDs that appear in ANY slot of any scenario in the current ROM. This is
     // the "Vanilla" tab in the picker modal. Re-computed on each render so it
     // reflects edits the user has made within the session.
+    function renderTerrainRatePanel() {
+      var terrainRates = rom.neutralEncounters && rom.neutralEncounters.terrainRates;
+      var entries = terrainRates && terrainRates.entries ? terrainRates.entries : [];
+      if (!entries.length) return null;
+
+      var wrap = document.createElement('div');
+      wrap.className = 'terrain-rate-panel';
+
+      var head = document.createElement('div');
+      head.className = 'terrain-rate-head';
+      var title = document.createElement('div');
+      title.className = 'terrain-rate-title';
+      title.textContent = 'Terrain encounter rates';
+      head.appendChild(title);
+      var meta = document.createElement('div');
+      meta.className = 'terrain-rate-meta';
+      meta.textContent = 'ROM 0x141E80 -> RAM 0x801ED740';
+      head.appendChild(meta);
+      wrap.appendChild(head);
+
+      var help = document.createElement('div');
+      help.className = 'terrain-rate-help';
+      help.textContent = 'These are the terrain-byte thresholds for the per-unit rand % 100 check after the global encounter roll. 0 disables that terrain byte; 100 guarantees this local check. Decoy Cap doubles the active terrain rate.';
+      wrap.appendChild(help);
+
+      var grid = document.createElement('div');
+      grid.className = 'terrain-rate-grid';
+
+      function fmtByte(n) {
+        return '0x' + n.toString(16).toUpperCase().padStart(2, '0');
+      }
+
+      function commitRate(entry, next, numberInput, rangeInput, valueEl) {
+        var nv = parseInt(next, 10);
+        if (!isFinite(nv)) nv = 0;
+        if (nv < 0) nv = 0;
+        if (nv > 100) nv = 100;
+        entry.rate = nv;
+        numberInput.value = String(nv);
+        rangeInput.value = String(nv);
+        valueEl.textContent = nv + '%';
+        dirty.encounters = true;
+        markChanged();
+      }
+
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        if (!entry.enabled) continue;
+        (function(entry) {
+          var row = document.createElement('div');
+          row.className = 'terrain-rate-row terrain-rate-slot-' + entry.encounterSlot;
+
+          var label = document.createElement('div');
+          label.className = 'terrain-rate-label';
+          label.textContent = entry.terrainName;
+          row.appendChild(label);
+
+          var detail = document.createElement('div');
+          detail.className = 'terrain-rate-detail';
+          detail.textContent = fmtByte(entry.terrainByte) + ' -> slot ' + entry.encounterSlot + ' (lookup ' + entry.rawLookup + ')';
+          row.appendChild(detail);
+
+          var range = document.createElement('input');
+          range.className = 'terrain-rate-range';
+          range.type = 'range';
+          range.min = '0';
+          range.max = '100';
+          range.step = '1';
+          range.value = String(entry.rate);
+          row.appendChild(range);
+
+          var number = document.createElement('input');
+          number.className = 'terrain-rate-number';
+          number.type = 'number';
+          number.min = '0';
+          number.max = '100';
+          number.step = '1';
+          number.value = String(entry.rate);
+          row.appendChild(number);
+
+          var value = document.createElement('div');
+          value.className = 'terrain-rate-value';
+          value.textContent = entry.rate + '%';
+          row.appendChild(value);
+
+          range.addEventListener('input', function() {
+            number.value = range.value;
+            value.textContent = range.value + '%';
+          });
+          range.addEventListener('change', function() {
+            commitRate(entry, range.value, number, range, value);
+          });
+          number.addEventListener('change', function() {
+            commitRate(entry, number.value, number, range, value);
+          });
+
+          grid.appendChild(row);
+        })(entry);
+      }
+
+      wrap.appendChild(grid);
+      return wrap;
+    }
+
+    var ratePanel = renderTerrainRatePanel();
+    if (ratePanel) panel.appendChild(ratePanel);
+
     function computeVanillaClasses() {
       var set = {};
       var records = rom.neutralEncounters.records;
@@ -4000,7 +4107,7 @@ window.OB64 = window.OB64 || {};
       btn.className = 'save-inv-tab';
       if (t.id === saveInvActiveTab) btn.classList.add('active');
       var count = (eqByTab[t.id] || []).length + (conByTab[t.id] || []).length;
-      var iconUrl = t.icon ? ('resources/scraped%20sprites/' + encodeURIComponent(t.icon)) : '';
+      var iconUrl = t.icon ? ('resources/Item%20Icons/' + encodeURIComponent(t.icon)) : '';
       btn.innerHTML =
         (iconUrl ? '<img class="save-inv-tab-icon" src="' + iconUrl + '" alt="">' : '') +
         '<span class="save-inv-tab-label">' + t.label + '</span>' +
