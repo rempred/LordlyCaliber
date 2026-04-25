@@ -2143,6 +2143,32 @@ td.attack-list {
   white-space: nowrap;
 }
 
+.global-rate-unlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: -2px 0 12px 0;
+  padding: 8px 10px;
+  color: var(--ob-ink-soft);
+  background:
+    linear-gradient(180deg, rgba(34,82,108,0.10), rgba(196,143,55,0.10));
+  border: 1px dashed rgba(49,93,116,0.55);
+  border-radius: 4px;
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.global-rate-unlock input {
+  margin-top: 2px;
+  accent-color: var(--ob-seal-blue);
+}
+
+.global-rate-unlock strong {
+  color: var(--ob-seal-blue);
+}
+
 .terrain-rate-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
