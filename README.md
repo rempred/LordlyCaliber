@@ -28,10 +28,13 @@ in your own copy of the US retail `.v64`, and start modding.
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
   vanilla, `x3` normal cap, optional `x100` test cap).
-- **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw)
-  or 8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, stats,
-  equipment overrides, alignment, element, experience, army inventory
-  (equipment + consumables + treasures), and Goth.
+- **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
+  BizHawk in-game `.SaveRAM` battery saves, or 8 MB RDRAM `.bin` dumps. Edit
+  character names, classes, levels, stats, equipment overrides, alignment,
+  element, experience, and army inventory (equipment + consumables + treasures).
+  BizHawk files expose all valid native in-game slots through a slot selector.
+  Goth editing is available for live-state/RDRAM formats; native `.SaveRAM`
+  funds are hidden until that packed field is mapped.
 - **Patches** — save supported edits (shops, item prices, and the global
   encounter-roll multiplier) to a portable JSON patch file for sharing or
   reapplying to a fresh ROM.

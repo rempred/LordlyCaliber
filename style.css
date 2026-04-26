@@ -2922,6 +2922,28 @@ td.attack-list {
   filter: grayscale(0.45);
 }
 
+.save-slot-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--ob-display);
+  font-size: var(--ob-text-xs);
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ob-ink);
+}
+.save-slot-picker select {
+  min-width: 180px;
+  padding: 6px 10px;
+  color: var(--ob-ink);
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-wood-darkest);
+  border-radius: 4px;
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+}
+
 .save-status {
   font-family: var(--ob-serif);
   font-size: var(--ob-text-sm);
@@ -3138,6 +3160,15 @@ td.attack-list {
 }
 .save-gs-value:hover { background: rgba(224,179,90,0.35); color: var(--ob-ink); }
 .save-gs-value.modified { color: var(--ob-wax-red); font-weight: 700; }
+.save-gs-note {
+  grid-column: 1 / -1;
+  color: var(--ob-ink-dim);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border: 1px dashed rgba(116, 84, 50, 0.35);
+  background: rgba(236, 216, 168, 0.22);
+}
 
 /* ---- Tabbed Army Inventory ---- */
 .save-inv-wrap {

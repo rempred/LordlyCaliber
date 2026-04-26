@@ -1717,6 +1717,7 @@ OB64.RZIP_MAGIC = new Uint8Array([0x23, 0x52, 0x5a, 0x49, 0x50, 0x76, 0x01, 0x23
 
 OB64.detectSaveFormat = function(arrayBuffer) {
   var bytes = new Uint8Array(arrayBuffer);
+  if (OB64.isBizhawkSaveRam(bytes)) return 'bizhawk-saveram';
   if (bytes.length >= 20) {
     var match = true;
     for (var i = 0; i < 8; i++) if (bytes[i] !== OB64.RZIP_MAGIC[i]) { match = false; break; }
@@ -1725,6 +1726,25 @@ OB64.detectSaveFormat = function(arrayBuffer) {
   if (bytes.length === OB64.SAVE.RDRAM_SIZE) return 'bin';
   if (bytes.length >= OB64.SAVE.RDRAM_SIZE) return 'state-raw';
   return 'unknown';
+};
+
+OB64.SAVERAM_MAGIC = "QuestOG3";
+
+OB64.isAsciiAt = function(bytes, off, text) {
+  if (off < 0 || off + text.length > bytes.length) return false;
+  for (var i = 0; i < text.length; i++) {
+    if (bytes[off + i] !== text.charCodeAt(i)) return false;
+  }
+  return true;
+};
+
+OB64.isBizhawkSaveRam = function(bytes) {
+  if (!bytes || bytes.length !== OB64.SAVE.SAVERAM_SIZE) return false;
+  for (var i = 0; i < OB64.SAVE.SAVERAM_SLOT_COUNT; i++) {
+    var base = OB64.SAVE.SAVERAM_SLOT_BASE + i * OB64.SAVE.SAVERAM_SLOT_STRIDE;
+    if (OB64.isAsciiAt(bytes, base + OB64.SAVE.SAVERAM_MAGIC_OFFSET, OB64.SAVERAM_MAGIC)) return true;
+  }
+  return false;
 };
 
 OB64.unwrapRzip = function(arrayBuffer) {
@@ -1911,10 +1931,274 @@ OB64.parseConsumableInventory = function(rdram) {
   return { entries: entries };
 };
 
+OB64.parseSaveRamCodecCommands = function(group) {
+  if (group._cmdList) return group._cmdList;
+  var out = [];
+  var hex = group.cmds || "";
+  for (var i = 0; i + 5 < hex.length; i += 6) {
+    out.push({
+      off: parseInt(hex.slice(i, i + 2), 16),
+      bytes: parseInt(hex.slice(i + 2, i + 4), 16) & 0x7F,
+      signed: !!(parseInt(hex.slice(i + 2, i + 4), 16) & 0x80),
+      bits: parseInt(hex.slice(i + 4, i + 6), 16)
+    });
+  }
+  group._cmdList = out;
+  return out;
+};
+
+OB64.saveRamBitMask = function(bits) {
+  return bits >= 32 ? 0xFFFFFFFF : ((1 << bits) - 1);
+};
+
+OB64.saveRamReadBits = function(src, state, bitCount) {
+  var acc = 0;
+  var need = bitCount;
+  while (state.avail < need) {
+    need -= state.avail;
+    if (state.avail > 0) {
+      acc |= (state.cur & OB64.saveRamBitMask(state.avail)) << need;
+    }
+    state.cur = state.pos < src.length ? src[state.pos++] : 0;
+    state.avail = 8;
+  }
+  var shift = state.avail - need;
+  var value = (state.cur >>> shift) & OB64.saveRamBitMask(need);
+  state.avail = shift;
+  return (acc | value) >>> 0;
+};
+
+OB64.saveRamSignExtend = function(value, bits) {
+  if (bits <= 0 || bits >= 32) return value >>> 0;
+  var sign = 1 << (bits - 1);
+  return (value ^ sign) - sign;
+};
+
+OB64.unpackSaveRamPayload = function(payload) {
+  var rdram = new Uint8Array(OB64.SAVE.RDRAM_SIZE);
+  var state = { pos: 0, cur: 0, avail: 0 };
+  var codec = OB64.SAVERAM_MAIN_CODEC || [];
+  for (var g = 0; g < codec.length; g++) {
+    var group = codec[g];
+    var cmds = OB64.parseSaveRamCodecCommands(group);
+    for (var rec = 0; rec < group.count; rec++) {
+      var base = group.base + rec * group.stride;
+      for (var c = 0; c < cmds.length; c++) {
+        var cmd = cmds[c];
+        var value = OB64.saveRamReadBits(payload, state, cmd.bits);
+        if (cmd.signed) value = OB64.saveRamSignExtend(value, cmd.bits);
+        for (var b = cmd.bytes - 1; b >= 0; b--) {
+          rdram[base + cmd.off + (cmd.bytes - 1 - b)] = (value >>> (b * 8)) & 0xFF;
+        }
+      }
+    }
+  }
+  return rdram;
+};
+
+OB64.decodeSaveRamNameField = function(rdram, off) {
+  var decoded = [];
+  for (var i = 0; i < OB64.SAVE.NAME_MAX_LEN; i++) {
+    var b = rdram[off + i];
+    if (b === 0xFF) break;
+    if (b < 0x30) {
+      // Control-token names are rare for roster entries; use a readable
+      // placeholder rather than dropping the rest of the name.
+      var t = String(b + 1).padStart(2, "0");
+      decoded.push("{T" + t + "}");
+    } else {
+      var ch = b - 0x10;
+      decoded.push(ch >= 0x20 && ch < 0x7F && ch !== 0x7B ? String.fromCharCode(ch) : ".");
+    }
+  }
+  for (var j = 0; j < OB64.SAVE.NAME_MAX_LEN; j++) {
+    rdram[off + j] = j < decoded.join("").length ? decoded.join("").charCodeAt(j) & 0xFF : 0;
+  }
+};
+
+OB64.decodeSaveRamRosterNames = function(rdram) {
+  var base = OB64.SAVE.SAVERAM_CHARACTER_BASE || 0x193BC0;
+  for (var i = 0; i < 100; i++) {
+    OB64.decodeSaveRamNameField(rdram, base + i * OB64.SAVE.CHAR_STRIDE);
+  }
+};
+
+OB64.readSaveRamAscii = function(bytes, off, maxLen) {
+  var s = "";
+  for (var i = 0; i < maxLen && off + i < bytes.length; i++) {
+    var b = bytes[off + i];
+    if (b === 0 || b === 0xFF) break;
+    if (b >= 0x20 && b < 0x7F) s += String.fromCharCode(b);
+  }
+  return s;
+};
+
+OB64.calcSaveRamChecksums = function(bytes, base) {
+  var sum = base & 0xFFFF;
+  var bits = base & 0xFFFF;
+  var start = base + OB64.SAVE.SAVERAM_CHECKSUM_REGION_OFFSET;
+  var end = start + OB64.SAVE.SAVERAM_CHECKSUM_REGION_SIZE;
+  for (var i = start; i < end; i++) {
+    var b = bytes[i] || 0;
+    sum = (sum + b) & 0xFFFF;
+    for (var mask = b; mask; mask >>>= 1) bits = (bits + (mask & 1)) & 0xFFFF;
+  }
+  return { sum: sum, bits: bits };
+};
+
+OB64.parseSaveRamSlots = function(bytes) {
+  var slots = [];
+  for (var i = 0; i < OB64.SAVE.SAVERAM_SLOT_COUNT; i++) {
+    var base = OB64.SAVE.SAVERAM_SLOT_BASE + i * OB64.SAVE.SAVERAM_SLOT_STRIDE;
+    var hasMagic = OB64.isAsciiAt(bytes, base + OB64.SAVE.SAVERAM_MAGIC_OFFSET, OB64.SAVERAM_MAGIC);
+    var storedSum = OB64.readU16BE(bytes, base);
+    var storedBits = OB64.readU16BE(bytes, base + 2);
+    var calc = OB64.calcSaveRamChecksums(bytes, base);
+    var status0 = bytes[base + OB64.SAVE.SAVERAM_CHECKSUM_REGION_OFFSET];
+    var empty = !hasMagic || status0 === 0xFF;
+    var valid = hasMagic && !empty && storedSum === calc.sum && storedBits === calc.bits;
+    slots.push({
+      slotIndex: i,
+      base: base,
+      hasMagic: hasMagic,
+      empty: empty,
+      valid: valid,
+      checksumOk: storedSum === calc.sum && storedBits === calc.bits,
+      storedSum: storedSum,
+      storedBits: storedBits,
+      calcSum: calc.sum,
+      calcBits: calc.bits,
+      name: OB64.readSaveRamAscii(bytes, base + OB64.SAVE.SAVERAM_HEADER_NAME_OFFSET, 16)
+    });
+  }
+  return slots;
+};
+
+OB64.countEquippedItems = function(characters) {
+  var counts = {};
+  for (var i = 0; i < characters.length; i++) {
+    var eq = characters[i].equip || {};
+    ["weapon", "body", "offhand", "head"].forEach(function(k) {
+      var id = eq[k] || 0;
+      if (id) counts[id] = (counts[id] || 0) + 1;
+    });
+  }
+  return counts;
+};
+
+OB64.parseSaveRamInventory = function(rdram, characters) {
+  var base = OB64.SAVE.SAVERAM_EQUIPMENT_INV_BASE;
+  var size = OB64.SAVE.SAVERAM_EQUIPMENT_INV_ENTRY_SIZE;
+  var max = OB64.SAVE.SAVERAM_EQUIPMENT_INV_MAX_ENTRIES;
+  var equipped = OB64.countEquippedItems(characters || []);
+  var entries = [];
+  for (var i = 0; i < max; i++) {
+    var off = base + i * size;
+    var itemId = (rdram[off] << 8) | rdram[off + 1];
+    var owned = rdram[off + 3];
+    if (itemId === 0 && owned === 0) break;
+    entries.push({
+      off: off,
+      itemId: itemId,
+      equipped: equipped[itemId] || 0,
+      owned: owned,
+      nativeSaveRam: true
+    });
+  }
+  return { entries: entries };
+};
+
+OB64.parseSaveRamConsumableInventory = function(rdram) {
+  var base = OB64.SAVE.SAVERAM_CONSUMABLE_INV_BASE;
+  var size = OB64.SAVE.SAVERAM_CONSUMABLE_INV_ENTRY_SIZE;
+  var max = OB64.SAVE.SAVERAM_CONSUMABLE_INV_MAX_ENTRIES;
+  var entries = [];
+  for (var i = 0; i < max; i++) {
+    var off = base + i * size;
+    var id = (rdram[off] << 8) | rdram[off + 1];
+    var count = rdram[off + 3];
+    if (id === 0 && count === 0) break;
+    entries.push({ off: off, consumableId: id, count: count, nativeSaveRam: true });
+  }
+  return { entries: entries };
+};
+
+OB64.pickSaveRamSlot = function(slots, requestedSlotIndex) {
+  var selected = null;
+  if (typeof requestedSlotIndex === 'number' && requestedSlotIndex >= 0) {
+    for (var i = 0; i < slots.length; i++) {
+      if (slots[i].slotIndex === requestedSlotIndex) { selected = slots[i]; break; }
+    }
+    if (!selected) {
+      throw new Error('BizHawk .SaveRAM slot ' + (requestedSlotIndex + 1) + ' is outside the supported slot range.');
+    }
+    if (!selected.valid) {
+      throw new Error('BizHawk .SaveRAM slot ' + (requestedSlotIndex + 1) + ' is empty or failed checksum validation.');
+    }
+    return selected;
+  }
+  for (var j = 0; j < slots.length; j++) {
+    if (slots[j].valid) { selected = slots[j]; break; }
+  }
+  if (!selected) {
+    throw new Error('BizHawk .SaveRAM detected, but no valid Ogre Battle 64 save slot passed checksum validation.');
+  }
+  return selected;
+};
+
+OB64.parseBizhawkSaveRamFromBytes = function(bytes, requestedSlotIndex) {
+  bytes = bytes.slice();
+  var slots = OB64.parseSaveRamSlots(bytes);
+  var selected = OB64.pickSaveRamSlot(slots, requestedSlotIndex);
+  var packedOff = selected.base + OB64.SAVE.SAVERAM_PACKED_OFFSET;
+  var rdram = OB64.unpackSaveRamPayload(bytes.subarray(packedOff, packedOff + OB64.SAVE.SAVERAM_PACKED_SIZE));
+  OB64.decodeSaveRamRosterNames(rdram);
+  var armyBase = OB64.findArmyBase(rdram);
+  if (armyBase < 0) {
+    throw new Error('BizHawk .SaveRAM slot ' + (selected.slotIndex + 1) + ' decoded, but the character roster was not found.');
+  }
+  var characters = [];
+  for (var c = 0; c < OB64.SAVE.MAX_SLOTS; c++) {
+    var off = armyBase + c * OB64.SAVE.CHAR_STRIDE;
+    if (off + OB64.SAVE.CHAR_STRIDE > rdram.length) break;
+    var ch = OB64.parseCharacter(rdram, off);
+    if (ch) { ch.arrayIndex = c; characters.push(ch); }
+  }
+  var gameState = OB64.parseGameState(rdram);
+  gameState.goth = null;
+  gameState.gothUnsupported = true;
+  gameState.nativeSaveRam = true;
+  return {
+    format: 'bizhawk-saveram',
+    chunkSize: 0,
+    blob: null,
+    saveram: bytes,
+    rdram: rdram,
+    armyBase: armyBase,
+    characters: characters,
+    gameState: gameState,
+    inventory: OB64.parseSaveRamInventory(rdram, characters),
+    consumableInventory: OB64.parseSaveRamConsumableInventory(rdram),
+    slots: slots,
+    slotIndex: selected.slotIndex,
+    slotBase: selected.base,
+    slotName: selected.name,
+    origBytes: bytes.slice(),
+  };
+};
+
+OB64.parseBizhawkSaveRam = function(input, requestedSlotIndex) {
+  var bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  return OB64.parseBizhawkSaveRamFromBytes(bytes, requestedSlotIndex);
+};
+
 OB64.parseSaveFile = function(arrayBuffer) {
   var format = OB64.detectSaveFormat(arrayBuffer);
   if (format === 'unknown') {
-    throw new Error('Unrecognized save format. Expected RetroArch .state, raw libretro state, or 8 MB .bin RDRAM dump (got ' + arrayBuffer.byteLength + ' bytes).');
+    throw new Error('Unrecognized save format. Expected RetroArch .state, BizHawk .SaveRAM, raw libretro state, or 8 MB .bin RDRAM dump (got ' + arrayBuffer.byteLength + ' bytes).');
+  }
+  if (format === 'bizhawk-saveram') {
+    return OB64.parseBizhawkSaveRam(arrayBuffer);
   }
   var rdram, blob = null, chunkSize = 0;
   if (format === 'rzip') {
