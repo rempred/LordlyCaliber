@@ -224,10 +224,15 @@ OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET = 0x13C1EC;       // ori $s1, $s1, divisor_lo
 OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET = 0x13C1FC;       // addiu $s0, $zero, threshold
 OB64.NEUTRAL_GLOBAL_ALT_OFFSET    = 0x13C200;       // alternate branch threshold
 OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET = 0x13C228;       // fail branch after sltu
-OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // basis-point slider patch
+OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // multiplier patch divisor
 OB64.NEUTRAL_GLOBAL_BRANCH_CHECK = 0x14600090;      // bne $v1,$zero,exit
 OB64.NEUTRAL_GLOBAL_BRANCH_NEVER = 0x10000090;      // beq $zero,$zero,exit
 OB64.NEUTRAL_GLOBAL_BRANCH_ALWAYS = 0x00000000;     // legacy/nuclear NOP
+OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD = 50;         // vanilla normal path, pass count = 51
+OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR = 72000;
+OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS = 7;       // nearest 10000-divisor patch to 51/72000
+OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER = 3;
+OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER = 100;      // 100 * 7 bp = 7.00%
 
 OB64.TERRAIN_NAMES = {
   0: 'Plains / Roads',
@@ -1622,14 +1627,23 @@ OB64.parseConsumables = function(z64) {
   return recs;
 };
 
-// Returns the subset of consumables that appear in any shop's Expendable tab
-// (common + warp categories). This is a global list — the game applies a
-// further chapter-progression gate at runtime that we have NOT decoded yet,
-// so some of these may not be visible at the earliest shops (e.g. Altar of
-// Resurrection at 1500g is hidden in Tenne Plains). Display-only for now.
+// Known vanilla shop Expendable pool. Shopcsv.bin does NOT store consumables;
+// its high item IDs are equipment/display IDs in the normal item namespace.
+// The runtime shop menu builds Expendables from another path that we have not
+// fully decoded yet. Empirically, only records 1..8 are in the global shop
+// pool; a separate chapter/progression gate can still hide Altar early.
+OB64.KNOWN_SHOP_EXPENDABLE_IDS = {
+  1: true, 2: true, 3: true, 4: true,
+  5: true, 6: true, 7: true, 8: true,
+};
+
+OB64.isKnownShopExpendable = function(c) {
+  return !!(c && OB64.KNOWN_SHOP_EXPENDABLE_IDS[c.index]);
+};
+
 OB64.shopExpendables = function(consumables) {
   return consumables.filter(function(c) {
-    return c.flagHi === 0x0000 || c.flagHi === 0x0200;
+    return OB64.isKnownShopExpendable(c);
   });
 };
 

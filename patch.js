@@ -73,7 +73,11 @@ window.OB64 = window.OB64 || {};
     var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
     if (globalRate && globalRate.modified) {
       var basisPoints = clampBasisPoints(globalRate.basisPoints);
+      var multiplier = clampGlobalMultiplier(globalRate.multiplier != null
+        ? globalRate.multiplier
+        : basisPoints / vanillaGlobalBasisPoints());
       globalRateOut = {
+        multiplier: multiplier,
         basis_points: basisPoints,
         percent: basisPoints / 100
       };
@@ -177,7 +181,9 @@ window.OB64 = window.OB64 || {};
         warnings.push('Patch includes neutral_global_rate, but this ROM parse has no neutral encounter data — skipping.');
       } else {
         var basisPoints = null;
-        if (typeof globalPatch.basis_points === 'number') {
+        if (typeof globalPatch.multiplier === 'number') {
+          basisPoints = clampGlobalMultiplier(globalPatch.multiplier) * vanillaGlobalBasisPoints();
+        } else if (typeof globalPatch.basis_points === 'number') {
           basisPoints = globalPatch.basis_points;
         } else if (typeof globalPatch.percent === 'number') {
           basisPoints = globalPatch.percent * 100;
@@ -187,6 +193,7 @@ window.OB64 = window.OB64 || {};
         } else {
           var globalRate = rom.neutralEncounters.globalRate;
           globalRate.basisPoints = clampBasisPoints(basisPoints);
+          globalRate.multiplier = clampGlobalMultiplier(globalRate.basisPoints / vanillaGlobalBasisPoints());
           globalRate.modified = true;
           neutralGlobalRateApplied = 1;
           dirtyFlags.encounters = true;
@@ -259,6 +266,19 @@ window.OB64 = window.OB64 || {};
     if (!isFinite(n)) n = 0;
     if (n < 0) n = 0;
     if (n > 10000) n = 10000;
+    return n;
+  }
+
+  function vanillaGlobalBasisPoints() {
+    return OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS || 7;
+  }
+
+  function clampGlobalMultiplier(value) {
+    var n = Math.round(Number(value));
+    if (!isFinite(n)) n = 1;
+    if (n < 1) n = 1;
+    var max = OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER || 100;
+    if (n > max) n = max;
     return n;
   }
 

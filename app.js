@@ -736,11 +736,10 @@ window.OB64 = window.OB64 || {};
   }
 
   // All items in the game that belong to a given category, sorted by equipType.
-  // For expendable: return ALL 45 consumable master-table records. The modal
-  // lets the user toggle shop-visibility (flagHi common/warp ↔ quest) and
-  // edit prices per record. "Selected" in the modal maps to "shop-visible"
-  // for consumables (flagHi ∈ {0x0000, 0x0200}). See renderShops' modal
-  // click-handler for the commit logic.
+  // For expendable: return ALL 45 consumable master-table records as a price
+  // editor. Shop membership is runtime/global and is not stored in shopcsv;
+  // green rows mark the known vanilla shop pool, but clicking rows does not
+  // add/remove consumables until that runtime allow-list is decoded.
   function allItemsInCategory(cat) {
     if (cat === 'expendable') {
       if (!rom.consumables) return [];
@@ -755,7 +754,10 @@ window.OB64 = window.OB64 || {};
             isConsumable: true,
             consumableIndex: c.index,
             price: c.price,
-            flagHi: c.flagHi
+            flagHi: c.flagHi,
+            category: c.category,
+            effect: c.effect,
+            isKnownShopConsumable: OB64.isKnownShopExpendable(c)
           };
         });
     }
@@ -924,7 +926,9 @@ window.OB64 = window.OB64 || {};
       for (var k = 0; k < shop.items.length; k++) {
         buckets[categorizeShopItem(shop.items[k])].push(shop.items[k]);
       }
-      // For expendable: show the global consumable list (read-only)
+      // For expendable: show the known runtime shop pool. Shopcsv itself only
+      // stores equipment IDs; high shopcsv IDs like 0xF5 are spellbooks, not
+      // consumable records. Expanding this pool needs a separate runtime trace.
       var expNames = (rom.consumables ? OB64.shopExpendables(rom.consumables) : [])
         .map(function(c) { return c.name; });
 
@@ -972,20 +976,19 @@ window.OB64 = window.OB64 || {};
   // ---------- Shop-item modal ----------
   function openItemModal(shopIdx, category) {
     var shop = rom.shops[shopIdx];
-    // Expendable is NOT stored per-shop; the tab contents are a global
-    // filter over the consumable master table. We treat the modal as a
-    // master-table editor: "selected" = shop-visible (flagHi common/warp),
-    // and clicking an item flips its flagHi. Edits propagate to every shop.
+    // Expendable is NOT stored per-shop; the tab contents are a global runtime
+    // pool over the consumable master table. We know how to edit prices, but
+    // not yet how to expand the shop pool itself, so the modal is price-only.
     var isConsumableModal = (category === 'expendable');
     var items = allItemsInCategory(category);
 
     // Initial selection state.
     //   equipment categories → items in THIS shop's inventory
-    //   expendable            → items whose flagHi currently passes the shop filter
+    //   expendable            → known vanilla shop-pool records (display-only)
     var selected = {};
     if (isConsumableModal) {
       items.forEach(function(item) {
-        if (item.flagHi === 0x0000 || item.flagHi === 0x0200) selected[item.id] = true;
+        if (item.isKnownShopConsumable) selected[item.id] = true;
       });
     } else {
       shop.items.forEach(function(id) {
@@ -1007,7 +1010,7 @@ window.OB64 = window.OB64 || {};
     header.className = 'item-modal-header';
     var title = document.createElement('h2');
     title.textContent = isConsumableModal
-      ? 'Consumables — global list (affects every shop\u2019s Expendable tab)'
+      ? 'Consumables — price editor (shop pool is runtime-only)'
       : 'Shop #' + shopIdx + ' — ' + SHOP_CATEGORY_LABELS[category];
     header.appendChild(title);
     var btnClose = document.createElement('button');
@@ -1060,6 +1063,7 @@ window.OB64 = window.OB64 || {};
             row.classList.add('unused');
           }
           if (item.isConsumable) row.classList.add('consumable-item');
+          if (item.isConsumable && !item.isKnownShopConsumable) row.classList.add('consumable-unsupported');
 
           var img = document.createElement('img');
           img.className = 'item-modal-icon';
@@ -1072,6 +1076,16 @@ window.OB64 = window.OB64 || {};
           name.className = 'item-modal-name';
           name.textContent = item.name;
           row.appendChild(name);
+
+          if (item.isConsumable) {
+            var badge = document.createElement('span');
+            badge.className = 'item-modal-kind';
+            badge.textContent = item.isKnownShopConsumable ? 'shop pool' : (item.category || 'not shop');
+            badge.title = item.isKnownShopConsumable
+              ? 'Known vanilla runtime shop consumable. Visibility may still be chapter-gated.'
+              : 'Not known to be in the runtime shop Expendable pool yet.';
+            row.appendChild(badge);
+          }
 
           // Price chip — shown for equipment and consumables alike.
           // Consumables use a separate price-edit path (writes to
@@ -1091,24 +1105,10 @@ window.OB64 = window.OB64 || {};
           }
 
           if (isConsumableModal) {
-            row.addEventListener('click', function() {
-              var rec = rom.consumables[item.consumableIndex];
-              if (!rec) return;
-              if (selected[item.id]) {
-                delete selected[item.id];
-                row.classList.remove('selected');
-                rec.flagHi = 0x0100;
-                item.flagHi = 0x0100;
-              } else {
-                selected[item.id] = true;
-                row.classList.add('selected');
-                rec.flagHi = 0x0000;
-                item.flagHi = 0x0000;
-              }
-              dirty.consumables = true;
-              changes++;
-              updateStatus();
-            });
+            row.classList.add('readonly');
+            row.title = item.isKnownShopConsumable
+              ? 'Known shop-pool consumable. Click the price to edit it.'
+              : 'Shop visibility for this consumable is not decoded yet. Click the price to edit table data only.';
           } else {
             row.addEventListener('click', function(ev) {
               // Ctrl/Cmd+click: strip this item from every OTHER shop but
@@ -1147,7 +1147,7 @@ window.OB64 = window.OB64 || {};
     var hint = document.createElement('div');
     hint.className = 'item-modal-hint';
     hint.dataset.defaultText = isConsumableModal
-      ? 'Consumables are global. Toggling an item or editing price affects every shop.'
+      ? 'Consumable prices are editable. Adding new consumables to shops is not supported yet: the runtime shop allow-list/loop still needs to be decoded.'
       : 'Tip: Ctrl+click an item to remove it from every other shop.';
     hint.textContent = hint.dataset.defaultText;
     modal.appendChild(hint);
@@ -3047,11 +3047,23 @@ window.OB64 = window.OB64 || {};
       var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
       if (!globalRate) return null;
 
-      var SOFT_MAX_BP = 300;    // 3.00%: practical tuning range for normal play.
-      var HARD_MAX_BP = 10000;  // 100.00%: useful for diagnostics.
-      var VANILLA_GLOBAL_BP = (51 * 10000) / 72000; // 0.0708% normal path.
-      var startBp = Math.max(0, Math.min(HARD_MAX_BP, Math.round(globalRate.basisPoints || 0)));
-      var maxBp = startBp > SOFT_MAX_BP ? HARD_MAX_BP : SOFT_MAX_BP;
+      var SAFE_MAX_MULT = OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER || 3;
+      var HARD_MAX_MULT = OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER || 100;
+      var VANILLA_PATCH_BP = OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS || 7;
+      var VANILLA_EXACT_BP = ((OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD + 1) * 10000) /
+        OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
+      var startBp = Math.max(0, Math.min(10000, Math.round(globalRate.basisPoints || 0)));
+
+      function multiplierToBp(mult) {
+        mult = Math.max(1, Math.min(HARD_MAX_MULT, Math.round(mult || 1)));
+        return Math.max(1, Math.min(10000, VANILLA_PATCH_BP * mult));
+      }
+      function multiplierFromBp(bp) {
+        if (!isFinite(bp) || bp <= 0) return 1;
+        return Math.max(1, Math.min(HARD_MAX_MULT, Math.round(bp / VANILLA_PATCH_BP)));
+      }
+      var startMult = multiplierFromBp(startBp);
+      var maxMult = startMult > SAFE_MAX_MULT ? HARD_MAX_MULT : SAFE_MAX_MULT;
 
       function pct(bp) {
         return (bp / 100).toFixed(2) + '%';
@@ -3073,21 +3085,24 @@ window.OB64 = window.OB64 || {};
         }
         return 'Current ROM pattern is not recognized. Editing will overwrite the known global-roll sites with the standard slider patch.';
       }
-      function sync(bp, numberInput, rangeInput, valueEl, thresholdEl) {
-        if (!isFinite(bp)) bp = 0;
-        bp = Math.max(0, Math.min(maxBp, Math.round(bp)));
+      function sync(mult, numberInput, rangeInput, valueEl, thresholdEl) {
+        if (!isFinite(mult)) mult = 1;
+        mult = Math.max(1, Math.min(maxMult, Math.round(mult)));
+        var bp = multiplierToBp(mult);
+        globalRate.multiplier = mult;
         globalRate.basisPoints = bp;
-        numberInput.value = (bp / 100).toFixed(2);
-        rangeInput.value = String(bp);
-        valueEl.textContent = pct(bp);
-        thresholdEl.textContent = bp === 0 ? 'always fail' : ((bp - 1) + ' / 10000');
+        numberInput.value = String(mult);
+        rangeInput.value = String(mult);
+        valueEl.textContent = 'x' + mult + ' = ' + pct(bp);
+        thresholdEl.textContent = (bp - 1) + ' / 10000';
       }
       function updateVanillaMarker(markerEl) {
-        var pos = maxBp ? (VANILLA_GLOBAL_BP / maxBp) * 100 : 0;
+        var span = Math.max(1, maxMult - 1);
+        var pos = ((1 - 1) / span) * 100;
         markerEl.style.left = Math.max(0, Math.min(100, pos)).toFixed(3) + '%';
       }
-      function commit(bp, numberInput, rangeInput, valueEl, thresholdEl) {
-        sync(bp, numberInput, rangeInput, valueEl, thresholdEl);
+      function commit(mult, numberInput, rangeInput, valueEl, thresholdEl) {
+        sync(mult, numberInput, rangeInput, valueEl, thresholdEl);
         globalRate.modified = true;
         dirty.encounters = true;
         markChanged();
@@ -3123,25 +3138,25 @@ window.OB64 = window.OB64 || {};
 
       var label = document.createElement('div');
       label.className = 'terrain-rate-label';
-      label.textContent = 'Pass rate';
+      label.textContent = 'Multiplier';
       controls.appendChild(label);
 
       var range = document.createElement('input');
       range.className = 'global-rate-range';
       range.type = 'range';
-      range.min = '0';
-      range.max = String(maxBp);
+      range.min = '1';
+      range.max = String(maxMult);
       range.step = '1';
-      range.value = String(startBp);
+      range.value = String(startMult);
 
       var rangeWrap = document.createElement('div');
       rangeWrap.className = 'global-rate-range-wrap';
       rangeWrap.appendChild(range);
       var vanillaMarker = document.createElement('div');
       vanillaMarker.className = 'global-rate-vanilla-marker';
-      vanillaMarker.title = 'Vanilla global normal path: 51 / 72000 = 0.0708%';
+      vanillaMarker.title = 'Vanilla global normal path: 51 / 72000 = 0.0708%. Editor x1 writes 7 / 10000 = 0.07%.';
       var vanillaLabel = document.createElement('span');
-      vanillaLabel.textContent = 'Vanilla 0.07%';
+      vanillaLabel.textContent = 'Vanilla x1';
       vanillaMarker.appendChild(vanillaLabel);
       rangeWrap.appendChild(vanillaMarker);
       updateVanillaMarker(vanillaMarker);
@@ -3150,20 +3165,20 @@ window.OB64 = window.OB64 || {};
       var number = document.createElement('input');
       number.className = 'global-rate-number';
       number.type = 'number';
-      number.min = '0';
-      number.max = (maxBp / 100).toFixed(2);
-      number.step = '0.01';
-      number.value = (startBp / 100).toFixed(2);
+      number.min = '1';
+      number.max = String(maxMult);
+      number.step = '1';
+      number.value = String(startMult);
       controls.appendChild(number);
 
       var value = document.createElement('div');
       value.className = 'terrain-rate-value';
-      value.textContent = pct(startBp);
+      value.textContent = 'x' + startMult + ' = ' + pct(multiplierToBp(startMult));
       controls.appendChild(value);
 
       var threshold = document.createElement('div');
       threshold.className = 'global-rate-threshold';
-      threshold.textContent = startBp === 0 ? 'always fail' : ((startBp - 1) + ' / 10000');
+      threshold.textContent = (multiplierToBp(startMult) - 1) + ' / 10000';
       controls.appendChild(threshold);
 
       range.addEventListener('input', function() {
@@ -3173,7 +3188,7 @@ window.OB64 = window.OB64 || {};
         commit(parseInt(range.value, 10), number, range, value, threshold);
       });
       number.addEventListener('change', function() {
-        commit(parseFloat(number.value) * 100, number, range, value, threshold);
+        commit(parseInt(number.value, 10), number, range, value, threshold);
       });
 
       wrap.appendChild(controls);
@@ -3182,22 +3197,23 @@ window.OB64 = window.OB64 || {};
       unlockWrap.className = 'global-rate-unlock';
       var unlock = document.createElement('input');
       unlock.type = 'checkbox';
-      unlock.checked = maxBp === HARD_MAX_BP;
+      unlock.checked = maxMult === HARD_MAX_MULT;
       unlockWrap.appendChild(unlock);
       var unlockText = document.createElement('span');
       unlockText.innerHTML =
-        '<strong>Unlock extreme rates above 3%</strong> for testing. ' +
-        'Even 5% global can feel close to every couple of steps because the game rolls per eligible check, not per visible map step.';
+        '<strong>Enable x100 test range</strong>. ' +
+        'Normal tuning is capped at x3; x100 writes a 7.00% global pass rate before terrain, which is already very active in live play.';
       unlockWrap.appendChild(unlockText);
       unlock.addEventListener('change', function() {
-        maxBp = unlock.checked ? HARD_MAX_BP : SOFT_MAX_BP;
-        range.max = String(maxBp);
-        number.max = (maxBp / 100).toFixed(2);
+        maxMult = unlock.checked ? HARD_MAX_MULT : SAFE_MAX_MULT;
+        range.max = String(maxMult);
+        number.max = String(maxMult);
         updateVanillaMarker(vanillaMarker);
-        if ((globalRate.basisPoints || 0) > maxBp) {
-          commit(maxBp, number, range, value, threshold);
+        var currentMult = multiplierFromBp(globalRate.basisPoints || multiplierToBp(startMult));
+        if (currentMult > maxMult) {
+          commit(maxMult, number, range, value, threshold);
         } else {
-          sync(globalRate.basisPoints || 0, number, range, value, threshold);
+          sync(currentMult, number, range, value, threshold);
         }
       });
       wrap.appendChild(unlockWrap);
@@ -3205,10 +3221,10 @@ window.OB64 = window.OB64 || {};
       var note = document.createElement('div');
       note.className = 'terrain-rate-global-note';
       note.innerHTML =
-        '<strong>Export behavior:</strong> once edited, this slider patches the divisor to <code>10000</code> and writes both state-bit branches to the same selected basis-point rate. ' +
-        '<code>0%</code> uses an always-fail branch; the normal slider is capped at <code>3%</code> because higher values quickly become near-constant in live play. ' +
-        'The red slider marker shows vanilla normal play: <code>51 / 72000 = 0.0708%</code>. ' +
-        'Terrain rates still apply after this gate. Example: <code>50%</code> global with <code>50%</code> terrain is roughly a <code>25%</code> chance per eligible check, or about <code>4</code> eligible checks on average.';
+        '<strong>Export behavior:</strong> once edited, this writes both state-bit branches to the same multiplier-based basis-point patch. ' +
+        'Vanilla exact is <code>51 / 72000 = ' + (VANILLA_EXACT_BP / 100).toFixed(4) + '%</code>; editor <code>x1</code> writes the nearest stable patch, <code>7 / 10000 = 0.07%</code>. ' +
+        '<code>x2</code> and <code>x3</code> are the normal tuning range. The optional <code>x100</code> cap is <code>700 / 10000 = 7.00%</code>. ' +
+        'Terrain rates still apply after this gate, so <code>x100</code> with <code>50%</code> terrain is about <code>3.5%</code> per eligible check.';
       wrap.appendChild(note);
 
       return wrap;
