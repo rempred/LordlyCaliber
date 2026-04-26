@@ -5,8 +5,9 @@ Caliber*. It would not exist without the work below.
 
 ## Editor
 
-- **Claude** a pretty good bot.
-- **rempred** — PM.
+- **rempred** — project coordination, test cases, emulator verification, and release judgment.
+- **Claude** — AI-assisted reverse engineering, implementation, documentation, and maintenance.
+- **OpenAI Codex** — AI-assisted reverse engineering, implementation, documentation, and maintenance.
 
 ## Reference data and assets
 
