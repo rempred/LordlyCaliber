@@ -43,6 +43,17 @@ in your own copy of the US retail `.v64`, and start modding.
 > supported and will likely produce wrong offsets, garbled data, or crash on
 > export. Verify your file matches the name and size above before reporting bugs.
 
+## Releases and Downloads
+
+Packaged builds are published on GitHub Releases:
+
+- [LordlyCaliber v0.1.0](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.0)
+- Download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
+
+GitHub tracks download counts for uploaded release assets. Repository clones and
+GitHub's automatically generated source-code archives are separate from the
+project download asset.
+
 ## Features
 
 - **Shops** — modify the inventory of all 35 in-game shops, within the empirical
