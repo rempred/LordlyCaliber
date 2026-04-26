@@ -26,13 +26,14 @@ in your own copy of the US retail `.v64`, and start modding.
   all 277 equipment entries.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
-  encounter-roll pass rate with an exact basis-point slider.
+  encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
+  vanilla, `x3` normal cap, optional `x100` test cap).
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw)
   or 8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, stats,
   equipment overrides, alignment, element, experience, army inventory
   (equipment + consumables + treasures), and Goth.
 - **Patches** — save supported edits (shops, item prices, and the global
-  encounter-roll slider) to a portable JSON patch file for sharing or
+  encounter-roll multiplier) to a portable JSON patch file for sharing or
   reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 

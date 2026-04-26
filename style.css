@@ -1797,6 +1797,20 @@ td.attack-list {
   background: transparent;
 }
 
+.item-modal-row.selected.readonly:hover {
+  background:
+    linear-gradient(180deg, rgba(58,138,74,0.35), rgba(58,138,74,0.22));
+}
+
+.item-modal-row.consumable-unsupported {
+  opacity: 0.72;
+  background: rgba(122,81,32,0.10);
+}
+
+.item-modal-row.consumable-unsupported:hover {
+  background: rgba(122,81,32,0.16);
+}
+
 .item-modal-icon {
   width: 24px;
   height: 24px;
@@ -2110,7 +2124,7 @@ td.attack-list {
 
 .global-rate-controls {
   display: grid;
-  grid-template-columns: minmax(96px, auto) minmax(180px, 1fr) 74px 64px minmax(92px, auto);
+  grid-template-columns: minmax(96px, auto) minmax(180px, 1fr) 58px minmax(104px, auto) minmax(92px, auto);
   align-items: center;
   gap: 9px;
   margin: 0 0 12px 0;
@@ -2154,7 +2168,7 @@ td.attack-list {
 }
 
 .global-rate-number {
-  width: 74px;
+  width: 58px;
   padding: 3px 5px;
   font-family: var(--ob-mono);
   color: var(--ob-ink);
@@ -2275,7 +2289,7 @@ td.attack-list {
   }
 
   .global-rate-controls {
-    grid-template-columns: minmax(0, 1fr) 74px 64px;
+    grid-template-columns: minmax(0, 1fr) 58px minmax(104px, auto);
   }
 
   .global-rate-controls .terrain-rate-label,
