@@ -1,5 +1,33 @@
 # LordlyCaliber
 
+## Project Overview
+
+LordlyCaliber is a reverse-engineering and modding tool for *Ogre Battle 64:
+Person of Lordly Caliber*. The editor code, ROM parsers, repackers, save-file
+codecs, and supporting research scripts were entirely written by AI assistants,
+coordinated by rempred. AI assistants also helped with reverse-engineering work:
+inspecting ROM data, interpreting runtime memory, building probes, and turning
+verified findings into editor features.
+
+rempred keeps the project grounded by choosing research targets, supplying test
+cases, checking behavior in emulators, and deciding which findings are ready to
+ship.
+
+The public editor is intentionally clean and browser-only:
+
+- `index.html` loads the app shell and vendored dependencies.
+- `app.js` owns the UI, tabs, editing flows, and export actions.
+- `data.js` stores decoded constants, lookup tables, and save/ROM layout data.
+- `parsers.js` reads the ROM, save states, BizHawk `.SaveRAM`, and decoded data
+  structures into editor-friendly objects.
+- `repack.js` serializes edits back into ROM/save formats, including LHA/LZSS
+  repacking and N64 CRC repair.
+- `patch.js` imports/exports portable JSON patches for supported edits.
+- `style.css` contains the full parchment-themed interface.
+
+Research-only scripts and emulator probes are kept outside this repository.
+Only concrete, tested findings are ported into LordlyCaliber.
+
 A browser-based mod editor for *Ogre Battle 64: Person of Lordly Caliber*
 (Quest, N64, 1999). Edit shops, classes, items, neutral encounters, and save
 files — then export a patched ROM.
@@ -19,15 +47,21 @@ in your own copy of the US retail `.v64`, and start modding.
 
 - **Shops** — modify the inventory of all 35 in-game shops, within the empirical
   324-item / 24-per-shop budget.
+  Shop cards are ordered by playthrough scene, show budget warnings, and use
+  searchable item pickers.
 - **Classes** — edit base stats, growth curves, resistances, combat multipliers,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
+  Class cards expose equipment defaults, promotion requirements, unit type,
+  movement type, and combat behavior fields.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
+  Item names and IDs use the game's 1-based item numbering.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
   vanilla, `x3` normal cap, optional `x100` test cap).
+  Creature drop entries are editable from the same tab.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, or 8 MB RDRAM `.bin` dumps. Edit
   character names, classes, levels, stats, equipment overrides, alignment,
@@ -39,6 +73,22 @@ in your own copy of the US retail `.v64`, and start modding.
   encounter-roll multiplier) to a portable JSON patch file for sharing or
   reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
+
+## Current Limitations
+
+- Only the North American retail `.v64` listed above is supported. Other regions,
+  prototypes, `.z64` files, or already-modified ROMs may parse incorrectly.
+- The editor creates new ROM/save files in your browser downloads. It does not
+  overwrite your original files or patch a running emulator directly.
+- Shop exports must fit the original compressed archive slot. The UI warns about
+  known budgets, but very large inventory changes can still fail export.
+- BizHawk `.SaveRAM` supports roster and inventory editing across valid native
+  slots. Native `.SaveRAM` Goth/funds and some game-state fields are still
+  hidden until their packed-save locations are mapped.
+- Adding entirely new reserve characters is not enabled yet. The game has an
+  additional active/reserve validation structure that is still being decoded.
+- Per-mission deployment editing, stronghold editing, map editing, audio editing,
+  and combat-buffer expansion are research targets, not shipped features.
 
 ## Usage
 
@@ -57,7 +107,9 @@ in your own copy of the US retail `.v64`, and start modding.
 For save editing: switch to the **Save Game Editor** tab and **Load Save**.
 RetroArch `.state` files (Mupen64Plus-Next core) work out of the box.
 
-> **You must supply your own ROM.** No copyrighted code or assets are bundled.
+> **You must supply your own ROM.** No ROM or game code is bundled. Small
+> extracted UI/item icons are included only as identification references for the
+> editor.
 
 ## How it was built
 
@@ -102,9 +154,11 @@ save-state decompression.
 
 ## Credits
 
-See [CREDITS.md](CREDITS.md). The editor would not exist without the
-community wikis (OgreBattle64.net, ogrebattle64archive.com), Cralex's
-GameShark guide, and the reverse-engineering work of everyone who came before.
+See [CREDITS.md](CREDITS.md). LordlyCaliber was built with help from AI
+assistants, including **Claude** and **OpenAI Codex**, and coordinated by
+**rempred**. The editor would not exist without the community wikis
+(OgreBattle64.net, ogrebattle64archive.com), Cralex's GameShark guide, and the
+reverse-engineering work of everyone who came before.
 
 ## License
 
