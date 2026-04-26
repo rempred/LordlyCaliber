@@ -3800,7 +3800,8 @@ window.OB64 = window.OB64 || {};
 
   // ============================================================
   // SAVE-GAME TAB
-  // Edits a RetroArch Mupen64Plus-Next save state or raw 8 MB RDRAM dump.
+  // Edits a RetroArch Mupen64Plus-Next save state, BizHawk .SaveRAM, or raw
+  // 8 MB RDRAM dump.
   // Independent of the ROM — loads its own file, exports its own file.
   // ============================================================
   function renderSaveGame(panel) {
@@ -3813,7 +3814,7 @@ window.OB64 = window.OB64 || {};
     var loadInput = document.createElement('input');
     loadInput.type = 'file';
     loadInput.id = 'save-file-input';
-    loadInput.accept = '.state,.state1,.state2,.state3,.state4,.state5,.state6,.state7,.state8,.state9,.bin';
+    loadInput.accept = '.state,.state1,.state2,.state3,.state4,.state5,.state6,.state7,.state8,.state9,.bin,.SaveRAM,.saveram';
     loadInput.style.display = 'none';
 
     var loadLabel = document.createElement('label');
@@ -3833,11 +3834,14 @@ window.OB64 = window.OB64 || {};
     status.id = 'save-status';
     status.textContent = saveState
       ? buildSaveStatusLine()
-      : 'No save loaded. Accepts RetroArch .state (RZIP or uncompressed) or 8 MB .bin RDRAM dumps.';
+      : 'No save loaded. Accepts RetroArch .state, BizHawk .SaveRAM, or 8 MB .bin RDRAM dumps.';
 
     bar.appendChild(loadLabel);
     bar.appendChild(loadInput);
     bar.appendChild(exportBtn);
+    if (saveState && saveState.format === 'bizhawk-saveram') {
+      bar.appendChild(buildSaveRamSlotPicker());
+    }
     bar.appendChild(status);
     panel.appendChild(bar);
 
@@ -3854,6 +3858,7 @@ window.OB64 = window.OB64 || {};
         '<h3>How to produce a save file</h3>',
         '<ul>',
         '<li><strong>RetroArch:</strong> press F2 in-game to save a state. Files live in <code>RetroArch/states/Mupen64Plus-Next/</code> as <code>&lt;rom&gt;.state</code>, <code>.state1</code>, etc.</li>',
+        '<li><strong>BizHawk:</strong> use the in-game save menu, then load the battery save from <code>BizHawk/N64/SaveRAM/&lt;rom&gt;.SaveRAM</code>.</li>',
         '</ul>',
         '<p class="save-empty-note">Your edits produce <code>&lt;name&gt;-edited.&lt;ext&gt;</code>. The original file is never overwritten.</p>',
       ].join('\n');
@@ -3906,10 +3911,73 @@ window.OB64 = window.OB64 || {};
 
   function buildSaveStatusLine() {
     if (!saveState) return '';
-    var fmtLabel = { 'rzip': 'RZIP .state', 'state-raw': 'uncompressed .state', 'bin': '8 MB .bin' }[saveState.format] || saveState.format;
+    var fmtLabel = { 'rzip': 'RZIP .state', 'state-raw': 'uncompressed .state', 'bin': '8 MB .bin', 'bizhawk-saveram': 'BizHawk .SaveRAM' }[saveState.format] || saveState.format;
     var armyHex = '0x' + saveState.armyBase.toString(16).padStart(6, '0');
-    return 'Loaded ' + (saveFileName || 'save') + ' \u2014 ' + fmtLabel + ' \u2014 ' +
+    var slot = '';
+    if (saveState.format === 'bizhawk-saveram') {
+      var validSlots = (saveState.slots || []).filter(function(s) { return s.valid; }).length;
+      slot = ' \u2014 slot ' + ((saveState.slotIndex || 0) + 1) + (validSlots > 1 ? ' (' + validSlots + ' valid slots)' : '');
+    }
+    return 'Loaded ' + (saveFileName || 'save') + ' \u2014 ' + fmtLabel + slot + ' \u2014 ' +
            saveState.characters.length + ' characters \u2014 roster at RDRAM ' + armyHex;
+  }
+
+  function buildSaveRamSlotPicker() {
+    var wrap = document.createElement('label');
+    wrap.className = 'save-slot-picker';
+
+    var label = document.createElement('span');
+    label.textContent = 'In-game slot';
+
+    var select = document.createElement('select');
+    var slots = saveState.slots || [];
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      var opt = document.createElement('option');
+      opt.value = s.slotIndex;
+      opt.disabled = !s.valid;
+      var suffix = s.valid ? (s.name ? ' — ' + s.name : ' — valid') : (s.empty ? ' — empty' : ' — checksum failed');
+      opt.textContent = 'Slot ' + (s.slotIndex + 1) + suffix;
+      select.appendChild(opt);
+    }
+    select.value = saveState.slotIndex;
+    select.addEventListener('change', function() {
+      switchSaveRamSlot(parseInt(select.value, 10));
+    });
+
+    wrap.appendChild(label);
+    wrap.appendChild(select);
+    return wrap;
+  }
+
+  function commitCurrentSaveRamSlotEdits() {
+    if (!saveState || saveState.format !== 'bizhawk-saveram') return;
+    saveState.saveram = OB64.exportBizhawkSaveRam(saveState);
+    saveState.slots = OB64.parseSaveRamSlots(saveState.saveram);
+  }
+
+  function switchSaveRamSlot(slotIndex) {
+    if (!saveState || saveState.format !== 'bizhawk-saveram') return;
+    if (slotIndex === saveState.slotIndex) return;
+
+    var wasDirty = !!saveState.dirty;
+    var origBytes = saveState.origBytes;
+    try {
+      // Preserve edits already made to the currently-visible native slot so a
+      // single exported .SaveRAM can carry changes across multiple in-game saves.
+      if (saveState.dirty) commitCurrentSaveRamSlotEdits();
+      var mergedBytes = saveState.saveram || saveState.origBytes;
+      var next = OB64.parseBizhawkSaveRamFromBytes(mergedBytes, slotIndex);
+      next.origBytes = origBytes;
+      next.saveram = mergedBytes.slice();
+      next.dirty = wasDirty;
+      saveState = next;
+      renderSaveGame(document.getElementById('panel-save'));
+    } catch (err) {
+      console.error(err);
+      showErrorModal('Save slot switch failed', err.message);
+      renderSaveGame(document.getElementById('panel-save'));
+    }
   }
 
   function handleSaveFileLoad(file) {
@@ -3934,6 +4002,9 @@ window.OB64 = window.OB64 || {};
   function handleSaveExport() {
     if (!saveState) return;
     try {
+      if (saveState.format === 'bizhawk-saveram') {
+        commitCurrentSaveRamSlotEdits();
+      }
       OB64.downloadSaveFile(saveState, saveFileName);
       // Clear dirty flag after successful export so the button disables
       // until the next edit.
@@ -4745,16 +4816,21 @@ window.OB64 = window.OB64 || {};
   // existing zero-terminated list in RDRAM, shifting the terminator.
   function addItemToInventory(tabId, id) {
     if (!id) return;
+    var nativeSaveRam = saveState && saveState.format === 'bizhawk-saveram';
     if (tabId === 'consumable' || tabId === 'treasure') {
       var list = saveState.consumableInventory.entries;
-      var off = OB64.SAVE.CONSUMABLE_INV_BASE + list.length * OB64.SAVE.CONSUMABLE_INV_ENTRY_SIZE;
-      var entry = { off: off, consumableId: id, count: 1 };
+      var conBase = nativeSaveRam ? OB64.SAVE.SAVERAM_CONSUMABLE_INV_BASE : OB64.SAVE.CONSUMABLE_INV_BASE;
+      var conSize = nativeSaveRam ? OB64.SAVE.SAVERAM_CONSUMABLE_INV_ENTRY_SIZE : OB64.SAVE.CONSUMABLE_INV_ENTRY_SIZE;
+      var off = conBase + list.length * conSize;
+      var entry = { off: off, consumableId: id, count: 1, nativeSaveRam: nativeSaveRam };
       list.push(entry);
       OB64.writeConsumableInventoryEntry(saveState.rdram, entry);
     } else {
       var list = saveState.inventory.entries;
-      var off = OB64.SAVE.INVENTORY_BASE + list.length * OB64.SAVE.INVENTORY_ENTRY_SIZE;
-      var entry = { off: off, itemId: id, equipped: 0, owned: 1 };
+      var eqBase = nativeSaveRam ? OB64.SAVE.SAVERAM_EQUIPMENT_INV_BASE : OB64.SAVE.INVENTORY_BASE;
+      var eqSize = nativeSaveRam ? OB64.SAVE.SAVERAM_EQUIPMENT_INV_ENTRY_SIZE : OB64.SAVE.INVENTORY_ENTRY_SIZE;
+      var off = eqBase + list.length * eqSize;
+      var entry = { off: off, itemId: id, equipped: 0, owned: 1, nativeSaveRam: nativeSaveRam };
       list.push(entry);
       OB64.writeInventoryEntry(saveState.rdram, entry);
     }
@@ -4765,10 +4841,16 @@ window.OB64 = window.OB64 || {};
     var wrap = document.createElement('div');
     wrap.className = 'save-gamestate';
 
-    var rows = [
-      { key: 'goth',     label: 'Goth',     min: 0, max: 0xFFFFFFFF },
-      { key: 'scenario', label: 'Scenario', min: 0, max: 255, labels: OB64.SAVE.SCENARIO_LABELS },
-    ];
+    var rows = [];
+    if (gs.nativeSaveRam) {
+      var note = document.createElement('div');
+      note.className = 'save-gs-note';
+      note.textContent = 'Native BizHawk .SaveRAM game-state fields are packed differently from live save states, so this panel is hidden until those offsets are fully mapped. Roster and inventory edits are supported.';
+      wrap.appendChild(note);
+      return wrap;
+    }
+    rows.push({ key: 'goth', label: 'Goth', min: 0, max: 0xFFFFFFFF });
+    rows.push({ key: 'scenario', label: 'Scenario', min: 0, max: 255, labels: OB64.SAVE.SCENARIO_LABELS });
     for (var i = 0; i < rows.length; i++) {
       wrap.appendChild(buildGameStateRow(rows[i], gs));
     }

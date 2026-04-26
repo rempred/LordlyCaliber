@@ -1046,6 +1046,13 @@ OB64.writeGameState = function(rdram, gs) {
  * returned by parseInventory — { off, itemId, equipped, owned }.
  */
 OB64.writeInventoryEntry = function(rdram, entry) {
+  if (entry.nativeSaveRam) {
+    rdram[entry.off]     = (entry.itemId >> 8) & 0xFF;
+    rdram[entry.off + 1] = entry.itemId & 0xFF;
+    rdram[entry.off + 2] = 0;
+    rdram[entry.off + 3] = entry.owned & 0xFF;
+    return;
+  }
   rdram[entry.off]     = (entry.itemId >> 8) & 0xFF;
   rdram[entry.off + 1] = entry.itemId & 0xFF;
   rdram[entry.off + 2] = entry.equipped & 0xFF;
@@ -1058,6 +1065,13 @@ OB64.writeInventoryEntry = function(rdram, entry) {
  * Record layout is [u8 id, 0x00, u8 count, 0x00].
  */
 OB64.writeConsumableInventoryEntry = function(rdram, entry) {
+  if (entry.nativeSaveRam) {
+    rdram[entry.off]     = (entry.consumableId >> 8) & 0xFF;
+    rdram[entry.off + 1] = entry.consumableId & 0xFF;
+    rdram[entry.off + 2] = 0;
+    rdram[entry.off + 3] = entry.count & 0xFF;
+    return;
+  }
   rdram[entry.off]     = entry.consumableId & 0xFF;
   rdram[entry.off + 1] = 0;
   rdram[entry.off + 2] = entry.count & 0xFF;
@@ -1127,12 +1141,89 @@ OB64.rewrapRzip = function(blob, chunkSize) {
   return out;
 };
 
+OB64.saveRamWriteBits = function(out, state, value, bitCount) {
+  value >>>= 0;
+  var remaining = bitCount;
+  while (remaining > 0) {
+    if (state.avail === 0) {
+      out[state.pos++] = state.cur & 0xFF;
+      state.cur = 0;
+      state.avail = 8;
+    }
+    var take = Math.min(state.avail, remaining);
+    var shift = remaining - take;
+    var chunk = (value >>> shift) & OB64.saveRamBitMask(take);
+    state.avail -= take;
+    state.cur |= chunk << state.avail;
+    remaining -= take;
+  }
+};
+
+OB64.encodeSaveRamNameField = function(rdram, off) {
+  var name = OB64.decodeCharName(rdram, off);
+  for (var i = 0; i < OB64.SAVE.NAME_MAX_LEN; i++) rdram[off + i] = 0;
+  var maxChars = OB64.SAVE.NAME_MAX_LEN - 1;
+  var n = Math.min(name.length, maxChars);
+  for (var j = 0; j < n; j++) {
+    var ch = name.charCodeAt(j) & 0x7F;
+    rdram[off + j] = (ch + 0x10) & 0xFF;
+  }
+  rdram[off + n] = 0xFF;
+};
+
+OB64.encodeSaveRamRosterNames = function(rdram) {
+  var base = OB64.SAVE.SAVERAM_CHARACTER_BASE || 0x193BC0;
+  for (var i = 0; i < 100; i++) {
+    OB64.encodeSaveRamNameField(rdram, base + i * OB64.SAVE.CHAR_STRIDE);
+  }
+};
+
+OB64.packSaveRamPayload = function(rdram) {
+  var out = new Uint8Array(OB64.SAVE.SAVERAM_PACKED_SIZE);
+  var state = { pos: 0, cur: 0, avail: 8 };
+  var codec = OB64.SAVERAM_MAIN_CODEC || [];
+  for (var g = 0; g < codec.length; g++) {
+    var group = codec[g];
+    var cmds = OB64.parseSaveRamCodecCommands(group);
+    for (var rec = 0; rec < group.count; rec++) {
+      var base = group.base + rec * group.stride;
+      for (var c = 0; c < cmds.length; c++) {
+        var cmd = cmds[c];
+        var value = 0;
+        for (var b = 0; b < cmd.bytes; b++) value = ((value << 8) | rdram[base + cmd.off + b]) >>> 0;
+        OB64.saveRamWriteBits(out, state, value, cmd.bits);
+      }
+    }
+  }
+  if (state.avail < 8 && state.pos < out.length) out[state.pos++] = state.cur & 0xFF;
+  return out;
+};
+
+OB64.exportBizhawkSaveRam = function(save) {
+  var out = (save.saveram || save.origBytes).slice();
+  var rdram = save.rdram.slice();
+  var base = save.slotBase;
+  if (typeof base !== 'number') {
+    base = OB64.SAVE.SAVERAM_SLOT_BASE + (save.slotIndex || 0) * OB64.SAVE.SAVERAM_SLOT_STRIDE;
+  }
+  OB64.encodeSaveRamRosterNames(rdram);
+  var packed = OB64.packSaveRamPayload(rdram);
+  out.set(packed, base + OB64.SAVE.SAVERAM_PACKED_OFFSET);
+  var checks = OB64.calcSaveRamChecksums(out, base);
+  OB64.writeU16BE(out, base, checks.sum);
+  OB64.writeU16BE(out, base + 2, checks.bits);
+  return out;
+};
+
 /**
  * Top-level export: produce a Uint8Array in the same format the save was
  * loaded in. `save` is the object returned by parseSaveFile, with `rdram`
  * possibly mutated via writeCharacter / writeGameState.
  */
 OB64.exportSaveFile = function(save) {
+  if (save.format === 'bizhawk-saveram') {
+    return OB64.exportBizhawkSaveRam(save);
+  }
   if (save.format === 'bin') {
     return save.rdram.slice();
   }
@@ -1148,8 +1239,11 @@ OB64.exportSaveFile = function(save) {
 
 OB64.downloadSaveFile = function(save, originalFileName) {
   var bytes = OB64.exportSaveFile(save);
-  var baseName = (originalFileName || 'save').replace(/\.(state\d*|bin)$/i, '');
-  var ext = save.format === 'bin' ? '.bin' : (originalFileName && originalFileName.match(/\.(state\d*)$/i) ? originalFileName.match(/\.(state\d*)$/i)[0] : '.state');
+  var baseName = (originalFileName || 'save').replace(/\.(state\d*|bin|saveram)$/i, '');
+  var ext = '.state';
+  if (save.format === 'bin') ext = '.bin';
+  else if (save.format === 'bizhawk-saveram') ext = '.SaveRAM';
+  else if (originalFileName && originalFileName.match(/\.(state\d*)$/i)) ext = originalFileName.match(/\.(state\d*)$/i)[0];
   var fileName = baseName + '-edited' + ext;
   var blob = new Blob([bytes], { type: 'application/octet-stream' });
   var url = URL.createObjectURL(blob);
