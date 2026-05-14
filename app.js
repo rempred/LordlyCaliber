@@ -8,6 +8,8 @@ window.OB64 = window.OB64 || {};
   var saveState = null; // Parsed save state from OB64.parseSaveFile() — independent of rom
   var saveFileName = null; // Original save filename for export naming
   var changes = 0;      // Pending change count
+  var changeBatchDepth = 0;
+  var pendingChangeBatch = null;
   var activeTab = 'shops';
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
@@ -232,8 +234,17 @@ window.OB64 = window.OB64 || {};
       var patch = OB64.patch.collectPatch(rom);
       var shopsN = patch.summary.shops_modified;
       var pricesN = patch.summary.item_prices_modified;
+      var itemsN = patch.summary.item_stats_modified || 0;
+      var classesN = patch.summary.class_defs_modified || 0;
+      var neutralSlicesN = patch.summary.neutral_slices_modified || 0;
+      var terrainRatesN = patch.summary.terrain_rates_modified || 0;
+      var creatureDropsN = patch.summary.creature_drop_records_modified || 0;
+      var consumablesN = patch.summary.consumables_modified || 0;
+      var statGatesN = patch.summary.stat_gates_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
-      if (shopsN + pricesN + globalRateN === 0) {
+      if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
+          terrainRatesN + creatureDropsN + consumablesN + statGatesN +
+          globalRateN === 0) {
         statusBar.textContent = 'No edits to save — patch would be empty.';
         return;
       }
@@ -243,6 +254,13 @@ window.OB64 = window.OB64 || {};
       var parts = [];
       if (shopsN) parts.push(shopsN + ' shop' + (shopsN === 1 ? '' : 's'));
       if (pricesN) parts.push(pricesN + ' price' + (pricesN === 1 ? '' : 's'));
+      if (itemsN) parts.push(itemsN + ' item' + (itemsN === 1 ? '' : 's'));
+      if (classesN) parts.push(classesN + ' class' + (classesN === 1 ? '' : 'es'));
+      if (neutralSlicesN) parts.push(neutralSlicesN + ' encounter slice' + (neutralSlicesN === 1 ? '' : 's'));
+      if (terrainRatesN) parts.push(terrainRatesN + ' terrain rate' + (terrainRatesN === 1 ? '' : 's'));
+      if (creatureDropsN) parts.push(creatureDropsN + ' creature drop record' + (creatureDropsN === 1 ? '' : 's'));
+      if (consumablesN) parts.push(consumablesN + ' consumable' + (consumablesN === 1 ? '' : 's'));
+      if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
       if (globalRateN) parts.push('global encounter roll');
       statusBar.textContent = 'Patch saved (' + parts.join(', ') + ' changed).';
     } catch (err) {
@@ -260,7 +278,12 @@ window.OB64 = window.OB64 || {};
         var patch = OB64.patch.parsePatchFile(ev.target.result);
         var result = OB64.patch.applyPatch(rom, patch, dirty);
         // Count applied changes so status + export modal show the right counts
-        changes += result.applied.shops + result.applied.prices + (result.applied.neutralGlobalRate || 0);
+        changes += result.applied.shops + result.applied.prices +
+          (result.applied.itemStats || 0) + (result.applied.classDefs || 0) +
+          (result.applied.neutralSlices || 0) + (result.applied.terrainRates || 0) +
+          (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
+          (result.applied.statGates || 0) +
+          (result.applied.neutralGlobalRate || 0);
         lastPatchFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
@@ -268,6 +291,13 @@ window.OB64 = window.OB64 || {};
         var loadedParts = [];
         if (result.applied.shops) loadedParts.push(result.applied.shops + ' shop' + (result.applied.shops === 1 ? '' : 's'));
         if (result.applied.prices) loadedParts.push(result.applied.prices + ' price' + (result.applied.prices === 1 ? '' : 's'));
+        if (result.applied.itemStats) loadedParts.push(result.applied.itemStats + ' item' + (result.applied.itemStats === 1 ? '' : 's'));
+        if (result.applied.classDefs) loadedParts.push(result.applied.classDefs + ' class' + (result.applied.classDefs === 1 ? '' : 'es'));
+        if (result.applied.neutralSlices) loadedParts.push(result.applied.neutralSlices + ' encounter slice' + (result.applied.neutralSlices === 1 ? '' : 's'));
+        if (result.applied.terrainRates) loadedParts.push(result.applied.terrainRates + ' terrain rate' + (result.applied.terrainRates === 1 ? '' : 's'));
+        if (result.applied.creatureDrops) loadedParts.push(result.applied.creatureDrops + ' creature drop record' + (result.applied.creatureDrops === 1 ? '' : 's'));
+        if (result.applied.consumables) loadedParts.push(result.applied.consumables + ' consumable' + (result.applied.consumables === 1 ? '' : 's'));
+        if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
         if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
         if (!loadedParts.length) loadedParts.push('0 changes');
         var msg = 'Patch loaded: ' + file.name + ' (' +
@@ -357,8 +387,68 @@ window.OB64 = window.OB64 || {};
     statusBar.innerHTML = text;
   }
 
-  function markChanged() {
+  function beginChangeBatch() {
+    if (changeBatchDepth === 0) {
+      pendingChangeBatch = { needsCount: false, flags: {}, useActiveTab: false };
+    }
+    changeBatchDepth++;
+  }
+
+  function endChangeBatch() {
+    if (changeBatchDepth <= 0) return;
+    changeBatchDepth--;
+    if (changeBatchDepth > 0) return;
+    var batch = pendingChangeBatch;
+    pendingChangeBatch = null;
+    if (!batch || !batch.needsCount) return;
+    applyChanged(batch);
+  }
+
+  function markChanged(flagName) {
+    if (changeBatchDepth > 0) {
+      if (!pendingChangeBatch) {
+        pendingChangeBatch = { needsCount: false, flags: {}, useActiveTab: false };
+      }
+      pendingChangeBatch.needsCount = true;
+      if (flagName) pendingChangeBatch.flags[flagName] = true;
+      else pendingChangeBatch.useActiveTab = true;
+      return;
+    }
+    var batch = { needsCount: true, flags: {}, useActiveTab: !flagName };
+    if (flagName) batch.flags[flagName] = true;
+    applyChanged(batch);
+  }
+
+  function applyChanged(batch) {
     changes++;
+    var hasExplicitFlag = false;
+    if (batch && batch.flags) {
+      for (var flag in batch.flags) {
+        if (batch.flags[flag]) {
+          setDirtyFlag(flag);
+          hasExplicitFlag = true;
+        }
+      }
+    }
+    if (!hasExplicitFlag && (!batch || batch.useActiveTab)) {
+      setDirtyFlagForActiveTab();
+    }
+    updateStatus();
+  }
+
+  function setDirtyFlag(flagName) {
+    if (!flagName) return;
+    if (flagName === 'save') {
+      if (saveState) saveState.dirty = true;
+      renderSaveExportButtonState();
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(dirty, flagName)) {
+      dirty[flagName] = true;
+    }
+  }
+
+  function setDirtyFlagForActiveTab() {
     // Map the currently-active tab to a dirty flag so export can skip
     // subsystems the user never touched. This avoids LH5 round-trip
     // bloat rewriting untouched archives (e.g. enemydat was growing
@@ -384,7 +474,6 @@ window.OB64 = window.OB64 || {};
       // that modal sets dirty.consumables directly before calling markChanged().
       // missions/scenarios/map aren't editable in the current UI
     }
-    updateStatus();
   }
 
   function renderSaveExportButtonState() {
@@ -399,7 +488,8 @@ window.OB64 = window.OB64 || {};
   // Small enum dropdown (<30 options). options = {value: label, ...}
   function makeDropdown(td, options, currentVal, onCommit) {
     if (td.querySelector('select')) return;
-    var prev = td.textContent;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
     var sel = document.createElement('select');
     for (var k in options) {
       var opt = document.createElement('option');
@@ -413,24 +503,37 @@ window.OB64 = window.OB64 || {};
     sel.focus();
 
     function commit() {
-      var v = parseInt(sel.value);
+      if (committed) return;
+      var v = parseInt(sel.value, 10);
       if (!isNaN(v)) {
-        onCommit(v);
-        td.classList.add('modified');
-        markChanged();
+        if (String(v) === String(currentVal)) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
       }
     }
     sel.addEventListener('change', function() { commit(); });
     sel.addEventListener('blur', function() { commit(); });
     sel.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') { td.textContent = prev; }
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
     });
   }
 
   // Large searchable input (items=277, classes=164). options = {value: label, ...}
   function makeSearchableInput(td, options, currentVal, onCommit) {
     if (td.querySelector('input')) return;
-    var prev = td.textContent;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
     var listId = 'dl-' + Math.random().toString(36).slice(2, 8);
     var dl = document.createElement('datalist');
     dl.id = listId;
@@ -458,9 +561,10 @@ window.OB64 = window.OB64 || {};
     inp.focus();
 
     function commit() {
+      if (committed) return;
       var text = inp.value.trim();
       // Empty input = no change, restore previous display
-      if (text === '') { td.textContent = prev; return; }
+      if (text === '') { committed = true; restorePrevious(); return; }
       var v = reverseMap[text];
       // Also try parsing [NNN] from the end
       if (v === undefined) {
@@ -469,24 +573,37 @@ window.OB64 = window.OB64 || {};
       }
       if (v === undefined) v = parseInt(text);
       if (!isNaN(v)) {
-        onCommit(v);
-        td.classList.add('modified');
-        markChanged();
+        if (String(v) === String(currentVal)) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
       } else {
-        td.textContent = prev;
+        committed = true;
+        restorePrevious();
       }
     }
     inp.addEventListener('blur', function() { commit(); });
     inp.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') { td.textContent = prev; }
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
     });
   }
 
   // Numeric input with min/max validation
   function makeNumericInput(td, currentVal, min, max, onCommit) {
     if (td.querySelector('input')) return;
-    var prev = td.textContent;
+    var restorePrevious = captureRestore(td);
+    var committed = false;
     var inp = document.createElement('input');
     inp.type = 'number';
     inp.min = min;
@@ -498,18 +615,48 @@ window.OB64 = window.OB64 || {};
     inp.select();
 
     function commit() {
-      var v = parseInt(inp.value);
+      if (committed) return;
+      var v = parseInt(inp.value, 10);
       if (!isNaN(v) && v >= min && v <= max) {
-        onCommit(v);
-        td.classList.add('modified');
-        markChanged();
+        if (v === currentVal) {
+          committed = true;
+          restorePrevious();
+          return;
+        }
+        committed = true;
+        beginChangeBatch();
+        try {
+          onCommit(v);
+          td.classList.add('modified');
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
+      } else {
+        committed = true;
+        restorePrevious();
       }
     }
     inp.addEventListener('blur', function() { commit(); });
     inp.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') { td.textContent = prev; }
+      if (e.key === 'Escape') { committed = true; restorePrevious(); }
     });
+  }
+
+  function captureRestore(el) {
+    var previousNodes = Array.prototype.slice.call(el.childNodes);
+    var previousText = el.textContent;
+    return function() {
+      el.textContent = '';
+      if (!previousNodes.length) {
+        el.textContent = previousText;
+        return;
+      }
+      for (var i = 0; i < previousNodes.length; i++) {
+        el.appendChild(previousNodes[i]);
+      }
+    };
   }
 
   // ============================================================
@@ -534,8 +681,14 @@ window.OB64 = window.OB64 || {};
       currentId: opts.currentId,
       withIcons: opts.withIcons !== false, // default true for items
       onSelect:  function(id) {
-        if (opts.onSelect) opts.onSelect(id);
-        markChanged();
+        if (opts.currentId !== undefined && String(id) === String(opts.currentId)) return;
+        beginChangeBatch();
+        try {
+          if (opts.onSelect) opts.onSelect(id);
+          markChanged();
+        } finally {
+          endChangeBatch();
+        }
       }
     });
   }
@@ -1232,10 +1385,7 @@ window.OB64 = window.OB64 || {};
           rec.price = val;
           item.price = val;
           priceEl.classList.add('price-modified');
-          if (isConsumable) dirty.consumables = true;
-          else              dirty.items = true;
-          changes++;
-          updateStatus();
+          markChanged(isConsumable ? 'consumables' : 'items');
         }
       }
       priceEl.textContent = rec.price + 'g';
@@ -2250,8 +2400,8 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     // Editable stat-gate cell. Writes to rom.statGates.byClass[cid][field]
-    // and sets dirty.statGates directly (bypasses markChanged's tab-based
-    // mapping, which would misfile the edit under dirty.classDefs).
+    // and explicitly marks dirty.statGates instead of the surrounding
+    // Classes tab's dirty.classDefs flag.
     // For classes without a gate record, falls back to read-only dash.
     function addStatGateCell(tr, gate, field, title) {
       if (!gate) return addReadOnlyCell(tr, '\u2014', title, 'col-gate');
@@ -2263,9 +2413,7 @@ window.OB64 = window.OB64 || {};
         makeNumericInput(c, gate[field] | 0, 0, 255, function(nv) {
           gate[field] = nv & 0xFF;
           c.textContent = nv || '\u2014';
-          dirty.statGates = true;
-          changes++;
-          updateStatus();
+          markChanged('statGates');
         });
       });
       return c;
@@ -2519,7 +2667,7 @@ window.OB64 = window.OB64 || {};
     }
 
     // Editable stat-gate tile — writes to rom.statGates.byClass[cid][field]
-    // and sets dirty.statGates directly (same pattern as the table's
+    // and explicitly marks dirty.statGates (same pattern as the table's
     // addStatGateCell). Value 0 displays as em-dash.
     function tileStatGate(gate, field, label) {
       var e = document.createElement('div');
@@ -2539,9 +2687,7 @@ window.OB64 = window.OB64 || {};
           e.appendChild(lbl);
           val.textContent = nv || '\u2014';
           e.appendChild(val);
-          dirty.statGates = true;
-          changes++;
-          updateStatus();
+          markChanged('statGates');
         });
       });
       return e;
@@ -3433,35 +3579,36 @@ window.OB64 = window.OB64 || {};
           (function(slotIdx) {
             var dropSlot = dropsRec.slots[slotIdx];
             var dchip = document.createElement('span');
-            dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-eq' : ' drop-chip-exp');
+            dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-bit15-set' : ' drop-chip-bit15-clear');
             dchip.textContent = dropSlot.itemId ? OB64.itemName(dropSlot.itemId) : '\u2014';
-            dchip.title = (dropSlot.isEquipment ? 'Equipment' : 'Expendable')
-              + ' \u2014 item 0x' + dropSlot.itemId.toString(16).padStart(4, '0')
-              + ' (affects all scenarios using ' + OB64.className(classId) + ')';
+            dchip.title = (dropSlot.isEquipment ? 'Bit 15 set' : 'Bit 15 clear')
+              + ' \u2014 raw item 0x' + dropSlot.itemId.toString(16).padStart(4, '0')
+              + ' (bit meaning unverified; affects all scenarios using ' + OB64.className(classId) + ')';
             dchip.addEventListener('click', function(e) {
               e.stopPropagation();
-              openItemPicker(dchip, dropSlot.itemId, function(newItemId, kind) {
+              openItemPicker(dchip, dropSlot.itemId, dropSlot.isEquipment, function(newItemId, kind) {
                 if (newItemId === undefined) return;
                 dropSlot.itemId = newItemId;
-                // Derive equipment flag. Prefer the kind the user picked from
-                // the modal (disambiguates overlapping IDs between the
-                // equipment and consumable namespaces). Fall back to the
-                // item-stat equipType lookup for legacy paths.
-                if (kind === 'consumable') {
+                // Preserve the raw high bit as an explicit set/clear choice.
+                // Its runtime meaning is still unverified, so avoid naming it
+                // equipment-vs-consumable in the UI.
+                if (kind === 'bit15-clear') {
                   dropSlot.isEquipment = false;
-                } else if (kind === 'equip') {
+                } else if (kind === 'bit15-set') {
                   dropSlot.isEquipment = true;
                 } else if (kind === 'none' || newItemId === 0) {
                   dropSlot.isEquipment = false;
                 } else {
-                  var stat = rom.itemStats[newItemId];
-                  dropSlot.isEquipment = !!(stat && stat.equipType && stat.equipType > 0);
+                  dropSlot.isEquipment = !!dropSlot.isEquipment;
                 }
                 dropSlot.raw = (dropSlot.itemId & 0x7FFF) | (dropSlot.isEquipment ? 0x8000 : 0);
                 dirty.creatureDrops = true;
                 markChanged();
-                dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-eq' : ' drop-chip-exp');
-                var displayName = kind === 'consumable'
+                dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-bit15-set' : ' drop-chip-bit15-clear');
+                dchip.title = (dropSlot.isEquipment ? 'Bit 15 set' : 'Bit 15 clear')
+                  + ' \u2014 raw item 0x' + dropSlot.itemId.toString(16).padStart(4, '0')
+                  + ' (bit meaning unverified; affects all scenarios using ' + OB64.className(classId) + ')';
+                var displayName = kind === 'bit15-clear' && OB64.SAVE.CONSUMABLE_NAMES[newItemId]
                   ? OB64.consumableName(newItemId)
                   : (newItemId ? OB64.itemName(newItemId) : '\u2014');
                 dchip.textContent = displayName;
@@ -3747,24 +3894,25 @@ window.OB64 = window.OB64 || {};
     // (bit 15 = 0). Consumables show a kindLabel tag to disambiguate IDs
     // that collide across the two namespaces.
     // ============================================================
-    function openItemPicker(targetEl, currentItem, onPick) {
+    function openItemPicker(targetEl, currentItem, currentBit15, onPick) {
       var items = [];
       items.push({ id: 0, name: '(none)', kind: 'none' });
       for (var id in OB64.ITEM_NAMES) {
-        items.push({ id: parseInt(id), name: OB64.ITEM_NAMES[id], kind: 'equip' });
+        items.push({ id: parseInt(id), name: OB64.ITEM_NAMES[id], kind: 'bit15-set', kindLabel: 'bit 15 set' });
       }
       for (var cid in OB64.SAVE.CONSUMABLE_NAMES) {
         var cn = parseInt(cid);
         if (cn === 0) continue;
         items.push({
           id: cn, name: OB64.SAVE.CONSUMABLE_NAMES[cid],
-          kind: 'consumable', kindLabel: 'consumable'
+          kind: 'bit15-clear', kindLabel: 'bit 15 clear'
         });
       }
       openSaveItemPickerModal({
         title: 'Drop item',
         items: items,
         currentId: currentItem,
+        currentKind: currentItem ? (currentBit15 ? 'bit15-set' : 'bit15-clear') : 'none',
         onSelect: function(v, kind) { onPick(v | 0, kind); }
       });
     }
@@ -4038,33 +4186,25 @@ window.OB64 = window.OB64 || {};
     hdr.appendChild(idEl);
     card.appendChild(hdr);
 
-    // Repair button — shown on slots where ANY of +0x1A/+0x1B/+0x28 are zero.
-    // Real characters carry non-zero values in all three. Seeds from older
-    // versions of Add Character miss one or more.
+    // Repair button — shown on slots where one of the known activation bytes
+    // from older Add Character builds is missing. Alignment 0 is valid
+    // Chaotic alignment, not a broken-slot signal.
     var R = saveState.rdram, F = OB64.SAVE.FIELD;
     var isBrokenSeed = (R[ch.slotOff + F.FLAG_1A] === 0 ||
-                       R[ch.slotOff + F.FLAG_1B] === 0 ||
-                       R[ch.slotOff + F.ALIGNMENT] === 0);
+                       R[ch.slotOff + F.FLAG_1B] === 0);
     var actions = document.createElement('div');
     actions.className = 'save-char-actions';
     if (isBrokenSeed) {
       var repair = document.createElement('button');
       repair.className = 'save-char-btn save-char-repair';
       repair.textContent = 'Repair';
-      repair.title = 'Fill in +0x1A/+0x1B/alignment bytes that earlier versions of "Add Character" missed. The game hides slots where these are all zero.';
+      repair.title = 'Fill in +0x1A/+0x1B bytes that earlier versions of "Add Character" missed.';
       repair.addEventListener('click', function() { repairSeededCharacter(ch); });
       actions.appendChild(repair);
     }
-    var del = document.createElement('button');
-    del.className = 'save-char-btn save-char-delete';
-    del.textContent = '\u2715';
-    del.title = 'Delete this character (zero the 56-byte slot).';
-    del.addEventListener('click', function() {
-      if (confirm('Delete ' + ch.name + ' (slot ' + ch.slotIndex + ')? This zeroes the slot.')) {
-        deleteCharacter(ch);
-      }
-    });
-    actions.appendChild(del);
+    // Delete is intentionally hidden until the save unit/reserve assignment
+    // table is decoded. Zeroing a character slot can leave active-unit
+    // references pointing at an empty record.
     card.appendChild(actions);
 
     // Meta row: class + level + HP
@@ -4146,7 +4286,7 @@ window.OB64 = window.OB64 || {};
     var hint = field === 'offhand'
       ? 'Off-hand slot \u2014 shield / spellbook / accessory. 0 = class default.'
       : '0 = class default.';
-    tag.title = 'Click to change. ' + hint;
+    tag.title = 'Click to change. ' + hint + ' Save overrides are one byte, so only item IDs 0x01-0xFF are offered.';
     tag.addEventListener('click', function() { editCharEquip(tag, ch, field, label); });
     return tag;
   }
@@ -4160,6 +4300,7 @@ window.OB64 = window.OB64 || {};
       currentId: ch.equip[field] || 0,
       includeNone: true,
       onSelect: function(id) {
+        if (id === ch.equip[field]) return;
         ch.equip[field] = id;
         OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
         var itemLabel = id ? OB64.itemName(id) : '(class default)';
@@ -4218,7 +4359,12 @@ window.OB64 = window.OB64 || {};
       idHint.className = 'item-modal-price';
       idHint.textContent = String(item.id);
       row.appendChild(idHint);
-      row.addEventListener('click', function() { opts.onSelect(item.id); close(); });
+      row.addEventListener('click', function() {
+        if (opts.currentId === undefined || String(item.id) !== String(opts.currentId)) {
+          opts.onSelect(item.id);
+        }
+        close();
+      });
       col.appendChild(row);
     });
     body.appendChild(col);
@@ -4244,6 +4390,7 @@ window.OB64 = window.OB64 || {};
     for (var iid in OB64.ITEM_NAMES) {
       var id = parseInt(iid);
       if (id === 0) continue;
+      if (id > 0xFF) continue; // character equipment overrides are u8 item IDs
       var t = OB64.tabForItemId(id);
       var keep =
         (field === 'weapon'  && t === 'weapon') ||
@@ -4537,7 +4684,8 @@ window.OB64 = window.OB64 || {};
   // Writes a minimal, in-game-safe character record at the given slot.
   // Seeds all fields the game looks at to consider a slot valid/visible:
   //   +0x14 gender, +0x1A/+0x1B (unknown but always non-zero on real chars),
-  //   +0x28 alignment (0=Chaotic/hidden slot), HP, stats, slot_index.
+  //   alignment, HP, stats, slot_index. Alignment 0 is valid Chaotic; new
+  //   seeded characters use 50 just as a neutral default.
   function seedNewCharacter(slotOff, classId) {
     var F = OB64.SAVE.FIELD;
     var slotIndex = ((slotOff - saveState.armyBase) / OB64.SAVE.CHAR_STRIDE) + 1;
@@ -4568,13 +4716,12 @@ window.OB64 = window.OB64 || {};
     markChanged();
   }
 
-  // Repair an existing slot that was seeded before the FLAG_1A/1B/alignment
-  // fix landed. Called from the "Repair" button on broken seed cards.
+  // Repair an existing slot that was seeded before the FLAG_1A/1B fix landed.
+  // Called from the "Repair" button on broken seed cards.
   function repairSeededCharacter(ch) {
     var F = OB64.SAVE.FIELD;
     if (saveState.rdram[ch.slotOff + F.FLAG_1A] === 0) saveState.rdram[ch.slotOff + F.FLAG_1A] = 0x02;
     if (saveState.rdram[ch.slotOff + F.FLAG_1B] === 0) saveState.rdram[ch.slotOff + F.FLAG_1B] = 0x30;
-    if (saveState.rdram[ch.slotOff + F.ALIGNMENT] === 0) saveState.rdram[ch.slotOff + F.ALIGNMENT] = 50;
     markChanged();
     refreshInventorySection();
   }
@@ -4681,7 +4828,11 @@ window.OB64 = window.OB64 || {};
       idHint.textContent = item.id ? ('0x' + item.id.toString(16)) : '';
       row.appendChild(idHint);
       row.addEventListener('click', function() {
-        opts.onSelect(item.id, item.kind);
+        var sameId = opts.currentId !== undefined && String(item.id) === String(opts.currentId);
+        var sameKind = opts.currentKind === undefined || item.kind === opts.currentKind;
+        if (!(sameId && sameKind)) {
+          opts.onSelect(item.id, item.kind);
+        }
         close();
       });
       col.appendChild(row);

@@ -858,14 +858,23 @@ OB64.scincsvFlagName = function(flags) {
 // ============================================================
 // MOVEMENT TYPES (class def B32)
 // ============================================================
+// B32 uses ROM byte values, not the printed guide's "TYPE 1..7" row numbers.
+// Class examples from the guide map as:
+//   Sky: Hawkman / Angel Knight / Faerie / Griffin = 0x01
+//   Plain: Soldier / Knight / Cleric = 0x02
+//   Forest: Amazon / Archer / Ninja / Pumpkinhead = 0x03
+//   Mountain: Beast Tamer / Red Dragon / Cerberus / Golem = 0x04
+//   Snow: Valkyrie / Freya / Platinum Dragon / Bahamut = 0x05
+//   Marsh: Zombie / Blue Dragon / Hydra = 0x06
+//   Immobile: coffin/tendril-style fixed units = 0x07
 OB64.MOVEMENT_TYPES = {
-  0x01: "Float",
-  0x02: "Foot",
-  0x03: "Fast/Ninja",
-  0x04: "Heavy",
-  0x05: "Flying",
-  0x06: "Ghost",
-  0x07: "Skeleton",
+  0x01: "Sky",
+  0x02: "Plain",
+  0x03: "Forest",
+  0x04: "Mountain",
+  0x05: "Snow",
+  0x06: "Marsh",
+  0x07: "Immobile",
 };
 
 OB64.moveTypeName = function(id) {

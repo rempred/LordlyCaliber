@@ -506,7 +506,13 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     for (var s = 0; s < r.stats.length; s++) {
       OB64.writeU16BE(z64, off + s * 4, r.stats[s].base);
       z64[off + s * 4 + 2] = r.stats[s].g1;
-      z64[off + s * 4 + 3] = r.stats[s].g2;
+      var rawGrowthPair = r.stats[s].g2;
+      if (s === 0 && r.b3Raw !== undefined) rawGrowthPair = r.b3Raw;
+      if (s === 1 && r.b7Raw !== undefined) rawGrowthPair = r.b7Raw;
+      if (s === 2 && r.b11Raw !== undefined) rawGrowthPair = r.b11Raw;
+      if (s === 3 && r.b15Raw !== undefined) rawGrowthPair = r.b15Raw;
+      if (s === 4 && r.b19Raw !== undefined) rawGrowthPair = r.b19Raw;
+      z64[off + s * 4 + 3] = rawGrowthPair;
     }
 
     z64[off + 23] = r.lck;            // B23: LCK base
@@ -623,7 +629,8 @@ OB64.serializeNeutralEncounters = function(encounters, z64) {
 // ============================================================
 // Creature drop table serializer — writes 36 × 8 B records back to
 // ROM 0x142258. Record layout: [pad, classId, slot1 u16BE × 3].
-// Drop slot high bit (0x8000) = equipment flag; low 15 bits = item ID.
+// Drop slot high bit (0x8000) is preserved as raw bit 15; its runtime
+// meaning is unverified. Low 15 bits = item ID.
 // Outside CIC-6102 CRC window.
 // ============================================================
 OB64.serializeCreatureDrops = function(drops, z64) {
@@ -639,7 +646,9 @@ OB64.serializeCreatureDrops = function(drops, z64) {
       var slot = rec.slots[s];
       var raw = slot.raw;
       if (raw === undefined) {
-        // Rebuild from logical fields if UI set itemId/isEquipment directly
+        // Rebuild from logical fields if UI set itemId/isEquipment directly.
+        // isEquipment is retained as the historical property name, but the UI
+        // exposes it neutrally as raw bit 15 set/clear.
         raw = ((slot.itemId || 0) & 0x7FFF) | (slot.isEquipment ? 0x8000 : 0);
       }
       OB64.writeU16BE(z64, off + 2 + s * 2, raw);
