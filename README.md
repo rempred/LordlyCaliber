@@ -75,20 +75,23 @@ project download asset.
   Creature drop entries are editable from the same tab.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, or 8 MB RDRAM `.bin` dumps. Edit
-  character names, classes, levels, stats, equipment overrides, alignment,
-  element, experience, and army inventory (equipment + consumables + treasures).
+  character names, classes, levels, stats, one-byte equipment overrides,
+  alignment, element, experience, and army inventory (equipment + consumables +
+  treasures).
   BizHawk files expose all valid native in-game slots through a slot selector.
   Goth editing is available for live-state/RDRAM formats; native `.SaveRAM`
   funds are hidden until that packed field is mapped.
-- **Patches** — save supported edits (shops, item prices, and the global
-  encounter-roll multiplier) to a portable JSON patch file for sharing or
-  reapplying to a fresh ROM.
+- **Patches** — save supported edits (shops, item prices, item stats, class
+  definitions, encounter pools/rates, creature drops, consumables, stat gates,
+  and the global encounter-roll multiplier) to a portable JSON patch file for
+  sharing or reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 
 ## Current Limitations
 
 - Only the North American retail `.v64` listed above is supported. Other regions,
-  prototypes, `.z64` files, or already-modified ROMs may parse incorrectly.
+  prototypes, `.z64`/`.n64` byte orders, or already-modified ROMs are rejected
+  or unsupported.
 - The editor creates new ROM/save files in your browser downloads. It does not
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about

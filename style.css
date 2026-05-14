@@ -2524,11 +2524,10 @@ td.attack-list {
   text-shadow: 0 1px 0 rgba(255,245,210,0.45);
   transition: filter 0.12s, transform 0.05s;
 }
-/* Both drop-chip variants render gold for now — bit 15's real meaning is
-   uncertain (see docs/editor.md, Key Technical Notes). Re-split the styles
-   once the eq/exp distinction is confirmed. */
-.drop-chip-eq,
-.drop-chip-exp {
+/* Both bit-15 variants render the same for now — the high bit's real meaning
+   is uncertain (see docs/editor.md, Key Technical Notes). */
+.drop-chip-bit15-set,
+.drop-chip-bit15-clear {
   background:
     linear-gradient(180deg, #f3cc78 0%, #d89838 55%, #a67018 100%);
   border-color: #5a3a0a;

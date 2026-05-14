@@ -19,6 +19,15 @@ OB64.z64ToV64 = function(z64) {
   return OB64.v64ToZ64(z64); // Same swap
 };
 
+OB64.detectRomByteOrder = function(bytes) {
+  if (!bytes || bytes.length < 4) return 'unknown';
+  var b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
+  if (b0 === 0x37 && b1 === 0x80 && b2 === 0x40 && b3 === 0x12) return 'v64';
+  if (b0 === 0x80 && b1 === 0x37 && b2 === 0x12 && b3 === 0x40) return 'z64';
+  if (b0 === 0x40 && b1 === 0x12 && b2 === 0x37 && b3 === 0x80) return 'n64';
+  return 'unknown';
+};
+
 // ============================================================
 // DataView helpers (big-endian reads on Uint8Array)
 // ============================================================
@@ -374,7 +383,8 @@ OB64.parseNeutralEncounters = function(z64) {
 // ============================================================
 // Creature drop table — per-class drop list, 36 × 8 B at ROM 0x142258.
 // Record: [pad:u8, classId:u8, slot1:u16BE, slot2:u16BE, slot3:u16BE]
-// High bit of each slot (0x8000) = equipment flag; low 15 bits = item ID.
+// High bit of each slot (0x8000) is preserved as raw bit 15. Its runtime
+// meaning is not verified; low 15 bits are the item ID.
 // Record 35 is an all-zero sentinel. Outside CRC window.
 // Indexed BY CLASS ID — editing affects every scenario using that class.
 // ============================================================
@@ -1651,7 +1661,15 @@ OB64.shopExpendables = function(consumables) {
 // Master ROM loader — loads and parses everything
 // ============================================================
 OB64.loadROM = function(v64Data) {
-  var z64 = OB64.v64ToZ64(new Uint8Array(v64Data));
+  var input = new Uint8Array(v64Data);
+  var byteOrder = OB64.detectRomByteOrder(input);
+  if (byteOrder !== 'v64') {
+    if (byteOrder === 'z64' || byteOrder === 'n64') {
+      throw new Error('Unsupported ROM byte order .' + byteOrder + '. Please load the US retail .v64 byte-swapped ROM.');
+    }
+    throw new Error('Unsupported or unrecognized ROM. Please load the US retail .v64 byte-swapped ROM.');
+  }
+  var z64 = OB64.v64ToZ64(input);
   var archives = OB64.findArchives(z64);
 
   // Extract key archives
