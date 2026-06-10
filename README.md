@@ -23,6 +23,9 @@ The public editor is intentionally clean and browser-only:
 - `repack.js` serializes edits back into ROM/save formats, including LHA/LZSS
   repacking and N64 CRC repair.
 - `patch.js` imports/exports portable JSON patches for supported edits.
+- `tools.js` detects, applies, and removes Tools-tab ROM features.
+- `tools-data.js` is generated from the research workspace's verified patch
+  builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
 - `style.css` contains the full parchment-themed interface.
 
 Research-only scripts and emulator probes are kept outside this repository.
@@ -47,8 +50,8 @@ in your own copy of the US retail `.v64`, and start modding.
 
 Packaged builds are published on GitHub Releases:
 
-- [LordlyCaliber v0.1.0](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.0)
-- Download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
+- Current tagged release: [LordlyCaliber v0.1.1](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.1)
+- First packaged download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
 
 GitHub tracks download counts for uploaded release assets. Repository clones and
 GitHub's automatically generated source-code archives are separate from the
@@ -60,7 +63,7 @@ project download asset.
   324-item / 24-per-shop budget.
   Shop cards are ordered by playthrough scene, show budget warnings, and use
   searchable item pickers.
-- **Classes** — edit base stats, growth curves, resistances, combat multipliers,
+- **Classes** — edit base stats, growth means, resistances, combat multipliers,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, promotion requirements, unit type,
@@ -73,9 +76,18 @@ project download asset.
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
   vanilla, `x3` normal cap, optional `x100` test cap).
   Creature drop entries are editable from the same tab.
+- **Tools** — toggleable ROM fixes and quality-of-life features applied on
+  export and removable again (the original bytes are restored). Features
+  already present in a loaded ROM are detected; unrecognized bytes at a
+  feature's addresses disable its toggle instead of overwriting another mod.
+  First feature: **Chaos Frame Counter** — shows the hidden Chaos Frame stat
+  on the Army Management screen as a native parchment plate titled CHAOS
+  FRAME, in line with the SOLDIER/CHARACTER/UNIT labels (emulator-verified:
+  cold boot, both Army graphics task buffers, stable 30-frame screenshot
+  diff).
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, or 8 MB RDRAM `.bin` dumps. Edit
-  character names, classes, levels, stats, one-byte equipment overrides,
+  character names, classes, levels, HP, stats, one-byte equipment overrides,
   alignment, element, experience, and army inventory (equipment + consumables +
   treasures).
   BizHawk files expose all valid native in-game slots through a slot selector.
@@ -83,8 +95,8 @@ project download asset.
   funds are hidden until that packed field is mapped.
 - **Patches** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
-  and the global encounter-roll multiplier) to a portable JSON patch file for
-  sharing or reapplying to a fresh ROM.
+  the global encounter-roll multiplier, and Tools-tab feature toggles) to a
+  portable JSON patch file for sharing or reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 
 ## Current Limitations
@@ -148,8 +160,8 @@ save-state decompression.
 
 ## Planned features
 
-- **Promotion-tree editing** — write back to the stat gate table (LZSS region,
-  parser already in place).
+- **Promotion graph polish** — expose the already-editable stat gates and ROM
+  promotion links as a fuller visual workflow.
 - **Stronghold editor** — modify the 316 stronghold records (location, owner,
   shop assignment).
 - **Per-mission enemy deployment** — once the deployment opcode stream
