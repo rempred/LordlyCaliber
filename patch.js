@@ -10,12 +10,15 @@
 // v4 scope: all public ROM-edit tabs: shops, item_prices (legacy price-only
 // mirror), item stat fields, class definition fields, neutral encounters,
 // creature drops, consumables, stat gates, and the global encounter-roll slider.
+// v5 adds `tools`: Tools-tab feature toggles (map of feature id -> bool),
+// recorded only when the toggle differs from the state detected in the
+// loaded ROM.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 4;
+  var PATCH_VERSION = 5;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -152,11 +155,23 @@ window.OB64 = window.OB64 || {};
       };
     }
 
+    var toolsOut = {};
+    if (rom.tools && OB64.tools) {
+      var toolFeatures = OB64.tools.features();
+      for (var tf = 0; tf < toolFeatures.length; tf++) {
+        var toolId = toolFeatures[tf].id;
+        if (rom.tools.initial[toolId] === 'foreign') continue;
+        var wasApplied = rom.tools.initial[toolId] === 'applied';
+        var nowWanted = !!rom.tools.desired[toolId];
+        if (nowWanted !== wasApplied) toolsOut[toolId] = nowWanted;
+      }
+    }
+
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-05-14',
+      editor_version: '2026-06-09',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -172,6 +187,7 @@ window.OB64 = window.OB64 || {};
         consumables_modified:   Object.keys(consumablesOut).length,
         stat_gates_modified:    Object.keys(statGatesOut).length,
         neutral_global_rate_modified: globalRateOut ? 1 : 0,
+        tools_modified:         Object.keys(toolsOut).length,
       },
       patches: {
         shops:        shopsOut,
@@ -183,6 +199,7 @@ window.OB64 = window.OB64 || {};
         consumables:  consumablesOut,
         statGates:    statGatesOut,
         neutral_global_rate: globalRateOut,
+        tools:        toolsOut,
         // Reserved for future tabs.
         enemies:      {},
       },
@@ -229,6 +246,7 @@ window.OB64 = window.OB64 || {};
     var consumablesApplied = 0;
     var statGatesApplied = 0;
     var neutralGlobalRateApplied = 0;
+    var toolsApplied = 0;
     var p = patch.patches || {};
 
     // Shops.
@@ -363,6 +381,30 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    // Tools-tab feature toggles (v5). Stage the desired state; the export
+    // pipeline performs the actual byte writes (or restores).
+    var toolsPatch = p.tools || {};
+    for (var tk in toolsPatch) {
+      if (!OB64.tools || !rom.tools) break;
+      var toolFeature = OB64.tools.getFeature(tk);
+      if (!toolFeature) {
+        warnings.push('Patch enables unknown tool "' + tk + '" - this editor build does not have it. Skipping.');
+        continue;
+      }
+      if (rom.tools.initial[tk] === 'foreign') {
+        warnings.push('Tool "' + toolFeature.name + '" cannot be toggled: its ROM bytes match neither retail nor this build. Skipping.');
+        continue;
+      }
+      var wantTool = !!toolsPatch[tk];
+      if (rom.tools.desired[tk] !== wantTool) {
+        rom.tools.desired[tk] = wantTool;
+        toolsApplied++;
+      }
+    }
+    if (toolsApplied > 0 && OB64.tools) {
+      dirtyFlags.tools = OB64.tools.pendingChanges(rom) > 0;
+    }
+
     return {
       applied: {
         shops: shopsApplied,
@@ -374,7 +416,8 @@ window.OB64 = window.OB64 || {};
         creatureDrops: creatureDropsApplied,
         consumables: consumablesApplied,
         statGates: statGatesApplied,
-        neutralGlobalRate: neutralGlobalRateApplied
+        neutralGlobalRate: neutralGlobalRateApplied,
+        tools: toolsApplied
       },
       warnings: warnings,
     };

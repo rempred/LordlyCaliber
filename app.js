@@ -44,8 +44,9 @@ window.OB64 = window.OB64 || {};
       try {
         rom = OB64.loadROM(ev.target.result);
         OB64.patch.snapshotOriginal(rom);   // baseline for later diffing
+        OB64.tools.initState(rom);          // detect Tools-tab features in the ROM
         changes = 0;
-        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false };
+        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false };
         lastPatchFilename = null;
         emptyState.style.display = 'none';
         btnExport.disabled = false;
@@ -199,10 +200,33 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      // Tools-tab features (byte-level ROM patches, e.g. the Chaos Frame
+      // counter). applyDesired writes pending toggles into rom.z64 and
+      // restores originals for disabled ones; foreign-state features are
+      // skipped and reported.
+      var toolsCrc = false;
+      if (dirty.tools) {
+        var toolsResult = OB64.tools.applyDesired(rom);
+        if (toolsResult.skipped.length) {
+          showErrorModal('Tool skipped — unrecognized bytes',
+            'These features could not be toggled because their ROM bytes ' +
+            'match neither the retail original nor this editor\'s build ' +
+            '(another patch may occupy them):\n\n  ' +
+            toolsResult.skipped.join('\n  '));
+        }
+        var toolParts = toolsResult.applied.slice();
+        for (var tr = 0; tr < toolsResult.removed.length; tr++) {
+          toolParts.push(toolsResult.removed[tr] + ' removed');
+        }
+        if (toolParts.length) touched.push('tools: ' + toolParts.join(', '));
+        toolsCrc = toolsResult.crc;
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
-      // and stat gates live past that window; items/classes/consumables do not.
-      if (dirty.items || dirty.classDefs || dirty.consumables) {
+      // and stat gates live past that window; items/classes/consumables and
+      // the Tools-tab features do not.
+      if (dirty.items || dirty.classDefs || dirty.consumables || toolsCrc) {
         OB64.recalcN64CRC(rom.z64);
       }
 
@@ -216,8 +240,9 @@ window.OB64 = window.OB64 || {};
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false };
+      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false };
       changes = 0;
+      if (activeTab === 'tools') renderTab('tools');
       statusBar.textContent = exportMsg;
     } catch(err) {
       statusBar.textContent = 'Export error: ' + err.message;
@@ -242,9 +267,10 @@ window.OB64 = window.OB64 || {};
       var consumablesN = patch.summary.consumables_modified || 0;
       var statGatesN = patch.summary.stat_gates_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
+      var toolsN = patch.summary.tools_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN + statGatesN +
-          globalRateN === 0) {
+          globalRateN + toolsN === 0) {
         statusBar.textContent = 'No edits to save — patch would be empty.';
         return;
       }
@@ -262,6 +288,7 @@ window.OB64 = window.OB64 || {};
       if (consumablesN) parts.push(consumablesN + ' consumable' + (consumablesN === 1 ? '' : 's'));
       if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
       if (globalRateN) parts.push('global encounter roll');
+      if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
       statusBar.textContent = 'Patch saved (' + parts.join(', ') + ' changed).';
     } catch (err) {
       statusBar.textContent = 'Save Patch failed: ' + err.message;
@@ -283,7 +310,8 @@ window.OB64 = window.OB64 || {};
           (result.applied.neutralSlices || 0) + (result.applied.terrainRates || 0) +
           (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
           (result.applied.statGates || 0) +
-          (result.applied.neutralGlobalRate || 0);
+          (result.applied.neutralGlobalRate || 0) +
+          (result.applied.tools || 0);
         lastPatchFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
@@ -299,6 +327,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.consumables) loadedParts.push(result.applied.consumables + ' consumable' + (result.applied.consumables === 1 ? '' : 's'));
         if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
         if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
+        if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
         if (!loadedParts.length) loadedParts.push('0 changes');
         var msg = 'Patch loaded: ' + file.name + ' (' +
           loadedParts.join(', ') + ').';
@@ -374,6 +403,7 @@ window.OB64 = window.OB64 || {};
       case 'classes':   renderClasses(panel); break;
       case 'items':     renderItems(panel); break;
       case 'encounters': renderEncounters(panel); break;
+      case 'tools':     renderTools(panel); break;
       case 'save':      renderSaveGame(panel); break;
       case 'map':       renderMap(panel); break;
     }
@@ -385,6 +415,78 @@ window.OB64 = window.OB64 || {};
     if (changes > 0) text += ' | <span class="changes">' + changes + ' pending changes</span>';
     else text += ' | 0 pending changes';
     statusBar.innerHTML = text;
+  }
+
+  // ============================================================
+  // Tools tab — byte-level ROM fixes and QOL features
+  // ============================================================
+  // Each feature is a verified set of ROM writes defined in tools-data.js
+  // (generated from the research workspace). Toggling stages the change;
+  // Export ROM writes it (or restores the retail bytes when switched off).
+  function renderTools(panel) {
+    if (!rom) return;
+    var features = OB64.tools.features();
+
+    var html = '<div class="tools-intro">' +
+      '<h2>Tools</h2>' +
+      '<p>Small ROM fixes and quality-of-life features. Switch a feature on ' +
+      'and it is written into the ROM on the next <b>Export ROM</b>; switch ' +
+      'it off to restore the original bytes. Features already present in the ' +
+      'loaded ROM are detected automatically.</p>' +
+      '</div>';
+
+    html += '<div class="tool-cards">';
+    for (var i = 0; i < features.length; i++) {
+      var f = features[i];
+      var cur = OB64.tools.featureState(rom.z64, f);
+      var foreign = rom.tools.initial[f.id] === 'foreign';
+      var desired = !!rom.tools.desired[f.id];
+
+      var statusClass, statusText;
+      if (foreign) {
+        statusClass = 'foreign';
+        statusText = 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)';
+      } else if (cur === 'applied' && desired) {
+        statusClass = 'applied';
+        statusText = 'Applied in this ROM';
+      } else if (cur === 'applied' && !desired) {
+        statusClass = 'pending';
+        statusText = 'Will be removed on export';
+      } else if (desired) {
+        statusClass = 'pending';
+        statusText = 'Will be applied on export';
+      } else {
+        statusClass = 'off';
+        statusText = 'Not applied';
+      }
+
+      html += '<div class="tool-card' + (foreign ? ' tool-foreign' : '') + '">' +
+        '<div class="tool-card-head">' +
+          '<span class="tool-name">' + f.name + '</span>' +
+          '<label class="tool-switch" title="' + (foreign ? 'Unavailable' : 'Enable / disable') + '">' +
+            '<input type="checkbox" data-tool-id="' + f.id + '"' +
+              (desired ? ' checked' : '') + (foreign ? ' disabled' : '') + '>' +
+            '<span class="tool-slider"></span>' +
+          '</label>' +
+        '</div>' +
+        '<div class="tool-status ' + statusClass + '">' + statusText + '</div>' +
+        '<div class="tool-desc">' + f.description + '</div>' +
+        (f.verified ? '<div class="tool-meta">Verified: ' + f.verified + '</div>' : '') +
+      '</div>';
+    }
+    html += '</div>';
+
+    panel.innerHTML = html;
+
+    var boxes = panel.querySelectorAll('input[data-tool-id]');
+    for (var b = 0; b < boxes.length; b++) {
+      boxes[b].addEventListener('change', function(e) {
+        var id = e.target.dataset.toolId;
+        rom.tools.desired[id] = e.target.checked;
+        markChanged();          // routes to setDirtyFlagForActiveTab('tools')
+        renderTools(panel);     // refresh status chips
+      });
+    }
   }
 
   function beginChangeBatch() {
@@ -463,6 +565,12 @@ window.OB64 = window.OB64 || {};
         // the creature drop table, or both. The renderer sets the specific
         // flag directly (dirty.encounters / dirty.creatureDrops) before
         // calling markChanged(), so here we only bump the change counter.
+        break;
+      case 'tools':
+        // A toggle is only "dirty" while it differs from what the ROM buffer
+        // currently holds, so flipping a feature on and back off leaves
+        // nothing to export.
+        dirty.tools = OB64.tools.pendingChanges(rom) > 0;
         break;
       case 'save':
         // Save-state edits are tracked on the saveState object itself so
@@ -4311,8 +4419,8 @@ window.OB64 = window.OB64 || {};
   }
 
   // Lightweight enum-picker modal — same shell as the item picker, but rows
-  // are just labels (no sprite, no id hint). Used for Month, Element, Gender,
-  // and any other small enum field the user wants to edit via modal.
+  // are just labels (no sprite, no id hint). Used for Month, Element,
+  // and other small enum fields.
   function openSaveEnumPickerModal(opts) {
     // Accept options as either {id: label, ...} or [{id, label}].
     var items = [];
