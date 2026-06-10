@@ -1336,7 +1336,7 @@ OB64.parseClassGroups = function(z64) {
 // Stat order: STR, VIT, INT, MEN, AGI, DEX (6 x [u16 base, u8 growth, u8 pad])
 // B24 = Alignment, B25-31 = 7 resistances (Phys/Air/Fire/Earth/Water/Virtue/Bane)
 // B44 = front attack count, B45 = front atk ID, B46 = mid attack count,
-// B47 = mid atk ID, B48 = rear attack count.
+// B47 = rear atk ID; mid row reuses B45. B48 = rear attack count.
 // B49-B53 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef, flags).
 // ============================================================
 OB64.CLASS_DEF_OFFSET = 0x5DAD8;
@@ -1403,13 +1403,14 @@ OB64.parseClassDefs = function(z64) {
       }
     }
 
-    // B42-47 — was mislabeled as equipSlots in prior parser.
+    // B42-48 row attack block.
     // Correct layout per docs/combat-attack-buffer.md (in-game verified B44=10/B46=10 patch):
-    //   B42, B43 = unknown (possibly back-row related)
+    //   B42 = fixed equipment slot mask; B43 = unknown
     //   B44 = front row attack count (EDITABLE, VERIFIED)
-    //   B45 = front per-row tier/weapon-group index
+    //   B45 = front/reused-mid attack ID
     //   B46 = middle row attack count (EDITABLE, VERIFIED)
-    //   B47 = middle per-row tier/weapon-group index
+    //   B47 = rear row attack ID
+    //   B48 = rear row attack count
     var b42Raw    = isTerm || isSentinel ? 0 : z64[off + 42];
     var b43Raw    = isTerm || isSentinel ? 0 : z64[off + 43];
     var frontAtks = isTerm || isSentinel ? 0 : z64[off + 44];
@@ -1453,7 +1454,7 @@ OB64.parseClassDefs = function(z64) {
     // B57 = additional class requirement (usually 0x00; Special Class=0x5A, Flail Monarch=0x5B)
     var additionalReqRaw = isTerm || isSentinel ? 0 : z64[off + 57];
 
-    // B58 = dragon element (0xFF=non-dragon, 0x00-0x04=element index)
+    // B58 = default damage element (0xFF=Random/None, 0x00-0x04=element index)
     var dragonElement = isTerm || isSentinel ? 0xFF : z64[off + 58];
 
     // B59 = category (0x01=base/magic, 0x02=combat, 0x03=mid-dragon, 0x04=high-dragon)
