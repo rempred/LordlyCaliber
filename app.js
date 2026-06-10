@@ -47,6 +47,9 @@ window.OB64 = window.OB64 || {};
         OB64.tools.initState(rom);          // detect Tools-tab features in the ROM
         changes = 0;
         dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false };
+        // A ROM patched by an older build of a Tools feature upgrades on the
+        // next export unless the user switches the feature off.
+        dirty.tools = OB64.tools.pendingChanges(rom) > 0;
         lastPatchFilename = null;
         emptyState.style.display = 'none';
         btnExport.disabled = false;
@@ -215,6 +218,9 @@ window.OB64 = window.OB64 || {};
             toolsResult.skipped.join('\n  '));
         }
         var toolParts = toolsResult.applied.slice();
+        for (var tu = 0; tu < toolsResult.upgraded.length; tu++) {
+          toolParts.push(toolsResult.upgraded[tu] + ' updated');
+        }
         for (var tr = 0; tr < toolsResult.removed.length; tr++) {
           toolParts.push(toolsResult.removed[tr] + ' removed');
         }
@@ -446,6 +452,11 @@ window.OB64 = window.OB64 || {};
       if (foreign) {
         statusClass = 'foreign';
         statusText = 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)';
+      } else if (cur === 'outdated') {
+        statusClass = 'pending';
+        statusText = desired
+          ? 'Older version in this ROM — will be updated on export'
+          : 'Older version in this ROM — will be removed on export';
       } else if (cur === 'applied' && desired) {
         statusClass = 'applied';
         statusText = 'Applied in this ROM';

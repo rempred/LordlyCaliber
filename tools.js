@@ -48,20 +48,31 @@ window.OB64 = window.OB64 || {};
     z64.set(bytes, offset);
   }
 
-  // 'applied'  - every write region holds the patched bytes
-  // 'clean'    - every write region holds the original retail bytes
-  // 'foreign'  - anything else (partial apply, other mod, different build)
-  function featureState(z64, feature) {
-    var allPatched = true;
-    var allClean = true;
-    for (var i = 0; i < feature.writes.length; i++) {
-      var w = feature.writes[i];
-      if (!regionEquals(z64, w.offset, patchedBytes(w))) allPatched = false;
-      if (!regionEquals(z64, w.offset, originalBytes(w))) allClean = false;
-      if (!allPatched && !allClean) return 'foreign';
+  function writesMatch(z64, writes, key) {
+    for (var i = 0; i < writes.length; i++) {
+      var bytes = key === 'patched' ? patchedBytes(writes[i]) : originalBytes(writes[i]);
+      if (!regionEquals(z64, writes[i].offset, bytes)) return false;
     }
-    if (allPatched) return 'applied';
-    if (allClean) return 'clean';
+    return true;
+  }
+
+  // Older shipped build whose bytes fully match the ROM, if any.
+  function matchedSuperseded(z64, feature) {
+    var list = feature.superseded || [];
+    for (var i = 0; i < list.length; i++) {
+      if (writesMatch(z64, list[i].writes, 'patched')) return list[i];
+    }
+    return null;
+  }
+
+  // 'applied'  - every write region holds the current patched bytes
+  // 'clean'    - every write region holds the original retail bytes
+  // 'outdated' - the regions hold a known older build of this feature
+  // 'foreign'  - anything else (partial apply, other mod, unknown build)
+  function featureState(z64, feature) {
+    if (writesMatch(z64, feature.writes, 'patched')) return 'applied';
+    if (writesMatch(z64, feature.writes, 'original')) return 'clean';
+    if (matchedSuperseded(z64, feature)) return 'outdated';
     return 'foreign';
   }
 
@@ -79,7 +90,9 @@ window.OB64 = window.OB64 || {};
 
   // Call once after OB64.loadROM(). Stores per-feature state on the rom:
   //   rom.tools.initial[id]  - state detected in the loaded ROM
-  //   rom.tools.desired[id]  - the toggle; starts as "already applied"
+  //   rom.tools.desired[id]  - the toggle; starts on for applied AND
+  //                            outdated (an outdated feature upgrades on the
+  //                            next export unless the user switches it off)
   function initState(rom) {
     rom.tools = { initial: {}, desired: {} };
     var list = features();
@@ -87,11 +100,13 @@ window.OB64 = window.OB64 || {};
       var f = list[i];
       var st = featureState(rom.z64, f);
       rom.tools.initial[f.id] = st;
-      rom.tools.desired[f.id] = (st === 'applied');
+      rom.tools.desired[f.id] = (st === 'applied' || st === 'outdated');
     }
   }
 
-  // Number of features whose toggle differs from what the z64 currently holds.
+  // Number of features whose toggle differs from what the z64 currently
+  // holds. An outdated feature with the toggle on counts as pending (the
+  // upgrade itself is the change).
   function pendingChanges(rom) {
     if (!rom.tools) return 0;
     var n = 0;
@@ -101,17 +116,24 @@ window.OB64 = window.OB64 || {};
       var cur = featureState(rom.z64, f);
       if (cur === 'foreign') continue;
       var want = !!rom.tools.desired[f.id];
-      if (want !== (cur === 'applied')) n++;
+      if (cur === 'outdated' || want !== (cur === 'applied')) n++;
     }
     return n;
   }
 
+  function restoreWrites(z64, writes) {
+    for (var i = 0; i < writes.length; i++) {
+      writeRegion(z64, writes[i].offset, originalBytes(writes[i]));
+    }
+  }
+
   // Write every pending toggle into rom.z64. Returns
-  // { applied: [names], removed: [names], skipped: [names], crc: bool }.
-  // crc is true when any write touched the CIC-6102 CRC window, in which case
-  // the caller must run OB64.recalcN64CRC before exporting.
+  // { applied: [names], upgraded: [names], removed: [names], skipped: [names],
+  //   crc: bool }. crc is true when any write touched the CIC-6102 CRC
+  // window, in which case the caller must run OB64.recalcN64CRC before
+  // exporting.
   function applyDesired(rom) {
-    var res = { applied: [], removed: [], skipped: [], crc: false };
+    var res = { applied: [], upgraded: [], removed: [], skipped: [], crc: false };
     if (!rom.tools) return res;
     var list = features();
     for (var i = 0; i < list.length; i++) {
@@ -122,16 +144,17 @@ window.OB64 = window.OB64 || {};
         if (want !== (rom.tools.initial[f.id] === 'applied')) res.skipped.push(f.name);
         continue;
       }
-      if (want && cur === 'clean') {
+      var old = cur === 'outdated' ? matchedSuperseded(rom.z64, f) : null;
+      if (want && (cur === 'clean' || cur === 'outdated')) {
+        if (old) restoreWrites(rom.z64, old.writes);
         for (var wi = 0; wi < f.writes.length; wi++) {
           writeRegion(rom.z64, f.writes[wi].offset, patchedBytes(f.writes[wi]));
         }
-        res.applied.push(f.name);
+        (old ? res.upgraded : res.applied).push(f.name);
         if (f.crcWindow) res.crc = true;
-      } else if (!want && cur === 'applied') {
-        for (var wj = 0; wj < f.writes.length; wj++) {
-          writeRegion(rom.z64, f.writes[wj].offset, originalBytes(f.writes[wj]));
-        }
+      } else if (!want && (cur === 'applied' || cur === 'outdated')) {
+        if (old) restoreWrites(rom.z64, old.writes);
+        else restoreWrites(rom.z64, f.writes);
         res.removed.push(f.name);
         if (f.crcWindow) res.crc = true;
       }
