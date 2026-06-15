@@ -14,7 +14,11 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false };
+  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, squadOverrides: false };
+
+  // Bridges for the Squads tab (squads.js) — give it the live rom + a change hook.
+  OB64._romRef = function() { return rom; };
+  OB64._squadChanged = function() { markChanged('squadOverrides'); };
 
   // ============================================================
   // DOM refs
@@ -46,7 +50,8 @@ window.OB64 = window.OB64 || {};
         OB64.patch.snapshotOriginal(rom);   // baseline for later diffing
         OB64.tools.initState(rom);          // detect Tools-tab features in the ROM
         changes = 0;
-        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false };
+        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false };
+        if (rom.squadOverrides) rom.squadOverrides = {};
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
         dirty.tools = OB64.tools.pendingChanges(rom) > 0;
@@ -228,11 +233,38 @@ window.OB64 = window.OB64 || {};
         toolsCrc = toolsResult.crc;
       }
 
+      // Per-scenario squad overrides (Squads tab). Compiles every override into
+      // the runtime hook + bootstrap + blob writes (squadblob.js) and stamps them
+      // into rom.z64. The bootstrap cave is inside the CRC window.
+      var squadCrc = false;
+      if (dirty.squadOverrides && OB64.squad) {
+        var ovs = OB64.collectSquadOverrides(rom);
+        if (ovs.length) {
+          var sqw = OB64.squad.buildSquadOverrideWrites(ovs);
+          for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
+            rom.z64.set(sqw.writes[sqi].bytes, sqw.writes[sqi].offset);
+          }
+          squadCrc = sqw.crcWindow;
+          touched.push('squad overrides (' + ovs.length + ')');
+          var unmapped = OB64.squadCountUnmapped(rom);
+          if (unmapped) {
+            showErrorModal('Some overrides skipped',
+              unmapped + ' squad override(s) are in scenarios whose scenario gate ' +
+              'is not mapped yet, so they were not written. They remain saved in the patch.');
+          }
+        } else {
+          // last override removed — restore retail hook/cave/tail
+          OB64.squad.restoreVanilla(rom.z64);
+          squadCrc = true;
+          touched.push('squad overrides removed');
+        }
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
-      // and stat gates live past that window; items/classes/consumables and
-      // the Tools-tab features do not.
-      if (dirty.items || dirty.classDefs || dirty.consumables || toolsCrc) {
+      // and stat gates live past that window; items/classes/consumables, the
+      // Tools-tab features, and the squad-override bootstrap do not.
+      if (dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc) {
         OB64.recalcN64CRC(rom.z64);
       }
 
@@ -246,7 +278,7 @@ window.OB64 = window.OB64 || {};
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false };
+      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false };
       changes = 0;
       if (activeTab === 'tools') renderTab('tools');
       statusBar.textContent = exportMsg;
@@ -403,9 +435,7 @@ window.OB64 = window.OB64 || {};
     var panel = document.getElementById('panel-' + tab);
     switch(tab) {
       case 'shops':     renderShops(panel); break;
-      case 'enemies':   renderEnemies(panel); break;
-      case 'missions':  renderMissions(panel); break;
-      case 'scenarios': renderScenarios(panel); break;
+      case 'squads':    OB64.renderSquads(panel); break;
       case 'classes':   renderClasses(panel); break;
       case 'items':     renderItems(panel); break;
       case 'encounters': renderEncounters(panel); break;
@@ -568,7 +598,7 @@ window.OB64 = window.OB64 || {};
     // 358 B past its ROM slot on every export).
     switch (activeTab) {
       case 'shops':    dirty.shops = true; break;
-      case 'enemies':  dirty.enemies = true; break;
+      case 'squads':   dirty.squadOverrides = true; break;
       case 'items':    dirty.items = true; break;
       case 'classes':  dirty.classDefs = true; break;
       case 'encounters':
@@ -2672,7 +2702,7 @@ window.OB64 = window.OB64 || {};
       } else { // unit
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'UnitType', title: 'B64 humanoid (1) or beast (2)' },
+          { label: 'Size', title: 'B64 unit size — regular (1, 1 cell) or large (2, blocks adjacent)' },
           { label: 'SpriteType', title: 'B65 sprite/body type' },
           { label: 'CombatBehav', title: 'B66 combat behavior tier' },
           { label: 'Power', title: 'B69 power/stat rating' },
@@ -2683,7 +2713,7 @@ window.OB64 = window.OB64 || {};
           { label: 'B71', title: 'B71 padding', cls: 'col-raw' }
         ];
         fillRow = function(cid, tr, def) {
-          addDropdownCell(tr, def, 'unitType', OB64.UNIT_TYPES, OB64.unitTypeName);
+          addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
           addDropdownCell(tr, def, 'spriteType', OB64.SPRITE_TYPES, OB64.spriteTypeName);
           addDropdownCell(tr, def, 'combatBehavior', OB64.COMBAT_BEHAVIORS, OB64.combatBehaviorName);
           addNumericCell(tr, def, 'powerRating', 255);
@@ -2868,7 +2898,7 @@ window.OB64 = window.OB64 || {};
         if (tierLabel) metaParts.push(tierLabel);
         if (def) {
           metaParts.push(OB64.moveTypeName(def.moveType));
-          metaParts.push(OB64.unitTypeName(def.unitType));
+          metaParts.push(OB64.unitSizeName(def.unitSize));
           if (def.dragonElement !== 0xFF) metaParts.push(OB64.dragonElementName(def.dragonElement));
         }
         if (metaParts.length > 0) {
@@ -3166,7 +3196,7 @@ window.OB64 = window.OB64 || {};
           clsGrid.className = 'stats-grid';
           clsGrid.appendChild(tileDropdown(def, 'dragonElement', 'Element', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName));
           clsGrid.appendChild(tileDropdown(def, 'category', 'Category', OB64.CLASS_TIERS, OB64.classTierName));
-          clsGrid.appendChild(tileDropdown(def, 'unitType', 'UnitType', OB64.UNIT_TYPES, OB64.unitTypeName));
+          clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
           clsGrid.appendChild(tileDropdown(def, 'spriteType', 'SpriteType', OB64.SPRITE_TYPES, OB64.spriteTypeName));
           clsGrid.appendChild(tileDropdown(def, 'combatBehavior', 'Behavior', OB64.COMBAT_BEHAVIORS, OB64.combatBehaviorName));
           clsGrid.appendChild(tileDropdown(def, 'moveType', 'Move', OB64.MOVEMENT_TYPES, OB64.moveTypeName));
@@ -4081,7 +4111,7 @@ window.OB64 = window.OB64 || {};
     var loadInput = document.createElement('input');
     loadInput.type = 'file';
     loadInput.id = 'save-file-input';
-    loadInput.accept = '.state,.state1,.state2,.state3,.state4,.state5,.state6,.state7,.state8,.state9,.bin,.SaveRAM,.saveram';
+    loadInput.accept = '.state,.state1,.state2,.state3,.state4,.state5,.state6,.state7,.state8,.state9,.bin,.SaveRAM,.saveram,.sra';
     loadInput.style.display = 'none';
 
     var loadLabel = document.createElement('label');
@@ -4101,7 +4131,7 @@ window.OB64 = window.OB64 || {};
     status.id = 'save-status';
     status.textContent = saveState
       ? buildSaveStatusLine()
-      : 'No save loaded. Accepts RetroArch .state, BizHawk .SaveRAM, or 8 MB .bin RDRAM dumps.';
+      : 'No save loaded. Accepts RetroArch .state, BizHawk .SaveRAM, Project64 .sra, or 8 MB .bin RDRAM dumps.';
 
     bar.appendChild(loadLabel);
     bar.appendChild(loadInput);
@@ -4126,6 +4156,7 @@ window.OB64 = window.OB64 || {};
         '<ul>',
         '<li><strong>RetroArch:</strong> press F2 in-game to save a state. Files live in <code>RetroArch/states/Mupen64Plus-Next/</code> as <code>&lt;rom&gt;.state</code>, <code>.state1</code>, etc.</li>',
         '<li><strong>BizHawk:</strong> use the in-game save menu, then load the battery save from <code>BizHawk/N64/SaveRAM/&lt;rom&gt;.SaveRAM</code>.</li>',
+        '<li><strong>Project64:</strong> use the in-game save menu, then load the cartridge save from <code>Project64/Save/OgreBattle64-&lt;hash&gt;/OgreBattle64.sra</code> (each ROM build gets its own hash folder).</li>',
         '</ul>',
         '<p class="save-empty-note">Your edits produce <code>&lt;name&gt;-edited.&lt;ext&gt;</code>. The original file is never overwritten.</p>',
       ].join('\n');
@@ -4179,6 +4210,7 @@ window.OB64 = window.OB64 || {};
   function buildSaveStatusLine() {
     if (!saveState) return '';
     var fmtLabel = { 'rzip': 'RZIP .state', 'state-raw': 'uncompressed .state', 'bin': '8 MB .bin', 'bizhawk-saveram': 'BizHawk .SaveRAM' }[saveState.format] || saveState.format;
+    if (saveState.sourceFormat === 'pj64-sra') fmtLabel = 'Project64 .sra';
     var armyHex = '0x' + saveState.armyBase.toString(16).padStart(6, '0');
     var slot = '';
     if (saveState.format === 'bizhawk-saveram') {
@@ -4237,6 +4269,7 @@ window.OB64 = window.OB64 || {};
       var next = OB64.parseBizhawkSaveRamFromBytes(mergedBytes, slotIndex);
       next.origBytes = origBytes;
       next.saveram = mergedBytes.slice();
+      next.sourceFormat = saveState.sourceFormat;
       next.dirty = wasDirty;
       saveState = next;
       renderSaveGame(document.getElementById('panel-save'));
@@ -5112,15 +5145,20 @@ window.OB64 = window.OB64 || {};
     wrap.className = 'save-gamestate';
 
     var rows = [];
+    rows.push({ key: 'goth', label: 'Goth', min: 0, max: 9999999 });
+    rows.push({ key: 'chaosFrame', label: 'Chaos Frame', min: 0, max: 100 });
     if (gs.nativeSaveRam) {
+      // Goth (0x196A6C, 31 bits) and Chaos Frame (0x1936A9, 7 bits) are
+      // codec-mapped in battery saves, so they round-trip. The calendar /
+      // scenario fields are only partially persisted (e.g. scenario keeps
+      // 4 bits), so those stay hidden for native saves.
       var note = document.createElement('div');
       note.className = 'save-gs-note';
-      note.textContent = 'Native BizHawk .SaveRAM game-state fields are packed differently from live save states, so this panel is hidden until those offsets are fully mapped. Roster and inventory edits are supported.';
+      note.textContent = 'Battery saves support Goth and Chaos Frame. Calendar/scenario fields are not fully mapped in the packed format yet.';
       wrap.appendChild(note);
-      return wrap;
+    } else {
+      rows.push({ key: 'scenario', label: 'Scenario', min: 0, max: 255, labels: OB64.SAVE.SCENARIO_LABELS });
     }
-    rows.push({ key: 'goth', label: 'Goth', min: 0, max: 0xFFFFFFFF });
-    rows.push({ key: 'scenario', label: 'Scenario', min: 0, max: 255, labels: OB64.SAVE.SCENARIO_LABELS });
     for (var i = 0; i < rows.length; i++) {
       wrap.appendChild(buildGameStateRow(rows[i], gs));
     }
@@ -5207,12 +5245,12 @@ window.OB64 = window.OB64 || {};
     // (humanoid vs beast/dragon — class def byte B64). Changing between
     // unit types isn't allowed in-game. Requires the ROM to be loaded so
     // we can read classDefs; if not loaded, fall back to the full list.
-    var items = classItemsForUnitType(ch.classId);
+    var items = classItemsForSize(ch.classId);
     var title = 'Change class \u2014 ' + ch.name;
     if (rom && rom.classDefs) {
       var curDef = classDefFor(ch.classId);
-      var curType = curDef ? curDef.unitType : null;
-      if (curType) title += ' (' + (OB64.unitTypeName(curType)) + ' only)';
+      var curType = curDef ? curDef.unitSize : null;
+      if (curType) title += ' (' + (OB64.unitSizeName(curType)) + ' only)';
     } else {
       title += ' (ROM not loaded \u2014 showing all classes)';
     }
@@ -5239,19 +5277,19 @@ window.OB64 = window.OB64 || {};
   // Build the option list for a class-change modal. If the ROM is loaded,
   // filter to classes with the same unit type as the input class. Otherwise
   // return every known class.
-  function classItemsForUnitType(classId) {
+  function classItemsForSize(classId) {
     var out = [];
     var curDef = classDefFor(classId);
-    var curType = curDef ? curDef.unitType : null;
+    var curType = curDef ? curDef.unitSize : null;
     for (var id in OB64.CLASS_NAMES) {
       var idNum = parseInt(id);
       if (idNum === 0) continue;
       if (curType && rom && rom.classDefs) {
         var def = classDefFor(idNum);
         // Skip if the class def is missing (terminator/sentinel records) or
-        // its unit type differs. Also skip records with unitType = 0 since
+        // its unit type differs. Also skip records with unitSize = 0 since
         // those are the two non-class terminator rows in the table.
-        if (!def || def.unitType === 0 || def.unitType !== curType) continue;
+        if (!def || def.unitSize === 0 || def.unitSize !== curType) continue;
       }
       out.push({ id: idNum, label: OB64.className(idNum) });
     }
