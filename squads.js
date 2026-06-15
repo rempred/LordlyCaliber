@@ -430,7 +430,7 @@
       var sid = parseInt(k.split(':')[0]), eid = parseInt(k.split(':')[1]);
       var scn = scenarioById(sid); if (!scn) continue;
       var van = vanillaRec(scn, eid); if (!van) continue;
-      out.push({ gateId: scn.gate || scn.id, matchSig: [van[0], van[7], van[16]], record: rom.squadOverrides[k] });
+      out.push({ gateId: scn.gate || scn.id, original: van, record: rom.squadOverrides[k] });
     }
     return out;
   }
