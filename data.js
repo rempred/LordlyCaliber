@@ -882,15 +882,16 @@ OB64.moveTypeName = function(id) {
 };
 
 // ============================================================
-// UNIT TYPES (class def B64)
+// UNIT SIZE (class def B64) — formation footprint: regular units take 1 cell,
+// large units block any adjacent cell. Also gates equipment (regular vs large).
 // ============================================================
-OB64.UNIT_TYPES = {
-  0x01: "Humanoid",
-  0x02: "Beast/Dragon",
+OB64.UNIT_SIZES = {
+  0x01: "Regular",
+  0x02: "Large",
 };
 
-OB64.unitTypeName = function(id) {
-  return OB64.UNIT_TYPES[id] || ("0x" + id.toString(16).padStart(2, "0"));
+OB64.unitSizeName = function(id) {
+  return OB64.UNIT_SIZES[id] || ("0x" + id.toString(16).padStart(2, "0"));
 };
 
 // ============================================================
@@ -980,6 +981,11 @@ OB64.SAVE = {
   // stores a packed version of the same runtime structures the save-state
   // editor works with.
   SAVERAM_SIZE: 0x10000,
+  // Project64 cartridge saves (*.sra) are the same SRAM content: the first
+  // 32 KB, stored with every 4-byte word reversed (PJ64 keeps SRAM in
+  // little-endian words). Word-swap + zero-pad to SAVERAM_SIZE and the
+  // BizHawk slot layout below applies unchanged.
+  PJ64_SRA_SIZE: 0x8000,
   SAVERAM_SLOT_BASE: 0x10,
   SAVERAM_SLOT_STRIDE: 0x1850,
   SAVERAM_SLOT_COUNT: 3,
@@ -989,6 +995,10 @@ OB64.SAVE = {
   SAVERAM_CHECKSUM_REGION_SIZE: 0x1844,
   SAVERAM_PACKED_OFFSET: 0x2A,
   SAVERAM_PACKED_SIZE: 0x1824,
+  // RDRAM base of the persisted character array (codec group 0x193BC0,
+  // stride 56, 100 records). Record 0 is the army-name slot; the roster
+  // (Magnus) always starts one stride later at 0x193BF8.
+  SAVERAM_CHARACTER_BASE: 0x193BC0,
 
   // Character struct field offsets (big-endian RAM, post-unswap).
   FIELD: {
@@ -1110,9 +1120,17 @@ OB64.SAVE = {
     MONTH:            0x196A31,
     SCENARIO:         0x196A74,
     MAP_LOCATION:     0x196A99,
-    // Goth / war funds — u32 BE at 0x196C38. Found 2026-04-21 via state2→state3
-    // diff (5059 → 5521 after selling consumables + Ansate Cross).
-    GOTH:             0x196C38,
+    // Goth / war funds — u32 BE at 0x196A6C. This is the address the packed
+    // save persists (codec group 0x196A58 offset 0x14, 31 bits) and the one
+    // the in-game War Funds display reads (CF overlay work). Verified: a
+    // fresh chapter-1 save unpacks to exactly 1000 here. The 2026-04-21
+    // state-diff address 0x196C38 was wrong — it sits inside the per-item
+    // registry (codec group 0x196B00, 278 records) and only moved because
+    // items were sold between the diffed states.
+    GOTH:             0x196A6C,
+    // Chaos Frame — u8 at 0x1936A9 (codec group 0x193678 offset 0x31,
+    // 7 bits). In-game range 0-100; a fresh save unpacks to neutral 50.
+    CHAOS_FRAME:      0x1936A9,
   },
 
   // Known starting-character names used to anchor the army-array scan.

@@ -26,6 +26,10 @@ The public editor is intentionally clean and browser-only:
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
 - `tools-data.js` is generated from the research workspace's verified patch
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
+- `squadblob.js` builds the runtime squad-override hook/blob on export.
+- `squads-data.js` is generated from the research workspace's runtime scenario
+  atlas and holds runtime-key-to-edat rows. Do not hand-edit.
+- `squads.js` renders the runtime-key Squads editor.
 - `style.css` contains the full parchment-themed interface.
 
 Research-only scripts and emulator probes are kept outside this repository.
@@ -71,6 +75,10 @@ project download asset.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
   Item names and IDs use the game's 1-based item numbering.
+- **Squads** - edit enemy squad composition and formation per runtime scenario
+  key. The tab uses code-derived edat rows from the Project64 runtime atlas
+  (keys 1-64) and exports scenario-gated runtime overrides without changing
+  global `enemydat.bin`.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
@@ -86,17 +94,19 @@ project download asset.
   cold boot, both Army graphics task buffers, stable 30-frame screenshot
   diff).
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
-  BizHawk in-game `.SaveRAM` battery saves, or 8 MB RDRAM `.bin` dumps. Edit
-  character names, classes, levels, HP, stats, one-byte equipment overrides,
-  alignment, element, experience, and army inventory (equipment + consumables +
-  treasures).
-  BizHawk files expose all valid native in-game slots through a slot selector.
-  Goth editing is available for live-state/RDRAM formats; native `.SaveRAM`
-  funds are hidden until that packed field is mapped.
+  BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
+  8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
+  one-byte equipment overrides, alignment, element, experience, and army
+  inventory (equipment + consumables + treasures).
+  BizHawk/Project64 files expose all populated native in-game slots through a
+  slot selector (Project64 `.sra` is the same SRAM word-swapped; exports
+  round-trip byte-exactly back to `.sra`).
+  Goth (war funds) and Chaos Frame are editable in every format, including
+  battery saves.
 - **Patches** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
-  the global encounter-roll multiplier, and Tools-tab feature toggles) to a
-  portable JSON patch file for sharing or reapplying to a fresh ROM.
+  the global encounter-roll multiplier, squad overrides, and Tools-tab feature
+  toggles) to a portable JSON patch file for sharing or reapplying to a fresh ROM.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 
 ## Current Limitations
@@ -108,9 +118,9 @@ project download asset.
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
   known budgets, but very large inventory changes can still fail export.
-- BizHawk `.SaveRAM` supports roster and inventory editing across valid native
-  slots. Native `.SaveRAM` Goth/funds and some game-state fields are still
-  hidden until their packed-save locations are mapped.
+- BizHawk `.SaveRAM` and Project64 `.sra` support roster, inventory, Goth, and
+  Chaos Frame editing across valid native slots. Calendar/scenario fields are
+  hidden for battery saves (only partially persisted in the packed format).
 - Adding entirely new reserve characters is not enabled yet. The game has an
   additional active/reserve validation structure that is still being decoded.
 - Per-mission deployment editing, stronghold editing, map editing, audio editing,
@@ -131,7 +141,10 @@ project download asset.
    them to a clean ROM.
 
 For save editing: switch to the **Save Game Editor** tab and **Load Save**.
-RetroArch `.state` files (Mupen64Plus-Next core) work out of the box.
+RetroArch `.state` files (Mupen64Plus-Next core) work out of the box. Project64
+cartridge saves live at `Project64/Save/OgreBattle64-<hash>/OgreBattle64.sra`
+(each ROM build gets its own hash folder); edited exports drop back in as the
+same file name.
 
 > **You must supply your own ROM.** No ROM or game code is bundled. Small
 > extracted UI/item icons are included only as identification references for the
