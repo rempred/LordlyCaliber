@@ -1463,8 +1463,9 @@ OB64.parseClassDefs = function(z64) {
     // RAM pointer (bytes 60-63) — code-adjacent, preserve on write (don't serialize)
     var ptr = OB64.readU32BE(z64, off + 60);
 
-    // B64 = unit type (0x01=humanoid, 0x02=beast/dragon)
-    var unitType = isTerm || isSentinel ? 0 : z64[off + 64];
+    // B64 = unit SIZE / footprint (0x01=regular/1-cell, 0x02=large/blocks adjacent).
+    // Also gates equipment (regular vs large gear).
+    var unitSize = isTerm || isSentinel ? 0 : z64[off + 64];
 
     // B65 = sprite/body type (0-4)
     var spriteType = isTerm || isSentinel ? 0 : z64[off + 65];
@@ -1526,7 +1527,7 @@ OB64.parseClassDefs = function(z64) {
       dragonElement: dragonElement, // B58
       category: category,           // B59
       ptr: ptr,                     // B60-63 (runtime RAM pointer — HIDE, preserve)
-      unitType: unitType,           // B64
+      unitSize: unitSize,           // B64 (regular/large footprint)
       spriteType: spriteType,       // B65
       combatBehavior: combatBehavior, // B66
       b67Raw: b67Raw,               // B67 padding
@@ -1737,6 +1738,7 @@ OB64.RZIP_MAGIC = new Uint8Array([0x23, 0x52, 0x5a, 0x49, 0x50, 0x76, 0x01, 0x23
 OB64.detectSaveFormat = function(arrayBuffer) {
   var bytes = new Uint8Array(arrayBuffer);
   if (OB64.isBizhawkSaveRam(bytes)) return 'bizhawk-saveram';
+  if (OB64.isPj64Sra(bytes)) return 'pj64-sra';
   if (bytes.length >= 20) {
     var match = true;
     for (var i = 0; i < 8; i++) if (bytes[i] !== OB64.RZIP_MAGIC[i]) { match = false; break; }
@@ -1762,6 +1764,30 @@ OB64.isBizhawkSaveRam = function(bytes) {
   for (var i = 0; i < OB64.SAVE.SAVERAM_SLOT_COUNT; i++) {
     var base = OB64.SAVE.SAVERAM_SLOT_BASE + i * OB64.SAVE.SAVERAM_SLOT_STRIDE;
     if (OB64.isAsciiAt(bytes, base + OB64.SAVE.SAVERAM_MAGIC_OFFSET, OB64.SAVERAM_MAGIC)) return true;
+  }
+  return false;
+};
+
+// "QuestOG3" as it appears in a PJ64 .sra: the slot magic is 4-aligned and two
+// words long, so word-reversal maps it to this fixed string at the same offset.
+OB64.PJ64_SRA_MAGIC = "seuQ3GOt";
+
+OB64.wordSwap32 = function(bytes) {
+  var out = new Uint8Array(bytes.length);
+  for (var i = 0; i + 3 < bytes.length; i += 4) {
+    out[i]     = bytes[i + 3];
+    out[i + 1] = bytes[i + 2];
+    out[i + 2] = bytes[i + 1];
+    out[i + 3] = bytes[i];
+  }
+  return out;
+};
+
+OB64.isPj64Sra = function(bytes) {
+  if (!bytes || bytes.length !== OB64.SAVE.PJ64_SRA_SIZE) return false;
+  for (var i = 0; i < OB64.SAVE.SAVERAM_SLOT_COUNT; i++) {
+    var base = OB64.SAVE.SAVERAM_SLOT_BASE + i * OB64.SAVE.SAVERAM_SLOT_STRIDE;
+    if (OB64.isAsciiAt(bytes, base + OB64.SAVE.SAVERAM_MAGIC_OFFSET, OB64.PJ64_SRA_MAGIC)) return true;
   }
   return false;
 };
@@ -1816,10 +1842,42 @@ OB64.extractRdram = function(blob) {
   return rdram;
 };
 
+// Does `off` look like the first roster record? Structural test that does not
+// depend on the protagonist's (player-chosen) name: printable NUL-terminated
+// name, valid class with intact mirror byte, sane level — repeated on the
+// next record (which may instead be empty).
+OB64.looksLikeRosterSlot = function(rdram, off, allowEmpty) {
+  var F = OB64.SAVE.FIELD;
+  var cls = rdram[off + F.CLASS_ID];
+  if (cls === 0) return !!allowEmpty;
+  if (cls > 0xA4) return false;
+  if (rdram[off + F.CLASS_ID_COPY] !== cls) return false;
+  var lvl = rdram[off + F.LEVEL];
+  if (lvl === 0 || lvl > 60) return false;
+  var b0 = rdram[off];
+  if (b0 < 0x20 || b0 > 0x7E) return false;       // name starts printable
+  var terminated = false;
+  for (var i = 1; i < OB64.SAVE.NAME_MAX_LEN; i++) {
+    var b = rdram[off + i];
+    if (b === 0) { terminated = true; break; }
+    if (b < 0x20 || b > 0x7E) return false;
+  }
+  return terminated;
+};
+
 OB64.findArmyBase = function(rdram, anchorName) {
   var name = anchorName || OB64.SAVE.ANCHOR_NAME;
   var stride = OB64.SAVE.CHAR_STRIDE;
   var F = OB64.SAVE.FIELD;
+  // Fast path: the roster sits at its known runtime address in every save
+  // we've seen — accept it on structural validation alone so a renamed
+  // protagonist still loads.
+  var fixed = OB64.SAVE.SAVERAM_CHARACTER_BASE + stride;
+  if (fixed + stride * 2 <= rdram.length &&
+      OB64.looksLikeRosterSlot(rdram, fixed, false) &&
+      OB64.looksLikeRosterSlot(rdram, fixed + stride, true)) {
+    return fixed;
+  }
   var pat = new Uint8Array(name.length);
   for (var i = 0; i < name.length; i++) pat[i] = name.charCodeAt(i);
   outer:
@@ -1837,6 +1895,15 @@ OB64.findArmyBase = function(rdram, anchorName) {
     if (cls1 !== 0 && cls1 > 0xA4) continue;
     if (cls1 !== 0 && (lvl1 === 0 || lvl1 > 60)) continue;
     return off;
+  }
+  // Last resort: structural scan with no name anchor. Require two
+  // consecutive populated records (slot 1 is occupied in any real save
+  // this early scan could matter for) to keep false positives out.
+  for (var soff = 0; soff < rdram.length - stride * 2; soff += 4) {
+    if (OB64.looksLikeRosterSlot(rdram, soff, false) &&
+        OB64.looksLikeRosterSlot(rdram, soff + stride, false)) {
+      return soff;
+    }
   }
   return -1;
 };
@@ -1902,6 +1969,7 @@ OB64.parseGameState = function(rdram) {
     scenario:        rdram[G.SCENARIO],
     mapLocation:     rdram[G.MAP_LOCATION],
     goth:            goth,
+    chaosFrame:      rdram[G.CHAOS_FRAME],
   };
 };
 
@@ -2076,6 +2144,20 @@ OB64.parseSaveRamSlots = function(bytes) {
     var status0 = bytes[base + OB64.SAVE.SAVERAM_CHECKSUM_REGION_OFFSET];
     var empty = !hasMagic || status0 === 0xFF;
     var valid = hasMagic && !empty && storedSum === calc.sum && storedBits === calc.bits;
+    if (valid) {
+      // The game formats unused slots with a checksum-valid but rosterless
+      // payload (seen in PJ64 .sra slot 2). Probe for the roster so the
+      // picker can show them as empty instead of offering a slot that
+      // errors on selection.
+      try {
+        var packedOff = base + OB64.SAVE.SAVERAM_PACKED_OFFSET;
+        var probe = OB64.unpackSaveRamPayload(bytes.subarray(packedOff, packedOff + OB64.SAVE.SAVERAM_PACKED_SIZE));
+        OB64.decodeSaveRamRosterNames(probe);
+        if (OB64.findArmyBase(probe) < 0) { valid = false; empty = true; }
+      } catch (e) {
+        valid = false; empty = true;
+      }
+    }
     slots.push({
       slotIndex: i,
       base: base,
@@ -2172,9 +2254,16 @@ OB64.parseBizhawkSaveRamFromBytes = function(bytes, requestedSlotIndex) {
   var packedOff = selected.base + OB64.SAVE.SAVERAM_PACKED_OFFSET;
   var rdram = OB64.unpackSaveRamPayload(bytes.subarray(packedOff, packedOff + OB64.SAVE.SAVERAM_PACKED_SIZE));
   OB64.decodeSaveRamRosterNames(rdram);
-  var armyBase = OB64.findArmyBase(rdram);
+  // The packed-save codec always rebuilds the character array at its fixed
+  // RDRAM address; the protagonist (record 1 — record 0 is the army name)
+  // is wherever the player's chosen name put him, so don't anchor on
+  // "Magnus" — validate structurally and only fall back to the full scan.
+  var armyBase = OB64.SAVE.SAVERAM_CHARACTER_BASE + OB64.SAVE.CHAR_STRIDE;
+  if (!OB64.looksLikeRosterSlot(rdram, armyBase, false)) {
+    armyBase = OB64.findArmyBase(rdram);
+  }
   if (armyBase < 0) {
-    throw new Error('BizHawk .SaveRAM slot ' + (selected.slotIndex + 1) + ' decoded, but the character roster was not found.');
+    throw new Error('Battery save slot ' + (selected.slotIndex + 1) + ' decoded, but the character roster was not found.');
   }
   var characters = [];
   for (var c = 0; c < OB64.SAVE.MAX_SLOTS; c++) {
@@ -2183,9 +2272,11 @@ OB64.parseBizhawkSaveRamFromBytes = function(bytes, requestedSlotIndex) {
     var ch = OB64.parseCharacter(rdram, off);
     if (ch) { ch.arrayIndex = c; characters.push(ch); }
   }
+  // Goth (0x196A6C) and Chaos Frame (0x1936A9) are both codec-mapped, so
+  // parseGameState reads real values from the unpacked payload and edits
+  // pack back into the save. Other fields stay hidden for native saves
+  // (see buildGameStatePanel).
   var gameState = OB64.parseGameState(rdram);
-  gameState.goth = null;
-  gameState.gothUnsupported = true;
   gameState.nativeSaveRam = true;
   return {
     format: 'bizhawk-saveram',
@@ -2214,7 +2305,18 @@ OB64.parseBizhawkSaveRam = function(input, requestedSlotIndex) {
 OB64.parseSaveFile = function(arrayBuffer) {
   var format = OB64.detectSaveFormat(arrayBuffer);
   if (format === 'unknown') {
-    throw new Error('Unrecognized save format. Expected RetroArch .state, BizHawk .SaveRAM, raw libretro state, or 8 MB .bin RDRAM dump (got ' + arrayBuffer.byteLength + ' bytes).');
+    throw new Error('Unrecognized save format. Expected RetroArch .state, BizHawk .SaveRAM, Project64 .sra, raw libretro state, or 8 MB .bin RDRAM dump (got ' + arrayBuffer.byteLength + ' bytes).');
+  }
+  if (format === 'pj64-sra') {
+    // Word-swap to native order and zero-pad to the BizHawk container size;
+    // from there the SRAM slot layout is identical. sourceFormat makes the
+    // export path truncate + swap back so the file round-trips as a .sra.
+    var native = OB64.wordSwap32(new Uint8Array(arrayBuffer));
+    var container = new Uint8Array(OB64.SAVE.SAVERAM_SIZE);
+    container.set(native, 0);
+    var save = OB64.parseBizhawkSaveRamFromBytes(container);
+    save.sourceFormat = 'pj64-sra';
+    return save;
   }
   if (format === 'bizhawk-saveram') {
     return OB64.parseBizhawkSaveRam(arrayBuffer);

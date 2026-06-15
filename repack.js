@@ -552,7 +552,7 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     z64[off + 58] = r.dragonElement;  // B58
     z64[off + 59] = r.category;       // B59
     // B60-63: runtime RAM pointer — DO NOT WRITE (preserve ROM bytes)
-    z64[off + 64] = r.unitType;       // B64
+    z64[off + 64] = r.unitSize;       // B64 (regular/large footprint)
     z64[off + 65] = r.spriteType;     // B65
     z64[off + 66] = r.combatBehavior; // B66
     z64[off + 67] = r.b67Raw || 0;    // B67 padding
@@ -1048,6 +1048,7 @@ OB64.writeGameState = function(rdram, gs) {
   rdram[G.GOTH + 1]         = (goth >>> 16) & 0xFF;
   rdram[G.GOTH + 2]         = (goth >>> 8)  & 0xFF;
   rdram[G.GOTH + 3]         =  goth         & 0xFF;
+  rdram[G.CHAOS_FRAME]      = (gs.chaosFrame || 0) & 0xFF;
 };
 
 /**
@@ -1231,7 +1232,12 @@ OB64.exportBizhawkSaveRam = function(save) {
  */
 OB64.exportSaveFile = function(save) {
   if (save.format === 'bizhawk-saveram') {
-    return OB64.exportBizhawkSaveRam(save);
+    var out = OB64.exportBizhawkSaveRam(save);
+    if (save.sourceFormat === 'pj64-sra') {
+      // Back to PJ64 cartridge-save form: first 32 KB, word-reversed.
+      return OB64.wordSwap32(out.subarray(0, OB64.SAVE.PJ64_SRA_SIZE));
+    }
+    return out;
   }
   if (save.format === 'bin') {
     return save.rdram.slice();
@@ -1248,10 +1254,10 @@ OB64.exportSaveFile = function(save) {
 
 OB64.downloadSaveFile = function(save, originalFileName) {
   var bytes = OB64.exportSaveFile(save);
-  var baseName = (originalFileName || 'save').replace(/\.(state\d*|bin|saveram)$/i, '');
+  var baseName = (originalFileName || 'save').replace(/\.(state\d*|bin|saveram|sra)$/i, '');
   var ext = '.state';
   if (save.format === 'bin') ext = '.bin';
-  else if (save.format === 'bizhawk-saveram') ext = '.SaveRAM';
+  else if (save.format === 'bizhawk-saveram') ext = save.sourceFormat === 'pj64-sra' ? '.sra' : '.SaveRAM';
   else if (originalFileName && originalFileName.match(/\.(state\d*)$/i)) ext = originalFileName.match(/\.(state\d*)$/i)[0];
   var fileName = baseName + '-edited' + ext;
   var blob = new Blob([bytes], { type: 'application/octet-stream' });
