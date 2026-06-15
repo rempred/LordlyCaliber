@@ -116,7 +116,7 @@
   }
   function bossName(sq) { return typeof sq.boss === 'string' ? sq.boss : (sq.bossLabel || ''); }
   function scenarioSearchText(scn) {
-    return [scn.name, scn.wikiHint || '', (scn.tags || []).join(' ')].join(' ');
+    return [scn.name, scn.wikiLabel || '', scn.identityNote || '', scn.wikiHint || '', (scn.tags || []).join(' ')].join(' ');
   }
   function scenarioTraceText(scn) {
     var parts = [];
@@ -151,7 +151,9 @@
       '#panel-squads .sq-list-count{display:block;margin-top:5px;color:var(--ob-ink-soft);font-size:11px}',
       '#panel-squads .sq-scn{font-size:12px;font-weight:700;color:var(--ob-ink-soft);margin:9px 2px 4px;display:flex;gap:8px;justify-content:space-between;align-items:center;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}',
       '#panel-squads .sq-scn.on{color:var(--ob-ink)}',
-      '#panel-squads .sq-scn span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-squads .sq-scn-name{min-width:0;overflow:hidden}',
+      '#panel-squads .sq-scn-name span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-squads .sq-scn-name small{display:block;margin-top:1px;font-size:10px;font-weight:700;line-height:1.2;text-transform:none;letter-spacing:0;color:var(--ob-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '#panel-squads .sq-scn-meta{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex:0 0 auto}',
       '#panel-squads .sq-scn .sq-chip{flex:0 0 auto}',
       '#panel-squads .sq-row{font-size:13px;color:var(--ob-ink);padding:7px 8px;border-radius:5px;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid transparent}',
@@ -256,8 +258,12 @@
       if (q && !scenarioMatch && !anyRowMatch) return;
       shownScenarios++;
       var expanded = scn.id === sel.scenarioId || !!q;
+      var scnSub = scn.wikiId ? (scn.identityNote ? scn.wikiLabel + ' - ' + scn.identityNote : scn.wikiLabel) : (scn.identityNote || scn.wikiLabel || '');
       html += '<div class="sq-scn' + (scn.id === sel.scenarioId ? ' on' : '') + '" data-scn="' + scn.id + '">' +
-        '<span>' + esc(scn.name) + '</span><span class="sq-scn-meta"><span class="sq-chip">key ' + scn.id + '</span>' +
+        '<span class="sq-scn-name"><span>' + esc(scn.name) + '</span>' +
+        (scnSub ? '<small>' + esc(scnSub) + '</small>' : '') + '</span><span class="sq-scn-meta">' +
+        (scn.wikiId ? '<span class="sq-chip">wiki ' + scn.wikiId + '</span>' : '') +
+        '<span class="sq-chip">key ' + scn.id + '</span>' +
         (nOver ? '<span class="sq-chip">' + nOver + ' edited</span>' : '') + '</span></div>';
       if (!expanded) return;
       rows.forEach(function (row) {
@@ -356,8 +362,10 @@
     if (scn.traceMethod) headChips += '<span class="sq-chip">' + esc(scn.traceMethod) + '</span>';
     var html = '<div class="sq-detail-head">' +
       '<div><div class="sq-head">' + esc(scn.name) + ' / edat ' + sel.edatId + '</div>' +
+      (scn.wikiLabel ? '<div class="sq-sub">' + esc(scn.wikiLabel) + '</div>' : '') +
+      (scn.identityNote ? '<div class="sq-sub">' + esc(scn.identityNote) + '</div>' : '') +
       '<div class="sq-sub">' + (bn ? esc(bn) + ' - ' : '') + 'vanilla: ' + esc(compLabel(van)) + ' - ' + memberCount(van) + ' units' + (trace ? ' - ' + esc(trace) : '') + '</div>' +
-      (scn.wikiHint ? '<div class="sq-sub">wiki hint: ' + esc(scn.wikiHint) + '</div>' : '') + '</div>' +
+      '</div>' +
       '<span class="sq-row-meta">' + headChips + '</span></div>';
     html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
     if (over) {
