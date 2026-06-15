@@ -14,11 +14,11 @@
  *   +0x000 sentinel 'OBMR'
  *   +0x004 entryCount (u32 BE)
  *   +0x008 resolver code  (bootstrap jumps here)
- *   +0x100 entries: each 40B = gateId(1) matchA(1) matchB(1) matchC(1) record[35] pad(1)
+ *   +0x100 entries: each 72B = gateId(1) original[35] replacement[35] pad(1)
  *
  * The resolver, per entry: gate on the live runtime scenario key (0x801936A7),
- * match the template classA/B/C at [s0], and on a hit memcpy the 35-byte record
- * over [s0].
+ * byte-match the live template at [s0] against original[35], and on a hit memcpy
+ * replacement[35] over [s0].
  */
 (function (OB64) {
   'use strict';
@@ -35,8 +35,10 @@
   var DISP_XORI  = 0x38420001;   // xori  $v0,$v0,1   (displaced from 0x195588)
   var RESOLVER_OFF = 0x08;       // resolver immediately after sentinel+count
   var ENTRIES_OFF  = 0x100;      // table fixed past the resolver (resolver < 0xF8B)
-  var ENTRY_STRIDE = 40;
+  var ENTRY_STRIDE = 72;
   var REC_LEN = 35;
+  var ENTRY_ORIGINAL_OFF = 1;
+  var ENTRY_REPLACEMENT_OFF = 36;
 
   // ---- MIPS R4300i encoder (port of mips_encode.py) ----
   var REG = {
@@ -90,7 +92,7 @@
     return out;
   }
 
-  // ---- resolver: per-entry gate + classA/B/C match + 35B memcpy ----
+  // ---- resolver: per-entry gate + original-35B match + replacement-35B memcpy ----
   function buildResolver() {
     var lines = [
       ['lui', 't3', 0x8040],                 // t3 = MOD_BASE
@@ -104,10 +106,20 @@
       ['lbu', 't0', 0, 't5'],                 // entry.gate
       ['bne', 't0', 't7', 'next'],
       ['nop'],
-      ['lbu', 't0', 0, 's0'], ['lbu', 't6', 1, 't5'], ['bne', 't0', 't6', 'next'], ['nop'],
-      ['lbu', 't0', 7, 's0'], ['lbu', 't6', 2, 't5'], ['bne', 't0', 't6', 'next'], ['nop'],
-      ['lbu', 't0', 16, 's0'], ['lbu', 't6', 3, 't5'], ['bne', 't0', 't6', 'next'], ['nop'],
-      ['addiu', 't1', 't5', 4],               // src = &record
+      ['addiu', 't1', 't5', ENTRY_ORIGINAL_OFF], // expected vanilla template
+      ['ori', 't2', 's0', 0],                 // live template
+      ['ori', 't9', 'zero', REC_LEN],
+      ['label', 'cmp'],
+      ['lbu', 't0', 0, 't1'],
+      ['lbu', 't6', 0, 't2'],
+      ['bne', 't0', 't6', 'next'],
+      ['nop'],
+      ['addiu', 't1', 't1', 1],
+      ['addiu', 't2', 't2', 1],
+      ['addiu', 't9', 't9', -1],
+      ['bne', 't9', 'zero', 'cmp'],
+      ['nop'],
+      ['addiu', 't1', 't5', ENTRY_REPLACEMENT_OFF], // src = &replacement
       ['ori', 't2', 's0', 0],                 // dst = s0
       ['ori', 't9', 'zero', REC_LEN],
       ['label', 'cpy'],
@@ -117,6 +129,8 @@
       ['addiu', 't2', 't2', 1],
       ['addiu', 't9', 't9', -1],
       ['bne', 't9', 'zero', 'cpy'],
+      ['nop'],
+      ['beq', 'zero', 'zero', 'done'],        // one override per template; avoid replacement chaining
       ['nop'],
       ['label', 'next'],
       ['addiu', 't5', 't5', ENTRY_STRIDE],
@@ -182,7 +196,7 @@
   }
 
   // ---- blob (sentinel + count + resolver + table) ----
-  // overrides: [{ gateId:int, matchSig:[a,b,c], record:Uint8Array(35) }]
+  // overrides: [{ gateId:int, original:Uint8Array(35), record:Uint8Array(35) }]
   function buildBlob(overrides) {
     var resolver = buildResolver();
     var resolverEnd = RESOLVER_OFF + resolver.length * 4;
@@ -202,11 +216,12 @@
     for (var i = 0; i < n; i++) {
       var o = overrides[i], off = ENTRIES_OFF + i * ENTRY_STRIDE;
       var gate = (o.gateId != null) ? o.gateId : o.gateLoc; // gateLoc kept for old tests/patches
+      var original = o.original || o.originalRecord || o.matchRecord;
+      if (!original || original.length !== REC_LEN) throw new Error('squad override ' + i + ' missing original 35-byte record');
+      if (!o.record || o.record.length !== REC_LEN) throw new Error('squad override ' + i + ' missing replacement 35-byte record');
       blob[off] = gate & 0xFF;
-      blob[off + 1] = o.matchSig[0] & 0xFF;
-      blob[off + 2] = o.matchSig[1] & 0xFF;
-      blob[off + 3] = o.matchSig[2] & 0xFF;
-      blob.set(o.record.subarray(0, REC_LEN), off + 4);
+      blob.set(original.subarray(0, REC_LEN), off + ENTRY_ORIGINAL_OFF);
+      blob.set(o.record.subarray(0, REC_LEN), off + ENTRY_REPLACEMENT_OFF);
     }
     return blob;
   }
