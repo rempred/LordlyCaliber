@@ -54,7 +54,7 @@ in your own copy of the US retail `.v64`, and start modding.
 
 Packaged builds are published on GitHub Releases:
 
-- Current tagged release: [LordlyCaliber v0.1.2](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.2)
+- Release index: [LordlyCaliber releases](https://github.com/rempred/LordlyCaliber/releases)
 - First packaged download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
 
 GitHub tracks download counts for uploaded release assets. Repository clones and
@@ -84,7 +84,7 @@ project download asset.
   global `enemydat.bin`. Current export uses vanilla 35-byte squad replacement
   records. The default UI enforces vanilla-style 5 formation slots and 2
   follower class groups; an experimental raw-capacity checkbox can fill all
-  encoded anchors (`Leader + Bx3 + Cx2`) for mod testing.
+  encoded anchors (`Leader + Bx3 + Cx3`) for mod testing.
   Formation-grid cells show the matching class portrait when one is available.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
@@ -129,9 +129,13 @@ project download asset.
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
   known budgets, but very large inventory changes can still fail export.
-- Squads can use up to 5 formation slots, where regular units cost 1 slot and
-  large units cost 2 slots. More than 2 follower class groups is not exported
-  yet; supporting it requires a larger runtime record/resolver design.
+- Squads use conservative vanilla validation by default: up to 5 formation
+  slots, where regular units cost 1 slot and large units cost 2 slots. The
+  experimental raw-capacity mode can encode all seven vanilla template anchors
+  (`Leader + Bx3 + Cx3`) and ignores large-unit spacing for mod testing, but
+  over-cap squads may not be supported by the game's organization screens.
+  More than 2 follower class groups is not exported yet; supporting it requires
+  a larger runtime record/resolver design.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
   name-framed header, but their exact runtime consumers are not fully traced.
 - BizHawk `.SaveRAM` and Project64 `.sra` support roster, inventory, Goth, and
@@ -199,11 +203,10 @@ save-state decompression.
   hidden behind a feature flag).
 - **Class promotion-tree visualizer** — interactive graph of all promotion
   paths derived from class def `reqClass` (B55).
-- **Combat attack buffer expansion** — lift the hard-coded 28-attack-per-battle
-  cap so high-attack-count classes (e.g. patched Fighters at 10/round) can be
-  combined without crashing battle setup. Requires relocating the 560-byte
-  attack-event log at RAM `0x80220DBC` (adjacent memory is live) and patching
-  the 17 `slti 28` bound-check sites in the combat overlay.
+- **High-attack combat stability** — continue the ROM-side combat research for
+  extreme attack-count mods. The old 28-entry/result-log theory is retracted;
+  current research points at combat action-stream/context relocation and
+  scheduler cleanup guards. This is not exposed in the public editor yet.
 - **Bulk patches** — apply common community patches (XP rate, encounter rate,
   rare-item drops) as one-click toggles.
 
