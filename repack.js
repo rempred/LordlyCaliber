@@ -503,9 +503,9 @@ OB64.serializeEnemydat = function(squads) {
 OB64.serializeClassDefs = function(classDefs, z64) {
   var base = OB64.CLASS_DEF_OFFSET;
   var RS = OB64.CLASS_DEF_RECORD_SIZE;
-  for (var i = 0; i < classDefs.length; i++) {
+  for (var i = 2; i < classDefs.length; i++) {
     var r = classDefs[i];
-    if (r.isTerm || r.isSentinel) continue;
+    if (!r) continue;
     var off = base + i * RS;
 
     // B0-23: stats (u16BE base + u8 growth mean + u8 raw) then LCK at B23.

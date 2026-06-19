@@ -72,7 +72,8 @@ project download asset.
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, promotion requirements, unit type,
   movement type, corrected same-class unit size, base HP, HP growth fields, and
-  bundled class portraits.
+  bundled class portraits. Card View has a warning-gated raw-record mode for
+  inspecting and editing terminator or sentinel story/NPC class slots.
   Story duplicate classes are labeled Special/Boss unless behavior is proven
   actually buggy.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
@@ -138,6 +139,8 @@ project download asset.
   a larger runtime record/resolver design.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
   name-framed header, but their exact runtime consumers are not fully traced.
+- Raw story/NPC class records can be viewed and edited in Classes Card View, but
+  their sentinel values are not proven combat-safe.
 - BizHawk `.SaveRAM` and Project64 `.sra` support roster, inventory, Goth, and
   Chaos Frame editing across valid native slots. Calendar/scenario fields are
   hidden for battery saves (only partially persisted in the packed format).
