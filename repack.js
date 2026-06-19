@@ -489,7 +489,7 @@ OB64.serializeEnemydat = function(squads) {
     buf[off + 19] = s.field19;
     buf[off + 22] = field(s, 'posC1', 'field22');
     buf[off + 23] = field(s, 'posC2', 'field23');
-    buf[off + 24] = s.field24;
+    buf[off + 24] = field(s, 'posC3', 'field24');
   }
   return buf;
 };

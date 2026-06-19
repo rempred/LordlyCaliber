@@ -271,7 +271,7 @@
     if (spec.classC && spec.classC.cells && spec.classC.cells.length) {
       rec[16] = spec.classC.cls & 0xFF;
       rec[17] = (spec.classC.equip || 0) & 0xFF;
-      for (i = 0; i < spec.classC.cells.length && i < 2; i++) rec[22 + i] = spec.classC.cells[i] & 0xFF;
+      for (i = 0; i < spec.classC.cells.length && i < 3; i++) rec[22 + i] = spec.classC.cells[i] & 0xFF;
     }
     return rec;
   }
@@ -281,12 +281,12 @@
     return {
       leader: { cls: rec[0], cell: rec[6], equip: rec[3] },
       classB: { cls: rec[7], equip: rec[8], cells: nz([13, 14, 15]) },
-      classC: { cls: rec[16], equip: rec[17], cells: nz([22, 23]) }
+      classC: { cls: rec[16], equip: rec[17], cells: nz([22, 23, 24]) }
     };
   }
 
   function memberCount(rec) {
-    var c = 1, k, cells = [13, 14, 15, 22, 23];
+    var c = 1, k, cells = [13, 14, 15, 22, 23, 24];
     for (k = 0; k < cells.length; k++) if (rec[cells[k]]) c++;
     return c;
   }
