@@ -93,9 +93,10 @@ project download asset.
   feature's addresses disable its toggle instead of overwriting another mod.
   First feature: **Chaos Frame Counter** — shows the hidden Chaos Frame stat
   on the Army Management screen as a native parchment plate titled CHAOS
-  FRAME, in line with the SOLDIER/CHARACTER/UNIT labels (emulator-verified:
-  cold boot, both Army graphics task buffers, stable 30-frame screenshot
-  diff).
+  FRAME, in line with the SOLDIER/CHARACTER/UNIT labels. The current payload
+  uses a standalone ROM-tail/free-RAM module and gates on the Army graphics
+  task buffers plus War Funds/header fingerprints, so it survives returning
+  from Class Change without relying on volatile menu-state bytes.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
