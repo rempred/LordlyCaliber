@@ -1638,6 +1638,7 @@ window.OB64 = window.OB64 || {};
       '<th title="Byte 16: second follower class group">Follower C</th>' +
       '<th title="Byte 22: first follower-C formation cell">C Cell 1</th>' +
       '<th title="Byte 23: second follower-C formation cell; 0 means none">C Cell 2</th>' +
+      '<th title="Byte 24: third follower-C formation cell; rare">C Cell 3</th>' +
       '<th title="Byte 3: leader equipment override">Equip Leader</th>' +
       '<th title="Byte 8: follower-B equipment override">Equip B</th>' +
       '<th title="Byte 17: follower-C equipment override">Equip C</th>' +
@@ -1777,6 +1778,19 @@ window.OB64 = window.OB64 || {};
           makeNumericInput(c, sq.posC2, 0, 9, function(v) {
             sq.posC2 = v;
             sq.field23 = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
+      (function(sq) {
+        var c = td(tr, sq.posC3);
+        c.className = 'editable num';
+        c.title = 'Byte 24: third follower-C formation cell; rare';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posC3, 0, 9, function(v) {
+            sq.posC3 = v;
+            sq.field24 = v; // legacy alias
             c.textContent = v;
           });
         });

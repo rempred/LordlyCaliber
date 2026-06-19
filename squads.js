@@ -49,7 +49,7 @@
     var out = [];
     if (rec[0]) out.push({ role: 'L', field: 6, cls: rec[0], cell: rec[6] });
     [13, 14, 15].forEach(function (f) { if (rec[f]) out.push({ role: 'B', field: f, cls: rec[7], cell: rec[f] }); });
-    [22, 23].forEach(function (f) { if (rec[f]) out.push({ role: 'C', field: f, cls: rec[16], cell: rec[f] }); });
+    [22, 23, 24].forEach(function (f) { if (rec[f]) out.push({ role: 'C', field: f, cls: rec[16], cell: rec[f] }); });
     return out;
   }
   function unitAtCell(rec, cell) { var u = units(rec); for (var i = 0; i < u.length; i++) if (u[i].cell === cell) return u[i]; return null; }
@@ -64,10 +64,10 @@
     var d = unitAtCell(rec, to);
     rec[s.field] = to; if (d) rec[d.field] = from;
   }
-  // member groups: B uses class rec[7] + cells 13/14/15; C uses rec[16] + 22/23
-  function groupFields(role) { return role === 'B' ? [13, 14, 15] : [22, 23]; }
+  // member groups: B uses class rec[7] + cells 13/14/15; C uses rec[16] + 22/23/24
+  function groupFields(role) { return role === 'B' ? [13, 14, 15] : [22, 23, 24]; }
   function groupClassField(role) { return role === 'B' ? 7 : 16; }
-  function groupCapacity(role) { return role === 'B' ? 3 : 2; }
+  function groupCapacity(role) { return 3; }
   function groupCount(rec, role) { var f = groupFields(role), n = 0; for (var i = 0; i < f.length; i++) if (rec[f[i]]) n++; return n; }
   function groupAddDisabledReason(rec, role) {
     var cls = rec[groupClassField(role)];
@@ -467,14 +467,14 @@
     if (over) {
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
-        'Allow full raw EDAT capacity: Leader + Bx3 + Cx2. Vanilla organization screens may not support over-cap units; test patched scenarios before release.</span></label>';
+        'Allow full raw EDAT capacity: Leader + Bx3 + Cx3. Vanilla organization screens may not support over-cap units; test patched scenarios before release.</span></label>';
       html += '<div class="sq-editor-grid">' + gridHtml(rec, true) + pickersHtml(rec) + '</div>';
       if (ui.notice) html += '<div class="sq-notice">' + esc(ui.notice) + '</div>';
       var n = memberCount(rec), slots = formationSlotCount(rec), adjOk = adjacencyOk(rec), hasLeader = !!rec[0] && !!rec[6];
       var normalOk = hasLeader && adjOk && slots <= 5;
       var ok = ui.rawCapacity ? hasLeader : normalOk;
       var status = ui.rawCapacity ? 'Experimental raw EDAT capacity' : (ok ? 'Valid' : (!hasLeader ? 'Leader class required' : (!adjOk ? 'Large-unit spacing conflict' : 'Formation slot limit exceeded')));
-      var capacity = ui.rawCapacity ? (n + '/6 raw anchors - large size ignored') : (slots + '/5 slots');
+      var capacity = ui.rawCapacity ? (n + '/7 raw anchors - large size ignored') : (slots + '/5 slots');
       html += '<div class="sq-foot"><span class="' + (ok && !ui.rawCapacity ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units - ' + capacity + ' - ' + followerTypeCount(rec) + '/2 follower types</span>' +
         '<span>' + esc(scenarioTraceText(scn)) + '</span></div>';
       html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">Reset to vanilla</button></div>';
