@@ -924,6 +924,7 @@ OB64.parseEnemydat = function(buf) {
       field19: buf[off + 19],
       posC1:   buf[off + 22],
       posC2:   buf[off + 23],
+      posC3:   buf[off + 24],
       field22: buf[off + 22],
       field23: buf[off + 23],
       field24: buf[off + 24],
