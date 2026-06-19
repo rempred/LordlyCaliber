@@ -1366,49 +1366,43 @@ OB64.parseClassDefs = function(z64) {
     // confirmed via level-up RAM diff. B3/B7/B11/B15/B19 are uncertain (possibly
     // part of growth formula; possibly padding). B23 is LCK base (NOT DEX-g2).
     var stats = [];
-    if (!isTerm && !isSentinel) {
-      for (var s = 0; s < 6; s++) {
-        stats.push({
-          base: OB64.readU16BE(z64, off + s * 4),
-          g1: z64[off + s * 4 + 2],
-          g2: z64[off + s * 4 + 3]
-        });
-      }
+    for (var s = 0; s < 6; s++) {
+      stats.push({
+        base: OB64.readU16BE(z64, off + s * 4),
+        g1: z64[off + s * 4 + 2],
+        g2: z64[off + s * 4 + 3]
+      });
     }
-    var strGrowth = isTerm || isSentinel ? 0 : z64[off + 2];
-    var vitGrowth = isTerm || isSentinel ? 0 : z64[off + 6];
-    var intGrowth = isTerm || isSentinel ? 0 : z64[off + 10];
-    var menGrowth = isTerm || isSentinel ? 0 : z64[off + 14];
-    var agiGrowth = isTerm || isSentinel ? 0 : z64[off + 18];
-    var dexGrowth = isTerm || isSentinel ? 0 : z64[off + 22];
-    var b3Raw  = isTerm || isSentinel ? 0 : z64[off + 3];
-    var b7Raw  = isTerm || isSentinel ? 0 : z64[off + 7];
-    var b11Raw = isTerm || isSentinel ? 0 : z64[off + 11];
-    var b15Raw = isTerm || isSentinel ? 0 : z64[off + 15];
-    var b19Raw = isTerm || isSentinel ? 0 : z64[off + 19];
+    var strGrowth = z64[off + 2];
+    var vitGrowth = z64[off + 6];
+    var intGrowth = z64[off + 10];
+    var menGrowth = z64[off + 14];
+    var agiGrowth = z64[off + 18];
+    var dexGrowth = z64[off + 22];
+    var b3Raw  = z64[off + 3];
+    var b7Raw  = z64[off + 7];
+    var b11Raw = z64[off + 11];
+    var b15Raw = z64[off + 15];
+    var b19Raw = z64[off + 19];
 
     // B23 = LCK (Luck base stat, range 40-60, default 50) — confirmed via level-up diff
-    var lck = isTerm || isSentinel ? 0 : z64[off + 23];
+    var lck = z64[off + 23];
 
     // Alignment (byte 24) and resistances (bytes 25-31)
-    var alignment = isTerm || isSentinel ? 50 : z64[off + 24];
+    var alignment = z64[off + 24];
     var resistances = [];
-    if (!isTerm && !isSentinel) {
-      for (var r = 25; r <= 31; r++) resistances.push(z64[off + r]);
-    }
+    for (var r = 25; r <= 31; r++) resistances.push(z64[off + r]);
 
     // Movement type (byte 32) and padding byte B33
-    var moveType = isTerm || isSentinel ? 0 : z64[off + 32];
-    var b33Raw = isTerm || isSentinel ? 0 : z64[off + 33];
+    var moveType = z64[off + 32];
+    var b33Raw = z64[off + 33];
 
     // Default equipment (bytes 34-41): 4 x u16BE item IDs
     // B34-35 = weapon, B36-37 = body armor, B38-39 = shield/off-hand, B40-41 = headgear/accessory
     // Verified by cross-referencing all human classes against H2F Mod CSV.
     var defaultEquip = [];
-    if (!isTerm && !isSentinel) {
-      for (var de = 34; de <= 40; de += 2) {
-        defaultEquip.push(OB64.readU16BE(z64, off + de));
-      }
+    for (var de = 34; de <= 40; de += 2) {
+      defaultEquip.push(OB64.readU16BE(z64, off + de));
     }
 
     // B42-48 row attack block.
@@ -1419,12 +1413,12 @@ OB64.parseClassDefs = function(z64) {
     //   B46 = middle row attack count (EDITABLE, VERIFIED)
     //   B47 = rear row attack ID
     //   B48 = rear row attack count
-    var b42Raw    = isTerm || isSentinel ? 0 : z64[off + 42];
-    var b43Raw    = isTerm || isSentinel ? 0 : z64[off + 43];
-    var frontAtks = isTerm || isSentinel ? 0 : z64[off + 44];
-    var b45Raw    = isTerm || isSentinel ? 0 : z64[off + 45];
-    var midAtks   = isTerm || isSentinel ? 0 : z64[off + 46];
-    var b47Raw    = isTerm || isSentinel ? 0 : z64[off + 47];
+    var b42Raw    = z64[off + 42];
+    var b43Raw    = z64[off + 43];
+    var frontAtks = z64[off + 44];
+    var b45Raw    = z64[off + 45];
+    var midAtks   = z64[off + 46];
+    var b47Raw    = z64[off + 47];
 
     // Back-compat legacy array — callers not yet migrated still read this.
     // Encoding keeps raw bytes available but is misleading; new code should
@@ -1440,13 +1434,13 @@ OB64.parseClassDefs = function(z64) {
     // Combined with B44 (front count) and B46 (mid count), all three row-attack
     // counts now decoded. See scripts/ob64_csv_cross_check.js.
     // B49-B53 = combat multipliers + flags.
-    var rearAtks   = isTerm || isSentinel ? 0 : z64[off + 48];
+    var rearAtks   = z64[off + 48];
     var atkTypeRaw = rearAtks; // legacy alias — keep for any external consumer
-    var physAtk    = isTerm || isSentinel ? 0 : z64[off + 49];
-    var magAtk     = isTerm || isSentinel ? 0 : z64[off + 50];
-    var physDef    = isTerm || isSentinel ? 0 : z64[off + 51];
-    var magDef     = isTerm || isSentinel ? 0 : z64[off + 52];
-    var flagsRaw   = isTerm || isSentinel ? 0 : z64[off + 53];
+    var physAtk    = z64[off + 49];
+    var magAtk     = z64[off + 50];
+    var physDef    = z64[off + 51];
+    var magDef     = z64[off + 52];
+    var flagsRaw   = z64[off + 53];
     // Back-compat
     var attacks = [atkTypeRaw, physAtk, magAtk, physDef, magDef, flagsRaw];
 
@@ -1455,18 +1449,18 @@ OB64.parseClassDefs = function(z64) {
     // B55 = required class ID (0 = no intermediate class needed)
     // B56 = required class level (0 = no level threshold for required class)
     // Verified against H2F Mod CSV for all human classes 0x01-0x28.
-    var reqLevel = isTerm || isSentinel ? 0 : z64[off + 54];
-    var reqClass = isTerm || isSentinel ? 0 : z64[off + 55];
-    var reqClassLevel = isTerm || isSentinel ? 0 : z64[off + 56];
+    var reqLevel = z64[off + 54];
+    var reqClass = z64[off + 55];
+    var reqClassLevel = z64[off + 56];
 
     // B57 = additional class requirement (usually 0x00; Special Class=0x5A, Flail Monarch=0x5B)
-    var additionalReqRaw = isTerm || isSentinel ? 0 : z64[off + 57];
+    var additionalReqRaw = z64[off + 57];
 
     // B58 = default damage element (0xFF=Random/None, 0x00-0x04=element index)
-    var dragonElement = isTerm || isSentinel ? 0xFF : z64[off + 58];
+    var dragonElement = z64[off + 58];
 
     // B59 = category (0x01=base/magic, 0x02=combat, 0x03=mid-dragon, 0x04=high-dragon)
-    var category = isTerm || isSentinel ? 0 : z64[off + 59];
+    var category = z64[off + 59];
 
     // RAM pointer (bytes 60-63) — code-adjacent, preserve on write (don't serialize)
     var namePtr = OB64.readU32BE(z64, off - 12);
@@ -1475,23 +1469,23 @@ OB64.parseClassDefs = function(z64) {
     // The size byte lives in the name-framed class record at +4, which is
     // stat-framed off-8 for the current class ID. The old off+64 view is shifted
     // one class ahead (e.g. Saturos 0x36 incorrectly inherited Ogre's size).
-    var unitSize = isTerm || isSentinel ? 0 : z64[off - 8];
+    var unitSize = z64[off - 8];
 
     // nameOff+5 / statOff-7: guide-facing sex/voice/body code (consumer TBD).
-    var sexOrVoice = isTerm || isSentinel ? 0 : z64[off - 7];
+    var sexOrVoice = z64[off - 7];
 
     // nameOff+6 / statOff-6: guide-facing leadership byte.
-    var leadership = isTerm || isSentinel ? 0 : z64[off - 6];
+    var leadership = z64[off - 6];
 
     // B67 padding, B68 sentinel (0xFF only for Stone Golem/Barkeep — those are isTerm)
-    var headerPad = isTerm || isSentinel ? 0 : z64[off - 5];
-    var baseHp = isTerm || isSentinel ? 0 : OB64.readU16BE(z64, off - 4);
+    var headerPad = z64[off - 5];
+    var baseHp = OB64.readU16BE(z64, off - 4);
 
     // nameOff+10 HP growth per level.
-    var hpGrowth = isTerm || isSentinel ? 0 : z64[off - 2];
+    var hpGrowth = z64[off - 2];
 
     // nameOff+11 padding/raw tail.
-    var headerTailRaw = isTerm || isSentinel ? 0 : z64[off - 1];
+    var headerTailRaw = z64[off - 1];
 
     // Back-compat aliases. Older code called these B65-B71, but they now mirror
     // the current class's name-framed header instead of the next class's header.
