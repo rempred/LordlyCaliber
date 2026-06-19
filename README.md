@@ -54,7 +54,7 @@ in your own copy of the US retail `.v64`, and start modding.
 
 Packaged builds are published on GitHub Releases:
 
-- Current tagged release: [LordlyCaliber v0.1.1](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.1)
+- Current tagged release: [LordlyCaliber v0.1.2](https://github.com/rempred/LordlyCaliber/releases/tag/v0.1.2)
 - First packaged download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
 
 GitHub tracks download counts for uploaded release assets. Repository clones and
@@ -71,14 +71,17 @@ project download asset.
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, promotion requirements, unit type,
-  movement type, and combat behavior fields.
+  movement type, corrected same-class unit size, base HP, and HP growth fields.
+  Story duplicate classes are labeled Special/Boss unless behavior is proven
+  actually buggy.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
   Item names and IDs use the game's 1-based item numbering.
 - **Squads** - edit enemy squad composition and formation per runtime scenario
   key. The tab uses code-derived edat rows from the Project64 runtime atlas
   (keys 1-64) and exports scenario-gated runtime overrides without changing
-  global `enemydat.bin`.
+  global `enemydat.bin`. Current export uses vanilla 35-byte squad replacement
+  records, so the UI enforces 5 formation slots and 2 follower class groups.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
@@ -107,6 +110,9 @@ project download asset.
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, and Tools-tab feature
   toggles) to a portable JSON patch file for sharing or reapplying to a fresh ROM.
+  Patch format v6 maps class-definition logical bytes 64-71 to the current
+  class name-framed header: size, sex/voice/body code, leadership, base HP,
+  HP growth, and raw header bytes.
 - **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
 
 ## Current Limitations
@@ -118,6 +124,11 @@ project download asset.
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
   known budgets, but very large inventory changes can still fail export.
+- Squads can use up to 5 formation slots, where regular units cost 1 slot and
+  large units cost 2 slots. More than 2 follower class groups is not exported
+  yet; supporting it requires a larger runtime record/resolver design.
+- Class sex/voice/body and leadership bytes are exposed from the corrected
+  name-framed header, but their exact runtime consumers are not fully traced.
 - BizHawk `.SaveRAM` and Project64 `.sra` support roster, inventory, Goth, and
   Chaos Frame editing across valid native slots. Calendar/scenario fields are
   hidden for battery saves (only partially persisted in the packed format).

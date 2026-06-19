@@ -185,39 +185,39 @@ OB64.CLASS_NAMES = {
   0x87: "Danika",
   0x88: "Danika tendril",
 
-  // Buggy leader classes (0x89-0xA4)
-  0x89: "Archer (buggy)",
-  0x8A: "Berserker (buggy)",
-  0x8B: "Beast Tamer (buggy)",
-  0x8C: "Valkyrie (buggy)",
-  0x8D: "Wizard (buggy)",
-  0x8E: "Phalanx (buggy)",
-  0x8F: "Berserker (buggy 2)",
-  0x90: "Knight (buggy)",
-  0x91: "Ninja Master (buggy)",
-  0x92: "Doll Master (buggy)",
-  0x93: "Knight Templar (buggy)",
-  0x94: "Archmage (buggy)",
-  0x95: "Priest (buggy)",
-  0x96: "Black Knight (buggy)",
-  0x97: "Dragon Master (buggy)",
-  0x98: "Siren (buggy)",
-  0x99: "Saturos (buggy)",
-  0x9A: "Sword Master (buggy)",
-  0x9B: "Knight Templar (buggy 2)",
-  0x9C: "Dragoon (buggy)",
-  0x9D: "Gorgon (buggy)",
-  0x9E: "Lich (buggy)",
-  0x9F: "Daemon (buggy)",
-  0xA0: "Plaladin (sic)",
+  // Special/boss duplicate class slots (0x89-0xA4)
+  0x89: "Archer (Special/Boss)",
+  0x8A: "Berserker (Special/Boss)",
+  0x8B: "Beast Tamer (Special/Boss)",
+  0x8C: "Valkyrie (Special/Boss)",
+  0x8D: "Wizard (Special/Boss)",
+  0x8E: "Phalanx (Special/Boss)",
+  0x8F: "Berserker (Special/Boss 2)",
+  0x90: "Knight (Special/Boss)",
+  0x91: "Ninja Master (Special/Boss)",
+  0x92: "Doll Master (Special/Boss)",
+  0x93: "Knight Templar (Special/Boss)",
+  0x94: "Archmage (Special/Boss)",
+  0x95: "Priest (Special/Boss)",
+  0x96: "Black Knight (Special/Boss)",
+  0x97: "Dragon Master (Special/Boss)",
+  0x98: "Siren (Special/Boss)",
+  0x99: "Saturos (Special/Boss)",
+  0x9A: "Sword Master (Special/Boss)",
+  0x9B: "Knight Templar (Special/Boss 2)",
+  0x9C: "Dragoon (Special/Boss)",
+  0x9D: "Gorgon (Special/Boss)",
+  0x9E: "Lich (Special/Boss)",
+  0x9F: "Daemon (Special/Boss)",
+  0xA0: "Plaladin (Special/Boss)",
   0xA1: "Danika tendril (alt)",
-  0xA2: "Paladin (buggy)",
+  0xA2: "Paladin (Special/Boss)",
   0xA3: "Witch (Deneb)",
   0xA4: "Death Bahamut (Grozz Nuy)",
 };
 
 // Categories — updated to match the 164-entry ID mapping.
-// Buggy/story-duplicate classes in 0x5A-0xA4 aren't assigned a category
+// Special/story-duplicate classes in 0x5A-0xA4 aren't assigned a category
 // (their names in CLASS_NAMES already flag them).
 OB64.CLASS_CATEGORIES = {
   "Human Male (Basic)":     [0x01, 0x02, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D],
@@ -882,10 +882,11 @@ OB64.moveTypeName = function(id) {
 };
 
 // ============================================================
-// UNIT SIZE (class def B64) — formation footprint: regular units take 1 cell,
-// large units block any adjacent cell. Also gates equipment (regular vs large).
+// UNIT SIZE (name-framed class byte +4 / statOff-8): regular units use 1 slot,
+// large units use 2 slots. Also gates equipment (regular vs large).
 // ============================================================
 OB64.UNIT_SIZES = {
+  0x00: "Regular",
   0x01: "Regular",
   0x02: "Large",
 };
@@ -895,32 +896,39 @@ OB64.unitSizeName = function(id) {
 };
 
 // ============================================================
-// SPRITE / BODY TYPES (class def B65)
+// NAME-FRAMED CLASS HEADER BYTES
 // ============================================================
-OB64.SPRITE_TYPES = {
-  0: "Std Humanoid",
-  1: "Alt/Magic Humanoid",
-  2: "Large Beast",
-  3: "Inanimate",
-  4: "Undead Monster",
+// These live at nameOff+5 and nameOff+6, or statOff-7 and statOff-6 for the
+// editor's class_id+1 stat-framed records. Labels are intentionally conservative
+// until the consumers are traced.
+OB64.CLASS_SEX_VOICE = {
+  0: "Type 0",
+  1: "Type 1",
+  2: "Type 2",
+  3: "Type 3",
+  4: "Type 4",
 };
 
-OB64.spriteTypeName = function(id) {
-  return OB64.SPRITE_TYPES[id] || ("0x" + id.toString(16).padStart(2, "0"));
+OB64.classSexVoiceName = function(id) {
+  return OB64.CLASS_SEX_VOICE[id] || ("0x" + id.toString(16).padStart(2, "0"));
 };
 
-// ============================================================
-// COMBAT BEHAVIOR / LEADER TIER (class def B66)
-// ============================================================
-OB64.COMBAT_BEHAVIORS = {
-  0: "Beast/Passive",
-  1: "Standard Weapon",
-  2: "Leader/Command",
+OB64.CLASS_LEADERSHIP = {
+  0: "0",
+  1: "1",
+  2: "2",
 };
 
-OB64.combatBehaviorName = function(id) {
-  return OB64.COMBAT_BEHAVIORS[id] || ("0x" + id.toString(16).padStart(2, "0"));
+OB64.classLeadershipName = function(id) {
+  return OB64.CLASS_LEADERSHIP[id] || ("0x" + id.toString(16).padStart(2, "0"));
 };
+
+// Legacy enum aliases. These no longer mean sprite/combat behavior; they map to
+// the recovered current-class name header so older hidden views do not crash.
+OB64.SPRITE_TYPES = OB64.CLASS_SEX_VOICE;
+OB64.spriteTypeName = OB64.classSexVoiceName;
+OB64.COMBAT_BEHAVIORS = OB64.CLASS_LEADERSHIP;
+OB64.combatBehaviorName = OB64.classLeadershipName;
 
 // ============================================================
 // DRAGON ELEMENTS (class def B58)
