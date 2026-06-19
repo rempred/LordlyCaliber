@@ -22,7 +22,8 @@ Caliber*. It would not exist without the work below.
   used throughout the editor (Classes tab, character struct decode).
 - **Thomas Olson** — item list contributed to Cralex's GameShark guide.
 - **dancing elf** — gender-code research contributed to Cralex's GameShark guide.
-- **GrantWChapman** — additional reference material.
+- **GrantWChapman** — class-definition offset/framing correction that led to
+  the same-class header migration for unit size, base HP, and HP growth.
 - **ShaneZell** — additional reference material.
 
 ## Game
