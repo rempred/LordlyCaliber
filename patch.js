@@ -126,7 +126,7 @@ window.OB64 = window.OB64 || {};
     var originalClassDefBytes = rom.original.classDefBytes || [];
     for (var recIdx = 0; rom.classDefs && recIdx < rom.classDefs.length; recIdx++) {
       var rec = rom.classDefs[recIdx];
-      if (!rec || rec.isTerm || rec.isSentinel) continue;
+      if (!rec) continue;
       var classId = recIdx - 1;
       if (classId <= 0) continue;
       var bytePatch = diffByteMap(classDefByteMap(rec), originalClassDefBytes[recIdx]);
@@ -320,8 +320,8 @@ window.OB64 = window.OB64 || {};
           ' (expected ' + (cid + 1) + '); applying the explicit record_index.');
       }
       var classDef = rom.classDefs[recIdx];
-      if (!classDef || classDef.isTerm || classDef.isSentinel) {
-        warnings.push('Patch references class #' + ck + ' but its class-def record is a terminator/sentinel - skipping.');
+      if (!classDef) {
+        warnings.push('Patch references class #' + ck + ' but its class-def record is missing - skipping.');
         continue;
       }
       var bytes = entryClass.bytes || {};
@@ -684,7 +684,7 @@ window.OB64 = window.OB64 || {};
 
   function classDefByteMap(r) {
     var out = {};
-    if (!r || r.isTerm || r.isSentinel) return out;
+    if (!r) return out;
 
     function b(off, value) { out[String(off)] = clampByte(value); }
     function u16(off, value) {

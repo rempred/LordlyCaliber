@@ -858,10 +858,12 @@ td.raw-hex {
 
 /* Growth-mean sub-badge in Card view */
 .class-card .stat-entry .growth-sub {
+  flex: 0 0 auto;
   font-family: var(--ob-mono);
   font-size: var(--ob-text-xs);
   color: var(--ob-stat-amber);
   font-style: italic;
+  white-space: nowrap;
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 3px;
@@ -909,6 +911,35 @@ td.raw-hex {
   margin-bottom: 12px;
   display: flex;
   gap: 4px;
+}
+
+.class-raw-data-gate {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 760px;
+  margin: -4px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ob-wax-red);
+  border-radius: 4px;
+  background: rgba(152,32,24,0.10);
+  color: var(--ob-ink);
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+}
+
+.class-raw-data-gate input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.class-raw-data-gate strong {
+  display: block;
+  font-family: var(--ob-display);
+  font-size: var(--ob-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ob-wax-red);
 }
 
 .class-view-toggle button {
@@ -1157,6 +1188,25 @@ td.attack-list {
   padding-left: 2px;
 }
 
+.class-card-raw-record {
+  box-shadow:
+    inset 0 0 0 2px rgba(152,32,24,0.45),
+    inset 0 1px 0 rgba(255,245,210,0.55),
+    0 4px 10px rgba(0,0,0,0.5);
+}
+
+.class-card-raw-warning {
+  margin: 4px 0 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--ob-wax-red);
+  border-radius: 4px;
+  background: rgba(152,32,24,0.12);
+  color: var(--ob-wax-red);
+  font-family: var(--ob-serif);
+  font-size: var(--ob-text-sm);
+  font-weight: 700;
+}
+
 .class-card-intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 62px;
@@ -1316,7 +1366,7 @@ td.attack-list {
 /* Base stats grid — sunken parchment tiles */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -1324,6 +1374,9 @@ td.attack-list {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 6px;
   padding: 3px 9px;
   background:
     linear-gradient(180deg, var(--ob-parchment-2), var(--ob-parchment-3));
@@ -1335,18 +1388,24 @@ td.attack-list {
 }
 
 .stat-label {
+  min-width: 0;
   font-family: var(--ob-display);
   font-size: var(--ob-text-xs);
   font-weight: 700;
   letter-spacing: 0.5px;
   color: var(--ob-ink);
+  overflow-wrap: anywhere;
 }
 
 .stat-value {
+  min-width: 0;
   font-family: var(--ob-mono);
   font-size: var(--ob-text-sm);
   font-weight: 600;
   color: var(--ob-ink);
+  text-align: right;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* Evolution links */

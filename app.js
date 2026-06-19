@@ -2339,33 +2339,54 @@ window.OB64 = window.OB64 || {};
     // View toggle
     var viewToggle = document.createElement('div');
     viewToggle.className = 'class-view-toggle';
+    var classViewMode = localStorage.getItem('ob64_classes_view') || 'table';
+    var rawClassDataUnlocked = localStorage.getItem('ob64_classes_raw_data') === '1';
+
     var btnTable = document.createElement('button');
     btnTable.textContent = 'Table View';
-    btnTable.className = 'active';
     var btnCards = document.createElement('button');
     btnCards.textContent = 'Card View';
     viewToggle.appendChild(btnTable);
     viewToggle.appendChild(btnCards);
+
+    var rawDataGate = document.createElement('label');
+    rawDataGate.className = 'class-raw-data-gate';
+    var rawDataInput = document.createElement('input');
+    rawDataInput.type = 'checkbox';
+    rawDataInput.checked = rawClassDataUnlocked;
+    rawDataGate.appendChild(rawDataInput);
+    var rawDataCopy = document.createElement('span');
+    rawDataCopy.innerHTML = '<strong>View raw class records</strong> Show and edit terminator/sentinel class bytes in Card View.';
+    rawDataGate.appendChild(rawDataCopy);
     panel.appendChild(viewToggle);
+    panel.appendChild(rawDataGate);
 
     var tableContainer = document.createElement('div');
     tableContainer.id = 'classes-table-view';
     var cardsContainer = document.createElement('div');
     cardsContainer.id = 'classes-card-view';
     cardsContainer.className = 'class-cards';
-    cardsContainer.style.display = 'none';
+
+    function setClassView(mode) {
+      classViewMode = mode === 'cards' ? 'cards' : 'table';
+      localStorage.setItem('ob64_classes_view', classViewMode);
+      btnTable.classList.toggle('active', classViewMode === 'table');
+      btnCards.classList.toggle('active', classViewMode === 'cards');
+      tableContainer.style.display = classViewMode === 'table' ? '' : 'none';
+      cardsContainer.style.display = classViewMode === 'cards' ? '' : 'none';
+      rawDataGate.style.display = classViewMode === 'cards' ? 'flex' : 'none';
+    }
 
     btnTable.addEventListener('click', function() {
-      btnTable.classList.add('active');
-      btnCards.classList.remove('active');
-      tableContainer.style.display = '';
-      cardsContainer.style.display = 'none';
+      setClassView('table');
     });
     btnCards.addEventListener('click', function() {
-      btnCards.classList.add('active');
-      btnTable.classList.remove('active');
-      tableContainer.style.display = 'none';
-      cardsContainer.style.display = '';
+      setClassView('cards');
+    });
+    rawDataInput.addEventListener('change', function() {
+      localStorage.setItem('ob64_classes_raw_data', rawDataInput.checked ? '1' : '0');
+      localStorage.setItem('ob64_classes_view', 'cards');
+      renderClasses(panel);
     });
 
     // Data
@@ -2962,10 +2983,17 @@ window.OB64 = window.OB64 || {};
       (function(cid) {
         var name = OB64.className(cid);
         var defs = defMap[cid];
+        var rawDef = rom.classDefs && rom.classDefs[cid + 1] ? rom.classDefs[cid + 1] : null;
         var def = defs && defs.length > 0 ? defs[0] : null;
+        var showingRawClassRecord = false;
+        if (rawClassDataUnlocked && rawDef) {
+          def = rawDef;
+          showingRawClassRecord = !!(rawDef.isTerm || rawDef.isSentinel);
+        }
 
         var card = document.createElement('div');
         card.className = 'class-card';
+        if (showingRawClassRecord) card.classList.add('class-card-raw-record');
 
         // Header
         var cardHeader = document.createElement('div');
@@ -3015,6 +3043,13 @@ window.OB64 = window.OB64 || {};
         }
 
         if (def) {
+          if (showingRawClassRecord) {
+            var rawWarn = document.createElement('div');
+            rawWarn.className = 'class-card-raw-warning';
+            rawWarn.textContent = 'Raw terminator/sentinel record. These bytes are editable, but the class is not a proven combat-safe class.';
+            card.appendChild(rawWarn);
+          }
+
           // --- Base Stats (always visible) — 6 stat tiles with base + growth badge, plus LCK
           var statsWrap = document.createElement('div');
           statsWrap.className = 'class-card-stats';
@@ -3357,6 +3392,7 @@ window.OB64 = window.OB64 || {};
     }
 
     panel.appendChild(cardsContainer);
+    setClassView(classViewMode);
   }
 
   function jumpToClass(e) {
@@ -5394,7 +5430,7 @@ window.OB64 = window.OB64 || {};
         // Skip if the class def is missing (terminator/sentinel records) or
         // its unit type differs. Also skip records with unitSize = 0 since
         // those are the two non-class terminator rows in the table.
-        if (!def || def.unitSize === 0 || def.unitSize !== curType) continue;
+        if (!def || def.isTerm || def.isSentinel || def.unitSize === 0 || def.unitSize !== curType) continue;
       }
       out.push({ id: idNum, label: OB64.className(idNum) });
     }
