@@ -2978,11 +2978,26 @@ window.OB64 = window.OB64 || {};
           metaParts.push(OB64.unitSizeName(def.unitSize));
           if (def.dragonElement !== 0xFF) metaParts.push(OB64.dragonElementName(def.dragonElement));
         }
-        if (metaParts.length > 0) {
-          var meta = document.createElement('div');
-          meta.className = 'class-card-meta';
-          meta.textContent = metaParts.join(' \u2022 ');
-          card.appendChild(meta);
+        var portraitImg = OB64.createClassPortrait ? OB64.createClassPortrait(cid, 'class-card-portrait') : null;
+        if (metaParts.length > 0 || portraitImg) {
+          var intro = document.createElement('div');
+          intro.className = 'class-card-intro';
+          var introText = document.createElement('div');
+          introText.className = 'class-card-intro-text';
+          if (metaParts.length > 0) {
+            var meta = document.createElement('div');
+            meta.className = 'class-card-meta';
+            meta.textContent = metaParts.join(' \u2022 ');
+            introText.appendChild(meta);
+          }
+          intro.appendChild(introText);
+          if (portraitImg) {
+            var portraitFrame = document.createElement('div');
+            portraitFrame.className = 'class-card-portrait-frame';
+            portraitFrame.appendChild(portraitImg);
+            intro.appendChild(portraitFrame);
+          }
+          card.appendChild(intro);
         }
 
         if (def) {

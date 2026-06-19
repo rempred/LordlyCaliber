@@ -71,7 +71,8 @@ project download asset.
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, promotion requirements, unit type,
-  movement type, corrected same-class unit size, base HP, and HP growth fields.
+  movement type, corrected same-class unit size, base HP, HP growth fields, and
+  bundled class portraits.
   Story duplicate classes are labeled Special/Boss unless behavior is proven
   actually buggy.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
@@ -81,7 +82,10 @@ project download asset.
   key. The tab uses code-derived edat rows from the Project64 runtime atlas
   (keys 1-64) and exports scenario-gated runtime overrides without changing
   global `enemydat.bin`. Current export uses vanilla 35-byte squad replacement
-  records, so the UI enforces 5 formation slots and 2 follower class groups.
+  records. The default UI enforces vanilla-style 5 formation slots and 2
+  follower class groups; an experimental raw-capacity checkbox can fill all
+  encoded anchors (`Leader + Bx3 + Cx2`) for mod testing.
+  Formation-grid cells show the matching class portrait when one is available.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`

@@ -1,0 +1,200 @@
+// OB64 class portrait manifest.
+// Source assets: ModderResources/OB64 portraits/OB64 portraits.
+// Filenames are kept verbatim so release builds can serve the images offline.
+
+window.OB64 = window.OB64 || {};
+
+(function() {
+  var BASE = 'resources/portraits/';
+
+  OB64.CLASS_PORTRAITS = {
+    0x01: "Soldier (Enemy).png",
+    0x02: "Fighter (Enemy).png",
+    0x03: "Lycanthrope (Messenger).png",
+    0x04: "Amazon (Enemy).png",
+    0x05: "Knight (Enemy).png",
+    0x06: "Berserker (Enemy).png",
+    0x07: "Fencer (Enemy).png",
+    0x08: "Phalanx (Enemy).png",
+    0x09: "Beast Tamer (Enemy).png",
+    0x0A: "Doll Master (Enemy).png",
+    0x0B: "Ninja (Enemy).png",
+    0x0C: "Wizard (Enemy).png",
+    0x0D: "Archer (Enemy).png",
+    0x0E: "Dragon Tamer (Enemy).png",
+    0x0F: "Valkyrie (Enemy).png",
+    0x10: "Witch (Enemy).png",
+    0x11: "Sorceress (Enemy).png",
+    0x12: "Cleric (Enemy).png",
+    0x13: "Paladin (Enemy).png",
+    0x14: "Dragoon (Enemy).png",
+    0x15: "Black Knight (Enemy).png",
+    0x16: "Sword Master (Enemy).png",
+    0x17: "Cataphract (Enemy).png",
+    0x18: "Beast Master (Enemy).png",
+    0x19: "Enchanter (Enemy).png",
+    0x1A: "Ninja Master (Enemy).png",
+    0x1B: "Archmage (Enemy).png",
+    0x1C: "Diana (Enemy).png",
+    0x1D: "Dragon Master (Enemy).png",
+    0x1E: "Freya.png",
+    0x1F: "Siren (Enemy).png",
+    0x20: "Priestess (Enemy).png",
+    0x21: "Princess (Enemy).png",
+    0x22: "Centurion Male (Enemy).png",
+    0x23: "Centurion Female (Enemy).png",
+    0x24: "Angel Knight (Enemy).png",
+    0x25: "Seraph (Enemy).png",
+    0x26: "Lich (Enemy).png",
+    0x27: "Hawkman (Enemy).png",
+    0x28: "Vultan (Enemy).png",
+    0x29: "Raven (Enemy).png",
+    0x2A: "Werewolf.png",
+    0x2B: "Vampire (Enemy).png",
+    0x2C: "Vampire (Enemy).png",
+    0x2D: "Male Zombie.png",
+    0x2E: "Female Zombie (Enemy).png",
+    0x2F: "Skeleton (Enemy).png",
+    0x30: "Ghost (Enemy).png",
+    0x31: "Gorgon (Enemy).png",
+    0x32: "Pumpkinhead (Enemy).png",
+    0x33: "Faerie (Enemy).png",
+    0x34: "Gremlin (Enemy).png",
+    0x35: "Goblin (Enemy).png",
+    0x36: "Saturos (Enemy).png",
+    0x37: "Ogre (Enemy).png",
+    0x38: "Young Dragon.png",
+    0x39: "Thunder Dragon.png",
+    0x3A: "Red Dragon.png",
+    0x3B: "Earth Dragon.png",
+    0x3C: "Blue Dragon.png",
+    0x3D: "Platinum Dragon.png",
+    0x3E: "Black Dragon.png",
+    0x3F: "Quetzalcoatl.png",
+    0x40: "Flarebrass.png",
+    0x41: "Ahzi Dahaka.png",
+    0x42: "Hydra.png",
+    0x43: "Bahamut.png",
+    0x44: "Tiamat.png",
+    0x45: "Wyrm.png",
+    0x46: "Wyvern.png",
+    0x47: "Griffin.png",
+    0x48: "Opinincus.png",
+    0x49: "Cockatrice.png",
+    0x4A: "Sphinx.png",
+    0x4B: "Hellhound.png",
+    0x4C: "Cerberus.png",
+    0x4E: "Golem.png",
+    0x4F: "Stone Golem.png",
+    0x50: "Baldr Golem.png",
+    0x51: "Hero (Gladiator_Vanguard).png",
+    0x52: "Hero (Gladiator_Vanguard).png",
+    0x53: "Hero (General).png",
+    0x54: "Dio (Gladiator_Warrior).png",
+    0x55: "Dio (Gladiator_Warrior).png",
+    0x56: "Leia (Blaze Knight_Rune_Knight).png",
+    0x57: "Leia (Blaze Knight_Rune_Knight).png",
+    0x58: "Destin (Lord).png",
+    0x59: "Debonair (General).png",
+    0x5A: "Gilbert (Beast Master).png",
+    0x5B: "Aisha (Priestess).png",
+    0x5C: "Saradin (Warlock).png",
+    0x5D: "Vad (Grappler).png",
+    0x5E: "Europea (Centurion Female).png",
+    0x5F: "Biske (Lycanthrope).png",
+    0x60: "Biske (Lycanthrope).png",
+    0x61: "Ankiseth (Solidblade).png",
+    0x62: "Yumil (Overlord).png",
+    0x63: "Amrius (Dark Prince).png",
+    0x65: "Procus (Flail Monarch).png",
+    0x66: "Richard (Death Templar).png",
+    0x67: "Baldwin (Temple Command).png",
+    0x68: "Thamuz (Temple Command).png",
+    0x69: "Pruflas (Temple Command).png",
+    0x6A: "Amazeroth (Temple Command).png",
+    0x6B: "Vapula (Temple Command).png",
+    0x6C: "Godeslas (Vanity).png",
+    0x6D: "Kerikov (Vanity).png",
+    0x6E: "Count Silvis (Vanity).png",
+    0x6F: "Xevec (Superior Knight).png",
+    0x70: "Rhade (Superior Knight).png",
+    0x71: "Danika (Enemy).png",
+    0x72: "Grappler.png",
+    0x73: "Knight Templar.png",
+    0x74: "Daemon.png",
+    0x75: "Troi (Phalanx).png",
+    0x76: "Asnabel (Berserker).png",
+    0x77: "Katreda (Cleric).png",
+    0x78: "Leidel (Archer).png",
+    0x79: "Sheen (Hawkman).png",
+    0x7A: "Meredia (Siren).png",
+    0x7B: "Paul (Enchanter).png",
+    0x7C: "Carth (Black Knight).png",
+    0x7D: "Hugo.png",
+    0x7E: "Frederick.png",
+    0x7F: "Odiron.png",
+    0x80: "Mari.png",
+    0x81: "Zeda.png",
+    0x82: "Barkeeper.png",
+    0x83: "Old Man 1.png",
+    0x84: "Male Civillian 1.png",
+    0x85: "Female Civillian 1.png",
+    0x86: "Danika (Enemy).png",
+    0x87: "Danika (Enemy).png",
+    0x88: "Danika's Tendrils.png",
+    0x89: "Archer (Enemy).png",
+    0x8A: "Berserker (Enemy).png",
+    0x8B: "Beast Tamer (Enemy).png",
+    0x8C: "Valkyrie (Enemy).png",
+    0x8D: "Wizard (Enemy).png",
+    0x8E: "Phalanx (Enemy).png",
+    0x8F: "Berserker (Enemy).png",
+    0x90: "Knight (Enemy).png",
+    0x91: "Ninja Master (Enemy).png",
+    0x92: "Doll Master (Enemy).png",
+    0x93: "Knight Templar.png",
+    0x94: "Archmage (Enemy).png",
+    0x95: "Priestess (Enemy).png",
+    0x96: "Black Knight (Enemy).png",
+    0x97: "Dragon Master (Enemy).png",
+    0x98: "Siren (Enemy).png",
+    0x99: "Saturos (Enemy).png",
+    0x9A: "Sword Master (Enemy).png",
+    0x9B: "Knight Templar.png",
+    0x9C: "Dragoon (Enemy).png",
+    0x9D: "Gorgon (Enemy).png",
+    0x9E: "Lich (Enemy).png",
+    0x9F: "Daemon.png",
+    0xA0: "Paladin (Enemy).png",
+    0xA1: "Danika's Tendrils.png",
+    0xA2: "Paladin (Enemy).png",
+    0xA3: "Witch (Enemy).png",
+    0xA4: "Grozz Nuy (Death Bahamut).png"
+  };
+
+  function encodePathSegment(s) {
+    return encodeURIComponent(s).replace(/'/g, '%27');
+  }
+
+  OB64.classPortraitFile = function(classId) {
+    return OB64.CLASS_PORTRAITS[classId & 0xFF] || null;
+  };
+
+  OB64.classPortraitUrl = function(classId) {
+    var file = OB64.classPortraitFile(classId);
+    return file ? BASE + encodePathSegment(file) : null;
+  };
+
+  OB64.createClassPortrait = function(classId, className) {
+    var url = OB64.classPortraitUrl(classId);
+    if (!url) return null;
+    var img = document.createElement('img');
+    img.className = className || 'ob-class-portrait';
+    img.src = url;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.title = OB64.className ? OB64.className(classId) : '';
+    return img;
+  };
+})();
