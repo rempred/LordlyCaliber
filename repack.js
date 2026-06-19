@@ -551,15 +551,22 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     z64[off + 57] = (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq) || 0; // B57
     z64[off + 58] = r.dragonElement;  // B58
     z64[off + 59] = r.category;       // B59
-    // B60-63: runtime RAM pointer — DO NOT WRITE (preserve ROM bytes)
-    z64[off + 64] = r.unitSize;       // B64 (regular/large footprint)
-    z64[off + 65] = r.spriteType;     // B65
-    z64[off + 66] = r.combatBehavior; // B66
-    z64[off + 67] = r.b67Raw || 0;    // B67 padding
-    z64[off + 68] = r.b68Raw || 0;    // B68 sentinel
-    z64[off + 69] = r.powerRating;    // B69
-    z64[off + 70] = r.unitCount;      // B70
-    z64[off + 71] = r.b71Raw || 0;    // B71 padding
+    // B60-63 in the old stat-framed view are the next class's name pointer.
+    // Do not write them. Current-class header bytes live at nameOff+4..+11,
+    // which is statOff-8..-1 for this record.
+    var sexOrVoice = r.sexOrVoice !== undefined ? r.sexOrVoice : (r.spriteType || 0);
+    var leadership = r.leadership !== undefined ? r.leadership : (r.combatBehavior || 0);
+    var headerPad = r.headerPad !== undefined ? r.headerPad : (r.b67Raw || 0);
+    var baseHp = r.baseHp !== undefined ? r.baseHp : (((r.b68Raw || 0) << 8) | (r.powerRating || 0));
+    var hpGrowth = r.hpGrowth !== undefined ? r.hpGrowth : (r.unitCount || 0);
+    var headerTailRaw = r.headerTailRaw !== undefined ? r.headerTailRaw : (r.b71Raw || 0);
+    z64[off - 8] = r.unitSize;        // name-framed +4 (regular/large footprint)
+    z64[off - 7] = sexOrVoice & 0xFF; // name-framed +5
+    z64[off - 6] = leadership & 0xFF; // name-framed +6
+    z64[off - 5] = headerPad & 0xFF;  // name-framed +7
+    OB64.writeU16BE(z64, off - 4, baseHp & 0xFFFF); // name-framed +8..+9
+    z64[off - 2] = hpGrowth & 0xFF;   // name-framed +10
+    z64[off - 1] = headerTailRaw & 0xFF; // name-framed +11
   }
 };
 

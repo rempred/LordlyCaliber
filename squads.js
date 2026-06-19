@@ -5,9 +5,9 @@
  * hook in squadblob.js). Does NOT touch global enemydat. Each override is a
  * 35-byte replacement record keyed by (scenario, target edat).
  *
- * Unit sizes: a class is regular (1 cell) or LARGE (B64==2; rendered as a 2x2
- * footprint). The enemy format stores each unit's anchor cell (1..9), not strict
- * 2x2 occupancy, so we store anchor cells and surface size via validation.
+ * Unit sizes: a class is regular (1 slot) or LARGE (2 slots) per the
+ * name-framed class size byte. The enemy format stores each unit's anchor cell
+ * (1..9), so we store anchor cells and surface size via validation.
  *
  * State: rom.squadOverrides = { "<scenarioId>:<edatId>": Uint8Array(35) }.
  */
@@ -23,6 +23,7 @@
   function key(sid, eid) { return sid + ':' + eid; }
   function cn(id) { return (id && OB64.className) ? OB64.className(id) : (id ? '0x' + id.toString(16) : 'None'); }
   function isLarge(cls) { return !!(OB64.SQUAD_DATA.largeSizes && OB64.SQUAD_DATA.largeSizes[cls]); }
+  function slotCost(cls) { return isLarge(cls) ? 2 : 1; }
   // boss = display-only label carried forward from the hand-curated boss edat notes.
   // large units don't take a rigid 2x2; they just forbid any unit in an adjacent
   // (8-neighbour) cell. cell -> display grid (row,col): row=(cell-1)//3, col=2-((cell-1)%3).
@@ -55,6 +56,8 @@
   function occupied(rec) { var s = {}; units(rec).forEach(function (u) { s[u.cell] = 1; }); return s; }
   function freeCell(rec) { var o = occupied(rec); for (var c = 1; c <= 9; c++) if (!o[c]) return c; return 0; }
   function memberCount(rec) { return units(rec).length; }
+  function formationSlotCount(rec) { var n = 0; units(rec).forEach(function (u) { n += slotCost(u.cls); }); return n; }
+  function followerTypeCount(rec) { return (rec[7] ? 1 : 0) + (rec[16] ? 1 : 0); }
   function moveUnit(rec, from, to) {
     if (from === to) return;
     var s = unitAtCell(rec, from); if (!s) return;
@@ -73,8 +76,14 @@
     return null;
   }
   function addUnitOfClass(rec, cls) {
+    if (!cls) return 'Pick a class to add.';
+    if (formationSlotCount(rec) + slotCost(cls) > 5) {
+      return 'A squad can use up to 5 formation slots. Normal units use 1 slot; large units use 2.';
+    }
     var role = freeGroupFor(rec, cls);
-    if (!role) return 'A squad can have the leader plus two member types. Remove one before adding a new class.';
+    if (!role) {
+      return 'ROM template limit: this 35-byte squad record has only two follower class groups (' + cn(rec[7]) + ' and ' + cn(rec[16]) + '). Add another of those classes, or replace/remove a group first.';
+    }
     var f = groupFields(role), slot = 0, i;
     for (i = 0; i < f.length; i++) if (!rec[f[i]]) { slot = f[i]; break; }
     if (!slot) return 'That member type is full.';
@@ -88,6 +97,25 @@
     }
     rec[groupClassField(role)] = saved;
     return 'No open cell. Large units cannot sit next to another unit.';
+  }
+  function canAddClass(rec, cls) {
+    return !!cls && formationSlotCount(rec) + slotCost(cls) <= 5 && !!freeGroupFor(rec, cls);
+  }
+  function addableClassIds(rec) {
+    var names = OB64.CLASS_NAMES || {}, out = [];
+    for (var k in names) {
+      var id = parseInt(k);
+      if (canAddClass(rec, id)) out.push(id);
+    }
+    return out;
+  }
+  function addOptionsHtml(ids) {
+    var html = '<option value="0">' + (ids.length ? '-- pick a class --' : 'ROM template limit reached') + '</option>';
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      html += '<option value="' + id + '">' + esc(cn(id)) + (isLarge(id) ? ' (large)' : '') + '</option>';
+    }
+    return html;
   }
   function removeCell(rec, cell) {
     var u = unitAtCell(rec, cell); if (!u || u.role === 'L') return;
@@ -331,6 +359,7 @@
 
   function pickersHtml(rec) {
     var h = '<div class="sq-pick">';
+    var addable = addableClassIds(rec);
     h += '<div class="sq-field"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0]) + '</select></div>';
     if (rec[7]) {
       h += '<div class="sq-field"><label>Member B - ' + esc(cn(rec[7])) + ' x' + groupCount(rec, 'B') + (isLarge(rec[7]) ? ' large' : '') +
@@ -340,7 +369,7 @@
       h += '<div class="sq-field"><label>Member C - ' + esc(cn(rec[16])) + ' x' + groupCount(rec, 'C') + (isLarge(rec[16]) ? ' large' : '') +
         '</label><select data-grp="C">' + classOptionsHtml(rec[16]) + '</select></div>';
     }
-    h += '<div class="sq-field"><label>Add unit</label><div class="sq-add-row"><select id="sq-add-cls">' + classOptionsHtml(0) + '</select><button type="button" id="sq-add" class="btn-secondary">Add</button></div></div>';
+    h += '<div class="sq-field"><label title="Current export uses the vanilla 35-byte squad record: 5 slots, 2 follower class groups.">Add unit</label><div class="sq-add-row"><select id="sq-add-cls"' + (addable.length ? '' : ' disabled') + '>' + addOptionsHtml(addable) + '</select><button type="button" id="sq-add" class="btn-secondary"' + (addable.length ? '' : ' disabled') + '>Add</button></div></div>';
     h += '</div>';
     return h;
   }
@@ -374,7 +403,7 @@
       var n = memberCount(rec), adjOk = adjacencyOk(rec), hasLeader = !!rec[0] && !!rec[6];
       var ok = hasLeader && adjOk;
       var status = ok ? 'Valid' : (!hasLeader ? 'Leader class required' : 'Large-unit spacing conflict');
-      html += '<div class="sq-foot"><span class="' + (ok ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units</span>' +
+      html += '<div class="sq-foot"><span class="' + (ok ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units - ' + formationSlotCount(rec) + '/5 slots - ' + followerTypeCount(rec) + '/2 follower types</span>' +
         '<span>' + esc(scenarioTraceText(scn)) + '</span></div>';
       html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">Reset to vanilla</button></div>';
     } else {
@@ -410,7 +439,7 @@
     });
     var addBtn = el.querySelector('#sq-add');
     if (addBtn) addBtn.onclick = function () {
-      var v = parseInt(el.querySelector('#sq-add-cls').value); if (!v) return;
+      var v = parseInt(el.querySelector('#sq-add-cls').value);
       var err = addUnitOfClass(rec, v);
       if (err) { ui.notice = err; renderDetail(rom); return; }
       commit(rom, scn);

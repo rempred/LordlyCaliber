@@ -2702,26 +2702,24 @@ window.OB64 = window.OB64 || {};
       } else { // unit
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'Size', title: 'B64 unit size — regular (1, 1 cell) or large (2, blocks adjacent)' },
-          { label: 'SpriteType', title: 'B65 sprite/body type' },
-          { label: 'CombatBehav', title: 'B66 combat behavior tier' },
-          { label: 'Power', title: 'B69 power/stat rating' },
-          { label: 'UnitCount', title: 'B70 formation size' },
+          { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
+          { label: 'Sex/Voice', title: 'nameOff+5 / statOff-7 header byte. Guide-facing sex/voice/body code; consumer not traced.' },
+          { label: 'Leadership', title: 'nameOff+6 / statOff-6 leadership byte' },
+          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)' },
+          { label: 'HP/lvl', title: 'nameOff+10 / statOff-2 HP growth per level' },
           { label: 'B33', title: 'B33 padding', cls: 'col-raw' },
-          { label: 'B67', title: 'B67 padding', cls: 'col-raw' },
-          { label: 'B68', title: 'B68 sentinel', cls: 'col-raw' },
-          { label: 'B71', title: 'B71 padding', cls: 'col-raw' }
+          { label: 'H+7', title: 'nameOff+7 / statOff-5 padding/raw header byte', cls: 'col-raw' },
+          { label: 'H+11', title: 'nameOff+11 / statOff-1 padding/raw header byte', cls: 'col-raw' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
-          addDropdownCell(tr, def, 'spriteType', OB64.SPRITE_TYPES, OB64.spriteTypeName);
-          addDropdownCell(tr, def, 'combatBehavior', OB64.COMBAT_BEHAVIORS, OB64.combatBehaviorName);
-          addNumericCell(tr, def, 'powerRating', 255);
-          addNumericCell(tr, def, 'unitCount', 255);
+          addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          addNumericCell(tr, def, 'baseHp', 65535);
+          addNumericCell(tr, def, 'hpGrowth', 255);
           addRawByteCell(tr, def, 'b33Raw', 'B33 padding');
-          addRawByteCell(tr, def, 'b67Raw', 'B67 padding');
-          addRawByteCell(tr, def, 'b68Raw', 'B68 sentinel');
-          addRawByteCell(tr, def, 'b71Raw', 'B71 padding');
+          addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte');
+          addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte');
         };
       }
 
@@ -3197,11 +3195,11 @@ window.OB64 = window.OB64 || {};
           clsGrid.appendChild(tileDropdown(def, 'dragonElement', 'Element', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName));
           clsGrid.appendChild(tileDropdown(def, 'category', 'Category', OB64.CLASS_TIERS, OB64.classTierName));
           clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
-          clsGrid.appendChild(tileDropdown(def, 'spriteType', 'SpriteType', OB64.SPRITE_TYPES, OB64.spriteTypeName));
-          clsGrid.appendChild(tileDropdown(def, 'combatBehavior', 'Behavior', OB64.COMBAT_BEHAVIORS, OB64.combatBehaviorName));
+          clsGrid.appendChild(tileDropdown(def, 'sexOrVoice', 'Sex/Voice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName));
+          clsGrid.appendChild(tileDropdown(def, 'leadership', 'Leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName));
           clsGrid.appendChild(tileDropdown(def, 'moveType', 'Move', OB64.MOVEMENT_TYPES, OB64.moveTypeName));
-          clsGrid.appendChild(tileNumeric(def, 'powerRating', 'Power', {title: 'B69'}));
-          clsGrid.appendChild(tileNumeric(def, 'unitCount', 'UnitCount', {title: 'B70'}));
+          clsGrid.appendChild(tileNumeric(def, 'baseHp', 'Base HP', {title: 'nameOff+8..9 / statOff-4..-3', max: 65535}));
+          clsGrid.appendChild(tileNumeric(def, 'hpGrowth', 'HP/lvl', {title: 'nameOff+10 / statOff-2'}));
           clsSec.appendChild(clsGrid);
           card.appendChild(clsSec);
 
@@ -3210,9 +3208,8 @@ window.OB64 = window.OB64 || {};
           var rawGrid = document.createElement('div');
           rawGrid.className = 'stats-grid';
           rawGrid.appendChild(tileNumeric(def, 'b33Raw', 'B33', {raw: true, title: 'B33 padding'}));
-          rawGrid.appendChild(tileNumeric(def, 'b67Raw', 'B67', {raw: true, title: 'B67 padding'}));
-          rawGrid.appendChild(tileNumeric(def, 'b68Raw', 'B68', {raw: true, title: 'B68 sentinel'}));
-          rawGrid.appendChild(tileNumeric(def, 'b71Raw', 'B71', {raw: true, title: 'B71 padding'}));
+          rawGrid.appendChild(tileNumeric(def, 'headerPad', 'H+7', {raw: true, title: 'nameOff+7 / statOff-5 padding/raw header byte'}));
+          rawGrid.appendChild(tileNumeric(def, 'headerTailRaw', 'H+11', {raw: true, title: 'nameOff+11 / statOff-1 padding/raw header byte'}));
           rawGrid.appendChild(tileNumeric(def, 'b3Raw', 'B3', {raw: true, title: 'Pair byte after STR growth'}));
           rawGrid.appendChild(tileNumeric(def, 'b7Raw', 'B7', {raw: true, title: 'Pair byte after VIT growth'}));
           rawGrid.appendChild(tileNumeric(def, 'b11Raw', 'B11', {raw: true, title: 'Pair byte after INT growth'}));
@@ -3296,7 +3293,7 @@ window.OB64 = window.OB64 || {};
     panel.innerHTML = '';
 
     // Shared category helpers for the class-picker drop-availability badge.
-    // Story / NPC / buggy classes (0x51+) get a stronger warning since
+    // Story / NPC / special-boss classes (0x51+) get a stronger warning since
     // they likely won't render as a tactical-map wild encounter.
     function dropStatus(classId) {
       if (!classId) return 'empty';
@@ -5242,7 +5239,7 @@ window.OB64 = window.OB64 || {};
 
   function editCharClass(el, ch) {
     // Filter to classes that share the character's current unit type
-    // (humanoid vs beast/dragon — class def byte B64). Changing between
+    // (humanoid vs beast/dragon - corrected class size byte). Changing between
     // unit types isn't allowed in-game. Requires the ROM to be loaded so
     // we can read classDefs; if not loaded, fall back to the full list.
     var items = classItemsForSize(ch.classId);
