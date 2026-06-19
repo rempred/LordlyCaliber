@@ -1628,10 +1628,19 @@ window.OB64 = window.OB64 || {};
     var table = document.createElement('table');
     table.innerHTML = '<thead><tr>' +
       '<th>#</th>' +
-      '<th>Class A</th><th>Ct</th>' +
-      '<th>Class B</th><th>Pos</th>' +
-      '<th>Class C</th>' +
-      '<th>Equip A</th><th>Equip B</th><th>Equip C</th>' +
+      '<th title="Byte 0: leader class">Leader</th>' +
+      '<th title="Byte 1: leader-class copies; usually 1">Copies</th>' +
+      '<th title="Byte 6: leader formation cell">Leader Cell</th>' +
+      '<th title="Byte 7: first follower class group">Follower B</th>' +
+      '<th title="Byte 13: first follower-B formation cell">B Cell 1</th>' +
+      '<th title="Byte 14: second follower-B formation cell; 0 means none">B Cell 2</th>' +
+      '<th title="Byte 15: third follower-B formation cell; rare">B Cell 3</th>' +
+      '<th title="Byte 16: second follower class group">Follower C</th>' +
+      '<th title="Byte 22: first follower-C formation cell">C Cell 1</th>' +
+      '<th title="Byte 23: second follower-C formation cell; 0 means none">C Cell 2</th>' +
+      '<th title="Byte 3: leader equipment override">Equip Leader</th>' +
+      '<th title="Byte 8: follower-B equipment override">Equip B</th>' +
+      '<th title="Byte 17: follower-C equipment override">Equip C</th>' +
       '</tr></thead>';
     var tbody = document.createElement('tbody');
 
@@ -1643,7 +1652,7 @@ window.OB64 = window.OB64 || {};
       tr.id = 'enemy-' + i;
       td(tr, i);
 
-      // Class A (searchable dropdown)
+      // Leader class (searchable dropdown)
       (function(sq) {
         var c = td(tr, sq.classA ? OB64.className(sq.classA) : '\u2014');
         c.className = 'editable';
@@ -1655,7 +1664,7 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
-      // Count A (number)
+      // Leader-class copy count (number)
       (function(sq) {
         var c = td(tr, sq.countA);
         c.className = 'editable num';
@@ -1667,7 +1676,21 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
-      // Class B (searchable dropdown)
+      // Leader formation cell (byte 6)
+      (function(sq) {
+        var c = td(tr, sq.posA);
+        c.className = 'editable num';
+        c.title = 'Byte 6: leader formation cell, 1-9';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posA, 0, 9, function(v) {
+            sq.posA = v;
+            sq.posB = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
+      // Follower-B class group (searchable dropdown)
       (function(sq) {
         var c = td(tr, sq.classB ? OB64.className(sq.classB) : '\u2014');
         c.className = 'editable';
@@ -1679,19 +1702,48 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
-      // Pos B (number)
+      // First Class-B member formation cell
       (function(sq) {
-        var c = td(tr, sq.posB);
+        var c = td(tr, sq.posB1);
         c.className = 'editable num';
+        c.title = 'Byte 13: first follower-B formation cell';
         c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posB, 0, 255, function(v) {
-            sq.posB = v;
+          makeNumericInput(c, sq.posB1, 0, 9, function(v) {
+            sq.posB1 = v;
+            sq.field13 = v; // legacy alias
             c.textContent = v;
           });
         });
       })(s);
 
-      // Class C (searchable dropdown)
+      // Additional Class-B member formation cells
+      (function(sq) {
+        var c = td(tr, sq.posB2);
+        c.className = 'editable num';
+        c.title = 'Byte 14: second follower-B formation cell; 0 means none';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posB2, 0, 9, function(v) {
+            sq.posB2 = v;
+            sq.field14 = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
+      (function(sq) {
+        var c = td(tr, sq.posB3);
+        c.className = 'editable num';
+        c.title = 'Byte 15: third follower-B formation cell; rare';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posB3, 0, 9, function(v) {
+            sq.posB3 = v;
+            sq.field15 = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
+      // Follower-C class group (searchable dropdown)
       (function(sq) {
         var c = td(tr, sq.classC ? OB64.className(sq.classC) : '\u2014');
         c.className = 'editable';
@@ -1703,13 +1755,40 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
+      // Class-C member formation cells
+      (function(sq) {
+        var c = td(tr, sq.posC1);
+        c.className = 'editable num';
+        c.title = 'Byte 22: first follower-C formation cell';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posC1, 0, 9, function(v) {
+            sq.posC1 = v;
+            sq.field22 = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
+      (function(sq) {
+        var c = td(tr, sq.posC2);
+        c.className = 'editable num';
+        c.title = 'Byte 23: second follower-C formation cell; 0 means none';
+        c.addEventListener('click', function() {
+          makeNumericInput(c, sq.posC2, 0, 9, function(v) {
+            sq.posC2 = v;
+            sq.field23 = v; // legacy alias
+            c.textContent = v;
+          });
+        });
+      })(s);
+
       // Equip A (pop-up item picker — shop-tab-style modal)
       (function(sq) {
         var c = td(tr, sq.equipA ? OB64.itemName(sq.equipA) : '\u2014');
         c.className = 'editable';
         c.addEventListener('click', function() {
           openItemPickerFromDict({
-            title: 'Equipment slot A',
+            title: 'Leader equipment override',
             options: itemOpts, currentId: sq.equipA,
             onSelect: function(v) {
               sq.equipA = v;
@@ -1726,7 +1805,7 @@ window.OB64 = window.OB64 || {};
         c.className = 'editable';
         c.addEventListener('click', function() {
           openItemPickerFromDict({
-            title: 'Equipment slot B',
+            title: 'Follower-B equipment override',
             options: itemOpts, currentId: sq.equipB,
             onSelect: function(v) {
               sq.equipB = v;
@@ -1743,7 +1822,7 @@ window.OB64 = window.OB64 || {};
         c.className = 'editable';
         c.addEventListener('click', function() {
           openItemPickerFromDict({
-            title: 'Equipment slot C',
+            title: 'Follower-C equipment override',
             options: itemOpts, currentId: sq.equipC,
             onSelect: function(v) {
               sq.equipC = v;
