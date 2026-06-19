@@ -1157,6 +1157,48 @@ td.attack-list {
   padding-left: 2px;
 }
 
+.class-card-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 62px;
+  gap: 10px;
+  align-items: start;
+  min-height: 58px;
+  margin: 0 0 8px;
+}
+
+.class-card-intro-text {
+  min-width: 0;
+}
+
+.class-card-intro .class-card-meta {
+  margin-bottom: 0;
+}
+
+.class-card-portrait-frame {
+  justify-self: end;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ob-wood-dark);
+  border-radius: 4px;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255,250,220,0.72), transparent 62%),
+    linear-gradient(180deg, var(--ob-parchment-2), var(--ob-parchment-3));
+  box-shadow:
+    inset 0 0 0 1px rgba(255,245,210,0.45),
+    0 1px 2px rgba(0,0,0,0.28);
+}
+
+.class-card-portrait {
+  max-width: 52px;
+  max-height: 52px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
+}
+
 .class-card-section-label {
   font-family: var(--ob-display);
   font-size: var(--ob-text-xs);
