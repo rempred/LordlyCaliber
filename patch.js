@@ -13,12 +13,14 @@
 // v5 adds `tools`: Tools-tab feature toggles (map of feature id -> bool),
 // recorded only when the toggle differs from the state detected in the
 // loaded ROM.
+// v6 remaps class-def logical bytes 64-71 to the current class's name-framed
+// header (physically statOff-8..-1), retiring the shifted statOff+B64..B71 view.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 5;
+  var PATCH_VERSION = 6;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -171,7 +173,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-06-09',
+      editor_version: '2026-06-19',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -303,6 +305,7 @@ window.OB64 = window.OB64 || {};
     // Class definition byte patches. Keys are class IDs; record_index is kept
     // as a human/debug hint and is accepted when present.
     var classPatch = p.classDefs || {};
+    var warnedLegacyClassHeader = false;
     for (var ck in classPatch) {
       var cid = parseInt(ck, 10);
       var entryClass = classPatch[ck];
@@ -330,6 +333,10 @@ window.OB64 = window.OB64 || {};
         if (byteOff >= 60 && byteOff <= 63) {
           warnings.push('Patch attempted to edit class #' + ck + ' pointer byte B' + byteOff + '; skipped.');
           continue;
+        }
+        if (patch.version < 6 && byteOff >= 65 && byteOff <= 71 && !warnedLegacyClassHeader) {
+          warnings.push('This patch predates class-header migration v6. Class-def bytes B65-B71 now target the current class name-framed header, not the old shifted tail labels.');
+          warnedLegacyClassHeader = true;
         }
         if (!isPatchByte(byteVal)) continue;
         applyClassDefByte(classDef, byteOff, byteVal & 0xFF);
@@ -728,13 +735,13 @@ window.OB64 = window.OB64 || {};
     b(58, r.dragonElement);
     b(59, r.category);
     b(64, r.unitSize);
-    b(65, r.spriteType);
-    b(66, r.combatBehavior);
-    b(67, r.b67Raw);
-    b(68, r.b68Raw);
-    b(69, r.powerRating);
-    b(70, r.unitCount);
-    b(71, r.b71Raw);
+    b(65, r.sexOrVoice !== undefined ? r.sexOrVoice : r.spriteType);
+    b(66, r.leadership !== undefined ? r.leadership : r.combatBehavior);
+    b(67, r.headerPad !== undefined ? r.headerPad : r.b67Raw);
+    var baseHp = r.baseHp !== undefined ? r.baseHp : (((r.b68Raw || 0) << 8) | (r.powerRating || 0));
+    u16(68, baseHp);
+    b(70, r.hpGrowth !== undefined ? r.hpGrowth : r.unitCount);
+    b(71, r.headerTailRaw !== undefined ? r.headerTailRaw : r.b71Raw);
     return out;
   }
 
@@ -813,13 +820,13 @@ window.OB64 = window.OB64 || {};
       case 58: r.dragonElement = value; return;
       case 59: r.category = value; return;
       case 64: r.unitSize = value; return;
-      case 65: r.spriteType = value; return;
-      case 66: r.combatBehavior = value; return;
-      case 67: r.b67Raw = value; return;
-      case 68: r.b68Raw = value; return;
-      case 69: r.powerRating = value; return;
-      case 70: r.unitCount = value; return;
-      case 71: r.b71Raw = value; return;
+      case 65: r.sexOrVoice = value; r.spriteType = value; return;
+      case 66: r.leadership = value; r.combatBehavior = value; return;
+      case 67: r.headerPad = value; r.b67Raw = value; return;
+      case 68: r.baseHp = ((value << 8) | ((r.baseHp || 0) & 0x00FF)); r.b68Raw = value; r.powerRating = r.baseHp & 0xFF; return;
+      case 69: r.baseHp = (((r.baseHp || 0) & 0xFF00) | value); r.b68Raw = (r.baseHp >> 8) & 0xFF; r.powerRating = value; return;
+      case 70: r.hpGrowth = value; r.unitCount = value; return;
+      case 71: r.headerTailRaw = value; r.b71Raw = value; return;
     }
   }
 

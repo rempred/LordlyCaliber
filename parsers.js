@@ -1461,30 +1461,40 @@ OB64.parseClassDefs = function(z64) {
     var category = isTerm || isSentinel ? 0 : z64[off + 59];
 
     // RAM pointer (bytes 60-63) — code-adjacent, preserve on write (don't serialize)
-    var ptr = OB64.readU32BE(z64, off + 60);
+    var namePtr = OB64.readU32BE(z64, off - 12);
 
-    // B64 = unit SIZE / footprint (0x01=regular/1-cell, 0x02=large/blocks adjacent).
-    // Also gates equipment (regular vs large gear).
-    var unitSize = isTerm || isSentinel ? 0 : z64[off + 64];
+    // Unit SIZE / footprint (0x01=regular/1-cell, 0x02=large/blocks adjacent).
+    // The size byte lives in the name-framed class record at +4, which is
+    // stat-framed off-8 for the current class ID. The old off+64 view is shifted
+    // one class ahead (e.g. Saturos 0x36 incorrectly inherited Ogre's size).
+    var unitSize = isTerm || isSentinel ? 0 : z64[off - 8];
 
-    // B65 = sprite/body type (0-4)
-    var spriteType = isTerm || isSentinel ? 0 : z64[off + 65];
+    // nameOff+5 / statOff-7: guide-facing sex/voice/body code (consumer TBD).
+    var sexOrVoice = isTerm || isSentinel ? 0 : z64[off - 7];
 
-    // B66 = combat behavior/leader tier (0=beast/passive, 1=standard weapon, 2=leader/command)
-    var combatBehavior = isTerm || isSentinel ? 0 : z64[off + 66];
+    // nameOff+6 / statOff-6: guide-facing leadership byte.
+    var leadership = isTerm || isSentinel ? 0 : z64[off - 6];
 
     // B67 padding, B68 sentinel (0xFF only for Stone Golem/Barkeep — those are isTerm)
-    var b67Raw = isTerm || isSentinel ? 0 : z64[off + 67];
-    var b68Raw = isTerm || isSentinel ? 0 : z64[off + 68];
+    var headerPad = isTerm || isSentinel ? 0 : z64[off - 5];
+    var baseHp = isTerm || isSentinel ? 0 : OB64.readU16BE(z64, off - 4);
 
-    // B69 = power/stat rating (49-180)
-    var powerRating = isTerm || isSentinel ? 0 : z64[off + 69];
+    // nameOff+10 HP growth per level.
+    var hpGrowth = isTerm || isSentinel ? 0 : z64[off - 2];
 
-    // B70 = unit count/formation size (2-7)
-    var unitCount = isTerm || isSentinel ? 0 : z64[off + 70];
+    // nameOff+11 padding/raw tail.
+    var headerTailRaw = isTerm || isSentinel ? 0 : z64[off - 1];
 
-    // B71 padding
-    var b71Raw = isTerm || isSentinel ? 0 : z64[off + 71];
+    // Back-compat aliases. Older code called these B65-B71, but they now mirror
+    // the current class's name-framed header instead of the next class's header.
+    var ptr = namePtr;
+    var spriteType = sexOrVoice;
+    var combatBehavior = leadership;
+    var b67Raw = headerPad;
+    var b68Raw = (baseHp >> 8) & 0xFF;
+    var powerRating = baseHp & 0xFF;
+    var unitCount = hpGrowth;
+    var b71Raw = headerTailRaw;
 
     records.push({
       index: i,
@@ -1527,14 +1537,21 @@ OB64.parseClassDefs = function(z64) {
       dragonElement: dragonElement, // B58
       category: category,           // B59
       ptr: ptr,                     // B60-63 (runtime RAM pointer — HIDE, preserve)
-      unitSize: unitSize,           // B64 (regular/large footprint)
-      spriteType: spriteType,       // B65
-      combatBehavior: combatBehavior, // B66
-      b67Raw: b67Raw,               // B67 padding
-      b68Raw: b68Raw,               // B68 sentinel
-      powerRating: powerRating,     // B69
-      unitCount: unitCount,         // B70
-      b71Raw: b71Raw                // B71 padding
+      unitSize: unitSize,           // name-framed +4 (regular/large footprint)
+      namePtr: namePtr,
+      sexOrVoice: sexOrVoice,       // nameOff+5 / statOff-7
+      leadership: leadership,       // nameOff+6 / statOff-6
+      headerPad: headerPad,         // nameOff+7 / statOff-5
+      baseHp: baseHp,               // nameOff+8..9 / statOff-4..-3
+      hpGrowth: hpGrowth,           // nameOff+10 / statOff-2
+      headerTailRaw: headerTailRaw, // nameOff+11 / statOff-1
+      spriteType: spriteType,       // legacy alias for sexOrVoice
+      combatBehavior: combatBehavior, // legacy alias for leadership
+      b67Raw: b67Raw,               // legacy alias for headerPad
+      b68Raw: b68Raw,               // legacy alias for baseHp high byte
+      powerRating: powerRating,     // legacy alias for baseHp low byte
+      unitCount: unitCount,         // legacy alias for hpGrowth
+      b71Raw: b71Raw                // legacy alias for headerTailRaw
     });
   }
   return records;
