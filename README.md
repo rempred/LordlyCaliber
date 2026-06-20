@@ -86,7 +86,8 @@ project download asset.
   global `enemydat.bin`. Current export uses vanilla 35-byte squad replacement
   records. The default UI enforces vanilla-style 5 formation slots and 2
   follower class groups; an experimental raw-capacity checkbox can fill all
-  encoded anchors (`Leader + Bx3 + Cx3`) for mod testing.
+  encoded anchors (`Leader + Bx3 + Cx3`) for mod testing, but over-cap squads
+  are not placement-safe by default.
   Formation-grid cells show the matching class portrait when one is available.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
@@ -142,7 +143,10 @@ project download asset.
   slots, where regular units cost 1 slot and large units cost 2 slots. The
   experimental raw-capacity mode can encode all seven vanilla template anchors
   (`Leader + Bx3 + Cx3`) and ignores large-unit spacing for mod testing, but
-  over-cap squads may not be supported by the game's organization screens.
+  over-cap squads may not be supported by the game's organization, map
+  inspection, or battle-placement paths. A key 2 / EDAT 13 seven-unit test
+  applied correctly but hid units in map inspection and placed units off-grid
+  in battle; the misplaced units also could not be attacked.
   More than 2 follower class groups is not exported yet; supporting it requires
   a larger runtime record/resolver design.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
