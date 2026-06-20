@@ -122,6 +122,8 @@ project download asset.
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, and Tools-tab feature
   toggles) to a portable JSON patch file for sharing or reapplying to a fresh ROM.
+  Squad patches store per-runtime-key 35-byte replacement records so a saved
+  patch can reproduce the exported squad override blob.
   Patch format v6 maps class-definition logical bytes 64-71 to the current
   class name-framed header: size, sex/voice/body code, leadership, base HP,
   HP growth, and raw header bytes.
