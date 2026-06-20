@@ -37,7 +37,31 @@ window.OB64 = window.OB64 || {};
     return write._original;
   }
 
+  function hex(n, width) {
+    var s = (n >>> 0).toString(16).toUpperCase();
+    while (width && s.length < width) s = '0' + s;
+    return '0x' + s;
+  }
+
+  function patchedLength(write) {
+    return patchedBytes(write).length;
+  }
+
+  function assertRomOffset(z64, offset, len, label) {
+    if (!Number.isFinite(offset) || offset < 0) {
+      throw new Error('Invalid ROM write offset for ' + label + ': ' + offset);
+    }
+    if (offset >= 0x80000000) {
+      throw new Error('Patch write for ' + label + ' uses a RAM address as a ROM offset: ' + hex(offset, 8));
+    }
+    if (offset + len > z64.length) {
+      throw new Error('Patch write for ' + label + ' exceeds ROM length: ' +
+        hex(offset, 6) + ' + ' + len + ' > ' + z64.length);
+    }
+  }
+
   function regionEquals(z64, offset, bytes) {
+    assertRomOffset(z64, offset, bytes.length, 'feature detection');
     for (var i = 0; i < bytes.length; i++) {
       if (z64[offset + i] !== bytes[i]) return false;
     }
@@ -45,7 +69,124 @@ window.OB64 = window.OB64 || {};
   }
 
   function writeRegion(z64, offset, bytes) {
+    assertRomOffset(z64, offset, bytes.length, 'feature apply');
     z64.set(bytes, offset);
+  }
+
+  function normalizeRegion(owner, region, fromWrite) {
+    if (!region) return null;
+    var start = Number(region.start != null ? region.start : region.offset);
+    var size = Number(region.size != null ? region.size : region.length);
+    var kind = region.kind || (fromWrite ? 'rom' : null);
+    if (!kind || !Number.isFinite(start) || !Number.isFinite(size) || size <= 0) return null;
+    return {
+      ownerId: owner.id,
+      ownerName: owner.name,
+      kind: kind,
+      start: start,
+      end: start + size,
+      size: size,
+      label: region.label || (fromWrite ? 'ROM write' : 'region'),
+    };
+  }
+
+  function featureRegions(feature) {
+    var out = [];
+    var writes = feature.writes || [];
+    for (var i = 0; i < writes.length; i++) {
+      out.push(normalizeRegion(feature, {
+        kind: 'rom',
+        start: writes[i].offset,
+        size: patchedLength(writes[i]),
+        label: writes[i].label || ('write ' + i),
+      }, true));
+    }
+    var explicit = feature.regions || [];
+    for (var r = 0; r < explicit.length; r++) {
+      var nr = normalizeRegion(feature, explicit[r], false);
+      if (nr) out.push(nr);
+    }
+    return out.filter(Boolean);
+  }
+
+  function rangesOverlap(a, b) {
+    return a.kind === b.kind && a.start < b.end && b.start < a.end;
+  }
+
+  function explicitlyExclusive(a, b) {
+    var ax = a.exclusiveWith || [];
+    var bx = b.exclusiveWith || [];
+    return ax.indexOf(b.id) !== -1 || bx.indexOf(a.id) !== -1;
+  }
+
+  function describeConflict(c) {
+    return c.a.ownerName + ' ' + c.a.kind + ' ' + hex(c.a.start, 6) + '..' + hex(c.a.end - 1, 6) +
+      ' (' + c.a.label + ') overlaps ' +
+      c.b.ownerName + ' ' + c.b.kind + ' ' + hex(c.b.start, 6) + '..' + hex(c.b.end - 1, 6) +
+      ' (' + c.b.label + ')';
+  }
+
+  function findRegionConflicts(regionOwners, options) {
+    options = options || {};
+    var owners = regionOwners || [];
+    var regions = [];
+    var byId = {};
+    for (var i = 0; i < owners.length; i++) {
+      byId[owners[i].id] = owners[i];
+      var rs = owners[i].regions || featureRegions(owners[i]);
+      for (var r = 0; r < rs.length; r++) {
+        var nr = rs[r].ownerId ? rs[r] : normalizeRegion(owners[i], rs[r], false);
+        if (nr) regions.push(nr);
+      }
+    }
+    var out = [];
+    for (var a = 0; a < regions.length; a++) {
+      for (var b = a + 1; b < regions.length; b++) {
+        if (regions[a].ownerId === regions[b].ownerId) continue;
+        if (!rangesOverlap(regions[a], regions[b])) continue;
+        var ownerA = byId[regions[a].ownerId] || {};
+        var ownerB = byId[regions[b].ownerId] || {};
+        var exclusive = explicitlyExclusive(ownerA, ownerB);
+        if (!exclusive || options.includeExclusive) {
+          out.push({ a: regions[a], b: regions[b], exclusive: exclusive });
+        }
+      }
+    }
+    return out;
+  }
+
+  function validateFeatureRegistry(z64) {
+    var list = features();
+    for (var i = 0; i < list.length; i++) {
+      var writes = list[i].writes || [];
+      for (var w = 0; w < writes.length; w++) {
+        assertRomOffset(z64, writes[w].offset, patchedLength(writes[w]), list[i].name + ' / ' + (writes[w].label || w));
+      }
+    }
+    var conflicts = findRegionConflicts(list, { includeExclusive: false });
+    if (conflicts.length) {
+      throw new Error('Tool patch region collision:\n  ' + conflicts.map(describeConflict).join('\n  '));
+    }
+  }
+
+  function desiredRegionConflicts(rom, extraOwners) {
+    if (!rom || !rom.tools) return [];
+    var owners = [];
+    var list = features();
+    for (var i = 0; i < list.length; i++) {
+      if (rom.tools.initial[list[i].id] === 'foreign') continue;
+      if (rom.tools.desired[list[i].id]) owners.push(list[i]);
+    }
+    if (extraOwners && extraOwners.length) owners = owners.concat(extraOwners);
+    return findRegionConflicts(owners, { includeExclusive: true });
+  }
+
+  function assertDesiredCompatible(rom, extraOwners) {
+    var conflicts = desiredRegionConflicts(rom, extraOwners);
+    if (conflicts.length) {
+      throw new Error('Selected patches cannot be enabled together:\n  ' +
+        conflicts.map(describeConflict).join('\n  '));
+    }
   }
 
   function writesMatch(z64, writes, key) {
@@ -94,6 +235,7 @@ window.OB64 = window.OB64 || {};
   //                            outdated (an outdated feature upgrades on the
   //                            next export unless the user switches it off)
   function initState(rom) {
+    validateFeatureRegistry(rom.z64);
     rom.tools = { initial: {}, desired: {} };
     var list = features();
     for (var i = 0; i < list.length; i++) {
@@ -135,6 +277,7 @@ window.OB64 = window.OB64 || {};
   function applyDesired(rom) {
     var res = { applied: [], upgraded: [], removed: [], skipped: [], crc: false };
     if (!rom.tools) return res;
+    assertDesiredCompatible(rom);
     var list = features();
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
@@ -169,6 +312,11 @@ window.OB64 = window.OB64 || {};
     initState: initState,
     pendingChanges: pendingChanges,
     applyDesired: applyDesired,
+    featureRegions: featureRegions,
+    findRegionConflicts: findRegionConflicts,
+    desiredRegionConflicts: desiredRegionConflicts,
+    assertDesiredCompatible: assertDesiredCompatible,
+    validateFeatureRegistry: validateFeatureRegistry,
   };
 
 })();

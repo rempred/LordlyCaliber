@@ -56,6 +56,7 @@ Packaged builds are published on GitHub Releases:
 
 - Release index: [LordlyCaliber releases](https://github.com/rempred/LordlyCaliber/releases)
 - First packaged download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
+- Draft notes for the next large release are kept in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 GitHub tracks download counts for uploaded release assets. Repository clones and
 GitHub's automatically generated source-code archives are separate from the
@@ -95,13 +96,18 @@ project download asset.
 - **Tools** — toggleable ROM fixes and quality-of-life features applied on
   export and removable again (the original bytes are restored). Features
   already present in a loaded ROM are detected; unrecognized bytes at a
-  feature's addresses disable its toggle instead of overwriting another mod.
-  First feature: **Chaos Frame Counter** — shows the hidden Chaos Frame stat
+  feature's addresses disable its toggle instead of overwriting another mod,
+  and declared ROM/RAM patch-region overlaps are rejected on export.
+  **Chaos Frame Counter** shows the hidden Chaos Frame stat
   on the Army Management screen as a native parchment plate titled CHAOS
   FRAME, in line with the SOLDIER/CHARACTER/UNIT labels. The current payload
   uses a standalone ROM-tail/free-RAM module and gates on the Army graphics
   task buffers plus War Funds/header fingerprints, so it survives returning
-  from Class Change without relying on volatile menu-state bytes.
+  from Class Change without relying on volatile menu-state bytes. Experimental
+  **High Attack Streamsplit** installs the v13 high-attack battle-stream fix
+  on a separate ROM/RAM lane; attack-count bytes are still edited from the
+  Classes tab, and fresh emulator regression is required before treating it as
+  release-ready.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
