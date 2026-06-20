@@ -233,13 +233,16 @@ OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET = 0x13C1EC;       // ori $s1, $s1, divisor_lo
 OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET = 0x13C1FC;       // addiu $s0, $zero, threshold
 OB64.NEUTRAL_GLOBAL_ALT_OFFSET    = 0x13C200;       // alternate branch threshold
 OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET = 0x13C228;       // fail branch after sltu
-OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // multiplier patch divisor
+OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // coarse multiplier patch divisor
+OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR = 1000000;       // smooth x1-x3 patch divisor
+OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS = 0x8000;       // addiu positive threshold + 1
 OB64.NEUTRAL_GLOBAL_BRANCH_CHECK = 0x14600090;      // bne $v1,$zero,exit
 OB64.NEUTRAL_GLOBAL_BRANCH_NEVER = 0x10000090;      // beq $zero,$zero,exit
 OB64.NEUTRAL_GLOBAL_BRANCH_ALWAYS = 0x00000000;     // legacy/nuclear NOP
 OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD = 50;         // vanilla normal path, pass count = 51
 OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR = 72000;
 OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS = 7;       // nearest 10000-divisor patch to 51/72000
+OB64.NEUTRAL_GLOBAL_VANILLA_MICRO_BASIS_POINTS = 700; // 7 bp, in hundredths of a bp
 OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER = 3;
 OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER = 100;      // 100 * 7 bp = 7.00%
 
@@ -306,6 +309,10 @@ OB64.parseNeutralGlobalRate = function(z64) {
     if (!divisor || threshold < 0) return 0;
     return Math.max(0, Math.min(10000, Math.round(((threshold + 1) * 10000) / divisor)));
   }
+  function passMicroBasisPoints(threshold, divisor) {
+    if (!divisor || threshold < 0) return 0;
+    return Math.max(0, Math.min(1000000, Math.round(((threshold + 1) * 1000000) / divisor)));
+  }
 
   var divisor = decodeDivisor();
   var normal = decodeThreshold(OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET);
@@ -313,15 +320,19 @@ OB64.parseNeutralGlobalRate = function(z64) {
   var branchWord = OB64.readU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET);
   var mode = 'unknown';
   var basisPoints = 0;
+  var microBasisPoints = 0;
   if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_NEVER) {
     mode = 'never';
     basisPoints = 0;
+    microBasisPoints = 0;
   } else if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_ALWAYS) {
     mode = 'always';
     basisPoints = 10000;
+    microBasisPoints = 1000000;
   } else if (branchWord === OB64.NEUTRAL_GLOBAL_BRANCH_CHECK && divisor.valid && normal.valid) {
     mode = 'threshold';
     basisPoints = passBasisPoints(normal.value, divisor.value);
+    microBasisPoints = passMicroBasisPoints(normal.value, divisor.value);
   }
 
   return {
@@ -334,9 +345,13 @@ OB64.parseNeutralGlobalRate = function(z64) {
     branchWord: branchWord,
     mode: mode,
     basisPoints: basisPoints,
+    microBasisPoints: microBasisPoints,
     originalBasisPoints: basisPoints,
+    originalMicroBasisPoints: microBasisPoints,
     normalBasisPoints: divisor.valid && normal.valid ? passBasisPoints(normal.value, divisor.value) : null,
     alternateBasisPoints: divisor.valid && alternate.valid ? passBasisPoints(alternate.value, divisor.value) : null,
+    normalMicroBasisPoints: divisor.valid && normal.valid ? passMicroBasisPoints(normal.value, divisor.value) : null,
+    alternateMicroBasisPoints: divisor.valid && alternate.valid ? passMicroBasisPoints(alternate.value, divisor.value) : null,
     modified: false
   };
 };

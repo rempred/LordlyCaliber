@@ -587,25 +587,38 @@ OB64.serializeClassDefs = function(classDefs, z64) {
 OB64.serializeNeutralGlobalRate = function(globalRate, z64) {
   if (!globalRate || !globalRate.modified) return;
 
-  var basisPoints = parseInt(globalRate.basisPoints, 10);
-  if (!isFinite(basisPoints)) basisPoints = 0;
-  if (basisPoints < 0) basisPoints = 0;
-  if (basisPoints > 10000) basisPoints = 10000;
+  var microBasisPoints = globalRate.microBasisPoints != null
+    ? parseInt(globalRate.microBasisPoints, 10)
+    : Math.round(Number(globalRate.basisPoints || 0) * 100);
+  if (!isFinite(microBasisPoints)) microBasisPoints = 0;
+  if (microBasisPoints < 0) microBasisPoints = 0;
+  if (microBasisPoints > 1000000) microBasisPoints = 1000000;
 
-  // Export edited global rates with a 10,000-step divisor so the UI's
-  // percent/basis-point value is the actual pass count over divisor.
-  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET, 0x3C110000);
-  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET, 0x36310000 | OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR);
+  function writeDivisor(divisor) {
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET,
+      0x3C110000 | ((divisor >>> 16) & 0xFFFF));
+    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET,
+      0x36310000 | (divisor & 0xFFFF));
+  }
 
-  if (basisPoints === 0) {
+  if (microBasisPoints === 0) {
+    writeDivisor(OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR);
     // The comparison is unsigned, so threshold -1 would pass everything.
     // Use an unconditional branch to the existing fail/exit target instead.
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, 0x24100000);
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, 0x24100000);
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_NEVER);
   } else {
-    var threshold = basisPoints - 1;
+    var smoothMaxPass = OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS || 0x8000;
+    var divisor = microBasisPoints <= smoothMaxPass
+      ? OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR
+      : OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR;
+    var passCount = divisor === OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR
+      ? microBasisPoints
+      : Math.max(1, Math.min(10000, Math.round(microBasisPoints / 100)));
+    var threshold = passCount - 1;
     var thresholdWord = 0x24100000 | (threshold & 0xFFFF);
+    writeDivisor(divisor);
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, thresholdWord);
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, thresholdWord);
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_CHECK);

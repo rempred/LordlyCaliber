@@ -3509,23 +3509,47 @@ window.OB64 = window.OB64 || {};
       var SAFE_MAX_MULT = OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER || 3;
       var HARD_MAX_MULT = OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER || 100;
       var VANILLA_PATCH_BP = OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS || 7;
+      var VANILLA_PATCH_MICRO_BP = OB64.NEUTRAL_GLOBAL_VANILLA_MICRO_BASIS_POINTS || (VANILLA_PATCH_BP * 100);
       var VANILLA_EXACT_BP = ((OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD + 1) * 10000) /
         OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
-      var startBp = Math.max(0, Math.min(10000, Math.round(globalRate.basisPoints || 0)));
+      var isVanillaGlobal = globalRate.mode === 'threshold' &&
+        globalRate.divisor === OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR &&
+        globalRate.normalThreshold === OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD;
+      var startMicroBp = isVanillaGlobal
+        ? VANILLA_PATCH_MICRO_BP
+        : Math.max(0, Math.min(1000000, Math.round(globalRate.microBasisPoints != null
+          ? globalRate.microBasisPoints
+          : (globalRate.basisPoints || 0) * 100)));
 
-      function multiplierToBp(mult) {
-        mult = Math.max(1, Math.min(HARD_MAX_MULT, Math.round(mult || 1)));
-        return Math.max(1, Math.min(10000, VANILLA_PATCH_BP * mult));
+      function fmtMult(mult) {
+        return Number(mult).toFixed(2).replace(/\.00$/, '');
       }
-      function multiplierFromBp(bp) {
-        if (!isFinite(bp) || bp <= 0) return 1;
-        return Math.max(1, Math.min(HARD_MAX_MULT, Math.round(bp / VANILLA_PATCH_BP)));
+      function multiplierToMicroBp(mult) {
+        mult = Number(mult);
+        if (!isFinite(mult)) mult = 1;
+        mult = Math.max(1, Math.min(HARD_MAX_MULT, Math.round(mult * 100) / 100));
+        return Math.max(1, Math.min(1000000, Math.round(VANILLA_PATCH_MICRO_BP * mult)));
       }
-      var startMult = multiplierFromBp(startBp);
+      function multiplierFromMicroBp(microBp) {
+        if (!isFinite(microBp) || microBp <= 0) return 1;
+        return Math.max(1, Math.min(HARD_MAX_MULT, Math.round((microBp / VANILLA_PATCH_MICRO_BP) * 100) / 100));
+      }
+      function encodingForMicroBp(microBp) {
+        microBp = Math.max(0, Math.min(1000000, Math.round(microBp || 0)));
+        if (microBp === 0) return { threshold: 0, divisor: OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR || 10000 };
+        if (microBp <= (OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS || 0x8000)) {
+          return { threshold: microBp - 1, divisor: OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR || 1000000 };
+        }
+        return {
+          threshold: Math.max(0, Math.min(9999, Math.round(microBp / 100) - 1)),
+          divisor: OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR || 10000
+        };
+      }
+      var startMult = multiplierFromMicroBp(startMicroBp);
       var maxMult = startMult > SAFE_MAX_MULT ? HARD_MAX_MULT : SAFE_MAX_MULT;
 
-      function pct(bp) {
-        return (bp / 100).toFixed(2) + '%';
+      function pct(microBp) {
+        return (microBp / 10000).toFixed(4) + '%';
       }
       function exactChance(threshold, divisor) {
         if (!divisor || threshold == null || threshold < 0) return 'unknown';
@@ -3545,15 +3569,18 @@ window.OB64 = window.OB64 || {};
         return 'Current ROM pattern is not recognized. Editing will overwrite the known global-roll sites with the standard slider patch.';
       }
       function sync(mult, numberInput, rangeInput, valueEl, thresholdEl) {
+        mult = Number(mult);
         if (!isFinite(mult)) mult = 1;
-        mult = Math.max(1, Math.min(maxMult, Math.round(mult)));
-        var bp = multiplierToBp(mult);
+        mult = Math.max(1, Math.min(maxMult, Math.round(mult * 100) / 100));
+        var microBp = multiplierToMicroBp(mult);
+        var enc = encodingForMicroBp(microBp);
         globalRate.multiplier = mult;
-        globalRate.basisPoints = bp;
-        numberInput.value = String(mult);
-        rangeInput.value = String(mult);
-        valueEl.textContent = 'x' + mult + ' = ' + pct(bp);
-        thresholdEl.textContent = (bp - 1) + ' / 10000';
+        globalRate.microBasisPoints = microBp;
+        globalRate.basisPoints = microBp / 100;
+        numberInput.value = fmtMult(mult);
+        rangeInput.value = fmtMult(mult);
+        valueEl.textContent = 'x' + fmtMult(mult) + ' = ' + pct(microBp);
+        thresholdEl.textContent = enc.threshold + ' / ' + enc.divisor;
       }
       function updateVanillaMarker(markerEl) {
         var span = Math.max(1, maxMult - 1);
@@ -3605,8 +3632,8 @@ window.OB64 = window.OB64 || {};
       range.type = 'range';
       range.min = '1';
       range.max = String(maxMult);
-      range.step = '1';
-      range.value = String(startMult);
+      range.step = '0.01';
+      range.value = fmtMult(startMult);
 
       var rangeWrap = document.createElement('div');
       rangeWrap.className = 'global-rate-range-wrap';
@@ -3626,28 +3653,29 @@ window.OB64 = window.OB64 || {};
       number.type = 'number';
       number.min = '1';
       number.max = String(maxMult);
-      number.step = '1';
-      number.value = String(startMult);
+      number.step = '0.01';
+      number.value = fmtMult(startMult);
       controls.appendChild(number);
 
       var value = document.createElement('div');
       value.className = 'terrain-rate-value';
-      value.textContent = 'x' + startMult + ' = ' + pct(multiplierToBp(startMult));
+      value.textContent = 'x' + fmtMult(startMult) + ' = ' + pct(multiplierToMicroBp(startMult));
       controls.appendChild(value);
 
       var threshold = document.createElement('div');
       threshold.className = 'global-rate-threshold';
-      threshold.textContent = (multiplierToBp(startMult) - 1) + ' / 10000';
+      var startEnc = encodingForMicroBp(multiplierToMicroBp(startMult));
+      threshold.textContent = startEnc.threshold + ' / ' + startEnc.divisor;
       controls.appendChild(threshold);
 
       range.addEventListener('input', function() {
-        sync(parseInt(range.value, 10), number, range, value, threshold);
+        sync(parseFloat(range.value), number, range, value, threshold);
       });
       range.addEventListener('change', function() {
-        commit(parseInt(range.value, 10), number, range, value, threshold);
+        commit(parseFloat(range.value), number, range, value, threshold);
       });
       number.addEventListener('change', function() {
-        commit(parseInt(number.value, 10), number, range, value, threshold);
+        commit(parseFloat(number.value), number, range, value, threshold);
       });
 
       wrap.appendChild(controls);
@@ -3661,14 +3689,14 @@ window.OB64 = window.OB64 || {};
       var unlockText = document.createElement('span');
       unlockText.innerHTML =
         '<strong>Enable x100 test range</strong>. ' +
-        'Normal tuning is capped at x3; x100 writes a 7.00% global pass rate before terrain, which is already very active in live play.';
+        'Normal tuning is a smooth x1.00-x3.00 range; x100 writes a 7.0000% global pass rate before terrain, which is already very active in live play.';
       unlockWrap.appendChild(unlockText);
       unlock.addEventListener('change', function() {
         maxMult = unlock.checked ? HARD_MAX_MULT : SAFE_MAX_MULT;
         range.max = String(maxMult);
         number.max = String(maxMult);
         updateVanillaMarker(vanillaMarker);
-        var currentMult = multiplierFromBp(globalRate.basisPoints || multiplierToBp(startMult));
+        var currentMult = multiplierFromMicroBp(globalRate.microBasisPoints || multiplierToMicroBp(startMult));
         if (currentMult > maxMult) {
           commit(maxMult, number, range, value, threshold);
         } else {
@@ -3681,8 +3709,8 @@ window.OB64 = window.OB64 || {};
       note.className = 'terrain-rate-global-note';
       note.innerHTML =
         '<strong>Export behavior:</strong> once edited, this writes both state-bit branches to the same multiplier-based basis-point patch. ' +
-        'Vanilla exact is <code>51 / 72000 = ' + (VANILLA_EXACT_BP / 100).toFixed(4) + '%</code>; editor <code>x1</code> writes the nearest stable patch, <code>7 / 10000 = 0.07%</code>. ' +
-        '<code>x2</code> and <code>x3</code> are the normal tuning range. The optional <code>x100</code> cap is <code>700 / 10000 = 7.00%</code>. ' +
+        'Vanilla exact is <code>51 / 72000 = ' + (VANILLA_EXACT_BP / 100).toFixed(4) + '%</code>; editor <code>x1.00</code> writes the nearest stable patch, <code>700 / 1000000 = 0.0700%</code>. ' +
+        '<code>x1.00</code> through <code>x3.00</code> is the normal smooth tuning range. The optional <code>x100</code> cap is encoded with the coarse high-range divisor as <code>700 / 10000 = 7.0000%</code>. ' +
         'Terrain rates still apply after this gate, so <code>x100</code> with <code>50%</code> terrain is about <code>3.5%</code> per eligible check.';
       wrap.appendChild(note);
 
