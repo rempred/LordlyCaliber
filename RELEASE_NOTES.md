@@ -22,6 +22,8 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
   Streamsplit support.
 - Added ROM/RAM patch-region metadata and collision checks so enabled patches
   cannot silently share the same tail, bootstrap, or runtime region.
+- Fixed JSON patch save/load for Squads so saved patches carry the same
+  runtime-key 35-byte replacement records that Export ROM writes.
 - Updated release-facing docs to describe default versus experimental squad
   capacity, Tools safety checks, and the current high-attack caveats.
 
@@ -45,6 +47,7 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
 - Tools writes now reject RAM-looking values used as ROM offsets.
 - Tools and dynamic squad overrides declare occupied ROM/RAM regions.
 - Export blocks selected feature combinations that would overlap.
+- JSON patch round-trip now covers squad overrides as well as Tools toggles.
 - Current headless checks:
   - `node scripts/ob64_editor_tools_test.js`
   - `node tools/verify_squadblob.js`
