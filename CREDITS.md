@@ -17,16 +17,16 @@ Caliber*. It would not exist without the work below.
 - **Joshua Lindquist** — [OgreBattle64.net](https://ogrebattle64.net/) —
   primary source of the item sprites in [resources/Item Icons/](resources/Item%20Icons/)
   and the shop-category icons in [resources/Item Icons/](resources/Item%20Icons/).
-- **Imported OB64 portrait resource bundle** — source of the class and squad
-  portrait PNGs in [resources/portraits/](resources/portraits/). Exact original
-  author attribution should be corrected if a named source is identified.
+- **GrantWChapman** — ripped the imported OB64 portrait resource bundle used
+  for the class and squad portrait PNGs in
+  [resources/portraits/](resources/portraits/), and supplied the
+  class-definition offset/framing correction that led to the same-class header
+  migration for unit size, base HP, and HP growth.
 - **Cralex** — author of the *Ogre Battle 64 Person of Lordly Caliber Gameshark
   Class Hacking Guide*, which supplied the authoritative 154-class mapping
   used throughout the editor (Classes tab, character struct decode).
 - **Thomas Olson** — item list contributed to Cralex's GameShark guide.
 - **dancing elf** — gender-code research contributed to Cralex's GameShark guide.
-- **GrantWChapman** — class-definition offset/framing correction that led to
-  the same-class header migration for unit size, base HP, and HP growth.
 - **ShaneZell** — additional reference material.
 
 ## Game
