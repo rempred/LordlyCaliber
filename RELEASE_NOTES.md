@@ -70,6 +70,9 @@
   task into the Army Management UI path and uses screen/header fingerprints
   rather than a volatile single state pointer. This keeps the CF counter away
   from the Squads and High Attack patch regions.
+
+### High Attack Streamsplit
+
 - `high-attack-streamsplit` is exposed as experimental. It installs the v13
   high-attack battle-stream fix on a separate non-conflicting lane:
   tail `0x027A0000`, module RAM `0x80440000`, owner/context
