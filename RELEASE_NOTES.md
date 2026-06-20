@@ -2,10 +2,6 @@
 
 ## v0.2.0 Candidate
 
-This is a large editor release candidate after `v0.1.2`. It expands the editor
-from table editing into runtime-backed squad editing and experimental ROM tool
-features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
-
 ### Highlights
 
 - Added the public Squads tab for runtime-key enemy squad editing.
