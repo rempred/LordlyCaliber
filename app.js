@@ -322,9 +322,10 @@ window.OB64 = window.OB64 || {};
       var statGatesN = patch.summary.stat_gates_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
       var toolsN = patch.summary.tools_modified || 0;
+      var squadsN = patch.summary.squad_overrides_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN + statGatesN +
-          globalRateN + toolsN === 0) {
+          globalRateN + toolsN + squadsN === 0) {
         statusBar.textContent = 'No edits to save — patch would be empty.';
         return;
       }
@@ -343,6 +344,7 @@ window.OB64 = window.OB64 || {};
       if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
       if (globalRateN) parts.push('global encounter roll');
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
+      if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       statusBar.textContent = 'Patch saved (' + parts.join(', ') + ' changed).';
     } catch (err) {
       statusBar.textContent = 'Save Patch failed: ' + err.message;
@@ -365,7 +367,8 @@ window.OB64 = window.OB64 || {};
           (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
           (result.applied.statGates || 0) +
           (result.applied.neutralGlobalRate || 0) +
-          (result.applied.tools || 0);
+          (result.applied.tools || 0) +
+          (result.applied.squadOverrides || 0);
         lastPatchFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
@@ -382,6 +385,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
         if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
         if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
+        if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
         if (!loadedParts.length) loadedParts.push('0 changes');
         var msg = 'Patch loaded: ' + file.name + ' (' +
           loadedParts.join(', ') + ').';

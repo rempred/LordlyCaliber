@@ -15,6 +15,8 @@
 // loaded ROM.
 // v6 remaps class-def logical bytes 64-71 to the current class's name-framed
 // header (physically statOff-8..-1), retiring the shifted statOff+B64..B71 view.
+// v6 also carries `squadOverrides`: runtime-key/EDAT replacement records used
+// by the Squads tab.
 
 window.OB64 = window.OB64 || {};
 
@@ -169,6 +171,8 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    var squadOverridesOut = collectSquadOverridePatch(rom);
+
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
@@ -190,6 +194,7 @@ window.OB64 = window.OB64 || {};
         stat_gates_modified:    Object.keys(statGatesOut).length,
         neutral_global_rate_modified: globalRateOut ? 1 : 0,
         tools_modified:         Object.keys(toolsOut).length,
+        squad_overrides_modified: Object.keys(squadOverridesOut).length,
       },
       patches: {
         shops:        shopsOut,
@@ -202,6 +207,7 @@ window.OB64 = window.OB64 || {};
         statGates:    statGatesOut,
         neutral_global_rate: globalRateOut,
         tools:        toolsOut,
+        squadOverrides: squadOverridesOut,
         // Reserved for future tabs.
         enemies:      {},
       },
@@ -249,6 +255,7 @@ window.OB64 = window.OB64 || {};
     var statGatesApplied = 0;
     var neutralGlobalRateApplied = 0;
     var toolsApplied = 0;
+    var squadOverridesApplied = 0;
     var p = patch.patches || {};
 
     // Shops.
@@ -412,6 +419,9 @@ window.OB64 = window.OB64 || {};
       dirtyFlags.tools = OB64.tools.pendingChanges(rom) > 0;
     }
 
+    squadOverridesApplied = applySquadOverridesPatch(rom, p.squadOverrides || p.squad_overrides, warnings);
+    if (squadOverridesApplied > 0) dirtyFlags.squadOverrides = true;
+
     return {
       applied: {
         shops: shopsApplied,
@@ -424,7 +434,8 @@ window.OB64 = window.OB64 || {};
         consumables: consumablesApplied,
         statGates: statGatesApplied,
         neutralGlobalRate: neutralGlobalRateApplied,
-        tools: toolsApplied
+        tools: toolsApplied,
+        squadOverrides: squadOverridesApplied
       },
       warnings: warnings,
     };
@@ -478,6 +489,115 @@ window.OB64 = window.OB64 || {};
     if (!a || !b || a.length !== b.length) return false;
     for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
     return true;
+  }
+
+  function bytesToHex(bytes) {
+    var out = '';
+    for (var i = 0; bytes && i < bytes.length; i++) {
+      var s = (bytes[i] & 0xFF).toString(16).toUpperCase();
+      if (s.length < 2) s = '0' + s;
+      out += s;
+    }
+    return out;
+  }
+
+  function hexToBytes(hex, expectedLen) {
+    if (typeof hex !== 'string') return null;
+    var clean = hex.replace(/\s+/g, '');
+    if (clean.length % 2 !== 0) return null;
+    var len = clean.length / 2;
+    if (expectedLen && len !== expectedLen) return null;
+    var out = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
+      var v = parseInt(clean.substr(i * 2, 2), 16);
+      if (!isFinite(v)) return null;
+      out[i] = v & 0xFF;
+    }
+    return out;
+  }
+
+  function squadScenarioById(sid) {
+    var data = OB64.SQUAD_DATA || {};
+    var list = data.scenarios || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === sid) return list[i];
+    return null;
+  }
+
+  function squadVanillaRecord(sid, eid) {
+    var scn = squadScenarioById(sid);
+    if (!scn || !scn.squads) return null;
+    for (var i = 0; i < scn.squads.length; i++) {
+      if (scn.squads[i].e === eid) return hexToBytes(scn.squads[i].rec, 35);
+    }
+    return null;
+  }
+
+  function parseSquadOverrideKey(key, entry) {
+    var sid = entry && Number.isInteger(entry.scenario_id) ? entry.scenario_id : null;
+    var eid = entry && Number.isInteger(entry.edat_id) ? entry.edat_id : null;
+    if (sid == null || eid == null) {
+      var parts = String(key).split(':');
+      if (parts.length === 2) {
+        sid = parseInt(parts[0], 10);
+        eid = parseInt(parts[1], 10);
+      }
+    }
+    if (!isFinite(sid) || !isFinite(eid)) return null;
+    return { sid: sid, eid: eid, key: sid + ':' + eid };
+  }
+
+  function collectSquadOverridePatch(rom) {
+    var out = {};
+    if (!rom.squadOverrides) return out;
+    for (var k in rom.squadOverrides) {
+      var parsed = parseSquadOverrideKey(k, null);
+      if (!parsed) continue;
+      var rec = rom.squadOverrides[k];
+      if (!rec || rec.length !== 35) continue;
+      var vanilla = squadVanillaRecord(parsed.sid, parsed.eid);
+      if (vanilla && arraysEqual(rec, vanilla)) continue;
+      out[parsed.key] = {
+        scenario_id: parsed.sid,
+        edat_id: parsed.eid,
+        record: bytesToHex(rec)
+      };
+      if (vanilla) out[parsed.key].original = bytesToHex(vanilla);
+    }
+    return out;
+  }
+
+  function applySquadOverridesPatch(rom, patchObj, warnings) {
+    if (!patchObj || typeof patchObj !== 'object') return 0;
+    rom.squadOverrides = rom.squadOverrides || {};
+    var applied = 0;
+    for (var k in patchObj) {
+      var entry = patchObj[k];
+      var parsed = parseSquadOverrideKey(k, entry);
+      if (!parsed) {
+        warnings.push('Patch squad override key "' + k + '" is invalid - skipping.');
+        continue;
+      }
+      var recHex = typeof entry === 'string' ? entry : entry && entry.record;
+      var rec = hexToBytes(recHex, 35);
+      if (!rec) {
+        warnings.push('Patch squad override ' + parsed.key + ' is not a 35-byte record - skipping.');
+        continue;
+      }
+      var vanilla = squadVanillaRecord(parsed.sid, parsed.eid);
+      if (!vanilla) {
+        warnings.push('Patch squad override ' + parsed.key + ' does not match a known runtime-key EDAT row - skipping.');
+        continue;
+      }
+      if (entry && entry.original) {
+        var original = hexToBytes(entry.original, 35);
+        if (original && !arraysEqual(original, vanilla)) {
+          warnings.push('Patch squad override ' + parsed.key + ' was based on a different original record; applying replacement anyway.');
+        }
+      }
+      rom.squadOverrides[parsed.key] = rec;
+      applied++;
+    }
+    return applied;
   }
 
   function snapshotItemStat(stat) {
