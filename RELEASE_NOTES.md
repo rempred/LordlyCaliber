@@ -28,6 +28,27 @@
   capacity, Tools safety checks, the Chaos Frame refactor, and the current
   high-attack caveats.
 
+### High Attack Streamsplit
+
+- `high-attack-streamsplit` is exposed as experimental. It installs the v13
+  high-attack battle-stream fix on a separate non-conflicting lane:
+  tail `0x027A0000`, module RAM `0x80440000`, owner/context
+  `0x8044A820/0x80450000`.
+- High Attack Streamsplit is a runtime battle-engine patch for classes with
+  attack counts above the vanilla-safe range. The original failure was not the
+  small result log; high-count battles overran the action-stream/context layout
+  used by battle setup and playback.
+- The streamsplit patch keeps the normal battle behavior path but relocates the
+  battle context/action-stream work area into free RAM and splits the control
+  trailer away from the growing stream. It also installs the current guards for
+  known null actor/class stream cases and final stream handoff behavior.
+- High Attack does not edit class attack-count bytes. Use the Classes tab for
+  those values.
+- Unit Info display wraps count `9` to `x1`; combat behavior remains the
+  authority, and testing has validated counts above 8.
+- High Attack remains experimental and should be treated as a research feature,
+  not a safe default patch.
+
 ### Squads And EDAT Overrides
 
 - The Squads tab edits enemy squad templates by runtime scenario key, not by
@@ -70,27 +91,6 @@
   task into the Army Management UI path and uses screen/header fingerprints
   rather than a volatile single state pointer. This keeps the CF counter away
   from the Squads and High Attack patch regions.
-
-### High Attack Streamsplit
-
-- `high-attack-streamsplit` is exposed as experimental. It installs the v13
-  high-attack battle-stream fix on a separate non-conflicting lane:
-  tail `0x027A0000`, module RAM `0x80440000`, owner/context
-  `0x8044A820/0x80450000`.
-- High Attack Streamsplit is a runtime battle-engine patch for classes with
-  attack counts above the vanilla-safe range. The original failure was not the
-  small result log; high-count battles overran the action-stream/context layout
-  used by battle setup and playback.
-- The streamsplit patch keeps the normal battle behavior path but relocates the
-  battle context/action-stream work area into free RAM and splits the control
-  trailer away from the growing stream. It also installs the current guards for
-  known null actor/class stream cases and final stream handoff behavior.
-- High Attack does not edit class attack-count bytes. Use the Classes tab for
-  those values.
-- Unit Info display wraps count `9` to `x1`; combat behavior remains the
-  authority, and testing has validated counts above 8.
-- High Attack remains experimental and should be treated as a research feature,
-  not a safe default patch.
 
 ### Safety And Validation
 
