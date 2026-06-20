@@ -4,7 +4,8 @@
  * Ports the proven Python builders (tools/build_modloader_*.py + mips_encode.py)
  * that were validated in-game (edat 298, count/grow tests, edat 13 cross-mission).
  * Emits the three ROM writes that install the runtime override system:
- *   1. trampoline  jal 0x80097fc4  at ROM 0x195584  (record-builder hook)
+ *   1. trampoline  jal 0x80097fc4  at the revision-specific record-builder hook
+ *                  (Rev 0 ROM 0x195584; Rev 1 ROM 0x1955A4)
  *   2. bootstrap   at ROM 0x283c4 / RAM 0x80097fc4  (uncached sentinel + PI-DMA
  *                  the blob from ROM tail into the free upper 4MB, then jump in)
  *   3. blob        at ROM tail 0x2780000 -> RAM 0x80400000
@@ -23,7 +24,7 @@
 (function (OB64) {
   'use strict';
 
-  // ---- constants (all proven in-game) ----
+  // ---- constants (Rev 0 proven in-game; Rev 1 hook is the same routine at +0x20) ----
   var HOOK_ROM   = 0x195584;     // record-builder trampoline site (outside CRC)
   var BOOT_ROM   = 0x283C4;      // bootstrap cave (z64; inside CRC -> recalc)
   var BOOT_RAM   = 0x80097FC4;   // bootstrap runtime address (linear, resident)
@@ -39,6 +40,25 @@
   var REC_LEN = 35;
   var ENTRY_ORIGINAL_OFF = 1;
   var ENTRY_REPLACEMENT_OFF = 36;
+
+  function patchLayout(romOrLayout) {
+    var layout = romOrLayout && romOrLayout.layout ? romOrLayout.layout : romOrLayout;
+    if (!layout && OB64.currentRomLayout) layout = OB64.currentRomLayout;
+    var squadPatch = (layout && layout.squadPatch) || {};
+    var out = {
+      id: layout && layout.id ? layout.id : 'us-rev0',
+      HOOK_ROM: HOOK_ROM,
+      BOOT_ROM: BOOT_ROM,
+      BOOT_RAM: BOOT_RAM,
+      TAIL_Z64: TAIL_Z64,
+      MOD_BASE: MOD_BASE,
+      SENTINEL: SENTINEL
+    };
+    for (var k in squadPatch) out[k] = squadPatch[k];
+    out.PI_CART = (0x10000000 + out.TAIL_Z64) >>> 0;
+    out.MOD_PHYS = (out.MOD_BASE & 0x1FFFFFFF) >>> 0;
+    return out;
+  }
 
   // ---- MIPS R4300i encoder (port of mips_encode.py) ----
   var REG = {
@@ -93,9 +113,10 @@
   }
 
   // ---- resolver: per-entry gate + original-35B match + replacement-35B memcpy ----
-  function buildResolver() {
+  function buildResolver(layout) {
+    layout = layout || patchLayout();
     var lines = [
-      ['lui', 't3', 0x8040],                 // t3 = MOD_BASE
+      ['lui', 't3', (layout.MOD_BASE >>> 16) & 0xFFFF], // t3 = MOD_BASE
       ['lw', 't4', 4, 't3'],                  // t4 = entryCount
       ['ori', 't5', 't3', ENTRIES_OFF],       // t5 = &entry[0]
       ['lui', 't8', 0x8019],
@@ -143,17 +164,18 @@
       ['jr', 'ra'],
       ['nop']
     ];
-    return assemble((MOD_BASE + RESOLVER_OFF) >>> 0, lines);
+    return assemble((layout.MOD_BASE + RESOLVER_OFF) >>> 0, lines);
   }
 
   // ---- bootstrap (CRC cave): uncached sentinel -> PI-DMA -> jump to resolver ----
-  function buildBootstrap(blobLen) {
+  function buildBootstrap(blobLen, layout) {
+    layout = layout || patchLayout();
     if ((blobLen - 1) > 0xFFFF) throw new Error('blob too large for single-imm PI length');
     var lines = [
       ['lui', 't0', 0xA040],
       ['lw', 't1', 0, 't0'],                  // sentinel (uncached 0xA0400000)
-      ['lui', 't2', (SENTINEL >>> 16) & 0xFFFF],
-      ['ori', 't2', 't2', SENTINEL & 0xFFFF],
+      ['lui', 't2', (layout.SENTINEL >>> 16) & 0xFFFF],
+      ['ori', 't2', 't2', layout.SENTINEL & 0xFFFF],
       ['beq', 't1', 't2', 'loaded'],
       ['nop'],
       ['lui', 't0', 0xA460],                  // PI regs base
@@ -162,9 +184,9 @@
       ['andi', 't1', 't1', 3],
       ['bne', 't1', 'zero', 'w1'],
       ['nop'],
-      ['lui', 't1', 0x0040],                  // PI_DRAM_ADDR = 0x00400000
+      ['lui', 't1', (layout.MOD_PHYS >>> 16) & 0xFFFF], // PI_DRAM_ADDR = module phys
       ['sw', 't1', 0, 't0'],
-      ['lui', 't1', (PI_CART >>> 16) & 0xFFFF],  // PI_CART_ADDR = 0x12780000
+      ['lui', 't1', (layout.PI_CART >>> 16) & 0xFFFF],  // PI_CART_ADDR
       ['sw', 't1', 4, 't0'],
       ['ori', 't1', 'zero', (blobLen - 1) & 0xFFFF],
       ['sw', 't1', 0x0C, 't0'],               // PI_WR_LEN -> trigger
@@ -174,12 +196,12 @@
       ['bne', 't1', 'zero', 'w2'],
       ['nop'],
       ['label', 'loaded'],
-      ['lui', 't0', 0x8040],
+      ['lui', 't0', (layout.MOD_BASE >>> 16) & 0xFFFF],
       ['ori', 't0', 't0', RESOLVER_OFF],
       ['jr', 't0'],
       ['nop']
     ];
-    var words = assemble(BOOT_RAM, lines);
+    var words = assemble(layout.BOOT_RAM, lines);
     if (words.length * 4 > 108) throw new Error('bootstrap exceeds the 108B cave');
     return words;
   }
@@ -197,8 +219,9 @@
 
   // ---- blob (sentinel + count + resolver + table) ----
   // overrides: [{ gateId:int, original:Uint8Array(35), record:Uint8Array(35) }]
-  function buildBlob(overrides) {
-    var resolver = buildResolver();
+  function buildBlob(overrides, layout) {
+    layout = layout || patchLayout();
+    var resolver = buildResolver(layout);
     var resolverEnd = RESOLVER_OFF + resolver.length * 4;
     if (resolverEnd > ENTRIES_OFF) throw new Error('resolver overruns the table offset');
     var n = overrides.length;
@@ -230,16 +253,17 @@
   // Returns { writes: [{offset, label, bytes:Uint8Array}], crcWindow: true }.
   // crcWindow is true because the bootstrap cave lies inside z64 0x1000-0x101000.
   function buildSquadOverrideWrites(overrides) {
-    var blob = buildBlob(overrides);
-    var boot = buildBootstrap(blob.length);
+    var layout = patchLayout(arguments.length > 1 ? arguments[1] : null);
+    var blob = buildBlob(overrides, layout);
+    var boot = buildBootstrap(blob.length, layout);
     var tramp = new Uint8Array(8);
-    tramp.set(wordsToBytes([M.jal(BOOT_RAM), M.nop()]), 0);
+    tramp.set(wordsToBytes([M.jal(layout.BOOT_RAM), M.nop()]), 0);
     return {
       crcWindow: true,
       writes: [
-        { offset: HOOK_ROM, label: 'record-builder trampoline', bytes: tramp },
-        { offset: BOOT_ROM, label: 'bootstrap (DMA loader)', bytes: wordsToBytes(boot) },
-        { offset: TAIL_Z64, label: 'override blob (' + overrides.length + ' entries)', bytes: blob }
+        { offset: layout.HOOK_ROM, label: 'record-builder trampoline', bytes: tramp },
+        { offset: layout.BOOT_ROM, label: 'bootstrap (DMA loader)', bytes: wordsToBytes(boot) },
+        { offset: layout.TAIL_Z64, label: 'override blob (' + overrides.length + ' entries)', bytes: blob }
       ]
     };
   }
@@ -248,20 +272,22 @@
   // removed): trampoline back to the displaced sltiu/xori, clear the cave, and
   // zero the blob region. Only the trampoline + cave matter (the cave is in the
   // CRC window); the tail is cleared for tidiness (outside CRC).
-  function restoreVanilla(z64) {
-    z64.set(wordsToBytes([DISP_SLTIU, DISP_XORI]), HOOK_ROM);
+  function restoreVanilla(z64, romOrLayout) {
+    var layout = patchLayout(romOrLayout);
+    z64.set(wordsToBytes([DISP_SLTIU, DISP_XORI]), layout.HOOK_ROM);
     var i;
-    for (i = 0; i < 108; i++) z64[BOOT_ROM + i] = 0;
-    for (i = 0; i < 0x10000; i++) z64[TAIL_Z64 + i] = 0;
+    for (i = 0; i < 108; i++) z64[layout.BOOT_ROM + i] = 0;
+    for (i = 0; i < 0x10000; i++) z64[layout.TAIL_Z64 + i] = 0;
   }
 
-  function patchRegions() {
+  function patchRegions(romOrLayout) {
+    var layout = patchLayout(romOrLayout);
     return [
-      { kind: 'rom', start: HOOK_ROM, size: 8, label: 'record-builder trampoline' },
-      { kind: 'rom', start: BOOT_ROM, size: 108, label: 'bootstrap cave' },
-      { kind: 'rom', start: TAIL_Z64, size: 0x10000, label: 'squad override tail lane' },
-      { kind: 'ram', start: BOOT_RAM, size: 108, label: 'bootstrap runtime' },
-      { kind: 'ram', start: MOD_BASE, size: 0x10000, label: 'squad override runtime lane' },
+      { kind: 'rom', start: layout.HOOK_ROM, size: 8, label: 'record-builder trampoline' },
+      { kind: 'rom', start: layout.BOOT_ROM, size: 108, label: 'bootstrap cave' },
+      { kind: 'rom', start: layout.TAIL_Z64, size: 0x10000, label: 'squad override tail lane' },
+      { kind: 'ram', start: layout.BOOT_RAM, size: 108, label: 'bootstrap runtime' },
+      { kind: 'ram', start: layout.MOD_BASE, size: 0x10000, label: 'squad override runtime lane' },
     ];
   }
 
@@ -307,6 +333,7 @@
     patchRegions: patchRegions,
     buildBlob: buildBlob,
     buildBootstrap: buildBootstrap,
+    patchLayout: patchLayout,
     recordFromSpec: recordFromSpec,
     specFromRecord: specFromRecord,
     memberCount: memberCount,

@@ -40,15 +40,20 @@ A browser-based mod editor for *Ogre Battle 64: Person of Lordly Caliber*
 files — then export a patched ROM.
 
 No installation, no build step. Open `index.html` in any modern browser, drop
-in your own copy of the US retail `.v64`, and start modding.
+in your own copy of the US retail ROM, and start modding.
 
 > **ROM compatibility:** the editor is built and tested against the North
-> American (USA) retail dump:
+> American (USA) retail Rev 0 dump:
 > `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64` (41,943,040 bytes,
 > .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
+> It also supports the common USA Rev 1 dump in `.z64`, `.v64`, or `.n64`
+> byte order for data editing/export. Rev 1 supports the Chaos Frame Counter
+> and Squads runtime override export; High Attack Streamsplit remains Rev 0-only
+> until its changed Rev 1 code path is rebuilt.
 > Japanese, European, debug, prototype, or otherwise modified ROMs are not
 > supported and will likely produce wrong offsets, garbled data, or crash on
-> export. Verify your file matches the name and size above before reporting bugs.
+> export. Verify your file is a supported US Rev 0 or Rev 1 image before
+> reporting bugs.
 
 ## Releases and Downloads
 
@@ -108,7 +113,7 @@ project download asset.
   **High Attack Streamsplit** installs the v13 high-attack battle-stream fix
   on a separate ROM/RAM lane; attack-count bytes are still edited from the
   Classes tab, and fresh emulator regression is required before treating it as
-  release-ready.
+  release-ready. High Attack Streamsplit is currently enabled only on Rev 0.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
@@ -128,13 +133,13 @@ project download asset.
   Patch format v6 maps class-definition logical bytes 64-71 to the current
   class name-framed header: size, sex/voice/body code, leadership, base HP,
   HP growth, and raw header bytes.
-- **Export** — writes a clean `.v64` with the N64 CIC-6102 CRC re-calculated.
+- **Export** — writes a clean ROM in the same byte order that was loaded, with
+  the N64 CIC-6102 CRC re-calculated when needed.
 
 ## Current Limitations
 
-- Only the North American retail `.v64` listed above is supported. Other regions,
-  prototypes, `.z64`/`.n64` byte orders, or already-modified ROMs are rejected
-  or unsupported.
+- Only the North American retail Rev 0/Rev 1 ROMs listed above are supported.
+  Other regions, prototypes, or unknown modified ROMs are rejected or unsupported.
 - The editor creates new ROM/save files in your browser downloads. It does not
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
@@ -171,7 +176,7 @@ project download asset.
    downloads need a real `http://` origin in some browsers).
 2. Click **Load ROM** and select your legally-obtained US retail `.v64`.
 3. Use the tabs to make edits — pending changes show in the status bar.
-4. **Export ROM** writes a fresh `.v64` to your downloads.
+4. **Export ROM** writes a fresh ROM in the loaded byte order to your downloads.
 5. (Optional) **Save Patch** writes your edits as JSON. **Load Patch** re-applies
    them to a clean ROM.
 

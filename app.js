@@ -62,7 +62,9 @@ window.OB64 = window.OB64 || {};
         patchFileInput.disabled = false;
         btnLoadPatchLabel.setAttribute('aria-disabled', 'false');
         updatePatchChip();
-        statusBar.textContent = 'ROM loaded: ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' + rom.archives.length + ' archives | 0 pending changes';
+        statusBar.textContent = 'ROM loaded: ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' +
+          (rom.layout ? rom.layout.name : 'Unknown layout') + ' .' + (rom.byteOrder || 'v64') +
+          ' | ' + rom.archives.length + ' archives | 0 pending changes';
         renderTab(activeTab);
 
         // Warn if any shop in the loaded ROM is already over the per-shop
@@ -216,12 +218,20 @@ window.OB64 = window.OB64 || {};
       var squadOverridesForConflict = (OB64.squad && OB64.collectSquadOverrides)
         ? OB64.collectSquadOverrides(rom)
         : [];
+      if (dirty.squadOverrides && rom.layout && rom.layout.supportsSquadOverrides === false) {
+        showErrorModal('Export failed - squad overrides unavailable',
+          'This ROM revision can be parsed and repacked, but the Squads runtime ' +
+          'override hook has not been verified for it yet.\n\n' +
+          (rom.layout.unsupportedFeaturesReason || 'Load a supported Rev 0 ROM to export squad overrides.'));
+        statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
+        return;
+      }
       if (OB64.tools && OB64.squad && squadOverridesForConflict.length) {
         try {
           OB64.tools.assertDesiredCompatible(rom, [{
             id: 'squad-overrides',
             name: 'Squad Overrides',
-            regions: OB64.squad.patchRegions()
+            regions: OB64.squad.patchRegions(rom)
           }]);
         } catch (e) {
           showErrorModal('Export failed - patch region collision', e.message);
@@ -256,7 +266,7 @@ window.OB64 = window.OB64 || {};
       if (dirty.squadOverrides && OB64.squad) {
         var ovs = squadOverridesForConflict;
         if (ovs.length) {
-          var sqw = OB64.squad.buildSquadOverrideWrites(ovs);
+          var sqw = OB64.squad.buildSquadOverrideWrites(ovs, rom);
           for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
             rom.z64.set(sqw.writes[sqi].bytes, sqw.writes[sqi].offset);
           }
@@ -270,7 +280,7 @@ window.OB64 = window.OB64 || {};
           }
         } else {
           // last override removed — restore retail hook/cave/tail
-          OB64.squad.restoreVanilla(rom.z64);
+          OB64.squad.restoreVanilla(rom.z64, rom);
           squadCrc = true;
           touched.push('squad overrides removed');
         }
@@ -289,8 +299,8 @@ window.OB64 = window.OB64 || {};
         return;
       }
 
-      OB64.exportROM(rom.z64);
-      var exportMsg = 'ROM exported as ob64_modified.v64 ('
+      var exportedName = OB64.exportROM(rom);
+      var exportMsg = 'ROM exported as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
@@ -482,6 +492,7 @@ window.OB64 = window.OB64 || {};
   function renderTools(panel) {
     if (!rom) return;
     var features = OB64.tools.features();
+    var toolsDisabled = rom.tools && rom.tools.disabledReason;
 
     var html = '<div class="tools-intro">' +
       '<h2>Tools</h2>' +
@@ -489,17 +500,24 @@ window.OB64 = window.OB64 || {};
       'and it is written into the ROM on the next <b>Export ROM</b>; switch ' +
       'it off to restore the original bytes. Features already present in the ' +
       'loaded ROM are detected automatically.</p>' +
+      (toolsDisabled ? '<p><b>Unavailable for this ROM:</b> ' + toolsDisabled + '</p>' : '') +
       '</div>';
 
     html += '<div class="tool-cards">';
     for (var i = 0; i < features.length; i++) {
       var f = features[i];
       var cur = OB64.tools.featureState(rom.z64, f);
+      var unsupported = rom.tools.initial[f.id] === 'unsupported';
       var foreign = rom.tools.initial[f.id] === 'foreign';
       var desired = !!rom.tools.desired[f.id];
 
       var statusClass, statusText;
-      if (foreign) {
+      if (unsupported) {
+        statusClass = 'foreign';
+        statusText = (rom.tools.unsupportedReasons && rom.tools.unsupportedReasons[f.id])
+          ? rom.tools.unsupportedReasons[f.id]
+          : 'Unavailable for this ROM revision';
+      } else if (foreign) {
         statusClass = 'foreign';
         statusText = 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)';
       } else if (cur === 'outdated') {
@@ -521,12 +539,12 @@ window.OB64 = window.OB64 || {};
         statusText = 'Not applied';
       }
 
-      html += '<div class="tool-card' + (foreign ? ' tool-foreign' : '') + '">' +
+      html += '<div class="tool-card' + ((foreign || unsupported) ? ' tool-foreign' : '') + '">' +
         '<div class="tool-card-head">' +
           '<span class="tool-name">' + f.name + '</span>' +
-          '<label class="tool-switch" title="' + (foreign ? 'Unavailable' : 'Enable / disable') + '">' +
+          '<label class="tool-switch" title="' + ((foreign || unsupported) ? 'Unavailable' : 'Enable / disable') + '">' +
             '<input type="checkbox" data-tool-id="' + f.id + '"' +
-              (desired ? ' checked' : '') + (foreign ? ' disabled' : '') + '>' +
+              (desired ? ' checked' : '') + ((foreign || unsupported) ? ' disabled' : '') + '>' +
             '<span class="tool-slider"></span>' +
           '</label>' +
         '</div>' +

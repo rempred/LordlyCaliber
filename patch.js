@@ -416,6 +416,10 @@ window.OB64 = window.OB64 || {};
         warnings.push('Tool "' + toolFeature.name + '" cannot be toggled: its ROM bytes match neither retail nor this build. Skipping.');
         continue;
       }
+      if (rom.tools.initial[tk] === 'unsupported' || rom.tools.disabledReason) {
+        warnings.push('Tool "' + toolFeature.name + '" is not available for this ROM revision. Skipping.');
+        continue;
+      }
       var wantTool = !!toolsPatch[tk];
       if (rom.tools.desired[tk] !== wantTool) {
         rom.tools.desired[tk] = wantTool;
@@ -426,7 +430,12 @@ window.OB64 = window.OB64 || {};
       dirtyFlags.tools = OB64.tools.pendingChanges(rom) > 0;
     }
 
-    squadOverridesApplied = applySquadOverridesPatch(rom, p.squadOverrides || p.squad_overrides, warnings);
+    var squadOverridePatch = p.squadOverrides || p.squad_overrides;
+    if (squadOverridePatch && rom.layout && rom.layout.supportsSquadOverrides === false) {
+      warnings.push('Patch includes squad overrides, but this ROM revision does not have a verified runtime override hook yet. Skipping.');
+    } else {
+      squadOverridesApplied = applySquadOverridesPatch(rom, squadOverridePatch, warnings);
+    }
     if (squadOverridesApplied > 0) dirtyFlags.squadOverrides = true;
 
     return {

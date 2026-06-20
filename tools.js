@@ -109,6 +109,26 @@ window.OB64 = window.OB64 || {};
     return out.filter(Boolean);
   }
 
+  function featureUnsupportedReason(rom, feature) {
+    if (!rom || !rom.layout || !feature) return '';
+    if (rom.layout.supportsTools === false) {
+      return rom.layout.unsupportedFeaturesReason || 'Tools are not available for this ROM revision.';
+    }
+    var blocked = rom.layout.unsupportedTools || {};
+    if (Object.prototype.hasOwnProperty.call(blocked, feature.id)) {
+      return blocked[feature.id] || 'This tool is not available for this ROM revision.';
+    }
+    var allowed = rom.layout.supportedTools || null;
+    if (allowed && allowed[feature.id] !== true) {
+      return 'This tool has not been enabled for this ROM revision.';
+    }
+    return '';
+  }
+
+  function featureSupported(rom, feature) {
+    return !featureUnsupportedReason(rom, feature);
+  }
+
   function rangesOverlap(a, b) {
     return a.kind === b.kind && a.start < b.end && b.start < a.end;
   }
@@ -175,6 +195,7 @@ window.OB64 = window.OB64 || {};
     var list = features();
     for (var i = 0; i < list.length; i++) {
       if (rom.tools.initial[list[i].id] === 'foreign') continue;
+      if (!featureSupported(rom, list[i])) continue;
       if (rom.tools.desired[list[i].id]) owners.push(list[i]);
     }
     if (extraOwners && extraOwners.length) owners = owners.concat(extraOwners);
@@ -235,11 +256,28 @@ window.OB64 = window.OB64 || {};
   //                            outdated (an outdated feature upgrades on the
   //                            next export unless the user switches it off)
   function initState(rom) {
+    rom.tools = { initial: {}, desired: {}, unsupportedReasons: {} };
+    if (rom.layout && rom.layout.supportsTools === false) {
+      rom.tools.disabledReason = rom.layout.unsupportedFeaturesReason || 'Tools are not available for this ROM revision.';
+      var disabledList = features();
+      for (var di = 0; di < disabledList.length; di++) {
+        rom.tools.initial[disabledList[di].id] = 'unsupported';
+        rom.tools.desired[disabledList[di].id] = false;
+        rom.tools.unsupportedReasons[disabledList[di].id] = rom.tools.disabledReason;
+      }
+      return;
+    }
     validateFeatureRegistry(rom.z64);
-    rom.tools = { initial: {}, desired: {} };
     var list = features();
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
+      var unsupportedReason = featureUnsupportedReason(rom, f);
+      if (unsupportedReason) {
+        rom.tools.initial[f.id] = 'unsupported';
+        rom.tools.desired[f.id] = false;
+        rom.tools.unsupportedReasons[f.id] = unsupportedReason;
+        continue;
+      }
       var st = featureState(rom.z64, f);
       rom.tools.initial[f.id] = st;
       rom.tools.desired[f.id] = (st === 'applied' || st === 'outdated');
@@ -251,10 +289,12 @@ window.OB64 = window.OB64 || {};
   // upgrade itself is the change).
   function pendingChanges(rom) {
     if (!rom.tools) return 0;
+    if (rom.tools.disabledReason) return 0;
     var n = 0;
     var list = features();
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
+      if (!featureSupported(rom, f)) continue;
       var cur = featureState(rom.z64, f);
       if (cur === 'foreign') continue;
       var want = !!rom.tools.desired[f.id];
@@ -277,10 +317,15 @@ window.OB64 = window.OB64 || {};
   function applyDesired(rom) {
     var res = { applied: [], upgraded: [], removed: [], skipped: [], crc: false };
     if (!rom.tools) return res;
+    if (rom.tools.disabledReason) return res;
     assertDesiredCompatible(rom);
     var list = features();
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
+      if (!featureSupported(rom, f)) {
+        if (rom.tools.desired[f.id]) res.skipped.push(f.name);
+        continue;
+      }
       var cur = featureState(rom.z64, f);
       var want = !!rom.tools.desired[f.id];
       if (cur === 'foreign') {
@@ -317,6 +362,8 @@ window.OB64 = window.OB64 || {};
     desiredRegionConflicts: desiredRegionConflicts,
     assertDesiredCompatible: assertDesiredCompatible,
     validateFeatureRegistry: validateFeatureRegistry,
+    featureUnsupportedReason: featureUnsupportedReason,
+    featureSupported: featureSupported,
   };
 
 })();

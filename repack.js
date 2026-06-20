@@ -990,17 +990,24 @@ OB64.recalcN64CRC = function(z64) {
 };
 
 // ============================================================
-// Export modified ROM as .v64
+// Export modified ROM in the same byte order the user loaded.
 // ============================================================
-OB64.exportROM = function(z64) {
-  var v64 = OB64.z64ToV64(z64);
-  var blob = new Blob([v64], { type: 'application/octet-stream' });
+OB64.exportROM = function(romOrZ64) {
+  var z64 = romOrZ64 && romOrZ64.z64 ? romOrZ64.z64 : romOrZ64;
+  var byteOrder = romOrZ64 && romOrZ64.z64
+    ? (romOrZ64.exportByteOrder || romOrZ64.byteOrder || 'v64')
+    : 'v64';
+  var out = OB64.serializeRomImage(z64, byteOrder);
+  var ext = OB64.romByteOrderExtension(byteOrder);
+  var filename = 'ob64_modified.' + ext;
+  var blob = new Blob([out], { type: 'application/octet-stream' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = 'ob64_modified.v64';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+  return filename;
 };
 
 /* ============================================================================

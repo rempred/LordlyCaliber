@@ -19,6 +19,21 @@ OB64.z64ToV64 = function(z64) {
   return OB64.v64ToZ64(z64); // Same swap
 };
 
+OB64.n64ToZ64 = function(n64) {
+  var z64 = new Uint8Array(n64.length);
+  for (var i = 0; i < n64.length - 3; i += 4) {
+    z64[i] = n64[i + 3];
+    z64[i + 1] = n64[i + 2];
+    z64[i + 2] = n64[i + 1];
+    z64[i + 3] = n64[i];
+  }
+  return z64;
+};
+
+OB64.z64ToN64 = function(z64) {
+  return OB64.n64ToZ64(z64); // Same word swap
+};
+
 OB64.detectRomByteOrder = function(bytes) {
   if (!bytes || bytes.length < 4) return 'unknown';
   var b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
@@ -58,6 +73,158 @@ OB64.writeU32BE = function(buf, off, val) {
   buf[off + 1] = (val >>> 16) & 0xFF;
   buf[off + 2] = (val >>> 8) & 0xFF;
   buf[off + 3] = val & 0xFF;
+};
+
+// ============================================================
+// ROM byte-order normalization + revision-specific layout profiles
+// ============================================================
+OB64.normalizeRomImage = function(data) {
+  var input = new Uint8Array(data);
+  var byteOrder = OB64.detectRomByteOrder(input);
+  if (byteOrder === 'v64') return { z64: OB64.v64ToZ64(input), byteOrder: byteOrder };
+  if (byteOrder === 'z64') return { z64: new Uint8Array(input), byteOrder: byteOrder };
+  if (byteOrder === 'n64') return { z64: OB64.n64ToZ64(input), byteOrder: byteOrder };
+  return { z64: null, byteOrder: byteOrder };
+};
+
+OB64.serializeRomImage = function(z64, byteOrder) {
+  if (byteOrder === 'v64') return OB64.z64ToV64(z64);
+  if (byteOrder === 'n64') return OB64.z64ToN64(z64);
+  return new Uint8Array(z64);
+};
+
+OB64.romByteOrderExtension = function(byteOrder) {
+  if (byteOrder === 'v64') return 'v64';
+  if (byteOrder === 'n64') return 'n64';
+  return 'z64';
+};
+
+OB64.ROM_LAYOUTS = {
+  'us-rev0': {
+    id: 'us-rev0',
+    name: 'US retail Rev 0',
+    version: 0x00,
+    gameId: 'NO',
+    country: 'E',
+    vanillaCrc1: 0xE6419BC5,
+    vanillaCrc2: 0x69011DE3,
+    supportsTools: true,
+    supportsSquadOverrides: true,
+    unsupportedTools: {},
+    unsupportedFeaturesReason: '',
+    squadPatch: {
+      HOOK_ROM: 0x195584
+    },
+    offsets: {
+      LZSS_GAP_START: 0x20248C2,
+      STAT_GATE_GAP_OFFSET: 0x3A960C,
+      NEUTRAL_ENCOUNTER_OFFSET: 0x141ED0,
+      NEUTRAL_TERRAIN_RATE_OFFSET: 0x141E80,
+      NEUTRAL_TERRAIN_SLOT_OFFSET: 0x141EA0,
+      NEUTRAL_GLOBAL_DIV_HI_OFFSET: 0x13C1E8,
+      NEUTRAL_GLOBAL_DIV_LO_OFFSET: 0x13C1EC,
+      NEUTRAL_GLOBAL_NORMAL_OFFSET: 0x13C1FC,
+      NEUTRAL_GLOBAL_ALT_OFFSET: 0x13C200,
+      NEUTRAL_GLOBAL_BRANCH_OFFSET: 0x13C228,
+      CREATURE_DROP_OFFSET: 0x142258,
+      ITEM_STAT_OFFSET: 0x62310,
+      MAP_EDGE_OFFSET: 0x858E4,
+      MAP_NAME_OFFSET: 0x85984,
+      GROWTH_TIER_OFFSET: 0x17F7F0,
+      GROWTH_CURVE_OFFSET: 0x17F668,
+      EVOLUTION_OFFSET: 0x654A0,
+      CLASS_GROUP_OFFSET: 0x6592C,
+      CLASS_DEF_OFFSET: 0x5DAD8,
+      CONSUMABLE_TABLE_OFFSET: 0x645CC
+    }
+  },
+  'us-rev1': {
+    id: 'us-rev1',
+    name: 'US retail Rev 1',
+    version: 0x01,
+    gameId: 'NO',
+    country: 'E',
+    vanillaCrc1: 0x0ADAECA7,
+    vanillaCrc2: 0xB17F9795,
+    supportsTools: true,
+    supportsSquadOverrides: true,
+    unsupportedTools: {
+      'high-attack-streamsplit': 'Rev 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a Rev 1 payload before enabling.'
+    },
+    unsupportedFeaturesReason: 'Rev 1 supports normal data edits, Chaos Frame Counter, and Squads runtime overrides. High Attack Streamsplit remains disabled until its changed Rev 1 code path is rebuilt.',
+    squadPatch: {
+      HOOK_ROM: 0x1955A4
+    },
+    offsets: {
+      LZSS_GAP_START: 0x2024516,
+      STAT_GATE_GAP_OFFSET: 0x3A960C,
+      NEUTRAL_ENCOUNTER_OFFSET: 0x141EF0,
+      NEUTRAL_TERRAIN_RATE_OFFSET: 0x141EA0,
+      NEUTRAL_TERRAIN_SLOT_OFFSET: 0x141EC0,
+      NEUTRAL_GLOBAL_DIV_HI_OFFSET: 0x13C208,
+      NEUTRAL_GLOBAL_DIV_LO_OFFSET: 0x13C20C,
+      NEUTRAL_GLOBAL_NORMAL_OFFSET: 0x13C21C,
+      NEUTRAL_GLOBAL_ALT_OFFSET: 0x13C220,
+      NEUTRAL_GLOBAL_BRANCH_OFFSET: 0x13C248,
+      CREATURE_DROP_OFFSET: 0x142278,
+      ITEM_STAT_OFFSET: 0x62330,
+      MAP_EDGE_OFFSET: 0x85904,
+      MAP_NAME_OFFSET: 0x859A4,
+      GROWTH_TIER_OFFSET: 0x17F810,
+      GROWTH_CURVE_OFFSET: 0x17F688,
+      EVOLUTION_OFFSET: 0x654C0,
+      CLASS_GROUP_OFFSET: 0x6594C,
+      CLASS_DEF_OFFSET: 0x5DAF8,
+      CONSUMABLE_TABLE_OFFSET: 0x645EC
+    }
+  }
+};
+
+OB64.cloneRomLayout = function(layout) {
+  var out = {};
+  for (var k in layout) {
+    if (k === 'offsets') continue;
+    out[k] = layout[k];
+  }
+  out.offsets = {};
+  for (var ok in layout.offsets) out.offsets[ok] = layout.offsets[ok];
+  return out;
+};
+
+OB64.romHeaderText = function(z64, off, len) {
+  var chars = [];
+  for (var i = 0; i < len && off + i < z64.length; i++) {
+    var b = z64[off + i];
+    if (b === 0) break;
+    chars.push(String.fromCharCode(b));
+  }
+  return chars.join('');
+};
+
+OB64.detectRomLayout = function(z64) {
+  if (!z64 || z64.length < 0x40) return null;
+  var imageName = OB64.romHeaderText(z64, 0x20, 20).trim();
+  var gameId = OB64.romHeaderText(z64, 0x3B, 2);
+  var country = OB64.romHeaderText(z64, 0x3E, 1);
+  var version = z64[0x3F];
+  if (imageName !== 'OgreBattle64' || gameId !== 'NO' || country !== 'E') {
+    return null;
+  }
+  var layout = version === 0x00 ? OB64.ROM_LAYOUTS['us-rev0']
+    : version === 0x01 ? OB64.ROM_LAYOUTS['us-rev1']
+    : null;
+  if (!layout) return null;
+  var out = OB64.cloneRomLayout(layout);
+  out.imageName = imageName;
+  out.headerCrc1 = OB64.readU32BE(z64, 0x10);
+  out.headerCrc2 = OB64.readU32BE(z64, 0x14);
+  return out;
+};
+
+OB64.applyRomLayout = function(layout) {
+  if (!layout || !layout.offsets) throw new Error('Missing ROM layout profile');
+  for (var k in layout.offsets) OB64[k] = layout.offsets[k];
+  OB64.currentRomLayout = layout;
 };
 
 // ============================================================
@@ -1696,16 +1863,17 @@ OB64.shopExpendables = function(consumables) {
 // ============================================================
 // Master ROM loader — loads and parses everything
 // ============================================================
-OB64.loadROM = function(v64Data) {
-  var input = new Uint8Array(v64Data);
-  var byteOrder = OB64.detectRomByteOrder(input);
-  if (byteOrder !== 'v64') {
-    if (byteOrder === 'z64' || byteOrder === 'n64') {
-      throw new Error('Unsupported ROM byte order .' + byteOrder + '. Please load the US retail .v64 byte-swapped ROM.');
-    }
-    throw new Error('Unsupported or unrecognized ROM. Please load the US retail .v64 byte-swapped ROM.');
+OB64.loadROM = function(romData) {
+  var normalized = OB64.normalizeRomImage(romData);
+  if (!normalized.z64) {
+    throw new Error('Unsupported or unrecognized ROM image. Please load a US retail Rev 0 or Rev 1 .v64/.z64/.n64 ROM.');
   }
-  var z64 = OB64.v64ToZ64(input);
+  var z64 = normalized.z64;
+  var layout = OB64.detectRomLayout(z64);
+  if (!layout) {
+    throw new Error('Unsupported ROM revision. This editor supports US retail Rev 0 and Rev 1 only.');
+  }
+  OB64.applyRomLayout(layout);
   var archives = OB64.findArchives(z64);
 
   // Extract key archives
@@ -1739,6 +1907,9 @@ OB64.loadROM = function(v64Data) {
 
   return {
     z64: z64,
+    byteOrder: normalized.byteOrder,
+    exportByteOrder: normalized.byteOrder,
+    layout: layout,
     archives: archives,
     enemySquads: OB64.parseEnemydat(enemydatBuf),
     strongholds: strongholds,
