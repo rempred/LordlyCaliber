@@ -579,8 +579,8 @@ td input, td select {
    ============================================================ */
 .empty-state {
   text-align: center;
-  padding: 80px 20px;
-  max-width: 560px;
+  padding: 56px 28px;
+  max-width: 680px;
   margin: 40px auto;
   background:
     radial-gradient(ellipse at 50% 30%, rgba(255,240,200,0.35), transparent 65%),
@@ -607,6 +607,60 @@ td input, td select {
   font-style: normal;
   margin-bottom: 14px;
   text-shadow: 0 1px 0 rgba(255,245,210,0.45);
+}
+
+.supported-roms {
+  max-width: 590px;
+  margin: 24px auto 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(122,90,36,0.38);
+  text-align: left;
+  font-style: normal;
+  font-size: var(--ob-text-xs);
+  color: var(--ob-ink-soft);
+}
+
+.supported-roms p {
+  margin-bottom: 10px;
+  font-family: var(--ob-display);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--ob-ink);
+}
+
+.supported-roms dl {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  gap: 10px 12px;
+}
+
+.supported-roms dt {
+  font-family: var(--ob-display);
+  font-weight: 700;
+  color: var(--ob-wax-red);
+}
+
+.supported-roms dd {
+  min-width: 0;
+}
+
+.supported-roms code,
+.supported-roms span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.supported-roms code {
+  font-family: var(--ob-mono);
+  color: var(--ob-ink);
+}
+
+.supported-roms span {
+  margin-top: 2px;
+  font-family: var(--ob-mono);
+  color: var(--ob-ink-dim);
 }
 
 /* ============================================================

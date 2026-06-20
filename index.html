@@ -14,7 +14,7 @@
     <h1>OB64 Mod Editor</h1>
     <div class="header-buttons">
       <label for="rom-file" class="btn-file">Load ROM</label>
-      <input type="file" id="rom-file" accept=".v64">
+      <input type="file" id="rom-file" accept=".v64,.z64,.n64">
 
       <label for="patch-file" class="btn-file btn-secondary" id="btn-load-patch-label" aria-disabled="true">Load Patch</label>
       <input type="file" id="patch-file" accept=".json,application/json" disabled>
@@ -40,7 +40,22 @@
   <div class="content" id="content">
     <div class="empty-state" id="empty-state">
       <h2>No ROM Loaded</h2>
-      <p>Click "Load ROM" to open an Ogre Battle 64 .v64 ROM file.</p>
+      <p>Click "Load ROM" to open a supported Ogre Battle 64 ROM.</p>
+      <div class="supported-roms">
+        <p>Supported ROMs (SHA-256)</p>
+        <dl>
+          <dt>Header rev 0</dt>
+          <dd>
+            <code>Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64</code>
+            <span>6CA0A1AFE224831E202857AD64EF26BD429A034A4EA48404BB09621641A07B12</span>
+          </dd>
+          <dt>Header rev 1</dt>
+          <dd>
+            <code>Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1).z64</code>
+            <span>3BFBAF0AF968795102F6D136713665E347C22723B4CA75BD5494FDC97DF5919E</span>
+          </dd>
+        </dl>
+      </div>
     </div>
 
     <div class="tab-panel active" id="panel-shops"></div>

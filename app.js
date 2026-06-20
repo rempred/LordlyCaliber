@@ -222,7 +222,7 @@ window.OB64 = window.OB64 || {};
         showErrorModal('Export failed - squad overrides unavailable',
           'This ROM revision can be parsed and repacked, but the Squads runtime ' +
           'override hook has not been verified for it yet.\n\n' +
-          (rom.layout.unsupportedFeaturesReason || 'Load a supported Rev 0 ROM to export squad overrides.'));
+          (rom.layout.unsupportedFeaturesReason || 'Load a supported header revision 0 ROM to export squad overrides.'));
         statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
         return;
       }

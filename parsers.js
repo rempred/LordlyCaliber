@@ -102,7 +102,7 @@ OB64.romByteOrderExtension = function(byteOrder) {
 OB64.ROM_LAYOUTS = {
   'us-rev0': {
     id: 'us-rev0',
-    name: 'US retail Rev 0',
+    name: 'US retail header rev 0',
     version: 0x00,
     gameId: 'NO',
     country: 'E',
@@ -140,7 +140,7 @@ OB64.ROM_LAYOUTS = {
   },
   'us-rev1': {
     id: 'us-rev1',
-    name: 'US retail Rev 1',
+    name: 'US retail header rev 1',
     version: 0x01,
     gameId: 'NO',
     country: 'E',
@@ -149,9 +149,9 @@ OB64.ROM_LAYOUTS = {
     supportsTools: true,
     supportsSquadOverrides: true,
     unsupportedTools: {
-      'high-attack-streamsplit': 'Rev 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a Rev 1 payload before enabling.'
+      'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.'
     },
-    unsupportedFeaturesReason: 'Rev 1 supports normal data edits, Chaos Frame Counter, and Squads runtime overrides. High Attack Streamsplit remains disabled until its changed Rev 1 code path is rebuilt.',
+    unsupportedFeaturesReason: 'Header revision 1 supports normal data edits, Chaos Frame Counter, and Squads runtime overrides. High Attack Streamsplit remains disabled until its changed header revision 1 code path is rebuilt.',
     squadPatch: {
       HOOK_ROM: 0x1955A4
     },
@@ -1866,12 +1866,12 @@ OB64.shopExpendables = function(consumables) {
 OB64.loadROM = function(romData) {
   var normalized = OB64.normalizeRomImage(romData);
   if (!normalized.z64) {
-    throw new Error('Unsupported or unrecognized ROM image. Please load a US retail Rev 0 or Rev 1 .v64/.z64/.n64 ROM.');
+    throw new Error('Unsupported or unrecognized ROM image. Please load a US retail header revision 0 or 1 .v64/.z64/.n64 ROM.');
   }
   var z64 = normalized.z64;
   var layout = OB64.detectRomLayout(z64);
   if (!layout) {
-    throw new Error('Unsupported ROM revision. This editor supports US retail Rev 0 and Rev 1 only.');
+    throw new Error('Unsupported ROM revision. This editor supports US retail header revision 0 and 1 only.');
   }
   OB64.applyRomLayout(layout);
   var archives = OB64.findArchives(z64);

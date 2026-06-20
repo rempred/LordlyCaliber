@@ -43,16 +43,24 @@ No installation, no build step. Open `index.html` in any modern browser, drop
 in your own copy of the US retail ROM, and start modding.
 
 > **ROM compatibility:** the editor is built and tested against the North
-> American (USA) retail Rev 0 dump:
+> American (USA) retail header revision 0 dump:
 > `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64` (41,943,040 bytes,
 > .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
-> It also supports the common USA Rev 1 dump in `.z64`, `.v64`, or `.n64`
-> byte order for data editing/export. Rev 1 supports the Chaos Frame Counter
-> and Squads runtime override export; High Attack Streamsplit remains Rev 0-only
-> until its changed Rev 1 code path is rebuilt.
+> It also supports the common USA header revision 1 dump in `.z64`, `.v64`, or
+> `.n64` byte order for data editing/export. Header revision 1 supports the Chaos
+> Frame Counter and Squads runtime override export; High Attack Streamsplit
+> remains header revision 0-only until its changed header revision 1 code path is
+> rebuilt.
+>
+> Supported exact source images:
+> - Header rev 0: `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64`
+>   SHA-256: `6CA0A1AFE224831E202857AD64EF26BD429A034A4EA48404BB09621641A07B12`
+> - Header rev 1: `Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1).z64`
+>   SHA-256: `3BFBAF0AF968795102F6D136713665E347C22723B4CA75BD5494FDC97DF5919E`
+>
 > Japanese, European, debug, prototype, or otherwise modified ROMs are not
 > supported and will likely produce wrong offsets, garbled data, or crash on
-> export. Verify your file is a supported US Rev 0 or Rev 1 image before
+> export. Verify your file is a supported USA header revision 0 or 1 image before
 > reporting bugs.
 
 ## Releases and Downloads
@@ -113,7 +121,7 @@ project download asset.
   **High Attack Streamsplit** installs the v13 high-attack battle-stream fix
   on a separate ROM/RAM lane; attack-count bytes are still edited from the
   Classes tab, and fresh emulator regression is required before treating it as
-  release-ready. High Attack Streamsplit is currently enabled only on Rev 0.
+  release-ready. High Attack Streamsplit is currently enabled only on header revision 0.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
@@ -138,7 +146,7 @@ project download asset.
 
 ## Current Limitations
 
-- Only the North American retail Rev 0/Rev 1 ROMs listed above are supported.
+- Only the North American retail header revision 0/1 ROMs listed above are supported.
   Other regions, prototypes, or unknown modified ROMs are rejected or unsupported.
 - The editor creates new ROM/save files in your browser downloads. It does not
   overwrite your original files or patch a running emulator directly.
@@ -174,7 +182,7 @@ project download asset.
    ```
    Or open `index.html` directly in a browser (most features work, but file
    downloads need a real `http://` origin in some browsers).
-2. Click **Load ROM** and select your legally-obtained US retail `.v64`.
+2. Click **Load ROM** and select your legally-obtained supported US retail ROM.
 3. Use the tabs to make edits — pending changes show in the status bar.
 4. **Export ROM** writes a fresh ROM in the loaded byte order to your downloads.
 5. (Optional) **Save Patch** writes your edits as JSON. **Load Patch** re-applies

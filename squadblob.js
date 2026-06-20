@@ -5,7 +5,7 @@
  * that were validated in-game (edat 298, count/grow tests, edat 13 cross-mission).
  * Emits the three ROM writes that install the runtime override system:
  *   1. trampoline  jal 0x80097fc4  at the revision-specific record-builder hook
- *                  (Rev 0 ROM 0x195584; Rev 1 ROM 0x1955A4)
+ *                  (header rev 0 ROM 0x195584; header rev 1 ROM 0x1955A4)
  *   2. bootstrap   at ROM 0x283c4 / RAM 0x80097fc4  (uncached sentinel + PI-DMA
  *                  the blob from ROM tail into the free upper 4MB, then jump in)
  *   3. blob        at ROM tail 0x2780000 -> RAM 0x80400000
@@ -24,7 +24,7 @@
 (function (OB64) {
   'use strict';
 
-  // ---- constants (Rev 0 proven in-game; Rev 1 hook is the same routine at +0x20) ----
+  // ---- constants (header rev 0 proven in-game; header rev 1 hook is the same routine at +0x20) ----
   var HOOK_ROM   = 0x195584;     // record-builder trampoline site (outside CRC)
   var BOOT_ROM   = 0x283C4;      // bootstrap cave (z64; inside CRC -> recalc)
   var BOOT_RAM   = 0x80097FC4;   // bootstrap runtime address (linear, resident)
