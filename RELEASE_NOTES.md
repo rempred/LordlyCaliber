@@ -22,22 +22,70 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
   mode for all encoded squad anchors.
 - Expanded the Tools tab beyond Chaos Frame with experimental High Attack
   Streamsplit support.
+- Refactored the Chaos Frame counter into its own standalone mod-region module
+  instead of sharing fragile tail/free-RAM space with other patches.
 - Added ROM/RAM patch-region metadata and collision checks so enabled patches
   cannot silently share the same tail, bootstrap, or runtime region.
 - Fixed JSON patch save/load for Squads so saved patches carry the same
   runtime-key 35-byte replacement records that Export ROM writes.
 - Updated release-facing docs to describe default versus experimental squad
-  capacity, Tools safety checks, and the current high-attack caveats.
+  capacity, Tools safety checks, the Chaos Frame refactor, and the current
+  high-attack caveats.
+
+### Squads And EDAT Overrides
+
+- The Squads tab edits enemy squad templates by runtime scenario key, not by
+  wiki mission number alone. This matters because several runtime keys are
+  branch variants, aliases, internal cases, or loaded-only scenarios.
+- Each editable row is an EDAT template used by the selected runtime key. The
+  editor shows the matched wiki mission/squad label when the current research
+  atlas can identify it, plus loaded EDAT rows that were present in ESET even
+  when the older builder trace did not observe them.
+- Export ROM does not rewrite global `enemydat.bin`. Instead, it writes a
+  runtime override module:
+  - hook: record-builder trampoline at ROM `0x00195584`
+  - bootstrap: z64 `0x0283C4` / RAM `0x80097FC4`
+  - override blob: z64 tail `0x02780000` -> RAM `0x80400000`
+- At runtime, the module checks the live scenario key at `0x801936A7`, matches
+  the original 35-byte EDAT record, and copies the replacement 35-byte record
+  over the live template before the game builds the deployed 52-byte unit
+  records. This makes reused EDATs safely editable per scenario/key.
+- Save Patch / Load Patch now round-trips these squad overrides as
+  runtime-key/EDAT 35-byte replacement records, so a JSON patch can reproduce
+  the same Squads output as Export ROM.
+- The safe default editor path stays inside the vanilla-style limit of five
+  formation slots and two follower class groups. Experimental raw-capacity mode
+  can encode all seven EDAT anchors (`Leader + Bx3 + Cx3`), but this is a
+  research option, not a promise that map inspection, battle placement, or
+  targeting will support it.
 
 ### Tools
 
 - `cf-army-counter` remains the stable Tools feature. It shows Chaos Frame on
   the Army Management screen and restores cleanly in the validated mid-game
   Army Management flows.
+- The Chaos Frame counter was refactored into a standalone module lane:
+  - hook: z64 `0x023F7C`
+  - bootstrap: z64 `0x034E78` / RAM `0x800A4A78`
+  - tail blob: z64 `0x02790000`
+  - module RAM: `0x80420000`
+- The bootstrap checks an `OBCF` sentinel, PI-DMAs the module from ROM tail into
+  free RAM, then jumps into the counter module. The module inserts the display
+  task into the Army Management UI path and uses screen/header fingerprints
+  rather than a volatile single state pointer. This keeps the CF counter away
+  from the Squads and High Attack patch regions.
 - `high-attack-streamsplit` is exposed as experimental. It installs the v13
   high-attack battle-stream fix on a separate non-conflicting lane:
   tail `0x027A0000`, module RAM `0x80440000`, owner/context
   `0x8044A820/0x80450000`.
+- High Attack Streamsplit is a runtime battle-engine patch for classes with
+  attack counts above the vanilla-safe range. The original failure was not the
+  small result log; high-count battles overran the action-stream/context layout
+  used by battle setup and playback.
+- The streamsplit patch keeps the normal battle behavior path but relocates the
+  battle context/action-stream work area into free RAM and splits the control
+  trailer away from the growing stream. It also installs the current guards for
+  known null actor/class stream cases and final stream handoff behavior.
 - High Attack does not edit class attack-count bytes. Use the Classes tab for
   those values.
 - Unit Info display wraps count `9` to `x1`; combat behavior remains the
