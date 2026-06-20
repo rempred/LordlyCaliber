@@ -3599,6 +3599,16 @@ td.attack-list {
   color: var(--ob-ink-soft);
 }
 
+.tool-notes {
+  margin: 0 0 0 16px;
+  color: var(--ob-ink-soft);
+  line-height: 1.35;
+}
+
+.tool-notes li {
+  margin: 2px 0;
+}
+
 .tool-meta {
   font-family: var(--ob-serif);
   font-size: 0.82em;
