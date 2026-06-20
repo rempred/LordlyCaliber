@@ -14,6 +14,8 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
 - Added squad formation portraits and class-card portraits from the bundled
   offline portrait set.
 - Corrected class-header framing and same-class unit size parsing.
+- Thanks to GrantWChapman for the unit/class byte correction that identified
+  the proper same-class unit-size byte and companion-slot capacity behavior.
 - Added warning-gated raw class record viewing/editing for sentinel, story, and
   NPC class records.
 - Corrected squad C-slot capacity handling and added experimental raw-capacity
@@ -30,7 +32,8 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
 ### Tools
 
 - `cf-army-counter` remains the stable Tools feature. It shows Chaos Frame on
-  the Army Management screen and restores cleanly.
+  the Army Management screen and restores cleanly in the validated mid-game
+  Army Management flows.
 - `high-attack-streamsplit` is exposed as experimental. It installs the v13
   high-attack battle-stream fix on a separate non-conflicting lane:
   tail `0x027A0000`, module RAM `0x80440000`, owner/context
@@ -39,8 +42,8 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
   those values.
 - Unit Info display wraps count `9` to `x1`; combat behavior remains the
   authority, and testing has validated counts above 8.
-- High Attack still needs fresh Project64 cold-boot/high-count regression on
-  the moved editor lane before it should be called release-ready.
+- High Attack remains experimental and should be treated as a research feature,
+  not a safe default patch.
 
 ### Safety And Validation
 
@@ -61,9 +64,26 @@ features, so `v0.2.0` is the recommended version number rather than `v0.1.3`.
 
 - High Attack Streamsplit is experimental until the moved lane gets fresh
   emulator regression coverage.
+- High Attack known-bugs warning: pressing `A` at battle start / `FIGHT IT OUT`
+  can take an unstable path and may crash.
+- High Attack known-bugs warning: opening or using the battle menu during a
+  high-count battle may end the battle early, softlock, or crash.
+- High Attack may still expose scheduler/stream edge cases in unusual battle
+  flows, high unit counts, animation timing, or scenario-specific cut-in paths.
+- High Attack display caveat: Unit Info can misrepresent very high attack
+  counts, including wrapping count `9` to `x1`; combat behavior is the
+  authority.
+- Chaos Frame display caveat: one very-early-game Army Management screen showed
+  no counter even though the ROM patch bytes were present; this is suspected to
+  be a runtime visibility/state gate and needs a targeted follow-up.
 - Raw squad capacity mode can encode formations beyond vanilla organization
   assumptions; this is intentional modder-facing behavior, not a guarantee that
-  every game menu supports over-cap organization.
+  every game menu or battle-placement path supports over-cap organization.
+- Raw squad capacity known-bugs warning: a key 2 / EDAT 13 seven-unit test
+  applied the replacement record correctly, but map inspection hid units and
+  battle placed units off-grid; the misplaced units also could not be attacked.
+  Treat 6-7 unit squads as research-only until that exact scenario is manually
+  validated.
 - More than two follower class groups is still not exported; supporting that
   requires a larger runtime record/resolver design.
 - The parent research workspace docs and generated research artifacts are not

@@ -58,6 +58,16 @@
   function memberCount(rec) { return units(rec).length; }
   function formationSlotCount(rec) { var n = 0; units(rec).forEach(function (u) { n += slotCost(u.cls); }); return n; }
   function followerTypeCount(rec) { return (rec[7] ? 1 : 0) + (rec[16] ? 1 : 0); }
+  function rawCapacityWarning(rec) {
+    if (!ui.rawCapacity) return '';
+    if (memberCount(rec) > 5 || formationSlotCount(rec) > 5) {
+      return 'Raw EDAT capacity can encode over-cap squads, but map inspection and battle placement may hide units, place them off-grid, or make them untargetable. Keep release edits at 5 formation slots unless this exact scenario is tested.';
+    }
+    if (!adjacencyOk(rec)) {
+      return 'Raw EDAT capacity ignores large-unit spacing; battle placement may not match the editor grid.';
+    }
+    return 'Raw EDAT capacity is experimental; verify this scenario in map inspection and battle before release.';
+  }
   function moveUnit(rec, from, to) {
     if (from === to) return;
     var s = unitAtCell(rec, from); if (!s) return;
@@ -467,13 +477,15 @@
     if (over) {
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
-        'Allow full raw EDAT capacity: Leader + Bx3 + Cx3. Vanilla organization screens may not support over-cap units; test patched scenarios before release.</span></label>';
+        'Allow full raw EDAT capacity: Leader + Bx3 + Cx3. This can exceed the game placement assumptions; over-cap squads may hide units in map inspection, place them off-grid in battle, or make them untargetable.</span></label>';
       html += '<div class="sq-editor-grid">' + gridHtml(rec, true) + pickersHtml(rec) + '</div>';
       if (ui.notice) html += '<div class="sq-notice">' + esc(ui.notice) + '</div>';
       var n = memberCount(rec), slots = formationSlotCount(rec), adjOk = adjacencyOk(rec), hasLeader = !!rec[0] && !!rec[6];
       var normalOk = hasLeader && adjOk && slots <= 5;
       var ok = ui.rawCapacity ? hasLeader : normalOk;
-      var status = ui.rawCapacity ? 'Experimental raw EDAT capacity' : (ok ? 'Valid' : (!hasLeader ? 'Leader class required' : (!adjOk ? 'Large-unit spacing conflict' : 'Formation slot limit exceeded')));
+      var rawWarn = rawCapacityWarning(rec);
+      if (rawWarn) html += '<div class="sq-notice">' + esc(rawWarn) + '</div>';
+      var status = ui.rawCapacity ? (rawWarn ? 'Experimental raw EDAT capacity - placement risk' : 'Experimental raw EDAT capacity') : (ok ? 'Valid' : (!hasLeader ? 'Leader class required' : (!adjOk ? 'Large-unit spacing conflict' : 'Formation slot limit exceeded')));
       var capacity = ui.rawCapacity ? (n + '/7 raw anchors - large size ignored') : (slots + '/5 slots');
       html += '<div class="sq-foot"><span class="' + (ok && !ui.rawCapacity ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units - ' + capacity + ' - ' + followerTypeCount(rec) + '/2 follower types</span>' +
         '<span>' + esc(scenarioTraceText(scn)) + '</span></div>';
