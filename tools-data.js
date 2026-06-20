@@ -101,11 +101,10 @@ OB64.TOOLS_FEATURES = [
   {
     id: 'high-attack-streamsplit',
     name: 'High Attack Battle Stream Fix',
-    description: 'Experimental high-attack battle stream fix. Relocates the battle action stream/control context into Expansion Pak RAM and installs the v13 parser guards so class attack counts above the vanilla range can resolve without the known stream overflow/freeze path. The Unit Info screen still displays 9 as x1; combat behavior is the authority.',
+    description: 'Experimental high-attack battle stream fix. Relocates the battle action stream/control context into Expansion Pak RAM and installs the v13 parser guards so class attack counts above the vanilla range can resolve without the known stream overflow/freeze path.',
     verified: 'v13 authoritative normal/menu-stall gates passed on 2026-06-18; editor lane moved to non-conflicting z64/RAM addresses on 2026-06-19 and needs a fresh cold-boot regression',
     notes: [
       'Does not edit class attack-count bytes; use the Classes tab for per-class counts.',
-      'Unit Info display wraps 9 to x1; combat tests showed counts above 8 still execute.',
     ],
     crcWindow: true,
     regions: [
