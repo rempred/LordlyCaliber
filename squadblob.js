@@ -255,6 +255,16 @@
     for (i = 0; i < 0x10000; i++) z64[TAIL_Z64 + i] = 0;
   }
 
+  function patchRegions() {
+    return [
+      { kind: 'rom', start: HOOK_ROM, size: 8, label: 'record-builder trampoline' },
+      { kind: 'rom', start: BOOT_ROM, size: 108, label: 'bootstrap cave' },
+      { kind: 'rom', start: TAIL_Z64, size: 0x10000, label: 'squad override tail lane' },
+      { kind: 'ram', start: BOOT_RAM, size: 108, label: 'bootstrap runtime' },
+      { kind: 'ram', start: MOD_BASE, size: 0x10000, label: 'squad override runtime lane' },
+    ];
+  }
+
   // ---- record <-> high-level squad spec (for the UI) ----
   // spec = { leader:{cls,cell,equip}, classB:{cls,equip,cells:[]}, classC:{cls,equip,cells:[]} }
   function recordFromSpec(spec) {
@@ -294,6 +304,7 @@
   OB64.squad = {
     buildSquadOverrideWrites: buildSquadOverrideWrites,
     restoreVanilla: restoreVanilla,
+    patchRegions: patchRegions,
     buildBlob: buildBlob,
     buildBootstrap: buildBootstrap,
     recordFromSpec: recordFromSpec,

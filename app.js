@@ -213,6 +213,22 @@ window.OB64 = window.OB64 || {};
       // restores originals for disabled ones; foreign-state features are
       // skipped and reported.
       var toolsCrc = false;
+      var squadOverridesForConflict = (OB64.squad && OB64.collectSquadOverrides)
+        ? OB64.collectSquadOverrides(rom)
+        : [];
+      if (OB64.tools && OB64.squad && squadOverridesForConflict.length) {
+        try {
+          OB64.tools.assertDesiredCompatible(rom, [{
+            id: 'squad-overrides',
+            name: 'Squad Overrides',
+            regions: OB64.squad.patchRegions()
+          }]);
+        } catch (e) {
+          showErrorModal('Export failed - patch region collision', e.message);
+          statusBar.textContent = 'Export failed (patch regions): ' + e.message;
+          return;
+        }
+      }
       if (dirty.tools) {
         var toolsResult = OB64.tools.applyDesired(rom);
         if (toolsResult.skipped.length) {
@@ -238,7 +254,7 @@ window.OB64 = window.OB64 || {};
       // into rom.z64. The bootstrap cave is inside the CRC window.
       var squadCrc = false;
       if (dirty.squadOverrides && OB64.squad) {
-        var ovs = OB64.collectSquadOverrides(rom);
+        var ovs = squadOverridesForConflict;
         if (ovs.length) {
           var sqw = OB64.squad.buildSquadOverrideWrites(ovs);
           for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
@@ -512,6 +528,9 @@ window.OB64 = window.OB64 || {};
         '</div>' +
         '<div class="tool-status ' + statusClass + '">' + statusText + '</div>' +
         '<div class="tool-desc">' + f.description + '</div>' +
+        (f.notes && f.notes.length
+          ? '<ul class="tool-notes">' + f.notes.map(function(n) { return '<li>' + n + '</li>'; }).join('') + '</ul>'
+          : '') +
         (f.verified ? '<div class="tool-meta">Verified: ' + f.verified + '</div>' : '') +
       '</div>';
     }
