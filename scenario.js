@@ -249,9 +249,34 @@ window.OB64 = window.OB64 || {};
     return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
   }
 
+  // Initial town allegiance is DERIVED (r6 decode + live watch, 2026-07-03): a site garrisoned
+  // by a selector-placed Section 1 row starts enemy-held; otherwise the ktenmain morale byte's
+  // 0x80 bit marks a neutral start; otherwise allied. There is no standalone owner byte.
+  // Project intent (user's neutral/allied choice, pending the ktenmain export lane) sits
+  // between garrison and the static bit.
   function siteAllegiance(rom, runtimeKey, selector) {
-    var bucket = ensureState(rom).siteAllegiances[runtimeKey] || {};
-    return bucket[selector] || 'neutral';
+    var model = modelFor(rom, runtimeKey);
+    if (model) {
+      for (var i = 0; i < model.section1.length; i++) {
+        var b = model.section1[i].bytes;
+        if ((b[4] || 0) === 0 && (b[3] || 0) === selector) return 'enemy';
+      }
+    }
+    var intent = (ensureState(rom).siteAllegiances[runtimeKey] || {})[selector];
+    if (intent === 'neutral' || intent === 'allied') return intent;
+    var site = (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0];
+    if (site && site.neutralAtStart) return 'neutral';
+    return 'allied';
+  }
+
+  function siteGarrisonRows(rom, runtimeKey, selector) {
+    var model = modelFor(rom, runtimeKey);
+    var out = [];
+    if (model) model.section1.forEach(function(row) {
+      var b = row.bytes;
+      if ((b[4] || 0) === 0 && (b[3] || 0) === selector) out.push(row.sourceId);
+    });
+    return out;
   }
 
   function setSiteAllegiance(rom, runtimeKey, selector, value) {
@@ -276,6 +301,50 @@ window.OB64 = window.OB64 || {};
     var original = state.originalBytes[runtimeKey];
     if (!model || !original) return false;
     return !OB64.scenarioCodec.equalBytes(modelBytes(model), original);
+  }
+
+  // Live archive-fit prediction: every eset must recompress into its fixed ROM slot (the r11
+  // ladder's 16-row key1 rung failed exactly here: 183B archive vs 181B slot).
+  function archiveFitInfo(rom, key) {
+    var meta = ensureState(rom).metadata[key] || scenarioData(key);
+    var model = modelFor(rom, key);
+    if (!meta || !model || !rom.archives || !rom.archives[meta.archive] || !OB64.lh5Compress || !OB64.buildLHAArchive) return null;
+    var arc = rom.archives[meta.archive];
+    var slot = (arc.totalHeaderSize || 0) + (arc.compSize || 0);
+    if (!slot) return null;
+    var raw = modelBytes(model);
+    var built = OB64.buildLHAArchive(OB64.lh5Compress(raw), raw, meta.filename || 'eset.bin');
+    return { size: built.length - 1, slot: slot, fits: (built.length - 1) <= slot };
+  }
+
+  function unitCountFromRecord(b) {
+    if (!b || !b[0]) return 0;
+    var c = 1;
+    if (b[7]) [13, 14, 15].forEach(function(f) { if (b[f]) c++; });
+    if (b[16]) [22, 23, 24].forEach(function(f) { if (b[f]) c++; });
+    return c;
+  }
+
+  function hexRecordBytes(hex) {
+    if (!hex) return null;
+    var out = [];
+    for (var i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+    return out;
+  }
+
+  // Predicted deployed-unit records at load for this key. The table is 100 stride-52 records
+  // including the padding record (measured live 2026-07-03; busiest vanilla load observed 88).
+  function predictedUnits(rom, key) {
+    var model = modelFor(rom, key);
+    var records = ((OB64.SCENARIO_ESET_DATA || {}).enemydat || {}).records || [];
+    if (!model) return null;
+    var total = 1; // padding record 0
+    model.section1.forEach(function(row) {
+      var e = (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1;
+      var over = rom.squadOverrides && rom.squadOverrides[key + ':' + e];
+      total += unitCountFromRecord(over ? Array.from(over) : hexRecordBytes(records[e]));
+    });
+    return total;
   }
 
   function anyProjectStub(rom) {
@@ -834,23 +903,42 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  // World position for a Section 2 waypoint node (kind 1, subtype 2). DUAL payload encoding
-  // (key4 vs key20 evidence): bytes[3]==0 -> bytes[4] is a SITE SELECTOR (march-to-town);
-  // bytes[3]!=0 -> (bytes[3],bytes[4]) are bounds-normalized byte coordinates (key20 camp a4,15).
-  // Waypoint payload (unified, evidence keys 4/11/20): byte [3] = flag (0/1), and the pair
-  // lives at [4],[5] for EVERY kind-1 subtype (0/1/2 - subtype is behavior, not encoding):
-  // [5]==0 -> [4] is a SITE SELECTOR (march-to-town); [5]!=0 -> ([4],[5]) are bounds-normalized
-  // byte coordinates (key20 camp = 164,21; key11 patrol legs = (90,176),(176,123)). Coordinate
-  // targets with z exactly at zMin (byte 0) would misread as selectors - none observed vanilla.
+  // Resolve a scene-relative ktenmain record index to a site (the SECOND site index space:
+  // shared by kind-12 triggers and kind-1 SUB-1 waypoints). Live anchors: runC E2 b[6]=4 ->
+  // Hou (key1 scene-record 4), and Joe's key1 node-4 observation: sub-1 [4]=1 -> Mulsuk
+  // (scene-record 1). 97/121 sub-1 waypoints corpus-wide resolve to selector-table sites;
+  // the rest reference scene records beyond the selector table (rendered as unresolved).
+  function siteBySceneRecord(rom, key, rel) {
+    var sites = ensureState(rom).sites[key] || [];
+    var min = null;
+    sites.forEach(function(s) {
+      if (s.ktenmainRecordIndex != null && (min === null || s.ktenmainRecordIndex < min)) min = s.ktenmainRecordIndex;
+    });
+    if (min === null) return null;
+    return sites.filter(function(s) { return s.ktenmainRecordIndex === min + rel; })[0] || null;
+  }
+
+  // Waypoint payload model v3 (2026-07-03, two live anchors + corpus fit):
+  //   [5] != 0 -> ([4],[5]) bounds-normalized byte coordinates (/256, game-exact).
+  //   [5] == 0, subtype 0/2 -> SELECTOR-table target: selector = [4] - [3]
+  //       (live: key11 sub-2 (1,6,0) -> Baldera sel 5; (1,2,0) -> Carnot sel 1; key4 sub-2
+  //        (0,8/4/2,0) -> Burgund/Phuntua/Taza; 71/74 corpus in range; the 3 misses all
+  //        compute sel 0 = sentinel, semantics open - rider r2).
+  //   [5] == 0, subtype 1 -> SCENE-RECORD target (kind-12's space): site whose ktenmain
+  //       record index == sceneMin + [4] (live: key1 (0,1,0) -> Mulsuk - Joe watched the
+  //       triggered units march there, correcting the old selector reading "Zemio").
   function nodeWorld(rom, key, node) {
     if (!node || node.kind !== 1) return null;
     if (!node.bytes) return null;
     if (node.bytes[5] === 0) {
-      // Byte [3] flag shifts the selector index: [3]=0 -> selector = [4] (verified keys 4/20);
-      // [3]=1 -> selector = [4]-1 (live-verified key11 node 4: [4]=6 -> Baldera, selector 5 -
-      // units observed marching there; single specimen, grade [obs]).
-      var sel = node.bytes[3] === 1 ? node.bytes[4] - 1 : node.bytes[4];
-      var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
+      var site;
+      if (node.subtype === 1) {
+        site = siteBySceneRecord(rom, key, node.bytes[4]);
+        return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector, recordSpace: true } : null;
+      }
+      var sel = node.bytes[4] - node.bytes[3];
+      if (sel <= 0) return null; // sel-0 sentinel (key11 n15, key21 n10/n18) - semantics open
+      site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
       return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector } : null;
     }
     var b = calibrationData(key) && calibrationData(key).boundsWorld;
@@ -969,10 +1057,15 @@ window.OB64 = window.OB64 || {};
       out.label = '≤ ' + b[6] + ' enemy squads remain';
       out.detail = 'remnant-count trigger (live count at 0x801F0FDE)';
     } else if (kind === 12) {
-      // Payload indexes the runtime SITE-RECORD table (record b[6]-1), which is ordered
-      // differently from the selector space (live-proven: key1 E2 record 3 = Hou).
-      out.label = 'Site flag test (site record #' + b[6] + ')';
-      out.detail = 'tests bit 0x0004 on runtime site record ' + (b[6] - 1) + ' (record-table order, not the selector space; flag semantics partially open)';
+      // SCENE-RECORD space (shared with kind-1 sub-1 waypoints): site = sceneMin + b[6].
+      // Live anchors: runC key1 E2 b[6]=4 -> Hou; Joe's Mulsuk march anchors the same space
+      // for sub-1. Mapping restored 2026-07-03 via ktenmainRecordIndex in the site data.
+      var recSite = siteBySceneRecord(rom, key, b[6]);
+      out.label = 'Site flag test (' + (recSite ? recSite.siteName.trim() : 'scene record #' + b[6] + ', unresolved') + ')';
+      out.detail = 'tests bit 0x0004 on the runtime site record for scene record ' + b[6] +
+        (recSite ? ' = ' + recSite.siteName.trim() : ' (beyond the selector-table sites)') +
+        '; flag semantics partially open';
+      out.geometry = !!recSite;
     } else {
       out.label = (EXTRA_KIND_NAMES[kind] || 'Kind ' + kind + ' (undecoded)');
       out.detail = 'payload ' + b.slice(2).map(function(v) { return OB64.scenarioCodec.hexByte(v); }).join(' ');
@@ -1104,8 +1197,9 @@ window.OB64 = window.OB64 || {};
           if (d < best) { best = d; nearest = site; }
         });
         if (node.bytes) {
-          node.bytes[2] = 2;
+          node.bytes[2] = 2; // drag normalizes the node to sub-2 selector/coordinate space
           if (nearest && best < SNAP_SCREEN_PX) {
+            node.bytes[3] = 0; // sel = [4] - [3]: clear any prior offset so the snap reads back
             node.bytes[4] = nearest.selector & 0xFF;
             node.bytes[5] = 0;
           } else {
@@ -1243,11 +1337,13 @@ window.OB64 = window.OB64 || {};
         tag.textContent = 'E' + extra.extraId + ' ' + describeExtra(rom, key, extra).label;
         svg.appendChild(tag);
         shape = rect;
-      } else if (kind === 4) {
+      } else if (kind === 4 || kind === 12) {
         // kind 4 compares object +0x74 == b[6]-1, i.e. SELECTOR space (live-proven, key1 E1).
-        // kind 12 indexes the site-RECORD table whose order we cannot resolve statically, so it
-        // gets no map geometry (avoid drawing it at the wrong town).
-        var site = sites.filter(function(s) { return s.selector === b[6]; })[0] || null;
+        // kind 12 uses SCENE-RECORD space (live-proven, runC key1 E2 -> Hou) - ring restored
+        // 2026-07-03 now that ktenmainRecordIndex maps records to sites.
+        var site = kind === 4
+          ? (sites.filter(function(s) { return s.selector === b[6]; })[0] || null)
+          : siteBySceneRecord(rom, key, b[6]);
         if (!site) return;
         var p = projection.worldToImage(site.x, site.z);
         var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -1340,8 +1436,22 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
         '<input id="sc-trig-n" type="number" min="1" max="30" value="' + b[6] + '"></div>';
     } else if (extra.kind === 12) {
-      html += '<div class="sc-form-row"><label class="sc-label">Site record #</label>' +
-        '<input id="sc-trig-rec" type="number" min="1" max="30" value="' + b[6] + '"></div>';
+      // Scene-record space, mapped through ktenmainRecordIndex (anchors: Hou/runC, Mulsuk/Joe).
+      var recSites = sites.filter(function(s) { return s.ktenmainRecordIndex != null; });
+      var recMin = recSites.length ? Math.min.apply(null, recSites.map(function(s) { return s.ktenmainRecordIndex; })) : null;
+      if (recMin != null) {
+        var hasCurrent = recSites.some(function(s) { return s.ktenmainRecordIndex - recMin === b[6]; });
+        html += '<div class="sc-form-row"><label class="sc-label">Site</label><select id="sc-trig-rec-sel">' +
+          recSites.map(function(s) {
+            var rel = s.ktenmainRecordIndex - recMin;
+            return option(String(rel), rel + ': ' + (s.siteName || '').trim(), String(b[6]));
+          }).join('') +
+          (hasCurrent ? '' : option(String(b[6]), b[6] + ': (beyond the selector-table sites)', String(b[6]))) +
+          '</select></div>';
+      } else {
+        html += '<div class="sc-form-row"><label class="sc-label">Scene record #</label>' +
+          '<input id="sc-trig-rec" type="number" min="0" max="30" value="' + b[6] + '"></div>';
+      }
     }
     html += '<div class="sc-form-row"><label class="sc-label">Raw payload</label><div class="sc-mini-grid" style="grid-template-columns:repeat(8,1fr)">' +
       b.slice(2).map(function(v, i) {
@@ -1377,6 +1487,8 @@ window.OB64 = window.OB64 || {};
     if (n) n.onchange = function() { extra.bytes[6] = clamp(parseInt(this.value, 10) || 4, 1, 30); commitTrig(); };
     var rec = el.querySelector('#sc-trig-rec');
     if (rec) rec.onchange = function() { extra.bytes[6] = parseInt(this.value, 10) & 0xFF; commitTrig(); };
+    var recSel = el.querySelector('#sc-trig-rec-sel');
+    if (recSel) recSel.onchange = function() { extra.bytes[6] = parseInt(this.value, 10) & 0xFF; commitTrig(); };
     el.querySelectorAll('.sc-trig-raw').forEach(function(inp) {
       inp.onchange = function() {
         var v = parseByte(this.value);
@@ -1395,11 +1507,21 @@ window.OB64 = window.OB64 || {};
       cal && cal.mapName ? cal.mapName : 'no map image',
       cal ? cal.registrationGrade : 'ungraded',
     ]);
+    var fit = archiveFitInfo(rom, key);
+    var units = predictedUnits(rom, key);
     html += '<div class="sc-meter-grid">' +
-      meter(model.section1.length + '/19', 'source rows') +
+      meter(model.section1.length + '/' + OB64.scenarioCodec.DEFAULT_LIMITS.section1RowsMax, 'source rows') +
       meter(model.section2.length + '/16', 'nodes') +
       meter(model.section3.length + '/16', 'extras') +
+      meter(fit ? fit.size + '/' + fit.slot + 'B' : 'n/a', 'archive fit') +
+      meter(units != null ? units + '/100' : 'n/a', 'units at load') +
     '</div>';
+    if (fit && !fit.fits) {
+      html += '<div class="sc-warning">This ESET no longer fits its fixed ROM slot (' + fit.size + 'B compressed vs ' + fit.slot + 'B). Remove or shrink content before export; the archive grow/relocate path is not installed yet.</div>';
+    }
+    if (units != null && units > 100) {
+      html += '<div class="sc-warning">Predicted deployed units (' + units + ') exceed the 100-record table - reduce squad sizes or squad count.</div>';
+    }
     html += validation.errors.length
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors, ' + validation.warnings.length + ' warnings</div>';
@@ -1506,20 +1628,45 @@ window.OB64 = window.OB64 || {};
 
   function renderSiteDetail(el, rom, key, site) {
     var allegiance = siteAllegiance(rom, key, site.selector);
-    el.innerHTML = backToOverviewHtml() + detailHead(site.siteName || ('Site ' + site.selector), [
+    var garrisons = siteGarrisonRows(rom, key, site.selector);
+    var intent = (ensureState(rom).siteAllegiances[key] || {})[site.selector];
+    var why = garrisons.length
+      ? 'ENEMY: garrisoned by squad source ' + garrisons.join(', ') + ' (enemy-held state is derived from garrison placement - decoded 2026-07-03).'
+      : (allegiance === 'neutral'
+        ? (intent === 'neutral' ? 'NEUTRAL (project intent; static bit pending export).' : 'NEUTRAL: ktenmain morale byte 0x80 bit set for this site.')
+        : (intent === 'allied' ? 'ALLIED (project intent; static bit pending export).' : 'ALLIED: no garrison, neutral bit clear (default).'));
+    var html = backToOverviewHtml() + detailHead(site.siteName || ('Site ' + site.selector), [
       'selector ' + site.selector,
       'x ' + site.x.toFixed(3) + ' / z ' + site.z.toFixed(3),
-    ]) +
-      '<div class="sc-form-row"><label class="sc-label">Allegiance</label><select id="sc-site-allegiance">' +
-        option('allied', 'Allied', allegiance) +
-        option('enemy', 'Enemy', allegiance) +
-        option('neutral', 'Neutral', allegiance) +
+      allegiance.toUpperCase() + (site.isObjective ? ' / objective-flagged' : ''),
+    ]);
+    html += '<div class="sc-section"><span class="sc-label">Initial allegiance</span>' +
+      '<div class="sc-sub">' + esc(why) + '</div>';
+    if (garrisons.length) {
+      html += '<div class="sc-sub">To change: move or delete the garrison squad (drag it off the town). ' +
+        'Neutral/allied intent below only applies once no garrison remains.</div>';
+    } else {
+      html += '<div class="sc-sub">To make this town ENEMY-held: place a squad on it (drag one over, or Add Squad - it snaps).</div>';
+    }
+    html += '<div class="sc-form-row"><label class="sc-label">No-garrison state</label><select id="sc-site-allegiance">' +
+        option('', 'Static default (' + (site.neutralAtStart ? 'neutral' : 'allied') + ')', intent || '') +
+        option('allied', 'Allied', intent || '') +
+        option('neutral', 'Neutral', intent || '') +
       '</select></div>' +
-      '<div class="sc-warning">ROM export stub: initial site allegiance source is pending decode, so this value is saved in Scenario project JSON and blocked visibly during ROM export.</div>';
+      '<div class="sc-warning">Neutral/allied writes target the ktenmain site table, but our LHA recompression of ktenmain ' +
+      'currently exceeds its ROM slot by ~32B - the intent saves to project JSON and blocks ROM export until encoder ' +
+      'parity or the archive grow/relocate path lands. Garrison-based (enemy) authoring exports fully today.</div>';
+    html += '</div>';
+    el.innerHTML = html;
     wireBackButton(el);
     var sel = el.querySelector('#sc-site-allegiance');
     if (sel) sel.onchange = function() {
-      setSiteAllegiance(rom, key, site.selector, this.value);
+      if (this.value) setSiteAllegiance(rom, key, site.selector, this.value);
+      else {
+        var bucket = ensureState(rom).siteAllegiances[key] || {};
+        delete bucket[site.selector];
+        changed();
+      }
       renderScenarioTab(document.getElementById('panel-scenario'));
     };
   }
@@ -2146,7 +2293,19 @@ window.OB64 = window.OB64 || {};
     }
     var maxSource = model.section1.reduce(function(max, row) { return Math.max(max, row.sourceId); }, 0);
     if (maxSource + 1 > OB64.scenarioCodec.DEFAULT_LIMITS.sourceIdMax) {
-      ui.gateText = 'Next source id would exceed the 0x30 conservative cap.';
+      ui.gateText = 'Next source id would exceed 0x31 - the measured 50-slot pool ceiling (source 0x32 breaks the scenario load).';
+      renderScenarioTab(panel);
+      return;
+    }
+    var fitNow = archiveFitInfo(rom, key);
+    if (fitNow && !fitNow.fits) {
+      ui.gateText = 'This ESET already exceeds its ROM slot (' + fitNow.size + '/' + fitNow.slot + 'B) - shrink it before adding squads.';
+      renderScenarioTab(panel);
+      return;
+    }
+    var unitsNow = predictedUnits(rom, key);
+    if (unitsNow != null && unitsNow >= 100) {
+      ui.gateText = 'Deployed-unit table is full (' + unitsNow + '/100) - reduce squad sizes first.';
       renderScenarioTab(panel);
       return;
     }
@@ -2235,6 +2394,10 @@ window.OB64 = window.OB64 || {};
     ui.selectedSite = null;
     ui.selectedTrigger = null;
     ui.gateText = 'Squad placed: source ' + bytes[0] + ' / edat ' + edatId + '. Edit the comp in the sidebar; exports with the mission ESET + squad-override blob.';
+    var fitAfter = archiveFitInfo(rom, key);
+    if (fitAfter && !fitAfter.fits) {
+      ui.gateText += ' WARNING: the eset now exceeds its ROM slot (' + fitAfter.size + '/' + fitAfter.slot + 'B) - export will block until it shrinks.';
+    }
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
@@ -2365,7 +2528,14 @@ window.OB64 = window.OB64 || {};
     var state = ensureState(rom);
     var stubs = anyProjectStub(rom);
     var blocked = [];
-    if (stubs.siteAllegianceKeys.length) blocked.push('Initial town allegiance ROM source is pending decode; saved project values are not written to ROM.');
+    if (stubs.siteAllegianceKeys.length) blocked.push('Neutral/allied town intent targets the ktenmain site table, whose LHA recompression currently exceeds its ROM slot by ~32B; intents stay project-only until encoder parity or the grow/relocate path lands. (Enemy-held via garrison placement exports fully.)');
+    // Per-key archive-fit pre-check: report cleanly instead of throwing mid-splice.
+    Object.keys(state.models).forEach(function(k) {
+      var rk = Number(k);
+      if (!keyModified(rom, rk)) return;
+      var f = archiveFitInfo(rom, rk);
+      if (f && !f.fits) blocked.push('Scenario key ' + rk + ' no longer fits its ROM slot (' + f.size + 'B compressed vs ' + f.slot + 'B) - shrink it or wait for grow/relocate.');
+    });
     // Added squads EXPORT as of 2026-07-03: appended-row deployment and the override
     // re-skin are both cold-boot proven (r10 run: control squad kept its donor comp,
     // the overridden one deployed Black Knight + 2 Ninja). The row splices with its

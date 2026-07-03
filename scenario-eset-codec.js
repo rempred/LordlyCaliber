@@ -17,8 +17,11 @@ window.OB64 = window.OB64 || {};
   };
 
   var DEFAULT_LIMITS = {
-    section1RowsMax: 19,
-    sourceIdMax: 0x30,
+    // Measured live 2026-07-03 (wiki/eset-capacity-live-ladder.md): 20 rows land with source
+    // 0x31; source 0x32 gets no object slot and the scenario fails to land (50-slot pool ends
+    // at 0x31 inclusive). Archive slot fit is a separate per-key export gate.
+    section1RowsMax: 20,
+    sourceIdMax: 0x31,
     section2RowsMax: 16,
     section3RowsMax: 16,
     descriptorGroupsMax: 10,
