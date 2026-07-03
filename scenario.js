@@ -11,7 +11,10 @@ window.OB64 = window.OB64 || {};
     selectedSite: null,
     selectedTrigger: null,
     search: '',
-    viewMode: 'image',
+    // 'auto' = art on site-fitted registrations, schematic on provisional ones. Forcing art
+    // onto provisional maps draws sites/units with the rough bounds-envelope affine - visibly
+    // off the towns (Joe report 2026-07-03) - so art-by-default only where calibration earns it.
+    viewMode: 'auto',
     zoom: 0.45,
     advanced: false,
     layers: { squads: true, sites: true, routes: true, triggers: true },
@@ -21,6 +24,10 @@ window.OB64 = window.OB64 || {};
   // clicks must not clear the selection; tools clear it a tick AFTER their final click so the
   // trailing click event cannot deselect.
   var mapTool = null;
+  // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
+  // The old fixed 48 IMAGE px was ~14 screen px at fit zoom - trivially easy to miss a town
+  // and silently write near-town coordinate bytes instead of the selector (Joe, 2026-07-03).
+  var SNAP_SCREEN_PX = 30;
 
   function releaseMapTool() {
     setTimeout(function() { mapTool = null; }, 0);
@@ -31,6 +38,18 @@ window.OB64 = window.OB64 || {};
     ui.selectedSite = null;
     ui.selectedTrigger = null;
     renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  // Behavior-builder form state, persisted across the full re-renders every commit triggers
+  // (Joe, 2026-07-03: applying / live re-gating visually wiped in-progress selections and the
+  // confirmation message, reading as "didn't save"). Reset when a different squad is selected.
+  var builder = null;
+
+  function builderFor(key, rowIndex) {
+    if (!builder || builder.key !== key || builder.rowIndex !== rowIndex) {
+      builder = { key: key, rowIndex: rowIndex, template: '', trigger: null, threshold: null, dest: null, msg: '', msgOk: true };
+    }
+    return builder;
   }
 
   function esc(value) {
@@ -114,7 +133,11 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-add-ghost{opacity:.7;transform:translate(-50%,-50%);outline:3px dashed var(--ob-gold-bright)}',
       '#panel-scenario .sc-back{margin:0 0 8px}',
       '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:10px;font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
-      '#panel-scenario .sc-site-marker{width:22px;height:22px;border-radius:50%;background:rgba(245,230,200,.86);border:3px solid var(--sc-green);box-shadow:0 1px 4px rgba(0,0,0,.5);z-index:18;transform:translate(-50%,-50%) translate(-16px,-16px)}',
+      // Town = a ring CENTERED on the site anchor, larger than and BELOW the squad icon, so a
+      // garrison squad stands inside its town's allegiance ring (old 16px offset read as
+      // "dots are not on towns").
+      '#panel-scenario .sc-site-marker{width:48px;height:48px;border-radius:50%;background:transparent;border:3px solid var(--sc-green);box-shadow:0 1px 4px rgba(0,0,0,.35);z-index:8;transform:translate(-50%,-50%)}',
+      '#panel-scenario .sc-site-marker:hover{background:rgba(245,230,200,.2)}',
       '#panel-scenario .sc-site-marker.enemy{border-color:var(--sc-red)}',
       '#panel-scenario .sc-site-marker.allied{border-color:var(--sc-blue)}',
       '#panel-scenario .sc-site-marker.neutral{border-color:var(--sc-green)}',
@@ -535,7 +558,7 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-map-head">' +
         '<div class="sc-map-title">' + esc(displayLabel(key)) + '</div>' +
         '<div class="sc-map-tools">' +
-          '<select id="sc-view-mode"><option value="image">Art</option><option value="auto">Auto</option><option value="schematic">Schematic</option></select>' +
+          '<select id="sc-view-mode"><option value="auto">Art (calibrated)</option><option value="image">Art (force)</option><option value="schematic">Schematic</option></select>' +
           '<span class="sc-chip" id="sc-zoom-chip" title="Scroll the map to zoom">' + Math.round(ui.zoom * 100) + '%</span>' +
           '<span class="sc-chip">' + esc(cal.registrationGrade || 'ungraded') + '</span>' +
         '</div>' +
@@ -765,8 +788,8 @@ window.OB64 = window.OB64 || {};
         var rect = inner.getBoundingClientRect();
         btn.style.left = clamp(mv.clientX - rect.left, 0, rect.width) + 'px';
         btn.style.top = clamp(mv.clientY - rect.top, 0, rect.height) + 'px';
-        // Snap preview: highlight the site this drop would attach to (same 48 image-px rule
-        // as updatePlacementFromImage).
+        // Snap preview: highlight the site this drop would attach to (same screen-px rule
+        // as placementBytesFromImage).
         var imageX = (mv.clientX - rect.left) / zoom;
         var imageY = (mv.clientY - rect.top) / zoom;
         var nearest = null, best = Infinity;
@@ -775,7 +798,7 @@ window.OB64 = window.OB64 || {};
           var d = Math.hypot(sp.x - imageX, sp.y - imageY);
           if (d < best) { best = d; nearest = sp; }
         });
-        if (nearest && best < 48) {
+        if (nearest && best < SNAP_SCREEN_PX / zoom) {
           if (!snapRing) snapRing = mapGhost(inner, 'sc-snap-ring');
           snapRing.style.left = (nearest.x * zoom) + 'px';
           snapRing.style.top = (nearest.y * zoom) + 'px';
@@ -833,8 +856,8 @@ window.OB64 = window.OB64 || {};
     var b = calibrationData(key) && calibrationData(key).boundsWorld;
     if (!b) return null;
     return {
-      x: b.xMin + (node.bytes[4] / 255) * (b.xMax - b.xMin),
-      z: b.zMin + (node.bytes[5] / 255) * (b.zMax - b.zMin),
+      x: b.xMin + (node.bytes[4] / 256) * (b.xMax - b.xMin),
+      z: b.zMin + (node.bytes[5] / 256) * (b.zMax - b.zMin),
     };
   }
 
@@ -1082,14 +1105,14 @@ window.OB64 = window.OB64 || {};
         });
         if (node.bytes) {
           node.bytes[2] = 2;
-          if (nearest && best < 24) {
+          if (nearest && best < SNAP_SCREEN_PX) {
             node.bytes[4] = nearest.selector & 0xFF;
             node.bytes[5] = 0;
           } else {
             var b = calibrationData(key) && calibrationData(key).boundsWorld;
             if (b) {
-              node.bytes[4] = clamp(Math.round(((world.x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255), 0, 255);
-              node.bytes[5] = clamp(Math.round(((world.z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255), 1, 255);
+              node.bytes[4] = clamp(Math.round(((world.x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 256), 0, 255);
+              node.bytes[5] = clamp(Math.round(((world.z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 256), 1, 255);
             }
           }
           var state = ensureState(rom);
@@ -1103,12 +1126,15 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  // Byte->world decode is /256 (NOT /255): proven f32-exact against the r10 probe's live
+  // object positions (4/4 coordinates). /256 also makes byte->world->byte a perfect identity,
+  // so mode switches and drag round-trips can no longer drift a placement.
   function byteToWorld(cal, xb, zb) {
     var b = cal && cal.boundsWorld;
     if (!b) return null;
     return {
-      x: b.xMin + (xb / 255) * (b.xMax - b.xMin),
-      z: b.zMin + (zb / 255) * (b.zMax - b.zMin),
+      x: b.xMin + (xb / 256) * (b.xMax - b.xMin),
+      z: b.zMin + (zb / 256) * (b.zMax - b.zMin),
     };
   }
 
@@ -1225,9 +1251,9 @@ window.OB64 = window.OB64 || {};
         if (!site) return;
         var p = projection.worldToImage(site.x, site.z);
         var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        ring.setAttribute('cx', p.x * zoom - 16);
-        ring.setAttribute('cy', p.y * zoom - 16);
-        ring.setAttribute('r', sel ? 24 : 20);
+        ring.setAttribute('cx', p.x * zoom);
+        ring.setAttribute('cy', p.y * zoom);
+        ring.setAttribute('r', sel ? 32 : 28);
         ring.setAttribute('fill', 'none');
         ring.setAttribute('stroke', sel ? 'rgba(245,210,98,.95)' : 'rgba(245,210,98,.9)');
         ring.setAttribute('stroke-width', sel ? '5' : '3');
@@ -1394,7 +1420,17 @@ window.OB64 = window.OB64 || {};
         '<span class="sc-sub">' + esc(d.detail) + '</span></button>';
     });
     if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
-    html += '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ New trigger (draw area on map)</button>';
+    // Kind-FIRST creation: pick the trigger type, then only geometric kinds enter draw mode;
+    // static kinds (site / threshold / record) create immediately and open their editor.
+    html += '<div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
+      '<select id="sc-new-trig-kind">' +
+        '<option value="1">Player enters area (draw on map)</option>' +
+        '<option value="8">Unit enters area (draw on map)</option>' +
+        '<option value="4">Player at site</option>' +
+        '<option value="9">Squads-remaining threshold</option>' +
+        '<option value="12">Site flag test</option>' +
+      '</select>' +
+      '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ Add trigger</button></div>';
     html += '</div></div>';
     var addedHere = [];
     (ensureState(rom).addedSquads || []).forEach(function(r, i) { if (r.runtimeKey === key) addedHere.push({ r: r, i: i }); });
@@ -1430,16 +1466,24 @@ window.OB64 = window.OB64 || {};
     var newTrig = el.querySelector('#sc-new-trigger');
     if (newTrig) newTrig.onclick = function() {
       if (model.section3.length >= 16) { ui.gateText = 'Section 3 is at its 16-extra cap.'; renderScenarioTab(document.getElementById('panel-scenario')); return; }
-      drawRectOnMap(rom, key, null, function(rect) {
-        var extra = allocExtra(model, 1, rect);
+      var kind = parseInt((el.querySelector('#sc-new-trig-kind') || {}).value, 10) || 1;
+      var finish = function(extra) {
         if (!extra) return;
         ensureState(rom).modifiedKeys[key] = true;
         changed();
-        ui.selectedTrigger = extra.extraId;
+        ui.selectedTrigger = extra.extraId; // open its editor for parameter tuning
         renderScenarioTab(document.getElementById('panel-scenario'));
-      });
-      var gate = document.getElementById('sc-gate');
-      if (gate) gate.textContent = 'Drag a rectangle on the map for the new trigger area...';
+      };
+      if (kind === 1 || kind === 8) {
+        drawRectOnMap(rom, key, null, function(rect) { finish(allocExtra(model, kind, rect)); });
+        var gate = document.getElementById('sc-gate');
+        if (gate) gate.textContent = 'Drag a rectangle on the map for the new trigger area...';
+        return;
+      }
+      // Static kinds create immediately with a sensible default parameter (payload[4] -> byte [6]).
+      var sites = ensureState(rom).sites[key] || [];
+      var param = kind === 4 ? ((sites[0] && sites[0].selector) || 1) : (kind === 9 ? 4 : 1);
+      finish(allocExtra(model, kind, [0, 0, 0, 0, param]));
     };
   }
 
@@ -1498,9 +1542,7 @@ window.OB64 = window.OB64 || {};
       'drop raw ' + OB64.scenarioCodec.hexByte(row.dropRaw, 4),
     ]);
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
-      '<div id="sc-comp-host"></div>' +
-      '<div class="sc-form-row"><label class="sc-label"></label>' +
-      '<button type="button" id="sc-edit-comp" class="sc-inline-btn">Open in Squads tab</button></div></div>';
+      '<div id="sc-comp-host"></div></div>';
     html += '<div class="sc-section"><span class="sc-label">Placement</span>' + placementEditorHtml(rom, key, row, point) + '</div>';
     // Reflect the squad's CURRENT gate/threshold in the builder controls.
     var curStartNode = nodeById(model, row.bytes[6]);
@@ -1511,32 +1553,38 @@ window.OB64 = window.OB64 || {};
       var curExtra = model.section3.filter(function(x) { return x.extraId === curGate; })[0];
       if (curExtra && curExtra.kind === 9) curThresh = curExtra.bytes[6] || 4;
     }
+    var bld = builderFor(key, rowIndex);
+    var selTemplate = bld.template || '';
+    var selTrigger = bld.trigger != null ? bld.trigger : curGateStr;
+    var selThresh = bld.threshold != null ? bld.threshold : curThresh;
     html += '<div class="sc-section"><span class="sc-label">Behavior</span>' +
       '<div class="sc-form-row"><label class="sc-label">Template</label><select id="sc-template">' +
-      option('', 'Current: ' + describeBehavior(rom, key, model, row), '') +
-      option('guard-site', 'Guard (hold position)', '') +
-      option('march-chain', 'March to destination', '') +
-      option('wait-march', 'Wait for trigger, then march', '') +
-      option('solo-ambush', 'Ambush (dormant until trigger)', '') +
-      option('reinforce-remnant', 'Reinforce when N squads remain', '') +
-      option('camp-terminal', 'March + permanent camp', '') +
+      option('', 'Current: ' + describeBehavior(rom, key, model, row), selTemplate) +
+      option('guard-site', 'Guard (hold position)', selTemplate) +
+      option('march-chain', 'March to destination', selTemplate) +
+      option('wait-march', 'Wait for trigger, then march', selTemplate) +
+      option('solo-ambush', 'Ambush (dormant until trigger)', selTemplate) +
+      option('reinforce-remnant', 'Reinforce when N squads remain', selTemplate) +
+      option('camp-terminal', 'March + permanent camp', selTemplate) +
       '</select></div>' +
       '<div class="sc-form-row"><label class="sc-label">Trigger</label><select id="sc-tpl-trigger">' +
-      option('', 'None', curGateStr) +
+      option('', 'None', selTrigger) +
       model.section3.map(function(x) {
-        return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, curGateStr);
+        return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, selTrigger);
       }).join('') +
-      option('new-rect', '+ New player rect (draw on map)', curGateStr) +
+      option('new-rect', '+ New player rect (draw on map)', selTrigger) +
       '</select></div>' +
       '<div class="sc-form-row"><label class="sc-label">Destination</label>' +
-      '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">Pick on map</button></div>' +
+      '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">' +
+      (bld.dest ? 'Dest: ' + bld.dest.x.toFixed(1) + ', ' + bld.dest.z.toFixed(1) : 'Pick on map') +
+      '</button></div>' +
       '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
-      '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + curThresh + '"></div>' +
+      '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + selThresh + '"></div>' +
       '<div class="sc-form-row"><label class="sc-label"></label>' +
       '<button type="button" id="sc-tpl-apply" class="sc-inline-btn">Apply behavior</button></div>' +
       '<div class="sc-form-row"><label class="sc-label"></label>' +
       '<button type="button" id="sc-tpl-clear-route" class="sc-inline-btn">Remove route (guard / hold position)</button></div>' +
-      '<div id="sc-tpl-msg" class="sc-sub"></div>' +
+      '<div id="sc-tpl-msg" class="sc-sub" style="' + (bld.msgOk ? '' : 'color:var(--sc-red)') + '">' + esc(bld.msg || '') + '</div>' +
       '</div>';
     html += '<div class="sc-section"><label><input type="checkbox" id="sc-advanced"' + (ui.advanced ? ' checked' : '') + '> Advanced</label></div>';
     html += ui.advanced ? advancedHtml(model, rowIndex) : nodePreviewHtml(model, row);
@@ -1625,12 +1673,6 @@ window.OB64 = window.OB64 || {};
     wireBackButton(el);
     var del = el.querySelector('#sc-delete-added');
     if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
-    var editComp = el.querySelector('#sc-edit-comp');
-    if (editComp) editComp.onclick = function() {
-      if (OB64.squadsFocus) OB64.squadsFocus(key, detailPoint.edat);
-      var navBtn = document.querySelector('button[data-tab="squads"]');
-      if (navBtn) navBtn.click();
-    };
     // Embed the full Squads comp editor in the sidebar (override toggle, formation grid,
     // class pickers, drag cells) - renders live against the same override state.
     var compHost = el.querySelector('#sc-comp-host');
@@ -1669,11 +1711,19 @@ window.OB64 = window.OB64 || {};
     if (x) x.onchange = commitWorld;
     if (z) z.onchange = commitWorld;
     // Behavior builder: template + trigger + map-picked destination + threshold -> applyTemplate.
-    var tplState = { dest: null };
+    // Form state lives in builderFor(key,rowIndex) so it SURVIVES the full re-render every
+    // commit triggers; msg() persists the same way.
+    var bld = builderFor(key, rowIndex);
     var msg = function(text, ok) {
+      bld.msg = text || '';
+      bld.msgOk = ok !== false;
       var m = el.querySelector('#sc-tpl-msg');
-      if (m) { m.textContent = text || ''; m.style.color = ok ? '' : 'var(--sc-red)'; }
+      if (m) { m.textContent = bld.msg; m.style.color = bld.msgOk ? '' : 'var(--sc-red)'; }
     };
+    var tplSelEl = el.querySelector('#sc-template');
+    if (tplSelEl) tplSelEl.onchange = function() { bld.template = this.value; };
+    var thresholdEl = el.querySelector('#sc-tpl-threshold');
+    if (thresholdEl) thresholdEl.onchange = function() { bld.threshold = parseInt(this.value, 10) || 4; };
     var destBtn = el.querySelector('#sc-tpl-dest');
     if (destBtn) destBtn.onclick = function() {
       var inner = document.getElementById('sc-map-inner');
@@ -1702,7 +1752,7 @@ window.OB64 = window.OB64 || {};
         var world = proj.imageToWorld(
           clamp((ev.clientX - rect.left) / zoom, 0, proj.naturalWidth),
           clamp((ev.clientY - rect.top) / zoom, 0, proj.naturalHeight));
-        tplState.dest = world;
+        bld.dest = world;
         destBtn.textContent = 'Dest: ' + world.x.toFixed(1) + ', ' + world.z.toFixed(1);
         ghost.classList.add('set');
         setTimeout(function() { ghost.remove(); }, 450);
@@ -1714,6 +1764,7 @@ window.OB64 = window.OB64 || {};
     // squad's CURRENT start node (byte [10]) immediately.
     var trigSelEl = el.querySelector('#sc-tpl-trigger');
     if (trigSelEl) trigSelEl.onchange = function() {
+      bld.trigger = this.value;
       var template = (el.querySelector('#sc-template') || {}).value;
       if (template) return; // template flow consumes the trigger at Apply time
       var row2 = model.section1[rowIndex];
@@ -1724,12 +1775,14 @@ window.OB64 = window.OB64 || {};
           var extra = allocExtra(model, 1, rect);
           if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
           startNode.bytes[10] = extra.extraId;
+          bld.trigger = null; // baked into the node; form reflects the new current gate
           msg('E' + extra.extraId + ' created and set as gate.', true);
           commitScenarioEdit(rom, key);
         });
         return;
       }
       startNode.bytes[10] = this.value ? parseInt(this.value, 10) : 0;
+      bld.trigger = null; // baked in
       msg(this.value ? 'Gate set to E' + this.value : 'Gate cleared - route is now UNGATED (solid line): the unit marches immediately. Use "Remove route" to make it hold position.', true);
       commitScenarioEdit(rom, key);
     };
@@ -1747,12 +1800,19 @@ window.OB64 = window.OB64 || {};
       var cal = calibrationData(key);
       var finish = function(triggerId) {
         var err = applyTemplate(model, rowIndex, template, cal, {
-          trigger: triggerId, dest: tplState.dest, threshold: threshold,
+          trigger: triggerId, dest: bld.dest, threshold: threshold,
         });
         if (err) { msg(err, false); return; }
-        msg('Applied: ' + template, true);
+        // Bake the form: choices are now the squad's CURRENT behavior; the re-render shows
+        // them in the "Current:" entry plus this surviving confirmation.
+        bld.template = '';
+        bld.trigger = null;
+        bld.dest = null;
+        bld.threshold = null;
+        msg('Applied: ' + template + ' - behavior is now shown under "Current" above.', true);
         commitScenarioEdit(rom, key);
       };
+      if (!template) { msg('Pick a template first (or use the Trigger dropdown alone to re-gate the current route).', false); return; }
       if (trigSel === 'new-rect') {
         drawRectOnMap(rom, key, msg, function(rect) {
           var extra = allocExtra(model, 1, rect);
@@ -1841,14 +1901,14 @@ window.OB64 = window.OB64 || {};
 
   function setCoordinateBytesFromWorld(cal, row, x, z) {
     var b = cal && cal.boundsWorld ? cal.boundsWorld : { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
-    var xb = Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255);
-    var zb = Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255);
+    var xb = Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 256);
+    var zb = Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 256);
     row.bytes[3] = clamp(xb, 0, 255);
     row.bytes[4] = clamp(zb || 1, 1, 255);
   }
 
   // Snap-or-coordinate placement write (shared by marker drop and add-squad place): a site
-  // within 48 image px wins selector mode; otherwise bounds-normalized coordinate bytes.
+  // within SNAP_SCREEN_PX screen px wins selector mode; otherwise coordinate bytes.
   function placementBytesFromImage(rom, key, row, imageX, imageY, projection) {
     var world = projection.imageToWorld(imageX, imageY);
     var sites = ensureState(rom).sites[key] || [];
@@ -1859,7 +1919,7 @@ window.OB64 = window.OB64 || {};
       var d = Math.hypot(p.x - imageX, p.y - imageY);
       if (d < best) { best = d; nearest = site; }
     });
-    if (nearest && best < 48) {
+    if (nearest && best < SNAP_SCREEN_PX / Math.max(0.05, ui.zoom)) {
       row.bytes[3] = nearest.selector & 0xFF;
       row.bytes[4] = 0;
     } else {
@@ -1929,8 +1989,8 @@ window.OB64 = window.OB64 || {};
   function worldToBytePair(cal, x, z) {
     var b = cal && cal.boundsWorld ? cal.boundsWorld : { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
     return [
-      clamp(Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255), 0, 255),
-      clamp(Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255), 0, 255),
+      clamp(Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 256), 0, 255),
+      clamp(Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 256), 0, 255),
     ];
   }
 

@@ -307,7 +307,8 @@ window.OB64 = window.OB64 || {};
       // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
       // and stat gates live past that window; items/classes/consumables, the
       // Tools-tab features, and the squad-override bootstrap do not.
-      if (dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc) {
+      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc);
+      if (crcChanged) {
         OB64.recalcN64CRC(rom.z64);
       }
 
@@ -319,6 +320,12 @@ window.OB64 = window.OB64 || {};
       var exportedName = OB64.exportROM(rom);
       var exportMsg = 'ROM exported as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
+      // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
+      // native saves look gone. Surface the recovery recipe instead of a silent surprise.
+      if (crcChanged) {
+        exportMsg += ' | CRC changed: Project64 will use a NEW save folder for this ROM'
+          + ' — reseed it (tools/seed_pj64_save.py) or copy your .sra into the new folder';
+      }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
       dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
