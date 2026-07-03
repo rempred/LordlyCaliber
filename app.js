@@ -14,11 +14,12 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, squadOverrides: false };
+  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
 
   // Bridges for the Squads tab (squads.js) — give it the live rom + a change hook.
   OB64._romRef = function() { return rom; };
   OB64._squadChanged = function() { markChanged('squadOverrides'); };
+  OB64._scenarioChanged = function() { markChanged('scenario'); };
 
   // ============================================================
   // DOM refs
@@ -50,8 +51,9 @@ window.OB64 = window.OB64 || {};
         OB64.patch.snapshotOriginal(rom);   // baseline for later diffing
         OB64.tools.initState(rom);          // detect Tools-tab features in the ROM
         changes = 0;
-        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false };
+        dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         if (rom.squadOverrides) rom.squadOverrides = {};
+        if (OB64.scenario) OB64.scenario.ensureState(rom);
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
         dirty.tools = OB64.tools.pendingChanges(rom) > 0;
@@ -286,6 +288,21 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      // Scenario tab ESET edits. Project-only scenario features such as town
+      // allegiance and reserved add-squad records deliberately block ROM
+      // export until their underlying ROM source/resolver is decoded.
+      if (dirty.scenario && OB64.scenario) {
+        var scenarioResult = OB64.scenario.exportScenarioArchives(rom);
+        if (scenarioResult.blocked && scenarioResult.blocked.length) {
+          showErrorModal('Export blocked - scenario project stubs', scenarioResult.blocked.join('\n\n'));
+          statusBar.textContent = 'Export blocked (scenario project stubs)';
+          return;
+        }
+        if (scenarioResult.touched.length) {
+          touched.push('scenarios: ' + scenarioResult.touched.join(', '));
+        }
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
       // and stat gates live past that window; items/classes/consumables, the
@@ -304,7 +321,7 @@ window.OB64 = window.OB64 || {};
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false };
+      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       changes = 0;
       if (activeTab === 'tools') renderTab('tools');
       statusBar.textContent = exportMsg;
@@ -466,6 +483,7 @@ window.OB64 = window.OB64 || {};
     switch(tab) {
       case 'shops':     renderShops(panel); break;
       case 'squads':    OB64.renderSquads(panel); break;
+      case 'scenario':  OB64.renderScenarioTab(panel); break;
       case 'classes':   renderClasses(panel); break;
       case 'items':     renderItems(panel); break;
       case 'encounters': renderEncounters(panel); break;
@@ -640,6 +658,7 @@ window.OB64 = window.OB64 || {};
     switch (activeTab) {
       case 'shops':    dirty.shops = true; break;
       case 'squads':   dirty.squadOverrides = true; break;
+      case 'scenario': dirty.scenario = true; break;
       case 'items':    dirty.items = true; break;
       case 'classes':  dirty.classDefs = true; break;
       case 'encounters':

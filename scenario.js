@@ -1,0 +1,1956 @@
+// Map-first Scenario tab.
+window.OB64 = window.OB64 || {};
+
+(function(OB64) {
+  'use strict';
+
+  var STYLE_ID = 'scenario-style';
+  var ui = {
+    selectedKey: 1,
+    selectedPoint: null,
+    selectedSite: null,
+    selectedTrigger: null,
+    search: '',
+    viewMode: 'auto',
+    zoom: 0.45,
+    advanced: false,
+    layers: { squads: true, sites: true, routes: true, triggers: true },
+    gateText: '',
+  };
+
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"]/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function num(value, fallback) {
+    value = Number(value);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  function clamp(value, lo, hi) {
+    value = num(value, lo);
+    return Math.max(lo, Math.min(hi, value));
+  }
+
+  function injectStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var css = [
+      '#panel-scenario{--sc-line:rgba(62,45,25,.28);--sc-panel:#efe0bd;--sc-soft:rgba(255,255,255,.18);--sc-red:#b7372f;--sc-blue:#2d6fbc;--sc-green:#2f8f4e}',
+      '#panel-scenario .sc-page{max-width:1500px;margin:0 auto;color:var(--ob-ink)}',
+      '#panel-scenario .sc-titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 12px}',
+      '#panel-scenario h2{margin:0;color:var(--ob-gold-bright);font-size:22px;line-height:1.1}',
+      '#panel-scenario .sc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
+      '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label{height:32px;display:inline-flex;align-items:center;border-radius:5px;font-size:12px;font-weight:700}',
+      '#panel-scenario .sc-actions input[type=text]{height:32px;width:210px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
+      '#panel-scenario .sc-gate{font-size:12px;color:var(--ob-ink-soft);min-height:18px}',
+      '#panel-scenario .sc-layout{display:grid;grid-template-columns:280px minmax(460px,1fr) 500px;gap:12px;align-items:start}',
+      // Embedded Squads comp editor: stack formation grid over pickers so the full modal fits the sidebar.
+      '#sc-comp-host .sq-editor-grid{display:grid;grid-template-columns:1fr !important;gap:10px}',
+      '#sc-comp-host .sq-pick{grid-template-columns:1fr !important}',
+      '#panel-scenario .sc-trigger-row{display:block;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:6px 8px;margin:4px 0;cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-trigger-row .sc-sub{display:block;margin-top:2px}',
+      '#panel-scenario .sc-trigger-row:hover{background:rgba(104,74,36,.14)}',
+      '#panel-scenario .sc-trigger-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
+      // Draw-interaction feedback: rubber-band rect, destination pick ghost, drop snap ring.
+      '#panel-scenario .sc-rubber-band{border:2px dashed rgba(245,210,98,.95);background:rgba(245,210,98,.14);border-radius:3px}',
+      '#panel-scenario .sc-pick-ghost{width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid rgba(245,210,98,.95);background:rgba(245,210,98,.35);box-shadow:0 0 0 3px rgba(0,0,0,.25)}',
+      '#panel-scenario .sc-pick-ghost.set{background:rgba(47,143,78,.85);border-color:#fff;transition:transform .3s;transform:scale(1.8)}',
+      '#panel-scenario .sc-snap-ring{width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px dashed rgba(245,210,98,.95);animation:sc-snap-pulse .8s infinite}',
+      '@keyframes sc-snap-pulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.12);opacity:.7}100%{transform:scale(1);opacity:1}}',
+      '#sc-comp-host .sq-pick select,#sc-comp-host .sq-field select{max-width:100% !important;width:100%}',
+      '#sc-comp-host .sq-detail-head{padding:0 0 6px;margin:0 0 6px}',
+      '#sc-comp-host .sq-foot{flex-wrap:wrap}',
+      '#panel-scenario .sc-list,#panel-scenario .sc-map-panel,#panel-scenario .sc-detail{background:var(--ob-parchment);border:1px solid var(--ob-parchment-edge);border-radius:6px;box-shadow:var(--ob-shadow-sm)}',
+      '#panel-scenario .sc-list{max-height:calc(100vh - 205px);min-height:620px;overflow:auto;padding:10px}',
+      '#panel-scenario .sc-list-tools{position:sticky;top:0;z-index:3;background:var(--ob-parchment);border-bottom:1px solid var(--sc-line);padding-bottom:8px;margin-bottom:8px}',
+      '#panel-scenario .sc-list-tools input{width:100%;height:32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
+      '#panel-scenario .sc-group{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.4px;margin:10px 2px 4px}',
+      '#panel-scenario .sc-key{width:100%;border:1px solid transparent;background:transparent;color:var(--ob-ink);border-radius:5px;padding:7px 8px;text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;cursor:pointer}',
+      '#panel-scenario .sc-key:hover{background:rgba(104,74,36,.12);border-color:var(--sc-line)}',
+      '#panel-scenario .sc-key.on{background:var(--ob-wood-lo);color:var(--ob-parchment);border-color:var(--ob-wood-hi)}',
+      '#panel-scenario .sc-key-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700}',
+      '#panel-scenario .sc-key-sub{grid-column:1/-1;color:inherit;opacity:.72;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-scenario .sc-chip{display:inline-flex;align-items:center;min-height:18px;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:800;line-height:1;text-transform:uppercase;background:var(--ob-parchment-dark);color:var(--ob-ink);white-space:nowrap}',
+      '#panel-scenario .sc-key.on .sc-chip{background:rgba(245,230,200,.18);color:var(--ob-parchment)}',
+      '#panel-scenario .sc-map-panel{padding:10px;min-width:0}',
+      '#panel-scenario .sc-map-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 8px}',
+      '#panel-scenario .sc-map-title{font-size:15px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-scenario .sc-map-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
+      '#panel-scenario .sc-map-tools select,#panel-scenario .sc-map-tools input{height:28px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:12px}',
+      '#panel-scenario .sc-layer-toggles{display:flex;gap:7px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--sc-line);padding-top:8px;margin-top:8px}',
+      '#panel-scenario .sc-layer-toggles label{font-size:12px;display:flex;gap:4px;align-items:center}',
+      '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
+      '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
+      '#panel-scenario .sc-map-img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block}',
+      '#panel-scenario .sc-schematic{position:absolute;left:0;top:0;width:100%;height:100%;background:#2f3b32}',
+      '#panel-scenario .sc-bounds{position:absolute;border:2px dashed rgba(245,230,200,.65);background:rgba(0,0,0,.08);pointer-events:none}',
+      '#panel-scenario .sc-layer-svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}',
+      '#panel-scenario .sc-marker{position:absolute;border:0;background:transparent;padding:0;transform:translate(-50%,-50%);cursor:pointer;z-index:10}',
+      '#panel-scenario .sc-squad-marker{width:38px;height:38px;border-radius:50%;background:#1d1a16;box-shadow:0 2px 6px rgba(0,0,0,.45)}',
+      '#panel-scenario .sc-squad-marker img{width:30px;height:30px;object-fit:contain;image-rendering:pixelated;border-radius:50%;margin:4px}',
+      '#panel-scenario .sc-squad-marker.enemy{outline:3px solid var(--sc-red)}',
+      '#panel-scenario .sc-squad-marker.allied{outline:3px solid var(--sc-blue)}',
+      '#panel-scenario .sc-squad-marker.neutral{outline:3px solid var(--sc-green)}',
+      '#panel-scenario .sc-squad-marker.dormant{opacity:.54;filter:grayscale(.45)}',
+      '#panel-scenario .sc-squad-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 2px 6px rgba(0,0,0,.45)}',
+      '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:10px;font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
+      '#panel-scenario .sc-site-marker{width:22px;height:22px;border-radius:50%;background:rgba(245,230,200,.86);border:3px solid var(--sc-green);box-shadow:0 1px 4px rgba(0,0,0,.5);z-index:18;transform:translate(-50%,-50%) translate(-16px,-16px)}',
+      '#panel-scenario .sc-site-marker.enemy{border-color:var(--sc-red)}',
+      '#panel-scenario .sc-site-marker.allied{border-color:var(--sc-blue)}',
+      '#panel-scenario .sc-site-marker.neutral{border-color:var(--sc-green)}',
+      '#panel-scenario .sc-site-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 1px 4px rgba(0,0,0,.5)}',
+      '#panel-scenario .sc-detail{padding:12px;min-height:620px}',
+      '#panel-scenario .sc-detail-head{border-bottom:1px solid var(--sc-line);padding-bottom:9px;margin-bottom:10px}',
+      '#panel-scenario .sc-head-title{font-size:16px;font-weight:800;line-height:1.2}',
+      '#panel-scenario .sc-sub{font-size:12px;color:var(--ob-ink-soft);line-height:1.35;margin-top:3px}',
+      '#panel-scenario .sc-meter-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 10px}',
+      '#panel-scenario .sc-meter{border:1px solid var(--sc-line);border-radius:5px;padding:6px;background:rgba(255,255,255,.14)}',
+      '#panel-scenario .sc-meter strong{display:block;font-size:17px;line-height:1}',
+      '#panel-scenario .sc-meter span{font-size:10px;text-transform:uppercase;color:var(--ob-ink-soft);font-weight:800}',
+      '#panel-scenario .sc-section{border-top:1px solid var(--sc-line);padding-top:10px;margin-top:10px}',
+      '#panel-scenario .sc-label{display:block;font-size:11px;font-weight:900;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.35px;margin-bottom:4px}',
+      '#panel-scenario .sc-form-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}',
+      '#panel-scenario .sc-form-row select,#panel-scenario .sc-form-row input{height:30px;min-width:0;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 7px}',
+      '#panel-scenario .sc-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}',
+      '#panel-scenario .sc-unit{min-width:0;text-align:center;border:1px solid var(--sc-line);border-radius:5px;padding:5px;background:rgba(255,255,255,.14)}',
+      '#panel-scenario .sc-unit img{width:42px;height:36px;object-fit:contain;image-rendering:pixelated;display:block;margin:0 auto 2px}',
+      '#panel-scenario .sc-unit span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:800}',
+      '#panel-scenario .sc-node-list{display:grid;gap:6px;max-height:220px;overflow:auto}',
+      '#panel-scenario .sc-node{border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:6px;font-size:12px;line-height:1.35}',
+      '#panel-scenario .sc-raw-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}',
+      '#panel-scenario .sc-byte{display:grid;grid-template-columns:1fr;gap:2px;font-size:10px;color:var(--ob-ink-soft);font-weight:800}',
+      '#panel-scenario .sc-byte input{width:100%;height:26px;text-align:center;border:1px solid var(--ob-parchment-edge);border-radius:4px;background:#f7ebce;color:var(--ob-ink)}',
+      '#panel-scenario .sc-warning{border:1px solid var(--ob-wax-red);background:rgba(152,32,24,.10);color:var(--ob-wax-red);border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35;margin-top:8px}',
+      '#panel-scenario .sc-ok{border:1px solid #2f8f4e;background:rgba(47,143,78,.10);color:#185c34;border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35;margin-top:8px}',
+      '#panel-scenario .sc-table{width:100%;font-size:12px}',
+      '#panel-scenario .sc-table th,#panel-scenario .sc-table td{padding:4px 5px}',
+      '@media (max-width:1180px){#panel-scenario .sc-layout{grid-template-columns:1fr}#panel-scenario .sc-list{min-height:240px;max-height:320px}#panel-scenario .sc-detail{min-height:360px}#panel-scenario .sc-map-scroll{height:520px}}'
+    ].join('');
+    var style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function dataScenarios() {
+    return (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scenarios) || [];
+  }
+
+  function calibrationScenarios() {
+    return (OB64.SCENARIO_MAP_CALIBRATION && OB64.SCENARIO_MAP_CALIBRATION.scenarios) || [];
+  }
+
+  function scenarioData(runtimeKey) {
+    return dataScenarios().filter(function(s) { return s.runtimeKey === runtimeKey; })[0] || null;
+  }
+
+  function calibrationData(runtimeKey) {
+    return calibrationScenarios().filter(function(s) { return s.runtimeKey === runtimeKey; })[0] || null;
+  }
+
+  function squadScenario(runtimeKey) {
+    var scenarios = (OB64.SQUAD_DATA && OB64.SQUAD_DATA.scenarios) || [];
+    return scenarios.filter(function(s) { return s.id === runtimeKey; })[0] || null;
+  }
+
+  function defaultImageBase() {
+    return localStorage.getItem('ob64_scenario_image_base') || '../wiki/maps/vgmaps/';
+  }
+
+  function ensureState(rom) {
+    if (!rom.scenarioEditor) {
+      rom.scenarioEditor = {
+        models: {},
+        originalBytes: {},
+        metadata: {},
+        sourceRows: {},
+        sites: {},
+        siteAllegiances: {},
+        addedSquads: [],
+        modifiedKeys: {},
+        settings: { imageBasePath: defaultImageBase() },
+      };
+      dataScenarios().forEach(function(entry) {
+        if (entry.missing || !entry.rawHex) return;
+        var raw = OB64.scenarioCodec.compactHexToBytes(entry.rawHex);
+        var model = OB64.scenarioCodec.parseEset(raw, { sourcePath: entry.relPath || entry.filename });
+        rom.scenarioEditor.models[entry.runtimeKey] = model;
+        rom.scenarioEditor.originalBytes[entry.runtimeKey] = raw;
+        rom.scenarioEditor.metadata[entry.runtimeKey] = entry;
+        rom.scenarioEditor.sourceRows[entry.runtimeKey] = entry.sourceRows || [];
+        rom.scenarioEditor.sites[entry.runtimeKey] = entry.sites || [];
+      });
+    }
+    return rom.scenarioEditor;
+  }
+
+  function modelFor(rom, runtimeKey) {
+    var state = ensureState(rom);
+    return state.models[runtimeKey] || null;
+  }
+
+  function rowRuntime(rom, runtimeKey, rowIndex) {
+    var rows = ensureState(rom).sourceRows[runtimeKey] || [];
+    return rows.filter(function(row) { return row.section1Row === rowIndex; })[0] || null;
+  }
+
+  function pointFor(runtimeKey, rowIndex) {
+    var cal = calibrationData(runtimeKey);
+    if (!cal || !cal.points) return null;
+    return cal.points.filter(function(point) { return point.section1Row === rowIndex; })[0] || null;
+  }
+
+  function displayLabel(runtimeKey) {
+    var scn = squadScenario(runtimeKey);
+    var cal = calibrationData(runtimeKey);
+    return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
+  }
+
+  function siteAllegiance(rom, runtimeKey, selector) {
+    var bucket = ensureState(rom).siteAllegiances[runtimeKey] || {};
+    return bucket[selector] || 'neutral';
+  }
+
+  function setSiteAllegiance(rom, runtimeKey, selector, value) {
+    var state = ensureState(rom);
+    if (!state.siteAllegiances[runtimeKey]) state.siteAllegiances[runtimeKey] = {};
+    state.siteAllegiances[runtimeKey][selector] = value;
+    state.modifiedKeys[runtimeKey] = true;
+    changed();
+  }
+
+  function changed() {
+    if (OB64._scenarioChanged) OB64._scenarioChanged();
+  }
+
+  function modelBytes(model) {
+    return OB64.scenarioCodec.serializeEset(model);
+  }
+
+  function keyModified(rom, runtimeKey) {
+    var state = ensureState(rom);
+    var model = state.models[runtimeKey];
+    var original = state.originalBytes[runtimeKey];
+    if (!model || !original) return false;
+    return !OB64.scenarioCodec.equalBytes(modelBytes(model), original);
+  }
+
+  function anyProjectStub(rom) {
+    var state = ensureState(rom);
+    var siteKeys = Object.keys(state.siteAllegiances).filter(function(key) {
+      return Object.keys(state.siteAllegiances[key] || {}).length > 0;
+    });
+    return {
+      siteAllegianceKeys: siteKeys,
+      addedSquads: state.addedSquads || [],
+    };
+  }
+
+  function classIconForPoint(point) {
+    var classes = point && point.classes ? point.classes : [];
+    var cls = classes[0] && classes[0].classId;
+    return cls && OB64.classPortraitUrl ? OB64.classPortraitUrl(cls) : '';
+  }
+
+  var iconProvider = {
+    leaderIconUrl: classIconForPoint,
+  };
+
+  function projectionFor(cal, useImage) {
+    var width = useImage && cal.image ? cal.image.width : 1000;
+    var height = useImage && cal.image ? cal.image.height : 1000;
+    return {
+      naturalWidth: width,
+      naturalHeight: height,
+      pointToImage: function(point) {
+        if (useImage && point && point.image) return { x: point.image.x, y: point.image.y };
+        if (point && point.world) return worldToImage(cal, point.world.x, point.world.z, useImage);
+        return { x: width / 2, y: height / 2 };
+      },
+      worldToImage: function(x, z) {
+        return worldToImage(cal, x, z, useImage);
+      },
+      imageToWorld: function(x, y) {
+        if (useImage && cal.worldToImage) {
+          return {
+            x: (x - (cal.worldToImage.c || 0)) / (cal.worldToImage.a || 1),
+            z: (y - (cal.worldToImage.f || 0)) / (cal.worldToImage.e || 1),
+          };
+        }
+        var b = cal.boundsWorld || { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
+        return {
+          x: b.xMin + (x / width) * (b.xMax - b.xMin),
+          z: b.zMin + (y / height) * (b.zMax - b.zMin),
+        };
+      },
+    };
+  }
+
+  function worldToImage(cal, x, z, useImage) {
+    if (useImage && cal.worldToImage) {
+      return {
+        x: cal.worldToImage.a * x + (cal.worldToImage.b || 0) * z + cal.worldToImage.c,
+        y: (cal.worldToImage.d || 0) * x + cal.worldToImage.e * z + cal.worldToImage.f,
+      };
+    }
+    var b = cal.boundsWorld || { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
+    return {
+      x: ((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 1000,
+      y: ((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 1000,
+    };
+  }
+
+  function useImageFor(cal) {
+    if (!cal || !cal.image || ui.viewMode === 'schematic') return false;
+    if (ui.viewMode === 'image') return true;
+    return cal.registrationGrade === 'site-fitted';
+  }
+
+  function imagePath(rom, cal) {
+    var base = ensureState(rom).settings.imageBasePath || defaultImageBase();
+    if (!cal || !cal.image) return '';
+    return base.replace(/[\\\/]?$/, '/') + cal.image.filename;
+  }
+
+  function pointTitle(point, runtimeRow) {
+    var parts = [];
+    parts.push('source ' + (runtimeRow ? runtimeRow.sourceId : point.sourceId));
+    parts.push('edat ' + point.edat);
+    if (point.wikiSquad) parts.push(point.wikiSquad);
+    if (point.classes) parts.push(point.classes.map(function(c) { return c.className; }).join(' + '));
+    return parts.join(' / ');
+  }
+
+  function renderScenarioTab(panel) {
+    injectStyle();
+    if (!OB64.scenarioCodec || !OB64.SCENARIO_ESET_DATA || !OB64.SCENARIO_MAP_CALIBRATION) {
+      panel.innerHTML = '<p>Scenario data files are not loaded.</p>';
+      return;
+    }
+    var rom = OB64._romRef && OB64._romRef();
+    if (!rom) return;
+    ensureState(rom);
+    if (!modelFor(rom, ui.selectedKey)) {
+      var first = dataScenarios().filter(function(s) { return !s.missing; })[0];
+      ui.selectedKey = first ? first.runtimeKey : 1;
+    }
+
+    // Full re-render resets every scrollbar; capture and restore them (list, map, detail, page).
+    var scrolls = {
+      list: panel.querySelector('#sc-list'),
+      map: panel.querySelector('#sc-map-panel .sc-map-scroll'),
+      detail: panel.querySelector('#sc-detail'),
+    };
+    var saved = {
+      winX: window.pageXOffset || 0,
+      winY: window.pageYOffset || 0,
+    };
+    Object.keys(scrolls).forEach(function(k) {
+      saved[k] = scrolls[k] ? { top: scrolls[k].scrollTop, left: scrolls[k].scrollLeft } : null;
+    });
+
+    panel.innerHTML =
+      '<div class="sc-page">' +
+        '<div class="sc-titlebar">' +
+          '<div><h2>Scenario</h2><div class="sc-gate" id="sc-gate">' + esc(ui.gateText) + '</div></div>' +
+          '<div class="sc-actions">' +
+            '<button type="button" id="sc-run-gate" class="btn-secondary">Run Codec Gate</button>' +
+            '<label class="btn-file btn-secondary" for="sc-project-file">Load Project</label>' +
+            '<input id="sc-project-file" type="file" accept=".json,application/json" style="display:none">' +
+            '<button type="button" id="sc-save-project" class="btn-secondary">Save Project</button>' +
+            '<input type="text" id="sc-image-base" value="' + esc(ensureState(rom).settings.imageBasePath || defaultImageBase()) + '" title="Map art base path">' +
+            '<button type="button" id="sc-add-squad">Add Squad</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="sc-layout">' +
+          '<div class="sc-list" id="sc-list"></div>' +
+          '<div class="sc-map-panel" id="sc-map-panel"></div>' +
+          '<div class="sc-detail" id="sc-detail"></div>' +
+        '</div>' +
+      '</div>';
+    wireToolbar(panel, rom);
+    renderList(panel.querySelector('#sc-list'), rom);
+    renderMapPanel(panel.querySelector('#sc-map-panel'), rom);
+    renderDetail(panel.querySelector('#sc-detail'), rom);
+
+    var keyChanged = ui.lastFitKey !== ui.selectedKey;
+    var restore = {
+      list: panel.querySelector('#sc-list'),
+      map: panel.querySelector('#sc-map-panel .sc-map-scroll'),
+      detail: panel.querySelector('#sc-detail'),
+    };
+    Object.keys(restore).forEach(function(k) {
+      if (k === 'map' && keyChanged) return; // fresh scenario: zoom-to-fit instead
+      if (restore[k] && saved[k]) { restore[k].scrollTop = saved[k].top; restore[k].scrollLeft = saved[k].left; }
+    });
+    window.scrollTo(saved.winX, saved.winY);
+
+    if (keyChanged) {
+      ui.lastFitKey = ui.selectedKey;
+      var cal2 = calibrationData(ui.selectedKey);
+      var proj = cal2 ? projectionFor(cal2, useImageFor(cal2)) : null;
+      var scroller = panel.querySelector('#sc-map-panel .sc-map-scroll');
+      if (proj && scroller) {
+        var x0 = 0, y0 = 0, x1 = proj.naturalWidth, y1 = proj.naturalHeight;
+        if (cal2 && cal2.boundsWorld) {
+          var b2 = cal2.boundsWorld;
+          var pA = proj.worldToImage(b2.xMin, b2.zMin);
+          var pB = proj.worldToImage(b2.xMax, b2.zMax);
+          x0 = Math.min(pA.x, pB.x); x1 = Math.max(pA.x, pB.x);
+          y0 = Math.min(pA.y, pB.y); y1 = Math.max(pA.y, pB.y);
+        }
+        var vw = scroller.clientWidth || 720, vh = scroller.clientHeight || 620;
+        var fit = clamp(Math.min(vw / Math.max(1, x1 - x0), vh / Math.max(1, y1 - y0)) * 0.92, 0.15, 2);
+        if (Math.abs(fit - ui.zoom) > 0.01) {
+          ui.zoom = fit;
+          renderMapPanel(panel.querySelector('#sc-map-panel'), rom);
+          scroller = panel.querySelector('#sc-map-panel .sc-map-scroll');
+        }
+        scroller.scrollLeft = ((x0 + x1) / 2) * ui.zoom - vw / 2;
+        scroller.scrollTop = ((y0 + y1) / 2) * ui.zoom - vh / 2;
+      }
+    }
+  }
+
+  function wireToolbar(panel, rom) {
+    var gate = panel.querySelector('#sc-run-gate');
+    if (gate) gate.onclick = function() {
+      var result = OB64.scenarioCodec.roundTripAll(OB64.SCENARIO_ESET_DATA);
+      ui.gateText = 'Codec gate: ' + result.summary.passed + '/' + result.summary.files + ' byte-identical, errors=' + result.summary.errors;
+      renderScenarioTab(panel);
+    };
+    var save = panel.querySelector('#sc-save-project');
+    if (save) save.onclick = function() { downloadProject(rom); };
+    var load = panel.querySelector('#sc-project-file');
+    if (load) load.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          loadProject(rom, JSON.parse(ev.target.result));
+          ui.gateText = 'Project loaded: ' + file.name;
+          renderScenarioTab(panel);
+        } catch (err) {
+          ui.gateText = 'Project load failed: ' + err.message;
+          renderScenarioTab(panel);
+        } finally {
+          load.value = '';
+        }
+      };
+      reader.readAsText(file);
+    };
+    var base = panel.querySelector('#sc-image-base');
+    if (base) base.onchange = function() {
+      ensureState(rom).settings.imageBasePath = this.value.trim() || defaultImageBase();
+      localStorage.setItem('ob64_scenario_image_base', ensureState(rom).settings.imageBasePath);
+      renderScenarioTab(panel);
+    };
+    var add = panel.querySelector('#sc-add-squad');
+    if (add) add.onclick = function() {
+      reserveAddSquad(rom, ui.selectedKey);
+      renderScenarioTab(panel);
+    };
+  }
+
+  function renderList(el, rom) {
+    var q = ui.search.toLowerCase().trim();
+    var scenarios = dataScenarios().slice().sort(function(a, b) { return a.runtimeKey - b.runtimeKey; });
+    var html = '<div class="sc-list-tools"><input id="sc-search" placeholder="Search runtime keys, missions, branches" value="' + esc(ui.search) + '"></div>';
+    var lastGroup = null;
+    scenarios.forEach(function(entry) {
+      var cal = calibrationData(entry.runtimeKey);
+      var scn = squadScenario(entry.runtimeKey);
+      var label = displayLabel(entry.runtimeKey);
+      var group = scn && scn.wikiId ? ('Wiki ' + scn.wikiId + ': ' + (scn.wikiTitle || scn.wikiHint || label)) : 'Internal or branch aliases';
+      var hay = [entry.runtimeKey, label, group, cal && cal.mapName, scn && scn.branchStatus, scn && scn.branchConfidence].join(' ').toLowerCase();
+      if (q && hay.indexOf(q) < 0) return;
+      if (group !== lastGroup) {
+        html += '<div class="sc-group">' + esc(group) + '</div>';
+        lastGroup = group;
+      }
+      var modified = keyModified(rom, entry.runtimeKey);
+      html += '<button type="button" class="sc-key' + (entry.runtimeKey === ui.selectedKey ? ' on' : '') + '" data-key="' + entry.runtimeKey + '">' +
+        '<span class="sc-key-name">' + esc(label) + '</span>' +
+        '<span class="sc-chip">key ' + entry.runtimeKey + '</span>' +
+        '<span class="sc-key-sub">' + esc((cal && cal.mapName ? cal.mapName + ' / ' : '') + (cal ? cal.registrationGrade : 'no map') + (modified ? ' / edited' : '')) + '</span>' +
+      '</button>';
+    });
+    el.innerHTML = html;
+    el.querySelectorAll('.sc-key').forEach(function(btn) {
+      btn.onclick = function() {
+        ui.selectedKey = parseInt(this.dataset.key, 10);
+        ui.selectedPoint = null;
+        ui.selectedSite = null;
+        ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+    });
+    var search = el.querySelector('#sc-search');
+    if (search) search.oninput = function() {
+      ui.search = this.value;
+      renderList(el, rom);
+      var next = document.getElementById('sc-search');
+      if (next) {
+        next.focus();
+        next.setSelectionRange(next.value.length, next.value.length);
+      }
+    };
+  }
+
+  function renderMapPanel(el, rom) {
+    var key = ui.selectedKey;
+    var cal = calibrationData(key);
+    var model = modelFor(rom, key);
+    var state = ensureState(rom);
+    if (!cal || !model) {
+      el.innerHTML = '<div class="sc-warning">No map or ESET data for key ' + key + '.</div>';
+      return;
+    }
+    var useImage = useImageFor(cal);
+    var projection = projectionFor(cal, useImage);
+    var width = Math.max(720, Math.round(projection.naturalWidth * ui.zoom));
+    var height = Math.max(520, Math.round(projection.naturalHeight * ui.zoom));
+    el.innerHTML =
+      '<div class="sc-map-head">' +
+        '<div class="sc-map-title">' + esc(displayLabel(key)) + '</div>' +
+        '<div class="sc-map-tools">' +
+          '<select id="sc-view-mode"><option value="auto">Auto</option><option value="image">Art</option><option value="schematic">Schematic</option></select>' +
+          '<select id="sc-zoom"><option value="0.30">30%</option><option value="0.45">45%</option><option value="0.60">60%</option><option value="0.80">80%</option><option value="1.00">100%</option></select>' +
+          '<span class="sc-chip">' + esc(cal.registrationGrade || 'ungraded') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sc-map-scroll"><div id="sc-map-inner" class="sc-map-inner" style="width:' + width + 'px;height:' + height + 'px"></div></div>' +
+      '<div class="sc-layer-toggles">' +
+        layerToggleHtml('squads', 'Squads') +
+        layerToggleHtml('sites', 'Sites') +
+        layerToggleHtml('routes', 'Routes') +
+        layerToggleHtml('triggers', 'Triggers') +
+      '</div>';
+    var view = el.querySelector('#sc-view-mode');
+    if (view) {
+      view.value = ui.viewMode;
+      view.onchange = function() {
+        ui.viewMode = this.value;
+        renderMapPanel(el, rom);
+      };
+    }
+    var zoom = el.querySelector('#sc-zoom');
+    if (zoom) {
+      zoom.value = String(ui.zoom.toFixed(2));
+      zoom.onchange = function() {
+        ui.zoom = parseFloat(this.value);
+        renderMapPanel(el, rom);
+      };
+    }
+    el.querySelectorAll('input[data-layer]').forEach(function(box) {
+      box.onchange = function() {
+        ui.layers[this.dataset.layer] = !!this.checked;
+        renderMapPanel(el, rom);
+      };
+    });
+    var inner = el.querySelector('#sc-map-inner');
+    if (useImage && cal.image) {
+      inner.innerHTML = '<img class="sc-map-img" src="' + esc(imagePath(rom, cal)) + '" alt="">';
+      var img = inner.querySelector('img');
+      img.onerror = function() {
+        ui.viewMode = 'schematic';
+        renderMapPanel(el, rom);
+      };
+    } else {
+      inner.innerHTML = '<svg class="sc-schematic" viewBox="0 0 1000 1000" preserveAspectRatio="none">' +
+        '<rect x="0" y="0" width="1000" height="1000" fill="#2f3b32"></rect>' +
+        '<path d="M0 500H1000M500 0V1000" stroke="rgba(245,230,200,.18)" stroke-width="2"></path>' +
+        '<rect x="60" y="60" width="880" height="880" fill="none" stroke="rgba(245,230,200,.48)" stroke-width="4" stroke-dasharray="12 10"></rect>' +
+      '</svg>';
+    }
+    renderBounds(inner, cal, projection, useImage, ui.zoom);
+    buildLayers(rom, key, cal, model, projection, ui.zoom).forEach(function(layer) {
+      if (ui.layers[layer.id]) layer.render(inner);
+    });
+  }
+
+  function layerToggleHtml(id, label) {
+    return '<label><input type="checkbox" data-layer="' + id + '"' + (ui.layers[id] ? ' checked' : '') + '> ' + esc(label) + '</label>';
+  }
+
+  function renderBounds(inner, cal, projection, useImage, zoom) {
+    if (!cal.boundsPixels && !cal.boundsWorld) return;
+    var left, top, right, bottom;
+    if (useImage && cal.boundsPixels) {
+      left = cal.boundsPixels.left * zoom;
+      top = cal.boundsPixels.top * zoom;
+      right = cal.boundsPixels.right * zoom;
+      bottom = cal.boundsPixels.bottom * zoom;
+    } else {
+      var b = cal.boundsWorld;
+      var p1 = projection.worldToImage(b.xMin, b.zMin);
+      var p2 = projection.worldToImage(b.xMax, b.zMax);
+      left = Math.min(p1.x, p2.x) * zoom;
+      top = Math.min(p1.y, p2.y) * zoom;
+      right = Math.max(p1.x, p2.x) * zoom;
+      bottom = Math.max(p1.y, p2.y) * zoom;
+    }
+    var div = document.createElement('div');
+    div.className = 'sc-bounds';
+    div.style.left = left + 'px';
+    div.style.top = top + 'px';
+    div.style.width = Math.max(1, right - left) + 'px';
+    div.style.height = Math.max(1, bottom - top) + 'px';
+    inner.appendChild(div);
+  }
+
+  function buildLayers(rom, key, cal, model, projection, zoom) {
+    return [
+      { id: 'routes', name: 'Routes', render: function(inner) { renderRouteLayer(inner, rom, key, cal, model, projection, zoom); } },
+      { id: 'triggers', name: 'Triggers', render: function(inner) { renderTriggerLayer(inner, rom, key, cal, model, projection, zoom); } },
+      { id: 'sites', name: 'Sites', render: function(inner) { renderSiteLayer(inner, rom, key, projection, zoom); } },
+      { id: 'squads', name: 'Squads', render: function(inner) { renderSquadLayer(inner, rom, key, projection, zoom); } },
+    ];
+  }
+
+  function renderSiteLayer(inner, rom, key, projection, zoom) {
+    var sites = ensureState(rom).sites[key] || [];
+    sites.forEach(function(site) {
+      var p = projection.worldToImage(site.x, site.z);
+      var allegiance = siteAllegiance(rom, key, site.selector);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sc-marker sc-site-marker ' + allegiance + (ui.selectedSite && ui.selectedSite.selector === site.selector ? ' on' : '');
+      btn.style.left = (p.x * zoom) + 'px';
+      btn.style.top = (p.y * zoom) + 'px';
+      btn.title = site.siteName + ' / selector ' + site.selector + ' / ' + allegiance;
+      btn.dataset.selector = site.selector;
+      btn.onclick = function() {
+        ui.selectedPoint = null;
+        ui.selectedTrigger = null;
+        ui.selectedSite = site;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      inner.appendChild(btn);
+    });
+  }
+
+  function renderSquadLayer(inner, rom, key, projection, zoom) {
+    var cal = calibrationData(key);
+    (cal.points || []).forEach(function(point) {
+      var runtimeRow = rowRuntime(rom, key, point.section1Row);
+      var liveWorld = rowWorld(rom, key, point.section1Row, point);
+      var p = liveWorld ? projection.worldToImage(liveWorld.x, liveWorld.z) : projection.pointToImage(point);
+      var dormant = runtimeRow ? runtimeRow.dormant : !!point.dormant;
+      var img = iconProvider.leaderIconUrl(point);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sc-marker sc-squad-marker enemy' + (dormant ? ' dormant' : '') +
+        (ui.selectedPoint === point.section1Row ? ' on' : '');
+      btn.style.left = (p.x * zoom) + 'px';
+      btn.style.top = (p.y * zoom) + 'px';
+      btn.title = pointTitle(point, runtimeRow);
+      btn.dataset.row = point.section1Row;
+      btn.innerHTML = (img ? '<img src="' + esc(img) + '" alt="">' : '') + (dormant ? '<span class="sc-badge">!</span>' : '');
+      btn.onclick = function() {
+        ui.selectedPoint = point.section1Row;
+        ui.selectedSite = null;
+        ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      wireMarkerDrag(btn, rom, key, point, projection, zoom);
+      inner.appendChild(btn);
+    });
+  }
+
+  function wireMarkerDrag(btn, rom, key, point, projection, zoom) {
+    btn.addEventListener('pointerdown', function(ev) {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      var moved = false;
+      var startX = ev.clientX;
+      var startY = ev.clientY;
+      var snapRing = null;
+      var move = function(mv) {
+        if (!moved && Math.hypot(mv.clientX - startX, mv.clientY - startY) < 5) return;
+        moved = true;
+        btn.style.cursor = 'grabbing';
+        var inner = document.getElementById('sc-map-inner');
+        if (!inner) return;
+        var rect = inner.getBoundingClientRect();
+        btn.style.left = clamp(mv.clientX - rect.left, 0, rect.width) + 'px';
+        btn.style.top = clamp(mv.clientY - rect.top, 0, rect.height) + 'px';
+        // Snap preview: highlight the site this drop would attach to (same 48 image-px rule
+        // as updatePlacementFromImage).
+        var imageX = (mv.clientX - rect.left) / zoom;
+        var imageY = (mv.clientY - rect.top) / zoom;
+        var nearest = null, best = Infinity;
+        (ensureState(rom).sites[key] || []).forEach(function(site) {
+          var sp = projection.worldToImage(site.x, site.z);
+          var d = Math.hypot(sp.x - imageX, sp.y - imageY);
+          if (d < best) { best = d; nearest = sp; }
+        });
+        if (nearest && best < 48) {
+          if (!snapRing) snapRing = mapGhost(inner, 'sc-snap-ring');
+          snapRing.style.left = (nearest.x * zoom) + 'px';
+          snapRing.style.top = (nearest.y * zoom) + 'px';
+          snapRing.style.display = '';
+        } else if (snapRing) {
+          snapRing.style.display = 'none';
+        }
+      };
+      var up = function(uv) {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        if (snapRing) snapRing.remove();
+        btn.style.cursor = '';
+        if (!moved) return; // plain click: let btn.onclick select
+        // Swallow the click that follows a completed drag so selection state is not clobbered.
+        btn.addEventListener('click', function block(ce) {
+          ce.stopPropagation(); ce.preventDefault();
+          btn.removeEventListener('click', block, true);
+        }, true);
+        var inner = document.getElementById('sc-map-inner');
+        if (!inner) return;
+        var rect = inner.getBoundingClientRect();
+        var imageX = clamp((uv.clientX - rect.left) / zoom, 0, projection.naturalWidth);
+        var imageY = clamp((uv.clientY - rect.top) / zoom, 0, projection.naturalHeight);
+        updatePlacementFromImage(rom, key, point.section1Row, imageX, imageY, projection);
+        ui.selectedPoint = point.section1Row;
+        ui.selectedSite = null;
+        ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  }
+
+  // World position for a Section 2 waypoint node (kind 1, subtype 2). DUAL payload encoding
+  // (key4 vs key20 evidence): bytes[3]==0 -> bytes[4] is a SITE SELECTOR (march-to-town);
+  // bytes[3]!=0 -> (bytes[3],bytes[4]) are bounds-normalized byte coordinates (key20 camp a4,15).
+  // Waypoint payload (unified, evidence keys 4/11/20): byte [3] = flag (0/1), and the pair
+  // lives at [4],[5] for EVERY kind-1 subtype (0/1/2 - subtype is behavior, not encoding):
+  // [5]==0 -> [4] is a SITE SELECTOR (march-to-town); [5]!=0 -> ([4],[5]) are bounds-normalized
+  // byte coordinates (key20 camp = 164,21; key11 patrol legs = (90,176),(176,123)). Coordinate
+  // targets with z exactly at zMin (byte 0) would misread as selectors - none observed vanilla.
+  function nodeWorld(rom, key, node) {
+    if (!node || node.kind !== 1) return null;
+    if (!node.bytes) return null;
+    if (node.bytes[5] === 0) {
+      // Byte [3] flag shifts the selector index: [3]=0 -> selector = [4] (verified keys 4/20);
+      // [3]=1 -> selector = [4]-1 (live-verified key11 node 4: [4]=6 -> Baldera, selector 5 -
+      // units observed marching there; single specimen, grade [obs]).
+      var sel = node.bytes[3] === 1 ? node.bytes[4] - 1 : node.bytes[4];
+      var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
+      return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector } : null;
+    }
+    var b = calibrationData(key) && calibrationData(key).boundsWorld;
+    if (!b) return null;
+    return {
+      x: b.xMin + (node.bytes[4] / 255) * (b.xMax - b.xMin),
+      z: b.zMin + (node.bytes[5] / 255) * (b.zMax - b.zMin),
+    };
+  }
+
+  // Live world position from the CURRENT model bytes (selector site or coordinate pair);
+  // static calibration point is only the fallback. Rendering from live bytes is what makes
+  // drag edits visible.
+  function rowWorld(rom, key, rowIndex, fallbackPoint) {
+    var model = modelFor(rom, key);
+    var row = model && model.section1[rowIndex];
+    if (row && row.bytes) {
+      if (row.bytes[4] === 0) {
+        var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === row.bytes[3]; })[0];
+        if (site) return { x: site.x, z: site.z };
+      } else {
+        var w = byteToWorld(calibrationData(key), row.bytes[3], row.bytes[4]);
+        if (w) return w;
+      }
+    }
+    return fallbackPoint && fallbackPoint.world ? fallbackPoint.world : null;
+  }
+
+  function nodeById(model, nodeId) {
+    for (var i = 0; i < model.section2.length; i++) {
+      if (model.section2[i].nodeId === nodeId) return model.section2[i];
+    }
+    return null;
+  }
+
+  // Walk the REAL route: Section 1 byte [6] start node -> Section 2 [17] next links
+  // (operator-1 gates fork to byte [16]). Returns [{node, world|null}] max 20 hops.
+  function walkNodeChain(rom, key, model, startNodeId) {
+    var chain = [];
+    var seen = {};
+    var nodeId = startNodeId;
+    for (var hop = 0; hop < 20; hop++) {
+      if (!nodeId || nodeId === 0xFF || seen[nodeId]) break;
+      var node = nodeById(model, nodeId);
+      if (!node) break;
+      seen[nodeId] = true;
+      chain.push({ node: node, world: nodeWorld(rom, key, node) });
+      var op = node.bytes ? node.bytes[11] : 0;
+      if (op === 1 && node.bytes[16]) {
+        chain[chain.length - 1].forkNodeId = node.bytes[16];
+      }
+      nodeId = node.bytes ? node.bytes[17] : 0;
+    }
+    return chain;
+  }
+
+  // Human-readable classification of a squad's CURRENT behavior from its decoded bytes.
+  function describeBehavior(rom, key, model, row) {
+    if (!row || !row.bytes) return 'unknown';
+    var start = row.bytes[6];
+    if (!start || start < 4 || start > 0x13) return 'Guard / hold position';
+    var startNode = nodeById(model, start);
+    if (!startNode) return 'Guard / hold position';
+    var chain = walkNodeChain(rom, key, model, start);
+    var last = chain[chain.length - 1];
+    var terminal = last && last.node.bytes[17] === 0xFF;
+    var destName = '';
+    for (var i = chain.length - 1; i >= 0; i--) {
+      if (chain[i].world) { destName = chain[i].world.siteName ? chain[i].world.siteName.trim() : 'coordinates'; break; }
+    }
+    var gateA = startNode.bytes[10];
+    var op = startNode.bytes[11];
+    var gate = '';
+    if (gateA) {
+      var extra = model.section3.filter(function(x) { return x.extraId === gateA; })[0];
+      var kindNames = { 1: 'player area', 4: 'player at site', 8: 'unit in area', 9: 'squads remaining', 12: 'site flag' };
+      gate = 'E' + gateA + (extra && kindNames[extra.kind] ? ' (' + kindNames[extra.kind] + ')' : '');
+      if (op === 2 && startNode.bytes[12]) gate += ' AND E' + startNode.bytes[12];
+      if (op === 3 && startNode.bytes[12]) gate += ' OR E' + startNode.bytes[12];
+      if (op === 1 && startNode.bytes[12]) gate += ' / else E' + startNode.bytes[12];
+    }
+    var marchWord = destName ? 'march to ' + destName : (chain.length > 1 ? 'march' : 'act');
+    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '');
+    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '');
+    if (destName) return 'March to ' + destName + (terminal ? ' + permanent camp' : '');
+    return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
+  }
+
+  var EXTRA_KIND_NAMES = {
+    1: 'Player enters area', 4: 'Player at site', 6: 'Mission event flag', 8: 'Unit in area',
+    9: 'Squads-remaining threshold', 12: 'Site flag test', 19: 'Referenced-object check',
+    24: 'Object state check', 25: 'Member-status check', 26: 'High-flag consume',
+  };
+
+  function siteName(rom, key, selector) {
+    var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === selector; })[0];
+    return site ? (site.siteName || '').trim() || ('site ' + selector) : 'site ' + selector;
+  }
+
+  // Plain-English decode of a Section 3 trigger, with geometry info when location-based.
+  function describeExtra(rom, key, extra) {
+    var b = extra.bytes || [];
+    var kind = extra.kind;
+    var out = { id: extra.extraId, kind: kind, label: '', geometry: null, detail: '' };
+    if (kind === 1 || kind === 8) {
+      var lo = byteToWorld(calibrationData(key), b[2], b[3]);
+      var hi = byteToWorld(calibrationData(key), b[4], b[5]);
+      out.geometry = 'rect';
+      out.label = (kind === 1 ? 'Player enters area' : 'Unit ' + b[6] + ' enters area');
+      out.detail = lo && hi ? 'world x ' + lo.x.toFixed(1) + '..' + hi.x.toFixed(1) + ', z ' + lo.z.toFixed(1) + '..' + hi.z.toFixed(1) : 'byte rect ' + b[2] + ',' + b[3] + '..' + b[4] + ',' + b[5];
+    } else if (kind === 4) {
+      out.geometry = 'site';
+      out.label = 'Player at ' + siteName(rom, key, b[6]);
+      out.detail = 'latches when a player-flagged unit occupies site slot ' + b[6];
+    } else if (kind === 9) {
+      out.label = '≤ ' + b[6] + ' enemy squads remain';
+      out.detail = 'remnant-count trigger (live count at 0x801F0FDE)';
+    } else if (kind === 12) {
+      // Payload indexes the runtime SITE-RECORD table (record b[6]-1), which is ordered
+      // differently from the selector space (live-proven: key1 E2 record 3 = Hou).
+      out.label = 'Site flag test (site record #' + b[6] + ')';
+      out.detail = 'tests bit 0x0004 on runtime site record ' + (b[6] - 1) + ' (record-table order, not the selector space; flag semantics partially open)';
+    } else {
+      out.label = (EXTRA_KIND_NAMES[kind] || 'Kind ' + kind + ' (undecoded)');
+      out.detail = 'payload ' + b.slice(2).map(function(v) { return OB64.scenarioCodec.hexByte(v); }).join(' ');
+    }
+    return out;
+  }
+
+  // Which nodes gate on this extra, and which squads pass through those nodes.
+  function extraConsumers(rom, key, model, extraId) {
+    var nodes = model.section2.filter(function(n) { return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId); });
+    var nodeIds = nodes.map(function(n) { return n.nodeId; });
+    var squads = model.section1.filter(function(row) {
+      var chain = walkNodeChain(rom, key, model, row.bytes[6]);
+      return chain.some(function(h) { return nodeIds.indexOf(h.node.nodeId) >= 0; });
+    }).map(function(r) { return r.sourceId; });
+    return { nodeIds: nodeIds, squadSourceIds: squads };
+  }
+
+  function polyline(svg, pts, zoom, color, dash, width) {
+    if (pts.length < 2) return;
+    var el = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    el.setAttribute('points', pts.map(function(p) { return (p.x * zoom) + ',' + (p.y * zoom); }).join(' '));
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', color);
+    el.setAttribute('stroke-width', width || 3);
+    if (dash) el.setAttribute('stroke-dasharray', dash);
+    el.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(el);
+  }
+
+  function waypointDot(svg, p, zoom, node, selected) {
+    var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', p.x * zoom);
+    c.setAttribute('cy', p.y * zoom);
+    c.setAttribute('r', selected ? 8 : 6);
+    c.setAttribute('fill', node && node.bytes && node.bytes[17] === 0xFF ? 'rgba(183,55,47,.9)' : 'rgba(73,176,210,.9)');
+    c.setAttribute('stroke', 'rgba(20,16,10,.8)');
+    c.setAttribute('stroke-width', '2');
+    c.setAttribute('data-node-id', node ? node.nodeId : '');
+    c.style.pointerEvents = 'auto';
+    c.style.cursor = 'grab';
+    svg.appendChild(c);
+    return c;
+  }
+
+  function renderRouteLayer(inner, rom, key, cal, model, projection, zoom) {
+    var svg = svgLayer(projection, zoom);
+    (cal.points || []).forEach(function(point) {
+      var row = model.section1[point.section1Row];
+      if (!row || !row.bytes || !row.bytes[6]) return;
+      var chain = walkNodeChain(rom, key, model, row.bytes[6]);
+      if (!chain.length) return;
+      var startWorld = rowWorld(rom, key, point.section1Row, point);
+      var pts = [startWorld ? projection.worldToImage(startWorld.x, startWorld.z) : projection.pointToImage(point)];
+      chain.forEach(function(hop) {
+        if (hop.world) pts.push(projection.worldToImage(hop.world.x, hop.world.z));
+      });
+      var isSel = ui.selectedPoint === point.section1Row;
+      // Dashed = route waits on a gate at its start node; SOLID = ungated, marches immediately.
+      var startN = chain[0] && chain[0].node;
+      var gated = !!(startN && startN.kind !== 1 && startN.bytes[10]);
+      polyline(svg, pts, zoom, isSel ? 'rgba(245,210,98,.95)' : 'rgba(73,176,210,.82)', gated ? '9 7' : null, isSel ? 4 : 3);
+      // Waypoint handles for every coordinate node in this squad's chain (drag to move).
+      chain.forEach(function(hop) {
+        if (!hop.world) return;
+        var p = projection.worldToImage(hop.world.x, hop.world.z);
+        var dot = waypointDot(svg, p, zoom, hop.node, isSel);
+        wireWaypointDrag(dot, rom, key, hop.node, projection, zoom);
+        // Gate badge: waypoints that wait on a trigger show which one (E-id + operator).
+        var gA = hop.node.bytes[10], gOp = hop.node.bytes[11], gB = hop.node.bytes[12];
+        if (gA) {
+          var glyph = 'E' + gA + (gOp === 2 && gB ? '&E' + gB : gOp === 3 && gB ? '|E' + gB : gOp === 1 && gB ? '?E' + gB : '');
+          // Gates only BLOCK on kind-0/kind-2 nodes (live-verified key11: units marched past
+          // gated kind-1 waypoints); kind-1 badges render dimmed as informational.
+          var blocking = hop.node.kind !== 1;
+          var gt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          gt.setAttribute('x', p.x * zoom + 9);
+          gt.setAttribute('y', p.y * zoom - 8);
+          gt.setAttribute('fill', blocking ? (isSel ? 'rgba(245,210,98,1)' : 'rgba(245,230,200,.92)') : 'rgba(245,230,200,.45)');
+          gt.setAttribute('font-size', '11');
+          gt.setAttribute('font-weight', '800');
+          gt.setAttribute('paint-order', 'stroke');
+          gt.setAttribute('stroke', 'rgba(20,16,10,.75)');
+          gt.setAttribute('stroke-width', '2.5');
+          gt.textContent = glyph;
+          gt.style.pointerEvents = 'auto';
+          gt.style.cursor = 'pointer';
+          gt.addEventListener('click', function(ev) { ev.stopPropagation(); selectTrigger(gA); });
+          svg.appendChild(gt);
+        }
+        if (hop.forkNodeId) {
+          var forkNode = nodeById(model, hop.forkNodeId);
+          var fw = nodeWorld(rom, key, forkNode);
+          if (fw) {
+            var fp = projection.worldToImage(fw.x, fw.z);
+            polyline(svg, [p, fp], zoom, 'rgba(47,143,78,.85)', '3 5', 2);
+          }
+        }
+      });
+    });
+    inner.appendChild(svg);
+  }
+
+  // Drag a coordinate waypoint: writes Section 2 bytes [3],[4] from the drop position.
+  function wireWaypointDrag(dot, rom, key, node, projection, zoom) {
+    dot.addEventListener('pointerdown', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var move = function(mv) {
+        var inner = document.getElementById('sc-map-inner');
+        var rect = inner.getBoundingClientRect();
+        dot.setAttribute('cx', clamp(mv.clientX - rect.left, 0, rect.width));
+        dot.setAttribute('cy', clamp(mv.clientY - rect.top, 0, rect.height));
+      };
+      var up = function(uv) {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        var inner = document.getElementById('sc-map-inner');
+        var rect = inner.getBoundingClientRect();
+        var world = projection.imageToWorld(
+          clamp((uv.clientX - rect.left) / zoom, 0, projection.naturalWidth),
+          clamp((uv.clientY - rect.top) / zoom, 0, projection.naturalHeight));
+        // Dual waypoint encoding: snap to a site -> b3=0, b4=selector; else byte coordinates.
+        var sites = ensureState(rom).sites[key] || [];
+        var nearest = null, best = Infinity;
+        sites.forEach(function(site) {
+          var sp = projection.worldToImage(site.x, site.z);
+          var d = Math.hypot(sp.x * zoom - (uv.clientX - rect.left), sp.y * zoom - (uv.clientY - rect.top));
+          if (d < best) { best = d; nearest = site; }
+        });
+        if (node.bytes) {
+          node.bytes[2] = 2;
+          if (nearest && best < 24) {
+            node.bytes[4] = nearest.selector & 0xFF;
+            node.bytes[5] = 0;
+          } else {
+            var b = calibrationData(key) && calibrationData(key).boundsWorld;
+            if (b) {
+              node.bytes[4] = clamp(Math.round(((world.x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255), 0, 255);
+              node.bytes[5] = clamp(Math.round(((world.z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255), 1, 255);
+            }
+          }
+          var state = ensureState(rom);
+          state.modifiedKeys[key] = true;
+          changed();
+        }
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  }
+
+  function byteToWorld(cal, xb, zb) {
+    var b = cal && cal.boundsWorld;
+    if (!b) return null;
+    return {
+      x: b.xMin + (xb / 255) * (b.xMax - b.xMin),
+      z: b.zMin + (zb / 255) * (b.zMax - b.zMin),
+    };
+  }
+
+  // Real trigger geometry from decoded Section 3 payloads:
+  // kinds 0x01 (player-in-rect) and 0x08 (unit-in-rect): byte rect [2]=xLo [3]=zLo [4]=xHi [5]=zHi.
+  // kind 0x04 (player-at-site) and 0x0C (site-flag): payload byte [6] selects the subject site.
+  // kind 0x09 (remnant count) has no geometry - shown in the detail panel only.
+  // Floating feedback elements for map draw interactions.
+  function mapGhost(inner, cls) {
+    var el = document.createElement('div');
+    el.className = cls;
+    el.style.position = 'absolute';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = 60;
+    inner.appendChild(el);
+    return el;
+  }
+
+  // One-shot rect drawing on the map with a live rubber-band; writes byte-rect via cb.
+  function drawRectOnMap(rom, key, onStatus, cb) {
+    var inner = document.getElementById('sc-map-inner');
+    if (!inner) { if (onStatus) onStatus('Map not available.', false); return; }
+    if (onStatus) onStatus('Drag a rectangle on the map...', true);
+    inner.style.cursor = 'crosshair';
+    var proj = null;
+    try { var cal = calibrationData(key); proj = projectionFor(cal, useImageFor(cal)); } catch (e) {}
+    var zoom = ui.zoom;
+    var start = null;
+    var band = null;
+    var move = function(ev) {
+      if (!start || !band) return;
+      var r = inner.getBoundingClientRect();
+      var x = ev.clientX - r.left, y = ev.clientY - r.top;
+      band.style.left = Math.min(start.x, x) + 'px';
+      band.style.top = Math.min(start.y, y) + 'px';
+      band.style.width = Math.abs(x - start.x) + 'px';
+      band.style.height = Math.abs(y - start.y) + 'px';
+    };
+    var down = function(ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var r = inner.getBoundingClientRect();
+      start = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      band = mapGhost(inner, 'sc-rubber-band');
+      band.style.left = start.x + 'px';
+      band.style.top = start.y + 'px';
+      inner.addEventListener('pointermove', move, true);
+    };
+    var up = function(ev) {
+      inner.removeEventListener('pointerdown', down, true);
+      inner.removeEventListener('pointerup', up, true);
+      inner.removeEventListener('pointermove', move, true);
+      inner.style.cursor = '';
+      if (band) band.remove();
+      if (!start || !proj) { if (onStatus) onStatus('Cancelled.', false); return; }
+      var r = inner.getBoundingClientRect();
+      var end = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      var w1 = proj.imageToWorld(Math.min(start.x, end.x) / zoom, Math.min(start.y, end.y) / zoom);
+      var w2 = proj.imageToWorld(Math.max(start.x, end.x) / zoom, Math.max(start.y, end.y) / zoom);
+      var b1 = worldToBytePair(calibrationData(key), Math.min(w1.x, w2.x), Math.min(w1.z, w2.z));
+      var b2 = worldToBytePair(calibrationData(key), Math.max(w1.x, w2.x), Math.max(w1.z, w2.z));
+      cb([b1[0], b1[1], b2[0], b2[1]]);
+    };
+    inner.addEventListener('pointerdown', down, true);
+    inner.addEventListener('pointerup', up, true);
+  }
+
+  function selectTrigger(extraId) {
+    ui.selectedTrigger = ui.selectedTrigger === extraId ? null : extraId;
+    ui.selectedPoint = null;
+    ui.selectedSite = null;
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  function renderTriggerLayer(inner, rom, key, cal, model, projection, zoom) {
+    var svg = svgLayer(projection, zoom);
+    var sites = ensureState(rom).sites[key] || [];
+    model.section3.forEach(function(extra) {
+      var kind = extra.kind;
+      var b = extra.bytes || [];
+      var sel = ui.selectedTrigger === extra.extraId;
+      var shape = null;
+      if (kind === 1 || kind === 8) {
+        var lo = byteToWorld(cal, b[2], b[3]);
+        var hi = byteToWorld(cal, b[4], b[5]);
+        if (!lo || !hi) return;
+        var p1 = projection.worldToImage(lo.x, lo.z);
+        var p2 = projection.worldToImage(hi.x, hi.z);
+        var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', Math.min(p1.x, p2.x) * zoom);
+        rect.setAttribute('y', Math.min(p1.y, p2.y) * zoom);
+        rect.setAttribute('width', Math.abs(p2.x - p1.x) * zoom);
+        rect.setAttribute('height', Math.abs(p2.y - p1.y) * zoom);
+        rect.setAttribute('rx', 3);
+        rect.setAttribute('fill', kind === 1 ? 'rgba(183,55,47,' + (sel ? '.28' : '.13') + ')' : 'rgba(45,111,188,' + (sel ? '.28' : '.13') + ')');
+        rect.setAttribute('stroke', sel ? 'rgba(245,210,98,.95)' : (kind === 1 ? 'rgba(183,55,47,.8)' : 'rgba(45,111,188,.8)'));
+        rect.setAttribute('stroke-width', sel ? '4' : '2');
+        svg.appendChild(rect);
+        var tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        tag.setAttribute('x', Math.min(p1.x, p2.x) * zoom + 4);
+        tag.setAttribute('y', Math.min(p1.y, p2.y) * zoom + 13);
+        tag.setAttribute('fill', 'rgba(245,230,200,.95)');
+        tag.setAttribute('font-size', '11');
+        tag.setAttribute('font-weight', '800');
+        tag.textContent = 'E' + extra.extraId + ' ' + describeExtra(rom, key, extra).label;
+        svg.appendChild(tag);
+        shape = rect;
+      } else if (kind === 4) {
+        // kind 4 compares object +0x74 == b[6]-1, i.e. SELECTOR space (live-proven, key1 E1).
+        // kind 12 indexes the site-RECORD table whose order we cannot resolve statically, so it
+        // gets no map geometry (avoid drawing it at the wrong town).
+        var site = sites.filter(function(s) { return s.selector === b[6]; })[0] || null;
+        if (!site) return;
+        var p = projection.worldToImage(site.x, site.z);
+        var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        ring.setAttribute('cx', p.x * zoom - 16);
+        ring.setAttribute('cy', p.y * zoom - 16);
+        ring.setAttribute('r', sel ? 24 : 20);
+        ring.setAttribute('fill', 'none');
+        ring.setAttribute('stroke', sel ? 'rgba(245,210,98,.95)' : 'rgba(245,210,98,.9)');
+        ring.setAttribute('stroke-width', sel ? '5' : '3');
+        ring.setAttribute('stroke-dasharray', '5 4');
+        svg.appendChild(ring);
+        shape = ring;
+      }
+      if (shape) {
+        shape.setAttribute('data-extra-id', extra.extraId);
+        shape.style.pointerEvents = 'auto';
+        shape.style.cursor = 'pointer';
+        shape.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          selectTrigger(extra.extraId);
+        });
+      }
+    });
+    inner.appendChild(svg);
+  }
+
+  function svgLayer(projection, zoom) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'sc-layer-svg');
+    svg.setAttribute('width', projection.naturalWidth * zoom);
+    svg.setAttribute('height', projection.naturalHeight * zoom);
+    return svg;
+  }
+
+  function renderDetail(el, rom) {
+    if (OB64.releaseSquadCompEditor) OB64.releaseSquadCompEditor(); // detach any stale embed host
+    var key = ui.selectedKey;
+    var model = modelFor(rom, key);
+    var cal = calibrationData(key);
+    if (!model) {
+      el.innerHTML = '<div class="sc-warning">No ESET model.</div>';
+      return;
+    }
+    if (ui.selectedTrigger != null && !model.section3.filter(function(x) { return x.extraId === ui.selectedTrigger; })[0]) {
+      ui.selectedTrigger = null; // stale across scenario change
+    }
+    if (ui.selectedTrigger != null) {
+      renderTriggerDetail(el, rom, key, model, ui.selectedTrigger);
+    } else if (ui.selectedSite) {
+      renderSiteDetail(el, rom, key, ui.selectedSite);
+    } else if (ui.selectedPoint != null) {
+      renderSquadDetail(el, rom, key, ui.selectedPoint);
+    } else {
+      renderScenarioOverview(el, rom, key, model, cal);
+    }
+  }
+
+  function renderTriggerDetail(el, rom, key, model, extraId) {
+    var extra = model.section3.filter(function(x) { return x.extraId === extraId; })[0];
+    var d = describeExtra(rom, key, extra);
+    var use = extraConsumers(rom, key, model, extraId);
+    var b = extra.bytes;
+    var sites = ensureState(rom).sites[key] || [];
+    var html = detailHead('Trigger E' + extraId, [
+      d.label,
+      'kind ' + extra.kind + (EXTRA_KIND_NAMES[extra.kind] ? ' - ' + EXTRA_KIND_NAMES[extra.kind] : ''),
+      d.geometry ? 'location-based (highlighted on map)' : 'no map geometry',
+    ]);
+    html += '<div class="sc-section"><span class="sc-label">Meaning</span><div class="sc-sub">' + esc(d.label) + '</div>' +
+      '<div class="sc-sub">' + esc(d.detail) + '</div></div>';
+    // --- Editor ---
+    html += '<div class="sc-section"><span class="sc-label">Edit trigger</span>' +
+      '<div class="sc-form-row"><label class="sc-label">Kind</label><select id="sc-trig-kind">' +
+      [[1, 'Player enters area'], [4, 'Player at site'], [8, 'Unit enters area'], [9, 'Squads-remaining threshold'], [12, 'Site flag test']]
+        .map(function(k) { return option(String(k[0]), k[0] + ': ' + k[1], String(extra.kind)); }).join('') +
+      (![1, 4, 8, 9, 12].includes(extra.kind) ? option(String(extra.kind), extra.kind + ': undecoded (edit raw bytes)', String(extra.kind)) : '') +
+      '</select></div>';
+    if (extra.kind === 1 || extra.kind === 8) {
+      html += '<div class="sc-form-row"><label class="sc-label">Area</label>' +
+        '<button type="button" id="sc-trig-redraw" class="sc-inline-btn">Redraw on map</button></div>';
+      if (extra.kind === 8) {
+        html += '<div class="sc-form-row"><label class="sc-label">Watched unit</label>' +
+          '<input id="sc-trig-unit" type="number" min="0" max="255" value="' + b[6] + '"></div>';
+      }
+    } else if (extra.kind === 4) {
+      html += '<div class="sc-form-row"><label class="sc-label">Site</label><select id="sc-trig-site">' +
+        sites.map(function(s) { return option(String(s.selector), s.selector + ': ' + (s.siteName || '').trim(), String(b[6])); }).join('') +
+        '</select></div>';
+    } else if (extra.kind === 9) {
+      html += '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
+        '<input id="sc-trig-n" type="number" min="1" max="30" value="' + b[6] + '"></div>';
+    } else if (extra.kind === 12) {
+      html += '<div class="sc-form-row"><label class="sc-label">Site record #</label>' +
+        '<input id="sc-trig-rec" type="number" min="1" max="30" value="' + b[6] + '"></div>';
+    }
+    html += '<div class="sc-form-row"><label class="sc-label">Raw payload</label><div class="sc-mini-grid" style="grid-template-columns:repeat(8,1fr)">' +
+      b.slice(2).map(function(v, i) {
+        return '<input class="sc-trig-raw" data-off="' + (i + 2) + '" value="' + hx2(v) + '" style="min-width:0">';
+      }).join('') + '</div></div>';
+    html += '</div>';
+    html += '<div class="sc-section"><span class="sc-label">Used by</span>';
+    if (use.nodeIds.length) {
+      html += '<div class="sc-sub">Gate on node' + (use.nodeIds.length > 1 ? 's' : '') + ' ' + use.nodeIds.join(', ') + '</div>';
+      html += '<div class="sc-sub">Squads: ' + (use.squadSourceIds.length ? use.squadSourceIds.map(function(s) { return 'source ' + s; }).join(', ') : 'none chain through these nodes') + '</div>';
+    } else {
+      html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
+    }
+    html += '</div>';
+    html += '<div class="sc-section"><button type="button" class="sc-inline-btn" id="sc-trigger-back">Back to scenario overview</button></div>';
+    el.innerHTML = html;
+
+    var commitTrig = function() { ensureState(rom).modifiedKeys[key] = true; changed(); renderScenarioTab(document.getElementById('panel-scenario')); };
+    var kindSel = el.querySelector('#sc-trig-kind');
+    if (kindSel) kindSel.onchange = function() { extra.bytes[1] = parseInt(this.value, 10) & 0xFF; extra.kind = extra.bytes[1]; commitTrig(); };
+    var redraw = el.querySelector('#sc-trig-redraw');
+    if (redraw) redraw.onclick = function() {
+      drawRectOnMap(rom, key, null, function(rect) {
+        extra.bytes[2] = rect[0]; extra.bytes[3] = rect[1]; extra.bytes[4] = rect[2]; extra.bytes[5] = rect[3];
+        commitTrig();
+      });
+    };
+    var unit = el.querySelector('#sc-trig-unit');
+    if (unit) unit.onchange = function() { extra.bytes[6] = parseInt(this.value, 10) & 0xFF; commitTrig(); };
+    var siteSel = el.querySelector('#sc-trig-site');
+    if (siteSel) siteSel.onchange = function() { extra.bytes[6] = parseInt(this.value, 10) & 0xFF; commitTrig(); };
+    var n = el.querySelector('#sc-trig-n');
+    if (n) n.onchange = function() { extra.bytes[6] = clamp(parseInt(this.value, 10) || 4, 1, 30); commitTrig(); };
+    var rec = el.querySelector('#sc-trig-rec');
+    if (rec) rec.onchange = function() { extra.bytes[6] = parseInt(this.value, 10) & 0xFF; commitTrig(); };
+    el.querySelectorAll('.sc-trig-raw').forEach(function(inp) {
+      inp.onchange = function() {
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(extra.bytes[+this.dataset.off]); return; }
+        extra.bytes[+this.dataset.off] = v;
+        commitTrig();
+      };
+    });
+    var back = el.querySelector('#sc-trigger-back');
+    if (back) back.onclick = function() { selectTrigger(extraId); };
+  }
+
+  function renderScenarioOverview(el, rom, key, model, cal) {
+    var validation = OB64.scenarioCodec.validateEset(model);
+    var stubs = anyProjectStub(rom);
+    var html = detailHead(displayLabel(key), [
+      'runtime key ' + key,
+      cal && cal.mapName ? cal.mapName : 'no map image',
+      cal ? cal.registrationGrade : 'ungraded',
+    ]);
+    html += '<div class="sc-meter-grid">' +
+      meter(model.section1.length + '/19', 'source rows') +
+      meter(model.section2.length + '/16', 'nodes') +
+      meter(model.section3.length + '/16', 'extras') +
+    '</div>';
+    html += validation.errors.length
+      ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
+      : '<div class="sc-ok">Codec validation: zero errors, ' + validation.warnings.length + ' warnings</div>';
+    if (stubs.siteAllegianceKeys.length || stubs.addedSquads.length) {
+      html += '<div class="sc-warning">ROM export pending source decode: ' +
+        (stubs.siteAllegianceKeys.length ? 'site allegiance ' : '') +
+        (stubs.addedSquads.length ? 'add-squad reserved records ' : '') +
+        '</div>';
+    }
+    html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
+    model.section2.forEach(function(node) {
+      html += nodeSummaryHtml(model, node);
+    });
+    html += '</div></div>';
+    html += '<div class="sc-section"><span class="sc-label">Triggers</span><div class="sc-node-list">';
+    model.section3.forEach(function(extra) {
+      var d = describeExtra(rom, key, extra);
+      html += '<button type="button" class="sc-trigger-row' + (ui.selectedTrigger === extra.extraId ? ' on' : '') + '" data-extra="' + extra.extraId + '">' +
+        '<strong>E' + extra.extraId + '</strong> ' + esc(d.label) +
+        (d.geometry ? ' <span class="sc-chip">on map</span>' : '') +
+        '<span class="sc-sub">' + esc(d.detail) + '</span></button>';
+    });
+    if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
+    html += '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ New trigger (draw area on map)</button>';
+    html += '</div></div>';
+    if ((ensureState(rom).addedSquads || []).filter(function(r) { return r.runtimeKey === key; }).length) {
+      html += '<div class="sc-section"><span class="sc-label">Reserved add-squad records</span><div class="sc-node-list">';
+      ensureState(rom).addedSquads.filter(function(r) { return r.runtimeKey === key; }).forEach(function(r) {
+        html += '<div class="sc-node">reserved edat ' + esc(r.edatId) + ' / placement source ' + esc(r.sourceId) + '</div>';
+      });
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('.sc-trigger-row').forEach(function(btn) {
+      btn.onclick = function() { selectTrigger(parseInt(this.dataset.extra, 10)); };
+    });
+    var newTrig = el.querySelector('#sc-new-trigger');
+    if (newTrig) newTrig.onclick = function() {
+      if (model.section3.length >= 16) { ui.gateText = 'Section 3 is at its 16-extra cap.'; renderScenarioTab(document.getElementById('panel-scenario')); return; }
+      drawRectOnMap(rom, key, null, function(rect) {
+        var extra = allocExtra(model, 1, rect);
+        if (!extra) return;
+        ensureState(rom).modifiedKeys[key] = true;
+        changed();
+        ui.selectedTrigger = extra.extraId;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      });
+      var gate = document.getElementById('sc-gate');
+      if (gate) gate.textContent = 'Drag a rectangle on the map for the new trigger area...';
+    };
+  }
+
+  function nodeSummaryHtml(model, node) {
+    var op = node.gate.operatorName;
+    var label = 'node ' + node.nodeId + ' / kind ' + node.kind + ' / ' + op;
+    var target = node.nextNode === 0xFF ? 'terminal 0xFF' : ('next ' + node.nextNode);
+    var extraA = extraName(model, node.gate.extraA);
+    var extraB = node.gate.operator ? extraName(model, node.gate.extraB) : '';
+    return '<div class="sc-node"><strong>' + esc(label) + '</strong><br>' +
+      'gate: ' + esc(extraA + (extraB ? ' ' + op + ' ' + extraB : '')) + ' -> ' + esc(target) +
+      '<br><code>' + esc(node.raw18) + '</code></div>';
+  }
+
+  function extraName(model, id) {
+    if (!id) return 'none';
+    var extra = model.section3.filter(function(e) { return e.extraId === id; })[0];
+    return extra ? ('extra ' + id + ' kind ' + extra.kind) : ('extra ' + id);
+  }
+
+  function renderSiteDetail(el, rom, key, site) {
+    var allegiance = siteAllegiance(rom, key, site.selector);
+    el.innerHTML = detailHead(site.siteName || ('Site ' + site.selector), [
+      'selector ' + site.selector,
+      'x ' + site.x.toFixed(3) + ' / z ' + site.z.toFixed(3),
+    ]) +
+      '<div class="sc-form-row"><label class="sc-label">Allegiance</label><select id="sc-site-allegiance">' +
+        option('allied', 'Allied', allegiance) +
+        option('enemy', 'Enemy', allegiance) +
+        option('neutral', 'Neutral', allegiance) +
+      '</select></div>' +
+      '<div class="sc-warning">ROM export stub: initial site allegiance source is pending decode, so this value is saved in Scenario project JSON and blocked visibly during ROM export.</div>';
+    var sel = el.querySelector('#sc-site-allegiance');
+    if (sel) sel.onchange = function() {
+      setSiteAllegiance(rom, key, site.selector, this.value);
+      renderScenarioTab(document.getElementById('panel-scenario'));
+    };
+  }
+
+  function renderSquadDetail(el, rom, key, rowIndex) {
+    var model = modelFor(rom, key);
+    var row = model.section1[rowIndex];
+    var point = pointFor(key, rowIndex);
+    var runtimeRow = rowRuntime(rom, key, rowIndex);
+    var validation = OB64.scenarioCodec.validateEset(model);
+    if (!row || !point) {
+      el.innerHTML = '<div class="sc-warning">Selected row is not available.</div>';
+      return;
+    }
+    var html = detailHead('Source ' + row.sourceId + ' / EDAT ' + point.edat, [
+      point.wikiSquad || 'runtime row ' + rowIndex,
+      runtimeRow && runtimeRow.dormant ? 'dormant trigger' : 'active',
+      'drop raw ' + OB64.scenarioCodec.hexByte(row.dropRaw, 4),
+    ]);
+    html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
+      '<div id="sc-comp-host"></div>' +
+      '<div class="sc-form-row"><label class="sc-label"></label>' +
+      '<button type="button" id="sc-edit-comp" class="sc-inline-btn">Open in Squads tab</button></div></div>';
+    html += '<div class="sc-section"><span class="sc-label">Placement</span>' + placementEditorHtml(rom, key, row, point) + '</div>';
+    // Reflect the squad's CURRENT gate/threshold in the builder controls.
+    var curStartNode = nodeById(model, row.bytes[6]);
+    var curGate = curStartNode ? (curStartNode.bytes[10] || 0) : 0;
+    var curGateStr = curGate ? String(curGate) : '';
+    var curThresh = 4;
+    if (curGate) {
+      var curExtra = model.section3.filter(function(x) { return x.extraId === curGate; })[0];
+      if (curExtra && curExtra.kind === 9) curThresh = curExtra.bytes[6] || 4;
+    }
+    html += '<div class="sc-section"><span class="sc-label">Behavior</span>' +
+      '<div class="sc-form-row"><label class="sc-label">Template</label><select id="sc-template">' +
+      option('', 'Current: ' + describeBehavior(rom, key, model, row), '') +
+      option('guard-site', 'Guard (hold position)', '') +
+      option('march-chain', 'March to destination', '') +
+      option('wait-march', 'Wait for trigger, then march', '') +
+      option('solo-ambush', 'Ambush (dormant until trigger)', '') +
+      option('reinforce-remnant', 'Reinforce when N squads remain', '') +
+      option('camp-terminal', 'March + permanent camp', '') +
+      '</select></div>' +
+      '<div class="sc-form-row"><label class="sc-label">Trigger</label><select id="sc-tpl-trigger">' +
+      option('', 'None', curGateStr) +
+      model.section3.map(function(x) {
+        return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, curGateStr);
+      }).join('') +
+      option('new-rect', '+ New player rect (draw on map)', curGateStr) +
+      '</select></div>' +
+      '<div class="sc-form-row"><label class="sc-label">Destination</label>' +
+      '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">Pick on map</button></div>' +
+      '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
+      '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + curThresh + '"></div>' +
+      '<div class="sc-form-row"><label class="sc-label"></label>' +
+      '<button type="button" id="sc-tpl-apply" class="sc-inline-btn">Apply behavior</button></div>' +
+      '<div class="sc-form-row"><label class="sc-label"></label>' +
+      '<button type="button" id="sc-tpl-clear-route" class="sc-inline-btn">Remove route (guard / hold position)</button></div>' +
+      '<div id="sc-tpl-msg" class="sc-sub"></div>' +
+      '</div>';
+    html += '<div class="sc-section"><label><input type="checkbox" id="sc-advanced"' + (ui.advanced ? ' checked' : '') + '> Advanced</label></div>';
+    html += ui.advanced ? advancedHtml(model, rowIndex) : nodePreviewHtml(model, row);
+    html += validation.errors.length
+      ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
+      : '<div class="sc-ok">Codec validation: zero errors for current model</div>';
+    el.innerHTML = html;
+    wireSquadDetail(el, rom, key, rowIndex);
+  }
+
+  function placementEditorHtml(rom, key, row, point) {
+    var sites = ensureState(rom).sites[key] || [];
+    var mode = row.bytes[4] === 0 ? 'selector' : 'coordinate';
+    var selector = mode === 'selector' ? row.bytes[3] : '';
+    var world = point.world || { x: 0, z: 0 };
+    var html = '<div class="sc-form-row"><label class="sc-label">Mode</label><select id="sc-placement-mode">' +
+      option('selector', 'Site selector', mode) + option('coordinate', 'Coordinate', mode) + '</select></div>';
+    html += '<div class="sc-form-row"><label class="sc-label">Site</label><select id="sc-placement-site">';
+    html += '<option value="">Coordinate</option>';
+    sites.forEach(function(site) {
+      html += '<option value="' + site.selector + '"' + (String(selector) === String(site.selector) ? ' selected' : '') + '>' +
+        esc(site.selector + ': ' + site.siteName) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="sc-form-row"><label class="sc-label">World X</label><input id="sc-world-x" type="number" step="0.01" value="' + esc(world.x.toFixed(2)) + '"></div>';
+    html += '<div class="sc-form-row"><label class="sc-label">World Z</label><input id="sc-world-z" type="number" step="0.01" value="' + esc(world.z.toFixed(2)) + '"></div>';
+    return html;
+  }
+
+  function nodePreviewHtml(model, row) {
+    var related = [];
+    [row.startNode].concat(row.behaviorBytes || []).forEach(function(id) {
+      model.section2.forEach(function(node) {
+        if (node.nodeId === id) related.push(node);
+      });
+    });
+    var html = '<div class="sc-section"><span class="sc-label">Linked nodes</span><div class="sc-node-list">';
+    related.forEach(function(node) { html += nodeSummaryHtml(model, node); });
+    if (!related.length) html += '<div class="sc-node">No linked node rows resolved.</div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function advancedHtml(model, rowIndex) {
+    var row = model.section1[rowIndex];
+    var html = '<div class="sc-section"><span class="sc-label">Section 1 raw row</span>' + rawGridHtml('s1', row.bytes, rowIndex, 's1') + '</div>';
+    html += '<div class="sc-section"><span class="sc-label">Section 2 gate builder</span><table class="sc-table"><thead><tr><th>Node</th><th>Kind</th><th>A</th><th>Op</th><th>B</th><th>Next</th></tr></thead><tbody>';
+    model.section2.forEach(function(node) {
+      html += '<tr data-node="' + node.row + '"><td>' + node.nodeId + '</td><td>' + node.kind + '</td>' +
+        '<td><input class="sc-node-byte" data-row="' + node.row + '" data-off="10" value="' + hx2(node.bytes[10]) + '"></td>' +
+        '<td><select class="sc-node-byte" data-row="' + node.row + '" data-off="11">' +
+          [0,1,2,3].map(function(op) { return '<option value="' + op + '"' + (node.bytes[11] === op ? ' selected' : '') + '>' + op + ' ' + OB64.scenarioCodec.GATE_OPERATORS[op].name + '</option>'; }).join('') +
+        '</select></td>' +
+        '<td><input class="sc-node-byte" data-row="' + node.row + '" data-off="12" value="' + hx2(node.bytes[12]) + '"></td>' +
+        '<td><input class="sc-node-byte" data-row="' + node.row + '" data-off="17" value="' + hx2(node.bytes[17]) + '"></td></tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<div class="sc-section"><span class="sc-label">Section 3 extras</span><div class="sc-node-list">';
+    model.section3.forEach(function(extra) {
+      html += '<div class="sc-node">extra ' + extra.extraId + ' kind <input class="sc-extra-byte" data-row="' + extra.row + '" data-off="1" value="' + hx2(extra.bytes[1]) + '"> ' +
+        rawGridHtml('s3-' + extra.row, extra.bytes, extra.row, 's3', 'sc-extra-grid') + '</div>';
+    });
+    if (!model.section3.length) html += '<div class="sc-node">No extras.</div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function rawGridHtml(prefix, bytes, rowIndex, kind, extraClass) {
+    var html = '<div class="sc-raw-grid' + (extraClass ? ' ' + esc(extraClass) : '') + '">';
+    for (var i = 0; i < bytes.length; i++) {
+      html += '<label class="sc-byte">' + i + '<input class="sc-byte-input" data-kind="' + esc(kind || 's1') + '" data-prefix="' + prefix + '" data-row="' + rowIndex + '" data-off="' + i + '" value="' + hx2(bytes[i]) + '"></label>';
+    }
+    return html + '</div>';
+  }
+
+  function wireSquadDetail(el, rom, key, rowIndex) {
+    var model = modelFor(rom, key);
+    var editComp = el.querySelector('#sc-edit-comp');
+    if (editComp) editComp.onclick = function() {
+      var point = pointFor(key, rowIndex);
+      if (OB64.squadsFocus && point) OB64.squadsFocus(key, point.edat);
+      var navBtn = document.querySelector('button[data-tab="squads"]');
+      if (navBtn) navBtn.click();
+    };
+    // Embed the full Squads comp editor in the sidebar (override toggle, formation grid,
+    // class pickers, drag cells) - renders live against the same override state.
+    var compHost = el.querySelector('#sc-comp-host');
+    if (compHost && OB64.renderSquadCompEditor) {
+      var pt = pointFor(key, rowIndex);
+      if (pt) OB64.renderSquadCompEditor(compHost, rom, key, pt.edat);
+    }
+    var mode = el.querySelector('#sc-placement-mode');
+    if (mode) mode.onchange = function() {
+      var row = model.section1[rowIndex];
+      if (this.value === 'selector') {
+        var site = (ensureState(rom).sites[key] || [])[0];
+        row.bytes[3] = site ? site.selector : row.bytes[3];
+        row.bytes[4] = 0;
+      } else {
+        var point = pointFor(key, rowIndex);
+        setCoordinateBytesFromWorld(calibrationData(key), row, point && point.world ? point.world.x : 0, point && point.world ? point.world.z : 0);
+      }
+      commitScenarioEdit(rom, key);
+    };
+    var site = el.querySelector('#sc-placement-site');
+    if (site) site.onchange = function() {
+      var row = model.section1[rowIndex];
+      if (this.value) {
+        row.bytes[3] = parseInt(this.value, 10) & 0xFF;
+        row.bytes[4] = 0;
+        commitScenarioEdit(rom, key);
+      }
+    };
+    var x = el.querySelector('#sc-world-x');
+    var z = el.querySelector('#sc-world-z');
+    function commitWorld() {
+      var row = model.section1[rowIndex];
+      setCoordinateBytesFromWorld(calibrationData(key), row, parseFloat(x.value), parseFloat(z.value));
+      commitScenarioEdit(rom, key);
+    }
+    if (x) x.onchange = commitWorld;
+    if (z) z.onchange = commitWorld;
+    // Behavior builder: template + trigger + map-picked destination + threshold -> applyTemplate.
+    var tplState = { dest: null };
+    var msg = function(text, ok) {
+      var m = el.querySelector('#sc-tpl-msg');
+      if (m) { m.textContent = text || ''; m.style.color = ok ? '' : 'var(--sc-red)'; }
+    };
+    var destBtn = el.querySelector('#sc-tpl-dest');
+    if (destBtn) destBtn.onclick = function() {
+      var inner = document.getElementById('sc-map-inner');
+      if (!inner) return;
+      msg('Click the map to set the destination...', true);
+      inner.style.cursor = 'crosshair';
+      var ghost = mapGhost(inner, 'sc-pick-ghost');
+      var follow = function(mv) {
+        var r = inner.getBoundingClientRect();
+        ghost.style.left = (mv.clientX - r.left) + 'px';
+        ghost.style.top = (mv.clientY - r.top) + 'px';
+      };
+      inner.addEventListener('pointermove', follow, true);
+      var once = function(ev) {
+        inner.removeEventListener('pointerdown', once, true);
+        inner.removeEventListener('pointermove', follow, true);
+        inner.style.cursor = '';
+        ev.preventDefault();
+        ev.stopPropagation();
+        var rect = inner.getBoundingClientRect();
+        var cal = calibrationData(key);
+        var proj = projectionFor(cal, useImageFor(cal));
+        var zoom = ui.zoom;
+        var world = proj.imageToWorld(
+          clamp((ev.clientX - rect.left) / zoom, 0, proj.naturalWidth),
+          clamp((ev.clientY - rect.top) / zoom, 0, proj.naturalHeight));
+        tplState.dest = world;
+        destBtn.textContent = 'Dest: ' + world.x.toFixed(1) + ', ' + world.z.toFixed(1);
+        ghost.classList.add('set');
+        setTimeout(function() { ghost.remove(); }, 450);
+        msg('Destination set.', true);
+      };
+      inner.addEventListener('pointerdown', once, true);
+    };
+    // Live trigger editing: with no template chosen, changing the Trigger re-gates the
+    // squad's CURRENT start node (byte [10]) immediately.
+    var trigSelEl = el.querySelector('#sc-tpl-trigger');
+    if (trigSelEl) trigSelEl.onchange = function() {
+      var template = (el.querySelector('#sc-template') || {}).value;
+      if (template) return; // template flow consumes the trigger at Apply time
+      var row2 = model.section1[rowIndex];
+      var startNode = nodeById(model, row2.bytes[6]);
+      if (!startNode) { msg('No start node on this squad - apply a template first.', false); return; }
+      if (this.value === 'new-rect') {
+        drawRectOnMap(rom, key, msg, function(rect) {
+          var extra = allocExtra(model, 1, rect);
+          if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
+          startNode.bytes[10] = extra.extraId;
+          msg('E' + extra.extraId + ' created and set as gate.', true);
+          commitScenarioEdit(rom, key);
+        });
+        return;
+      }
+      startNode.bytes[10] = this.value ? parseInt(this.value, 10) : 0;
+      msg(this.value ? 'Gate set to E' + this.value : 'Gate cleared - route is now UNGATED (solid line): the unit marches immediately. Use "Remove route" to make it hold position.', true);
+      commitScenarioEdit(rom, key);
+    };
+    var clearRoute = el.querySelector('#sc-tpl-clear-route');
+    if (clearRoute) clearRoute.onclick = function() {
+      model.section1[rowIndex].bytes[6] = 1; // +0xBA = 1: hold position, no route
+      msg('Route removed - unit guards its position.', true);
+      commitScenarioEdit(rom, key);
+    };
+    var applyBtn = el.querySelector('#sc-tpl-apply');
+    if (applyBtn) applyBtn.onclick = function() {
+      var template = (el.querySelector('#sc-template') || {}).value;
+      var trigSel = (el.querySelector('#sc-tpl-trigger') || {}).value;
+      var threshold = parseInt((el.querySelector('#sc-tpl-threshold') || {}).value, 10) || 4;
+      var cal = calibrationData(key);
+      var finish = function(triggerId) {
+        var err = applyTemplate(model, rowIndex, template, cal, {
+          trigger: triggerId, dest: tplState.dest, threshold: threshold,
+        });
+        if (err) { msg(err, false); return; }
+        msg('Applied: ' + template, true);
+        commitScenarioEdit(rom, key);
+      };
+      if (trigSel === 'new-rect') {
+        drawRectOnMap(rom, key, msg, function(rect) {
+          var extra = allocExtra(model, 1, rect);
+          if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
+          finish(extra.extraId);
+        });
+        return;
+      }
+      finish(trigSel ? parseInt(trigSel, 10) : 0);
+    };
+    var adv = el.querySelector('#sc-advanced');
+    if (adv) adv.onchange = function() {
+      ui.advanced = !!this.checked;
+      renderScenarioTab(document.getElementById('panel-scenario'));
+    };
+    el.querySelectorAll('.sc-byte-input').forEach(function(inp) {
+      inp.onchange = function() {
+        var kind = this.dataset.kind || 's1';
+        var row = parseInt(this.dataset.row, 10);
+        var off = parseInt(this.dataset.off, 10);
+        if (kind === 's3') model.section3[row].bytes[off] = parseByte(this.value);
+        else model.section1[row].bytes[off] = parseByte(this.value);
+        commitScenarioEdit(rom, key);
+      };
+    });
+    el.querySelectorAll('.sc-node-byte').forEach(function(inp) {
+      inp.onchange = function() {
+        var row = parseInt(this.dataset.row, 10);
+        var off = parseInt(this.dataset.off, 10);
+        model.section2[row].bytes[off] = parseByte(this.value);
+        commitScenarioEdit(rom, key);
+      };
+    });
+    el.querySelectorAll('.sc-extra-byte').forEach(function(inp) {
+      inp.onchange = function() {
+        var row = parseInt(this.dataset.row, 10);
+        var off = parseInt(this.dataset.off, 10);
+        model.section3[row].bytes[off] = parseByte(this.value);
+        commitScenarioEdit(rom, key);
+      };
+    });
+  }
+
+  function parseByte(value) {
+    var s = String(value).trim();
+    var v = /^0x/i.test(s) ? parseInt(s, 16) : parseInt(s, 10);
+    return clamp(v, 0, 255) & 0xFF;
+  }
+
+  function hx2(value) {
+    return '0x' + Number(value || 0).toString(16).toUpperCase().padStart(2, '0');
+  }
+
+  function option(value, label, current) {
+    return '<option value="' + esc(value) + '"' + (String(value) === String(current) ? ' selected' : '') + '>' + esc(label) + '</option>';
+  }
+
+  function detailHead(title, chips) {
+    return '<div class="sc-detail-head"><div class="sc-head-title">' + esc(title) + '</div>' +
+      '<div class="sc-sub">' + (chips || []).map(esc).join(' / ') + '</div></div>';
+  }
+
+  function meter(value, label) {
+    return '<div class="sc-meter"><strong>' + esc(value) + '</strong><span>' + esc(label) + '</span></div>';
+  }
+
+  function commitScenarioEdit(rom, key) {
+    var state = ensureState(rom);
+    var model = state.models[key];
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    state.modifiedKeys[key] = true;
+    changed();
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  function setCoordinateBytesFromWorld(cal, row, x, z) {
+    var b = cal && cal.boundsWorld ? cal.boundsWorld : { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
+    var xb = Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255);
+    var zb = Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255);
+    row.bytes[3] = clamp(xb, 0, 255);
+    row.bytes[4] = clamp(zb || 1, 1, 255);
+  }
+
+  function updatePlacementFromImage(rom, key, rowIndex, imageX, imageY, projection) {
+    var state = ensureState(rom);
+    var model = state.models[key];
+    var row = model.section1[rowIndex];
+    var world = projection.imageToWorld(imageX, imageY);
+    var sites = state.sites[key] || [];
+    var nearest = null;
+    var best = Infinity;
+    sites.forEach(function(site) {
+      var p = projection.worldToImage(site.x, site.z);
+      var d = Math.hypot(p.x - imageX, p.y - imageY);
+      if (d < best) { best = d; nearest = site; }
+    });
+    if (nearest && best < 48) {
+      row.bytes[3] = nearest.selector & 0xFF;
+      row.bytes[4] = 0;
+    } else {
+      setCoordinateBytesFromWorld(calibrationData(key), row, world.x, world.z);
+    }
+    state.modifiedKeys[key] = true;
+    changed();
+  }
+
+  // Section 2/3 allocation. Hard caps are structural RAM layout: 16 nodes (ids 0x04..0x13),
+  // 16 extras (ids 0x01..0x10). Returns null when the mission is at cap.
+  function allocNode(model, fields) {
+    if (model.section2.length >= 16) return null;
+    var nodeId = 4 + model.section2.length;
+    var bytes = new Array(18).fill(0);
+    bytes[0] = nodeId;
+    bytes[1] = fields.kind || 0;
+    bytes[2] = fields.subtype || 0;
+    // Waypoint pair lives at [4],[5]: selector mode = ([4]=selector, [5]=0); coordinate mode
+    // keeps [5] >= 1 so it cannot misread as a selector.
+    if (fields.coordBytes) { bytes[4] = fields.coordBytes[0]; bytes[5] = Math.max(1, fields.coordBytes[1]); }
+    if (fields.siteSelector) { bytes[4] = fields.siteSelector & 0xFF; bytes[5] = 0; }
+    bytes[10] = fields.gateExtra || 0;
+    bytes[11] = fields.gateOp || 0;
+    bytes[12] = fields.gateExtraB || 0;
+    bytes[17] = fields.next != null ? fields.next : 0;
+    var node = { nodeId: nodeId, kind: bytes[1], bytes: bytes };
+    model.section2.push(node);
+    return node;
+  }
+
+  function allocExtra(model, kind, payload) {
+    if (model.section3.length >= 16) return null;
+    var extraId = 1 + model.section3.length;
+    var bytes = new Array(10).fill(0);
+    bytes[0] = extraId;
+    bytes[1] = kind;
+    (payload || []).forEach(function(v, i) { bytes[2 + i] = v & 0xFF; });
+    var extra = { extraId: extraId, kind: kind, bytes: bytes };
+    model.section3.push(extra);
+    return extra;
+  }
+
+  function worldToBytePair(cal, x, z) {
+    var b = cal && cal.boundsWorld ? cal.boundsWorld : { xMin: -16, xMax: 16, zMin: -16, zMax: 16 };
+    return [
+      clamp(Math.round(((x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 255), 0, 255),
+      clamp(Math.round(((z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 255), 0, 255),
+    ];
+  }
+
+  // Behavior templates write the DECODED grammar:
+  //   Section 1 byte [6] = start node id (object +0xBA); kind-2 start node => spawns dormant
+  //   (loader clears the active bit - the ambush mechanism); node byte [10]/[11]/[12] = compound
+  //   gate; node byte [17] = next node (0xFF = permanent camp); coordinate waypoints are kind 1
+  //   subtype 2 with bounds-normalized byte coords in [3],[4].
+  // params: { trigger: extraId|0, dest: {x,z}|null, threshold: n }
+  function applyTemplate(model, rowIndex, template, cal, params) {
+    var row = model.section1[rowIndex];
+    if (!template) return 'no template';
+    params = params || {};
+    var destBytes = params.dest ? worldToBytePair(cal, params.dest.x, params.dest.z) : null;
+
+    if (template === 'guard-site' || template === 'guard-coordinate') {
+      row.bytes[6] = 1; // +0xBA = 1: no route, hold position (scripted-tier idle convention)
+      return null;
+    }
+    if (template === 'march-chain') {
+      if (!destBytes) return 'march-chain needs a destination - use "Pick on map"';
+      var dest = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      if (!dest) return 'Section 2 is at its 16-node cap';
+      row.bytes[6] = dest.nodeId;
+      return null;
+    }
+    if (template === 'wait-march') {
+      if (!destBytes) return 'wait-march needs a destination - use "Pick on map"';
+      if (!params.trigger) return 'wait-march needs a trigger (create one below first)';
+      var wDest = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      if (!wDest) return 'Section 2 is at its 16-node cap';
+      var hold = allocNode(model, { kind: 0, gateExtra: params.trigger, next: wDest.nodeId });
+      if (!hold) return 'Section 2 is at its 16-node cap';
+      row.bytes[6] = hold.nodeId;
+      return null;
+    }
+    if (template === 'solo-ambush') {
+      if (!params.trigger) return 'ambush needs a trigger (create one below first)';
+      var order = destBytes ? allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
+      var lair = allocNode(model, {
+        kind: 2, gateExtra: params.trigger, next: order ? order.nodeId : 1,
+      });
+      if (!lair) return 'Section 2 is at its 16-node cap';
+      row.bytes[6] = lair.nodeId; // kind-2 start => spawns dormant, wakes via path B with orders
+      return null;
+    }
+    if (template === 'reinforce-remnant') {
+      var extra = allocExtra(model, 9, [0, 0, 0, 0, clamp(params.threshold || 4, 1, 30)]);
+      if (!extra) return 'Section 3 is at its 16-extra cap';
+      var rDest = destBytes ? allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
+      var gate = allocNode(model, { kind: 2, gateExtra: extra.extraId, next: rDest ? rDest.nodeId : 1 });
+      if (!gate) return 'Section 2 is at its 16-node cap';
+      row.bytes[6] = gate.nodeId;
+      return null;
+    }
+    if (template === 'camp-terminal') {
+      if (!destBytes) return 'camp-terminal needs a destination - use "Pick on map"';
+      var camp = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0xFF });
+      if (!camp) return 'Section 2 is at its 16-node cap';
+      row.bytes[6] = camp.nodeId;
+      return null;
+    }
+    return 'unknown template';
+  }
+
+  function reserveAddSquad(rom, key) {
+    var state = ensureState(rom);
+    var model = state.models[key];
+    var maxSource = model.section1.reduce(function(max, row) { return Math.max(max, row.sourceId); }, 0);
+    var existingEdats = {};
+    model.section1.forEach(function(row) { existingEdats[row.edatOneBased - 1] = true; });
+    var edat = 1;
+    while (existingEdats[edat] && edat < 600) edat++;
+    state.addedSquads.push({
+      runtimeKey: key,
+      sourceId: maxSource + 1,
+      edatId: edat,
+      status: 'reserved-pending-override-resolver',
+      createdAt: new Date().toISOString(),
+    });
+    state.modifiedKeys[key] = true;
+    ui.gateText = 'Add-squad reserved for project JSON; ROM export is blocked until override resolver plumbing lands.';
+    changed();
+  }
+
+  function collectProject(rom) {
+    var state = ensureState(rom);
+    var modifiedEsets = {};
+    Object.keys(state.models).forEach(function(key) {
+      if (keyModified(rom, Number(key))) {
+        modifiedEsets[key] = {
+          runtimeKey: Number(key),
+          archive: state.metadata[key] && state.metadata[key].archive,
+          filename: state.metadata[key] && state.metadata[key].filename,
+          rawHex: OB64.scenarioCodec.bytesToCompactHex(modelBytes(state.models[key])),
+        };
+      }
+    });
+    return {
+      format: 'ob64-scenario-project',
+      version: 1,
+      created_at: new Date().toISOString(),
+      source: 'LordlyCaliber Scenario tab',
+      settings: state.settings,
+      modifiedEsets: modifiedEsets,
+      siteAllegiances: state.siteAllegiances,
+      addedSquads: state.addedSquads,
+      layers: {},
+    };
+  }
+
+  function downloadProject(rom) {
+    var project = collectProject(rom);
+    var blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'ob64_scenario_project_' + project.created_at.replace(/[:.]/g, '-') + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function loadProject(rom, project) {
+    if (!project || project.format !== 'ob64-scenario-project') throw new Error('Not an OB64 Scenario project file');
+    var state = ensureState(rom);
+    if (project.settings) state.settings = project.settings;
+    state.siteAllegiances = project.siteAllegiances || {};
+    state.addedSquads = project.addedSquads || [];
+    var esets = project.modifiedEsets || {};
+    Object.keys(esets).forEach(function(key) {
+      var raw = OB64.scenarioCodec.compactHexToBytes(esets[key].rawHex);
+      state.models[key] = OB64.scenarioCodec.parseEset(raw, { sourcePath: esets[key].filename || key });
+      state.modifiedKeys[key] = true;
+    });
+    changed();
+  }
+
+  function exportScenarioArchives(rom) {
+    var state = ensureState(rom);
+    var stubs = anyProjectStub(rom);
+    var blocked = [];
+    if (stubs.siteAllegianceKeys.length) blocked.push('Initial town allegiance ROM source is pending decode; saved project values are not written to ROM.');
+    if (stubs.addedSquads.length) blocked.push('Add-squad override resolver is not wired in this branch; reserved records are project-only.');
+    if (blocked.length) return { touched: [], blocked: blocked };
+
+    var touched = [];
+    Object.keys(state.models).forEach(function(key) {
+      var runtimeKey = Number(key);
+      var model = state.models[key];
+      var original = state.originalBytes[key];
+      var raw = modelBytes(model);
+      if (!original || OB64.scenarioCodec.equalBytes(raw, original)) return;
+      var meta = state.metadata[key] || scenarioData(runtimeKey);
+      if (!meta || !meta.archive || !rom.archives[meta.archive]) throw new Error('Missing ROM archive for runtime key ' + runtimeKey);
+      var comp = OB64.lh5Compress(raw);
+      var arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
+      var result = OB64.spliceArchive(rom.z64, rom.archives[meta.archive], arc);
+      if (!result.success) throw new Error('Scenario key ' + runtimeKey + ' ESET archive does not fit its ROM slot: ' + result.error);
+      touched.push('scenario key ' + runtimeKey);
+      state.originalBytes[key] = raw.slice(0);
+    });
+    return { touched: touched, blocked: [] };
+  }
+
+  OB64.renderScenarioTab = renderScenarioTab;
+  OB64.scenario = {
+    ensureState: ensureState,
+    collectProject: collectProject,
+    loadProject: loadProject,
+    exportScenarioArchives: exportScenarioArchives,
+    iconProvider: iconProvider,
+    keyModified: keyModified,
+  };
+})(window.OB64);

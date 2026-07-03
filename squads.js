@@ -17,6 +17,27 @@
   var GRID = [3, 2, 1, 6, 5, 4, 9, 8, 7];   // display order: back row top, front row bottom
   var sel = { scenarioId: null, edatId: null };
   var ui = { search: '', notice: '', rawCapacity: false };
+  // Deep-link hook: the Scenario tab focuses a squad here before switching tabs.
+  OB64.squadsFocus = function(scenarioId, edatId) {
+    sel.scenarioId = scenarioId;
+    sel.edatId = edatId;
+    ui.search = '';
+    ui.notice = '';
+  };
+
+  // Embed the full squad comp editor (override toggle, grid, pickers, drag cells) into an
+  // arbitrary container - used by the Scenario tab's right sidebar. Re-renders on every commit
+  // because renderDetail keeps writing into the host until released.
+  OB64.renderSquadCompEditor = function(container, rom, scenarioId, edatId) {
+    injectStyle();
+    ensureInit(rom);
+    sel.scenarioId = scenarioId;
+    sel.edatId = edatId;
+    ui.notice = '';
+    detailHost = container;
+    renderDetail(rom);
+  };
+  OB64.releaseSquadCompEditor = function() { detailHost = null; };
   var STYLE_ID = 'squads-style';
 
   function hexToBytes(h) { var b = new Uint8Array(h.length / 2); for (var i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16); return b; }
@@ -243,6 +264,9 @@
       '#panel-squads .sq-empty{color:var(--ob-ink-soft);font-size:13px;padding:14px 4px}',
       '@media (max-width:980px){#panel-squads .sq-wrap{grid-template-columns:1fr}#panel-squads .sq-list{max-height:320px;min-height:260px}#panel-squads .sq-editor-grid{grid-template-columns:1fr}#panel-squads .sq-pick{grid-template-columns:1fr}#panel-squads .sq-info-grid{grid-template-columns:1fr}}'
     ].join('');
+    // Duplicate every rule re-scoped to #sc-comp-host so the Scenario sidebar embed
+    // gets the identical squad-editor styling (grid, cells, pickers, chips).
+    css = css + css.replace(/#panel-squads/g, '#sc-comp-host');
     var s = document.createElement('style'); s.id = STYLE_ID; s.textContent = css; document.head.appendChild(s);
   }
 
@@ -274,6 +298,7 @@
   }
 
   function renderSquads(panel) {
+    detailHost = null; // entering the Squads tab always renders into #sq-detail
     if (!OB64.SQUAD_DATA) { panel.innerHTML = '<p>Squad data not loaded.</p>'; return; }
     var rom = OB64._romRef && OB64._romRef(); if (!rom) return;
     ensureInit(rom); injectStyle();
@@ -447,8 +472,12 @@
     el.innerHTML = html;
   }
 
+  // When set, the squad comp editor renders into this element instead of #sq-detail
+  // (used by the Scenario tab's right sidebar).
+  var detailHost = null;
+
   function renderDetail(rom) {
-    var el = document.getElementById('sq-detail'); if (!el) return;
+    var el = detailHost || document.getElementById('sq-detail'); if (!el) return;
     var scn = scenarioById(sel.scenarioId);
     if (!scn) {
       el.innerHTML = '<p class="sq-empty">Select a runtime key.</p>';
@@ -517,7 +546,7 @@
   }
 
   function wireDetail(rom, scn, rec, k) {
-    var el = document.getElementById('sq-detail');
+    var el = detailHost || document.getElementById('sq-detail');
     el.querySelectorAll('select[data-grp]').forEach(function (s) {
       s.onchange = function () {
         var v = parseInt(this.value), grp = this.dataset.grp;
