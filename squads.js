@@ -488,6 +488,13 @@
       return;
     }
     var van = vanillaRec(scn, sel.edatId), k = key(scn.id, sel.edatId), over = rom.squadOverrides[k], rec = over || van;
+    // Added squads (Scenario tab) have no vanilla record; their override IS the record.
+    var isAdded = !van;
+    if (!rec) {
+      el.innerHTML = '<div class="sq-detail-head"><div><div class="sq-head">' + esc(scn.name) + ' / edat ' + sel.edatId + '</div>' +
+        '<div class="sq-sub">No record: this edat has no vanilla squad and no override.</div></div></div>';
+      return;
+    }
     var selected = null;
     for (var si = 0; si < scn.squads.length; si++) if (scn.squads[si].e === sel.edatId) { selected = scn.squads[si]; break; }
     var bn = selected ? bossName(selected) : '';
@@ -499,10 +506,12 @@
       (scn.wikiLabel ? '<div class="sq-sub">' + esc(scn.wikiLabel) + '</div>' : '') +
       (scn.identityNote ? '<div class="sq-sub">' + esc(scn.identityNote) + '</div>' : '') +
       (selected && selected.wikiSquad ? '<div class="sq-sub">wiki squad: ' + esc(selected.wikiSquad) + '</div>' : '') +
-      '<div class="sq-sub">' + (bn ? esc(bn) + ' - ' : '') + 'vanilla: ' + esc(compLabel(van)) + ' - ' + memberCount(van) + ' units' + (trace ? ' - ' + esc(trace) : '') + '</div>' +
+      '<div class="sq-sub">' + (bn ? esc(bn) + ' - ' : '') +
+      (van ? 'vanilla: ' + esc(compLabel(van)) + ' - ' + memberCount(van) + ' units' : 'added squad - no vanilla record') +
+      (trace ? ' - ' + esc(trace) : '') + '</div>' +
       '</div>' +
       '<span class="sq-row-meta">' + headChips + '</span></div>';
-    html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
+    if (!isAdded) html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
     if (over) {
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
@@ -518,7 +527,7 @@
       var capacity = ui.rawCapacity ? (n + '/7 raw anchors - large size ignored') : (slots + '/5 slots');
       html += '<div class="sq-foot"><span class="' + (ok && !ui.rawCapacity ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units - ' + capacity + ' - ' + followerTypeCount(rec) + '/2 follower types</span>' +
         '<span>' + esc(scenarioTraceText(scn)) + '</span></div>';
-      html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">Reset to vanilla</button></div>';
+      html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">' + (isAdded ? 'Reset to lone leader' : 'Reset to vanilla') + '</button></div>';
     } else {
       html += '<div class="sq-editor-grid">' + gridHtml(van, false) +
         '<div class="sq-readout"><div class="sq-section-label">Vanilla squad</div>' +
@@ -573,7 +582,19 @@
       };
     });
     el.querySelectorAll('.sq-remove').forEach(function (x) { x.onclick = function (e) { e.stopPropagation(); removeCell(rec, parseInt(this.dataset.cell)); commit(rom, scn); }; });
-    var rb = el.querySelector('#sq-reset'); if (rb) rb.onclick = function () { rom.squadOverrides[k] = vanillaRec(scn, sel.edatId).slice(0); commit(rom, scn); };
+    var rb = el.querySelector('#sq-reset'); if (rb) rb.onclick = function () {
+      var v = vanillaRec(scn, sel.edatId);
+      if (v) {
+        rom.squadOverrides[k] = v.slice(0);
+      } else {
+        // Added squad: no vanilla to restore - reset to a lone leader in the center cell.
+        var d = new Uint8Array(35);
+        d[0] = rec[0] || 1;
+        d[6] = 5;
+        rom.squadOverrides[k] = d;
+      }
+      commit(rom, scn);
+    };
     el.querySelectorAll('.sq-cell').forEach(function (c) {
       c.ondragstart = function (e) { e.dataTransfer.setData('text/plain', this.dataset.cell); e.dataTransfer.effectAllowed = 'move'; };
       c.ondragover = function (e) { e.preventDefault(); this.style.outline = '2px solid var(--ob-gold-bright)'; };
@@ -586,6 +607,15 @@
     ui.notice = '';
     if (OB64._squadChanged) OB64._squadChanged();
     renderDetail(rom); renderList(rom);
+    // Embedded in the Scenario sidebar: let the map refresh its markers (leader icon lives there).
+    if (detailHost && OB64._scenarioSquadEdit) OB64._scenarioSquadEdit();
+  }
+
+  // Added squads (Scenario tab) have no vanilla card; their override's match key is the
+  // DONOR enemydat record's bytes from the generated table (resolver matches on content).
+  function donorOriginalRec(eid) {
+    var d = OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.enemydat;
+    return d && d.records && d.records[eid] ? hexToBytes(d.records[eid]) : null;
   }
 
   function collectSquadOverrides(rom) {
@@ -594,7 +624,8 @@
     for (var k in rom.squadOverrides) {
       var sid = parseInt(k.split(':')[0]), eid = parseInt(k.split(':')[1]);
       var scn = scenarioById(sid); if (!scn) continue;
-      var van = vanillaRec(scn, eid); if (!van) continue;
+      var van = vanillaRec(scn, eid) || donorOriginalRec(eid);
+      if (!van) continue;
       out.push({ gateId: scn.gate || scn.id, original: van, record: rom.squadOverrides[k] });
     }
     return out;

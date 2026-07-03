@@ -11,12 +11,27 @@ window.OB64 = window.OB64 || {};
     selectedSite: null,
     selectedTrigger: null,
     search: '',
-    viewMode: 'auto',
+    viewMode: 'image',
     zoom: 0.45,
     advanced: false,
     layers: { squads: true, sites: true, routes: true, triggers: true },
     gateText: '',
   };
+  // Active one-shot map tool ('rect' | 'pick' | 'add-squad' | null). While set, background
+  // clicks must not clear the selection; tools clear it a tick AFTER their final click so the
+  // trailing click event cannot deselect.
+  var mapTool = null;
+
+  function releaseMapTool() {
+    setTimeout(function() { mapTool = null; }, 0);
+  }
+
+  function clearSelection() {
+    ui.selectedPoint = null;
+    ui.selectedSite = null;
+    ui.selectedTrigger = null;
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
 
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"]/g, function(c) {
@@ -95,6 +110,9 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-squad-marker.neutral{outline:3px solid var(--sc-green)}',
       '#panel-scenario .sc-squad-marker.dormant{opacity:.54;filter:grayscale(.45)}',
       '#panel-scenario .sc-squad-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 2px 6px rgba(0,0,0,.45)}',
+      '#panel-scenario .sc-squad-marker.added{outline:3px dashed var(--ob-gold-bright)}',
+      '#panel-scenario .sc-add-ghost{opacity:.7;transform:translate(-50%,-50%);outline:3px dashed var(--ob-gold-bright)}',
+      '#panel-scenario .sc-back{margin:0 0 8px}',
       '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:10px;font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
       '#panel-scenario .sc-site-marker{width:22px;height:22px;border-radius:50%;background:rgba(245,230,200,.86);border:3px solid var(--sc-green);box-shadow:0 1px 4px rgba(0,0,0,.5);z-index:18;transform:translate(-50%,-50%) translate(-16px,-16px)}',
       '#panel-scenario .sc-site-marker.enemy{border-color:var(--sc-red)}',
@@ -303,7 +321,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function useImageFor(cal) {
-    if (!cal || !cal.image || ui.viewMode === 'schematic') return false;
+    if (!cal || !cal.image || cal._artMissing || ui.viewMode === 'schematic') return false;
     if (ui.viewMode === 'image') return true;
     return cal.registrationGrade === 'site-fitted';
   }
@@ -446,12 +464,12 @@ window.OB64 = window.OB64 || {};
     if (base) base.onchange = function() {
       ensureState(rom).settings.imageBasePath = this.value.trim() || defaultImageBase();
       localStorage.setItem('ob64_scenario_image_base', ensureState(rom).settings.imageBasePath);
+      calibrationScenarios().forEach(function(c) { delete c._artMissing; }); // retry art under the new path
       renderScenarioTab(panel);
     };
     var add = panel.querySelector('#sc-add-squad');
     if (add) add.onclick = function() {
-      reserveAddSquad(rom, ui.selectedKey);
-      renderScenarioTab(panel);
+      beginAddSquadPlacement(rom, ui.selectedKey);
     };
   }
 
@@ -517,8 +535,8 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-map-head">' +
         '<div class="sc-map-title">' + esc(displayLabel(key)) + '</div>' +
         '<div class="sc-map-tools">' +
-          '<select id="sc-view-mode"><option value="auto">Auto</option><option value="image">Art</option><option value="schematic">Schematic</option></select>' +
-          '<select id="sc-zoom"><option value="0.30">30%</option><option value="0.45">45%</option><option value="0.60">60%</option><option value="0.80">80%</option><option value="1.00">100%</option></select>' +
+          '<select id="sc-view-mode"><option value="image">Art</option><option value="auto">Auto</option><option value="schematic">Schematic</option></select>' +
+          '<span class="sc-chip" id="sc-zoom-chip" title="Scroll the map to zoom">' + Math.round(ui.zoom * 100) + '%</span>' +
           '<span class="sc-chip">' + esc(cal.registrationGrade || 'ungraded') + '</span>' +
         '</div>' +
       '</div>' +
@@ -537,14 +555,27 @@ window.OB64 = window.OB64 || {};
         renderMapPanel(el, rom);
       };
     }
-    var zoom = el.querySelector('#sc-zoom');
-    if (zoom) {
-      zoom.value = String(ui.zoom.toFixed(2));
-      zoom.onchange = function() {
-        ui.zoom = parseFloat(this.value);
-        renderMapPanel(el, rom);
-      };
-    }
+    // Wheel-to-zoom, anchored at the cursor so the point under the pointer stays put.
+    var scroller = el.querySelector('.sc-map-scroll');
+    if (scroller) scroller.addEventListener('wheel', function(ev) {
+      if (mapTool) return; // draw/pick/place tools own the map; zooming would strand their listeners
+      ev.preventDefault();
+      var rect = scroller.getBoundingClientRect();
+      var offX = ev.clientX - rect.left;
+      var offY = ev.clientY - rect.top;
+      var cx = scroller.scrollLeft + offX;
+      var cy = scroller.scrollTop + offY;
+      var next = clamp(ui.zoom * Math.pow(1.0015, -ev.deltaY), 0.12, 3);
+      if (Math.abs(next - ui.zoom) < 0.0001) return;
+      var scale = next / ui.zoom;
+      ui.zoom = next;
+      renderMapPanel(el, rom);
+      var s2 = el.querySelector('.sc-map-scroll');
+      if (s2) {
+        s2.scrollLeft = cx * scale - offX;
+        s2.scrollTop = cy * scale - offY;
+      }
+    }, { passive: false });
     el.querySelectorAll('input[data-layer]').forEach(function(box) {
       box.onchange = function() {
         ui.layers[this.dataset.layer] = !!this.checked;
@@ -556,7 +587,8 @@ window.OB64 = window.OB64 || {};
       inner.innerHTML = '<img class="sc-map-img" src="' + esc(imagePath(rom, cal)) + '" alt="">';
       var img = inner.querySelector('img');
       img.onerror = function() {
-        ui.viewMode = 'schematic';
+        // Fall back for THIS map only; a missing PNG must not clobber the global view mode.
+        cal._artMissing = true;
         renderMapPanel(el, rom);
       };
     } else {
@@ -569,6 +601,17 @@ window.OB64 = window.OB64 || {};
     renderBounds(inner, cal, projection, useImage, ui.zoom);
     buildLayers(rom, key, cal, model, projection, ui.zoom).forEach(function(layer) {
       if (ui.layers[layer.id]) layer.render(inner);
+    });
+    // Clicking empty map (not a marker/shape) returns the sidebar to the scenario overview.
+    inner.addEventListener('click', function(ev) {
+      if (mapTool) return; // a draw/pick/place tool owns the map right now
+      var t = ev.target;
+      var isBackground = t === inner ||
+        (t.classList && t.classList.contains('sc-map-img')) ||
+        (t.closest && t.closest('.sc-schematic'));
+      if (!isBackground) return;
+      if (ui.selectedPoint == null && !ui.selectedSite && ui.selectedTrigger == null) return;
+      clearSelection();
     });
   }
 
@@ -633,23 +676,67 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function renderSquadLayer(inner, rom, key, projection, zoom) {
+  // Marker list = every CURRENT Section 1 row: calibration points where they exist, synthetic
+  // points for rows without one (added squads, uncalibrated vanilla rows).
+  function pointsForAllRows(rom, key) {
     var cal = calibrationData(key);
-    (cal.points || []).forEach(function(point) {
+    var model = modelFor(rom, key);
+    var byRow = {};
+    ((cal && cal.points) || []).forEach(function(p) { byRow[p.section1Row] = p; });
+    var out = [];
+    ((model && model.section1) || []).forEach(function(row, i) {
+      out.push(byRow[i] || syntheticPoint(rom, key, i, row));
+    });
+    return out;
+  }
+
+  function syntheticPoint(rom, key, i, row) {
+    return {
+      section1Row: i,
+      sourceId: row.sourceId,
+      edat: row.edatOneBased - 1,
+      world: rowWorld(rom, key, i, null),
+      added: isAddedRow(rom, key, i),
+    };
+  }
+
+  // Leader icon from the LIVE record: squad override first (added squads always have one, and
+  // vanilla squads reflect comp edits immediately), then static calibration classes, then the
+  // wiki vanilla record.
+  function liveLeaderIcon(rom, key, point) {
+    if (!point) return '';
+    var over = rom.squadOverrides && rom.squadOverrides[key + ':' + point.edat];
+    if (over && over[0] && OB64.classPortraitUrl) return OB64.classPortraitUrl(over[0]);
+    var icon = classIconForPoint(point);
+    if (icon) return icon;
+    var scn = squadScenario(key);
+    var sq = scn && (scn.squads || []).filter(function(s) { return s.e === point.edat; })[0];
+    if (sq && sq.rec && OB64.classPortraitUrl) {
+      var cls = parseInt(sq.rec.substr(0, 2), 16);
+      if (cls) return OB64.classPortraitUrl(cls);
+    }
+    return '';
+  }
+
+  function renderSquadLayer(inner, rom, key, projection, zoom) {
+    pointsForAllRows(rom, key).forEach(function(point) {
       var runtimeRow = rowRuntime(rom, key, point.section1Row);
       var liveWorld = rowWorld(rom, key, point.section1Row, point);
+      if (!liveWorld && !point.world && !point.image) return; // no resolvable position
       var p = liveWorld ? projection.worldToImage(liveWorld.x, liveWorld.z) : projection.pointToImage(point);
       var dormant = runtimeRow ? runtimeRow.dormant : !!point.dormant;
-      var img = iconProvider.leaderIconUrl(point);
+      var img = liveLeaderIcon(rom, key, point);
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'sc-marker sc-squad-marker enemy' + (dormant ? ' dormant' : '') +
+        (point.added ? ' added' : '') +
         (ui.selectedPoint === point.section1Row ? ' on' : '');
       btn.style.left = (p.x * zoom) + 'px';
       btn.style.top = (p.y * zoom) + 'px';
-      btn.title = pointTitle(point, runtimeRow);
+      btn.title = pointTitle(point, runtimeRow) + (point.added ? ' / ADDED squad' : '');
       btn.dataset.row = point.section1Row;
-      btn.innerHTML = (img ? '<img src="' + esc(img) + '" alt="">' : '') + (dormant ? '<span class="sc-badge">!</span>' : '');
+      btn.innerHTML = (img ? '<img src="' + esc(img) + '" alt="">' : '') +
+        (point.added ? '<span class="sc-badge">+</span>' : (dormant ? '<span class="sc-badge">!</span>' : ''));
       btn.onclick = function() {
         ui.selectedPoint = point.section1Row;
         ui.selectedSite = null;
@@ -910,7 +997,7 @@ window.OB64 = window.OB64 || {};
 
   function renderRouteLayer(inner, rom, key, cal, model, projection, zoom) {
     var svg = svgLayer(projection, zoom);
-    (cal.points || []).forEach(function(point) {
+    pointsForAllRows(rom, key).forEach(function(point) {
       var row = model.section1[point.section1Row];
       if (!row || !row.bytes || !row.bytes[6]) return;
       var chain = walkNodeChain(rom, key, model, row.bytes[6]);
@@ -1045,6 +1132,7 @@ window.OB64 = window.OB64 || {};
     var inner = document.getElementById('sc-map-inner');
     if (!inner) { if (onStatus) onStatus('Map not available.', false); return; }
     if (onStatus) onStatus('Drag a rectangle on the map...', true);
+    mapTool = 'rect';
     inner.style.cursor = 'crosshair';
     var proj = null;
     try { var cal = calibrationData(key); proj = projectionFor(cal, useImageFor(cal)); } catch (e) {}
@@ -1074,6 +1162,7 @@ window.OB64 = window.OB64 || {};
       inner.removeEventListener('pointerup', up, true);
       inner.removeEventListener('pointermove', move, true);
       inner.style.cursor = '';
+      releaseMapTool();
       if (band) band.remove();
       if (!start || !proj) { if (onStatus) onStatus('Cancelled.', false); return; }
       var r = inner.getBoundingClientRect();
@@ -1196,7 +1285,7 @@ window.OB64 = window.OB64 || {};
     var use = extraConsumers(rom, key, model, extraId);
     var b = extra.bytes;
     var sites = ensureState(rom).sites[key] || [];
-    var html = detailHead('Trigger E' + extraId, [
+    var html = backToOverviewHtml() + detailHead('Trigger E' + extraId, [
       d.label,
       'kind ' + extra.kind + (EXTRA_KIND_NAMES[extra.kind] ? ' - ' + EXTRA_KIND_NAMES[extra.kind] : ''),
       d.geometry ? 'location-based (highlighted on map)' : 'no map geometry',
@@ -1241,8 +1330,8 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
     }
     html += '</div>';
-    html += '<div class="sc-section"><button type="button" class="sc-inline-btn" id="sc-trigger-back">Back to scenario overview</button></div>';
     el.innerHTML = html;
+    wireBackButton(el);
 
     var commitTrig = function() { ensureState(rom).modifiedKeys[key] = true; changed(); renderScenarioTab(document.getElementById('panel-scenario')); };
     var kindSel = el.querySelector('#sc-trig-kind');
@@ -1270,8 +1359,6 @@ window.OB64 = window.OB64 || {};
         commitTrig();
       };
     });
-    var back = el.querySelector('#sc-trigger-back');
-    if (back) back.onclick = function() { selectTrigger(extraId); };
   }
 
   function renderScenarioOverview(el, rom, key, model, cal) {
@@ -1290,11 +1377,8 @@ window.OB64 = window.OB64 || {};
     html += validation.errors.length
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors, ' + validation.warnings.length + ' warnings</div>';
-    if (stubs.siteAllegianceKeys.length || stubs.addedSquads.length) {
-      html += '<div class="sc-warning">ROM export pending source decode: ' +
-        (stubs.siteAllegianceKeys.length ? 'site allegiance ' : '') +
-        (stubs.addedSquads.length ? 'add-squad reserved records ' : '') +
-        '</div>';
+    if (stubs.siteAllegianceKeys.length) {
+      html += '<div class="sc-warning">Heads-up, not an error: town allegiance edits have no decoded ROM home yet; they save to project JSON and block ROM export until the source decode lands.</div>';
     }
     html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
     model.section2.forEach(function(node) {
@@ -1312,16 +1396,36 @@ window.OB64 = window.OB64 || {};
     if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
     html += '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ New trigger (draw area on map)</button>';
     html += '</div></div>';
-    if ((ensureState(rom).addedSquads || []).filter(function(r) { return r.runtimeKey === key; }).length) {
-      html += '<div class="sc-section"><span class="sc-label">Reserved add-squad records</span><div class="sc-node-list">';
-      ensureState(rom).addedSquads.filter(function(r) { return r.runtimeKey === key; }).forEach(function(r) {
-        html += '<div class="sc-node">reserved edat ' + esc(r.edatId) + ' / placement source ' + esc(r.sourceId) + '</div>';
+    var addedHere = [];
+    (ensureState(rom).addedSquads || []).forEach(function(r, i) { if (r.runtimeKey === key) addedHere.push({ r: r, i: i }); });
+    if (addedHere.length) {
+      html += '<div class="sc-section"><span class="sc-label">Added squads</span><div class="sc-node-list">';
+      addedHere.forEach(function(item) {
+        var r = item.r;
+        var placed = r.section1Row != null;
+        html += '<div class="sc-node">' + (placed ? 'placed' : 'legacy reserved (not on map)') +
+          ' / source ' + esc(r.sourceId) + ' / edat ' + esc(r.edatId) + ' ' +
+          '<button type="button" class="sc-inline-btn sc-added-row" data-idx="' + item.i + '" data-row="' + (placed ? r.section1Row : '') + '">' +
+          (placed ? 'Select' : 'Remove') + '</button></div>';
       });
       html += '</div></div>';
     }
     el.innerHTML = html;
     el.querySelectorAll('.sc-trigger-row').forEach(function(btn) {
       btn.onclick = function() { selectTrigger(parseInt(this.dataset.extra, 10)); };
+    });
+    el.querySelectorAll('.sc-added-row').forEach(function(btn) {
+      btn.onclick = function() {
+        if (this.dataset.row !== '') {
+          ui.selectedPoint = parseInt(this.dataset.row, 10);
+          ui.selectedSite = null;
+          ui.selectedTrigger = null;
+        } else {
+          ensureState(rom).addedSquads.splice(parseInt(this.dataset.idx, 10), 1);
+          changed();
+        }
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
     });
     var newTrig = el.querySelector('#sc-new-trigger');
     if (newTrig) newTrig.onclick = function() {
@@ -1358,7 +1462,7 @@ window.OB64 = window.OB64 || {};
 
   function renderSiteDetail(el, rom, key, site) {
     var allegiance = siteAllegiance(rom, key, site.selector);
-    el.innerHTML = detailHead(site.siteName || ('Site ' + site.selector), [
+    el.innerHTML = backToOverviewHtml() + detailHead(site.siteName || ('Site ' + site.selector), [
       'selector ' + site.selector,
       'x ' + site.x.toFixed(3) + ' / z ' + site.z.toFixed(3),
     ]) +
@@ -1368,6 +1472,7 @@ window.OB64 = window.OB64 || {};
         option('neutral', 'Neutral', allegiance) +
       '</select></div>' +
       '<div class="sc-warning">ROM export stub: initial site allegiance source is pending decode, so this value is saved in Scenario project JSON and blocked visibly during ROM export.</div>';
+    wireBackButton(el);
     var sel = el.querySelector('#sc-site-allegiance');
     if (sel) sel.onchange = function() {
       setSiteAllegiance(rom, key, site.selector, this.value);
@@ -1378,16 +1483,18 @@ window.OB64 = window.OB64 || {};
   function renderSquadDetail(el, rom, key, rowIndex) {
     var model = modelFor(rom, key);
     var row = model.section1[rowIndex];
-    var point = pointFor(key, rowIndex);
-    var runtimeRow = rowRuntime(rom, key, rowIndex);
-    var validation = OB64.scenarioCodec.validateEset(model);
-    if (!row || !point) {
+    if (!row) {
       el.innerHTML = '<div class="sc-warning">Selected row is not available.</div>';
       return;
     }
-    var html = detailHead('Source ' + row.sourceId + ' / EDAT ' + point.edat, [
+    var point = pointFor(key, rowIndex) || syntheticPoint(rom, key, rowIndex, row);
+    var runtimeRow = rowRuntime(rom, key, rowIndex);
+    var validation = OB64.scenarioCodec.validateEset(model);
+    var added = isAddedRow(rom, key, rowIndex);
+    var html = backToOverviewHtml();
+    html += detailHead('Source ' + row.sourceId + ' / EDAT ' + point.edat, [
       point.wikiSquad || 'runtime row ' + rowIndex,
-      runtimeRow && runtimeRow.dormant ? 'dormant trigger' : 'active',
+      added ? 'ADDED squad' : (runtimeRow && runtimeRow.dormant ? 'dormant trigger' : 'active'),
       'drop raw ' + OB64.scenarioCodec.hexByte(row.dropRaw, 4),
     ]);
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
@@ -1433,6 +1540,13 @@ window.OB64 = window.OB64 || {};
       '</div>';
     html += '<div class="sc-section"><label><input type="checkbox" id="sc-advanced"' + (ui.advanced ? ' checked' : '') + '> Advanced</label></div>';
     html += ui.advanced ? advancedHtml(model, rowIndex) : nodePreviewHtml(model, row);
+    if (added) {
+      html += '<div class="sc-section"><div class="sc-sub">Added squad on donor record ' + point.edat +
+        ' (verified unreferenced; comp applies via the per-scenario override at record-build time).</div>' +
+        '<div class="sc-ok">Exports to ROM: the row splices into this mission\'s ESET and the comp rides the ' +
+        'squad-override blob - both cold-boot proven 2026-07-03.</div>' +
+        '<button type="button" class="sc-inline-btn" id="sc-delete-added">Delete this added squad</button></div>';
+    }
     html += validation.errors.length
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors for current model</div>';
@@ -1444,7 +1558,7 @@ window.OB64 = window.OB64 || {};
     var sites = ensureState(rom).sites[key] || [];
     var mode = row.bytes[4] === 0 ? 'selector' : 'coordinate';
     var selector = mode === 'selector' ? row.bytes[3] : '';
-    var world = point.world || { x: 0, z: 0 };
+    var world = rowWorld(rom, key, row.row, point) || point.world || { x: 0, z: 0 };
     var html = '<div class="sc-form-row"><label class="sc-label">Mode</label><select id="sc-placement-mode">' +
       option('selector', 'Site selector', mode) + option('coordinate', 'Coordinate', mode) + '</select></div>';
     html += '<div class="sc-form-row"><label class="sc-label">Site</label><select id="sc-placement-site">';
@@ -1507,10 +1621,13 @@ window.OB64 = window.OB64 || {};
 
   function wireSquadDetail(el, rom, key, rowIndex) {
     var model = modelFor(rom, key);
+    var detailPoint = pointFor(key, rowIndex) || syntheticPoint(rom, key, rowIndex, model.section1[rowIndex]);
+    wireBackButton(el);
+    var del = el.querySelector('#sc-delete-added');
+    if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
     var editComp = el.querySelector('#sc-edit-comp');
     if (editComp) editComp.onclick = function() {
-      var point = pointFor(key, rowIndex);
-      if (OB64.squadsFocus && point) OB64.squadsFocus(key, point.edat);
+      if (OB64.squadsFocus) OB64.squadsFocus(key, detailPoint.edat);
       var navBtn = document.querySelector('button[data-tab="squads"]');
       if (navBtn) navBtn.click();
     };
@@ -1518,8 +1635,7 @@ window.OB64 = window.OB64 || {};
     // class pickers, drag cells) - renders live against the same override state.
     var compHost = el.querySelector('#sc-comp-host');
     if (compHost && OB64.renderSquadCompEditor) {
-      var pt = pointFor(key, rowIndex);
-      if (pt) OB64.renderSquadCompEditor(compHost, rom, key, pt.edat);
+      OB64.renderSquadCompEditor(compHost, rom, key, detailPoint.edat);
     }
     var mode = el.querySelector('#sc-placement-mode');
     if (mode) mode.onchange = function() {
@@ -1529,8 +1645,8 @@ window.OB64 = window.OB64 || {};
         row.bytes[3] = site ? site.selector : row.bytes[3];
         row.bytes[4] = 0;
       } else {
-        var point = pointFor(key, rowIndex);
-        setCoordinateBytesFromWorld(calibrationData(key), row, point && point.world ? point.world.x : 0, point && point.world ? point.world.z : 0);
+        var w = rowWorld(rom, key, rowIndex, detailPoint) || { x: 0, z: 0 };
+        setCoordinateBytesFromWorld(calibrationData(key), row, w.x, w.z);
       }
       commitScenarioEdit(rom, key);
     };
@@ -1563,6 +1679,7 @@ window.OB64 = window.OB64 || {};
       var inner = document.getElementById('sc-map-inner');
       if (!inner) return;
       msg('Click the map to set the destination...', true);
+      mapTool = 'pick';
       inner.style.cursor = 'crosshair';
       var ghost = mapGhost(inner, 'sc-pick-ghost');
       var follow = function(mv) {
@@ -1575,6 +1692,7 @@ window.OB64 = window.OB64 || {};
         inner.removeEventListener('pointerdown', once, true);
         inner.removeEventListener('pointermove', follow, true);
         inner.style.cursor = '';
+        releaseMapTool();
         ev.preventDefault();
         ev.stopPropagation();
         var rect = inner.getBoundingClientRect();
@@ -1697,6 +1815,17 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-sub">' + (chips || []).map(esc).join(' / ') + '</div></div>';
   }
 
+  // Every element detail view (squad/site/trigger) opens with this; clicking empty map space
+  // does the same thing.
+  function backToOverviewHtml() {
+    return '<button type="button" class="sc-inline-btn sc-back" id="sc-back-overview">&#8592; Scenario overview</button>';
+  }
+
+  function wireBackButton(el) {
+    var b = el.querySelector('#sc-back-overview');
+    if (b) b.onclick = clearSelection;
+  }
+
   function meter(value, label) {
     return '<div class="sc-meter"><strong>' + esc(value) + '</strong><span>' + esc(label) + '</span></div>';
   }
@@ -1718,12 +1847,11 @@ window.OB64 = window.OB64 || {};
     row.bytes[4] = clamp(zb || 1, 1, 255);
   }
 
-  function updatePlacementFromImage(rom, key, rowIndex, imageX, imageY, projection) {
-    var state = ensureState(rom);
-    var model = state.models[key];
-    var row = model.section1[rowIndex];
+  // Snap-or-coordinate placement write (shared by marker drop and add-squad place): a site
+  // within 48 image px wins selector mode; otherwise bounds-normalized coordinate bytes.
+  function placementBytesFromImage(rom, key, row, imageX, imageY, projection) {
     var world = projection.imageToWorld(imageX, imageY);
-    var sites = state.sites[key] || [];
+    var sites = ensureState(rom).sites[key] || [];
     var nearest = null;
     var best = Infinity;
     sites.forEach(function(site) {
@@ -1737,8 +1865,29 @@ window.OB64 = window.OB64 || {};
     } else {
       setCoordinateBytesFromWorld(calibrationData(key), row, world.x, world.z);
     }
+  }
+
+  function updatePlacementFromImage(rom, key, rowIndex, imageX, imageY, projection) {
+    var state = ensureState(rom);
+    placementBytesFromImage(rom, key, state.models[key].section1[rowIndex], imageX, imageY, projection);
     state.modifiedKeys[key] = true;
     changed();
+  }
+
+  // After ANY structural change (row/node/extra count), the parse-time offset copy and the
+  // final Section 1 row's alias tail ([16]=Section 2 count, [17]=first node id - the game's
+  // section-2 locator, validated by 'final-row-section2-alias') both go stale. Re-sync them
+  // so codec validation keeps reporting on the model the serializer will actually write.
+  function syncStructuralOffsets(model) {
+    var off = OB64.scenarioCodec.computeOffsets(model);
+    model.offsets.section2 = off.section2Offset;
+    model.offsets.section3 = off.section3Offset;
+    model.section3Present = off.section3Present;
+    if (model.section1.length && model.section2.length) {
+      var fin = model.section1[model.section1.length - 1];
+      fin.bytes[16] = model.section2.length & 0xFF;
+      fin.bytes[17] = model.section2[0].nodeId & 0xFF;
+    }
   }
 
   // Section 2/3 allocation. Hard caps are structural RAM layout: 16 nodes (ids 0x04..0x13),
@@ -1760,6 +1909,7 @@ window.OB64 = window.OB64 || {};
     bytes[17] = fields.next != null ? fields.next : 0;
     var node = { nodeId: nodeId, kind: bytes[1], bytes: bytes };
     model.section2.push(node);
+    syncStructuralOffsets(model);
     return node;
   }
 
@@ -1772,6 +1922,7 @@ window.OB64 = window.OB64 || {};
     (payload || []).forEach(function(v, i) { bytes[2 + i] = v & 0xFF; });
     var extra = { extraId: extraId, kind: kind, bytes: bytes };
     model.section3.push(extra);
+    syncStructuralOffsets(model);
     return extra;
   }
 
@@ -1845,24 +1996,213 @@ window.OB64 = window.OB64 || {};
     return 'unknown template';
   }
 
-  function reserveAddSquad(rom, key) {
+  // Donor pick for an added squad. Donors come from the generated verified-donor list
+  // (records referenced by NO eset / runtime trace / wiki mapping - likely the training
+  // opponent pool, so they are override donors ONLY, never overwritten). The override
+  // resolver matches on record CONTENT, so the donor's bytes must also be unique among
+  // everything this scenario loads (and among other donors used here).
+  function firstFreeEdat(rom, key, model) {
+    var data = OB64.SCENARIO_ESET_DATA || {};
+    var pool = (data.enemydat && data.enemydat.donorCandidates) || [];
+    var records = (data.enemydat && data.enemydat.records) || [];
+    var used = {};
+    var usedContent = {};
+    model.section1.forEach(function(row) {
+      var e = row.edatOneBased - 1;
+      used[e] = true;
+      if (records[e]) usedContent[records[e]] = true;
+    });
+    var scn = squadScenario(key);
+    if (scn) (scn.squads || []).forEach(function(sq) {
+      used[sq.e] = true;
+      if (records[sq.e]) usedContent[records[sq.e]] = true;
+    });
+    (ensureState(rom).addedSquads || []).forEach(function(r) {
+      if (r.runtimeKey !== key) return;
+      used[r.edatId] = true;
+      if (records[r.edatId]) usedContent[records[r.edatId]] = true;
+    });
+    for (var i = 0; i < pool.length; i++) {
+      var e2 = pool[i];
+      if (used[e2]) continue;
+      if (records[e2] && usedContent[records[e2]]) continue; // byte-equal content collision
+      return e2;
+    }
+    // No verified donor available (should not happen with 175 candidates): legacy scan.
+    var edat = 0;
+    while (used[edat] && edat < 700) edat++;
+    return edat;
+  }
+
+  // Default composition for a freshly placed squad: clone the scenario's first vanilla record
+  // (keeps scenario-appropriate non-composition bytes), then reduce it to a lone leader in the
+  // center cell. Falls back to a bare Fighter when the scenario has no squad data.
+  function defaultSquadSeed(rom, key) {
+    var out = new Uint8Array(35);
+    var scn = squadScenario(key);
+    var sq = scn && scn.squads && scn.squads[0];
+    if (sq && sq.rec) {
+      var src = OB64.scenarioCodec.compactHexToBytes(sq.rec);
+      out.set(src.slice(0, 35));
+    }
+    out[6] = 5; // leader anchor: center cell
+    [7, 13, 14, 15, 16, 22, 23, 24].forEach(function(f) { out[f] = 0; }); // drop B/C groups
+    if (!out[0]) out[0] = 0x01; // Fighter
+    return out;
+  }
+
+  function seedSquadOverride(rom, key, edatId) {
+    if (!rom.squadOverrides) rom.squadOverrides = {};
+    var k = key + ':' + edatId;
+    if (!rom.squadOverrides[k]) {
+      rom.squadOverrides[k] = defaultSquadSeed(rom, key);
+      // The comp rides the squad-override export lane; mark it dirty so app.js
+      // includes the blob writes even if the comp is never edited afterwards.
+      if (OB64._squadChanged) OB64._squadChanged();
+    }
+    return rom.squadOverrides[k];
+  }
+
+  function isAddedRow(rom, key, rowIndex) {
+    return (ensureState(rom).addedSquads || []).some(function(r) {
+      return r.runtimeKey === key && r.section1Row === rowIndex;
+    });
+  }
+
+  // Add Squad = a unit-place tool: crosshair + ghost marker, one click places a real Section 1
+  // row (guard behavior, default lone-leader comp seeded as a squad override so the sidebar
+  // modal edits it and the marker wears the leader's icon). Exports for real: the row splices
+  // with the mission ESET, the comp rides the squad-override blob (both cold-boot proven).
+  function beginAddSquadPlacement(rom, key) {
     var state = ensureState(rom);
     var model = state.models[key];
+    var panel = document.getElementById('panel-scenario');
+    if (!model) return;
+    var limit = OB64.scenarioCodec.DEFAULT_LIMITS.section1RowsMax;
+    if (model.section1.length >= limit) {
+      ui.gateText = 'Section 1 is at its ' + limit + '-row conservative cap for this scenario.';
+      renderScenarioTab(panel);
+      return;
+    }
     var maxSource = model.section1.reduce(function(max, row) { return Math.max(max, row.sourceId); }, 0);
-    var existingEdats = {};
-    model.section1.forEach(function(row) { existingEdats[row.edatOneBased - 1] = true; });
-    var edat = 1;
-    while (existingEdats[edat] && edat < 600) edat++;
+    if (maxSource + 1 > OB64.scenarioCodec.DEFAULT_LIMITS.sourceIdMax) {
+      ui.gateText = 'Next source id would exceed the 0x30 conservative cap.';
+      renderScenarioTab(panel);
+      return;
+    }
+    var inner = document.getElementById('sc-map-inner');
+    if (!inner) { ui.gateText = 'Map is not available for this scenario.'; renderScenarioTab(panel); return; }
+
+    mapTool = 'add-squad';
+    inner.style.cursor = 'crosshair';
+    var gateEl = document.getElementById('sc-gate');
+    if (gateEl) gateEl.textContent = 'Click the map to place the new squad (snaps to towns, Esc cancels)...';
+
+    var ghost = mapGhost(inner, 'sc-squad-marker sc-add-ghost');
+    var seedRec = defaultSquadSeed(rom, key);
+    var iconUrl = seedRec[0] && OB64.classPortraitUrl ? OB64.classPortraitUrl(seedRec[0]) : '';
+    ghost.innerHTML = iconUrl ? '<img src="' + esc(iconUrl) + '" alt="">' : '';
+    var follow = function(mv) {
+      var r = inner.getBoundingClientRect();
+      ghost.style.left = (mv.clientX - r.left) + 'px';
+      ghost.style.top = (mv.clientY - r.top) + 'px';
+    };
+    var cleanup = function() {
+      inner.removeEventListener('pointerdown', once, true);
+      inner.removeEventListener('pointermove', follow, true);
+      document.removeEventListener('keydown', onKey, true);
+      inner.style.cursor = '';
+      ghost.remove();
+      releaseMapTool();
+    };
+    var onKey = function(ke) {
+      if (ke.key !== 'Escape') return;
+      cleanup();
+      ui.gateText = 'Add squad cancelled.';
+      renderScenarioTab(panel);
+    };
+    var once = function(ev) {
+      cleanup();
+      ev.preventDefault();
+      ev.stopPropagation();
+      var rect = inner.getBoundingClientRect();
+      var cal = calibrationData(key);
+      var proj = projectionFor(cal, useImageFor(cal));
+      var imageX = clamp((ev.clientX - rect.left) / ui.zoom, 0, proj.naturalWidth);
+      var imageY = clamp((ev.clientY - rect.top) / ui.zoom, 0, proj.naturalHeight);
+      createAddedSquadAt(rom, key, imageX, imageY, proj);
+    };
+    inner.addEventListener('pointermove', follow, true);
+    inner.addEventListener('pointerdown', once, true);
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  function createAddedSquadAt(rom, key, imageX, imageY, projection) {
+    var state = ensureState(rom);
+    var model = state.models[key];
+    var last = model.section1[model.section1.length - 1] || null;
+    var maxSource = model.section1.reduce(function(max, row) { return Math.max(max, row.sourceId); }, 0);
+    var edatId = firstFreeEdat(rom, key, model);
+    var bytes = new Array(18).fill(0);
+    bytes[0] = (maxSource + 1) & 0xFF;
+    bytes[1] = ((edatId + 1) >> 8) & 0xFF;
+    bytes[2] = (edatId + 1) & 0xFF;
+    if (last) {
+      bytes[5] = last.bytes[5]; // phase byte: keep the file's own convention
+      bytes[9] = last.bytes[9]; // tier byte: same
+    }
+    bytes[6] = 1; // start node 1 = hold position (guard) until a behavior is applied
+    placementBytesFromImage(rom, key, { bytes: bytes }, imageX, imageY, projection);
+    // The appended row becomes the final row and must carry the Section 2 alias tail; the old
+    // final row's tail reverts to plain descriptor space (zero = no descriptor group).
+    if (last) { last.bytes[16] = 0; last.bytes[17] = 0; }
+    model.section1.push({ bytes: bytes });
+    syncStructuralOffsets(model);
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    var rowIndex = model.section1.length - 1;
     state.addedSquads.push({
       runtimeKey: key,
-      sourceId: maxSource + 1,
-      edatId: edat,
-      status: 'reserved-pending-override-resolver',
+      sourceId: bytes[0],
+      edatId: edatId,
+      section1Row: rowIndex,
+      status: 'placed',
       createdAt: new Date().toISOString(),
     });
+    seedSquadOverride(rom, key, edatId);
     state.modifiedKeys[key] = true;
-    ui.gateText = 'Add-squad reserved for project JSON; ROM export is blocked until override resolver plumbing lands.';
     changed();
+    ui.selectedPoint = rowIndex;
+    ui.selectedSite = null;
+    ui.selectedTrigger = null;
+    ui.gateText = 'Squad placed: source ' + bytes[0] + ' / edat ' + edatId + '. Edit the comp in the sidebar; exports with the mission ESET + squad-override blob.';
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  function deleteAddedSquad(rom, key, rowIndex) {
+    var state = ensureState(rom);
+    var model = state.models[key];
+    var entryIndex = -1;
+    state.addedSquads.forEach(function(r, i) {
+      if (entryIndex < 0 && r.runtimeKey === key && r.section1Row === rowIndex) entryIndex = i;
+    });
+    if (entryIndex < 0) return;
+    var entry = state.addedSquads[entryIndex];
+    model.section1.splice(rowIndex, 1);
+    state.addedSquads.splice(entryIndex, 1);
+    state.addedSquads.forEach(function(r) {
+      if (r.runtimeKey === key && r.section1Row != null && r.section1Row > rowIndex) r.section1Row--;
+    });
+    if (rom.squadOverrides) {
+      delete rom.squadOverrides[key + ':' + entry.edatId];
+      if (OB64._squadChanged) OB64._squadChanged();
+    }
+    syncStructuralOffsets(model);
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    state.modifiedKeys[key] = true;
+    changed();
+    ui.selectedPoint = null;
+    ui.gateText = 'Added squad removed (source ' + entry.sourceId + ' / edat ' + entry.edatId + ').';
+    renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
   function collectProject(rom) {
@@ -1886,7 +2226,15 @@ window.OB64 = window.OB64 || {};
       settings: state.settings,
       modifiedEsets: modifiedEsets,
       siteAllegiances: state.siteAllegiances,
-      addedSquads: state.addedSquads,
+      // Carry each added squad's comp record (its squad override) so a project reload
+      // restores the sidebar-editable composition, not just the placement row.
+      addedSquads: state.addedSquads.map(function(r) {
+        var copy = {};
+        for (var f in r) copy[f] = r[f];
+        var over = rom.squadOverrides && rom.squadOverrides[r.runtimeKey + ':' + r.edatId];
+        if (over) copy.compRecHex = OB64.scenarioCodec.bytesToCompactHex(over);
+        return copy;
+      }),
       layers: {},
     };
   }
@@ -1908,6 +2256,11 @@ window.OB64 = window.OB64 || {};
     if (project.settings) state.settings = project.settings;
     state.siteAllegiances = project.siteAllegiances || {};
     state.addedSquads = project.addedSquads || [];
+    state.addedSquads.forEach(function(r) {
+      if (!r.compRecHex) return;
+      if (!rom.squadOverrides) rom.squadOverrides = {};
+      rom.squadOverrides[r.runtimeKey + ':' + r.edatId] = OB64.scenarioCodec.compactHexToBytes(r.compRecHex);
+    });
     var esets = project.modifiedEsets || {};
     Object.keys(esets).forEach(function(key) {
       var raw = OB64.scenarioCodec.compactHexToBytes(esets[key].rawHex);
@@ -1917,12 +2270,53 @@ window.OB64 = window.OB64 || {};
     changed();
   }
 
+  // The override resolver matches on record CONTENT within a scenario gate. Every added
+  // squad's donor bytes must be unique among that scenario's loaded records - hand edits in
+  // the Advanced grid can retarget rows in ways the donor picker never saw.
+  function addedSquadCollisions(rom) {
+    var data = OB64.SCENARIO_ESET_DATA || {};
+    var records = (data.enemydat && data.enemydat.records) || [];
+    var state = ensureState(rom);
+    var issues = [];
+    (state.addedSquads || []).forEach(function(r) {
+      if (r.section1Row == null) return;
+      var model = state.models[r.runtimeKey];
+      if (!model) return;
+      var donorHex = records[r.edatId];
+      if (!donorHex) {
+        issues.push('key ' + r.runtimeKey + ' edat ' + r.edatId + ': no record bytes available for the override original');
+        return;
+      }
+      var matches = 0;
+      model.section1.forEach(function(row) {
+        // read the edat from raw bytes (decoded fields can be stale mid-edit)
+        var e = (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1;
+        if (records[e] === donorHex) matches++;
+      });
+      if (matches > 1) {
+        issues.push('key ' + r.runtimeKey + ' source ' + r.sourceId + ': donor record ' + r.edatId +
+          ' content collides with another row this scenario loads (the override would re-skin both)');
+      }
+    });
+    return issues;
+  }
+
   function exportScenarioArchives(rom) {
     var state = ensureState(rom);
     var stubs = anyProjectStub(rom);
     var blocked = [];
     if (stubs.siteAllegianceKeys.length) blocked.push('Initial town allegiance ROM source is pending decode; saved project values are not written to ROM.');
-    if (stubs.addedSquads.length) blocked.push('Add-squad override resolver is not wired in this branch; reserved records are project-only.');
+    // Added squads EXPORT as of 2026-07-03: appended-row deployment and the override
+    // re-skin are both cold-boot proven (r10 run: control squad kept its donor comp,
+    // the overridden one deployed Black Knight + 2 Ninja). The row splices with its
+    // mission ESET below; the comp rides the squad-override blob lane in app.js.
+    // Only donor content collisions still block (the resolver matches on content).
+    if (stubs.addedSquads.length) {
+      var collisions = addedSquadCollisions(rom);
+      if (collisions.length) {
+        blocked.push('Added-squad donor content collisions must be fixed before export: ' + collisions.join(' | '));
+      }
+    }
     if (blocked.length) return { touched: [], blocked: blocked };
 
     var touched = [];
@@ -1943,6 +2337,21 @@ window.OB64 = window.OB64 || {};
     });
     return { touched: touched, blocked: [] };
   }
+
+  // The embedded Squads comp editor calls this on every commit so squad markers repaint with
+  // the current leader icon without a full tab re-render (scroll and focus stay put).
+  OB64._scenarioSquadEdit = function() {
+    var panel = document.getElementById('panel-scenario');
+    if (!panel) return;
+    var mapPanel = panel.querySelector('#sc-map-panel');
+    var rom = OB64._romRef && OB64._romRef();
+    if (!mapPanel || !rom) return;
+    var scroller = mapPanel.querySelector('.sc-map-scroll');
+    var saved = scroller ? { left: scroller.scrollLeft, top: scroller.scrollTop } : null;
+    renderMapPanel(mapPanel, rom);
+    var next = mapPanel.querySelector('.sc-map-scroll');
+    if (next && saved) { next.scrollLeft = saved.left; next.scrollTop = saved.top; }
+  };
 
   OB64.renderScenarioTab = renderScenarioTab;
   OB64.scenario = {

@@ -394,6 +394,7 @@ window.OB64 = window.OB64 || {};
     serializeEset: serializeEset,
     validateEset: validateEset,
     refreshDecodedRows: refreshDecodedRows,
+    computeOffsets: computeOffsets,
     descriptorGroups: descriptorGroups,
     cloneModel: cloneModel,
     bytesToHex: bytesToHex,
