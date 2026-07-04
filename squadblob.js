@@ -74,6 +74,10 @@
   // (SLOT0_COMPLETION_GATE_ENABLED); the Rev 0/editor build never writes or
   // validates that slot. See tools/build_high_attack_stream_shift_rom.py and
   // tools/build_cf_army_counter_modregion_rom.py for the other slots.
+  // Slot 0 COLD-BOOT REGRESSED 2026-07-04: an editor export's blob machinery re-emitted
+  // with this hardened bootstrap+continuation deployed all squads and applied every
+  // override on a full cold boot (tools/build_cache_hardened_regression_rom.js;
+  // cache-hardened-fixleaders-verdict.json). Slots 1/3 (Tools tab) remain unregressed.
   var CACHE_CONT_Z64 = 0x03054C;
   var CACHE_CONT_RAM = 0x800A014C;
   var CACHE_CONT_BYTES = 0xC0; // reserved slot; real usage is ~108B
