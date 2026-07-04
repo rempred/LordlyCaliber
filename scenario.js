@@ -31,7 +31,7 @@ window.OB64 = window.OB64 || {};
   var RELOC_CAVE_SIZE = 0x320;
   var RELOC_BOOT_RAM_BASE = 0x8006FC00;
   var RELOC_STUB_BYTES = 0x80;
-  var RELOC_ENTRY_BYTES = 12;
+  var RELOC_ENTRY_BYTES = 8;
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
   // The old fixed 48 IMAGE px was ~14 screen px at fit zoom - trivially easy to miss a town
   // and silently write near-town coordinate bytes instead of the selector (Joe, 2026-07-03).
@@ -354,30 +354,19 @@ window.OB64 = window.OB64 || {};
     var caveRam = (RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0;
     var tableRam = (caveRam + RELOC_STUB_BYTES) >>> 0;
     return [
-      mipsLui(25, tableRam >>> 16),            // lui   t9, hi(table)
+      mipsLui(25, tableRam >>> 16),            // lui   t9,hi(table)
       mipsOri(25, 25, tableRam & 0xFFFF),      // ori   t9,t9,lo(table)
-      mipsLw(15, 25, 0),                       // lw    t7,0(t9)       ; count
-      mipsAddiu(25, 25, 4),                    // addiu t9,t9,4        ; entries
-      mipsBeq(15, 0, 19),                      // loop: beq t7,zero,store
-      0x00000000,
-      mipsLw(24, 25, 0),                       // lw    t8,0(t9)       ; original cart start
-      mipsSltu(1, 2, 24),                      // sltu  at,v0,t8
-      mipsBne(1, 0, 11),                       // bne   at,zero,next
-      0x00000000,
-      mipsLw(14, 25, 8),                       // lw    t6,8(t9)       ; size
-      mipsAddu(14, 24, 14),                    // addu  t6,t8,t6       ; original end
-      mipsSltu(1, 2, 14),                      // sltu  at,v0,t6
-      mipsBeq(1, 0, 6),                        // beq   at,zero,next
-      0x00000000,
-      mipsLw(14, 25, 4),                       // lw    t6,4(t9)       ; tail cart start
-      mipsSubu(2, 2, 24),                      // subu  v0,v0,t8
-      mipsAddu(2, 2, 14),                      // addu  v0,v0,t6
-      mipsJ(caveRam + 0x60),                   // j     store
-      0x00000000,
-      mipsAddiu(25, 25, RELOC_ENTRY_BYTES),    // next: addiu t9,t9,12
-      mipsAddiu(15, 15, -1),                   // addiu t7,t7,-1
-      mipsJ(caveRam + 0x10),                   // j     loop
-      0x00000000,
+      mipsLw(24, 25, 0),                       // loop: lw t8,0(t9)
+      mipsBeq(24, 0, 9),                       // beq   t8,zero,store
+      0x00000000,                              // nop
+      mipsBne(2, 24, 4),                       // bne   v0,t8,next
+      0x00000000,                              // nop
+      mipsLw(2, 25, 4),                        // lw    v0,4(t9)
+      mipsJ(caveRam + 0x34),                   // j     store
+      0x00000000,                              // nop
+      mipsAddiu(25, 25, RELOC_ENTRY_BYTES),    // next: addiu t9,t9,8
+      mipsJ(caveRam + 0x08),                   // j     loop
+      0x00000000,                              // nop
       mipsSw(2, 4, 0),                         // store: sw v0,0(a0)
       0x03E00008,                              // jr    ra
       0x00000000,
@@ -391,10 +380,18 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  // ESET fetches DMA in 0x200-byte windows on a fixed grid at phase 0x3E (observed live:
+  // key1 archive 0x27478C2 <- window 0x274783E, key30 0x2749AC3 <- 0x2749A3E, and key6's
+  // 0x2747D90 <- TWO windows 0x2747C3E/0x2747E3E, which refutes any fixed archive-relative
+  // delta). The redirect table exact-matches the window-start cart address, so this model
+  // must reproduce the loader's computation; only single-window archives may relocate.
+  var DMA_WINDOW_SIZE = 0x200;
+  var DMA_WINDOW_PHASE = 0x3E;
+
   function dmaWindowForArchive(arc) {
     var archiveOffset = arc.offset >>> 0;
-    var start = ((archiveOffset - 0x84) & ~1) >>> 0;
-    var delta = archiveOffset - start;
+    var delta = (((archiveOffset - DMA_WINDOW_PHASE) % DMA_WINDOW_SIZE) + DMA_WINDOW_SIZE) % DMA_WINDOW_SIZE;
+    var start = (archiveOffset - delta) >>> 0;
     return { start: start, delta: delta };
   }
 
@@ -409,7 +406,7 @@ window.OB64 = window.OB64 || {};
   function installRelocationRedirect(rom, entries) {
     if (!entries.length) return;
     var z64 = rom.z64;
-    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - 4) / RELOC_ENTRY_BYTES);
+    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - RELOC_ENTRY_BYTES) / RELOC_ENTRY_BYTES);
     if (entries.length > maxEntries) throw new Error('Too many relocated scenario archives for the redirect table (' + entries.length + '/' + maxEntries + ').');
     var hookWord = readU32(z64, RELOC_HOOK_ROM);
     var delayWord = readU32(z64, RELOC_HOOK_DELAY_ROM);
@@ -422,41 +419,95 @@ window.OB64 = window.OB64 || {};
     var words = relocationStubWords();
     for (var i = 0; i < words.length; i++) writeU32(z64, RELOC_CAVE_ROM + i * 4, words[i]);
     var table = RELOC_CAVE_ROM + RELOC_STUB_BYTES;
-    writeU32(z64, table, entries.length);
     entries.forEach(function(entry, idx) {
-      var off = table + 4 + idx * RELOC_ENTRY_BYTES;
+      var off = table + idx * RELOC_ENTRY_BYTES;
       writeU32(z64, off, cartAddress(entry.originalDmaStart));
       writeU32(z64, off + 4, cartAddress(entry.tailDmaStart));
-      writeU32(z64, off + 8, entry.windowSize >>> 0);
     });
+    writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES, 0);
+    writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES + 4, 0);
     writeU32(z64, RELOC_HOOK_ROM, expectedJal);
     writeU32(z64, RELOC_HOOK_DELAY_ROM, 0x00431024);
     if (OB64.recalcN64CRC) OB64.recalcN64CRC(z64);
   }
 
-  function relocateArchiveToTail(rom, arc, builtArchive, tailCursor) {
+  function relocationPatchRegions(relocations) {
+    var regions = [
+      { kind: 'rom', start: RELOC_HOOK_ROM, size: 8, label: 'scenario relocation DMA hook' },
+      { kind: 'rom', start: RELOC_CAVE_ROM, size: RELOC_CAVE_SIZE, label: 'scenario relocation cave/table' },
+    ];
+    (relocations || []).forEach(function(entry, idx) {
+      regions.push({
+        kind: 'rom',
+        start: entry.tailDmaStart,
+        size: entry.windowSize,
+        label: 'scenario relocation tail window ' + (idx + 1),
+      });
+    });
+    return regions;
+  }
+
+  function relocationPatchOwner(relocations) {
+    return {
+      id: 'scenario-eset-relocation',
+      name: 'Scenario ESET Relocation',
+      regions: relocationPatchRegions(relocations),
+    };
+  }
+
+  function planRelocationToTail(rom, arc, builtArchive, tailCursor) {
     var win = dmaWindowForArchive(arc);
     var archiveSize = builtArchive.length - 1;
+    // The proven redirect exact-matches ONE window-start cart address and the loader sizes
+    // its fetch from the original resource, so relocation is only safe when the original
+    // fetch was a single window AND the rebuilt archive still fits that same window.
+    var originalSize = (arc.totalHeaderSize || 0) + (arc.compSize || 0);
+    if (win.delta + originalSize > DMA_WINDOW_SIZE) {
+      throw new Error('relocation unavailable: the original archive spans multiple DMA windows (0x' +
+        win.delta.toString(16).toUpperCase() + ' window prefix + ' + originalSize + 'B > ' +
+        DMA_WINDOW_SIZE + 'B); multi-window relocation is not yet proven');
+    }
+    if (win.delta + archiveSize + 1 > DMA_WINDOW_SIZE) {
+      throw new Error('relocation limit: rebuilt archive is ' + archiveSize + 'B but the single DMA window fits ' +
+        (DMA_WINDOW_SIZE - win.delta - 1) + 'B after its 0x' + win.delta.toString(16).toUpperCase() +
+        ' prefix; reduce content');
+    }
     var tailDmaStart = tailCursor;
     var tailArchiveOffset = tailDmaStart + win.delta;
     var total = win.delta + archiveSize;
     var windowSize = align(total + 0x200, 0x200);
     if (tailArchiveOffset + archiveSize > rom.z64.length) throw new Error('Scenario relocation tail write exceeds ROM size.');
-    for (var i = 0; i < windowSize; i++) {
-      var off = tailDmaStart + i;
-      if (off >= rom.z64.length) break;
-      if (rom.z64[off] !== 0xFF && rom.z64[off] !== 0x00) throw new Error('Scenario relocation tail is occupied at z64 0x' + off.toString(16).toUpperCase());
-    }
-    rom.z64.set(rom.z64.slice(win.start, win.start + win.delta), tailDmaStart);
-    rom.z64.set(builtArchive.slice(0, archiveSize), tailArchiveOffset);
-    rom.z64[tailArchiveOffset + archiveSize] = 0x00;
     return {
       originalDmaStart: win.start,
       tailDmaStart: tailDmaStart,
       windowSize: windowSize,
       tailArchiveOffset: tailArchiveOffset,
       nextTailCursor: align(tailDmaStart + windowSize, 0x10),
+      _sourceWindowStart: win.start,
+      _sourceWindowDelta: win.delta,
+      _archiveSize: archiveSize,
     };
+  }
+
+  function assertRelocationTailFree(rom, moved) {
+    for (var i = 0; i < moved.windowSize; i++) {
+      var off = moved.tailDmaStart + i;
+      if (off >= rom.z64.length) break;
+      if (rom.z64[off] !== 0xFF && rom.z64[off] !== 0x00) throw new Error('Scenario relocation tail is occupied at z64 0x' + off.toString(16).toUpperCase());
+    }
+  }
+
+  function writeRelocatedArchive(rom, builtArchive, moved) {
+    rom.z64.set(
+      rom.z64.slice(moved._sourceWindowStart, moved._sourceWindowStart + moved._sourceWindowDelta),
+      moved.tailDmaStart
+    );
+    rom.z64.set(builtArchive.slice(0, moved._archiveSize), moved.tailArchiveOffset);
+    rom.z64[moved.tailArchiveOffset + moved._archiveSize] = 0x00;
+  }
+
+  function publicRelocationRegions(relocations) {
+    return relocationPatchRegions(relocations || []);
   }
 
   function unitCountFromRecord(b) {
@@ -2682,6 +2733,7 @@ window.OB64 = window.OB64 || {};
 
     var touched = [];
     var relocations = [];
+    var relocationWrites = [];
     var tailCursor = RELOC_TAIL_START;
     Object.keys(state.models).forEach(function(key) {
       var runtimeKey = Number(key);
@@ -2698,18 +2750,34 @@ window.OB64 = window.OB64 || {};
       if (result.success) {
         touched.push('scenario key ' + runtimeKey);
       } else {
-        var moved = relocateArchiveToTail(rom, rom.archives[meta.archive], arc, tailCursor);
+        var moved;
+        try {
+          moved = planRelocationToTail(rom, rom.archives[meta.archive], arc, tailCursor);
+        } catch (e) {
+          throw new Error('Scenario key ' + runtimeKey + ' ' + e.message);
+        }
+        assertRelocationTailFree(rom, moved);
         tailCursor = moved.nextTailCursor;
         moved.runtimeKey = runtimeKey;
         moved.archive = meta.archive;
         relocations.push(moved);
+        relocationWrites.push({ moved: moved, archive: arc });
         touched.push('scenario key ' + runtimeKey + ' relocated');
       }
       state.originalBytes[key] = raw.slice(0);
     });
+    if (relocations.length && OB64.tools) {
+      OB64.tools.assertDesiredCompatible(rom, [relocationPatchOwner(relocations)]);
+    }
+    relocationWrites.forEach(function(w) {
+      writeRelocatedArchive(rom, w.archive, w.moved);
+      delete w.moved._sourceWindowStart;
+      delete w.moved._sourceWindowDelta;
+      delete w.moved._archiveSize;
+    });
     installRelocationRedirect(rom, relocations);
     rom.scenarioRelocations = relocations;
-    return { touched: touched, blocked: [], relocations: relocations };
+    return { touched: touched, blocked: [], relocations: relocations, crc: relocations.length > 0 };
   }
 
   // The embedded Squads comp editor calls this on every commit so squad markers repaint with
@@ -2733,6 +2801,7 @@ window.OB64 = window.OB64 || {};
     collectProject: collectProject,
     loadProject: loadProject,
     exportScenarioArchives: exportScenarioArchives,
+    patchRegions: publicRelocationRegions,
     iconProvider: iconProvider,
     keyModified: keyModified,
   };

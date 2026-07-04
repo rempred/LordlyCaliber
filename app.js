@@ -291,6 +291,7 @@ window.OB64 = window.OB64 || {};
       // Scenario tab ESET edits. Project-only scenario features such as town
       // allegiance and reserved add-squad records deliberately block ROM
       // export until their underlying ROM source/resolver is decoded.
+      var scenarioCrc = false;
       if (dirty.scenario && OB64.scenario) {
         var scenarioResult = OB64.scenario.exportScenarioArchives(rom);
         if (scenarioResult.blocked && scenarioResult.blocked.length) {
@@ -298,6 +299,7 @@ window.OB64 = window.OB64 || {};
           statusBar.textContent = 'Export blocked (scenario project stubs)';
           return;
         }
+        scenarioCrc = !!scenarioResult.crc;
         if (scenarioResult.touched.length) {
           touched.push('scenarios: ' + scenarioResult.touched.join(', '));
         }
@@ -307,7 +309,7 @@ window.OB64 = window.OB64 || {};
       // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
       // and stat gates live past that window; items/classes/consumables, the
       // Tools-tab features, and the squad-override bootstrap do not.
-      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc);
+      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc || scenarioCrc);
       if (crcChanged) {
         OB64.recalcN64CRC(rom.z64);
       }
