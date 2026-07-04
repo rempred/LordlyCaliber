@@ -24,6 +24,14 @@ window.OB64 = window.OB64 || {};
   // clicks must not clear the selection; tools clear it a tick AFTER their final click so the
   // trailing click event cannot deselect.
   var mapTool = null;
+  var RELOC_TAIL_START = 0x027C0000;
+  var RELOC_HOOK_ROM = 0x0001BFE4;
+  var RELOC_HOOK_DELAY_ROM = 0x0001BFE8;
+  var RELOC_CAVE_ROM = 0x000318DC;
+  var RELOC_CAVE_SIZE = 0x320;
+  var RELOC_BOOT_RAM_BASE = 0x8006FC00;
+  var RELOC_STUB_BYTES = 0x80;
+  var RELOC_ENTRY_BYTES = 12;
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
   // The old fixed 48 IMAGE px was ~14 screen px at fit zoom - trivially easy to miss a town
   // and silently write near-town coordinate bytes instead of the selector (Joe, 2026-07-03).
@@ -303,8 +311,8 @@ window.OB64 = window.OB64 || {};
     return !OB64.scenarioCodec.equalBytes(modelBytes(model), original);
   }
 
-  // Live archive-fit prediction: every eset must recompress into its fixed ROM slot (the r11
-  // ladder's 16-row key1 rung failed exactly here: 183B archive vs 181B slot).
+  // Live archive-fit prediction: values over the fixed slot now route to the grow/relocate
+  // lane at export time. The fit flag is still useful in the UI as a note, not a block.
   function archiveFitInfo(rom, key) {
     var meta = ensureState(rom).metadata[key] || scenarioData(key);
     var model = modelFor(rom, key);
@@ -315,6 +323,140 @@ window.OB64 = window.OB64 || {};
     var raw = modelBytes(model);
     var built = OB64.buildLHAArchive(OB64.lh5Compress(raw), raw, meta.filename || 'eset.bin');
     return { size: built.length - 1, slot: slot, fits: (built.length - 1) <= slot };
+  }
+
+  function readU32(z64, off) {
+    return ((z64[off] << 24) | (z64[off + 1] << 16) | (z64[off + 2] << 8) | z64[off + 3]) >>> 0;
+  }
+
+  function writeU32(z64, off, value) {
+    value >>>= 0;
+    z64[off] = (value >>> 24) & 0xFF;
+    z64[off + 1] = (value >>> 16) & 0xFF;
+    z64[off + 2] = (value >>> 8) & 0xFF;
+    z64[off + 3] = value & 0xFF;
+  }
+
+  function mipsJ(ramAddr) { return (0x08000000 | ((ramAddr >>> 2) & 0x03FFFFFF)) >>> 0; }
+  function mipsJal(ramAddr) { return (0x0C000000 | ((ramAddr >>> 2) & 0x03FFFFFF)) >>> 0; }
+  function mipsLui(rt, imm) { return ((0x0F << 26) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
+  function mipsOri(rt, rs, imm) { return ((0x0D << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
+  function mipsLw(rt, base, off) { return ((0x23 << 26) | (base << 21) | (rt << 16) | (off & 0xFFFF)) >>> 0; }
+  function mipsSw(rt, base, off) { return ((0x2B << 26) | (base << 21) | (rt << 16) | (off & 0xFFFF)) >>> 0; }
+  function mipsAddiu(rt, rs, imm) { return ((0x09 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
+  function mipsAddu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x21) >>> 0; }
+  function mipsSubu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x23) >>> 0; }
+  function mipsSltu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x2B) >>> 0; }
+  function mipsBeq(rs, rt, imm) { return ((0x04 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
+  function mipsBne(rs, rt, imm) { return ((0x05 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
+
+  function relocationStubWords() {
+    var caveRam = (RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0;
+    var tableRam = (caveRam + RELOC_STUB_BYTES) >>> 0;
+    return [
+      mipsLui(25, tableRam >>> 16),            // lui   t9, hi(table)
+      mipsOri(25, 25, tableRam & 0xFFFF),      // ori   t9,t9,lo(table)
+      mipsLw(15, 25, 0),                       // lw    t7,0(t9)       ; count
+      mipsAddiu(25, 25, 4),                    // addiu t9,t9,4        ; entries
+      mipsBeq(15, 0, 19),                      // loop: beq t7,zero,store
+      0x00000000,
+      mipsLw(24, 25, 0),                       // lw    t8,0(t9)       ; original cart start
+      mipsSltu(1, 2, 24),                      // sltu  at,v0,t8
+      mipsBne(1, 0, 11),                       // bne   at,zero,next
+      0x00000000,
+      mipsLw(14, 25, 8),                       // lw    t6,8(t9)       ; size
+      mipsAddu(14, 24, 14),                    // addu  t6,t8,t6       ; original end
+      mipsSltu(1, 2, 14),                      // sltu  at,v0,t6
+      mipsBeq(1, 0, 6),                        // beq   at,zero,next
+      0x00000000,
+      mipsLw(14, 25, 4),                       // lw    t6,4(t9)       ; tail cart start
+      mipsSubu(2, 2, 24),                      // subu  v0,v0,t8
+      mipsAddu(2, 2, 14),                      // addu  v0,v0,t6
+      mipsJ(caveRam + 0x60),                   // j     store
+      0x00000000,
+      mipsAddiu(25, 25, RELOC_ENTRY_BYTES),    // next: addiu t9,t9,12
+      mipsAddiu(15, 15, -1),                   // addiu t7,t7,-1
+      mipsJ(caveRam + 0x10),                   // j     loop
+      0x00000000,
+      mipsSw(2, 4, 0),                         // store: sw v0,0(a0)
+      0x03E00008,                              // jr    ra
+      0x00000000,
+    ];
+  }
+
+  function assertRelocationCaveClean(z64) {
+    for (var i = 0; i < RELOC_CAVE_SIZE; i++) {
+      var b = z64[RELOC_CAVE_ROM + i];
+      if (b !== 0x00) throw new Error('Scenario relocation cave is not clean at z64 0x' + (RELOC_CAVE_ROM + i).toString(16).toUpperCase());
+    }
+  }
+
+  function dmaWindowForArchive(arc) {
+    var archiveOffset = arc.offset >>> 0;
+    var start = ((archiveOffset - 0x84) & ~1) >>> 0;
+    var delta = archiveOffset - start;
+    return { start: start, delta: delta };
+  }
+
+  function align(n, step) {
+    return Math.ceil(n / step) * step;
+  }
+
+  function cartAddress(romOffset) {
+    return (0x10000000 | (romOffset >>> 0)) >>> 0;
+  }
+
+  function installRelocationRedirect(rom, entries) {
+    if (!entries.length) return;
+    var z64 = rom.z64;
+    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - 4) / RELOC_ENTRY_BYTES);
+    if (entries.length > maxEntries) throw new Error('Too many relocated scenario archives for the redirect table (' + entries.length + '/' + maxEntries + ').');
+    var hookWord = readU32(z64, RELOC_HOOK_ROM);
+    var delayWord = readU32(z64, RELOC_HOOK_DELAY_ROM);
+    var expectedJal = mipsJal((RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0);
+    if (!((hookWord === 0x00431024 && delayWord === 0xAC820000) || (hookWord === expectedJal && delayWord === 0x00431024))) {
+      throw new Error('Scenario relocation hook site is not clean (0x' + hookWord.toString(16).toUpperCase() + '/0x' + delayWord.toString(16).toUpperCase() + ').');
+    }
+    if (hookWord !== expectedJal) assertRelocationCaveClean(z64);
+
+    var words = relocationStubWords();
+    for (var i = 0; i < words.length; i++) writeU32(z64, RELOC_CAVE_ROM + i * 4, words[i]);
+    var table = RELOC_CAVE_ROM + RELOC_STUB_BYTES;
+    writeU32(z64, table, entries.length);
+    entries.forEach(function(entry, idx) {
+      var off = table + 4 + idx * RELOC_ENTRY_BYTES;
+      writeU32(z64, off, cartAddress(entry.originalDmaStart));
+      writeU32(z64, off + 4, cartAddress(entry.tailDmaStart));
+      writeU32(z64, off + 8, entry.windowSize >>> 0);
+    });
+    writeU32(z64, RELOC_HOOK_ROM, expectedJal);
+    writeU32(z64, RELOC_HOOK_DELAY_ROM, 0x00431024);
+    if (OB64.recalcN64CRC) OB64.recalcN64CRC(z64);
+  }
+
+  function relocateArchiveToTail(rom, arc, builtArchive, tailCursor) {
+    var win = dmaWindowForArchive(arc);
+    var archiveSize = builtArchive.length - 1;
+    var tailDmaStart = tailCursor;
+    var tailArchiveOffset = tailDmaStart + win.delta;
+    var total = win.delta + archiveSize;
+    var windowSize = align(total + 0x200, 0x200);
+    if (tailArchiveOffset + archiveSize > rom.z64.length) throw new Error('Scenario relocation tail write exceeds ROM size.');
+    for (var i = 0; i < windowSize; i++) {
+      var off = tailDmaStart + i;
+      if (off >= rom.z64.length) break;
+      if (rom.z64[off] !== 0xFF && rom.z64[off] !== 0x00) throw new Error('Scenario relocation tail is occupied at z64 0x' + off.toString(16).toUpperCase());
+    }
+    rom.z64.set(rom.z64.slice(win.start, win.start + win.delta), tailDmaStart);
+    rom.z64.set(builtArchive.slice(0, archiveSize), tailArchiveOffset);
+    rom.z64[tailArchiveOffset + archiveSize] = 0x00;
+    return {
+      originalDmaStart: win.start,
+      tailDmaStart: tailDmaStart,
+      windowSize: windowSize,
+      tailArchiveOffset: tailArchiveOffset,
+      nextTailCursor: align(tailDmaStart + windowSize, 0x10),
+    };
   }
 
   function unitCountFromRecord(b) {
@@ -2297,12 +2439,6 @@ window.OB64 = window.OB64 || {};
       renderScenarioTab(panel);
       return;
     }
-    var fitNow = archiveFitInfo(rom, key);
-    if (fitNow && !fitNow.fits) {
-      ui.gateText = 'This ESET already exceeds its ROM slot (' + fitNow.size + '/' + fitNow.slot + 'B) - shrink it before adding squads.';
-      renderScenarioTab(panel);
-      return;
-    }
     var unitsNow = predictedUnits(rom, key);
     if (unitsNow != null && unitsNow >= 100) {
       ui.gateText = 'Deployed-unit table is full (' + unitsNow + '/100) - reduce squad sizes first.';
@@ -2396,7 +2532,7 @@ window.OB64 = window.OB64 || {};
     ui.gateText = 'Squad placed: source ' + bytes[0] + ' / edat ' + edatId + '. Edit the comp in the sidebar; exports with the mission ESET + squad-override blob.';
     var fitAfter = archiveFitInfo(rom, key);
     if (fitAfter && !fitAfter.fits) {
-      ui.gateText += ' WARNING: the eset now exceeds its ROM slot (' + fitAfter.size + '/' + fitAfter.slot + 'B) - export will block until it shrinks.';
+      ui.gateText += ' This ESET exceeds its old slot (' + fitAfter.size + '/' + fitAfter.slot + 'B); export will relocate it to ROM tail.';
     }
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
@@ -2529,13 +2665,8 @@ window.OB64 = window.OB64 || {};
     var stubs = anyProjectStub(rom);
     var blocked = [];
     if (stubs.siteAllegianceKeys.length) blocked.push('Neutral/allied town intent targets the ktenmain site table, whose LHA recompression currently exceeds its ROM slot by ~32B; intents stay project-only until encoder parity or the grow/relocate path lands. (Enemy-held via garrison placement exports fully.)');
-    // Per-key archive-fit pre-check: report cleanly instead of throwing mid-splice.
-    Object.keys(state.models).forEach(function(k) {
-      var rk = Number(k);
-      if (!keyModified(rom, rk)) return;
-      var f = archiveFitInfo(rom, rk);
-      if (f && !f.fits) blocked.push('Scenario key ' + rk + ' no longer fits its ROM slot (' + f.size + 'B compressed vs ' + f.slot + 'B) - shrink it or wait for grow/relocate.');
-    });
+    // Slot overflow is handled below by the relocation lane. Keep the fit number as
+    // a user-facing note, not an export blocker.
     // Added squads EXPORT as of 2026-07-03: appended-row deployment and the override
     // re-skin are both cold-boot proven (r10 run: control squad kept its donor comp,
     // the overridden one deployed Black Knight + 2 Ninja). The row splices with its
@@ -2550,6 +2681,8 @@ window.OB64 = window.OB64 || {};
     if (blocked.length) return { touched: [], blocked: blocked };
 
     var touched = [];
+    var relocations = [];
+    var tailCursor = RELOC_TAIL_START;
     Object.keys(state.models).forEach(function(key) {
       var runtimeKey = Number(key);
       var model = state.models[key];
@@ -2560,12 +2693,23 @@ window.OB64 = window.OB64 || {};
       if (!meta || !meta.archive || !rom.archives[meta.archive]) throw new Error('Missing ROM archive for runtime key ' + runtimeKey);
       var comp = OB64.lh5Compress(raw);
       var arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
-      var result = OB64.spliceArchive(rom.z64, rom.archives[meta.archive], arc);
-      if (!result.success) throw new Error('Scenario key ' + runtimeKey + ' ESET archive does not fit its ROM slot: ' + result.error);
-      touched.push('scenario key ' + runtimeKey);
+      var arcBody = arc.slice ? arc.slice(0, arc.length - 1) : arc.subarray(0, arc.length - 1);
+      var result = OB64.spliceArchive(rom.z64, rom.archives[meta.archive], arcBody);
+      if (result.success) {
+        touched.push('scenario key ' + runtimeKey);
+      } else {
+        var moved = relocateArchiveToTail(rom, rom.archives[meta.archive], arc, tailCursor);
+        tailCursor = moved.nextTailCursor;
+        moved.runtimeKey = runtimeKey;
+        moved.archive = meta.archive;
+        relocations.push(moved);
+        touched.push('scenario key ' + runtimeKey + ' relocated');
+      }
       state.originalBytes[key] = raw.slice(0);
     });
-    return { touched: touched, blocked: [] };
+    installRelocationRedirect(rom, relocations);
+    rom.scenarioRelocations = relocations;
+    return { touched: touched, blocked: [], relocations: relocations };
   }
 
   // The embedded Squads comp editor calls this on every commit so squad markers repaint with

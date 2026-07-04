@@ -17,12 +17,14 @@
 // header (physically statOff-8..-1), retiring the shifted statOff+B64..B71 view.
 // v6 also carries `squadOverrides`: runtime-key/EDAT replacement records used
 // by the Squads tab.
+// v7 carries `scenario`: the Scenario tab project payload (modified ESETs,
+// added squads, squad comp records, and site allegiance intents).
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 6;
+  var PATCH_VERSION = 7;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -176,6 +178,7 @@ window.OB64 = window.OB64 || {};
     }
 
     var squadOverridesOut = collectSquadOverridePatch(rom);
+    var scenarioOut = collectScenarioPatch(rom);
 
     return {
       format: PATCH_FORMAT,
@@ -199,6 +202,7 @@ window.OB64 = window.OB64 || {};
         neutral_global_rate_modified: globalRateOut ? 1 : 0,
         tools_modified:         Object.keys(toolsOut).length,
         squad_overrides_modified: Object.keys(squadOverridesOut).length,
+        scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
       },
       patches: {
         shops:        shopsOut,
@@ -212,6 +216,7 @@ window.OB64 = window.OB64 || {};
         neutral_global_rate: globalRateOut,
         tools:        toolsOut,
         squadOverrides: squadOverridesOut,
+        scenario:     scenarioOut,
         // Reserved for future tabs.
         enemies:      {},
       },
@@ -260,6 +265,7 @@ window.OB64 = window.OB64 || {};
     var neutralGlobalRateApplied = 0;
     var toolsApplied = 0;
     var squadOverridesApplied = 0;
+    var scenarioApplied = 0;
     var p = patch.patches || {};
 
     // Shops.
@@ -438,6 +444,15 @@ window.OB64 = window.OB64 || {};
     }
     if (squadOverridesApplied > 0) dirtyFlags.squadOverrides = true;
 
+    var scenarioPatch = p.scenario || null;
+    if (scenarioPatch) {
+      scenarioApplied = applyScenarioPatch(rom, scenarioPatch, warnings);
+      if (scenarioApplied > 0) {
+        dirtyFlags.scenario = true;
+        dirtyFlags.squadOverrides = true;
+      }
+    }
+
     return {
       applied: {
         shops: shopsApplied,
@@ -451,7 +466,8 @@ window.OB64 = window.OB64 || {};
         statGates: statGatesApplied,
         neutralGlobalRate: neutralGlobalRateApplied,
         tools: toolsApplied,
-        squadOverrides: squadOverridesApplied
+        squadOverrides: squadOverridesApplied,
+        scenario: scenarioApplied
       },
       warnings: warnings,
     };
@@ -614,6 +630,38 @@ window.OB64 = window.OB64 || {};
       applied++;
     }
     return applied;
+  }
+
+  function scenarioPatchCount(project) {
+    if (!project) return 0;
+    var n = 0;
+    n += Object.keys(project.modifiedEsets || {}).length;
+    n += (project.addedSquads || []).length;
+    Object.keys(project.siteAllegiances || {}).forEach(function(key) {
+      n += Object.keys(project.siteAllegiances[key] || {}).length;
+    });
+    return n;
+  }
+
+  function collectScenarioPatch(rom) {
+    if (!OB64.scenario || !OB64.scenario.collectProject) return null;
+    var project = OB64.scenario.collectProject(rom);
+    return scenarioPatchCount(project) ? project : null;
+  }
+
+  function applyScenarioPatch(rom, project, warnings) {
+    if (!project || typeof project !== 'object') return 0;
+    if (!OB64.scenario || !OB64.scenario.loadProject) {
+      warnings.push('Patch includes scenario data, but this editor build has no Scenario tab loader - skipping.');
+      return 0;
+    }
+    try {
+      OB64.scenario.loadProject(rom, project);
+      return scenarioPatchCount(project);
+    } catch (err) {
+      warnings.push('Scenario patch failed: ' + (err && err.message ? err.message : err));
+      return 0;
+    }
   }
 
   function snapshotItemStat(stat) {
