@@ -41,6 +41,20 @@ window.OB64 = window.OB64 || {};
     setTimeout(function() { mapTool = null; }, 0);
   }
 
+  // Map-tool captures eat the POINTERDOWN, but the browser still synthesizes a CLICK from the
+  // same press - it lands on whatever marker sits under the cursor and switches the sidebar
+  // selection away from the squad being edited (Joe, 2026-07-04). Eat exactly one follow-up
+  // click in the capture phase; the timeout drops the guard if no click materializes.
+  function eatNextMapClick(inner) {
+    var eat = function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      inner.removeEventListener('click', eat, true);
+    };
+    inner.addEventListener('click', eat, true);
+    setTimeout(function() { inner.removeEventListener('click', eat, true); }, 400);
+  }
+
   function clearSelection() {
     ui.selectedPoint = null;
     ui.selectedSite = null;
@@ -55,7 +69,10 @@ window.OB64 = window.OB64 || {};
 
   function builderFor(key, rowIndex) {
     if (!builder || builder.key !== key || builder.rowIndex !== rowIndex) {
-      builder = { key: key, rowIndex: rowIndex, template: '', trigger: null, threshold: null, dest: null, msg: '', msgOk: true };
+      // owned = Section 2/3 records this builder allocated for this row; live re-applies
+      // REWRITE them in place instead of allocating fresh ones, so exploring templates
+      // does not erode the 16-node/16-extra caps.
+      builder = { key: key, rowIndex: rowIndex, template: '', trigger: null, threshold: null, dest: null, msg: '', msgOk: true, owned: { dest: null, gate: null, extra: null } };
     }
     return builder;
   }
@@ -1475,6 +1492,7 @@ window.OB64 = window.OB64 || {};
       inner.removeEventListener('pointerup', up, true);
       inner.removeEventListener('pointermove', move, true);
       inner.style.cursor = '';
+      eatNextMapClick(inner); // the drag's release must not select the marker under it
       releaseMapTool();
       if (band) band.remove();
       if (!start || !proj) { if (onStatus) onStatus('Cancelled.', false); return; }
@@ -1889,9 +1907,13 @@ window.OB64 = window.OB64 || {};
     var curGate = curStartNode ? (curStartNode.bytes[10] || 0) : 0;
     var curGateStr = curGate ? String(curGate) : '';
     var curThresh = 4;
+    var curGateIsThreshold = false;
     if (curGate) {
       var curExtra = model.section3.filter(function(x) { return x.extraId === curGate; })[0];
-      if (curExtra && curExtra.kind === 9) curThresh = curExtra.bytes[6] || 4;
+      if (curExtra && curExtra.kind === 9) {
+        curThresh = curExtra.bytes[6] || 4;
+        curGateIsThreshold = true;
+      }
     }
     var bld = builderFor(key, rowIndex);
     var selTemplate = bld.template || '';
@@ -1918,10 +1940,12 @@ window.OB64 = window.OB64 || {};
       '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">' +
       (bld.dest ? 'Dest: ' + bld.dest.x.toFixed(1) + ', ' + bld.dest.z.toFixed(1) : 'Pick on map') +
       '</button></div>' +
-      '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
-      '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + selThresh + '"></div>' +
-      '<div class="sc-form-row"><label class="sc-label"></label>' +
-      '<button type="button" id="sc-tpl-apply" class="sc-inline-btn">Apply behavior</button></div>' +
+      // Threshold N = the parameter of the kind-9 squads-remaining predicate; only rendered
+      // where it applies (the Reinforce template, or live-editing an existing kind-9 gate).
+      (selTemplate === 'reinforce-remnant' || (!selTemplate && curGateIsThreshold)
+        ? '<div class="sc-form-row"><label class="sc-label">Squads left ≤ N</label>' +
+          '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + selThresh + '"></div>'
+        : '') +
       '<div class="sc-form-row"><label class="sc-label"></label>' +
       '<button type="button" id="sc-tpl-clear-route" class="sc-inline-btn">Remove route (guard / hold position)</button></div>' +
       '<div id="sc-tpl-msg" class="sc-sub" style="' + (bld.msgOk ? '' : 'color:var(--sc-red)') + '">' + esc(bld.msg || '') + '</div>' +
@@ -2050,7 +2074,9 @@ window.OB64 = window.OB64 || {};
     }
     if (x) x.onchange = commitWorld;
     if (z) z.onchange = commitWorld;
-    // Behavior builder: template + trigger + map-picked destination + threshold -> applyTemplate.
+    // Behavior builder: fully LIVE (Joe, 2026-07-04 - no Apply button). Every template/
+    // trigger/destination/threshold change re-applies immediately through the builder's
+    // owned Section 2/3 slots; requirement gaps surface as hints without touching bytes.
     // Form state lives in builderFor(key,rowIndex) so it SURVIVES the full re-render every
     // commit triggers; msg() persists the same way.
     var bld = builderFor(key, rowIndex);
@@ -2060,10 +2086,48 @@ window.OB64 = window.OB64 || {};
       var m = el.querySelector('#sc-tpl-msg');
       if (m) { m.textContent = bld.msg; m.style.color = bld.msgOk ? '' : 'var(--sc-red)'; }
     };
+    // Current gate/threshold seed the live apply when the form fields are untouched.
+    var curNode0 = nodeById(model, model.section1[rowIndex].bytes[6]);
+    var curGate0 = curNode0 ? (curNode0.bytes[10] || 0) : 0;
+    var curThresh0 = 4;
+    if (curGate0) {
+      var curExtra0 = model.section3.filter(function(x) { return x.extraId === curGate0; })[0];
+      if (curExtra0 && curExtra0.kind === 9) curThresh0 = curExtra0.bytes[6] || 4;
+    }
+    var liveApply = function() {
+      if (!bld.template) return;
+      var trigRaw = bld.trigger != null ? bld.trigger : (curGate0 ? String(curGate0) : '');
+      var triggerId = trigRaw && trigRaw !== 'new-rect' ? (parseInt(trigRaw, 10) || 0) : 0;
+      var err = applyTemplate(model, rowIndex, bld.template, calibrationData(key), {
+        trigger: triggerId,
+        dest: bld.dest,
+        threshold: bld.threshold != null ? bld.threshold : curThresh0,
+        owned: bld.owned,
+      });
+      if (err) { msg(err, false); return; }
+      msg('Live: behavior updated.', true);
+      commitScenarioEdit(rom, key);
+    };
     var tplSelEl = el.querySelector('#sc-template');
-    if (tplSelEl) tplSelEl.onchange = function() { bld.template = this.value; };
+    if (tplSelEl) tplSelEl.onchange = function() {
+      bld.template = this.value;
+      if (!bld.template) { msg('', true); return; }
+      liveApply();
+    };
     var thresholdEl = el.querySelector('#sc-tpl-threshold');
-    if (thresholdEl) thresholdEl.onchange = function() { bld.threshold = parseInt(this.value, 10) || 4; };
+    if (thresholdEl) thresholdEl.onchange = function() {
+      bld.threshold = clamp(parseInt(this.value, 10) || 4, 1, 30);
+      if (bld.template === 'reinforce-remnant') { liveApply(); return; }
+      // No template selected: live-edit the CURRENT kind-9 gate's threshold byte.
+      if (curGate0) {
+        var ex = model.section3.filter(function(x) { return x.extraId === curGate0; })[0];
+        if (ex && ex.kind === 9) {
+          ex.bytes[6] = bld.threshold & 0xFF;
+          msg('E' + ex.extraId + ' threshold set to ' + bld.threshold + '.', true);
+          commitScenarioEdit(rom, key);
+        }
+      }
+    };
     var destBtn = el.querySelector('#sc-tpl-dest');
     if (destBtn) destBtn.onclick = function() {
       var inner = document.getElementById('sc-map-inner');
@@ -2082,6 +2146,7 @@ window.OB64 = window.OB64 || {};
         inner.removeEventListener('pointerdown', once, true);
         inner.removeEventListener('pointermove', follow, true);
         inner.style.cursor = '';
+        eatNextMapClick(inner); // the pick must not also select the marker under the cursor
         releaseMapTool();
         ev.preventDefault();
         ev.stopPropagation();
@@ -2089,38 +2154,58 @@ window.OB64 = window.OB64 || {};
         var cal = calibrationData(key);
         var proj = projectionFor(cal, useImageFor(cal));
         var zoom = ui.zoom;
-        var world = proj.imageToWorld(
-          clamp((ev.clientX - rect.left) / zoom, 0, proj.naturalWidth),
-          clamp((ev.clientY - rect.top) / zoom, 0, proj.naturalHeight));
+        var imageX = clamp((ev.clientX - rect.left) / zoom, 0, proj.naturalWidth);
+        var imageY = clamp((ev.clientY - rect.top) / zoom, 0, proj.naturalHeight);
+        var world = proj.imageToWorld(imageX, imageY);
+        // Snap the destination onto a town within the standard snap radius.
+        var snapped = null;
+        var best = Infinity;
+        (ensureState(rom).sites[key] || []).forEach(function(site) {
+          var p = proj.worldToImage(site.x, site.z);
+          var d = Math.hypot(p.x - imageX, p.y - imageY);
+          if (d < best) { best = d; snapped = site; }
+        });
+        if (snapped && best < SNAP_SCREEN_PX / Math.max(0.05, zoom)) {
+          world = { x: snapped.x, z: snapped.z };
+        } else {
+          snapped = null;
+        }
         bld.dest = world;
         destBtn.textContent = 'Dest: ' + world.x.toFixed(1) + ', ' + world.z.toFixed(1);
         ghost.classList.add('set');
         setTimeout(function() { ghost.remove(); }, 450);
-        msg('Destination set.', true);
+        msg(snapped ? 'Destination set on ' + snapped.siteName + '.' : 'Destination set.', true);
+        liveApply();
       };
       inner.addEventListener('pointerdown', once, true);
     };
-    // Live trigger editing: with no template chosen, changing the Trigger re-gates the
-    // squad's CURRENT start node (byte [10]) immediately.
+    // Trigger changes are live in both modes: with a template selected they re-apply it;
+    // with no template they re-gate the squad's CURRENT start node (byte [10]) directly.
     var trigSelEl = el.querySelector('#sc-tpl-trigger');
     if (trigSelEl) trigSelEl.onchange = function() {
       bld.trigger = this.value;
-      var template = (el.querySelector('#sc-template') || {}).value;
-      if (template) return; // template flow consumes the trigger at Apply time
-      var row2 = model.section1[rowIndex];
-      var startNode = nodeById(model, row2.bytes[6]);
-      if (!startNode) { msg('No start node on this squad - apply a template first.', false); return; }
       if (this.value === 'new-rect') {
         drawRectOnMap(rom, key, msg, function(rect) {
           var extra = allocExtra(model, 1, rect);
           if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
-          startNode.bytes[10] = extra.extraId;
+          bld.trigger = String(extra.extraId);
+          if (bld.template) {
+            msg('E' + extra.extraId + ' created.', true);
+            liveApply();
+            return;
+          }
+          var startNodeA = nodeById(model, model.section1[rowIndex].bytes[6]);
+          if (!startNodeA) { msg('E' + extra.extraId + ' created - pick a template to use it.', false); commitScenarioEdit(rom, key); return; }
+          startNodeA.bytes[10] = extra.extraId;
           bld.trigger = null; // baked into the node; form reflects the new current gate
           msg('E' + extra.extraId + ' created and set as gate.', true);
           commitScenarioEdit(rom, key);
         });
         return;
       }
+      if (bld.template) { liveApply(); return; }
+      var startNode = nodeById(model, model.section1[rowIndex].bytes[6]);
+      if (!startNode) { msg('No start node on this squad - pick a template first.', false); return; }
       startNode.bytes[10] = this.value ? parseInt(this.value, 10) : 0;
       bld.trigger = null; // baked in
       msg(this.value ? 'Gate set to E' + this.value : 'Gate cleared - route is now UNGATED (solid line): the unit marches immediately. Use "Remove route" to make it hold position.', true);
@@ -2129,39 +2214,9 @@ window.OB64 = window.OB64 || {};
     var clearRoute = el.querySelector('#sc-tpl-clear-route');
     if (clearRoute) clearRoute.onclick = function() {
       model.section1[rowIndex].bytes[6] = 1; // +0xBA = 1: hold position, no route
+      bld.template = '';
       msg('Route removed - unit guards its position.', true);
       commitScenarioEdit(rom, key);
-    };
-    var applyBtn = el.querySelector('#sc-tpl-apply');
-    if (applyBtn) applyBtn.onclick = function() {
-      var template = (el.querySelector('#sc-template') || {}).value;
-      var trigSel = (el.querySelector('#sc-tpl-trigger') || {}).value;
-      var threshold = parseInt((el.querySelector('#sc-tpl-threshold') || {}).value, 10) || 4;
-      var cal = calibrationData(key);
-      var finish = function(triggerId) {
-        var err = applyTemplate(model, rowIndex, template, cal, {
-          trigger: triggerId, dest: bld.dest, threshold: threshold,
-        });
-        if (err) { msg(err, false); return; }
-        // Bake the form: choices are now the squad's CURRENT behavior; the re-render shows
-        // them in the "Current:" entry plus this surviving confirmation.
-        bld.template = '';
-        bld.trigger = null;
-        bld.dest = null;
-        bld.threshold = null;
-        msg('Applied: ' + template + ' - behavior is now shown under "Current" above.', true);
-        commitScenarioEdit(rom, key);
-      };
-      if (!template) { msg('Pick a template first (or use the Trigger dropdown alone to re-gate the current route).', false); return; }
-      if (trigSel === 'new-rect') {
-        drawRectOnMap(rom, key, msg, function(rect) {
-          var extra = allocExtra(model, 1, rect);
-          if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
-          finish(extra.extraId);
-        });
-        return;
-      }
-      finish(trigSel ? parseInt(trigSel, 10) : 0);
     };
     var adv = el.querySelector('#sc-advanced');
     if (adv) adv.onchange = function() {
@@ -2334,16 +2389,62 @@ window.OB64 = window.OB64 || {};
     ];
   }
 
+  // Owned-slot writers for the live behavior builder: the first application allocates, every
+  // later one REWRITES the same node/extra in place (same id, new kind/waypoint/gate/next), so
+  // live template/trigger/dest/threshold changes never leak Section 2/3 records.
+  function ownedNodeWrite(model, owned, slot, fields) {
+    var node = owned[slot] != null ? nodeById(model, owned[slot]) : null;
+    if (!node) {
+      node = allocNode(model, fields);
+      if (node) owned[slot] = node.nodeId;
+      return node;
+    }
+    var b = node.bytes;
+    b[1] = fields.kind || 0;
+    b[2] = fields.subtype || 0;
+    b[4] = 0;
+    b[5] = 0;
+    if (fields.coordBytes) { b[4] = fields.coordBytes[0]; b[5] = Math.max(1, fields.coordBytes[1]); }
+    if (fields.siteSelector != null) { b[4] = fields.siteSelector & 0xFF; b[5] = 0; }
+    b[10] = fields.gateExtra || 0;
+    b[11] = fields.gateOp || 0;
+    b[12] = fields.gateExtraB || 0;
+    b[17] = fields.next != null ? fields.next : 0;
+    node.kind = b[1];
+    return node;
+  }
+
+  function ownedExtra9Write(model, owned, threshold) {
+    var extra = owned.extra != null
+      ? model.section3.filter(function(x) { return x.extraId === owned.extra; })[0]
+      : null;
+    if (!extra) {
+      extra = allocExtra(model, 9, [0, 0, 0, 0, clamp(threshold || 4, 1, 30)]);
+      if (extra) owned.extra = extra.extraId;
+      return extra;
+    }
+    extra.kind = 9;
+    extra.bytes[1] = 9;
+    extra.bytes[2] = 0;
+    extra.bytes[3] = 0;
+    extra.bytes[4] = 0;
+    extra.bytes[5] = 0;
+    extra.bytes[6] = clamp(threshold || 4, 1, 30) & 0xFF;
+    return extra;
+  }
+
   // Behavior templates write the DECODED grammar:
   //   Section 1 byte [6] = start node id (object +0xBA); kind-2 start node => spawns dormant
   //   (loader clears the active bit - the ambush mechanism); node byte [10]/[11]/[12] = compound
   //   gate; node byte [17] = next node (0xFF = permanent camp); coordinate waypoints are kind 1
-  //   subtype 2 with bounds-normalized byte coords in [3],[4].
-  // params: { trigger: extraId|0, dest: {x,z}|null, threshold: n }
+  //   subtype 2 with bounds-normalized byte coords in [4],[5] ([5] kept >= 1 so it cannot
+  //   misread as a selector).
+  // params: { trigger: extraId|0, dest: {x,z}|null, threshold: n, owned: builder owned slots }
   function applyTemplate(model, rowIndex, template, cal, params) {
     var row = model.section1[rowIndex];
     if (!template) return 'no template';
     params = params || {};
+    var owned = params.owned || { dest: null, gate: null, extra: null };
     var destBytes = params.dest ? worldToBytePair(cal, params.dest.x, params.dest.z) : null;
 
     if (template === 'guard-site' || template === 'guard-coordinate') {
@@ -2351,26 +2452,26 @@ window.OB64 = window.OB64 || {};
       return null;
     }
     if (template === 'march-chain') {
-      if (!destBytes) return 'march-chain needs a destination - use "Pick on map"';
-      var dest = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      if (!destBytes) return 'march needs a destination - click Destination, then the map';
+      var dest = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
       if (!dest) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = dest.nodeId;
       return null;
     }
     if (template === 'wait-march') {
-      if (!destBytes) return 'wait-march needs a destination - use "Pick on map"';
-      if (!params.trigger) return 'wait-march needs a trigger (create one below first)';
-      var wDest = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      if (!destBytes) return 'wait-march needs a destination - click Destination, then the map';
+      if (!params.trigger) return 'wait-march needs a trigger - pick one in Trigger';
+      var wDest = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
       if (!wDest) return 'Section 2 is at its 16-node cap';
-      var hold = allocNode(model, { kind: 0, gateExtra: params.trigger, next: wDest.nodeId });
+      var hold = ownedNodeWrite(model, owned, 'gate', { kind: 0, gateExtra: params.trigger, next: wDest.nodeId });
       if (!hold) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = hold.nodeId;
       return null;
     }
     if (template === 'solo-ambush') {
-      if (!params.trigger) return 'ambush needs a trigger (create one below first)';
-      var order = destBytes ? allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
-      var lair = allocNode(model, {
+      if (!params.trigger) return 'ambush needs a trigger - pick one in Trigger';
+      var order = destBytes ? ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
+      var lair = ownedNodeWrite(model, owned, 'gate', {
         kind: 2, gateExtra: params.trigger, next: order ? order.nodeId : 1,
       });
       if (!lair) return 'Section 2 is at its 16-node cap';
@@ -2378,17 +2479,17 @@ window.OB64 = window.OB64 || {};
       return null;
     }
     if (template === 'reinforce-remnant') {
-      var extra = allocExtra(model, 9, [0, 0, 0, 0, clamp(params.threshold || 4, 1, 30)]);
+      var extra = ownedExtra9Write(model, owned, params.threshold);
       if (!extra) return 'Section 3 is at its 16-extra cap';
-      var rDest = destBytes ? allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
-      var gate = allocNode(model, { kind: 2, gateExtra: extra.extraId, next: rDest ? rDest.nodeId : 1 });
+      var rDest = destBytes ? ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
+      var gate = ownedNodeWrite(model, owned, 'gate', { kind: 2, gateExtra: extra.extraId, next: rDest ? rDest.nodeId : 1 });
       if (!gate) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = gate.nodeId;
       return null;
     }
     if (template === 'camp-terminal') {
-      if (!destBytes) return 'camp-terminal needs a destination - use "Pick on map"';
-      var camp = allocNode(model, { kind: 1, subtype: 2, coordBytes: destBytes, next: 0xFF });
+      if (!destBytes) return 'camp needs a destination - click Destination, then the map';
+      var camp = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0xFF });
       if (!camp) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = camp.nodeId;
       return null;
