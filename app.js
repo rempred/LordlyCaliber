@@ -261,6 +261,19 @@ window.OB64 = window.OB64 || {};
         toolsCrc = toolsResult.crc;
       }
 
+      // Squad-leader map-sprite gate: runs BEFORE the squad-override blob lane below,
+      // because a spriteless leader class deployed as a map unit hangs LOADING in a
+      // runaway DMA (see spritelessLeaderIssues in scenario.js). Covers both lanes
+      // (Squads-tab overrides and Scenario-tab added squads).
+      if ((dirty.squadOverrides || dirty.scenario) && OB64.scenario && OB64.scenario.spritelessLeaderIssues) {
+        var leaderIssues = OB64.scenario.spritelessLeaderIssues(rom);
+        if (leaderIssues.length) {
+          showErrorModal('Export blocked - squad leader has no map sprite', leaderIssues.join('\n\n'));
+          statusBar.textContent = 'Export blocked (squad leader without map sprite)';
+          return;
+        }
+      }
+
       // Per-scenario squad overrides (Squads tab). Compiles every override into
       // the runtime hook + bootstrap + blob writes (squadblob.js) and stamps them
       // into rom.z64. The bootstrap cave is inside the CRC window.

@@ -2812,6 +2812,69 @@ window.OB64 = window.OB64 || {};
     return issues;
   }
 
+  // Map-unit leader sprite gate (root cause of the 2026-07-04 relocation "overflow" crash).
+  // The LOADING map-unit visual builder resolves the squad LEADER's class through two static
+  // tables in the 0x141000 overlay module: slot = u8[0x14E074 + classId], then
+  // entry = u32BE[0x14DF30 + slot*4]. Slot 0's entry is the 0xFFFFFFFF "no map sprite"
+  // sentinel (85/165 classes: monsters, undead, Ninja, soldiers, specials). The game passes
+  // the sentinel's low half (0xFFFF) UNGUARDED as an index into the 1272-entry type-5 sprite
+  // directory (blob 0x0209D322), reads a garbage child offset, trusts a garbage u32 blob
+  // length (~1.1 GB), and runs the 0x200-window cart DMA off the ROM end (PI-540 hang).
+  // So: any squad the player can DEPLOY on the map must have a sprite-valid leader class.
+  var SPRITE_CLASS_SLOT_TABLE_Z64 = 0x14E074; // 0xA5 bytes, indexed by class id
+  var SPRITE_SLOT_ENTRY_TABLE_Z64 = 0x14DF30; // 0x51 u32 BE entries
+  var SPRITE_NONE_SENTINEL = 0xFFFFFFFF;
+
+  function leaderClassHasMapSprite(rom, classId) {
+    if (!(classId >= 1 && classId <= 0xA4)) return false;
+    var slot = rom.z64[SPRITE_CLASS_SLOT_TABLE_Z64 + classId];
+    var off = SPRITE_SLOT_ENTRY_TABLE_Z64 + slot * 4;
+    var entry = (((rom.z64[off] << 24) | (rom.z64[off + 1] << 16) | (rom.z64[off + 2] << 8) | rom.z64[off + 3]) >>> 0);
+    return entry !== SPRITE_NONE_SENTINEL;
+  }
+
+  function classLabel(id) {
+    var name = OB64.className ? OB64.className(id) : null;
+    return (name || 'class') + ' (0x' + id.toString(16).toUpperCase().padStart(2, '0') + ')';
+  }
+
+  // Every override/added-squad leader that can deploy as a map unit must have a map sprite.
+  // Added squads are checked on their EFFECTIVE comp (override record, else donor default).
+  // Vanilla-record overrides are checked only when they CHANGE the leader byte — unchanged
+  // vanilla leaders (e.g. story classes like 0x8A) display through a separate named-character
+  // path and are load-proven as shipped.
+  function spritelessLeaderIssues(rom) {
+    var data = OB64.SCENARIO_ESET_DATA || {};
+    var records = (data.enemydat && data.enemydat.records) || [];
+    var state = ensureState(rom);
+    var issues = [];
+    var addedByKey = {};
+    (state.addedSquads || []).forEach(function(r) {
+      if (r.section1Row == null) return;
+      addedByKey[r.runtimeKey + ':' + r.edatId] = r;
+      var over = rom.squadOverrides && rom.squadOverrides[r.runtimeKey + ':' + r.edatId];
+      var donorHex = records[r.edatId] || '';
+      var leader = over ? over[0] : parseInt(donorHex.slice(0, 2) || '0', 16);
+      if (!leaderClassHasMapSprite(rom, leader)) {
+        issues.push('key ' + r.runtimeKey + ' added squad (source ' + r.sourceId + ', edat ' + r.edatId + '): leader ' +
+          classLabel(leader) + ' has no map-unit sprite; deploying it hangs LOADING in a runaway DMA. Pick a leader class with a map sprite.');
+      }
+    });
+    Object.keys(rom.squadOverrides || {}).forEach(function(k) {
+      if (addedByKey[k]) return;
+      var over = rom.squadOverrides[k];
+      if (!over || !over.length) return;
+      var edatId = Number(k.split(':')[1]);
+      var donorHex = records[edatId] || '';
+      var originalLeader = parseInt(donorHex.slice(0, 2) || '0', 16);
+      if (over[0] !== originalLeader && !leaderClassHasMapSprite(rom, over[0])) {
+        issues.push('squad override ' + k + ': new leader ' + classLabel(over[0]) +
+          ' has no map-unit sprite; deploying it hangs LOADING in a runaway DMA. Keep the original leader or pick a class with a map sprite.');
+      }
+    });
+    return issues;
+  }
+
   function exportScenarioArchives(rom) {
     var state = ensureState(rom);
     var stubs = anyProjectStub(rom);
@@ -2829,6 +2892,10 @@ window.OB64 = window.OB64 || {};
       if (collisions.length) {
         blocked.push('Added-squad donor content collisions must be fixed before export: ' + collisions.join(' | '));
       }
+    }
+    var spriteless = spritelessLeaderIssues(rom);
+    if (spriteless.length) {
+      blocked.push('Squad leaders without a map-unit sprite must be fixed before export: ' + spriteless.join(' | '));
     }
     if (blocked.length) return { touched: [], blocked: blocked };
 
@@ -2905,5 +2972,7 @@ window.OB64 = window.OB64 || {};
     patchRegions: publicRelocationRegions,
     iconProvider: iconProvider,
     keyModified: keyModified,
+    leaderClassHasMapSprite: leaderClassHasMapSprite,
+    spritelessLeaderIssues: spritelessLeaderIssues,
   };
 })(window.OB64);
