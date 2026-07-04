@@ -102,6 +102,14 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario h2{margin:0;color:var(--ob-gold-bright);font-size:22px;line-height:1.1}',
       '#panel-scenario .sc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
       '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label{height:32px;display:inline-flex;align-items:center;border-radius:5px;font-size:12px;font-weight:700}',
+      // Parchment/stone button theme (mirrors .header-buttons in style.css) for every scenario
+      // control that previously fell through to browser-default white.
+      '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label,#panel-scenario .sc-inline-btn{font-family:var(--ob-display);letter-spacing:.6px;text-transform:uppercase;padding:0 12px;color:var(--ob-ink);background:linear-gradient(180deg,var(--ob-parchment) 0%,var(--ob-parchment-2) 55%,var(--ob-parchment-3) 100%);border:1px solid var(--ob-wood-darkest);cursor:pointer;text-shadow:0 1px 0 rgba(255,240,200,.45);box-shadow:inset 0 1px 0 rgba(255,245,210,.65),inset 0 -2px 0 rgba(122,81,32,.45),0 2px 3px rgba(0,0,0,.35);transition:filter .12s,transform .04s}',
+      '#panel-scenario .sc-inline-btn{height:28px;border-radius:5px;font-size:11px;font-weight:800;display:inline-flex;align-items:center}',
+      '#panel-scenario .sc-actions button:hover,#panel-scenario .sc-actions label:hover,#panel-scenario .sc-inline-btn:hover{filter:brightness(1.08)}',
+      '#panel-scenario .sc-actions button:active,#panel-scenario .sc-actions label:active,#panel-scenario .sc-inline-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 3px rgba(80,50,20,.55),0 1px 2px rgba(0,0,0,.35)}',
+      '#panel-scenario .sc-danger{color:var(--ob-wax-red);border-color:var(--ob-wax-red);background:linear-gradient(180deg,var(--ob-parchment-2) 0%,var(--ob-parchment-3) 100%)}',
+      '#panel-scenario .sc-danger:hover{filter:brightness(1.05);background:rgba(152,32,24,.12)}',
       '#panel-scenario .sc-actions input[type=text]{height:32px;width:210px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
       '#panel-scenario .sc-gate{font-size:12px;color:var(--ob-ink-soft);min-height:18px}',
       '#panel-scenario .sc-layout{display:grid;grid-template-columns:280px minmax(460px,1fr) 500px;gap:12px;align-items:start}',
@@ -192,6 +200,16 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-ok{border:1px solid #2f8f4e;background:rgba(47,143,78,.10);color:#185c34;border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35;margin-top:8px}',
       '#panel-scenario .sc-table{width:100%;font-size:12px}',
       '#panel-scenario .sc-table th,#panel-scenario .sc-table td{padding:4px 5px}',
+      // Squad roster under the map: one row per Section 1 squad, click-to-select.
+      '#panel-scenario .sc-roster{border-top:1px solid var(--sc-line);margin-top:8px;padding-top:8px}',
+      '#panel-scenario .sc-roster-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}',
+      '#panel-scenario .sc-roster-list{display:grid;gap:4px;max-height:300px;overflow:auto}',
+      '#panel-scenario .sc-roster-row{display:grid;grid-template-columns:34px minmax(120px,1fr) minmax(140px,1.4fr) auto auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:4px 8px;font-size:12px;cursor:pointer;text-align:left}',
+      '#panel-scenario .sc-roster-row:hover{background:rgba(104,74,36,.14)}',
+      '#panel-scenario .sc-roster-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
+      '#panel-scenario .sc-roster-row img{width:28px;height:28px;object-fit:contain;image-rendering:pixelated;border-radius:50%;background:#1d1a16}',
+      '#panel-scenario .sc-roster-row .sc-sub{margin-top:0}',
+      '#panel-scenario .sc-roster-row .sc-chips{display:flex;gap:4px;justify-content:flex-end}',
       '@media (max-width:1180px){#panel-scenario .sc-layout{grid-template-columns:1fr}#panel-scenario .sc-list{min-height:240px;max-height:320px}#panel-scenario .sc-detail{min-height:360px}#panel-scenario .sc-map-scroll{height:520px}}'
     ].join('');
     var style = document.createElement('style');
@@ -676,7 +694,7 @@ window.OB64 = window.OB64 || {};
         '<div class="sc-titlebar">' +
           '<div><h2>Scenario</h2><div class="sc-gate" id="sc-gate">' + esc(ui.gateText) + '</div></div>' +
           '<div class="sc-actions">' +
-            '<button type="button" id="sc-run-gate" class="btn-secondary">Run Codec Gate</button>' +
+            '<button type="button" id="sc-run-gate" class="btn-secondary" title="Self-test: rebuilds all 63 vanilla mission archives through the editor codec and confirms every one is byte-identical. Does not change your ROM or edits.">Validate Missions</button>' +
             '<label class="btn-file btn-secondary" for="sc-project-file">Load Project</label>' +
             '<input id="sc-project-file" type="file" accept=".json,application/json" style="display:none">' +
             '<button type="button" id="sc-save-project" class="btn-secondary">Save Project</button>' +
@@ -738,7 +756,8 @@ window.OB64 = window.OB64 || {};
     var gate = panel.querySelector('#sc-run-gate');
     if (gate) gate.onclick = function() {
       var result = OB64.scenarioCodec.roundTripAll(OB64.SCENARIO_ESET_DATA);
-      ui.gateText = 'Codec gate: ' + result.summary.passed + '/' + result.summary.files + ' byte-identical, errors=' + result.summary.errors;
+      ui.gateText = 'Mission validation: ' + result.summary.passed + '/' + result.summary.files + ' vanilla missions rebuild byte-identical, errors=' + result.summary.errors +
+        (result.summary.errors === 0 && result.summary.passed === result.summary.files ? ' - mission editing is healthy.' : ' - REPORT THIS: the codec disagrees with this ROM.');
       renderScenarioTab(panel);
     };
     var save = panel.querySelector('#sc-save-project');
@@ -848,7 +867,8 @@ window.OB64 = window.OB64 || {};
         layerToggleHtml('sites', 'Sites') +
         layerToggleHtml('routes', 'Routes') +
         layerToggleHtml('triggers', 'Triggers') +
-      '</div>';
+      '</div>' +
+      '<div class="sc-roster" id="sc-roster"></div>';
     var view = el.querySelector('#sc-view-mode');
     if (view) {
       view.value = ui.viewMode;
@@ -904,6 +924,7 @@ window.OB64 = window.OB64 || {};
     buildLayers(rom, key, cal, model, projection, ui.zoom).forEach(function(layer) {
       if (ui.layers[layer.id]) layer.render(inner);
     });
+    renderSquadRoster(el.querySelector('#sc-roster'), rom, key, model);
     // Clicking empty map (not a marker/shape) returns the sidebar to the scenario overview.
     inner.addEventListener('click', function(ev) {
       if (mapTool) return; // a draw/pick/place tool owns the map right now
@@ -987,7 +1008,11 @@ window.OB64 = window.OB64 || {};
     ((cal && cal.points) || []).forEach(function(p) { byRow[p.section1Row] = p; });
     var out = [];
     ((model && model.section1) || []).forEach(function(row, i) {
-      out.push(byRow[i] || syntheticPoint(rom, key, i, row));
+      // Calibration points are keyed by the VANILLA row index; after a row deletion the
+      // indexes shift, so only trust a point that still matches the live row's identity.
+      var p = byRow[i];
+      if (p && (p.sourceId !== row.sourceId || p.edat !== row.edatOneBased - 1)) p = null;
+      out.push(p || syntheticPoint(rom, key, i, row));
     });
     return out;
   }
@@ -1048,6 +1073,92 @@ window.OB64 = window.OB64 || {};
       wireMarkerDrag(btn, rom, key, point, projection, zoom);
       inner.appendChild(btn);
     });
+  }
+
+  // Effective 35-byte comp record for a row: live squad override first, else the vanilla
+  // record from the scenario squad data. Null when neither is known.
+  function effectiveRecordFor(rom, key, point) {
+    var over = rom.squadOverrides && rom.squadOverrides[key + ':' + point.edat];
+    if (over && over.length) return over;
+    var scn = squadScenario(key);
+    var sq = scn && (scn.squads || []).filter(function(s) { return s.e === point.edat; })[0];
+    if (sq && sq.rec) return hexRecordBytes(sq.rec);
+    return null;
+  }
+
+  // Squad roster under the map: every Section 1 row with leader, comp size, behavior, and
+  // Select/Delete actions. Clicking a row selects the squad exactly like its map marker.
+  function renderSquadRoster(host, rom, key, model) {
+    if (!host || !model) return;
+    var points = pointsForAllRows(rom, key);
+    var html = '<div class="sc-roster-head"><span class="sc-label" style="margin:0">Squads in this scenario (' + points.length + ')</span></div>' +
+      '<div class="sc-roster-list">';
+    points.forEach(function(point) {
+      var row = model.section1[point.section1Row];
+      if (!row) return;
+      var runtimeRow = rowRuntime(rom, key, point.section1Row);
+      var dormant = runtimeRow ? runtimeRow.dormant : !!point.dormant;
+      var rec = effectiveRecordFor(rom, key, point);
+      var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown leader';
+      var units = rec ? unitCountFromRecord(rec) : null;
+      var icon = liveLeaderIcon(rom, key, point);
+      var behavior = describeBehavior(rom, key, model, row);
+      html += '<div class="sc-roster-row' + (ui.selectedPoint === point.section1Row ? ' on' : '') + '" data-row="' + point.section1Row + '" role="button" tabindex="0">' +
+        (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span></span>') +
+        '<span><strong>Source ' + esc(row.sourceId) + ' / EDAT ' + esc(point.edat) + '</strong>' +
+        '<span class="sc-sub" style="display:block">' + esc(leader) + (units != null ? ' - ' + units + ' unit' + (units === 1 ? '' : 's') : '') + '</span></span>' +
+        '<span class="sc-sub">' + esc(behavior || '') + '</span>' +
+        '<span class="sc-chips">' +
+        (point.added ? '<span class="sc-chip">Added</span>' : '') +
+        (dormant ? '<span class="sc-chip">Dormant</span>' : '') +
+        '</span>' +
+        '<button type="button" class="sc-inline-btn sc-danger sc-roster-del" data-row="' + point.section1Row + '" title="Remove this squad from the mission">Delete</button>' +
+        '</div>';
+    });
+    if (!points.length) html += '<div class="sc-node">No squads in this scenario.</div>';
+    html += '</div>';
+    host.innerHTML = html;
+    host.querySelectorAll('.sc-roster-row').forEach(function(rowEl) {
+      rowEl.onclick = function(ev) {
+        if (ev.target.classList && ev.target.classList.contains('sc-roster-del')) return;
+        ui.selectedPoint = parseInt(this.dataset.row, 10);
+        ui.selectedSite = null;
+        ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+    });
+    host.querySelectorAll('.sc-roster-del').forEach(function(btn) {
+      btn.onclick = function(ev) {
+        ev.stopPropagation();
+        deleteSquadRow(rom, key, parseInt(this.dataset.row, 10));
+      };
+    });
+  }
+
+  // Delete ANY Section 1 squad row. Added squads route through deleteAddedSquad (which also
+  // retires their override + donor bookkeeping); vanilla rows splice out of the mission ESET
+  // (the global enemydat record is untouched - the squad just never deploys here).
+  function deleteSquadRow(rom, key, rowIndex) {
+    if (isAddedRow(rom, key, rowIndex)) { deleteAddedSquad(rom, key, rowIndex); return; }
+    var state = ensureState(rom);
+    var model = state.models[key];
+    var row = model && model.section1[rowIndex];
+    if (!row) return;
+    if (!window.confirm('Remove squad source ' + row.sourceId + ' / EDAT ' + (row.edatOneBased - 1) +
+      ' from this mission?\n\nThe squad will not deploy here anymore. Its choreography nodes stay ' +
+      'in the mission (harmless), and the global enemy record is untouched.')) return;
+    model.section1.splice(rowIndex, 1);
+    state.addedSquads.forEach(function(r) {
+      if (r.runtimeKey === key && r.section1Row != null && r.section1Row > rowIndex) r.section1Row--;
+    });
+    syncStructuralOffsets(model);
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    state.modifiedKeys[key] = true;
+    changed();
+    if (ui.selectedPoint === rowIndex) ui.selectedPoint = null;
+    else if (ui.selectedPoint != null && ui.selectedPoint > rowIndex) ui.selectedPoint--;
+    ui.gateText = 'Squad removed from this mission (source ' + row.sourceId + ').';
+    renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
   function wireMarkerDrag(btn, rom, key, point, projection, zoom) {
@@ -1677,6 +1788,19 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
     }
     html += '</div>';
+    // Delete: safe only when nothing references the extraId (ids are stored in the record, so
+    // deletion does not renumber survivors). Referencing nodes must drop/replace it first.
+    var refNodes = model.section2.filter(function(n) {
+      return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId) || n.section3Ref === extraId;
+    }).map(function(n) { return n.nodeId; });
+    html += '<div class="sc-section">';
+    if (refNodes.length) {
+      html += '<div class="sc-sub">Cannot delete: node' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
+        ' still reference' + (refNodes.length > 1 ? '' : 's') + ' this trigger. Clear those gates first (edit the squad behavior or the node bytes).</div>';
+    } else {
+      html += '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete">Delete this trigger</button>';
+    }
+    html += '</div>';
     el.innerHTML = html;
     wireBackButton(el);
 
@@ -1708,6 +1832,18 @@ window.OB64 = window.OB64 || {};
         commitTrig();
       };
     });
+    var del = el.querySelector('#sc-trig-delete');
+    if (del) del.onclick = function() {
+      if (!window.confirm('Delete trigger E' + extraId + '?')) return;
+      var idx = model.section3.indexOf(extra);
+      if (idx < 0) return;
+      model.section3.splice(idx, 1);
+      syncStructuralOffsets(model);
+      OB64.scenarioCodec.refreshDecodedRows(model);
+      ui.selectedTrigger = null;
+      ui.gateText = 'Trigger E' + extraId + ' deleted.';
+      commitTrig();
+    };
   }
 
   function renderScenarioOverview(el, rom, key, model, cal) {
@@ -1728,7 +1864,7 @@ window.OB64 = window.OB64 || {};
       meter(units != null ? units + '/100' : 'n/a', 'units at load') +
     '</div>';
     if (fit && !fit.fits) {
-      html += '<div class="sc-warning">This ESET no longer fits its fixed ROM slot (' + fit.size + 'B compressed vs ' + fit.slot + 'B). Remove or shrink content before export; the archive grow/relocate path is not installed yet.</div>';
+      html += '<div class="sc-ok">This mission has outgrown its original ROM slot (' + fit.size + 'B compressed vs ' + fit.slot + 'B). Export will relocate it to free ROM-tail space automatically (single fetch-window missions); if this mission does not qualify, export reports the exact limit.</div>';
     }
     if (units != null && units > 100) {
       html += '<div class="sc-warning">Predicted deployed units (' + units + ') exceed the 100-record table - reduce squad sizes or squad count.</div>';
@@ -1957,7 +2093,10 @@ window.OB64 = window.OB64 || {};
         ' (verified unreferenced; comp applies via the per-scenario override at record-build time).</div>' +
         '<div class="sc-ok">Exports to ROM: the row splices into this mission\'s ESET and the comp rides the ' +
         'squad-override blob - both cold-boot proven 2026-07-03.</div>' +
-        '<button type="button" class="sc-inline-btn" id="sc-delete-added">Delete this added squad</button></div>';
+        '<button type="button" class="sc-inline-btn sc-danger" id="sc-delete-added">Delete this added squad</button></div>';
+    } else {
+      html += '<div class="sc-section"><button type="button" class="sc-inline-btn sc-danger" id="sc-delete-squad" ' +
+        'title="Remove this squad from the mission (the global enemy record is untouched)">Remove squad from mission</button></div>';
     }
     html += validation.errors.length
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
@@ -2037,6 +2176,8 @@ window.OB64 = window.OB64 || {};
     wireBackButton(el);
     var del = el.querySelector('#sc-delete-added');
     if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
+    var delVanilla = el.querySelector('#sc-delete-squad');
+    if (delVanilla) delVanilla.onclick = function() { deleteSquadRow(rom, key, rowIndex); };
     // Embed the full Squads comp editor in the sidebar (override toggle, formation grid,
     // class pickers, drag cells) - renders live against the same override state.
     var compHost = el.querySelector('#sc-comp-host');
