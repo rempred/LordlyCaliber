@@ -41,6 +41,43 @@
   var ENTRY_ORIGINAL_OFF = 1;
   var ENTRY_REPLACEMENT_OFF = 36;
 
+  // ---- cache-coherency hardening (2026-06-30) ----
+  // OB64's own resident resource loader (RAM 0x800761E4-0x80076324, ROM
+  // 0x000065E4) invalidates I-cache then D-cache for an executable
+  // destination range, via these two resident leaf helpers, before its own
+  // PI DMA. Proven by live register trace (a0=start vaddr, a1=length bytes)
+  // in wiki/overlay-dma-source-map/20260628-223030-requester-cache/
+  // cache-coherency-audit.json and confirmed by static disassembly: both
+  // helpers are pure (a0,a1) functions that clobber only $at,$t0-$t3, never
+  // write back a0/a1, and have no $gp/stack dependency. Calling them here
+  // mirrors a real, shipped, hardware-exercised pattern rather than
+  // reimplementing CACHE-instruction loops from scratch.
+  var ICACHE_INVALIDATE_RAM = 0x800900C0;
+  var DCACHE_INVALIDATE_RAM = 0x80090010;
+  // The tiny trampoline cave (BOOT_ROM/BOOT_RAM, ~108B hard ceiling) has no
+  // room left for the extra invalidate-call instructions, so the DMA-trigger
+  // logic plus the new cache-invalidate calls move into the separately
+  // documented/smoke-tested "preferred full-body cave"
+  // (docs/runtime-override-rom-plan.md "Stub Placement"), re-verified
+  // 2026-06-30 as 800 bytes of clean 0x00 padding. The tiny cave becomes a
+  // bare sentinel-check dispatch that `j`s (not `jal`s, so $ra survives for
+  // the module's own caller) into this continuation on first load only.
+  // Shared spacious-cave allocation (z64 0x03054C..0x03086C, 800B verified
+  // clean 2026-06-30), divided into 0xC0-byte slots so Squads, High Attack,
+  // and Chaos Frame can each add their cache-invalidate continuation without
+  // colliding. The Rev 0/editor-facing build claims exactly THREE slots:
+  //   slot 0 (this file, Squads):       z64 0x03054C / RAM 0x800A014C
+  //   slot 1 (High Attack main):        z64 0x03060C / RAM 0x800A020C
+  //   slot 3 (Chaos Frame):             z64 0x03078C / RAM 0x800A038C
+  // Slot 2 (z64 0x0306CC / RAM 0x800A02CC) is reserved address space for
+  // High Attack's slot0-completion bootstrap, which is a Rev 1-only path
+  // (SLOT0_COMPLETION_GATE_ENABLED); the Rev 0/editor build never writes or
+  // validates that slot. See tools/build_high_attack_stream_shift_rom.py and
+  // tools/build_cf_army_counter_modregion_rom.py for the other slots.
+  var CACHE_CONT_Z64 = 0x03054C;
+  var CACHE_CONT_RAM = 0x800A014C;
+  var CACHE_CONT_BYTES = 0xC0; // reserved slot; real usage is ~108B
+
   function patchLayout(romOrLayout) {
     var layout = romOrLayout && romOrLayout.layout ? romOrLayout.layout : romOrLayout;
     if (!layout && OB64.currentRomLayout) layout = OB64.currentRomLayout;
@@ -52,7 +89,9 @@
       BOOT_RAM: BOOT_RAM,
       TAIL_Z64: TAIL_Z64,
       MOD_BASE: MOD_BASE,
-      SENTINEL: SENTINEL
+      SENTINEL: SENTINEL,
+      CACHE_CONT_Z64: CACHE_CONT_Z64,
+      CACHE_CONT_RAM: CACHE_CONT_RAM
     };
     for (var k in squadPatch) out[k] = squadPatch[k];
     out.PI_CART = (0x10000000 + out.TAIL_Z64) >>> 0;
@@ -85,7 +124,9 @@
     bne:  function (rs, rt, off) { return ((0x05 << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(off)) >>> 0; },
     blez: function (rs, off) { return ((0x06 << 26) | (r(rs) << 21) | i16(off)) >>> 0; },
     jr:   function (rs) { return ((r(rs) << 21) | 0x08) >>> 0; },
-    jal:  function (tgt) { return ((0x03 << 26) | ((tgt >>> 2) & 0x03FFFFFF)) >>> 0; }
+    j:    function (tgt) { return ((0x02 << 26) | ((tgt >>> 2) & 0x03FFFFFF)) >>> 0; },
+    jal:  function (tgt) { return ((0x03 << 26) | ((tgt >>> 2) & 0x03FFFFFF)) >>> 0; },
+    addu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x21) >>> 0; }
   };
 
   // ---- two-pass label assembler ----
@@ -167,7 +208,14 @@
     return assemble((layout.MOD_BASE + RESOLVER_OFF) >>> 0, lines);
   }
 
-  // ---- bootstrap (CRC cave): uncached sentinel -> PI-DMA -> jump to resolver ----
+  // ---- bootstrap dispatch (CRC cave, <=108B): sentinel check only ----
+  // On first load, `j`s (not `jal`s - $ra must survive for the resolver's
+  // eventual return through the record-builder hook) into the cache-invalidate
+  // + PI-DMA continuation built by buildCacheInvalidateContinuation(), which
+  // lives in the spacious cave because this tiny cave has no room left for
+  // the extra invalidate-call instructions. Already-loaded re-entries (the
+  // common case - this hook fires per squad build) take the unchanged fast
+  // path straight to the resolver.
   function buildBootstrap(blobLen, layout) {
     layout = layout || patchLayout();
     if ((blobLen - 1) > 0xFFFF) throw new Error('blob too large for single-imm PI length');
@@ -178,9 +226,36 @@
       ['ori', 't2', 't2', layout.SENTINEL & 0xFFFF],
       ['beq', 't1', 't2', 'loaded'],
       ['nop'],
-      ['lui', 't0', 0xA460],                  // PI regs base
+      ['raw', M.j(layout.CACHE_CONT_RAM)],
+      ['nop'],
+      ['label', 'loaded'],
+      ['lui', 't0', (layout.MOD_BASE >>> 16) & 0xFFFF],
+      ['ori', 't0', 't0', RESOLVER_OFF],
+      ['jr', 't0'],
+      ['nop']
+    ];
+    var words = assemble(layout.BOOT_RAM, lines);
+    if (words.length * 4 > 108) throw new Error('bootstrap exceeds the 108B cave');
+    return words;
+  }
+
+  // ---- cache-invalidate + PI-DMA continuation (spacious cave) ----
+  function buildCacheInvalidateContinuation(blobLen, layout) {
+    layout = layout || patchLayout();
+    if ((blobLen - 1) > 0xFFFF) throw new Error('blob too large for single-imm PI length');
+    var lines = [
+      ['addu', 't4', 'ra', 'zero'],            // stash real $ra (helpers clobber $at,t0-t3 only)
+      ['lui', 'a0', (layout.MOD_BASE >>> 16) & 0xFFFF],
+      ['ori', 'a1', 'zero', blobLen & 0xFFFF],
+      ['raw', M.jal(ICACHE_INVALIDATE_RAM)],
+      ['nop'],
+      ['raw', M.jal(DCACHE_INVALIDATE_RAM)],   // a0/a1 survive: neither helper writes them back
+      ['nop'],
+      ['addu', 'ra', 't4', 'zero'],            // restore real $ra
+
+      ['lui', 't0', 0xA460],                   // PI regs base
       ['label', 'w1'],
-      ['lw', 't1', 0x10, 't0'],               // PI_STATUS
+      ['lw', 't1', 0x10, 't0'],                // PI_STATUS
       ['andi', 't1', 't1', 3],
       ['bne', 't1', 'zero', 'w1'],
       ['nop'],
@@ -195,14 +270,13 @@
       ['andi', 't1', 't1', 3],
       ['bne', 't1', 'zero', 'w2'],
       ['nop'],
-      ['label', 'loaded'],
       ['lui', 't0', (layout.MOD_BASE >>> 16) & 0xFFFF],
       ['ori', 't0', 't0', RESOLVER_OFF],
       ['jr', 't0'],
       ['nop']
     ];
-    var words = assemble(layout.BOOT_RAM, lines);
-    if (words.length * 4 > 108) throw new Error('bootstrap exceeds the 108B cave');
+    var words = assemble(layout.CACHE_CONT_RAM, lines);
+    if (words.length * 4 > CACHE_CONT_BYTES) throw new Error('cache-invalidate continuation exceeds its reserved cave slot');
     return words;
   }
 
@@ -256,13 +330,15 @@
     var layout = patchLayout(arguments.length > 1 ? arguments[1] : null);
     var blob = buildBlob(overrides, layout);
     var boot = buildBootstrap(blob.length, layout);
+    var cont = buildCacheInvalidateContinuation(blob.length, layout);
     var tramp = new Uint8Array(8);
     tramp.set(wordsToBytes([M.jal(layout.BOOT_RAM), M.nop()]), 0);
     return {
       crcWindow: true,
       writes: [
         { offset: layout.HOOK_ROM, label: 'record-builder trampoline', bytes: tramp },
-        { offset: layout.BOOT_ROM, label: 'bootstrap (DMA loader)', bytes: wordsToBytes(boot) },
+        { offset: layout.BOOT_ROM, label: 'bootstrap (sentinel dispatch)', bytes: wordsToBytes(boot) },
+        { offset: layout.CACHE_CONT_Z64, label: 'cache-invalidate + DMA continuation', bytes: wordsToBytes(cont) },
         { offset: layout.TAIL_Z64, label: 'override blob (' + overrides.length + ' entries)', bytes: blob }
       ]
     };
@@ -277,6 +353,7 @@
     z64.set(wordsToBytes([DISP_SLTIU, DISP_XORI]), layout.HOOK_ROM);
     var i;
     for (i = 0; i < 108; i++) z64[layout.BOOT_ROM + i] = 0;
+    for (i = 0; i < CACHE_CONT_BYTES; i++) z64[layout.CACHE_CONT_Z64 + i] = 0;
     for (i = 0; i < 0x10000; i++) z64[layout.TAIL_Z64 + i] = 0;
   }
 
@@ -285,8 +362,10 @@
     return [
       { kind: 'rom', start: layout.HOOK_ROM, size: 8, label: 'record-builder trampoline' },
       { kind: 'rom', start: layout.BOOT_ROM, size: 108, label: 'bootstrap cave' },
+      { kind: 'rom', start: layout.CACHE_CONT_Z64, size: CACHE_CONT_BYTES, label: 'cache-invalidate continuation cave' },
       { kind: 'rom', start: layout.TAIL_Z64, size: 0x10000, label: 'squad override tail lane' },
       { kind: 'ram', start: layout.BOOT_RAM, size: 108, label: 'bootstrap runtime' },
+      { kind: 'ram', start: layout.CACHE_CONT_RAM, size: CACHE_CONT_BYTES, label: 'cache-invalidate continuation runtime' },
       { kind: 'ram', start: layout.MOD_BASE, size: 0x10000, label: 'squad override runtime lane' },
     ];
   }
