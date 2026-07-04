@@ -1,5 +1,94 @@
 # Draft Release Notes
 
+## v0.3.0 Candidate
+
+### Highlights
+
+- Added the **Scenario tab**: a map-first per-mission editor for all 64 runtime
+  scenario keys. Missions render as maps with draggable enemy squad markers
+  (leader portraits + allegiance rings); clicking a squad opens the full
+  composition editor in the sidebar. The standalone Squads tab is retired —
+  its editor now lives inside Scenario.
+- **Add Squad**: place entirely new enemy squads on a mission. New squads
+  splice a real placement row into the mission's ESET archive and carry their
+  composition through the scenario-gated runtime override lane; the full path
+  is cold-boot proven in Project64.
+- **Routes and behaviors**: drag-draw movement routes with editable waypoints;
+  a live behavior builder edits triggers and gates (player-at-site, site
+  flags, squads-remaining thresholds, AND/OR compound gates) and applies
+  changes as you make them, re-using its own Section 2/3 slots so exploring
+  templates never erodes the mission's 16-node/16-extra caps.
+- **Mission archive grow/relocate lane**: when an edited mission no longer
+  fits its original compressed slot, export automatically copies it to free
+  ROM-tail space behind a small DMA redirect installed in the game's resource
+  loader. Currently supported for single-fetch-window missions (~32 of 63);
+  the UI reports exact fit/relocation status per mission. Relocation exports
+  recalculate the CRC, and the UI explains the resulting new Project64 save
+  folder with a recovery recipe.
+- **Patch v7**: JSON patches now embed the full Scenario project payload
+  (modified mission ESETs, added squads, site intents) alongside all previous
+  lanes, so one patch file reproduces a complete scenario mod on a clean ROM.
+  v6 and earlier patches still load.
+- **Crash guard — squad leaders need map sprites**: 85 of 165 classes
+  (monsters, undead, Ninja, most special/story classes) have no map-unit
+  sprite, and the game hangs during mission LOADING in a runaway DMA if one
+  leads a deployed squad (the sprite lookup's "none" sentinel is consumed
+  unchecked as a resource index — a vanilla engine defect). Export now blocks
+  added squads and leader-changing overrides whose leader class has no sprite,
+  naming the squad and the class. Squad members are unrestricted.
+- **Cache-coherency hardening** for the squad-override runtime module: the
+  bootstrap now invalidates the CPU instruction/data caches over the blob
+  region before use, calling the game's own resident cache helpers — the same
+  pattern the game's loader uses for its own DMAs. Verified end-to-end by
+  cold-boot regression.
+- Scenario work saves standalone as a JSON project file, independent of
+  patches.
+
+### Scenario Editing Details
+
+- Per-mission maps use calibrated per-key registrations with a schematic
+  fallback (bounds, sites, markers); full-art backgrounds are a local
+  calibration workflow and are not bundled.
+- Site rings and trigger targets resolve to real town names from the static
+  scene tables; kind-12 site triggers edit through a site dropdown.
+- Town-allegiance intents (neutral/allied) persist in projects and patches but
+  do not export to ROM yet; enemy-held-via-garrison placement exports fully.
+- Added-squad donor records come from a verified census of enemy-data records
+  referenced by no mission (used read-only as templates; the override lane
+  never overwrites them in ROM). Export validates donor content collisions.
+- Per-mission add-squad budget follows the game's 50 deploy slots and the
+  archive fit / relocation status; the UI meters both.
+
+### Safety And Validation
+
+- A no-edit export remains SHA-256 byte-identical to the loaded ROM (verified
+  after every lane added in this release).
+- The relocation lane declares its ROM regions (hook, cave, redirect table,
+  tail windows) through the same patch-region ownership checks the Tools tab
+  uses, so overlapping feature combinations are rejected on export.
+- The mission fetch-window model was corrected from a fixed offset to the
+  live-traced 0x200-byte grid; relocation is guarded to missions whose
+  original fetch is a single window and whose rebuilt archive still fits it,
+  with precise per-mission error messages otherwise.
+- The spriteless-leader gate runs before any squad-override bytes are staged,
+  in both the Squads and Scenario export paths.
+- New headless checks:
+  - `node tools/test_editor_leader_guard.js` (parent workspace)
+  - `node tools/test_editor_noop_export.js` (parent workspace)
+
+### Known Caveats
+
+- Squad leaders must use classes with map-unit sprites (export enforces this);
+  giving monsters and special classes map sprites is a research target.
+- Multi-fetch-window missions still enforce their original archive slot size.
+- Newly placed squads inherit the dormancy semantics of their placement row;
+  dormant/ambush authoring works but reads as advanced usage — wake timing is
+  driven by the game's trigger evaluation, not by the editor.
+- The Squads/High Attack/Chaos Frame cache-invalidate hardening shares a
+  partitioned code cave; the Squads slot is cold-boot regressed, while the
+  High Attack and Chaos Frame slots remain static-build-only pending their own
+  regression runs.
+
 ## v0.2.0 Candidate
 
 ### Highlights

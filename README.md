@@ -26,18 +26,28 @@ The public editor is intentionally clean and browser-only:
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
 - `tools-data.js` is generated from the research workspace's verified patch
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
-- `squadblob.js` builds the runtime squad-override hook/blob on export.
+- `squadblob.js` builds the runtime squad-override hook/blob on export, with
+  cache-invalidate hardening mirroring the game's own resource loader.
 - `squads-data.js` is generated from the research workspace's runtime scenario
   atlas and holds runtime-key-to-edat rows. Do not hand-edit.
-- `squads.js` renders the runtime-key Squads editor.
+- `squads.js` renders the squad composition editor (embedded in the Scenario
+  tab sidebar; the standalone Squads tab is retired).
+- `scenario.js` renders the map-first Scenario tab: placement, routes,
+  triggers, added squads, and the ESET export/relocation lane.
+- `scenario-eset-codec.js` parses and rebuilds the per-mission ESET archives
+  (validated round-trip against all 63 vanilla files).
+- `scenario-eset-data.js` and `scenario-map-calibration.js` are generated from
+  the research workspace (mission data, donor census, per-key map
+  registrations). Do not hand-edit.
 - `style.css` contains the full parchment-themed interface.
 
 Research-only scripts and emulator probes are kept outside this repository.
 Only concrete, tested findings are ported into LordlyCaliber.
 
 A browser-based mod editor for *Ogre Battle 64: Person of Lordly Caliber*
-(Quest, N64, 1999). Edit shops, classes, items, neutral encounters, and save
-files — then export a patched ROM.
+(Quest, N64, 1999). Edit shops, classes, items, neutral encounters, entire
+mission scenarios — enemy squads, placements, routes, triggers — and save
+files, then export a patched ROM.
 
 No installation, no build step. Open `index.html` in any modern browser, drop
 in your own copy of the US retail ROM, and start modding.
@@ -93,15 +103,29 @@ project download asset.
 - **Items** — change weapon/armor/spellbook stats, prices, and resistances for
   all 277 equipment entries.
   Item names and IDs use the game's 1-based item numbering.
-- **Squads** - edit enemy squad composition and formation per runtime scenario
-  key. The tab uses code-derived edat rows from the Project64 runtime atlas
-  (keys 1-64) and exports scenario-gated runtime overrides without changing
-  global `enemydat.bin`. Current export uses vanilla 35-byte squad replacement
-  records. The default UI enforces vanilla-style 5 formation slots and 2
-  follower class groups; an experimental raw-capacity checkbox can fill all
-  encoded anchors (`Leader + Bx3 + Cx3`) for mod testing, but over-cap squads
-  are not placement-safe by default.
-  Formation-grid cells show the matching class portrait when one is available.
+- **Scenario** — a map-first per-mission editor covering all 64 runtime
+  scenario keys. Each mission renders as a map (calibrated per-key art
+  registration with a schematic fallback) with draggable enemy squad markers
+  wearing their leader's portrait. Click a squad to edit its composition and
+  formation in the sidebar (the former Squads tab, embedded); drag to
+  reposition; drag-draw movement routes with editable waypoints; edit
+  triggers/gates (player-at-site, site flags, squads-remaining thresholds,
+  AND/OR compound gates) through a live behavior builder — changes apply as
+  you make them. **Add Squad** places entirely new enemy squads on a mission
+  using verified donor records plus the scenario-gated runtime override lane,
+  and exports end-to-end (cold-boot proven in Project64). Squad comps export
+  as runtime overrides without changing global `enemydat.bin`; the default UI
+  enforces vanilla-style formation limits, with the experimental raw-capacity
+  mode still available for mod testing.
+  Oversized mission edits take an automatic **grow/relocate lane**: when a
+  rebuilt mission archive no longer fits its original slot, export copies it
+  to free ROM-tail space behind a small DMA redirect (currently supported for
+  single-fetch-window missions, about half of them; the UI reports precise
+  fit/relocation status per mission). A safety gate blocks exports that would
+  hang the game: squad leaders must use a class with a map-unit sprite (85 of
+  165 classes — monsters, undead, and most special classes — have none, and
+  the game crashes during mission LOADING if one leads a deployed squad).
+  Scenario work can also be saved standalone as a JSON project file.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
@@ -134,15 +158,20 @@ project download asset.
   battery saves.
 - **Patches** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
-  the global encounter-roll multiplier, squad overrides, and Tools-tab feature
-  toggles) to a portable JSON patch file for sharing or reapplying to a fresh ROM.
+  the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
+  and Tools-tab feature toggles) to a portable JSON patch file for sharing or
+  reapplying to a fresh ROM.
   Squad patches store per-runtime-key 35-byte replacement records so a saved
   patch can reproduce the exported squad override blob.
-  Patch format v6 maps class-definition logical bytes 64-71 to the current
-  class name-framed header: size, sex/voice/body code, leadership, base HP,
-  HP growth, and raw header bytes.
+  Patch format v7 embeds the full Scenario project payload (modified mission
+  ESETs, added squads, and site intents), so one patch file reproduces a
+  complete scenario mod; v6 and earlier patches still load.
 - **Export** — writes a clean ROM in the same byte order that was loaded, with
-  the N64 CIC-6102 CRC re-calculated when needed.
+  the N64 CIC-6102 CRC re-calculated when needed. A no-edit export is
+  byte-identical to the input. When an export changes the CRC (scenario
+  relocation, squad overrides, some Tools features), Project64 keys a NEW save
+  folder for the ROM — the UI surfaces the recovery recipe so existing saves
+  don't silently "disappear".
 
 ## Current Limitations
 
@@ -152,16 +181,28 @@ project download asset.
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
   known budgets, but very large inventory changes can still fail export.
-- Squads use conservative vanilla validation by default: up to 5 formation
-  slots, where regular units cost 1 slot and large units cost 2 slots. The
-  experimental raw-capacity mode can encode all seven vanilla template anchors
-  (`Leader + Bx3 + Cx3`) and ignores large-unit spacing for mod testing, but
-  over-cap squads may not be supported by the game's organization, map
-  inspection, or battle-placement paths. A key 2 / EDAT 13 seven-unit test
-  applied correctly but hid units in map inspection and placed units off-grid
-  in battle; the misplaced units also could not be attacked.
+- Squad comps use conservative vanilla validation by default: up to 5
+  formation slots, where regular units cost 1 slot and large units cost 2
+  slots. The experimental raw-capacity mode can encode all seven vanilla
+  template anchors (`Leader + Bx3 + Cx3`) and ignores large-unit spacing for
+  mod testing, but over-cap squads may not be supported by the game's
+  organization, map inspection, or battle-placement paths. A key 2 / EDAT 13
+  seven-unit test applied correctly but hid units in map inspection and placed
+  units off-grid in battle; the misplaced units also could not be attacked.
   More than 2 follower class groups is not exported yet; supporting it requires
   a larger runtime record/resolver design.
+- Scenario squad leaders must use a class with a map-unit sprite; export blocks
+  the rest (a game engine limit, not an editor choice — a spriteless leader
+  hangs mission LOADING in a runaway DMA). Members are unrestricted.
+- Mission archive relocation currently supports single-fetch-window missions
+  (~32 of 63); multi-window missions still enforce the original slot-size cap.
+  Per-mission add-squad budget is also capped by the game's 50 deploy slots.
+- Neutral/allied town-allegiance intents are saved in projects/patches but do
+  not export to ROM yet (their static source table currently recompresses
+  larger than its slot); enemy-held-via-garrison exports fully.
+- Full-art mission map backgrounds are a local-development calibration and are
+  not bundled; the editor ships with the schematic map view (bounds, sites,
+  markers), which is fully functional for editing.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
   name-framed header, but their exact runtime consumers are not fully traced.
 - Raw story/NPC class records can be viewed and edited in Classes Card View, but
@@ -171,8 +212,8 @@ project download asset.
   hidden for battery saves (only partially persisted in the packed format).
 - Adding entirely new reserve characters is not enabled yet. The game has an
   additional active/reserve validation structure that is still being decoded.
-- Per-mission deployment editing, stronghold editing, map editing, audio editing,
-  and combat-buffer expansion are research targets, not shipped features.
+- Stronghold editing, world-map editing, audio editing, and combat-buffer
+  expansion are research targets, not shipped features.
 
 ## Usage
 
@@ -214,6 +255,12 @@ on the US retail ROM:
 - N64 CIC-6102 CRC re-calculation to keep patched ROMs bootable.
 - Per-class data cross-validated against the GameShark Class Hacking Guide
   and community wiki tables.
+- The Scenario tab rests on live Project64 tracing of the game's mission
+  loader: the per-mission ESET format (placement, routes, compound trigger
+  gates), the runtime squad-builder hook, the archive fetch/DMA-window model
+  behind the relocation lane, and the map projection used to register mission
+  maps — every export lane was proven by cold-booting patched ROMs, not just
+  by static byte checks.
 
 Built with vanilla JavaScript — no framework, no build step. Single bundled
 dependency: [fflate](https://github.com/101arrowz/fflate) for RetroArch RZIP
@@ -225,10 +272,14 @@ save-state decompression.
   promotion links as a fuller visual workflow.
 - **Stronghold editor** — modify the 316 stronghold records (location, owner,
   shop assignment).
-- **Per-mission enemy deployment** — once the deployment opcode stream
-  (currently runtime-instantiated) is fully decoded.
-- **Map tab** — visualize the 38-node world map with edit controls (currently
-  hidden behind a feature flag).
+- **Town allegiance export** — ship the neutral/allied intent lane once the
+  site table packaging fits its ROM slot.
+- **Multi-window mission relocation** — extend the grow/relocate lane to the
+  missions whose archives span multiple fetch windows, removing the remaining
+  per-mission size caps.
+- **Map-unit sprites for more leader classes** — investigate the game's
+  special-leader sprite table so monster-led squads can appear on the world
+  map instead of being blocked at export.
 - **Class promotion-tree visualizer** — interactive graph of all promotion
   paths derived from class def `reqClass` (B55).
 - **High-attack combat stability** — continue the ROM-side combat research for
