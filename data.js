@@ -7,16 +7,16 @@ window.OB64 = window.OB64 || {};
 // ============================================================
 // CLASS NAMES (164 entries, 0x01-0xA4)
 //
-// Authoritative source: docs/gameshark-reference.md (Cralex's community
-// Gameshark Class Hacking Guide). The previous 103-entry table was built
+// Authoritative source: Cralex's community GameShark Class Hacking Guide.
+// The previous 103-entry table was built
 // by reverse-reading the in-ROM display-name table at 0x65DF0 and missed
 // several non-displayable / variant slots (Centurion Female 0x23, Vampire
 // in coffin 0x2C, Zombie Female 0x2E, every story-character duplicate in
 // 0x5A-0xA4), producing a progressive positive shift from 0x27 upward
 // (Werewolf at 0x29 instead of 0x2A, Wyrm at 0x42 instead of 0x45, etc.).
 //
-// Rebuilt 2026-04-15; verified via in-game anchors Hicks 0x27 Hawkman,
-// Hariara 0x4E Golem, Leia 0x56 Blaze Knight.
+// Rebuilt from the GameShark guide and verified against in-game anchors:
+// Hicks 0x27 Hawkman, Hariara 0x4E Golem, Leia 0x56 Blaze Knight.
 // ============================================================
 OB64.CLASS_NAMES = {
   0x00: "None",
@@ -975,7 +975,7 @@ OB64.classTierName = function(id) {
 
 /* ============================================================================
    SAVE-GAME EDITOR constants
-   See docs/editor.md "Save tab" for the empirical RAM layout this maps to.
+   Empirical RAM layout, verified against live emulator memory and savestate diffs.
    ============================================================================ */
 
 OB64.SAVE = {
@@ -1026,8 +1026,8 @@ OB64.SAVE = {
                            // NOT +0x2B: that offset is WEAPON (confirmed via
                            // Frost state2↔state3 diff).
     EXP:           0x35,   // u8 experience toward next level (verified vs in-game)
-    // Stat offsets VERIFIED 2026-04-21 against in-game display in state2
-    // (Magnus, Frost, Eva). docs/character-struct.md had the three pairs
+    // Stat offsets verified against the in-game status display for several
+    // characters (Magnus, Frost, Eva). Earlier notes had the three pairs
     // swapped (STR↔VIT, INT↔MEN, AGI↔DEX). Real layout:
     STR:           0x1C,   // u16 BE
     VIT:           0x1E,   // u16 BE
@@ -1038,8 +1038,8 @@ OB64.SAVE = {
     // Equipment — u8 item id overrides; 0x00 = use the class default (class
     // def B34-41, which stores u16 per slot so items > 255 like Blue Sash /
     // Amulet / Spellbook are reachable only via class default).
-    // Confirmed 2026-04-21 via state2↔state3 diff on Frost + Stephanie.
-    // Slot names mirror docs/rom-layout.md:332-333 (B38-39 "shield/off-hand",
+    // Confirmed via savestate diffs across equipment changes (Frost + Stephanie).
+    // Slot names mirror the class-definition equipment block (B38-39 "shield/off-hand",
     // B40-41 "headgear/accessory") — off-hand holds shield/spellbook/accessory.
     WEAPON:        0x2B,   // u8 item id
     BODY:          0x2D,   // u8 item id
@@ -1057,8 +1057,8 @@ OB64.SAVE = {
   INVENTORY_ENTRY_SIZE: 4,
   INVENTORY_MAX_ENTRIES: 128,
 
-  // Army consumable + treasure inventory — phys 0x193C8D (found 2026-04-21 via
-  // state2→state3 diff after selling consumables and Ansate Cross).
+  // Army consumable + treasure inventory — phys 0x193C8D (located by diffing
+  // savestates taken before/after selling consumables and the Ansate Cross).
   // Format: flat list of 4-byte records, zero-terminated. Each record is
   // [u8 consumable_id, 0x00, u8 count, 0x00]. Consumable IDs index into the
   // 45-entry consumable master table (parsed by OB64.parseConsumables).
@@ -1118,8 +1118,8 @@ OB64.SAVE = {
     43: "Pedra of Virtue",    44: "Pedra of Bane",
   },
 
-  // Game-state bytes — offsets per docs/game-state.md (physical RAM offsets,
-  // NOT virtual KSEG0). Re-verify these if a file comes in with garbage.
+  // Game-state bytes — PHYSICAL RAM offsets (not virtual KSEG0 addresses).
+  // Re-verify these if a file comes in with garbage.
   GAME_STATE: {
     TIME_OF_DAY:      0x196A28,
     CHAPTER:          0x196A2A,
@@ -1131,8 +1131,8 @@ OB64.SAVE = {
     // Goth / war funds — u32 BE at 0x196A6C. This is the address the packed
     // save persists (codec group 0x196A58 offset 0x14, 31 bits) and the one
     // the in-game War Funds display reads (CF overlay work). Verified: a
-    // fresh chapter-1 save unpacks to exactly 1000 here. The 2026-04-21
-    // state-diff address 0x196C38 was wrong — it sits inside the per-item
+    // fresh chapter-1 save unpacks to exactly 1000 here. An earlier
+    // state-diff candidate, 0x196C38, was wrong — it sits inside the per-item
     // registry (codec group 0x196B00, 278 records) and only moved because
     // items were sold between the diffed states.
     GOTH:             0x196A6C,

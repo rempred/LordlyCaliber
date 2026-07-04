@@ -1262,9 +1262,9 @@ window.OB64 = window.OB64 || {};
       card.appendChild(thumb);
 
       // Per-shop item counter — warns when the shop exceeds the vanilla
-      // max (24). Confirmed 2026-04-19 that a 277-item shop crashes the
-      // shop menu on load, so this is a real gameplay limit, not just a
-      // display preference.
+      // max (24). A heavily over-cap shop (tested at 277 items) crashes the
+      // in-game shop menu on load, so this is a real gameplay limit, not
+      // just a display preference.
       var perShopCount = shop.items.length;
       var perShopCap = OB64.SHOP_MAX_ITEMS_PER_SHOP;
       var shopCounter = document.createElement('div');
@@ -3328,9 +3328,9 @@ window.OB64 = window.OB64 || {};
           var combatGrid = document.createElement('div');
           combatGrid.className = 'stats-grid';
           combatGrid.appendChild(tileNumeric(def, 'frontAtks', 'FrontAtks',
-            {title: 'B44 front row attack count (verified in-game 2026-04-17)'}));
+            {title: 'B44 front row attack count (verified in-game)'}));
           combatGrid.appendChild(tileNumeric(def, 'midAtks', 'MidAtks',
-            {title: 'B46 middle row attack count (verified in-game 2026-04-17)'}));
+            {title: 'B46 middle row attack count (verified in-game)'}));
           combatGrid.appendChild(tileNumeric(def, 'rearAtks', 'RearAtks',
             {title: 'B48 rear row attack count. Decoded via CSV cross-check (79/79 match) \u2014 previously mislabeled "atkType".'}));
           combatGrid.appendChild(tileNumeric(def, 'physAtk', 'PAtk', {title: 'B49'}));
@@ -3517,7 +3517,7 @@ window.OB64 = window.OB64 || {};
   // One card per scenario slice (skipping empty slices). Each card shows
   // 10 terrain slots with creature chips and inline drop lists. Drops
   // are class-keyed so edits propagate across every scenario using
-  // that creature. See docs/neutral-encounters.md for structure.
+  // that creature.
   // ============================================================
   function renderEncounters(panel) {
     panel.innerHTML = '';
@@ -4425,10 +4425,10 @@ window.OB64 = window.OB64 || {};
     rosterHeading.textContent = 'Roster \u2014 ' + saveState.characters.length + ' characters';
     panel.appendChild(rosterHeading);
 
-    // Add Character button commented out 2026-04-21 — seeded characters
-    // don't appear in-game even with +0x1A/+0x1B/alignment filled. There's
-    // another activation list or field we haven't located. Re-enable once
-    // the real validation mechanism is decoded.
+    // Add Character button intentionally disabled: seeded characters don't
+    // appear in-game even with +0x1A/+0x1B/alignment filled, so the game has
+    // another activation list or validation field this editor has not located.
+    // Re-enable once that mechanism is decoded.
     // var rosterActions = document.createElement('div');
     // rosterActions.className = 'save-inv-actions';
     // var addCharBtn = document.createElement('button');

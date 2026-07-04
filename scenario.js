@@ -12,8 +12,8 @@ window.OB64 = window.OB64 || {};
     selectedTrigger: null,
     search: '',
     // 'auto' = art on site-fitted registrations, schematic on provisional ones. Forcing art
-    // onto provisional maps draws sites/units with the rough bounds-envelope affine - visibly
-    // off the towns (Joe report 2026-07-03) - so art-by-default only where calibration earns it.
+    // onto a provisional map draws sites/units through the rough bounds-envelope affine,
+    // visibly off the towns - so art is the default only where calibration earns it.
     viewMode: 'auto',
     zoom: 0.45,
     advanced: false,
@@ -33,18 +33,18 @@ window.OB64 = window.OB64 || {};
   var RELOC_STUB_BYTES = 0x80;
   var RELOC_ENTRY_BYTES = 8;
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
-  // The old fixed 48 IMAGE px was ~14 screen px at fit zoom - trivially easy to miss a town
-  // and silently write near-town coordinate bytes instead of the selector (Joe, 2026-07-03).
+  // A fixed image-pixel radius shrinks with zoom-to-fit (~14 screen px), making it easy to
+  // miss a town and silently write near-town coordinate bytes instead of the site selector.
   var SNAP_SCREEN_PX = 30;
 
   function releaseMapTool() {
     setTimeout(function() { mapTool = null; }, 0);
   }
 
-  // Map-tool captures eat the POINTERDOWN, but the browser still synthesizes a CLICK from the
-  // same press - it lands on whatever marker sits under the cursor and switches the sidebar
-  // selection away from the squad being edited (Joe, 2026-07-04). Eat exactly one follow-up
-  // click in the capture phase; the timeout drops the guard if no click materializes.
+  // Map-tool captures consume the POINTERDOWN, but the browser still synthesizes a CLICK from
+  // the same press - it lands on whatever marker sits under the cursor and would switch the
+  // sidebar selection away from the squad being edited. Eat exactly one follow-up click in
+  // the capture phase; the timeout drops the guard if no click materializes.
   function eatNextMapClick(inner) {
     var eat = function(ev) {
       ev.preventDefault();
@@ -62,9 +62,9 @@ window.OB64 = window.OB64 || {};
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
-  // Behavior-builder form state, persisted across the full re-renders every commit triggers
-  // (Joe, 2026-07-03: applying / live re-gating visually wiped in-progress selections and the
-  // confirmation message, reading as "didn't save"). Reset when a different squad is selected.
+  // Behavior-builder form state, persisted across the full re-renders every commit triggers.
+  // Without it, applying or live re-gating wipes in-progress selections and the confirmation
+  // message, which reads as "didn't save". Reset when a different squad is selected.
   var builder = null;
 
   function builderFor(key, rowIndex) {
@@ -280,6 +280,25 @@ window.OB64 = window.OB64 || {};
     return rows.filter(function(row) { return row.section1Row === rowIndex; })[0] || null;
   }
 
+  // A squad deploys DORMANT when its start node is kind 2: the loader keeps such rows
+  // inactive at placement and the dispatcher wakes them through the node's gate. Computing
+  // this from the live model means ambush behaviors authored in the editor (including added
+  // squads) shade/badge exactly like vanilla ambushers; the static runtime flag is only a
+  // fallback for rows the model cannot resolve.
+  function rowIsDormant(rom, runtimeKey, model, rowIndex) {
+    var row = model && model.section1[rowIndex];
+    if (row) {
+      var start = row.bytes[6];
+      if (start >= 4 && start <= 0x13) {
+        var node = nodeById(model, start);
+        if (node) return node.kind === 2;
+      }
+      return false;
+    }
+    var runtimeRow = rowRuntime(rom, runtimeKey, rowIndex);
+    return runtimeRow ? !!runtimeRow.dormant : false;
+  }
+
   function pointFor(runtimeKey, rowIndex) {
     var cal = calibrationData(runtimeKey);
     if (!cal || !cal.points) return null;
@@ -292,11 +311,11 @@ window.OB64 = window.OB64 || {};
     return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
   }
 
-  // Initial town allegiance is DERIVED (r6 decode + live watch, 2026-07-03): a site garrisoned
-  // by a selector-placed Section 1 row starts enemy-held; otherwise the ktenmain morale byte's
-  // 0x80 bit marks a neutral start; otherwise allied. There is no standalone owner byte.
-  // Project intent (user's neutral/allied choice, pending the ktenmain export lane) sits
-  // between garrison and the static bit.
+  // Initial town allegiance is DERIVED, not stored: a site garrisoned by a selector-placed
+  // Section 1 row starts enemy-held; otherwise the ktenmain morale byte's 0x80 bit marks a
+  // neutral start; otherwise the site starts allied. The game has no standalone owner byte
+  // (confirmed by live write-watching the loader). Project intent (the user's neutral/allied
+  // choice, pending the ktenmain export lane) sits between garrison and the static bit.
   function siteAllegiance(rom, runtimeKey, selector) {
     var model = modelFor(rom, runtimeKey);
     if (model) {
@@ -560,8 +579,9 @@ window.OB64 = window.OB64 || {};
     return out;
   }
 
-  // Predicted deployed-unit records at load for this key. The table is 100 stride-52 records
-  // including the padding record (measured live 2026-07-03; busiest vanilla load observed 88).
+  // Predicted deployed-unit records at load for this key. The runtime table holds 100
+  // stride-52 records including the padding record; the busiest vanilla load observed live
+  // uses 88, so the cap is real headroom, not theory.
   function predictedUnits(rom, key) {
     var model = modelFor(rom, key);
     var records = ((OB64.SCENARIO_ESET_DATA || {}).enemydat || {}).records || [];
@@ -694,7 +714,10 @@ window.OB64 = window.OB64 || {};
         '<div class="sc-titlebar">' +
           '<div><h2>Scenario</h2><div class="sc-gate" id="sc-gate">' + esc(ui.gateText) + '</div></div>' +
           '<div class="sc-actions">' +
-            '<button type="button" id="sc-run-gate" class="btn-secondary" title="Self-test: rebuilds all 63 vanilla mission archives through the editor codec and confirms every one is byte-identical. Does not change your ROM or edits.">Validate Missions</button>' +
+            // Codec self-test kept wired but hidden: it validates the editor build, not the
+            // user's edits, so it reads as noise in the toolbar. Re-enable by removing the
+            // style attribute if a support workflow needs one-click verification again.
+            '<button type="button" id="sc-run-gate" class="btn-secondary" style="display:none" title="Self-test: rebuilds all 63 vanilla mission archives through the editor codec and confirms every one is byte-identical. Does not change your ROM or edits.">Validate Missions</button>' +
             '<label class="btn-file btn-secondary" for="sc-project-file">Load Project</label>' +
             '<input id="sc-project-file" type="file" accept=".json,application/json" style="display:none">' +
             '<button type="button" id="sc-save-project" class="btn-secondary">Save Project</button>' +
@@ -1046,12 +1069,13 @@ window.OB64 = window.OB64 || {};
   }
 
   function renderSquadLayer(inner, rom, key, projection, zoom) {
+    var model = modelFor(rom, key);
     pointsForAllRows(rom, key).forEach(function(point) {
       var runtimeRow = rowRuntime(rom, key, point.section1Row);
       var liveWorld = rowWorld(rom, key, point.section1Row, point);
       if (!liveWorld && !point.world && !point.image) return; // no resolvable position
       var p = liveWorld ? projection.worldToImage(liveWorld.x, liveWorld.z) : projection.pointToImage(point);
-      var dormant = runtimeRow ? runtimeRow.dormant : !!point.dormant;
+      var dormant = rowIsDormant(rom, key, model, point.section1Row);
       var img = liveLeaderIcon(rom, key, point);
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -1063,7 +1087,9 @@ window.OB64 = window.OB64 || {};
       btn.title = pointTitle(point, runtimeRow) + (point.added ? ' / ADDED squad' : '');
       btn.dataset.row = point.section1Row;
       btn.innerHTML = (img ? '<img src="' + esc(img) + '" alt="">' : '') +
-        (point.added ? '<span class="sc-badge">+</span>' : (dormant ? '<span class="sc-badge">!</span>' : ''));
+        (point.added && dormant ? '<span class="sc-badge">+!</span>' :
+          point.added ? '<span class="sc-badge">+</span>' :
+          dormant ? '<span class="sc-badge">!</span>' : '');
       btn.onclick = function() {
         ui.selectedPoint = point.section1Row;
         ui.selectedSite = null;
@@ -1096,8 +1122,7 @@ window.OB64 = window.OB64 || {};
     points.forEach(function(point) {
       var row = model.section1[point.section1Row];
       if (!row) return;
-      var runtimeRow = rowRuntime(rom, key, point.section1Row);
-      var dormant = runtimeRow ? runtimeRow.dormant : !!point.dormant;
+      var dormant = rowIsDormant(rom, key, model, point.section1Row);
       var rec = effectiveRecordFor(rom, key, point);
       var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown leader';
       var units = rec ? unitCountFromRecord(rec) : null;
@@ -1224,11 +1249,12 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  // Resolve a scene-relative ktenmain record index to a site (the SECOND site index space:
-  // shared by kind-12 triggers and kind-1 SUB-1 waypoints). Live anchors: runC E2 b[6]=4 ->
-  // Hou (key1 scene-record 4), and Joe's key1 node-4 observation: sub-1 [4]=1 -> Mulsuk
-  // (scene-record 1). 97/121 sub-1 waypoints corpus-wide resolve to selector-table sites;
-  // the rest reference scene records beyond the selector table (rendered as unresolved).
+  // Resolve a scene-relative ktenmain record index to a site. This is the SECOND site index
+  // space in the format, shared by kind-12 triggers and kind-1 subtype-1 waypoints, and is
+  // anchored by two live in-game observations (a kind-12 trigger resolving to Hou, and a
+  // subtype-1 waypoint whose squad marched to Mulsuk). 97/121 subtype-1 waypoints corpus-wide
+  // resolve to selector-table sites; the rest reference scene records beyond the selector
+  // table and render as unresolved.
   function siteBySceneRecord(rom, key, rel) {
     var sites = ensureState(rom).sites[key] || [];
     var min = null;
@@ -1239,15 +1265,14 @@ window.OB64 = window.OB64 || {};
     return sites.filter(function(s) { return s.ktenmainRecordIndex === min + rel; })[0] || null;
   }
 
-  // Waypoint payload model v3 (2026-07-03, two live anchors + corpus fit):
+  // Waypoint payload decode (live-anchored + corpus-fitted):
   //   [5] != 0 -> ([4],[5]) bounds-normalized byte coordinates (/256, game-exact).
-  //   [5] == 0, subtype 0/2 -> SELECTOR-table target: selector = [4] - [3]
-  //       (live: key11 sub-2 (1,6,0) -> Baldera sel 5; (1,2,0) -> Carnot sel 1; key4 sub-2
-  //        (0,8/4/2,0) -> Burgund/Phuntua/Taza; 71/74 corpus in range; the 3 misses all
-  //        compute sel 0 = sentinel, semantics open - rider r2).
-  //   [5] == 0, subtype 1 -> SCENE-RECORD target (kind-12's space): site whose ktenmain
-  //       record index == sceneMin + [4] (live: key1 (0,1,0) -> Mulsuk - Joe watched the
-  //       triggered units march there, correcting the old selector reading "Zemio").
+  //   [5] == 0, subtype 0/2 -> SELECTOR-table target: selector = [4] - [3].
+  //       71/74 corpus waypoints land on valid selectors; the 3 misses all compute
+  //       selector 0, a sentinel whose semantics are still open (treated as unresolved).
+  //   [5] == 0, subtype 1 -> SCENE-RECORD target (the same index space kind-12 triggers
+  //       use): the site whose ktenmain record index equals sceneMin + [4]. Confirmed by
+  //       watching a triggered squad march to the decoded town in-game.
   function nodeWorld(rom, key, node) {
     if (!node || node.kind !== 1) return null;
     if (!node.bytes) return null;
@@ -1258,7 +1283,7 @@ window.OB64 = window.OB64 || {};
         return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector, recordSpace: true } : null;
       }
       var sel = node.bytes[4] - node.bytes[3];
-      if (sel <= 0) return null; // sel-0 sentinel (key11 n15, key21 n10/n18) - semantics open
+      if (sel <= 0) return null; // selector-0 sentinel; semantics undecoded, render unresolved
       site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
       return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector } : null;
     }
@@ -1378,9 +1403,9 @@ window.OB64 = window.OB64 || {};
       out.label = '≤ ' + b[6] + ' enemy squads remain';
       out.detail = 'remnant-count trigger (live count at 0x801F0FDE)';
     } else if (kind === 12) {
-      // SCENE-RECORD space (shared with kind-1 sub-1 waypoints): site = sceneMin + b[6].
-      // Live anchors: runC key1 E2 b[6]=4 -> Hou; Joe's Mulsuk march anchors the same space
-      // for sub-1. Mapping restored 2026-07-03 via ktenmainRecordIndex in the site data.
+      // SCENE-RECORD space (shared with kind-1 subtype-1 waypoints): site = sceneMin + b[6].
+      // The mapping rides ktenmainRecordIndex in the generated site data and is anchored by
+      // two independent live in-game observations (see siteBySceneRecord).
       var recSite = siteBySceneRecord(rom, key, b[6]);
       out.label = 'Site flag test (' + (recSite ? recSite.siteName.trim() : 'scene record #' + b[6] + ', unresolved') + ')';
       out.detail = 'tests bit 0x0004 on the runtime site record for scene record ' + b[6] +
@@ -1541,9 +1566,9 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  // Byte->world decode is /256 (NOT /255): proven f32-exact against the r10 probe's live
-  // object positions (4/4 coordinates). /256 also makes byte->world->byte a perfect identity,
-  // so mode switches and drag round-trips can no longer drift a placement.
+  // Byte->world decode is /256 (NOT /255): proven f32-exact against live object positions
+  // read out of the running game (4/4 coordinates). /256 also makes byte->world->byte a
+  // perfect identity, so mode switches and drag round-trips cannot drift a placement.
   function byteToWorld(cal, xb, zb) {
     var b = cal && cal.boundsWorld;
     if (!b) return null;
@@ -1660,9 +1685,9 @@ window.OB64 = window.OB64 || {};
         svg.appendChild(tag);
         shape = rect;
       } else if (kind === 4 || kind === 12) {
-        // kind 4 compares object +0x74 == b[6]-1, i.e. SELECTOR space (live-proven, key1 E1).
-        // kind 12 uses SCENE-RECORD space (live-proven, runC key1 E2 -> Hou) - ring restored
-        // 2026-07-03 now that ktenmainRecordIndex maps records to sites.
+        // kind 4 compares object +0x74 == b[6]-1, i.e. SELECTOR space; kind 12 uses
+        // SCENE-RECORD space (both live-proven in-game). ktenmainRecordIndex maps scene
+        // records to sites so both kinds can draw their target ring.
         var site = kind === 4
           ? (sites.filter(function(s) { return s.selector === b[6]; })[0] || null)
           : siteBySceneRecord(rom, key, b[6]);
@@ -1758,7 +1783,7 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-form-row"><label class="sc-label">Threshold N</label>' +
         '<input id="sc-trig-n" type="number" min="1" max="30" value="' + b[6] + '"></div>';
     } else if (extra.kind === 12) {
-      // Scene-record space, mapped through ktenmainRecordIndex (anchors: Hou/runC, Mulsuk/Joe).
+      // Scene-record space, mapped through ktenmainRecordIndex (see siteBySceneRecord).
       var recSites = sites.filter(function(s) { return s.ktenmainRecordIndex != null; });
       var recMin = recSites.length ? Math.min.apply(null, recSites.map(function(s) { return s.ktenmainRecordIndex; })) : null;
       if (recMin != null) {
@@ -1978,7 +2003,7 @@ window.OB64 = window.OB64 || {};
     var garrisons = siteGarrisonRows(rom, key, site.selector);
     var intent = (ensureState(rom).siteAllegiances[key] || {})[site.selector];
     var why = garrisons.length
-      ? 'ENEMY: garrisoned by squad source ' + garrisons.join(', ') + ' (enemy-held state is derived from garrison placement - decoded 2026-07-03).'
+      ? 'ENEMY: garrisoned by squad source ' + garrisons.join(', ') + ' (enemy-held state is derived from garrison placement).'
       : (allegiance === 'neutral'
         ? (intent === 'neutral' ? 'NEUTRAL (project intent; static bit pending export).' : 'NEUTRAL: ktenmain morale byte 0x80 bit set for this site.')
         : (intent === 'allied' ? 'ALLIED (project intent; static bit pending export).' : 'ALLIED: no garrison, neutral bit clear (default).'));
@@ -2026,13 +2051,13 @@ window.OB64 = window.OB64 || {};
       return;
     }
     var point = pointFor(key, rowIndex) || syntheticPoint(rom, key, rowIndex, row);
-    var runtimeRow = rowRuntime(rom, key, rowIndex);
     var validation = OB64.scenarioCodec.validateEset(model);
     var added = isAddedRow(rom, key, rowIndex);
+    var dormant = rowIsDormant(rom, key, model, rowIndex);
     var html = backToOverviewHtml();
     html += detailHead('Source ' + row.sourceId + ' / EDAT ' + point.edat, [
       point.wikiSquad || 'runtime row ' + rowIndex,
-      added ? 'ADDED squad' : (runtimeRow && runtimeRow.dormant ? 'dormant trigger' : 'active'),
+      (added ? 'ADDED squad' : 'vanilla squad') + ' / ' + (dormant ? 'deploys dormant (ambush)' : 'deploys active'),
       'drop raw ' + OB64.scenarioCodec.hexByte(row.dropRaw, 4),
     ]);
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
@@ -2092,7 +2117,7 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-section"><div class="sc-sub">Added squad on donor record ' + point.edat +
         ' (verified unreferenced; comp applies via the per-scenario override at record-build time).</div>' +
         '<div class="sc-ok">Exports to ROM: the row splices into this mission\'s ESET and the comp rides the ' +
-        'squad-override blob - both cold-boot proven 2026-07-03.</div>' +
+        'squad-override blob - both verified by cold-boot testing in Project64.</div>' +
         '<button type="button" class="sc-inline-btn sc-danger" id="sc-delete-added">Delete this added squad</button></div>';
     } else {
       html += '<div class="sc-section"><button type="button" class="sc-inline-btn sc-danger" id="sc-delete-squad" ' +
@@ -2215,9 +2240,9 @@ window.OB64 = window.OB64 || {};
     }
     if (x) x.onchange = commitWorld;
     if (z) z.onchange = commitWorld;
-    // Behavior builder: fully LIVE (Joe, 2026-07-04 - no Apply button). Every template/
-    // trigger/destination/threshold change re-applies immediately through the builder's
-    // owned Section 2/3 slots; requirement gaps surface as hints without touching bytes.
+    // Behavior builder is fully LIVE - there is no Apply button. Every template/trigger/
+    // destination/threshold change re-applies immediately through the builder's owned
+    // Section 2/3 slots; requirement gaps surface as hints without touching any bytes.
     // Form state lives in builderFor(key,rowIndex) so it SURVIVES the full re-render every
     // commit triggers; msg() persists the same way.
     var bld = builderFor(key, rowIndex);
@@ -2953,7 +2978,7 @@ window.OB64 = window.OB64 || {};
     return issues;
   }
 
-  // Map-unit leader sprite gate (root cause of the 2026-07-04 relocation "overflow" crash).
+  // Map-unit leader sprite gate (root cause of a LOADING hang first hit by a user export).
   // The LOADING map-unit visual builder resolves the squad LEADER's class through two static
   // tables in the 0x141000 overlay module: slot = u8[0x14E074 + classId], then
   // entry = u32BE[0x14DF30 + slot*4]. Slot 0's entry is the 0xFFFFFFFF "no map sprite"
@@ -3023,11 +3048,11 @@ window.OB64 = window.OB64 || {};
     if (stubs.siteAllegianceKeys.length) blocked.push('Neutral/allied town intent targets the ktenmain site table, whose LHA recompression currently exceeds its ROM slot by ~32B; intents stay project-only until encoder parity or the grow/relocate path lands. (Enemy-held via garrison placement exports fully.)');
     // Slot overflow is handled below by the relocation lane. Keep the fit number as
     // a user-facing note, not an export blocker.
-    // Added squads EXPORT as of 2026-07-03: appended-row deployment and the override
-    // re-skin are both cold-boot proven (r10 run: control squad kept its donor comp,
-    // the overridden one deployed Black Knight + 2 Ninja). The row splices with its
-    // mission ESET below; the comp rides the squad-override blob lane in app.js.
-    // Only donor content collisions still block (the resolver matches on content).
+    // Added squads EXPORT: appended-row deployment and the override re-skin are both
+    // cold-boot proven (a control squad kept its donor comp while the overridden one
+    // deployed its replacement comp, in the same run). The row splices with its mission
+    // ESET below; the comp rides the squad-override blob lane in app.js. Only donor
+    // content collisions still block (the resolver matches on record content).
     if (stubs.addedSquads.length) {
       var collisions = addedSquadCollisions(rom);
       if (collisions.length) {

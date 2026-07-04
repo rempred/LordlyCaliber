@@ -41,43 +41,36 @@
   var ENTRY_ORIGINAL_OFF = 1;
   var ENTRY_REPLACEMENT_OFF = 36;
 
-  // ---- cache-coherency hardening (2026-06-30) ----
-  // OB64's own resident resource loader (RAM 0x800761E4-0x80076324, ROM
-  // 0x000065E4) invalidates I-cache then D-cache for an executable
-  // destination range, via these two resident leaf helpers, before its own
-  // PI DMA. Proven by live register trace (a0=start vaddr, a1=length bytes)
-  // in wiki/overlay-dma-source-map/20260628-223030-requester-cache/
-  // cache-coherency-audit.json and confirmed by static disassembly: both
-  // helpers are pure (a0,a1) functions that clobber only $at,$t0-$t3, never
-  // write back a0/a1, and have no $gp/stack dependency. Calling them here
-  // mirrors a real, shipped, hardware-exercised pattern rather than
-  // reimplementing CACHE-instruction loops from scratch.
+  // ---- cache-coherency hardening ----
+  // The N64 CPU's instruction/data caches do not observe PI DMA, so code DMA'd into RAM
+  // must have its destination range invalidated before it executes (a stale I-cache line
+  // executes garbage; a dirty D-cache line can write back OVER the fresh copy). The game's
+  // own resident resource loader (RAM 0x800761E4-0x80076324) solves this by calling two
+  // resident leaf helpers - I-cache invalidate then D-cache invalidate over (a0=start vaddr,
+  // a1=length) - before its PI DMA. This module calls the same two helpers, mirroring the
+  // shipped, hardware-exercised pattern instead of reimplementing CACHE-instruction loops.
+  // Both helpers were confirmed by live register trace and static disassembly to be pure
+  // (a0,a1) functions that clobber only $at,$t0-$t3, never write back a0/a1, and have no
+  // $gp or stack dependency.
   var ICACHE_INVALIDATE_RAM = 0x800900C0;
   var DCACHE_INVALIDATE_RAM = 0x80090010;
-  // The tiny trampoline cave (BOOT_ROM/BOOT_RAM, ~108B hard ceiling) has no
-  // room left for the extra invalidate-call instructions, so the DMA-trigger
-  // logic plus the new cache-invalidate calls move into the separately
-  // documented/smoke-tested "preferred full-body cave"
-  // (docs/runtime-override-rom-plan.md "Stub Placement"), re-verified
-  // 2026-06-30 as 800 bytes of clean 0x00 padding. The tiny cave becomes a
-  // bare sentinel-check dispatch that `j`s (not `jal`s, so $ra survives for
-  // the module's own caller) into this continuation on first load only.
-  // Shared spacious-cave allocation (z64 0x03054C..0x03086C, 800B verified
-  // clean 2026-06-30), divided into 0xC0-byte slots so Squads, High Attack,
-  // and Chaos Frame can each add their cache-invalidate continuation without
-  // colliding. The Rev 0/editor-facing build claims exactly THREE slots:
+  // The tiny trampoline cave (BOOT_ROM/BOOT_RAM, ~108B hard ceiling) has no room left for
+  // the extra invalidate-call instructions, so the DMA-trigger logic plus the invalidate
+  // calls live in a continuation in a larger shared code cave (z64 0x03054C..0x03086C,
+  // verified clean 0x00 padding). The tiny cave becomes a bare sentinel-check dispatch that
+  // `j`s (not `jal`s, so $ra survives for the module's own caller) into the continuation on
+  // first load only; already-loaded re-entries take the unchanged fast path.
+  // The shared cave is divided into 0xC0-byte slots so the Squads, High Attack, and Chaos
+  // Frame features can each place a cache-invalidate continuation without colliding:
   //   slot 0 (this file, Squads):       z64 0x03054C / RAM 0x800A014C
   //   slot 1 (High Attack main):        z64 0x03060C / RAM 0x800A020C
   //   slot 3 (Chaos Frame):             z64 0x03078C / RAM 0x800A038C
-  // Slot 2 (z64 0x0306CC / RAM 0x800A02CC) is reserved address space for
-  // High Attack's slot0-completion bootstrap, which is a Rev 1-only path
-  // (SLOT0_COMPLETION_GATE_ENABLED); the Rev 0/editor build never writes or
-  // validates that slot. See tools/build_high_attack_stream_shift_rom.py and
-  // tools/build_cf_army_counter_modregion_rom.py for the other slots.
-  // Slot 0 COLD-BOOT REGRESSED 2026-07-04: an editor export's blob machinery re-emitted
-  // with this hardened bootstrap+continuation deployed all squads and applied every
-  // override on a full cold boot (tools/build_cache_hardened_regression_rom.js;
-  // cache-hardened-fixleaders-verdict.json). Slots 1/3 (Tools tab) remain unregressed.
+  // Slot 2 (z64 0x0306CC / RAM 0x800A02CC) is reserved address space for High Attack's
+  // slot0-completion bootstrap, a header-rev-1-only path; the rev-0/editor build never
+  // writes or validates that slot.
+  // Slot 0 (this file) is cold-boot regression tested: an editor export re-emitted through
+  // this hardened bootstrap+continuation deployed all squads and applied every override on
+  // a full cold boot. The High Attack and Chaos Frame slots are still static-build only.
   var CACHE_CONT_Z64 = 0x03054C;
   var CACHE_CONT_RAM = 0x800A014C;
   var CACHE_CONT_BYTES = 0xC0; // reserved slot; real usage is ~108B

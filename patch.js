@@ -5,8 +5,6 @@
 // the same patch can be applied to any compatible ROM to reproduce the edits
 // without re-exporting a full v64.
 //
-// See docs/editor.md "JSON Patch Format" for the schema.
-//
 // v4 scope: all public ROM-edit tabs: shops, item_prices (legacy price-only
 // mirror), item stat fields, class definition fields, neutral encounters,
 // creature drops, consumables, stat gates, and the global encounter-roll slider.
@@ -94,7 +92,7 @@ window.OB64 = window.OB64 || {};
   }
 
   // --------------------------------------------------------------
-  // collectPatch(rom) -> JSON object matching the schema in docs/editor.md.
+  // collectPatch(rom) -> portable JSON patch object.
   // Returns { patches: {...}, summary: {...}, ... } with only the fields
   // that differ from rom.original.
   // --------------------------------------------------------------
@@ -184,7 +182,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-06-19',
+      editor_version: '2026-07-04',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,

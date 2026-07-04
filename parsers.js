@@ -293,7 +293,7 @@ OB64.lzssDecode = function(data, startOff, maxDecompSize) {
 // Value 0 = no requirement. ALN range is inclusive.
 // Promotion to target class X requires the character's stats to meet
 // statGates[X] AND alignment ∈ [ALN_MIN, ALN_MAX].
-// See docs/promotion-system.md for verification (in-game test 2026-04-19).
+// Verified by in-game promotion tests across the humanoid classes.
 // ============================================================
 OB64.LZSS_GAP_START = 0x20248C2;
 OB64.STAT_GATE_GAP_OFFSET = 0x3A960C;
@@ -350,8 +350,8 @@ OB64.parseStatGates = function(z64) {
 // Neutral encounter pool — the wild creatures that spawn during tactical-
 // map walking. ROM 0x141ED0, 816 B total. Outside CIC-6102 CRC window.
 //
-// Record structure (verified 2026-04-19 via ogrebattle64.net wiki scrape
-// + byte-level slot→terrain cross-check across 19 confident scenes):
+// Record structure (verified against the ogrebattle64.net wiki plus a
+// byte-level slot-to-terrain cross-check across 19 confident scenes):
 //
 //   The table is NOT 51 × 16B rows as docs previously suggested. It is
 //   40 × 20B SLICES, each slice being one scenario (indexed by dispatcher
@@ -611,10 +611,8 @@ OB64.parseCreatureDrops = function(z64) {
 
 // ============================================================
 // Scenario $s0 → name table for neutral encounter cards.
-// Complete mapping for all 39 non-empty slices, derived 2026-04-19 by
-// best-match scoring every $s0 against every scraped wiki scene.
-// See scripts/ob64_encounter_best_match.js and
-// docs/scenario_wiki_source.md for the full cross-reference.
+// Complete mapping for all 39 non-empty slices, derived by best-match
+// scoring every $s0 slice against every scraped wiki scene.
 //
 // $s0=40 is empty (all zeros) — skipped at render time.
 // ============================================================
@@ -663,8 +661,8 @@ OB64.ENCOUNTER_SCENARIO_NAMES = {
 // ============================================================
 // Wiki-sourced back-row attack counts — SUPERSEDED by direct ROM decode.
 //
-// 2026-04-19: cross-check against "Class Chart.csv" Rear Attack # column
-// showed B48 matches CSV rear count at 79/79 classes (100%). B48, which
+// A cross-check against a community class chart's rear-attack column
+// showed B48 matches the rear count at 79/79 classes (100%). B48, which
 // was previously mislabeled "atkType (uncertain)" in both docs and editor,
 // IS the rear-row attack count. The record's `rearAtks` field reads it
 // directly from ROM and is fully editable, like frontAtks / midAtks.
@@ -1588,7 +1586,7 @@ OB64.parseClassDefs = function(z64) {
     }
 
     // B42-48 row attack block.
-    // Correct layout per docs/combat-attack-buffer.md (in-game verified B44=10/B46=10 patch):
+    // Layout verified in-game with a B44=10/B46=10 patch:
     //   B42 = fixed equipment slot mask; B43 = unknown
     //   B44 = front row attack count (EDITABLE, VERIFIED)
     //   B45 = front/reused-mid attack ID
