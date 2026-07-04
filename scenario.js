@@ -311,34 +311,43 @@ window.OB64 = window.OB64 || {};
     return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
   }
 
-  // Initial town allegiance is DERIVED, not stored: a site garrisoned by a selector-placed
-  // Section 1 row starts enemy-held; otherwise the ktenmain morale byte's 0x80 bit marks a
-  // neutral start; otherwise the site starts allied. The game has no standalone owner byte
-  // (confirmed by live write-watching the loader). Project intent (the user's neutral/allied
-  // choice, pending the ktenmain export lane) sits between garrison and the static bit.
-  function siteAllegiance(rom, runtimeKey, selector) {
+  // A squad "holds" a town at load either by SELECTOR placement (snapped to the site) or by
+  // a COORDINATE placement that lands on the site. Coordinate garrisons are common on the
+  // late-game maps where every squad is coordinate-placed - counting only selector rows made
+  // those missions render almost entirely allied. Threshold: on-site squads measure < 1.0
+  // world units from their site corpus-wide while field squads measure >= 1.7, and the
+  // densest map spaces sites 1.94 apart, so 1.2 splits the two populations cleanly.
+  var GARRISON_WORLD_RADIUS = 1.2;
+
+  function siteGarrisonRows(rom, runtimeKey, selector) {
     var model = modelFor(rom, runtimeKey);
-    if (model) {
-      for (var i = 0; i < model.section1.length; i++) {
-        var b = model.section1[i].bytes;
-        if ((b[4] || 0) === 0 && (b[3] || 0) === selector) return 'enemy';
+    var site = (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0];
+    var out = [];
+    if (model) model.section1.forEach(function(row, i) {
+      var b = row.bytes;
+      if ((b[4] || 0) === 0) {
+        if ((b[3] || 0) === selector) out.push(row.sourceId);
+        return;
       }
-    }
+      if (!site) return;
+      var w = rowWorld(rom, runtimeKey, i, null);
+      if (w && Math.hypot(w.x - site.x, w.z - site.z) <= GARRISON_WORLD_RADIUS) out.push(row.sourceId);
+    });
+    return out;
+  }
+
+  // Initial town allegiance is DERIVED, not stored: a site held by a Section 1 squad starts
+  // enemy; otherwise the ktenmain morale byte's 0x80 bit marks a neutral start; otherwise the
+  // site starts allied. The game has no standalone owner byte (confirmed by live
+  // write-watching the loader). Project intent (the user's neutral/allied choice, pending the
+  // ktenmain export lane) sits between garrison and the static bit.
+  function siteAllegiance(rom, runtimeKey, selector) {
+    if (siteGarrisonRows(rom, runtimeKey, selector).length) return 'enemy';
     var intent = (ensureState(rom).siteAllegiances[runtimeKey] || {})[selector];
     if (intent === 'neutral' || intent === 'allied') return intent;
     var site = (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0];
     if (site && site.neutralAtStart) return 'neutral';
     return 'allied';
-  }
-
-  function siteGarrisonRows(rom, runtimeKey, selector) {
-    var model = modelFor(rom, runtimeKey);
-    var out = [];
-    if (model) model.section1.forEach(function(row) {
-      var b = row.bytes;
-      if ((b[4] || 0) === 0 && (b[3] || 0) === selector) out.push(row.sourceId);
-    });
-    return out;
   }
 
   function setSiteAllegiance(rom, runtimeKey, selector, value) {
@@ -1169,21 +1178,32 @@ window.OB64 = window.OB64 || {};
     var model = state.models[key];
     var row = model && model.section1[rowIndex];
     if (!row) return;
-    if (!window.confirm('Remove squad source ' + row.sourceId + ' / EDAT ' + (row.edatOneBased - 1) +
+    confirmThemed('Remove squad from mission',
+      'Remove squad source ' + row.sourceId + ' / EDAT ' + (row.edatOneBased - 1) +
       ' from this mission?\n\nThe squad will not deploy here anymore. Its choreography nodes stay ' +
-      'in the mission (harmless), and the global enemy record is untouched.')) return;
-    model.section1.splice(rowIndex, 1);
-    state.addedSquads.forEach(function(r) {
-      if (r.runtimeKey === key && r.section1Row != null && r.section1Row > rowIndex) r.section1Row--;
-    });
-    syncStructuralOffsets(model);
-    OB64.scenarioCodec.refreshDecodedRows(model);
-    state.modifiedKeys[key] = true;
-    changed();
-    if (ui.selectedPoint === rowIndex) ui.selectedPoint = null;
-    else if (ui.selectedPoint != null && ui.selectedPoint > rowIndex) ui.selectedPoint--;
-    ui.gateText = 'Squad removed from this mission (source ' + row.sourceId + ').';
-    renderScenarioTab(document.getElementById('panel-scenario'));
+      'in the mission (harmless), and the global enemy record is untouched.',
+      'Remove squad',
+      function() {
+        model.section1.splice(rowIndex, 1);
+        state.addedSquads.forEach(function(r) {
+          if (r.runtimeKey === key && r.section1Row != null && r.section1Row > rowIndex) r.section1Row--;
+        });
+        syncStructuralOffsets(model);
+        OB64.scenarioCodec.refreshDecodedRows(model);
+        state.modifiedKeys[key] = true;
+        changed();
+        if (ui.selectedPoint === rowIndex) ui.selectedPoint = null;
+        else if (ui.selectedPoint != null && ui.selectedPoint > rowIndex) ui.selectedPoint--;
+        ui.gateText = 'Squad removed from this mission (source ' + row.sourceId + ').';
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      });
+  }
+
+  // Themed confirm with a plain-confirm fallback so the flow still works if app.js has not
+  // exported the modal (e.g. module loaded standalone in tests).
+  function confirmThemed(title, message, confirmLabel, onConfirm) {
+    if (OB64.showConfirmModal) OB64.showConfirmModal(title, message, onConfirm, confirmLabel);
+    else if (window.confirm(message)) onConfirm();
   }
 
   function wireMarkerDrag(btn, rom, key, point, projection, zoom) {
@@ -1813,15 +1833,16 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
     }
     html += '</div>';
-    // Delete: safe only when nothing references the extraId (ids are stored in the record, so
-    // deletion does not renumber survivors). Referencing nodes must drop/replace it first.
-    var refNodes = model.section2.filter(function(n) {
-      return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId) || n.section3Ref === extraId;
-    }).map(function(n) { return n.nodeId; });
+    // Delete: extra ids are stored in the record, so deletion never renumbers survivors.
+    // An unreferenced trigger deletes directly; a referenced one deletes by first clearing
+    // the gate bytes on every referencing node (those nodes become ungated = always pass).
+    var refNodes = triggerRefNodes(model, extraId);
     html += '<div class="sc-section">';
     if (refNodes.length) {
-      html += '<div class="sc-sub">Cannot delete: node' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
-        ' still reference' + (refNodes.length > 1 ? '' : 's') + ' this trigger. Clear those gates first (edit the squad behavior or the node bytes).</div>';
+      html += '<div class="sc-sub">Node' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
+        ' gate' + (refNodes.length > 1 ? '' : 's') + ' on this trigger; deleting it clears those gates (the nodes run ungated).</div>' +
+        '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete" data-ungate="1">Delete trigger + un-gate ' +
+        refNodes.length + ' node' + (refNodes.length > 1 ? 's' : '') + '</button>';
     } else {
       html += '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete">Delete this trigger</button>';
     }
@@ -1858,17 +1879,43 @@ window.OB64 = window.OB64 || {};
       };
     });
     var del = el.querySelector('#sc-trig-delete');
-    if (del) del.onclick = function() {
-      if (!window.confirm('Delete trigger E' + extraId + '?')) return;
+    if (del) del.onclick = function() { deleteTrigger(rom, key, model, extra); };
+  }
+
+  // Nodes whose gate references this extra (extraA at [10]; extraB at [12] when an operator
+  // is set — [10] doubles as the codec's section3Ref, so clearing the gate bytes fully
+  // un-references the trigger).
+  function triggerRefNodes(model, extraId) {
+    return model.section2.filter(function(n) {
+      return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId);
+    }).map(function(n) { return n.nodeId; });
+  }
+
+  function deleteTrigger(rom, key, model, extra) {
+    var extraId = extra.extraId;
+    var refNodes = triggerRefNodes(model, extraId);
+    var message = refNodes.length
+      ? 'Delete trigger E' + extraId + '?\n\nNode' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
+        ' will lose ' + (refNodes.length > 1 ? 'their gates' : 'its gate') + ' and run ungated (squads on ' +
+        (refNodes.length > 1 ? 'those nodes' : 'that node') + ' act immediately).'
+      : 'Delete trigger E' + extraId + '? Nothing references it.';
+    confirmThemed('Delete trigger', message, 'Delete trigger', function() {
       var idx = model.section3.indexOf(extra);
       if (idx < 0) return;
+      model.section2.forEach(function(n) {
+        if (n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId)) {
+          n.bytes[10] = 0; n.bytes[11] = 0; n.bytes[12] = 0;
+        }
+      });
       model.section3.splice(idx, 1);
       syncStructuralOffsets(model);
       OB64.scenarioCodec.refreshDecodedRows(model);
       ui.selectedTrigger = null;
-      ui.gateText = 'Trigger E' + extraId + ' deleted.';
-      commitTrig();
-    };
+      ui.gateText = 'Trigger E' + extraId + ' deleted' + (refNodes.length ? ' (node ' + refNodes.join(', ') + ' un-gated).' : '.');
+      ensureState(rom).modifiedKeys[key] = true;
+      changed();
+      renderScenarioTab(document.getElementById('panel-scenario'));
+    });
   }
 
   function renderScenarioOverview(el, rom, key, model, cal) {
@@ -1908,10 +1955,11 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section"><span class="sc-label">Triggers</span><div class="sc-node-list">';
     model.section3.forEach(function(extra) {
       var d = describeExtra(rom, key, extra);
-      html += '<button type="button" class="sc-trigger-row' + (ui.selectedTrigger === extra.extraId ? ' on' : '') + '" data-extra="' + extra.extraId + '">' +
+      html += '<div class="sc-trigger-row' + (ui.selectedTrigger === extra.extraId ? ' on' : '') + '" data-extra="' + extra.extraId + '" role="button" tabindex="0">' +
         '<strong>E' + extra.extraId + '</strong> ' + esc(d.label) +
         (d.geometry ? ' <span class="sc-chip">on map</span>' : '') +
-        '<span class="sc-sub">' + esc(d.detail) + '</span></button>';
+        '<button type="button" class="sc-inline-btn sc-danger sc-trig-row-del" data-extra="' + extra.extraId + '" title="Delete this trigger" style="float:right">Delete</button>' +
+        '<span class="sc-sub">' + esc(d.detail) + '</span></div>';
     });
     if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
     // Kind-FIRST creation: pick the trigger type, then only geometric kinds enter draw mode;
@@ -1942,7 +1990,18 @@ window.OB64 = window.OB64 || {};
     }
     el.innerHTML = html;
     el.querySelectorAll('.sc-trigger-row').forEach(function(btn) {
-      btn.onclick = function() { selectTrigger(parseInt(this.dataset.extra, 10)); };
+      btn.onclick = function(ev) {
+        if (ev.target.classList && ev.target.classList.contains('sc-trig-row-del')) return;
+        selectTrigger(parseInt(this.dataset.extra, 10));
+      };
+    });
+    el.querySelectorAll('.sc-trig-row-del').forEach(function(btn) {
+      btn.onclick = function(ev) {
+        ev.stopPropagation();
+        var id = parseInt(this.dataset.extra, 10);
+        var extra = model.section3.filter(function(x) { return x.extraId === id; })[0];
+        if (extra) deleteTrigger(rom, key, model, extra);
+      };
     });
     el.querySelectorAll('.sc-added-row').forEach(function(btn) {
       btn.onclick = function() {

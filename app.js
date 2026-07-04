@@ -1683,6 +1683,63 @@ window.OB64 = window.OB64 || {};
     document.addEventListener('keydown', escHandler);
   }
 
+  // Themed confirm dialog on the error-modal chrome (native window.confirm looks foreign
+  // against the parchment UI). onConfirm runs only when the user clicks the confirm button;
+  // overlay click, x, Cancel, and Escape all dismiss without confirming.
+  function showConfirmModal(title, message, onConfirm, confirmLabel) {
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay';
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) close();
+    });
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal';
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = title;
+    header.appendChild(h2);
+    var btnX = document.createElement('button');
+    btnX.className = 'error-modal-close';
+    btnX.textContent = '×';
+    btnX.addEventListener('click', close);
+    header.appendChild(btnX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body';
+    body.textContent = message;
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer';
+    var btnCancel = document.createElement('button');
+    btnCancel.className = 'error-modal-ok';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', close);
+    footer.appendChild(btnCancel);
+    var btnGo = document.createElement('button');
+    btnGo.className = 'error-modal-ok';
+    btnGo.textContent = confirmLabel || 'Confirm';
+    btnGo.addEventListener('click', function() { close(); onConfirm(); });
+    footer.appendChild(btnGo);
+    modal.appendChild(footer);
+
+    document.body.appendChild(overlay);
+    btnCancel.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+    }
+    var escHandler = function(ev) { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', escHandler);
+  }
+  OB64.showConfirmModal = showConfirmModal;
+
   function commitSelectionToShop(shopIdx, category, selected) {
     var shop = rom.shops[shopIdx];
     var kept = shop.items.filter(function(id) { return categorizeShopItem(id) !== category; });
