@@ -1347,9 +1347,15 @@ window.OB64 = window.OB64 || {};
     var chain = walkNodeChain(rom, key, model, start);
     var last = chain[chain.length - 1];
     var terminal = last && last.node.bytes[17] === 0xFF;
-    var destName = '';
+    var destName = '', destIsTown = false;
     for (var i = chain.length - 1; i >= 0; i--) {
-      if (chain[i].world) { destName = chain[i].world.siteName ? chain[i].world.siteName.trim() : 'coordinates'; break; }
+      if (chain[i].world) {
+        // town = selRaw selector site (byte[5]==0); coordinate node (byte[5]!=0) = an open
+        // map point (camp/patrol anchor, mostly not on a town per the byte[5]!=0 corpus).
+        if (chain[i].world.siteName) { destName = chain[i].world.siteName.trim(); destIsTown = true; }
+        else { destName = 'a map point'; }
+        break;
+      }
     }
     var gateA = startNode.bytes[10];
     var op = startNode.bytes[11];
@@ -1363,9 +1369,10 @@ window.OB64 = window.OB64 || {};
       if (op === 1 && startNode.bytes[12]) gate += ' / else E' + startNode.bytes[12];
     }
     var marchWord = destName ? 'march to ' + destName : (chain.length > 1 ? 'march' : 'act');
-    // These squads hold their march destination in the runtime waypoint but divert to intercept
-    // the nearest player unit in aggro range (see docs march-to checklist), so note that.
-    var intercept = destName ? ' (diverts to intercept your units in range)' : '';
+    // Town-marchers hold their march destination in the runtime waypoint but divert to intercept
+    // the nearest player unit in aggro range (live-confirmed; see docs march-to checklist). The
+    // note is scoped to town destinations - coordinate/patrol squads were not observed intercepting.
+    var intercept = destIsTown ? ' (diverts to intercept your units in range)' : '';
     if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
     if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
     if (destName) return 'March to ' + destName + (terminal ? ' + permanent camp' : '') + intercept;
