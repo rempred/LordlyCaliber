@@ -141,6 +141,8 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-key-sub{grid-column:1/-1;color:inherit;opacity:.72;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '#panel-scenario .sc-chip{display:inline-flex;align-items:center;min-height:18px;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:800;line-height:1;text-transform:uppercase;background:var(--ob-parchment-dark);color:var(--ob-ink);white-space:nowrap}',
       '#panel-scenario .sc-key.on .sc-chip{background:rgba(245,230,200,.18);color:var(--ob-parchment)}',
+      '#panel-scenario .sc-key-dev:not(.on){opacity:.6}',
+      '#panel-scenario .sc-key-dev:not(.on) .sc-key-name{font-style:italic;font-weight:600}',
       '#panel-scenario .sc-map-panel{padding:10px;min-width:0}',
       '#panel-scenario .sc-map-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 8px}',
       '#panel-scenario .sc-map-title{font-size:15px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -813,16 +815,30 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  // Dev/internal/special-loader runtime keys, sorted to the bottom of the scenario list.
+  // 10/22/35/62 = the eset0_00 internal-alias keys (no wiki mission of their own);
+  // 54/63/64 = bugged dev/special-loader keys (54 is the units-less runtime dupe of the
+  // wiki-42 Keryoleth II pair 52/53). This is a curatorial classification from the
+  // runtime-key wiki-identity audit plus live observation, not a decodable ROM byte.
+  var DEV_KEYS = [10, 22, 35, 54, 62, 63, 64];
+  function isDevKey(runtimeKey) { return DEV_KEYS.indexOf(runtimeKey) >= 0; }
+
   function renderList(el, rom) {
     var q = ui.search.toLowerCase().trim();
-    var scenarios = dataScenarios().slice().sort(function(a, b) { return a.runtimeKey - b.runtimeKey; });
+    var scenarios = dataScenarios().slice().sort(function(a, b) {
+      var ad = isDevKey(a.runtimeKey), bd = isDevKey(b.runtimeKey);
+      if (ad !== bd) return ad ? 1 : -1;
+      return a.runtimeKey - b.runtimeKey;
+    });
     var html = '<div class="sc-list-tools"><input id="sc-search" placeholder="Search runtime keys, missions, branches" value="' + esc(ui.search) + '"></div>';
     var lastGroup = null;
     scenarios.forEach(function(entry) {
       var cal = calibrationData(entry.runtimeKey);
       var scn = squadScenario(entry.runtimeKey);
       var label = displayLabel(entry.runtimeKey);
-      var group = scn && scn.wikiId ? ('Wiki ' + scn.wikiId + ': ' + (scn.wikiTitle || scn.wikiHint || label)) : 'Internal or branch aliases';
+      var group = isDevKey(entry.runtimeKey)
+        ? 'Dev / internal keys (not normal scenarios)'
+        : (scn && scn.wikiId ? ('Wiki ' + scn.wikiId + ': ' + (scn.wikiTitle || scn.wikiHint || label)) : 'Internal or branch aliases');
       var hay = [entry.runtimeKey, label, group, cal && cal.mapName, scn && scn.branchStatus, scn && scn.branchConfidence].join(' ').toLowerCase();
       if (q && hay.indexOf(q) < 0) return;
       if (group !== lastGroup) {
@@ -830,7 +846,7 @@ window.OB64 = window.OB64 || {};
         lastGroup = group;
       }
       var modified = keyModified(rom, entry.runtimeKey);
-      html += '<button type="button" class="sc-key' + (entry.runtimeKey === ui.selectedKey ? ' on' : '') + '" data-key="' + entry.runtimeKey + '">' +
+      html += '<button type="button" class="sc-key' + (entry.runtimeKey === ui.selectedKey ? ' on' : '') + (isDevKey(entry.runtimeKey) ? ' sc-key-dev' : '') + '" data-key="' + entry.runtimeKey + '">' +
         '<span class="sc-key-name">' + esc(label) + '</span>' +
         '<span class="sc-chip">key ' + entry.runtimeKey + '</span>' +
         '<span class="sc-key-sub">' + esc((cal && cal.mapName ? cal.mapName + ' / ' : '') + (cal ? cal.registrationGrade : 'no map') + (modified ? ' / edited' : '')) + '</span>' +
@@ -2003,7 +2019,7 @@ window.OB64 = window.OB64 || {};
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors, ' + validation.warnings.length + ' warnings</div>';
     if (stubs.siteAllegianceKeys.length) {
-      html += '<div class="sc-warning">Heads-up, not an error: town allegiance edits now point at the decoded scincsv/ktenmain static descriptors; they save to project JSON and block ROM export until that archive lane lands.</div>';
+      html += '<div class="sc-ok">Town allegiance edits export to ROM: they rewrite the scincsv descriptor addend for the town. Several runtime keys can share one scincsv archive, so an edit here also moves that town in the keys that read the same descriptor.</div>';
     }
     html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
     model.section2.forEach(function(node) {
@@ -2118,7 +2134,7 @@ window.OB64 = window.OB64 || {};
   function siteAllegianceReason(site, allegiance, intent) {
     var desc = site.siteDescriptor || {};
     if (intent === 'enemy' || intent === 'neutral' || intent === 'allied') {
-      return intent.toUpperCase() + ' (project intent; ROM export lane pending for static site descriptors).';
+      return intent.toUpperCase() + ' (edit; exports to ROM by rewriting the scincsv descriptor addend).';
     }
     var file = desc.scincsvFilename || '?';
     var town = desc.ownKtenmainName || site.siteName || 'this site';
@@ -2155,14 +2171,20 @@ window.OB64 = window.OB64 || {};
         (desc.ownKtenmainRecordIndex === null || desc.ownKtenmainRecordIndex === undefined ? '' : (' / ktenmain rec ' + desc.ownKtenmainRecordIndex)) +
         (desc.descriptorPresent ? (' / addend ' + (desc.descriptorAddendHex || '0x????')) : ' / no descriptor') + '</div>';
     }
-    html += '<div class="sc-form-row"><label class="sc-label">Project state</label><select id="sc-site-allegiance">' +
+    var canAuthor = !!desc.descriptorPresent;
+    html += '<div class="sc-form-row"><label class="sc-label">Allegiance</label><select id="sc-site-allegiance"' + (canAuthor ? '' : ' disabled') + '>' +
         option('', 'Static default (' + (site.initialAllegiance || 'enemy') + ')', intent || '') +
         option('allied', 'Allied', intent || '') +
         option('neutral', 'Neutral', intent || '') +
         option('enemy', 'Enemy', intent || '') +
-      '</select></div>' +
-      '<div class="sc-warning">Town allegiance writes target the scincsv site descriptor stream (the addend halfword). ' +
-      'The intent saves to project JSON and blocks ROM export until the static descriptor export lane lands.</div>';
+      '</select></div>';
+    if (canAuthor) {
+      html += '<div class="sc-ok">Exports to ROM: rewrites the scincsv ' + esc(desc.scincsvFilename || '') +
+        ' addend for this town (a tiny archive, outside the CRC window). Runtime keys that share this archive move together.</div>';
+    } else {
+      html += '<div class="sc-warning">This town has no scincsv descriptor, so its allegiance cannot be authored yet ' +
+        '(that would need adding a new descriptor row). It defaults to enemy-held.</div>';
+    }
     html += '</div>';
     el.innerHTML = html;
     wireBackButton(el);
@@ -3176,11 +3198,87 @@ window.OB64 = window.OB64 || {};
     return issues;
   }
 
+  function dataScincsvArchives() {
+    return (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scincsvArchives) || {};
+  }
+
+  // Author-selected allegiance -> scincsv descriptor addend halfword. The runtime rule is
+  // (addend & 0x2000)=allied, (addend == 0)=neutral, else=enemy. We flip only the classifying
+  // bits and keep the town's natural low descriptor bits, so an authored state stays as close
+  // to a vanilla descriptor as possible.
+  function allegianceTargetAddend(current, target) {
+    current = (current || 0) & 0xFFFF;
+    if (target === 'neutral') return 0x0000;
+    if (target === 'allied') return (current | 0x2000) & 0xFFFF;
+    var v = current & ~0x2000 & 0xFFFF; // enemy: nonzero, without the allied bit
+    return v === 0 ? 0x0004 : v;
+  }
+
+  // Collect town-allegiance intents and group them by the shared scincsv archive they target.
+  // Several runtime keys can read one scincsv archive (e.g. keys 52/53 share scincsv28b), so an
+  // edit to one key's town also moves the others reading the same descriptor - intended, but a
+  // conflicting intent for the same descriptor blocks the export. Returns
+  // { edits: {archive: {archive, filename, payload, changes:[...]}}, blocked: [msg...] }.
+  function planAllegianceEdits(rom) {
+    var state = ensureState(rom);
+    var archives = dataScincsvArchives();
+    var byArchive = {};
+    var blocked = [];
+    var claims = {}; // "archive:offset" -> { to, label }
+    Object.keys(state.siteAllegiances).forEach(function(keyStr) {
+      var runtimeKey = Number(keyStr);
+      var intents = state.siteAllegiances[keyStr] || {};
+      Object.keys(intents).forEach(function(selStr) {
+        var selector = Number(selStr);
+        var intent = intents[selStr];
+        if (!intent || intent === 'static') return;
+        var site = siteForSelector(rom, runtimeKey, selector);
+        var desc = site && site.siteDescriptor;
+        var label = ((site && (site.siteName || site.name)) || ('Site ' + selector)) + ' (key ' + runtimeKey + ')';
+        if (!desc || desc.scincsvArchive == null || desc.descriptorByteOffset == null || !desc.descriptorPresent) {
+          blocked.push(label + ': no scincsv descriptor to edit - authoring this town needs a new descriptor row, not yet supported.');
+          return;
+        }
+        var arcInfo = archives[desc.scincsvArchive];
+        if (!arcInfo || !arcInfo.payloadHex) {
+          blocked.push(label + ': scincsv archive ' + desc.scincsvArchive + ' payload is unavailable.');
+          return;
+        }
+        var current = desc.descriptorAddend || 0;
+        var to = allegianceTargetAddend(current, intent);
+        if (to === (current & 0xFFFF)) return; // no-op: already this state
+        var off = desc.descriptorByteOffset;
+        var ckey = desc.scincsvArchive + ':' + off;
+        if (claims[ckey]) {
+          if (claims[ckey].to !== to) {
+            blocked.push('Allegiance conflict: ' + label + ' and ' + claims[ckey].label + ' share scincsv archive ' + desc.scincsvArchive + ' but request different states for the same town.');
+          }
+          return; // same target already claimed - idempotent, do not double-write
+        }
+        claims[ckey] = { to: to, label: label };
+        if (!byArchive[desc.scincsvArchive]) {
+          byArchive[desc.scincsvArchive] = {
+            archive: desc.scincsvArchive,
+            filename: arcInfo.filename,
+            payload: OB64.scenarioCodec.compactHexToBytes(arcInfo.payloadHex),
+            changes: [],
+          };
+        }
+        byArchive[desc.scincsvArchive].changes.push({ offset: off, from: current, to: to, label: label });
+      });
+    });
+    return { edits: byArchive, blocked: blocked };
+  }
+
   function exportScenarioArchives(rom) {
     var state = ensureState(rom);
-    var stubs = anyProjectStub(rom);
     var blocked = [];
-    if (stubs.siteAllegianceKeys.length) blocked.push('Town allegiance intent targets the scincsv site descriptor stream (addend halfword); intents stay project-only until the static descriptor archive export lane lands.');
+    // Town allegiance now exports: intents rewrite the scincsv descriptor addend halfword in a
+    // tiny LH5 archive (~25-45 B at ROM ~0x2745E5B, outside the CIC-6102 CRC window). Grouping +
+    // conflict/absent-descriptor validation is planned here; the splice/relocate runs below.
+    var allegiancePlan = planAllegianceEdits(rom);
+    if (allegiancePlan.blocked.length) blocked = blocked.concat(allegiancePlan.blocked);
+    var stubs = anyProjectStub(rom);
     // Slot overflow is handled below by the relocation lane. Keep the fit number as
     // a user-facing note, not an export blocker.
     // Added squads EXPORT: appended-row deployment and the override re-skin are both
@@ -3234,6 +3332,41 @@ window.OB64 = window.OB64 || {};
         touched.push('scenario key ' + runtimeKey + ' relocated');
       }
       state.originalBytes[key] = raw.slice(0);
+    });
+    // Town-allegiance edits: one rebuilt scincsv archive per shared descriptor stream. Same
+    // splice-in-place / relocate-to-tail path as the ESET archives above. scincsv archives sit
+    // outside the CRC window, so a splice-in-place needs no CRC recalc; a relocation installs the
+    // boot-cave redirect (inside the window) and sets crc below via relocations.length.
+    Object.keys(allegiancePlan.edits).forEach(function(arcKey) {
+      var plan = allegiancePlan.edits[arcKey];
+      var payload = plan.payload.slice ? plan.payload.slice(0) : new Uint8Array(plan.payload);
+      plan.changes.forEach(function(ch) {
+        payload[ch.offset] = (ch.to >>> 8) & 0xFF;
+        payload[ch.offset + 1] = ch.to & 0xFF;
+      });
+      var archiveDir = rom.archives[plan.archive];
+      if (!archiveDir) throw new Error('Missing ROM archive ' + plan.archive + ' for town allegiance edit');
+      // Store the descriptor stream UNCOMPRESSED (-lh0-). scincsv payloads are tiny, the game's
+      // loader accepts -lh0- (index 750 ships that way), and this dodges an lh5Compress bug on
+      // small payloads. The stored body still fits the original slot (headers are ~74 B).
+      var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'));
+      var result = OB64.spliceArchive(rom.z64, archiveDir, arc);
+      if (result.success) {
+        touched.push('town allegiance (scincsv ' + plan.archive + ')');
+      } else {
+        var moved;
+        try {
+          moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
+        } catch (e) {
+          throw new Error('Town allegiance scincsv ' + plan.archive + ' ' + e.message);
+        }
+        assertRelocationTailFree(rom, moved);
+        tailCursor = moved.nextTailCursor;
+        moved.archive = plan.archive;
+        relocations.push(moved);
+        relocationWrites.push({ moved: moved, archive: arc });
+        touched.push('town allegiance (scincsv ' + plan.archive + ') relocated');
+      }
     });
     if (relocations.length && OB64.tools) {
       OB64.tools.assertDesiredCompatible(rom, [relocationPatchOwner(relocations)]);

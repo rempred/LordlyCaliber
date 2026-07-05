@@ -399,6 +399,62 @@ OB64.buildLHAArchive = function(compressedData, originalData, filename) {
   return result;
 };
 
+// Build a STORED (-lh0-, uncompressed) level-2 LHA archive: same header layout as buildLHAArchive
+// but the method is "-lh0-" and the payload is written verbatim (compSize == uncompSize). The game's
+// archive loader accepts -lh0- (scincsv archive index 750 ships uncompressed in the retail ROM), and
+// this avoids the LH5 encoder entirely. Used for the tiny scincsv town-allegiance descriptors, where
+// the uncompressed body plus header still fits the original slot and lh5Compress has a small-payload
+// bug. Returns the full archive (no trailing byte to strip).
+OB64.buildLHAArchiveUncompressed = function(payload, filename) {
+  var fnBytes = [];
+  for (var i = 0; i < filename.length; i++) fnBytes.push(filename.charCodeAt(i));
+  var fnLen = fnBytes.length;
+  var extFnSize = 1 + fnLen + 2;
+  var totalHeaderSize = 24 + 2 + extFnSize;
+
+  var header = new Uint8Array(totalHeaderSize);
+  var size = payload.length; // compSize == uncompSize for stored
+  var dataCRC = OB64.crc16(payload);
+
+  header[0] = totalHeaderSize & 0xFF;
+  header[1] = (totalHeaderSize >>> 8) & 0xFF;
+  // Method: -lh0-
+  header[2] = 0x2D; header[3] = 0x6C; header[4] = 0x68;
+  header[5] = 0x30; header[6] = 0x2D;
+  // Compressed size == uncompressed size (LE 32-bit)
+  header[7]  = size & 0xFF;
+  header[8]  = (size >>> 8) & 0xFF;
+  header[9]  = (size >>> 16) & 0xFF;
+  header[10] = (size >>> 24) & 0xFF;
+  header[11] = size & 0xFF;
+  header[12] = (size >>> 8) & 0xFF;
+  header[13] = (size >>> 16) & 0xFF;
+  header[14] = (size >>> 24) & 0xFF;
+  // Timestamp
+  header[15] = 0x9C; header[16] = 0x3C; header[17] = 0x29; header[18] = 0x37;
+  // Attribute
+  header[19] = 0x20;
+  // Level 2
+  header[20] = 2;
+  // CRC (LE 16-bit)
+  header[21] = dataCRC & 0xFF;
+  header[22] = (dataCRC >>> 8) & 0xFF;
+  // OS ID
+  header[23] = 0x4D;
+  // Extended header: filename
+  header[24] = extFnSize & 0xFF;
+  header[25] = (extFnSize >>> 8) & 0xFF;
+  header[26] = 0x01;
+  for (var j = 0; j < fnLen; j++) header[27 + j] = fnBytes[j];
+  header[27 + fnLen] = 0;
+  header[28 + fnLen] = 0;
+
+  var result = new Uint8Array(totalHeaderSize + payload.length);
+  result.set(header, 0);
+  result.set(payload, totalHeaderSize);
+  return result;
+};
+
 // ============================================================
 // Splice archive into z64 ROM
 // ============================================================
