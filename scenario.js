@@ -1878,7 +1878,7 @@ window.OB64 = window.OB64 || {};
         html += '<div class="sc-sub">No squads chain through these nodes.</div>';
       }
     } else {
-      html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
+      html += '<div class="sc-sub">No squad gates on this trigger - it is an <strong>objective / event trigger</strong>: its condition (e.g. the player reaching this site) fires a story event, win/lose check, or <strong>cutscene</strong> rather than launching a squad. (Confirmed: key2 E3 = player-at-Ishro plays a cutscene.)</div>';
     }
     html += '</div>';
     // Delete: extra ids are stored in the record, so deletion never renumbers survivors.
