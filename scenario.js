@@ -3202,16 +3202,16 @@ window.OB64 = window.OB64 || {};
     return (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scincsvArchives) || {};
   }
 
-  // Author-selected allegiance -> scincsv descriptor addend halfword. The runtime rule is
-  // (addend & 0x2000)=allied, (addend == 0)=neutral, else=enemy. We flip only the classifying
-  // bits and keep the town's natural low descriptor bits, so an authored state stays as close
-  // to a vanilla descriptor as possible.
+  // Author-selected allegiance -> scincsv descriptor addend halfword. The game reads SPECIFIC
+  // canonical values, not bit patterns: corpus scan is enemy=0x0004 (366/366 uniform),
+  // neutral=0x0000 (uniform), allied=0x2012 (58/65; 0x2002 the other 7). An earlier "flip only
+  // the 0x2000 bit" approach was WRONG - clearing 0x2000 off an ex-allied 0x2002 gives 0x0002,
+  // which the game does NOT treat as enemy (proven in-game: Jadd stayed allied at 0x0002 while
+  // Billney at 0x0004 flipped correctly). So always emit the canonical value for the target state.
   function allegianceTargetAddend(current, target) {
-    current = (current || 0) & 0xFFFF;
     if (target === 'neutral') return 0x0000;
-    if (target === 'allied') return (current | 0x2000) & 0xFFFF;
-    var v = current & ~0x2000 & 0xFFFF; // enemy: nonzero, without the allied bit
-    return v === 0 ? 0x0004 : v;
+    if (target === 'allied') return 0x2012;
+    return 0x0004; // enemy
   }
 
   // Collect town-allegiance intents and group them by the shared scincsv archive they target.
