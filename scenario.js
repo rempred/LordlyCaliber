@@ -151,8 +151,12 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-route-legend .sc-leg-t{font-weight:800;color:var(--ob-ink)}',
       '#panel-scenario .sc-route-legend .sc-leg{display:inline-flex;align-items:center;gap:5px}',
       '#panel-scenario .sc-leg-dot{display:inline-block;width:9px;height:9px;border-radius:2px}',
-      '#panel-scenario .sc-squad-link{color:var(--sc-blue);text-decoration:underline;cursor:pointer;font-weight:700}',
-      '#panel-scenario .sc-squad-link:hover{color:var(--ob-wood-hi)}',
+      '#panel-scenario .sc-squad-chip{display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;align-items:center;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:4px 8px;margin:4px 0;cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-squad-chip:hover{background:rgba(104,74,36,.14)}',
+      '#panel-scenario .sc-squad-chip:active{transform:translateY(1px)}',
+      '#panel-scenario .sc-squad-chip img,#panel-scenario .sc-squad-chip .sc-chip-noicon{width:26px;height:26px;object-fit:contain;image-rendering:pixelated;border-radius:50%;background:#1d1a16;display:inline-block}',
+      '#panel-scenario .sc-squad-chip strong{font-weight:800}',
+      '#panel-scenario .sc-squad-chip .sc-chip-sub{display:block;color:var(--ob-ink-soft);font-size:11px}',
       '#panel-scenario .sc-layer-toggles label{font-size:12px;display:flex;gap:4px;align-items:center}',
       '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
       '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
@@ -1854,9 +1858,25 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section"><span class="sc-label">Used by</span>';
     if (use.nodeIds.length) {
       html += '<div class="sc-sub">Gate on node' + (use.nodeIds.length > 1 ? 's' : '') + ' ' + use.nodeIds.join(', ') + '</div>';
-      html += '<div class="sc-sub">Squads: ' + (use.squadRefs.length
-        ? use.squadRefs.map(function(r) { return '<a href="#" class="sc-squad-link" data-row="' + r.rowIndex + '">source ' + r.sourceId + ' / EDAT ' + r.edat + '</a>'; }).join(', ')
-        : 'none chain through these nodes') + '</div>';
+      if (use.squadRefs.length) {
+        var points = pointsForAllRows(rom, key);
+        var pointByRow = {}; points.forEach(function(p) { pointByRow[p.section1Row] = p; });
+        html += '<div class="sc-sub" style="margin:6px 0 3px">Squads (' + use.squadRefs.length + '):</div>';
+        use.squadRefs.forEach(function(r) {
+          var point = pointByRow[r.rowIndex], srow = model.section1[r.rowIndex];
+          var rec = point ? effectiveRecordFor(rom, key, point) : null;
+          var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown';
+          var icon = point ? liveLeaderIcon(rom, key, point) : null;
+          var behavior = describeBehavior(rom, key, model, srow);
+          var bar = (behavior && behavior.indexOf('Guard') !== 0 && behavior !== 'unknown') ? 'border-left:5px solid ' + routeColor(r.rowIndex) + ';' : '';
+          html += '<button type="button" class="sc-squad-chip" data-row="' + r.rowIndex + '" style="' + bar + '">' +
+            (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span class="sc-chip-noicon"></span>') +
+            '<span><strong>Source ' + esc(r.sourceId) + ' / EDAT ' + esc(r.edat) + '</strong>' +
+            '<span class="sc-chip-sub">' + esc(leader) + '</span></span></button>';
+        });
+      } else {
+        html += '<div class="sc-sub">No squads chain through these nodes.</div>';
+      }
     } else {
       html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
     }
@@ -1877,8 +1897,8 @@ window.OB64 = window.OB64 || {};
     html += '</div>';
     el.innerHTML = html;
     wireBackButton(el);
-    // "Used by" squad links jump to that squad's detail.
-    el.querySelectorAll('.sc-squad-link').forEach(function(a) {
+    // "Used by" squad cards jump to that squad's detail.
+    el.querySelectorAll('.sc-squad-chip').forEach(function(a) {
       a.onclick = function(ev) {
         ev.preventDefault();
         ui.selectedPoint = parseInt(this.dataset.row, 10);
