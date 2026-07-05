@@ -167,7 +167,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-back{margin:0 0 8px}',
       '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:10px;font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
       // Town = a ring CENTERED on the site anchor, larger than and BELOW the squad icon, so a
-      // garrison squad stands inside its town's allegiance ring (old 16px offset read as
+      // site-placed squad stands inside its town's allegiance ring (old 16px offset read as
       // "dots are not on towns").
       '#panel-scenario .sc-site-marker{width:48px;height:48px;border-radius:50%;background:transparent;border:3px solid var(--sc-green);box-shadow:0 1px 4px rgba(0,0,0,.35);z-index:8;transform:translate(-50%,-50%)}',
       '#panel-scenario .sc-site-marker:hover{background:rgba(245,230,200,.2)}',
@@ -311,43 +311,20 @@ window.OB64 = window.OB64 || {};
     return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
   }
 
-  // A squad "holds" a town at load either by SELECTOR placement (snapped to the site) or by
-  // a COORDINATE placement that lands on the site. Coordinate garrisons are common on the
-  // late-game maps where every squad is coordinate-placed - counting only selector rows made
-  // those missions render almost entirely allied. Threshold: on-site squads measure < 1.0
-  // world units from their site corpus-wide while field squads measure >= 1.7, and the
-  // densest map spaces sites 1.94 apart, so 1.2 splits the two populations cleanly.
-  var GARRISON_WORLD_RADIUS = 1.2;
-
-  function siteGarrisonRows(rom, runtimeKey, selector) {
-    var model = modelFor(rom, runtimeKey);
-    var site = (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0];
-    var out = [];
-    if (model) model.section1.forEach(function(row, i) {
-      var b = row.bytes;
-      if ((b[4] || 0) === 0) {
-        if ((b[3] || 0) === selector) out.push(row.sourceId);
-        return;
-      }
-      if (!site) return;
-      var w = rowWorld(rom, runtimeKey, i, null);
-      if (w && Math.hypot(w.x - site.x, w.z - site.z) <= GARRISON_WORLD_RADIUS) out.push(row.sourceId);
-    });
-    return out;
+  function siteForSelector(rom, runtimeKey, selector) {
+    return (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0] || null;
   }
 
-  // Initial town allegiance is DERIVED, not stored: a site held by a Section 1 squad starts
-  // enemy; otherwise the ktenmain morale byte's 0x80 bit marks a neutral start; otherwise the
-  // site starts allied. The game has no standalone owner byte (confirmed by live
-  // write-watching the loader). Project intent (the user's neutral/allied choice, pending the
-  // ktenmain export lane) sits between garrison and the static bit.
+  // Initial town allegiance comes from each site's OWN scincsv descriptor addend (the stream is
+  // selected per key by the scenario resource table). addend & 0x2000 = allied, addend == 0x0000
+  // = neutral, otherwise (or descriptor absent) = enemy - most towns start enemy-held. The
+  // generator (tools/gen_scenario_eset_data.js) resolves this into site.initialAllegiance.
   function siteAllegiance(rom, runtimeKey, selector) {
-    if (siteGarrisonRows(rom, runtimeKey, selector).length) return 'enemy';
     var intent = (ensureState(rom).siteAllegiances[runtimeKey] || {})[selector];
-    if (intent === 'neutral' || intent === 'allied') return intent;
-    var site = (ensureState(rom).sites[runtimeKey] || []).filter(function(s) { return s.selector === selector; })[0];
-    if (site && site.neutralAtStart) return 'neutral';
-    return 'allied';
+    if (intent === 'enemy' || intent === 'neutral' || intent === 'allied') return intent;
+    var site = siteForSelector(rom, runtimeKey, selector);
+    if (site && (site.initialAllegiance === 'enemy' || site.initialAllegiance === 'neutral' || site.initialAllegiance === 'allied')) return site.initialAllegiance;
+    return 'enemy';
   }
 
   function setSiteAllegiance(rom, runtimeKey, selector, value) {
@@ -1285,26 +1262,25 @@ window.OB64 = window.OB64 || {};
     return sites.filter(function(s) { return s.ktenmainRecordIndex === min + rel; })[0] || null;
   }
 
-  // Waypoint payload decode (live-anchored + corpus-fitted):
+  // Waypoint payload decode (waypoint-field-confirmed 2026-07-05):
   //   [5] != 0 -> ([4],[5]) bounds-normalized byte coordinates (/256, game-exact).
-  //   [5] == 0, subtype 0/2 -> SELECTOR-table target: selector = [4] - [3].
-  //       71/74 corpus waypoints land on valid selectors; the 3 misses all compute
-  //       selector 0, a sentinel whose semantics are still open (treated as unresolved).
-  //   [5] == 0, subtype 1 -> SCENE-RECORD target (the same index space kind-12 triggers
-  //       use): the site whose ktenmain record index equals sceneMin + [4]. Confirmed by
-  //       watching a triggered squad march to the decoded town in-game.
+  //   [5] == 0 -> SELECTOR-table target: selector = [4] - [3] (ALL subtypes; selector 0 = sentinel,
+  //       unresolved). The march destination is the runtime object WAYPOINT (+0x28) = this site;
+  //       a separate aggro field (+0x4C) diverts the squad to intercept the nearest player in range,
+  //       which is why on a normal playthrough you see it chase your units rather than march cleanly.
+  //       (The old subtype-1 "scene-record" reading was the +0x4C aggro field mis-decoded.)
   function nodeWorld(rom, key, node) {
     if (!node || node.kind !== 1) return null;
     if (!node.bytes) return null;
     if (node.bytes[5] === 0) {
-      var site;
-      if (node.subtype === 1) {
-        site = siteBySceneRecord(rom, key, node.bytes[4]);
-        return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector, recordSpace: true } : null;
-      }
+      // Selector-space march destination for ALL subtypes. CONFIRMED 2026-07-05 via the runtime
+      // waypoint field (map-unit object +0x28): key3 terminal nodes with [4]=5 set waypoint to
+      // Baldera's exact world coords = the site at selector 5. The old subtype-1 "scene-record"
+      // reading (sceneMin+[4]) was wrong - it came from reading the +0x4C AGGRO field (which chases
+      // the nearest player unit) instead of the +0x28 march waypoint. See docs march-to checklist.
       var sel = node.bytes[4] - node.bytes[3];
       if (sel <= 0) return null; // selector-0 sentinel; semantics undecoded, render unresolved
-      site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
+      var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
       return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector } : null;
     }
     var b = calibrationData(key) && calibrationData(key).boundsWorld;
@@ -1387,9 +1363,12 @@ window.OB64 = window.OB64 || {};
       if (op === 1 && startNode.bytes[12]) gate += ' / else E' + startNode.bytes[12];
     }
     var marchWord = destName ? 'march to ' + destName : (chain.length > 1 ? 'march' : 'act');
-    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '');
-    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '');
-    if (destName) return 'March to ' + destName + (terminal ? ' + permanent camp' : '');
+    // These squads hold their march destination in the runtime waypoint but divert to intercept
+    // the nearest player unit in aggro range (see docs march-to checklist), so note that.
+    var intercept = destName ? ' (diverts to intercept your units in range)' : '';
+    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
+    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
+    if (destName) return 'March to ' + destName + (terminal ? ' + permanent camp' : '') + intercept;
     return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
   }
 
@@ -1945,7 +1924,7 @@ window.OB64 = window.OB64 || {};
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors, ' + validation.warnings.length + ' warnings</div>';
     if (stubs.siteAllegianceKeys.length) {
-      html += '<div class="sc-warning">Heads-up, not an error: town allegiance edits have no decoded ROM home yet; they save to project JSON and block ROM export until the source decode lands.</div>';
+      html += '<div class="sc-warning">Heads-up, not an error: town allegiance edits now point at the decoded scincsv/ktenmain static descriptors; they save to project JSON and block ROM export until that archive lane lands.</div>';
     }
     html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
     model.section2.forEach(function(node) {
@@ -2057,15 +2036,34 @@ window.OB64 = window.OB64 || {};
     return extra ? ('extra ' + id + ' kind ' + extra.kind) : ('extra ' + id);
   }
 
+  function siteAllegianceReason(site, allegiance, intent) {
+    var desc = site.siteDescriptor || {};
+    if (intent === 'enemy' || intent === 'neutral' || intent === 'allied') {
+      return intent.toUpperCase() + ' (project intent; ROM export lane pending for static site descriptors).';
+    }
+    var file = desc.scincsvFilename || '?';
+    var town = desc.ownKtenmainName || site.siteName || 'this site';
+    var addend = desc.descriptorAddendHex || '0x????';
+    if (!desc.scincsvFilename) {
+      return 'ENEMY: no scincsv descriptor stream is selected for this scenario key (default enemy-held).';
+    }
+    if (!desc.descriptorPresent) {
+      return 'ENEMY: ' + town + ' has no descriptor in scincsv ' + file + ' (default enemy-held).';
+    }
+    if (allegiance === 'allied') {
+      return 'ALLIED: scincsv ' + file + ' descriptor for ' + town + ' has addend ' + addend + ' (bit 0x2000 set).';
+    }
+    if (allegiance === 'neutral') {
+      return 'NEUTRAL: scincsv ' + file + ' descriptor for ' + town + ' has addend 0x0000.';
+    }
+    return 'ENEMY: scincsv ' + file + ' descriptor for ' + town + ' has addend ' + addend + ' (bit 0x2000 clear = enemy-held).';
+  }
+
   function renderSiteDetail(el, rom, key, site) {
     var allegiance = siteAllegiance(rom, key, site.selector);
-    var garrisons = siteGarrisonRows(rom, key, site.selector);
     var intent = (ensureState(rom).siteAllegiances[key] || {})[site.selector];
-    var why = garrisons.length
-      ? 'ENEMY: garrisoned by squad source ' + garrisons.join(', ') + ' (enemy-held state is derived from garrison placement).'
-      : (allegiance === 'neutral'
-        ? (intent === 'neutral' ? 'NEUTRAL (project intent; static bit pending export).' : 'NEUTRAL: ktenmain morale byte 0x80 bit set for this site.')
-        : (intent === 'allied' ? 'ALLIED (project intent; static bit pending export).' : 'ALLIED: no garrison, neutral bit clear (default).'));
+    var why = siteAllegianceReason(site, allegiance, intent);
+    var desc = site.siteDescriptor || {};
     var html = backToOverviewHtml() + detailHead(site.siteName || ('Site ' + site.selector), [
       'selector ' + site.selector,
       'x ' + site.x.toFixed(3) + ' / z ' + site.z.toFixed(3),
@@ -2073,20 +2071,19 @@ window.OB64 = window.OB64 || {};
     ]);
     html += '<div class="sc-section"><span class="sc-label">Initial allegiance</span>' +
       '<div class="sc-sub">' + esc(why) + '</div>';
-    if (garrisons.length) {
-      html += '<div class="sc-sub">To change: move or delete the garrison squad (drag it off the town). ' +
-        'Neutral/allied intent below only applies once no garrison remains.</div>';
-    } else {
-      html += '<div class="sc-sub">To make this town ENEMY-held: place a squad on it (drag one over, or Add Squad - it snaps).</div>';
+    if (desc.scincsvFilename) {
+      html += '<div class="sc-sub">Source: ' + esc(desc.scincsvFilename) +
+        (desc.ownKtenmainRecordIndex === null || desc.ownKtenmainRecordIndex === undefined ? '' : (' / ktenmain rec ' + desc.ownKtenmainRecordIndex)) +
+        (desc.descriptorPresent ? (' / addend ' + (desc.descriptorAddendHex || '0x????')) : ' / no descriptor') + '</div>';
     }
-    html += '<div class="sc-form-row"><label class="sc-label">No-garrison state</label><select id="sc-site-allegiance">' +
-        option('', 'Static default (' + (site.neutralAtStart ? 'neutral' : 'allied') + ')', intent || '') +
+    html += '<div class="sc-form-row"><label class="sc-label">Project state</label><select id="sc-site-allegiance">' +
+        option('', 'Static default (' + (site.initialAllegiance || 'enemy') + ')', intent || '') +
         option('allied', 'Allied', intent || '') +
         option('neutral', 'Neutral', intent || '') +
+        option('enemy', 'Enemy', intent || '') +
       '</select></div>' +
-      '<div class="sc-warning">Neutral/allied writes target the ktenmain site table, but our LHA recompression of ktenmain ' +
-      'currently exceeds its ROM slot by ~32B - the intent saves to project JSON and blocks ROM export until encoder ' +
-      'parity or the archive grow/relocate path lands. Garrison-based (enemy) authoring exports fully today.</div>';
+      '<div class="sc-warning">Town allegiance writes target the scincsv site descriptor stream (the addend halfword). ' +
+      'The intent saves to project JSON and blocks ROM export until the static descriptor export lane lands.</div>';
     html += '</div>';
     el.innerHTML = html;
     wireBackButton(el);
@@ -3104,7 +3101,7 @@ window.OB64 = window.OB64 || {};
     var state = ensureState(rom);
     var stubs = anyProjectStub(rom);
     var blocked = [];
-    if (stubs.siteAllegianceKeys.length) blocked.push('Neutral/allied town intent targets the ktenmain site table, whose LHA recompression currently exceeds its ROM slot by ~32B; intents stay project-only until encoder parity or the grow/relocate path lands. (Enemy-held via garrison placement exports fully.)');
+    if (stubs.siteAllegianceKeys.length) blocked.push('Town allegiance intent targets the scincsv site descriptor stream (addend halfword); intents stay project-only until the static descriptor archive export lane lands.');
     // Slot overflow is handled below by the relocation lane. Keep the fit number as
     // a user-facing note, not an export blocker.
     // Added squads EXPORT: appended-row deployment and the override re-skin are both
@@ -3173,6 +3170,56 @@ window.OB64 = window.OB64 || {};
     return { touched: touched, blocked: [], relocations: relocations, crc: relocations.length > 0 };
   }
 
+  function siteAllegianceCensus(rom) {
+    var state = ensureState(rom);
+    var totals = { keys: 0, sites: 0, enemy: 0, neutral: 0, allied: 0, projectIntent: 0 };
+    var keys = dataScenarios().slice().sort(function(a, b) { return a.runtimeKey - b.runtimeKey; }).map(function(entry) {
+      var runtimeKey = entry.runtimeKey;
+      var sites = (state.sites[runtimeKey] || []).slice().sort(function(a, b) { return a.selector - b.selector; }).map(function(site) {
+        var intent = (state.siteAllegiances[runtimeKey] || {})[site.selector] || '';
+        var allegiance = siteAllegiance(rom, runtimeKey, site.selector);
+        var desc = site.siteDescriptor || {};
+        totals.sites++;
+        if (totals[allegiance] != null) totals[allegiance]++;
+        if (intent) totals.projectIntent++;
+        return {
+          selector: site.selector,
+          siteName: site.siteName || ('Site ' + site.selector),
+          x: site.x,
+          z: site.z,
+          allegiance: allegiance,
+          initialAllegiance: site.initialAllegiance || '',
+          neutralAtStart: !!site.neutralAtStart,
+          isObjective: !!site.isObjective,
+          projectIntent: intent,
+          ktenmainRecordIndex: site.ktenmainRecordIndex,
+          ktenmainMoraleOffset: site.ktenmainMoraleOffset,
+          reason: siteAllegianceReason(site, allegiance, intent),
+          descriptor: {
+            scincsvArchive: desc.scincsvArchive,
+            scincsvFilename: desc.scincsvFilename,
+            ownKtenmainRecordIndex: desc.ownKtenmainRecordIndex,
+            ownKtenmainName: desc.ownKtenmainName,
+            descriptorPresent: desc.descriptorPresent,
+            descriptorIndex: desc.descriptorIndex,
+            descriptorAddendHex: desc.descriptorAddendHex,
+          },
+        };
+      });
+      totals.keys++;
+      return {
+        runtimeKey: runtimeKey,
+        label: displayLabel(runtimeKey),
+        archive: entry.archive,
+        filename: entry.filename,
+        source: entry.source || null,
+        siteCount: sites.length,
+        sites: sites,
+      };
+    });
+    return { summary: totals, keys: keys };
+  }
+
   // The embedded Squads comp editor calls this on every commit so squad markers repaint with
   // the current leader icon without a full tab re-render (scroll and focus stay put).
   OB64._scenarioSquadEdit = function() {
@@ -3197,6 +3244,7 @@ window.OB64 = window.OB64 || {};
     patchRegions: publicRelocationRegions,
     iconProvider: iconProvider,
     keyModified: keyModified,
+    siteAllegianceCensus: siteAllegianceCensus,
     leaderClassHasMapSprite: leaderClassHasMapSprite,
     spritelessLeaderIssues: spritelessLeaderIssues,
   };
