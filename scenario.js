@@ -151,6 +151,8 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-route-legend .sc-leg-t{font-weight:800;color:var(--ob-ink)}',
       '#panel-scenario .sc-route-legend .sc-leg{display:inline-flex;align-items:center;gap:5px}',
       '#panel-scenario .sc-leg-dot{display:inline-block;width:9px;height:9px;border-radius:2px}',
+      '#panel-scenario .sc-squad-link{color:var(--sc-blue);text-decoration:underline;cursor:pointer;font-weight:700}',
+      '#panel-scenario .sc-squad-link:hover{color:var(--ob-wood-hi)}',
       '#panel-scenario .sc-layer-toggles label{font-size:12px;display:flex;gap:4px;align-items:center}',
       '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
       '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
@@ -921,7 +923,12 @@ window.OB64 = window.OB64 || {};
     el.querySelectorAll('input[data-layer]').forEach(function(box) {
       box.onchange = function() {
         ui.layers[this.dataset.layer] = !!this.checked;
+        // Preserve the scroll position across the re-render so toggling a filter doesn't jump the view.
+        var sc = el.querySelector('.sc-map-scroll');
+        var sl = sc ? sc.scrollLeft : 0, st = sc ? sc.scrollTop : 0;
         renderMapPanel(el, rom);
+        var sc2 = el.querySelector('.sc-map-scroll');
+        if (sc2) { sc2.scrollLeft = sl; sc2.scrollTop = st; }
       };
     });
     var inner = el.querySelector('#sc-map-inner');
@@ -1361,6 +1368,10 @@ window.OB64 = window.OB64 || {};
     var chain = walkNodeChain(rom, key, model, start);
     var last = chain[chain.length - 1];
     var terminal = last && last.node.bytes[17] === 0xFF;
+    // Multi-hop routes chain several waypoints (e.g. key7 EDAT532: -> Mosaka -> Takua). The
+    // FINAL resolved node is the destination; earlier resolved town stops are "via" points.
+    var stops = [];
+    chain.forEach(function(h) { if (h.world && h.world.siteName) stops.push(h.world.siteName.trim()); });
     var destName = '', destIsTown = false;
     for (var i = chain.length - 1; i >= 0; i--) {
       if (chain[i].world) {
@@ -1371,6 +1382,8 @@ window.OB64 = window.OB64 || {};
         break;
       }
     }
+    var viaStops = destIsTown ? stops.slice(0, -1) : stops;
+    var via = viaStops.length ? ' via ' + viaStops.join(' → ') : '';
     var gateA = startNode.bytes[10];
     var op = startNode.bytes[11];
     var gate = '';
@@ -1382,14 +1395,14 @@ window.OB64 = window.OB64 || {};
       if (op === 3 && startNode.bytes[12]) gate += ' OR E' + startNode.bytes[12];
       if (op === 1 && startNode.bytes[12]) gate += ' / else E' + startNode.bytes[12];
     }
-    var marchWord = destName ? 'march to ' + destName : (chain.length > 1 ? 'march' : 'act');
+    var marchWord = destName ? 'march to ' + destName + via : (chain.length > 1 ? 'march' : 'act');
     // Town-marchers hold their march destination in the runtime waypoint but divert to intercept
     // the nearest player unit in aggro range (live-confirmed; see docs march-to checklist). The
     // note is scoped to town destinations - coordinate/patrol squads were not observed intercepting.
     var intercept = destIsTown ? ' (diverts to intercept your units in range)' : '';
     if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
     if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
-    if (destName) return 'March to ' + destName + (terminal ? ' + permanent camp' : '') + intercept;
+    if (destName) return 'March to ' + destName + via + (terminal ? ' + permanent camp' : '') + intercept;
     return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
   }
 
@@ -1443,11 +1456,15 @@ window.OB64 = window.OB64 || {};
   function extraConsumers(rom, key, model, extraId) {
     var nodes = model.section2.filter(function(n) { return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId); });
     var nodeIds = nodes.map(function(n) { return n.nodeId; });
-    var squads = model.section1.filter(function(row) {
+    var refs = [];
+    model.section1.forEach(function(row, idx) {
+      if (!row.bytes) return;
       var chain = walkNodeChain(rom, key, model, row.bytes[6]);
-      return chain.some(function(h) { return nodeIds.indexOf(h.node.nodeId) >= 0; });
-    }).map(function(r) { return r.sourceId; });
-    return { nodeIds: nodeIds, squadSourceIds: squads };
+      if (chain.some(function(h) { return nodeIds.indexOf(h.node.nodeId) >= 0; })) {
+        refs.push({ sourceId: row.sourceId, edat: (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1, rowIndex: idx });
+      }
+    });
+    return { nodeIds: nodeIds, squadSourceIds: refs.map(function(r) { return r.sourceId; }), squadRefs: refs };
   }
 
   // Per-squad route colors: line TYPE (solid/dashed) encodes gated-ness, COLOR identifies the
@@ -1837,7 +1854,9 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section"><span class="sc-label">Used by</span>';
     if (use.nodeIds.length) {
       html += '<div class="sc-sub">Gate on node' + (use.nodeIds.length > 1 ? 's' : '') + ' ' + use.nodeIds.join(', ') + '</div>';
-      html += '<div class="sc-sub">Squads: ' + (use.squadSourceIds.length ? use.squadSourceIds.map(function(s) { return 'source ' + s; }).join(', ') : 'none chain through these nodes') + '</div>';
+      html += '<div class="sc-sub">Squads: ' + (use.squadRefs.length
+        ? use.squadRefs.map(function(r) { return '<a href="#" class="sc-squad-link" data-row="' + r.rowIndex + '">source ' + r.sourceId + ' / EDAT ' + r.edat + '</a>'; }).join(', ')
+        : 'none chain through these nodes') + '</div>';
     } else {
       html += '<div class="sc-sub">No Section 2 gate references this trigger (objective-layer or unused).</div>';
     }
@@ -1858,6 +1877,16 @@ window.OB64 = window.OB64 || {};
     html += '</div>';
     el.innerHTML = html;
     wireBackButton(el);
+    // "Used by" squad links jump to that squad's detail.
+    el.querySelectorAll('.sc-squad-link').forEach(function(a) {
+      a.onclick = function(ev) {
+        ev.preventDefault();
+        ui.selectedPoint = parseInt(this.dataset.row, 10);
+        ui.selectedSite = null;
+        ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+    });
 
     var commitTrig = function() { ensureState(rom).modifiedKeys[key] = true; changed(); renderScenarioTab(document.getElementById('panel-scenario')); };
     var kindSel = el.querySelector('#sc-trig-kind');
