@@ -147,6 +147,10 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-map-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
       '#panel-scenario .sc-map-tools select,#panel-scenario .sc-map-tools input{height:28px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:12px}',
       '#panel-scenario .sc-layer-toggles{display:flex;gap:7px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--sc-line);padding-top:8px;margin-top:8px}',
+      '#panel-scenario .sc-route-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--ob-ink-soft);padding:6px 2px 0;margin-top:6px}',
+      '#panel-scenario .sc-route-legend .sc-leg-t{font-weight:800;color:var(--ob-ink)}',
+      '#panel-scenario .sc-route-legend .sc-leg{display:inline-flex;align-items:center;gap:5px}',
+      '#panel-scenario .sc-leg-dot{display:inline-block;width:9px;height:9px;border-radius:2px}',
       '#panel-scenario .sc-layer-toggles label{font-size:12px;display:flex;gap:4px;align-items:center}',
       '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
       '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
@@ -877,6 +881,13 @@ window.OB64 = window.OB64 || {};
         layerToggleHtml('routes', 'Routes') +
         layerToggleHtml('triggers', 'Triggers') +
       '</div>' +
+      '<div class="sc-route-legend">' +
+        '<span class="sc-leg-t">Route lines:</span>' +
+        '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#6a4d28" stroke-width="3"></line></svg> marches at start</span>' +
+        '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#6a4d28" stroke-width="3" stroke-dasharray="9 7"></line></svg> waits for a trigger</span>' +
+        '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#2f8f4e" stroke-width="2" stroke-dasharray="3 5"></line></svg> conditional fork</span>' +
+        '<span class="sc-leg"><span class="sc-leg-dot" style="background:#4db0d2"></span><span class="sc-leg-dot" style="background:#e6a92e"></span><span class="sc-leg-dot" style="background:#d2564b"></span> each color = one squad (matches roster bar)</span>' +
+      '</div>' +
       '<div class="sc-roster" id="sc-roster"></div>';
     var view = el.querySelector('#sc-view-mode');
     if (view) {
@@ -1114,7 +1125,10 @@ window.OB64 = window.OB64 || {};
       var units = rec ? unitCountFromRecord(rec) : null;
       var icon = liveLeaderIcon(rom, key, point);
       var behavior = describeBehavior(rom, key, model, row);
-      html += '<div class="sc-roster-row' + (ui.selectedPoint === point.section1Row ? ' on' : '') + '" data-row="' + point.section1Row + '" role="button" tabindex="0">' +
+      // Color bar = this squad's route color on the map (only squads that actually march).
+      var marches = behavior && behavior.indexOf('Guard') !== 0 && behavior !== 'unknown';
+      var barStyle = marches ? 'border-left:5px solid ' + routeColor(point.section1Row) + ';' : '';
+      html += '<div class="sc-roster-row' + (ui.selectedPoint === point.section1Row ? ' on' : '') + '" data-row="' + point.section1Row + '" role="button" tabindex="0" style="' + barStyle + '">' +
         (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span></span>') +
         '<span><strong>Source ' + esc(row.sourceId) + ' / EDAT ' + esc(point.edat) + '</strong>' +
         '<span class="sc-sub" style="display:block">' + esc(leader) + (units != null ? ' - ' + units + ' unit' + (units === 1 ? '' : 's') : '') + '</span></span>' +
@@ -1436,6 +1450,12 @@ window.OB64 = window.OB64 || {};
     return { nodeIds: nodeIds, squadSourceIds: squads };
   }
 
+  // Per-squad route colors: line TYPE (solid/dashed) encodes gated-ness, COLOR identifies the
+  // squad (keyed on its Section 1 row so it stays stable across renders and matches the roster).
+  var ROUTE_COLORS = ['#4db0d2', '#e6a92e', '#d2564b', '#63c069', '#b072d6', '#e6863a', '#42c4a6',
+    '#d76bab', '#a6c845', '#6a86e6', '#d8d05a', '#c88a5e', '#8fd0e0', '#8ad07a', '#e07a7a', '#b0a0e0'];
+  function routeColor(i) { return ROUTE_COLORS[((i % ROUTE_COLORS.length) + ROUTE_COLORS.length) % ROUTE_COLORS.length]; }
+
   function polyline(svg, pts, zoom, color, dash, width) {
     if (pts.length < 2) return;
     var el = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
@@ -1476,10 +1496,13 @@ window.OB64 = window.OB64 || {};
         if (hop.world) pts.push(projection.worldToImage(hop.world.x, hop.world.z));
       });
       var isSel = ui.selectedPoint === point.section1Row;
-      // Dashed = route waits on a gate at its start node; SOLID = ungated, marches immediately.
+      // Line TYPE encodes gating: dashed = waits on a gate at its start node; solid = ungated,
+      // marches immediately. Line COLOR identifies the squad (stable per Section 1 row).
       var startN = chain[0] && chain[0].node;
       var gated = !!(startN && startN.kind !== 1 && startN.bytes[10]);
-      polyline(svg, pts, zoom, isSel ? 'rgba(245,210,98,.95)' : 'rgba(73,176,210,.82)', gated ? '9 7' : null, isSel ? 4 : 3);
+      var color = routeColor(point.section1Row);
+      if (isSel) polyline(svg, pts, zoom, 'rgba(245,210,98,.55)', gated ? '9 7' : null, 8); // selection halo
+      polyline(svg, pts, zoom, color, gated ? '9 7' : null, isSel ? 4 : 3);
       // Waypoint handles for every coordinate node in this squad's chain (drag to move).
       chain.forEach(function(hop) {
         if (!hop.world) return;
