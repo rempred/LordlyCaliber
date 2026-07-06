@@ -477,7 +477,7 @@ window.OB64 = window.OB64 || {};
   function downloadPatch(patch, filename) {
     if (!filename) {
       var ts = (patch.created_at || new Date().toISOString()).replace(/[:.]/g, '-');
-      filename = 'ob64_patch_' + ts + '.json';
+      filename = 'ob64_project_' + ts + '.json';
     }
     var blob = new Blob([JSON.stringify(patch, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -491,7 +491,7 @@ window.OB64 = window.OB64 || {};
   }
 
   // --------------------------------------------------------------
-  // parsePatchFile(fileText) -> validates + returns parsed patch object.
+  // parsePatchFile(fileText) -> validates + returns parsed project/patch object.
   // Throws on invalid JSON or wrong format.
   // --------------------------------------------------------------
   function parsePatchFile(fileText) {
@@ -502,13 +502,66 @@ window.OB64 = window.OB64 || {};
       throw new PatchFormatError('File is not valid JSON: ' + e.message);
     }
     if (!parsed || typeof parsed !== 'object') {
-      throw new PatchFormatError('Patch file is not a JSON object');
+      throw new PatchFormatError('Project file is not a JSON object');
     }
+    if (parsed.format === 'ob64-scenario-project') return patchFromScenarioProject(parsed);
     if (parsed.format !== PATCH_FORMAT) {
-      throw new PatchFormatError('File is not an ob64-patch (format="' +
-        parsed.format + '", expected "' + PATCH_FORMAT + '")');
+      throw new PatchFormatError('File is not an OB64 project (format="' +
+        parsed.format + '", expected "' + PATCH_FORMAT + '" or "ob64-scenario-project")');
     }
     return parsed;
+  }
+
+  function blankProjectSummary() {
+    return {
+      shops_modified: 0,
+      item_prices_modified: 0,
+      item_stats_modified: 0,
+      class_defs_modified: 0,
+      neutral_slices_modified: 0,
+      terrain_rates_modified: 0,
+      creature_drop_records_modified: 0,
+      consumables_modified: 0,
+      stat_gates_modified: 0,
+      neutral_global_rate_modified: 0,
+      tools_modified: 0,
+      squad_overrides_modified: 0,
+      scenario_modified: 0,
+    };
+  }
+
+  function blankProjectPatches() {
+    return {
+      shops: {},
+      item_prices: {},
+      items: {},
+      classDefs: {},
+      neutral_encounters: { scenario_slices: {}, terrain_rates: {} },
+      creatureDrops: {},
+      consumables: {},
+      statGates: {},
+      neutral_global_rate: null,
+      tools: {},
+      squadOverrides: {},
+      scenario: null,
+      enemies: {},
+    };
+  }
+
+  function patchFromScenarioProject(project) {
+    var summary = blankProjectSummary();
+    summary.scenario_modified = scenarioPatchCount(project);
+    var patches = blankProjectPatches();
+    patches.scenario = project;
+    return {
+      format: PATCH_FORMAT,
+      version: PATCH_VERSION,
+      created_at: project.created_at || new Date().toISOString(),
+      editor_version: '2026-07-04',
+      source: 'legacy scenario project',
+      summary: summary,
+      patches: patches,
+    };
   }
 
   // --------------------------------------------------------------
@@ -634,6 +687,7 @@ window.OB64 = window.OB64 || {};
     if (!project) return 0;
     var n = 0;
     n += Object.keys(project.modifiedEsets || {}).length;
+    n += Object.keys(project.modifiedTreasures || {}).length;
     n += (project.addedSquads || []).length;
     Object.keys(project.siteAllegiances || {}).forEach(function(key) {
       n += Object.keys(project.siteAllegiances[key] || {}).length;

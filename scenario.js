@@ -915,9 +915,6 @@ window.OB64 = window.OB64 || {};
             // user's edits, so it reads as noise in the toolbar. Re-enable by removing the
             // style attribute if a support workflow needs one-click verification again.
             '<button type="button" id="sc-run-gate" class="btn-secondary" style="display:none" title="Self-test: rebuilds all 63 vanilla mission archives through the editor codec and confirms every one is byte-identical. Does not change your ROM or edits.">Validate Missions</button>' +
-            '<label class="btn-file btn-secondary" for="sc-project-file">Load Project</label>' +
-            '<input id="sc-project-file" type="file" accept=".json,application/json" style="display:none">' +
-            '<button type="button" id="sc-save-project" class="btn-secondary">Save Project</button>' +
             '<button type="button" id="sc-add-squad">Add Squad</button>' +
           '</div>' +
         '</div>' +
@@ -978,27 +975,6 @@ window.OB64 = window.OB64 || {};
       ui.gateText = 'Mission validation: ' + result.summary.passed + '/' + result.summary.files + ' vanilla missions rebuild byte-identical, errors=' + result.summary.errors +
         (result.summary.errors === 0 && result.summary.passed === result.summary.files ? ' - mission editing is healthy.' : ' - REPORT THIS: the codec disagrees with this ROM.');
       renderScenarioTab(panel);
-    };
-    var save = panel.querySelector('#sc-save-project');
-    if (save) save.onclick = function() { downloadProject(rom); };
-    var load = panel.querySelector('#sc-project-file');
-    if (load) load.onchange = function(e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function(ev) {
-        try {
-          loadProject(rom, JSON.parse(ev.target.result));
-          ui.gateText = 'Project loaded: ' + file.name;
-          renderScenarioTab(panel);
-        } catch (err) {
-          ui.gateText = 'Project load failed: ' + err.message;
-          renderScenarioTab(panel);
-        } finally {
-          load.value = '';
-        }
-      };
-      reader.readAsText(file);
     };
     var add = panel.querySelector('#sc-add-squad');
     if (add) add.onclick = function() {
@@ -4102,17 +4078,6 @@ window.OB64 = window.OB64 || {};
       }),
       layers: {},
     };
-  }
-
-  function downloadProject(rom) {
-    var project = collectProject(rom);
-    var blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'ob64_scenario_project_' + project.created_at.replace(/[:.]/g, '-') + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   function loadProject(rom, project) {

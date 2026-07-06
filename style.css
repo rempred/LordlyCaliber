@@ -228,7 +228,7 @@ body::before {
 
 #rom-file, #patch-file { display: none; }
 
-/* Patch-loaded chip — small parchment label with wax seal dot */
+/* Project-loaded chip - small parchment label with wax seal dot */
 .patch-chip {
   margin-left: 8px;
   padding: 4px 12px 4px 20px;

@@ -34,8 +34,8 @@ window.OB64 = window.OB64 || {};
   var emptyState = document.getElementById('empty-state');
   var statusBar = document.getElementById('status-bar');
 
-  // Name of the most-recently loaded or saved patch (for status display)
-  var lastPatchFilename = null;
+  // Name of the most-recently loaded or saved project (for status display)
+  var lastProjectFilename = null;
 
   // ============================================================
   // ROM Loading
@@ -57,7 +57,7 @@ window.OB64 = window.OB64 || {};
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
         dirty.tools = OB64.tools.pendingChanges(rom) > 0;
-        lastPatchFilename = null;
+        lastProjectFilename = null;
         emptyState.style.display = 'none';
         btnExport.disabled = false;
         btnSavePatch.disabled = false;
@@ -354,7 +354,7 @@ window.OB64 = window.OB64 || {};
   });
 
   // ============================================================
-  // Patch — Save / Load
+  // Project - Save / Load
   // ============================================================
   btnSavePatch.addEventListener('click', function() {
     if (!rom) return;
@@ -376,11 +376,12 @@ window.OB64 = window.OB64 || {};
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN + statGatesN +
           globalRateN + toolsN + squadsN + scenarioN === 0) {
-        statusBar.textContent = 'No edits to save — patch would be empty.';
+        statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
+          (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
       }
       OB64.patch.downloadPatch(patch);
-      lastPatchFilename = 'ob64_patch_' + patch.created_at.replace(/[:.]/g, '-') + '.json';
+      lastProjectFilename = 'ob64_project_' + patch.created_at.replace(/[:.]/g, '-') + '.json';
       updatePatchChip();
       var parts = [];
       if (shopsN) parts.push(shopsN + ' shop' + (shopsN === 1 ? '' : 's'));
@@ -396,9 +397,10 @@ window.OB64 = window.OB64 || {};
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
       if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
-      statusBar.textContent = 'Patch saved (' + parts.join(', ') + ' changed).';
+      statusBar.textContent = 'Project saved (' + parts.join(', ') + ' changed).' +
+        (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
     } catch (err) {
-      statusBar.textContent = 'Save Patch failed: ' + err.message;
+      statusBar.textContent = 'Save Project failed: ' + err.message;
       console.error(err);
     }
   });
@@ -421,7 +423,7 @@ window.OB64 = window.OB64 || {};
           (result.applied.tools || 0) +
           (result.applied.squadOverrides || 0) +
           (result.applied.scenario || 0);
-        lastPatchFilename = file.name;
+        lastProjectFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
 
@@ -440,15 +442,15 @@ window.OB64 = window.OB64 || {};
         if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
         if (result.applied.scenario) loadedParts.push(result.applied.scenario + ' scenario change' + (result.applied.scenario === 1 ? '' : 's'));
         if (!loadedParts.length) loadedParts.push('0 changes');
-        var msg = 'Patch loaded: ' + file.name + ' (' +
+        var msg = 'Project loaded: ' + file.name + ' (' +
           loadedParts.join(', ') + ').';
         if (result.warnings.length) {
-          console.warn('[patch] warnings:', result.warnings);
+          console.warn('[project] warnings:', result.warnings);
           msg += ' (' + result.warnings.length + ' warning' + (result.warnings.length === 1 ? '' : 's') + ' — see console)';
         }
         statusBar.textContent = msg;
       } catch (err) {
-        statusBar.textContent = 'Load Patch failed: ' + err.message;
+        statusBar.textContent = 'Load Project failed: ' + err.message;
         console.error(err);
       } finally {
         // Clear the input so re-loading the same filename re-fires change
@@ -460,8 +462,8 @@ window.OB64 = window.OB64 || {};
 
   function updatePatchChip() {
     if (!patchChip) return;
-    if (lastPatchFilename) {
-      patchChip.textContent = 'patch: ' + lastPatchFilename;
+    if (lastProjectFilename) {
+      patchChip.textContent = 'project: ' + lastProjectFilename;
       patchChip.hidden = false;
     } else {
       patchChip.textContent = '';
@@ -597,7 +599,6 @@ window.OB64 = window.OB64 || {};
         (f.notes && f.notes.length
           ? '<ul class="tool-notes">' + f.notes.map(function(n) { return '<li>' + n + '</li>'; }).join('') + '</ul>'
           : '') +
-        (f.verified ? '<div class="tool-meta">Verified: ' + f.verified + '</div>' : '') +
       '</div>';
     }
     html += '</div>';

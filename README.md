@@ -127,7 +127,9 @@ project download asset.
   hang the game: squad leaders must use a class with a map-unit sprite (85 of
   165 classes — monsters, undead, and most special classes — have none, and
   the game crashes during mission LOADING if one leads a deployed squad).
-  Scenario work can also be saved standalone as a JSON project file.
+  Scenario work is saved through the top-level Project JSON flow, so one file
+  can carry Scenario edits together with shop, class, item, encounter, and
+  Tools changes.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
@@ -158,16 +160,19 @@ project download asset.
   round-trip byte-exactly back to `.sra`).
   Goth (war funds) and Chaos Frame are editable in every format, including
   battery saves.
-- **Patches** — save supported edits (shops, item prices, item stats, class
+- **Projects** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
-  and Tools-tab feature toggles) to a portable JSON patch file for sharing or
+  and Tools-tab feature toggles) to a portable JSON project file for sharing or
   reapplying to a fresh ROM.
-  Squad patches store per-runtime-key 35-byte replacement records so a saved
-  patch can reproduce the exported squad override blob.
-  Patch format v7 embeds the full Scenario project payload (modified mission
-  ESETs, added squads, and site intents), so one patch file reproduces a
-  complete scenario mod; v6 and earlier patches still load.
+  Squad project data stores per-runtime-key 35-byte replacement records so a
+  saved project can reproduce the exported squad override blob.
+  The Project JSON container embeds the full Scenario payload (modified mission
+  ESETs, added squads, and site intents), so one file reproduces a complete
+  scenario mod; older patch files and legacy Scenario-only project files still
+  load.
+  Save Game Editor changes are separate save-file edits; use that tab's Export
+  Save control for them.
 - **Export** — writes a clean ROM in the same byte order that was loaded, with
   the N64 CIC-6102 CRC re-calculated when needed. A no-edit export is
   byte-identical to the input. When an export changes the CRC (scenario
@@ -228,7 +233,7 @@ project download asset.
 2. Click **Load ROM** and select your legally-obtained supported US retail ROM.
 3. Use the tabs to make edits — pending changes show in the status bar.
 4. **Export ROM** writes a fresh ROM in the loaded byte order to your downloads.
-5. (Optional) **Save Patch** writes your edits as JSON. **Load Patch** re-applies
+5. (Optional) **Save Project** writes your edits as JSON. **Load Project** re-applies
    them to a clean ROM.
 
 For save editing: switch to the **Save Game Editor** tab and **Load Save**.

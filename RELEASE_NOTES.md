@@ -25,10 +25,11 @@
   the UI reports exact fit/relocation status per mission. Relocation exports
   recalculate the CRC, and the UI explains the resulting new Project64 save
   folder with a recovery recipe.
-- **Patch v7**: JSON patches now embed the full Scenario project payload
+- **Project JSON**: Save Project / Load Project use the JSON patch container
+  and embed the full Scenario project payload
   (modified mission ESETs, added squads, site intents) alongside all previous
-  lanes, so one patch file reproduces a complete scenario mod on a clean ROM.
-  v6 and earlier patches still load.
+  lanes, so one project file reproduces a complete scenario mod on a clean ROM.
+  v6 and earlier patches still load, as do legacy Scenario-only project files.
 - **Crash guard — squad leaders need map sprites**: 85 of 165 classes
   (monsters, undead, Ninja, most special/story classes) have no map-unit
   sprite, and the game hangs during mission LOADING in a runaway DMA if one
@@ -41,8 +42,8 @@
   region before use, calling the game's own resident cache helpers — the same
   pattern the game's loader uses for its own DMAs. Verified end-to-end by
   cold-boot regression.
-- Scenario work saves standalone as a JSON project file, independent of
-  patches.
+- Scenario work is now saved through the top-level Project JSON flow rather
+  than a separate Scenario-tab project toolbar.
 
 ### Scenario Editing Details
 
@@ -50,7 +51,7 @@
   per-key registrations and a schematic fallback (bounds, sites, markers).
 - Site rings and trigger targets resolve to real town names from the static
   scene tables; kind-12 site triggers edit through a site dropdown.
-- Town-allegiance intents (neutral/allied) persist in projects and patches but
+- Town-allegiance intents (neutral/allied) persist in Project JSON but
   do not export to ROM yet; enemy-held-via-garrison placement exports fully.
 - Added-squad donor records come from a verified census of enemy-data records
   referenced by no mission (used read-only as templates; the override lane
@@ -155,8 +156,8 @@
   the original 35-byte EDAT record, and copies the replacement 35-byte record
   over the live template before the game builds the deployed 52-byte unit
   records. This makes reused EDATs safely editable per scenario/key.
-- Save Patch / Load Patch now round-trips these squad overrides as
-  runtime-key/EDAT 35-byte replacement records, so a JSON patch can reproduce
+- Save Project / Load Project now round-trips these squad overrides as
+  runtime-key/EDAT 35-byte replacement records, so a JSON project can reproduce
   the same Squads output as Export ROM.
 - The safe default editor path stays inside the vanilla-style limit of five
   formation slots and two follower class groups. Experimental raw-capacity mode
