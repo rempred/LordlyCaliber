@@ -13,9 +13,7 @@ window.OB64 = window.OB64 || {};
     selectedTreasure: null,
     selectedNode: null,
     search: '',
-    // 'auto' = art on site-fitted registrations, schematic on provisional ones. Forcing art
-    // onto a provisional map draws sites/units through the rough bounds-envelope affine,
-    // visibly off the towns - so art is the default only where calibration earns it.
+    // 'auto' = art on site-fitted registrations, schematic on provisional ones.
     viewMode: 'auto',
     zoom: 0.45,
     advanced: false,
@@ -862,7 +860,6 @@ window.OB64 = window.OB64 || {};
 
   function useImageFor(cal) {
     if (!cal || !cal.image || cal._artMissing || ui.viewMode === 'schematic') return false;
-    if (ui.viewMode === 'image') return true;
     return cal.registrationGrade === 'site-fitted';
   }
 
@@ -1088,7 +1085,7 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-map-head">' +
         '<div class="sc-map-title">' + esc(displayLabel(key)) + '</div>' +
         '<div class="sc-map-tools">' +
-          '<select id="sc-view-mode"><option value="auto">Art (calibrated)</option><option value="image">Art (force)</option><option value="schematic">Schematic</option></select>' +
+          '<select id="sc-view-mode"><option value="auto">Art (calibrated)</option><option value="schematic">Schematic</option></select>' +
           '<span class="sc-chip" id="sc-zoom-chip" title="Scroll the map to zoom">' + Math.round(ui.zoom * 100) + '%</span>' +
           '<span class="sc-chip">' + esc(cal.registrationGrade || 'ungraded') + '</span>' +
         '</div>' +
@@ -1111,6 +1108,7 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-roster" id="sc-roster"></div>';
     var view = el.querySelector('#sc-view-mode');
     if (view) {
+      if (ui.viewMode !== 'schematic') ui.viewMode = 'auto';
       view.value = ui.viewMode;
       view.onchange = function() {
         ui.viewMode = this.value;
