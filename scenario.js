@@ -2268,6 +2268,31 @@ window.OB64 = window.OB64 || {};
       '<button type="button" id="sc-tpl-clear-route" class="sc-inline-btn">Remove route (guard / hold position)</button></div>' +
       '<div id="sc-tpl-msg" class="sc-sub" style="' + (bld.msgOk ? '' : 'color:var(--sc-red)') + '">' + esc(bld.msg || '') + '</div>' +
       '</div>';
+    // Squad standing orders live on the START NODE (Section 2), NOT Section 1 [7]/[8]. For a kind-0
+    // hold node, node byte [2] = Move order and byte [3] = Wait order, copied at deploy to the live
+    // object's +0x91/+0x92 - the same Guard/Initiate/Retreat + Direct/Hit&Run/Evasion enum the player's
+    // own units use. Wait = Initiate makes the squad break formation and seek/attack nearby player
+    // units (the "sally"/aggro behavior). Decoded from the AI dispatcher/resolver - see
+    // docs/enemy-system.md "Enemy movement / aggro AI". Editing the node affects every squad that
+    // starts on it. (Section 1 [7]/[8] were tested and do NOT drive aggro; the node orders do.)
+    var orderNode = nodeById(model, row.bytes[6]);
+    function orderSelect(id, nodeRow, off, cur, names) {
+      var opts = '';
+      if (cur >= names.length) opts += '<option value="' + cur + '" selected>' + cur + ' (raw)</option>';
+      for (var v = 0; v < names.length; v++) opts += '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + v + ' - ' + names[v] + '</option>';
+      return '<select id="' + id + '" data-node-row="' + nodeRow + '" data-off="' + off + '">' + opts + '</select>';
+    }
+    html += '<div class="sc-section"><span class="sc-label">Squad orders</span>';
+    if (orderNode && orderNode.bytes[1] === 0) {
+      html += '<div class="sc-sub">Standing orders on hold node ' + orderNode.nodeId + ' (same as your own units). Wait = Initiate makes it break off and attack nearby player units; shared by any squad starting on this node.</div>' +
+        '<div class="sc-form-row"><label class="sc-label">Move</label>' + orderSelect('sc-move-order', orderNode.row, 2, orderNode.bytes[2], ['Direct', 'Hit & Run', 'Evasion']) + '</div>' +
+        '<div class="sc-form-row"><label class="sc-label">Wait</label>' + orderSelect('sc-wait-order', orderNode.row, 3, orderNode.bytes[3], ['Guard', 'Initiate (seek & attack)', 'Retreat']) + '</div>';
+    } else if (row.bytes[6] === 1) {
+      html += '<div class="sc-sub">This squad holds where it spawns (no movement node). Apply a hold/march behavior above to give it a node whose Move/Wait orders can be set.</div>';
+    } else {
+      html += '<div class="sc-sub">Move/Wait orders apply to a kind-0 hold node; this squad starts on a ' + (orderNode ? 'kind-' + orderNode.bytes[1] : 'missing') + ' node.</div>';
+    }
+    html += '</div>';
     html += '<div class="sc-section"><label><input type="checkbox" id="sc-advanced"' + (ui.advanced ? ' checked' : '') + '> Advanced</label></div>';
     html += ui.advanced ? advancedHtml(model, rowIndex) : nodePreviewHtml(model, row);
     if (added) {
@@ -2545,6 +2570,16 @@ window.OB64 = window.OB64 || {};
     if (adv) adv.onchange = function() {
       ui.advanced = !!this.checked;
       renderScenarioTab(document.getElementById('panel-scenario'));
+    };
+    var moveO = el.querySelector('#sc-move-order');
+    if (moveO) moveO.onchange = function() {
+      model.section2[parseInt(this.dataset.nodeRow, 10)].bytes[parseInt(this.dataset.off, 10)] = parseInt(this.value, 10) & 0xFF;
+      commitScenarioEdit(rom, key);
+    };
+    var waitO = el.querySelector('#sc-wait-order');
+    if (waitO) waitO.onchange = function() {
+      model.section2[parseInt(this.dataset.nodeRow, 10)].bytes[parseInt(this.dataset.off, 10)] = parseInt(this.value, 10) & 0xFF;
+      commitScenarioEdit(rom, key);
     };
     el.querySelectorAll('.sc-byte-input').forEach(function(inp) {
       inp.onchange = function() {
@@ -2981,6 +3016,11 @@ window.OB64 = window.OB64 || {};
       bytes[5] = last.bytes[5]; // phase byte: keep the file's own convention
       bytes[9] = last.bytes[9]; // tier byte: same
     }
+    // Section 1 [7]/[8] are non-zero in every vanilla row (range 1..4) but do NOT drive squad AI
+    // (tested: they are not the aggro/order control - that is the start node's [2]/[3] orders). Keep
+    // them in-range by inheriting the mission's convention instead of leaving a fresh-fill 0.
+    bytes[7] = (last && last.bytes[7]) || 0x02;
+    bytes[8] = (last && last.bytes[8]) || 0x01;
     bytes[6] = 1; // start node 1 = hold position (guard) until a behavior is applied
     placementBytesFromImage(rom, key, { bytes: bytes }, imageX, imageY, projection);
     // The appended row becomes the final row and must carry the Section 2 alias tail; the old
