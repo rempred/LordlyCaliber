@@ -25,8 +25,7 @@ Caliber*. It would not exist without the work below.
 - **[VGMaps.com](https://www.vgmaps.com/) (The Video Game Atlas)** — source of the
   scenario map art bundled in [resources/maps/vgmaps/](resources/maps/vgmaps/)
   and shown in the Scenario tab's map view. The maps were ripped and contributed
-  by the VGMaps community; the editor uses them with permission for map
-  calibration and display.
+  by the VGMaps community.
 - **Cralex** — author of the *Ogre Battle 64 Person of Lordly Caliber Gameshark
   Class Hacking Guide*, which supplied the authoritative 154-class mapping
   used throughout the editor (Classes tab, character struct decode).
