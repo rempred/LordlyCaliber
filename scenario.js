@@ -10,6 +10,7 @@ window.OB64 = window.OB64 || {};
     selectedPoint: null,
     selectedSite: null,
     selectedTrigger: null,
+    selectedNode: null,
     search: '',
     // 'auto' = art on site-fitted registrations, schematic on provisional ones. Forcing art
     // onto a provisional map draws sites/units through the rough bounds-envelope affine,
@@ -56,6 +57,18 @@ window.OB64 = window.OB64 || {};
   }
 
   function clearSelection() {
+    ui.selectedPoint = null;
+    ui.selectedSite = null;
+    ui.selectedTrigger = null;
+    ui.selectedNode = null;
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  // Select a Section-2 node (mirrors selectTrigger): opens the node editor, which lists every
+  // squad that starts on or routes through it. Node detail sits LAST in the dispatcher, so any
+  // squad/site/trigger selection takes precedence and this only shows when nothing else is picked.
+  function selectNode(nodeId) {
+    ui.selectedNode = ui.selectedNode === nodeId ? null : nodeId;
     ui.selectedPoint = null;
     ui.selectedSite = null;
     ui.selectedTrigger = null;
@@ -1416,13 +1429,13 @@ window.OB64 = window.OB64 || {};
       if (op === 1 && startNode.bytes[12]) gate += ' / else E' + startNode.bytes[12];
     }
     var marchWord = destName ? 'march to ' + destName + via : (chain.length > 1 ? 'march' : 'act');
-    // Town-marchers hold their march destination in the runtime waypoint but divert to intercept
-    // the nearest player unit in aggro range (live-confirmed; see docs march-to checklist). The
-    // note is scoped to town destinations - coordinate/patrol squads were not observed intercepting.
-    var intercept = destIsTown ? ' (diverts to intercept your units in range)' : '';
-    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
-    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '') + intercept;
-    if (destName) return 'March to ' + destName + via + (terminal ? ' + permanent camp' : '') + intercept;
+    // No "diverts to intercept" note: vanilla town-marchers were observed diverting to nearby
+    // players, but that is NOT reproducible for an editor-created marcher (a marching squad has no
+    // Wait=Initiate order), so advertising it on the behavior line was misleading. See
+    // docs/enemy-system.md "Enemy movement / aggro AI" (the open +0x92-vs-+0xBB march-intercept item).
+    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '');
+    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '');
+    if (destName) return 'March to ' + destName + via + (terminal ? ' + permanent camp' : '');
     return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
   }
 
@@ -1485,6 +1498,18 @@ window.OB64 = window.OB64 || {};
       }
     });
     return { nodeIds: nodeIds, squadSourceIds: refs.map(function(r) { return r.sourceId; }), squadRefs: refs };
+  }
+
+  // Which squads use a node: it is their start node (Sec1 [+6]) or appears in their route chain.
+  function nodeConsumers(rom, key, model, nodeId) {
+    var refs = [];
+    model.section1.forEach(function(row, idx) {
+      if (!row.bytes) return;
+      var chain = walkNodeChain(rom, key, model, row.bytes[6]);
+      var uses = row.bytes[6] === nodeId || chain.some(function(h) { return h.node.nodeId === nodeId; });
+      if (uses) refs.push({ sourceId: row.sourceId, edat: (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1, rowIndex: idx, isStart: row.bytes[6] === nodeId });
+    });
+    return refs;
   }
 
   // Per-squad route colors: line TYPE (solid/dashed) encodes gated-ness, COLOR identifies the
@@ -1803,12 +1828,17 @@ window.OB64 = window.OB64 || {};
     if (ui.selectedTrigger != null && !model.section3.filter(function(x) { return x.extraId === ui.selectedTrigger; })[0]) {
       ui.selectedTrigger = null; // stale across scenario change
     }
+    if (ui.selectedNode != null && !nodeById(model, ui.selectedNode)) {
+      ui.selectedNode = null; // stale across scenario change
+    }
     if (ui.selectedTrigger != null) {
       renderTriggerDetail(el, rom, key, model, ui.selectedTrigger);
     } else if (ui.selectedSite) {
       renderSiteDetail(el, rom, key, ui.selectedSite);
     } else if (ui.selectedPoint != null) {
       renderSquadDetail(el, rom, key, ui.selectedPoint);
+    } else if (ui.selectedNode != null) {
+      renderNodeDetail(el, rom, key, model, ui.selectedNode);
     } else {
       renderScenarioOverview(el, rom, key, model, cal);
     }
@@ -1965,6 +1995,101 @@ window.OB64 = window.OB64 || {};
     }).map(function(n) { return n.nodeId; });
   }
 
+  function nodeKindName(k) {
+    return k === 0 ? 'hold' : k === 1 ? 'waypoint' : k === 2 ? 'ambush' : 'kind ' + k;
+  }
+
+  // Node editor - mirrors renderTriggerDetail: edit the node's kind / orders / gate / next / raw
+  // bytes, and list every squad that starts on or routes through it (clickable -> that squad).
+  function renderNodeDetail(el, rom, key, model, nodeId) {
+    var node = nodeById(model, nodeId);
+    if (!node) { el.innerHTML = backToOverviewHtml() + '<div class="sc-warning">Node ' + nodeId + ' not found.</div>'; wireBackButton(el); return; }
+    var b = node.bytes;
+    var use = nodeConsumers(rom, key, model, nodeId);
+    var nextTxt = b[17] === 0xFF ? 'terminal / camp' : (b[17] ? 'node ' + b[17] : 'none');
+    var html = backToOverviewHtml() + detailHead('Node ' + nodeId, [
+      nodeKindName(node.kind) + ' node',
+      'next: ' + nextTxt,
+      'used by ' + use.length + ' squad' + (use.length === 1 ? '' : 's'),
+    ]);
+    html += '<div class="sc-section"><span class="sc-label">Edit node</span>';
+    html += '<div class="sc-form-row"><label class="sc-label">Kind</label><select id="sc-node-kind">' +
+      [[0, 'Hold (carries Move/Wait orders)'], [1, 'Waypoint (march target)'], [2, 'Ambush (dormant until woken)']]
+        .map(function(k) { return option(String(k[0]), k[0] + ': ' + k[1], String(node.kind)); }).join('') +
+      ([0, 1, 2].indexOf(node.kind) < 0 ? option(String(node.kind), node.kind + ': undecoded (edit raw bytes)', String(node.kind)) : '') +
+      '</select></div>';
+    if (node.kind === 0) {
+      var ag = orderAggro(b[3] & 0xFF);
+      html += '<div class="' + ag.cls + '" style="margin-top:0' + ag.style + '"><strong>' + esc(ag.verb) + '</strong> &mdash; ' + ag.detail + '</div>' +
+        '<div class="sc-form-row"><label class="sc-label">Wait</label>' + orderSelect('sc-node-wait', node.row, 3, b[3] & 0xFF, WAIT_NAMES, WAIT_BLURB) + '</div>' +
+        '<div class="sc-form-row"><label class="sc-label">Move</label>' + orderSelect('sc-node-move', node.row, 2, b[2] & 0xFF, MOVE_NAMES, MOVE_BLURB) + '</div>';
+    }
+    html += '<div class="sc-form-row"><label class="sc-label">Gate trigger</label><select id="sc-node-gate">' +
+      option('0', 'None (always pass)', String(b[10])) +
+      model.section3.map(function(x) { return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, String(b[10])); }).join('') +
+      '</select></div>';
+    html += '<div class="sc-form-row"><label class="sc-label">Next node</label><select id="sc-node-next">' +
+      option('0', 'None (stop here)', String(b[17])) +
+      option('255', 'Terminal / permanent camp (0xFF)', String(b[17])) +
+      model.section2.filter(function(n) { return n.nodeId !== nodeId; })
+        .map(function(n) { return option(String(n.nodeId), 'node ' + n.nodeId + ' (' + nodeKindName(n.bytes[1]) + ')', String(b[17])); }).join('') +
+      '</select></div>';
+    if (node.kind === 1) {
+      var w = nodeWorld(rom, key, node);
+      html += '<div class="sc-sub">Waypoint position ' + (w ? '(' + w.x.toFixed(1) + ', ' + w.z.toFixed(1) + ')' : '(uncalibrated)') + ' &mdash; drag its dot on the map to move it.</div>';
+    }
+    html += '<div class="sc-form-row"><label class="sc-label">Raw bytes</label><div class="sc-mini-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px">' +
+      b.map(function(v, i) { return '<input class="sc-node-raw" data-off="' + i + '" value="' + hx2(v) + '" title="[+' + i + ']" style="min-width:0">'; }).join('') + '</div></div>';
+    html += '</div>';
+    html += '<div class="sc-section"><span class="sc-label">Used by</span>';
+    if (use.length) {
+      var points = pointsForAllRows(rom, key), pointByRow = {};
+      points.forEach(function(p) { pointByRow[p.section1Row] = p; });
+      html += '<div class="sc-sub">' + use.length + ' squad' + (use.length === 1 ? '' : 's') + ' start on or route through this node:</div>';
+      use.forEach(function(r) {
+        var point = pointByRow[r.rowIndex];
+        var rec = point ? effectiveRecordFor(rom, key, point) : null;
+        var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown';
+        var icon = point ? liveLeaderIcon(rom, key, point) : null;
+        html += '<button type="button" class="sc-squad-chip" data-row="' + r.rowIndex + '" style="border-left:5px solid ' + routeColor(r.rowIndex) + ';">' +
+          (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span class="sc-chip-noicon"></span>') +
+          '<span><strong>Source ' + esc(r.sourceId) + ' / EDAT ' + esc(r.edat) + (r.isStart ? ' (start)' : '') + '</strong>' +
+          '<span class="sc-chip-sub">' + esc(leader) + '</span></span></button>';
+      });
+    } else {
+      html += '<div class="sc-sub">No squad starts on or routes through this node yet.</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+    wireBackButton(el);
+    el.querySelectorAll('.sc-squad-chip').forEach(function(a) {
+      a.onclick = function(ev) {
+        ev.preventDefault();
+        ui.selectedPoint = parseInt(this.dataset.row, 10);
+        ui.selectedNode = null; ui.selectedSite = null; ui.selectedTrigger = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+    });
+    var kindSel = el.querySelector('#sc-node-kind');
+    if (kindSel) kindSel.onchange = function() { b[1] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    var moveO = el.querySelector('#sc-node-move');
+    if (moveO) moveO.onchange = function() { b[2] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    var waitO = el.querySelector('#sc-node-wait');
+    if (waitO) waitO.onchange = function() { b[3] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    var gateSel = el.querySelector('#sc-node-gate');
+    if (gateSel) gateSel.onchange = function() { b[10] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    var nextSel = el.querySelector('#sc-node-next');
+    if (nextSel) nextSel.onchange = function() { b[17] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    el.querySelectorAll('.sc-node-raw').forEach(function(inp) {
+      inp.onchange = function() {
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(b[+this.dataset.off]); return; }
+        b[+this.dataset.off] = v;
+        commitScenarioEdit(rom, key);
+      };
+    });
+  }
+
   function deleteTrigger(rom, key, model, extra) {
     var extraId = extra.extraId;
     var refNodes = triggerRefNodes(model, extraId);
@@ -2025,7 +2150,18 @@ window.OB64 = window.OB64 || {};
     model.section2.forEach(function(node) {
       html += nodeSummaryHtml(model, node);
     });
-    html += '</div></div>';
+    if (!model.section2.length) html += '<div class="sc-node">No Section 2 nodes.</div>';
+    html += '</div>';
+    // + Add node (mirrors + Add trigger): allocNode assigns nodeId = 4 + count, capped at 16. The
+    // new node opens in the editor; point a squad at it via that squad's Start-node picker.
+    html += '<div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
+      '<select id="sc-new-node-kind">' +
+        '<option value="0">Hold node (Move/Wait orders)</option>' +
+        '<option value="1">Waypoint node (march target)</option>' +
+        '<option value="2">Ambush node (dormant until woken)</option>' +
+      '</select>' +
+      '<button type="button" class="sc-inline-btn" id="sc-new-node"' + (model.section2.length >= 16 ? ' disabled title="Section 2 is at its 16-node cap"' : '') + '>+ Add node</button></div>';
+    html += '</div>';
     html += '<div class="sc-section"><span class="sc-label">Triggers</span><div class="sc-node-list">';
     model.section3.forEach(function(extra) {
       var d = describeExtra(rom, key, extra);
@@ -2063,11 +2199,14 @@ window.OB64 = window.OB64 || {};
       html += '</div></div>';
     }
     el.innerHTML = html;
-    el.querySelectorAll('.sc-trigger-row').forEach(function(btn) {
+    el.querySelectorAll('.sc-trigger-row:not(.sc-node-row)').forEach(function(btn) {
       btn.onclick = function(ev) {
         if (ev.target.classList && ev.target.classList.contains('sc-trig-row-del')) return;
         selectTrigger(parseInt(this.dataset.extra, 10));
       };
+    });
+    el.querySelectorAll('.sc-node-row').forEach(function(btn) {
+      btn.onclick = function() { selectNode(parseInt(this.dataset.nodeId, 10)); };
     });
     el.querySelectorAll('.sc-trig-row-del').forEach(function(btn) {
       btn.onclick = function(ev) {
@@ -2090,6 +2229,14 @@ window.OB64 = window.OB64 || {};
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
     });
+    var newNode = el.querySelector('#sc-new-node');
+    if (newNode) newNode.onclick = function() {
+      var node = allocNode(model, { kind: parseInt((el.querySelector('#sc-new-node-kind') || {}).value, 10) || 0 });
+      if (!node) return; // at the 16-node cap
+      ui.selectedNode = node.nodeId; // open the new node's editor
+      ui.selectedPoint = null; ui.selectedSite = null; ui.selectedTrigger = null;
+      commitScenarioEdit(rom, key); // refreshes decoded fields (gate/next/raw18) + re-renders
+    };
     var newTrig = el.querySelector('#sc-new-trigger');
     if (newTrig) newTrig.onclick = function() {
       if (model.section3.length >= 16) { ui.gateText = 'Section 3 is at its 16-extra cap.'; renderScenarioTab(document.getElementById('panel-scenario')); return; }
@@ -2116,13 +2263,14 @@ window.OB64 = window.OB64 || {};
 
   function nodeSummaryHtml(model, node) {
     var op = node.gate.operatorName;
-    var label = 'node ' + node.nodeId + ' / kind ' + node.kind + ' / ' + op;
     var target = node.nextNode === 0xFF ? 'terminal 0xFF' : ('next ' + node.nextNode);
     var extraA = extraName(model, node.gate.extraA);
     var extraB = node.gate.operator ? extraName(model, node.gate.extraB) : '';
-    return '<div class="sc-node"><strong>' + esc(label) + '</strong><br>' +
-      'gate: ' + esc(extraA + (extraB ? ' ' + op + ' ' + extraB : '')) + ' -> ' + esc(target) +
-      '<br><code>' + esc(node.raw18) + '</code></div>';
+    return '<div class="sc-trigger-row sc-node-row' + (ui.selectedNode === node.nodeId ? ' on' : '') + '" data-node-id="' + node.nodeId + '" role="button" tabindex="0">' +
+      '<strong>node ' + node.nodeId + '</strong> ' + esc(nodeKindName(node.kind)) +
+      (node.kind === 0 && node.bytes[3] === 1 ? ' <span class="sc-chip">aggro</span>' : '') +
+      '<span class="sc-sub">gate: ' + esc(extraA + (extraB ? ' ' + op + ' ' + extraB : '')) + ' &rarr; ' + esc(target) +
+      ' &middot; <code>' + esc(node.raw18) + '</code></span></div>';
   }
 
   function extraName(model, id) {
@@ -2269,28 +2417,56 @@ window.OB64 = window.OB64 || {};
       '<div id="sc-tpl-msg" class="sc-sub" style="' + (bld.msgOk ? '' : 'color:var(--sc-red)') + '">' + esc(bld.msg || '') + '</div>' +
       '</div>';
     // Squad standing orders live on the START NODE (Section 2), NOT Section 1 [7]/[8]. For a kind-0
-    // hold node, node byte [2] = Move order and byte [3] = Wait order, copied at deploy to the live
-    // object's +0x91/+0x92 - the same Guard/Initiate/Retreat + Direct/Hit&Run/Evasion enum the player's
-    // own units use. Wait = Initiate makes the squad break formation and seek/attack nearby player
-    // units (the "sally"/aggro behavior). Decoded from the AI dispatcher/resolver - see
-    // docs/enemy-system.md "Enemy movement / aggro AI". Editing the node affects every squad that
-    // starts on it. (Section 1 [7]/[8] were tested and do NOT drive aggro; the node orders do.)
+    // HOLD node, node byte [2] = Move order and byte [3] = Wait order; func_00121F38 copies them at
+    // deploy to the live object's +0x91 (Move) / +0x92 (Wait) - the SAME enum the player's own units
+    // use. Wait == 1 (Initiate) is the aggro/sally gate (break formation, seek & attack nearby player
+    // squads). Decoded from the AI dispatcher/resolver - see docs/enemy-system.md "Enemy movement /
+    // aggro AI". Editing the node affects EVERY squad that starts on it. (Section 1 [7]/[8] were
+    // tested and do NOT drive aggro; the node orders do.) The headline/summary rebuild from the live
+    // bytes on every edit because commitScenarioEdit -> renderScenarioTab re-renders the whole tab,
+    // so the onchange handlers stay a plain byte write (no in-place DOM patch, no cross-closure call).
     var orderNode = nodeById(model, row.bytes[6]);
-    function orderSelect(id, nodeRow, off, cur, names) {
-      var opts = '';
-      if (cur >= names.length) opts += '<option value="' + cur + '" selected>' + cur + ' (raw)</option>';
-      for (var v = 0; v < names.length; v++) opts += '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + v + ' - ' + names[v] + '</option>';
-      return '<select id="' + id + '" data-node-row="' + nodeRow + '" data-off="' + off + '">' + opts + '</select>';
-    }
     html += '<div class="sc-section"><span class="sc-label">Squad orders</span>';
+    // Start-node picker: reassign which Section-2 node this squad deploys on (Sec1 [+6]), or jump to
+    // that node's editor. 1 = the "hold at spawn" sentinel; >=4 = a real node.
+    html += '<div class="sc-form-row"><label class="sc-label">Start node</label><select id="sc-start-node">' +
+      option('1', '1 - hold at spawn (sentinel, no node)', String(row.bytes[6])) +
+      model.section2.map(function(n) {
+        var kn = n.bytes[1] === 0 ? 'hold' : n.bytes[1] === 1 ? 'waypoint' : n.bytes[1] === 2 ? 'ambush' : 'kind ' + n.bytes[1];
+        return option(String(n.nodeId), n.nodeId + ' - ' + kn + ' node', String(row.bytes[6]));
+      }).join('') +
+      '</select>' +
+      (row.bytes[6] >= 4 && orderNode ? '<button type="button" id="sc-edit-node" class="sc-inline-btn" style="margin-left:6px">Edit node ' + orderNode.nodeId + ' &rsaquo;</button>' : '') +
+      '</div>';
     if (orderNode && orderNode.bytes[1] === 0) {
-      html += '<div class="sc-sub">Standing orders on hold node ' + orderNode.nodeId + ' (same as your own units). Wait = Initiate makes it break off and attack nearby player units; shared by any squad starting on this node.</div>' +
-        '<div class="sc-form-row"><label class="sc-label">Move</label>' + orderSelect('sc-move-order', orderNode.row, 2, orderNode.bytes[2], ['Direct', 'Hit & Run', 'Evasion']) + '</div>' +
-        '<div class="sc-form-row"><label class="sc-label">Wait</label>' + orderSelect('sc-wait-order', orderNode.row, 3, orderNode.bytes[3], ['Guard', 'Initiate (seek & attack)', 'Retreat']) + '</div>';
+      var mv = orderNode.bytes[2] & 0xFF, wt = orderNode.bytes[3] & 0xFF;
+      var ag = orderAggro(wt);
+      // 1) Unmissable aggro headline - color box driven purely by the Wait byte.
+      html += '<div class="' + ag.cls + '" style="margin-top:0' + ag.style + '"><strong>' + esc(ag.verb) + '</strong> &mdash; ' + ag.detail + '</div>';
+      // 2) Live one-line combined effect (Wait/idle clause + Move/travel clause).
+      html += '<div class="sc-sub" style="margin-top:4px">' + esc(orderEffectSentence(mv, wt)) + '</div>';
+      // 3) The two controls. Wait first (it is the sally gate). Each carries a mono byte-identity chip:
+      //    source node id, the Section-2 offset it writes, raw value hex+dec, and the live-object offset.
+      html += '<div class="sc-form-row"><label class="sc-label" title="What it does idle at its post - THE aggro/sally gate">Wait <span class="sc-sub" style="display:inline;font-weight:400">(idle)</span></label>' +
+        orderSelect('sc-wait-order', orderNode.row, 3, wt, WAIT_NAMES, WAIT_BLURB) +
+        '<div class="sc-sub" style="font-family:var(--ob-mono,monospace);margin-top:2px">node ' + orderNode.nodeId + ' [+3] ' + hx2(wt) + ' (' + wt + ') &rarr; live +0x92</div></div>';
+      html += '<div class="sc-form-row"><label class="sc-label" title="How it travels once it IS engaging/advancing">Move <span class="sc-sub" style="display:inline;font-weight:400">(travel)</span></label>' +
+        orderSelect('sc-move-order', orderNode.row, 2, mv, MOVE_NAMES, MOVE_BLURB) +
+        '<div class="sc-sub" style="font-family:var(--ob-mono,monospace);margin-top:2px">node ' + orderNode.nodeId + ' [+2] ' + hx2(mv) + ' (' + mv + ') &rarr; live +0x91</div></div>';
+      // 4) Context + scoped provisional note.
+      html += '<div class="sc-sub">Same enum as your own units. Shared by <b>every</b> squad whose start node (Sec1 [+6]) = ' + orderNode.nodeId + '.</div>' +
+        '<div class="sc-sub" style="opacity:.8"><i>Provisional:</i> the sally gate (Wait=Initiate) is player-menu-proven for the enum and data-corroborated across scenarios; enemy-side labels for Move 1/2 and Wait=Retreat, plus a cold-boot of a newly-authored Initiate garrison, are still pending in-game confirmation.</div>';
     } else if (row.bytes[6] === 1) {
-      html += '<div class="sc-sub">This squad holds where it spawns (no movement node). Apply a hold/march behavior above to give it a node whose Move/Wait orders can be set.</div>';
+      html += '<div class="sc-ok" style="margin-top:0"><strong>STATIC &mdash; holds where it spawns.</strong> &mdash; fights any player squad that reaches it, but never gives chase.</div>' +
+        '<div class="sc-sub" style="font-family:var(--ob-mono,monospace)">Sec1 [+6] = ' + hx2(row.bytes[6]) + ' (1) &mdash; no-movement-script sentinel (no Section-2 node, no Move/Wait to set).</div>' +
+        '<div class="sc-sub">Apply a hold/march behavior above to attach a kind-0 node whose Move/Wait orders become editable here.</div>';
     } else {
-      html += '<div class="sc-sub">Move/Wait orders apply to a kind-0 hold node; this squad starts on a ' + (orderNode ? 'kind-' + orderNode.bytes[1] : 'missing') + ' node.</div>';
+      var k = orderNode ? (orderNode.bytes[1] & 0xFF) : null;
+      var kName = k === 1 ? 'waypoint' : (k === 2 ? 'ambush' : null);
+      html += '<div class="sc-sub" style="font-family:var(--ob-mono,monospace)">Sec1 [+6] = ' + hx2(row.bytes[6]) + ' (' + (row.bytes[6] & 0xFF) + ') &rarr; ' +
+        (orderNode ? 'node ' + orderNode.nodeId + ' [+1] kind ' + hx2(k) + ' (' + k + (kName ? ', ' + kName : '') + ')' : '<b>missing node</b>') + '</div>' +
+        '<div class="sc-sub">Move/Wait orders ([+2]/[+3]) live only on a kind-0 <b>hold</b> node. This squad starts on a ' +
+        (orderNode ? 'kind-' + k + (kName ? ' ' + kName : '') : 'missing') + ' node, so there are no standing orders to edit here. Route it through a hold node to expose the sally lever.</div>';
     }
     html += '</div>';
     html += '<div class="sc-section"><label><input type="checkbox" id="sc-advanced"' + (ui.advanced ? ' checked' : '') + '> Advanced</label></div>';
@@ -2581,6 +2757,13 @@ window.OB64 = window.OB64 || {};
       model.section2[parseInt(this.dataset.nodeRow, 10)].bytes[parseInt(this.dataset.off, 10)] = parseInt(this.value, 10) & 0xFF;
       commitScenarioEdit(rom, key);
     };
+    var startNodeSel = el.querySelector('#sc-start-node');
+    if (startNodeSel) startNodeSel.onchange = function() {
+      model.section1[rowIndex].bytes[6] = parseInt(this.value, 10) & 0xFF;
+      commitScenarioEdit(rom, key);
+    };
+    var editNode = el.querySelector('#sc-edit-node');
+    if (editNode) editNode.onclick = function() { selectNode(model.section1[rowIndex].bytes[6]); };
     el.querySelectorAll('.sc-byte-input').forEach(function(inp) {
       inp.onchange = function() {
         var kind = this.dataset.kind || 's1';
@@ -2617,6 +2800,57 @@ window.OB64 = window.OB64 || {};
 
   function hx2(value) {
     return '0x' + Number(value || 0).toString(16).toUpperCase().padStart(2, '0');
+  }
+
+  // ---- Enemy standing-order enums (shared with the player's own Move/Wait menu) ---------------
+  // Node byte [2] = Move order (-> live object +0x91), byte [3] = Wait order (-> +0x92). Same enum
+  // the player sets in-game. Wait == 1 (Initiate) is the aggro/sally gate. See docs/enemy-system.md
+  // "Enemy movement / aggro AI". These are module-level so both renderSquadDetail and any caller can
+  // reach them (the two functions do NOT share a closure).
+  var MOVE_NAMES = ['Direct', 'Hit & Run', 'Evasion'];
+  var WAIT_NAMES = ['Guard', 'Initiate', 'Retreat'];
+  // Short per-option meanings shown inline in the dropdowns.
+  var MOVE_BLURB = ['close straight in', 'strike then withdraw', 'avoid contact'];
+  var WAIT_BLURB = ['hold post', 'seek & attack', 'flee'];
+
+  // Aggro headline, driven purely by the Wait byte (node [3] -> live +0x92): Guard = green "holds",
+  // Initiate = red "sallies" (the gate), Retreat = neutral "flees", anything else = raw/unverified.
+  // Returns { cls, style, verb, detail } for the colored strip. detail is injected UNescaped by the
+  // caller, so any & / < in it must already be HTML-encoded here.
+  function orderAggro(wait) {
+    var strip = ';border:1px solid var(--sc-line);background:var(--sc-soft);color:var(--ob-ink-soft);' +
+      'border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35';
+    if (wait === 0) return { cls: 'sc-ok', style: '', verb: 'AGGRO: OFF - HOLDS', detail: 'guards its post; fights on contact but never leaves' };
+    if (wait === 1) return { cls: 'sc-warning', style: '', verb: 'AGGRO: ON - SALLIES', detail: 'breaks formation to seek &amp; attack nearby player squads' };
+    if (wait === 2) return { cls: '', style: strip, verb: 'RETREATS', detail: 'holds, but actively avoids nearby player squads' };
+    return { cls: '', style: strip, verb: 'RAW WAIT=' + hx2(wait), detail: 'non-standard Wait value; behavior unverified' };
+  }
+
+  // One-line plain-English effect = Wait/idle clause + Move/travel clause. The caller passes this
+  // through esc(), so plain '&' is fine here.
+  function orderEffectSentence(move, wait) {
+    var w = wait === 0 ? 'Holds its post; fights only when a player squad reaches it'
+      : wait === 1 ? 'SALLIES: breaks formation to seek and attack nearby player squads'
+      : wait === 2 ? 'Holds its post but actively flees from player squads'
+      : 'Unknown Wait value ' + hx2(wait) + ' (raw)';
+    var m = move === 0 ? ', closing straight in on its target'
+      : move === 1 ? ', striking then withdrawing (hit & run)'
+      : move === 2 ? ', avoiding contact as it moves (evasion)'
+      : ', with unknown Move value ' + hx2(move) + ' (raw)';
+    return w + m + '.';
+  }
+
+  // Order dropdown: "N - Name (meaning)"; out-of-range current value shown as "0xNN / NN (raw)".
+  // Module-level so both the squad editor and the node editor can build it (they don't share a
+  // closure). data-node-row/data-off carry the Section-2 row + byte offset the handler writes.
+  function orderSelect(id, nodeRow, off, cur, names, blurbs) {
+    var opts = '';
+    if (cur >= names.length) opts += '<option value="' + cur + '" selected>' + hx2(cur) + ' / ' + cur + ' (raw)</option>';
+    for (var v = 0; v < names.length; v++) {
+      var g = (blurbs && blurbs[v]) ? ' (' + blurbs[v] + ')' : '';
+      opts += '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + v + ' - ' + esc(names[v] + g) + '</option>';
+    }
+    return '<select id="' + id + '" data-node-row="' + nodeRow + '" data-off="' + off + '">' + opts + '</select>';
   }
 
   function option(value, label, current) {
