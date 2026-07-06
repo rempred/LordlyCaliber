@@ -49,16 +49,6 @@ their own legally-obtained copy of the game.
   Game Editor tab. Vendored at [vendor/fflate.min.js](vendor/fflate.min.js).
   MIT license — see [vendor/LICENSE-fflate](vendor/LICENSE-fflate).
 
-## Fonts
-
-Loaded at runtime from Google Fonts:
-
-- **[Cinzel](https://fonts.google.com/specimen/Cinzel)** by Natanael Gama —
-  used for headings, tab labels, and buttons. SIL Open Font License 1.1.
-- **[EB Garamond](https://fonts.google.com/specimen/EB+Garamond)** by Georg
-  Duffner and Octavio Pardo — used for body text and item names. SIL Open
-  Font License 1.1.
-
 ---
 
 Contributions, corrections, and additional credits are welcome via pull
