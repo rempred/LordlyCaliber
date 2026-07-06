@@ -39,6 +39,8 @@ The public editor is intentionally clean and browser-only:
 - `scenario-eset-data.js` and `scenario-map-calibration.js` are generated from
   the research workspace (mission data, donor census, per-key map
   registrations). Do not hand-edit.
+- `resources/maps/vgmaps/` bundles the full-art scenario map PNGs used by the
+  Scenario tab's calibrated map view.
 - `style.css` contains the full parchment-themed interface.
 
 Research-only scripts and emulator probes are kept outside this repository.
@@ -200,9 +202,9 @@ project download asset.
 - Neutral/allied town-allegiance intents are saved in projects/patches but do
   not export to ROM yet (their static source table currently recompresses
   larger than its slot); enemy-held-via-garrison exports fully.
-- Full-art mission map backgrounds are a local-development calibration and are
-  not bundled; the editor ships with the schematic map view (bounds, sites,
-  markers), which is fully functional for editing.
+- Full-art mission map backgrounds are bundled for calibrated Scenario tab
+  maps; Fort Romulus still defaults to the schematic map because its full-art
+  registration remains provisional.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
   name-framed header, but their exact runtime consumers are not fully traced.
 - Raw story/NPC class records can be viewed and edited in Classes Card View, but
@@ -307,5 +309,7 @@ MIT — see [LICENSE](LICENSE). Bundled fflate library is also MIT — see
 LordlyCaliber is an unofficial fan tool. *Ogre Battle 64: Person of Lordly
 Caliber* is © 1999 Quest Corporation, published in North America by Atlus and
 on N64 by Nintendo. Item icons in `resources/` are extracted from the original
-game for identification purposes only. This project is not affiliated with or
-endorsed by any rights holder.
+game for identification purposes only. Scenario map art in
+`resources/maps/vgmaps/` is from VGMaps.com and used with permission; see
+[CREDITS.md](CREDITS.md). This project is not affiliated with or endorsed by
+any rights holder.

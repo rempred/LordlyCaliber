@@ -375,7 +375,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function defaultImageBase() {
-    return localStorage.getItem('ob64_scenario_image_base') || '../wiki/maps/vgmaps/';
+    return localStorage.getItem('ob64_scenario_image_base') || 'resources/maps/vgmaps/';
   }
 
   function ensureState(rom) {

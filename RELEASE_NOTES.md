@@ -46,9 +46,8 @@
 
 ### Scenario Editing Details
 
-- Per-mission maps use calibrated per-key registrations with a schematic
-  fallback (bounds, sites, markers); full-art backgrounds are a local
-  calibration workflow and are not bundled.
+- Per-mission maps use bundled VGMaps full-art backgrounds with calibrated
+  per-key registrations and a schematic fallback (bounds, sites, markers).
 - Site rings and trigger targets resolve to real town names from the static
   scene tables; kind-12 site triggers edit through a site dropdown.
 - Town-allegiance intents (neutral/allied) persist in projects and patches but
