@@ -2486,23 +2486,29 @@ window.OB64 = window.OB64 || {};
     html += '<details class="sc-help" open style="border:1px solid var(--sc-line);border-radius:6px;padding:8px 10px;margin:0 0 12px;background:var(--sc-panel)">' +
       '<summary style="cursor:pointer;font-weight:800;color:var(--ob-ink)">❓ How scenarios work — start here</summary>' +
       '<div class="sc-sub" style="margin-top:8px;line-height:1.5">' +
-        '<p style="margin:0 0 6px">A scenario is a set of <b>enemy squads</b> on a map. Pick a scenario (KEY) on the left, <b>click a squad</b> in the list, and set its <b>Behavior</b>. The map shows where each squad deploys and the route it takes.</p>' +
-        '<p style="margin:0 0 3px"><b>The pieces:</b></p>' +
+        '<p style="margin:0 0 6px">A scenario is a set of enemy squads placed on a mission map. Pick a scenario key on the left, select a squad, then choose its <b>Behavior</b>. The map shows where each squad starts and any route or trigger logic attached to it.</p>' +
+        '<p style="margin:0 0 3px"><b>Main pieces</b></p>' +
         '<ul style="margin:0 0 6px;padding-left:18px">' +
-          '<li><b>Node</b> = a point in a squad’s route. <b>Hold</b> sits at its post, <b>Waypoint</b> is a march destination, <b>Ambush</b> is hidden until woken. Nodes chain through each node’s <i>Next</i>.</li>' +
-          '<li><b>Trigger</b> = a condition (you reach a town, N squads remain, …). A node can <i>wait</i> on a trigger, then advance to its Next when it fires.</li>' +
-          '<li><b>Squad orders</b> = Move / Wait, same as your own units. <b>Wait = Initiate</b> makes a standing squad attack anyone who comes near.</li>' +
+          '<li><b>Squad</b>: an enemy unit group. Its composition, formation, placement, and behavior are edited in the sidebar.</li>' +
+          '<li><b>Node</b>: a route or behavior instruction. A node can make a squad hold position, march to a waypoint, wait behind a trigger, spawn hidden as an ambush, or chain into another node through <b>Next</b>.</li>' +
+          '<li><b>Trigger</b>: a condition such as the player reaching an area, a site flag changing, or the number of remaining enemy squads dropping.</li>' +
+          '<li><b>Squad orders</b>: Move / Wait values stored on hold nodes. <b>Wait = Initiate</b> is the important one: it makes a standing squad attack nearby player units.</li>' +
         '</ul>' +
-        '<p style="margin:0 0 6px"><b>The rule that trips people up:</b> only a <b>sentinel</b> (a dumb town-sitter) works with <b>no node</b>. <b>Anything else — moving OR attacking — needs a node.</b> And a unit attacks <i>while moving</i> only if its route ADVANCES from a hold/ambush node onto a waypoint. So just dropping a unit on a march point (or setting a trigger + destination without a hold node) makes it walk there and <b>ignore you</b>.</p>' +
-        '<p style="margin:0 0 3px"><b>Recipes (pick under Behavior → “Set to” on a squad):</b></p>' +
+        '<p style="margin:0 0 3px"><b>Core rule</b></p>' +
+        '<p style="margin:0 0 6px">A squad with <b>no node</b> is a stationary sentinel. It holds its spawn point and fights if reached, but it has no Move / Wait orders, so it cannot sally, chase, wait for triggers, or march.</p>' +
+        '<p style="margin:0 0 6px">Anything active needs a node. A squad that should attack nearby units needs a hold node with <b>Wait = Initiate</b>. A squad that should move needs a waypoint node. A squad that should become aggressive while moving needs to advance from a hold or ambush node into a waypoint. A plain <b>March to destination</b> is passive: it walks to the destination and ignores the player on the way.</p>' +
+        '<p style="margin:0 0 3px"><b>Common setups</b></p>' +
         '<ul style="margin:0;padding-left:18px">' +
-          '<li><b>Dumb town-sitter</b> — sits where you place it, fights only what reaches it, never moves → <b>Guard</b>. A <b>sentinel</b>: <b>0 nodes</b> (the only node-free option; it has no orders to set). Only 16 nodes per scenario, so use these for plain garrisons.</li>' +
-          '<li><b>Stays put but attacks anyone who comes near</b> (a sally) → <b>Attacks anyone who comes near</b>. Builds <b>1 hold node</b> (Wait = Initiate). A sentinel can’t do this — it needs the node.</li>' +
-          '<li><b>Marches somewhere, ignores you</b> → <b>March to destination</b>. Builds <b>1 waypoint node</b>.</li>' +
-          '<li><b>Marches AND attacks you on the way</b> → <b>Wait for trigger, then march</b>. Builds a <b>hold node → waypoint node</b> (2 nodes): it waits at the hold node, then the trigger sends it to the waypoint — that advance is what makes it aggressive. A plain placed unit + destination will NOT attack.</li>' +
-          '<li><b>Hidden until you arrive, then attacks</b> → <b>Ambush</b>. Builds an <b>ambush node → waypoint</b>.</li>' +
+          '<li><b>Guard</b>: holds position with no node. Best for simple town guards and filler garrisons.</li>' +
+          '<li><b>Attacks anyone who comes near</b>: creates one hold node with <b>Wait = Initiate</b>. The squad stays put but sallies against nearby player units.</li>' +
+          '<li><b>March to destination</b>: creates one waypoint node. The squad walks to the destination but does not actively intercept the player.</li>' +
+          '<li><b>Wait for trigger, then march</b>: creates a hold node that waits on a trigger, then advances to a waypoint. This is the structure used for aggressive triggered marchers.</li>' +
+          '<li><b>Ambush</b>: creates a hidden ambush node gated by a trigger. If you set a destination, it wakes and moves there; without one, it wakes from the ambush point.</li>' +
+          '<li><b>Reinforce when N squads remain</b>: creates a squads-remaining trigger and an ambush-style start node. Optionally give it a destination if the reinforcement should move after appearing.</li>' +
+          '<li><b>March + permanent camp</b>: creates a waypoint node marked as a terminal camp. The squad moves there and stays.</li>' +
         '</ul>' +
-        '<p style="margin:8px 0 0"><b>Save nodes (only 16 per scenario):</b> if several squads need the <i>same</i> behavior — all march to the same place, or all sally from the same spot — point them at <b>one shared node</b> instead of building one each. Set each squad’s <b>Start node</b> (top of its Squad orders) to the same node; the node editor’s <b>Used by</b> list shows everyone sharing it. Together with sentinels for the dumb sitters, that keeps big scenarios under the cap.</p>' +
+        '<p style="margin:8px 0 0"><b>Node budget</b></p>' +
+        '<p style="margin:0">Each scenario only has 16 nodes. Use node-free <b>Guard</b> squads for simple stationary enemies. If several squads should share the same route, trigger, or sally behavior, point them at the same <b>Start node</b> instead of creating duplicate nodes. The node editor’s <b>Used by</b> list shows every squad sharing that node.</p>' +
       '</div>' +
     '</details>';
     var fit = archiveFitInfo(rom, key);

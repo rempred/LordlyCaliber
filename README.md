@@ -22,9 +22,10 @@ The public editor is intentionally clean and browser-only:
   structures into editor-friendly objects.
 - `repack.js` serializes edits back into ROM/save formats, including LHA/LZSS
   repacking and N64 CRC repair.
-- `patch.js` imports/exports portable JSON patches for supported edits.
+- `patch.js` imports/exports portable Project JSON files for supported edits
+  and still accepts older patch/Scenario-project JSON.
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
-- `tools-data.js` is generated from the research workspace's verified patch
+- `tools-data.js` is generated from the research workspace's Tools feature
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
 - `squadblob.js` builds the runtime squad-override hook/blob on export, with
   cache-invalidate hardening mirroring the game's own resource loader.
@@ -33,7 +34,7 @@ The public editor is intentionally clean and browser-only:
 - `squads.js` renders the squad composition editor (embedded in the Scenario
   tab sidebar; the standalone Squads tab is retired).
 - `scenario.js` renders the map-first Scenario tab: placement, routes,
-  triggers, added squads, and the ESET export/relocation lane.
+  triggers, buried treasure, added squads, and the ESET export/relocation lane.
 - `scenario-eset-codec.js` parses and rebuilds the per-mission ESET archives
   (validated round-trip against all 63 vanilla files).
 - `scenario-eset-data.js` and `scenario-map-calibration.js` are generated from
@@ -81,7 +82,6 @@ Packaged builds are published on GitHub Releases:
 
 - Release index: [LordlyCaliber releases](https://github.com/rempred/LordlyCaliber/releases)
 - First packaged download asset: [LordlyCaliber-v0.1.0.zip](https://github.com/rempred/LordlyCaliber/releases/download/v0.1.0/LordlyCaliber-v0.1.0.zip)
-- Draft notes for the next large release are kept in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 GitHub tracks download counts for uploaded release assets. Repository clones and
 GitHub's automatically generated source-code archives are separate from the
@@ -106,17 +106,18 @@ project download asset.
   all 277 equipment entries.
   Item names and IDs use the game's 1-based item numbering.
 - **Scenario** — a map-first per-mission editor covering all 64 runtime
-  scenario keys. Each mission renders as a map (calibrated per-key art
-  registration with a schematic fallback) with draggable enemy squad markers
-  wearing their leader's portrait. Click a squad to edit its composition and
-  formation in the sidebar (the former Squads tab, embedded); drag to
-  reposition; drag-draw movement routes with editable waypoints; edit
-  triggers/gates (player-at-site, site flags, squads-remaining thresholds,
-  AND/OR compound gates) through a live behavior builder — changes apply as
-  you make them. **Add Squad** places entirely new enemy squads on a mission
-  using verified donor records plus the scenario-gated runtime override lane,
-  and exports end-to-end (cold-boot proven in Project64). Squad comps export
-  as runtime overrides without changing global `enemydat.bin`; the default UI
+  scenario keys. The 62 renderable mission keys use site-fitted full-art map
+  registrations, while internal/no-image keys keep the schematic fallback.
+  Enemy squads appear as draggable portrait markers; click a squad to edit its
+  composition and formation in the sidebar (the former Squads tab, embedded);
+  drag-draw movement routes with editable waypoints; edit triggers/gates
+  (player-at-site, site flags, squads-remaining thresholds, AND/OR compound
+  gates) through a live behavior builder — changes apply as you make them.
+  Buried treasure can be added, removed, or moved on the map using the Shops
+  item icons. **Add Squad** places entirely new enemy squads on a mission using
+  verified donor records plus the scenario-gated runtime override lane, and
+  exports end-to-end (cold-boot proven in Project64). Squad comps export as
+  runtime overrides without changing global `enemydat.bin`; the default UI
   enforces vanilla-style formation limits, with the experimental raw-capacity
   mode still available for mod testing.
   Oversized mission edits take an automatic **grow/relocate lane**: when a
@@ -168,9 +169,9 @@ project download asset.
   Squad project data stores per-runtime-key 35-byte replacement records so a
   saved project can reproduce the exported squad override blob.
   The Project JSON container embeds the full Scenario payload (modified mission
-  ESETs, added squads, and site intents), so one file reproduces a complete
-  scenario mod; older patch files and legacy Scenario-only project files still
-  load.
+  ESETs, buried treasures, added squads, squad comp records, and site intents),
+  so one file reproduces a complete scenario mod; older patch files and legacy
+  Scenario-only project files still load.
   Save Game Editor changes are separate save-file edits; use that tab's Export
   Save control for them.
 - **Export** — writes a clean ROM in the same byte order that was loaded, with
@@ -204,12 +205,12 @@ project download asset.
 - Mission archive relocation currently supports single-fetch-window missions
   (~32 of 63); multi-window missions still enforce the original slot-size cap.
   Per-mission add-squad budget is also capped by the game's 50 deploy slots.
-- Neutral/allied town-allegiance intents are saved in projects/patches but do
+- Neutral/allied town-allegiance intents are saved in Project JSON but do
   not export to ROM yet (their static source table currently recompresses
   larger than its slot); enemy-held-via-garrison exports fully.
-- Full-art mission map backgrounds are bundled for calibrated Scenario tab
-  maps; Fort Romulus still defaults to the schematic map because its full-art
-  registration remains provisional.
+- Full-art mission map backgrounds are bundled and site-fitted for the 62
+  renderable runtime keys. Two internal/no-image keys still render through the
+  schematic fallback.
 - Class sex/voice/body and leadership bytes are exposed from the corrected
   name-framed header, but their exact runtime consumers are not fully traced.
 - Raw story/NPC class records can be viewed and edited in Classes Card View, but
@@ -289,20 +290,20 @@ save-state decompression.
   map instead of being blocked at export.
 - **Class promotion-tree visualizer** — interactive graph of all promotion
   paths derived from class def `reqClass` (B55).
-- **High-attack combat stability** — continue the ROM-side combat research for
-  extreme attack-count mods. The old 28-entry/result-log theory is retracted;
-  current research points at combat action-stream/context relocation and
-  scheduler cleanup guards. This is not exposed in the public editor yet.
+- **High-attack combat stability** — continue ROM-side regression for extreme
+  attack-count mods. The old 28-entry/result-log theory is retracted; current
+  research points at combat action-stream/context relocation and scheduler
+  cleanup guards. The experimental Streamsplit toggle exists in Tools, but it
+  remains a research/testing feature until fresh emulator regression is done.
 - **Bulk patches** — apply common community patches (XP rate, encounter rate,
   rare-item drops) as one-click toggles.
 
 ## Credits
 
 See [CREDITS.md](CREDITS.md). LordlyCaliber was built with help from AI
-assistants, including **Claude** and **OpenAI Codex**, and coordinated by
-**rempred**. The editor would not exist without the community wikis
-(OgreBattle64.net, ogrebattle64archive.com), Cralex's GameShark guide, and the
-reverse-engineering work of everyone who came before.
+assistants and coordinated by **rempred**. The editor would not exist without
+the community wikis (OgreBattle64.net, ogrebattle64archive.com), Cralex's
+GameShark guide, and the reverse-engineering work of everyone who came before.
 
 ## License
 
