@@ -247,6 +247,64 @@ same file name.
 > extracted UI/item icons are included only as identification references for the
 > editor.
 
+## Emulator Settings For Override Patches
+
+Runtime override patches need the N64 Expansion Pak / 8 MB RDRAM. This applies
+to exported ROMs that include Squads runtime overrides, Scenario **Add Squad**
+composition overrides, Chaos Frame Counter, or High Attack Streamsplit. These
+features install code/data in the free upper-RDRAM lanes at `0x80400000+`; a
+strict 4 MB setup can hang, black-screen, or fault when the patched ROM tries to
+load the module.
+
+You do **not** need interpreter core just to play or test an override-patched
+ROM. The default/dynamic recompiler is fine. Interpreter mode is only needed for
+debugger/watchpoint tracing.
+
+### Project64 / PJ64
+
+Project64 is the recommended emulator for testing exported ROMs and for using
+the editor's Project64 `.sra` save support.
+
+- Use Project64 4.x or a recent Project64 development build with the GLideN64
+  video plugin.
+- Set the per-game profile to **8 MB RDRAM / Expansion Pak**. Re-check this
+  after exporting a ROM with a changed CRC, because Project64 may create a new
+  per-ROM profile entry.
+- If editing Project64 config files manually, the exact key varies by build;
+  the required result is 8 MB RDRAM. Common forms include `RDRAM Size=8`,
+  `RDRamSize=8388608`, or `Game_RDRamSize=0x800000`.
+- Leave the CPU core on the normal/default recompiler for gameplay. Use
+  interpreter only for debugger/watchpoint work.
+- If Project64 runs OB64 at about 15 fps, disable **Sync using Audio** in
+  Project64's settings. OB64 should run at about 30 fps in-game.
+- Cold-boot the exported ROM before judging runtime patches. Loading an old
+  savestate can restore old RAM and hide or overwrite the module that the new
+  ROM would normally load.
+- Project64 creates a separate save folder for every different ROM hash. After
+  exporting a patched ROM, expect a new `OgreBattle64-<hash>` save folder and
+  move or re-export the `.sra` save you want to use into that folder.
+
+### RetroArch
+
+[RetroArch](https://www.retroarch.com/) is supported mainly through the
+Mupen64Plus-Next core's `.state` files in the Save Game Editor.
+
+- Use the **Mupen64Plus-Next** N64 core for save-state files you plan to load in
+  LordlyCaliber.
+- Make sure Expansion Pak / extra memory is enabled for the core. If the core
+  exposes an RDRAM-size option, set it to **8 MB**. In Mupen64Plus-Next `.opt`
+  files, the important value is `mupen64plus-ForceDisableExtraMem = "False"`.
+- The dynamic recompiler is fine for gameplay. No interpreter setting is needed
+  for LordlyCaliber's override patches.
+- Keep the same core and core version for a save-state workflow. RetroArch
+  states are not a portable save format across unrelated cores or emulator
+  versions.
+- Prefer in-game saves when validating a newly exported ROM. Like Project64,
+  RetroArch savestates can carry old RAM forward and mask whether the patched
+  ROM cold-boots correctly.
+- Legacy research scripts that talk to RetroArch expect **Network Commands**
+  enabled on UDP port `55355`. Normal editor use does not require this.
+
 ## How it was built
 
 The editor is the working surface of an extended reverse-engineering effort

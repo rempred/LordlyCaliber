@@ -1077,7 +1077,7 @@ window.OB64 = window.OB64 || {};
       '<div class="sc-route-legend">' +
         '<span class="sc-leg-t">Route lines:</span>' +
         '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#6a4d28" stroke-width="3"></line></svg> marches at start</span>' +
-        '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#6a4d28" stroke-width="3" stroke-dasharray="9 7"></line></svg> waits for a trigger</span>' +
+        '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#6a4d28" stroke-width="3" stroke-dasharray="9 7"></line></svg> waits before advancing</span>' +
         '<span class="sc-leg"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#2f8f4e" stroke-width="2" stroke-dasharray="3 5"></line></svg> conditional fork</span>' +
         '<span class="sc-leg"><span class="sc-leg-dot" style="background:#4db0d2"></span><span class="sc-leg-dot" style="background:#e6a92e"></span><span class="sc-leg-dot" style="background:#d2564b"></span> each color = one squad (matches roster bar)</span>' +
       '</div>' +
@@ -1669,8 +1669,8 @@ window.OB64 = window.OB64 || {};
     // Wait=Initiate order), so advertising it on the behavior line was misleading. See
     // docs/enemy-system.md "Enemy movement / aggro AI" (the open +0x92-vs-+0xBB march-intercept item).
     if (startNode.kind === 0 && !destName && !gateA) return startNode.bytes[3] === 1 ? 'Holds position, attacks anyone who comes near (sally)' : 'Holds position (hold node)';
-    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '');
-    if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '');
+    if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'advance trigger') + '; on pass, ' + marchWord + (terminal ? ' + camp' : '');
+    if (gateA) return 'Wait for ' + gate + '; on pass, ' + marchWord + (terminal ? ' + camp' : '');
     if (destName) return 'March to ' + destName + via + (terminal ? ' + permanent camp' : '');
     return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
   }
@@ -1683,9 +1683,9 @@ window.OB64 = window.OB64 || {};
   function templateHelp(tpl) {
     if (tpl === 'guard-site') return 'Sits where it deploys and fights only what reaches it - never moves, never chases. This is a SENTINEL: it uses NO node (the cheapest option). It has no orders, so it cannot sally - use "Attacks anyone who comes near" for that.';
     if (tpl === 'guard-sally') return 'Sits at its post but attacks any player squad that comes within range (a "sally"). Uses ONE hold node with Wait = Initiate - a sentinel has no orders, so this is the node-backed version.';
-    if (tpl === 'march-chain') return 'PASSIVE: walks straight to the destination and ignores the player - it will NOT chase or intercept. For a marcher that attacks, use "Wait for trigger, then march" instead.';
-    if (tpl === 'wait-march') return 'Holds at its post until the trigger fires, then marches to the destination. This is the structure vanilla INTERCEPTING marchers use (it advances from a gated hold node to a waypoint). Needs a Trigger + a Destination.';
-    if (tpl === 'solo-ambush') return 'Hidden and inert until the trigger fires, then wakes and marches to the destination (pursues, like a vanilla ambush). Needs a Trigger + a Destination.';
+    if (tpl === 'march-chain') return 'PASSIVE: walks straight to the destination and ignores the player - it will NOT chase or intercept. For a marcher that attacks, use "Wait for trigger, then advance to destination" instead.';
+    if (tpl === 'wait-march') return 'Holds at its post until the trigger fires, then advances to the destination. The trigger gates the move from the hold node to the next waypoint; it does not activate the hold node itself. Needs an Advance trigger + a Destination.';
+    if (tpl === 'solo-ambush') return 'Hidden and inert until the trigger fires, then advances to the destination (pursues, like a vanilla ambush). The trigger gates the move from the ambush node to its next node. Needs an Advance trigger + a Destination.';
     if (tpl === 'reinforce-remnant') return 'Stays out of the fight until <= N enemy squads remain, then deploys. Set the threshold below.';
     if (tpl === 'camp-terminal') return 'Marches to the destination and camps there permanently (one-way).';
     return 'Movement comes from NODES, not the unit. A squad attacks while moving only if it ADVANCES from a gated hold/ambush node to a waypoint - a plain "March to destination" is passive.';
@@ -2217,7 +2217,7 @@ window.OB64 = window.OB64 || {};
     html += '</div>';
     html += '<div class="sc-section"><span class="sc-label">Used by</span>';
     if (use.nodeIds.length) {
-      html += '<div class="sc-sub">Gate on node' + (use.nodeIds.length > 1 ? 's' : '') + ' ' + use.nodeIds.join(', ') + '</div>';
+      html += '<div class="sc-sub">Advance gate on node' + (use.nodeIds.length > 1 ? 's' : '') + ' ' + use.nodeIds.join(', ') + ': this trigger lets the node advance to its Next node; it does not activate the current node.</div>';
       if (use.squadRefs.length) {
         var points = pointsForAllRows(rom, key);
         var pointByRow = {}; points.forEach(function(p) { pointByRow[p.section1Row] = p; });
@@ -2238,7 +2238,7 @@ window.OB64 = window.OB64 || {};
         html += '<div class="sc-sub">No squads chain through these nodes.</div>';
       }
     } else {
-      html += '<div class="sc-sub">No squad gates on this trigger - it is an <strong>objective / event trigger</strong>: its condition (e.g. the player reaching this site) fires a story event, win/lose check, or <strong>cutscene</strong> rather than launching a squad. (Confirmed: key2 E3 = player-at-Ishro plays a cutscene.)</div>';
+      html += '<div class="sc-sub">No squad advance gates reference this trigger - it is an <strong>objective / event trigger</strong>: its condition (e.g. the player reaching this site) fires a story event, win/lose check, or <strong>cutscene</strong> rather than advancing a squad route. (Confirmed: key2 E3 = player-at-Ishro plays a cutscene.)</div>';
     }
     html += '</div>';
     // Delete: extra ids are stored in the record, so deletion never renumbers survivors.
@@ -2248,8 +2248,8 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section">';
     if (refNodes.length) {
       html += '<div class="sc-sub">Node' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
-        ' gate' + (refNodes.length > 1 ? '' : 's') + ' on this trigger; deleting it clears those gates (the nodes run ungated).</div>' +
-        '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete" data-ungate="1">Delete trigger + un-gate ' +
+        ' advance gate' + (refNodes.length > 1 ? 's' : '') + ' on this trigger; deleting it clears those gates (the nodes advance ungated).</div>' +
+        '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete" data-ungate="1">Delete trigger + clear advance gate on ' +
         refNodes.length + ' node' + (refNodes.length > 1 ? 's' : '') + '</button>';
     } else {
       html += '<button type="button" class="sc-inline-btn sc-danger" id="sc-trig-delete">Delete this trigger</button>';
@@ -2341,7 +2341,7 @@ window.OB64 = window.OB64 || {};
         '<div class="sc-form-row"><label class="sc-label">Wait</label>' + orderSelect('sc-node-wait', node.row, 3, b[3] & 0xFF, WAIT_NAMES, WAIT_BLURB) + '</div>' +
         '<div class="sc-form-row"><label class="sc-label">Move</label>' + orderSelect('sc-node-move', node.row, 2, b[2] & 0xFF, MOVE_NAMES, MOVE_BLURB) + '</div>';
     }
-    html += '<div class="sc-form-row"><label class="sc-label">Gate trigger</label><select id="sc-node-gate">' +
+    html += '<div class="sc-form-row"><label class="sc-label" title="Condition required before this node advances to its Next node">Advance gate</label><select id="sc-node-gate">' +
       option('0', 'None (always pass)', String(b[10])) +
       model.section3.map(function(x) { return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, String(b[10])); }).join('') +
       '</select></div>';
@@ -2351,6 +2351,7 @@ window.OB64 = window.OB64 || {};
       model.section2.filter(function(n) { return n.nodeId !== nodeId; })
         .map(function(n) { return option(String(n.nodeId), 'node ' + n.nodeId + ' (' + nodeKindName(n.bytes[1]) + ')', String(b[17])); }).join('') +
       '</select></div>';
+    html += '<div class="sc-sub"><b>Advance gate means:</b> the squad is already using this node. When the trigger condition passes, this node may advance to <b>Next node</b>. It is not a trigger to activate this current node.</div>';
     if (node.kind === 1) {
       var w = nodeWorld(rom, key, node);
       var sites = ensureState(rom).sites[key] || [];
@@ -2451,8 +2452,8 @@ window.OB64 = window.OB64 || {};
     var refNodes = triggerRefNodes(model, extraId);
     var message = refNodes.length
       ? 'Delete trigger E' + extraId + '?\n\nNode' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
-        ' will lose ' + (refNodes.length > 1 ? 'their gates' : 'its gate') + ' and run ungated (squads on ' +
-        (refNodes.length > 1 ? 'those nodes' : 'that node') + ' act immediately).'
+        ' will lose ' + (refNodes.length > 1 ? 'their advance gates' : 'its advance gate') + ' and advance ungated (squads on ' +
+        (refNodes.length > 1 ? 'those nodes' : 'that node') + ' can move to Next immediately).'
       : 'Delete trigger E' + extraId + '? Nothing references it.';
     confirmThemed('Delete trigger', message, 'Delete trigger', function() {
       var idx = model.section3.indexOf(extra);
@@ -2466,7 +2467,7 @@ window.OB64 = window.OB64 || {};
       syncStructuralOffsets(model);
       OB64.scenarioCodec.refreshDecodedRows(model);
       ui.selectedTrigger = null;
-      ui.gateText = 'Trigger E' + extraId + ' deleted' + (refNodes.length ? ' (node ' + refNodes.join(', ') + ' un-gated).' : '.');
+      ui.gateText = 'Trigger E' + extraId + ' deleted' + (refNodes.length ? ' (advance gate cleared on node ' + refNodes.join(', ') + ').' : '.');
       ensureState(rom).modifiedKeys[key] = true;
       changed();
       renderScenarioTab(document.getElementById('panel-scenario'));
@@ -2490,8 +2491,8 @@ window.OB64 = window.OB64 || {};
         '<p style="margin:0 0 3px"><b>Main pieces</b></p>' +
         '<ul style="margin:0 0 6px;padding-left:18px">' +
           '<li><b>Squad</b>: an enemy unit group. Its composition, formation, placement, and behavior are edited in the sidebar.</li>' +
-          '<li><b>Node</b>: a route or behavior instruction. A node can make a squad hold position, march to a waypoint, wait behind a trigger, spawn hidden as an ambush, or chain into another node through <b>Next</b>.</li>' +
-          '<li><b>Trigger</b>: a condition such as the player reaching an area, a site flag changing, or the number of remaining enemy squads dropping.</li>' +
+          '<li><b>Node</b>: a route or behavior instruction. A node can make a squad hold position, march to a waypoint, wait behind an <b>advance gate</b>, spawn hidden as an ambush, or chain into another node through <b>Next</b>.</li>' +
+          '<li><b>Trigger</b>: a condition such as the player reaching an area, a site flag changing, or the number of remaining enemy squads dropping. When a node uses a trigger, it gates the move to that node\'s <b>Next</b> node; it does not activate the current node.</li>' +
           '<li><b>Squad orders</b>: Move / Wait values stored on hold nodes. <b>Wait = Initiate</b> is the important one: it makes a standing squad attack nearby player units.</li>' +
         '</ul>' +
         '<p style="margin:0 0 3px"><b>Core rule</b></p>' +
@@ -2502,8 +2503,8 @@ window.OB64 = window.OB64 || {};
           '<li><b>Guard</b>: holds position with no node. Best for simple town guards and filler garrisons.</li>' +
           '<li><b>Attacks anyone who comes near</b>: creates one hold node with <b>Wait = Initiate</b>. The squad stays put but sallies against nearby player units.</li>' +
           '<li><b>March to destination</b>: creates one waypoint node. The squad walks to the destination but does not actively intercept the player.</li>' +
-          '<li><b>Wait for trigger, then march</b>: creates a hold node that waits on a trigger, then advances to a waypoint. This is the structure used for aggressive triggered marchers.</li>' +
-          '<li><b>Ambush</b>: creates a hidden ambush node gated by a trigger. If you set a destination, it wakes and moves there; without one, it wakes from the ambush point.</li>' +
+          '<li><b>Wait for trigger, then advance</b>: creates a hold node whose trigger gates the move to its next waypoint. This is the structure used for aggressive triggered marchers.</li>' +
+          '<li><b>Ambush</b>: creates a hidden ambush node whose trigger gates the move to its next node. If you set a destination, it wakes and moves there; without one, it wakes from the ambush point.</li>' +
           '<li><b>Reinforce when N squads remain</b>: creates a squads-remaining trigger and an ambush-style start node. Optionally give it a destination if the reinforcement should move after appearing.</li>' +
           '<li><b>March + permanent camp</b>: creates a waypoint node marked as a terminal camp. The squad moves there and stays.</li>' +
         '</ul>' +
@@ -2706,7 +2707,7 @@ window.OB64 = window.OB64 || {};
     return '<div class="sc-trigger-row sc-node-row' + (ui.selectedNode === node.nodeId ? ' on' : '') + '" data-node-id="' + node.nodeId + '" role="button" tabindex="0">' +
       '<strong>node ' + node.nodeId + '</strong> ' + esc(nodeKindName(node.kind)) +
       (node.kind === 0 && node.bytes[3] === 1 ? ' <span class="sc-chip">aggro</span>' : '') +
-      '<span class="sc-sub">gate: ' + esc(extraA + (extraB ? ' ' + op + ' ' + extraB : '')) + ' &rarr; ' + esc(target) +
+      '<span class="sc-sub">advance gate: ' + esc(extraA + (extraB ? ' ' + op + ' ' + extraB : '')) + ' &rarr; ' + esc(target) +
       ' &middot; <code>' + esc(node.raw18) + '</code></span></div>';
   }
 
@@ -2829,13 +2830,14 @@ window.OB64 = window.OB64 || {};
       option('guard-site', 'Guard - hold position (dumb, no node)', selTemplate) +
       option('guard-sally', 'Attacks anyone who comes near (stays put)', selTemplate) +
       option('march-chain', 'March to destination (passive - ignores you)', selTemplate) +
-      option('wait-march', 'Wait for trigger, then march (aggressive - intercepts)', selTemplate) +
-      option('solo-ambush', 'Ambush - hidden until trigger, then attacks', selTemplate) +
+      option('wait-march', 'Wait for trigger, then advance to destination', selTemplate) +
+      option('solo-ambush', 'Ambush - hidden until trigger, then advances', selTemplate) +
       option('reinforce-remnant', 'Reinforce when N squads remain', selTemplate) +
       option('camp-terminal', 'March + permanent camp', selTemplate) +
       '</select></div>' +
       '<div id="sc-tpl-help" class="sc-sub" style="margin-top:2px">' + esc(templateHelp(selTemplate)) + '</div>' +
-      '<div class="sc-form-row"><label class="sc-label">Trigger</label><select id="sc-tpl-trigger">' +
+      '<div class="sc-sub"><b>Trigger here is an advance gate:</b> it controls when the squad leaves its current start node for the next node, not when the current node activates.</div>' +
+      '<div class="sc-form-row"><label class="sc-label" title="Condition required before this squad advances from its current start node to the next node">Advance trigger</label><select id="sc-tpl-trigger">' +
       option('', 'None', selTrigger) +
       model.section3.map(function(x) {
         return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, selTrigger);
@@ -2964,7 +2966,9 @@ window.OB64 = window.OB64 || {};
   function advancedHtml(model, rowIndex) {
     var row = model.section1[rowIndex];
     var html = '<div class="sc-section"><span class="sc-label">Section 1 raw row</span>' + rawGridHtml('s1', row.bytes, rowIndex, 's1') + '</div>';
-    html += '<div class="sc-section"><span class="sc-label">Section 2 gate builder</span><table class="sc-table"><thead><tr><th>Node</th><th>Kind</th><th>A</th><th>Op</th><th>B</th><th>Next</th></tr></thead><tbody>';
+    html += '<div class="sc-section"><span class="sc-label">Section 2 advance gates</span>' +
+      '<div class="sc-sub">Gate bytes block the transition from this node to <b>Next</b>. They do not activate the current node.</div>' +
+      '<table class="sc-table"><thead><tr><th>Node</th><th>Kind</th><th>A</th><th>Op</th><th>B</th><th>Next</th></tr></thead><tbody>';
     model.section2.forEach(function(node) {
       html += '<tr data-node="' + node.row + '"><td>' + node.nodeId + '</td><td>' + node.kind + '</td>' +
         '<td><input class="sc-node-byte" data-row="' + node.row + '" data-off="10" value="' + hx2(node.bytes[10]) + '"></td>' +
@@ -3164,7 +3168,7 @@ window.OB64 = window.OB64 || {};
           if (!startNodeA) { msg('E' + extra.extraId + ' created - pick a template to use it.', false); commitScenarioEdit(rom, key); return; }
           startNodeA.bytes[10] = extra.extraId;
           bld.trigger = null; // baked into the node; form reflects the new current gate
-          msg('E' + extra.extraId + ' created and set as gate.', true);
+          msg('E' + extra.extraId + ' created and set as the advance gate.', true);
           commitScenarioEdit(rom, key);
         });
         return;
@@ -3174,7 +3178,7 @@ window.OB64 = window.OB64 || {};
       if (!startNode) { msg('No start node on this squad - pick a template first.', false); return; }
       startNode.bytes[10] = this.value ? parseInt(this.value, 10) : 0;
       bld.trigger = null; // baked in
-      msg(this.value ? 'Gate set to E' + this.value : 'Gate cleared - route is now UNGATED (solid line): the unit marches immediately. Use "Remove route" to make it hold position.', true);
+      msg(this.value ? 'Advance gate set to E' + this.value : 'Advance gate cleared - route is now UNGATED (solid line): the unit may advance immediately. Use "Remove route" to make it hold position.', true);
       commitScenarioEdit(rom, key);
     };
     var clearRoute = el.querySelector('#sc-tpl-clear-route');
@@ -3249,10 +3253,10 @@ window.OB64 = window.OB64 || {};
   // the player sets in-game. Wait == 1 (Initiate) is the aggro/sally gate. See docs/enemy-system.md
   // "Enemy movement / aggro AI". These are module-level so both renderSquadDetail and any caller can
   // reach them (the two functions do NOT share a closure).
-  var MOVE_NAMES = ['Direct', 'Hit & Run', 'Evasion'];
+  var MOVE_NAMES = ['Direct', 'Agressive', 'Evasion'];
   var WAIT_NAMES = ['Guard', 'Initiate', 'Retreat'];
   // Short per-option meanings shown inline in the dropdowns.
-  var MOVE_BLURB = ['close straight in', 'strike then withdraw', 'avoid contact'];
+  var MOVE_BLURB = ['close straight in', '', 'avoid contact'];
   var WAIT_BLURB = ['hold post', 'seek & attack', 'flee'];
 
   // Aggro headline, driven purely by the Wait byte (node [3] -> live +0x92): Guard = green "holds",
@@ -3777,7 +3781,7 @@ window.OB64 = window.OB64 || {};
     }
     if (template === 'wait-march') {
       if (!destBytes) return 'wait-march needs a destination - click Destination, then the map';
-      if (!params.trigger) return 'wait-march needs a trigger - pick one in Trigger';
+      if (!params.trigger) return 'wait-march needs an advance trigger - pick one in Advance trigger';
       var wDest = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
       if (!wDest) return 'Section 2 is at its 16-node cap';
       var hold = ownedNodeWrite(model, owned, 'gate', { kind: 0, gateExtra: params.trigger, next: wDest.nodeId });
@@ -3786,7 +3790,7 @@ window.OB64 = window.OB64 || {};
       return null;
     }
     if (template === 'solo-ambush') {
-      if (!params.trigger) return 'ambush needs a trigger - pick one in Trigger';
+      if (!params.trigger) return 'ambush needs an advance trigger - pick one in Advance trigger';
       var order = destBytes ? ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
       var lair = ownedNodeWrite(model, owned, 'gate', {
         kind: 2, gateExtra: params.trigger, next: order ? order.nodeId : 1,
