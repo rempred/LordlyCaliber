@@ -65,13 +65,13 @@
   --ob-display:         'Cinzel', 'EB Garamond', Palatino, Georgia, serif;
   --ob-mono:            'Consolas', 'Menlo', 'Courier New', monospace;
 
-  /* Type scale — 4 sizes, 11px minimum.
+  /* Type scale — 4 sizes, 12px minimum.
      xs = labels, badges, chips, captions
      sm = body default (tables, inputs, buttons, paragraphs)
      md = card/section/modal titles
      lg = page-level headings */
-  --ob-text-xs:         11px;
-  --ob-text-sm:         13px;
+  --ob-text-xs:         12px;
+  --ob-text-sm:         14px;
   --ob-text-md:         16px;
   --ob-text-lg:         22px;
 }

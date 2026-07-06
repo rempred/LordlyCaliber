@@ -115,24 +115,24 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario{--sc-line:rgba(62,45,25,.28);--sc-panel:#efe0bd;--sc-soft:rgba(255,255,255,.18);--sc-red:#b7372f;--sc-blue:#2d6fbc;--sc-green:#2f8f4e}',
       '#panel-scenario .sc-page{max-width:1500px;margin:0 auto;color:var(--ob-ink)}',
       '#panel-scenario .sc-titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 12px}',
-      '#panel-scenario h2{margin:0;color:var(--ob-gold-bright);font-size:22px;line-height:1.1}',
+      '#panel-scenario h2{margin:0;color:var(--ob-gold-bright);font-size:var(--ob-text-lg);line-height:1.1}',
       '#panel-scenario .sc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
-      '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label{height:32px;display:inline-flex;align-items:center;border-radius:5px;font-size:12px;font-weight:700}',
+      '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label{height:32px;display:inline-flex;align-items:center;border-radius:5px;font-size:var(--ob-text-sm);font-weight:700}',
       // Parchment/stone button theme (mirrors .header-buttons in style.css) for every scenario
       // control that previously fell through to browser-default white.
       '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label,#panel-scenario .sc-inline-btn{font-family:var(--ob-display);letter-spacing:.6px;text-transform:uppercase;padding:0 12px;color:var(--ob-ink);background:linear-gradient(180deg,var(--ob-parchment) 0%,var(--ob-parchment-2) 55%,var(--ob-parchment-3) 100%);border:1px solid var(--ob-wood-darkest);cursor:pointer;text-shadow:0 1px 0 rgba(255,240,200,.45);box-shadow:inset 0 1px 0 rgba(255,245,210,.65),inset 0 -2px 0 rgba(122,81,32,.45),0 2px 3px rgba(0,0,0,.35);transition:filter .12s,transform .04s}',
-      '#panel-scenario .sc-inline-btn{height:28px;border-radius:5px;font-size:11px;font-weight:800;display:inline-flex;align-items:center}',
+      '#panel-scenario .sc-inline-btn{height:28px;border-radius:5px;font-size:var(--ob-text-xs);font-weight:800;display:inline-flex;align-items:center}',
       '#panel-scenario .sc-actions button:hover,#panel-scenario .sc-actions label:hover,#panel-scenario .sc-inline-btn:hover{filter:brightness(1.08)}',
       '#panel-scenario .sc-actions button:active,#panel-scenario .sc-actions label:active,#panel-scenario .sc-inline-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 3px rgba(80,50,20,.55),0 1px 2px rgba(0,0,0,.35)}',
       '#panel-scenario .sc-danger{color:var(--ob-wax-red);border-color:var(--ob-wax-red);background:linear-gradient(180deg,var(--ob-parchment-2) 0%,var(--ob-parchment-3) 100%)}',
       '#panel-scenario .sc-danger:hover{filter:brightness(1.05);background:rgba(152,32,24,.12)}',
       '#panel-scenario .sc-actions input[type=text]{height:32px;width:210px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
-      '#panel-scenario .sc-gate{font-size:12px;color:var(--ob-ink-soft);min-height:18px}',
+      '#panel-scenario .sc-gate{font-size:var(--ob-text-sm);color:var(--ob-ink-soft);min-height:18px}',
       '#panel-scenario .sc-layout{display:grid;grid-template-columns:280px minmax(460px,1fr) 500px;gap:12px;align-items:start}',
       // Embedded Squads comp editor: stack formation grid over pickers so the full modal fits the sidebar.
       '#sc-comp-host .sq-editor-grid{display:grid;grid-template-columns:1fr !important;gap:10px}',
       '#sc-comp-host .sq-pick{grid-template-columns:1fr !important}',
-      '#panel-scenario .sc-trigger-row{display:block;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:6px 8px;margin:4px 0;cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-trigger-row{display:block;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:6px 8px;margin:4px 0;cursor:pointer;font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-trigger-row .sc-sub{display:block;margin-top:2px}',
       '#panel-scenario .sc-trigger-row:hover{background:rgba(104,74,36,.14)}',
       '#panel-scenario .sc-trigger-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
@@ -143,39 +143,42 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-snap-ring{width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px dashed rgba(245,210,98,.95);animation:sc-snap-pulse .8s infinite}',
       '@keyframes sc-snap-pulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.12);opacity:.7}100%{transform:scale(1);opacity:1}}',
       '#sc-comp-host .sq-pick select,#sc-comp-host .sq-field select{max-width:100% !important;width:100%}',
-      '#sc-comp-host .sq-detail-head{padding:0 0 6px;margin:0 0 6px}',
+      // Scenario embed: stack the head so the metadata chips sit ABOVE the squad title and the
+      // descriptive body runs the full panel width (vanilla Squads tab lays them side-by-side).
+      '#sc-comp-host .sq-detail-head{display:flex;flex-direction:column-reverse;align-items:stretch;gap:6px;padding:0 0 6px;margin:0 0 6px}',
+      '#sc-comp-host .sq-row-meta{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-start}',
       '#sc-comp-host .sq-foot{flex-wrap:wrap}',
       '#panel-scenario .sc-list,#panel-scenario .sc-map-panel,#panel-scenario .sc-detail{background:var(--ob-parchment);border:1px solid var(--ob-parchment-edge);border-radius:6px;box-shadow:var(--ob-shadow-sm)}',
       '#panel-scenario .sc-list{max-height:calc(100vh - 205px);min-height:620px;overflow:auto;padding:10px}',
       '#panel-scenario .sc-list-tools{position:sticky;top:0;z-index:3;background:var(--ob-parchment);border-bottom:1px solid var(--sc-line);padding-bottom:8px;margin-bottom:8px}',
       '#panel-scenario .sc-list-tools input{width:100%;height:32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
-      '#panel-scenario .sc-group{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.4px;margin:10px 2px 4px}',
+      '#panel-scenario .sc-group{font-size:var(--ob-text-xs);font-weight:800;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.4px;margin:10px 2px 4px}',
       '#panel-scenario .sc-key{width:100%;border:1px solid transparent;background:transparent;color:var(--ob-ink);border-radius:5px;padding:7px 8px;text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;cursor:pointer}',
       '#panel-scenario .sc-key:hover{background:rgba(104,74,36,.12);border-color:var(--sc-line)}',
       '#panel-scenario .sc-key.on{background:var(--ob-wood-lo);color:var(--ob-parchment);border-color:var(--ob-wood-hi)}',
-      '#panel-scenario .sc-key-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700}',
-      '#panel-scenario .sc-key-sub{grid-column:1/-1;color:inherit;opacity:.72;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '#panel-scenario .sc-chip{display:inline-flex;align-items:center;min-height:18px;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:800;line-height:1;text-transform:uppercase;background:var(--ob-parchment-dark);color:var(--ob-ink);white-space:nowrap}',
+      '#panel-scenario .sc-key-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ob-text-sm);font-weight:700}',
+      '#panel-scenario .sc-key-sub{grid-column:1/-1;color:inherit;opacity:.72;font-size:var(--ob-text-xs);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-scenario .sc-chip{display:inline-flex;align-items:center;min-height:18px;border-radius:4px;padding:1px 5px;font-size:var(--ob-text-xs);font-weight:800;line-height:1;text-transform:uppercase;background:var(--ob-parchment-dark);color:var(--ob-ink);white-space:nowrap}',
       '#panel-scenario .sc-key.on .sc-chip{background:rgba(245,230,200,.18);color:var(--ob-parchment)}',
       '#panel-scenario .sc-key-dev:not(.on){opacity:.6}',
       '#panel-scenario .sc-key-dev:not(.on) .sc-key-name{font-style:italic;font-weight:600}',
       '#panel-scenario .sc-map-panel{padding:10px;min-width:0}',
       '#panel-scenario .sc-map-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 8px}',
-      '#panel-scenario .sc-map-title{font-size:15px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-scenario .sc-map-title{font-size:var(--ob-text-md);font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '#panel-scenario .sc-map-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
-      '#panel-scenario .sc-map-tools select,#panel-scenario .sc-map-tools input{height:28px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:12px}',
+      '#panel-scenario .sc-map-tools select,#panel-scenario .sc-map-tools input{height:28px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-layer-toggles{display:flex;gap:7px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--sc-line);padding-top:8px;margin-top:8px}',
-      '#panel-scenario .sc-route-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--ob-ink-soft);padding:6px 2px 0;margin-top:6px}',
+      '#panel-scenario .sc-route-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:var(--ob-text-xs);color:var(--ob-ink-soft);padding:6px 2px 0;margin-top:6px}',
       '#panel-scenario .sc-route-legend .sc-leg-t{font-weight:800;color:var(--ob-ink)}',
       '#panel-scenario .sc-route-legend .sc-leg{display:inline-flex;align-items:center;gap:5px}',
       '#panel-scenario .sc-leg-dot{display:inline-block;width:9px;height:9px;border-radius:2px}',
-      '#panel-scenario .sc-squad-chip{display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;align-items:center;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:4px 8px;margin:4px 0;cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-squad-chip{display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;align-items:center;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:4px 8px;margin:4px 0;cursor:pointer;font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-squad-chip:hover{background:rgba(104,74,36,.14)}',
       '#panel-scenario .sc-squad-chip:active{transform:translateY(1px)}',
       '#panel-scenario .sc-squad-chip img,#panel-scenario .sc-squad-chip .sc-chip-noicon{width:26px;height:26px;object-fit:contain;image-rendering:pixelated;border-radius:50%;background:#1d1a16;display:inline-block}',
       '#panel-scenario .sc-squad-chip strong{font-weight:800}',
-      '#panel-scenario .sc-squad-chip .sc-chip-sub{display:block;color:var(--ob-ink-soft);font-size:11px}',
-      '#panel-scenario .sc-layer-toggles label{font-size:12px;display:flex;gap:4px;align-items:center}',
+      '#panel-scenario .sc-squad-chip .sc-chip-sub{display:block;color:var(--ob-ink-soft);font-size:var(--ob-text-xs)}',
+      '#panel-scenario .sc-layer-toggles label{font-size:var(--ob-text-sm);display:flex;gap:4px;align-items:center}',
       '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
       '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
       '#panel-scenario .sc-map-img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block}',
@@ -187,7 +190,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-treasure-marker img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}',
       '#panel-scenario .sc-treasure-marker.on{outline:3px solid var(--ob-gold-bright);outline-offset:2px;background:rgba(92,58,24,.95);z-index:28}',
       '#panel-scenario .sc-treasure-marker.sc-add-ghost{opacity:.72;pointer-events:none}',
-      '#panel-scenario .sc-treasure-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:5px 8px;margin:4px 0;text-align:left;color:var(--ob-ink);cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-treasure-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:5px 8px;margin:4px 0;text-align:left;color:var(--ob-ink);cursor:pointer;font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-treasure-row:hover{background:rgba(104,74,36,.14)}',
       '#panel-scenario .sc-treasure-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
       '#panel-scenario .sc-treasure-row img,.sc-treasure-current img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated}',
@@ -202,7 +205,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-squad-marker.added{outline:3px dashed var(--ob-gold-bright)}',
       '#panel-scenario .sc-add-ghost{opacity:.7;transform:translate(-50%,-50%);outline:3px dashed var(--ob-gold-bright)}',
       '#panel-scenario .sc-back{margin:0 0 8px}',
-      '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:10px;font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
+      '#panel-scenario .sc-badge{position:absolute;right:-5px;bottom:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--ob-gold);color:#2a1b0c;font-size:var(--ob-text-xs);font-weight:900;line-height:16px;text-align:center;border:1px solid rgba(0,0,0,.35)}',
       // Town = a ring CENTERED on the site anchor, larger than and BELOW the squad icon, so a
       // site-placed squad stands inside its town's allegiance ring (old 16px offset read as
       // "dots are not on towns").
@@ -214,34 +217,34 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-site-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 1px 4px rgba(0,0,0,.5)}',
       '#panel-scenario .sc-detail{padding:12px;min-height:620px}',
       '#panel-scenario .sc-detail-head{border-bottom:1px solid var(--sc-line);padding-bottom:9px;margin-bottom:10px}',
-      '#panel-scenario .sc-head-title{font-size:16px;font-weight:800;line-height:1.2}',
-      '#panel-scenario .sc-sub{font-size:12px;color:var(--ob-ink-soft);line-height:1.35;margin-top:3px}',
+      '#panel-scenario .sc-head-title{font-size:var(--ob-text-md);font-weight:800;line-height:1.2}',
+      '#panel-scenario .sc-sub{font-size:var(--ob-text-sm);color:var(--ob-ink-soft);line-height:1.35;margin-top:3px}',
       '#panel-scenario .sc-meter-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 10px}',
       '#panel-scenario .sc-meter{border:1px solid var(--sc-line);border-radius:5px;padding:6px;background:rgba(255,255,255,.14)}',
-      '#panel-scenario .sc-meter strong{display:block;font-size:17px;line-height:1}',
-      '#panel-scenario .sc-meter span{font-size:10px;text-transform:uppercase;color:var(--ob-ink-soft);font-weight:800}',
+      '#panel-scenario .sc-meter strong{display:block;font-size:var(--ob-text-md);line-height:1}',
+      '#panel-scenario .sc-meter span{font-size:var(--ob-text-xs);text-transform:uppercase;color:var(--ob-ink-soft);font-weight:800}',
       '#panel-scenario .sc-section{border-top:1px solid var(--sc-line);padding-top:10px;margin-top:10px}',
-      '#panel-scenario .sc-label{display:block;font-size:11px;font-weight:900;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.35px;margin-bottom:4px}',
+      '#panel-scenario .sc-label{display:block;font-size:var(--ob-text-xs);font-weight:900;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.35px;margin-bottom:4px}',
       '#panel-scenario .sc-form-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}',
       '#panel-scenario .sc-form-row select,#panel-scenario .sc-form-row input{height:30px;min-width:0;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 7px}',
       '#panel-scenario .sc-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}',
       '#panel-scenario .sc-unit{min-width:0;text-align:center;border:1px solid var(--sc-line);border-radius:5px;padding:5px;background:rgba(255,255,255,.14)}',
       '#panel-scenario .sc-unit img{width:42px;height:36px;object-fit:contain;image-rendering:pixelated;display:block;margin:0 auto 2px}',
-      '#panel-scenario .sc-unit span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:800}',
+      '#panel-scenario .sc-unit span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ob-text-xs);font-weight:800}',
       '#panel-scenario .sc-node-list{display:grid;gap:6px;max-height:220px;overflow:auto}',
-      '#panel-scenario .sc-node{border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:6px;font-size:12px;line-height:1.35}',
+      '#panel-scenario .sc-node{border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:6px;font-size:var(--ob-text-sm);line-height:1.35}',
       '#panel-scenario .sc-raw-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}',
-      '#panel-scenario .sc-byte{display:grid;grid-template-columns:1fr;gap:2px;font-size:10px;color:var(--ob-ink-soft);font-weight:800}',
+      '#panel-scenario .sc-byte{display:grid;grid-template-columns:1fr;gap:2px;font-size:var(--ob-text-xs);color:var(--ob-ink-soft);font-weight:800}',
       '#panel-scenario .sc-byte input{width:100%;height:26px;text-align:center;border:1px solid var(--ob-parchment-edge);border-radius:4px;background:#f7ebce;color:var(--ob-ink)}',
-      '#panel-scenario .sc-warning{border:1px solid var(--ob-wax-red);background:rgba(152,32,24,.10);color:var(--ob-wax-red);border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35;margin-top:8px}',
-      '#panel-scenario .sc-ok{border:1px solid #2f8f4e;background:rgba(47,143,78,.10);color:#185c34;border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35;margin-top:8px}',
-      '#panel-scenario .sc-table{width:100%;font-size:12px}',
+      '#panel-scenario .sc-warning{border:1px solid var(--ob-wax-red);background:rgba(152,32,24,.10);color:var(--ob-wax-red);border-radius:5px;padding:7px 8px;font-size:var(--ob-text-sm);line-height:1.35;margin-top:8px}',
+      '#panel-scenario .sc-ok{border:1px solid #2f8f4e;background:rgba(47,143,78,.10);color:#185c34;border-radius:5px;padding:7px 8px;font-size:var(--ob-text-sm);line-height:1.35;margin-top:8px}',
+      '#panel-scenario .sc-table{width:100%;font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-table th,#panel-scenario .sc-table td{padding:4px 5px}',
       // Squad roster under the map: one row per Section 1 squad, click-to-select.
       '#panel-scenario .sc-roster{border-top:1px solid var(--sc-line);margin-top:8px;padding-top:8px}',
       '#panel-scenario .sc-roster-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}',
       '#panel-scenario .sc-roster-list{display:grid;gap:4px;max-height:300px;overflow:auto}',
-      '#panel-scenario .sc-roster-row{display:grid;grid-template-columns:34px minmax(120px,1fr) minmax(140px,1.4fr) auto auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:4px 8px;font-size:12px;cursor:pointer;text-align:left}',
+      '#panel-scenario .sc-roster-row{display:grid;grid-template-columns:34px minmax(120px,1fr) minmax(140px,1.4fr) auto auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:4px 8px;font-size:var(--ob-text-sm);cursor:pointer;text-align:left}',
       '#panel-scenario .sc-roster-row:hover{background:rgba(104,74,36,.14)}',
       '#panel-scenario .sc-roster-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
       '#panel-scenario .sc-roster-row img{width:28px;height:28px;object-fit:contain;image-rendering:pixelated;border-radius:50%;background:#1d1a16}',
@@ -918,7 +921,6 @@ window.OB64 = window.OB64 || {};
             '<label class="btn-file btn-secondary" for="sc-project-file">Load Project</label>' +
             '<input id="sc-project-file" type="file" accept=".json,application/json" style="display:none">' +
             '<button type="button" id="sc-save-project" class="btn-secondary">Save Project</button>' +
-            '<input type="text" id="sc-image-base" value="' + esc(ensureState(rom).settings.imageBasePath || defaultImageBase()) + '" title="Map art base path">' +
             '<button type="button" id="sc-add-squad">Add Squad</button>' +
           '</div>' +
         '</div>' +
@@ -1000,13 +1002,6 @@ window.OB64 = window.OB64 || {};
         }
       };
       reader.readAsText(file);
-    };
-    var base = panel.querySelector('#sc-image-base');
-    if (base) base.onchange = function() {
-      ensureState(rom).settings.imageBasePath = this.value.trim() || defaultImageBase();
-      localStorage.setItem('ob64_scenario_image_base', ensureState(rom).settings.imageBasePath);
-      calibrationScenarios().forEach(function(c) { delete c._artMissing; }); // retry art under the new path
-      renderScenarioTab(panel);
     };
     var add = panel.querySelector('#sc-add-squad');
     if (add) add.onclick = function() {
@@ -2156,10 +2151,12 @@ window.OB64 = window.OB64 || {};
       '<button type="button" class="sc-inline-btn" id="sc-treasure-item" style="margin-top:8px">Change item</button>' +
     '</div>';
     html += '<div class="sc-section"><span class="sc-label">Position</span>' +
-      '<div class="sc-form-row"><label class="sc-label">Raw X/Y</label>' +
-        '<input id="sc-treasure-x" type="number" min="0" max="255" value="' + record.x + '" style="width:70px"> ' +
-        '<input id="sc-treasure-y" type="number" min="0" max="255" value="' + record.y + '" style="width:70px"> ' +
-        '<button type="button" class="sc-inline-btn" id="sc-treasure-set">Set</button></div>' +
+      '<label class="sc-label">Raw X/Y</label>' +
+      '<div style="display:flex;gap:6px;align-items:center;margin:0 0 6px">' +
+        '<input id="sc-treasure-x" type="number" min="0" max="255" value="' + record.x + '" style="width:64px">' +
+        '<input id="sc-treasure-y" type="number" min="0" max="255" value="' + record.y + '" style="width:64px">' +
+        '<button type="button" class="sc-inline-btn" id="sc-treasure-set" style="flex:0 0 auto">Set</button>' +
+      '</div>' +
       '<div class="sc-sub">' + (world ? ('World: x ' + world.x.toFixed(3) + ' / z ' + world.z.toFixed(3)) : 'No calibrated bounds for this key.') + '</div>' +
       '<button type="button" class="sc-inline-btn" id="sc-treasure-move" style="margin-top:8px">Move on map</button>' +
     '</div>';
@@ -2389,10 +2386,13 @@ window.OB64 = window.OB64 || {};
         option('', '- set where this waypoint marches -', curVal) +
         sites.map(function(s) { return option('sel:' + s.selector, 'town ' + s.selector + ': ' + (s.siteName || '').trim(), curVal); }).join('') +
         '</select></div>' +
-        '<div class="sc-form-row"><label class="sc-label">or coordinate</label>' +
-        '<input id="sc-node-tx" type="number" step="0.1" value="' + (w ? w.x.toFixed(1) : '') + '" placeholder="X" style="width:64px"> ' +
-        '<input id="sc-node-tz" type="number" step="0.1" value="' + (w ? w.z.toFixed(1) : '') + '" placeholder="Z" style="width:64px"> ' +
-        '<button type="button" id="sc-node-tset" class="sc-inline-btn">Set</button></div>' +
+        '<div class="sc-form-row"><label class="sc-label">or click map</label><button type="button" id="sc-node-pick" class="sc-inline-btn">Pick target on map</button></div>' +
+        '<label class="sc-label">or coordinate</label>' +
+        '<div style="display:flex;gap:6px;align-items:center;margin:0 0 6px">' +
+        '<input id="sc-node-tx" type="number" step="0.1" value="' + (w ? w.x.toFixed(1) : '') + '" placeholder="X" style="width:64px">' +
+        '<input id="sc-node-tz" type="number" step="0.1" value="' + (w ? w.z.toFixed(1) : '') + '" placeholder="Z" style="width:64px">' +
+        '<button type="button" id="sc-node-tset" class="sc-inline-btn" style="flex:0 0 auto">Set</button>' +
+        '</div>' +
         '<div class="sc-sub">This waypoint marches its squad to: ' +
         (w ? (w.siteName ? '<b>' + esc(w.siteName) + '</b> (selector ' + w.selector + ')' : 'coordinate (' + w.x.toFixed(1) + ', ' + w.z.toFixed(1) + ')') :
              (b[5] === 0 ? 'selector ' + (b[4] - b[3]) + ' (no matching town / uncalibrated)' : 'coordinate (uncalibrated)')) +
@@ -2458,6 +2458,8 @@ window.OB64 = window.OB64 || {};
       b[5] = clamp(Math.round(((tz - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
       commitScenarioEdit(rom, key);
     };
+    var pickBtn = el.querySelector('#sc-node-pick');
+    if (pickBtn) pickBtn.onclick = function() { beginPickWaypointTarget(rom, key, node); };
     el.querySelectorAll('.sc-node-raw').forEach(function(inp) {
       inp.onchange = function() {
         var v = parseByte(this.value);
@@ -2506,7 +2508,7 @@ window.OB64 = window.OB64 || {};
     // Newcomer guide: the scenario model + the one non-obvious rule + copy-paste recipes. Collapsible
     // (native <details>), open by default so a first-time user is oriented before they touch anything.
     html += '<details class="sc-help" open style="border:1px solid var(--sc-line);border-radius:6px;padding:8px 10px;margin:0 0 12px;background:var(--sc-panel)">' +
-      '<summary style="cursor:pointer;font-weight:800;color:var(--ob-gold-bright)">❓ How scenarios work — start here</summary>' +
+      '<summary style="cursor:pointer;font-weight:800;color:var(--ob-ink)">❓ How scenarios work — start here</summary>' +
       '<div class="sc-sub" style="margin-top:8px;line-height:1.5">' +
         '<p style="margin:0 0 6px">A scenario is a set of <b>enemy squads</b> on a map. Pick a scenario (KEY) on the left, <b>click a squad</b> in the list, and set its <b>Behavior</b>. The map shows where each squad deploys and the route it takes.</p>' +
         '<p style="margin:0 0 3px"><b>The pieces:</b></p>' +
@@ -3277,7 +3279,7 @@ window.OB64 = window.OB64 || {};
   // caller, so any & / < in it must already be HTML-encoded here.
   function orderAggro(wait) {
     var strip = ';border:1px solid var(--sc-line);background:var(--sc-soft);color:var(--ob-ink-soft);' +
-      'border-radius:5px;padding:7px 8px;font-size:12px;line-height:1.35';
+      'border-radius:5px;padding:7px 8px;font-size:var(--ob-text-sm);line-height:1.35';
     if (wait === 0) return { cls: 'sc-ok', style: '', verb: 'AGGRO: OFF - HOLDS', detail: 'guards its post; fights on contact but never leaves' };
     if (wait === 1) return { cls: 'sc-warning', style: '', verb: 'AGGRO: ON - SALLIES', detail: 'breaks formation to seek &amp; attack nearby player squads' };
     if (wait === 2) return { cls: '', style: strip, verb: 'RETREATS', detail: 'holds, but actively avoids nearby player squads' };
@@ -3454,6 +3456,73 @@ window.OB64 = window.OB64 || {};
     ui.selectedTreasure = { archive: archive, index: index };
     clearOtherSelectionsForTreasure();
     commitTreasureEdit(rom, archive, 'Treasure moved to x ' + record.x + ' / y ' + record.y + '.');
+  }
+
+  // Waypoint March target via a map click: mirrors the behavior-builder destination picker but
+  // writes straight to the node's target bytes. Snap onto a town within the standard radius (town
+  // selector: [4]=selector,[5]=0,[3]=0); otherwise a bounds-projected coordinate ([4]=x,[5]=z>=1).
+  function beginPickWaypointTarget(rom, key, node) {
+    var panel = document.getElementById('panel-scenario');
+    var inner = document.getElementById('sc-map-inner');
+    if (!inner) { ui.gateText = 'The map is not available for this scenario - use the X/Z inputs.'; renderScenarioTab(panel); return; }
+    mapTool = 'pick';
+    inner.style.cursor = 'crosshair';
+    var gate = document.getElementById('sc-gate');
+    if (gate) gate.textContent = 'Click the map to set this waypoint’s march target (Esc to cancel)...';
+    var ghost = mapGhost(inner, 'sc-pick-ghost');
+    var follow = function(mv) {
+      var r = inner.getBoundingClientRect();
+      ghost.style.left = (mv.clientX - r.left) + 'px';
+      ghost.style.top = (mv.clientY - r.top) + 'px';
+    };
+    var cleanup = function() {
+      inner.removeEventListener('pointerdown', once, true);
+      inner.removeEventListener('pointermove', follow, true);
+      document.removeEventListener('keydown', onKey, true);
+      inner.style.cursor = '';
+      ghost.remove();
+      releaseMapTool();
+    };
+    var onKey = function(ev) {
+      if (ev.key !== 'Escape') return;
+      cleanup();
+      ui.gateText = 'March target unchanged.';
+      renderScenarioTab(panel);
+    };
+    var once = function(ev) {
+      cleanup();
+      ev.preventDefault();
+      ev.stopPropagation();
+      eatNextMapClick(inner);
+      var rect = inner.getBoundingClientRect();
+      var cal = calibrationData(key);
+      var proj = projectionFor(cal, useImageFor(cal));
+      var imageX = clamp((ev.clientX - rect.left) / ui.zoom, 0, proj.naturalWidth);
+      var imageY = clamp((ev.clientY - rect.top) / ui.zoom, 0, proj.naturalHeight);
+      var world = proj.imageToWorld(imageX, imageY);
+      var snapped = null, best = Infinity;
+      (ensureState(rom).sites[key] || []).forEach(function(site) {
+        var p = proj.worldToImage(site.x, site.z);
+        var d = Math.hypot(p.x - imageX, p.y - imageY);
+        if (d < best) { best = d; snapped = site; }
+      });
+      var b = node.bytes;
+      b[2] = 2; // match wireWaypointDrag: normalize the node to sub-2 selector/coordinate space
+      if (snapped && best < SNAP_SCREEN_PX / Math.max(0.05, ui.zoom)) {
+        b[4] = snapped.selector & 0xFF; b[5] = 0; b[3] = 0;
+        ui.gateText = 'March target set on ' + (snapped.siteName || ('town ' + snapped.selector)) + '.';
+      } else {
+        var bw = cal && cal.boundsWorld;
+        if (!bw) { ui.gateText = 'This scenario has no world bounds - use the X/Z inputs.'; renderScenarioTab(panel); return; }
+        b[4] = clamp(Math.round(((world.x - bw.xMin) / Math.max(0.001, bw.xMax - bw.xMin)) * 256), 0, 255);
+        b[5] = clamp(Math.round(((world.z - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
+        ui.gateText = 'March target set to (' + world.x.toFixed(1) + ', ' + world.z.toFixed(1) + ').';
+      }
+      commitScenarioEdit(rom, key);
+    };
+    inner.addEventListener('pointermove', follow, true);
+    inner.addEventListener('pointerdown', once, true);
+    document.addEventListener('keydown', onKey, true);
   }
 
   function beginPickTreasurePlacement(rom, key, archive, index) {
