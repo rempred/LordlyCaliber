@@ -1433,10 +1433,27 @@ window.OB64 = window.OB64 || {};
     // players, but that is NOT reproducible for an editor-created marcher (a marching squad has no
     // Wait=Initiate order), so advertising it on the behavior line was misleading. See
     // docs/enemy-system.md "Enemy movement / aggro AI" (the open +0x92-vs-+0xBB march-intercept item).
+    if (startNode.kind === 0 && !destName && !gateA) return startNode.bytes[3] === 1 ? 'Holds position, attacks anyone who comes near (sally)' : 'Holds position (hold node)';
     if (startNode.kind === 2) return 'Ambush - dormant until ' + (gate || 'trigger') + ', then ' + marchWord + (terminal ? ' + camp' : '');
     if (gateA) return 'Wait for ' + gate + ', then ' + marchWord + (terminal ? ' + camp' : '');
     if (destName) return 'March to ' + destName + via + (terminal ? ' + permanent camp' : '');
     return terminal ? 'March + permanent camp' : 'Patrol route (nodes ' + chain.map(function(h) { return h.node.nodeId; }).join('>') + ')';
+  }
+
+  // Plain-English guidance per Behavior template. The point users keep missing: movement comes from
+  // NODES, and a plain march-to-a-point is PASSIVE - a squad only attacks while moving if it ADVANCES
+  // from a gated hold/ambush node to a waypoint (the vanilla intercepting-marcher structure). The
+  // default (no template selected = viewing the current behavior) states that model. See
+  // docs/enemy-system.md "Enemy movement / aggro AI".
+  function templateHelp(tpl) {
+    if (tpl === 'guard-site') return 'Sits where it deploys and fights only what reaches it - never moves, never chases. This is a SENTINEL: it uses NO node (the cheapest option). It has no orders, so it cannot sally - use "Attacks anyone who comes near" for that.';
+    if (tpl === 'guard-sally') return 'Sits at its post but attacks any player squad that comes within range (a "sally"). Uses ONE hold node with Wait = Initiate - a sentinel has no orders, so this is the node-backed version.';
+    if (tpl === 'march-chain') return 'PASSIVE: walks straight to the destination and ignores the player - it will NOT chase or intercept. For a marcher that attacks, use "Wait for trigger, then march" instead.';
+    if (tpl === 'wait-march') return 'Holds at its post until the trigger fires, then marches to the destination. This is the structure vanilla INTERCEPTING marchers use (it advances from a gated hold node to a waypoint). Needs a Trigger + a Destination.';
+    if (tpl === 'solo-ambush') return 'Hidden and inert until the trigger fires, then wakes and marches to the destination (pursues, like a vanilla ambush). Needs a Trigger + a Destination.';
+    if (tpl === 'reinforce-remnant') return 'Stays out of the fight until <= N enemy squads remain, then deploys. Set the threshold below.';
+    if (tpl === 'camp-terminal') return 'Marches to the destination and camps there permanently (one-way).';
+    return 'Movement comes from NODES, not the unit. A squad attacks while moving only if it ADVANCES from a gated hold/ambush node to a waypoint - a plain "March to destination" is passive.';
   }
 
   var EXTRA_KIND_NAMES = {
@@ -2018,6 +2035,7 @@ window.OB64 = window.OB64 || {};
         .map(function(k) { return option(String(k[0]), k[0] + ': ' + k[1], String(node.kind)); }).join('') +
       ([0, 1, 2].indexOf(node.kind) < 0 ? option(String(node.kind), node.kind + ': undecoded (edit raw bytes)', String(node.kind)) : '') +
       '</select></div>';
+    html += '<div class="sc-sub">Hold = sits at its post (Wait=Initiate makes it sally). Waypoint = a march destination. Ambush = hidden until woken. A unit becomes an <b>aggressive marcher</b> by ADVANCING from a hold/ambush node to a waypoint (set that waypoint as this node\'s Next).</div>';
     if (node.kind === 0) {
       var ag = orderAggro(b[3] & 0xFF);
       html += '<div class="' + ag.cls + '" style="margin-top:0' + ag.style + '"><strong>' + esc(ag.verb) + '</strong> &mdash; ' + ag.detail + '</div>' +
@@ -2036,7 +2054,21 @@ window.OB64 = window.OB64 || {};
       '</select></div>';
     if (node.kind === 1) {
       var w = nodeWorld(rom, key, node);
-      html += '<div class="sc-sub">Waypoint position ' + (w ? '(' + w.x.toFixed(1) + ', ' + w.z.toFixed(1) + ')' : '(uncalibrated)') + ' &mdash; drag its dot on the map to move it.</div>';
+      var sites = ensureState(rom).sites[key] || [];
+      var curSel = (b[5] === 0) ? (b[4] - b[3]) : null;
+      var curVal = (curSel != null && curSel > 0) ? ('sel:' + curSel) : '';
+      html += '<div class="sc-form-row"><label class="sc-label">March target</label><select id="sc-node-target">' +
+        option('', '- set where this waypoint marches -', curVal) +
+        sites.map(function(s) { return option('sel:' + s.selector, 'town ' + s.selector + ': ' + (s.siteName || '').trim(), curVal); }).join('') +
+        '</select></div>' +
+        '<div class="sc-form-row"><label class="sc-label">or coordinate</label>' +
+        '<input id="sc-node-tx" type="number" step="0.1" value="' + (w ? w.x.toFixed(1) : '') + '" placeholder="X" style="width:64px"> ' +
+        '<input id="sc-node-tz" type="number" step="0.1" value="' + (w ? w.z.toFixed(1) : '') + '" placeholder="Z" style="width:64px"> ' +
+        '<button type="button" id="sc-node-tset" class="sc-inline-btn">Set</button></div>' +
+        '<div class="sc-sub">This waypoint marches its squad to: ' +
+        (w ? (w.siteName ? '<b>' + esc(w.siteName) + '</b> (selector ' + w.selector + ')' : 'coordinate (' + w.x.toFixed(1) + ', ' + w.z.toFixed(1) + ')') :
+             (b[5] === 0 ? 'selector ' + (b[4] - b[3]) + ' (no matching town / uncalibrated)' : 'coordinate (uncalibrated)')) +
+        '. A new waypoint starts unset - pick a town or type X/Z (you can also drag its dot on the map once it is on a squad route).</div>';
     }
     html += '<div class="sc-form-row"><label class="sc-label">Raw bytes</label><div class="sc-mini-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px">' +
       b.map(function(v, i) { return '<input class="sc-node-raw" data-off="' + i + '" value="' + hx2(v) + '" title="[+' + i + ']" style="min-width:0">'; }).join('') + '</div></div>';
@@ -2080,6 +2112,24 @@ window.OB64 = window.OB64 || {};
     if (gateSel) gateSel.onchange = function() { b[10] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
     var nextSel = el.querySelector('#sc-node-next');
     if (nextSel) nextSel.onchange = function() { b[17] = parseInt(this.value, 10) & 0xFF; commitScenarioEdit(rom, key); };
+    // Waypoint march target: town selector (mirrors the map-drag: [4]=selector, [5]=0) or a world
+    // coordinate projected through the map bounds ([4]=x, [5]=z, min 1).
+    var tgtSel = el.querySelector('#sc-node-target');
+    if (tgtSel) tgtSel.onchange = function() {
+      if (this.value.indexOf('sel:') !== 0) return;
+      b[4] = parseInt(this.value.slice(4), 10) & 0xFF; b[5] = 0; b[3] = 0;
+      commitScenarioEdit(rom, key);
+    };
+    var tset = el.querySelector('#sc-node-tset');
+    if (tset) tset.onclick = function() {
+      var bw = calibrationData(key) && calibrationData(key).boundsWorld;
+      var tx = parseFloat((el.querySelector('#sc-node-tx') || {}).value);
+      var tz = parseFloat((el.querySelector('#sc-node-tz') || {}).value);
+      if (!bw || isNaN(tx) || isNaN(tz)) return;
+      b[4] = clamp(Math.round(((tx - bw.xMin) / Math.max(0.001, bw.xMax - bw.xMin)) * 256), 0, 255);
+      b[5] = clamp(Math.round(((tz - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
+      commitScenarioEdit(rom, key);
+    };
     el.querySelectorAll('.sc-node-raw').forEach(function(inp) {
       inp.onchange = function() {
         var v = parseByte(this.value);
@@ -2125,6 +2175,30 @@ window.OB64 = window.OB64 || {};
       cal && cal.mapName ? cal.mapName : 'no map image',
       cal ? cal.registrationGrade : 'ungraded',
     ]);
+    // Newcomer guide: the scenario model + the one non-obvious rule + copy-paste recipes. Collapsible
+    // (native <details>), open by default so a first-time user is oriented before they touch anything.
+    html += '<details class="sc-help" open style="border:1px solid var(--sc-line);border-radius:6px;padding:8px 10px;margin:0 0 12px;background:var(--sc-panel)">' +
+      '<summary style="cursor:pointer;font-weight:800;color:var(--ob-gold-bright)">❓ How scenarios work — start here</summary>' +
+      '<div class="sc-sub" style="margin-top:8px;line-height:1.5">' +
+        '<p style="margin:0 0 6px">A scenario is a set of <b>enemy squads</b> on a map. Pick a scenario (KEY) on the left, <b>click a squad</b> in the list, and set its <b>Behavior</b>. The map shows where each squad deploys and the route it takes.</p>' +
+        '<p style="margin:0 0 3px"><b>The pieces:</b></p>' +
+        '<ul style="margin:0 0 6px;padding-left:18px">' +
+          '<li><b>Node</b> = a point in a squad’s route. <b>Hold</b> sits at its post, <b>Waypoint</b> is a march destination, <b>Ambush</b> is hidden until woken. Nodes chain through each node’s <i>Next</i>.</li>' +
+          '<li><b>Trigger</b> = a condition (you reach a town, N squads remain, …). A node can <i>wait</i> on a trigger, then advance to its Next when it fires.</li>' +
+          '<li><b>Squad orders</b> = Move / Wait, same as your own units. <b>Wait = Initiate</b> makes a standing squad attack anyone who comes near.</li>' +
+        '</ul>' +
+        '<p style="margin:0 0 6px"><b>The rule that trips people up:</b> only a <b>sentinel</b> (a dumb town-sitter) works with <b>no node</b>. <b>Anything else — moving OR attacking — needs a node.</b> And a unit attacks <i>while moving</i> only if its route ADVANCES from a hold/ambush node onto a waypoint. So just dropping a unit on a march point (or setting a trigger + destination without a hold node) makes it walk there and <b>ignore you</b>.</p>' +
+        '<p style="margin:0 0 3px"><b>Recipes (pick under Behavior → “Set to” on a squad):</b></p>' +
+        '<ul style="margin:0;padding-left:18px">' +
+          '<li><b>Dumb town-sitter</b> — sits where you place it, fights only what reaches it, never moves → <b>Guard</b>. A <b>sentinel</b>: <b>0 nodes</b> (the only node-free option; it has no orders to set). Only 16 nodes per scenario, so use these for plain garrisons.</li>' +
+          '<li><b>Stays put but attacks anyone who comes near</b> (a sally) → <b>Attacks anyone who comes near</b>. Builds <b>1 hold node</b> (Wait = Initiate). A sentinel can’t do this — it needs the node.</li>' +
+          '<li><b>Marches somewhere, ignores you</b> → <b>March to destination</b>. Builds <b>1 waypoint node</b>.</li>' +
+          '<li><b>Marches AND attacks you on the way</b> → <b>Wait for trigger, then march</b>. Builds a <b>hold node → waypoint node</b> (2 nodes): it waits at the hold node, then the trigger sends it to the waypoint — that advance is what makes it aggressive. A plain placed unit + destination will NOT attack.</li>' +
+          '<li><b>Hidden until you arrive, then attacks</b> → <b>Ambush</b>. Builds an <b>ambush node → waypoint</b>.</li>' +
+        '</ul>' +
+        '<p style="margin:8px 0 0"><b>Save nodes (only 16 per scenario):</b> if several squads need the <i>same</i> behavior — all march to the same place, or all sally from the same spot — point them at <b>one shared node</b> instead of building one each. Set each squad’s <b>Start node</b> (top of its Squad orders) to the same node; the node editor’s <b>Used by</b> list shows everyone sharing it. Together with sentinels for the dumb sitters, that keeps big scenarios under the cap.</p>' +
+      '</div>' +
+    '</details>';
     var fit = archiveFitInfo(rom, key);
     var units = predictedUnits(rom, key);
     html += '<div class="sc-meter-grid">' +
@@ -2386,15 +2460,18 @@ window.OB64 = window.OB64 || {};
     var selTrigger = bld.trigger != null ? bld.trigger : curGateStr;
     var selThresh = bld.threshold != null ? bld.threshold : curThresh;
     html += '<div class="sc-section"><span class="sc-label">Behavior</span>' +
-      '<div class="sc-form-row"><label class="sc-label">Template</label><select id="sc-template">' +
-      option('', 'Current: ' + describeBehavior(rom, key, model, row), selTemplate) +
-      option('guard-site', 'Guard (hold position)', selTemplate) +
-      option('march-chain', 'March to destination', selTemplate) +
-      option('wait-march', 'Wait for trigger, then march', selTemplate) +
-      option('solo-ambush', 'Ambush (dormant until trigger)', selTemplate) +
+      '<div class="sc-sub">Now: <b>' + esc(describeBehavior(rom, key, model, row)) + '</b></div>' +
+      '<div class="sc-form-row"><label class="sc-label">Set to</label><select id="sc-template">' +
+      option('', '- pick a behavior to apply -', selTemplate) +
+      option('guard-site', 'Guard - hold position (dumb, no node)', selTemplate) +
+      option('guard-sally', 'Attacks anyone who comes near (stays put)', selTemplate) +
+      option('march-chain', 'March to destination (passive - ignores you)', selTemplate) +
+      option('wait-march', 'Wait for trigger, then march (aggressive - intercepts)', selTemplate) +
+      option('solo-ambush', 'Ambush - hidden until trigger, then attacks', selTemplate) +
       option('reinforce-remnant', 'Reinforce when N squads remain', selTemplate) +
       option('camp-terminal', 'March + permanent camp', selTemplate) +
       '</select></div>' +
+      '<div id="sc-tpl-help" class="sc-sub" style="margin-top:2px">' + esc(templateHelp(selTemplate)) + '</div>' +
       '<div class="sc-form-row"><label class="sc-label">Trigger</label><select id="sc-tpl-trigger">' +
       option('', 'None', selTrigger) +
       model.section3.map(function(x) {
@@ -2635,6 +2712,8 @@ window.OB64 = window.OB64 || {};
     var tplSelEl = el.querySelector('#sc-template');
     if (tplSelEl) tplSelEl.onchange = function() {
       bld.template = this.value;
+      var hp = el.querySelector('#sc-tpl-help');   // update the guidance immediately, even if apply errors (no re-render)
+      if (hp) hp.textContent = templateHelp(this.value);
       if (!bld.template) { msg('', true); return; }
       liveApply();
     };
@@ -3041,6 +3120,15 @@ window.OB64 = window.OB64 || {};
 
     if (template === 'guard-site' || template === 'guard-coordinate') {
       row.bytes[6] = 1; // +0xBA = 1: no route, hold position (scripted-tier idle convention)
+      return null;
+    }
+    if (template === 'guard-sally') {
+      // A STATIONARY hold node (kind 0) with Wait = Initiate, so it attacks nearby player squads.
+      // Unlike the sentinel above this needs a node - a sentinel ([6]=1) has no orders to carry.
+      var sally = ownedNodeWrite(model, owned, 'gate', { kind: 0, next: 0 });
+      if (!sally) return 'Section 2 is at its 16-node cap';
+      sally.bytes[3] = 1; // Wait = Initiate (sally)
+      row.bytes[6] = sally.nodeId;
       return null;
     }
     if (template === 'march-chain') {
