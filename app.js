@@ -301,15 +301,15 @@ window.OB64 = window.OB64 || {};
         }
       }
 
-      // Scenario tab ESET edits. Project-only scenario features such as town
-      // allegiance and reserved add-squad records deliberately block ROM
-      // export until their underlying ROM source/resolver is decoded.
+      // Scenario tab edits. Unsupported authoring cases, such as towns with no
+      // scincsv descriptor row or add-squad donor collisions, block export with
+      // an actionable reason from the Scenario module.
       var scenarioCrc = false;
       if (dirty.scenario && OB64.scenario) {
         var scenarioResult = OB64.scenario.exportScenarioArchives(rom);
         if (scenarioResult.blocked && scenarioResult.blocked.length) {
-          showErrorModal('Export blocked - scenario project stubs', scenarioResult.blocked.join('\n\n'));
-          statusBar.textContent = 'Export blocked (scenario project stubs)';
+          showErrorModal('Export blocked - scenario edits', scenarioResult.blocked.join('\n\n'));
+          statusBar.textContent = 'Export blocked (scenario edits)';
           return;
         }
         scenarioCrc = !!scenarioResult.crc;

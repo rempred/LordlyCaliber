@@ -205,9 +205,9 @@ project download asset.
 - Mission archive relocation currently supports single-fetch-window missions
   (~32 of 63); multi-window missions still enforce the original slot-size cap.
   Per-mission add-squad budget is also capped by the game's 50 deploy slots.
-- Neutral/allied town-allegiance intents are saved in Project JSON but do
-  not export to ROM yet (their static source table currently recompresses
-  larger than its slot); enemy-held-via-garrison exports fully.
+- Neutral/allied town-allegiance edits export for towns with existing scincsv
+  descriptors. Towns with no descriptor row still cannot be authored until the
+  editor can add new descriptor rows safely.
 - Full-art mission map backgrounds are bundled and site-fitted for the 62
   renderable runtime keys. Two internal/no-image keys still render through the
   schematic fallback.
@@ -280,8 +280,8 @@ save-state decompression.
   promotion links as a fuller visual workflow.
 - **Stronghold editor** — modify the 316 stronghold records (location, owner,
   shop assignment).
-- **Town allegiance export** — ship the neutral/allied intent lane once the
-  site table packaging fits its ROM slot.
+- **Town descriptor authoring** — support towns that do not already have a
+  scincsv descriptor row.
 - **Multi-window mission relocation** — extend the grow/relocate lane to the
   missions whose archives span multiple fetch windows, removing the remaining
   per-mission size caps.
