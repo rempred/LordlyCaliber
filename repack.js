@@ -404,13 +404,16 @@ OB64.buildLHAArchive = function(compressedData, originalData, filename) {
 // archive loader accepts -lh0- (scincsv archive index 750 ships uncompressed in the retail ROM), and
 // this avoids the LH5 encoder entirely. Used for the tiny scincsv town-allegiance descriptors, where
 // the uncompressed body plus header still fits the original slot and lh5Compress has a small-payload
-// bug. Returns the full archive (no trailing byte to strip).
-OB64.buildLHAArchiveUncompressed = function(payload, filename) {
+// bug. Pass totalHeaderSizeOverride when replacing a retail -lh0- archive whose original level-2
+// header carried extra extension data; this preserves the payload start offset inside the slot.
+// Returns the full archive (no trailing byte to strip).
+OB64.buildLHAArchiveUncompressed = function(payload, filename, totalHeaderSizeOverride) {
   var fnBytes = [];
   for (var i = 0; i < filename.length; i++) fnBytes.push(filename.charCodeAt(i));
   var fnLen = fnBytes.length;
   var extFnSize = 1 + fnLen + 2;
-  var totalHeaderSize = 24 + 2 + extFnSize;
+  var minHeaderSize = 24 + 2 + extFnSize;
+  var totalHeaderSize = Math.max(minHeaderSize, totalHeaderSizeOverride || 0);
 
   var header = new Uint8Array(totalHeaderSize);
   var size = payload.length; // compSize == uncompSize for stored

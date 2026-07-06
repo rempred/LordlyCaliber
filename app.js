@@ -927,6 +927,7 @@ window.OB64 = window.OB64 || {};
       }
     });
   }
+  OB64.openItemPickerFromDict = openItemPickerFromDict;
 
   // ============================================================
   // Filter helper
@@ -1122,6 +1123,7 @@ window.OB64 = window.OB64 || {};
     if (!name) return null;
     return 'resources/Item%20Icons/' + encodeURIComponent(name) + '.png';
   }
+  OB64.itemIconURL = itemIconURL;
 
   // All items in the game that belong to a given category, sorted by equipType.
   // For expendable: return ALL 45 consumable master-table records as a price
@@ -5223,6 +5225,7 @@ window.OB64 = window.OB64 || {};
     }
     return out;
   }
+  OB64.saveItemsForTab = saveItemsForTab;
 
   // Shop-tab-style modal: list of icon + name rows, click to select.
   //   opts = { title, items, currentId, includeNone, onSelect(id) }
@@ -5326,6 +5329,7 @@ window.OB64 = window.OB64 || {};
     var esc = function(ev) { if (ev.key === 'Escape') close(); };
     document.addEventListener('keydown', esc);
   }
+  OB64.openSaveItemPickerModal = openSaveItemPickerModal;
 
   // Small count-edit modal (for equipped/owned on equipment inventory, or count
   // on consumable inventory).

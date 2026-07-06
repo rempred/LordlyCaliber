@@ -10,6 +10,7 @@ window.OB64 = window.OB64 || {};
     selectedPoint: null,
     selectedSite: null,
     selectedTrigger: null,
+    selectedTreasure: null,
     selectedNode: null,
     search: '',
     // 'auto' = art on site-fitted registrations, schematic on provisional ones. Forcing art
@@ -18,7 +19,7 @@ window.OB64 = window.OB64 || {};
     viewMode: 'auto',
     zoom: 0.45,
     advanced: false,
-    layers: { squads: true, sites: true, routes: true, triggers: true },
+    layers: { squads: true, sites: true, routes: true, triggers: true, treasure: true },
     gateText: '',
   };
   // Active one-shot map tool ('rect' | 'pick' | 'add-squad' | null). While set, background
@@ -60,6 +61,7 @@ window.OB64 = window.OB64 || {};
     ui.selectedPoint = null;
     ui.selectedSite = null;
     ui.selectedTrigger = null;
+    ui.selectedTreasure = null;
     ui.selectedNode = null;
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
@@ -72,6 +74,7 @@ window.OB64 = window.OB64 || {};
     ui.selectedPoint = null;
     ui.selectedSite = null;
     ui.selectedTrigger = null;
+    ui.selectedTreasure = null;
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
@@ -180,6 +183,15 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-bounds{position:absolute;border:2px dashed rgba(245,230,200,.65);background:rgba(0,0,0,.08);pointer-events:none}',
       '#panel-scenario .sc-layer-svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}',
       '#panel-scenario .sc-marker{position:absolute;border:0;background:transparent;padding:0;transform:translate(-50%,-50%);cursor:pointer;z-index:10}',
+      '#panel-scenario .sc-treasure-marker{width:32px;height:32px;border-radius:50%;background:rgba(42,30,18,.86);border:2px solid rgba(245,210,98,.92);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,.45),0 0 0 2px rgba(60,38,18,.55);overflow:visible}',
+      '#panel-scenario .sc-treasure-marker img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}',
+      '#panel-scenario .sc-treasure-marker.on{outline:3px solid var(--ob-gold-bright);outline-offset:2px;background:rgba(92,58,24,.95);z-index:28}',
+      '#panel-scenario .sc-treasure-marker.sc-add-ghost{opacity:.72;pointer-events:none}',
+      '#panel-scenario .sc-treasure-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:5px 8px;margin:4px 0;text-align:left;color:var(--ob-ink);cursor:pointer;font-size:12px}',
+      '#panel-scenario .sc-treasure-row:hover{background:rgba(104,74,36,.14)}',
+      '#panel-scenario .sc-treasure-row.on{outline:2px solid var(--ob-gold-bright);background:rgba(245,210,98,.18)}',
+      '#panel-scenario .sc-treasure-row img,.sc-treasure-current img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated}',
+      '#panel-scenario .sc-treasure-current{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:center}',
       '#panel-scenario .sc-squad-marker{width:38px;height:38px;border-radius:50%;background:#1d1a16;box-shadow:0 2px 6px rgba(0,0,0,.45)}',
       '#panel-scenario .sc-squad-marker img{width:30px;height:30px;object-fit:contain;image-rendering:pixelated;border-radius:50%;margin:4px}',
       '#panel-scenario .sc-squad-marker.enemy{outline:3px solid var(--sc-red)}',
@@ -264,6 +276,101 @@ window.OB64 = window.OB64 || {};
     return scenarios.filter(function(s) { return s.id === runtimeKey; })[0] || null;
   }
 
+  function treasureData() {
+    return OB64.SCENARIO_TREASURE_DATA || {};
+  }
+
+  function treasureArchiveForKey(runtimeKey) {
+    var map = treasureData().runtimeKeyToArchive || {};
+    return map[runtimeKey] || map[String(runtimeKey)] || null;
+  }
+
+  function treasureArchiveEntry(archive) {
+    var archives = treasureData().archives || {};
+    return archives[archive] || archives[String(archive)] || null;
+  }
+
+  function cloneTreasureRecord(record, archive, index) {
+    return {
+      index: index,
+      archive: archive,
+      globalId: record.globalId != null ? record.globalId : record.global_id,
+      x: record.x & 0xFF,
+      y: record.y & 0xFF,
+      table: record.table & 0xFF,
+      itemId: record.itemId != null ? record.itemId : record.item_id,
+      itemName: record.itemName || record.item_name || '',
+      itemNamespace: record.itemNamespace || record.item_namespace || '',
+      added: !!record.added,
+    };
+  }
+
+  function serializeTreasureRecords(records) {
+    var out = new Uint8Array(1 + records.length * 6);
+    out[0] = records.length & 0xFF;
+    records.forEach(function(record, i) {
+      var off = 1 + i * 6;
+      out[off] = record.globalId & 0xFF;
+      out[off + 1] = record.x & 0xFF;
+      out[off + 2] = record.y & 0xFF;
+      out[off + 3] = record.table & 0xFF;
+      out[off + 4] = (record.itemId >>> 8) & 0xFF;
+      out[off + 5] = record.itemId & 0xFF;
+    });
+    return out;
+  }
+
+  function refreshTreasureRecord(record) {
+    record.itemName = treasureItemName(record);
+    record.itemNamespace = record.table === 1 ? 'equipment' : (record.table === 2 ? 'special' : 'unknown');
+    return record;
+  }
+
+  function parseTreasureBytes(bytes, archive, entry) {
+    var count = bytes[0] || 0;
+    var records = [];
+    for (var i = 0; i < count; i++) {
+      var off = 1 + i * 6;
+      records.push(refreshTreasureRecord({
+        index: i,
+        archive: archive,
+        globalId: bytes[off] || 0,
+        x: bytes[off + 1] || 0,
+        y: bytes[off + 2] || 0,
+        table: bytes[off + 3] || 0,
+        itemId: ((bytes[off + 4] || 0) << 8) | (bytes[off + 5] || 0),
+        added: false,
+      }));
+    }
+    return {
+      archive: archive,
+      filename: entry && entry.filename,
+      records: records,
+    };
+  }
+
+  function initTreasureState(state) {
+    if (state.treasureArchives) return;
+    state.treasureArchives = {};
+    state.originalTreasureBytes = {};
+    state.modifiedTreasureArchives = {};
+    var archives = treasureData().archives || {};
+    Object.keys(archives).forEach(function(key) {
+      var archive = Number(key);
+      var entry = archives[key];
+      var raw = entry.rawHex && OB64.scenarioCodec ? OB64.scenarioCodec.compactHexToBytes(entry.rawHex) : serializeTreasureRecords(entry.records || []);
+      state.originalTreasureBytes[archive] = raw;
+      state.treasureArchives[archive] = {
+        archive: archive,
+        filename: entry.filename,
+        relPath: entry.relPath,
+        runtimeKeys: entry.runtimeKeys || [],
+        validationStatus: entry.validationStatus || '',
+        records: (entry.records || []).map(function(record, i) { return cloneTreasureRecord(record, archive, i); }),
+      };
+    });
+  }
+
   function defaultImageBase() {
     return localStorage.getItem('ob64_scenario_image_base') || '../wiki/maps/vgmaps/';
   }
@@ -292,6 +399,7 @@ window.OB64 = window.OB64 || {};
         rom.scenarioEditor.sites[entry.runtimeKey] = entry.sites || [];
       });
     }
+    initTreasureState(rom.scenarioEditor);
     return rom.scenarioEditor;
   }
 
@@ -358,6 +466,83 @@ window.OB64 = window.OB64 || {};
     state.siteAllegiances[runtimeKey][selector] = value;
     state.modifiedKeys[runtimeKey] = true;
     changed();
+  }
+
+  function treasureModelForKey(rom, runtimeKey) {
+    var archive = treasureArchiveForKey(runtimeKey);
+    if (!archive) return null;
+    return ensureState(rom).treasureArchives[archive] || null;
+  }
+
+  function treasureItemName(record) {
+    if (!record) return '';
+    if (record.table === 1) return OB64.itemName ? OB64.itemName(record.itemId) : ('Item ' + record.itemId);
+    if (record.table === 2) return OB64.consumableName ? OB64.consumableName(record.itemId) : ('Special ' + record.itemId);
+    return 'Unknown table ' + record.table + ' item ' + record.itemId;
+  }
+
+  function treasureItemIcon(record) {
+    var name = treasureItemName(record);
+    if (OB64.itemIconURL) return OB64.itemIconURL(name);
+    return 'resources/Item%20Icons/' + encodeURIComponent(name) + '.png';
+  }
+
+  function treasureWorldForKey(key, record) {
+    return byteToWorld(calibrationData(key), record.x, record.y);
+  }
+
+  function treasureSelected(rom, key) {
+    if (!ui.selectedTreasure) return null;
+    var archive = treasureArchiveForKey(key);
+    if (!archive || ui.selectedTreasure.archive !== archive) return null;
+    var model = ensureState(rom).treasureArchives[archive];
+    if (!model) return null;
+    var record = model.records[ui.selectedTreasure.index];
+    if (!record) return null;
+    return { archive: archive, index: ui.selectedTreasure.index, model: model, record: record };
+  }
+
+  function reindexTreasureModel(model) {
+    (model.records || []).forEach(function(record, i) {
+      record.index = i;
+      record.archive = model.archive;
+      refreshTreasureRecord(record);
+    });
+  }
+
+  function treasureArchiveModified(rom, archive) {
+    var state = ensureState(rom);
+    var model = state.treasureArchives[archive];
+    var original = state.originalTreasureBytes[archive];
+    if (!model || !original) return false;
+    return !OB64.scenarioCodec.equalBytes(serializeTreasureRecords(model.records), original);
+  }
+
+  function treasureMinHeaderSize(filename) {
+    return 24 + 2 + (1 + String(filename || '').length + 2);
+  }
+
+  function treasureMaxRecordsForArchive(rom, archive, filename) {
+    var archiveDir = rom && rom.archives && rom.archives[archive];
+    if (!archiveDir) return 0;
+    var slotSize = (archiveDir.totalHeaderSize || 0) + (archiveDir.compSize || 0);
+    var maxPayload = slotSize - treasureMinHeaderSize(filename || ('maizo' + archive + '.bin'));
+    return Math.max(0, Math.floor((maxPayload - 1) / 6));
+  }
+
+  function commitTreasureEdit(rom, archive, message) {
+    var state = ensureState(rom);
+    state.modifiedTreasureArchives[archive] = true;
+    if (message) ui.gateText = message;
+    changed();
+    renderScenarioTab(document.getElementById('panel-scenario'));
+  }
+
+  function clearOtherSelectionsForTreasure() {
+    ui.selectedPoint = null;
+    ui.selectedSite = null;
+    ui.selectedTrigger = null;
+    ui.selectedNode = null;
   }
 
   function changed() {
@@ -520,9 +705,10 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function planRelocationToTail(rom, arc, builtArchive, tailCursor) {
+  function planRelocationToTail(rom, arc, builtArchive, tailCursor, opts) {
+    opts = opts || {};
     var win = dmaWindowForArchive(arc);
-    var archiveSize = builtArchive.length - 1;
+    var archiveSize = opts.fullArchiveLength ? builtArchive.length : builtArchive.length - 1;
     // The proven redirect exact-matches ONE window-start cart address and the loader sizes
     // its fetch from the original resource, so relocation is only safe when the original
     // fetch was a single window AND the rebuilt archive still fits that same window.
@@ -858,7 +1044,8 @@ window.OB64 = window.OB64 || {};
         html += '<div class="sc-group">' + esc(group) + '</div>';
         lastGroup = group;
       }
-      var modified = keyModified(rom, entry.runtimeKey);
+      var tArchive = treasureArchiveForKey(entry.runtimeKey);
+      var modified = keyModified(rom, entry.runtimeKey) || (tArchive && treasureArchiveModified(rom, tArchive));
       html += '<button type="button" class="sc-key' + (entry.runtimeKey === ui.selectedKey ? ' on' : '') + (isDevKey(entry.runtimeKey) ? ' sc-key-dev' : '') + '" data-key="' + entry.runtimeKey + '">' +
         '<span class="sc-key-name">' + esc(label) + '</span>' +
         '<span class="sc-chip">key ' + entry.runtimeKey + '</span>' +
@@ -872,6 +1059,8 @@ window.OB64 = window.OB64 || {};
         ui.selectedPoint = null;
         ui.selectedSite = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
     });
@@ -915,6 +1104,7 @@ window.OB64 = window.OB64 || {};
         layerToggleHtml('sites', 'Sites') +
         layerToggleHtml('routes', 'Routes') +
         layerToggleHtml('triggers', 'Triggers') +
+        layerToggleHtml('treasure', 'Treasure') +
       '</div>' +
       '<div class="sc-route-legend">' +
         '<span class="sc-leg-t">Route lines:</span>' +
@@ -993,7 +1183,7 @@ window.OB64 = window.OB64 || {};
         (t.classList && t.classList.contains('sc-map-img')) ||
         (t.closest && t.closest('.sc-schematic'));
       if (!isBackground) return;
-      if (ui.selectedPoint == null && !ui.selectedSite && ui.selectedTrigger == null) return;
+      if (ui.selectedPoint == null && !ui.selectedSite && ui.selectedTrigger == null && !ui.selectedTreasure) return;
       clearSelection();
     });
   }
@@ -1033,6 +1223,7 @@ window.OB64 = window.OB64 || {};
       { id: 'routes', name: 'Routes', render: function(inner) { renderRouteLayer(inner, rom, key, cal, model, projection, zoom); } },
       { id: 'triggers', name: 'Triggers', render: function(inner) { renderTriggerLayer(inner, rom, key, cal, model, projection, zoom); } },
       { id: 'sites', name: 'Sites', render: function(inner) { renderSiteLayer(inner, rom, key, projection, zoom); } },
+      { id: 'treasure', name: 'Treasure', render: function(inner) { renderTreasureLayer(inner, rom, key, projection, zoom); } },
       { id: 'squads', name: 'Squads', render: function(inner) { renderSquadLayer(inner, rom, key, projection, zoom); } },
     ];
   }
@@ -1052,10 +1243,79 @@ window.OB64 = window.OB64 || {};
       btn.onclick = function() {
         ui.selectedPoint = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         ui.selectedSite = site;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
       inner.appendChild(btn);
+    });
+  }
+
+  function renderTreasureLayer(inner, rom, key, projection, zoom) {
+    var model = treasureModelForKey(rom, key);
+    if (!model) return;
+    model.records.forEach(function(record, index) {
+      var world = treasureWorldForKey(key, record);
+      if (!world) return;
+      var p = projection.worldToImage(world.x, world.z);
+      var selected = ui.selectedTreasure && ui.selectedTreasure.archive === model.archive && ui.selectedTreasure.index === index;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sc-marker sc-treasure-marker' + (selected ? ' on' : '');
+      btn.style.left = (p.x * zoom) + 'px';
+      btn.style.top = (p.y * zoom) + 'px';
+      btn.title = treasureItemName(record) + ' / gid ' + record.globalId + ' / x ' + record.x + ' y ' + record.y;
+      btn.dataset.archive = model.archive;
+      btn.dataset.index = index;
+      btn.innerHTML = '<img src="' + esc(treasureItemIcon(record)) + '" alt="">';
+      var img = btn.querySelector('img');
+      if (img) img.onerror = function() { img.style.visibility = 'hidden'; };
+      btn.onclick = function() {
+        ui.selectedTreasure = { archive: model.archive, index: index };
+        clearOtherSelectionsForTreasure();
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      wireTreasureDrag(btn, rom, key, model.archive, index, projection, zoom);
+      inner.appendChild(btn);
+    });
+  }
+
+  function wireTreasureDrag(btn, rom, key, archive, index, projection, zoom) {
+    btn.addEventListener('pointerdown', function(ev) {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      var moved = false;
+      var startX = ev.clientX;
+      var startY = ev.clientY;
+      var move = function(mv) {
+        if (!moved && Math.hypot(mv.clientX - startX, mv.clientY - startY) < 5) return;
+        moved = true;
+        btn.style.cursor = 'grabbing';
+        var inner = document.getElementById('sc-map-inner');
+        if (!inner) return;
+        var rect = inner.getBoundingClientRect();
+        btn.style.left = clamp(mv.clientX - rect.left, 0, rect.width) + 'px';
+        btn.style.top = clamp(mv.clientY - rect.top, 0, rect.height) + 'px';
+      };
+      var up = function(uv) {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        btn.style.cursor = '';
+        if (!moved) return;
+        btn.addEventListener('click', function block(ce) {
+          ce.stopPropagation(); ce.preventDefault();
+          btn.removeEventListener('click', block, true);
+        }, true);
+        var inner = document.getElementById('sc-map-inner');
+        if (!inner) return;
+        var rect = inner.getBoundingClientRect();
+        var imageX = clamp((uv.clientX - rect.left) / zoom, 0, projection.naturalWidth);
+        var imageY = clamp((uv.clientY - rect.top) / zoom, 0, projection.naturalHeight);
+        moveTreasureFromImage(rom, key, archive, index, imageX, imageY, projection);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
     });
   }
 
@@ -1131,6 +1391,8 @@ window.OB64 = window.OB64 || {};
         ui.selectedPoint = point.section1Row;
         ui.selectedSite = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
       wireMarkerDrag(btn, rom, key, point, projection, zoom);
@@ -1189,6 +1451,8 @@ window.OB64 = window.OB64 || {};
         ui.selectedPoint = parseInt(this.dataset.row, 10);
         ui.selectedSite = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
     });
@@ -1293,6 +1557,8 @@ window.OB64 = window.OB64 || {};
         ui.selectedPoint = point.section1Row;
         ui.selectedSite = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
       document.addEventListener('pointermove', move);
@@ -1756,6 +2022,8 @@ window.OB64 = window.OB64 || {};
     ui.selectedTrigger = ui.selectedTrigger === extraId ? null : extraId;
     ui.selectedPoint = null;
     ui.selectedSite = null;
+    ui.selectedTreasure = null;
+    ui.selectedNode = null;
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
@@ -1848,8 +2116,15 @@ window.OB64 = window.OB64 || {};
     if (ui.selectedNode != null && !nodeById(model, ui.selectedNode)) {
       ui.selectedNode = null; // stale across scenario change
     }
+    if (ui.selectedTreasure && !treasureSelected(rom, key)) {
+      ui.selectedTreasure = null; // stale across scenario/archive change
+    }
     if (ui.selectedTrigger != null) {
       renderTriggerDetail(el, rom, key, model, ui.selectedTrigger);
+    } else if (ui.selectedTreasure) {
+      var treas = treasureSelected(rom, key);
+      if (treas) renderTreasureDetail(el, rom, key, treas);
+      else renderScenarioOverview(el, rom, key, model, cal);
     } else if (ui.selectedSite) {
       renderSiteDetail(el, rom, key, ui.selectedSite);
     } else if (ui.selectedPoint != null) {
@@ -1859,6 +2134,57 @@ window.OB64 = window.OB64 || {};
     } else {
       renderScenarioOverview(el, rom, key, model, cal);
     }
+  }
+
+  function renderTreasureDetail(el, rom, key, selected) {
+    var record = selected.record;
+    var model = selected.model;
+    var world = treasureWorldForKey(key, record);
+    var shared = (model.runtimeKeys || []).filter(function(k) { return k !== key; });
+    var html = backToOverviewHtml() + detailHead('Buried treasure', [
+      treasureItemName(record),
+      'gid ' + record.globalId + ' / archive ' + selected.archive,
+      'x ' + record.x + ' / y ' + record.y,
+    ]);
+    html += '<div class="sc-section"><span class="sc-label">Reward</span>' +
+      '<div class="sc-treasure-current">' +
+        '<img src="' + esc(treasureItemIcon(record)) + '" alt="">' +
+        '<div><strong>' + esc(treasureItemName(record)) + '</strong>' +
+          '<span class="sc-sub" style="display:block">' + (record.table === 1 ? 'Equipment' : 'Special') +
+          ' table ' + record.table + ' / item ' + record.itemId + '</span></div>' +
+      '</div>' +
+      '<button type="button" class="sc-inline-btn" id="sc-treasure-item" style="margin-top:8px">Change item</button>' +
+    '</div>';
+    html += '<div class="sc-section"><span class="sc-label">Position</span>' +
+      '<div class="sc-form-row"><label class="sc-label">Raw X/Y</label>' +
+        '<input id="sc-treasure-x" type="number" min="0" max="255" value="' + record.x + '" style="width:70px"> ' +
+        '<input id="sc-treasure-y" type="number" min="0" max="255" value="' + record.y + '" style="width:70px"> ' +
+        '<button type="button" class="sc-inline-btn" id="sc-treasure-set">Set</button></div>' +
+      '<div class="sc-sub">' + (world ? ('World: x ' + world.x.toFixed(3) + ' / z ' + world.z.toFixed(3)) : 'No calibrated bounds for this key.') + '</div>' +
+      '<button type="button" class="sc-inline-btn" id="sc-treasure-move" style="margin-top:8px">Move on map</button>' +
+    '</div>';
+    html += '<div class="sc-section"><span class="sc-label">Source</span>' +
+      '<div class="sc-sub">' + esc(model.filename || ('archive ' + selected.archive)) + ' / record ' + (selected.index + 1) + ' of ' + model.records.length + '</div>' +
+      (shared.length ? '<div class="sc-sub">Shared by runtime keys: ' + shared.join(', ') + '</div>' : '') +
+      '<button type="button" class="sc-inline-btn sc-danger" id="sc-treasure-delete" style="margin-top:8px">Remove treasure</button>' +
+    '</div>';
+    el.innerHTML = html;
+    wireBackButton(el);
+    var icon = el.querySelector('.sc-treasure-current img');
+    if (icon) icon.onerror = function() { icon.style.visibility = 'hidden'; };
+    var item = el.querySelector('#sc-treasure-item');
+    if (item) item.onclick = function() { openTreasureItemPicker(rom, key, selected.archive, selected.index); };
+    var set = el.querySelector('#sc-treasure-set');
+    if (set) set.onclick = function() {
+      var x = clamp(parseInt((el.querySelector('#sc-treasure-x') || {}).value, 10) || 0, 0, 255);
+      var y = clamp(parseInt((el.querySelector('#sc-treasure-y') || {}).value, 10) || 0, 0, 255);
+      record.x = x; record.y = y;
+      commitTreasureEdit(rom, selected.archive, 'Treasure moved to x ' + x + ' / y ' + y + '.');
+    };
+    var move = el.querySelector('#sc-treasure-move');
+    if (move) move.onclick = function() { beginPickTreasurePlacement(rom, key, selected.archive, selected.index); };
+    var del = el.querySelector('#sc-treasure-delete');
+    if (del) del.onclick = function() { deleteTreasure(rom, key, selected.archive, selected.index); };
   }
 
   function renderTriggerDetail(el, rom, key, model, extraId) {
@@ -1967,6 +2293,8 @@ window.OB64 = window.OB64 || {};
         ui.selectedPoint = parseInt(this.dataset.row, 10);
         ui.selectedSite = null;
         ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
     });
@@ -2098,7 +2426,7 @@ window.OB64 = window.OB64 || {};
       a.onclick = function(ev) {
         ev.preventDefault();
         ui.selectedPoint = parseInt(this.dataset.row, 10);
-        ui.selectedNode = null; ui.selectedSite = null; ui.selectedTrigger = null;
+        ui.selectedNode = null; ui.selectedSite = null; ui.selectedTrigger = null; ui.selectedTreasure = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
     });
@@ -2220,6 +2548,29 @@ window.OB64 = window.OB64 || {};
     if (stubs.siteAllegianceKeys.length) {
       html += '<div class="sc-ok">Town allegiance edits export to ROM: they rewrite the scincsv descriptor addend for the town. Several runtime keys can share one scincsv archive, so an edit here also moves that town in the keys that read the same descriptor.</div>';
     }
+    var tModel = treasureModelForKey(rom, key);
+    if (tModel) {
+      html += '<div class="sc-section"><span class="sc-label">Buried treasure</span>' +
+        '<div class="sc-sub">' + esc(tModel.filename || ('archive ' + tModel.archive)) + ' / ' + tModel.records.length + ' records' +
+        (treasureArchiveModified(rom, tModel.archive) ? ' / modified' : '') + '</div>' +
+        '<div class="sc-node-list">';
+      tModel.records.forEach(function(record, i) {
+        var selected = ui.selectedTreasure && ui.selectedTreasure.archive === tModel.archive && ui.selectedTreasure.index === i;
+        html += '<div class="sc-treasure-row' + (selected ? ' on' : '') + '" data-treasure-index="' + i + '" role="button" tabindex="0">' +
+          '<img src="' + esc(treasureItemIcon(record)) + '" alt="">' +
+          '<span><strong>' + esc(treasureItemName(record)) + '</strong>' +
+            '<span class="sc-sub" style="display:block">gid ' + record.globalId + ' / x ' + record.x + ' y ' + record.y + ' / ' +
+            (record.table === 1 ? 'equipment' : 'special') + ' ' + record.itemId + '</span></span>' +
+          '<button type="button" class="sc-inline-btn sc-danger sc-treasure-row-del" data-treasure-index="' + i + '">Delete</button>' +
+        '</div>';
+      });
+      if (!tModel.records.length) html += '<div class="sc-node">No buried treasure records.</div>';
+      html += '</div>' +
+        '<button type="button" class="sc-inline-btn" id="sc-new-treasure" style="margin-top:8px">+ Add treasure</button>' +
+      '</div>';
+    } else {
+      html += '<div class="sc-section"><span class="sc-label">Buried treasure</span><div class="sc-sub">No maizo file is mapped for this runtime key.</div></div>';
+    }
     html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
     model.section2.forEach(function(node) {
       html += nodeSummaryHtml(model, node);
@@ -2273,6 +2624,28 @@ window.OB64 = window.OB64 || {};
       html += '</div></div>';
     }
     el.innerHTML = html;
+    el.querySelectorAll('.sc-treasure-row').forEach(function(row) {
+      row.onclick = function(ev) {
+        if (ev.target.classList && ev.target.classList.contains('sc-treasure-row-del')) return;
+        var modelNow = treasureModelForKey(rom, key);
+        if (!modelNow) return;
+        ui.selectedTreasure = { archive: modelNow.archive, index: parseInt(this.dataset.treasureIndex, 10) };
+        clearOtherSelectionsForTreasure();
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+      var img = row.querySelector('img');
+      if (img) img.onerror = function() { img.style.visibility = 'hidden'; };
+    });
+    el.querySelectorAll('.sc-treasure-row-del').forEach(function(btn) {
+      btn.onclick = function(ev) {
+        ev.stopPropagation();
+        var modelNow = treasureModelForKey(rom, key);
+        if (!modelNow) return;
+        deleteTreasure(rom, key, modelNow.archive, parseInt(this.dataset.treasureIndex, 10));
+      };
+    });
+    var addTreasure = el.querySelector('#sc-new-treasure');
+    if (addTreasure) addTreasure.onclick = function() { beginAddTreasurePlacement(rom, key); };
     el.querySelectorAll('.sc-trigger-row:not(.sc-node-row)').forEach(function(btn) {
       btn.onclick = function(ev) {
         if (ev.target.classList && ev.target.classList.contains('sc-trig-row-del')) return;
@@ -2296,6 +2669,8 @@ window.OB64 = window.OB64 || {};
           ui.selectedPoint = parseInt(this.dataset.row, 10);
           ui.selectedSite = null;
           ui.selectedTrigger = null;
+          ui.selectedTreasure = null;
+          ui.selectedNode = null;
         } else {
           ensureState(rom).addedSquads.splice(parseInt(this.dataset.idx, 10), 1);
           changed();
@@ -2308,7 +2683,7 @@ window.OB64 = window.OB64 || {};
       var node = allocNode(model, { kind: parseInt((el.querySelector('#sc-new-node-kind') || {}).value, 10) || 0 });
       if (!node) return; // at the 16-node cap
       ui.selectedNode = node.nodeId; // open the new node's editor
-      ui.selectedPoint = null; ui.selectedSite = null; ui.selectedTrigger = null;
+      ui.selectedPoint = null; ui.selectedSite = null; ui.selectedTrigger = null; ui.selectedTreasure = null;
       commitScenarioEdit(rom, key); // refreshes decoded fields (gate/next/raw18) + re-renders
     };
     var newTrig = el.querySelector('#sc-new-trigger');
@@ -2320,6 +2695,10 @@ window.OB64 = window.OB64 || {};
         ensureState(rom).modifiedKeys[key] = true;
         changed();
         ui.selectedTrigger = extra.extraId; // open its editor for parameter tuning
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
+        ui.selectedPoint = null;
+        ui.selectedSite = null;
         renderScenarioTab(document.getElementById('panel-scenario'));
       };
       if (kind === 1 || kind === 8) {
@@ -3060,6 +3439,213 @@ window.OB64 = window.OB64 || {};
     ];
   }
 
+  function treasureBytesFromImage(key, imageX, imageY, projection) {
+    var world = projection.imageToWorld(imageX, imageY);
+    return worldToBytePair(calibrationData(key), world.x, world.z);
+  }
+
+  function moveTreasureFromImage(rom, key, archive, index, imageX, imageY, projection) {
+    var model = ensureState(rom).treasureArchives[archive];
+    var record = model && model.records[index];
+    if (!record) return;
+    var pair = treasureBytesFromImage(key, imageX, imageY, projection);
+    record.x = pair[0];
+    record.y = pair[1];
+    ui.selectedTreasure = { archive: archive, index: index };
+    clearOtherSelectionsForTreasure();
+    commitTreasureEdit(rom, archive, 'Treasure moved to x ' + record.x + ' / y ' + record.y + '.');
+  }
+
+  function beginPickTreasurePlacement(rom, key, archive, index) {
+    var inner = document.getElementById('sc-map-inner');
+    if (!inner) { ui.gateText = 'Map is not available for this scenario.'; renderScenarioTab(document.getElementById('panel-scenario')); return; }
+    var record = (ensureState(rom).treasureArchives[archive] || {}).records[index];
+    if (!record) return;
+    mapTool = 'pick';
+    inner.style.cursor = 'crosshair';
+    var gate = document.getElementById('sc-gate');
+    if (gate) gate.textContent = 'Click the map to move this treasure...';
+    var ghost = mapGhost(inner, 'sc-marker sc-treasure-marker sc-add-ghost');
+    ghost.innerHTML = '<img src="' + esc(treasureItemIcon(record)) + '" alt="">';
+    var follow = function(mv) {
+      var r = inner.getBoundingClientRect();
+      ghost.style.left = (mv.clientX - r.left) + 'px';
+      ghost.style.top = (mv.clientY - r.top) + 'px';
+    };
+    var cleanup = function() {
+      inner.removeEventListener('pointerdown', once, true);
+      inner.removeEventListener('pointermove', follow, true);
+      document.removeEventListener('keydown', onKey, true);
+      inner.style.cursor = '';
+      ghost.remove();
+      releaseMapTool();
+    };
+    var onKey = function(ev) {
+      if (ev.key !== 'Escape') return;
+      cleanup();
+      ui.gateText = 'Move treasure cancelled.';
+      renderScenarioTab(document.getElementById('panel-scenario'));
+    };
+    var once = function(ev) {
+      cleanup();
+      ev.preventDefault();
+      ev.stopPropagation();
+      eatNextMapClick(inner);
+      var rect = inner.getBoundingClientRect();
+      var cal = calibrationData(key);
+      var proj = projectionFor(cal, useImageFor(cal));
+      var imageX = clamp((ev.clientX - rect.left) / ui.zoom, 0, proj.naturalWidth);
+      var imageY = clamp((ev.clientY - rect.top) / ui.zoom, 0, proj.naturalHeight);
+      moveTreasureFromImage(rom, key, archive, index, imageX, imageY, proj);
+    };
+    inner.addEventListener('pointermove', follow, true);
+    inner.addEventListener('pointerdown', once, true);
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  function nextTreasureGlobalId(rom) {
+    var used = {};
+    var state = ensureState(rom);
+    Object.keys(state.treasureArchives || {}).forEach(function(archive) {
+      (state.treasureArchives[archive].records || []).forEach(function(record) {
+        used[record.globalId & 0xFF] = true;
+      });
+    });
+    for (var id = 231; id <= 255; id++) {
+      if (!used[id]) return id;
+    }
+    for (var fallback = 1; fallback <= 255; fallback++) {
+      if (!used[fallback]) return fallback;
+    }
+    return null;
+  }
+
+  function beginAddTreasurePlacement(rom, key) {
+    var archive = treasureArchiveForKey(key);
+    var model = archive && ensureState(rom).treasureArchives[archive];
+    var panel = document.getElementById('panel-scenario');
+    if (!model) { ui.gateText = 'No maizo treasure archive is mapped for this scenario key.'; renderScenarioTab(panel); return; }
+    var maxRecords = treasureMaxRecordsForArchive(rom, archive, model.filename);
+    if (model.records.length >= maxRecords) { ui.gateText = 'This maizo file is at its fixed -lh0- slot capacity.'; renderScenarioTab(panel); return; }
+    var gid = nextTreasureGlobalId(rom);
+    if (gid == null) { ui.gateText = 'No unused treasure global id remains.'; renderScenarioTab(panel); return; }
+    var inner = document.getElementById('sc-map-inner');
+    if (!inner) { ui.gateText = 'Map is not available for this scenario.'; renderScenarioTab(panel); return; }
+    mapTool = 'add-treasure';
+    inner.style.cursor = 'crosshair';
+    var gate = document.getElementById('sc-gate');
+    if (gate) gate.textContent = 'Click the map to place a new treasure...';
+    var ghost = mapGhost(inner, 'sc-marker sc-treasure-marker sc-add-ghost');
+    ghost.innerHTML = '<img src="' + esc((OB64.itemIconURL ? OB64.itemIconURL('Heal Leaf') : 'resources/Item%20Icons/Heal%20Leaf.png')) + '" alt="">';
+    var follow = function(mv) {
+      var r = inner.getBoundingClientRect();
+      ghost.style.left = (mv.clientX - r.left) + 'px';
+      ghost.style.top = (mv.clientY - r.top) + 'px';
+    };
+    var cleanup = function() {
+      inner.removeEventListener('pointerdown', once, true);
+      inner.removeEventListener('pointermove', follow, true);
+      document.removeEventListener('keydown', onKey, true);
+      inner.style.cursor = '';
+      ghost.remove();
+      releaseMapTool();
+    };
+    var onKey = function(ev) {
+      if (ev.key !== 'Escape') return;
+      cleanup();
+      ui.gateText = 'Add treasure cancelled.';
+      renderScenarioTab(panel);
+    };
+    var once = function(ev) {
+      cleanup();
+      ev.preventDefault();
+      ev.stopPropagation();
+      eatNextMapClick(inner);
+      var rect = inner.getBoundingClientRect();
+      var cal = calibrationData(key);
+      var proj = projectionFor(cal, useImageFor(cal));
+      var imageX = clamp((ev.clientX - rect.left) / ui.zoom, 0, proj.naturalWidth);
+      var imageY = clamp((ev.clientY - rect.top) / ui.zoom, 0, proj.naturalHeight);
+      createTreasureAt(rom, key, archive, imageX, imageY, proj, gid);
+    };
+    inner.addEventListener('pointermove', follow, true);
+    inner.addEventListener('pointerdown', once, true);
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  function createTreasureAt(rom, key, archive, imageX, imageY, projection, globalId) {
+    var model = ensureState(rom).treasureArchives[archive];
+    if (!model) return;
+    var pair = treasureBytesFromImage(key, imageX, imageY, projection);
+    var record = refreshTreasureRecord({
+      index: model.records.length,
+      archive: archive,
+      globalId: globalId,
+      x: pair[0],
+      y: pair[1],
+      table: 2,
+      itemId: 1,
+      added: true,
+    });
+    model.records.push(record);
+    reindexTreasureModel(model);
+    ui.selectedTreasure = { archive: archive, index: record.index };
+    clearOtherSelectionsForTreasure();
+    commitTreasureEdit(rom, archive, 'Treasure added: gid ' + record.globalId + ' / Heal Leaf. Use Change item to choose the reward.');
+  }
+
+  function deleteTreasure(rom, key, archive, index) {
+    var model = ensureState(rom).treasureArchives[archive];
+    var record = model && model.records[index];
+    if (!record) return;
+    confirmThemed('Remove buried treasure',
+      'Remove treasure gid ' + record.globalId + ' (' + treasureItemName(record) + ') from this maizo file?',
+      'Remove treasure',
+      function() {
+        model.records.splice(index, 1);
+        reindexTreasureModel(model);
+        ui.selectedTreasure = null;
+        commitTreasureEdit(rom, archive, 'Treasure removed from archive ' + archive + '.');
+      });
+  }
+
+  function openTreasureItemPicker(rom, key, archive, index) {
+    var model = ensureState(rom).treasureArchives[archive];
+    var record = model && model.records[index];
+    if (!record) return;
+    var items = [];
+    Object.keys(OB64.ITEM_NAMES || {}).map(Number).filter(function(id) { return id > 0; }).sort(function(a, b) { return a - b; }).forEach(function(id) {
+      items.push({ id: id, name: OB64.itemName(id), kind: 'equip', kindLabel: 'Equipment' });
+    });
+    for (var cid = 1; cid <= 44; cid++) {
+      items.push({ id: cid, name: OB64.consumableName(cid), kind: 'consumable', kindLabel: 'Special' });
+    }
+    var currentKind = record.table === 2 ? 'consumable' : 'equip';
+    if (OB64.openSaveItemPickerModal) {
+      OB64.openSaveItemPickerModal({
+        title: 'Select treasure item',
+        items: items,
+        currentId: record.itemId,
+        currentKind: currentKind,
+        onSelect: function(id, kind) {
+          record.table = kind === 'consumable' ? 2 : 1;
+          record.itemId = id & 0xFFFF;
+          refreshTreasureRecord(record);
+          commitTreasureEdit(rom, archive, 'Treasure reward set to ' + treasureItemName(record) + '.');
+        },
+      });
+      return;
+    }
+    var raw = window.prompt('Item id (equipment table 1)', String(record.itemId));
+    var id = parseInt(raw, 10);
+    if (!isNaN(id)) {
+      record.table = 1;
+      record.itemId = id & 0xFFFF;
+      refreshTreasureRecord(record);
+      commitTreasureEdit(rom, archive, 'Treasure reward set to ' + treasureItemName(record) + '.');
+    }
+  }
+
   // Owned-slot writers for the live behavior builder: the first application allocates, every
   // later one REWRITES the same node/extra in place (same id, new kind/waypoint/gate/next), so
   // live template/trigger/dest/threshold changes never leak Section 2/3 records.
@@ -3366,6 +3952,8 @@ window.OB64 = window.OB64 || {};
     ui.selectedPoint = rowIndex;
     ui.selectedSite = null;
     ui.selectedTrigger = null;
+    ui.selectedTreasure = null;
+    ui.selectedNode = null;
     ui.gateText = 'Squad placed: source ' + bytes[0] + ' / edat ' + edatId + '. Edit the comp in the sidebar; exports with the mission ESET + squad-override blob.';
     var fitAfter = archiveFitInfo(rom, key);
     if (fitAfter && !fitAfter.fits) {
@@ -3414,13 +4002,25 @@ window.OB64 = window.OB64 || {};
         };
       }
     });
+    var modifiedTreasures = {};
+    Object.keys(state.treasureArchives || {}).forEach(function(archiveKey) {
+      var archive = Number(archiveKey);
+      if (!treasureArchiveModified(rom, archive)) return;
+      var model = state.treasureArchives[archive];
+      modifiedTreasures[archive] = {
+        archive: archive,
+        filename: model.filename,
+        rawHex: OB64.scenarioCodec.bytesToCompactHex(serializeTreasureRecords(model.records)),
+      };
+    });
     return {
       format: 'ob64-scenario-project',
-      version: 1,
+      version: 2,
       created_at: new Date().toISOString(),
       source: 'LordlyCaliber Scenario tab',
       settings: state.settings,
       modifiedEsets: modifiedEsets,
+      modifiedTreasures: modifiedTreasures,
       siteAllegiances: state.siteAllegiances,
       // Carry each added squad's comp record (its squad override) so a project reload
       // restores the sidebar-editable composition, not just the placement row.
@@ -3462,6 +4062,14 @@ window.OB64 = window.OB64 || {};
       var raw = OB64.scenarioCodec.compactHexToBytes(esets[key].rawHex);
       state.models[key] = OB64.scenarioCodec.parseEset(raw, { sourcePath: esets[key].filename || key });
       state.modifiedKeys[key] = true;
+    });
+    var treasures = project.modifiedTreasures || {};
+    Object.keys(treasures).forEach(function(archiveKey) {
+      var archive = Number(archiveKey);
+      var entry = treasureArchiveEntry(archive) || { filename: treasures[archiveKey].filename };
+      var raw = OB64.scenarioCodec.compactHexToBytes(treasures[archiveKey].rawHex);
+      state.treasureArchives[archive] = parseTreasureBytes(raw, archive, entry);
+      state.modifiedTreasureArchives[archive] = true;
     });
     changed();
   }
@@ -3695,6 +4303,32 @@ window.OB64 = window.OB64 || {};
       }
       state.originalBytes[key] = raw.slice(0);
     });
+    // Buried treasure edits: maizo payloads are already stored (-lh0-) in retail. Keep the total
+    // archive slot size fixed by resizing the level-2 header, so add/remove/move edits splice
+    // directly outside the CRC window without shifting the following LHA archive.
+    Object.keys(state.treasureArchives || {}).forEach(function(archiveKey) {
+      var archive = Number(archiveKey);
+      if (!treasureArchiveModified(rom, archive)) return;
+      var model = state.treasureArchives[archive];
+      var payload = serializeTreasureRecords(model.records);
+      var archiveDir = rom.archives[archive];
+      if (!archiveDir) throw new Error('Missing ROM archive ' + archive + ' for maizo treasure edit');
+      var filename = model.filename || ((treasureArchiveEntry(archive) || {}).filename) || ('maizo' + archive + '.bin');
+      var slotSize = (archiveDir.totalHeaderSize || 0) + (archiveDir.compSize || 0);
+      var minHeaderSize = 24 + 2 + (1 + filename.length + 2);
+      var treasureHeaderSize = slotSize - payload.length;
+      if (treasureHeaderSize < minHeaderSize || treasureHeaderSize > 0xFFFF) {
+        throw new Error('Buried treasure maizo archive ' + archive + ' does not fit its fixed -lh0- slot');
+      }
+      var arc = OB64.buildLHAArchiveUncompressed(payload, filename, treasureHeaderSize);
+      var result = OB64.spliceArchive(rom.z64, archiveDir, arc);
+      if (result.success) {
+        touched.push('buried treasure (maizo archive ' + archive + ')');
+      } else {
+        throw new Error('Buried treasure maizo archive ' + archive + ' ' + result.error);
+      }
+      state.originalTreasureBytes[archive] = payload.slice ? payload.slice(0) : new Uint8Array(payload);
+    });
     // Town-allegiance edits: one rebuilt scincsv archive per shared descriptor stream. Same
     // splice-in-place / relocate-to-tail path as the ESET archives above. scincsv archives sit
     // outside the CRC window, so a splice-in-place needs no CRC recalc; a relocation installs the
@@ -3711,14 +4345,14 @@ window.OB64 = window.OB64 || {};
       // Store the descriptor stream UNCOMPRESSED (-lh0-). scincsv payloads are tiny, the game's
       // loader accepts -lh0- (index 750 ships that way), and this dodges an lh5Compress bug on
       // small payloads. The stored body still fits the original slot (headers are ~74 B).
-      var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'));
+      var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'), archiveDir.totalHeaderSize);
       var result = OB64.spliceArchive(rom.z64, archiveDir, arc);
       if (result.success) {
         touched.push('town allegiance (scincsv ' + plan.archive + ')');
       } else {
         var moved;
         try {
-          moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
+          moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: true });
         } catch (e) {
           throw new Error('Town allegiance scincsv ' + plan.archive + ' ' + e.message);
         }
