@@ -2445,6 +2445,7 @@ window.OB64 = window.OB64 || {};
     var tgtSel = el.querySelector('#sc-node-target');
     if (tgtSel) tgtSel.onchange = function() {
       if (this.value.indexOf('sel:') !== 0) return;
+      b[2] = 2; // match the drag/map-pick: normalize to sub-2 selector/coordinate space
       b[4] = parseInt(this.value.slice(4), 10) & 0xFF; b[5] = 0; b[3] = 0;
       commitScenarioEdit(rom, key);
     };
@@ -2454,6 +2455,7 @@ window.OB64 = window.OB64 || {};
       var tx = parseFloat((el.querySelector('#sc-node-tx') || {}).value);
       var tz = parseFloat((el.querySelector('#sc-node-tz') || {}).value);
       if (!bw || isNaN(tx) || isNaN(tz)) return;
+      b[2] = 2; // match the drag/map-pick: normalize to sub-2 selector/coordinate space
       b[4] = clamp(Math.round(((tx - bw.xMin) / Math.max(0.001, bw.xMax - bw.xMin)) * 256), 0, 255);
       b[5] = clamp(Math.round(((tz - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
       commitScenarioEdit(rom, key);
