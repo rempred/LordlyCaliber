@@ -26,6 +26,7 @@ window.OB64 = window.OB64 || {};
     section3RowsMax: 16,
     descriptorGroupsMax: 10,
     descriptorMembersMax: 5,
+    enemydatRecords: 556,
   };
 
   function readU16BE(buf, off) {
@@ -221,6 +222,9 @@ window.OB64 = window.OB64 || {};
 
   function serializeEset(model) {
     refreshDecodedRows(model);
+    if (model.section1.length && model.section2.length === 0) {
+      throw new Error('Cannot serialize ESET with Section 1 rows and zero Section 2 nodes; the final Section 1 row overlaps the Section 2 count byte.');
+    }
     var offsets = computeOffsets(model);
     var out = new Uint8Array(offsets.byteLength);
     for (var h = 0; h < Math.min(16, model.header.length); h++) out[h] = model.header[h] & 0xFF;
@@ -285,6 +289,8 @@ window.OB64 = window.OB64 || {};
     var offsets = computeOffsets(model);
     var nodeIds = {};
     var extraIds = {};
+    var nodeCounts = {};
+    var extraCounts = {};
 
     if (model.offsets.stream0 !== 0x0008) issue(errors, 'header-stream0-offset', 'Header [0..1] must be 0x0008', { actual: model.offsets.stream0 });
     if (model.offsets.countStream !== 0x000F) issue(errors, 'header-count-stream-offset', 'Header [2..3] must be 0x000F', { actual: model.offsets.countStream });
@@ -292,19 +298,33 @@ window.OB64 = window.OB64 || {};
     if (model.offsets.section3 !== offsets.section3Offset) issue(errors, 'section3-offset', 'Section 3 offset does not match recomputed offset', { actual: model.offsets.section3, expected: offsets.section3Offset });
     if ((model.header[14] || 0) !== 0) issue(errors, 'section1-count-high-byte', 'Section 1 count high byte must be zero', { actual: model.header[14] });
     if (model.section1.length > limits.section1RowsMax) issue(errors, 'section1-cap', 'Section 1 rows exceed conservative limit', { count: model.section1.length, limit: limits.section1RowsMax });
+    if (model.section1.length && model.section2.length === 0) issue(errors, 'section2-empty', 'Section 1 rows require at least one Section 2 node', { section1Rows: model.section1.length });
     if (model.section2.length > limits.section2RowsMax) issue(errors, 'section2-cap', 'Section 2 rows exceed hard limit', { count: model.section2.length, limit: limits.section2RowsMax });
     if (model.section3.length > limits.section3RowsMax) issue(errors, 'section3-cap', 'Section 3 rows exceed hard limit', { count: model.section3.length, limit: limits.section3RowsMax });
 
     model.section2.forEach(function(row) {
+      nodeCounts[row.nodeId] = (nodeCounts[row.nodeId] || 0) + 1;
       nodeIds[row.nodeId] = true;
       if (row.nodeId < 0x04 || row.nodeId >= 0x14) issue(errors, 'section2-node-id-domain', 'Section 2 node id must be 0x04..0x13', { row: row.row, nodeId: row.nodeId });
+      if (row.nodeId !== 4 + row.row) issue(errors, 'section2-node-id-sequence', 'Section 2 node id must equal 4 + row index', { row: row.row, nodeId: row.nodeId, expected: 4 + row.row });
     });
     model.section3.forEach(function(row) {
+      extraCounts[row.extraId] = (extraCounts[row.extraId] || 0) + 1;
       extraIds[row.extraId] = true;
       if (row.extraId < 0x01 || row.extraId > 0x10) issue(errors, 'section3-extra-id-domain', 'Section 3 extra id must be 0x01..0x10', { row: row.row, extraId: row.extraId });
+      if (row.extraId !== 1 + row.row) issue(errors, 'section3-extra-id-sequence', 'Section 3 extra id must equal 1 + row index', { row: row.row, extraId: row.extraId, expected: 1 + row.row });
+    });
+    Object.keys(nodeCounts).forEach(function(id) {
+      if (nodeCounts[id] > 1) issue(errors, 'section2-node-id-duplicate', 'Section 2 node id appears more than once', { nodeId: Number(id), count: nodeCounts[id] });
+    });
+    Object.keys(extraCounts).forEach(function(id) {
+      if (extraCounts[id] > 1) issue(errors, 'section3-extra-id-duplicate', 'Section 3 extra id appears more than once', { extraId: Number(id), count: extraCounts[id] });
     });
     model.section1.forEach(function(row) {
       if (row.sourceId > limits.sourceIdMax) issue(errors, 'source-id-cap', 'sourceId exceeds conservative limit', { row: row.row, sourceId: row.sourceId, limit: limits.sourceIdMax });
+      if (row.edatOneBased < 1 || row.edatOneBased > limits.enemydatRecords) {
+        issue(errors, 'section1-edat-range', 'Section 1 edatOneBased must reference an enemydat record', { row: row.row, edatOneBased: row.edatOneBased, min: 1, max: limits.enemydatRecords });
+      }
     });
 
     if (model.section1.length) {
@@ -326,10 +346,14 @@ window.OB64 = window.OB64 || {};
 
     model.section2.forEach(function(row) {
       if (row.nextNode === 0xFF) issue(warnings, 'terminal-ff-next-node', '0xFF terminal/one-way sentinel', { row: row.row, nodeId: row.nodeId });
+      else if (row.nextNode === 1) issue(info, 'next-node-hold-sentinel', '0x01 is the known hold-position sentinel', { row: row.row, nodeId: row.nodeId });
       else if (row.nextNode !== 0 && !nodeIds[row.nextNode]) issue(warnings, 'next-node-unresolved', 'Next node target is missing', { row: row.row, nodeId: row.nodeId, nextNode: row.nextNode });
       if (row.section3Ref !== 0 && !extraIds[row.section3Ref]) issue(warnings, 'section3-ref-unresolved', 'Section 3 reference is missing or an alias case', { row: row.row, nodeId: row.nodeId, section3Ref: row.section3Ref });
       if (!GATE_OPERATORS[row.gate.operator]) issue(errors, 'section2-gate-operator-domain', 'Gate operator must be 0, 1, 2, or 3', { row: row.row, operator: row.gate.operator });
       if (row.gate.operator !== 0 && !extraIds[row.gate.extraB]) issue(errors, 'section2-gate-extraB-unresolved', 'Compound gate extra B must reference an existing extra', { row: row.row, operator: row.gate.operator, extraB: row.gate.extraB });
+      if (row.gate.extendedTerm && row.gate.extendedTerm.extra && !extraIds[row.gate.extendedTerm.extra]) {
+        issue(warnings, 'section2-gate-extension-extra-unresolved', 'Extension gate term references a missing extra', { row: row.row, nodeId: row.nodeId, extra: row.gate.extendedTerm.extra, operator: row.gate.extendedTerm.operator });
+      }
     });
 
     model.section1.forEach(function(row) {

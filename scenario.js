@@ -91,6 +91,10 @@ window.OB64 = window.OB64 || {};
     return builder;
   }
 
+  function resetBuilderState() {
+    builder = null;
+  }
+
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"]/g, function(c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -409,9 +413,22 @@ window.OB64 = window.OB64 || {};
     return state.models[runtimeKey] || null;
   }
 
+  function rowMatchesIdentity(row, sourceId, edatZeroBased) {
+    return !!row && row.sourceId === sourceId && (row.edatOneBased - 1) === edatZeroBased;
+  }
+
+  function runtimeRowMatchesLive(row, runtimeRow) {
+    if (!row || !runtimeRow) return true;
+    var edat = runtimeRow.edat != null ? runtimeRow.edat : (runtimeRow.edatOneBased != null ? runtimeRow.edatOneBased - 1 : null);
+    return runtimeRow.sourceId === row.sourceId && edat === row.edatOneBased - 1;
+  }
+
   function rowRuntime(rom, runtimeKey, rowIndex) {
     var rows = ensureState(rom).sourceRows[runtimeKey] || [];
-    return rows.filter(function(row) { return row.section1Row === rowIndex; })[0] || null;
+    var runtimeRow = rows.filter(function(row) { return row.section1Row === rowIndex; })[0] || null;
+    var model = modelFor(rom, runtimeKey);
+    var liveRow = model && model.section1[rowIndex];
+    return runtimeRowMatchesLive(liveRow, runtimeRow) ? runtimeRow : null;
   }
 
   // A squad deploys DORMANT when its start node is kind 2: the loader keeps such rows
@@ -437,6 +454,15 @@ window.OB64 = window.OB64 || {};
     var cal = calibrationData(runtimeKey);
     if (!cal || !cal.points) return null;
     return cal.points.filter(function(point) { return point.section1Row === rowIndex; })[0] || null;
+  }
+
+  function resolvePointForRow(rom, key, rowIndex) {
+    var model = modelFor(rom, key);
+    var row = model && model.section1[rowIndex];
+    if (!row) return null;
+    var p = pointFor(key, rowIndex);
+    if (p && !rowMatchesIdentity(row, p.sourceId, p.edat)) p = null;
+    return p || syntheticPoint(rom, key, rowIndex, row);
   }
 
   function displayLabel(runtimeKey) {
@@ -1291,17 +1317,10 @@ window.OB64 = window.OB64 || {};
   // Marker list = every CURRENT Section 1 row: calibration points where they exist, synthetic
   // points for rows without one (added squads, uncalibrated vanilla rows).
   function pointsForAllRows(rom, key) {
-    var cal = calibrationData(key);
     var model = modelFor(rom, key);
-    var byRow = {};
-    ((cal && cal.points) || []).forEach(function(p) { byRow[p.section1Row] = p; });
     var out = [];
     ((model && model.section1) || []).forEach(function(row, i) {
-      // Calibration points are keyed by the VANILLA row index; after a row deletion the
-      // indexes shift, so only trust a point that still matches the live row's identity.
-      var p = byRow[i];
-      if (p && (p.sourceId !== row.sourceId || p.edat !== row.edatOneBased - 1)) p = null;
-      out.push(p || syntheticPoint(rom, key, i, row));
+      out.push(resolvePointForRow(rom, key, i));
     });
     return out;
   }
@@ -1725,9 +1744,10 @@ window.OB64 = window.OB64 || {};
       // The mapping rides ktenmainRecordIndex in the generated site data and is anchored by
       // two independent live in-game observations (see siteBySceneRecord).
       var recSite = siteBySceneRecord(rom, key, b[6]);
-      out.label = 'Site flag test (' + (recSite ? recSite.siteName.trim() : 'scene record #' + b[6] + ', unresolved') + ')';
+      var recName = recSite ? ((recSite.siteName || '').trim() || ('scene record #' + b[6])) : '';
+      out.label = 'Site flag test (' + (recSite ? recName : 'scene record #' + b[6] + ', unresolved') + ')';
       out.detail = 'tests bit 0x0004 on the runtime site record for scene record ' + b[6] +
-        (recSite ? ' = ' + recSite.siteName.trim() : ' (beyond the selector-table sites)') +
+        (recSite ? ' = ' + recName : ' (beyond the selector-table sites)') +
         '; flag semantics partially open';
       out.geometry = !!recSite;
     } else {
@@ -1737,9 +1757,16 @@ window.OB64 = window.OB64 || {};
     return out;
   }
 
+  function nodeReferencesExtra(node, extraId) {
+    var b = node.bytes || [];
+    return b[10] === extraId ||
+      (b[11] !== 0 && b[12] === extraId) ||
+      ((b[13] !== 0 || b[14] !== 0) && b[14] === extraId);
+  }
+
   // Which nodes gate on this extra, and which squads pass through those nodes.
   function extraConsumers(rom, key, model, extraId) {
-    var nodes = model.section2.filter(function(n) { return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId); });
+    var nodes = model.section2.filter(function(n) { return nodeReferencesExtra(n, extraId); });
     var nodeIds = nodes.map(function(n) { return n.nodeId; });
     var refs = [];
     model.section1.forEach(function(row, idx) {
@@ -2307,8 +2334,107 @@ window.OB64 = window.OB64 || {};
   // un-references the trigger).
   function triggerRefNodes(model, extraId) {
     return model.section2.filter(function(n) {
-      return n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId);
+      return nodeReferencesExtra(n, extraId);
     }).map(function(n) { return n.nodeId; });
+  }
+
+  function liveNodeIdMap(model) {
+    var out = {};
+    (model.section2 || []).forEach(function(n) { out[n.nodeId] = true; });
+    return out;
+  }
+
+  function extraRenumberMapAfterDelete(model, deleteIdx) {
+    var map = {};
+    (model.section3 || []).forEach(function(extra, i) {
+      if (i === deleteIdx) return;
+      map[extra.extraId] = i < deleteIdx ? i + 1 : i;
+    });
+    return map;
+  }
+
+  function planDeleteTrigger(model, extra) {
+    // Keep Section 3 gapless on deletion. Retail never distinguishes scan-by-id from
+    // (id-1)*10 arithmetic lookup, so gapped ids are reserved for a future live probe.
+    var idx = model.section3.indexOf(extra);
+    if (idx < 0) return { blocked: true, message: 'Trigger E' + (extra && extra.extraId) + ' is not in this model.' };
+    var extraId = extra.extraId;
+    var idMap = extraRenumberMapAfterDelete(model, idx);
+    var nodeIds = liveNodeIdMap(model);
+    var survivorTakesDeletedId = Object.keys(idMap).some(function(id) { return idMap[id] === extraId; });
+    var ambiguous = [];
+    model.section2.forEach(function(n) {
+      var next = n.bytes[17] || 0;
+      if (idMap[next] != null && idMap[next] !== next && nodeIds[next]) {
+        ambiguous.push({ nodeId: n.nodeId, value: next });
+      } else if (next === extraId && next !== 1 && !nodeIds[next] && survivorTakesDeletedId) {
+        ambiguous.push({ nodeId: n.nodeId, value: next });
+      }
+    });
+    if (ambiguous.length) {
+      return {
+        blocked: true,
+        message: 'Cannot delete trigger E' + extraId + ' yet: Section-2 byte [17] on node ' +
+          ambiguous.map(function(a) { return a.nodeId + ' (value ' + a.value + ')'; }).join(', ') +
+          ' could mean either a next-node id or a shifted trigger id. Delete the highest-id trigger first, or clear/change that node [17] value before deleting E' + extraId + '.',
+        ambiguous: ambiguous,
+      };
+    }
+    var actions = [];
+    model.section2.forEach(function(n) {
+      var b = n.bytes;
+      if (b[10] === extraId && b[11] !== 0 && b[12] && b[12] !== extraId) actions.push('node ' + n.nodeId + ': promote gate B to A');
+      else if (b[10] === extraId) actions.push('node ' + n.nodeId + ': clear main gate');
+      else if (b[11] !== 0 && b[12] === extraId) actions.push('node ' + n.nodeId + ': clear gate B only');
+      if ((b[13] !== 0 || b[14] !== 0) && b[14] === extraId) actions.push('node ' + n.nodeId + ': clear extension gate term');
+      [10, 12, 14, 17].forEach(function(off) {
+        if ((off === 12 && b[11] === 0) || (off === 14 && b[13] === 0 && b[14] === 0)) return;
+        if (idMap[b[off]] != null && idMap[b[off]] !== b[off]) actions.push('node ' + n.nodeId + ': remap byte [' + off + '] E' + b[off] + ' -> E' + idMap[b[off]]);
+      });
+    });
+    return { blocked: false, extraId: extraId, index: idx, idMap: idMap, actions: actions };
+  }
+
+  function remapExtraByte(b, off, idMap) {
+    if (idMap[b[off]] != null) b[off] = idMap[b[off]];
+  }
+
+  function applyDeleteTriggerPlan(model, plan) {
+    var extraId = plan.extraId;
+    var idMap = plan.idMap || {};
+    model.section2.forEach(function(n) {
+      var b = n.bytes;
+      var op = b[11] || 0;
+      var extraB = b[12] || 0;
+      if (b[10] === extraId) {
+        if (op !== 0 && extraB && extraB !== extraId) {
+          b[10] = extraB;
+          b[11] = 0;
+          b[12] = 0;
+        } else {
+          b[10] = 0;
+          b[11] = 0;
+          b[12] = 0;
+        }
+      } else if (op !== 0 && extraB === extraId) {
+        b[11] = 0;
+        b[12] = 0;
+      }
+      if ((b[13] !== 0 || b[14] !== 0) && b[14] === extraId) {
+        b[13] = 0;
+        b[14] = 0;
+      }
+      remapExtraByte(b, 10, idMap);
+      if (b[11] !== 0) remapExtraByte(b, 12, idMap);
+      if (b[13] !== 0 || b[14] !== 0) remapExtraByte(b, 14, idMap);
+      remapExtraByte(b, 17, idMap);
+    });
+    model.section3.splice(plan.index, 1);
+    model.section3.forEach(function(extra, i) { extra.bytes[0] = i + 1; extra.extraId = i + 1; });
+    syncStructuralOffsets(model);
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    resetBuilderState();
+    return model;
   }
 
   function nodeKindName(k) {
@@ -2449,25 +2575,24 @@ window.OB64 = window.OB64 || {};
 
   function deleteTrigger(rom, key, model, extra) {
     var extraId = extra.extraId;
+    var plan = planDeleteTrigger(model, extra);
+    if (plan.blocked) {
+      ui.gateText = plan.message;
+      if (window.alert) window.alert(plan.message);
+      var panel = document.getElementById('panel-scenario');
+      if (panel) renderScenarioTab(panel);
+      return;
+    }
     var refNodes = triggerRefNodes(model, extraId);
     var message = refNodes.length
       ? 'Delete trigger E' + extraId + '?\n\nNode' + (refNodes.length > 1 ? 's' : '') + ' ' + refNodes.join(', ') +
-        ' will lose ' + (refNodes.length > 1 ? 'their advance gates' : 'its advance gate') + ' and advance ungated (squads on ' +
-        (refNodes.length > 1 ? 'those nodes' : 'that node') + ' can move to Next immediately).'
+        ' will be updated safely. Gate A matches will clear the gate or promote gate B to A; gate B matches will clear only B; extension matches will clear only the extension term. Shifted trigger ids will be renumbered and references remapped.' +
+        (plan.actions.length ? '\n\nPlanned edits:\n- ' + plan.actions.join('\n- ') : '')
       : 'Delete trigger E' + extraId + '? Nothing references it.';
     confirmThemed('Delete trigger', message, 'Delete trigger', function() {
-      var idx = model.section3.indexOf(extra);
-      if (idx < 0) return;
-      model.section2.forEach(function(n) {
-        if (n.bytes[10] === extraId || (n.bytes[11] !== 0 && n.bytes[12] === extraId)) {
-          n.bytes[10] = 0; n.bytes[11] = 0; n.bytes[12] = 0;
-        }
-      });
-      model.section3.splice(idx, 1);
-      syncStructuralOffsets(model);
-      OB64.scenarioCodec.refreshDecodedRows(model);
+      applyDeleteTriggerPlan(model, plan);
       ui.selectedTrigger = null;
-      ui.gateText = 'Trigger E' + extraId + ' deleted' + (refNodes.length ? ' (advance gate cleared on node ' + refNodes.join(', ') + ').' : '.');
+      ui.gateText = 'Trigger E' + extraId + ' deleted. Remaining triggers renumbered and references remapped.';
       ensureState(rom).modifiedKeys[key] = true;
       changed();
       renderScenarioTab(document.getElementById('panel-scenario'));
@@ -2793,7 +2918,7 @@ window.OB64 = window.OB64 || {};
       el.innerHTML = '<div class="sc-warning">Selected row is not available.</div>';
       return;
     }
-    var point = pointFor(key, rowIndex) || syntheticPoint(rom, key, rowIndex, row);
+    var point = resolvePointForRow(rom, key, rowIndex);
     var validation = OB64.scenarioCodec.validateEset(model);
     var added = isAddedRow(rom, key, rowIndex);
     var dormant = rowIsDormant(rom, key, model, rowIndex);
@@ -2999,7 +3124,7 @@ window.OB64 = window.OB64 || {};
 
   function wireSquadDetail(el, rom, key, rowIndex) {
     var model = modelFor(rom, key);
-    var detailPoint = pointFor(key, rowIndex) || syntheticPoint(rom, key, rowIndex, model.section1[rowIndex]);
+    var detailPoint = resolvePointForRow(rom, key, rowIndex);
     wireBackButton(el);
     var del = el.querySelector('#sc-delete-added');
     if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
@@ -3215,8 +3340,11 @@ window.OB64 = window.OB64 || {};
         var kind = this.dataset.kind || 's1';
         var row = parseInt(this.dataset.row, 10);
         var off = parseInt(this.dataset.off, 10);
-        if (kind === 's3') model.section3[row].bytes[off] = parseByte(this.value);
-        else model.section1[row].bytes[off] = parseByte(this.value);
+        var target = kind === 's3' ? (model.section3[row] && model.section3[row].bytes) : (model.section1[row] && model.section1[row].bytes);
+        if (!target) return;
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(target[off]); return; }
+        target[off] = v;
         commitScenarioEdit(rom, key);
       };
     });
@@ -3224,7 +3352,11 @@ window.OB64 = window.OB64 || {};
       inp.onchange = function() {
         var row = parseInt(this.dataset.row, 10);
         var off = parseInt(this.dataset.off, 10);
-        model.section2[row].bytes[off] = parseByte(this.value);
+        var target = model.section2[row] && model.section2[row].bytes;
+        if (!target) return;
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(target[off]); return; }
+        target[off] = v;
         commitScenarioEdit(rom, key);
       };
     });
@@ -3232,7 +3364,11 @@ window.OB64 = window.OB64 || {};
       inp.onchange = function() {
         var row = parseInt(this.dataset.row, 10);
         var off = parseInt(this.dataset.off, 10);
-        model.section3[row].bytes[off] = parseByte(this.value);
+        var target = model.section3[row] && model.section3[row].bytes;
+        if (!target) return;
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(target[off]); return; }
+        target[off] = v;
         commitScenarioEdit(rom, key);
       };
     });
@@ -3240,7 +3376,11 @@ window.OB64 = window.OB64 || {};
 
   function parseByte(value) {
     var s = String(value).trim();
-    var v = /^0x/i.test(s) ? parseInt(s, 16) : parseInt(s, 10);
+    var v;
+    if (/^0x[0-9a-f]+$/i.test(s)) v = parseInt(s, 16);
+    else if (/^-?[0-9]+$/.test(s)) v = parseInt(s, 10);
+    else return null;
+    if (!Number.isFinite(v)) return null;
     return clamp(v, 0, 255) & 0xFF;
   }
 
@@ -3385,6 +3525,9 @@ window.OB64 = window.OB64 || {};
 
   // Section 2/3 allocation. Hard caps are structural RAM layout: 16 nodes (ids 0x04..0x13),
   // 16 extras (ids 0x01..0x10). Returns null when the mission is at cap.
+  // Section 3 runtime lookup is still scan-vs-arithmetic open because retail keeps
+  // extraId == row+1. The editor preserves that invariant on delete/serialize until a
+  // gapped-id live probe settles the runtime resolver.
   function allocNode(model, fields) {
     if (model.section2.length >= 16) return null;
     var nodeId = 4 + model.section2.length;
@@ -3408,7 +3551,13 @@ window.OB64 = window.OB64 || {};
 
   function allocExtra(model, kind, payload) {
     if (model.section3.length >= 16) return null;
-    var extraId = 1 + model.section3.length;
+    var used = {};
+    model.section3.forEach(function(extra) { used[extra.extraId] = true; });
+    var extraId = null;
+    for (var i = 1; i <= 16; i++) {
+      if (!used[i]) { extraId = i; break; }
+    }
+    if (extraId == null) return null;
     var bytes = new Array(10).fill(0);
     bytes[0] = extraId;
     bytes[1] = kind;
@@ -4499,5 +4648,17 @@ window.OB64 = window.OB64 || {};
     siteAllegianceCensus: siteAllegianceCensus,
     leaderClassHasMapSprite: leaderClassHasMapSprite,
     spritelessLeaderIssues: spritelessLeaderIssues,
+    _modelTest: {
+      resolvePointForRow: resolvePointForRow,
+      rowRuntime: rowRuntime,
+      parseByte: parseByte,
+      allocNode: allocNode,
+      allocExtra: allocExtra,
+      planDeleteTrigger: planDeleteTrigger,
+      applyDeleteTriggerPlan: applyDeleteTriggerPlan,
+      triggerRefNodes: triggerRefNodes,
+      describeExtra: describeExtra,
+      resetBuilderState: resetBuilderState,
+    },
   };
 })(window.OB64);
