@@ -1591,13 +1591,16 @@ window.OB64 = window.OB64 || {};
             if (OB64._squadChanged) OB64._squadChanged();
           }
         }
-        syncStructuralOffsets(model);
-        OB64.scenarioCodec.refreshDecodedRows(model);
+        var gc = runNodeGc(model);
+        if (!gc.changed) {
+          syncStructuralOffsets(model);
+          OB64.scenarioCodec.refreshDecodedRows(model);
+        }
         state.modifiedKeys[key] = true;
         changed();
         if (ui.selectedPoint === rowIndex) ui.selectedPoint = null;
         else if (ui.selectedPoint != null && ui.selectedPoint > rowIndex) ui.selectedPoint--;
-        ui.gateText = 'Squad removed from this mission (source ' + row.sourceId + ').';
+        ui.gateText = 'Squad removed from this mission (source ' + row.sourceId + ').' + (gc.message ? ' ' + gc.message : '');
         renderScenarioTab(document.getElementById('panel-scenario'));
       });
   }
@@ -1607,6 +1610,35 @@ window.OB64 = window.OB64 || {};
   function confirmThemed(title, message, confirmLabel, onConfirm) {
     if (OB64.showConfirmModal) OB64.showConfirmModal(title, message, onConfirm, confirmLabel);
     else if (window.confirm(message)) onConfirm();
+  }
+
+  function confirmIfSharedNode(rom, key, model, rowIndex, node, title, actionText, onConfirm) {
+    var refs = node ? nodeConsumerRows(model, node.nodeId) : [];
+    var others = otherSquadRefs(refs, rowIndex);
+    if (!others.length) { onConfirm(); return; }
+    confirmThemed(title,
+      actionText + '\n\nThis start node is shared. Affected squads: ' + formatSquadRefs(refs) + '.',
+      'Apply anyway',
+      onConfirm);
+  }
+
+  function confirmIfSharedExtra(rom, key, model, rowIndex, extraId, title, actionText, onConfirm) {
+    var refs = nodesUsedBySquads(model, triggerRefNodes(model, extraId));
+    var others = otherSquadRefs(refs, rowIndex);
+    if (!others.length) { onConfirm(); return; }
+    confirmThemed(title,
+      actionText + '\n\nThis trigger is shared. Affected squads: ' + formatSquadRefs(refs) + '.',
+      'Apply anyway',
+      onConfirm);
+  }
+
+  function replacementClause(replaced) {
+    return replaced ? ' (replaces ' + replaced + ')' : '';
+  }
+
+  function startGateStatus(triggerId, replaced) {
+    if (triggerId) return 'Advance gate set to E' + triggerId + replacementClause(replaced) + '.';
+    return 'Advance gate cleared' + replacementClause(replaced) + ' - route is now UNGATED (solid line): the unit may advance immediately. Use "Remove route" to make it hold position.';
   }
 
   function wireMarkerDrag(btn, rom, key, point, projection, zoom) {
@@ -1821,13 +1853,20 @@ window.OB64 = window.OB64 || {};
   // docs/enemy-system.md "Enemy movement / aggro AI".
   function templateHelp(tpl) {
     if (tpl === 'guard-site') return 'Sits where it deploys and fights only what reaches it - never moves, never chases. This is a SENTINEL: it uses NO node (the cheapest option). It has no orders, so it cannot sally - use "Attacks anyone who comes near" for that.';
-    if (tpl === 'guard-sally') return 'Sits at its post but attacks any player squad that comes within range (a "sally"). Uses ONE hold node with Wait = Initiate - a sentinel has no orders, so this is the node-backed version.';
+    if (tpl === 'guard-sally') return 'Sits at its post but attacks any player squad that comes within range (a "sally"). Uses ONE hold node with Wait = Initiate - a sentinel has no orders, so this is the node-backed version. Templates assert their Move/Wait orders; adjust Squad orders after applying if you want custom behavior.';
     if (tpl === 'march-chain') return 'PASSIVE: walks straight to the destination and ignores the player - it will NOT chase or intercept. For a marcher that attacks, use "Wait for trigger, then advance to destination" instead.';
-    if (tpl === 'wait-march') return 'Holds at its post until the trigger fires, then advances to the destination. The trigger gates the move from the hold node to the next waypoint; it does not activate the hold node itself. Needs an Advance trigger + a Destination.';
-    if (tpl === 'solo-ambush') return 'Hidden and inert until the trigger fires, then advances to the destination (pursues, like a vanilla ambush). The trigger gates the move from the ambush node to its next node. Needs an Advance trigger + a Destination.';
-    if (tpl === 'reinforce-remnant') return 'Stays out of the fight until <= N enemy squads remain, then deploys. Set the threshold below.';
+    if (tpl === 'wait-march') return 'Holds at its post until the trigger fires, then advances to the destination. The trigger gates the move from the hold node to the next waypoint; it does not activate the hold node itself. Needs an Advance trigger + a Destination. Templates assert their Move/Wait orders; adjust Squad orders after applying if you want custom behavior.';
+    if (tpl === 'solo-ambush') return 'Hidden and inert until the trigger fires, then advances to the destination (pursues, like a vanilla ambush). The trigger gates the move from the ambush node to its next node. Needs an Advance trigger + a Destination. Templates assert their Move/Wait orders; adjust Squad orders after applying if you want custom behavior.';
+    if (tpl === 'reinforce-remnant') return 'Stays out of the fight until <= N enemy squads remain, then deploys. Set the threshold below. Templates assert their Move/Wait orders; adjust Squad orders after applying if you want custom behavior.';
     if (tpl === 'camp-terminal') return 'Marches to the destination and camps there permanently (one-way).';
-    return 'Movement comes from NODES, not the unit. A squad attacks while moving only if it ADVANCES from a gated hold/ambush node to a waypoint - a plain "March to destination" is passive.';
+    return 'Movement comes from NODES, not the unit. A squad attacks while moving only if it ADVANCES from a gated hold/ambush node to a waypoint - a plain "March to destination" is passive. Templates assert their declared Move/Wait bytes; adjust Squad orders afterward for manual tweaks.';
+  }
+
+  function builderDestLabel(dest) {
+    if (!dest) return 'Pick on map';
+    if (dest.siteName) return 'Dest: ' + dest.siteName;
+    if (dest.selector != null) return 'Dest: site ' + dest.selector;
+    return 'Dest: ' + dest.x.toFixed(1) + ', ' + dest.z.toFixed(1);
   }
 
   var EXTRA_KIND_NAMES = {
@@ -1909,6 +1948,87 @@ window.OB64 = window.OB64 || {};
       if (uses) refs.push({ sourceId: row.sourceId, edat: (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1, rowIndex: idx, isStart: row.bytes[6] === nodeId });
     });
     return refs;
+  }
+
+  function rowSquadRef(row, idx) {
+    return {
+      sourceId: row && row.sourceId,
+      edat: row && row.bytes ? ((((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1) : null,
+      rowIndex: idx,
+    };
+  }
+
+  function walkNodeChainModel(model, startNodeId) {
+    var chain = [];
+    var seen = {};
+    var nodeId = startNodeId;
+    for (var hop = 0; hop < 20; hop++) {
+      if (!nodeId || nodeId === 0xFF || seen[nodeId]) break;
+      var node = nodeById(model, nodeId);
+      if (!node) break;
+      seen[nodeId] = true;
+      chain.push(node);
+      nodeId = node.bytes ? node.bytes[17] : 0;
+    }
+    return chain;
+  }
+
+  function nodeConsumerRows(model, nodeId) {
+    var refs = [];
+    (model.section1 || []).forEach(function(row, idx) {
+      if (!row.bytes) return;
+      var chain = walkNodeChainModel(model, row.bytes[6]);
+      var uses = row.bytes[6] === nodeId || chain.some(function(n) { return n.nodeId === nodeId; });
+      if (uses) {
+        var ref = rowSquadRef(row, idx);
+        ref.isStart = row.bytes[6] === nodeId;
+        refs.push(ref);
+      }
+    });
+    return refs;
+  }
+
+  function nodesUsedBySquads(model, nodeIds) {
+    var idSet = {};
+    (nodeIds || []).forEach(function(id) { idSet[id] = true; });
+    var refs = [];
+    (model.section1 || []).forEach(function(row, idx) {
+      if (!row.bytes) return;
+      var chain = walkNodeChainModel(model, row.bytes[6]);
+      var uses = idSet[row.bytes[6]] || chain.some(function(n) { return idSet[n.nodeId]; });
+      if (uses) refs.push(rowSquadRef(row, idx));
+    });
+    return refs;
+  }
+
+  function otherSquadRefs(refs, rowIndex) {
+    return (refs || []).filter(function(r) { return r.rowIndex !== rowIndex; });
+  }
+
+  function formatSquadRefs(refs) {
+    return (refs || []).map(function(r) {
+      return 'source ' + (r.sourceId != null ? r.sourceId : '?') + ' / EDAT ' + (r.edat != null ? r.edat : '?');
+    }).join(', ');
+  }
+
+  function gateSummaryFromBytes(b) {
+    if (!b || !b[10]) return '';
+    var out = 'E' + b[10];
+    if (b[11] === 2 && b[12]) out += ' AND E' + b[12];
+    else if (b[11] === 3 && b[12]) out += ' OR E' + b[12];
+    else if (b[11] === 1 && b[12]) out += ' ELSE E' + b[12];
+    return out;
+  }
+
+  function applyStartGateReplacement(model, rowIndex, triggerId) {
+    var row = model.section1[rowIndex];
+    var startNode = row && nodeById(model, row.bytes[6]);
+    if (!startNode) return { ok: false, message: 'No start node on this squad.' };
+    var replaced = gateSummaryFromBytes(startNode.bytes);
+    startNode.bytes[10] = triggerId ? (triggerId & 0xFF) : 0;
+    startNode.bytes[11] = 0;
+    startNode.bytes[12] = 0;
+    return { ok: true, node: startNode, replaced: replaced };
   }
 
   // Per-squad route colors: line TYPE (solid/dashed) encodes gated-ness, COLOR identifies the
@@ -2557,6 +2677,112 @@ window.OB64 = window.OB64 || {};
     return model;
   }
 
+  function liveExtraIdMap(model) {
+    var out = {};
+    (model.section3 || []).forEach(function(extra) { out[extra.extraId] = true; });
+    return out;
+  }
+
+  function isNodeDomainValue(value) {
+    return value >= 4 && value <= 0x13;
+  }
+
+  function planNodeGc(model) {
+    var nodeIds = liveNodeIdMap(model);
+    var extraIds = liveExtraIdMap(model);
+    var referenced = {};
+    (model.section1 || []).forEach(function(row) {
+      var start = row.bytes && row.bytes[6];
+      if (nodeIds[start]) referenced[start] = true;
+    });
+    (model.section2 || []).forEach(function(node) {
+      var b = node.bytes || [];
+      if (isNodeDomainValue(b[17]) && nodeIds[b[17]]) referenced[b[17]] = true;
+      if (b[11] === 1 && nodeIds[b[16]]) referenced[b[16]] = true;
+    });
+    var removed = [];
+    var survivors = [];
+    (model.section2 || []).forEach(function(node) {
+      if (referenced[node.nodeId]) survivors.push(node);
+      else removed.push(node);
+    });
+    if (!survivors.length && removed.length) {
+      return {
+        blocked: true,
+        changed: false,
+        removed: removed.map(function(n) { return n.nodeId; }),
+        idMap: {},
+        message: 'Node cleanup skipped: Section 2 must keep at least one node row for this ESET format.',
+      };
+    }
+    if (!removed.length) return { blocked: false, changed: false, removed: [], idMap: {} };
+    var idMap = {};
+    survivors.forEach(function(node, i) { idMap[node.nodeId] = 4 + i; });
+    var ambiguous = [];
+    survivors.forEach(function(node) {
+      var next = node.bytes && node.bytes[17];
+      if (idMap[next] != null && idMap[next] !== next && next >= 4 && next <= 0x10 && extraIds[next]) {
+        ambiguous.push({ nodeId: node.nodeId, value: next, mapped: idMap[next] });
+      }
+    });
+    if (ambiguous.length) {
+      return {
+        blocked: true,
+        changed: false,
+        removed: removed.map(function(n) { return n.nodeId; }),
+        idMap: idMap,
+        ambiguous: ambiguous,
+        message: 'Node cleanup skipped: Section-2 [17] on node ' +
+          ambiguous.map(function(a) { return a.nodeId + ' has overlap value ' + a.value; }).join(', ') +
+          ', which is both a node id and a trigger id.',
+      };
+    }
+    return {
+      blocked: false,
+      changed: true,
+      removed: removed.map(function(n) { return n.nodeId; }),
+      survivors: survivors,
+      idMap: idMap,
+      message: 'Node cleanup removed orphan node' + (removed.length === 1 ? '' : 's') + ' ' +
+        removed.map(function(n) { return n.nodeId; }).join(', ') + '.',
+    };
+  }
+
+  function remapNodeRefByte(b, off, idMap) {
+    if (idMap[b[off]] != null) b[off] = idMap[b[off]];
+  }
+
+  function applyNodeGcPlan(model, plan) {
+    if (!plan || plan.blocked || !plan.changed) return { changed: false, skipped: !!(plan && plan.blocked), message: plan && plan.message };
+    var idMap = plan.idMap || {};
+    (model.section1 || []).forEach(function(row) {
+      if (row.bytes) remapNodeRefByte(row.bytes, 6, idMap);
+    });
+    var survivors = (plan.survivors || []).map(function(node) { return node; });
+    survivors.forEach(function(node) {
+      var b = node.bytes || [];
+      remapNodeRefByte(b, 17, idMap);
+      if (b[11] === 1) remapNodeRefByte(b, 16, idMap);
+    });
+    model.section2 = survivors;
+    model.section2.forEach(function(node, i) {
+      node.row = i;
+      node.nodeId = 4 + i;
+      node.bytes[0] = node.nodeId;
+      node.kind = node.bytes[1];
+    });
+    syncStructuralOffsets(model);
+    OB64.scenarioCodec.refreshDecodedRows(model);
+    resetBuilderState();
+    return { changed: true, skipped: false, removed: plan.removed || [], message: plan.message };
+  }
+
+  function runNodeGc(model) {
+    var plan = planNodeGc(model);
+    if (plan.blocked || !plan.changed) return { changed: false, skipped: !!plan.blocked, message: plan.message };
+    return applyNodeGcPlan(model, plan);
+  }
+
   function nodeKindName(k) {
     return k === 0 ? 'hold' : k === 1 ? 'waypoint' : k === 2 ? 'ambush' : 'kind ' + k;
   }
@@ -3091,7 +3317,7 @@ window.OB64 = window.OB64 || {};
       '</select></div>' +
       '<div class="sc-form-row"><label class="sc-label">Destination</label>' +
       '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">' +
-      (bld.dest ? 'Dest: ' + bld.dest.x.toFixed(1) + ', ' + bld.dest.z.toFixed(1) : 'Pick on map') +
+      esc(builderDestLabel(bld.dest)) +
       '</button></div>' +
       // Threshold N = the parameter of the kind-9 squads-remaining predicate; only rendered
       // where it applies (the Reinforce template, or live-editing an existing kind-9 gate).
@@ -3311,14 +3537,16 @@ window.OB64 = window.OB64 || {};
       if (!bld.template) return;
       var trigRaw = bld.trigger != null ? bld.trigger : (curGate0 ? String(curGate0) : '');
       var triggerId = trigRaw && trigRaw !== 'new-rect' ? (parseInt(trigRaw, 10) || 0) : 0;
-      var err = applyTemplate(model, rowIndex, bld.template, calibrationData(key), {
+      var applyParams = {
         trigger: triggerId,
         dest: bld.dest,
         threshold: bld.threshold != null ? bld.threshold : curThresh0,
         owned: bld.owned,
-      });
+      };
+      var err = applyTemplate(model, rowIndex, bld.template, calibrationData(key), applyParams);
       if (err) { msg(err, false); return; }
-      msg('Live: behavior updated.', true);
+      if (applyParams.gcResult && applyParams.gcResult.changed) bld = builderFor(key, rowIndex);
+      msg('Live: behavior updated.' + (applyParams.gcResult && applyParams.gcResult.message ? ' ' + applyParams.gcResult.message : ''), true);
       commitScenarioEdit(rom, key);
     };
     var tplSelEl = el.querySelector('#sc-template');
@@ -3337,9 +3565,13 @@ window.OB64 = window.OB64 || {};
       if (curGate0) {
         var ex = model.section3.filter(function(x) { return x.extraId === curGate0; })[0];
         if (ex && ex.kind === 9) {
-          ex.bytes[6] = bld.threshold & 0xFF;
-          msg('E' + ex.extraId + ' threshold set to ' + bld.threshold + '.', true);
-          commitScenarioEdit(rom, key);
+          confirmIfSharedExtra(rom, key, model, rowIndex, ex.extraId, 'Edit shared trigger threshold',
+            'Set E' + ex.extraId + ' threshold to ' + bld.threshold + '?',
+            function() {
+              ex.bytes[6] = bld.threshold & 0xFF;
+              msg('E' + ex.extraId + ' threshold set to ' + bld.threshold + '.', true);
+              commitScenarioEdit(rom, key);
+            });
         }
       }
     };
@@ -3381,12 +3613,12 @@ window.OB64 = window.OB64 || {};
           if (d < best) { best = d; snapped = site; }
         });
         if (snapped && best < SNAP_SCREEN_PX / Math.max(0.05, zoom)) {
-          world = { x: snapped.x, z: snapped.z };
+          world = { x: snapped.x, z: snapped.z, selector: snapped.selector, siteName: (snapped.siteName || ('site ' + snapped.selector)).trim() };
         } else {
           snapped = null;
         }
         bld.dest = world;
-        destBtn.textContent = 'Dest: ' + world.x.toFixed(1) + ', ' + world.z.toFixed(1);
+        destBtn.textContent = builderDestLabel(world);
         ghost.classList.add('set');
         setTimeout(function() { ghost.remove(); }, 450);
         msg(snapped ? 'Destination set on ' + snapped.siteName + '.' : 'Destination set.', true);
@@ -3399,38 +3631,63 @@ window.OB64 = window.OB64 || {};
     var trigSelEl = el.querySelector('#sc-tpl-trigger');
     if (trigSelEl) trigSelEl.onchange = function() {
       bld.trigger = this.value;
+      var setCurrentStartGate = function(triggerId) {
+        var startNode = nodeById(model, model.section1[rowIndex].bytes[6]);
+        if (!startNode) { msg('No start node on this squad - pick a template first.', false); return; }
+        var replaced = gateSummaryFromBytes(startNode.bytes);
+        var action = (triggerId ? 'Set this squad\'s advance gate to E' + triggerId : 'Clear this squad\'s advance gate') +
+          replacementClause(replaced) + '?';
+        confirmIfSharedNode(rom, key, model, rowIndex, startNode, 'Edit shared advance gate', action, function() {
+          var result = applyStartGateReplacement(model, rowIndex, triggerId);
+          if (!result.ok) { msg(result.message, false); return; }
+          bld.trigger = null; // baked in
+          msg(startGateStatus(triggerId, result.replaced), true);
+          commitScenarioEdit(rom, key);
+        });
+      };
       if (this.value === 'new-rect') {
         drawRectOnMap(rom, key, msg, function(rect) {
-          var extra = allocExtra(model, 1, rect);
-          if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
-          bld.trigger = String(extra.extraId);
           if (bld.template) {
+            var extra = allocExtra(model, 1, rect);
+            if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
+            bld.trigger = String(extra.extraId);
             msg('E' + extra.extraId + ' created.', true);
             liveApply();
             return;
           }
           var startNodeA = nodeById(model, model.section1[rowIndex].bytes[6]);
-          if (!startNodeA) { msg('E' + extra.extraId + ' created - pick a template to use it.', false); commitScenarioEdit(rom, key); return; }
-          startNodeA.bytes[10] = extra.extraId;
-          bld.trigger = null; // baked into the node; form reflects the new current gate
-          msg('E' + extra.extraId + ' created and set as the advance gate.', true);
-          commitScenarioEdit(rom, key);
+          if (!startNodeA) {
+            var loose = allocExtra(model, 1, rect);
+            if (!loose) { msg('Section 3 is at its 16-extra cap', false); return; }
+            msg('E' + loose.extraId + ' created - pick a template to use it.', false);
+            commitScenarioEdit(rom, key);
+            return;
+          }
+          var replaced = gateSummaryFromBytes(startNodeA.bytes);
+          confirmIfSharedNode(rom, key, model, rowIndex, startNodeA, 'Edit shared advance gate',
+            'Create a new player-rect trigger and set it as this squad\'s advance gate' + replacementClause(replaced) + '?',
+            function() {
+              var extra = allocExtra(model, 1, rect);
+              if (!extra) { msg('Section 3 is at its 16-extra cap', false); return; }
+              var result = applyStartGateReplacement(model, rowIndex, extra.extraId);
+              if (!result.ok) { msg(result.message, false); return; }
+              bld.trigger = null; // baked into the node; form reflects the new current gate
+              msg('E' + extra.extraId + ' created and set as the advance gate' + replacementClause(result.replaced) + '.', true);
+              commitScenarioEdit(rom, key);
+            });
         });
         return;
       }
       if (bld.template) { liveApply(); return; }
-      var startNode = nodeById(model, model.section1[rowIndex].bytes[6]);
-      if (!startNode) { msg('No start node on this squad - pick a template first.', false); return; }
-      startNode.bytes[10] = this.value ? parseInt(this.value, 10) : 0;
-      bld.trigger = null; // baked in
-      msg(this.value ? 'Advance gate set to E' + this.value : 'Advance gate cleared - route is now UNGATED (solid line): the unit may advance immediately. Use "Remove route" to make it hold position.', true);
-      commitScenarioEdit(rom, key);
+      setCurrentStartGate(this.value ? (parseInt(this.value, 10) || 0) : 0);
     };
     var clearRoute = el.querySelector('#sc-tpl-clear-route');
     if (clearRoute) clearRoute.onclick = function() {
       model.section1[rowIndex].bytes[6] = 1; // +0xBA = 1: hold position, no route
+      var gc = runNodeGc(model);
       bld.template = '';
-      msg('Route removed - unit guards its position.', true);
+      if (gc.changed) bld = builderFor(key, rowIndex);
+      msg('Route removed - unit guards its position.' + (gc.message ? ' ' + gc.message : ''), true);
       commitScenarioEdit(rom, key);
     };
     var adv = el.querySelector('#sc-advanced');
@@ -3643,6 +3900,41 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function writeNodeFields(node, fields) {
+    fields = fields || {};
+    var b = node.bytes;
+    var kind = fields.kind || 0;
+    b[1] = kind;
+    if (kind === 1) {
+      b[2] = fields.subtype != null ? (fields.subtype & 0xFF) : 0;
+      b[3] = fields.selectorOffset != null ? (fields.selectorOffset & 0xFF) : 0;
+    } else {
+      b[2] = fields.moveOrder != null ? (fields.moveOrder & 0xFF) : 0;
+      b[3] = fields.waitOrder != null ? (fields.waitOrder & 0xFF) : 0;
+    }
+    b[4] = 0;
+    b[5] = 0;
+    if (fields.coordBytes) {
+      b[4] = fields.coordBytes[0] & 0xFF;
+      b[5] = Math.max(1, fields.coordBytes[1] & 0xFF);
+    }
+    if (fields.siteSelector != null) {
+      b[3] = 0;
+      b[4] = fields.siteSelector & 0xFF;
+      b[5] = 0;
+    }
+    b[10] = fields.gateExtra || 0;
+    b[11] = fields.gateOp || 0;
+    b[12] = fields.gateExtraB || 0;
+    b[13] = 0;
+    b[14] = 0;
+    b[15] = 0;
+    b[16] = fields.forkNode || 0;
+    b[17] = fields.next != null ? fields.next : 0;
+    node.kind = b[1];
+    return node;
+  }
+
   // Section 2/3 allocation. Hard caps are structural RAM layout: 16 nodes (ids 0x04..0x13),
   // 16 extras (ids 0x01..0x10). Returns null when the mission is at cap.
   // Section 3 runtime lookup is still scan-vs-arithmetic open because retail keeps
@@ -3653,17 +3945,8 @@ window.OB64 = window.OB64 || {};
     var nodeId = 4 + model.section2.length;
     var bytes = new Array(18).fill(0);
     bytes[0] = nodeId;
-    bytes[1] = fields.kind || 0;
-    bytes[2] = fields.subtype || 0;
-    // Waypoint pair lives at [4],[5]: selector mode = ([4]=selector, [5]=0); coordinate mode
-    // keeps [5] >= 1 so it cannot misread as a selector.
-    if (fields.coordBytes) { bytes[4] = fields.coordBytes[0]; bytes[5] = Math.max(1, fields.coordBytes[1]); }
-    if (fields.siteSelector) { bytes[4] = fields.siteSelector & 0xFF; bytes[5] = 0; }
-    bytes[10] = fields.gateExtra || 0;
-    bytes[11] = fields.gateOp || 0;
-    bytes[12] = fields.gateExtraB || 0;
-    bytes[17] = fields.next != null ? fields.next : 0;
     var node = { nodeId: nodeId, kind: bytes[1], bytes: bytes };
+    writeNodeFields(node, fields);
     model.section2.push(node);
     syncStructuralOffsets(model);
     return node;
@@ -3970,35 +4253,79 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  // Owned-slot writers for the live behavior builder: the first application allocates, every
-  // later one REWRITES the same node/extra in place (same id, new kind/waypoint/gate/next), so
-  // live template/trigger/dest/threshold changes never leak Section 2/3 records.
-  function ownedNodeWrite(model, owned, slot, fields) {
-    var node = owned[slot] != null ? nodeById(model, owned[slot]) : null;
+  function nodeExclusiveToRow(model, nodeId, rowIndex) {
+    var refs = nodeConsumerRows(model, nodeId);
+    return refs.length === 1 && refs[0].rowIndex === rowIndex;
+  }
+
+  function deriveTemplateReuse(model, rowIndex, owned) {
+    var reuse = { slots: {}, used: {} };
+    owned = owned || {};
+    function claim(slot, node) {
+      if (!node || reuse.slots[slot] || reuse.used[node.nodeId]) return;
+      if (!nodeExclusiveToRow(model, node.nodeId, rowIndex)) return;
+      reuse.slots[slot] = node.nodeId;
+      reuse.used[node.nodeId] = true;
+    }
+    ['gate', 'dest'].forEach(function(slot) {
+      var ownedNode = owned[slot] != null ? nodeById(model, owned[slot]) : null;
+      claim(slot, ownedNode);
+    });
+    var row = model.section1[rowIndex];
+    var chain = row && row.bytes ? walkNodeChainModel(model, row.bytes[6]) : [];
+    chain.forEach(function(node, i) {
+      if (i === 0 && (node.kind === 0 || node.kind === 2)) claim('gate', node);
+      if (node.kind === 1) claim('dest', node);
+    });
+    return reuse;
+  }
+
+  function claimTemplateNode(model, owned, slot, reuse) {
+    var nodeId = reuse && reuse.slots ? reuse.slots[slot] : null;
+    var node = nodeId != null ? nodeById(model, nodeId) : null;
+    if (node) {
+      owned[slot] = node.nodeId;
+      return node;
+    }
+    return null;
+  }
+
+  function extraById(model, extraId) {
+    return (model.section3 || []).filter(function(x) { return x.extraId === extraId; })[0] || null;
+  }
+
+  function extraExclusiveToRow(model, extraId, rowIndex) {
+    var refNodes = triggerRefNodes(model, extraId);
+    var refs = nodesUsedBySquads(model, refNodes);
+    return otherSquadRefs(refs, rowIndex).length === 0;
+  }
+
+  function reusableExtra9ForRow(model, rowIndex, owned) {
+    var ownedExtra = owned && owned.extra != null ? extraById(model, owned.extra) : null;
+    if (ownedExtra && ownedExtra.kind === 9 && extraExclusiveToRow(model, ownedExtra.extraId, rowIndex)) return ownedExtra.extraId;
+    var row = model.section1[rowIndex];
+    var startNode = row && row.bytes ? nodeById(model, row.bytes[6]) : null;
+    var gateId = startNode && startNode.bytes ? startNode.bytes[10] : 0;
+    var gateExtra = gateId ? extraById(model, gateId) : null;
+    if (gateExtra && gateExtra.kind === 9 && extraExclusiveToRow(model, gateExtra.extraId, rowIndex)) return gateExtra.extraId;
+    return null;
+  }
+
+  // Owned-slot writers for the live behavior builder. Same-session ownership is only a fast
+  // path now: before allocation, templates also derive reusable nodes from the squad's current
+  // exclusive chain, so re-selecting and re-applying cannot leak orphan nodes.
+  function ownedNodeWrite(model, owned, slot, fields, reuse) {
+    var node = claimTemplateNode(model, owned, slot, reuse);
     if (!node) {
       node = allocNode(model, fields);
       if (node) owned[slot] = node.nodeId;
       return node;
     }
-    var b = node.bytes;
-    b[1] = fields.kind || 0;
-    b[2] = fields.subtype || 0;
-    b[4] = 0;
-    b[5] = 0;
-    if (fields.coordBytes) { b[4] = fields.coordBytes[0]; b[5] = Math.max(1, fields.coordBytes[1]); }
-    if (fields.siteSelector != null) { b[4] = fields.siteSelector & 0xFF; b[5] = 0; }
-    b[10] = fields.gateExtra || 0;
-    b[11] = fields.gateOp || 0;
-    b[12] = fields.gateExtraB || 0;
-    b[17] = fields.next != null ? fields.next : 0;
-    node.kind = b[1];
-    return node;
+    return writeNodeFields(node, fields);
   }
 
-  function ownedExtra9Write(model, owned, threshold) {
-    var extra = owned.extra != null
-      ? model.section3.filter(function(x) { return x.extraId === owned.extra; })[0]
-      : null;
+  function ownedExtra9Write(model, owned, threshold, reusableExtraId) {
+    var extra = reusableExtraId != null ? extraById(model, reusableExtraId) : null;
     if (!extra) {
       extra = allocExtra(model, 9, [0, 0, 0, 0, clamp(threshold || 4, 1, 30)]);
       if (extra) owned.extra = extra.extraId;
@@ -4014,74 +4341,90 @@ window.OB64 = window.OB64 || {};
     return extra;
   }
 
+  function templateDestinationFields(cal, dest, next) {
+    if (!dest) return null;
+    var fields = { kind: 1, subtype: 2, next: next != null ? next : 0 };
+    if (dest.selector != null) fields.siteSelector = dest.selector;
+    else fields.coordBytes = worldToBytePair(cal, dest.x, dest.z);
+    return fields;
+  }
+
   // Behavior templates write the DECODED grammar:
   //   Section 1 byte [6] = start node id (object +0xBA); kind-2 start node => spawns dormant
   //   (loader clears the active bit - the ambush mechanism); node byte [10]/[11]/[12] = compound
   //   gate; node byte [17] = next node (0xFF = permanent camp); coordinate waypoints are kind 1
   //   subtype 2 with bounds-normalized byte coords in [4],[5] ([5] kept >= 1 so it cannot
   //   misread as a selector).
-  // params: { trigger: extraId|0, dest: {x,z}|null, threshold: n, owned: builder owned slots }
+  // params: { trigger: extraId|0, dest: {x,z,selector?}|null, threshold: n, owned: builder owned slots }
   function applyTemplate(model, rowIndex, template, cal, params) {
     var row = model.section1[rowIndex];
     if (!template) return 'no template';
     params = params || {};
     var owned = params.owned || { dest: null, gate: null, extra: null };
-    var destBytes = params.dest ? worldToBytePair(cal, params.dest.x, params.dest.z) : null;
+    var reuse = deriveTemplateReuse(model, rowIndex, owned);
+    var destFields = templateDestinationFields(cal, params.dest, 0);
 
     if (template === 'guard-site' || template === 'guard-coordinate') {
       row.bytes[6] = 1; // +0xBA = 1: no route, hold position (scripted-tier idle convention)
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'guard-sally') {
       // A STATIONARY hold node (kind 0) with Wait = Initiate, so it attacks nearby player squads.
       // Unlike the sentinel above this needs a node - a sentinel ([6]=1) has no orders to carry.
-      var sally = ownedNodeWrite(model, owned, 'gate', { kind: 0, next: 0 });
+      var sally = ownedNodeWrite(model, owned, 'gate', { kind: 0, moveOrder: 0, waitOrder: 1, next: 0 }, reuse);
       if (!sally) return 'Section 2 is at its 16-node cap';
-      sally.bytes[3] = 1; // Wait = Initiate (sally)
       row.bytes[6] = sally.nodeId;
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'march-chain') {
-      if (!destBytes) return 'march needs a destination - click Destination, then the map';
-      var dest = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      if (!destFields) return 'march needs a destination - click Destination, then the map';
+      var dest = ownedNodeWrite(model, owned, 'dest', destFields, reuse);
       if (!dest) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = dest.nodeId;
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'wait-march') {
-      if (!destBytes) return 'wait-march needs a destination - click Destination, then the map';
+      if (!destFields) return 'wait-march needs a destination - click Destination, then the map';
       if (!params.trigger) return 'wait-march needs an advance trigger - pick one in Advance trigger';
-      var wDest = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 });
+      var wDest = ownedNodeWrite(model, owned, 'dest', destFields, reuse);
       if (!wDest) return 'Section 2 is at its 16-node cap';
-      var hold = ownedNodeWrite(model, owned, 'gate', { kind: 0, gateExtra: params.trigger, next: wDest.nodeId });
+      var hold = ownedNodeWrite(model, owned, 'gate', { kind: 0, moveOrder: 0, waitOrder: 0, gateExtra: params.trigger, next: wDest.nodeId }, reuse);
       if (!hold) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = hold.nodeId;
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'solo-ambush') {
       if (!params.trigger) return 'ambush needs an advance trigger - pick one in Advance trigger';
-      var order = destBytes ? ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
+      var order = destFields ? ownedNodeWrite(model, owned, 'dest', destFields, reuse) : null;
       var lair = ownedNodeWrite(model, owned, 'gate', {
-        kind: 2, gateExtra: params.trigger, next: order ? order.nodeId : 1,
-      });
+        kind: 2, moveOrder: 0, waitOrder: 0, gateExtra: params.trigger, next: order ? order.nodeId : 1,
+      }, reuse);
       if (!lair) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = lair.nodeId; // kind-2 start => spawns dormant, wakes via path B with orders
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'reinforce-remnant') {
-      var extra = ownedExtra9Write(model, owned, params.threshold);
+      var extra = ownedExtra9Write(model, owned, params.threshold, reusableExtra9ForRow(model, rowIndex, owned));
       if (!extra) return 'Section 3 is at its 16-extra cap';
-      var rDest = destBytes ? ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0 }) : null;
-      var gate = ownedNodeWrite(model, owned, 'gate', { kind: 2, gateExtra: extra.extraId, next: rDest ? rDest.nodeId : 1 });
+      var rDest = destFields ? ownedNodeWrite(model, owned, 'dest', destFields, reuse) : null;
+      var gate = ownedNodeWrite(model, owned, 'gate', { kind: 2, moveOrder: 0, waitOrder: 0, gateExtra: extra.extraId, next: rDest ? rDest.nodeId : 1 }, reuse);
       if (!gate) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = gate.nodeId;
+      params.gcResult = runNodeGc(model);
       return null;
     }
     if (template === 'camp-terminal') {
-      if (!destBytes) return 'camp needs a destination - click Destination, then the map';
-      var camp = ownedNodeWrite(model, owned, 'dest', { kind: 1, subtype: 2, coordBytes: destBytes, next: 0xFF });
+      var campFields = templateDestinationFields(cal, params.dest, 0xFF);
+      if (!campFields) return 'camp needs a destination - click Destination, then the map';
+      var camp = ownedNodeWrite(model, owned, 'dest', campFields, reuse);
       if (!camp) return 'Section 2 is at its 16-node cap';
       row.bytes[6] = camp.nodeId;
+      params.gcResult = runNodeGc(model);
       return null;
     }
     return 'unknown template';
@@ -4304,12 +4647,15 @@ window.OB64 = window.OB64 || {};
       delete rom.squadOverrides[key + ':' + entry.edatId];
       if (OB64._squadChanged) OB64._squadChanged();
     }
-    syncStructuralOffsets(model);
-    OB64.scenarioCodec.refreshDecodedRows(model);
+    var gc = runNodeGc(model);
+    if (!gc.changed) {
+      syncStructuralOffsets(model);
+      OB64.scenarioCodec.refreshDecodedRows(model);
+    }
     state.modifiedKeys[key] = true;
     changed();
     ui.selectedPoint = null;
-    ui.gateText = 'Added squad removed (source ' + entry.sourceId + ' / edat ' + entry.edatId + ').';
+    ui.gateText = 'Added squad removed (source ' + entry.sourceId + ' / edat ' + entry.edatId + ').' + (gc.message ? ' ' + gc.message : '');
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
 
@@ -4875,6 +5221,11 @@ window.OB64 = window.OB64 || {};
       parseByte: parseByte,
       allocNode: allocNode,
       allocExtra: allocExtra,
+      applyTemplate: applyTemplate,
+      planNodeGc: planNodeGc,
+      applyNodeGcPlan: applyNodeGcPlan,
+      runNodeGc: runNodeGc,
+      applyStartGateReplacement: applyStartGateReplacement,
       planDeleteTrigger: planDeleteTrigger,
       applyDeleteTriggerPlan: applyDeleteTriggerPlan,
       triggerRefNodes: triggerRefNodes,
