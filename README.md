@@ -110,9 +110,11 @@ project download asset.
   registrations, while internal/no-image keys keep the schematic fallback.
   Enemy squads appear as draggable portrait markers; click a squad to edit its
   composition and formation in the sidebar (the former Squads tab, embedded);
-  drag-draw movement routes with editable waypoints; edit triggers/gates
-  (player-at-site, site flags, squads-remaining thresholds, AND/OR compound
-  gates) through a live behavior builder — changes apply as you make them.
+  drag-draw movement routes with editable waypoints. The squad detail links to
+  its shared route nodes, and clicking a linked node opens the node editor for
+  exact movement, gate, and waypoint-target edits. Squad-level Behavior
+  templates are limited to row-local guard/sally presets so shared node edits do
+  not look like one-EDAT-only changes.
   Buried treasure can be added, removed, or moved on the map using the Shops
   item icons. **Add Squad** places entirely new enemy squads on a mission using
   verified donor records plus the scenario-gated runtime override lane, and

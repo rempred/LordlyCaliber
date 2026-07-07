@@ -17,6 +17,7 @@ window.OB64 = window.OB64 || {};
     viewMode: 'auto',
     zoom: 0.45,
     advanced: false,
+    helpOpen: true,
     layers: { squads: true, sites: true, routes: true, triggers: true, treasure: true },
     gateText: '',
   };
@@ -137,7 +138,8 @@ window.OB64 = window.OB64 || {};
       // Parchment/stone button theme (mirrors .header-buttons in style.css) for every scenario
       // control that previously fell through to browser-default white.
       '#panel-scenario .sc-actions button,#panel-scenario .sc-actions label,#panel-scenario .sc-inline-btn{font-family:var(--ob-display);letter-spacing:.6px;text-transform:uppercase;padding:0 12px;color:var(--ob-ink);background:linear-gradient(180deg,var(--ob-parchment) 0%,var(--ob-parchment-2) 55%,var(--ob-parchment-3) 100%);border:1px solid var(--ob-wood-darkest);cursor:pointer;text-shadow:0 1px 0 rgba(255,240,200,.45);box-shadow:inset 0 1px 0 rgba(255,245,210,.65),inset 0 -2px 0 rgba(122,81,32,.45),0 2px 3px rgba(0,0,0,.35);transition:filter .12s,transform .04s}',
-      '#panel-scenario .sc-inline-btn{height:28px;border-radius:5px;font-size:var(--ob-text-xs);font-weight:800;display:inline-flex;align-items:center}',
+      '#panel-scenario .sc-inline-btn{height:28px;border-radius:5px;font-size:var(--ob-text-xs);font-weight:800;display:inline-flex;align-items:center;justify-content:center;text-align:center}',
+      '#panel-scenario .sc-node-edit-btn{width:100%;min-width:0}',
       '#panel-scenario .sc-actions button:hover,#panel-scenario .sc-actions label:hover,#panel-scenario .sc-inline-btn:hover{filter:brightness(1.08)}',
       '#panel-scenario .sc-actions button:active,#panel-scenario .sc-actions label:active,#panel-scenario .sc-inline-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 3px rgba(80,50,20,.55),0 1px 2px rgba(0,0,0,.35)}',
       '#panel-scenario .sc-danger{color:var(--ob-wax-red);border-color:var(--ob-wax-red);background:linear-gradient(180deg,var(--ob-parchment-2) 0%,var(--ob-parchment-3) 100%)}',
@@ -1757,7 +1759,7 @@ window.OB64 = window.OB64 || {};
       var sel = node.bytes[4] - node.bytes[3];
       if (sel <= 0) return null; // selector-0 sentinel; semantics undecoded, render unresolved
       var site = (ensureState(rom).sites[key] || []).filter(function(s) { return s.selector === sel; })[0];
-      return site ? { x: site.x, z: site.z, siteName: site.siteName, selector: site.selector } : null;
+      return site ? { x: site.x, z: site.z, siteName: (site.siteName || site.name || '').trim(), selector: site.selector } : null;
     }
     var b = calibrationData(key) && calibrationData(key).boundsWorld;
     if (!b) return null;
@@ -3028,7 +3030,7 @@ window.OB64 = window.OB64 || {};
     ]);
     // Newcomer guide: the scenario model + the one non-obvious rule + copy-paste recipes. Collapsible
     // (native <details>), open by default so a first-time user is oriented before they touch anything.
-    html += '<details class="sc-help" open style="border:1px solid var(--sc-line);border-radius:6px;padding:8px 10px;margin:0 0 12px;background:var(--sc-panel)">' +
+    html += '<details class="sc-help"' + (ui.helpOpen ? ' open' : '') + ' style="border:1px solid var(--sc-line);border-radius:6px;padding:8px 10px;margin:0 0 12px;background:var(--sc-panel)">' +
       '<summary style="cursor:pointer;font-weight:800;color:var(--ob-ink)">❓ How scenarios work — start here</summary>' +
       '<div class="sc-sub" style="margin-top:8px;line-height:1.5">' +
         '<p style="margin:0 0 6px">A scenario is a set of enemy squads placed on a mission map. Pick a scenario key on the left, select a squad, then choose its <b>Behavior</b>. The map shows where each squad starts and any route or trigger logic attached to it.</p>' +
@@ -3153,6 +3155,8 @@ window.OB64 = window.OB64 || {};
       html += '</div></div>';
     }
     el.innerHTML = html;
+    var help = el.querySelector('.sc-help');
+    if (help) help.ontoggle = function() { ui.helpOpen = !!this.open; };
     el.querySelectorAll('.sc-treasure-row').forEach(function(row) {
       row.onclick = function(ev) {
         if (ev.target.classList && ev.target.classList.contains('sc-treasure-row-del')) return;
@@ -3348,54 +3352,22 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
       '<div id="sc-comp-host"></div></div>';
     html += '<div class="sc-section"><span class="sc-label">Placement</span>' + placementEditorHtml(rom, key, row, point) + '</div>';
-    // Reflect the squad's CURRENT gate/threshold in the builder controls.
-    var curStartNode = nodeById(model, row.bytes[6]);
-    var curGate = curStartNode ? (curStartNode.bytes[10] || 0) : 0;
-    var curGateStr = curGate ? String(curGate) : '';
-    var curThresh = 4;
-    var curGateIsThreshold = false;
-    if (curGate) {
-      var curExtra = model.section3.filter(function(x) { return x.extraId === curGate; })[0];
-      if (curExtra && curExtra.kind === 9) {
-        curThresh = curExtra.bytes[6] || 4;
-        curGateIsThreshold = true;
-      }
-    }
     var bld = builderFor(key, rowIndex);
     var selTemplate = bld.template || '';
-    var selTrigger = bld.trigger != null ? bld.trigger : curGateStr;
-    var selThresh = bld.threshold != null ? bld.threshold : curThresh;
-    html += '<div class="sc-section"><span class="sc-label">Behavior</span>' +
+    if (selTemplate !== 'guard-site' && selTemplate !== 'guard-sally') {
+      selTemplate = '';
+      bld.template = '';
+    }
+    var behaviorHtml = '<div class="sc-section"><span class="sc-label">Behavior templates</span>' +
+      '<div class="sc-sub"><b>Preferred workflow:</b> set this EDAT row\'s <b>Start node</b>, then click a <b>Linked node</b> or <b>Edit node</b> for exact movement, gates, and waypoint targets. These templates only set row-local guard/sally presets; they are not the preferred way to fine-tune EDAT behavior.</div>' +
       '<div class="sc-sub">Now: <b>' + esc(describeBehavior(rom, key, model, row)) + '</b></div>' +
       '<div class="sc-form-row"><label class="sc-label">Set to</label><select id="sc-template">' +
       option('', '- pick a behavior to apply -', selTemplate) +
       option('guard-site', 'Guard - hold position (dumb, no node)', selTemplate) +
       option('guard-sally', 'Attacks anyone who comes near (stays put)', selTemplate) +
-      option('march-chain', 'March to destination (passive - ignores you)', selTemplate) +
-      option('wait-march', 'Wait for trigger, then advance to destination', selTemplate) +
-      option('solo-ambush', 'Ambush - hidden until trigger, then advances', selTemplate) +
-      option('reinforce-remnant', 'Reinforce when N squads remain', selTemplate) +
-      option('camp-terminal', 'March + permanent camp', selTemplate) +
       '</select></div>' +
       '<div id="sc-tpl-help" class="sc-sub" style="margin-top:2px">' + esc(templateHelp(selTemplate)) + '</div>' +
-      '<div class="sc-sub"><b>Trigger here is an advance gate:</b> it controls when the squad leaves its current start node for the next node, not when the current node activates.</div>' +
-      '<div class="sc-form-row"><label class="sc-label" title="Condition required before this squad advances from its current start node to the next node">Advance trigger</label><select id="sc-tpl-trigger">' +
-      option('', 'None', selTrigger) +
-      model.section3.map(function(x) {
-        return option(String(x.extraId), 'E' + x.extraId + ': ' + describeExtra(rom, key, x).label, selTrigger);
-      }).join('') +
-      option('new-rect', '+ New player rect (draw on map)', selTrigger) +
-      '</select></div>' +
-      '<div class="sc-form-row"><label class="sc-label">Destination</label>' +
-      '<button type="button" id="sc-tpl-dest" class="sc-inline-btn">' +
-      esc(builderDestLabel(bld.dest)) +
-      '</button></div>' +
-      // Threshold N = the parameter of the kind-9 squads-remaining predicate; only rendered
-      // where it applies (the Reinforce template, or live-editing an existing kind-9 gate).
-      (selTemplate === 'reinforce-remnant' || (!selTemplate && curGateIsThreshold)
-        ? '<div class="sc-form-row"><label class="sc-label">Squads left ≤ N</label>' +
-          '<input id="sc-tpl-threshold" type="number" min="1" max="30" value="' + selThresh + '"></div>'
-        : '') +
+      '<div class="sc-sub">Routes, ambush gates, reinforcement thresholds, and march destinations live on shared node/trigger rows. Edit those from the node editor so it is clear every EDAT row sharing that node will change.</div>' +
       '<div class="sc-form-row"><label class="sc-label"></label>' +
       '<button type="button" id="sc-tpl-clear-route" class="sc-inline-btn">Remove route (guard / hold position)</button></div>' +
       '<div id="sc-tpl-msg" class="sc-sub" style="' + (bld.msgOk ? '' : 'color:var(--sc-red)') + '">' + esc(bld.msg || '') + '</div>' +
@@ -3419,9 +3391,10 @@ window.OB64 = window.OB64 || {};
         var kn = n.bytes[1] === 0 ? 'hold' : n.bytes[1] === 1 ? 'waypoint' : n.bytes[1] === 2 ? 'ambush' : 'kind ' + n.bytes[1];
         return option(String(n.nodeId), n.nodeId + ' - ' + kn + ' node', String(row.bytes[6]));
       }).join('') +
-      '</select>' +
-      (row.bytes[6] >= 4 && orderNode ? '<button type="button" id="sc-edit-node" class="sc-inline-btn" style="margin-left:6px">Edit node ' + orderNode.nodeId + ' &rsaquo;</button>' : '') +
-      '</div>';
+      '</select></div>' +
+      (row.bytes[6] >= 4 && orderNode
+        ? '<div class="sc-form-row"><label class="sc-label"></label><button type="button" id="sc-edit-node" class="sc-inline-btn sc-node-edit-btn">Edit node ' + orderNode.nodeId + ' &rsaquo;</button></div>'
+        : '');
     if (orderNode && orderNode.bytes[1] === 0) {
       var mv = orderNode.bytes[2] & 0xFF, wt = orderNode.bytes[3] & 0xFF;
       var ag = orderAggro(wt);
@@ -3468,6 +3441,7 @@ window.OB64 = window.OB64 || {};
     html += validation.errors.length
       ? '<div class="sc-warning">Validation errors: ' + validation.errors.map(function(e) { return e.code; }).join(', ') + '</div>'
       : '<div class="sc-ok">Codec validation: zero errors for current model</div>';
+    html += behaviorHtml;
     el.innerHTML = html;
     wireSquadDetail(el, rom, key, rowIndex);
   }
@@ -3584,9 +3558,14 @@ window.OB64 = window.OB64 || {};
     }
     if (x) x.onchange = commitWorld;
     if (z) z.onchange = commitWorld;
-    // Behavior builder is fully LIVE - there is no Apply button. Every template/trigger/
-    // destination/threshold change re-applies immediately through the builder's owned
-    // Section 2/3 slots; requirement gaps surface as hints without touching any bytes.
+    el.querySelectorAll('.sc-node-row').forEach(function(btn) {
+      btn.onclick = function(ev) {
+        ev.preventDefault();
+        selectNode(parseInt(this.dataset.nodeId, 10));
+      };
+    });
+    // Behavior template picker is fully LIVE - there is no Apply button. The EDAT panel only
+    // exposes row-local guard/sally presets; shared gates and destinations are edited from nodes.
     // Form state lives in builderFor(key,rowIndex) so it SURVIVES the full re-render every
     // commit triggers; msg() persists the same way.
     var bld = builderFor(key, rowIndex);
