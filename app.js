@@ -220,21 +220,32 @@ window.OB64 = window.OB64 || {};
       var squadOverridesForConflict = (OB64.squad && OB64.collectSquadOverrides)
         ? OB64.collectSquadOverrides(rom)
         : [];
+      var patchRegionOwners = [];
+      if (OB64.squad && squadOverridesForConflict.length) {
+        patchRegionOwners.push({
+          id: 'squad-overrides',
+          name: 'Squad Overrides',
+          regions: OB64.squad.patchRegions(rom)
+        });
+      }
+      if (OB64.scenario && OB64.scenario.patchRegions && rom.scenarioRelocations && rom.scenarioRelocations.length) {
+        patchRegionOwners.push({
+          id: 'scenario-eset-relocation',
+          name: 'Scenario ESET Relocation',
+          regions: OB64.scenario.patchRegions(rom.scenarioRelocations)
+        });
+      }
       if (dirty.squadOverrides && rom.layout && rom.layout.supportsSquadOverrides === false) {
         showErrorModal('Export failed - squad overrides unavailable',
           'This ROM revision can be parsed and repacked, but the Squads runtime ' +
           'override hook has not been verified for it yet.\n\n' +
           (rom.layout.unsupportedFeaturesReason || 'Load a supported header revision 0 ROM to export squad overrides.'));
-        statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
-        return;
-      }
-      if (OB64.tools && OB64.squad && squadOverridesForConflict.length) {
+          statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
+          return;
+        }
+      if (OB64.tools && patchRegionOwners.length) {
         try {
-          OB64.tools.assertDesiredCompatible(rom, [{
-            id: 'squad-overrides',
-            name: 'Squad Overrides',
-            regions: OB64.squad.patchRegions(rom)
-          }]);
+          OB64.tools.assertDesiredCompatible(rom, patchRegionOwners);
         } catch (e) {
           showErrorModal('Export failed - patch region collision', e.message);
           statusBar.textContent = 'Export failed (patch regions): ' + e.message;

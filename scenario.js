@@ -380,31 +380,55 @@ window.OB64 = window.OB64 || {};
     return localStorage.getItem('ob64_scenario_image_base') || 'resources/maps/vgmaps/';
   }
 
+  function createScenarioState(preserved) {
+    preserved = preserved || {};
+    var state = {
+      models: {},
+      originalBytes: {},
+      metadata: {},
+      sourceRows: {},
+      sites: {},
+      siteAllegiances: {},
+      addedSquads: [],
+      modifiedKeys: {},
+      settings: preserved.settings || { imageBasePath: defaultImageBase() },
+      archiveOriginalSlots: preserved.archiveOriginalSlots || {},
+      slotOwnedArchives: preserved.slotOwnedArchives || {},
+      relocationOwnedWindows: preserved.relocationOwnedWindows || [],
+    };
+    dataScenarios().forEach(function(entry) {
+      if (entry.missing || !entry.rawHex) return;
+      var raw = OB64.scenarioCodec.compactHexToBytes(entry.rawHex);
+      var model = OB64.scenarioCodec.parseEset(raw, { sourcePath: entry.relPath || entry.filename });
+      state.models[entry.runtimeKey] = model;
+      state.originalBytes[entry.runtimeKey] = raw;
+      state.metadata[entry.runtimeKey] = entry;
+      state.sourceRows[entry.runtimeKey] = entry.sourceRows || [];
+      state.sites[entry.runtimeKey] = entry.sites || [];
+    });
+    initTreasureState(state);
+    return state;
+  }
+
   function ensureState(rom) {
     if (!rom.scenarioEditor) {
-      rom.scenarioEditor = {
-        models: {},
-        originalBytes: {},
-        metadata: {},
-        sourceRows: {},
-        sites: {},
-        siteAllegiances: {},
-        addedSquads: [],
-        modifiedKeys: {},
-        settings: { imageBasePath: defaultImageBase() },
-      };
-      dataScenarios().forEach(function(entry) {
-        if (entry.missing || !entry.rawHex) return;
-        var raw = OB64.scenarioCodec.compactHexToBytes(entry.rawHex);
-        var model = OB64.scenarioCodec.parseEset(raw, { sourcePath: entry.relPath || entry.filename });
-        rom.scenarioEditor.models[entry.runtimeKey] = model;
-        rom.scenarioEditor.originalBytes[entry.runtimeKey] = raw;
-        rom.scenarioEditor.metadata[entry.runtimeKey] = entry;
-        rom.scenarioEditor.sourceRows[entry.runtimeKey] = entry.sourceRows || [];
-        rom.scenarioEditor.sites[entry.runtimeKey] = entry.sites || [];
-      });
+      rom.scenarioEditor = createScenarioState();
     }
+    if (!rom.scenarioEditor.archiveOriginalSlots) rom.scenarioEditor.archiveOriginalSlots = {};
+    if (!rom.scenarioEditor.slotOwnedArchives) rom.scenarioEditor.slotOwnedArchives = {};
+    if (!rom.scenarioEditor.relocationOwnedWindows) rom.scenarioEditor.relocationOwnedWindows = [];
     initTreasureState(rom.scenarioEditor);
+    return rom.scenarioEditor;
+  }
+
+  function resetScenarioState(rom) {
+    var old = ensureState(rom);
+    rom.scenarioEditor = createScenarioState({
+      settings: old.settings,
+      archiveOriginalSlots: old.archiveOriginalSlots,
+      slotOwnedArchives: old.slotOwnedArchives,
+      relocationOwnedWindows: old.relocationOwnedWindows,
+    });
     return rom.scenarioEditor;
   }
 
@@ -415,6 +439,11 @@ window.OB64 = window.OB64 || {};
 
   function rowMatchesIdentity(row, sourceId, edatZeroBased) {
     return !!row && row.sourceId === sourceId && (row.edatOneBased - 1) === edatZeroBased;
+  }
+
+  function rowEdatId(row) {
+    if (!row || !row.bytes) return null;
+    return ((((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1);
   }
 
   function runtimeRowMatchesLive(row, runtimeRow) {
@@ -602,6 +631,25 @@ window.OB64 = window.OB64 || {};
     return { size: built.length - 1, slot: slot, fits: (built.length - 1) <= slot };
   }
 
+  function archiveSlotSize(archiveDir) {
+    return (archiveDir.totalHeaderSize || 0) + (archiveDir.compSize || 0);
+  }
+
+  function snapshotArchiveSlot(rom, state, archive) {
+    if (state.archiveOriginalSlots[archive] || !rom.archives || !rom.archives[archive]) return;
+    var dir = rom.archives[archive];
+    state.archiveOriginalSlots[archive] = rom.z64.slice(dir.offset, dir.offset + archiveSlotSize(dir));
+  }
+
+  function restoreArchiveSlot(rom, state, archive) {
+    var bytes = state.archiveOriginalSlots[archive];
+    var dir = rom.archives && rom.archives[archive];
+    if (!bytes || !dir) return false;
+    rom.z64.set(bytes, dir.offset);
+    delete state.slotOwnedArchives[archive];
+    return true;
+  }
+
   function readU32(z64, off) {
     return ((z64[off] << 24) | (z64[off + 1] << 16) | (z64[off + 2] << 8) | z64[off + 3]) >>> 0;
   }
@@ -680,18 +728,52 @@ window.OB64 = window.OB64 || {};
     return (0x10000000 | (romOffset >>> 0)) >>> 0;
   }
 
+  function relocationExpectedJal() {
+    return mipsJal((RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0);
+  }
+
+  function relocationHookState(rom) {
+    var hookWord = readU32(rom.z64, RELOC_HOOK_ROM);
+    var delayWord = readU32(rom.z64, RELOC_HOOK_DELAY_ROM);
+    var expectedJal = relocationExpectedJal();
+    return {
+      hookWord: hookWord,
+      delayWord: delayWord,
+      clean: hookWord === 0x00431024 && delayWord === 0xAC820000,
+      installed: hookWord === expectedJal && delayWord === 0x00431024,
+      expectedJal: expectedJal,
+    };
+  }
+
+  function hasKnownRelocationOwnership(rom, state) {
+    return !!((rom.scenarioRelocations && rom.scenarioRelocations.length) ||
+      (state.relocationOwnedWindows && state.relocationOwnedWindows.length));
+  }
+
+  function restoreRelocationRedirect(rom) {
+    var state = relocationHookState(rom);
+    if (state.clean) return false;
+    if (!state.installed) {
+      throw new Error('Scenario relocation hook site is not clean (0x' + state.hookWord.toString(16).toUpperCase() +
+        '/0x' + state.delayWord.toString(16).toUpperCase() + ').');
+    }
+    writeU32(rom.z64, RELOC_HOOK_ROM, 0x00431024);
+    writeU32(rom.z64, RELOC_HOOK_DELAY_ROM, 0xAC820000);
+    for (var i = 0; i < RELOC_CAVE_SIZE; i++) rom.z64[RELOC_CAVE_ROM + i] = 0;
+    if (OB64.recalcN64CRC) OB64.recalcN64CRC(rom.z64);
+    return true;
+  }
+
   function installRelocationRedirect(rom, entries) {
-    if (!entries.length) return;
     var z64 = rom.z64;
     var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - RELOC_ENTRY_BYTES) / RELOC_ENTRY_BYTES);
     if (entries.length > maxEntries) throw new Error('Too many relocated scenario archives for the redirect table (' + entries.length + '/' + maxEntries + ').');
-    var hookWord = readU32(z64, RELOC_HOOK_ROM);
-    var delayWord = readU32(z64, RELOC_HOOK_DELAY_ROM);
-    var expectedJal = mipsJal((RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0);
-    if (!((hookWord === 0x00431024 && delayWord === 0xAC820000) || (hookWord === expectedJal && delayWord === 0x00431024))) {
-      throw new Error('Scenario relocation hook site is not clean (0x' + hookWord.toString(16).toUpperCase() + '/0x' + delayWord.toString(16).toUpperCase() + ').');
+    if (!entries.length) return restoreRelocationRedirect(rom);
+    var hookState = relocationHookState(rom);
+    if (!(hookState.clean || hookState.installed)) {
+      throw new Error('Scenario relocation hook site is not clean (0x' + hookState.hookWord.toString(16).toUpperCase() + '/0x' + hookState.delayWord.toString(16).toUpperCase() + ').');
     }
-    if (hookWord !== expectedJal) assertRelocationCaveClean(z64);
+    if (!hookState.installed) assertRelocationCaveClean(z64);
 
     var words = relocationStubWords();
     for (var i = 0; i < words.length; i++) writeU32(z64, RELOC_CAVE_ROM + i * 4, words[i]);
@@ -703,9 +785,10 @@ window.OB64 = window.OB64 || {};
     });
     writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES, 0);
     writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES + 4, 0);
-    writeU32(z64, RELOC_HOOK_ROM, expectedJal);
+    writeU32(z64, RELOC_HOOK_ROM, hookState.expectedJal);
     writeU32(z64, RELOC_HOOK_DELAY_ROM, 0x00431024);
     if (OB64.recalcN64CRC) OB64.recalcN64CRC(z64);
+    return true;
   }
 
   function relocationPatchRegions(relocations) {
@@ -767,12 +850,41 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function assertRelocationTailFree(rom, moved) {
+  function tailOffsetOwned(off, ownedWindows) {
+    for (var i = 0; i < (ownedWindows || []).length; i++) {
+      var w = ownedWindows[i];
+      if (off >= w.tailDmaStart && off < w.tailDmaStart + w.windowSize) return true;
+    }
+    return false;
+  }
+
+  function assertRelocationTailFree(rom, moved, ownedWindows) {
     for (var i = 0; i < moved.windowSize; i++) {
       var off = moved.tailDmaStart + i;
       if (off >= rom.z64.length) break;
+      if (tailOffsetOwned(off, ownedWindows)) continue;
       if (rom.z64[off] !== 0xFF && rom.z64[off] !== 0x00) throw new Error('Scenario relocation tail is occupied at z64 0x' + off.toString(16).toUpperCase());
     }
+  }
+
+  function resetOwnedRelocationWindows(rom, state) {
+    (state.relocationOwnedWindows || []).forEach(function(w) {
+      if (!w.originalBytes) return;
+      rom.z64.set(w.originalBytes, w.tailDmaStart);
+    });
+  }
+
+  function snapshotRelocationWindow(rom, state, moved) {
+    var found = null;
+    (state.relocationOwnedWindows || []).forEach(function(w) {
+      if (!found && w.tailDmaStart === moved.tailDmaStart && w.windowSize === moved.windowSize) found = w;
+    });
+    if (found && found.originalBytes) return found;
+    return {
+      tailDmaStart: moved.tailDmaStart,
+      windowSize: moved.windowSize,
+      originalBytes: rom.z64.slice(moved.tailDmaStart, moved.tailDmaStart + moved.windowSize),
+    };
   }
 
   function writeRelocatedArchive(rom, builtArchive, moved) {
@@ -1467,10 +1579,18 @@ window.OB64 = window.OB64 || {};
       'in the mission (harmless), and the global enemy record is untouched.',
       'Remove squad',
       function() {
+        var edatId = rowEdatId(row);
         model.section1.splice(rowIndex, 1);
         state.addedSquads.forEach(function(r) {
           if (r.runtimeKey === key && r.section1Row != null && r.section1Row > rowIndex) r.section1Row--;
         });
+        if (rom.squadOverrides && edatId != null) {
+          var stillReferenced = model.section1.some(function(r) { return rowEdatId(r) === edatId; });
+          if (!stillReferenced && rom.squadOverrides[key + ':' + edatId]) {
+            delete rom.squadOverrides[key + ':' + edatId];
+            if (OB64._squadChanged) OB64._squadChanged();
+          }
+        }
         syncStructuralOffsets(model);
         OB64.scenarioCodec.refreshDecodedRows(model);
         state.modifiedKeys[key] = true;
@@ -4241,15 +4361,37 @@ window.OB64 = window.OB64 || {};
 
   function loadProject(rom, project) {
     if (!project || project.format !== 'ob64-scenario-project') throw new Error('Not an OB64 Scenario project file');
-    var state = ensureState(rom);
+    if (project.version != null && project.version > 2) {
+      throw new Error('Scenario project version ' + project.version + ' is newer than this editor supports (max 2).');
+    }
+    var oldState = ensureState(rom);
+    var oldAdded = (oldState.addedSquads || []).slice();
+    var state = resetScenarioState(rom);
     if (project.settings) state.settings = project.settings;
     state.siteAllegiances = project.siteAllegiances || {};
-    state.addedSquads = project.addedSquads || [];
+    state.addedSquads = (project.addedSquads || []).map(function(r) {
+      var copy = {};
+      for (var f in r) copy[f] = r[f];
+      return copy;
+    });
+    var keepAddedOverrides = {};
+    state.addedSquads.forEach(function(r) {
+      keepAddedOverrides[r.runtimeKey + ':' + r.edatId] = true;
+    });
     state.addedSquads.forEach(function(r) {
       if (!r.compRecHex) return;
       if (!rom.squadOverrides) rom.squadOverrides = {};
       rom.squadOverrides[r.runtimeKey + ':' + r.edatId] = OB64.scenarioCodec.compactHexToBytes(r.compRecHex);
     });
+    var prunedOverrides = false;
+    oldAdded.forEach(function(r) {
+      var key = r.runtimeKey + ':' + r.edatId;
+      if (!keepAddedOverrides[key] && rom.squadOverrides && rom.squadOverrides[key]) {
+        delete rom.squadOverrides[key];
+        prunedOverrides = true;
+      }
+    });
+    if (prunedOverrides && OB64._squadChanged) OB64._squadChanged();
     var esets = project.modifiedEsets || {};
     Object.keys(esets).forEach(function(key) {
       var raw = OB64.scenarioCodec.compactHexToBytes(esets[key].rawHex);
@@ -4436,6 +4578,13 @@ window.OB64 = window.OB64 || {};
   function exportScenarioArchives(rom) {
     var state = ensureState(rom);
     var blocked = [];
+    var hookState = relocationHookState(rom);
+    if (hookState.installed && !hasKnownRelocationOwnership(rom, state)) {
+      blocked.push('Scenario relocation hook is already installed in this ROM, but this editor session did not create or adopt its redirect table. Load a clean ROM or the source project JSON before exporting scenario edits; pre-relocated ROM adoption is not implemented yet.');
+    } else if (!hookState.clean && !hookState.installed) {
+      blocked.push('Scenario relocation hook site is not clean (0x' + hookState.hookWord.toString(16).toUpperCase() + '/0x' + hookState.delayWord.toString(16).toUpperCase() + ').');
+    }
+
     // Town allegiance now exports: intents rewrite the scincsv descriptor addend halfword in a
     // tiny LH5 archive (~25-45 B at ROM ~0x2745E5B, outside the CIC-6102 CRC window). Grouping +
     // conflict/absent-descriptor validation is planned here; the splice/relocate runs below.
@@ -4459,116 +4608,188 @@ window.OB64 = window.OB64 || {};
     if (spriteless.length) {
       blocked.push('Squad leaders without a map-unit sprite must be fixed before export: ' + spriteless.join(' | '));
     }
-    if (blocked.length) return { touched: [], blocked: blocked };
 
     var touched = [];
+    var inlineWrites = [];
+    var restoreSlots = [];
     var relocations = [];
     var relocationWrites = [];
     var tailCursor = RELOC_TAIL_START;
-    Object.keys(state.models).forEach(function(key) {
+    var ownedWindows = state.relocationOwnedWindows || [];
+
+    Object.keys(state.models).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(key) {
       var runtimeKey = Number(key);
       var model = state.models[key];
+      var validation = OB64.scenarioCodec.validateEset(model);
+      if (validation.errors.length) {
+        blocked.push('Scenario key ' + runtimeKey + ' validator errors: ' +
+          validation.errors.map(function(e) { return e.code; }).join(', '));
+        return;
+      }
+      var raw;
+      try {
+        raw = modelBytes(model);
+      } catch (e) {
+        blocked.push('Scenario key ' + runtimeKey + ' serialize failed: ' + e.message);
+        return;
+      }
       var original = state.originalBytes[key];
-      var raw = modelBytes(model);
-      if (!original || OB64.scenarioCodec.equalBytes(raw, original)) return;
       var meta = state.metadata[key] || scenarioData(runtimeKey);
-      if (!meta || !meta.archive || !rom.archives[meta.archive]) throw new Error('Missing ROM archive for runtime key ' + runtimeKey);
+      var archive = meta && meta.archive;
+      var archiveDir = archive != null && rom.archives && rom.archives[archive];
+      if (!original || OB64.scenarioCodec.equalBytes(raw, original)) {
+        if (archiveDir && state.slotOwnedArchives[archive]) {
+          restoreSlots.push({ archive: archive, label: 'scenario key ' + runtimeKey + ' restored' });
+        }
+        return;
+      }
+      if (!meta || archive == null || !archiveDir) {
+        blocked.push('Missing ROM archive for runtime key ' + runtimeKey);
+        return;
+      }
       var comp = OB64.lh5Compress(raw);
       var arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
       var arcBody = arc.slice ? arc.slice(0, arc.length - 1) : arc.subarray(0, arc.length - 1);
-      var result = OB64.spliceArchive(rom.z64, rom.archives[meta.archive], arcBody);
-      if (result.success) {
-        touched.push('scenario key ' + runtimeKey);
-      } else {
-        var moved;
-        try {
-          moved = planRelocationToTail(rom, rom.archives[meta.archive], arc, tailCursor);
-        } catch (e) {
-          throw new Error('Scenario key ' + runtimeKey + ' ' + e.message);
-        }
-        assertRelocationTailFree(rom, moved);
-        tailCursor = moved.nextTailCursor;
-        moved.runtimeKey = runtimeKey;
-        moved.archive = meta.archive;
-        relocations.push(moved);
-        relocationWrites.push({ moved: moved, archive: arc });
-        touched.push('scenario key ' + runtimeKey + ' relocated');
+      if (arcBody.length <= archiveSlotSize(archiveDir)) {
+        inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: arcBody, label: 'scenario key ' + runtimeKey });
+        return;
       }
-      state.originalBytes[key] = raw.slice(0);
+      var moved;
+      try {
+        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
+        assertRelocationTailFree(rom, moved, ownedWindows);
+      } catch (e2) {
+        blocked.push('Scenario key ' + runtimeKey + ' ' + e2.message);
+        return;
+      }
+      tailCursor = moved.nextTailCursor;
+      moved.runtimeKey = runtimeKey;
+      moved.archive = archive;
+      relocations.push(moved);
+      relocationWrites.push({ moved: moved, archive: arc });
+      if (state.slotOwnedArchives[archive]) restoreSlots.push({ archive: archive, label: 'scenario key ' + runtimeKey + ' fixed slot restored before relocation' });
     });
+
     // Buried treasure edits: maizo payloads are already stored (-lh0-) in retail. Keep the total
     // archive slot size fixed by resizing the level-2 header, so add/remove/move edits splice
     // directly outside the CRC window without shifting the following LHA archive.
-    Object.keys(state.treasureArchives || {}).forEach(function(archiveKey) {
+    Object.keys(state.treasureArchives || {}).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(archiveKey) {
       var archive = Number(archiveKey);
-      if (!treasureArchiveModified(rom, archive)) return;
       var model = state.treasureArchives[archive];
+      var archiveDir = rom.archives && rom.archives[archive];
+      if (!treasureArchiveModified(rom, archive)) {
+        if (archiveDir && state.slotOwnedArchives[archive]) {
+          restoreSlots.push({ archive: archive, label: 'buried treasure (maizo archive ' + archive + ') restored' });
+        }
+        return;
+      }
       var payload = serializeTreasureRecords(model.records);
-      var archiveDir = rom.archives[archive];
-      if (!archiveDir) throw new Error('Missing ROM archive ' + archive + ' for maizo treasure edit');
+      if (!archiveDir) {
+        blocked.push('Missing ROM archive ' + archive + ' for maizo treasure edit');
+        return;
+      }
       var filename = model.filename || ((treasureArchiveEntry(archive) || {}).filename) || ('maizo' + archive + '.bin');
-      var slotSize = (archiveDir.totalHeaderSize || 0) + (archiveDir.compSize || 0);
+      var slotSize = archiveSlotSize(archiveDir);
       var minHeaderSize = 24 + 2 + (1 + filename.length + 2);
       var treasureHeaderSize = slotSize - payload.length;
       if (treasureHeaderSize < minHeaderSize || treasureHeaderSize > 0xFFFF) {
-        throw new Error('Buried treasure maizo archive ' + archive + ' does not fit its fixed -lh0- slot');
+        blocked.push('Buried treasure maizo archive ' + archive + ' does not fit its fixed -lh0- slot');
+        return;
       }
       var arc = OB64.buildLHAArchiveUncompressed(payload, filename, treasureHeaderSize);
-      var result = OB64.spliceArchive(rom.z64, archiveDir, arc);
-      if (result.success) {
-        touched.push('buried treasure (maizo archive ' + archive + ')');
-      } else {
-        throw new Error('Buried treasure maizo archive ' + archive + ' ' + result.error);
+      if (arc.length > slotSize) {
+        blocked.push('Buried treasure maizo archive ' + archive + ' new archive is ' + (arc.length - slotSize) + ' bytes larger than original slot');
+        return;
       }
-      state.originalTreasureBytes[archive] = payload.slice ? payload.slice(0) : new Uint8Array(payload);
+      inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: arc, label: 'buried treasure (maizo archive ' + archive + ')' });
     });
+
     // Town-allegiance edits: one rebuilt scincsv archive per shared descriptor stream. Same
     // splice-in-place / relocate-to-tail path as the ESET archives above. scincsv archives sit
     // outside the CRC window, so a splice-in-place needs no CRC recalc; a relocation installs the
     // boot-cave redirect (inside the window) and sets crc below via relocations.length.
-    Object.keys(allegiancePlan.edits).forEach(function(arcKey) {
+    Object.keys(allegiancePlan.edits).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(arcKey) {
       var plan = allegiancePlan.edits[arcKey];
       var payload = plan.payload.slice ? plan.payload.slice(0) : new Uint8Array(plan.payload);
       plan.changes.forEach(function(ch) {
         payload[ch.offset] = (ch.to >>> 8) & 0xFF;
         payload[ch.offset + 1] = ch.to & 0xFF;
       });
-      var archiveDir = rom.archives[plan.archive];
-      if (!archiveDir) throw new Error('Missing ROM archive ' + plan.archive + ' for town allegiance edit');
+      var archiveDir = rom.archives && rom.archives[plan.archive];
+      if (!archiveDir) {
+        blocked.push('Missing ROM archive ' + plan.archive + ' for town allegiance edit');
+        return;
+      }
       // Store the descriptor stream UNCOMPRESSED (-lh0-). scincsv payloads are tiny, the game's
       // loader accepts -lh0- (index 750 ships that way), and this dodges an lh5Compress bug on
       // small payloads. The stored body still fits the original slot (headers are ~74 B).
       var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'), archiveDir.totalHeaderSize);
-      var result = OB64.spliceArchive(rom.z64, archiveDir, arc);
-      if (result.success) {
-        touched.push('town allegiance (scincsv ' + plan.archive + ')');
-      } else {
-        var moved;
-        try {
-          moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: true });
-        } catch (e) {
-          throw new Error('Town allegiance scincsv ' + plan.archive + ' ' + e.message);
-        }
-        assertRelocationTailFree(rom, moved);
-        tailCursor = moved.nextTailCursor;
-        moved.archive = plan.archive;
-        relocations.push(moved);
-        relocationWrites.push({ moved: moved, archive: arc });
-        touched.push('town allegiance (scincsv ' + plan.archive + ') relocated');
+      if (arc.length <= archiveSlotSize(archiveDir)) {
+        inlineWrites.push({ archive: plan.archive, archiveDir: archiveDir, bytes: arc, label: 'town allegiance (scincsv ' + plan.archive + ')' });
+        return;
       }
+      var moved;
+      try {
+        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: true });
+        assertRelocationTailFree(rom, moved, ownedWindows);
+      } catch (e) {
+        blocked.push('Town allegiance scincsv ' + plan.archive + ' ' + e.message);
+        return;
+      }
+      tailCursor = moved.nextTailCursor;
+      moved.archive = plan.archive;
+      relocations.push(moved);
+      relocationWrites.push({ moved: moved, archive: arc });
+      if (state.slotOwnedArchives[plan.archive]) restoreSlots.push({ archive: plan.archive, label: 'town allegiance (scincsv ' + plan.archive + ') fixed slot restored before relocation' });
     });
-    if (relocations.length && OB64.tools) {
-      OB64.tools.assertDesiredCompatible(rom, [relocationPatchOwner(relocations)]);
+
+    var publicRelocations = relocations.map(function(moved) {
+      return {
+        originalDmaStart: moved.originalDmaStart,
+        tailDmaStart: moved.tailDmaStart,
+        windowSize: moved.windowSize,
+        tailArchiveOffset: moved.tailArchiveOffset,
+        runtimeKey: moved.runtimeKey,
+        archive: moved.archive,
+      };
+    });
+    if (publicRelocations.length && OB64.tools) {
+      try {
+        OB64.tools.assertDesiredCompatible(rom, [relocationPatchOwner(publicRelocations)]);
+      } catch (e3) {
+        blocked.push(e3.message);
+      }
     }
-    relocationWrites.forEach(function(w) {
-      writeRelocatedArchive(rom, w.archive, w.moved);
-      delete w.moved._sourceWindowStart;
-      delete w.moved._sourceWindowDelta;
-      delete w.moved._archiveSize;
+    if (blocked.length) return { touched: [], blocked: blocked, relocations: rom.scenarioRelocations || [] };
+
+    resetOwnedRelocationWindows(rom, state);
+
+    restoreSlots.forEach(function(w) {
+      if (restoreArchiveSlot(rom, state, w.archive)) touched.push(w.label);
     });
-    installRelocationRedirect(rom, relocations);
-    rom.scenarioRelocations = relocations;
-    return { touched: touched, blocked: [], relocations: relocations, crc: relocations.length > 0 };
+
+    inlineWrites.forEach(function(w) {
+      snapshotArchiveSlot(rom, state, w.archive);
+      rom.z64.set(w.bytes, w.archiveDir.offset);
+      if (w.bytes.length < archiveSlotSize(w.archiveDir)) {
+        rom.z64.fill(0, w.archiveDir.offset + w.bytes.length, w.archiveDir.offset + archiveSlotSize(w.archiveDir));
+      }
+      state.slotOwnedArchives[w.archive] = true;
+      touched.push(w.label);
+    });
+
+    var newOwnedWindows = [];
+    relocationWrites.forEach(function(w) {
+      var owned = snapshotRelocationWindow(rom, state, w.moved);
+      writeRelocatedArchive(rom, w.archive, w.moved);
+      newOwnedWindows.push(owned);
+      touched.push(w.moved.runtimeKey != null ? ('scenario key ' + w.moved.runtimeKey + ' relocated') : ('town allegiance (archive ' + w.moved.archive + ') relocated'));
+    });
+    state.relocationOwnedWindows = newOwnedWindows;
+    var redirectChanged = installRelocationRedirect(rom, publicRelocations);
+    if (redirectChanged && !publicRelocations.length) touched.push('scenario relocation redirect removed');
+    rom.scenarioRelocations = publicRelocations;
+    return { touched: touched, blocked: [], relocations: publicRelocations, crc: !!redirectChanged };
   }
 
   function siteAllegianceCensus(rom) {
