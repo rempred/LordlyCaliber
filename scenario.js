@@ -95,6 +95,20 @@ window.OB64 = window.OB64 || {};
     builder = null;
   }
 
+  function invalidateBuilderOwnedNodes(idMap) {
+    if (!builder || !builder.owned) return;
+    ['dest', 'gate'].forEach(function(slot) {
+      var id = builder.owned[slot];
+      if (id == null) return;
+      builder.owned[slot] = idMap && idMap[id] != null ? idMap[id] : null;
+    });
+  }
+
+  function remapSelectedNodeAfterGc(idMap) {
+    if (ui.selectedNode == null) return;
+    ui.selectedNode = idMap && idMap[ui.selectedNode] != null ? idMap[ui.selectedNode] : null;
+  }
+
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"]/g, function(c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -447,6 +461,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function runtimeRowMatchesLive(row, runtimeRow) {
+    // Missing live source rows are treated as a match so dormant/static fallback rows still render.
     if (!row || !runtimeRow) return true;
     var edat = runtimeRow.edat != null ? runtimeRow.edat : (runtimeRow.edatOneBased != null ? runtimeRow.edatOneBased - 1 : null);
     return runtimeRow.sourceId === row.sourceId && edat === row.edatOneBased - 1;
@@ -926,6 +941,7 @@ window.OB64 = window.OB64 || {};
     model.section1.forEach(function(row) {
       var e = (((row.bytes[1] || 0) << 8) | (row.bytes[2] || 0)) - 1;
       var over = rom.squadOverrides && rom.squadOverrides[key + ':' + e];
+      // B1=2 multi-source rows can undercount here; keep this as a conservative UI meter.
       total += unitCountFromRecord(over ? Array.from(over) : hexRecordBytes(records[e]));
     });
     return total;
@@ -1290,7 +1306,7 @@ window.OB64 = window.OB64 || {};
         (t.classList && t.classList.contains('sc-map-img')) ||
         (t.closest && t.closest('.sc-schematic'));
       if (!isBackground) return;
-      if (ui.selectedPoint == null && !ui.selectedSite && ui.selectedTrigger == null && !ui.selectedTreasure) return;
+      if (ui.selectedPoint == null && !ui.selectedSite && ui.selectedTrigger == null && !ui.selectedTreasure && ui.selectedNode == null) return;
       clearSelection();
     });
   }
@@ -1528,7 +1544,7 @@ window.OB64 = window.OB64 || {};
       var icon = liveLeaderIcon(rom, key, point);
       var behavior = describeBehavior(rom, key, model, row);
       // Color bar = this squad's route color on the map (only squads that actually march).
-      var marches = behavior && behavior.indexOf('Guard') !== 0 && behavior !== 'unknown';
+      var marches = squadMarches(model, row);
       var barStyle = marches ? 'border-left:5px solid ' + routeColor(point.section1Row) + ';' : '';
       html += '<div class="sc-roster-row' + (ui.selectedPoint === point.section1Row ? ' on' : '') + '" data-row="' + point.section1Row + '" role="button" tabindex="0" style="' + barStyle + '">' +
         (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span></span>') +
@@ -1973,6 +1989,13 @@ window.OB64 = window.OB64 || {};
     return chain;
   }
 
+  function squadMarches(model, row) {
+    if (!model || !row || !row.bytes) return false;
+    var start = row.bytes[6];
+    if (!start || start < 4 || start > 0x13) return false;
+    return walkNodeChainModel(model, start).some(function(node) { return node && node.kind === 1; });
+  }
+
   function nodeConsumerRows(model, nodeId) {
     var refs = [];
     (model.section1 || []).forEach(function(row, idx) {
@@ -2153,17 +2176,10 @@ window.OB64 = window.OB64 || {};
           if (d < best) { best = d; nearest = site; }
         });
         if (node.bytes) {
-          node.bytes[2] = 2; // drag normalizes the node to sub-2 selector/coordinate space
           if (nearest && best < SNAP_SCREEN_PX) {
-            node.bytes[3] = 0; // sel = [4] - [3]: clear any prior offset so the snap reads back
-            node.bytes[4] = nearest.selector & 0xFF;
-            node.bytes[5] = 0;
+            writeWaypointSelectorTarget(node, nearest.selector);
           } else {
-            var b = calibrationData(key) && calibrationData(key).boundsWorld;
-            if (b) {
-              node.bytes[4] = clamp(Math.round(((world.x - b.xMin) / Math.max(0.001, b.xMax - b.xMin)) * 256), 0, 255);
-              node.bytes[5] = clamp(Math.round(((world.z - b.zMin) / Math.max(0.001, b.zMax - b.zMin)) * 256), 1, 255);
-            }
+            writeWaypointCoordinateTarget(node, calibrationData(key), world.x, world.z);
           }
           var state = ensureState(rom);
           state.modifiedKeys[key] = true;
@@ -2450,7 +2466,7 @@ window.OB64 = window.OB64 || {};
         '<button type="button" id="sc-trig-redraw" class="sc-inline-btn">Redraw on map</button></div>';
       if (extra.kind === 8) {
         html += '<div class="sc-form-row"><label class="sc-label">Watched unit</label>' +
-          '<input id="sc-trig-unit" type="number" min="0" max="255" value="' + b[6] + '"></div>';
+          '<select id="sc-trig-unit">' + watchedUnitOptionsHtml(rom, key, model, b[6] & 0xFF) + '</select></div>';
       }
     } else if (extra.kind === 4) {
       html += '<div class="sc-form-row"><label class="sc-label">Site</label><select id="sc-trig-site">' +
@@ -2495,7 +2511,7 @@ window.OB64 = window.OB64 || {};
           var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown';
           var icon = point ? liveLeaderIcon(rom, key, point) : null;
           var behavior = describeBehavior(rom, key, model, srow);
-          var bar = (behavior && behavior.indexOf('Guard') !== 0 && behavior !== 'unknown') ? 'border-left:5px solid ' + routeColor(r.rowIndex) + ';' : '';
+          var bar = squadMarches(model, srow) ? 'border-left:5px solid ' + routeColor(r.rowIndex) + ';' : '';
           html += '<button type="button" class="sc-squad-chip" data-row="' + r.rowIndex + '" style="' + bar + '">' +
             (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span class="sc-chip-noicon"></span>') +
             '<span><strong>Source ' + esc(r.sourceId) + ' / EDAT ' + esc(r.edat) + '</strong>' +
@@ -2539,7 +2555,11 @@ window.OB64 = window.OB64 || {};
 
     var commitTrig = function() { ensureState(rom).modifiedKeys[key] = true; changed(); renderScenarioTab(document.getElementById('panel-scenario')); };
     var kindSel = el.querySelector('#sc-trig-kind');
-    if (kindSel) kindSel.onchange = function() { extra.bytes[1] = parseInt(this.value, 10) & 0xFF; extra.kind = extra.bytes[1]; commitTrig(); };
+    if (kindSel) kindSel.onchange = function() {
+      resetExtraPayloadForKind(rom, key, extra, parseInt(this.value, 10) || 1);
+      ui.gateText = 'Trigger E' + extra.extraId + ' kind changed to ' + extra.kind + '; payload reset for the new kind.';
+      commitTrig();
+    };
     var redraw = el.querySelector('#sc-trig-redraw');
     if (redraw) redraw.onclick = function() {
       drawRectOnMap(rom, key, null, function(rect) {
@@ -2695,11 +2715,20 @@ window.OB64 = window.OB64 || {};
       var start = row.bytes && row.bytes[6];
       if (nodeIds[start]) referenced[start] = true;
     });
-    (model.section2 || []).forEach(function(node) {
-      var b = node.bytes || [];
-      if (isNodeDomainValue(b[17]) && nodeIds[b[17]]) referenced[b[17]] = true;
-      if (b[11] === 1 && nodeIds[b[16]]) referenced[b[16]] = true;
-    });
+    var changed = true;
+    while (changed) {
+      changed = false;
+      (model.section2 || []).forEach(function(node) {
+        if (!referenced[node.nodeId]) return;
+        var b = node.bytes || [];
+        [b[17], b[11] === 1 ? b[16] : 0].forEach(function(id) {
+          if (isNodeDomainValue(id) && nodeIds[id] && !referenced[id]) {
+            referenced[id] = true;
+            changed = true;
+          }
+        });
+      });
+    }
     var removed = [];
     var survivors = [];
     (model.section2 || []).forEach(function(node) {
@@ -2773,7 +2802,8 @@ window.OB64 = window.OB64 || {};
     });
     syncStructuralOffsets(model);
     OB64.scenarioCodec.refreshDecodedRows(model);
-    resetBuilderState();
+    remapSelectedNodeAfterGc(idMap);
+    invalidateBuilderOwnedNodes(idMap);
     return { changed: true, skipped: false, removed: plan.removed || [], message: plan.message };
   }
 
@@ -2785,6 +2815,49 @@ window.OB64 = window.OB64 || {};
 
   function nodeKindName(k) {
     return k === 0 ? 'hold' : k === 1 ? 'waypoint' : k === 2 ? 'ambush' : 'kind ' + k;
+  }
+
+  function nextNodeFallbackOption(model, current, nodeId) {
+    current = current & 0xFF;
+    if (current === 0 || current === 0xFF) return '';
+    var listed = model.section2.some(function(n) { return n.nodeId !== nodeId && n.nodeId === current; });
+    if (listed) return '';
+    var label = current === 1
+      ? '1: hold sentinel / no node'
+      : (current + ': raw value' + (extraById(model, current) ? ' (also E' + current + ' trigger id)' : ' (unlisted)'));
+    return option(String(current), label, String(current));
+  }
+
+  function defaultExtraPayload(rom, key, kind) {
+    var sites = ensureState(rom).sites[key] || [];
+    var param = kind === 4 ? ((sites[0] && sites[0].selector) || 1) : (kind === 9 ? 4 : (kind === 12 ? 1 : 0));
+    return [0, 0, 0, 0, param];
+  }
+
+  function resetExtraPayloadForKind(rom, key, extra, kind) {
+    extra.bytes[1] = kind & 0xFF;
+    extra.kind = extra.bytes[1];
+    for (var i = 2; i < extra.bytes.length; i++) extra.bytes[i] = 0;
+    defaultExtraPayload(rom, key, extra.kind).forEach(function(v, i) { extra.bytes[2 + i] = v & 0xFF; });
+  }
+
+  function watchedUnitOptionsHtml(rom, key, model, current) {
+    var rows = model && model.section1 ? model.section1 : [];
+    var seen = {};
+    var hasCurrent = false;
+    var html = rows.map(function(row, idx) {
+      var source = row.sourceId & 0xFF;
+      if (seen[source]) return '';
+      seen[source] = true;
+      if (source === current) hasCurrent = true;
+      var point = resolvePointForRow(rom, key, idx);
+      var edat = point ? point.edat : rowEdatId(row);
+      var rec = point ? effectiveRecordFor(rom, key, point) : null;
+      var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown leader';
+      return option(String(source), 'source ' + source + ' / EDAT ' + edat + ' / ' + leader, String(current));
+    }).join('');
+    if (!hasCurrent) html += option(String(current), current + ': raw value (not in this mission roster)', String(current));
+    return html;
   }
 
   // Node editor - mirrors renderTriggerDetail: edit the node's kind / orders / gate / next / raw
@@ -2822,6 +2895,7 @@ window.OB64 = window.OB64 || {};
       option('255', 'Terminal / permanent camp (0xFF)', String(b[17])) +
       model.section2.filter(function(n) { return n.nodeId !== nodeId; })
         .map(function(n) { return option(String(n.nodeId), 'node ' + n.nodeId + ' (' + nodeKindName(n.bytes[1]) + ')', String(b[17])); }).join('') +
+      nextNodeFallbackOption(model, b[17], nodeId) +
       '</select></div>';
     html += '<div class="sc-sub"><b>Advance gate means:</b> the squad is already using this node. When the trigger condition passes, this node may advance to <b>Next node</b>. It is not a trigger to activate this current node.</div>';
     if (node.kind === 1) {
@@ -2855,10 +2929,12 @@ window.OB64 = window.OB64 || {};
       html += '<div class="sc-sub">' + use.length + ' squad' + (use.length === 1 ? '' : 's') + ' start on or route through this node:</div>';
       use.forEach(function(r) {
         var point = pointByRow[r.rowIndex];
+        var srow = model.section1[r.rowIndex];
         var rec = point ? effectiveRecordFor(rom, key, point) : null;
         var leader = rec && rec[0] ? (OB64.className ? OB64.className(rec[0]) : '0x' + rec[0].toString(16)) : 'unknown';
         var icon = point ? liveLeaderIcon(rom, key, point) : null;
-        html += '<button type="button" class="sc-squad-chip" data-row="' + r.rowIndex + '" style="border-left:5px solid ' + routeColor(r.rowIndex) + ';">' +
+        var bar = squadMarches(model, srow) ? 'border-left:5px solid ' + routeColor(r.rowIndex) + ';' : '';
+        html += '<button type="button" class="sc-squad-chip" data-row="' + r.rowIndex + '" style="' + bar + '">' +
           (icon ? '<img src="' + esc(icon) + '" alt="">' : '<span class="sc-chip-noicon"></span>') +
           '<span><strong>Source ' + esc(r.sourceId) + ' / EDAT ' + esc(r.edat) + (r.isStart ? ' (start)' : '') + '</strong>' +
           '<span class="sc-chip-sub">' + esc(leader) + '</span></span></button>';
@@ -2892,8 +2968,7 @@ window.OB64 = window.OB64 || {};
     var tgtSel = el.querySelector('#sc-node-target');
     if (tgtSel) tgtSel.onchange = function() {
       if (this.value.indexOf('sel:') !== 0) return;
-      b[2] = 2; // match the drag/map-pick: normalize to sub-2 selector/coordinate space
-      b[4] = parseInt(this.value.slice(4), 10) & 0xFF; b[5] = 0; b[3] = 0;
+      writeWaypointSelectorTarget(node, parseInt(this.value.slice(4), 10));
       commitScenarioEdit(rom, key);
     };
     var tset = el.querySelector('#sc-node-tset');
@@ -2902,9 +2977,7 @@ window.OB64 = window.OB64 || {};
       var tx = parseFloat((el.querySelector('#sc-node-tx') || {}).value);
       var tz = parseFloat((el.querySelector('#sc-node-tz') || {}).value);
       if (!bw || isNaN(tx) || isNaN(tz)) return;
-      b[2] = 2; // match the drag/map-pick: normalize to sub-2 selector/coordinate space
-      b[4] = clamp(Math.round(((tx - bw.xMin) / Math.max(0.001, bw.xMax - bw.xMin)) * 256), 0, 255);
-      b[5] = clamp(Math.round(((tz - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
+      writeWaypointCoordinateTarget(node, calibrationData(key), tx, tz);
       commitScenarioEdit(rom, key);
     };
     var pickBtn = el.querySelector('#sc-node-pick');
@@ -2924,7 +2997,7 @@ window.OB64 = window.OB64 || {};
     var plan = planDeleteTrigger(model, extra);
     if (plan.blocked) {
       ui.gateText = plan.message;
-      if (window.alert) window.alert(plan.message);
+      if (OB64.showErrorModal) OB64.showErrorModal('Trigger delete blocked', plan.message);
       var panel = document.getElementById('panel-scenario');
       if (panel) renderScenarioTab(panel);
       return;
@@ -3164,9 +3237,7 @@ window.OB64 = window.OB64 || {};
         return;
       }
       // Static kinds create immediately with a sensible default parameter (payload[4] -> byte [6]).
-      var sites = ensureState(rom).sites[key] || [];
-      var param = kind === 4 ? ((sites[0] && sites[0].selector) || 1) : (kind === 9 ? 4 : 1);
-      finish(allocExtra(model, kind, [0, 0, 0, 0, param]));
+      finish(allocExtra(model, kind, defaultExtraPayload(rom, key, kind)));
     };
   }
 
@@ -3979,6 +4050,25 @@ window.OB64 = window.OB64 || {};
     ];
   }
 
+  function writeWaypointSelectorTarget(node, selector) {
+    if (!node || !node.bytes) return false;
+    node.bytes[2] = 2;
+    node.bytes[3] = 0;
+    node.bytes[4] = selector & 0xFF;
+    node.bytes[5] = 0;
+    return true;
+  }
+
+  function writeWaypointCoordinateTarget(node, cal, x, z) {
+    if (!node || !node.bytes || !cal || !cal.boundsWorld) return false;
+    var pair = worldToBytePair(cal, x, z);
+    node.bytes[2] = 2;
+    node.bytes[3] = 0;
+    node.bytes[4] = pair[0] & 0xFF;
+    node.bytes[5] = Math.max(1, pair[1] & 0xFF);
+    return true;
+  }
+
   function treasureBytesFromImage(key, imageX, imageY, projection) {
     var world = projection.imageToWorld(imageX, imageY);
     return worldToBytePair(calibrationData(key), world.x, world.z);
@@ -4044,16 +4134,11 @@ window.OB64 = window.OB64 || {};
         var d = Math.hypot(p.x - imageX, p.y - imageY);
         if (d < best) { best = d; snapped = site; }
       });
-      var b = node.bytes;
-      b[2] = 2; // match wireWaypointDrag: normalize the node to sub-2 selector/coordinate space
       if (snapped && best < SNAP_SCREEN_PX / Math.max(0.05, ui.zoom)) {
-        b[4] = snapped.selector & 0xFF; b[5] = 0; b[3] = 0;
+        writeWaypointSelectorTarget(node, snapped.selector);
         ui.gateText = 'March target set on ' + (snapped.siteName || ('town ' + snapped.selector)) + '.';
       } else {
-        var bw = cal && cal.boundsWorld;
-        if (!bw) { ui.gateText = 'This scenario has no world bounds - use the X/Z inputs.'; renderScenarioTab(panel); return; }
-        b[4] = clamp(Math.round(((world.x - bw.xMin) / Math.max(0.001, bw.xMax - bw.xMin)) * 256), 0, 255);
-        b[5] = clamp(Math.round(((world.z - bw.zMin) / Math.max(0.001, bw.zMax - bw.zMin)) * 256), 1, 255);
+        if (!writeWaypointCoordinateTarget(node, cal, world.x, world.z)) { ui.gateText = 'This scenario has no world bounds - use the X/Z inputs.'; renderScenarioTab(panel); return; }
         ui.gateText = 'March target set to (' + world.x.toFixed(1) + ', ' + world.z.toFixed(1) + ').';
       }
       commitScenarioEdit(rom, key);
@@ -5221,11 +5306,18 @@ window.OB64 = window.OB64 || {};
       parseByte: parseByte,
       allocNode: allocNode,
       allocExtra: allocExtra,
+      builderFor: builderFor,
+      getBuilder: function() { return builder; },
       applyTemplate: applyTemplate,
       planNodeGc: planNodeGc,
       applyNodeGcPlan: applyNodeGcPlan,
       runNodeGc: runNodeGc,
       applyStartGateReplacement: applyStartGateReplacement,
+      squadMarches: squadMarches,
+      writeWaypointCoordinateTarget: writeWaypointCoordinateTarget,
+      writeWaypointSelectorTarget: writeWaypointSelectorTarget,
+      setSelectedNodeForTest: function(nodeId) { ui.selectedNode = nodeId; },
+      getSelectedNodeForTest: function() { return ui.selectedNode; },
       planDeleteTrigger: planDeleteTrigger,
       applyDeleteTriggerPlan: applyDeleteTriggerPlan,
       triggerRefNodes: triggerRefNodes,

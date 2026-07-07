@@ -56,11 +56,15 @@
   }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
-  function classOptionsHtml(cur) {
+  function classOptionsHtml(cur, rom, annotateLeader) {
     var names = OB64.CLASS_NAMES || {}, html = '<option value="0">-- pick a class --</option>';
     for (var k in names) {
       var id = parseInt(k);
-      html += '<option value="' + id + '"' + (id === cur ? ' selected' : '') + '>' + esc(names[k]) + (isLarge(id) ? ' (large)' : '') + '</option>';
+      var spriteNote = '';
+      if (annotateLeader && rom && OB64.scenario && OB64.scenario.leaderClassHasMapSprite && !OB64.scenario.leaderClassHasMapSprite(rom, id)) {
+        spriteNote = ' - no map sprite (cannot lead)';
+      }
+      html += '<option value="' + id + '"' + (id === cur ? ' selected' : '') + '>' + esc(names[k]) + (isLarge(id) ? ' (large)' : '') + esc(spriteNote) + '</option>';
     }
     return html;
   }
@@ -419,15 +423,15 @@
     return h + '</div></div>';
   }
 
-  function pickersHtml(rec) {
+  function pickersHtml(rec, rom) {
     var h = '<div class="sq-pick">';
-    h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0]) + '</select></div>';
+    h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0], rom, true) + '</select></div>';
     ['B', 'C'].forEach(function (role) {
       var cls = rec[groupClassField(role)], count = groupCount(rec, role);
       var reason = groupAddDisabledReason(rec, role);
       var label = 'Member ' + role + (cls ? ' - ' + cn(cls) + ' x' + count + (isLarge(cls) ? ' large' : '') : ' - Empty');
       h += '<div class="sq-field"><label>' + esc(label) + '</label><div class="sq-group-row">' +
-        '<select data-grp="' + role + '">' + classOptionsHtml(cls) + '</select>' +
+        '<select data-grp="' + role + '">' + classOptionsHtml(cls, rom, false) + '</select>' +
         '<button type="button" class="sq-add-member" data-grp="' + role + '" title="' + esc(reason || ('Add one Member ' + role + ' unit to the grid')) + '" aria-label="Add Member ' + role + '"' + (reason ? ' disabled' : '') + '>+</button>' +
         '</div></div>';
     });
@@ -516,7 +520,7 @@
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
         'Allow full raw EDAT capacity: Leader + Bx3 + Cx3. This can exceed the game placement assumptions; over-cap squads may hide units in map inspection, place them off-grid in battle, or make them untargetable.</span></label>';
-      html += '<div class="sq-editor-grid">' + gridHtml(rec, true) + pickersHtml(rec) + '</div>';
+      html += '<div class="sq-editor-grid">' + gridHtml(rec, true) + pickersHtml(rec, rom) + '</div>';
       if (ui.notice) html += '<div class="sq-notice">' + esc(ui.notice) + '</div>';
       var n = memberCount(rec), slots = formationSlotCount(rec), adjOk = adjacencyOk(rec), hasLeader = !!rec[0] && !!rec[6];
       var normalOk = hasLeader && adjOk && slots <= 5;

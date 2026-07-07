@@ -240,9 +240,9 @@ window.OB64 = window.OB64 || {};
           'This ROM revision can be parsed and repacked, but the Squads runtime ' +
           'override hook has not been verified for it yet.\n\n' +
           (rom.layout.unsupportedFeaturesReason || 'Load a supported header revision 0 ROM to export squad overrides.'));
-          statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
-          return;
-        }
+        statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
+        return;
+      }
       if (OB64.tools && patchRegionOwners.length) {
         try {
           OB64.tools.assertDesiredCompatible(rom, patchRegionOwners);
@@ -1752,6 +1752,7 @@ window.OB64 = window.OB64 || {};
     var escHandler = function(ev) { if (ev.key === 'Escape') close(); };
     document.addEventListener('keydown', escHandler);
   }
+  OB64.showErrorModal = showErrorModal;
   OB64.showConfirmModal = showConfirmModal;
 
   function commitSelectionToShop(shopIdx, category, selected) {

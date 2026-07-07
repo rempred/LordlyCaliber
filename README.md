@@ -36,7 +36,7 @@ The public editor is intentionally clean and browser-only:
 - `scenario.js` renders the map-first Scenario tab: placement, routes,
   triggers, buried treasure, added squads, and the ESET export/relocation lane.
 - `scenario-eset-codec.js` parses and rebuilds the per-mission ESET archives
-  (validated round-trip against all 63 vanilla files).
+  (validated round-trip against all 64 selected runtime-key payloads).
 - `scenario-eset-data.js` and `scenario-map-calibration.js` are generated from
   the research workspace (mission data, donor census, per-key map
   registrations). Do not hand-edit.
