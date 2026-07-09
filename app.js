@@ -2811,6 +2811,34 @@ window.OB64 = window.OB64 || {};
       }
       return c;
     }
+    // Combat-action picker cell: shows the resolved attack name (rom-names-data.js
+    // OB64.ACTION_NAMES, combat action table 0x60980, ID = record + 1) and edits
+    // via the searchable picker. Falls back to a raw byte cell if the generated
+    // module is not loaded.
+    function addActionCell(tr, def, field, label, extraTitle) {
+      if (!OB64.actionName || !OB64.actionOptions) {
+        return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
+      }
+      var id = def ? (def[field] || 0) : 0;
+      var c = td(tr, def ? (id > 0 ? OB64.actionName(id) : '—') : '');
+      c.className = 'editable equip-config';
+      c.title = label + ' — ID ' + id + ' (combat action table 0x60980, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+      if (def) {
+        c.addEventListener('click', function() {
+          openItemPickerFromDict({
+            title: label + ' — ' + (def.name || ''),
+            options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
+            onSelect: function(nv) {
+              def[field] = nv;
+              c.textContent = nv > 0 ? OB64.actionName(nv) : '—';
+              c.title = label + ' — ID ' + nv + ' (combat action table 0x60980, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+              c.classList.add('modified');
+            }
+          });
+        });
+      }
+      return c;
+    }
     // Read-only cell for data that isn't part of the class def (e.g. stat-gate
     // thresholds from the LZSS-compressed block, back-row attack counts from
     // wiki data). Rendered with .read-only-cell for a muted look.
@@ -2907,8 +2935,8 @@ window.OB64 = window.OB64 || {};
           { label: 'Flags', title: 'B53 combat flags \u2014 not decoded', cls: 'col-raw' },
           { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
           { label: 'B43', title: 'B43 \u2014 unknown, often matches B45 (front attack ID) but not always', cls: 'col-raw' },
-          { label: 'F-AtkID', title: 'B45 \u2014 front-row attack ID (index into combat action table at ROM 0x60988). e.g. Thrust=1, Slash=4, Strike=9, [Elem. Magic]=45. Identified via CSV.', cls: 'col-raw' },
-          { label: 'R-AtkID', title: 'B47 \u2014 rear-row attack ID (combat action table index). May differ from B45 for caster/boss classes (e.g. Valkyrie front=Cleave(5), rear=Lightning(51)). Mid-row reuses B45.', cls: 'col-raw' }
+          { label: 'Front Attack', title: 'B45 \u2014 front-row attack (combat action table 0x60980, ID = record + 1). Names resolved from the ROM name pool via rom-names-data.js.' },
+          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack. Mid-row reuses B45. Caster IDs 45-48/51-54 display element-composed names in-game (e.g. Valkyrie shows Lightning).' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
@@ -2922,9 +2950,9 @@ window.OB64 = window.OB64 || {};
           addNumericCell(tr, def, 'magDef', 255);
           addRawByteCell(tr, def, 'flagsRaw', 'B53 combat flags \u2014 not decoded');
           addRawByteCell(tr, def, 'b42Raw', 'B42 \u2014 fixed-equip-slots bitmask: 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head');
-          addRawByteCell(tr, def, 'b43Raw', 'B43 \u2014 unknown, often equals B45 (front attack ID)');
-          addRawByteCell(tr, def, 'b45Raw', 'B45 \u2014 front-row attack ID (combat action table index). Thrust=1, Slash=4, Strike=9, [Elem. Magic]=45');
-          addRawByteCell(tr, def, 'b47Raw', 'B47 \u2014 rear-row attack ID (combat action table index). Differs from B45 for classes with unique rear attacks.');
+          addRawByteCell(tr, def, 'b43Raw', 'B43 \u2014 unknown, often equals B45 (front attack ID)' + (def && OB64.actionName ? '. If attack ID: ' + OB64.actionName(def.b43Raw) : ''));
+          addActionCell(tr, def, 'b45Raw', 'Front attack (B45)');
+          addActionCell(tr, def, 'b47Raw', 'Rear attack (B47)', 'Mid-row reuses B45. Caster IDs 45-48/51-54 display element-composed names in-game.');
         };
       } else if (activeSubview === 'promotion') {
         cols = [
@@ -3415,10 +3443,39 @@ window.OB64 = window.OB64 || {};
             {raw: true, title: 'B42 \u2014 fixed-equip-slots bitmask (identified via CSV "Fixed Equips"). 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head. Lycanthrope=0x0F (all fixed), Soldier=0x03 (Wpn+Off).'}));
           combatGrid.appendChild(tileNumeric(def, 'b43Raw', 'B43',
             {raw: true, title: 'B43 \u2014 unknown, often matches B45 (front attack ID)'}));
-          combatGrid.appendChild(tileNumeric(def, 'b45Raw', 'Front AtkID',
-            {raw: true, title: 'B45 \u2014 front-row attack ID (combat action table index). e.g. Thrust=1, Slash=4, Strike=9, [Elem. Magic]=45'}));
-          combatGrid.appendChild(tileNumeric(def, 'b47Raw', 'Rear AtkID',
-            {raw: true, title: 'B47 \u2014 rear-row attack ID. May differ from front (e.g. Valkyrie front=Cleave(5), rear=Lightning(51)). Mid-row reuses B45.'}));
+          function actionTile(field, label, hint) {
+            if (!OB64.actionName || !OB64.actionOptions) {
+              return tileNumeric(def, field, label, {raw: true, title: hint});
+            }
+            var entry = document.createElement('div');
+            entry.className = 'stat-entry editable';
+            entry.title = hint;
+            var lbl = document.createElement('span');
+            lbl.className = 'stat-label';
+            lbl.textContent = label;
+            entry.appendChild(lbl);
+            var vs = document.createElement('span');
+            vs.className = 'stat-value';
+            var cur = def[field] || 0;
+            vs.textContent = cur > 0 ? OB64.actionName(cur) : 'None';
+            entry.appendChild(vs);
+            entry.addEventListener('click', function() {
+              openItemPickerFromDict({
+                title: label + ' \u2014 ' + (def.name || ''),
+                options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
+                onSelect: function(nv) {
+                  def[field] = nv;
+                  vs.textContent = nv > 0 ? OB64.actionName(nv) : 'None';
+                  entry.classList.add('modified');
+                }
+              });
+            });
+            return entry;
+          }
+          combatGrid.appendChild(actionTile('b45Raw', 'Front Attack',
+            'B45 \u2014 front-row attack (combat action table 0x60980, ID = record + 1)'));
+          combatGrid.appendChild(actionTile('b47Raw', 'Rear Attack',
+            'B47 \u2014 rear-row attack (mid-row reuses B45; caster IDs 45-48/51-54 display element-composed names in-game)'));
           combatSec.appendChild(combatGrid);
           card.appendChild(combatSec);
 
