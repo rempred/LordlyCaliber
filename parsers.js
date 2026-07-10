@@ -523,6 +523,32 @@ OB64.parseNeutralGlobalRate = function(z64) {
   };
 };
 
+// Resolve the value shown when the Encounters tab is rendered. The source ROM
+// instruction pattern remains unchanged until export, so a session/project edit
+// must take precedence over a still-vanilla parsed pattern on later renders.
+OB64.neutralGlobalRateDisplayMicroBasisPoints = function(globalRate) {
+  var vanillaMicroBp = OB64.NEUTRAL_GLOBAL_VANILLA_MICRO_BASIS_POINTS || 700;
+  if (!globalRate) return vanillaMicroBp;
+
+  var currentMicroBp = globalRate.microBasisPoints != null
+    ? Number(globalRate.microBasisPoints)
+    : Number(globalRate.basisPoints || 0) * 100;
+  function clamp(value) {
+    return Math.max(0, Math.min(1000000, Math.round(value)));
+  }
+
+  if (globalRate.modified && isFinite(currentMicroBp)) {
+    return clamp(currentMicroBp);
+  }
+
+  var isVanillaPattern = globalRate.mode === 'threshold' &&
+    globalRate.divisor === OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR &&
+    globalRate.normalThreshold === OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD;
+  if (isVanillaPattern) return vanillaMicroBp;
+
+  return isFinite(currentMicroBp) ? clamp(currentMicroBp) : 0;
+};
+
 OB64.parseNeutralEncounters = function(z64) {
   var tableStart = OB64.NEUTRAL_ENCOUNTER_OFFSET;
   var lead = OB64.NEUTRAL_ENCOUNTER_LEADING_PAD;
@@ -1523,8 +1549,8 @@ OB64.parseClassGroups = function(z64) {
 // authoritative GameShark mapping; intermediate terminators separate categories.
 // Stat order: STR, VIT, INT, MEN, AGI, DEX (6 x [u16 base, u8 growth, u8 pad])
 // B24 = Alignment, B25-31 = 7 resistances (Phys/Air/Fire/Earth/Water/Virtue/Bane)
-// B44 = front attack count, B45 = front atk ID, B46 = mid attack count,
-// B47 = rear atk ID; mid row reuses B45. B48 = rear attack count.
+// B43/B44 = front attack ID/count, B45/B46 = middle attack ID/count,
+// B47/B48 = rear attack ID/count.
 // B49-B53 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef, flags).
 // ============================================================
 OB64.CLASS_DEF_OFFSET = 0x5DAD8;
@@ -1586,10 +1612,13 @@ OB64.parseClassDefs = function(z64) {
     }
 
     // B42-48 row attack block.
-    // Layout verified in-game with a B44=10/B46=10 patch:
-    //   B42 = fixed equipment slot mask; B43 = unknown
+    // Counts were verified in-game with a B44=10/B46=10 patch. The three
+    // action IDs were verified from the ROM reader path and discriminating
+    // class-chart rows on 2026-07-10:
+    //   B42 = fixed equipment slot mask
+    //   B43 = front row attack ID
     //   B44 = front row attack count (EDITABLE, VERIFIED)
-    //   B45 = front/reused-mid attack ID
+    //   B45 = middle row attack ID
     //   B46 = middle row attack count (EDITABLE, VERIFIED)
     //   B47 = rear row attack ID
     //   B48 = rear row attack count
@@ -1600,9 +1629,8 @@ OB64.parseClassDefs = function(z64) {
     var midAtks   = z64[off + 46];
     var b47Raw    = z64[off + 47];
 
-    // Back-compat legacy array — callers not yet migrated still read this.
-    // Encoding keeps raw bytes available but is misleading; new code should
-    // use the named frontAtks/midAtks/bXXRaw fields instead.
+    // Deprecated pre-decode shape retained for external compatibility only.
+    // These values are not equipment slot types/groups.
     var equipSlots = [
       { slotType: b42Raw,    equipGroup: b43Raw },
       { slotType: frontAtks, equipGroup: b45Raw },
@@ -1616,6 +1644,11 @@ OB64.parseClassDefs = function(z64) {
     // B49-B53 = combat multipliers + flags.
     var rearAtks   = z64[off + 48];
     var atkTypeRaw = rearAtks; // legacy alias — keep for any external consumer
+    var rowAttacks = [
+      { attackId: b43Raw, count: frontAtks },
+      { attackId: b45Raw, count: midAtks },
+      { attackId: b47Raw, count: rearAtks }
+    ];
     var physAtk    = z64[off + 49];
     var magAtk     = z64[off + 50];
     var physDef    = z64[off + 51];
@@ -1695,12 +1728,13 @@ OB64.parseClassDefs = function(z64) {
       moveType: moveType,           // B32
       b33Raw: b33Raw,               // B33 padding
       defaultEquip: defaultEquip,   // B34-41: [weapon, body, offhand, headgear] u16BE
-      // B42-47 row-attack block (was mislabeled equipSlots)
+      // B42-48 row-attack block (was mislabeled equipSlots)
       b42Raw: b42Raw, b43Raw: b43Raw,
       frontAtks: frontAtks,         // B44 — front row attack count (EDITABLE, verified)
       b45Raw: b45Raw,
       midAtks: midAtks,             // B46 — middle row attack count (EDITABLE, verified)
       b47Raw: b47Raw,
+      rowAttacks: rowAttacks,       // canonical [{attackId,count}] front/middle/rear
       equipSlots: equipSlots,       // LEGACY back-compat shape (do not use in new code)
       // B48 = rear-row attack count (verified against CSV 79/79)
       rearAtks: rearAtks,           // B48

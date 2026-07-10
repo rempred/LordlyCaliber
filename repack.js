@@ -595,13 +595,13 @@ OB64.serializeClassDefs = function(classDefs, z64) {
       OB64.writeU16BE(z64, off + 34 + de * 2, r.defaultEquip[de]);
     }
 
-    // B42-47: row-attack block (was mislabeled equipSlots)
+    // B42-48: fixed-equipment mask plus front/middle/rear attack ID/count pairs.
     z64[off + 42] = r.b42Raw || 0;
-    z64[off + 43] = r.b43Raw || 0;
+    z64[off + 43] = r.b43Raw || 0;   // front row attack ID
     z64[off + 44] = r.frontAtks;      // B44 — front row attack count
-    z64[off + 45] = r.b45Raw || 0;
+    z64[off + 45] = r.b45Raw || 0;   // middle row attack ID
     z64[off + 46] = r.midAtks;        // B46 — middle row attack count
-    z64[off + 47] = r.b47Raw || 0;
+    z64[off + 47] = r.b47Raw || 0;   // rear row attack ID
 
     // B48 = rear-row attack count (decoded from CSV cross-check).
     // Prefer rearAtks if the UI set it; fall back to legacy atkTypeRaw.
