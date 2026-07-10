@@ -741,50 +741,22 @@ OB64.isDefensive = function(equipType) {
   return equipType >= 0x0E && equipType <= 0x16;
 };
 
-// ============================================================
-// EQUIPMENT SLOT TYPE NAMES (class def B42/B44/B46 first byte)
-// ============================================================
-OB64.EQUIP_SLOT_TYPES = {
-  0x00: "Weapon",
-  0x01: "Body",
-  0x02: "Off-hand",
-  0x03: "Advanced",
-  0x08: "Special",
-  0x0F: "Fixed",
-};
+// Deprecated compatibility names from the editor's pre-2026-07-10 class-row
+// decode. B42 is a fixed-equipment mask; B43/B45/B47 are the front/middle/rear
+// combat action IDs, while B44/B46/B48 are their counts. Keep these symbols so
+// old extensions do not crash, but do not expose the retired equipment-profile
+// interpretation.
+OB64.EQUIP_SLOT_TYPES = {};
+OB64.EQUIP_GROUPS = {};
 
 OB64.equipSlotTypeName = function(id) {
-  return OB64.EQUIP_SLOT_TYPES[id] || ("Flag 0x" + id.toString(16).padStart(2, "0"));
-};
-
-// ============================================================
-// EQUIPMENT GROUP DESCRIPTIONS (class def B43/B45/B47 second byte)
-// Cross-referenced from H2F Mod CSV default equipment per class.
-// These are equipment profile indices that determine which item
-// categories a class can equip in each slot.
-// ============================================================
-OB64.EQUIP_GROUPS = {
-  0x01: "Spear/Light",     // Soldier, Dragon Tamer: spears + light armor
-  0x03: "Spear/Heavy",     // Phalanx, Cataphract: spears + heavy armor + heavy shields
-  0x04: "Sword/Armor",     // Fighter, Knight, Paladin, etc: swords + armor + shields
-  0x05: "Polearm/Med",     // Valkyrie, Black Knight, Freya: polearms + medium armor
-  0x06: "Claw/Ninja",      // Ninja, Ninja Master: claws + ninja garb
-  0x09: "Axe/Light",       // Berserker: axes + light armor
-  0x0C: "Whip/Leather",    // Beast Tamer, Beast Master: whips + leather
-  0x0D: "Doll/Robe",       // Doll Master, Enchanter: dolls + robes
-  0x0E: "Bow/Light",       // Amazon, Archer, Diana: bows + light armor
-  0x11: "Clothing",        // Sword Master slot 4: light clothing
-  0x2D: "Staff/Magic",     // Wizard, Sorceress, Archmage, Siren: staves + robes + spellbooks
-  0x2E: "Adv. Magic",      // Archmage, Siren, Freya: advanced magic accessories
-  0x2F: "Witch Magic",     // Witch: staves + witch dress + spellbooks
-  0x32: "Ninja Adv.",      // Ninja Master slot 4: advanced ninja accessories
-  0x33: "Valkyrie Arm",    // Valkyrie slot 4: special armor
-  0x34: "Cleric",          // Cleric: maces + cleric vestments
-  0x35: "Priest",          // Priest: maces + robes of the wise
+  return "Legacy value 0x" + id.toString(16).padStart(2, "0");
 };
 
 OB64.equipGroupName = function(id) {
-  return OB64.EQUIP_GROUPS[id] || ("Group 0x" + id.toString(16).padStart(2, "0"));
+  return OB64.actionName
+    ? OB64.actionName(id)
+    : ("Action 0x" + id.toString(16).padStart(2, "0"));
 };
 
 // ============================================================

@@ -2812,7 +2812,7 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     // Combat-action picker cell: shows the resolved attack name (rom-names-data.js
-    // OB64.ACTION_NAMES, combat action table 0x60980, ID = record + 1) and edits
+    // OB64.ACTION_NAMES, combat action table 0x60988, ID = record + 1) and edits
     // via the searchable picker. Falls back to a raw byte cell if the generated
     // module is not loaded.
     function addActionCell(tr, def, field, label, extraTitle) {
@@ -2822,7 +2822,7 @@ window.OB64 = window.OB64 || {};
       var id = def ? (def[field] || 0) : 0;
       var c = td(tr, def ? (id > 0 ? OB64.actionName(id) : '—') : '');
       c.className = 'editable equip-config';
-      c.title = label + ' — ID ' + id + ' (combat action table 0x60980, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+      c.title = label + ' — ID ' + id + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
       if (def) {
         c.addEventListener('click', function() {
           openItemPickerFromDict({
@@ -2831,7 +2831,7 @@ window.OB64 = window.OB64 || {};
             onSelect: function(nv) {
               def[field] = nv;
               c.textContent = nv > 0 ? OB64.actionName(nv) : '—';
-              c.title = label + ' — ID ' + nv + ' (combat action table 0x60980, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+              c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
               c.classList.add('modified');
             }
           });
@@ -2934,9 +2934,9 @@ window.OB64 = window.OB64 || {};
           { label: 'MDef', title: 'B52 magic defense multiplier' },
           { label: 'Flags', title: 'B53 combat flags \u2014 not decoded', cls: 'col-raw' },
           { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
-          { label: 'B43', title: 'B43 \u2014 unknown, often matches B45 (front attack ID) but not always', cls: 'col-raw' },
-          { label: 'Front Attack', title: 'B45 \u2014 front-row attack (combat action table 0x60980, ID = record + 1). Names resolved from the ROM name pool via rom-names-data.js.' },
-          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack. Mid-row reuses B45. Caster IDs 45-48/51-54 display element-composed names in-game (e.g. Valkyrie shows Lightning).' }
+          { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Names resolved from the ROM name pool via rom-names-data.js.' },
+          { label: 'Middle Attack', title: 'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1).' },
+          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). Caster IDs 45-48/51-54 display element-composed names in-game (e.g. Valkyrie shows Lightning).' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
@@ -2950,9 +2950,9 @@ window.OB64 = window.OB64 || {};
           addNumericCell(tr, def, 'magDef', 255);
           addRawByteCell(tr, def, 'flagsRaw', 'B53 combat flags \u2014 not decoded');
           addRawByteCell(tr, def, 'b42Raw', 'B42 \u2014 fixed-equip-slots bitmask: 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head');
-          addRawByteCell(tr, def, 'b43Raw', 'B43 \u2014 unknown, often equals B45 (front attack ID)' + (def && OB64.actionName ? '. If attack ID: ' + OB64.actionName(def.b43Raw) : ''));
-          addActionCell(tr, def, 'b45Raw', 'Front attack (B45)');
-          addActionCell(tr, def, 'b47Raw', 'Rear attack (B47)', 'Mid-row reuses B45. Caster IDs 45-48/51-54 display element-composed names in-game.');
+          addActionCell(tr, def, 'b43Raw', 'Front attack (B43)');
+          addActionCell(tr, def, 'b45Raw', 'Middle attack (B45)');
+          addActionCell(tr, def, 'b47Raw', 'Rear attack (B47)', 'Caster IDs 45-48/51-54 display element-composed names in-game.');
         };
       } else if (activeSubview === 'promotion') {
         cols = [
@@ -3441,8 +3441,6 @@ window.OB64 = window.OB64 || {};
             {raw: true, title: 'B53 combat flags \u2014 not decoded, edit with caution'}));
           combatGrid.appendChild(tileNumeric(def, 'b42Raw', 'FixEq Mask',
             {raw: true, title: 'B42 \u2014 fixed-equip-slots bitmask (identified via CSV "Fixed Equips"). 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head. Lycanthrope=0x0F (all fixed), Soldier=0x03 (Wpn+Off).'}));
-          combatGrid.appendChild(tileNumeric(def, 'b43Raw', 'B43',
-            {raw: true, title: 'B43 \u2014 unknown, often matches B45 (front attack ID)'}));
           function actionTile(field, label, hint) {
             if (!OB64.actionName || !OB64.actionOptions) {
               return tileNumeric(def, field, label, {raw: true, title: hint});
@@ -3472,10 +3470,12 @@ window.OB64 = window.OB64 || {};
             });
             return entry;
           }
-          combatGrid.appendChild(actionTile('b45Raw', 'Front Attack',
-            'B45 \u2014 front-row attack (combat action table 0x60980, ID = record + 1)'));
+          combatGrid.appendChild(actionTile('b43Raw', 'Front Attack',
+            'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1)'));
+          combatGrid.appendChild(actionTile('b45Raw', 'Middle Attack',
+            'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1)'));
           combatGrid.appendChild(actionTile('b47Raw', 'Rear Attack',
-            'B47 \u2014 rear-row attack (mid-row reuses B45; caster IDs 45-48/51-54 display element-composed names in-game)'));
+            'B47 \u2014 rear-row attack (caster IDs 45-48/51-54 display element-composed names in-game)'));
           combatSec.appendChild(combatGrid);
           card.appendChild(combatSec);
 
@@ -3704,14 +3704,7 @@ window.OB64 = window.OB64 || {};
       var VANILLA_PATCH_MICRO_BP = OB64.NEUTRAL_GLOBAL_VANILLA_MICRO_BASIS_POINTS || (VANILLA_PATCH_BP * 100);
       var VANILLA_EXACT_BP = ((OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD + 1) * 10000) /
         OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
-      var isVanillaGlobal = globalRate.mode === 'threshold' &&
-        globalRate.divisor === OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR &&
-        globalRate.normalThreshold === OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD;
-      var startMicroBp = isVanillaGlobal
-        ? VANILLA_PATCH_MICRO_BP
-        : Math.max(0, Math.min(1000000, Math.round(globalRate.microBasisPoints != null
-          ? globalRate.microBasisPoints
-          : (globalRate.basisPoints || 0) * 100)));
+      var startMicroBp = OB64.neutralGlobalRateDisplayMicroBasisPoints(globalRate);
 
       function fmtMult(mult) {
         return Number(mult).toFixed(2).replace(/\.00$/, '');

@@ -1037,13 +1037,13 @@ window.OB64 = window.OB64 || {};
     }
 
     switch (off) {
-      case 42: r.b42Raw = value; syncEquipSlots(r); return;
-      case 43: r.b43Raw = value; syncEquipSlots(r); return;
-      case 44: r.frontAtks = value; syncEquipSlots(r); return;
-      case 45: r.b45Raw = value; syncEquipSlots(r); return;
-      case 46: r.midAtks = value; syncEquipSlots(r); return;
-      case 47: r.b47Raw = value; syncEquipSlots(r); return;
-      case 48: r.rearAtks = value; r.atkTypeRaw = value; syncAttacks(r); return;
+      case 42: r.b42Raw = value; syncRowAttackState(r); return;
+      case 43: r.b43Raw = value; syncRowAttackState(r); return;
+      case 44: r.frontAtks = value; syncRowAttackState(r); return;
+      case 45: r.b45Raw = value; syncRowAttackState(r); return;
+      case 46: r.midAtks = value; syncRowAttackState(r); return;
+      case 47: r.b47Raw = value; syncRowAttackState(r); return;
+      case 48: r.rearAtks = value; r.atkTypeRaw = value; syncRowAttackState(r); syncAttacks(r); return;
       case 49: r.physAtk = value; syncAttacks(r); return;
       case 50: r.magAtk = value; syncAttacks(r); return;
       case 51: r.physDef = value; syncAttacks(r); return;
@@ -1066,7 +1066,13 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function syncEquipSlots(r) {
+  function syncRowAttackState(r) {
+    r.rowAttacks = [
+      { attackId: r.b43Raw, count: r.frontAtks },
+      { attackId: r.b45Raw, count: r.midAtks },
+      { attackId: r.b47Raw, count: r.rearAtks }
+    ];
+    // Deprecated pre-decode shape retained for patch compatibility only.
     r.equipSlots = [
       { slotType: r.b42Raw,    equipGroup: r.b43Raw },
       { slotType: r.frontAtks, equipGroup: r.b45Raw },
