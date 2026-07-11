@@ -990,13 +990,9 @@ OB64.SAVE = {
     ELEMENT:       0x15,   // u8 (0=class default, 1-B per GS guide) — EXPERIMENTAL
     HP_MAX:        0x17,   // u8
     FLAG_1A:       0x1A,   // u8 — seed default 0x02; observed 0x01/0x02 on real chars
-    FLAG_1B:       0x1B,   // u8 — seed default 0x30; observed 0x1e-0x4B on real chars
+    ALIGNMENT:     0x1B,   // u8 (0=Chaotic, 50=Neutral, 100=Lawful), live-verified
     HP_CUR:        0x19,   // u8
-    ALIGNMENT:     0x28,   // u8 (0=Chaotic, 50=Neutral, 100=Lawful). +0x28 shows
-                           // values 50-56 across most player chars and 0x55=85
-                           // (Lawful) for Belinda, consistent with alignment.
-                           // NOT +0x2B: that offset is WEAPON (confirmed via
-                           // Frost state2↔state3 diff).
+    LUCK:          0x28,   // u8 Luck (0..100 item clamp), live-verified with Goblet
     EXP:           0x35,   // u8 experience toward next level (verified vs in-game)
     // Stat offsets verified against the in-game status display for several
     // characters (Magnus, Frost, Eva). Earlier notes had the three pairs
@@ -1029,16 +1025,15 @@ OB64.SAVE = {
   INVENTORY_ENTRY_SIZE: 4,
   INVENTORY_MAX_ENTRIES: 128,
 
-  // Army consumable + treasure inventory — phys 0x193C8D (located by diffing
-  // savestates taken before/after selling consumables and the Ansate Cross).
+  // Army consumable + treasure inventory — physical RDRAM 0x193AC0.
   // Format: flat list of 4-byte records, zero-terminated. Each record is
-  // [u8 consumable_id, 0x00, u8 count, 0x00]. Consumable IDs index into the
+  // [u16BE consumable_id, u16BE count]. Consumable IDs index into the
   // 45-entry consumable master table (parsed by OB64.parseConsumables).
   // The "Treasure" tab filters this list by flagHi category; quest items like
   // Ansate Cross (consumable id 25) live alongside Heal Leaf (id 1) etc.
-  CONSUMABLE_INV_BASE: 0x193C8D,
+  CONSUMABLE_INV_BASE: 0x193AC0,
   CONSUMABLE_INV_ENTRY_SIZE: 4,
-  CONSUMABLE_INV_MAX_ENTRIES: 64,
+  CONSUMABLE_INV_MAX_ENTRIES: 40,
 
   // Native SaveRAM inventory tables. The game expands these into the runtime
   // sorted lists above when a save is loaded.

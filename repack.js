@@ -610,12 +610,14 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     z64[off + 50] = r.magAtk;
     z64[off + 51] = r.physDef;
     z64[off + 52] = r.magDef;
-    z64[off + 53] = r.flagsRaw || 0;
-
-    z64[off + 54] = r.reqLevel;       // B54
-    z64[off + 55] = r.reqClass;       // B55
-    z64[off + 56] = r.reqClassLevel;  // B56
-    z64[off + 57] = (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq) || 0; // B57
+    // B53-B57 level-progression chain. Prefer canonical names while retaining
+    // compatibility with patches produced before the field correction.
+    z64[off + 53] = (r.baseClass !== undefined ? r.baseClass : r.flagsRaw) || 0;
+    z64[off + 54] = (r.baseTransitionLevel !== undefined ? r.baseTransitionLevel : r.reqLevel) || 0;
+    z64[off + 55] = (r.intermediateClass !== undefined ? r.intermediateClass : r.reqClass) || 0;
+    z64[off + 56] = (r.finalTransitionLevel !== undefined ? r.finalTransitionLevel : r.reqClassLevel) || 0;
+    z64[off + 57] = (r.classCopyMatch !== undefined ? r.classCopyMatch :
+      (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq)) || 0;
     z64[off + 58] = r.dragonElement;  // B58
     z64[off + 59] = r.category;       // B59
     // B60-63 in the old stat-framed view are the next class's name pointer.
@@ -1108,6 +1110,7 @@ OB64.writeCharacter = function(rdram, slotOff, ch) {
   if (ch.gender    !== undefined) rdram[slotOff + F.GENDER]    = ch.gender    & 0xFF;
   if (ch.element   !== undefined) rdram[slotOff + F.ELEMENT]   = ch.element   & 0xFF;
   if (ch.alignment !== undefined) rdram[slotOff + F.ALIGNMENT] = ch.alignment & 0xFF;
+  if (ch.luck      !== undefined) rdram[slotOff + F.LUCK]      = ch.luck      & 0xFF;
   if (ch.exp       !== undefined) rdram[slotOff + F.EXP]       = ch.exp       & 0xFF;
   OB64.writeU16BE_rdram(rdram, slotOff + F.STR, ch.stats.STR & 0xFFFF);
   OB64.writeU16BE_rdram(rdram, slotOff + F.VIT, ch.stats.VIT & 0xFFFF);
@@ -1166,20 +1169,13 @@ OB64.writeInventoryEntry = function(rdram, entry) {
 /**
  * Write one consumable-inventory entry.
  * `entry` = { off, consumableId, count } from parseConsumableInventory.
- * Record layout is [u8 id, 0x00, u8 count, 0x00].
+ * Record layout is [u16BE id, u16BE count].
  */
 OB64.writeConsumableInventoryEntry = function(rdram, entry) {
-  if (entry.nativeSaveRam) {
-    rdram[entry.off]     = (entry.consumableId >> 8) & 0xFF;
-    rdram[entry.off + 1] = entry.consumableId & 0xFF;
-    rdram[entry.off + 2] = 0;
-    rdram[entry.off + 3] = entry.count & 0xFF;
-    return;
-  }
-  rdram[entry.off]     = entry.consumableId & 0xFF;
-  rdram[entry.off + 1] = 0;
-  rdram[entry.off + 2] = entry.count & 0xFF;
-  rdram[entry.off + 3] = 0;
+  rdram[entry.off]     = (entry.consumableId >> 8) & 0xFF;
+  rdram[entry.off + 1] = entry.consumableId & 0xFF;
+  rdram[entry.off + 2] = (entry.count >> 8) & 0xFF;
+  rdram[entry.off + 3] = entry.count & 0xFF;
 };
 
 /** In-place 4-byte word swap over a buffer. Idempotent: two swaps == no-op. */

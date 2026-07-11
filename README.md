@@ -96,7 +96,8 @@ project download asset.
 - **Classes** — edit base stats, growth means, resistances, combat multipliers,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
-  Class cards expose equipment defaults, promotion requirements, unit type,
+  Class cards expose equipment defaults, the B53-B57 level-progression chain,
+  promotion stat gates, unit type,
   movement type, corrected same-class unit size, base HP, HP growth fields, and
   bundled class portraits. Card View has a warning-gated raw-record mode for
   inspecting and editing terminator or sentinel story/NPC class slots.
@@ -158,7 +159,7 @@ project download asset.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
-  one-byte equipment overrides, alignment, element, experience, and army
+  one-byte equipment overrides, alignment, luck, element, experience, and army
   inventory (equipment + consumables + treasures).
   BizHawk/Project64 files expose all populated native in-game slots through a
   slot selector (Project64 `.sra` is the same SRAM word-swapped; exports
@@ -361,7 +362,7 @@ save-state decompression.
   special-leader sprite table so monster-led squads can appear on the world
   map instead of being blocked at export.
 - **Class promotion-tree visualizer** — interactive graph of all promotion
-  paths derived from class def `reqClass` (B55).
+  paths derived from the B53-B56 base/intermediate/final progression chain.
 - **High-attack combat stability** — continue ROM-side regression for extreme
   attack-count mods. The old 28-entry/result-log theory is retracted; current
   research points at combat action-stream/context relocation and scheduler

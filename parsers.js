@@ -1551,7 +1551,8 @@ OB64.parseClassGroups = function(z64) {
 // B24 = Alignment, B25-31 = 7 resistances (Phys/Air/Fire/Earth/Water/Virtue/Bane)
 // B43/B44 = front attack ID/count, B45/B46 = middle attack ID/count,
 // B47/B48 = rear attack ID/count.
-// B49-B53 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef, flags).
+// B49-B52 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef).
+// B53-B57 = base/intermediate/final level-progression chain + class-copy match.
 // ============================================================
 OB64.CLASS_DEF_OFFSET = 0x5DAD8;
 OB64.CLASS_DEF_RECORD_SIZE = 72;
@@ -1653,21 +1654,28 @@ OB64.parseClassDefs = function(z64) {
     var magAtk     = z64[off + 50];
     var physDef    = z64[off + 51];
     var magDef     = z64[off + 52];
-    var flagsRaw   = z64[off + 53];
-    // Back-compat
+    // B53-B57 are the level-progression class chain, not combat flags plus
+    // promotion prerequisites. func_00044934 resolves the class row for an
+    // absolute level as:
+    //   level < B54 -> B53
+    //   level < B56 -> B55
+    //   otherwise   -> the target/current class
+    // B57 is compared with the character's +0x12 class copy to decide whether
+    // the primary or copied class identity supplies the row.
+    var baseClass = z64[off + 53];
+    var baseTransitionLevel = z64[off + 54];
+    var intermediateClass = z64[off + 55];
+    var finalTransitionLevel = z64[off + 56];
+    var classCopyMatch = z64[off + 57];
+
+    // Back-compat aliases for old patch consumers. These names were based on
+    // superseded labels; new code must use the canonical names above.
+    var flagsRaw = baseClass;
+    var reqLevel = baseTransitionLevel;
+    var reqClass = intermediateClass;
+    var reqClassLevel = finalTransitionLevel;
+    var additionalReqRaw = classCopyMatch;
     var attacks = [atkTypeRaw, physAtk, magAtk, physDef, magDef, flagsRaw];
-
-    // Promotion requirements (bytes 54-56)
-    // B54 = base level requirement (0 = no base requirement, i.e. starting class)
-    // B55 = required class ID (0 = no intermediate class needed)
-    // B56 = required class level (0 = no level threshold for required class)
-    // Verified against H2F Mod CSV for all human classes 0x01-0x28.
-    var reqLevel = z64[off + 54];
-    var reqClass = z64[off + 55];
-    var reqClassLevel = z64[off + 56];
-
-    // B57 = additional class requirement (usually 0x00; Special Class=0x5A, Flail Monarch=0x5B)
-    var additionalReqRaw = z64[off + 57];
 
     // B58 = default damage element (0xFF=Random/None, 0x00-0x04=element index)
     var dragonElement = z64[off + 58];
@@ -1743,13 +1751,20 @@ OB64.parseClassDefs = function(z64) {
       magAtk: magAtk,               // B50
       physDef: physDef,             // B51
       magDef: magDef,               // B52
-      flagsRaw: flagsRaw,           // B53 (not decoded)
-      attacks: attacks,             // LEGACY back-compat array
-      reqLevel: reqLevel,           // B54
-      reqClass: reqClass,           // B55
-      reqClassLevel: reqClassLevel, // B56
-      additionalReqRaw: additionalReqRaw, // B57
-      additionalReq: additionalReqRaw,    // LEGACY alias
+      // Level-progression chain (MIPS-verified in func_00044934).
+      baseClass: baseClass,                         // B53
+      baseTransitionLevel: baseTransitionLevel,     // B54 (absolute level)
+      intermediateClass: intermediateClass,         // B55
+      finalTransitionLevel: finalTransitionLevel,   // B56 (absolute level)
+      classCopyMatch: classCopyMatch,               // B57
+      // Superseded aliases retained for patch compatibility.
+      flagsRaw: flagsRaw,
+      attacks: attacks,
+      reqLevel: reqLevel,
+      reqClass: reqClass,
+      reqClassLevel: reqClassLevel,
+      additionalReqRaw: additionalReqRaw,
+      additionalReq: additionalReqRaw,
       dragonElement: dragonElement, // B58
       category: category,           // B59
       ptr: ptr,                     // B60-63 (runtime RAM pointer — HIDE, preserve)
@@ -2170,6 +2185,7 @@ OB64.parseCharacter = function(rdram, slotOff) {
     gender:    rdram[slotOff + F.GENDER],
     element:   rdram[slotOff + F.ELEMENT],
     alignment: rdram[slotOff + F.ALIGNMENT],
+    luck:      rdram[slotOff + F.LUCK],
     exp:       rdram[slotOff + F.EXP],
     hpMax:     rdram[slotOff + F.HP_MAX],
     hpCur:     rdram[slotOff + F.HP_CUR],
@@ -2233,9 +2249,9 @@ OB64.parseInventory = function(rdram) {
 };
 
 /**
- * Parse the army consumable + treasure inventory at phys 0x193C8D.
+ * Parse the army consumable + treasure inventory at phys 0x193AC0.
  * Flat list of 4-byte records, zero-record terminated:
- *   [u8 consumable_id, 0x00, u8 count, 0x00]
+ *   [u16BE consumable_id, u16BE count]
  * consumable_id indexes into the 45-entry consumable master table. Quest /
  * treasure items (e.g. Ansate Cross = id 25) are in the same list and are
  * filtered to the Treasure tab by flagHi category.
@@ -2247,8 +2263,8 @@ OB64.parseConsumableInventory = function(rdram) {
   var entries = [];
   for (var i = 0; i < max; i++) {
     var off = base + i * size;
-    var id = rdram[off];
-    var count = rdram[off + 2];
+    var id = (rdram[off] << 8) | rdram[off + 1];
+    var count = (rdram[off + 2] << 8) | rdram[off + 3];
     if (id === 0 && count === 0) break;
     entries.push({ off: off, consumableId: id, count: count });
   }
@@ -2454,7 +2470,7 @@ OB64.parseSaveRamConsumableInventory = function(rdram) {
   for (var i = 0; i < max; i++) {
     var off = base + i * size;
     var id = (rdram[off] << 8) | rdram[off + 1];
-    var count = rdram[off + 3];
+    var count = (rdram[off + 2] << 8) | rdram[off + 3];
     if (id === 0 && count === 0) break;
     entries.push({ off: off, consumableId: id, count: count, nativeSaveRam: true });
   }
