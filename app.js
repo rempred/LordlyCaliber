@@ -2427,32 +2427,25 @@ window.OB64 = window.OB64 || {};
     return map;
   }
 
-  // Build evolution lookup by deriving promotion links from ROM data.
-  //
-  // Promotion data comes from class def bytes B54-56 (parsed as reqLevel,
-  // reqClass, reqClassLevel). B55 = required class ID: if class X has
-  // B55 = Y, then Y promotes to X. This gives us all intermediate→advanced
-  // promotion links directly from the ROM.
-  //
-  // For intermediate classes (B55=0, B54>0), the required BASE class
-  // (Fighter or Amazon) is encoded in the MIPS handler functions at
-  // ROM 0x1AB030, not in the class def table. Those links are not shown.
+  // Build evolution lookup from the MIPS-verified B53-B56 progression chain.
+  // B53 is the base class, B54 the first absolute-level transition, B55 the
+  // optional intermediate class, and B56 the final absolute-level transition.
+  // The direct predecessor is B55 when present, otherwise B53.
   //
   // The evolution table at ROM 0x654A0 is only used for tier display —
   // its "tree" field is per-category (not global) and cannot derive chains.
   function buildEvolutionLookup(classEvolution) {
     var defMap = buildClassDefMap(rom.classDefs);
 
-    // Derive promotions by reversing B55 (reqClass) across all class defs
+    // Reverse each target class's direct predecessor.
     var promotions = {}; // classId -> [target classIds]
     var demotions = {};  // classId -> [source classIds]
     for (var cid = 0; cid <= 0xA4; cid++) {
       var defs = defMap[cid];
       if (!defs || defs.length === 0) continue;
       var def = defs[0];
-      if (def.reqClass > 0) {
-        // This class requires reqClass → reqClass promotes to this class
-        var src = def.reqClass;
+      var src = def.intermediateClass > 0 ? def.intermediateClass : def.baseClass;
+      if (src > 0 && src !== cid) {
         if (!promotions[src]) promotions[src] = [];
         if (promotions[src].indexOf(cid) === -1) {
           promotions[src].push(cid);
@@ -2868,15 +2861,16 @@ window.OB64 = window.OB64 || {};
       return c;
     }
 
-    function addReqClassCell(tr, def) {
-      var c = td(tr, def && def.reqClass > 0 ? OB64.className(def.reqClass) : '\u2014');
+    function addClassFieldCell(tr, def, field, title) {
+      var c = td(tr, def && def[field] > 0 ? OB64.className(def[field]) : '\u2014');
       c.className = 'editable';
+      if (title) c.title = title;
       if (def) {
         c.addEventListener('click', function() {
           var classOpts = { 0: 'None' };
           for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
-          makeSearchableInput(c, classOpts, def.reqClass, function(nv) {
-            def.reqClass = nv;
+          makeSearchableInput(c, classOpts, def[field], function(nv) {
+            def[field] = nv;
             c.textContent = nv > 0 ? OB64.className(nv) : '\u2014';
             markChanged();
           });
@@ -2932,7 +2926,6 @@ window.OB64 = window.OB64 || {};
           { label: 'MAtk', title: 'B50 magic attack multiplier' },
           { label: 'PDef', title: 'B51 physical defense multiplier' },
           { label: 'MDef', title: 'B52 magic defense multiplier' },
-          { label: 'Flags', title: 'B53 combat flags \u2014 not decoded', cls: 'col-raw' },
           { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
           { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Names resolved from the ROM name pool via rom-names-data.js.' },
           { label: 'Middle Attack', title: 'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1).' },
@@ -2948,7 +2941,6 @@ window.OB64 = window.OB64 || {};
           addNumericCell(tr, def, 'magAtk', 255);
           addNumericCell(tr, def, 'physDef', 255);
           addNumericCell(tr, def, 'magDef', 255);
-          addRawByteCell(tr, def, 'flagsRaw', 'B53 combat flags \u2014 not decoded');
           addRawByteCell(tr, def, 'b42Raw', 'B42 \u2014 fixed-equip-slots bitmask: 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head');
           addActionCell(tr, def, 'b43Raw', 'Front attack (B43)');
           addActionCell(tr, def, 'b45Raw', 'Middle attack (B45)');
@@ -2957,10 +2949,11 @@ window.OB64 = window.OB64 || {};
       } else if (activeSubview === 'promotion') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'ReqLv', title: 'B54 required level' },
-          { label: 'ReqClass', title: 'B55 required class' },
-          { label: 'ReqClLv', title: 'B56 required class level' },
-          { label: 'AddlReq', title: 'B57 additional requirement \u2014 uncertain', cls: 'col-raw' },
+          { label: 'Base', title: 'B53 base class used below the B54 transition level' },
+          { label: 'Next Lv', title: 'B54 absolute level at which the record stops using B53' },
+          { label: 'Intermediate', title: 'B55 intermediate class used until the B56 transition; 0 means no intermediate stage' },
+          { label: 'Final Lv', title: 'B56 absolute level at which the target/final class begins; not levels spent in B55' },
+          { label: 'Copy Match', title: 'B57 class-copy match ID; consumers compare it with character +0x12 when choosing the class row' },
           { label: 'Element', title: 'B58 default damage element (CSV-verified: 0x00=Physical, 0x01=Wind, 0x02=Flame, 0x03=Earth, 0x04=Water, 0xFF=Random/None)' },
           { label: 'Category', title: 'B59 category/tier' },
           // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C,
@@ -2977,10 +2970,11 @@ window.OB64 = window.OB64 || {};
           { label: 'Promotes To' }, { label: 'Promotes From' }
         ];
         fillRow = function(cid, tr, def) {
-          addNumericCell(tr, def, 'reqLevel', 255);
-          addReqClassCell(tr, def);
-          addNumericCell(tr, def, 'reqClassLevel', 255);
-          addRawByteCell(tr, def, 'additionalReqRaw', 'B57 additional requirement \u2014 uncertain');
+          addClassFieldCell(tr, def, 'baseClass', 'B53 base progression class');
+          addNumericCell(tr, def, 'baseTransitionLevel', 255);
+          addClassFieldCell(tr, def, 'intermediateClass', 'B55 optional intermediate progression class');
+          addNumericCell(tr, def, 'finalTransitionLevel', 255);
+          addClassFieldCell(tr, def, 'classCopyMatch', 'B57 class-copy match/override ID');
           addDropdownCell(tr, def, 'dragonElement', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName);
           addDropdownCell(tr, def, 'category', OB64.CLASS_TIERS, OB64.classTierName);
           // Stat gates — class-id-indexed (NOT class_id+1 like class defs).
@@ -3437,8 +3431,6 @@ window.OB64 = window.OB64 || {};
           combatGrid.appendChild(tileNumeric(def, 'magAtk', 'MAtk', {title: 'B50'}));
           combatGrid.appendChild(tileNumeric(def, 'physDef', 'PDef', {title: 'B51'}));
           combatGrid.appendChild(tileNumeric(def, 'magDef', 'MDef', {title: 'B52'}));
-          combatGrid.appendChild(tileNumeric(def, 'flagsRaw', 'Flags',
-            {raw: true, title: 'B53 combat flags \u2014 not decoded, edit with caution'}));
           combatGrid.appendChild(tileNumeric(def, 'b42Raw', 'FixEq Mask',
             {raw: true, title: 'B42 \u2014 fixed-equip-slots bitmask (identified via CSV "Fixed Equips"). 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head. Lycanthrope=0x0F (all fixed), Soldier=0x03 (Wpn+Off).'}));
           function actionTile(field, label, hint) {
@@ -3479,28 +3471,27 @@ window.OB64 = window.OB64 || {};
           combatSec.appendChild(combatGrid);
           card.appendChild(combatSec);
 
-          // --- Promotion (collapsible)
-          var promoSec = makeSection('Promotion', false);
+          // --- Level progression and promotion (collapsible)
+          var promoSec = makeSection('Progression / Promotion', false);
           var promoGrid = document.createElement('div');
           promoGrid.className = 'stats-grid';
-          promoGrid.appendChild(tileNumeric(def, 'reqLevel', 'ReqLevel', {title: 'B54'}));
-          // ReqClass uses a class-searchable dropdown
-          (function() {
+          function progressionClassTile(field, label, titleText) {
             var entry = document.createElement('div');
             entry.className = 'stat-entry editable';
+            entry.title = titleText;
             var lbl = document.createElement('span');
             lbl.className = 'stat-label';
-            lbl.textContent = 'ReqClass';
+            lbl.textContent = label;
             entry.appendChild(lbl);
             var vs = document.createElement('span');
             vs.className = 'stat-value';
-            vs.textContent = def.reqClass > 0 ? OB64.className(def.reqClass) : 'None';
+            vs.textContent = def[field] > 0 ? OB64.className(def[field]) : 'None';
             entry.appendChild(vs);
             entry.addEventListener('click', function() {
               var classOpts = { 0: 'None' };
               for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
-              makeSearchableInput(entry, classOpts, def.reqClass, function(nv) {
-                def.reqClass = nv;
+              makeSearchableInput(entry, classOpts, def[field], function(nv) {
+                def[field] = nv;
                 entry.textContent = '';
                 entry.appendChild(lbl);
                 vs.textContent = nv > 0 ? OB64.className(nv) : 'None';
@@ -3508,11 +3499,18 @@ window.OB64 = window.OB64 || {};
                 markChanged();
               });
             });
-            promoGrid.appendChild(entry);
-          })();
-          promoGrid.appendChild(tileNumeric(def, 'reqClassLevel', 'ReqClassLv', {title: 'B56'}));
-          promoGrid.appendChild(tileNumeric(def, 'additionalReqRaw', 'AddlReq',
-            {raw: true, title: 'B57 additional requirement \u2014 uncertain (0x5A/0x5B rare)'}));
+            return entry;
+          }
+          promoGrid.appendChild(progressionClassTile('baseClass', 'Base Class',
+            'B53 class row used below the B54 transition level'));
+          promoGrid.appendChild(tileNumeric(def, 'baseTransitionLevel', 'Next Lv',
+            {title: 'B54 absolute level at which progression stops using B53'}));
+          promoGrid.appendChild(progressionClassTile('intermediateClass', 'Intermediate',
+            'B55 class row used from B54 until B56; 0 means no intermediate stage'));
+          promoGrid.appendChild(tileNumeric(def, 'finalTransitionLevel', 'Final Lv',
+            {title: 'B56 absolute level at which the target/final class begins'}));
+          promoGrid.appendChild(progressionClassTile('classCopyMatch', 'Copy Match',
+            'B57 compared with character +0x12 when choosing the primary or copied class identity'));
           promoSec.appendChild(promoGrid);
 
           // Stat-gate thresholds: LZSS-compressed block at z64 0x3A960C,
@@ -4548,7 +4546,7 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(rosterHeading);
 
     // Add Character button intentionally disabled: seeded characters don't
-    // appear in-game even with +0x1A/+0x1B/alignment filled, so the game has
+    // appear in-game even with +0x1A, Alignment, and Luck filled, so the game has
     // another activation list or validation field this editor has not located.
     // Re-enable once that mechanism is decoded.
     // var rosterActions = document.createElement('div');
@@ -4715,19 +4713,18 @@ window.OB64 = window.OB64 || {};
     hdr.appendChild(idEl);
     card.appendChild(hdr);
 
-    // Repair button — shown on slots where one of the known activation bytes
-    // from older Add Character builds is missing. Alignment 0 is valid
-    // Chaotic alignment, not a broken-slot signal.
+    // Repair button — shown when the remaining known activation byte from
+    // older Add Character builds is missing. Alignment 0 is valid Chaotic
+    // alignment, not a broken-slot signal.
     var R = saveState.rdram, F = OB64.SAVE.FIELD;
-    var isBrokenSeed = (R[ch.slotOff + F.FLAG_1A] === 0 ||
-                       R[ch.slotOff + F.FLAG_1B] === 0);
+    var isBrokenSeed = (R[ch.slotOff + F.FLAG_1A] === 0);
     var actions = document.createElement('div');
     actions.className = 'save-char-actions';
     if (isBrokenSeed) {
       var repair = document.createElement('button');
       repair.className = 'save-char-btn save-char-repair';
       repair.textContent = 'Repair';
-      repair.title = 'Fill in +0x1A/+0x1B bytes that earlier versions of "Add Character" missed.';
+      repair.title = 'Fill in the +0x1A activation byte that earlier versions of "Add Character" missed.';
       repair.addEventListener('click', function() { repairSeededCharacter(ch); });
       actions.appendChild(repair);
     }
@@ -4759,7 +4756,7 @@ window.OB64 = window.OB64 || {};
     meta.appendChild(hpEl);
     card.appendChild(meta);
 
-    // Element / Alignment / Experience row
+    // Element / Alignment / Luck / Experience row
     var attrLabel = document.createElement('div');
     attrLabel.className = 'class-card-section-label';
     attrLabel.textContent = 'Attributes';
@@ -4769,6 +4766,7 @@ window.OB64 = window.OB64 || {};
     attrRow.className = 'save-attr-row';
     attrRow.appendChild(buildElementField(ch));
     attrRow.appendChild(buildAlignmentField(ch));
+    attrRow.appendChild(buildLuckField(ch));
     attrRow.appendChild(buildExpField(ch));
     card.appendChild(attrRow);
 
@@ -4984,6 +4982,28 @@ window.OB64 = window.OB64 || {};
         ch.alignment = v;
         OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
         val.textContent = v + ' (' + alignmentLabel(v) + ')';
+      });
+    });
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function buildLuckField(ch) {
+    var wrap = document.createElement('div');
+    wrap.className = 'save-attr-field';
+    var lbl = document.createElement('span');
+    lbl.className = 'save-attr-label';
+    lbl.textContent = 'Luck';
+    wrap.appendChild(lbl);
+    var val = document.createElement('span');
+    val.className = 'save-attr-value save-attr-clickable';
+    val.textContent = ch.luck;
+    val.title = 'Click to edit Luck (0-100). Stored at character +0x28.';
+    val.addEventListener('click', function() {
+      makeNumericInput(val, ch.luck, 0, 100, function(v) {
+        ch.luck = v;
+        OB64.writeCharacter(saveState.rdram, ch.slotOff, ch);
+        val.textContent = v;
       });
     });
     wrap.appendChild(val);
@@ -5212,9 +5232,9 @@ window.OB64 = window.OB64 || {};
 
   // Writes a minimal, in-game-safe character record at the given slot.
   // Seeds all fields the game looks at to consider a slot valid/visible:
-  //   +0x14 gender, +0x1A/+0x1B (unknown but always non-zero on real chars),
-  //   alignment, HP, stats, slot_index. Alignment 0 is valid Chaotic; new
-  //   seeded characters use 50 just as a neutral default.
+  //   +0x14 gender, +0x1A activation, Alignment, Luck, HP, stats, slot_index.
+  //   Alignment 0 is valid Chaotic; new seeded characters use neutral/default
+  //   values of 50 for both Alignment and Luck.
   function seedNewCharacter(slotOff, classId) {
     var F = OB64.SAVE.FIELD;
     var slotIndex = ((slotOff - saveState.armyBase) / OB64.SAVE.CHAR_STRIDE) + 1;
@@ -5227,30 +5247,27 @@ window.OB64 = window.OB64 || {};
       gender: 0,
       element: 0,
       alignment: 50,
+      luck: 50,
       exp: 0,
       hpMax: 50,
       hpCur: 50,
       stats: { STR: 50, VIT: 50, INT: 50, MEN: 50, AGI: 50, DEX: 50 },
       equip: { weapon: 0, body: 0, offhand: 0, head: 0 },
     };
-    // Zero the slot first, then write the seed, then fill the "must be
-    // non-zero" bytes real characters carry (+0x1A, +0x1B) — observed on
-    // every real character in state9; missing on slot-49-52 adds that the
-    // game refused to display.
+    // Zero the slot first, then write the seed, then fill the remaining
+    // activation byte at +0x1A. +0x1B is Alignment and may legitimately be 0.
     for (var i = 0; i < OB64.SAVE.CHAR_STRIDE; i++) saveState.rdram[slotOff + i] = 0;
     saveState.rdram[slotOff + F.SLOT_INDEX] = slotIndex & 0xFF;
     OB64.writeCharacter(saveState.rdram, slotOff, ch);
     saveState.rdram[slotOff + F.FLAG_1A] = 0x02;
-    saveState.rdram[slotOff + F.FLAG_1B] = 0x30;
     markChanged();
   }
 
-  // Repair an existing slot that was seeded before the FLAG_1A/1B fix landed.
+  // Repair an existing slot that was seeded before the FLAG_1A fix landed.
   // Called from the "Repair" button on broken seed cards.
   function repairSeededCharacter(ch) {
     var F = OB64.SAVE.FIELD;
     if (saveState.rdram[ch.slotOff + F.FLAG_1A] === 0) saveState.rdram[ch.slotOff + F.FLAG_1A] = 0x02;
-    if (saveState.rdram[ch.slotOff + F.FLAG_1B] === 0) saveState.rdram[ch.slotOff + F.FLAG_1B] = 0x30;
     markChanged();
     refreshInventorySection();
   }
