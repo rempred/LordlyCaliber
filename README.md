@@ -149,10 +149,12 @@ project download asset.
   uses a standalone ROM-tail/free-RAM module and gates on the Army graphics
   task buffers plus War Funds/header fingerprints, so it survives returning
   from Class Change without relying on volatile menu-state bytes. Experimental
-  **High Attack Streamsplit** installs the v13 high-attack battle-stream fix
-  on a separate ROM/RAM lane; attack-count bytes are still edited from the
-  Classes tab, and fresh emulator regression is required before treating it as
-  release-ready. High Attack Streamsplit is currently enabled only on header revision 0.
+  **High Attack Streamsplit** installs the high-attack battle-stream fix on a
+  separate ROM/RAM lane, including interrupt-safe end-of-stream handling,
+  first-menu separator handling, and relocated battle-menu state stores;
+  attack-count bytes are still edited from the Classes tab, and fresh
+  cold-boot regression is required before treating it as release-ready. High
+  Attack Streamsplit is currently enabled only on header revision 0.
 - **Save Game Editor** — load RetroArch `.state` saves (RZIP-compressed or raw),
   BizHawk in-game `.SaveRAM` battery saves, Project64 `.sra` cartridge saves, or
   8 MB RDRAM `.bin` dumps. Edit character names, classes, levels, HP, stats,
@@ -258,9 +260,15 @@ features install code/data in the free upper-RDRAM lanes at `0x80400000+`; a
 strict 4 MB setup can hang, black-screen, or fault when the patched ROM tries to
 load the module.
 
-You do **not** need interpreter core just to play or test an override-patched
-ROM. The default/dynamic recompiler is fine. Interpreter mode is only needed for
-debugger/watchpoint tracing.
+Most override-patched ROMs do **not** require interpreter core just for
+gameplay. Current High Attack Streamsplit is the exception: v21 passed its
+first-menu cold boot under Project64 Interpreter, while the default recompiler
+hard-locked at battle load when the live combat-overlay rewrite installed.
+The attempted v22 cache-maintenance workaround is rejected: it reached the
+menu under the recompiler but then generated an endless stream and overwrote
+RDRAM. The editor therefore exports v21 and requires Interpreter for High
+Attack Streamsplit. Interpreter is also required for debugger/watchpoint
+tracing.
 
 ### Project64 / PJ64
 
@@ -275,8 +283,10 @@ the editor's Project64 `.sra` save support.
 - If editing Project64 config files manually, the exact key varies by build;
   the required result is 8 MB RDRAM. Common forms include `RDRAM Size=8`,
   `RDRamSize=8388608`, or `Game_RDRamSize=0x800000`.
-- Leave the CPU core on the normal/default recompiler for gameplay. Use
-  interpreter only for debugger/watchpoint work.
+- For **High Attack Streamsplit**, select **Interpreter** under the per-game CPU
+  core settings. Project64's default recompiler is unsupported for this tool.
+  Other override features can use the normal/default recompiler.
+  Debugger/watchpoint work also requires Interpreter.
 - If Project64 runs OB64 at about 15 fps, disable **Sync using Audio** in
   Project64's settings. OB64 should run at about 30 fps in-game.
 - Cold-boot the exported ROM before judging runtime patches. Loading an old
@@ -296,8 +306,10 @@ Mupen64Plus-Next core's `.state` files in the Save Game Editor.
 - Make sure Expansion Pak / extra memory is enabled for the core. If the core
   exposes an RDRAM-size option, set it to **8 MB**. In Mupen64Plus-Next `.opt`
   files, the important value is `mupen64plus-ForceDisableExtraMem = "False"`.
-- The dynamic recompiler is fine for gameplay. No interpreter setting is needed
-  for LordlyCaliber's override patches.
+- No RetroArch-core failure equivalent to Project64's High Attack recompiler
+  hard lock has been established. Treat High Attack dynamic-recompiler support
+  as unverified and cold-boot test it before relying on that configuration;
+  the other override patches have no current interpreter requirement.
 - Keep the same core and core version for a save-state workflow. RetroArch
   states are not a portable save format across unrelated cores or emulator
   versions.
