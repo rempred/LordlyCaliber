@@ -970,7 +970,7 @@ window.OB64 = window.OB64 || {};
     b(57, r.classCopyMatch !== undefined ? r.classCopyMatch :
       (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq));
     b(58, r.dragonElement);
-    b(59, r.category);
+    b(59, r.itemCapacity !== undefined ? r.itemCapacity : r.category);
     b(64, r.unitSize);
     b(65, r.sexOrVoice !== undefined ? r.sexOrVoice : r.spriteType);
     b(66, r.leadership !== undefined ? r.leadership : r.combatBehavior);
@@ -1055,7 +1055,7 @@ window.OB64 = window.OB64 || {};
       case 56: r.finalTransitionLevel = value; r.reqClassLevel = value; return;
       case 57: r.classCopyMatch = value; r.additionalReqRaw = value; r.additionalReq = value; return;
       case 58: r.dragonElement = value; return;
-      case 59: r.category = value; return;
+      case 59: r.itemCapacity = value; r.category = value; return;
       case 64: r.unitSize = value; return;
       case 65: r.sexOrVoice = value; r.spriteType = value; return;
       case 66: r.leadership = value; r.combatBehavior = value; return;

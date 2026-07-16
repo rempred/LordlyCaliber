@@ -619,7 +619,7 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     z64[off + 57] = (r.classCopyMatch !== undefined ? r.classCopyMatch :
       (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq)) || 0;
     z64[off + 58] = r.dragonElement;  // B58
-    z64[off + 59] = r.category;       // B59
+    z64[off + 59] = (r.itemCapacity !== undefined ? r.itemCapacity : r.category); // B59
     // B60-63 in the old stat-framed view are the next class's name pointer.
     // Do not write them. Current-class header bytes live at nameOff+4..+11,
     // which is statOff-8..-1 for this record.

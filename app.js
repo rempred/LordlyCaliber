@@ -2470,6 +2470,15 @@ window.OB64 = window.OB64 || {};
   // Confirmed by cross-referencing H2F Mod class chart CSV against ROM hex data.
   var CLASS_STAT_NAMES = ['STR', 'VIT', 'INT', 'MEN', 'AGI', 'DEX'];
   var CLASS_STAT_CSS = ['stat-atk', 'stat-vit', 'stat-int', 'stat-men', 'stat-agi', 'stat-dex'];
+  var CLASS_GROWTH_HISTORY_HELP = {
+    baseClass: 'B53 is the early growth class used to initialize and level-scale a generated character before the first switch level (B54). It does not control player promotion eligibility.',
+    firstSwitchLevel: 'B54 is the first absolute level boundary in generated stat history. Below this level the game uses B53; from this level until B56 it uses B55 when a middle class is present. It is not a required promotion level.',
+    middleClass: 'B55 is the middle class used while reconstructing generated-character growth between B54 and B56. A value of 0 means there is no middle growth stage. It is not a required prior class.',
+    secondSwitchLevel: 'B56 is the second absolute level boundary in generated stat history. From this level onward the requested/current class supplies growth. It is not levels spent in B55 or a promotion requirement.',
+    historyLink: 'B57 is compared with the character\'s secondary class byte (+0x12) to decide whether this class row\'s growth history applies or the secondary class row is used. That operation is proven; the design name "Class History Link" remains descriptive.'
+  };
+  var CLASS_ITEM_CAPACITY_HELP = 'B59 is this character class\'s contribution to its squad\'s carried-item limit. ' +
+    'Squad item capacity = min(sum of member B59 values, 10 slots).';
 
   function renderClasses(panel) {
     panel.innerHTML = '';
@@ -2660,13 +2669,13 @@ window.OB64 = window.OB64 || {};
     // ---- TABLE VIEW (sub-tabbed by field group) ----
     //
     // The classes table is split into 4 sub-views (Stats / Equipment & Combat /
-    // Promotion / Unit Info) so column count stays scannable. A second-level
+    // Growth / Promotion / Unit Info) so column count stays scannable. A second-level
     // toggle under the main Table/Card switch picks the active sub-view; the
     // choice is persisted in localStorage.
     var TABLE_SUBVIEWS = [
       { id: 'stats',     label: 'Stats' },
       { id: 'combat',    label: 'Equipment & Combat' },
-      { id: 'promotion', label: 'Promotion' },
+      { id: 'promotion', label: 'Growth / Promotion' },
       { id: 'unit',      label: 'Unit Info' }
     ];
     var activeSubview = localStorage.getItem('ob64_classes_subview') || 'stats';
@@ -2949,13 +2958,13 @@ window.OB64 = window.OB64 || {};
       } else if (activeSubview === 'promotion') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'Base', title: 'B53 base class used below the B54 transition level' },
-          { label: 'Next Lv', title: 'B54 absolute level at which the record stops using B53' },
-          { label: 'Intermediate', title: 'B55 intermediate class used until the B56 transition; 0 means no intermediate stage' },
-          { label: 'Final Lv', title: 'B56 absolute level at which the target/final class begins; not levels spent in B55' },
-          { label: 'Copy Match', title: 'B57 class-copy match ID; consumers compare it with character +0x12 when choosing the class row' },
+          { label: 'Early Growth', title: CLASS_GROWTH_HISTORY_HELP.baseClass },
+          { label: 'Switch Lv 1', title: CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel },
+          { label: 'Middle Growth', title: CLASS_GROWTH_HISTORY_HELP.middleClass },
+          { label: 'Switch Lv 2', title: CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel },
+          { label: 'History Link', title: CLASS_GROWTH_HISTORY_HELP.historyLink },
           { label: 'Element', title: 'B58 default damage element (CSV-verified: 0x00=Physical, 0x01=Wind, 0x02=Flame, 0x03=Earth, 0x04=Water, 0xFF=Random/None)' },
-          { label: 'Category', title: 'B59 category/tier' },
+          { label: 'Item Cap.', title: CLASS_ITEM_CAPACITY_HELP },
           // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C,
           // decompressed by OB64.parseStatGates. Read-only (edit would require
           // LZSS recompress + block splice on export, not yet implemented).
@@ -2970,13 +2979,17 @@ window.OB64 = window.OB64 || {};
           { label: 'Promotes To' }, { label: 'Promotes From' }
         ];
         fillRow = function(cid, tr, def) {
-          addClassFieldCell(tr, def, 'baseClass', 'B53 base progression class');
-          addNumericCell(tr, def, 'baseTransitionLevel', 255);
-          addClassFieldCell(tr, def, 'intermediateClass', 'B55 optional intermediate progression class');
-          addNumericCell(tr, def, 'finalTransitionLevel', 255);
-          addClassFieldCell(tr, def, 'classCopyMatch', 'B57 class-copy match/override ID');
+          addClassFieldCell(tr, def, 'baseClass', CLASS_GROWTH_HISTORY_HELP.baseClass);
+          var firstSwitchCell = addNumericCell(tr, def, 'baseTransitionLevel', 255);
+          firstSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel;
+          addClassFieldCell(tr, def, 'intermediateClass', CLASS_GROWTH_HISTORY_HELP.middleClass);
+          var secondSwitchCell = addNumericCell(tr, def, 'finalTransitionLevel', 255);
+          secondSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel;
+          addClassFieldCell(tr, def, 'classCopyMatch', CLASS_GROWTH_HISTORY_HELP.historyLink);
           addDropdownCell(tr, def, 'dragonElement', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName);
-          addDropdownCell(tr, def, 'category', OB64.CLASS_TIERS, OB64.classTierName);
+          var itemCapacityCell = addDropdownCell(tr, def, 'itemCapacity',
+            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
+          itemCapacityCell.title = CLASS_ITEM_CAPACITY_HELP;
           // Stat gates — class-id-indexed (NOT class_id+1 like class defs).
           // Missing entry = no stat gate defined for this class (promotion not
           // gated by stats). Dash-fill all 8 cells in that case.
@@ -3471,8 +3484,8 @@ window.OB64 = window.OB64 || {};
           combatSec.appendChild(combatGrid);
           card.appendChild(combatSec);
 
-          // --- Level progression and promotion (collapsible)
-          var promoSec = makeSection('Progression / Promotion', false);
+          // --- Generated growth history and actual promotion gates (collapsible)
+          var promoSec = makeSection('Growth History / Promotion Gates', false);
           var promoGrid = document.createElement('div');
           promoGrid.className = 'stats-grid';
           function progressionClassTile(field, label, titleText) {
@@ -3501,16 +3514,16 @@ window.OB64 = window.OB64 || {};
             });
             return entry;
           }
-          promoGrid.appendChild(progressionClassTile('baseClass', 'Base Class',
-            'B53 class row used below the B54 transition level'));
-          promoGrid.appendChild(tileNumeric(def, 'baseTransitionLevel', 'Next Lv',
-            {title: 'B54 absolute level at which progression stops using B53'}));
-          promoGrid.appendChild(progressionClassTile('intermediateClass', 'Intermediate',
-            'B55 class row used from B54 until B56; 0 means no intermediate stage'));
-          promoGrid.appendChild(tileNumeric(def, 'finalTransitionLevel', 'Final Lv',
-            {title: 'B56 absolute level at which the target/final class begins'}));
-          promoGrid.appendChild(progressionClassTile('classCopyMatch', 'Copy Match',
-            'B57 compared with character +0x12 when choosing the primary or copied class identity'));
+          promoGrid.appendChild(progressionClassTile('baseClass', 'Early Growth Class',
+            CLASS_GROWTH_HISTORY_HELP.baseClass));
+          promoGrid.appendChild(tileNumeric(def, 'baseTransitionLevel', 'Growth Switch Lv 1',
+            {title: CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel}));
+          promoGrid.appendChild(progressionClassTile('intermediateClass', 'Middle Growth Class',
+            CLASS_GROWTH_HISTORY_HELP.middleClass));
+          promoGrid.appendChild(tileNumeric(def, 'finalTransitionLevel', 'Growth Switch Lv 2',
+            {title: CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel}));
+          promoGrid.appendChild(progressionClassTile('classCopyMatch', 'Class History Link',
+            CLASS_GROWTH_HISTORY_HELP.historyLink));
           promoSec.appendChild(promoGrid);
 
           // Stat-gate thresholds: LZSS-compressed block at z64 0x3A960C,
@@ -3549,7 +3562,10 @@ window.OB64 = window.OB64 || {};
           var clsGrid = document.createElement('div');
           clsGrid.className = 'stats-grid';
           clsGrid.appendChild(tileDropdown(def, 'dragonElement', 'Element', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName));
-          clsGrid.appendChild(tileDropdown(def, 'category', 'Category', OB64.CLASS_TIERS, OB64.classTierName));
+          var itemCapacityTile = tileDropdown(def, 'itemCapacity', 'Item Capacity',
+            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
+          itemCapacityTile.title = CLASS_ITEM_CAPACITY_HELP;
+          clsGrid.appendChild(itemCapacityTile);
           clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
           clsGrid.appendChild(tileDropdown(def, 'sexOrVoice', 'Sex/Voice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName));
           clsGrid.appendChild(tileDropdown(def, 'leadership', 'Leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName));
