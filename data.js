@@ -932,18 +932,24 @@ OB64.defaultElementName = function(id) {
 OB64.dragonElementName = OB64.defaultElementName;
 
 // ============================================================
-// CLASS CATEGORY / TIER (class def B59)
+// CLASS ITEM-CAPACITY CONTRIBUTION (class def B59)
 // ============================================================
-OB64.CLASS_TIERS = {
-  0x01: "Base/Magic",
-  0x02: "Combat",
-  0x03: "Mid-Dragon",
-  0x04: "High-Dragon",
+OB64.CLASS_ITEM_CAPACITIES = {
+  0x01: "1 slot",
+  0x02: "2 slots",
+  0x03: "3 slots",
+  0x04: "4 slots",
+  0xFF: "0xFF (raw/sentinel)",
 };
 
-OB64.classTierName = function(id) {
-  return OB64.CLASS_TIERS[id] || ("0x" + id.toString(16).padStart(2, "0"));
+OB64.classItemCapacityName = function(id) {
+  return OB64.CLASS_ITEM_CAPACITIES[id] || ("0x" + id.toString(16).padStart(2, "0"));
 };
+
+// Backward-compatible names for integrations that loaded these globals before
+// B59's arithmetic carried-item consumer was decoded.
+OB64.CLASS_TIERS = OB64.CLASS_ITEM_CAPACITIES;
+OB64.classTierName = OB64.classItemCapacityName;
 
 /* ============================================================================
    SAVE-GAME EDITOR constants

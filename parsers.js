@@ -1680,8 +1680,10 @@ OB64.parseClassDefs = function(z64) {
     // B58 = default damage element (0xFF=Random/None, 0x00-0x04=element index)
     var dragonElement = z64[off + 58];
 
-    // B59 = category (0x01=base/magic, 0x02=combat, 0x03=mid-dragon, 0x04=high-dragon)
-    var category = z64[off + 59];
+    // B59 = per-character contribution to the squad's carried-item capacity.
+    // Effective squad capacity is min(sum(member B59), 10 physical item slots).
+    var itemCapacity = z64[off + 59];
+    var category = itemCapacity; // Backward-compatible alias for older class-object consumers.
 
     // RAM pointer (bytes 60-63) — code-adjacent, preserve on write (don't serialize)
     var namePtr = OB64.readU32BE(z64, off - 12);
@@ -1766,7 +1768,8 @@ OB64.parseClassDefs = function(z64) {
       additionalReqRaw: additionalReqRaw,
       additionalReq: additionalReqRaw,
       dragonElement: dragonElement, // B58
-      category: category,           // B59
+      itemCapacity: itemCapacity,   // B59
+      category: category,           // Superseded B59 alias retained for compatibility
       ptr: ptr,                     // B60-63 (runtime RAM pointer — HIDE, preserve)
       unitSize: unitSize,           // name-framed +4 (regular/large footprint)
       namePtr: namePtr,
