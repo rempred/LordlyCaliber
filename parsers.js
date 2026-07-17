@@ -110,10 +110,14 @@ OB64.ROM_LAYOUTS = {
     vanillaCrc2: 0x69011DE3,
     supportsTools: true,
     supportsSquadOverrides: true,
+    supportsShopOverrides: true,
     unsupportedTools: {},
     unsupportedFeaturesReason: '',
     squadPatch: {
       HOOK_ROM: 0x195584
+    },
+    shopPatch: {
+      HOOK_ROM: 0x19BF18
     },
     offsets: {
       LZSS_GAP_START: 0x20248C2,
@@ -148,12 +152,18 @@ OB64.ROM_LAYOUTS = {
     vanillaCrc2: 0xB17F9795,
     supportsTools: true,
     supportsSquadOverrides: true,
+    supportsShopOverrides: true,
     unsupportedTools: {
       'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.'
     },
-    unsupportedFeaturesReason: 'Header revision 1 supports normal data edits, Chaos Frame Counter, and Squads runtime overrides. High Attack Streamsplit remains disabled until its changed header revision 1 code path is rebuilt.',
+    unsupportedFeaturesReason: 'Header revision 1 supports normal data edits, Chaos Frame Counter, and shared Shops+Squads runtime overrides. High Attack Streamsplit remains disabled until its changed header revision 1 code path is rebuilt.',
     squadPatch: {
       HOOK_ROM: 0x1955A4
+    },
+    shopPatch: {
+      // Same side-loaded overlay routine as rev 0, shifted by the accepted
+      // header-revision +0x20 ROM delta; its runtime address is unchanged.
+      HOOK_ROM: 0x19BF38
     },
     offsets: {
       LZSS_GAP_START: 0x2024516,
@@ -1140,20 +1150,32 @@ OB64.parseEnemydat = function(buf) {
 };
 
 // ============================================================
-// Shop capacity constant
+// Shop capacities
 // ============================================================
-// Empirically verified max number of item IDs across all shops that still
-// fits in archive #751's 549-byte ROM slot after LH5 compression. Beyond
-// this, the compressed archive grows past the slot and export fails.
-// See scripts/ob64_shop_roundtrip_test.js for the measurement.
-OB64.SHOP_ITEM_LIMIT = 324;
+// Legacy archive #751 budget: 324 total equipment IDs was the measured
+// compression-dependent point that fit one specific 549-byte ROM slot. It is
+// not a runtime item-count limit and is no longer used by the editor's runtime
+// shop overrides.
+OB64.SHOP_ARCHIVE_ITEM_BUDGET = 324;
+OB64.SHOP_ITEM_LIMIT = OB64.SHOP_ARCHIVE_ITEM_BUDGET; // compatibility alias
 
-// Per-shop item cap. The vanilla game's largest shop (archive #33) holds
-// 24 items, and a modded ROM with 277 items in one shop was confirmed to
-// crash the shop menu on load. The true runtime cap is somewhere between
-// 24 and 277; until it's decoded via MIPS trace we use the vanilla max as
-// a known-safe warn threshold.
-OB64.SHOP_MAX_ITEMS_PER_SHOP = 24;
+// The vanilla data happens to top out at 24 equipment entries in one shop.
+// Static code at z64 0x19782C clears a 0xC8-byte u32 equipment array and a
+// 0x3C-byte u32 consumable array before filling them without bounds checks:
+// 50 equipment and 15 consumables are therefore the narrow static
+// non-overflow ceilings. Menu behavior at those exact maxima is not yet
+// cold-boot proven.
+OB64.SHOP_VANILLA_MAX_EQUIPMENT = 24;
+OB64.SHOP_MAX_EQUIPMENT_PER_SHOP = 50;
+OB64.SHOP_MAX_CONSUMABLES_PER_SHOP = 15;
+OB64.SHOP_MAX_ITEMS_PER_SHOP = OB64.SHOP_MAX_EQUIPMENT_PER_SHOP; // compatibility alias
+
+// func_0019BE40's source-list producer writes these exact plain u16 IDs before
+// appending bit-15-tagged equipment. Record 7 (Altar of Resurrection) is not
+// written. Focused static cross-references found no alternate writer in this
+// shop-list path, and the accepted guide corpus lists 46 storefronts with no
+// Altar entry, so the retail editor baseline intentionally leaves it clear.
+OB64.VANILLA_SHOP_CONSUMABLE_IDS = [1, 2, 3, 4, 5, 6, 8];
 
 OB64.totalShopItems = function(shops) {
   var total = 0;
@@ -1191,7 +1213,12 @@ OB64.parseShops = function(buf) {
         items.push(OB64.readU16BE(buf, j));
       }
     }
-    shops.push({ index: s, items: items });
+    shops.push({
+      index: s,
+      items: items,
+      consumables: OB64.VANILLA_SHOP_CONSUMABLE_IDS.slice(),
+      runtimeOverride: false
+    });
   }
   return shops;
 };
@@ -1871,12 +1898,12 @@ OB64.parseClassDefs = function(z64) {
 // name_ptr is a RAM address 0x801905xx..0x801906xx pointing at ASCII names
 // in the code-region string block; RAM to ROM delta for these strings is
 // 0x8012A100 (Heal Leaf RAM 0x801906B0 → ROM 0x665B0).
-// flag_hi categories (empirical):
+// flag_hi metadata groups (empirical; these do not grant shop membership):
 //   0xFFFF = "None" sentinel (rec 0)
-//   0x0000 = common purchasable (Heal Leaf..Altar of Resurrection)
-//   0x0200 = special purchasable (Quit Gate)
+//   0x0000 = common/curative group (Heal Leaf..Altar of Resurrection)
+//   0x0200 = warp group (Quit Gate)
 //   0x0100 = quest-only (price 2550 sentinel)
-//   0x0201 = special buyable (Silver Hourglass, Dowsing Rod, Love and Peace)
+//   0x0201 = special 0x0201 group (Silver Hourglass, Dowsing Rod, Love and Peace)
 //   0x0300 = bestowal (price 10 nominal, never in shops)
 //   0x0401 = story/Pedras (never in shops)
 // ============================================================
@@ -1890,7 +1917,7 @@ OB64.CONSUMABLE_FLAG_HI = {
   0x0000: 'common',
   0x0200: 'warp',
   0x0100: 'quest',
-  0x0201: 'buyable-special',
+  0x0201: 'special-0201',
   0x0300: 'bestowal',
   0x0401: 'story',
 };
@@ -1963,15 +1990,14 @@ OB64.parseConsumables = function(z64) {
   return recs;
 };
 
-// Known vanilla shop Expendable pool. Shopcsv.bin does NOT store consumables;
-// its high item IDs are equipment/display IDs in the normal item namespace.
-// The runtime shop menu builds Expendables from another path that we have not
-// fully decoded yet. Empirically, only records 1..8 are in the global shop
-// pool; a separate chapter/progression gate can still hide Altar early.
-OB64.KNOWN_SHOP_EXPENDABLE_IDS = {
-  1: true, 2: true, 3: true, 4: true,
-  5: true, 6: true, 7: true, 8: true,
-};
+// Exact vanilla source-list records from func_0019BE40. shopcsv.bin does NOT
+// store consumables; its high IDs remain equipment/display IDs.
+OB64.KNOWN_SHOP_EXPENDABLE_IDS = {};
+for (var shopConsumableIndex = 0;
+     shopConsumableIndex < OB64.VANILLA_SHOP_CONSUMABLE_IDS.length;
+     shopConsumableIndex++) {
+  OB64.KNOWN_SHOP_EXPENDABLE_IDS[OB64.VANILLA_SHOP_CONSUMABLE_IDS[shopConsumableIndex]] = true;
+}
 
 OB64.isKnownShopExpendable = function(c) {
   return !!(c && OB64.KNOWN_SHOP_EXPENDABLE_IDS[c.index]);

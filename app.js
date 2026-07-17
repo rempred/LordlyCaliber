@@ -48,6 +48,9 @@ window.OB64 = window.OB64 || {};
     reader.onload = function(ev) {
       try {
         rom = OB64.loadROM(ev.target.result);
+        // Rehydrate an existing shared ROM-tail shop table before taking the
+        // project baseline, so reopening a patched ROM preserves its shops.
+        if (OB64.runtimeOverrides) OB64.runtimeOverrides.applyParsedShopOverrides(rom);
         OB64.patch.snapshotOriginal(rom);   // baseline for later diffing
         OB64.tools.initState(rom);          // detect Tools-tab features in the ROM
         changes = 0;
@@ -69,25 +72,6 @@ window.OB64 = window.OB64 || {};
           ' | ' + rom.archives.length + ' archives | 0 pending changes';
         renderTab(activeTab);
 
-        // Warn if any shop in the loaded ROM is already over the per-shop
-        // cap — that ROM will crash the shop menu when the player opens it.
-        var bigShops = [];
-        for (var si = 0; si < rom.shops.length; si++) {
-          if (rom.shops[si].items.length > OB64.SHOP_MAX_ITEMS_PER_SHOP) {
-            bigShops.push({ idx: si, count: rom.shops[si].items.length });
-          }
-        }
-        if (bigShops.length) {
-          var detail = bigShops.map(function(b) {
-            return '  Shop #' + b.idx + ': ' + b.count + ' items';
-          }).join('\n');
-          showErrorModal('Shop over per-shop capacity',
-            'One or more shops in this ROM hold more items than the vanilla ' +
-            'maximum (' + OB64.SHOP_MAX_ITEMS_PER_SHOP + '). A 277-item shop has ' +
-            'been confirmed to crash the shop menu on load, so any shop past this ' +
-            'threshold is a likely crash source.\n\n' + detail + '\n\n' +
-            'Open the Shops tab and reduce the over-capacity shops before playing.');
-        }
       } catch(err) {
         statusBar.textContent = 'Error loading ROM: ' + err.message;
         console.error(err);
@@ -104,30 +88,20 @@ window.OB64 = window.OB64 || {};
     statusBar.textContent = 'Exporting...';
     try {
       var touched = [];
+      var shopOverridesForRuntime = OB64.runtimeOverrides
+        ? OB64.runtimeOverrides.collectShopOverrides(rom)
+        : [];
 
-      // Shops (archive #751 / shopcsv.bin)
-      if (dirty.shops) {
-        var shopBuf = OB64.serializeShops(rom.shops);
-        var shopComp = OB64.lh5Compress(shopBuf);
-        var shopArc = OB64.buildLHAArchive(shopComp, shopBuf, 'shopcsv.bin');
-        var shopResult = OB64.spliceArchive(rom.z64, rom.archives[751], shopArc);
-        if (!shopResult.success) {
-          var shopArch = rom.archives[751];
-          var slotSize = shopArch.totalHeaderSize + shopArch.compSize;
-          var overBy = shopArc.length - slotSize;
-          var totalItems = OB64.totalShopItems(rom.shops);
-          showErrorModal('Export failed — shop overfill',
-            'The compressed shop archive is ' + overBy +
-            ' bytes larger than its ROM slot (' + shopArc.length +
-            ' / ' + slotSize + ' bytes).\n\n' +
-            'Current total: ' + totalItems + ' items across all shops.\n' +
-            'Recommended maximum: ' + OB64.SHOP_ITEM_LIMIT + ' items.\n\n' +
-            'Remove ' + Math.max(1, totalItems - OB64.SHOP_ITEM_LIMIT) +
-            ' or more item(s) from one or more shops and try again.');
-          statusBar.textContent = 'Export failed (shops): ' + shopResult.error;
-          return;
-        }
-        touched.push('shops');
+      // Shop membership edits compile into the shared OBM2 runtime blob below.
+      // Archive #751 remains the retail fallback for unchanged shop indices.
+      if (dirty.shops && (!OB64.runtimeOverrides ||
+          (rom.layout && rom.layout.supportsShopOverrides === false))) {
+        showErrorModal('Export failed - runtime shops unavailable',
+          'This ROM revision can parse shopcsv, but its per-shop runtime ' +
+          'source-list hook is unavailable. The archive fallback cannot ' +
+          'represent per-shop consumables or the larger runtime limits.');
+        statusBar.textContent = 'Export failed (runtime shops unavailable)';
+        return;
       }
 
       // Enemydat (archive #647)
@@ -199,11 +173,13 @@ window.OB64 = window.OB64 || {};
         ? OB64.collectSquadOverrides(rom)
         : [];
       var patchRegionOwners = [];
-      if (OB64.squad && squadOverridesForConflict.length) {
+      if (OB64.squad && (squadOverridesForConflict.length || shopOverridesForRuntime.length)) {
         patchRegionOwners.push({
-          id: 'squad-overrides',
-          name: 'Squad Overrides',
-          regions: OB64.squad.patchRegions(rom)
+          id: 'runtime-overrides',
+          name: 'Shared Runtime Overrides',
+          regions: shopOverridesForRuntime.length && OB64.runtimeOverrides
+            ? OB64.runtimeOverrides.patchRegions(rom)
+            : OB64.squad.patchRegions(rom)
         });
       }
       if (OB64.scenario && OB64.scenario.patchRegions && rom.scenarioRelocations && rom.scenarioRelocations.length) {
@@ -263,19 +239,42 @@ window.OB64 = window.OB64 || {};
         }
       }
 
-      // Per-scenario squad overrides (Squads tab). Compiles every override into
-      // the runtime hook + bootstrap + blob writes (squadblob.js) and stamps them
-      // into rom.z64. The bootstrap cave is inside the CRC window.
-      var squadCrc = false;
-      if (dirty.squadOverrides && OB64.squad) {
+      // Shared runtime overrides. Shop edits use the same one-time loader,
+      // tail lane, and upper-RAM module as Squads. Squad-only exports retain
+      // the already-proven squadblob byte path.
+      var runtimeCrc = false;
+      if ((dirty.squadOverrides || dirty.shops) && OB64.squad) {
         var ovs = squadOverridesForConflict;
-        if (ovs.length) {
+        if (shopOverridesForRuntime.length) {
+          var rtw = OB64.runtimeOverrides.buildRuntimeOverrideWrites(
+            ovs, shopOverridesForRuntime, rom.shops.length, rom);
+          for (var rwi = 0; rwi < rtw.writes.length; rwi++) {
+            rom.z64.set(rtw.writes[rwi].bytes, rtw.writes[rwi].offset);
+          }
+          runtimeCrc = rtw.crcWindow;
+          if (dirty.shops) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
+          if (dirty.squadOverrides && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
+          if (dirty.squadOverrides) {
+            var sharedUnmapped = OB64.squadCountUnmapped(rom);
+            if (sharedUnmapped) {
+              showErrorModal('Some overrides skipped',
+                sharedUnmapped + ' squad override(s) are in scenarios whose scenario gate ' +
+                'is not mapped yet, so they were not written. They remain saved in the patch.');
+            }
+          }
+        } else if (ovs.length) {
+          // Last shop override removed while squads remain: restore its hook,
+          // then install the proven Squads-only module.
+          if (dirty.shops && OB64.runtimeOverrides) {
+            OB64.runtimeOverrides.restoreShopHook(rom.z64, rom);
+            touched.push('runtime shops removed');
+          }
           var sqw = OB64.squad.buildSquadOverrideWrites(ovs, rom);
           for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
             rom.z64.set(sqw.writes[sqi].bytes, sqw.writes[sqi].offset);
           }
-          squadCrc = sqw.crcWindow;
-          touched.push('squad overrides (' + ovs.length + ')');
+          runtimeCrc = sqw.crcWindow;
+          if (dirty.squadOverrides) touched.push('squad overrides (' + ovs.length + ')');
           var unmapped = OB64.squadCountUnmapped(rom);
           if (unmapped) {
             showErrorModal('Some overrides skipped',
@@ -283,10 +282,13 @@ window.OB64 = window.OB64 || {};
               'is not mapped yet, so they were not written. They remain saved in the patch.');
           }
         } else {
-          // last override removed — restore retail hook/cave/tail
-          OB64.squad.restoreVanilla(rom.z64, rom);
-          squadCrc = true;
-          touched.push('squad overrides removed');
+          // Last shared override removed: restore both hook sites and the
+          // canonical loader/cave/tail allocation.
+          if (OB64.runtimeOverrides) OB64.runtimeOverrides.restoreAll(rom.z64, rom);
+          else OB64.squad.restoreVanilla(rom.z64, rom);
+          runtimeCrc = true;
+          if (dirty.shops) touched.push('runtime shops removed');
+          if (dirty.squadOverrides) touched.push('squad overrides removed');
         }
       }
 
@@ -308,10 +310,10 @@ window.OB64 = window.OB64 || {};
       }
 
       // CRC must be recalculated whenever we patch the CIC-6102 window
-      // (z64 0x1000-0x101000). Shops/enemydat archives, encounter/drop tables,
-      // and stat gates live past that window; items/classes/consumables, the
-      // Tools-tab features, and the squad-override bootstrap do not.
-      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || squadCrc || scenarioCrc);
+      // (z64 0x1000-0x101000). Shop/enemydat archive data, encounter/drop
+      // tables, and stat gates live past that window; items/classes/
+      // consumables, Tools-tab features, and the shared runtime bootstrap do not.
+      var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables || toolsCrc || runtimeCrc || scenarioCrc);
       if (crcChanged) {
         OB64.recalcN64CRC(rom.z64);
       }
@@ -1129,10 +1131,8 @@ window.OB64 = window.OB64 || {};
   OB64.itemIconURL = itemIconURL;
 
   // All items in the game that belong to a given category, sorted by equipType.
-  // For expendable: return ALL 45 consumable master-table records as a price
-  // editor. Shop membership is runtime/global and is not stored in shopcsv;
-  // green rows mark the known vanilla shop pool, but clicking rows does not
-  // add/remove consumables until that runtime allow-list is decoded.
+  // Expendables use their actual plain runtime-list IDs; the shared shop
+  // override encodes those separately from bit-15 equipment IDs.
   function allItemsInCategory(cat) {
     if (cat === 'expendable') {
       if (!rom.consumables) return [];
@@ -1140,7 +1140,7 @@ window.OB64 = window.OB64 || {};
         .filter(function(c) { return c.flagHi !== 0xFFFF; }) // skip the "None" sentinel
         .map(function(c) {
           return {
-            id: -1 - c.index,          // synthetic id (consumables aren't in equipment ID-space)
+            id: c.index,
             name: c.name,
             equipType: null,
             equipTypeName: 'Consumable',
@@ -1197,21 +1197,40 @@ window.OB64 = window.OB64 || {};
       shopRecs[sh.shopIdx].push(sh);
     }
 
-    // Capacity counter — items across all shops vs ROM slot limit
+    // The retail archive has a compression-dependent aggregate budget, but the
+    // consumer has separate fixed arrays per opened shop: 50 equipment and 15
+    // consumables. Runtime overrides therefore validate per shop, not against
+    // the old observed 324-entry archive total.
     var total = OB64.totalShopItems(rom.shops);
-    var limit = OB64.SHOP_ITEM_LIMIT;
+    var runtimeShopCount = OB64.runtimeOverrides
+      ? OB64.runtimeOverrides.collectShopOverrides(rom).length
+      : 0;
+    var overCapacity = false;
+    var nearCapacity = false;
+    for (var capIdx = 0; capIdx < rom.shops.length; capIdx++) {
+      var capShop = rom.shops[capIdx];
+      var equipCount = (capShop.items || []).length;
+      var expendableCount = (capShop.consumables || []).length;
+      if (equipCount > OB64.SHOP_MAX_EQUIPMENT_PER_SHOP ||
+          expendableCount > OB64.SHOP_MAX_CONSUMABLES_PER_SHOP) overCapacity = true;
+      if (equipCount >= OB64.SHOP_MAX_EQUIPMENT_PER_SHOP - 3 ||
+          expendableCount >= OB64.SHOP_MAX_CONSUMABLES_PER_SHOP - 2) nearCapacity = true;
+    }
     var counter = document.createElement('div');
     counter.className = 'shop-counter';
-    var state = total > limit ? 'over' : (total >= limit - 10 ? 'near' : 'ok');
+    var state = overCapacity ? 'over' : (nearCapacity ? 'near' : 'ok');
     counter.classList.add('shop-counter-' + state);
-    var countSpan = '<strong>' + total + '</strong> / ' + limit;
+    var countSpan = '<strong>' + total + '</strong> equipment entries · <strong>' +
+      runtimeShopCount + '</strong> runtime-overridden shops';
     var suffix = '';
     if (state === 'over') {
-      suffix = ' <span class="shop-counter-warn">over limit — export may fail due to ROM slot size</span>';
+      suffix = ' <span class="shop-counter-warn">one or more shops exceeds the static consumer arrays</span>';
     } else if (state === 'near') {
-      suffix = ' <span class="shop-counter-warn">approaching limit</span>';
+      suffix = ' <span class="shop-counter-warn">one or more shops is near capacity</span>';
     }
-    counter.innerHTML = 'Items across all shops: ' + countSpan + suffix;
+    counter.innerHTML = countSpan + ' · per-shop limits: ' +
+      OB64.SHOP_MAX_EQUIPMENT_PER_SHOP + ' equipment / ' +
+      OB64.SHOP_MAX_CONSUMABLES_PER_SHOP + ' expendables' + suffix;
     panel.appendChild(counter);
 
     var filter = makeFilterBar('Filter by stronghold, scenario, or item name...', function(q) {
@@ -1236,7 +1255,8 @@ window.OB64 = window.OB64 || {};
     var shopOrder = [];
     for (var si = 0; si < rom.shops.length; si++) {
       var shopRecsList = shopRecs[si] || [];
-      if (rom.shops[si].items.length === 0 && shopRecsList.length === 0) continue;
+      if (rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
+          !rom.shops[si].runtimeOverride) continue;
       var minScene = Infinity;
       var minMission = Infinity;
       for (var mi = 0; mi < shopRecsList.length; mi++) {
@@ -1266,20 +1286,23 @@ window.OB64 = window.OB64 || {};
       thumb.title = 'Shop #' + s;
       card.appendChild(thumb);
 
-      // Per-shop item counter — warns when the shop exceeds the vanilla
-      // max (24). A heavily over-cap shop (tested at 277 items) crashes the
-      // in-game shop menu on load, so this is a real gameplay limit, not
-      // just a display preference.
+      // These are the two byte-exact downstream array capacities, not the
+      // largest inventory observed in retail data.
       var perShopCount = shop.items.length;
-      var perShopCap = OB64.SHOP_MAX_ITEMS_PER_SHOP;
+      var perShopConsumables = (shop.consumables || []).length;
+      var perShopCap = OB64.SHOP_MAX_EQUIPMENT_PER_SHOP;
+      var perShopConsumableCap = OB64.SHOP_MAX_CONSUMABLES_PER_SHOP;
       var shopCounter = document.createElement('div');
       shopCounter.className = 'shop-item-count';
-      if (perShopCount > perShopCap) shopCounter.classList.add('shop-item-count-over');
-      else if (perShopCount >= perShopCap - 3) shopCounter.classList.add('shop-item-count-near');
-      shopCounter.textContent = perShopCount + ' / ' + perShopCap + ' items';
-      if (perShopCount > perShopCap) {
-        shopCounter.title = 'Shops larger than ' + perShopCap + ' items are known to crash the shop menu on load.';
+      if (perShopCount > perShopCap || perShopConsumables > perShopConsumableCap) {
+        shopCounter.classList.add('shop-item-count-over');
+      } else if (perShopCount >= perShopCap - 3 ||
+                 perShopConsumables >= perShopConsumableCap - 2) {
+        shopCounter.classList.add('shop-item-count-near');
       }
+      shopCounter.textContent = perShopCount + ' / ' + perShopCap + ' equipment · ' +
+        perShopConsumables + ' / ' + perShopConsumableCap + ' expendable';
+      shopCounter.title = 'Static consumer capacities: 50 equipment slots and 15 consumable slots.';
       card.appendChild(shopCounter);
 
       // Per-stronghold location rows: "Stronghold, Scenario".
@@ -1319,11 +1342,10 @@ window.OB64 = window.OB64 || {};
       for (var k = 0; k < shop.items.length; k++) {
         buckets[categorizeShopItem(shop.items[k])].push(shop.items[k]);
       }
-      // For expendable: show the known runtime shop pool. Shopcsv itself only
-      // stores equipment IDs; high shopcsv IDs like 0xF5 are spellbooks, not
-      // consumable records. Expanding this pool needs a separate runtime trace.
-      var expNames = (rom.consumables ? OB64.shopExpendables(rom.consumables) : [])
-        .map(function(c) { return c.name; });
+      var expNames = (shop.consumables || []).map(function(id) {
+        var c = rom.consumables && rom.consumables[id];
+        return c && c.name ? c.name : ('Consumable #' + id);
+      });
 
       var catsEl = document.createElement('div');
       catsEl.className = 'shop-categories';
@@ -1369,19 +1391,16 @@ window.OB64 = window.OB64 || {};
   // ---------- Shop-item modal ----------
   function openItemModal(shopIdx, category) {
     var shop = rom.shops[shopIdx];
-    // Expendable is NOT stored per-shop; the tab contents are a global runtime
-    // pool over the consumable master table. We know how to edit prices, but
-    // not yet how to expand the shop pool itself, so the modal is price-only.
     var isConsumableModal = (category === 'expendable');
     var items = allItemsInCategory(category);
 
     // Initial selection state.
-    //   equipment categories → items in THIS shop's inventory
-    //   expendable            → known vanilla shop-pool records (display-only)
+    // Both ID spaces are per-shop; runtime encoding distinguishes them with
+    // bit 15 rather than by changing their stored IDs here.
     var selected = {};
     if (isConsumableModal) {
-      items.forEach(function(item) {
-        if (item.isKnownShopConsumable) selected[item.id] = true;
+      (shop.consumables || []).forEach(function(id) {
+        selected[id] = true;
       });
     } else {
       shop.items.forEach(function(id) {
@@ -1403,7 +1422,7 @@ window.OB64 = window.OB64 || {};
     header.className = 'item-modal-header';
     var title = document.createElement('h2');
     title.textContent = isConsumableModal
-      ? 'Consumables — price editor (shop pool is runtime-only)'
+      ? 'Shop #' + shopIdx + ' — Expendables'
       : 'Shop #' + shopIdx + ' — ' + SHOP_CATEGORY_LABELS[category];
     header.appendChild(title);
     var btnClose = document.createElement('button');
@@ -1456,7 +1475,6 @@ window.OB64 = window.OB64 || {};
             row.classList.add('unused');
           }
           if (item.isConsumable) row.classList.add('consumable-item');
-          if (item.isConsumable && !item.isKnownShopConsumable) row.classList.add('consumable-unsupported');
 
           var img = document.createElement('img');
           img.className = 'item-modal-icon';
@@ -1473,10 +1491,10 @@ window.OB64 = window.OB64 || {};
           if (item.isConsumable) {
             var badge = document.createElement('span');
             badge.className = 'item-modal-kind';
-            badge.textContent = item.isKnownShopConsumable ? 'shop pool' : (item.category || 'not shop');
+            badge.textContent = item.isKnownShopConsumable ? 'retail' : (item.category || 'special');
             badge.title = item.isKnownShopConsumable
-              ? 'Known vanilla runtime shop consumable. Visibility may still be chapter-gated.'
-              : 'Not known to be in the runtime shop Expendable pool yet.';
+              ? 'Written by the byte-exact retail shop source-list producer.'
+              : 'Not written by the retail shop producer. Purchase/use behavior still needs runtime proof.';
             row.appendChild(badge);
           }
 
@@ -1497,35 +1515,46 @@ window.OB64 = window.OB64 || {};
             row.appendChild(price);
           }
 
-          if (isConsumableModal) {
-            row.classList.add('readonly');
-            row.title = item.isKnownShopConsumable
-              ? 'Known shop-pool consumable. Click the price to edit it.'
-              : 'Shop visibility for this consumable is not decoded yet. Click the price to edit table data only.';
-          } else {
-            row.addEventListener('click', function(ev) {
-              // Ctrl/Cmd+click: strip this item from every OTHER shop but
-              // leave the current shop's selection untouched.
-              if (ev.ctrlKey || ev.metaKey) {
-                ev.preventDefault();
-                var removedFrom = removeItemFromOtherShops(shopIdx, item.id);
-                flashHint(hint, removedFrom
-                  ? 'Removed ' + item.name + ' from ' + removedFrom + ' other shop' + (removedFrom === 1 ? '' : 's') + '.'
-                  : item.name + ' is not in any other shop.');
-                updateRowUnused(row, item.id);
+          if (item.isConsumable && !item.isKnownShopConsumable) {
+            row.title = 'Custom/special consumable: list encoding is verified, but purchase and use behavior are not.';
+          }
+          row.addEventListener('click', function(ev) {
+            // Ctrl/Cmd+click: strip this ID from every OTHER shop but leave
+            // the current shop's selection untouched.
+            if (ev.ctrlKey || ev.metaKey) {
+              ev.preventDefault();
+              var removedFrom = isConsumableModal
+                ? removeConsumableFromOtherShops(shopIdx, item.id)
+                : removeItemFromOtherShops(shopIdx, item.id);
+              flashHint(hint, removedFrom
+                ? 'Removed ' + item.name + ' from ' + removedFrom + ' other shop' + (removedFrom === 1 ? '' : 's') + '.'
+                : item.name + ' is not in any other shop.');
+              updateRowUnused(row, item.id, isConsumableModal);
+              return;
+            }
+            if (selected[item.id]) {
+              delete selected[item.id];
+              row.classList.remove('selected');
+            } else {
+              var currentCount = isConsumableModal
+                ? (shop.consumables || []).length
+                : shop.items.length;
+              var maxCount = isConsumableModal
+                ? OB64.SHOP_MAX_CONSUMABLES_PER_SHOP
+                : OB64.SHOP_MAX_EQUIPMENT_PER_SHOP;
+              if (currentCount >= maxCount) {
+                flashHint(hint, 'Shop #' + shopIdx + ' is already at the static ' +
+                  maxCount + (isConsumableModal ? '-consumable' : '-equipment') +
+                  ' consumer-array capacity.', 'error');
                 return;
               }
-              if (selected[item.id]) {
-                delete selected[item.id];
-                row.classList.remove('selected');
-              } else {
-                selected[item.id] = true;
-                row.classList.add('selected');
-              }
-              commitSelectionToShop(shopIdx, category, selected);
-              updateRowUnused(row, item.id);
-            });
-          }
+              selected[item.id] = true;
+              row.classList.add('selected');
+            }
+            if (isConsumableModal) commitConsumableSelectionToShop(shopIdx, selected);
+            else commitSelectionToShop(shopIdx, category, selected);
+            updateRowUnused(row, item.id, isConsumableModal);
+          });
           col.appendChild(row);
         }
       });
@@ -1540,8 +1569,8 @@ window.OB64 = window.OB64 || {};
     var hint = document.createElement('div');
     hint.className = 'item-modal-hint';
     hint.dataset.defaultText = isConsumableModal
-      ? 'Consumable prices are editable. Adding new consumables to shops is not supported yet: the runtime shop allow-list/loop still needs to be decoded.'
-      : 'Tip: Ctrl+click an item to remove it from every other shop.';
+      ? 'Select up to the 15-entry consumer array. Non-retail badges mark entries whose purchase/use behavior is unproven. Runtime shops require the Expansion Pak; exact-max cold-boot proof is pending.'
+      : 'Select up to the 50-entry equipment array. Runtime shops require the Expansion Pak; exact-max cold-boot proof is pending. Ctrl+click removes an item from every other shop.';
     hint.textContent = hint.dataset.defaultText;
     modal.appendChild(hint);
 
@@ -1555,14 +1584,16 @@ window.OB64 = window.OB64 || {};
     document.addEventListener('keydown', escHandler);
   }
 
-  function flashHint(hint, message) {
+  function flashHint(hint, message, kind) {
     if (!hint) return;
     hint.textContent = message;
     hint.classList.add('item-modal-hint-flash');
+    hint.classList.toggle('item-modal-hint-error', kind === 'error');
     clearTimeout(hint._resetTimer);
     hint._resetTimer = setTimeout(function() {
       hint.textContent = hint.dataset.defaultText || '';
       hint.classList.remove('item-modal-hint-flash');
+      hint.classList.remove('item-modal-hint-error');
     }, 2000);
   }
 
@@ -1573,9 +1604,28 @@ window.OB64 = window.OB64 || {};
       var shop = rom.shops[i];
       var before = shop.items.length;
       shop.items = shop.items.filter(function(id) { return id !== itemId; });
-      if (shop.items.length !== before) removedFrom++;
+      if (shop.items.length !== before) {
+        if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, i);
+        removedFrom++;
+      }
     }
-    if (removedFrom > 0) markChanged();
+    if (removedFrom > 0) markChanged('shops');
+    return removedFrom;
+  }
+
+  function removeConsumableFromOtherShops(currentShopIdx, consumableId) {
+    var removedFrom = 0;
+    for (var i = 0; i < rom.shops.length; i++) {
+      if (i === currentShopIdx) continue;
+      var shop = rom.shops[i];
+      var before = (shop.consumables || []).length;
+      shop.consumables = (shop.consumables || []).filter(function(id) { return id !== consumableId; });
+      if (shop.consumables.length !== before) {
+        if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, i);
+        removedFrom++;
+      }
+    }
+    if (removedFrom > 0) markChanged('shops');
     return removedFrom;
   }
 
@@ -1586,8 +1636,11 @@ window.OB64 = window.OB64 || {};
     return false;
   }
 
-  function updateRowUnused(row, itemId) {
-    if (isItemInAnyShop(itemId)) row.classList.remove('unused');
+  function updateRowUnused(row, itemId, isConsumable) {
+    // The red "unused" cue is useful for equipment distribution, but it made
+    // most perfectly selectable special consumables look disabled. Their
+    // retail/custom status is carried by the badge and tooltip instead.
+    if (isConsumable || isItemInAnyShop(itemId)) row.classList.remove('unused');
     else row.classList.add('unused');
   }
 
@@ -1751,7 +1804,15 @@ window.OB64 = window.OB64 || {};
     var kept = shop.items.filter(function(id) { return categorizeShopItem(id) !== category; });
     var newIds = Object.keys(selected).map(function(k) { return parseInt(k, 10); });
     shop.items = kept.concat(newIds);
-    markChanged();
+    if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+    markChanged('shops');
+  }
+
+  function commitConsumableSelectionToShop(shopIdx, selected) {
+    var shop = rom.shops[shopIdx];
+    shop.consumables = Object.keys(selected).map(function(k) { return parseInt(k, 10); });
+    if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+    markChanged('shops');
   }
 
   // ============================================================
@@ -3028,6 +3089,8 @@ window.OB64 = window.OB64 || {};
           { label: 'MEN', title: 'B12 base' }, { label: 'MEN base/lv', title: classGrowthHelp(3), cls: 'col-growth' },
           { label: 'AGI', title: 'B16 base' }, { label: 'AGI base/lv', title: classGrowthHelp(4), cls: 'col-growth' },
           { label: 'DEX', title: 'B20 base' }, { label: 'DEX base/lv', title: classGrowthHelp(5), cls: 'col-growth' },
+          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)' },
+          { label: 'HP base/lv', title: CLASS_HP_GROWTH_HELP, cls: 'col-growth' },
           { label: 'LCK', title: 'B23 Luck base (40-60 typical)' },
           { label: 'ALN', title: 'B24 Alignment (0-100)' },
           { label: 'Phys' }, { label: 'Wind' }, { label: 'Fire' }, { label: 'Earth' },
@@ -3039,6 +3102,10 @@ window.OB64 = window.OB64 || {};
             addStatBaseCell(tr, def, si);
             addStatGrowthCell(tr, def, si, STAT_GROWTH_FIELDS[si]);
           }
+          var baseHpCell = addNumericCell(tr, def, 'baseHp', 65535);
+          baseHpCell.title = 'nameOff+8..9 / statOff-4..-3 base HP (u16)';
+          var hpGrowthCell = addNumericCell(tr, def, 'hpGrowth', 255, 'col-growth');
+          hpGrowthCell.title = CLASS_HP_GROWTH_HELP;
           addNumericCell(tr, def, 'lck', 255);
           addNumericCell(tr, def, 'alignment', 100);
           for (var ri = 0; ri < 7; ri++) addResCell(tr, def, ri);
@@ -3135,8 +3202,6 @@ window.OB64 = window.OB64 || {};
           { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
           { label: 'Sex/Voice ?', title: CLASS_SEX_VOICE_HELP, cls: 'col-raw' },
           { label: 'Leadership ?', title: CLASS_LEADERSHIP_HELP, cls: 'col-raw' },
-          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)' },
-          { label: 'HP base/lv', title: CLASS_HP_GROWTH_HELP },
           { label: 'B33', title: 'B33 padding', cls: 'col-raw' },
           { label: 'H+7', title: 'nameOff+7 / statOff-5 padding/raw header byte', cls: 'col-raw' },
           { label: 'H+11', title: 'nameOff+11 / statOff-1 padding/raw header byte', cls: 'col-raw' }
@@ -3149,8 +3214,6 @@ window.OB64 = window.OB64 || {};
           var leadershipCell = addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
           leadershipCell.classList.add('raw-byte');
           leadershipCell.title = CLASS_LEADERSHIP_HELP;
-          addNumericCell(tr, def, 'baseHp', 65535);
-          addNumericCell(tr, def, 'hpGrowth', 255);
           addRawByteCell(tr, def, 'b33Raw', 'B33 padding');
           addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte');
           addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte');
