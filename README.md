@@ -133,6 +133,11 @@ project download asset.
   runtime overrides without changing global `enemydat.bin`; the default UI
   enforces vanilla-style formation limits, with the experimental raw-capacity
   mode still available for mod testing.
+  Clicking a town exposes its scenario-specific starting Allegiance plus its
+  global Population and Morale. Population/Morale rebuild the shared 316-record
+  `ktenmain` table; Morale preserves B24 bit 7 and is locked on exact `0xFF`
+  objective records. The detail panel warns when another runtime key references
+  the same global record.
   Oversized mission edits take an automatic **grow/relocate lane**: when a
   rebuilt mission archive no longer fits its original slot, export copies it
   to free ROM-tail space behind a small DMA redirect (currently supported for
@@ -184,7 +189,8 @@ project download asset.
   Squad project data stores per-runtime-key 35-byte replacement records so a
   saved project can reproduce the exported squad override blob.
   The Project JSON container embeds the full Scenario payload (modified mission
-  ESETs, buried treasures, added squads, squad comp records, and site intents),
+  ESETs, buried treasures, added squads, squad comp records, site allegiance
+  intents, and global stronghold Population/Morale intents),
   so one file reproduces a complete scenario mod; older patch files and legacy
   Scenario-only project files still load.
   Save Game Editor changes are separate save-file edits; use that tab's Export
@@ -223,6 +229,10 @@ project download asset.
 - Neutral/allied town-allegiance edits export for towns with existing scincsv
   descriptors. Towns with no descriptor row still cannot be authored until the
   editor can add new descriptor rows safely.
+- Population/Morale edits must keep global `ktenmain` archive #691 within its
+  original ROM slot. The dual greedy/lazy LH5 encoder provides normal edit
+  headroom, but sufficiently numerous high-entropy changes can still block
+  export with an exact overfill count.
 - Full-art mission map backgrounds are bundled and site-fitted for the 62
   renderable runtime keys. Two internal/no-image keys still render through the
   schematic fallback.
@@ -235,8 +245,8 @@ project download asset.
   hidden for battery saves (only partially persisted in the packed format).
 - Adding entirely new reserve characters is not enabled yet. The game has an
   additional active/reserve validation structure that is still being decoded.
-- Stronghold editing, world-map editing, audio editing, and combat-buffer
-  expansion are research targets, not shipped features.
+- Remaining stronghold fields, world-map editing, audio editing, and
+  combat-buffer expansion are research targets, not shipped features.
 
 ## Usage
 
@@ -350,8 +360,9 @@ on the US retail ROM:
   loader: the per-mission ESET format (placement, routes, compound trigger
   gates), the runtime squad-builder hook, the archive fetch/DMA-window model
   behind the relocation lane, and the map projection used to register mission
-  maps — every export lane was proven by cold-booting patched ROMs, not just
-  by static byte checks.
+  maps. The Population/Morale lane is byte-exact through serialize, LH5
+  recompress, in-slot splice, re-extract, and parse; a cold-boot gameplay check
+  of newly edited values remains pending.
 
 Built with vanilla JavaScript — no framework, no build step. Single bundled
 dependency: [fflate](https://github.com/101arrowz/fflate) for RetroArch RZIP
@@ -361,8 +372,9 @@ save-state decompression.
 
 - **Promotion graph polish** — expose the already-editable stat gates and ROM
   promotion links as a fuller visual workflow.
-- **Stronghold editor** — modify the 316 stronghold records (location, owner,
-  shop assignment).
+- **Stronghold editor expansion** — expose the remaining global record fields
+  beyond the shipped Population/Morale controls, including names, capabilities,
+  types, and shop assignments.
 - **Town descriptor authoring** — support towns that do not already have a
   scincsv descriptor row.
 - **Multi-window mission relocation** — extend the grow/relocate lane to the
