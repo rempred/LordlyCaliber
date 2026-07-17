@@ -1082,7 +1082,9 @@ window.OB64 = window.OB64 || {};
       }
     }
     Object.keys(byRecord).forEach(function(recordIndex) {
-      byRecord[recordIndex].sort(function(a, b) { return a - b; });
+      byRecord[recordIndex].sort(function(a, b) {
+        return OB64.compareScenarioKeys ? OB64.compareScenarioKeys(a, b) : a - b;
+      });
     });
     return byRecord;
   }
@@ -1217,9 +1219,9 @@ window.OB64 = window.OB64 || {};
     var grid = document.createElement('div');
     grid.className = 'shop-cards';
 
-    // Render order follows the lowest mapped runtime key from the Scenario
-    // dataset. Ties fall back to ktenmain mission ID, then shop index. Shops
-    // with no mapped runtime key land at the end.
+    // Render order follows the lowest mapped normal wiki mission from the
+    // Scenario dataset. Ties use the corresponding runtime key, ktenmain
+    // mission ID, then shop index. Dev-only and unmapped shops land at the end.
     // A shop is shown if it either holds items OR is referenced by at
     // least one stronghold — that way emptying a real shop doesn't hide
     // its card, but shopcsv padding slots stay hidden.
@@ -1228,20 +1230,32 @@ window.OB64 = window.OB64 || {};
       var shopRecsList = shopRecs[si] || [];
       if (rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
           !rom.shops[si].runtimeOverride) continue;
-      var minRuntimeKey = Infinity;
+      var minWiki = Infinity;
+      var minScenarioKey = Infinity;
       var minMission = Infinity;
       for (var mi = 0; mi < shopRecsList.length; mi++) {
         var rr = shopRecsList[mi];
         var runtimeKeys = scenarioKeysByRecord[rr.index] || [];
-        if (runtimeKeys.length && runtimeKeys[0] < minRuntimeKey) {
-          minRuntimeKey = runtimeKeys[0];
+        for (var rki = 0; rki < runtimeKeys.length; rki++) {
+          var runtimeKey = runtimeKeys[rki];
+          if (OB64.isDevScenarioKey && OB64.isDevScenarioKey(runtimeKey)) continue;
+          var keyInfo = OB64.scenarioKeyInfo
+            ? OB64.scenarioKeyInfo(runtimeKey)
+            : { wikiId: 0 };
+          if (!keyInfo.wikiId) continue;
+          if (keyInfo.wikiId < minWiki ||
+              (keyInfo.wikiId === minWiki && runtimeKey < minScenarioKey)) {
+            minWiki = keyInfo.wikiId;
+            minScenarioKey = runtimeKey;
+          }
         }
         if (rr.missionId < minMission) minMission = rr.missionId;
       }
-      shopOrder.push({ idx: si, minRuntimeKey: minRuntimeKey, minMission: minMission });
+      shopOrder.push({ idx: si, minWiki: minWiki, minScenarioKey: minScenarioKey, minMission: minMission });
     }
     shopOrder.sort(function(a, b) {
-      if (a.minRuntimeKey !== b.minRuntimeKey) return a.minRuntimeKey - b.minRuntimeKey;
+      if (a.minWiki !== b.minWiki) return a.minWiki - b.minWiki;
+      if (a.minScenarioKey !== b.minScenarioKey) return a.minScenarioKey - b.minScenarioKey;
       if (a.minMission !== b.minMission) return a.minMission - b.minMission;
       return a.idx - b.idx;
     });
