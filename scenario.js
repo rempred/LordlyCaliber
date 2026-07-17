@@ -1161,12 +1161,29 @@ window.OB64 = window.OB64 || {};
   var DEV_KEYS = [10, 22, 35, 54, 62, 63, 64];
   function isDevKey(runtimeKey) { return DEV_KEYS.indexOf(runtimeKey) >= 0; }
 
+  function wikiIdForKey(runtimeKey) {
+    var scn = squadScenario(runtimeKey);
+    return scn && scn.wikiId ? scn.wikiId : Infinity;
+  }
+
+  function compareScenarioKeys(a, b) {
+    var ad = isDevKey(a), bd = isDevKey(b);
+    if (ad !== bd) return ad ? 1 : -1;
+    if (ad) return a - b;
+    var aw = wikiIdForKey(a), bw = wikiIdForKey(b);
+    if (aw !== bw) return aw < bw ? -1 : 1;
+    return a - b;
+  }
+
+  // Shared UI ordering: wiki sequence for normal scenarios, then dev/internal
+  // keys in runtime-key order. Shops and Scenario must not maintain two orders.
+  OB64.isDevScenarioKey = isDevKey;
+  OB64.compareScenarioKeys = compareScenarioKeys;
+
   function renderList(el, rom) {
     var q = ui.search.toLowerCase().trim();
     var scenarios = dataScenarios().slice().sort(function(a, b) {
-      var ad = isDevKey(a.runtimeKey), bd = isDevKey(b.runtimeKey);
-      if (ad !== bd) return ad ? 1 : -1;
-      return a.runtimeKey - b.runtimeKey;
+      return compareScenarioKeys(a.runtimeKey, b.runtimeKey);
     });
     var html = '<div class="sc-list-tools"><input id="sc-search" placeholder="Search runtime keys, missions, branches" value="' + esc(ui.search) + '"></div>';
     var lastGroup = null;
