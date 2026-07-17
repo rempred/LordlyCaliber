@@ -769,9 +769,88 @@ td.raw-hex {
 }
 
 /* Items table — compact columns */
+.item-growth-note {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ob-wood-dark);
+  border-left: 4px solid var(--ob-gold);
+  border-radius: 4px;
+  background: rgba(239, 222, 174, 0.38);
+  color: var(--ob-ink-soft);
+  font-size: var(--ob-text-sm);
+}
+
+.item-raw-note {
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(122, 81, 32, 0.55);
+  border-left: 4px solid var(--ob-wax-red);
+  border-radius: 4px;
+  background: rgba(90, 70, 50, 0.09);
+  color: var(--ob-ink-soft);
+  font-size: var(--ob-text-sm);
+}
+
+.items-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.items-table {
+  width: max-content;
+  min-width: 100%;
+}
+
 .items-table th,
 .items-table td {
   padding: 4px 9px;
+}
+
+.items-table .item-growth-start {
+  border-left: 3px solid var(--ob-gold-dim);
+}
+
+.items-table td.item-growth {
+  color: #6a3f86;
+  font-weight: 700;
+}
+
+.items-table .item-growth-unknown {
+  color: var(--ob-ink-dim);
+  background: rgba(90, 70, 50, 0.08);
+}
+
+.items-table .item-raw-start {
+  border-left: 3px solid var(--ob-wax-red);
+}
+
+.items-table th.item-raw-byte,
+.items-table td.item-raw-byte {
+  font-family: var(--ob-mono);
+  color: var(--ob-ink-dim);
+  background: rgba(90, 70, 50, 0.10);
+}
+
+.items-table td.item-raw-byte::after {
+  content: ' \26A0';
+  opacity: 0.62;
+}
+
+.items-table th.item-pointer-byte,
+.items-table td.item-pointer-byte,
+.classes-table .pointer-byte,
+.class-card .pointer-byte {
+  background: rgba(152, 32, 24, 0.12);
+  color: #7b251f;
+}
+
+.items-table tr.item-internal-record td {
+  background-image: linear-gradient(rgba(152, 32, 24, 0.045), rgba(152, 32, 24, 0.045));
+}
+
+.items-table tr.item-internal-record td:first-child::after {
+  content: ' ⚠';
+  color: var(--ob-wax-red);
 }
 
 /* ============================================================
@@ -910,7 +989,7 @@ td.raw-hex {
   font-style: italic;
 }
 
-/* Growth-mean sub-badge in Card view */
+/* Per-level base-growth sub-badge in Card view */
 .class-card .stat-entry .growth-sub {
   flex: 0 0 auto;
   font-family: var(--ob-mono);
@@ -1039,7 +1118,7 @@ td.class-name {
   letter-spacing: 0.3px;
 }
 
-/* Growth tier inline badges (table view) */
+/* Per-level growth inline badges (table view) */
 td.growth-tiers {
   white-space: normal;
 }

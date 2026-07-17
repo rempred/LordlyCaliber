@@ -1266,11 +1266,14 @@ OB64.parseScincsv = function(buf, archiveIdx) {
 };
 
 // ============================================================
-// Parse item stat table — 295 x 32B from ROM
-// ROM offset 0x62310 (z64)
+// Parse item stat table — 278 logical 32B records from ROM: ID 0 sentinel
+// plus equipment IDs 0x01-0x115. ITEM_STAT_OFFSET is stat-framed: B0 begins
+// there, while the current record's logical B28-B31 name pointer is stored at
+// statOff-4..statOff-1. The final B27 is immediately before the consumable
+// master table at 0x645CC (rev0) / 0x645EC (rev1).
 // ============================================================
 OB64.ITEM_STAT_OFFSET = 0x62310;
-OB64.ITEM_STAT_COUNT = 295;
+OB64.ITEM_STAT_COUNT = 278;
 OB64.ITEM_STAT_SIZE = 32;
 
 // Signed byte helper: values 128-255 → -128 to -1
@@ -1283,12 +1286,18 @@ OB64.parseItemStats = function(z64) {
   var items = [];
   for (var i = 0; i < OB64.ITEM_STAT_COUNT; i++) {
     var off = base + i * OB64.ITEM_STAT_SIZE;
+    // Present one logical 32-byte record to callers even though the source is
+    // stat-framed: stats/tail B0-B27, then the same item's preceding pointer.
+    var logicalRaw = new Uint8Array(OB64.ITEM_STAT_SIZE);
+    logicalRaw.set(z64.subarray(off, off + 28), 0);
+    logicalRaw.set(z64.subarray(off - 4, off), 28);
     items.push({
       index: i,
       gameId: i,                     // stat table is 0-indexed: index 0 = sentinel, index N = game_id N
       equipType: z64[off],           // byte 0: equipment type/slot
       element: z64[off + 1],         // byte 1: element
       grade: z64[off + 2],           // byte 2: quality tier within equip type (0-11)
+      b3Raw: z64[off + 3],           // byte 3: reserved/unknown raw byte
       price: OB64.readU16BE(z64, off + 4), // bytes 4-5: price (uint16 BE)
       // --- Character stats (all signed bytes, confirmed via wiki cross-ref) ---
       strRaw: z64[off + 6],          // byte 6: STR (Strength)
@@ -1313,10 +1322,64 @@ OB64.parseItemStats = function(z64) {
       resWater: OB64.signedByte(z64[off + 17]),   // byte 17: Water resist
       resVirtue: OB64.signedByte(z64[off + 18]),  // byte 18: Virtue/Holy resist
       resBane: OB64.signedByte(z64[off + 19]),    // byte 19: Bane/Dark resist
-      rawBytes: z64.subarray(off, off + OB64.ITEM_STAT_SIZE),
+      // --- Permanent level-up additions (B20-B21, eight packed 2-bit lanes) ---
+      // func_00044AA4 sums the seven functioning lanes across the character's
+      // four resolved equipment slots. Retail calls B20 bits 7:6 for both HP
+      // and STR. Layout symmetry suggests bits 5:4 may have been intended for
+      // STR, but its accessor has no accepted retail caller; intent is unproven.
+      growthByte20: z64[off + 20],
+      growthByte21: z64[off + 21],
+      growthHpStr: (z64[off + 20] >>> 6) & 0x03,  // B20 7:6: retail adds to HP + STR
+      growthUnknown: (z64[off + 20] >>> 4) & 0x03,// B20 5:4: likely intended STR; unused/unresolved
+      growthInt: (z64[off + 20] >>> 2) & 0x03,    // B20 bits 3:2
+      growthAgi: z64[off + 20] & 0x03,            // B20 bits 1:0
+      growthDex: (z64[off + 21] >>> 6) & 0x03,    // B21 bits 7:6
+      growthVit: (z64[off + 21] >>> 4) & 0x03,    // B21 bits 5:4
+      growthMen: (z64[off + 21] >>> 2) & 0x03,    // B21 bits 3:2
+      growthLck: z64[off + 21] & 0x03,            // B21 bits 1:0
+      // B22-B27 have partial consumers but no complete accepted semantic map.
+      // Logical B28-B31 are the current runtime item-name pointer, physically
+      // stored at statOff-4..statOff-1. Expose each byte without inventing
+      // labels so advanced edits can still round-trip exactly.
+      b22Raw: z64[off + 22],
+      b23Raw: z64[off + 23],
+      b24Raw: z64[off + 24],
+      b25Raw: z64[off + 25],
+      b26Raw: z64[off + 26],
+      b27Raw: z64[off + 27],
+      b28Raw: z64[off - 4],
+      b29Raw: z64[off - 3],
+      b30Raw: z64[off - 2],
+      b31Raw: z64[off - 1],
+      namePtr: OB64.readU32BE(z64, off - 4),
+      rawBytes: logicalRaw,
     });
   }
   return items;
+};
+
+// Repack the decoded B20/B21 lanes. Missing logical fields fall back to the
+// parsed raw byte so callers that carry an older item object do not zero data.
+OB64.packItemGrowthByte20 = function(item) {
+  var raw = item && typeof item.growthByte20 === 'number' ? item.growthByte20 : 0;
+  function lane(field, shift) {
+    return item && typeof item[field] === 'number' ? item[field] & 0x03 : (raw >>> shift) & 0x03;
+  }
+  return (lane('growthHpStr', 6) << 6) |
+    (lane('growthUnknown', 4) << 4) |
+    (lane('growthInt', 2) << 2) |
+    lane('growthAgi', 0);
+};
+
+OB64.packItemGrowthByte21 = function(item) {
+  var raw = item && typeof item.growthByte21 === 'number' ? item.growthByte21 : 0;
+  function lane(field, shift) {
+    return item && typeof item[field] === 'number' ? item[field] & 0x03 : (raw >>> shift) & 0x03;
+  }
+  return (lane('growthDex', 6) << 6) |
+    (lane('growthVit', 4) << 4) |
+    (lane('growthMen', 2) << 2) |
+    lane('growthLck', 0);
 };
 
 // ============================================================
@@ -1416,9 +1479,10 @@ OB64.parseWorldMap = function(z64) {
 };
 
 // ============================================================
-// Parse class growth tiers — 72 classes x 3 bytes (6 nibbles per class)
-// ROM 0x17F7F0: each class has 6 stat growth tier values (0-3)
-// indexed directly by class ID 0-71
+// Legacy packed-table candidate — 72 x 3 bytes at ROM 0x17F7F0.
+// Older editor notes called these class growth tiers. No accepted static
+// consumer ties this table to level-up growth, and the Classes UI does not use
+// it. Keep the parser shape only for backward-compatible research access.
 // ============================================================
 OB64.GROWTH_TIER_OFFSET = 0x17F7F0;
 OB64.GROWTH_TIER_COUNT = 72;
@@ -1447,11 +1511,10 @@ OB64.parseClassGrowth = function(z64) {
 };
 
 // ============================================================
-// Parse growth probability curves — 16 tiers x 24 level entries
-// ROM 0x17F668: probability of gaining a stat point at each level
-// Only tiers 0-3 are actually referenced by classes.
-// Tier 0 = highest growth (~27% avg), tier 3 = lowest (~9% avg)
-// 16 x 24 = 384 bytes + 8 bytes padding sentinel at 0x17F7E8
+// Legacy 16 x 24 table candidate at ROM 0x17F668.
+// The former "growth probability curves" interpretation has no accepted
+// consumer and is not part of the verified level-up formula. Preserve the raw
+// parser for compatibility; do not present these bytes as class growth data.
 // ============================================================
 OB64.GROWTH_CURVE_OFFSET = 0x17F668;
 OB64.GROWTH_CURVE_TIERS = 16;
@@ -1568,10 +1631,11 @@ OB64.parseClassDefs = function(z64) {
     var isTerm = (b0 === 0xFF && z64[off + 1] === 0xFF);
     var isSentinel = (b0 === 0x80);
 
-    // B0-23: 6 stats (u16BE base + u8 growth mean + u8 raw), then LCK base at B23.
-    // Stat order: STR, VIT, INT, MEN, AGI, DEX. Growth means B2/B6/B10/B14/B18/B22
-    // confirmed via level-up RAM diff. B3/B7/B11/B15/B19 are uncertain (possibly
-    // part of growth formula; possibly padding). B23 is LCK base (NOT DEX-g2).
+    // B0-23: 6 stats (u16BE base + u8 per-level base gain + u8 raw), then LCK
+    // base at B23. Stat order: STR, VIT, INT, MEN, AGI, DEX. For ordinary
+    // classes, each B2/B6/B10/B14/B18/B22 byte is the minimum before two 0/1
+    // RNG rolls and equipment growth are added. B3/B7/B11/B15/B19 are not read
+    // by the recovered level-up routine; their broader meaning remains unknown.
     var stats = [];
     for (var s = 0; s < 6; s++) {
       stats.push({
@@ -1685,8 +1749,13 @@ OB64.parseClassDefs = function(z64) {
     var itemCapacity = z64[off + 59];
     var category = itemCapacity; // Backward-compatible alias for older class-object consumers.
 
-    // RAM pointer (bytes 60-63) — code-adjacent, preserve on write (don't serialize)
+    // Current-class name pointer at name-framed H+0..H+3 / logical B60-B63.
+    // Physical storage is statOff-12..-9 because `off` is stat-framed.
     var namePtr = OB64.readU32BE(z64, off - 12);
+    var namePtr0Raw = z64[off - 12];
+    var namePtr1Raw = z64[off - 11];
+    var namePtr2Raw = z64[off - 10];
+    var namePtr3Raw = z64[off - 9];
 
     // Unit SIZE / footprint (0x01=regular/1-cell, 0x02=large/blocks adjacent).
     // The size byte lives in the name-framed class record at +4, which is
@@ -1727,8 +1796,8 @@ OB64.parseClassDefs = function(z64) {
       isTerm: isTerm,
       isSentinel: isSentinel,
       stats: stats,
-      // Named growth means — mirror of stats[i].g1, UI binds here. Edit dispatch
-      // must keep both in sync (see renderClasses edit callbacks).
+      // Named per-level base gains — mirror of stats[i].g1. Edit dispatch must
+      // keep both in sync (see renderClasses edit callbacks).
       strGrowth: strGrowth, vitGrowth: vitGrowth, intGrowth: intGrowth,
       menGrowth: menGrowth, agiGrowth: agiGrowth, dexGrowth: dexGrowth,
       b3Raw: b3Raw, b7Raw: b7Raw, b11Raw: b11Raw, b15Raw: b15Raw, b19Raw: b19Raw,
@@ -1770,9 +1839,13 @@ OB64.parseClassDefs = function(z64) {
       dragonElement: dragonElement, // B58
       itemCapacity: itemCapacity,   // B59
       category: category,           // Superseded B59 alias retained for compatibility
-      ptr: ptr,                     // B60-63 (runtime RAM pointer — HIDE, preserve)
+      ptr: ptr,                     // logical B60-63 current-class name pointer
       unitSize: unitSize,           // name-framed +4 (regular/large footprint)
       namePtr: namePtr,
+      namePtr0Raw: namePtr0Raw,     // name-framed +0 / logical B60
+      namePtr1Raw: namePtr1Raw,     // name-framed +1 / logical B61
+      namePtr2Raw: namePtr2Raw,     // name-framed +2 / logical B62
+      namePtr3Raw: namePtr3Raw,     // name-framed +3 / logical B63
       sexOrVoice: sexOrVoice,       // nameOff+5 / statOff-7
       leadership: leadership,       // nameOff+6 / statOff-6
       headerPad: headerPad,         // nameOff+7 / statOff-5

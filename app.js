@@ -145,29 +145,7 @@ window.OB64 = window.OB64 || {};
 
       // Item stats (direct z64 patch at 0x62310)
       if (dirty.items) {
-        for (var i = 0; i < rom.itemStats.length; i++) {
-          var item = rom.itemStats[i];
-          var off = OB64.ITEM_STAT_OFFSET + i * OB64.ITEM_STAT_SIZE;
-          rom.z64[off + 0] = item.equipType;
-          rom.z64[off + 1] = item.element;
-          rom.z64[off + 2] = item.grade;
-          OB64.writeU16BE(rom.z64, off + 4, item.price);
-          rom.z64[off + 6] = item.strRaw;
-          rom.z64[off + 7] = item.intRaw;
-          rom.z64[off + 8] = item.agiRaw;
-          rom.z64[off + 9] = item.dexRaw;
-          rom.z64[off + 10] = item.vitRaw;
-          rom.z64[off + 11] = item.menRaw;
-          rom.z64[off + 12] = item.b12Raw;
-          var sb = function(v) { return v < 0 ? v + 256 : v; };
-          rom.z64[off + 13] = sb(item.resPhys);
-          rom.z64[off + 14] = sb(item.resWind);
-          rom.z64[off + 15] = sb(item.resFire);
-          rom.z64[off + 16] = sb(item.resEarth);
-          rom.z64[off + 17] = sb(item.resWater);
-          rom.z64[off + 18] = sb(item.resVirtue);
-          rom.z64[off + 19] = sb(item.resBane);
-        }
+        OB64.serializeItemStats(rom.itemStats, rom.z64);
         touched.push('items');
       }
 
@@ -731,6 +709,19 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // Shared editing helpers — dropdown, searchable input, numeric
   // ============================================================
+
+  // Keep the stored value visible when a byte/ID also has a friendly label.
+  // The editor is a modding surface, so a guide-facing name must never replace
+  // the underlying value that will be written back to the ROM.
+  function formatByteChoice(value, label) {
+    var n = Number(value) & 0xFF;
+    return '0x' + n.toString(16).padStart(2, '0').toUpperCase() + ' · ' + label;
+  }
+
+  function formatU16Choice(value, label) {
+    var n = Number(value) & 0xFFFF;
+    return '0x' + n.toString(16).padStart(4, '0').toUpperCase() + ' · ' + label;
+  }
 
   // Small enum dropdown (<30 options). options = {value: label, ...}
   function makeDropdown(td, options, currentVal, onCommit) {
@@ -2182,6 +2173,16 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // ITEMS TAB
   // ============================================================
+  var ITEM_GROWTH_FIELDS = {
+    growthHpStr: true, growthUnknown: true, growthInt: true, growthAgi: true,
+    growthDex: true, growthVit: true, growthMen: true, growthLck: true,
+  };
+  var ITEM_RAW_BYTE_FIELDS = {
+    b3Raw: true, b12Raw: true,
+    b22Raw: true, b23Raw: true, b24Raw: true, b25Raw: true, b26Raw: true, b27Raw: true,
+    b28Raw: true, b29Raw: true, b30Raw: true, b31Raw: true,
+  };
+
   function renderItems(panel) {
     panel.innerHTML = '';
     var filter = makeFilterBar('Filter by name, type, element, or category...', function(q) {
@@ -2192,28 +2193,58 @@ window.OB64 = window.OB64 || {};
     });
     panel.appendChild(filter);
 
+    var growthNote = document.createElement('div');
+    growthNote.className = 'item-growth-note';
+    growthNote.innerHTML = '<strong>Level-up growth (B20-B21):</strong> each value is a permanent 0-3 addition per level from this equipped item. Retail code applies B20 bits 7:6 to both HP and STR; the community layout hypothesis is that this was intended as HP only. B20 bits 5:4 is shown as <strong>STR? unused</strong>: its dedicated accessor fits the missing STR position, but no accepted retail caller or effect is established. These fields are separate from ordinary while-equipped stat bonuses.';
+    panel.appendChild(growthNote);
+
+    var rawNote = document.createElement('div');
+    rawNote.className = 'item-raw-note';
+    rawNote.innerHTML = '<strong>Raw byte access:</strong> all 278 logical records are shown (ID 0 sentinel plus 277 equipment IDs, 0x01-0x115). Shaded ⚠ columns expose every remaining logical record byte and use intentionally conservative labels. Logical B28-B31 form the current item\'s runtime name pointer and are physically stored at statOff-4..statOff-1; changing pointer bytes can break names or crash the game.';
+    panel.appendChild(rawNote);
+
     var table = document.createElement('table');
     table.className = 'items-table';
     table.innerHTML = '<thead><tr>' +
-      '<th>ID</th>' +
-      '<th>Name</th>' +
-      '<th>Type</th>' +
-      '<th>Elem</th>' +
-      '<th>Gr</th>' +
-      '<th>Price</th>' +
-      '<th title="Strength">STR</th>' +
-      '<th title="Intelligence">INT</th>' +
-      '<th title="Agility">AGI</th>' +
-      '<th title="Dexterity">DEX</th>' +
-      '<th title="Vitality">VIT</th>' +
-      '<th title="Mentality">MEN</th>' +
-      '<th title="Physical Resistance">Phys</th>' +
-      '<th title="Wind Resistance">Wind</th>' +
-      '<th title="Fire Resistance">Fire</th>' +
-      '<th title="Earth Resistance">Earth</th>' +
-      '<th title="Water Resistance">Water</th>' +
-      '<th title="Virtue Resistance">Virt</th>' +
-      '<th title="Bane Resistance">Bane</th>' +
+      '<th title="Record index / game item ID. The ID is not stored as a separate byte inside the 32-byte item record.">ID</th>' +
+      '<th title="Name resolved through logical B28-B31, the current item-name pointer (physically statOff-4..statOff-1).">Name</th>' +
+      '<th title="B0: equipment type / slot byte.">Type</th>' +
+      '<th title="B1: element byte.">Elem</th>' +
+      '<th title="B2: equipment grade / quality byte.">Gr</th>' +
+      '<th title="B4-B5: price (unsigned 16-bit, big-endian).">Price</th>' +
+      '<th title="B6: Strength static equipment modifier (signed byte).">STR</th>' +
+      '<th title="B7: Intelligence static equipment modifier (signed byte).">INT</th>' +
+      '<th title="B8: Agility static equipment modifier (signed byte).">AGI</th>' +
+      '<th title="B9: Dexterity static equipment modifier (signed byte).">DEX</th>' +
+      '<th title="B10: Vitality static equipment modifier (signed byte).">VIT</th>' +
+      '<th title="B11: Mentality static equipment modifier (signed byte).">MEN</th>' +
+      '<th title="B13: Physical resistance modifier (signed byte).">Phys</th>' +
+      '<th title="B14: Wind resistance modifier (signed byte).">Wind</th>' +
+      '<th title="B15: Fire resistance modifier (signed byte).">Fire</th>' +
+      '<th title="B16: Earth resistance modifier (signed byte).">Earth</th>' +
+      '<th title="B17: Water resistance modifier (signed byte).">Water</th>' +
+      '<th title="B18: Virtue resistance modifier (signed byte).">Virt</th>' +
+      '<th title="B19: Bane resistance modifier (signed byte).">Bane</th>' +
+      '<th class="item-growth-start" title="B20 bits 7:6. Retail code permanently adds this value to both HP and STR. Community layout inference suggests HP was the intended lane.">HP (+STR retail)</th>' +
+      '<th title="B21 bits 5:4. Permanent VIT addition per level while equipped.">VIT-g</th>' +
+      '<th title="B20 bits 3:2. Permanent INT addition per level while equipped.">INT-g</th>' +
+      '<th title="B21 bits 3:2. Permanent MEN addition per level while equipped.">MEN-g</th>' +
+      '<th title="B20 bits 1:0. Permanent AGI addition per level while equipped.">AGI-g</th>' +
+      '<th title="B21 bits 7:6. Permanent DEX addition per level while equipped.">DEX-g</th>' +
+      '<th title="B21 bits 1:0. Permanent LCK addition per level while equipped.">LCK-g</th>' +
+      '<th class="item-growth-unknown" title="B20 bits 5:4. Likely intended STR position by packed-layout symmetry, but the dedicated accessor has no accepted retail caller or established effect.">STR? unused</th>' +
+      '<th class="item-raw-byte item-raw-start" title="B3 reserved/unknown raw byte. Exact semantics unknown; edit with caution.">B3 ?</th>' +
+      '<th class="item-raw-byte" title="B12 unknown signed/stat-adjacent byte. Exact consumer and semantics are unverified.">B12 ?</th>' +
+      '<th class="item-raw-byte" title="B22 tail byte. Partial consumers exist, but complete semantics are unknown.">B22 ?</th>' +
+      '<th class="item-raw-byte" title="B23 tail byte. Complete semantics are unknown.">B23 ?</th>' +
+      '<th class="item-raw-byte" title="B24 tail byte. Complete semantics are unknown.">B24 ?</th>' +
+      '<th class="item-raw-byte" title="B25 tail byte. Complete semantics are unknown.">B25 ?</th>' +
+      '<th class="item-raw-byte" title="B26 tail byte. Complete semantics are unknown.">B26 ?</th>' +
+      '<th class="item-raw-byte" title="B27 tail byte. Complete semantics are unknown.">B27 ?</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B28: current item-name pointer byte 0, physically statOff-4. Editing can break name lookup or crash.">Ptr28</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B29: current item-name pointer byte 1, physically statOff-3. Editing can break name lookup or crash.">Ptr29</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B30: current item-name pointer byte 2, physically statOff-2. Editing can break name lookup or crash.">Ptr30</th>' +
+      '<th class="item-raw-byte item-pointer-byte" title="Logical B31: current item-name pointer byte 3, physically statOff-1. Editing can break name lookup or crash.">Ptr31</th>' +
       '</tr></thead>';
     var tbody = document.createElement('tbody');
 
@@ -2237,10 +2268,39 @@ window.OB64 = window.OB64 || {};
       { field: 'resBane', label: 'Bane' },
     ];
 
-    for (var i = 1; i < rom.itemStats.length; i++) { // skip index 0 (sentinel)
+    var GROWTH_FIELDS = [
+      { field: 'growthHpStr', start: true },
+      { field: 'growthVit' },
+      { field: 'growthInt' },
+      { field: 'growthMen' },
+      { field: 'growthAgi' },
+      { field: 'growthDex' },
+      { field: 'growthLck' },
+      { field: 'growthUnknown', unknown: true },
+    ];
+
+    var RAW_FIELDS = [
+      { field: 'b3Raw', hint: 'B3 reserved/unknown raw byte.' },
+      { field: 'b12Raw', hint: 'B12 unknown signed/stat-adjacent byte.' },
+      { field: 'b22Raw', hint: 'B22 partially consumed tail byte; complete semantics unknown.' },
+      { field: 'b23Raw', hint: 'B23 tail byte; semantics unknown.' },
+      { field: 'b24Raw', hint: 'B24 tail byte; semantics unknown.' },
+      { field: 'b25Raw', hint: 'B25 tail byte; semantics unknown.' },
+      { field: 'b26Raw', hint: 'B26 tail byte; semantics unknown.' },
+      { field: 'b27Raw', hint: 'B27 tail byte; semantics unknown.' },
+      { field: 'b28Raw', pointer: true, hint: 'Logical B28 current item-name pointer byte; physically statOff-4. Editing can break names or crash.' },
+      { field: 'b29Raw', pointer: true, hint: 'Logical B29 current item-name pointer byte; physically statOff-3. Editing can break names or crash.' },
+      { field: 'b30Raw', pointer: true, hint: 'Logical B30 current item-name pointer byte; physically statOff-2. Editing can break names or crash.' },
+      { field: 'b31Raw', pointer: true, hint: 'Logical B31 current item-name pointer byte; physically statOff-1. Editing can break names or crash.' },
+    ];
+
+    for (var i = 0; i < rom.itemStats.length; i++) {
       var item = rom.itemStats[i];
-      if (item.equipType === 0xFF) continue; // skip sentinel entries
       var tr = document.createElement('tr');
+      if (i === 0 || item.equipType === 0xFF) {
+        tr.className = 'item-internal-record';
+        tr.title = 'Internal/sentinel item-stat record. All bytes are editable, but gameplay safety is not established.';
+      }
 
       // ID
       td(tr, '0x' + item.gameId.toString(16).padStart(2, '0'));
@@ -2251,24 +2311,24 @@ window.OB64 = window.OB64 || {};
 
       // Equip Type (dropdown)
       (function(itm) {
-        var tdType = td(tr, OB64.equipTypeName(itm.equipType));
+        var tdType = td(tr, formatByteChoice(itm.equipType, OB64.equipTypeName(itm.equipType)));
         tdType.className = 'equip-type editable';
         tdType.addEventListener('click', function() {
           makeDropdown(tdType, OB64.EQUIP_TYPES, itm.equipType, function(v) {
             itm.equipType = v;
-            tdType.textContent = OB64.equipTypeName(v);
+            tdType.textContent = formatByteChoice(v, OB64.equipTypeName(v));
           });
         });
       })(item);
 
       // Element (dropdown)
       (function(itm) {
-        var tdElem = td(tr, OB64.elementName(itm.element));
+        var tdElem = td(tr, formatByteChoice(itm.element, OB64.elementName(itm.element)));
         tdElem.className = 'element element-' + itm.element + ' editable';
         tdElem.addEventListener('click', function() {
           makeDropdown(tdElem, OB64.ELEMENT_NAMES, itm.element, function(v) {
             itm.element = v;
-            tdElem.textContent = OB64.elementName(v);
+            tdElem.textContent = formatByteChoice(v, OB64.elementName(v));
             tdElem.className = 'element element-' + v + ' editable modified';
           });
         });
@@ -2334,11 +2394,48 @@ window.OB64 = window.OB64 || {};
         })(ri, item);
       }
 
+      // Packed B20-B21 level-up additions (all eight 2-bit lanes, editable 0-3).
+      for (var gi = 0; gi < GROWTH_FIELDS.length; gi++) {
+        var gdef = GROWTH_FIELDS[gi];
+        var gv = item[gdef.field];
+        var tdGrowth = document.createElement('td');
+        tdGrowth.textContent = gv || '\u2014';
+        tdGrowth.className = 'num editable item-growth' +
+          (gv ? '' : ' dim') +
+          (gdef.start ? ' item-growth-start' : '') +
+          (gdef.unknown ? ' item-growth-unknown' : '');
+        tdGrowth.dataset.itemIdx = i;
+        tdGrowth.dataset.field = gdef.field;
+        tdGrowth.addEventListener('click', itemCellClick);
+        tr.appendChild(tdGrowth);
+      }
+
+      // Every otherwise-unmodeled byte remains directly editable. These cells
+      // are deliberately shaded and warned because their consumers are either
+      // incomplete or, for B28-B31, pointer-sensitive.
+      for (var rfi = 0; rfi < RAW_FIELDS.length; rfi++) {
+        var rawDef = RAW_FIELDS[rfi];
+        var rawVal = item[rawDef.field] & 0xFF;
+        var tdRaw = document.createElement('td');
+        tdRaw.textContent = rawVal;
+        tdRaw.className = 'num editable item-raw-byte' +
+          (rfi === 0 ? ' item-raw-start' : '') +
+          (rawDef.pointer ? ' item-pointer-byte' : '');
+        tdRaw.title = rawDef.hint + ' Raw range: 0-255.';
+        tdRaw.dataset.itemIdx = i;
+        tdRaw.dataset.field = rawDef.field;
+        tdRaw.addEventListener('click', itemCellClick);
+        tr.appendChild(tdRaw);
+      }
+
       tbody.appendChild(tr);
     }
 
     table.appendChild(tbody);
-    panel.appendChild(table);
+    var tableWrap = document.createElement('div');
+    tableWrap.className = 'items-table-wrap';
+    tableWrap.appendChild(table);
+    panel.appendChild(tableWrap);
     makeSortable(table);
   }
 
@@ -2357,9 +2454,11 @@ window.OB64 = window.OB64 || {};
     var field = tcell.dataset.field;
     var item = rom.itemStats[idx];
 
-    // Signed fields: all stats and resistances. Unsigned: price only.
+    // Signed fields: ordinary stats and resistances. Growth lanes are unsigned 0-3.
     var isSigned = field in SIGNED_ITEM_FIELDS;
-    var maxVal = field === 'price' ? 65535 : 127;
+    var isGrowth = field in ITEM_GROWTH_FIELDS;
+    var isRawByte = field in ITEM_RAW_BYTE_FIELDS;
+    var maxVal = field === 'price' ? 65535 : (isGrowth ? 3 : (isRawByte ? 255 : 127));
     var minVal = isSigned ? -128 : 0;
     var curVal = item[field];
 
@@ -2376,7 +2475,9 @@ window.OB64 = window.OB64 || {};
     input.addEventListener('blur', function() { commitItemEdit(tcell, input, idx, field, minVal, maxVal, isSigned); });
     input.addEventListener('keydown', function(ev) {
       if (ev.key === 'Enter') commitItemEdit(tcell, input, idx, field, minVal, maxVal, isSigned);
-      if (ev.key === 'Escape') { tcell.textContent = curVal; }
+      if (ev.key === 'Escape') {
+        tcell.textContent = field === 'price' ? curVal : (curVal || '\u2014');
+      }
     });
   }
 
@@ -2392,11 +2493,18 @@ window.OB64 = window.OB64 || {};
             rom.itemStats[idx][rawField] = val < 0 ? val + 256 : val;
           }
         }
+        if (field === 'b12Raw') rom.itemStats[idx].b12 = OB64.signedByte(val);
+        if (/^b(?:28|29|30|31)Raw$/.test(field)) {
+          var ptrItem = rom.itemStats[idx];
+          ptrItem.namePtr = ((ptrItem.b28Raw << 24) | (ptrItem.b29Raw << 16) |
+            (ptrItem.b30Raw << 8) | ptrItem.b31Raw) >>> 0;
+        }
         tcell.classList.add('modified');
         markChanged();
       }
     }
-    tcell.textContent = rom.itemStats[idx][field];
+    var shown = rom.itemStats[idx][field];
+    tcell.textContent = field === 'price' ? shown : (shown || '\u2014');
   }
 
   // ============================================================
@@ -2479,6 +2587,19 @@ window.OB64 = window.OB64 || {};
   };
   var CLASS_ITEM_CAPACITY_HELP = 'B59 is this character class\'s contribution to its squad\'s carried-item limit. ' +
     'Squad item capacity = min(sum of member B59 values, 10 slots).';
+  var CLASS_HP_GROWTH_HELP = 'nameOff+10 / statOff-2 is the class base/minimum HP gain per level. For ordinary classes: gain = this byte + two independent 0/1 RNG rolls + equipped HP/STR growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
+  var CLASS_SEX_VOICE_HELP = 'Logical B65 (H+5): nameOff+5 / statOff-7. Guide-facing Sex/Voice label only; consumer not traced. Edit with caution.';
+  var CLASS_LEADERSHIP_HELP = 'Logical B66 (H+6): nameOff+6 / statOff-6. Guide-facing Leadership label only; consumer not traced. Edit with caution.';
+  function classGrowthHelp(statIdx) {
+    var byteOff = 2 + statIdx * 4;
+    return 'B' + byteOff + ' is the class base/minimum per-level gain. For ordinary classes: gain = B' +
+      byteOff + ' + two independent 0/1 RNG rolls + equipped-item growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
+  }
+  function syncClassNamePointer(def) {
+    def.namePtr = ((def.namePtr0Raw << 24) | (def.namePtr1Raw << 16) |
+      (def.namePtr2Raw << 8) | def.namePtr3Raw) >>> 0;
+    def.ptr = def.namePtr;
+  }
 
   function renderClasses(panel) {
     panel.innerHTML = '';
@@ -2669,14 +2790,15 @@ window.OB64 = window.OB64 || {};
     // ---- TABLE VIEW (sub-tabbed by field group) ----
     //
     // The classes table is split into 4 sub-views (Stats / Equipment & Combat /
-    // Growth / Promotion / Unit Info) so column count stays scannable. A second-level
+    // Growth History / Promotion / Unit Info) so column count stays scannable. A second-level
     // toggle under the main Table/Card switch picks the active sub-view; the
     // choice is persisted in localStorage.
     var TABLE_SUBVIEWS = [
       { id: 'stats',     label: 'Stats' },
       { id: 'combat',    label: 'Equipment & Combat' },
-      { id: 'promotion', label: 'Growth / Promotion' },
-      { id: 'unit',      label: 'Unit Info' }
+      { id: 'promotion', label: 'Growth History / Promotion' },
+      { id: 'unit',      label: 'Unit Info' },
+      { id: 'raw',       label: 'Raw Bytes ⚠' }
     ];
     var activeSubview = localStorage.getItem('ob64_classes_subview') || 'stats';
     if (!TABLE_SUBVIEWS.some(function(s) { return s.id === activeSubview; })) {
@@ -2713,6 +2835,7 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, def[field], 0, max, function(nv) {
             def[field] = nv;
+            if (/^namePtr[0-3]Raw$/.test(field)) syncClassNamePointer(def);
             c.textContent = nv;
             markChanged();
           });
@@ -2743,7 +2866,7 @@ window.OB64 = window.OB64 || {};
     function addStatGrowthCell(tr, def, statIdx, growthField) {
       var c = td(tr, def ? def[growthField] : 0);
       c.className = 'editable col-growth';
-      c.title = 'Growth mean (B' + (2 + statIdx * 4) + ') \u2014 confirmed via level-up diff';
+      c.title = classGrowthHelp(statIdx);
       if (def) {
         c.addEventListener('click', function() {
           makeNumericInput(c, def[growthField], 0, 255, function(nv) {
@@ -2777,13 +2900,13 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addDropdownCell(tr, def, field, optTable, nameFn) {
-      var c = td(tr, def ? nameFn(def[field]) : '\u2014');
+      var c = td(tr, def ? formatByteChoice(def[field], nameFn(def[field])) : '\u2014');
       c.className = 'editable';
       if (def) {
         c.addEventListener('click', function() {
           makeDropdown(c, optTable, def[field], function(nv) {
             def[field] = nv;
-            c.textContent = nameFn(nv);
+            c.textContent = formatByteChoice(nv, nameFn(nv));
             markChanged();
           });
         });
@@ -2793,7 +2916,7 @@ window.OB64 = window.OB64 || {};
     function addEquipCell(tr, def, displayCol) {
       var slotIdx = COL_TO_SLOT[displayCol];
       var itemId = def && def.defaultEquip.length > slotIdx ? def.defaultEquip[slotIdx] : 0;
-      var c = td(tr, itemId > 0 ? OB64.itemName(itemId) : '\u2014');
+      var c = td(tr, formatU16Choice(itemId, itemId > 0 ? OB64.itemName(itemId) : 'None'));
       c.className = 'editable equip-config';
       c.title = EQUIP_LABELS[displayCol] + ': 0x' + itemId.toString(16).padStart(4, '0');
       if (def) {
@@ -2804,7 +2927,7 @@ window.OB64 = window.OB64 || {};
             options: opts, currentId: def.defaultEquip[slotIdx],
             onSelect: function(nv) {
               def.defaultEquip[slotIdx] = nv;
-              c.textContent = nv > 0 ? OB64.itemName(nv) : '\u2014';
+              c.textContent = formatU16Choice(nv, nv > 0 ? OB64.itemName(nv) : 'None');
               c.title = EQUIP_LABELS[displayCol] + ': 0x' + nv.toString(16).padStart(4, '0');
               c.classList.add('modified');
             }
@@ -2822,7 +2945,7 @@ window.OB64 = window.OB64 || {};
         return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
       }
       var id = def ? (def[field] || 0) : 0;
-      var c = td(tr, def ? (id > 0 ? OB64.actionName(id) : '—') : '');
+      var c = td(tr, def ? formatByteChoice(id, id > 0 ? OB64.actionName(id) : 'None') : '');
       c.className = 'editable equip-config';
       c.title = label + ' — ID ' + id + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
       if (def) {
@@ -2832,7 +2955,7 @@ window.OB64 = window.OB64 || {};
             options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
             onSelect: function(nv) {
               def[field] = nv;
-              c.textContent = nv > 0 ? OB64.actionName(nv) : '—';
+              c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionName(nv) : 'None');
               c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
               c.classList.add('modified');
             }
@@ -2871,7 +2994,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function addClassFieldCell(tr, def, field, title) {
-      var c = td(tr, def && def[field] > 0 ? OB64.className(def[field]) : '\u2014');
+      var c = td(tr, def ? formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None') : '\u2014');
       c.className = 'editable';
       if (title) c.title = title;
       if (def) {
@@ -2880,7 +3003,7 @@ window.OB64 = window.OB64 || {};
           for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
           makeSearchableInput(c, classOpts, def[field], function(nv) {
             def[field] = nv;
-            c.textContent = nv > 0 ? OB64.className(nv) : '\u2014';
+            c.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
             markChanged();
           });
         });
@@ -2899,12 +3022,12 @@ window.OB64 = window.OB64 || {};
       if (activeSubview === 'stats') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'STR', title: 'B0 base (u16)' }, { label: 'STR-g', title: 'B2 growth mean', cls: 'col-growth' },
-          { label: 'VIT', title: 'B4 base' }, { label: 'VIT-g', title: 'B6 growth', cls: 'col-growth' },
-          { label: 'INT', title: 'B8 base' }, { label: 'INT-g', title: 'B10 growth', cls: 'col-growth' },
-          { label: 'MEN', title: 'B12 base' }, { label: 'MEN-g', title: 'B14 growth', cls: 'col-growth' },
-          { label: 'AGI', title: 'B16 base' }, { label: 'AGI-g', title: 'B18 growth', cls: 'col-growth' },
-          { label: 'DEX', title: 'B20 base' }, { label: 'DEX-g', title: 'B22 growth', cls: 'col-growth' },
+          { label: 'STR', title: 'B0 base (u16)' }, { label: 'STR base/lv', title: classGrowthHelp(0), cls: 'col-growth' },
+          { label: 'VIT', title: 'B4 base' }, { label: 'VIT base/lv', title: classGrowthHelp(1), cls: 'col-growth' },
+          { label: 'INT', title: 'B8 base' }, { label: 'INT base/lv', title: classGrowthHelp(2), cls: 'col-growth' },
+          { label: 'MEN', title: 'B12 base' }, { label: 'MEN base/lv', title: classGrowthHelp(3), cls: 'col-growth' },
+          { label: 'AGI', title: 'B16 base' }, { label: 'AGI base/lv', title: classGrowthHelp(4), cls: 'col-growth' },
+          { label: 'DEX', title: 'B20 base' }, { label: 'DEX base/lv', title: classGrowthHelp(5), cls: 'col-growth' },
           { label: 'LCK', title: 'B23 Luck base (40-60 typical)' },
           { label: 'ALN', title: 'B24 Alignment (0-100)' },
           { label: 'Phys' }, { label: 'Wind' }, { label: 'Fire' }, { label: 'Earth' },
@@ -3006,27 +3129,62 @@ window.OB64 = window.OB64 || {};
           var tdTo = document.createElement('td'); renderPromoLinks(tdTo, evoLookup.promotions[cid]); tr.appendChild(tdTo);
           var tdFrom = document.createElement('td'); renderPromoLinks(tdFrom, evoLookup.demotions[cid]); tr.appendChild(tdFrom);
         };
-      } else { // unit
+      } else if (activeSubview === 'unit') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
           { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
-          { label: 'Sex/Voice', title: 'nameOff+5 / statOff-7 header byte. Guide-facing sex/voice/body code; consumer not traced.' },
-          { label: 'Leadership', title: 'nameOff+6 / statOff-6 leadership byte' },
+          { label: 'Sex/Voice ?', title: CLASS_SEX_VOICE_HELP, cls: 'col-raw' },
+          { label: 'Leadership ?', title: CLASS_LEADERSHIP_HELP, cls: 'col-raw' },
           { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)' },
-          { label: 'HP/lvl', title: 'nameOff+10 / statOff-2 HP growth per level' },
+          { label: 'HP base/lv', title: CLASS_HP_GROWTH_HELP },
           { label: 'B33', title: 'B33 padding', cls: 'col-raw' },
           { label: 'H+7', title: 'nameOff+7 / statOff-5 padding/raw header byte', cls: 'col-raw' },
           { label: 'H+11', title: 'nameOff+11 / statOff-1 padding/raw header byte', cls: 'col-raw' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
-          addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
-          addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          var sexCell = addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          sexCell.classList.add('raw-byte');
+          sexCell.title = CLASS_SEX_VOICE_HELP;
+          var leadershipCell = addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          leadershipCell.classList.add('raw-byte');
+          leadershipCell.title = CLASS_LEADERSHIP_HELP;
           addNumericCell(tr, def, 'baseHp', 65535);
           addNumericCell(tr, def, 'hpGrowth', 255);
           addRawByteCell(tr, def, 'b33Raw', 'B33 padding');
           addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte');
           addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte');
+        };
+      } else { // raw bytes
+        var classPointerWarning = 'Current-class runtime name-pointer byte. Editing can break class-name lookup or crash the game.';
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'B3 ?', title: 'Adjacent raw byte after STR growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B7 ?', title: 'Adjacent raw byte after VIT growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B11 ?', title: 'Adjacent raw byte after INT growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B15 ?', title: 'Adjacent raw byte after MEN growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B19 ?', title: 'Adjacent raw byte after AGI growth; not read by the recovered level-up routine.', cls: 'col-raw' },
+          { label: 'B33 ?', title: 'Padding/raw byte with unknown semantics.', cls: 'col-raw' },
+          { label: 'Ptr+0', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+1', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+2', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'Ptr+3', title: classPointerWarning, cls: 'col-raw pointer-byte' },
+          { label: 'H+7 ?', title: 'nameOff+7 / statOff-5 padding/raw header byte.', cls: 'col-raw' },
+          { label: 'H+11 ?', title: 'nameOff+11 / statOff-1 padding/raw header byte.', cls: 'col-raw' }
+        ];
+        fillRow = function(cid, tr, def) {
+          addRawByteCell(tr, def, 'b3Raw', 'B3 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b7Raw', 'B7 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b11Raw', 'B11 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b15Raw', 'B15 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b19Raw', 'B19 is not read by the recovered level-up routine; broader semantics unknown.');
+          addRawByteCell(tr, def, 'b33Raw', 'B33 padding/raw byte; semantics unknown.');
+          addRawByteCell(tr, def, 'namePtr0Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr1Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr2Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'namePtr3Raw', classPointerWarning).classList.add('pointer-byte');
+          addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte; semantics unknown.');
+          addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte; semantics unknown.');
         };
       }
 
@@ -3076,11 +3234,10 @@ window.OB64 = window.OB64 || {};
 
     // ---- CARD VIEW ----
     //
-    // Every class-def byte is editable. Uncertain fields (B42/43/45/47/48/53/57
-    // + padding bytes B33/67/68/71 + growth-pair bytes B3/7/11/15/19) render
-    // with the .raw-byte class and a "caution" tooltip. Sections below the
-    // three always-open blocks (Stats / Alignment / Resistances) are
-    // collapsible <details> elements.
+    // Every logical class-record byte is editable. Unknown/padding bytes,
+    // guide-labeled fields whose consumers remain untraced, and the four
+    // runtime pointer bytes render shaded with explicit caution tooltips.
+    // Sections below the three always-open blocks are collapsible <details>.
 
     // Collapsible-section factory.
     function makeSection(title, open) {
@@ -3110,6 +3267,7 @@ window.OB64 = window.OB64 || {};
       e.addEventListener('click', function() {
         makeNumericInput(e, d[field], 0, opts.max || 255, function(nv) {
           d[field] = nv;
+          if (/^namePtr[0-3]Raw$/.test(field)) syncClassNamePointer(d);
           e.textContent = '';
           e.appendChild(lbl);
           val.textContent = nv;
@@ -3157,14 +3315,14 @@ window.OB64 = window.OB64 || {};
       e.appendChild(lbl);
       var val = document.createElement('span');
       val.className = 'stat-value';
-      val.textContent = nameFn(d[field]);
+      val.textContent = formatByteChoice(d[field], nameFn(d[field]));
       e.appendChild(val);
       e.addEventListener('click', function() {
         makeDropdown(e, optTable, d[field], function(nv) {
           d[field] = nv;
           e.textContent = '';
           e.appendChild(lbl);
-          val.textContent = nameFn(nv);
+          val.textContent = formatByteChoice(nv, nameFn(nv));
           e.appendChild(val);
           markChanged();
         });
@@ -3248,7 +3406,7 @@ window.OB64 = window.OB64 || {};
           statsWrap.className = 'class-card-stats';
           var sLabel = document.createElement('div');
           sLabel.className = 'class-card-section-label';
-          sLabel.textContent = 'Base Stats';
+          sLabel.textContent = 'Base Stats / Level Growth';
           statsWrap.appendChild(sLabel);
           var statsGrid = document.createElement('div');
           statsGrid.className = 'stats-grid';
@@ -3279,14 +3437,14 @@ window.OB64 = window.OB64 || {};
                 // Growth sub-badge (click to edit)
                 var gVal = document.createElement('span');
                 gVal.className = 'growth-sub editable';
-                gVal.textContent = '+' + def[STAT_G[statIdx]];
-                gVal.title = 'Growth mean (B' + (2 + statIdx * 4) + ') \u2014 level-up gain per turn';
+                gVal.textContent = 'base +' + def[STAT_G[statIdx]];
+                gVal.title = classGrowthHelp(statIdx);
                 gVal.addEventListener('click', function(ev) {
                   ev.stopPropagation();
                   makeNumericInput(gVal, def[STAT_G[statIdx]], 0, 255, function(nv) {
                     def[STAT_G[statIdx]] = nv;
                     def.stats[statIdx].g1 = nv; // keep legacy shape in sync for serializer
-                    gVal.textContent = '+' + nv;
+                    gVal.textContent = 'base +' + nv;
                     markChanged();
                   });
                 });
@@ -3410,7 +3568,7 @@ window.OB64 = window.OB64 || {};
               var vs = document.createElement('span');
               vs.className = 'stat-value';
               var iid = def.defaultEquip[slotIdx];
-              vs.textContent = iid > 0 ? OB64.itemName(iid) : 'None';
+              vs.textContent = formatU16Choice(iid, iid > 0 ? OB64.itemName(iid) : 'None');
               entry.appendChild(vs);
               entry.addEventListener('click', function() {
                 var opts = getSlotOptions(slotIdx, def);
@@ -3419,7 +3577,7 @@ window.OB64 = window.OB64 || {};
                   options: opts, currentId: def.defaultEquip[slotIdx],
                   onSelect: function(nv) {
                     def.defaultEquip[slotIdx] = nv;
-                    vs.textContent = nv > 0 ? OB64.itemName(nv) : 'None';
+                    vs.textContent = formatU16Choice(nv, nv > 0 ? OB64.itemName(nv) : 'None');
                     entry.classList.add('modified');
                   }
                 });
@@ -3460,7 +3618,7 @@ window.OB64 = window.OB64 || {};
             var vs = document.createElement('span');
             vs.className = 'stat-value';
             var cur = def[field] || 0;
-            vs.textContent = cur > 0 ? OB64.actionName(cur) : 'None';
+            vs.textContent = formatByteChoice(cur, cur > 0 ? OB64.actionName(cur) : 'None');
             entry.appendChild(vs);
             entry.addEventListener('click', function() {
               openItemPickerFromDict({
@@ -3468,7 +3626,7 @@ window.OB64 = window.OB64 || {};
                 options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
                 onSelect: function(nv) {
                   def[field] = nv;
-                  vs.textContent = nv > 0 ? OB64.actionName(nv) : 'None';
+                  vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionName(nv) : 'None');
                   entry.classList.add('modified');
                 }
               });
@@ -3498,7 +3656,7 @@ window.OB64 = window.OB64 || {};
             entry.appendChild(lbl);
             var vs = document.createElement('span');
             vs.className = 'stat-value';
-            vs.textContent = def[field] > 0 ? OB64.className(def[field]) : 'None';
+            vs.textContent = formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None');
             entry.appendChild(vs);
             entry.addEventListener('click', function() {
               var classOpts = { 0: 'None' };
@@ -3507,7 +3665,7 @@ window.OB64 = window.OB64 || {};
                 def[field] = nv;
                 entry.textContent = '';
                 entry.appendChild(lbl);
-                vs.textContent = nv > 0 ? OB64.className(nv) : 'None';
+                vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
                 entry.appendChild(vs);
                 markChanged();
               });
@@ -3567,26 +3725,40 @@ window.OB64 = window.OB64 || {};
           itemCapacityTile.title = CLASS_ITEM_CAPACITY_HELP;
           clsGrid.appendChild(itemCapacityTile);
           clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
-          clsGrid.appendChild(tileDropdown(def, 'sexOrVoice', 'Sex/Voice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName));
-          clsGrid.appendChild(tileDropdown(def, 'leadership', 'Leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName));
+          var sexTile = tileDropdown(def, 'sexOrVoice', 'Sex/Voice ?', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          sexTile.classList.add('raw-byte');
+          sexTile.title = CLASS_SEX_VOICE_HELP;
+          clsGrid.appendChild(sexTile);
+          var leadershipTile = tileDropdown(def, 'leadership', 'Leadership ?', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          leadershipTile.classList.add('raw-byte');
+          leadershipTile.title = CLASS_LEADERSHIP_HELP;
+          clsGrid.appendChild(leadershipTile);
           clsGrid.appendChild(tileDropdown(def, 'moveType', 'Move', OB64.MOVEMENT_TYPES, OB64.moveTypeName));
           clsGrid.appendChild(tileNumeric(def, 'baseHp', 'Base HP', {title: 'nameOff+8..9 / statOff-4..-3', max: 65535}));
-          clsGrid.appendChild(tileNumeric(def, 'hpGrowth', 'HP/lvl', {title: 'nameOff+10 / statOff-2'}));
+          clsGrid.appendChild(tileNumeric(def, 'hpGrowth', 'HP base/lv', {title: CLASS_HP_GROWTH_HELP}));
           clsSec.appendChild(clsGrid);
           card.appendChild(clsSec);
 
-          // --- Raw / Padding (collapsed by default) — padding + growth-pair bytes
+          // --- Raw / Padding (collapsed by default) — padding + adjacent unknown bytes
           var rawSec = makeSection('Raw / Padding', false);
+          var pointerWarn = document.createElement('div');
+          pointerWarn.className = 'class-card-raw-warning';
+          pointerWarn.textContent = 'All bytes are editable. Ptr+0..3 form the runtime class-name pointer; changing them can break name lookup or crash the game.';
+          rawSec.appendChild(pointerWarn);
           var rawGrid = document.createElement('div');
           rawGrid.className = 'stats-grid';
+          rawGrid.appendChild(tileNumeric(def, 'namePtr0Raw', 'Ptr+0', {raw: true, title: 'Runtime class-name pointer byte 0. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr1Raw', 'Ptr+1', {raw: true, title: 'Runtime class-name pointer byte 1. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr2Raw', 'Ptr+2', {raw: true, title: 'Runtime class-name pointer byte 2. Editing can break names or crash.'}));
+          rawGrid.appendChild(tileNumeric(def, 'namePtr3Raw', 'Ptr+3', {raw: true, title: 'Runtime class-name pointer byte 3. Editing can break names or crash.'}));
           rawGrid.appendChild(tileNumeric(def, 'b33Raw', 'B33', {raw: true, title: 'B33 padding'}));
           rawGrid.appendChild(tileNumeric(def, 'headerPad', 'H+7', {raw: true, title: 'nameOff+7 / statOff-5 padding/raw header byte'}));
           rawGrid.appendChild(tileNumeric(def, 'headerTailRaw', 'H+11', {raw: true, title: 'nameOff+11 / statOff-1 padding/raw header byte'}));
-          rawGrid.appendChild(tileNumeric(def, 'b3Raw', 'B3', {raw: true, title: 'Pair byte after STR growth'}));
-          rawGrid.appendChild(tileNumeric(def, 'b7Raw', 'B7', {raw: true, title: 'Pair byte after VIT growth'}));
-          rawGrid.appendChild(tileNumeric(def, 'b11Raw', 'B11', {raw: true, title: 'Pair byte after INT growth'}));
-          rawGrid.appendChild(tileNumeric(def, 'b15Raw', 'B15', {raw: true, title: 'Pair byte after MEN growth'}));
-          rawGrid.appendChild(tileNumeric(def, 'b19Raw', 'B19', {raw: true, title: 'Pair byte after AGI growth'}));
+          rawGrid.appendChild(tileNumeric(def, 'b3Raw', 'B3', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b7Raw', 'B7', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b11Raw', 'B11', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b15Raw', 'B15', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
+          rawGrid.appendChild(tileNumeric(def, 'b19Raw', 'B19', {raw: true, title: 'Adjacent raw byte; not read by the recovered level-up routine'}));
           rawSec.appendChild(rawGrid);
           card.appendChild(rawSec);
         }
@@ -5300,7 +5472,8 @@ window.OB64 = window.OB64 || {};
   // ============================================================
 
   // Returns a list of {id, name, kind: 'equip'|'consumable'} items that belong
-  // to the named tab. "equip" kinds reference the 295-item equipment table;
+  // to the named tab. "equip" kinds reference the 277 equipment IDs in the
+  // 278-record logical item-stat table (ID 0 is the sentinel);
   // "consumable" kinds index the 45-entry consumable master.
   function saveItemsForTab(tabId) {
     var out = [];

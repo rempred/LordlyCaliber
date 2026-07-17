@@ -554,6 +554,55 @@ OB64.serializeEnemydat = function(squads) {
 };
 
 // ============================================================
+// Item-stat serializer — writes every logical byte of all 278 records.
+// ITEM_STAT_OFFSET is stat-framed: B0-B27 are at statOff+0..+27, while the
+// current record's logical B28-B31 name pointer is at statOff-4..statOff-1.
+// Typed fields retain their normal controls; raw/reserved/pointer bytes use
+// explicit scalar fields so advanced edits are not silently discarded.
+// ============================================================
+OB64.serializeItemStats = function(itemStats, z64) {
+  function raw(item, field, rel) {
+    if (item && typeof item[field] === 'number') return item[field] & 0xFF;
+    if (item && item.rawBytes && typeof item.rawBytes[rel] === 'number') return item.rawBytes[rel] & 0xFF;
+    return 0;
+  }
+  function signed(v) { return v < 0 ? v + 256 : v; }
+
+  for (var i = 0; itemStats && i < itemStats.length; i++) {
+    var item = itemStats[i];
+    if (!item) continue;
+    var off = OB64.ITEM_STAT_OFFSET + i * OB64.ITEM_STAT_SIZE;
+    z64[off] = item.equipType & 0xFF;
+    z64[off + 1] = item.element & 0xFF;
+    z64[off + 2] = item.grade & 0xFF;
+    z64[off + 3] = raw(item, 'b3Raw', 3);
+    OB64.writeU16BE(z64, off + 4, item.price & 0xFFFF);
+    z64[off + 6] = raw(item, 'strRaw', 6);
+    z64[off + 7] = raw(item, 'intRaw', 7);
+    z64[off + 8] = raw(item, 'agiRaw', 8);
+    z64[off + 9] = raw(item, 'dexRaw', 9);
+    z64[off + 10] = raw(item, 'vitRaw', 10);
+    z64[off + 11] = raw(item, 'menRaw', 11);
+    z64[off + 12] = raw(item, 'b12Raw', 12);
+    z64[off + 13] = signed(item.resPhys) & 0xFF;
+    z64[off + 14] = signed(item.resWind) & 0xFF;
+    z64[off + 15] = signed(item.resFire) & 0xFF;
+    z64[off + 16] = signed(item.resEarth) & 0xFF;
+    z64[off + 17] = signed(item.resWater) & 0xFF;
+    z64[off + 18] = signed(item.resVirtue) & 0xFF;
+    z64[off + 19] = signed(item.resBane) & 0xFF;
+    z64[off + 20] = OB64.packItemGrowthByte20(item);
+    z64[off + 21] = OB64.packItemGrowthByte21(item);
+    for (var rel = 22; rel <= 27; rel++) {
+      z64[off + rel] = raw(item, 'b' + rel + 'Raw', rel);
+    }
+    for (var ptrRel = 28; ptrRel <= 31; ptrRel++) {
+      z64[off - 4 + (ptrRel - 28)] = raw(item, 'b' + ptrRel + 'Raw', ptrRel);
+    }
+  }
+};
+
+// ============================================================
 // Class definition serializer — writes all editable fields back to z64
 // Class def table: 166 x 72B at ROM z64 0x5DAD8.
 // record_index = class_id + 1; records 2-N cover class IDs 0x01-0xA4
@@ -567,7 +616,7 @@ OB64.serializeClassDefs = function(classDefs, z64) {
     if (!r) continue;
     var off = base + i * RS;
 
-    // B0-23: stats (u16BE base + u8 growth mean + u8 raw) then LCK at B23.
+    // B0-23: stats (u16BE base + u8 per-level base gain + u8 raw), then LCK at B23.
     // r.stats[i].g1 is kept in sync with r.{str,vit,int,men,agi,dex}Growth by
     // the edit dispatch in renderClasses, so this loop writes the UI's edits.
     for (var s = 0; s < r.stats.length; s++) {
@@ -620,9 +669,14 @@ OB64.serializeClassDefs = function(classDefs, z64) {
       (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq)) || 0;
     z64[off + 58] = r.dragonElement;  // B58
     z64[off + 59] = (r.itemCapacity !== undefined ? r.itemCapacity : r.category); // B59
-    // B60-63 in the old stat-framed view are the next class's name pointer.
-    // Do not write them. Current-class header bytes live at nameOff+4..+11,
-    // which is statOff-8..-1 for this record.
+    // Logical B60-B63 are the current class's name pointer. Physical storage is
+    // nameOff+0..+3 / statOff-12..-9; expose it with a strong UI warning.
+    var namePtr = r.namePtr !== undefined ? r.namePtr : (r.ptr || 0);
+    z64[off - 12] = r.namePtr0Raw !== undefined ? r.namePtr0Raw & 0xFF : (namePtr >>> 24) & 0xFF;
+    z64[off - 11] = r.namePtr1Raw !== undefined ? r.namePtr1Raw & 0xFF : (namePtr >>> 16) & 0xFF;
+    z64[off - 10] = r.namePtr2Raw !== undefined ? r.namePtr2Raw & 0xFF : (namePtr >>> 8) & 0xFF;
+    z64[off - 9] = r.namePtr3Raw !== undefined ? r.namePtr3Raw & 0xFF : namePtr & 0xFF;
+    // Current-class header bytes live at nameOff+4..+11 / statOff-8..-1.
     var sexOrVoice = r.sexOrVoice !== undefined ? r.sexOrVoice : (r.spriteType || 0);
     var leadership = r.leadership !== undefined ? r.leadership : (r.combatBehavior || 0);
     var headerPad = r.headerPad !== undefined ? r.headerPad : (r.b67Raw || 0);
