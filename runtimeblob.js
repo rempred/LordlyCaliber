@@ -26,7 +26,7 @@
   var assemble = S._assemble;
 
   var SHOP_HOOK_ROM = 0x19BF18;
-  var SHOP_CLEANUP_RAM = 0x8020BBC4;
+  var SHOP_CLEANUP_ROM_DELTA = 0xAC;
   var SHOP_RESOLVER_OFF = 0xEB00;
   var SHOP_TABLE_OFF = 0xEC00;
   var SHOP_MAGIC = 0x4F425348; // 'OBSH'
@@ -57,7 +57,8 @@
     layout.SENTINEL = SHARED_SENTINEL;
     var shopPatch = (profile && profile.shopPatch) || {};
     layout.SHOP_HOOK_ROM = shopPatch.HOOK_ROM != null ? shopPatch.HOOK_ROM : SHOP_HOOK_ROM;
-    layout.SHOP_CLEANUP_RAM = shopPatch.CLEANUP_RAM != null ? shopPatch.CLEANUP_RAM : SHOP_CLEANUP_RAM;
+    layout.SHOP_CLEANUP_ROM = shopPatch.CLEANUP_ROM != null ? shopPatch.CLEANUP_ROM :
+      (layout.SHOP_HOOK_ROM + SHOP_CLEANUP_ROM_DELTA) >>> 0;
     layout.supportsShopOverrides = !profile || profile.supportsShopOverrides !== false;
     return layout;
   }
@@ -95,13 +96,28 @@
     return true;
   }
 
+  function shopCleanupBranchOffset(layout) {
+    // Both instructions relocate inside the same side-loaded overlay. Encode
+    // their ROM-relative distance instead of the decompiler's nominal RAM
+    // label, which is not the address used by every live overlay placement.
+    var branchRom = (layout.SHOP_HOOK_ROM + 16) >>> 0;
+    if (typeof layout.SHOP_CLEANUP_ROM !== 'number' || !isFinite(layout.SHOP_CLEANUP_ROM)) {
+      throw new Error('shop cleanup branch target is missing');
+    }
+    var delta = layout.SHOP_CLEANUP_ROM - (branchRom + 4);
+    if ((delta & 3) !== 0) throw new Error('shop cleanup branch target is not word-aligned');
+    var words = delta / 4;
+    if (words < -0x8000 || words > 0x7FFF) throw new Error('shop cleanup branch target is out of range');
+    return words;
+  }
+
   function buildShopHook(layout) {
     return S.wordsToBytes([
       M.addu('t8', 'v0', 'zero'),       // preserve archive buffer across loader
       M.addu('a0', 'v1', 'zero'),       // a0 = direct ktenmain/shopcsv index
       M.jal(layout.BOOT_RAM),
       M.ori('t9', 'zero', SHOP_DISPATCH_ID),
-      M.j(layout.SHOP_CLEANUP_RAM),
+      M.beq('zero', 'zero', shopCleanupBranchOffset(layout)),
       M.nop()
     ]);
   }
@@ -481,7 +497,7 @@
     patchLayout: runtimeLayout,
     consts: {
       SHOP_HOOK_ROM: SHOP_HOOK_ROM,
-      SHOP_CLEANUP_RAM: SHOP_CLEANUP_RAM,
+      SHOP_CLEANUP_ROM_DELTA: SHOP_CLEANUP_ROM_DELTA,
       SHOP_RESOLVER_OFF: SHOP_RESOLVER_OFF,
       SHOP_TABLE_OFF: SHOP_TABLE_OFF,
       SHOP_MAGIC: SHOP_MAGIC,

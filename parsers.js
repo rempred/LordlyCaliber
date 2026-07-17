@@ -117,7 +117,8 @@ OB64.ROM_LAYOUTS = {
       HOOK_ROM: 0x195584
     },
     shopPatch: {
-      HOOK_ROM: 0x19BF18
+      HOOK_ROM: 0x19BF18,
+      CLEANUP_ROM: 0x19BFC4
     },
     offsets: {
       LZSS_GAP_START: 0x20248C2,
@@ -162,8 +163,10 @@ OB64.ROM_LAYOUTS = {
     },
     shopPatch: {
       // Same side-loaded overlay routine as rev 0, shifted by the accepted
-      // header-revision +0x20 ROM delta; its runtime address is unchanged.
-      HOOK_ROM: 0x19BF38
+      // header-revision +0x20 ROM delta. The hook branches by the relative
+      // distance so both instructions follow the overlay's live relocation.
+      HOOK_ROM: 0x19BF38,
+      CLEANUP_ROM: 0x19BFE4
     },
     offsets: {
       LZSS_GAP_START: 0x2024516,

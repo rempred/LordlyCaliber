@@ -89,9 +89,12 @@ project download asset.
 
 ## Features
 
-- **Shops** — modify the inventory of all 35 in-game shops, within the empirical
-  324-item / 24-per-shop budget.
-  Shop cards are ordered by playthrough scene, show budget warnings, and use
+- **Shops** — modify the equipment and consumable inventory of all 35 in-game
+  shops through the shared Expansion-Pak runtime override. The editor enforces
+  the statically safe 50-equipment / 15-consumable per-shop ceilings; 24 was
+  only the largest retail equipment list, not a code limit. The corrected
+  40+10 path is state-replay verified; exact-max and purchase/use tests remain.
+  Shop cards are ordered by playthrough scene, show capacity warnings, and use
   searchable item pickers.
 - **Classes** — edit base stats, per-level base gains, resistances, combat multipliers,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
