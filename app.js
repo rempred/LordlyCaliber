@@ -480,7 +480,6 @@ window.OB64 = window.OB64 || {};
     for (var i = 0; i < panels.length; i++) {
       panels[i].classList.toggle('active', panels[i].id === 'panel-' + tab);
     }
-
     // The Save tab works independently of the ROM — it edits a save state,
     // not the ROM. Hide the "No ROM Loaded" scroll when the save tab is
     // active so the user sees the save panel instead.
@@ -951,6 +950,34 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // Sortable columns — click any <th> to sort
   // ============================================================
+  function compareSortableText(aText, bText, sortAsc) {
+    // Blank values are always a final bucket. Only populated values reverse
+    // direction, so descending sorts do not promote blanks.
+    var aEmpty = (aText === '\u2014' || aText === '-' || aText === '');
+    var bEmpty = (bText === '\u2014' || bText === '-' || bText === '');
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+
+    if (aText.indexOf('0x') === 0 && bText.indexOf('0x') === 0) {
+      return sortAsc
+        ? parseInt(aText, 16) - parseInt(bText, 16)
+        : parseInt(bText, 16) - parseInt(aText, 16);
+    }
+    if (aText.charAt(0) === '#' && bText.charAt(0) === '#') {
+      return sortAsc
+        ? parseInt(aText.slice(1)) - parseInt(bText.slice(1))
+        : parseInt(bText.slice(1)) - parseInt(aText.slice(1));
+    }
+
+    var aNum = parseFloat(aText);
+    var bNum = parseFloat(bText);
+    if (!isNaN(aNum) && !isNaN(bNum)) {
+      return sortAsc ? aNum - bNum : bNum - aNum;
+    }
+    return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  }
+
   function makeSortable(table) {
     var headers = table.querySelectorAll('thead th');
     var tbody = table.querySelector('tbody');
@@ -975,37 +1002,7 @@ window.OB64 = window.OB64 || {};
           if (!aCell || !bCell) return 0;
           var aText = aCell.textContent.trim();
           var bText = bCell.textContent.trim();
-
-          // Treat em-dash as empty/lowest
-          var aEmpty = (aText === '\u2014' || aText === '-' || aText === '');
-          var bEmpty = (bText === '\u2014' || bText === '-' || bText === '');
-          if (aEmpty && bEmpty) return 0;
-          if (aEmpty) return sortAsc ? 1 : -1;
-          if (bEmpty) return sortAsc ? -1 : 1;
-
-          // Hex values (0x...)
-          if (aText.indexOf('0x') === 0 && bText.indexOf('0x') === 0) {
-            return sortAsc
-              ? parseInt(aText, 16) - parseInt(bText, 16)
-              : parseInt(bText, 16) - parseInt(aText, 16);
-          }
-
-          // Archive refs (#NNN)
-          if (aText.charAt(0) === '#' && bText.charAt(0) === '#') {
-            return sortAsc
-              ? parseInt(aText.slice(1)) - parseInt(bText.slice(1))
-              : parseInt(bText.slice(1)) - parseInt(aText.slice(1));
-          }
-
-          // Numeric
-          var aNum = parseFloat(aText);
-          var bNum = parseFloat(bText);
-          if (!isNaN(aNum) && !isNaN(bNum)) {
-            return sortAsc ? aNum - bNum : bNum - aNum;
-          }
-
-          // String
-          return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+          return compareSortableText(aText, bText, sortAsc);
         });
 
         for (var i = 0; i < rows.length; i++) {
