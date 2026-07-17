@@ -5,6 +5,8 @@
    DESIGN TOKENS
    ============================================================ */
 :root {
+  --app-top-height: 100px;
+
   /* Parchment (panel/card fills) */
   --ob-parchment:       #ecd8a8;
   --ob-parchment-2:     #dcc286;
@@ -87,6 +89,7 @@ body {
   background-attachment: fixed;
   color: var(--ob-ink);
   min-height: 100vh;
+  padding-top: var(--app-top-height);
 }
 
 /* Subtle stone-grain overlay on the body — pseudo-element so layout is unaffected */
@@ -119,8 +122,10 @@ body::before {
    HEADER — wooden crown bar with gold engraving
    ============================================================ */
 .app-top {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
   isolation: isolate;
 }
@@ -370,6 +375,27 @@ body::before {
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+
+/* Items and Classes keep their complete local control stack in view. Only
+   the ledger region scrolls, so filters, notes/subviews, and column labels do
+   not move independently or require detached header clones. */
+#panel-items.active,
+#panel-classes.active {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--app-top-height) - 70px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+#panel-items > .filter-bar,
+#panel-items > .item-growth-note,
+#panel-items > .item-raw-note,
+#panel-classes > .filter-bar,
+#panel-classes > .class-view-toggle,
+#panel-classes > .class-raw-data-gate {
+  flex: 0 0 auto;
+}
 
 /* ============================================================
    FILTER BAR — parchment field
@@ -778,34 +804,38 @@ td.raw-hex {
 /* Items table — compact columns */
 .item-growth-note {
   margin: 8px 0 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--ob-wood-dark);
-  border-left: 4px solid var(--ob-gold);
-  border-radius: 4px;
-  background: rgba(239, 222, 174, 0.38);
-  color: var(--ob-ink-soft);
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ob-parchment);
   font-size: var(--ob-text-sm);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.8);
 }
 
 .item-raw-note {
   margin: -4px 0 12px;
-  padding: 8px 12px;
-  border: 1px solid rgba(122, 81, 32, 0.55);
-  border-left: 4px solid var(--ob-wax-red);
-  border-radius: 4px;
-  background: rgba(90, 70, 50, 0.09);
-  color: var(--ob-ink-soft);
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ob-parchment);
   font-size: var(--ob-text-sm);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.8);
 }
 
+.item-growth-note strong { color: var(--ob-gold-bright); }
+.item-raw-note strong { color: #efaa96; }
+
 .items-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: auto;
 }
 
 .items-table {
   width: max-content;
   min-width: 100%;
+  overflow: visible;
 }
 
 .items-table th,
@@ -1182,6 +1212,8 @@ td.attack-list {
   white-space: nowrap;
 }
 
+.classes-table { overflow: visible; }
+
 .classes-table th {
   position: sticky;
   top: 0;
@@ -1189,9 +1221,11 @@ td.attack-list {
 }
 
 #classes-table-view {
-  overflow-x: auto;
-  max-height: 80vh;
-  overflow-y: auto;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--ob-wood-dark);
   border-radius: 4px;
   box-shadow:
@@ -1222,6 +1256,30 @@ td.attack-list {
   z-index: 4;
   background:
     linear-gradient(180deg, var(--ob-wood-mid), var(--ob-wood-dark));
+}
+
+.classes-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+#classes-card-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* These real headers stay at the top of their local ledger scrollers. */
+.items-table thead th,
+.classes-table thead th {
+  top: 0;
+  z-index: 60;
+}
+
+.classes-table thead .col-sticky,
+.classes-table thead .col-sticky-name {
+  z-index: 61;
 }
 
 .classes-table td.equip-config {

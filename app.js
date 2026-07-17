@@ -33,6 +33,23 @@ window.OB64 = window.OB64 || {};
   var tabBar = document.getElementById('tab-bar');
   var emptyState = document.getElementById('empty-state');
   var statusBar = document.getElementById('status-bar');
+  var appTop = document.querySelector('.app-top');
+
+  // The application header and mod tabs are fixed as one viewport-level unit.
+  // Keep an exact body offset so wrapped controls or font-size changes never
+  // leave page content hidden underneath the fixed chrome.
+  function syncAppTopHeight() {
+    var height = appTop ? Math.ceil(appTop.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--app-top-height', height + 'px');
+  }
+  syncAppTopHeight();
+  window.addEventListener('resize', syncAppTopHeight);
+  if (window.ResizeObserver && appTop) {
+    new window.ResizeObserver(syncAppTopHeight).observe(appTop);
+  }
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(syncAppTopHeight);
+  }
 
   // Name of the most-recently loaded or saved project (for status display)
   var lastProjectFilename = null;
@@ -2876,6 +2893,7 @@ window.OB64 = window.OB64 || {};
     tableContainer.appendChild(subviewBar);
 
     var tableHost = document.createElement('div');
+    tableHost.className = 'classes-table-scroll';
     tableContainer.appendChild(tableHost);
 
     // Cell builders — each appends exactly ONE <td>. `def` is passed in so the
