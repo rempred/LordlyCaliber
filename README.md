@@ -13,7 +13,8 @@ rempred keeps the project grounded by choosing research targets, supplying test
 cases, checking behavior in emulators, and deciding which findings are ready to
 ship.
 
-The public editor is intentionally clean and browser-only:
+The public editor application is intentionally clean and browser-only.
+Optional desktop utilities are kept separate from its runtime:
 
 - `index.html` loads the app shell and vendored dependencies.
 - `app.js` owns the UI, tabs, editing flows, and export actions.
@@ -43,6 +44,8 @@ The public editor is intentionally clean and browser-only:
 - `resources/maps/vgmaps/` bundles the full-art scenario map PNGs used by the
   Scenario tab's calibrated map view.
 - `style.css` contains the full parchment-themed interface.
+- `supplemental-tools/` contains optional standalone release utilities. These
+  tools are not loaded by `index.html` and do not add editor tabs.
 
 Research-only scripts and emulator probes are kept outside this repository.
 Only concrete, tested findings are ported into LordlyCaliber.
@@ -86,6 +89,15 @@ Packaged builds are published on GitHub Releases:
 GitHub tracks download counts for uploaded release assets. Repository clones and
 GitHub's automatically generated source-code archives are separate from the
 project download asset.
+
+## Supplemental Desktop Tools
+
+`supplemental-tools/project64-battery-save-manager/` contains the standalone
+Project64 Battery Save Manager. It scans arbitrary directory trees for Ogre
+Battle 64 `.sra` battery saves and copies a selected save into the directory
+expected for a chosen patched ROM. It does not handle savestates and is not
+part of the browser editor. See the tool's README for launch requirements and
+safety behavior.
 
 ## Features
 
