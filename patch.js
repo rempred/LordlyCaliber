@@ -22,12 +22,14 @@
 // v10 carries each edited shop's per-shop consumable membership alongside its
 // equipment IDs. Both lists compile into the shared runtime override table;
 // v9 and older equipment-only projects remain readable.
+// v11 carries Scenario-project v3 stronghold-field intents for global ktenmain
+// Population and Morale edits.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 10;
+  var PATCH_VERSION = 11;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -719,6 +721,11 @@ window.OB64 = window.OB64 || {};
     n += (project.addedSquads || []).length;
     Object.keys(project.siteAllegiances || {}).forEach(function(key) {
       n += Object.keys(project.siteAllegiances[key] || {}).length;
+    });
+    Object.keys(project.strongholdFields || {}).forEach(function(index) {
+      var edit = project.strongholdFields[index] || {};
+      if (Object.prototype.hasOwnProperty.call(edit, 'population')) n++;
+      if (Object.prototype.hasOwnProperty.call(edit, 'morale')) n++;
     });
     return n;
   }

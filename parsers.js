@@ -1417,8 +1417,9 @@ OB64.packItemGrowthByte21 = function(item) {
 // Archive #691: master stronghold definitions with names, types,
 // capabilities, and shop assignments
 // Record layout: B0=groupFlag, B1-20=name, B21=padding(0), B22-23=u16BE population,
-// B24=morale(bits 0-6)+neutral flag(bit 7), B25=capabilities, B26=type, B27=shopIdx
-// B24=0xFF (255) = mission objective marker (neutral + morale 127)
+// B24=morale(bits 0-6)+preserved legacy flag(bit 7), B25=capabilities, B26=type, B27=shopIdx.
+// Initial allegiance is NOT B24 bit 7; it comes from the scenario-selected scincsv descriptor.
+// Exact B24=0xFF (255) is the mission-objective marker and must remain byte-exact.
 // ============================================================
 OB64.KTENMAIN_REC_SIZE = 28;
 
@@ -1448,7 +1449,9 @@ OB64.parseKtenmain = function(buf) {
       name: name,                  // stronghold name (ASCII)
       population: OB64.readU16BE(buf, off + 22), // bytes 22-23: u16BE population
       morale: b24 & 0x7F,         // byte 24 bits 0-6: morale (0-127)
-      neutral: (b24 & 0x80) !== 0, // byte 24 bit 7: neutral flag (true = neutral at mission start)
+      moraleByte: b24,             // raw byte, retained for exact objective/high-bit preservation
+      moraleHighBit: (b24 & 0x80) !== 0, // bit 7 consumer remains unidentified; not allegiance
+      neutral: (b24 & 0x80) !== 0, // legacy compatibility alias; do not interpret as allegiance
       isObjective: b24 === 0xFF,  // 0xFF = mission objective marker
       capabilities: buf[off + 25], // byte 25: bitmask (bit0=shop, bit1=temple, bit2=treasure, bit3=mine)
       type: buf[off + 26],         // byte 26: stronghold type (0x09=town, 0x29=fort, 0x49=boss, 0x89=castle)
@@ -2064,6 +2067,7 @@ OB64.loadROM = function(romData) {
     layout: layout,
     archives: archives,
     enemySquads: OB64.parseEnemydat(enemydatBuf),
+    ktenmainRaw: ktenmainBuf.slice ? ktenmainBuf.slice(0) : new Uint8Array(ktenmainBuf),
     strongholds: strongholds,
     shopStrongholds: OB64.buildShopStrongholds(strongholds),
     shops: OB64.parseShops(shopBuf),

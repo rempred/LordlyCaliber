@@ -59,13 +59,14 @@ OB64.crc16 = function(data) {
 };
 
 // ============================================================
-// LZSS Encoder — Greedy matching, 8KB window
+// LZSS Encoder — greedy + one-byte-lazy matching, 8KB window
 // ============================================================
-function lzssEncode(data) {
-  var tokens = [];
+function findLzssMatches(data) {
   var HASH_SIZE = 4096;
   var hashHead = new Int32Array(HASH_SIZE);
   var hashPrev = new Int32Array(data.length);
+  var bestLengths = new Uint16Array(data.length);
+  var bestDistances = new Uint16Array(data.length);
   hashHead.fill(-1);
   hashPrev.fill(-1);
 
@@ -73,8 +74,7 @@ function lzssEncode(data) {
     return ((data[p] << 8) ^ (data[p + 1] << 4) ^ data[p + 2]) & (HASH_SIZE - 1);
   }
 
-  var pos = 0;
-  while (pos < data.length) {
+  for (var pos = 0; pos < data.length; pos++) {
     var bestLen = 0, bestDist = 0;
 
     if (pos + 2 < data.length) {
@@ -100,15 +100,29 @@ function lzssEncode(data) {
       hashHead[h] = pos;
     }
 
-    if (bestLen >= THRESHOLD) {
+    bestLengths[pos] = bestLen;
+    bestDistances[pos] = bestDist;
+  }
+
+  return { lengths: bestLengths, distances: bestDistances };
+}
+
+function tokenizeLzss(data, matches, lazy) {
+  var tokens = [];
+  var pos = 0;
+  while (pos < data.length) {
+    var bestLen = matches.lengths[pos];
+    var bestDist = matches.distances[pos];
+
+    // A greedy match can hide a longer match beginning one byte later. Build
+    // both parses in lh5Compress and retain the smaller final bitstream, so
+    // this heuristic can never enlarge an archive versus the legacy parse.
+    if (lazy && bestLen >= THRESHOLD && pos + 1 < data.length &&
+        matches.lengths[pos + 1] > bestLen) {
+      tokens.push({ literal: data[pos] });
+      pos++;
+    } else if (bestLen >= THRESHOLD) {
       tokens.push({ length: bestLen, distance: bestDist });
-      for (var k = 1; k < bestLen; k++) {
-        if (pos + k + 2 < data.length) {
-          var hk = hash3(pos + k);
-          hashPrev[pos + k] = hashHead[hk];
-          hashHead[hk] = pos + k;
-        }
-      }
       pos += bestLen;
     } else {
       tokens.push({ literal: data[pos] });
@@ -116,6 +130,10 @@ function lzssEncode(data) {
     }
   }
   return tokens;
+}
+
+function lzssEncode(data) {
+  return tokenizeLzss(data, findLzssMatches(data), false);
 }
 
 // ============================================================
@@ -277,8 +295,7 @@ function writeCharacterTree(writer, cLens) {
 // ============================================================
 // LH5 Compress — single-block encoder
 // ============================================================
-OB64.lh5Compress = function(data) {
-  var tokens = lzssEncode(data);
+function lh5CompressTokens(tokens) {
   var writer = new BitWriter();
 
   var cFreq = new Uint32Array(NC);
@@ -338,6 +355,13 @@ OB64.lh5Compress = function(data) {
   }
 
   return writer.flush();
+}
+
+OB64.lh5Compress = function(data) {
+  var matches = findLzssMatches(data);
+  var greedy = lh5CompressTokens(tokenizeLzss(data, matches, false));
+  var lazy = lh5CompressTokens(tokenizeLzss(data, matches, true));
+  return lazy.length < greedy.length ? lazy : greedy;
 };
 
 // ============================================================
@@ -478,6 +502,51 @@ OB64.spliceArchive = function(z64, archive, newArchiveData) {
   }
 
   return { success: true, padded: originalArcSize - newArcSize };
+};
+
+// ============================================================
+// Serialize ktenmain stronghold Population/Morale fields
+// ============================================================
+OB64.serializeKtenmain = function(originalRaw, strongholds, fieldEdits) {
+  if (!originalRaw || originalRaw.length % OB64.KTENMAIN_REC_SIZE !== 0) {
+    throw new Error('ktenmain source payload is missing or not record-aligned');
+  }
+  var out = originalRaw.slice ? originalRaw.slice(0) : new Uint8Array(originalRaw);
+  var recordCount = Math.floor(out.length / OB64.KTENMAIN_REC_SIZE);
+  var records = strongholds || [];
+  var edits = fieldEdits || {};
+
+  Object.keys(edits).forEach(function(indexKey) {
+    var index = Number(indexKey);
+    if (!Number.isInteger(index) || index < 0 || index >= recordCount || !records[index]) {
+      throw new Error('ktenmain record index ' + indexKey + ' is out of range');
+    }
+    var edit = edits[indexKey] || {};
+    var off = index * OB64.KTENMAIN_REC_SIZE;
+
+    if (Object.prototype.hasOwnProperty.call(edit, 'population')) {
+      var population = Number(edit.population);
+      if (!Number.isInteger(population) || population < 0 || population > 0xFFFF) {
+        throw new Error(records[index].name + ' population must be an integer from 0 to 65535');
+      }
+      out[off + 22] = (population >>> 8) & 0xFF;
+      out[off + 23] = population & 0xFF;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(edit, 'morale')) {
+      var morale = Number(edit.morale);
+      if (!Number.isInteger(morale) || morale < 0 || morale > 0x7F) {
+        throw new Error(records[index].name + ' morale must be an integer from 0 to 127');
+      }
+      var originalB24 = originalRaw[off + 24];
+      if (originalB24 === 0xFF || records[index].isObjective) {
+        throw new Error(records[index].name + ' uses the exact B24=0xFF objective marker; morale editing is disabled');
+      }
+      out[off + 24] = (originalB24 & 0x80) | morale;
+    }
+  });
+
+  return out;
 };
 
 // ============================================================

@@ -245,6 +245,8 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-label{display:block;font-size:var(--ob-text-xs);font-weight:900;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.35px;margin-bottom:4px}',
       '#panel-scenario .sc-form-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}',
       '#panel-scenario .sc-form-row select,#panel-scenario .sc-form-row input{height:30px;min-width:0;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 7px}',
+      '#panel-scenario .sc-field-value{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}',
+      '#panel-scenario .sc-field-value>.sc-sub{grid-column:1/-1;margin-top:0}',
       '#panel-scenario .sc-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}',
       '#panel-scenario .sc-unit{min-width:0;text-align:center;border:1px solid var(--sc-line);border-radius:5px;padding:5px;background:rgba(255,255,255,.14)}',
       '#panel-scenario .sc-unit img{width:42px;height:36px;object-fit:contain;image-rendering:pixelated;display:block;margin:0 auto 2px}',
@@ -405,6 +407,7 @@ window.OB64 = window.OB64 || {};
       sourceRows: {},
       sites: {},
       siteAllegiances: {},
+      strongholdFields: {},
       addedSquads: [],
       modifiedKeys: {},
       settings: preserved.settings || { imageBasePath: defaultImageBase() },
@@ -433,6 +436,7 @@ window.OB64 = window.OB64 || {};
     if (!rom.scenarioEditor.archiveOriginalSlots) rom.scenarioEditor.archiveOriginalSlots = {};
     if (!rom.scenarioEditor.slotOwnedArchives) rom.scenarioEditor.slotOwnedArchives = {};
     if (!rom.scenarioEditor.relocationOwnedWindows) rom.scenarioEditor.relocationOwnedWindows = [];
+    if (!rom.scenarioEditor.strongholdFields) rom.scenarioEditor.strongholdFields = {};
     initTreasureState(rom.scenarioEditor);
     return rom.scenarioEditor;
   }
@@ -554,6 +558,65 @@ window.OB64 = window.OB64 || {};
     state.siteAllegiances[runtimeKey][selector] = value;
     state.modifiedKeys[runtimeKey] = true;
     changed();
+  }
+
+  function strongholdForSite(rom, site) {
+    var index = site && site.ktenmainRecordIndex;
+    if (!Number.isInteger(index) || !rom.strongholds || !rom.strongholds[index]) return null;
+    return rom.strongholds[index];
+  }
+
+  function strongholdFieldIntent(rom, recordIndex, field) {
+    var edit = ensureState(rom).strongholdFields[recordIndex] || {};
+    return Object.prototype.hasOwnProperty.call(edit, field) ? edit[field] : null;
+  }
+
+  function strongholdFieldValue(rom, recordIndex, field) {
+    var intent = strongholdFieldIntent(rom, recordIndex, field);
+    if (intent !== null) return intent;
+    var record = rom.strongholds && rom.strongholds[recordIndex];
+    return record ? record[field] : null;
+  }
+
+  function setStrongholdField(rom, recordIndex, field, value) {
+    var record = rom.strongholds && rom.strongholds[recordIndex];
+    if (!record) throw new Error('Stronghold record ' + recordIndex + ' is unavailable');
+    var max = field === 'population' ? 0xFFFF : 0x7F;
+    if ((field !== 'population' && field !== 'morale') ||
+        !Number.isInteger(value) || value < 0 || value > max) {
+      throw new Error(field + ' must be an integer from 0 to ' + max);
+    }
+    if (field === 'morale' && record.isObjective) {
+      throw new Error(record.name + ' uses the exact B24=0xFF objective marker; morale editing is disabled');
+    }
+
+    var state = ensureState(rom);
+    var edit = state.strongholdFields[recordIndex] || {};
+    if (value === record[field]) delete edit[field];
+    else edit[field] = value;
+    if (Object.keys(edit).length) state.strongholdFields[recordIndex] = edit;
+    else delete state.strongholdFields[recordIndex];
+    changed();
+  }
+
+  function strongholdReferenceKeys(rom, recordIndex) {
+    var state = ensureState(rom);
+    var keys = [];
+    Object.keys(state.sites).forEach(function(keyStr) {
+      var found = (state.sites[keyStr] || []).some(function(site) {
+        return site.ktenmainRecordIndex === recordIndex;
+      });
+      if (found) keys.push(Number(keyStr));
+    });
+    return keys.sort(function(a, b) { return a - b; });
+  }
+
+  function keyHasStrongholdEdits(rom, runtimeKey) {
+    var state = ensureState(rom);
+    var edits = state.strongholdFields || {};
+    return (state.sites[runtimeKey] || []).some(function(site) {
+      return site.ktenmainRecordIndex != null && !!edits[site.ktenmainRecordIndex];
+    });
   }
 
   function treasureModelForKey(rom, runtimeKey) {
@@ -971,6 +1034,9 @@ window.OB64 = window.OB64 || {};
     });
     return {
       siteAllegianceKeys: siteKeys,
+      strongholdFieldCount: Object.keys(state.strongholdFields || {}).reduce(function(total, index) {
+        return total + Object.keys(state.strongholdFields[index] || {}).length;
+      }, 0),
       addedSquads: state.addedSquads || [],
     };
   }
@@ -1201,7 +1267,10 @@ window.OB64 = window.OB64 || {};
         lastGroup = group;
       }
       var tArchive = treasureArchiveForKey(entry.runtimeKey);
-      var modified = keyModified(rom, entry.runtimeKey) || (tArchive && treasureArchiveModified(rom, tArchive));
+      var modified = keyModified(rom, entry.runtimeKey) ||
+        (tArchive && treasureArchiveModified(rom, tArchive)) ||
+        Object.keys(ensureState(rom).siteAllegiances[entry.runtimeKey] || {}).length > 0 ||
+        keyHasStrongholdEdits(rom, entry.runtimeKey);
       html += '<button type="button" class="sc-key' + (entry.runtimeKey === ui.selectedKey ? ' on' : '') + (isDevKey(entry.runtimeKey) ? ' sc-key-dev' : '') + '" data-key="' + entry.runtimeKey + '">' +
         '<span class="sc-key-name">' + esc(label) + '</span>' +
         '<span class="sc-chip">key ' + entry.runtimeKey + '</span>' +
@@ -3111,6 +3180,11 @@ window.OB64 = window.OB64 || {};
     if (stubs.siteAllegianceKeys.length) {
       html += '<div class="sc-ok">Town allegiance edits export to ROM: they rewrite the scincsv descriptor addend for the town. Several runtime keys can share one scincsv archive, so an edit here also moves that town in the keys that read the same descriptor.</div>';
     }
+    if (stubs.strongholdFieldCount) {
+      html += '<div class="sc-ok">' + stubs.strongholdFieldCount + ' Population/Morale field edit' +
+        (stubs.strongholdFieldCount === 1 ? '' : 's') +
+        ' pending in global ktenmain archive #691. Every scenario that references an edited record receives the same value.</div>';
+    }
     var tModel = treasureModelForKey(rom, key);
     if (tModel) {
       html += '<div class="sc-section"><span class="sc-label">Buried treasure</span>' +
@@ -3318,6 +3392,22 @@ window.OB64 = window.OB64 || {};
     return 'ENEMY: scincsv ' + file + ' descriptor for ' + town + ' has addend ' + addend + ' (bit 0x2000 clear = enemy-held).';
   }
 
+  function wireStrongholdFieldInput(el, rom, site, id, field, max) {
+    var input = el.querySelector(id);
+    if (!input) return;
+    input.onchange = function() {
+      var value = Number(this.value);
+      if (this.value.trim() === '' || !Number.isInteger(value) || value < 0 || value > max) {
+        this.setCustomValidity('Enter a whole number from 0 to ' + max + '.');
+        this.reportValidity();
+        return;
+      }
+      this.setCustomValidity('');
+      setStrongholdField(rom, site.ktenmainRecordIndex, field, value);
+      renderScenarioTab(document.getElementById('panel-scenario'));
+    };
+  }
+
   function renderSiteDetail(el, rom, key, site) {
     var allegiance = siteAllegiance(rom, key, site.selector);
     var intent = (ensureState(rom).siteAllegiances[key] || {})[site.selector];
@@ -3350,6 +3440,40 @@ window.OB64 = window.OB64 || {};
         '(that would need adding a new descriptor row). It defaults to enemy-held.</div>';
     }
     html += '</div>';
+
+    var stronghold = strongholdForSite(rom, site);
+    if (stronghold) {
+      var recordIndex = site.ktenmainRecordIndex;
+      var population = strongholdFieldValue(rom, recordIndex, 'population');
+      var morale = strongholdFieldValue(rom, recordIndex, 'morale');
+      var populationIntent = strongholdFieldIntent(rom, recordIndex, 'population');
+      var moraleIntent = strongholdFieldIntent(rom, recordIndex, 'morale');
+      var referenceKeys = strongholdReferenceKeys(rom, recordIndex);
+      html += '<div class="sc-section"><span class="sc-label">Population and morale</span>' +
+        '<div class="sc-sub">Global source: <code>ktenmain</code> archive #691, record ' + recordIndex +
+        '. These values follow this facility everywhere it is reused; allegiance above remains scenario-specific.</div>' +
+        '<div class="sc-form-row"><label class="sc-label" for="sc-site-population">Population</label>' +
+          '<div class="sc-field-value"><input id="sc-site-population" type="number" min="0" max="65535" step="1" value="' + population + '">' +
+          (populationIntent !== null ? '<span class="sc-chip">edited</span>' : '') +
+          '<span class="sc-sub">B22-B23, unsigned 16-bit</span></div></div>' +
+        '<div class="sc-form-row"><label class="sc-label" for="sc-site-morale">Morale</label>' +
+          '<div class="sc-field-value"><input id="sc-site-morale" type="number" min="0" max="127" step="1" value="' + morale + '"' +
+            (stronghold.isObjective ? ' disabled' : '') + '>' +
+          (moraleIntent !== null ? '<span class="sc-chip">edited</span>' : '') +
+          '<span class="sc-sub">B24 bits 0-6; bit 7 is preserved</span></div></div>';
+      if (stronghold.isObjective) {
+        html += '<div class="sc-warning">Morale is locked because this record uses exact B24=0xFF as the mission-objective marker. Population remains editable.</div>';
+      }
+      if (referenceKeys.length > 1) {
+        html += '<div class="sc-warning">Shared global record: this edit affects runtime keys ' +
+          referenceKeys.join(', ') + '.</div>';
+      } else {
+        html += '<div class="sc-ok">Exports by rebuilding archive #691 in its original ROM slot. Values matching the loaded ROM remove the edit.</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div class="sc-warning">This map marker is not mapped to a ktenmain stronghold record, so Population and Morale are unavailable.</div>';
+    }
     el.innerHTML = html;
     wireBackButton(el);
     var sel = el.querySelector('#sc-site-allegiance');
@@ -3362,6 +3486,10 @@ window.OB64 = window.OB64 || {};
       }
       renderScenarioTab(document.getElementById('panel-scenario'));
     };
+    if (stronghold) {
+      wireStrongholdFieldInput(el, rom, site, '#sc-site-population', 'population', 0xFFFF);
+      if (!stronghold.isObjective) wireStrongholdFieldInput(el, rom, site, '#sc-site-morale', 'morale', 0x7F);
+    }
   }
 
   function renderSquadDetail(el, rom, key, rowIndex) {
@@ -4781,13 +4909,14 @@ window.OB64 = window.OB64 || {};
     });
     return {
       format: 'ob64-scenario-project',
-      version: 2,
+      version: 3,
       created_at: new Date().toISOString(),
       source: 'LordlyCaliber Scenario tab',
       settings: state.settings,
       modifiedEsets: modifiedEsets,
       modifiedTreasures: modifiedTreasures,
       siteAllegiances: state.siteAllegiances,
+      strongholdFields: state.strongholdFields,
       // Carry each added squad's comp record (its squad override) so a project reload
       // restores the sidebar-editable composition, not just the placement row.
       addedSquads: state.addedSquads.map(function(r) {
@@ -4803,14 +4932,45 @@ window.OB64 = window.OB64 || {};
 
   function loadProject(rom, project) {
     if (!project || project.format !== 'ob64-scenario-project') throw new Error('Not an OB64 Scenario project file');
-    if (project.version != null && project.version > 2) {
-      throw new Error('Scenario project version ' + project.version + ' is newer than this editor supports (max 2).');
+    if (project.version != null && project.version > 3) {
+      throw new Error('Scenario project version ' + project.version + ' is newer than this editor supports (max 3).');
     }
+    // Validate the new global-field payload before resetting the active Scenario
+    // state. A malformed project must not erase the user's current edits.
+    var loadedStrongholdFields = {};
+    Object.keys(project.strongholdFields || {}).forEach(function(indexKey) {
+      var recordIndex = Number(indexKey);
+      var record = rom.strongholds && rom.strongholds[recordIndex];
+      if (!Number.isInteger(recordIndex) || !record) {
+        throw new Error('Scenario project ktenmain record index ' + indexKey + ' is out of range');
+      }
+      var source = project.strongholdFields[indexKey] || {};
+      var edit = {};
+      if (Object.prototype.hasOwnProperty.call(source, 'population')) {
+        var population = Number(source.population);
+        if (!Number.isInteger(population) || population < 0 || population > 0xFFFF) {
+          throw new Error(record.name + ' population must be an integer from 0 to 65535');
+        }
+        if (population !== record.population) edit.population = population;
+      }
+      if (Object.prototype.hasOwnProperty.call(source, 'morale')) {
+        var morale = Number(source.morale);
+        if (!Number.isInteger(morale) || morale < 0 || morale > 0x7F) {
+          throw new Error(record.name + ' morale must be an integer from 0 to 127');
+        }
+        if (record.isObjective && morale !== record.morale) {
+          throw new Error(record.name + ' uses the exact B24=0xFF objective marker; morale editing is disabled');
+        }
+        if (morale !== record.morale) edit.morale = morale;
+      }
+      if (Object.keys(edit).length) loadedStrongholdFields[recordIndex] = edit;
+    });
     var oldState = ensureState(rom);
     var oldAdded = (oldState.addedSquads || []).slice();
     var state = resetScenarioState(rom);
     if (project.settings) state.settings = project.settings;
     state.siteAllegiances = project.siteAllegiances || {};
+    state.strongholdFields = loadedStrongholdFields;
     state.addedSquads = (project.addedSquads || []).map(function(r) {
       var copy = {};
       for (var f in r) copy[f] = r[f];
@@ -5017,6 +5177,30 @@ window.OB64 = window.OB64 || {};
     return { edits: byArchive, blocked: blocked };
   }
 
+  function planStrongholdFieldEdits(rom) {
+    var state = ensureState(rom);
+    var edits = state.strongholdFields || {};
+    var keys = Object.keys(edits);
+    if (!keys.length) return { payload: null, changes: 0, blocked: [] };
+    if (!rom.ktenmainRaw || !OB64.serializeKtenmain) {
+      return { payload: null, changes: 0, blocked: ['The loaded ROM has no retained ktenmain payload; reload the ROM before exporting Population or Morale edits.'] };
+    }
+
+    var changes = 0;
+    keys.forEach(function(indexKey) {
+      var edit = edits[indexKey] || {};
+      if (Object.prototype.hasOwnProperty.call(edit, 'population')) changes++;
+      if (Object.prototype.hasOwnProperty.call(edit, 'morale')) changes++;
+    });
+    try {
+      var payload = OB64.serializeKtenmain(rom.ktenmainRaw, rom.strongholds, edits);
+      if (OB64.scenarioCodec.equalBytes(payload, rom.ktenmainRaw)) payload = null;
+      return { payload: payload, changes: changes, blocked: [] };
+    } catch (e) {
+      return { payload: null, changes: changes, blocked: [e.message] };
+    }
+  }
+
   function exportScenarioArchives(rom) {
     var state = ensureState(rom);
     var blocked = [];
@@ -5032,6 +5216,8 @@ window.OB64 = window.OB64 || {};
     // conflict/absent-descriptor validation is planned here; the splice/relocate runs below.
     var allegiancePlan = planAllegianceEdits(rom);
     if (allegiancePlan.blocked.length) blocked = blocked.concat(allegiancePlan.blocked);
+    var strongholdPlan = planStrongholdFieldEdits(rom);
+    if (strongholdPlan.blocked.length) blocked = blocked.concat(strongholdPlan.blocked);
     var stubs = anyProjectStub(rom);
     // Slot overflow is handled below by the relocation lane. Keep the fit number as
     // a user-facing note, not an export blocker.
@@ -5058,6 +5244,40 @@ window.OB64 = window.OB64 || {};
     var relocationWrites = [];
     var tailCursor = RELOC_TAIL_START;
     var ownedWindows = state.relocationOwnedWindows || [];
+
+    // Population and Morale live in the global ktenmain master table (archive #691), not in a
+    // scenario-key resource. Rebuild only when an override exists. This archive spans multiple
+    // DMA windows, so it must fit its original slot; it cannot use the ESET single-window
+    // relocation lane below.
+    var ktenmainArchive = 691;
+    var ktenmainDir = rom.archives && rom.archives[ktenmainArchive];
+    if (strongholdPlan.payload) {
+      if (!ktenmainDir) {
+        blocked.push('Missing ROM archive #691 for Population/Morale edits');
+      } else {
+        var ktenmainComp = OB64.lh5Compress(strongholdPlan.payload);
+        var ktenmainVerify = OB64.lh5Decompress(ktenmainComp, strongholdPlan.payload.length);
+        if (!OB64.scenarioCodec.equalBytes(ktenmainVerify, strongholdPlan.payload)) {
+          blocked.push('Archive #691 LH5 verification failed; Population/Morale edits were not written.');
+        } else {
+          var ktenmainArc = OB64.buildLHAArchive(ktenmainComp, strongholdPlan.payload, 'ktenmain.bin');
+          var ktenmainSlot = archiveSlotSize(ktenmainDir);
+          if (ktenmainArc.length > ktenmainSlot) {
+            blocked.push('Population/Morale archive #691 is ' + (ktenmainArc.length - ktenmainSlot) +
+              ' bytes larger than its fixed ROM slot after compression. Reduce the number or entropy of edits.');
+          } else {
+            inlineWrites.push({
+              archive: ktenmainArchive,
+              archiveDir: ktenmainDir,
+              bytes: ktenmainArc,
+              label: 'Population/Morale (ktenmain, ' + strongholdPlan.changes + ' field' + (strongholdPlan.changes === 1 ? '' : 's') + ')',
+            });
+          }
+        }
+      }
+    } else if (ktenmainDir && state.slotOwnedArchives[ktenmainArchive]) {
+      restoreSlots.push({ archive: ktenmainArchive, label: 'Population/Morale (ktenmain) restored' });
+    }
 
     Object.keys(state.models).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(key) {
       var runtimeKey = Number(key);
@@ -5258,6 +5478,10 @@ window.OB64 = window.OB64 || {};
           projectIntent: intent,
           ktenmainRecordIndex: site.ktenmainRecordIndex,
           ktenmainMoraleOffset: site.ktenmainMoraleOffset,
+          population: site.ktenmainRecordIndex == null ? null : strongholdFieldValue(rom, site.ktenmainRecordIndex, 'population'),
+          morale: site.ktenmainRecordIndex == null ? null : strongholdFieldValue(rom, site.ktenmainRecordIndex, 'morale'),
+          populationIntent: site.ktenmainRecordIndex == null ? null : strongholdFieldIntent(rom, site.ktenmainRecordIndex, 'population'),
+          moraleIntent: site.ktenmainRecordIndex == null ? null : strongholdFieldIntent(rom, site.ktenmainRecordIndex, 'morale'),
           reason: siteAllegianceReason(site, allegiance, intent),
           descriptor: {
             scincsvArchive: desc.scincsvArchive,
@@ -5324,6 +5548,9 @@ window.OB64 = window.OB64 || {};
       applyNodeGcPlan: applyNodeGcPlan,
       runNodeGc: runNodeGc,
       applyStartGateReplacement: applyStartGateReplacement,
+      strongholdFieldValue: strongholdFieldValue,
+      setStrongholdField: setStrongholdField,
+      planStrongholdFieldEdits: planStrongholdFieldEdits,
       squadMarches: squadMarches,
       writeWaypointCoordinateTarget: writeWaypointCoordinateTarget,
       writeWaypointSelectorTarget: writeWaypointSelectorTarget,
