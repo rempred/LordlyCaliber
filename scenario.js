@@ -511,10 +511,25 @@ window.OB64 = window.OB64 || {};
     return p || syntheticPoint(rom, key, rowIndex, row);
   }
 
-  function displayLabel(runtimeKey) {
+  function scenarioKeyInfo(runtimeKey) {
     var scn = squadScenario(runtimeKey);
     var cal = calibrationData(runtimeKey);
-    return (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey);
+    return {
+      runtimeKey: runtimeKey,
+      label: (scn && scn.name) || (cal && cal.editorLabel) || ('Runtime Key ' + runtimeKey),
+      wikiId: (scn && scn.wikiId) || 0,
+      wikiTitle: (scn && (scn.wikiTitle || scn.wikiHint)) || '',
+      branchStatus: (scn && scn.branchStatus) || '',
+      branchConfidence: (scn && scn.branchConfidence) || '',
+    };
+  }
+
+  // Shared, presentation-only scenario identity resolver. Other tabs should
+  // consume this instead of maintaining their own runtime-key/wiki label list.
+  OB64.scenarioKeyInfo = scenarioKeyInfo;
+
+  function displayLabel(runtimeKey) {
+    return scenarioKeyInfo(runtimeKey).label;
   }
 
   function siteForSelector(rom, runtimeKey, selector) {

@@ -1045,51 +1045,6 @@ window.OB64 = window.OB64 || {};
     body: 'Body', expendable: 'Expendable'
   };
 
-  // ktenmain mission ID → wiki scene label. Each ktenmain mission's
-  // stronghold set is matched against the ogrebattle64.net scene pages by
-  // stronghold-overlap (Jaccard score). 34 of 40 ktenmain mission groups
-  // resolve cleanly; missions 1, 41, 46, 47 are likely cutscene or
-  // special-event tactical maps that the fan wiki doesn't document
-  // separately and fall through to "Mission N".
-  var SCENARIO_NAMES = {
-    2:  'Scene 5: Zenobian Border',
-    3:  'Scene 3: Crenel Canyon',
-    4:  'Scene 2: Volmus Mine',
-    5:  'Scene 6: Volmus Mine',
-    6:  'Scene 1: Tenne Plains',
-    7:  'Scene 9: Alba',
-    8:  'Scene 8: Dardunnelles',
-    9:  'Scene 7: Gunther Piedmont',
-    11: 'Scene 4: Mylesia',
-    12: 'Scene 20: Gules Hills',
-    14: 'Scene 23: Tremos Mountains South',
-    16: 'Scene 21: Fair Heights',
-    17: 'Scene 27: Temple of Berthe',
-    18: 'Scene 24: Capitrium',
-    20: 'Scene 26: Celesis',
-    21: 'Scene 25: Tremos Mountains North',
-    22: 'Scene 13: Sable Lowlands',
-    23: 'Scene 14: Audvera Heights',
-    24: 'Scene 12: The Highlands of Soathon',
-    25: 'Scene 15: Mount Ithaca',
-    26: 'Scene 16: Azure Plains',
-    27: 'Scene 40: Wentinus',
-    28: 'Scene 42: Mount Keryoleth',
-    30: 'Scene 36: Tybell',
-    31: 'Scene 35: Argent',
-    33: 'Scene 22: Vert Plateau',
-    34: 'Scene 39: Aurua Plains',
-    35: 'Scene 34: Barpheth',
-    36: 'Scene 37: Latium',
-    37: 'Scene 32: The Blue Basilica',
-    38: 'Scene 33: Ptia',
-    39: 'Scene 30: Romulus',
-    40: 'Scene 43: Aurua Plains',
-    43: 'Scene 18: Wentinus',
-    44: 'Scene 19: Dardunnelles',
-    48: 'Scene 31: Fort Romulus',
-  };
-
   // Stronghold-name overrides for ROM spellings that diverge from the fan
   // wiki (ogrebattle64.net). Most are simple transpositions/typos the
   // matcher caught while doing the scene-overlap analysis; we honor the
@@ -1108,18 +1063,35 @@ window.OB64 = window.OB64 || {};
   function strongholdDisplay(name) {
     return STRONGHOLD_ALIASES[name] || name;
   }
-  function scenarioName(missionId) {
-    return SCENARIO_NAMES[missionId] || ('Mission ' + missionId);
+  // Build the Shops tab's presentation-only record → runtime-key join from
+  // the same scenario dataset used by the Scenario tab. A ktenmain mission
+  // group is not a scenario key and can cover several visits or branches.
+  function buildShopScenarioKeyIndex() {
+    var byRecord = {};
+    var scenarios = (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scenarios) || [];
+    for (var i = 0; i < scenarios.length; i++) {
+      var entry = scenarios[i];
+      var sites = entry.sites || [];
+      for (var j = 0; j < sites.length; j++) {
+        var recordIndex = sites[j].ktenmainRecordIndex;
+        if (recordIndex == null) continue;
+        if (!byRecord[recordIndex]) byRecord[recordIndex] = [];
+        if (byRecord[recordIndex].indexOf(entry.runtimeKey) === -1) {
+          byRecord[recordIndex].push(entry.runtimeKey);
+        }
+      }
+    }
+    Object.keys(byRecord).forEach(function(recordIndex) {
+      byRecord[recordIndex].sort(function(a, b) { return a - b; });
+    });
+    return byRecord;
   }
-  // Extract the wiki scene number from the SCENARIO_NAMES label so card sort
-  // can use true in-game order (Scene 1 → 2 → 3 → …) rather than ktenmain's
-  // internal mission-ID order. Missions with no wiki mapping return Infinity
-  // and fall to the end.
-  function sceneIdOfMission(missionId) {
-    var label = SCENARIO_NAMES[missionId];
-    if (!label) return Infinity;
-    var m = /^Scene (\d+):/.exec(label);
-    return m ? parseInt(m[1], 10) : Infinity;
+
+  function shopScenarioKeyLabel(runtimeKey) {
+    var info = OB64.scenarioKeyInfo
+      ? OB64.scenarioKeyInfo(runtimeKey)
+      : { label: 'Runtime Key ' + runtimeKey };
+    return 'Key ' + runtimeKey + ': ' + info.label;
   }
 
   // URL for an item-icon PNG in resources/Item Icons/.
@@ -1196,6 +1168,7 @@ window.OB64 = window.OB64 || {};
       if (!shopRecs[sh.shopIdx]) shopRecs[sh.shopIdx] = [];
       shopRecs[sh.shopIdx].push(sh);
     }
+    var scenarioKeysByRecord = buildShopScenarioKeyIndex();
 
     // The retail archive has a compression-dependent aggregate budget, but the
     // consumer has separate fixed arrays per opened shop: 50 equipment and 15
@@ -1244,11 +1217,9 @@ window.OB64 = window.OB64 || {};
     var grid = document.createElement('div');
     grid.className = 'shop-cards';
 
-    // Render order: sort shops by their lowest wiki scene number so cards
-    // appear in true in-game progression (Scene 1 Tenne Plains → Scene 2
-    // Volmus Mine → …). Ties fall back to ktenmain mission ID, then shop
-    // index so shops sharing a scene keep a stable order. Shops with no
-    // wiki-mapped stronghold land at the end (min scene = Infinity).
+    // Render order follows the lowest mapped runtime key from the Scenario
+    // dataset. Ties fall back to ktenmain mission ID, then shop index. Shops
+    // with no mapped runtime key land at the end.
     // A shop is shown if it either holds items OR is referenced by at
     // least one stronghold — that way emptying a real shop doesn't hide
     // its card, but shopcsv padding slots stay hidden.
@@ -1257,18 +1228,20 @@ window.OB64 = window.OB64 || {};
       var shopRecsList = shopRecs[si] || [];
       if (rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
           !rom.shops[si].runtimeOverride) continue;
-      var minScene = Infinity;
+      var minRuntimeKey = Infinity;
       var minMission = Infinity;
       for (var mi = 0; mi < shopRecsList.length; mi++) {
         var rr = shopRecsList[mi];
-        var sceneId = sceneIdOfMission(rr.missionId);
-        if (sceneId < minScene) minScene = sceneId;
+        var runtimeKeys = scenarioKeysByRecord[rr.index] || [];
+        if (runtimeKeys.length && runtimeKeys[0] < minRuntimeKey) {
+          minRuntimeKey = runtimeKeys[0];
+        }
         if (rr.missionId < minMission) minMission = rr.missionId;
       }
-      shopOrder.push({ idx: si, minScene: minScene, minMission: minMission });
+      shopOrder.push({ idx: si, minRuntimeKey: minRuntimeKey, minMission: minMission });
     }
     shopOrder.sort(function(a, b) {
-      if (a.minScene !== b.minScene) return a.minScene - b.minScene;
+      if (a.minRuntimeKey !== b.minRuntimeKey) return a.minRuntimeKey - b.minRuntimeKey;
       if (a.minMission !== b.minMission) return a.minMission - b.minMission;
       return a.idx - b.idx;
     });
@@ -1324,8 +1297,15 @@ window.OB64 = window.OB64 || {};
           var rec = recs[r];
           var key = strongholdDisplay(rec.name) || '(no name)';
           if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
-          var sn = scenarioName(rec.missionId);
-          if (groups[key].indexOf(sn) === -1) groups[key].push(sn);
+          var mappedKeys = scenarioKeysByRecord[rec.index] || [];
+          if (mappedKeys.length === 0) {
+            var unmapped = 'No scenario-key mapping (ktenmain group ' + rec.missionId + ')';
+            if (groups[key].indexOf(unmapped) === -1) groups[key].push(unmapped);
+          }
+          for (var sk = 0; sk < mappedKeys.length; sk++) {
+            var scenarioLabel = shopScenarioKeyLabel(mappedKeys[sk]);
+            if (groups[key].indexOf(scenarioLabel) === -1) groups[key].push(scenarioLabel);
+          }
         }
         for (var g = 0; g < groupOrder.length; g++) {
           var name = groupOrder[g];
