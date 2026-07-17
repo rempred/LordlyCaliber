@@ -123,7 +123,10 @@
     jr:   function (rs) { return ((r(rs) << 21) | 0x08) >>> 0; },
     j:    function (tgt) { return ((0x02 << 26) | ((tgt >>> 2) & 0x03FFFFFF)) >>> 0; },
     jal:  function (tgt) { return ((0x03 << 26) | ((tgt >>> 2) & 0x03FFFFFF)) >>> 0; },
-    addu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x21) >>> 0; }
+    sll:  function (rd, rt, shamt) { return ((r(rt) << 16) | (r(rd) << 11) | ((shamt & 0x1F) << 6)) >>> 0; },
+    addu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x21) >>> 0; },
+    subu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x23) >>> 0; },
+    sltu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x2B) >>> 0; }
   };
 
   // ---- two-pass label assembler ----
@@ -300,8 +303,9 @@
     while (size % 8) size++;
     var blob = new Uint8Array(size);
     // header
-    blob[0] = (SENTINEL >>> 24) & 0xFF; blob[1] = (SENTINEL >>> 16) & 0xFF;
-    blob[2] = (SENTINEL >>> 8) & 0xFF; blob[3] = SENTINEL & 0xFF;
+    var sentinel = layout.SENTINEL == null ? SENTINEL : layout.SENTINEL;
+    blob[0] = (sentinel >>> 24) & 0xFF; blob[1] = (sentinel >>> 16) & 0xFF;
+    blob[2] = (sentinel >>> 8) & 0xFF; blob[3] = sentinel & 0xFF;
     blob[4] = (n >>> 24) & 0xFF; blob[5] = (n >>> 16) & 0xFF;
     blob[6] = (n >>> 8) & 0xFF; blob[7] = n & 0xFF;
     // resolver

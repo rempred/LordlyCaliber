@@ -19,12 +19,15 @@
 // added squads, squad comp records, and site allegiance intents).
 // v8 adds the eight decoded 2-bit equipment growth lanes from item B20-B21.
 // v9 exposes the remaining raw equipment bytes and class name-pointer bytes.
+// v10 carries each edited shop's per-shop consumable membership alongside its
+// equipment IDs. Both lists compile into the shared runtime override table;
+// v9 and older equipment-only projects remain readable.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 9;
+  var PATCH_VERSION = 10;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -70,7 +73,11 @@ window.OB64 = window.OB64 || {};
     rom.original = rom.original || {};
 
     rom.original.shops = (rom.shops || []).map(function(s) {
-      return { items: s.items.slice() };
+      return {
+        items: (s.items || []).slice(),
+        consumables: (s.consumables || []).slice(),
+        runtimeOverride: !!s.runtimeOverride
+      };
     });
 
     rom.original.itemPrices = {};
@@ -112,10 +119,14 @@ window.OB64 = window.OB64 || {};
 
     var shopsOut = {};
     for (var i = 0; rom.shops && i < rom.shops.length; i++) {
-      var a = rom.shops[i].items;
-      var b = rom.original.shops[i].items;
-      if (!arraysEqual(a, b)) {
-        shopsOut[String(i)] = { items: a.slice() };
+      var shopNow = rom.shops[i];
+      var shopOriginal = rom.original.shops[i];
+      if (!arraysEqual(shopNow.items, shopOriginal.items) ||
+          !arraysEqual(shopNow.consumables, shopOriginal.consumables)) {
+        shopsOut[String(i)] = {
+          items: (shopNow.items || []).slice(),
+          consumables: (shopNow.consumables || []).slice()
+        };
       }
     }
 
@@ -286,8 +297,14 @@ window.OB64 = window.OB64 || {};
         continue;
       }
       var entry = shopsPatch[k];
-      if (!entry || !Array.isArray(entry.items)) continue;
-      rom.shops[idx].items = entry.items.slice();
+      if (!entry || (!Array.isArray(entry.items) && !Array.isArray(entry.consumables))) continue;
+      if (Array.isArray(entry.items)) rom.shops[idx].items = entry.items.slice();
+      // Absent in v9 and older projects: retain the currently parsed vanilla
+      // (or already-patched) consumable list in that case.
+      if (Array.isArray(entry.consumables)) {
+        rom.shops[idx].consumables = entry.consumables.slice();
+      }
+      rom.shops[idx].runtimeOverride = true;
       shopsApplied++;
     }
     if (shopsApplied > 0) dirtyFlags.shops = true;
