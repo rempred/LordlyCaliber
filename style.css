@@ -118,6 +118,13 @@ body::before {
 /* ============================================================
    HEADER — wooden crown bar with gold engraving
    ============================================================ */
+.app-top {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  isolation: isolate;
+}
+
 .header {
   display: flex;
   align-items: center;

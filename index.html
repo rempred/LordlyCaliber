@@ -10,34 +10,36 @@
 </head>
 <body>
 
-  <div class="header">
-    <h1>OB64 Mod Editor</h1>
-    <div class="header-buttons">
-      <label for="rom-file" class="btn-file">Load ROM</label>
-      <input type="file" id="rom-file" accept=".v64,.z64,.n64">
+  <div class="app-top">
+    <div class="header">
+      <h1>OB64 Mod Editor</h1>
+      <div class="header-buttons">
+        <label for="rom-file" class="btn-file">Load ROM</label>
+        <input type="file" id="rom-file" accept=".v64,.z64,.n64">
 
-      <label for="patch-file" class="btn-file btn-secondary" id="btn-load-patch-label" aria-disabled="true">Load Project</label>
-      <input type="file" id="patch-file" accept=".json,application/json" disabled>
+        <label for="patch-file" class="btn-file btn-secondary" id="btn-load-patch-label" aria-disabled="true">Load Project</label>
+        <input type="file" id="patch-file" accept=".json,application/json" disabled>
 
-      <button id="btn-save-patch" class="btn-secondary" disabled>Save Project</button>
-      <button id="btn-export" disabled>Export ROM</button>
+        <button id="btn-save-patch" class="btn-secondary" disabled>Save Project</button>
+        <button id="btn-export" disabled>Export ROM</button>
 
-      <span id="patch-chip" class="patch-chip" hidden></span>
+        <span id="patch-chip" class="patch-chip" hidden></span>
+      </div>
     </div>
-  </div>
 
-  <div class="tab-bar" id="tab-bar">
-    <button data-tab="shops" class="active">Shops</button>
-    <!-- Squads tab visually retired: the Scenario tab's sidebar embeds the full comp
-         editor (module + panel stay for the override engine and deep links). -->
-    <button data-tab="squads" style="display:none">Squads</button>
-    <button data-tab="scenario">Scenario</button>
-    <button data-tab="classes">Classes</button>
-    <button data-tab="items">Items</button>
-    <button data-tab="encounters">Encounters</button>
-    <button data-tab="tools">Tools</button>
-    <button data-tab="save">Save Game Editor</button>
-    <button data-tab="map" style="display:none">Map</button>
+    <div class="tab-bar" id="tab-bar">
+      <button data-tab="shops" class="active">Shops</button>
+      <!-- Squads tab visually retired: the Scenario tab's sidebar embeds the full comp
+           editor (module + panel stay for the override engine and deep links). -->
+      <button data-tab="squads" style="display:none">Squads</button>
+      <button data-tab="scenario">Scenario</button>
+      <button data-tab="classes">Classes</button>
+      <button data-tab="items">Items</button>
+      <button data-tab="encounters">Encounters</button>
+      <button data-tab="tools">Tools</button>
+      <button data-tab="save">Save Game Editor</button>
+      <button data-tab="map" style="display:none">Map</button>
+    </div>
   </div>
 
   <div class="content" id="content">

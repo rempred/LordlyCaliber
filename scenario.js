@@ -129,8 +129,8 @@ window.OB64 = window.OB64 || {};
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var css = [
-      '#panel-scenario{--sc-line:rgba(62,45,25,.28);--sc-panel:#efe0bd;--sc-soft:rgba(255,255,255,.18);--sc-red:#b7372f;--sc-blue:#2d6fbc;--sc-green:#2f8f4e}',
-      '#panel-scenario .sc-page{max-width:1500px;margin:0 auto;color:var(--ob-ink)}',
+      '#panel-scenario{--sc-line:rgba(62,45,25,.28);--sc-panel:#efe0bd;--sc-soft:rgba(255,255,255,.18);--sc-red:#b7372f;--sc-blue:#2d6fbc;--sc-green:#2f8f4e;--sc-map-window:760px}',
+      '#panel-scenario .sc-page{max-width:2200px;margin:0 auto;color:var(--ob-ink)}',
       '#panel-scenario .sc-titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 12px}',
       '#panel-scenario h2{margin:0;color:var(--ob-gold-bright);font-size:var(--ob-text-lg);line-height:1.1}',
       '#panel-scenario .sc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}',
@@ -146,7 +146,8 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-danger:hover{filter:brightness(1.05);background:rgba(152,32,24,.12)}',
       '#panel-scenario .sc-actions input[type=text]{height:32px;width:210px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 8px}',
       '#panel-scenario .sc-gate{font-size:var(--ob-text-sm);color:var(--ob-ink-soft);min-height:18px}',
-      '#panel-scenario .sc-layout{display:grid;grid-template-columns:280px minmax(460px,1fr) 500px;gap:12px;align-items:start}',
+      '#panel-scenario .sc-layout{display:grid;grid-template-columns:280px var(--sc-map-window) 500px;gap:12px;align-items:start}',
+      '#panel-scenario .sc-layout.sc-overview-layout{grid-template-columns:280px var(--sc-map-window) minmax(900px,1fr)}',
       // Embedded Squads comp editor: stack formation grid over pickers so the full modal fits the sidebar.
       '#sc-comp-host .sq-editor-grid{display:grid;grid-template-columns:1fr !important;gap:10px}',
       '#sc-comp-host .sq-pick{grid-template-columns:1fr !important}',
@@ -198,7 +199,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-squad-chip .sc-chip-sub{display:block;color:var(--ob-ink-soft);font-size:var(--ob-text-xs)}',
       '#panel-scenario .sc-layer-toggles label{font-size:var(--ob-text-sm);display:flex;gap:4px;align-items:center}',
       '#panel-scenario .sc-map-scroll{height:620px;overflow:auto;border:1px solid var(--sc-line);border-radius:5px;background:#32281d;position:relative}',
-      '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;min-width:720px;min-height:520px;background:#243128;overflow:hidden}',
+      '#panel-scenario .sc-map-inner{position:relative;transform-origin:0 0;background:#243128;overflow:hidden}',
       '#panel-scenario .sc-map-img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block}',
       '#panel-scenario .sc-schematic{position:absolute;left:0;top:0;width:100%;height:100%;background:#2f3b32}',
       '#panel-scenario .sc-bounds{position:absolute;border:2px dashed rgba(245,230,200,.65);background:rgba(0,0,0,.08);pointer-events:none}',
@@ -206,7 +207,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-marker{position:absolute;border:0;background:transparent;padding:0;transform:translate(-50%,-50%);cursor:pointer;z-index:10}',
       '#panel-scenario .sc-treasure-marker{width:32px;height:32px;border-radius:50%;background:rgba(42,30,18,.86);border:2px solid rgba(245,210,98,.92);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,.45),0 0 0 2px rgba(60,38,18,.55);overflow:visible}',
       '#panel-scenario .sc-treasure-marker img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}',
-      '#panel-scenario .sc-treasure-marker.on{outline:3px solid var(--ob-gold-bright);outline-offset:2px;background:rgba(92,58,24,.95);z-index:28}',
+      '#panel-scenario .sc-treasure-marker.on{background:rgba(92,58,24,.95)}',
       '#panel-scenario .sc-treasure-marker.sc-add-ghost{opacity:.72;pointer-events:none}',
       '#panel-scenario .sc-treasure-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);padding:5px 8px;margin:4px 0;text-align:left;color:var(--ob-ink);cursor:pointer;font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-treasure-row:hover{background:rgba(104,74,36,.14)}',
@@ -219,7 +220,6 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-squad-marker.allied{outline:3px solid var(--sc-blue)}',
       '#panel-scenario .sc-squad-marker.neutral{outline:3px solid var(--sc-green)}',
       '#panel-scenario .sc-squad-marker.dormant{opacity:.54;filter:grayscale(.45)}',
-      '#panel-scenario .sc-squad-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 2px 6px rgba(0,0,0,.45)}',
       '#panel-scenario .sc-squad-marker.added{outline:3px dashed var(--ob-gold-bright)}',
       '#panel-scenario .sc-add-ghost{opacity:.7;transform:translate(-50%,-50%);outline:3px dashed var(--ob-gold-bright)}',
       '#panel-scenario .sc-back{margin:0 0 8px}',
@@ -232,8 +232,20 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-site-marker.enemy{border-color:var(--sc-red)}',
       '#panel-scenario .sc-site-marker.allied{border-color:var(--sc-blue)}',
       '#panel-scenario .sc-site-marker.neutral{border-color:var(--sc-green)}',
-      '#panel-scenario .sc-site-marker.on{box-shadow:0 0 0 4px rgba(245,210,98,.7),0 1px 4px rgba(0,0,0,.5)}',
+      '#panel-scenario .sc-treasure-marker.on,#panel-scenario .sc-squad-marker.on,#panel-scenario .sc-site-marker.on{z-index:40;outline:4px solid #fff4a8;outline-offset:2px;border-color:#ffe45c;box-shadow:0 0 0 2px #fffbe0,0 0 0 6px #ffd43b,0 0 16px 9px rgba(255,213,61,.96),0 0 32px 15px rgba(255,166,0,.82),0 3px 8px rgba(0,0,0,.68);animation:sc-selected-gold-glow .9s ease-in-out infinite alternate}',
+      '@keyframes sc-selected-gold-glow{from{box-shadow:0 0 0 2px #fffbe0,0 0 0 6px #ffd43b,0 0 14px 7px rgba(255,213,61,.90),0 0 26px 12px rgba(255,166,0,.68),0 3px 8px rgba(0,0,0,.68)}to{box-shadow:0 0 0 3px #fffef0,0 0 0 8px #ffe45c,0 0 24px 13px rgba(255,230,92,1),0 0 42px 20px rgba(255,174,0,.92),0 3px 8px rgba(0,0,0,.68)}}',
+      '@media (prefers-reduced-motion:reduce){#panel-scenario .sc-treasure-marker.on,#panel-scenario .sc-squad-marker.on,#panel-scenario .sc-site-marker.on{animation:none}}',
       '#panel-scenario .sc-detail{padding:12px;min-height:620px}',
+      '#panel-scenario .sc-overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start}',
+      '#panel-scenario .sc-overview-column{min-width:0;max-height:calc(100vh - 205px);overflow:auto;border:1px solid var(--sc-line);border-radius:6px;background:rgba(255,255,255,.10);padding:10px}',
+      '#panel-scenario .sc-overview-column>.sc-section:first-child{border-top:0;margin-top:0;padding-top:0}',
+      '#panel-scenario .sc-overview-triggers .sc-node-list,#panel-scenario .sc-overview-nodes .sc-node-list{max-height:calc(100vh - 340px)}',
+      '#panel-scenario .sc-town-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;width:100%;text-align:left;border:1px solid var(--sc-line);border-radius:5px;background:rgba(255,255,255,.14);color:var(--ob-ink);padding:6px 8px;margin:4px 0;cursor:pointer;font-size:var(--ob-text-sm)}',
+      '#panel-scenario .sc-town-row:hover{background:rgba(104,74,36,.14)}',
+      '#panel-scenario .sc-town-row.enemy{border-left:3px solid var(--sc-red)}',
+      '#panel-scenario .sc-town-row.allied{border-left:3px solid var(--sc-blue)}',
+      '#panel-scenario .sc-town-row.neutral{border-left:3px solid var(--sc-green)}',
+      '#panel-scenario .sc-town-row .sc-sub{grid-column:1/-1;margin-top:0}',
       '#panel-scenario .sc-detail-head{border-bottom:1px solid var(--sc-line);padding-bottom:9px;margin-bottom:10px}',
       '#panel-scenario .sc-head-title{font-size:var(--ob-text-md);font-weight:800;line-height:1.2}',
       '#panel-scenario .sc-sub{font-size:var(--ob-text-sm);color:var(--ob-ink-soft);line-height:1.35;margin-top:3px}',
@@ -270,7 +282,9 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-roster-row img{width:28px;height:28px;object-fit:contain;image-rendering:pixelated;border-radius:50%;background:#1d1a16}',
       '#panel-scenario .sc-roster-row .sc-sub{margin-top:0}',
       '#panel-scenario .sc-roster-row .sc-chips{display:flex;gap:4px;justify-content:flex-end}',
-      '@media (max-width:1180px){#panel-scenario .sc-layout{grid-template-columns:1fr}#panel-scenario .sc-list{min-height:240px;max-height:320px}#panel-scenario .sc-detail{min-height:360px}#panel-scenario .sc-map-scroll{height:520px}}'
+      '@media (max-width:1800px){#panel-scenario .sc-layout.sc-overview-layout{grid-template-columns:280px var(--sc-map-window) minmax(0,1fr)}#panel-scenario .sc-overview-layout .sc-detail{grid-column:1/-1}}',
+      '@media (max-width:1180px){#panel-scenario .sc-layout,#panel-scenario .sc-layout.sc-overview-layout{grid-template-columns:1fr}#panel-scenario .sc-list{min-height:240px;max-height:320px}#panel-scenario .sc-map-panel{width:var(--sc-map-window);max-width:100%}#panel-scenario .sc-detail,#panel-scenario .sc-overview-layout .sc-detail{grid-column:auto;min-height:360px}#panel-scenario .sc-map-scroll{height:520px}}',
+      '@media (max-width:860px){#panel-scenario .sc-overview-grid{grid-template-columns:1fr}#panel-scenario .sc-overview-column{max-height:none;overflow:visible}}'
     ].join('');
     var style = document.createElement('style');
     style.id = STYLE_ID;
@@ -1312,8 +1326,11 @@ window.OB64 = window.OB64 || {};
     }
     var useImage = useImageFor(cal);
     var projection = projectionFor(cal, useImage);
-    var width = Math.max(720, Math.round(projection.naturalWidth * ui.zoom));
-    var height = Math.max(520, Math.round(projection.naturalHeight * ui.zoom));
+    // The map image and every overlay share the same exact scale. A minimum
+    // rendered size here would stretch only the image while marker coordinates
+    // continue to use ui.zoom, causing the overlay to drift at low zoom.
+    var width = Math.max(1, projection.naturalWidth * ui.zoom);
+    var height = Math.max(1, projection.naturalHeight * ui.zoom);
     el.innerHTML =
       '<div class="sc-map-head">' +
         '<div class="sc-map-title">' + esc(displayLabel(key)) + '</div>' +
@@ -2462,6 +2479,7 @@ window.OB64 = window.OB64 || {};
     var model = modelFor(rom, key);
     var cal = calibrationData(key);
     if (!model) {
+      if (el.parentNode && el.parentNode.classList) el.parentNode.classList.remove('sc-overview-layout');
       el.innerHTML = '<div class="sc-warning">No ESET model.</div>';
       return;
     }
@@ -2473,6 +2491,11 @@ window.OB64 = window.OB64 || {};
     }
     if (ui.selectedTreasure && !treasureSelected(rom, key)) {
       ui.selectedTreasure = null; // stale across scenario/archive change
+    }
+    var overviewActive = ui.selectedTrigger == null && !ui.selectedTreasure && !ui.selectedSite &&
+      ui.selectedPoint == null && ui.selectedNode == null;
+    if (el.parentNode && el.parentNode.classList) {
+      el.parentNode.classList.toggle('sc-overview-layout', overviewActive);
     }
     if (ui.selectedTrigger != null) {
       renderTriggerDetail(el, rom, key, model, ui.selectedTrigger);
@@ -3124,7 +3147,7 @@ window.OB64 = window.OB64 || {};
   function renderScenarioOverview(el, rom, key, model, cal) {
     var validation = OB64.scenarioCodec.validateEset(model);
     var stubs = anyProjectStub(rom);
-    var html = detailHead(displayLabel(key), [
+    var html = '<div class="sc-overview-grid"><div class="sc-overview-column sc-overview-primary">' + detailHead(displayLabel(key), [
       'runtime key ' + key,
       cal && cal.mapName ? cal.mapName : 'no map image',
       cal ? cal.registrationGrade : 'ungraded',
@@ -3208,44 +3231,25 @@ window.OB64 = window.OB64 || {};
     } else {
       html += '<div class="sc-section"><span class="sc-label">Buried treasure</span><div class="sc-sub">No maizo file is mapped for this runtime key.</div></div>';
     }
-    html += '<div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
-    model.section2.forEach(function(node) {
-      html += nodeSummaryHtml(model, node);
+    var towns = (ensureState(rom).sites[key] || []).slice().sort(function(a, b) { return a.selector - b.selector; });
+    html += '<div class="sc-section"><span class="sc-label">Towns</span>' +
+      '<div class="sc-sub">Select a town to edit its Allegiance, Population, and Morale.</div><div class="sc-node-list">';
+    towns.forEach(function(site) {
+      var allegiance = siteAllegiance(rom, key, site.selector);
+      var stronghold = strongholdForSite(rom, site);
+      var values = stronghold
+        ? 'population ' + strongholdFieldValue(rom, site.ktenmainRecordIndex, 'population') +
+          ' / morale ' + strongholdFieldValue(rom, site.ktenmainRecordIndex, 'morale')
+        : 'Population/Morale record unavailable';
+      html += '<button type="button" class="sc-town-row ' + allegiance + '" data-site-selector="' + site.selector + '">' +
+        '<span><strong>' + esc(site.siteName || ('Site ' + site.selector)) + '</strong></span>' +
+        '<span class="sc-chip">' + esc(allegiance) + '</span>' +
+        '<span class="sc-sub">selector ' + site.selector + ' / ' + esc(values) +
+          (site.isObjective ? ' / objective' : '') + '</span></button>';
     });
-    if (!model.section2.length) html += '<div class="sc-node">No Section 2 nodes.</div>';
-    html += '</div>';
-    // + Add node (mirrors + Add trigger): allocNode assigns nodeId = 4 + count, capped at 16. The
-    // new node opens in the editor; point a squad at it via that squad's Start-node picker.
-    html += '<div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
-      '<select id="sc-new-node-kind">' +
-        '<option value="0">Hold node (Move/Wait orders)</option>' +
-        '<option value="1">Waypoint node (march target)</option>' +
-        '<option value="2">Ambush node (dormant until woken)</option>' +
-      '</select>' +
-      '<button type="button" class="sc-inline-btn" id="sc-new-node"' + (model.section2.length >= 16 ? ' disabled title="Section 2 is at its 16-node cap"' : '') + '>+ Add node</button></div>';
-    html += '</div>';
-    html += '<div class="sc-section"><span class="sc-label">Triggers</span><div class="sc-node-list">';
-    model.section3.forEach(function(extra) {
-      var d = describeExtra(rom, key, extra);
-      html += '<div class="sc-trigger-row' + (ui.selectedTrigger === extra.extraId ? ' on' : '') + '" data-extra="' + extra.extraId + '" role="button" tabindex="0">' +
-        '<strong>E' + extra.extraId + '</strong> ' + esc(d.label) +
-        (d.geometry ? ' <span class="sc-chip">on map</span>' : '') +
-        '<button type="button" class="sc-inline-btn sc-danger sc-trig-row-del" data-extra="' + extra.extraId + '" title="Delete this trigger" style="float:right">Delete</button>' +
-        '<span class="sc-sub">' + esc(d.detail) + '</span></div>';
-    });
-    if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
-    // Kind-FIRST creation: pick the trigger type, then only geometric kinds enter draw mode;
-    // static kinds (site / threshold / record) create immediately and open their editor.
-    html += '<div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
-      '<select id="sc-new-trig-kind">' +
-        '<option value="1">Player enters area (draw on map)</option>' +
-        '<option value="8">Unit enters area (draw on map)</option>' +
-        '<option value="4">Player at site</option>' +
-        '<option value="9">Squads-remaining threshold</option>' +
-        '<option value="12">Site flag test</option>' +
-      '</select>' +
-      '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ Add trigger</button></div>';
+    if (!towns.length) html += '<div class="sc-node">No towns are mapped for this runtime key.</div>';
     html += '</div></div>';
+
     var addedHere = [];
     (ensureState(rom).addedSquads || []).forEach(function(r, i) { if (r.runtimeKey === key) addedHere.push({ r: r, i: i }); });
     if (addedHere.length) {
@@ -3260,6 +3264,48 @@ window.OB64 = window.OB64 || {};
       });
       html += '</div></div>';
     }
+    html += '</div>';
+
+    // Column 2: trigger records and creation controls.
+    html += '<div class="sc-overview-column sc-overview-triggers"><div class="sc-section"><span class="sc-label">Triggers</span><div class="sc-node-list">';
+    model.section3.forEach(function(extra) {
+      var d = describeExtra(rom, key, extra);
+      html += '<div class="sc-trigger-row' + (ui.selectedTrigger === extra.extraId ? ' on' : '') + '" data-extra="' + extra.extraId + '" role="button" tabindex="0">' +
+        '<strong>E' + extra.extraId + '</strong> ' + esc(d.label) +
+        (d.geometry ? ' <span class="sc-chip">on map</span>' : '') +
+        '<button type="button" class="sc-inline-btn sc-danger sc-trig-row-del" data-extra="' + extra.extraId + '" title="Delete this trigger" style="float:right">Delete</button>' +
+        '<span class="sc-sub">' + esc(d.detail) + '</span></div>';
+    });
+    if (!model.section3.length) html += '<div class="sc-node">No Section 3 stream.</div>';
+    // Kind-FIRST creation: pick the trigger type, then only geometric kinds enter draw mode;
+    // static kinds (site / threshold / record) create immediately and open their editor.
+    html += '</div><div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
+      '<select id="sc-new-trig-kind">' +
+        '<option value="1">Player enters area (draw on map)</option>' +
+        '<option value="8">Unit enters area (draw on map)</option>' +
+        '<option value="4">Player at site</option>' +
+        '<option value="9">Squads-remaining threshold</option>' +
+        '<option value="12">Site flag test</option>' +
+      '</select>' +
+      '<button type="button" class="sc-inline-btn" id="sc-new-trigger">+ Add trigger</button></div>' +
+    '</div></div>';
+
+    // Column 3: choreography nodes and creation controls.
+    html += '<div class="sc-overview-column sc-overview-nodes"><div class="sc-section"><span class="sc-label">Choreography nodes</span><div class="sc-node-list">';
+    model.section2.forEach(function(node) {
+      html += nodeSummaryHtml(model, node);
+    });
+    if (!model.section2.length) html += '<div class="sc-node">No Section 2 nodes.</div>';
+    // + Add node (mirrors + Add trigger): allocNode assigns nodeId = 4 + count, capped at 16. The
+    // new node opens in the editor; point a squad at it via that squad's Start-node picker.
+    html += '</div><div class="sc-form-row" style="grid-template-columns:minmax(0,1fr) auto;margin-top:6px">' +
+      '<select id="sc-new-node-kind">' +
+        '<option value="0">Hold node (Move/Wait orders)</option>' +
+        '<option value="1">Waypoint node (march target)</option>' +
+        '<option value="2">Ambush node (dormant until woken)</option>' +
+      '</select>' +
+      '<button type="button" class="sc-inline-btn" id="sc-new-node"' + (model.section2.length >= 16 ? ' disabled title="Section 2 is at its 16-node cap"' : '') + '>+ Add node</button></div>' +
+    '</div></div></div>';
     el.innerHTML = html;
     var help = el.querySelector('.sc-help');
     if (help) help.ontoggle = function() { ui.helpOpen = !!this.open; };
@@ -3285,6 +3331,21 @@ window.OB64 = window.OB64 || {};
     });
     var addTreasure = el.querySelector('#sc-new-treasure');
     if (addTreasure) addTreasure.onclick = function() { beginAddTreasurePlacement(rom, key); };
+    el.querySelectorAll('.sc-town-row').forEach(function(btn) {
+      btn.onclick = function() {
+        var selector = parseInt(this.dataset.siteSelector, 10);
+        var site = (ensureState(rom).sites[key] || []).filter(function(candidate) {
+          return candidate.selector === selector;
+        })[0];
+        if (!site) return;
+        ui.selectedSite = site;
+        ui.selectedPoint = null;
+        ui.selectedTrigger = null;
+        ui.selectedTreasure = null;
+        ui.selectedNode = null;
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      };
+    });
     el.querySelectorAll('.sc-trigger-row:not(.sc-node-row)').forEach(function(btn) {
       btn.onclick = function(ev) {
         if (ev.target.classList && ev.target.classList.contains('sc-trig-row-del')) return;
