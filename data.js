@@ -244,7 +244,7 @@ OB64.className = function(id) {
 
 // ============================================================
 // ITEM NAMES (277 entries, 1-based IDs, max 0x115)
-// ROM 0x613B0-0x62310, ID 0x00 = no item
+// ROM 0x613B0-0x6230C, ID 0x00 = no item
 // ============================================================
 OB64.ITEM_NAMES = {
   0x01: "Short Sword",

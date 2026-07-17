@@ -17,12 +17,14 @@
 // by the Squads tab.
 // v7 carries `scenario`: the Scenario tab project payload (modified ESETs,
 // added squads, squad comp records, and site allegiance intents).
+// v8 adds the eight decoded 2-bit equipment growth lanes from item B20-B21.
+// v9 exposes the remaining raw equipment bytes and class name-pointer bytes.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 7;
+  var PATCH_VERSION = 9;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -30,7 +32,12 @@ window.OB64 = window.OB64 || {};
     'equipType', 'element', 'grade',
     'str', 'int', 'agi', 'dex', 'vit', 'men',
     'resPhys', 'resWind', 'resFire', 'resEarth',
-    'resWater', 'resVirtue', 'resBane'
+    'resWater', 'resVirtue', 'resBane',
+    'growthHpStr', 'growthUnknown', 'growthInt', 'growthAgi',
+    'growthDex', 'growthVit', 'growthMen', 'growthLck',
+    'b3Raw', 'b12Raw',
+    'b22Raw', 'b23Raw', 'b24Raw', 'b25Raw', 'b26Raw', 'b27Raw',
+    'b28Raw', 'b29Raw', 'b30Raw', 'b31Raw'
   ];
   var ITEM_APPLY_FIELDS = ITEM_PATCH_FIELDS.concat(['price']);
   var ITEM_SIGNED_RAW_FIELDS = {
@@ -41,6 +48,10 @@ window.OB64 = window.OB64 || {};
     str: true, int: true, agi: true, dex: true, vit: true, men: true,
     resPhys: true, resWind: true, resFire: true, resEarth: true,
     resWater: true, resVirtue: true, resBane: true,
+  };
+  var ITEM_GROWTH_FIELDS = {
+    growthHpStr: true, growthUnknown: true, growthInt: true, growthAgi: true,
+    growthDex: true, growthVit: true, growthMen: true, growthLck: true,
   };
 
   var CLASS_GROWTH_FIELDS = [
@@ -182,7 +193,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-07-04',
+      editor_version: '2026-07-16',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -345,8 +356,8 @@ window.OB64 = window.OB64 || {};
         var byteOff = parseInt(bo, 10);
         var byteVal = bytes[bo];
         if (!isFinite(byteOff) || byteOff < 0 || byteOff >= OB64.CLASS_DEF_RECORD_SIZE) continue;
-        if (byteOff >= 60 && byteOff <= 63) {
-          warnings.push('Patch attempted to edit class #' + ck + ' pointer byte B' + byteOff + '; skipped.');
+        if (byteOff >= 60 && byteOff <= 63 && patch.version < 9) {
+          warnings.push('Pre-v9 patch attempted to edit class #' + ck + ' pointer byte B' + byteOff + '; skipped.');
           continue;
         }
         if (patch.version < 6 && byteOff >= 65 && byteOff <= 71 && !warnedLegacyClassHeader) {
@@ -971,6 +982,11 @@ window.OB64 = window.OB64 || {};
       (r.additionalReqRaw !== undefined ? r.additionalReqRaw : r.additionalReq));
     b(58, r.dragonElement);
     b(59, r.itemCapacity !== undefined ? r.itemCapacity : r.category);
+    var namePtr = r.namePtr !== undefined ? r.namePtr : (r.ptr || 0);
+    b(60, r.namePtr0Raw !== undefined ? r.namePtr0Raw : (namePtr >>> 24));
+    b(61, r.namePtr1Raw !== undefined ? r.namePtr1Raw : (namePtr >>> 16));
+    b(62, r.namePtr2Raw !== undefined ? r.namePtr2Raw : (namePtr >>> 8));
+    b(63, r.namePtr3Raw !== undefined ? r.namePtr3Raw : namePtr);
     b(64, r.unitSize);
     b(65, r.sexOrVoice !== undefined ? r.sexOrVoice : r.spriteType);
     b(66, r.leadership !== undefined ? r.leadership : r.combatBehavior);
@@ -987,11 +1003,17 @@ window.OB64 = window.OB64 || {};
     var n = Math.round(Number(value));
     if (!isFinite(n)) return false;
     var min = ITEM_SIGNED_FIELDS[field] ? -128 : 0;
-    var max = field === 'price' ? 65535 : (ITEM_SIGNED_FIELDS[field] ? 127 : 255);
+    var max = field === 'price' ? 65535 :
+      (ITEM_GROWTH_FIELDS[field] ? 3 : (ITEM_SIGNED_FIELDS[field] ? 127 : 255));
     if (n < min || n > max) return false;
     item[field] = n;
     var rawField = ITEM_SIGNED_RAW_FIELDS[field];
     if (rawField) item[rawField] = n < 0 ? n + 256 : n;
+    if (field === 'b12Raw') item.b12 = OB64.signedByte(n);
+    if (/^b(?:28|29|30|31)Raw$/.test(field)) {
+      item.namePtr = ((item.b28Raw << 24) | (item.b29Raw << 16) |
+        (item.b30Raw << 8) | item.b31Raw) >>> 0;
+    }
     return true;
   }
 
@@ -1056,6 +1078,10 @@ window.OB64 = window.OB64 || {};
       case 57: r.classCopyMatch = value; r.additionalReqRaw = value; r.additionalReq = value; return;
       case 58: r.dragonElement = value; return;
       case 59: r.itemCapacity = value; r.category = value; return;
+      case 60: r.namePtr0Raw = value; syncClassNamePointer(r); return;
+      case 61: r.namePtr1Raw = value; syncClassNamePointer(r); return;
+      case 62: r.namePtr2Raw = value; syncClassNamePointer(r); return;
+      case 63: r.namePtr3Raw = value; syncClassNamePointer(r); return;
       case 64: r.unitSize = value; return;
       case 65: r.sexOrVoice = value; r.spriteType = value; return;
       case 66: r.leadership = value; r.combatBehavior = value; return;
@@ -1065,6 +1091,12 @@ window.OB64 = window.OB64 || {};
       case 70: r.hpGrowth = value; r.unitCount = value; return;
       case 71: r.headerTailRaw = value; r.b71Raw = value; return;
     }
+  }
+
+  function syncClassNamePointer(r) {
+    r.namePtr = ((r.namePtr0Raw << 24) | (r.namePtr1Raw << 16) |
+      (r.namePtr2Raw << 8) | r.namePtr3Raw) >>> 0;
+    r.ptr = r.namePtr;
   }
 
   function syncRowAttackState(r) {

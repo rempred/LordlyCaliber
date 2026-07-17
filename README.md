@@ -93,18 +93,24 @@ project download asset.
   324-item / 24-per-shop budget.
   Shop cards are ordered by playthrough scene, show budget warnings, and use
   searchable item pickers.
-- **Classes** — edit base stats, growth means, resistances, combat multipliers,
+- **Classes** — edit base stats, per-level base gains, resistances, combat multipliers,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, the B53-B57 level-progression chain,
   promotion stat gates, unit type,
   movement type, corrected same-class unit size, base HP, HP growth fields, and
   bundled class portraits. Card View has a warning-gated raw-record mode for
-  inspecting and editing terminator or sentinel story/NPC class slots.
+  inspecting and editing terminator or sentinel story/NPC class slots. Card
+  View and the Raw Bytes table subview expose every logical record byte;
+  uncertain and runtime-pointer fields are shaded with warnings.
   Story duplicate classes are labeled Special/Boss unless behavior is proven
   actually buggy.
-- **Items** — change weapon/armor/spellbook stats, prices, and resistances for
-  all 277 equipment entries.
+- **Items** — change weapon/armor/spellbook stats, prices, resistances, and the
+  packed B20-B21 permanent level-up additions for all 277 equipment entries.
+  Every logical byte in the 32-byte item record is editable; unknown/tail bytes
+  and the runtime name pointer are shaded and carry caution tooltips. The table
+  covers all 278 logical records (ID 0 sentinel plus IDs 0x01-0x115), and every
+  byte-backed descriptive choice retains its raw hex value beside the label.
   Item names and IDs use the game's 1-based item numbering.
 - **Scenario** — a map-first per-mission editor covering all 64 runtime
   scenario keys. The 62 renderable mission keys use site-fitted full-art map
@@ -327,7 +333,7 @@ on the US retail ROM:
 
 - All 825 LHA archives in the data section catalogued and round-trip-decoded.
 - 56-byte character struct, 72-byte class definition table (166 records),
-  32-byte item stat table (295 records), 12-byte consumable master table
+  32-byte item stat table (278 logical records), 12-byte consumable master table
   (45 records), 20-byte neutral-encounter scenario slice, adjacent
   terrain-rate tables, and the 28-byte stronghold record decoded against
   in-game testing and emulator memory diffs.
