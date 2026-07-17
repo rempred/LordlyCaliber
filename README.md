@@ -93,7 +93,8 @@ project download asset.
   shops through the shared Expansion-Pak runtime override. The editor enforces
   the statically safe 50-equipment / 15-consumable per-shop ceilings; 24 was
   only the largest retail equipment list, not a code limit. The corrected
-  40+10 path is state-replay verified; exact-max and purchase/use tests remain.
+  40+10 path is state-replay and cold-export/New Game/shop-load verified;
+  exact-max and purchase/use tests remain.
   Shop cards are ordered by playthrough scene, show capacity warnings, and use
   searchable item pickers.
 - **Classes** — edit base stats, per-level base gains, resistances, combat multipliers,
