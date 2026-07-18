@@ -48,11 +48,3 @@ the emulator cannot overwrite the copied file with stale in-memory data.
 
 Run `py -3 pj64_battery_save_manager.py --help` for the optional command-line
 index, prepare, assign, and interactive modes.
-
-## Development verification
-
-From this directory, run the standard-library test suite with:
-
-```powershell
-py -3 -m unittest discover -s tests -p "test_*.py" -v
-```
