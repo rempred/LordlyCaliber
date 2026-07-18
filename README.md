@@ -25,6 +25,8 @@ Optional desktop utilities are kept separate from its runtime:
   repacking and N64 CRC repair.
 - `patch.js` imports/exports portable Project JSON files for supported edits
   and still accepts older patch/Scenario-project JSON.
+- `changelog.js` turns that same canonical Project diff into a plain-English
+  release summary and downloadable `.txt` changelog.
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
 - `tools-data.js` is generated from the research workspace's Tools feature
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
@@ -207,6 +209,11 @@ safety behavior.
   Scenario-only project files still load.
   Save Game Editor changes are separate save-file edits; use that tab's Export
   Save control for them.
+- **Changelog** — previews every currently recorded ROM-project change in
+  readable categories with before/after values where the baseline is known.
+  The tab downloads the same report as a plain-text file suitable for release
+  notes. It is derived from the Project JSON diff, so there is no second list
+  for users to maintain manually. Save-game edits remain separate.
 - **Export** — writes a clean ROM in the same byte order that was loaded, with
   the N64 CIC-6102 CRC re-calculated when needed. A no-edit export is
   byte-identical to the input. When an export changes the CRC (scenario

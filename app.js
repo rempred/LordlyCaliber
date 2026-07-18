@@ -523,9 +523,111 @@ window.OB64 = window.OB64 || {};
       case 'items':     renderItems(panel); break;
       case 'encounters': renderEncounters(panel); break;
       case 'tools':     renderTools(panel); break;
+      case 'changelog': renderChangelog(panel); break;
       case 'save':      renderSaveGame(panel); break;
       case 'map':       renderMap(panel); break;
     }
+  }
+
+  function renderChangelog(panel) {
+    panel.innerHTML = '';
+    if (!rom) return;
+
+    var patch = OB64.patch.collectPatch(rom);
+    var report = OB64.changelog.build(rom, patch, {
+      projectName: lastProjectFilename || ''
+    });
+
+    var shell = document.createElement('div');
+    shell.className = 'changelog-shell';
+
+    var heading = document.createElement('div');
+    heading.className = 'changelog-heading';
+    var headingCopy = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Mod Changelog';
+    var intro = document.createElement('p');
+    intro.textContent = 'A plain-English release summary generated from the same exact diff used by Save Project.';
+    headingCopy.appendChild(title);
+    headingCopy.appendChild(intro);
+
+    var download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'changelog-download';
+    download.textContent = 'Download Changelog (.txt)';
+    download.disabled = report.sections.length === 0;
+    download.addEventListener('click', function() {
+      var filename;
+      if (lastProjectFilename) {
+        filename = lastProjectFilename.replace(/\.(json|txt)$/i, '') + '_changelog.txt';
+      }
+      var downloaded = OB64.changelog.download(report, filename);
+      statusBar.textContent = 'Changelog downloaded as ' + downloaded + '.';
+    });
+
+    heading.appendChild(headingCopy);
+    heading.appendChild(download);
+    shell.appendChild(heading);
+
+    var note = document.createElement('div');
+    note.className = 'changelog-note';
+    note.textContent = report.note;
+    shell.appendChild(note);
+
+    var summary = document.createElement('div');
+    summary.className = 'changelog-summary';
+    var total = document.createElement('strong');
+    total.textContent = String(report.totalChanges);
+    summary.appendChild(total);
+    var summaryText = ' changed project record' +
+      (report.totalChanges === 1 ? '' : 's') + ' across ' + report.sections.length +
+      ' area' + (report.sections.length === 1 ? '' : 's');
+    summary.appendChild(document.createTextNode(summaryText));
+    shell.appendChild(summary);
+
+    if (!report.sections.length) {
+      var empty = document.createElement('div');
+      empty.className = 'changelog-empty';
+      var emptyTitle = document.createElement('h3');
+      emptyTitle.textContent = 'No changes yet';
+      var emptyText = document.createElement('p');
+      emptyText.textContent = 'Edit the loaded ROM or load a Project JSON file. The changelog will be generated automatically.';
+      empty.appendChild(emptyTitle);
+      empty.appendChild(emptyText);
+      shell.appendChild(empty);
+      panel.appendChild(shell);
+      return;
+    }
+
+    report.sections.forEach(function(section) {
+      var sectionEl = document.createElement('section');
+      sectionEl.className = 'changelog-section';
+      var sectionTitle = document.createElement('h3');
+      sectionTitle.textContent = section.title;
+      var badge = document.createElement('span');
+      badge.textContent = String(section.count);
+      sectionTitle.appendChild(badge);
+      sectionEl.appendChild(sectionTitle);
+
+      section.entries.forEach(function(entry) {
+        var entryEl = document.createElement('article');
+        entryEl.className = 'changelog-entry';
+        var entryTitle = document.createElement('h4');
+        entryTitle.textContent = entry.title;
+        entryEl.appendChild(entryTitle);
+        var list = document.createElement('ul');
+        entry.lines.forEach(function(line) {
+          var item = document.createElement('li');
+          item.textContent = line;
+          list.appendChild(item);
+        });
+        entryEl.appendChild(list);
+        sectionEl.appendChild(entryEl);
+      });
+      shell.appendChild(sectionEl);
+    });
+
+    panel.appendChild(shell);
   }
 
   function updateStatus() {
