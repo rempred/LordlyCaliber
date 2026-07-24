@@ -26,6 +26,7 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   var fileInput = document.getElementById('rom-file');
   var btnExport = document.getElementById('btn-export');
+  var btnChangelog = document.getElementById('btn-changelog');
   var btnSavePatch = document.getElementById('btn-save-patch');
   var patchFileInput = document.getElementById('patch-file');
   var btnLoadPatchLabel = document.getElementById('btn-load-patch-label');
@@ -80,6 +81,7 @@ window.OB64 = window.OB64 || {};
         lastProjectFilename = null;
         emptyState.style.display = 'none';
         btnExport.disabled = false;
+        btnChangelog.disabled = false;
         btnSavePatch.disabled = false;
         patchFileInput.disabled = false;
         btnLoadPatchLabel.setAttribute('aria-disabled', 'false');
@@ -482,16 +484,14 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // Tab Switching
   // ============================================================
-  tabBar.addEventListener('click', function(e) {
-    if (e.target.tagName !== 'BUTTON') return;
-    var tab = e.target.dataset.tab;
-    if (!tab) return;
+  function activateTab(tab) {
     activeTab = tab;
 
     var buttons = tabBar.querySelectorAll('button');
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].classList.toggle('active', buttons[i].dataset.tab === tab);
     }
+    if (btnChangelog) btnChangelog.classList.toggle('active', tab === 'changelog');
 
     var panels = document.querySelectorAll('.tab-panel');
     for (var i = 0; i < panels.length; i++) {
@@ -508,7 +508,21 @@ window.OB64 = window.OB64 || {};
     } else {
       renderTab(tab);
     }
+  }
+
+  tabBar.addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    var tab = e.target.dataset.tab;
+    if (!tab) return;
+    activateTab(tab);
   });
+
+  if (btnChangelog) {
+    btnChangelog.addEventListener('click', function() {
+      if (!rom) return;
+      activateTab('changelog');
+    });
+  }
 
   // ============================================================
   // Render dispatcher
@@ -525,6 +539,13 @@ window.OB64 = window.OB64 || {};
       case 'tools':     renderTools(panel); break;
       case 'changelog': renderChangelog(panel); break;
       case 'save':      renderSaveGame(panel); break;
+      case 'damage':
+        if (OB64.damageCalculator) {
+          OB64.damageCalculator.render(panel, rom, {
+            openPicker: openSaveItemPickerModal
+          });
+        }
+        break;
       case 'map':       renderMap(panel); break;
     }
   }
@@ -2686,7 +2707,7 @@ window.OB64 = window.OB64 || {};
   // The class def table has 166 x 72-byte records at ROM 0x5DAD8.
   // Mapping: record_index = class_id + 1.
   // Verified by cross-referencing all VANILLA class stats/growths/resistances/
-  // combat multipliers from the H2F Mod class chart CSV against ROM hex data.
+  // combat coefficients from the H2F Mod class chart CSV against ROM hex data.
   // Every field matches perfectly with offset +1 for all 14+ tested classes.
   // Record 0 = pointer table (header). Record 1 = 0xFFFF terminator (class 0x00 "None").
   // Records 2-N cover class IDs 0x01 (Soldier) through 0xA4 (Death Bahamut /
@@ -3108,26 +3129,26 @@ window.OB64 = window.OB64 || {};
       }
       return c;
     }
-    // Combat-action picker cell: shows the resolved attack name (rom-names-data.js
-    // OB64.ACTION_NAMES, combat action table 0x60988, ID = record + 1) and edits
-    // via the searchable picker. Falls back to a raw byte cell if the generated
-    // module is not loaded.
+    // Combat-action picker cell: ordinary names come from the byte-derived ROM
+    // name map, while the nine shared-dynamic-name records use their verified
+    // resolver-template roles from data.js. Falls back to a raw byte cell if the
+    // generated name module is not loaded.
     function addActionCell(tr, def, field, label, extraTitle) {
-      if (!OB64.actionName || !OB64.actionOptions) {
+      if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
         return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
       }
       var id = def ? (def[field] || 0) : 0;
-      var c = td(tr, def ? formatByteChoice(id, id > 0 ? OB64.actionName(id) : 'None') : '');
+      var c = td(tr, def ? formatByteChoice(id, id > 0 ? OB64.actionEditorName(id) : 'None') : '');
       c.className = 'editable equip-config';
       c.title = label + ' — ID ' + id + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
       if (def) {
         c.addEventListener('click', function() {
           openItemPickerFromDict({
             title: label + ' — ' + (def.name || ''),
-            options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
+            options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
             onSelect: function(nv) {
               def[field] = nv;
-              c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionName(nv) : 'None');
+              c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
               c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
               c.classList.add('modified');
             }
@@ -3232,14 +3253,14 @@ window.OB64 = window.OB64 || {};
           { label: 'FrontAtks', title: 'B44 front row attack count (verified in-game)' },
           { label: 'MidAtks', title: 'B46 middle row attack count (verified in-game)' },
           { label: 'RearAtks', title: 'B48 rear row attack count (verified via "Class Chart.csv" cross-check, 79/79 match). Previously mislabeled "atkType".' },
-          { label: 'PAtk', title: 'B49 physical attack multiplier' },
-          { label: 'MAtk', title: 'B50 magic attack multiplier' },
-          { label: 'PDef', title: 'B51 physical defense multiplier' },
-          { label: 'MDef', title: 'B52 magic defense multiplier' },
+          { label: 'PAtk Coef', title: 'Physical Attack Coefficient (B49) — fixed per-class byte used by the derived Physical Attack formulas; not a direct percentage multiplier.' },
+          { label: 'MAtk Coef', title: 'Magic Attack Coefficient (B50) — fixed per-class byte entering the leading term (B50 + equipment INT bonuses) / 6; not a direct percentage multiplier.' },
+          { label: 'PDef Coef', title: 'Physical Defense Coefficient (B51) — fixed per-class byte entering the leading term B51 / 20; not a direct percentage multiplier.' },
+          { label: 'MDef Coef', title: 'Magic Defense Coefficient (B52) — fixed per-class byte entering the leading term B52 / 20; not a direct percentage multiplier.' },
           { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
-          { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Names resolved from the ROM name pool via rom-names-data.js.' },
+          { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Ordinary names come from the ROM name pool; shared dynamic-name records show verified template roles.' },
           { label: 'Middle Attack', title: 'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1).' },
-          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). Caster IDs 45-48/51-54 display element-composed names in-game (e.g. Valkyrie shows Lightning).' }
+          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). IDs 45-48, 51-54, and 145 are resolver templates whose concrete display spell may be composed later.' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
@@ -3762,7 +3783,7 @@ window.OB64 = window.OB64 || {};
           eqSec.appendChild(eqGrid);
           card.appendChild(eqSec);
 
-          // --- Combat (collapsible, open) — row attacks + mults + raw bytes
+          // --- Combat (collapsible, open) — row attacks + coefficients + raw bytes
           var combatSec = makeSection('Combat', true);
           var combatGrid = document.createElement('div');
           combatGrid.className = 'stats-grid';
@@ -3772,14 +3793,18 @@ window.OB64 = window.OB64 || {};
             {title: 'B46 middle row attack count (verified in-game)'}));
           combatGrid.appendChild(tileNumeric(def, 'rearAtks', 'RearAtks',
             {title: 'B48 rear row attack count. Decoded via CSV cross-check (79/79 match) \u2014 previously mislabeled "atkType".'}));
-          combatGrid.appendChild(tileNumeric(def, 'physAtk', 'PAtk', {title: 'B49'}));
-          combatGrid.appendChild(tileNumeric(def, 'magAtk', 'MAtk', {title: 'B50'}));
-          combatGrid.appendChild(tileNumeric(def, 'physDef', 'PDef', {title: 'B51'}));
-          combatGrid.appendChild(tileNumeric(def, 'magDef', 'MDef', {title: 'B52'}));
+          combatGrid.appendChild(tileNumeric(def, 'physAtk', 'PAtk Coef',
+            {title: 'Physical Attack Coefficient (B49) — fixed per-class byte used by the derived Physical Attack formulas; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'magAtk', 'MAtk Coef',
+            {title: 'Magic Attack Coefficient (B50) — fixed per-class byte entering the leading term (B50 + equipment INT bonuses) / 6; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'physDef', 'PDef Coef',
+            {title: 'Physical Defense Coefficient (B51) — fixed per-class byte entering the leading term B51 / 20; not a direct percentage multiplier.'}));
+          combatGrid.appendChild(tileNumeric(def, 'magDef', 'MDef Coef',
+            {title: 'Magic Defense Coefficient (B52) — fixed per-class byte entering the leading term B52 / 20; not a direct percentage multiplier.'}));
           combatGrid.appendChild(tileNumeric(def, 'b42Raw', 'FixEq Mask',
             {raw: true, title: 'B42 \u2014 fixed-equip-slots bitmask (identified via CSV "Fixed Equips"). 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head. Lycanthrope=0x0F (all fixed), Soldier=0x03 (Wpn+Off).'}));
           function actionTile(field, label, hint) {
-            if (!OB64.actionName || !OB64.actionOptions) {
+            if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
               return tileNumeric(def, field, label, {raw: true, title: hint});
             }
             var entry = document.createElement('div');
@@ -3792,15 +3817,15 @@ window.OB64 = window.OB64 || {};
             var vs = document.createElement('span');
             vs.className = 'stat-value';
             var cur = def[field] || 0;
-            vs.textContent = formatByteChoice(cur, cur > 0 ? OB64.actionName(cur) : 'None');
+            vs.textContent = formatByteChoice(cur, cur > 0 ? OB64.actionEditorName(cur) : 'None');
             entry.appendChild(vs);
             entry.addEventListener('click', function() {
               openItemPickerFromDict({
                 title: label + ' \u2014 ' + (def.name || ''),
-                options: OB64.actionOptions(), currentId: def[field] || 0, withIcons: false,
+                options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
                 onSelect: function(nv) {
                   def[field] = nv;
-                  vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionName(nv) : 'None');
+                  vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
                   entry.classList.add('modified');
                 }
               });
@@ -3812,7 +3837,7 @@ window.OB64 = window.OB64 || {};
           combatGrid.appendChild(actionTile('b45Raw', 'Middle Attack',
             'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1)'));
           combatGrid.appendChild(actionTile('b47Raw', 'Rear Attack',
-            'B47 \u2014 rear-row attack (caster IDs 45-48/51-54 display element-composed names in-game)'));
+            'B47 \u2014 rear-row attack (IDs 45-48, 51-54, and 145 show verified resolver-template roles; concrete element-dependent spells resolve later)'));
           combatSec.appendChild(combatGrid);
           card.appendChild(combatSec);
 
@@ -5717,12 +5742,14 @@ window.OB64 = window.OB64 || {};
       var row = document.createElement('div');
       row.className = 'item-modal-row';
       if (item.id === opts.currentId) row.classList.add('selected');
-      var img = document.createElement('img');
-      img.className = 'item-modal-icon';
-      img.src = itemIconURL(item.name);
-      img.alt = '';
-      img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
-      row.appendChild(img);
+      if (opts.withIcons !== false) {
+        var img = document.createElement('img');
+        img.className = 'item-modal-icon';
+        img.src = itemIconURL(item.name);
+        img.alt = '';
+        img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
+        row.appendChild(img);
+      }
       var name = document.createElement('span');
       name.className = 'item-modal-name';
       name.textContent = item.name;

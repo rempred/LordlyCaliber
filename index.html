@@ -21,9 +21,12 @@
         <input type="file" id="patch-file" accept=".json,application/json" disabled>
 
         <button id="btn-save-patch" class="btn-secondary" disabled>Save Project</button>
-        <button id="btn-export" disabled>Export ROM</button>
-
         <span id="patch-chip" class="patch-chip" hidden></span>
+
+        <div class="header-button-stack">
+          <button id="btn-export" disabled>Export ROM</button>
+          <button id="btn-changelog" class="btn-secondary" disabled>Changelog</button>
+        </div>
       </div>
     </div>
 
@@ -37,8 +40,8 @@
       <button data-tab="items">Items</button>
       <button data-tab="encounters">Encounters</button>
       <button data-tab="tools">Tools</button>
-      <button data-tab="changelog">Changelog</button>
       <button data-tab="save">Save Game Editor</button>
+      <button data-tab="damage">Damage Calculator</button>
       <button data-tab="map" style="display:none">Map</button>
     </div>
   </div>
@@ -73,6 +76,7 @@
     <div class="tab-panel" id="panel-tools"></div>
     <div class="tab-panel" id="panel-changelog"></div>
     <div class="tab-panel" id="panel-save"></div>
+    <div class="tab-panel" id="panel-damage"></div>
     <div class="tab-panel" id="panel-map"></div>
   </div>
 
@@ -99,6 +103,7 @@
   <script src="scenario-eset-codec.js"></script>
   <script src="scenario.js"></script>
   <script src="changelog.js"></script>
+  <script src="damage-calculator.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
