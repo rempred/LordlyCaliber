@@ -1,9 +1,11 @@
 // OB64 Mod Editor - evidence-backed consumable effect ranges.
 //
-// The only source identity authorized by this module is the verified US retail
-// rev0 .v64 named below. All ROM offsets are normalized z64 offsets. The guard
-// constants and immutable context hashes were read from that source without
-// mutation (SHA-256 6CA0A1AF...A07B12).
+// The patch profile below was derived from the verified US retail rev0 image,
+// but compatibility is decided from normalized ROM structure and the guarded
+// effect paths—not from a filename or container byte order. All ROM offsets are
+// normalized z64 offsets. The guard constants and immutable context hashes were
+// read from the reference source without mutation
+// (SHA-256 6CA0A1AF...A07B12).
 (function(root, factory) {
   var namespace = root && root.OB64 ? root.OB64 : {};
   var api = factory(namespace);
@@ -33,6 +35,8 @@
     crc1: 0xE6419BC5,
     crc2: 0x69011DE3
   });
+  var SUPPORTED_BYTE_ORDERS = Object.freeze(['v64', 'z64', 'n64']);
+  var SUPPORTED_HEADER_VERSIONS = Object.freeze([0x00, 0x01]);
 
   var MODEL_ORDER = [
     'cupOfLife',
@@ -489,13 +493,17 @@
   function evaluateSourceIdentity(facts) {
     facts = facts || {};
     var checks = {
-      filename: facts.filename === SOURCE_DESCRIPTOR.filename,
       size: facts.size === SOURCE_DESCRIPTOR.size,
-      sha256: String(facts.sha256 || '').toUpperCase() === SOURCE_DESCRIPTOR.sha256,
-      byteOrder: facts.byteOrder === SOURCE_DESCRIPTOR.byteOrder,
+      byteOrder: SUPPORTED_BYTE_ORDERS.indexOf(facts.byteOrder) !== -1,
       imageName: facts.imageName === SOURCE_DESCRIPTOR.imageName,
       gameId: facts.gameId === SOURCE_DESCRIPTOR.gameId,
       country: Number(facts.country) === SOURCE_DESCRIPTOR.country,
+      version: SUPPORTED_HEADER_VERSIONS.indexOf(Number(facts.version)) !== -1
+    };
+    var referenceChecks = {
+      filename: facts.filename === SOURCE_DESCRIPTOR.filename,
+      sha256: String(facts.sha256 || '').toUpperCase() === SOURCE_DESCRIPTOR.sha256,
+      byteOrder: facts.byteOrder === SOURCE_DESCRIPTOR.byteOrder,
       version: Number(facts.version) === SOURCE_DESCRIPTOR.version,
       crc1: (Number(facts.crc1) >>> 0) === SOURCE_DESCRIPTOR.crc1,
       crc2: (Number(facts.crc2) >>> 0) === SOURCE_DESCRIPTOR.crc2
@@ -503,22 +511,20 @@
     var eligible = Object.keys(checks).every(function(key) { return checks[key]; });
     var reason = '';
     if (!eligible) {
-      if (!checks.filename) {
-        reason = 'Effect editing requires the exact verified source file named "' +
-          SOURCE_DESCRIPTOR.filename + '".';
-      } else if (!checks.size) {
-        reason = 'Effect editing requires the exact 41,943,040-byte US rev0 source.';
-      } else if (!checks.sha256) {
-        reason = 'The loaded file is not the verified immutable US rev0 source. Reopened candidates, modified ROMs, and header-only matches cannot enable effect editing.';
+      if (!checks.size) {
+        reason = 'Effect editing requires the 41,943,040-byte US retail ROM layout.';
       } else if (!checks.byteOrder) {
-        reason = 'The verified effect source must be loaded in its original .v64 byte order.';
+        reason = 'Effect editing requires a recognized .v64, .z64, or .n64 ROM image.';
       } else {
-        reason = 'The loaded file does not match the verified US rev0 header identity required for effect editing.';
+        reason = 'Effect editing requires a supported US retail rev0 or rev1 ROM header.';
       }
     }
     return {
       eligible: eligible,
       reason: reason,
+      referenceMatch: Object.keys(referenceChecks).every(function(key) {
+        return referenceChecks[key];
+      }),
       facts: Object.freeze({
         filename: facts.filename || '',
         size: facts.size,
@@ -531,7 +537,8 @@
         crc1: facts.crc1,
         crc2: facts.crc2
       }),
-      checks: Object.freeze(checks)
+      checks: Object.freeze(checks),
+      referenceChecks: Object.freeze(referenceChecks)
     };
   }
 
@@ -767,10 +774,12 @@
       if (!guardResult.ok) {
         session.identity = {
           eligible: false,
-          reason: 'The exact source identity matched, but required consumable-effect guards failed: ' +
+          reason: 'This ROM loads in the editor, but its consumable-effect code does not match the supported patch profile: ' +
             guardResult.errors[0],
+          referenceMatch: immutableIdentity.referenceMatch,
           facts: immutableIdentity.facts,
           checks: immutableIdentity.checks,
+          referenceChecks: immutableIdentity.referenceChecks,
           guardErrors: guardResult.errors
         };
       }
@@ -790,7 +799,7 @@
     if (!session || !session.identity || !session.identity.eligible) {
       throw new Error(session && session.identity && session.identity.reason
         ? session.identity.reason
-        : 'Consumable effect editing requires a verified source session.');
+        : 'Consumable effect editing requires a compatible guarded ROM session.');
     }
   }
 
@@ -801,11 +810,11 @@
       String(session.identity.facts.sha256 || '').toUpperCase();
     var sourceHash = session.source && String(session.source.sha256 || '').toUpperCase();
     var ledgerHash = session.ledger && String(session.ledger.sourceSha256 || '').toUpperCase();
-    if (identityHash !== SOURCE_DESCRIPTOR.sha256 ||
-        sourceHash !== SOURCE_DESCRIPTOR.sha256 ||
-        ledgerHash !== SOURCE_DESCRIPTOR.sha256 ||
-        String(manifest.sourceSha256 || '').toUpperCase() !== SOURCE_DESCRIPTOR.sha256) {
-      throw new Error('Consumable effect source/session ledger ownership does not match the verified immutable source.');
+    if (!identityHash || identityHash !== sourceHash || identityHash !== ledgerHash) {
+      throw new Error('Consumable effect source/session ledger ownership does not match the loaded source.');
+    }
+    if (String(manifest.sourceSha256 || '').toUpperCase() !== SOURCE_DESCRIPTOR.sha256) {
+      throw new Error('Consumable effect guard profile does not match the qualified reference manifest.');
     }
     if (!session.baselineZ64 || session.baselineZ64.length !== SOURCE_DESCRIPTOR.size) {
       throw new Error('Consumable effect immutable normalized baseline is missing or has the wrong size.');
@@ -1714,12 +1723,12 @@
       var editable = eligible && !!disposition.modelKey;
       var reason = editable ? '' : (disposition.modelKey
         ? session && session.identity && session.identity.reason ||
-          'Load the exact verified US rev0 source to edit this effect.'
+          'Load a compatible US ROM whose consumable-effect path matches the supported profile.'
         : disposition.reason);
       if (!eligible && !disposition.modelKey) {
         reason += ' Effect editing is also unavailable for this source: ' +
           (session && session.identity && session.identity.reason ||
-            'load the exact verified US rev0 source.');
+            'load a compatible guarded US ROM.');
       }
       rows.push({
         id: id,
@@ -1923,9 +1932,9 @@
     compatibility.setAttribute('role', 'status');
     compatibility.setAttribute('aria-live', 'polite');
     compatibility.textContent = session && session.identity && session.identity.eligible
-      ? 'Effect editing available: exact verified US rev0 source and all guards match.'
+      ? 'Effect editing available: supported US ROM layout and all required effect-path guards match.'
       : 'Effect editing unavailable: ' + (session && session.identity && session.identity.reason ||
-        'load the exact verified US rev0 source.');
+        'load a compatible guarded US ROM.');
     shell.appendChild(compatibility);
 
     var sharedNotice = createElement(doc, 'div', 'consumable-shared-notice',
