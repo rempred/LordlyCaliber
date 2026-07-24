@@ -696,6 +696,41 @@ OB64.spellCategory = function(id) {
   return "Unknown";
 };
 
+// Verified player/editor-facing roles for the nine action records whose raw
+// ROM name pointer targets the shared runtime-composed name buffer. Keep the
+// generated ACTION_NAMES entry as "[Elemental Magic]" because that accurately
+// describes the raw name source; use this semantic layer when presenting class
+// action bytes to an editor user.
+OB64.ACTION_TEMPLATE_LABELS = {
+  0x2D: "Elemental Tier 1 Spell Template",
+  0x2E: "Elemental Tier 2 Spell Template",
+  0x2F: "Elemental Tier 3 Spell Template",
+  0x30: "Elemental Summon / High-Level Spell Template",
+  0x33: "Fixed Lightning Spell Template",
+  0x34: "Fixed Healing Spell Template",
+  0x35: "Fixed Healing Plus Spell Template",
+  0x36: "Fixed Nightmare Spell Template",
+  0x91: "Elemental Blast Spell Template",
+};
+
+OB64.actionEditorName = function(id) {
+  if (OB64.ACTION_TEMPLATE_LABELS[id]) return OB64.ACTION_TEMPLATE_LABELS[id];
+  return OB64.actionName
+    ? OB64.actionName(id)
+    : ("Action_0x" + Number(id || 0).toString(16).padStart(2, "0"));
+};
+
+OB64.actionEditorOptions = function() {
+  if (!OB64.actionOptions) return [];
+  return OB64.actionOptions().map(function(option) {
+    var templateLabel = OB64.ACTION_TEMPLATE_LABELS[option.id];
+    return {
+      id: option.id,
+      label: templateLabel ? (option.id + " \u2014 " + templateLabel) : option.label,
+    };
+  });
+};
+
 // ============================================================
 // EQUIPMENT TYPE NAMES (byte 0 of item stat record)
 // ============================================================

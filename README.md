@@ -27,6 +27,11 @@ Optional desktop utilities are kept separate from its runtime:
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
   release summary and downloadable `.txt` changelog.
+- `damage-calculator.js` provides the read-only Physical damage model and one
+  evidence-bounded Magic product slice for native template 45 or 51 resolving
+  to action 55, plus expected class-growth projection, native-action filtering,
+  derived-variable overrides, and formula constants used by the Damage
+  Calculator tab.
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
 - `tools-data.js` is generated from the research workspace's Tools feature
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
@@ -111,7 +116,7 @@ safety behavior.
   exact-max and purchase/use tests remain.
   Shop cards are ordered by playthrough scene, show capacity warnings, and use
   searchable item pickers.
-- **Classes** — edit base stats, per-level base gains, resistances, combat multipliers,
+- **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
   Class cards expose equipment defaults, the B53-B57 level-progression chain,
@@ -122,7 +127,89 @@ safety behavior.
   View and the Raw Bytes table subview expose every logical record byte;
   uncertain and runtime-pointer fields are shaded with warnings.
   Story duplicate classes are labeled Special/Boss unless behavior is proven
-  actually buggy.
+  actually buggy. Row-action pickers retain the raw action byte while replacing
+  the nine ambiguous `[Elemental Magic]` placeholders with verified Tier 1,
+  Tier 2, Tier 3, summon/high-level, fixed-spell, and elemental Blast template
+  roles.
+- **Damage Calculator** — compare a native action against a selected defender.
+  Physical remains the initial/fallback mode with its existing controls,
+  normal/critical results and hit comparison. Both modes now show explicit
+  total-adjustment equations, current component arithmetic, and lookup/rule
+  derivations instead of presenting the adjustments as an unexplained list.
+  The enabled **Magic** mode is deliberately narrower: it keeps the class-native
+  template ID separate from the resolved spell ID and displays an amount only
+  for native T1 template 45 resolving to Wind/Lightning 55 or native fixed
+  Lightning template 51 resolving to 55. Effective action behavior must retain
+  D0/action family `3` and D1/Wind `1`; differing overrides fail closed, while
+  D2-D7 remain fixed by the exact accepted action-55 record rather than exposed
+  as calculator overrides. Flame, Earth, Water, Virtue, Bane, Drakonite,
+  Random/None, non-native, and every non-55 resolution are unavailable. Its
+  evidence panel labels the exact
+  action-55 ordinary single-caster selector-0/pattern-1 full-power primary-target
+  runtime anchor separately from supported-static inputs and resolution. Magic
+  exposes a selected random adjustment (default 0; the accepted fixture uses
+  +1), an explicitly supported-static endpoint range, and one nonlethal
+  Hit-Points result. It does not display Magic hit/success, critical/doubling,
+  satellite, combined-caster, healing/status/special, or lethal-branch numbers.
+  Every attacker/defender Growth Gear and Current Gear input must be an own
+  combatant property containing an exact four-slot array whose indices `0..3`
+  are own properties. Each positive ID must be a finite integer inside the
+  parsed table and resolve through an own, non-null item record; explicit own
+  `[0, 0, 0, 0]` remains valid. Missing, inherited, sparse, malformed, negative,
+  fractional, nonnumeric, nonfinite, or unknown-item data renders no supported
+  Magic amount, range, score, or Hit-Points result and cannot be materialized or
+  cleaned into eligibility. Product derivation and gear-card presentation now
+  keep the permanently tested `Symbol` ID and throwing-conversion object inert:
+  their raw slot remains invalid, the card uses the fixed `(invalid item ID)`
+  label without invoking conversion hooks, and render reaches the unavailable
+  result while clearing stale amount/range/Hit-Points cards. Valid finite-integer
+  item labels and ordinary numeric unknown/out-of-bound labels retain their
+  existing presentation.
+  The retail default Physical-to-Magic transition now evaluates each candidate
+  against the complete normalized attacker/defender state, installs the first
+  eligible route, and rechecks the exact installed state through the same
+  policy. Retail deterministically selects class 15, native fixed template 51,
+  rear row, resolved action 55, and default gear `[74, 167, 135, 235]`; it does
+  not invent a Generic Spellbook selector.
+  The browser global deliberately exposes only `render`; unrestricted formula
+  helpers remain available solely through CommonJS for Node tests.
+  An open-by-default, mode-aware variable guide explains the source, formula,
+  and effect of the calculator inputs, including independent terrain/movement
+  lookups and exact anti-dragon requirements. Every applicable selector, input,
+  derived variable, constant, and result also has a keyboard-accessible styled
+  `?` popup with explicit What, Source, Use, and Rule sections. Calculator
+  changes never enter the Project diff, Changelog, or ROM export. The own-data
+  re-review returned `Revision required` because rejected hostile IDs still
+  crashed gear-label rendering; permanent direct metadata, real CommonJS
+  render, and browser-like Node `vm` render regressions now cover both hostile
+  fixtures through the standard-library fake DOM, including stale-output
+  clearing and zero conversion hooks.
+  A later fresh critical complete-delta review preserved that behavior,
+  calculator arithmetic, and every accepted boundary, while returning
+  `Revision required` for three guidance defects. The bounded wording
+  correction states that Alignment comes directly from each resolved
+  selected class rather than level/Growth-Gear projection, keeps
+  attacker-Alignment out of accuracy, gives Physical and Magic separate
+  Luck/Character-stats/current-HP help, and describes STR as unused by the
+  enabled bounded action-55 Magic calculation without calling Magic dormant.
+  The reviewer's corrected 32-case fake-DOM/event/formula-edge harness remains
+  intact and a 33rd rendered semantic case covers CommonJS and browser-like
+  Node `vm` mode switches. The fresh re-review passed all 13 assigned guidance
+  instances but found one separate Physical Attack Score popup using the false
+  Dexterity factor `(+50)/50`. At Joe's explicit direction, the Director
+  corrected that one rule to the already-canonical `(+100)/100` value and
+  added a 34th rendered CommonJS/browser-like Node `vm` regression, including
+  registered return to Physical and the direct CommonJS API. All local gates
+  pass. See the
+  [review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-action55-own-data-transition-closure-correction-independent-review.md)
+  [hostile-ID correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-action55-hostile-id-render-closure-correction-aar.md),
+  [variable-guide/tooltip/formula-reference AAR](../wiki/after-action-reports/20260723-damage-calculator-physical-adjustment-formula-reference-aar.md),
+  [complete-delta review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-hostile-id-ui-reference-complete-delta-independent-review.md),
+  [mode-accurate guidance correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-guidance-mode-accuracy-correction-aar.md),
+  [guidance re-review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-guidance-mode-accuracy-correction-independent-review.md),
+  and [popup correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-physical-attack-dex-popup-correction-aar.md).
+  Status: **accepted for the tested non-browser product scope by Joe's explicit
+  Director-correction disposition; Joe's final browser smoke remains pending**.
 - **Items** — change weapon/armor/spellbook stats, prices, resistances, and the
   packed B20-B21 permanent level-up additions for all 277 equipment entries.
   Every logical byte in the 32-byte item record is editable; unknown/tail bytes

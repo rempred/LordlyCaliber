@@ -140,6 +140,7 @@ OB64.ROM_LAYOUTS = {
       EVOLUTION_OFFSET: 0x654A0,
       CLASS_GROUP_OFFSET: 0x6592C,
       CLASS_DEF_OFFSET: 0x5DAD8,
+      ACTION_DEF_OFFSET: 0x60988,
       CONSUMABLE_TABLE_OFFSET: 0x645CC
     }
   },
@@ -188,6 +189,7 @@ OB64.ROM_LAYOUTS = {
       EVOLUTION_OFFSET: 0x654C0,
       CLASS_GROUP_OFFSET: 0x6594C,
       CLASS_DEF_OFFSET: 0x5DAF8,
+      ACTION_DEF_OFFSET: 0x609A8,
       CONSUMABLE_TABLE_OFFSET: 0x645EC
     }
   }
@@ -1639,7 +1641,7 @@ OB64.parseClassGroups = function(z64) {
 // Parse class definition table — 166 x 72 bytes at ROM 0x5DAD8
 // Mapping: record_index = class_id + 1.
 // Verified by cross-referencing H2F Mod class chart CSV against ROM hex data:
-// every stat, growth, resistance, and combat multiplier matches perfectly.
+// every stat, growth, resistance, and combat coefficient matches perfectly.
 // Record 0 = pointer table header. Record 1 = terminator (class 0x00 "None").
 // Records 2-N cover the full 164-class set (class IDs 0x01-0xA4) per the
 // authoritative GameShark mapping; intermediate terminators separate categories.
@@ -1647,7 +1649,7 @@ OB64.parseClassGroups = function(z64) {
 // B24 = Alignment, B25-31 = 7 resistances (Phys/Air/Fire/Earth/Water/Virtue/Bane)
 // B43/B44 = front attack ID/count, B45/B46 = middle attack ID/count,
 // B47/B48 = rear attack ID/count.
-// B49-B52 = combat mults (PhysAtk, MagAtk, PhysDef, MagDef).
+// B49-B52 = class combat coefficients (PhysAtk, MagAtk, PhysDef, MagDef).
 // B53-B57 = base/intermediate/final level-progression chain + class-copy match.
 // ============================================================
 OB64.CLASS_DEF_OFFSET = 0x5DAD8;
@@ -1739,7 +1741,7 @@ OB64.parseClassDefs = function(z64) {
     // against "Class Chart.csv" Rear Attack # column matched 79/79 classes (100%).
     // Combined with B44 (front count) and B46 (mid count), all three row-attack
     // counts now decoded. See scripts/ob64_csv_cross_check.js.
-    // B49-B53 = combat multipliers + flags.
+    // B49-B53 = class combat coefficients + flags.
     var rearAtks   = z64[off + 48];
     var atkTypeRaw = rearAtks; // legacy alias — keep for any external consumer
     var rowAttacks = [
@@ -1892,6 +1894,54 @@ OB64.parseClassDefs = function(z64) {
       powerRating: powerRating,     // legacy alias for baseHp low byte
       unitCount: unitCount,         // legacy alias for hpGrowth
       b71Raw: b71Raw                // legacy alias for headerTailRaw
+    });
+  }
+  return records;
+};
+
+// ============================================================
+// Parse combat-action definitions — 158 logical 16-byte records.
+//
+// The source is stat-framed, like the equipment table. ACTION_DEF_OFFSET is
+// the first physical 16-byte record at 0x60988. For action ID N, its name
+// pointer is at record+4 and behavior D0-D7 begins at record+8; D8-D11 cross
+// into the next record. Thus Fireball ID 63 has logical record 0x60D68, name
+// pointer 0x60D6C, and behavior bytes at 0x60D70. func_00044358 and
+// func_00044370 independently confirm the actionId*16 behavior frame.
+// D0-D7 are exposed with the narrow static labels established by the combat
+// research; callers must still gate formula use by a verified executor route.
+// ============================================================
+OB64.ACTION_DEF_OFFSET = 0x60988;
+OB64.ACTION_DEF_RECORD_SIZE = 16;
+OB64.ACTION_DEF_COUNT = 158;
+
+OB64.parseActionDefs = function(z64) {
+  var records = [];
+  for (var i = 0; i < OB64.ACTION_DEF_COUNT; i++) {
+    var gameId = i + 1;
+    var logicalOff = OB64.ACTION_DEF_OFFSET + i * OB64.ACTION_DEF_RECORD_SIZE;
+    var nameOff = logicalOff + 4;
+    var off = logicalOff + 8;
+    var logicalRaw = new Uint8Array(OB64.ACTION_DEF_RECORD_SIZE);
+    logicalRaw.set(z64.subarray(off, off + 12), 0);
+    logicalRaw.set(z64.subarray(nameOff, nameOff + 4), 12);
+    records.push({
+      index: i,
+      gameId: gameId,
+      offset: off,
+      logicalOffset: logicalOff,
+      nameOffset: nameOff,
+      family: z64[off],
+      element: z64[off + 1],
+      row: z64[off + 2],
+      effectType: z64[off + 3],
+      attackMode: z64[off + 4],
+      category: z64[off + 5],
+      secondaryA: z64[off + 6],
+      secondaryB: z64[off + 7],
+      namePtr: OB64.readU32BE(z64, nameOff),
+      rawBytes: logicalRaw,
+      sourceBytes: z64.slice(logicalOff, logicalOff + OB64.ACTION_DEF_RECORD_SIZE)
     });
   }
   return records;
@@ -2080,6 +2130,7 @@ OB64.loadROM = function(romData) {
     classEvolution: OB64.parseClassEvolution(z64),
     classGroups: OB64.parseClassGroups(z64),
     classDefs: OB64.parseClassDefs(z64),
+    actionDefs: OB64.parseActionDefs(z64),
     consumables: OB64.parseConsumables(z64),
     statGates: OB64.parseStatGates(z64),
     neutralEncounters: OB64.parseNeutralEncounters(z64),
