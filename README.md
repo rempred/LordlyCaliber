@@ -78,16 +78,18 @@ in your own copy of the US retail ROM, and start modding.
 > remains header revision 0-only until its changed header revision 1 code path is
 > rebuilt.
 >
-> Supported exact source images:
+> Verified reference images:
 > - Header rev 0: `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64`
 >   SHA-256: `6CA0A1AFE224831E202857AD64EF26BD429A034A4EA48404BB09621641A07B12`
 > - Header rev 1: `Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1).z64`
 >   SHA-256: `3BFBAF0AF968795102F6D136713665E347C22723B4CA75BD5494FDC97DF5919E`
 >
-> Japanese, European, debug, prototype, or otherwise modified ROMs are not
-> supported and will likely produce wrong offsets, garbled data, or crash on
-> export. Verify your file is a supported USA header revision 0 or 1 image before
-> reporting bugs.
+> Filenames are not compatibility checks. The loader recognizes `.z64`, `.v64`,
+> and `.n64` from their contents, normalizes them internally, and preserves the
+> input byte order on export. Japanese, European, debug, and prototype layouts
+> remain unsupported. Modified US ROMs may load when their header and archives
+> remain parseable; feature-specific checks disable only operations whose
+> required code/data no longer matches and report the first relevant mismatch.
 
 ## Releases and Downloads
 
@@ -121,13 +123,15 @@ safety behavior.
   searchable item pickers.
 - **Consumables** — view consumable IDs 1–31 with the same parsed names and
   item icons used by Shops; quest/story IDs 32–44 are intentionally omitted.
-  Ten rows are editable on the exact
-  verified rev0 `.v64`: Cup of Life, six linked stat boosters, Scroll of
+  Ten rows are editable when the loaded US ROM's normalized effect paths match
+  the supported patch profile: Cup of Life, six linked stat boosters, Scroll of
   Discipline, Urn of Chaos, and Goblet of Destiny. IDs 11–16 are six
   synchronized views of one shared range and one encoded word pair. The other
   21 visible rows remain present with native-disabled controls and evidence-accurate
-  reasons. Effect controls stay disabled for rev1, renamed inputs, modified
-  ROMs, and reopened candidates; a Project file never grants source trust.
+  reasons. Equivalent filenames and `.z64`/`.v64`/`.n64` byte orders are
+  accepted. A ROM whose relevant opcodes, dispatch table, target metadata, or
+  current effect words do not match remains visible but locked with a concrete
+  diagnostic; Project data cannot bypass those compatibility checks.
 - **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
@@ -331,11 +335,14 @@ safety behavior.
 
 ## Current Limitations
 
-- Only the North American retail header revision 0/1 ROMs listed above are supported.
-  Other regions, prototypes, or unknown modified ROMs are rejected or unsupported.
+- Only North American retail header revision 0/1 layouts are supported.
+  Other regions and prototypes are rejected. Modified US images are
+  experimenter inputs: compatible features remain available, while operations
+  with a known structural mismatch are disabled or rejected with a diagnostic.
 - Consumable-effect editing is narrower than general editor compatibility: it
-  requires the exact filename, 41,943,040-byte size, full-file SHA-256, `.v64`
-  order, header identity, and immutable guards of the listed rev0 source.
+  requires the 41,943,040-byte US layout plus matching normalized effect-code,
+  dispatch, target-metadata, and current-word guards. Filename, raw SHA-256,
+  header CRC, and `.z64`/`.v64`/`.n64` packaging do not determine eligibility.
 - The editor creates new ROM/save files in your browser downloads. It does not
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
