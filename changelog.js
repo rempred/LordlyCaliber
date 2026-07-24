@@ -389,6 +389,48 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Consumables', entries);
   }
 
+  function signedNumber(value) {
+    return Number(value) > 0 ? '+' + value : String(value);
+  }
+
+  function buildConsumableEffectSection(rom, patches, sections) {
+    var effects = patches.consumableEffects || {};
+    var entries = [];
+    var definitions = {
+      '10': { ids: [10], retail: [5, 10], title: consumableName(rom, 10) },
+      '11-16': {
+        ids: [11, 12, 13, 14, 15, 16],
+        retail: [2, 4],
+        title: 'Shared Stat Boosters (IDs 11\u201316)',
+        targets: ['STR (C+0x1C)', 'VIT (C+0x1E)', 'INT (C+0x20)',
+          'MEN (C+0x22)', 'AGI (C+0x24)', 'DEX (C+0x26)']
+      },
+      '17': { ids: [17], retail: [1, 3], title: consumableName(rom, 17) },
+      '18': { ids: [18], retail: [-3, -1], title: consumableName(rom, 18) },
+      '19': { ids: [19], retail: [-1, 1], title: consumableName(rom, 19) }
+    };
+    ['10', '11-16', '17', '18', '19'].forEach(function(key) {
+      if (!own(effects, key)) return;
+      var value = effects[key];
+      var def = definitions[key];
+      var width = value.deltaMax - value.deltaMin + 1;
+      var lines = [
+        'Effect range: ' + signedNumber(def.retail[0]) + '..' +
+          signedNumber(def.retail[1]) + ' -> ' +
+          signedNumber(value.deltaMin) + '..' + signedNumber(value.deltaMax) +
+          ' inclusive (width ' + width + ').'
+      ];
+      if (key === '11-16') {
+        lines.push('Shared items/targets: ' + def.ids.map(function(id, index) {
+          return consumableName(rom, id) + ' -> ' + def.targets[index];
+        }).join('; ') + '.');
+        lines.push('All six items use one canonical range and one encoded word pair.');
+      }
+      entries.push({ title: def.title, lines: lines });
+    });
+    addSection(sections, 'Consumable Effects', entries);
+  }
+
   function buildStatGateSection(rom, patches, sections) {
     var entries = [];
     numericKeys(patches.statGates).forEach(function(key) {
@@ -555,7 +597,7 @@ window.OB64 = window.OB64 || {};
       shops: true, item_prices: true, items: true, classDefs: true,
       neutral_encounters: true, creatureDrops: true, consumables: true,
       statGates: true, neutral_global_rate: true, tools: true,
-      squadOverrides: true, scenario: true, enemies: true
+      squadOverrides: true, scenario: true, consumableEffects: true, enemies: true
     };
     Object.keys(patches).sort().forEach(function(key) {
       if (handled[key] || isEmptyValue(patches[key])) return;
@@ -584,6 +626,7 @@ window.OB64 = window.OB64 || {};
     buildEncounterSection(rom, patches, sections);
     buildDropSection(rom, patches, sections);
     buildConsumableSection(rom, patches, sections);
+    buildConsumableEffectSection(rom, patches, sections);
     buildStatGateSection(rom, patches, sections);
     buildToolSection(patches, sections);
     buildSquadSection(patches, sections);

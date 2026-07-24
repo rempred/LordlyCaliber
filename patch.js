@@ -24,12 +24,14 @@
 // v9 and older equipment-only projects remain readable.
 // v11 carries Scenario-project v3 stronghold-field intents for global ktenmain
 // Population and Morale edits.
+// v12 carries the five verified consumable-effect range models. IDs 11-16 use
+// one canonical shared entry under `patches.consumableEffects["11-16"]`.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 11;
+  var PATCH_VERSION = 12;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -201,12 +203,15 @@ window.OB64 = window.OB64 || {};
 
     var squadOverridesOut = collectSquadOverridePatch(rom);
     var scenarioOut = collectScenarioPatch(rom);
+    var consumableEffectsOut = OB64.consumableEffects
+      ? OB64.consumableEffects.collectProjectPayload(rom.consumableEffects)
+      : {};
 
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-07-16',
+      editor_version: '2026-07-24',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -225,6 +230,7 @@ window.OB64 = window.OB64 || {};
         tools_modified:         Object.keys(toolsOut).length,
         squad_overrides_modified: Object.keys(squadOverridesOut).length,
         scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
+        consumable_effect_models_modified: Object.keys(consumableEffectsOut).length,
       },
       patches: {
         shops:        shopsOut,
@@ -239,6 +245,7 @@ window.OB64 = window.OB64 || {};
         tools:        toolsOut,
         squadOverrides: squadOverridesOut,
         scenario:     scenarioOut,
+        consumableEffects: consumableEffectsOut,
         // Reserved for future tabs.
         enemies:      {},
       },
@@ -260,6 +267,46 @@ window.OB64 = window.OB64 || {};
     if (!Number.isInteger(patch.version) || patch.version > PATCH_VERSION) {
       throw new PatchFormatError('Patch version ' + patch.version +
         ' is newer than this editor understands (' + PATCH_VERSION + '). Update the editor.');
+    }
+
+    var p = patch.patches || {};
+    var hasEffectPayload = Object.prototype.hasOwnProperty.call(p, 'consumableEffects');
+    var effectPayload = hasEffectPayload ? p.consumableEffects : undefined;
+    var validatedEffects = { entries: {}, modelCount: 0 };
+    if (hasEffectPayload) {
+      if (effectPayload === null) {
+        throw new PatchFormatError(
+          'Consumable effect Project data is invalid: patches.consumableEffects must be an object, not null.'
+        );
+      }
+      if (!OB64.consumableEffects || !rom.consumableEffects) {
+        if (!effectPayload || typeof effectPayload !== 'object' ||
+            Array.isArray(effectPayload) || Object.keys(effectPayload).length) {
+          throw new PatchFormatError('This editor session cannot load consumable effect Project data.');
+        }
+      } else {
+        try {
+          validatedEffects = OB64.consumableEffects.validateProjectPayload(
+            effectPayload,
+            rom.consumableEffects,
+            patch.version
+          );
+        } catch (effectError) {
+          throw new PatchFormatError('Consumable effect Project data is invalid: ' + effectError.message);
+        }
+        if (validatedEffects.modelCount) {
+          var projectGuards = OB64.consumableEffects.validateGuards(
+            rom.z64,
+            rom.consumableEffects,
+            rom.consumableEffects.guardManifest
+          );
+          if (!projectGuards.ok) {
+            throw new PatchFormatError(
+              'Consumable effect Project guards are invalid: ' + projectGuards.errors[0]
+            );
+          }
+        }
+      }
     }
 
     var warnings = [];
@@ -288,7 +335,7 @@ window.OB64 = window.OB64 || {};
     var toolsApplied = 0;
     var squadOverridesApplied = 0;
     var scenarioApplied = 0;
-    var p = patch.patches || {};
+    var consumableEffectsApplied = 0;
 
     // Shops.
     var shopsPatch = p.shops || {};
@@ -481,6 +528,14 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    if (validatedEffects.modelCount) {
+      consumableEffectsApplied = OB64.consumableEffects.applyProjectPayload(
+        rom.consumableEffects,
+        validatedEffects
+      );
+      if (consumableEffectsApplied > 0) dirtyFlags.consumableEffects = true;
+    }
+
     return {
       applied: {
         shops: shopsApplied,
@@ -495,7 +550,8 @@ window.OB64 = window.OB64 || {};
         neutralGlobalRate: neutralGlobalRateApplied,
         tools: toolsApplied,
         squadOverrides: squadOverridesApplied,
-        scenario: scenarioApplied
+        scenario: scenarioApplied,
+        consumableEffects: consumableEffectsApplied
       },
       warnings: warnings,
     };
@@ -557,6 +613,7 @@ window.OB64 = window.OB64 || {};
       tools_modified: 0,
       squad_overrides_modified: 0,
       scenario_modified: 0,
+      consumable_effect_models_modified: 0,
     };
   }
 
@@ -574,6 +631,7 @@ window.OB64 = window.OB64 || {};
       tools: {},
       squadOverrides: {},
       scenario: null,
+      consumableEffects: {},
       enemies: {},
     };
   }
@@ -587,7 +645,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: project.created_at || new Date().toISOString(),
-      editor_version: '2026-07-04',
+      editor_version: '2026-07-24',
       source: 'legacy scenario project',
       summary: summary,
       patches: patches,

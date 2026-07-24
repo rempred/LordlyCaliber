@@ -27,6 +27,9 @@ Optional desktop utilities are kept separate from its runtime:
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
   release summary and downloadable `.txt` changelog.
+- `consumable-effects.js` owns the evidence-backed five-model consumable-effect
+  catalog, exact-source identity gate, guard/transaction ledger, Project v12
+  payload, combined-diff provenance, and Consumables-tab renderer.
 - `damage-calculator.js` provides the read-only Physical damage model and one
   evidence-bounded Magic product slice for native template 45 or 51 resolving
   to action 55, plus expected class-growth projection, native-action filtering,
@@ -116,6 +119,15 @@ safety behavior.
   exact-max and purchase/use tests remain.
   Shop cards are ordered by playthrough scene, show capacity warnings, and use
   searchable item pickers.
+- **Consumables** — view consumable IDs 1–31 with the same parsed names and
+  item icons used by Shops; quest/story IDs 32–44 are intentionally omitted.
+  Ten rows are editable on the exact
+  verified rev0 `.v64`: Cup of Life, six linked stat boosters, Scroll of
+  Discipline, Urn of Chaos, and Goblet of Destiny. IDs 11–16 are six
+  synchronized views of one shared range and one encoded word pair. The other
+  21 visible rows remain present with native-disabled controls and evidence-accurate
+  reasons. Effect controls stay disabled for rev1, renamed inputs, modified
+  ROMs, and reopened candidates; a Project file never grants source trust.
 - **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
@@ -285,8 +297,10 @@ safety behavior.
 - **Projects** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
-  and Tools-tab feature toggles) to a portable JSON project file for sharing or
-  reapplying to a fresh ROM.
+  consumable-effect ranges, and Tools-tab feature toggles) to a portable JSON
+  project file for sharing or reapplying to a fresh ROM. Project format v12
+  stores only non-retail effect models under `patches.consumableEffects`, with
+  one `11-16` key for all six linked stat items. Older Projects remain readable.
   Squad project data stores per-runtime-key 35-byte replacement records so a
   saved project can reproduce the exported squad override blob.
   The Project JSON container embeds the full Scenario payload (modified mission
@@ -307,11 +321,21 @@ safety behavior.
   relocation, squad overrides, some Tools features), Project64 keys a NEW save
   folder for the ROM — the UI surfaces the recovery recipe so existing saves
   don't silently "disappear".
+  Exports containing consumable-effect edits preflight every model, guard, and
+  patch-region owner before writing an isolated candidate; recalculate
+  CIC-6102 once after all combined writes; independently verify it; restore the
+  loaded byte order; compute the candidate hash and complete concrete-owner
+  ledger in memory; and download exactly one ROM. ROM export never creates a
+  JSON sidecar. **Save Project** is the sole user-facing JSON export and records
+  every supported current ROM-edit family, including consumable effects.
 
 ## Current Limitations
 
 - Only the North American retail header revision 0/1 ROMs listed above are supported.
   Other regions, prototypes, or unknown modified ROMs are rejected or unsupported.
+- Consumable-effect editing is narrower than general editor compatibility: it
+  requires the exact filename, 41,943,040-byte size, full-file SHA-256, `.v64`
+  order, header identity, and immutable guards of the listed rev0 source.
 - The editor creates new ROM/save files in your browser downloads. It does not
   overwrite your original files or patch a running emulator directly.
 - Shop exports must fit the original compressed archive slot. The UI warns about
