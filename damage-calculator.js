@@ -1840,45 +1840,12 @@
     return node;
   }
 
-  var activeTooltipAnchor = null;
-
-  function damageTooltipPopup() {
-    var popup = document.getElementById('damage-tooltip-popup');
-    if (!popup) {
-      popup = document.createElement('div');
-      popup.id = 'damage-tooltip-popup';
-      popup.className = 'damage-tooltip-popup';
-      popup.setAttribute('role', 'tooltip');
-      popup.hidden = true;
-      document.body.appendChild(popup);
-    }
-    return popup;
-  }
-
   function showDamageTooltip(anchor, text) {
-    var popup = damageTooltipPopup();
-    activeTooltipAnchor = anchor;
-    popup.textContent = text;
-    popup.hidden = false;
-    popup.style.left = '0px';
-    popup.style.top = '0px';
-    var margin = 10;
-    var gap = 8;
-    var anchorRect = anchor.getBoundingClientRect();
-    var popupRect = popup.getBoundingClientRect();
-    var left = anchorRect.left + (anchorRect.width - popupRect.width) / 2;
-    left = Math.max(margin, Math.min(left, window.innerWidth - popupRect.width - margin));
-    var top = anchorRect.top - popupRect.height - gap;
-    if (top < margin) top = Math.min(window.innerHeight - popupRect.height - margin, anchorRect.bottom + gap);
-    popup.style.left = Math.max(margin, left) + 'px';
-    popup.style.top = Math.max(margin, top) + 'px';
+    if (OB64.showInfoPopup) OB64.showInfoPopup(anchor, text);
   }
 
   function hideDamageTooltip(anchor) {
-    if (anchor && activeTooltipAnchor !== anchor) return;
-    var popup = document.getElementById('damage-tooltip-popup');
-    if (popup) popup.hidden = true;
-    activeTooltipAnchor = null;
+    if (OB64.hideInfoPopup) OB64.hideInfoPopup(anchor);
   }
 
   function tooltipBadge(text) {
@@ -1886,6 +1853,7 @@
     badge.tabIndex = 0;
     badge.setAttribute('role', 'button');
     badge.setAttribute('aria-label', text);
+    badge.setAttribute('data-ob-popup-control', '');
     badge.addEventListener('mouseenter', function() { showDamageTooltip(badge, text); });
     badge.addEventListener('mouseleave', function() {
       if (document.activeElement !== badge) hideDamageTooltip(badge);
@@ -1895,6 +1863,7 @@
     badge.addEventListener('click', function(event) {
       event.preventDefault();
       event.stopPropagation();
+      badge.focus();
       showDamageTooltip(badge, text);
     });
     badge.addEventListener('keydown', function(event) {

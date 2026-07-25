@@ -209,7 +209,7 @@ OB64.CLASS_NAMES = {
   0x9D: "Gorgon (Special/Boss)",
   0x9E: "Lich (Special/Boss)",
   0x9F: "Daemon (Special/Boss)",
-  0xA0: "Plaladin (Special/Boss)",
+  0xA0: "Paladin (Special/Boss)",
   0xA1: "Danika tendril (alt)",
   0xA2: "Paladin (Special/Boss)",
   0xA3: "Witch (Deneb)",
@@ -906,8 +906,7 @@ OB64.unitSizeName = function(id) {
 // NAME-FRAMED CLASS HEADER BYTES
 // ============================================================
 // These live at nameOff+5 and nameOff+6, or statOff-7 and statOff-6 for the
-// editor's class_id+1 stat-framed records. Labels are intentionally conservative
-// until the consumers are traced.
+// editor's class_id+1 stat-framed records.
 OB64.CLASS_SEX_VOICE = {
   0: "Type 0",
   1: "Type 1",
@@ -921,9 +920,9 @@ OB64.classSexVoiceName = function(id) {
 };
 
 OB64.CLASS_LEADERSHIP = {
-  0: "0",
-  1: "1",
-  2: "2",
+  0: "No",
+  1: "Yes",
+  2: "Centurion",
 };
 
 OB64.classLeadershipName = function(id) {

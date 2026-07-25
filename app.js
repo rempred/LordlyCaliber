@@ -17,6 +17,129 @@ window.OB64 = window.OB64 || {};
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
   var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var activeInfoPopupAnchor = null;
+
+  function infoPopupElement() {
+    var popup = document.getElementById('ob-info-popup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'ob-info-popup';
+      popup.className = 'ob-info-popup';
+      popup.setAttribute('role', 'tooltip');
+      popup.hidden = true;
+      document.body.appendChild(popup);
+    }
+    return popup;
+  }
+
+  function showInfoPopup(anchor, text) {
+    var popup = infoPopupElement();
+    if (activeInfoPopupAnchor && activeInfoPopupAnchor !== anchor) {
+      activeInfoPopupAnchor.removeAttribute('aria-describedby');
+    }
+    activeInfoPopupAnchor = anchor;
+    popup.textContent = text;
+    popup.hidden = false;
+    popup.style.left = '0px';
+    popup.style.top = '0px';
+    var margin = 10;
+    var gap = 8;
+    var anchorRect = anchor.getBoundingClientRect();
+    var popupRect = popup.getBoundingClientRect();
+    var left = anchorRect.left + (anchorRect.width - popupRect.width) / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - popupRect.width - margin));
+    var top = anchorRect.top - popupRect.height - gap;
+    if (top < margin) top = Math.min(window.innerHeight - popupRect.height - margin, anchorRect.bottom + gap);
+    popup.style.left = Math.max(margin, left) + 'px';
+    popup.style.top = Math.max(margin, top) + 'px';
+    anchor.setAttribute('aria-describedby', popup.id);
+  }
+
+  function hideInfoPopup(anchor) {
+    if (anchor && activeInfoPopupAnchor !== anchor) return;
+    var popup = document.getElementById('ob-info-popup');
+    if (popup) popup.hidden = true;
+    if (activeInfoPopupAnchor) activeInfoPopupAnchor.removeAttribute('aria-describedby');
+    activeInfoPopupAnchor = null;
+  }
+
+  OB64.showInfoPopup = showInfoPopup;
+  OB64.hideInfoPopup = hideInfoPopup;
+
+  function absorbNativeTitle(element) {
+    if (!element || element.nodeType !== 1 || !element.hasAttribute('title')) return;
+    var text = element.getAttribute('title') || '';
+    if (text) element.setAttribute('data-ob-tooltip', text);
+    else element.removeAttribute('data-ob-tooltip');
+    element.removeAttribute('title');
+  }
+
+  function absorbNativeTitles(root) {
+    if (!root) return;
+    if (root.nodeType === 1) absorbNativeTitle(root);
+    if (root.querySelectorAll) {
+      var titled = root.querySelectorAll('[title]');
+      for (var i = 0; i < titled.length; i++) absorbNativeTitle(titled[i]);
+    }
+  }
+
+  function tooltipAnchorFor(target) {
+    if (!target || !target.closest || target.closest('[data-ob-popup-control]')) return null;
+    return target.closest('[data-ob-tooltip]');
+  }
+
+  function installStyledTooltips() {
+    absorbNativeTitles(document);
+
+    var observer = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var mutation = mutations[i];
+        if (mutation.type === 'attributes') {
+          absorbNativeTitle(mutation.target);
+          continue;
+        }
+        for (var j = 0; j < mutation.addedNodes.length; j++) {
+          absorbNativeTitles(mutation.addedNodes[j]);
+        }
+      }
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['title']
+    });
+
+    document.addEventListener('mouseover', function(event) {
+      if (event.target && event.target.closest && event.target.closest('[data-ob-popup-control]')) {
+        hideInfoPopup();
+        return;
+      }
+      var anchor = tooltipAnchorFor(event.target);
+      if (anchor) showInfoPopup(anchor, anchor.getAttribute('data-ob-tooltip'));
+    });
+    document.addEventListener('mouseout', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (!anchor) return;
+      if (event.relatedTarget && anchor.contains(event.relatedTarget)) return;
+      hideInfoPopup(anchor);
+    });
+    document.addEventListener('focusin', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (anchor) showInfoPopup(anchor, anchor.getAttribute('data-ob-tooltip'));
+    });
+    document.addEventListener('focusout', function(event) {
+      var anchor = tooltipAnchorFor(event.target);
+      if (!anchor) return;
+      if (event.relatedTarget && anchor.contains(event.relatedTarget)) return;
+      hideInfoPopup(anchor);
+    });
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') hideInfoPopup();
+    });
+  }
+
+  installStyledTooltips();
 
   // Bridges for the Squads tab (squads.js) — give it the live rom + a change hook.
   OB64._romRef = function() { return rom; };
@@ -308,11 +431,11 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if ((dirty.squadOverrides || dirty.scenario) && OB64.scenario &&
-          OB64.scenario.spritelessLeaderIssues) {
-        var leaderIssues = OB64.scenario.spritelessLeaderIssues(rom);
+          OB64.scenario.squadLeaderIssues) {
+        var leaderIssues = OB64.scenario.squadLeaderIssues(rom);
         if (leaderIssues.length) {
-          showErrorModal('Export blocked - squad leader has no map sprite', leaderIssues.join('\n\n'));
-          statusBar.textContent = 'Export blocked (squad leader without map sprite)';
+          showErrorModal('Export blocked - invalid squad leader', leaderIssues.join('\n\n'));
+          statusBar.textContent = 'Export blocked (invalid squad leader)';
           return;
         }
       }
@@ -3124,8 +3247,39 @@ window.OB64 = window.OB64 || {};
   var CLASS_ITEM_CAPACITY_HELP = 'B59 is this character class\'s contribution to its squad\'s carried-item limit. ' +
     'Squad item capacity = min(sum of member B59 values, 10 slots).';
   var CLASS_HP_GROWTH_HELP = 'nameOff+10 / statOff-2 is the class base/minimum HP gain per level. For ordinary classes: gain = this byte + two independent 0/1 RNG rolls + equipped HP/STR growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
-  var CLASS_SEX_VOICE_HELP = 'Logical B65 (H+5): nameOff+5 / statOff-7. Guide-facing Sex/Voice label only; consumer not traced. Edit with caution.';
-  var CLASS_LEADERSHIP_HELP = 'Logical B66 (H+6): nameOff+6 / statOff-6. Guide-facing Leadership label only; consumer not traced. Edit with caution.';
+  var CLASS_BASE_STAT_WARNING = 'This starting value only comes into play when this class is used as a base growth class in Growth. It does not directly set the stats of a character merely because this is their current class.';
+  var CLASS_SEX_VOICE_HELP = 'Logical B65 (H+5): nameOff+5 / statOff-7. Sex/type classification; exact values and consumer are not fully traced. Edit with caution.';
+  var CLASS_LEADERSHIP_HELP = 'Logical B66 (H+6): nameOff+6 / statOff-6. Leader type: 0 = No, 1 = Yes, 2 = Centurion.';
+
+  function classBaseStatWarningBadge() {
+    var badge = document.createElement('span');
+    badge.className = 'class-base-stat-warning';
+    badge.textContent = '\u26A0';
+    badge.tabIndex = 0;
+    badge.setAttribute('role', 'button');
+    badge.setAttribute('aria-label', CLASS_BASE_STAT_WARNING);
+    badge.setAttribute('data-ob-popup-control', '');
+    badge.addEventListener('mouseenter', function() { showInfoPopup(badge, CLASS_BASE_STAT_WARNING); });
+    badge.addEventListener('mouseleave', function() {
+      if (document.activeElement !== badge) hideInfoPopup(badge);
+    });
+    badge.addEventListener('focus', function() { showInfoPopup(badge, CLASS_BASE_STAT_WARNING); });
+    badge.addEventListener('blur', function() { hideInfoPopup(badge); });
+    badge.addEventListener('click', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      badge.focus();
+      showInfoPopup(badge, CLASS_BASE_STAT_WARNING);
+    });
+    badge.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        hideInfoPopup(badge);
+        badge.blur();
+      }
+    });
+    return badge;
+  }
+
   function classGrowthHelp(statIdx) {
     var byteOff = 2 + statIdx * 4;
     return 'B' + byteOff + ' is the class base/minimum per-level gain. For ordinary classes: gain = B' +
@@ -3325,21 +3479,24 @@ window.OB64 = window.OB64 || {};
 
     // ---- TABLE VIEW (sub-tabbed by field group) ----
     //
-    // The classes table is split into 4 sub-views (Stats / Equipment & Combat /
-    // Growth History / Promotion / Unit Info) so column count stays scannable. A second-level
+    // The classes table is split into focused field-group sub-views so column
+    // count stays scannable. A second-level
     // toggle under the main Table/Card switch picks the active sub-view; the
     // choice is persisted in localStorage.
     var TABLE_SUBVIEWS = [
-      { id: 'stats',     label: 'Stats' },
-      { id: 'combat',    label: 'Equipment & Combat' },
-      { id: 'promotion', label: 'Growth History / Promotion' },
       { id: 'unit',      label: 'Unit Info' },
+      { id: 'combat',    label: 'Combat' },
+      { id: 'growth',    label: 'Growth' },
+      { id: 'gates',     label: 'Promotion' },
       { id: 'raw',       label: 'Raw Bytes ⚠' }
     ];
-    var activeSubview = localStorage.getItem('ob64_classes_subview') || 'stats';
+    var activeSubview = localStorage.getItem('ob64_classes_subview') || 'unit';
+    if (activeSubview === 'stats') activeSubview = 'unit';
+    if (activeSubview === 'promotion') activeSubview = 'growth';
     if (!TABLE_SUBVIEWS.some(function(s) { return s.id === activeSubview; })) {
-      activeSubview = 'stats';
+      activeSubview = 'unit';
     }
+    localStorage.setItem('ob64_classes_subview', activeSubview);
 
     var subviewBar = document.createElement('div');
     subviewBar.className = 'classes-subview-toggle';
@@ -3362,6 +3519,28 @@ window.OB64 = window.OB64 || {};
     var tableHost = document.createElement('div');
     tableHost.className = 'classes-table-scroll';
     tableContainer.appendChild(tableHost);
+
+    function refreshGrowthHistoryLinks() {
+      evoLookup = buildEvolutionLookup(rom.classEvolution);
+
+      var usedByCells = tableHost.querySelectorAll('[data-growth-used-by-class-id]');
+      for (var i = 0; i < usedByCells.length; i++) {
+        var usedByCell = usedByCells[i];
+        var usedByClassId = parseInt(usedByCell.dataset.growthUsedByClassId, 10);
+        usedByCell.textContent = '';
+        usedByCell.className = 'col-growth-used-by';
+        renderPromoLinks(usedByCell, evoLookup.promotions[usedByClassId]);
+      }
+
+      var predecessorCells = tableHost.querySelectorAll('[data-growth-predecessor-class-id]');
+      for (var j = 0; j < predecessorCells.length; j++) {
+        var predecessorCell = predecessorCells[j];
+        var predecessorClassId = parseInt(predecessorCell.dataset.growthPredecessorClassId, 10);
+        predecessorCell.textContent = '';
+        predecessorCell.className = '';
+        renderPromoLinks(predecessorCell, evoLookup.demotions[predecessorClassId]);
+      }
+    }
 
     // Cell builders — each appends exactly ONE <td>. `def` is passed in so the
     // click-handler closures capture the correct class-def record.
@@ -3402,7 +3581,7 @@ window.OB64 = window.OB64 || {};
     }
     function addStatGrowthCell(tr, def, statIdx, growthField) {
       var c = td(tr, def ? def[growthField] : 0);
-      c.className = 'editable col-growth';
+      c.className = 'editable col-growth ' + CLASS_STAT_CSS[statIdx];
       c.title = classGrowthHelp(statIdx);
       if (def) {
         c.addEventListener('click', function() {
@@ -3542,6 +3721,9 @@ window.OB64 = window.OB64 || {};
             def[field] = nv;
             c.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
             markChanged();
+            if (field === 'baseClass' || field === 'intermediateClass') {
+              refreshGrowthHistoryLinks();
+            }
           });
         });
       }
@@ -3556,44 +3738,38 @@ window.OB64 = window.OB64 || {};
       var cols; // [{label, title?, cls?}]
       var fillRow; // function(cid, tr, def)
 
-      if (activeSubview === 'stats') {
+      if (activeSubview === 'unit') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'STR', title: 'B0 base (u16)' }, { label: 'STR base/lv', title: classGrowthHelp(0), cls: 'col-growth' },
-          { label: 'VIT', title: 'B4 base' }, { label: 'VIT base/lv', title: classGrowthHelp(1), cls: 'col-growth' },
-          { label: 'INT', title: 'B8 base' }, { label: 'INT base/lv', title: classGrowthHelp(2), cls: 'col-growth' },
-          { label: 'MEN', title: 'B12 base' }, { label: 'MEN base/lv', title: classGrowthHelp(3), cls: 'col-growth' },
-          { label: 'AGI', title: 'B16 base' }, { label: 'AGI base/lv', title: classGrowthHelp(4), cls: 'col-growth' },
-          { label: 'DEX', title: 'B20 base' }, { label: 'DEX base/lv', title: classGrowthHelp(5), cls: 'col-growth' },
-          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)' },
-          { label: 'HP base/lv', title: CLASS_HP_GROWTH_HELP, cls: 'col-growth' },
+          { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
+          { label: 'Sex/Type', title: CLASS_SEX_VOICE_HELP, cls: 'col-raw' },
+          { label: 'Leader', title: CLASS_LEADERSHIP_HELP },
           { label: 'LCK', title: 'B23 Luck base (40-60 typical)' },
           { label: 'ALN', title: 'B24 Alignment (0-100)' },
+          { label: 'Element', title: 'B58 default damage element (CSV-verified: 0x00=Physical, 0x01=Wind, 0x02=Flame, 0x03=Earth, 0x04=Water, 0xFF=Random/None)' },
+          { label: 'Item Cap.', title: CLASS_ITEM_CAPACITY_HELP },
           { label: 'Phys' }, { label: 'Wind' }, { label: 'Fire' }, { label: 'Earth' },
           { label: 'Water' }, { label: 'Virt' }, { label: 'Bane' }
         ];
-        var STAT_GROWTH_FIELDS = ['strGrowth', 'vitGrowth', 'intGrowth', 'menGrowth', 'agiGrowth', 'dexGrowth'];
         fillRow = function(cid, tr, def) {
-          for (var si = 0; si < 6; si++) {
-            addStatBaseCell(tr, def, si);
-            addStatGrowthCell(tr, def, si, STAT_GROWTH_FIELDS[si]);
-          }
-          var baseHpCell = addNumericCell(tr, def, 'baseHp', 65535);
-          baseHpCell.title = 'nameOff+8..9 / statOff-4..-3 base HP (u16)';
-          var hpGrowthCell = addNumericCell(tr, def, 'hpGrowth', 255, 'col-growth');
-          hpGrowthCell.title = CLASS_HP_GROWTH_HELP;
+          addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
+          var sexCell = addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          sexCell.classList.add('raw-byte');
+          sexCell.title = CLASS_SEX_VOICE_HELP;
+          var leadershipCell = addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
+          leadershipCell.title = CLASS_LEADERSHIP_HELP;
           addNumericCell(tr, def, 'lck', 255);
           addNumericCell(tr, def, 'alignment', 100);
+          addDropdownCell(tr, def, 'dragonElement', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName);
+          var itemCapacityCell = addDropdownCell(tr, def, 'itemCapacity',
+            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
+          itemCapacityCell.title = CLASS_ITEM_CAPACITY_HELP;
           for (var ri = 0; ri < 7; ri++) addResCell(tr, def, ri);
         };
       } else if (activeSubview === 'combat') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
           { label: 'Move', title: 'B32 movement type' },
-          { label: 'Wpn', title: 'B34-35 default weapon' },
-          { label: 'Body', title: 'B36-37 default body armor' },
-          { label: 'Head', title: 'B40-41 default headgear' },
-          { label: 'Acc', title: 'B38-39 default accessory/off-hand' },
           { label: 'FrontAtks', title: 'B44 front row attack count (verified in-game)' },
           { label: 'MidAtks', title: 'B46 middle row attack count (verified in-game)' },
           { label: 'RearAtks', title: 'B48 rear row attack count (verified via "Class Chart.csv" cross-check, 79/79 match). Previously mislabeled "atkType".' },
@@ -3608,7 +3784,6 @@ window.OB64 = window.OB64 || {};
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
-          for (var ei = 0; ei < 4; ei++) addEquipCell(tr, def, ei);
           addNumericCell(tr, def, 'frontAtks', 255);
           addNumericCell(tr, def, 'midAtks', 255);
           addNumericCell(tr, def, 'rearAtks', 255);
@@ -3621,19 +3796,61 @@ window.OB64 = window.OB64 || {};
           addActionCell(tr, def, 'b45Raw', 'Middle attack (B45)');
           addActionCell(tr, def, 'b47Raw', 'Rear attack (B47)', 'Caster IDs 45-48/51-54 display element-composed names in-game.');
         };
-      } else if (activeSubview === 'promotion') {
+      } else if (activeSubview === 'growth') {
+        var STAT_GROWTH_FIELDS = ['strGrowth', 'vitGrowth', 'intGrowth', 'menGrowth', 'agiGrowth', 'dexGrowth'];
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'STR', title: 'B0 base (u16)', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(0), cls: 'col-growth' },
+          { label: 'VIT', title: 'B4 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(1), cls: 'col-growth' },
+          { label: 'INT', title: 'B8 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(2), cls: 'col-growth' },
+          { label: 'MEN', title: 'B12 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(3), cls: 'col-growth' },
+          { label: 'AGI', title: 'B16 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(4), cls: 'col-growth' },
+          { label: 'DEX', title: 'B20 base', warning: true }, { label: 'Gain/Lv', title: classGrowthHelp(5), cls: 'col-growth' },
+          { label: 'Base HP', title: 'nameOff+8..9 / statOff-4..-3 base HP (u16)', warning: true },
+          { label: 'Gain/Lv', title: CLASS_HP_GROWTH_HELP, cls: 'col-growth' },
           { label: 'Early Growth', title: CLASS_GROWTH_HISTORY_HELP.baseClass },
           { label: 'Switch Lv 1', title: CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel },
           { label: 'Middle Growth', title: CLASS_GROWTH_HISTORY_HELP.middleClass },
           { label: 'Switch Lv 2', title: CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel },
           { label: 'History Link', title: CLASS_GROWTH_HISTORY_HELP.historyLink },
-          { label: 'Element', title: 'B58 default damage element (CSV-verified: 0x00=Physical, 0x01=Wind, 0x02=Flame, 0x03=Earth, 0x04=Water, 0xFF=Random/None)' },
-          { label: 'Item Cap.', title: CLASS_ITEM_CAPACITY_HELP },
-          // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C,
-          // decompressed by OB64.parseStatGates. Read-only (edit would require
-          // LZSS recompress + block splice on export, not yet implemented).
+          {
+            label: 'Used as Growth By',
+            title: 'Classes whose most recent configured growth-history predecessor is this class (B55 when present, otherwise B53).',
+            cls: 'col-growth-used-by'
+          },
+          { label: 'Promotes From' }
+        ];
+        fillRow = function(cid, tr, def) {
+          for (var si = 0; si < 6; si++) {
+            addStatBaseCell(tr, def, si);
+            addStatGrowthCell(tr, def, si, STAT_GROWTH_FIELDS[si]);
+          }
+          var baseHpCell = addNumericCell(tr, def, 'baseHp', 65535);
+          baseHpCell.title = 'nameOff+8..9 / statOff-4..-3 base HP (u16)';
+          var hpGrowthCell = addNumericCell(tr, def, 'hpGrowth', 255, 'col-growth');
+          hpGrowthCell.title = CLASS_HP_GROWTH_HELP;
+          addClassFieldCell(tr, def, 'baseClass', CLASS_GROWTH_HISTORY_HELP.baseClass);
+          var firstSwitchCell = addNumericCell(tr, def, 'baseTransitionLevel', 255);
+          firstSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel;
+          addClassFieldCell(tr, def, 'intermediateClass', CLASS_GROWTH_HISTORY_HELP.middleClass);
+          var secondSwitchCell = addNumericCell(tr, def, 'finalTransitionLevel', 255);
+          secondSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel;
+          addClassFieldCell(tr, def, 'classCopyMatch', CLASS_GROWTH_HISTORY_HELP.historyLink);
+          var tdTo = document.createElement('td');
+          tdTo.className = 'col-growth-used-by';
+          tdTo.dataset.growthUsedByClassId = cid;
+          renderPromoLinks(tdTo, evoLookup.promotions[cid]);
+          tr.appendChild(tdTo);
+          var tdFrom = document.createElement('td');
+          tdFrom.dataset.growthPredecessorClassId = cid;
+          renderPromoLinks(tdFrom, evoLookup.demotions[cid]);
+          tr.appendChild(tdFrom);
+        };
+      } else if (activeSubview === 'gates') {
+        cols = [
+          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C
+          // and edited through the existing stat-gate write path.
           { label: 'G-STR', title: 'Stat gate: STR threshold for promoting INTO this class (LZSS block)', cls: 'col-gate' },
           { label: 'G-VIT', title: 'Stat gate: VIT threshold', cls: 'col-gate' },
           { label: 'G-INT', title: 'Stat gate: INT threshold', cls: 'col-gate' },
@@ -3642,23 +3859,14 @@ window.OB64 = window.OB64 || {};
           { label: 'G-DEX', title: 'Stat gate: DEX threshold', cls: 'col-gate' },
           { label: 'G-AlnMin', title: 'Stat gate: minimum alignment (inclusive)', cls: 'col-gate' },
           { label: 'G-AlnMax', title: 'Stat gate: maximum alignment (inclusive)', cls: 'col-gate' },
-          { label: 'Promotes To' }, { label: 'Promotes From' }
+          { label: 'Wpn', title: 'B34-35 default weapon' },
+          { label: 'Body', title: 'B36-37 default body armor' },
+          { label: 'Head', title: 'B40-41 default headgear' },
+          { label: 'Acc', title: 'B38-39 default accessory/off-hand' }
         ];
         fillRow = function(cid, tr, def) {
-          addClassFieldCell(tr, def, 'baseClass', CLASS_GROWTH_HISTORY_HELP.baseClass);
-          var firstSwitchCell = addNumericCell(tr, def, 'baseTransitionLevel', 255);
-          firstSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.firstSwitchLevel;
-          addClassFieldCell(tr, def, 'intermediateClass', CLASS_GROWTH_HISTORY_HELP.middleClass);
-          var secondSwitchCell = addNumericCell(tr, def, 'finalTransitionLevel', 255);
-          secondSwitchCell.title = CLASS_GROWTH_HISTORY_HELP.secondSwitchLevel;
-          addClassFieldCell(tr, def, 'classCopyMatch', CLASS_GROWTH_HISTORY_HELP.historyLink);
-          addDropdownCell(tr, def, 'dragonElement', OB64.DEFAULT_ELEMENTS, OB64.defaultElementName);
-          var itemCapacityCell = addDropdownCell(tr, def, 'itemCapacity',
-            OB64.CLASS_ITEM_CAPACITIES, OB64.classItemCapacityName);
-          itemCapacityCell.title = CLASS_ITEM_CAPACITY_HELP;
-          // Stat gates — class-id-indexed (NOT class_id+1 like class defs).
-          // Missing entry = no stat gate defined for this class (promotion not
-          // gated by stats). Dash-fill all 8 cells in that case.
+          // Stat gates are class-id-indexed (NOT class_id+1 like class defs).
+          // A missing entry means no stat gate is defined for the class.
           var gate = rom.statGates && rom.statGates.byClass[cid];
           var gateLabel = gate ? 'Stat gate: promote INTO ' + OB64.className(cid) : 'No stat gate defined for ' + OB64.className(cid);
           addStatGateCell(tr, gate, 'str', gateLabel);
@@ -3669,30 +3877,7 @@ window.OB64 = window.OB64 || {};
           addStatGateCell(tr, gate, 'dex', gateLabel);
           addStatGateCell(tr, gate, 'alnMin', gateLabel);
           addStatGateCell(tr, gate, 'alnMax', gateLabel);
-          var tdTo = document.createElement('td'); renderPromoLinks(tdTo, evoLookup.promotions[cid]); tr.appendChild(tdTo);
-          var tdFrom = document.createElement('td'); renderPromoLinks(tdFrom, evoLookup.demotions[cid]); tr.appendChild(tdFrom);
-        };
-      } else if (activeSubview === 'unit') {
-        cols = [
-          { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
-          { label: 'Size', title: 'Unit size from name-framed +4 / statOff-8: regular (1 slot) or large (2 slots)' },
-          { label: 'Sex/Voice ?', title: CLASS_SEX_VOICE_HELP, cls: 'col-raw' },
-          { label: 'Leadership ?', title: CLASS_LEADERSHIP_HELP, cls: 'col-raw' },
-          { label: 'B33', title: 'B33 padding', cls: 'col-raw' },
-          { label: 'H+7', title: 'nameOff+7 / statOff-5 padding/raw header byte', cls: 'col-raw' },
-          { label: 'H+11', title: 'nameOff+11 / statOff-1 padding/raw header byte', cls: 'col-raw' }
-        ];
-        fillRow = function(cid, tr, def) {
-          addDropdownCell(tr, def, 'unitSize', OB64.UNIT_SIZES, OB64.unitSizeName);
-          var sexCell = addDropdownCell(tr, def, 'sexOrVoice', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
-          sexCell.classList.add('raw-byte');
-          sexCell.title = CLASS_SEX_VOICE_HELP;
-          var leadershipCell = addDropdownCell(tr, def, 'leadership', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
-          leadershipCell.classList.add('raw-byte');
-          leadershipCell.title = CLASS_LEADERSHIP_HELP;
-          addRawByteCell(tr, def, 'b33Raw', 'B33 padding');
-          addRawByteCell(tr, def, 'headerPad', 'nameOff+7 / statOff-5 padding/raw header byte');
-          addRawByteCell(tr, def, 'headerTailRaw', 'nameOff+11 / statOff-1 padding/raw header byte');
+          for (var ei = 0; ei < 4; ei++) addEquipCell(tr, def, ei);
         };
       } else { // raw bytes
         var classPointerWarning = 'Current-class runtime name-pointer byte. Editing can break class-name lookup or crash the game.';
@@ -3734,6 +3919,7 @@ window.OB64 = window.OB64 || {};
         if (col.cls) th.className = col.cls;
         if (col.title) th.title = col.title;
         th.textContent = col.label;
+        if (col.warning) th.appendChild(classBaseStatWarningBadge());
         hTr.appendChild(th);
       });
       thead.appendChild(hTr);
@@ -3798,6 +3984,7 @@ window.OB64 = window.OB64 || {};
       var lbl = document.createElement('span');
       lbl.className = 'stat-label';
       lbl.textContent = label;
+      if (opts.warning) lbl.appendChild(classBaseStatWarningBadge());
       e.appendChild(lbl);
       var val = document.createElement('span');
       val.className = 'stat-value';
@@ -3958,6 +4145,7 @@ window.OB64 = window.OB64 || {};
                 var sName = document.createElement('span');
                 sName.className = 'stat-label ' + CLASS_STAT_CSS[statIdx];
                 sName.textContent = CLASS_STAT_NAMES[statIdx];
+                sName.appendChild(classBaseStatWarningBadge());
                 entry.appendChild(sName);
                 // Base (click to edit)
                 var sVal = document.createElement('span');
@@ -4211,6 +4399,9 @@ window.OB64 = window.OB64 || {};
                 vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.className(nv) : 'None');
                 entry.appendChild(vs);
                 markChanged();
+                if (field === 'baseClass' || field === 'intermediateClass') {
+                  refreshGrowthHistoryLinks();
+                }
               });
             });
             return entry;
@@ -4268,16 +4459,16 @@ window.OB64 = window.OB64 || {};
           itemCapacityTile.title = CLASS_ITEM_CAPACITY_HELP;
           clsGrid.appendChild(itemCapacityTile);
           clsGrid.appendChild(tileDropdown(def, 'unitSize', 'Size', OB64.UNIT_SIZES, OB64.unitSizeName));
-          var sexTile = tileDropdown(def, 'sexOrVoice', 'Sex/Voice ?', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
+          var sexTile = tileDropdown(def, 'sexOrVoice', 'Sex/Type', OB64.CLASS_SEX_VOICE, OB64.classSexVoiceName);
           sexTile.classList.add('raw-byte');
           sexTile.title = CLASS_SEX_VOICE_HELP;
           clsGrid.appendChild(sexTile);
-          var leadershipTile = tileDropdown(def, 'leadership', 'Leadership ?', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
-          leadershipTile.classList.add('raw-byte');
+          var leadershipTile = tileDropdown(def, 'leadership', 'Leader', OB64.CLASS_LEADERSHIP, OB64.classLeadershipName);
           leadershipTile.title = CLASS_LEADERSHIP_HELP;
           clsGrid.appendChild(leadershipTile);
           clsGrid.appendChild(tileDropdown(def, 'moveType', 'Move', OB64.MOVEMENT_TYPES, OB64.moveTypeName));
-          clsGrid.appendChild(tileNumeric(def, 'baseHp', 'Base HP', {title: 'nameOff+8..9 / statOff-4..-3', max: 65535}));
+          clsGrid.appendChild(tileNumeric(def, 'baseHp', 'Base HP',
+            {title: 'nameOff+8..9 / statOff-4..-3', max: 65535, warning: true}));
           clsGrid.appendChild(tileNumeric(def, 'hpGrowth', 'HP base/lv', {title: CLASS_HP_GROWTH_HELP}));
           clsSec.appendChild(clsGrid);
           card.appendChild(clsSec);

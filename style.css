@@ -580,7 +580,7 @@ body::before {
   color: var(--ob-wood-darkest);
   background: rgba(255,250,225,0.92);
   font-family: var(--ob-serif);
-  font-size: 0.72rem;
+  font-size: var(--ob-text-xs);
   font-weight: 700;
   line-height: 1;
   cursor: help;
@@ -594,10 +594,10 @@ body::before {
   background: white;
 }
 
-.damage-tooltip-popup {
+.ob-info-popup {
   position: fixed;
   z-index: 10000;
-  width: min(360px, calc(100vw - 20px));
+  width: min(380px, calc(100vw - 20px));
   box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid var(--ob-gold);
@@ -607,12 +607,15 @@ body::before {
   box-shadow: 0 6px 18px rgba(0,0,0,0.45);
   font-family: var(--ob-serif);
   font-size: var(--ob-text-sm);
+  font-style: normal;
+  font-weight: 400;
   line-height: 1.35;
+  text-align: left;
   white-space: pre-line;
   pointer-events: none;
 }
 
-.damage-tooltip-popup[hidden] {
+.ob-info-popup[hidden] {
   display: none;
 }
 
@@ -726,7 +729,7 @@ body::before {
 
 .damage-output-value {
   font-family: var(--ob-display);
-  font-size: 1.45rem;
+  font-size: var(--ob-text-lg);
   color: var(--ob-wood-darkest);
 }
 
@@ -769,7 +772,7 @@ body::before {
   border-radius: 10px;
   color: white;
   background: var(--ob-wax-red);
-  font-size: 0.68rem;
+  font-size: var(--ob-text-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1188,22 +1191,6 @@ td input, td select {
   color: var(--ob-wax-red);
 }
 
-/* Tooltip */
-.tooltip {
-  position: absolute;
-  background: var(--ob-parchment);
-  border: 1px solid var(--ob-wood-dark);
-  border-radius: 3px;
-  padding: 5px 10px;
-  font-family: var(--ob-serif);
-  font-size: var(--ob-text-sm);
-  color: var(--ob-ink);
-  z-index: 100;
-  pointer-events: none;
-  white-space: nowrap;
-  box-shadow: var(--ob-shadow-md), inset 0 1px 0 rgba(255,245,210,0.5);
-}
-
 /* ============================================================
    FORMATION GRID (3x3)
    ============================================================ */
@@ -1620,7 +1607,7 @@ td.raw-hex {
 .classes-table td.raw-byte::after,
 .class-card .stat-entry.raw-byte::after {
   content: ' \26A0';
-  font-size: 1em;
+  font-size: var(--ob-text-sm);
   opacity: 0.6;
   margin-left: 2px;
 }
@@ -1657,8 +1644,8 @@ td.raw-hex {
 /* Growth-mean columns in Stats sub-view */
 .classes-table th.col-growth,
 .classes-table td.col-growth {
-  color: var(--ob-stat-amber);
   font-style: italic;
+  text-align: center;
 }
 
 /* Per-level base-growth sub-badge in Card view */
@@ -1678,6 +1665,28 @@ td.raw-hex {
   background: rgba(224,179,90,0.45);
   color: var(--ob-ink);
   cursor: pointer;
+}
+
+.class-base-stat-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  color: var(--ob-stat-amber);
+  font-family: sans-serif;
+  font-size: var(--ob-text-xs);
+  font-style: normal;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: help;
+  user-select: none;
+}
+
+.class-base-stat-warning:hover,
+.class-base-stat-warning:focus {
+  color: var(--ob-wax-red);
+  outline: 1px solid var(--ob-gold);
+  outline-offset: 2px;
 }
 
 /* Collapsible card sections */
@@ -1702,7 +1711,7 @@ td.raw-hex {
   content: '\25B8';
   display: inline-block;
   margin-right: 6px;
-  font-size: 1em;
+  font-size: var(--ob-text-xs);
   color: var(--ob-gold-dim);
   transition: transform 0.12s ease;
 }
@@ -1844,6 +1853,20 @@ td.attack-list {
 .classes-table td {
   padding: 4px 7px;
   font-size: var(--ob-text-sm);
+  white-space: nowrap;
+}
+
+.classes-table th.col-growth-used-by,
+.classes-table td.col-growth-used-by {
+  width: 360px;
+  min-width: 300px;
+  max-width: 420px;
+  white-space: normal;
+  overflow-wrap: normal;
+  line-height: 1.2;
+}
+
+.classes-table td.col-growth-used-by .xref {
   white-space: nowrap;
 }
 
@@ -3092,7 +3115,7 @@ td.attack-list {
   left: 4px;
   color: #b22a1c;
   font-family: var(--ob-mono);
-  font-size: 10px;
+  font-size: var(--ob-text-xs);
   font-weight: 700;
   white-space: nowrap;
   text-shadow: 0 1px 0 rgba(255,242,210,0.8);
@@ -3169,7 +3192,7 @@ td.attack-list {
 }
 
 .terrain-rate-detail {
-  font-size: 10px;
+  font-size: var(--ob-text-xs);
   white-space: nowrap;
 }
 
@@ -4093,7 +4116,7 @@ td.attack-list {
 .save-gs-note {
   grid-column: 1 / -1;
   color: var(--ob-ink-dim);
-  font-size: 0.88rem;
+  font-size: var(--ob-text-sm);
   line-height: 1.45;
   padding: 8px 10px;
   border: 1px dashed rgba(116, 84, 50, 0.35);
@@ -4404,14 +4427,14 @@ td.attack-list {
 .tool-name {
   font-family: var(--ob-display);
   font-weight: 700;
-  font-size: 1.05em;
+  font-size: var(--ob-text-md);
   color: var(--ob-ink);
 }
 
 .tool-status {
   font-family: var(--ob-serif);
   font-weight: 600;
-  font-size: 0.9em;
+  font-size: var(--ob-text-xs);
   padding: 2px 8px;
   border-radius: 4px;
   align-self: flex-start;
@@ -4441,7 +4464,7 @@ td.attack-list {
 
 .tool-meta {
   font-family: var(--ob-serif);
-  font-size: 0.82em;
+  font-size: var(--ob-text-xs);
   color: var(--ob-ink-dim);
   font-style: italic;
 }
@@ -4657,7 +4680,7 @@ td.attack-list {
 
 .consumable-icon-fallback {
   color: var(--ob-ink-dim);
-  font-size: 30px;
+  font-size: var(--ob-text-lg);
   line-height: 1;
 }
 

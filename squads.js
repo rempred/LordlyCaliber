@@ -56,13 +56,26 @@
   }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+  function mapSpriteFallbackClass(rom, id) {
+    if (!rom || !rom.classDefs || !OB64.scenario || !OB64.scenario.leaderClassMapSpriteSource) return 0;
+    var source = OB64.scenario.leaderClassMapSpriteSource(rom, id);
+    return source && source !== id ? source : 0;
+  }
+
   function classOptionsHtml(cur, rom, annotateLeader) {
     var names = OB64.CLASS_NAMES || {}, html = '<option value="0">-- pick a class --</option>';
     for (var k in names) {
       var id = parseInt(k);
       var spriteNote = '';
-      if (annotateLeader && rom && OB64.scenario && OB64.scenario.leaderClassHasMapSprite && !OB64.scenario.leaderClassHasMapSprite(rom, id)) {
-        spriteNote = ' - no map sprite (cannot lead)';
+      if (annotateLeader && rom && OB64.scenario) {
+        if (!OB64.scenario.leaderClassCanLead || !OB64.scenario.leaderClassCanLead(rom, id)) {
+          spriteNote = ' - Leader: No';
+        } else if (OB64.scenario.leaderClassHasMapSprite && !OB64.scenario.leaderClassHasMapSprite(rom, id)) {
+          var fallback = mapSpriteFallbackClass(rom, id);
+          spriteNote = fallback
+            ? ' - map sprite via B57: ' + cn(fallback)
+            : ' - no usable map sprite';
+        }
       }
       html += '<option value="' + id + '"' + (id === cur ? ' selected' : '') + '>' + esc(names[k]) + (isLarge(id) ? ' (large)' : '') + esc(spriteNote) + '</option>';
     }
@@ -254,6 +267,7 @@
       '#panel-squads .sq-field.leader{grid-column:1 / -1}',
       '#panel-squads .sq-pick label{display:block;font-size:var(--ob-text-sm);font-weight:700;color:var(--ob-ink-soft);margin:0 0 3px}',
       '#panel-squads .sq-pick select{width:100%;height:32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:var(--ob-text-sm)}',
+      '#panel-squads .sq-field-help{margin-top:4px;color:var(--ob-ink-soft);font-size:var(--ob-text-xs);line-height:1.35}',
       '#panel-squads .sq-group-row{display:flex;gap:6px;align-items:center}',
       '#panel-squads .sq-group-row select{flex:1;min-width:0}',
       '#panel-squads .sq-add-member{width:32px;height:32px;flex:0 0 32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:var(--ob-gold);color:var(--ob-ink);font-size:var(--ob-text-md);font-weight:800;line-height:1;cursor:pointer;padding:0}',
@@ -425,7 +439,8 @@
 
   function pickersHtml(rec, rom) {
     var h = '<div class="sq-pick">';
-    h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0], rom, true) + '</select></div>';
+    h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0], rom, true) + '</select>' +
+      '<div class="sq-field-help">A leader must be marked Yes or Centurion. Classes without a direct map sprite can use the sprite of the ordinary class linked by B57; export applies the same rule.</div></div>';
     ['B', 'C'].forEach(function (role) {
       var cls = rec[groupClassField(role)], count = groupCount(rec, role);
       var reason = groupAddDisabledReason(rec, role);
