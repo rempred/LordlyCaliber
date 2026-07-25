@@ -218,8 +218,10 @@ window.OB64 = window.OB64 || {};
     return candidate;
   }
 
-  function adoptExportCandidate(targetRom, candidateRom) {
-    targetRom.z64 = candidateRom.z64;
+  function adoptExportCandidate(targetRom, candidateRom, verifiedAdoption) {
+    if (!verifiedAdoption) {
+      targetRom.z64 = candidateRom.z64;
+    }
     if (candidateRom.scenarioEditor && targetRom.scenarioEditor) {
       targetRom.scenarioEditor.archiveOriginalSlots =
         candidateRom.scenarioEditor.archiveOriginalSlots;
@@ -252,6 +254,7 @@ window.OB64 = window.OB64 || {};
     var sourceWorkingZ64 = rom.z64;
     var candidateRom = createExportCandidate(exportRom);
     var effectTransaction = null;
+    var effectAdoption = null;
     var effectOwners = [];
     var exportDirty = Object.assign({}, dirty);
     try {
@@ -530,21 +533,28 @@ window.OB64 = window.OB64 || {};
         );
       }
       if (effectTransaction) {
+        OB64.consumableEffects.validateFinalAfterImage(
+          effectTransaction,
+          candidateRom.z64,
+          rom.consumableEffects
+        );
         var crcVerification = OB64.consumableEffects.verifyIndependentCrc(candidateRom.z64);
         if (!crcVerification.ok) {
           throw new Error('Independent CIC-6102 verification rejected the final candidate.');
         }
-        var candidateBytes = OB64.consumableEffects.serializeCandidate(candidateRom);
         var candidateOrder = rom.exportByteOrder || rom.byteOrder || 'v64';
         var candidateExtension = OB64.romByteOrderExtension(candidateOrder);
         var candidateFilename = 'ob64_modified.' + candidateExtension;
+        var candidatePackage =
+          OB64.consumableEffects.createVerifiedCandidatePackage(
+            exportRom,
+            candidateRom,
+            rom.consumableEffects,
+            effectTransaction,
+            candidateFilename
+          );
         provenance = await OB64.consumableEffects.buildProvenance(
-          candidateRom,
-          rom.consumableEffects,
-          effectTransaction,
-          candidateRom.z64,
-          candidateBytes,
-          candidateFilename,
+          candidatePackage,
           finalLedgerOwners,
           exportDirty
         );
@@ -552,15 +562,23 @@ window.OB64 = window.OB64 || {};
         if (exportRom.consumableEffects.generation !== effectTransaction.baseGeneration) {
           throw new Error('Consumable effect state changed while the final candidate was being verified.');
         }
-        var effectPackage = OB64.consumableEffects.downloadRomCandidate(
-          candidateBytes,
-          candidateFilename
+        OB64.consumableEffects.finalizeVerifiedCandidatePackage(
+          candidatePackage,
+          provenance
         );
-        exportedName = effectPackage.candidateFilename;
-        OB64.consumableEffects.commitTransaction(
+        var downloadReceipt = OB64.consumableEffects.downloadRomCandidate(
+          candidatePackage,
+          provenance
+        );
+        exportedName = downloadReceipt.candidateFilename;
+        effectAdoption = OB64.consumableEffects.commitAndAdoptTransaction(
           exportRom.consumableEffects,
           effectTransaction,
-          provenance
+          candidatePackage,
+          provenance,
+          downloadReceipt,
+          exportRom,
+          candidateRom
         );
       } else {
         var ordinaryLedger = null;
@@ -588,8 +606,8 @@ window.OB64 = window.OB64 || {};
           );
         }
       }
-      adoptExportCandidate(exportRom, candidateRom);
-      var exportMsg = 'ROM exported as ' + exportedName + ' ('
+      adoptExportCandidate(exportRom, candidateRom, effectAdoption);
+      var exportMsg = 'ROM export initiated as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
       // native saves look gone. Surface the recovery recipe instead of a silent surprise.
@@ -640,6 +658,25 @@ window.OB64 = window.OB64 || {};
     function range(entry) {
       return entry ? signed(entry.deltaMin) + '..' + signed(entry.deltaMax) : '';
     }
+    ['1', '2', '3', '4', '5'].forEach(function(projectKey) {
+      if (!payload[projectKey]) return;
+      var modelKey = OB64.consumableEffects.ITEM_TO_MODEL[Number(projectKey)];
+      var def = OB64.consumableEffects.MODEL_DEFS[modelKey];
+      var requested = payload[projectKey].magnitude;
+      var imported = rom && rom.consumableEffects &&
+        rom.consumableEffects.importedModels &&
+        rom.consumableEffects.importedModels[modelKey];
+      var baseline = imported ? imported.magnitude : def.vanillaMagnitude;
+      var status = OB64.consumableEffects.magnitudeStatus(modelKey, requested);
+      var detail = name(Number(projectKey)) + ' (ID ' + projectKey + ') magnitude ' +
+        baseline + ' -> ' + requested + ' (retail ' + def.vanillaMagnitude +
+        '; target ' + def.target + '; ' + status.label;
+      if (def.healingDescription) {
+        detail += '; prose ' + status.padded;
+      }
+      if (def.pairAtomic) detail += '; one value/two equal words';
+      out.push(detail + ')');
+    });
     if (payload['10']) out.push(name(10) + ' effect ' + range(payload['10']));
     if (payload['11-16']) {
       out.push('Shared Stat Boosters (IDs 11\u201316: ' +

@@ -27,9 +27,10 @@ Optional desktop utilities are kept separate from its runtime:
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
   release summary and downloadable `.txt` changelog.
-- `consumable-effects.js` owns the evidence-backed five-model consumable-effect
-  catalog, exact-source identity gate, guard/transaction ledger, Project v12
-  payload, combined-diff provenance, and Consumables-tab renderer.
+- `consumable-effects.js` owns the evidence-backed ten-model consumable-effect
+  catalog, explicit Rev 0/Rev 1 feature manifests, deterministic healing-text
+  codec, guard/transaction ledger, Project v13 payload, combined-diff
+  provenance, and Consumables-tab renderer.
 - `damage-calculator.js` provides the read-only Physical damage model and one
   evidence-bounded Magic product slice for native template 45 or 51 resolving
   to action 55, plus expected class-growth projection, native-action filtering,
@@ -123,15 +124,25 @@ safety behavior.
   searchable item pickers.
 - **Consumables** — view consumable IDs 1–31 with the same parsed names and
   item icons used by Shops; quest/story IDs 32–44 are intentionally omitted.
-  Ten rows are editable when the loaded US ROM's normalized effect paths match
-  the supported patch profile: Cup of Life, six linked stat boosters, Scroll of
-  Discipline, Urn of Chaos, and Goblet of Destiny. IDs 11–16 are six
-  synchronized views of one shared range and one encoded word pair. The other
-  21 visible rows remain present with native-disabled controls and evidence-accurate
-  reasons. Equivalent filenames and `.z64`/`.v64`/`.n64` byte orders are
-  accepted. A ROM whose relevant opcodes, dispatch table, target metadata, or
-  current effect words do not match remains visible but locked with a concrete
-  diagnostic; Project data cannot bypass those compatibility checks.
+  Fifteen rows are editable when their local normalized structures match:
+  Heal Leaf, Heal Seed, Heal Pack, Power Fruit, Angel Fruit, Cup of Life, six
+  linked stat boosters, Scroll of Discipline, Urn of Chaos, and Goblet of
+  Destiny. Healing values support `0..999`; `1..99` are warned and displayed as
+  `001..099`, while `0` is a warned consuming no-op. Their three numeric
+  in-game descriptions are synchronized through a deterministic complete-slot
+  rewrite. Heal Pack exposes one value backed by two required equal, atomic
+  code words. Fruit values support `0..65535`; `0` is a warned consuming no-op
+  and `256..65535` are warned as redundant with the ordinary u8 result at 255.
+  IDs 11–16 remain six synchronized views of one shared range and one encoded
+  word pair. The other 16 visible rows remain present with native-disabled
+  controls and evidence-accurate reasons.
+  Equivalent filenames and `.z64`/`.v64`/`.n64` byte orders are accepted.
+  Rev 0 and Rev 1 use explicit feature manifests: a local healing-description,
+  fruit-word, or range-profile mismatch locks only its dependent rows and
+  shows the exact diagnostic; Project data cannot bypass those checks. See the
+  [consumable-effects verification guide](scratch/CONSUMABLE_EFFECTS_TESTING.md)
+  for the prepared Joe runtime matrix. Runtime acceptance of IDs 1–5 remains
+  pending that execution.
 - **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
@@ -301,10 +312,14 @@ safety behavior.
 - **Projects** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
-  consumable-effect ranges, and Tools-tab feature toggles) to a portable JSON
-  project file for sharing or reapplying to a fresh ROM. Project format v12
-  stores only non-retail effect models under `patches.consumableEffects`, with
-  one `11-16` key for all six linked stat items. Older Projects remain readable.
+  consumable-effect magnitudes/ranges, and Tools-tab feature toggles) to a
+  portable JSON project file for sharing or reapplying to a ROM. Project format
+  v13 adds absolute `magnitude` entries for IDs 1–5 and preserves the v12 range
+  entries, including one `11-16` key for all six linked stat items. v12 accepts
+  only the older range keys; v11 and older retain their prior behavior.
+  Effect collection compares against the compatible values imported from the
+  loaded ROM, so reopening an already-edited ROM is clean and resetting a
+  custom import to retail remains an explicit Project request.
   Squad project data stores per-runtime-key 35-byte replacement records so a
   saved project can reproduce the exported squad override blob.
   The Project JSON container embeds the full Scenario payload (modified mission
@@ -325,13 +340,17 @@ safety behavior.
   relocation, squad overrides, some Tools features), Project64 keys a NEW save
   folder for the ROM — the UI surfaces the recovery recipe so existing saves
   don't silently "disappear".
-  Exports containing consumable-effect edits preflight every model, guard, and
-  patch-region owner before writing an isolated candidate; recalculate
-  CIC-6102 once after all combined writes; independently verify it; restore the
-  loaded byte order; compute the candidate hash and complete concrete-owner
-  ledger in memory; and download exactly one ROM. ROM export never creates a
-  JSON sidecar. **Save Project** is the sole user-facing JSON export and records
-  every supported current ROM-edit family, including consumable effects.
+  Exports containing consumable-effect edits preflight every requested local
+  facet and exact preimage before writing an isolated candidate. Sixteen
+  four-byte code regions have one exact owner; a pending healing change adds a
+  distinct exact owner for the complete selected-revision description slot.
+  Broad code/text profiles remain guards and collision surfaces, never delta
+  owners. The combined transaction then recalculates CIC-6102 once after all
+  writes, independently verifies it, restores the loaded byte order, computes
+  the candidate hash and complete concrete-owner ledger in memory, and
+  downloads exactly one ROM. ROM export never creates a JSON sidecar.
+  **Save Project** is the sole user-facing JSON export and records every
+  supported current ROM-edit family, including consumable effects.
 
 ## Current Limitations
 
@@ -339,6 +358,10 @@ safety behavior.
   Other regions and prototypes are rejected. Modified US images are
   experimenter inputs: compatible features remain available, while operations
   with a known structural mismatch are disabled or rejected with a diagnostic.
+- Healing/Fatigue consumable controls have accepted static ownership, codec,
+  and synthetic product verification, but their prepared cold-boot and
+  gameplay matrix has not yet been executed by Joe. Do not treat this as
+  runtime acceptance.
 - Consumable-effect editing is narrower than general editor compatibility: it
   requires the 41,943,040-byte US layout plus matching normalized effect-code,
   dispatch, target-metadata, and current-word guards. Filename, raw SHA-256,
@@ -488,8 +511,9 @@ on the US retail ROM:
   (45 records), 20-byte neutral-encounter scenario slice, adjacent
   terrain-rate tables, and the 28-byte stronghold record decoded against
   in-game testing and emulator memory diffs.
-- Custom LZSS compressor / decompressor for editing the dialogue scripts and
-  the stat-gate region.
+- Custom LZSS compressor / decompressor for editing dialogue scripts and the
+  stat-gate region, plus a pinned deterministic full-slot plan for the three
+  synchronized healing-description numbers.
 - N64 CIC-6102 CRC re-calculation to keep patched ROMs bootable.
 - Per-class data cross-validated against the GameShark Class Hacking Guide
   and community wiki tables.

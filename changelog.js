@@ -396,6 +396,36 @@ window.OB64 = window.OB64 || {};
   function buildConsumableEffectSection(rom, patches, sections) {
     var effects = patches.consumableEffects || {};
     var entries = [];
+    ['1', '2', '3', '4', '5'].forEach(function(key) {
+      if (!own(effects, key)) return;
+      var itemId = Number(key);
+      var modelKey = OB64.consumableEffects.ITEM_TO_MODEL[itemId];
+      var modelDef = OB64.consumableEffects.MODEL_DEFS[modelKey];
+      var requested = effects[key].magnitude;
+      var loaded = rom.consumableEffects &&
+        rom.consumableEffects.importedModels &&
+        rom.consumableEffects.importedModels[modelKey]
+        ? rom.consumableEffects.importedModels[modelKey].magnitude
+        : modelDef.vanillaMagnitude;
+      var status = OB64.consumableEffects.magnitudeStatus(modelKey, requested);
+      var lines = [
+        'Magnitude: ' + loaded + ' -> ' + requested +
+          ' (retail ' + modelDef.vanillaMagnitude + ').',
+        'Target/field: ' + modelDef.target + '.',
+        status.label + ': ' + status.message
+      ];
+      if (modelDef.healingDescription) {
+        lines.push('Synchronized in-game numeric description: ' +
+          status.padded + '.');
+      }
+      if (modelDef.pairAtomic) {
+        lines.push('One configured value is stored in two required equal code words; both change atomically.');
+      }
+      entries.push({
+        title: consumableName(rom, itemId) + ' (ID ' + itemId + ')',
+        lines: lines
+      });
+    });
     var definitions = {
       '10': { ids: [10], retail: [5, 10], title: consumableName(rom, 10) },
       '11-16': {

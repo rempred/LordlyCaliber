@@ -26,12 +26,14 @@
 // Population and Morale edits.
 // v12 carries the five verified consumable-effect range models. IDs 11-16 use
 // one canonical shared entry under `patches.consumableEffects["11-16"]`.
+// v13 adds absolute magnitude entries for consumable IDs 1-5 while preserving
+// the v12 range schemas and per-key backward compatibility.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 12;
+  var PATCH_VERSION = 13;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -289,22 +291,11 @@ window.OB64 = window.OB64 || {};
           validatedEffects = OB64.consumableEffects.validateProjectPayload(
             effectPayload,
             rom.consumableEffects,
-            patch.version
+            patch.version,
+            rom.z64
           );
         } catch (effectError) {
           throw new PatchFormatError('Consumable effect Project data is invalid: ' + effectError.message);
-        }
-        if (validatedEffects.modelCount) {
-          var projectGuards = OB64.consumableEffects.validateGuards(
-            rom.z64,
-            rom.consumableEffects,
-            rom.consumableEffects.guardManifest
-          );
-          if (!projectGuards.ok) {
-            throw new PatchFormatError(
-              'Consumable effect Project guards are invalid: ' + projectGuards.errors[0]
-            );
-          }
         }
       }
     }
@@ -533,7 +524,11 @@ window.OB64 = window.OB64 || {};
         rom.consumableEffects,
         validatedEffects
       );
-      if (consumableEffectsApplied > 0) dirtyFlags.consumableEffects = true;
+      if (consumableEffectsApplied > 0) {
+        dirtyFlags.consumableEffects = OB64.consumableEffects.refreshPending(
+          rom.consumableEffects
+        );
+      }
     }
 
     return {

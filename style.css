@@ -4548,6 +4548,12 @@ td.attack-list {
   border-color: var(--ob-seal-green);
 }
 
+.consumable-compatibility.is-partial {
+  color: #503507;
+  background: #ead49a;
+  border-color: #9a6b12;
+}
+
 .consumable-compatibility.is-unavailable {
   color: #651d16;
   background: #e5c2ad;
@@ -4690,6 +4696,10 @@ td.attack-list {
   min-width: 0;
 }
 
+.consumable-effect-value-magnitude > .consumable-effect-number {
+  max-width: 180px;
+}
+
 .consumable-effect-range {
   display: grid;
   grid-template-columns: repeat(2, minmax(92px, 1fr));
@@ -4739,6 +4749,32 @@ td.attack-list {
 .consumable-effect-error {
   margin-top: 4px;
   color: var(--ob-wax-red);
+  font-weight: 700;
+}
+
+.consumable-effect-warning {
+  margin-top: 6px;
+  padding: 5px 7px;
+  color: #173f1d;
+  background: rgba(76, 170, 58, 0.12);
+  border: 1px solid rgba(45, 112, 38, 0.5);
+  border-radius: 4px;
+  font-size: var(--ob-text-xs);
+  line-height: 1.35;
+}
+
+.consumable-effect-warning.is-warning-experimental,
+.consumable-effect-warning.is-warning-redundant {
+  color: #503507;
+  background: rgba(218, 168, 48, 0.2);
+  border-color: #9a6b12;
+  font-weight: 700;
+}
+
+.consumable-effect-warning.is-warning-no-op {
+  color: #651d16;
+  background: rgba(190, 76, 49, 0.16);
+  border-color: var(--ob-wax-red);
   font-weight: 700;
 }
 
