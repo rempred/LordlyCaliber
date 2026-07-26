@@ -257,6 +257,12 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-label{display:block;font-size:var(--ob-text-xs);font-weight:900;text-transform:uppercase;color:var(--ob-ink-soft);letter-spacing:.35px;margin-bottom:4px}',
       '#panel-scenario .sc-form-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;margin:6px 0}',
       '#panel-scenario .sc-form-row select,#panel-scenario .sc-form-row input{height:30px;min-width:0;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);padding:0 7px}',
+      '#panel-scenario .sc-item-choice{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:center;width:100%;min-height:42px;margin:8px 0 4px;padding:5px 8px;text-align:left;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);cursor:pointer}',
+      '#panel-scenario .sc-item-choice:hover{background:var(--ob-parchment-2);border-color:var(--ob-gold)}',
+      '#panel-scenario .sc-item-choice img,#panel-scenario .sc-item-choice .sc-item-choice-empty{width:28px;height:28px;object-fit:contain;image-rendering:pixelated;display:block}',
+      '#panel-scenario .sc-item-choice strong,#panel-scenario .sc-item-choice small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-scenario .sc-item-choice strong{font-size:var(--ob-text-sm)}',
+      '#panel-scenario .sc-item-choice small{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);margin-top:1px}',
       '#panel-scenario .sc-field-value{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}',
       '#panel-scenario .sc-field-value>.sc-sub{grid-column:1/-1;margin-top:0}',
       '#panel-scenario .sc-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}',
@@ -3573,6 +3579,7 @@ window.OB64 = window.OB64 || {};
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
       '<div id="sc-comp-host"></div></div>';
     html += '<div class="sc-section"><span class="sc-label">Placement</span>' + placementEditorHtml(rom, key, row, point) + '</div>';
+    html += normalDropEditorHtml(row);
     var bld = builderFor(key, rowIndex);
     var selTemplate = bld.template || '';
     if (selTemplate !== 'guard-site' && selTemplate !== 'guard-sally') {
@@ -3686,6 +3693,61 @@ window.OB64 = window.OB64 || {};
     return html;
   }
 
+  function normalDropEditorHtml(row) {
+    var flag = row.bytes[10] & 0xFF;
+    var rawId = ((row.bytes[11] << 8) | row.bytes[12]) & 0xFFFF;
+    var runtimeId = flag ? (rawId | 0x8000) : rawId;
+    var choice = normalDropChoice(flag, rawId);
+    var iconUrl = choice.id && OB64.itemIconURL ? OB64.itemIconURL(choice.name) : '';
+    return '<div class="sc-section"><span class="sc-label">Normal vanquish drop bytes</span>' +
+      '<div class="sc-sub">These are the three raw bytes on this Section 1 deployment row. Any nonzero [+10] value causes the normal drop path to set bit 15 on the raw ID. Special reward-queue overrides are not decoded or edited here.</div>' +
+      '<div class="sc-form-row"><label class="sc-label" for="sc-drop-flag">[+10] equipment flag</label>' +
+        '<input id="sc-drop-flag" class="sc-drop-byte" data-off="10" value="' + hx2(flag) + '"></div>' +
+      '<div class="sc-form-row"><label class="sc-label" for="sc-drop-id-hi">[+11] raw ID high</label>' +
+        '<input id="sc-drop-id-hi" class="sc-drop-byte" data-off="11" value="' + hx2(row.bytes[11]) + '"></div>' +
+      '<div class="sc-form-row"><label class="sc-label" for="sc-drop-id-lo">[+12] raw ID low</label>' +
+        '<input id="sc-drop-id-lo" class="sc-drop-byte" data-off="12" value="' + hx2(row.bytes[12]) + '"></div>' +
+      '<button type="button" id="sc-drop-picker" class="sc-item-choice" title="Choose from the complete normal-drop item list">' +
+        (iconUrl ? '<img src="' + esc(iconUrl) + '" alt="">' : '<span class="sc-item-choice-empty"></span>') +
+        '<span><strong>' + esc(choice.name) + '</strong><small>' + esc(choice.kindLabel) + ' / click to choose</small></span></button>' +
+      '<div class="sc-sub" style="font-family:var(--ob-mono,monospace)">raw ID ' +
+        OB64.scenarioCodec.hexByte(rawId, 4) + ' &rarr; normal runtime ID ' +
+        OB64.scenarioCodec.hexByte(runtimeId, 4) + '</div>' +
+      '<div class="sc-sub">No drop-chance byte has been assigned here; this control only preserves and edits the verified raw fields.</div></div>';
+  }
+
+  function normalDropChoice(flag, rawId) {
+    var runtimeId = flag ? (rawId | 0x8000) : rawId;
+    if (!runtimeId) return { id: 0, name: '(none)', kind: 'none', kindLabel: 'No normal drop' };
+    if (runtimeId & 0x8000) {
+      var equipId = runtimeId & 0x7FFF;
+      return {
+        id: equipId,
+        name: OB64.itemName ? OB64.itemName(equipId) : ('Equipment ' + equipId),
+        kind: 'equipment',
+        kindLabel: 'Equipment / sets [+10]'
+      };
+    }
+    var consumableName = OB64.SAVE && OB64.SAVE.CONSUMABLE_NAMES && OB64.SAVE.CONSUMABLE_NAMES[runtimeId];
+    return {
+      id: runtimeId,
+      name: consumableName || ('Raw normal drop ' + OB64.scenarioCodec.hexByte(runtimeId, 4)),
+      kind: consumableName ? 'consumable' : 'raw',
+      kindLabel: consumableName ? 'Consumable / clears [+10]' : 'Unmapped flag-clear ID'
+    };
+  }
+
+  function normalDropPickerItems() {
+    var items = [{ id: 0, name: '(none)', kind: 'none', kindLabel: 'No drop' }];
+    Object.keys(OB64.ITEM_NAMES || {}).map(Number).filter(function(id) { return id > 0; }).sort(function(a, b) { return a - b; }).forEach(function(id) {
+      items.push({ id: id, name: OB64.itemName(id), kind: 'equipment', kindLabel: 'Equipment / sets [+10]' });
+    });
+    for (var cid = 1; cid <= 44; cid++) {
+      items.push({ id: cid, name: OB64.consumableName(cid), kind: 'consumable', kindLabel: 'Consumable / clears [+10]' });
+    }
+    return items;
+  }
+
   function nodePreviewHtml(model, row) {
     var related = [];
     [row.startNode].concat(row.behaviorBytes || []).forEach(function(id) {
@@ -3779,6 +3841,37 @@ window.OB64 = window.OB64 || {};
     }
     if (x) x.onchange = commitWorld;
     if (z) z.onchange = commitWorld;
+    el.querySelectorAll('.sc-drop-byte').forEach(function(inp) {
+      inp.onchange = function() {
+        var row = model.section1[rowIndex];
+        var off = parseInt(this.dataset.off, 10);
+        var v = parseByte(this.value);
+        if (v == null) { this.value = hx2(row.bytes[off]); return; }
+        row.bytes[off] = v;
+        commitScenarioEdit(rom, key);
+      };
+    });
+    var dropPicker = el.querySelector('#sc-drop-picker');
+    if (dropPicker) dropPicker.onclick = function() {
+      var row = model.section1[rowIndex];
+      var flag = row.bytes[10] & 0xFF;
+      var rawId = ((row.bytes[11] << 8) | row.bytes[12]) & 0xFFFF;
+      var current = normalDropChoice(flag, rawId);
+      if (!OB64.openSaveItemPickerModal) return;
+      OB64.openSaveItemPickerModal({
+        title: 'Select normal vanquish drop',
+        items: normalDropPickerItems(),
+        currentId: current.id,
+        currentKind: current.kind,
+        onSelect: function(id, kind) {
+          var itemId = id & 0x7FFF;
+          row.bytes[10] = kind === 'equipment' ? 1 : 0;
+          row.bytes[11] = (itemId >>> 8) & 0xFF;
+          row.bytes[12] = itemId & 0xFF;
+          commitScenarioEdit(rom, key);
+        }
+      });
+    };
     el.querySelectorAll('.sc-node-row').forEach(function(btn) {
       btn.onclick = function(ev) {
         ev.preventDefault();

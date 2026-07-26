@@ -43,6 +43,34 @@
   function hexToBytes(h) { var b = new Uint8Array(h.length / 2); for (var i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16); return b; }
   function key(sid, eid) { return sid + ':' + eid; }
   function cn(id) { return (id && OB64.className) ? OB64.className(id) : (id ? '0x' + id.toString(16) : 'None'); }
+  function hx2(value) { return '0x' + (value & 0xFF).toString(16).toUpperCase().padStart(2, '0'); }
+  function parseByte(value) {
+    var s = String(value).trim(), v;
+    if (/^0x[0-9a-f]+$/i.test(s)) v = parseInt(s, 16);
+    else if (/^[0-9]+$/.test(s)) v = parseInt(s, 10);
+    else return null;
+    return Number.isFinite(v) && v >= 0 && v <= 255 ? v : null;
+  }
+  function equipmentName(value) {
+    if (!value) return 'Class default / none';
+    return OB64.itemName ? OB64.itemName(value) : ('Item ' + value);
+  }
+  function equipmentPickerItems() {
+    return Object.keys(OB64.ITEM_NAMES || {}).map(Number).filter(function(id) {
+      return id > 0 && id <= 0xFF;
+    }).sort(function(a, b) { return a - b; }).map(function(id) {
+      return { id: id, name: OB64.itemName(id), kind: 'equipment' };
+    });
+  }
+  function equipmentChoiceHtml(rec, off, label) {
+    var value = rec[off] & 0xFF;
+    var name = equipmentName(value);
+    var iconUrl = value && OB64.itemIconURL ? OB64.itemIconURL(name) : '';
+    return '<div class="sq-equip-row"><input class="sq-equip-byte" data-equip-off="' + off + '" aria-label="' + esc(label) + ' equipment byte [+' + off + ']" value="' + hx2(value) + '">' +
+      '<button type="button" class="sq-equip-pick" data-equip-off="' + off + '" data-equip-label="' + esc(label) + '" title="Choose from every item encodable by this byte">' +
+      (iconUrl ? '<img src="' + esc(iconUrl) + '" alt="">' : '<span class="sq-equip-noicon"></span>') +
+      '<span><strong>' + esc(name) + '</strong><small>[+' + off + '] ' + hx2(value) + ' / click to choose</small></span></button></div>';
+  }
   function isLarge(cls) { return !!(OB64.SQUAD_DATA.largeSizes && OB64.SQUAD_DATA.largeSizes[cls]); }
   function slotCost(cls) { return isLarge(cls) ? 2 : 1; }
   // boss = display-only label carried forward from the hand-curated boss edat notes.
@@ -267,6 +295,14 @@
       '#panel-squads .sq-field.leader{grid-column:1 / -1}',
       '#panel-squads .sq-pick label{display:block;font-size:var(--ob-text-sm);font-weight:700;color:var(--ob-ink-soft);margin:0 0 3px}',
       '#panel-squads .sq-pick select{width:100%;height:32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-size:var(--ob-text-sm)}',
+      '#panel-squads .sq-equip-row{display:grid;grid-template-columns:88px minmax(0,1fr);gap:7px;align-items:stretch;margin-top:7px}',
+      '#panel-squads .sq-equip-row input{width:100%;height:30px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);font-family:var(--ob-mono);font-size:var(--ob-text-sm);padding:0 7px}',
+      '#panel-squads .sq-equip-pick{display:grid;grid-template-columns:28px minmax(0,1fr);gap:6px;align-items:center;min-width:0;min-height:36px;padding:3px 6px;text-align:left;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);cursor:pointer}',
+      '#panel-squads .sq-equip-pick:hover{background:var(--ob-parchment-2);border-color:var(--ob-gold)}',
+      '#panel-squads .sq-equip-pick img,#panel-squads .sq-equip-noicon{width:24px;height:24px;display:block;object-fit:contain;image-rendering:pixelated}',
+      '#panel-squads .sq-equip-pick strong,#panel-squads .sq-equip-pick small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-squads .sq-equip-pick strong{font-size:var(--ob-text-xs)}',
+      '#panel-squads .sq-equip-pick small{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);margin-top:1px}',
       '#panel-squads .sq-field-help{margin-top:4px;color:var(--ob-ink-soft);font-size:var(--ob-text-xs);line-height:1.35}',
       '#panel-squads .sq-group-row{display:flex;gap:6px;align-items:center}',
       '#panel-squads .sq-group-row select{flex:1;min-width:0}',
@@ -440,15 +476,18 @@
   function pickersHtml(rec, rom) {
     var h = '<div class="sq-pick">';
     h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0], rom, true) + '</select>' +
-      '<div class="sq-field-help">A leader must be marked Yes or Centurion. Classes without a direct map sprite can use the sprite of the ordinary class linked by B57; export applies the same rule.</div></div>';
+      equipmentChoiceHtml(rec, 3, 'Leader') +
+      '<div class="sq-field-help">A leader must be marked Yes or Centurion. Equipment [+3] is the raw template byte (0 uses the class default); its picker contains the complete 0x01-0xFF encodable equipment list. Classes without a direct map sprite can use the sprite of the ordinary class linked by B57; export applies the same rule.</div></div>';
     ['B', 'C'].forEach(function (role) {
       var cls = rec[groupClassField(role)], count = groupCount(rec, role);
+      var equipOff = role === 'B' ? 8 : 17;
       var reason = groupAddDisabledReason(rec, role);
       var label = 'Member ' + role + (cls ? ' - ' + cn(cls) + ' x' + count + (isLarge(cls) ? ' large' : '') : ' - Empty');
       h += '<div class="sq-field"><label>' + esc(label) + '</label><div class="sq-group-row">' +
         '<select data-grp="' + role + '">' + classOptionsHtml(cls, rom, false) + '</select>' +
         '<button type="button" class="sq-add-member" data-grp="' + role + '" title="' + esc(reason || ('Add one Member ' + role + ' unit to the grid')) + '" aria-label="Add Member ' + role + '"' + (reason ? ' disabled' : '') + '>+</button>' +
-        '</div></div>';
+        '</div>' + equipmentChoiceHtml(rec, equipOff, 'Member ' + role) +
+        '<div class="sq-field-help">Raw equipment byte shared by every active Member ' + role + ' slot; 0 uses the class default. The picker contains every item encodable by the byte.</div></div>';
     });
     h += '</div>';
     return h;
@@ -575,6 +614,33 @@
 
   function wireDetail(rom, scn, rec, k) {
     var el = detailHost || document.getElementById('sq-detail');
+    el.querySelectorAll('.sq-equip-pick').forEach(function(button) {
+      button.onclick = function() {
+        var off = parseInt(this.dataset.equipOff, 10);
+        var label = this.dataset.equipLabel || 'Squad';
+        if (!OB64.openSaveItemPickerModal) return;
+        OB64.openSaveItemPickerModal({
+          title: label + ' equipment byte',
+          items: equipmentPickerItems(),
+          includeNone: true,
+          currentId: rec[off] & 0xFF,
+          currentKind: rec[off] ? 'equipment' : 'none',
+          onSelect: function(id) {
+            rec[off] = id & 0xFF;
+            commit(rom, scn);
+          }
+        });
+      };
+    });
+    el.querySelectorAll('.sq-equip-byte').forEach(function(input) {
+      input.onchange = function() {
+        var off = parseInt(this.dataset.equipOff, 10);
+        var value = parseByte(this.value);
+        if (value == null) { this.value = hx2(rec[off]); return; }
+        rec[off] = value;
+        commit(rom, scn);
+      };
+    });
     el.querySelectorAll('select[data-grp]').forEach(function (s) {
       s.onchange = function () {
         var v = parseInt(this.value), grp = this.dataset.grp;

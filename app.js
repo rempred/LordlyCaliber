@@ -1585,11 +1585,23 @@ window.OB64 = window.OB64 || {};
     return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
   }
 
-  function makeSortable(table) {
+  function makeSortable(table, options) {
+    options = options || {};
     var headers = table.querySelectorAll('thead th');
     var tbody = table.querySelector('tbody');
-    var sortCol = -1;
-    var sortAsc = true;
+    var sortCol = Number.isInteger(options.sortCol) ? options.sortCol : -1;
+    var sortAsc = options.sortAsc !== false;
+
+    function updateIndicators() {
+      for (var j = 0; j < headers.length; j++) {
+        headers[j].classList.remove('sort-asc', 'sort-desc');
+      }
+      if (sortCol >= 0 && sortCol < headers.length) {
+        headers[sortCol].classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+      }
+    }
+
+    updateIndicators();
 
     for (var h = 0; h < headers.length; h++) {
       headers[h].dataset.colIdx = h;
@@ -1616,11 +1628,10 @@ window.OB64 = window.OB64 || {};
           tbody.appendChild(rows[i]);
         }
 
-        // Update indicators
-        for (var j = 0; j < headers.length; j++) {
-          headers[j].classList.remove('sort-asc', 'sort-desc');
+        updateIndicators();
+        if (typeof options.onSort === 'function') {
+          options.onSort({ col: sortCol, asc: sortAsc, rows: rows.slice(0) });
         }
-        this.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
       });
     }
   }
@@ -3498,6 +3509,32 @@ window.OB64 = window.OB64 || {};
     }
     localStorage.setItem('ob64_classes_subview', activeSubview);
 
+    // Preserve the exact class order when the table is rebuilt for another subview.
+    // The active sort column is only meaningful in the subview that supplied it, while
+    // the resulting row order is shared by every subview and survives editor reloads.
+    var classSortState = null;
+    try {
+      classSortState = JSON.parse(localStorage.getItem('ob64_classes_sort_state') || 'null');
+    } catch (e) {
+      classSortState = null;
+    }
+    function normalizeClassRowOrder(order) {
+      var known = {};
+      var out = [];
+      for (var i = 0; i < allClassIds.length; i++) known[allClassIds[i]] = true;
+      if (Array.isArray(order)) {
+        for (var j = 0; j < order.length; j++) {
+          var id = parseInt(order[j], 10);
+          if (known[id]) { out.push(id); delete known[id]; }
+        }
+      }
+      for (var k = 0; k < allClassIds.length; k++) {
+        if (known[allClassIds[k]]) out.push(allClassIds[k]);
+      }
+      return out;
+    }
+    var classRowOrder = normalizeClassRowOrder(classSortState && classSortState.order);
+
     var subviewBar = document.createElement('div');
     subviewBar.className = 'classes-subview-toggle';
     var subviewBtns = {};
@@ -3926,12 +3963,13 @@ window.OB64 = window.OB64 || {};
       table.appendChild(thead);
 
       var tbody = document.createElement('tbody');
-      for (var ci = 0; ci < allClassIds.length; ci++) {
-        var cid = allClassIds[ci];
+      for (var ci = 0; ci < classRowOrder.length; ci++) {
+        var cid = classRowOrder[ci];
         var defs = defMap[cid];
         var def = defs && defs.length > 0 ? defs[0] : null;
         var tr = document.createElement('tr');
         tr.id = 'class-' + cid;
+        tr.dataset.classId = cid;
         var tdId = td(tr, '0x' + cid.toString(16).padStart(2, '0'));
         tdId.className = 'col-sticky';
         var tdName = td(tr, OB64.className(cid));
@@ -3941,7 +3979,20 @@ window.OB64 = window.OB64 || {};
       }
       table.appendChild(tbody);
       tableHost.appendChild(table);
-      makeSortable(table);
+      makeSortable(table, {
+        sortCol: classSortState && classSortState.subview === activeSubview ? classSortState.col : -1,
+        sortAsc: !classSortState || classSortState.asc !== false,
+        onSort: function(sort) {
+          classRowOrder = sort.rows.map(function(row) { return parseInt(row.dataset.classId, 10); });
+          classSortState = {
+            subview: activeSubview,
+            col: sort.col,
+            asc: sort.asc,
+            order: classRowOrder.slice(0)
+          };
+          localStorage.setItem('ob64_classes_sort_state', JSON.stringify(classSortState));
+        }
+      });
 
       // Re-apply any active text filter after rebuild
       var filterInput = filter.querySelector('input');
