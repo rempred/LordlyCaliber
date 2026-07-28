@@ -627,7 +627,8 @@ window.OB64 = window.OB64 || {};
       shops: true, item_prices: true, items: true, classDefs: true,
       neutral_encounters: true, creatureDrops: true, consumables: true,
       statGates: true, neutral_global_rate: true, tools: true,
-      squadOverrides: true, scenario: true, consumableEffects: true, enemies: true
+      squadOverrides: true, scenario: true, consumableEffects: true,
+      combatAnimationOverrides: true, enemies: true
     };
     Object.keys(patches).sort().forEach(function(key) {
       if (handled[key] || isEmptyValue(patches[key])) return;
@@ -635,6 +636,35 @@ window.OB64 = window.OB64 || {};
       genericLines(patches[key], friendlyKey(key), lines, 0);
       addSection(sections, friendlyKey(key), [{ title: 'Additional project changes', lines: lines }]);
     });
+  }
+
+  function buildCombatAnimationOverrideSection(rom, patches, sections) {
+    var payload = patches.combatAnimationOverrides;
+    if (!payload || !Array.isArray(payload.entries) || !OB64.combatAnimationOverrides) return;
+    var baseline = rom.combatAnimationOverrides
+      ? rom.combatAnimationOverrides.baseline : [];
+    var delta = OB64.combatAnimationOverrides.diff(baseline, payload.entries);
+    var entries = [];
+    delta.added.forEach(function(row) {
+      entries.push({ title: OB64.combatAnimationOverrides.describeEntry(row), lines: [
+        'Added Normal (modes 0/1) ' + hex(row.normalSelector, 2) +
+        ' and Blocked (mode 2) ' + hex(row.blockedSelector, 2) + '.'
+      ] });
+    });
+    delta.replaced.forEach(function(row) {
+      var lines = [];
+      if (row.before.normalSelector !== row.after.normalSelector) lines.push(
+        'Normal (modes 0/1) ' + hex(row.before.normalSelector, 2) + ' -> ' + hex(row.after.normalSelector, 2) + '.'
+      );
+      if (row.before.blockedSelector !== row.after.blockedSelector) lines.push(
+        'Blocked (mode 2) ' + hex(row.before.blockedSelector, 2) + ' -> ' + hex(row.after.blockedSelector, 2) + '.'
+      );
+      entries.push({ title: OB64.combatAnimationOverrides.describeEntry(row.after), lines: lines });
+    });
+    delta.removed.forEach(function(row) {
+      entries.push({ title: OB64.combatAnimationOverrides.describeEntry(row), lines: ['Removed both selector lanes; vanilla mode-selected behavior is restored.'] });
+    });
+    addSection(sections, 'Combat Attack Animations', entries);
   }
 
   function totalFromSummary(summary) {
@@ -661,6 +691,7 @@ window.OB64 = window.OB64 || {};
     buildToolSection(patches, sections);
     buildSquadSection(patches, sections);
     buildScenarioSection(rom, patches, sections);
+    buildCombatAnimationOverrideSection(rom, patches, sections);
     addUnknownSections(patches, sections);
 
     options = options || {};

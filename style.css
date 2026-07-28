@@ -2842,6 +2842,50 @@ td.attack-list {
     linear-gradient(180deg, #f5c9bd, #dfa092);
 }
 
+/* Shared Classes / Combat selector-override editor. */
+.combat-animation-override-button {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--ob-wood-darkest);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--ob-parchment) 0%, var(--ob-parchment-2) 55%, var(--ob-parchment-3) 100%);
+  color: var(--ob-ink);
+  font-family: var(--ob-display);
+  font-size: var(--ob-text-xs);
+  font-weight: 800;
+  letter-spacing: .6px;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255,240,200,.45);
+  box-shadow: inset 0 1px 0 rgba(255,245,210,.65), inset 0 -2px 0 rgba(122,81,32,.45), 0 2px 3px rgba(0,0,0,.35);
+  transition: filter .12s, transform .04s;
+  cursor: pointer;
+}
+.combat-animation-override-button:hover:not(:disabled) { filter: brightness(1.08); }
+.combat-animation-override-button:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 3px rgba(80,50,20,.55), 0 1px 2px rgba(0,0,0,.35); }
+.combat-animation-override-button:focus-visible { outline: 2px solid var(--ob-gold-bright); outline-offset: 2px; }
+.combat-animation-override-button:disabled { color: var(--ob-ink); opacity: .72; filter: saturate(.65); cursor: not-allowed; }
+.combat-animation-card-control { margin-top: 12px; }
+.combat-animation-modal { width: min(940px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.combat-animation-body { display: block; overflow: auto; }
+.combat-animation-capacity { font-weight: 700; margin-bottom: 10px; }
+.combat-animation-warnings { border-left: 4px solid #d79b34; padding: 6px 12px; margin-bottom: 16px; background: rgba(215,155,52,.10); }
+.combat-animation-warnings p { margin: 6px 0; }
+.combat-animation-context { margin-bottom: 14px; }
+.combat-animation-context h3 { margin: 0 0 6px; }
+.combat-animation-context p { margin: 4px 0; }
+.combat-animation-table { width: 100%; min-width: 800px; border-collapse: collapse; margin-bottom: 14px; }
+.combat-animation-table th, .combat-animation-table td { padding: 7px; text-align: left; border-bottom: 1px solid var(--border); }
+.combat-animation-table select { width: 100%; }
+.combat-animation-vanilla-row { background: rgba(255,255,255,.12); }
+.combat-animation-vanilla-label { font-style: italic; opacity: .78; }
+.combat-animation-add { display: grid; grid-template-columns: minmax(180px,2fr) minmax(190px,2fr) minmax(190px,2fr) auto; gap: 8px; }
+@media (max-width: 720px) { .combat-animation-add { grid-template-columns: 1fr; } }
+
 /* ============================================================
    ERROR MODAL
    ============================================================ */

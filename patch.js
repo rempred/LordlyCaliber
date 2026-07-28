@@ -28,12 +28,14 @@
 // one canonical shared entry under `patches.consumableEffects["11-16"]`.
 // v13 adds absolute magnitude entries for consumable IDs 1-5 while preserving
 // the v12 range schemas and per-key backward compatibility.
+// v14 adds the legacy one-selector combat-animation override table.
+// v15 replaces each v14 selector with Normal (modes 0/1) and Blocked (mode 2).
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 13;
+  var PATCH_VERSION = 15;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -208,6 +210,15 @@ window.OB64 = window.OB64 || {};
     var consumableEffectsOut = OB64.consumableEffects
       ? OB64.consumableEffects.collectProjectPayload(rom.consumableEffects)
       : {};
+    var combatAnimationOverridesOut = OB64.combatAnimationOverrides
+      ? OB64.combatAnimationOverrides.collectProjectPayload(rom.combatAnimationOverrides)
+      : null;
+    var combatAnimationOverrideChanges = combatAnimationOverridesOut
+      ? OB64.combatAnimationOverrides.diff(
+          rom.combatAnimationOverrides.baseline,
+          rom.combatAnimationOverrides.desired
+        ).count
+      : 0;
 
     return {
       format: PATCH_FORMAT,
@@ -233,6 +244,7 @@ window.OB64 = window.OB64 || {};
         squad_overrides_modified: Object.keys(squadOverridesOut).length,
         scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
         consumable_effect_models_modified: Object.keys(consumableEffectsOut).length,
+        combat_animation_overrides_modified: combatAnimationOverrideChanges,
       },
       patches: {
         shops:        shopsOut,
@@ -248,6 +260,7 @@ window.OB64 = window.OB64 || {};
         squadOverrides: squadOverridesOut,
         scenario:     scenarioOut,
         consumableEffects: consumableEffectsOut,
+        combatAnimationOverrides: combatAnimationOverridesOut,
         // Reserved for future tabs.
         enemies:      {},
       },
@@ -275,6 +288,19 @@ window.OB64 = window.OB64 || {};
     var hasEffectPayload = Object.prototype.hasOwnProperty.call(p, 'consumableEffects');
     var effectPayload = hasEffectPayload ? p.consumableEffects : undefined;
     var validatedEffects = { entries: {}, modelCount: 0 };
+    var hasSelectorPayload = patch.version >= 14 &&
+      Object.prototype.hasOwnProperty.call(p, 'combatAnimationOverrides') &&
+      p.combatAnimationOverrides !== null;
+    var validatedSelectorEntries = null;
+    if (hasSelectorPayload) {
+      try {
+        validatedSelectorEntries = OB64.combatAnimationOverrides.validateProjectPayload(
+          rom, p.combatAnimationOverrides, patch.version
+        );
+      } catch (selectorError) {
+        throw new PatchFormatError('Combat animation override Project data is invalid: ' + selectorError.message);
+      }
+    }
     if (hasEffectPayload) {
       if (effectPayload === null) {
         throw new PatchFormatError(
@@ -327,6 +353,7 @@ window.OB64 = window.OB64 || {};
     var squadOverridesApplied = 0;
     var scenarioApplied = 0;
     var consumableEffectsApplied = 0;
+    var combatAnimationOverridesApplied = 0;
 
     // Shops.
     var shopsPatch = p.shops || {};
@@ -530,6 +557,12 @@ window.OB64 = window.OB64 || {};
         );
       }
     }
+    if (validatedSelectorEntries) {
+      combatAnimationOverridesApplied = OB64.combatAnimationOverrides.applyProjectPayload(
+        rom.combatAnimationOverrides, validatedSelectorEntries
+      );
+      dirtyFlags.combatAnimationOverrides = rom.combatAnimationOverrides.dirty;
+    }
 
     return {
       applied: {
@@ -546,7 +579,8 @@ window.OB64 = window.OB64 || {};
         tools: toolsApplied,
         squadOverrides: squadOverridesApplied,
         scenario: scenarioApplied,
-        consumableEffects: consumableEffectsApplied
+        consumableEffects: consumableEffectsApplied,
+        combatAnimationOverrides: combatAnimationOverridesApplied
       },
       warnings: warnings,
     };
@@ -609,6 +643,7 @@ window.OB64 = window.OB64 || {};
       squad_overrides_modified: 0,
       scenario_modified: 0,
       consumable_effect_models_modified: 0,
+      combat_animation_overrides_modified: 0,
     };
   }
 
@@ -627,6 +662,7 @@ window.OB64 = window.OB64 || {};
       squadOverrides: {},
       scenario: null,
       consumableEffects: {},
+      combatAnimationOverrides: null,
       enemies: {},
     };
   }

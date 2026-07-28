@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -208,7 +208,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -261,9 +261,10 @@ window.OB64 = window.OB64 || {};
         // Rehydrate an existing shared ROM-tail shop table before taking the
         // project baseline, so reopening a patched ROM preserves its shops.
         if (OB64.runtimeOverrides) OB64.runtimeOverrides.applyParsedShopOverrides(nextRom);
+        OB64.combatAnimationOverrides.initialize(nextRom);
         OB64.patch.snapshotOriginal(nextRom);   // baseline for later diffing
         OB64.tools.initState(nextRom);          // detect Tools-tab features in the ROM
-        var nextDirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         if (nextRom.squadOverrides) nextRom.squadOverrides = {};
         if (OB64.scenario) OB64.scenario.ensureState(nextRom);
         // A ROM patched by an older build of a Tools feature upgrades on the
@@ -379,9 +380,11 @@ window.OB64 = window.OB64 || {};
     var effectTransaction = null;
     var effectAdoption = null;
     var effectOwners = [];
+    var selectorPlan = null;
     var exportDirty = Object.assign({}, dirty);
     try {
       var touched = [];
+      selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
       var shopOverridesForRuntime = OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectShopOverrides(rom)
         : [];
@@ -402,6 +405,8 @@ window.OB64 = window.OB64 || {};
         ? OB64.collectSquadOverrides(rom)
         : [];
       var sharedRegionOwners = [];
+      var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
+      if (selectorOwner) sharedRegionOwners.push(selectorOwner);
       if (OB64.squad && (dirty.shops || dirty.squadOverrides ||
           squadOverridesForConflict.length || shopOverridesForRuntime.length)) {
         sharedRegionOwners.push({
@@ -632,12 +637,20 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      // Recheck the complete owned lane immediately before its only writes.
+      var selectorResult = OB64.combatAnimationOverrides.applyPlan(candidateRom, selectorPlan);
+      if (selectorResult.touched.length) {
+        touched.push('attack animation overrides (' +
+          rom.combatAnimationOverrides.desired.length + ' / ' +
+          OB64.combatAnimationOverrides.capacity + ')');
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Shop/enemydat archive data, encounter/drop
       // tables, and stat gates live past that window; items/classes/
       // consumables, Tools-tab features, and the shared runtime bootstrap do not.
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
-        toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length);
+        toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc);
       if (crcChanged) {
         OB64.recalcN64CRC(candidateRom.z64);
       }
@@ -730,6 +743,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       adoptExportCandidate(exportRom, candidateRom, effectAdoption);
+      OB64.combatAnimationOverrides.adopt(exportRom);
       var exportMsg = 'ROM export initiated as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
@@ -740,7 +754,7 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       changes = 0;
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
@@ -831,9 +845,10 @@ window.OB64 = window.OB64 || {};
       var squadsN = patch.summary.squad_overrides_modified || 0;
       var scenarioN = patch.summary.scenario_modified || 0;
       var consumableEffectsN = patch.summary.consumable_effect_models_modified || 0;
+      var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN + statGatesN +
-          globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN === 0) {
+          globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
@@ -855,6 +870,7 @@ window.OB64 = window.OB64 || {};
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
       if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
+      if (selectorOverridesN) parts.push(selectorOverridesN + ' attack animation override change' + (selectorOverridesN === 1 ? '' : 's'));
       parts = parts.concat(consumableEffectSummaryParts(
         patch.patches && patch.patches.consumableEffects
       ));
@@ -884,7 +900,8 @@ window.OB64 = window.OB64 || {};
           (result.applied.tools || 0) +
           (result.applied.squadOverrides || 0) +
           (result.applied.scenario || 0) +
-          (result.applied.consumableEffects || 0);
+          (result.applied.consumableEffects || 0) +
+          (result.applied.combatAnimationOverrides || 0);
         lastProjectFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
@@ -903,6 +920,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
         if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
         if (result.applied.scenario) loadedParts.push(result.applied.scenario + ' scenario change' + (result.applied.scenario === 1 ? '' : 's'));
+        if (result.applied.combatAnimationOverrides) loadedParts.push(result.applied.combatAnimationOverrides + ' attack animation override change' + (result.applied.combatAnimationOverrides === 1 ? '' : 's'));
         if (result.applied.consumableEffects) {
           loadedParts = loadedParts.concat(consumableEffectSummaryParts(
             patch.patches && patch.patches.consumableEffects
@@ -3302,6 +3320,105 @@ window.OB64 = window.OB64 || {};
     def.ptr = def.namePtr;
   }
 
+  function combatOverrideCountForClass(classId) {
+    var state = rom && rom.combatAnimationOverrides;
+    if (!state) return 0;
+    return state.desired.filter(function(row) { return row.classId === Number(classId); }).length;
+  }
+
+  function refreshCombatOverrideButtons(classId) {
+    var buttons = document.querySelectorAll('[data-combat-animation-class="' + classId + '"]');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].textContent = 'Attack Animations (' + combatOverrideCountForClass(classId) + ')';
+    }
+  }
+
+  function applyClassAttackSelection(classId, def, field, actionId) {
+    var api = OB64.combatAnimationOverrides;
+    var state = rom && rom.combatAnimationOverrides;
+    var result;
+    beginChangeBatch();
+    try {
+      result = api.applyLiveAttackChange(state, def, classId, field, actionId);
+      if (result.classChanged) markChanged('classDefs');
+      if (result.overrideAdded) markChanged('combatAnimationOverrides');
+    } finally {
+      endChangeBatch();
+    }
+    if (result.overrideAdded) dirty.combatAnimationOverrides = state.dirty;
+    refreshCombatOverrideButtons(classId);
+    return result;
+  }
+
+  function combatOverrideButton(classId) {
+    var state = rom && rom.combatAnimationOverrides;
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'combat-animation-override-button';
+    button.dataset.combatAnimationClass = classId;
+    button.textContent = 'Attack Animations (' + combatOverrideCountForClass(classId) + ')';
+    var disabled = !state || !state.supported || state.readOnly;
+    button.disabled = disabled;
+    if (disabled) button.title = state
+      ? (state.disabledReason || state.diagnostic) : 'Attack Animation overrides are unavailable.';
+    else button.addEventListener('click', function() { openCombatAnimationOverrideEditor(classId); });
+    return button;
+  }
+
+  function openCombatAnimationOverrideEditor(classId) {
+    var api = OB64.combatAnimationOverrides, state = rom.combatAnimationOverrides;
+    function fmt(value) { return '0x' + Number(value).toString(16).toUpperCase().padStart(2, '0'); }
+    if (!state.supported || state.readOnly) {
+      showErrorModal('Attack Animations unavailable', state.disabledReason || state.diagnostic);
+      return;
+    }
+    var ci = api.classInfo(classId), liveDef = classDefFor(classId);
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay combat-animation-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Attack Animations for ' + ci.name);
+    var modal = document.createElement('div'); modal.className = 'item-modal combat-animation-modal'; overlay.appendChild(modal);
+    var header = document.createElement('div'); header.className = 'item-modal-header';
+    var title = document.createElement('h2'); title.textContent = 'Attack Animations — ' + ci.name + ' (' + fmt(classId) + ')'; header.appendChild(title);
+    var close = document.createElement('button'); close.type='button'; close.className='item-modal-close'; close.setAttribute('aria-label','Close'); close.textContent='×'; close.addEventListener('click',function(){overlay.remove();}); header.appendChild(close); modal.appendChild(header);
+    var body=document.createElement('div'); body.className='item-modal-body combat-animation-body'; modal.appendChild(body);
+    function changed() {
+      api.refresh(state); markChanged('combatAnimationOverrides'); dirty.combatAnimationOverrides=state.dirty;
+      refreshCombatOverrideButtons(classId);
+    }
+    function render() {
+      body.innerHTML='';
+      var usage=document.createElement('div'); usage.className='combat-animation-capacity'; usage.textContent='Global capacity: '+state.desired.length+' / '+api.capacity+' records'; body.appendChild(usage);
+      var warnings=document.createElement('div'); warnings.className='combat-animation-warnings'; warnings.setAttribute('role','note');
+      warnings.innerHTML='<p><strong>The game chooses the mode.</strong> Normal applies to game-selected modes 0/1; Blocked applies when the game selects mode 2. The editor does not choose or store a mode.</p><p>Game outcome/reaction and hit/spell effects remain separate.</p><p><strong>Structural availability does not prove visual compatibility; cold-boot test the exported ROM.</strong></p><p>Requires 8 MiB RDRAM / Expansion Pak.</p>'; body.appendChild(warnings);
+      var context=document.createElement('section'); context.className='combat-animation-context';
+      var ch=document.createElement('h3'); ch.textContent='Vanilla reference context'; context.appendChild(ch);
+      var referenceNote=document.createElement('p');referenceNote.textContent='Generated reference only; live rank assignments are shown in the mapping table below.';context.appendChild(referenceNote);
+      if(!ci.currentActions.length){var none=document.createElement('p');none.textContent='No resolved current rank context is available.';context.appendChild(none);}
+      ci.currentActions.forEach(function(a){var p=document.createElement('p');var contexts=a.contexts.map(function(x){return x.row+': '+(x.selectorsByRawMode?paddedSelectorContext(x.selectorsByRawMode):'unresolved selector context');});p.textContent=(a.name||'Unassigned')+' ('+fmt(a.id)+') — '+contexts.join('; ');context.appendChild(p);}); body.appendChild(context);
+      function selectorControl(label,value){var sel=document.createElement('select');sel.setAttribute('aria-label',label);if(value===null){var unresolved=document.createElement('option');unresolved.textContent='No resolved vanilla selector';unresolved.disabled=true;unresolved.selected=true;sel.appendChild(unresolved);}api.selectorOptions(classId).forEach(function(o){var op=document.createElement('option');op.value=o.id;op.textContent=fmt(o.id)+' — '+(o.status==='current_explicit'?'current explicit use':'structurally available / unassigned');op.selected=o.id===value;sel.appendChild(op);});return sel;}
+      var table=document.createElement('table');table.className='combat-animation-table';table.innerHTML='<thead><tr><th>Action</th><th>Normal (modes 0/1)</th><th>Blocked (mode 2)</th><th>Status</th><th></th></tr></thead>';var tb=document.createElement('tbody');
+      api.modalRows(state,liveDef,classId).forEach(function(row){
+        var tr=document.createElement('tr'),a=api.actionInfo(row.actionId);
+        if(!row.overridden)tr.className='combat-animation-vanilla-row';
+        var td=document.createElement('td');td.textContent=(a?a.name:'Action')+' ('+fmt(row.actionId)+')';tr.appendChild(td);
+        var normalSel=selectorControl((a?a.name:'Action')+' Normal (modes 0/1)',row.normalSelector),blockedSel=selectorControl((a?a.name:'Action')+' Blocked (mode 2)',row.blockedSelector);
+        function savePair(){try{api.setEntry(state,{classId:classId,actionId:row.actionId,normalSelector:Number(normalSel.value),blockedSelector:Number(blockedSel.value)});changed();render();}catch(e){showErrorModal('Attack Animation override rejected',e.message);render();}}
+        normalSel.addEventListener('change',savePair);blockedSel.addEventListener('change',savePair);
+        var normalTd=document.createElement('td');normalTd.appendChild(normalSel);tr.appendChild(normalTd);var blockedTd=document.createElement('td');blockedTd.appendChild(blockedSel);tr.appendChild(blockedTd);
+        var st=document.createElement('td');st.textContent=api.liveRankStatus(liveDef,row.actionId)+(row.overridden?' — override record':' — vanilla (no override record)');tr.appendChild(st);
+        var rm=document.createElement('td');
+        if(row.overridden){var rb=document.createElement('button');rb.type='button';rb.textContent='Remove';rb.addEventListener('click',function(){api.removeEntry(state,classId,row.actionId);changed();render();});rm.appendChild(rb);}
+        else {var vanilla=document.createElement('span');vanilla.className='combat-animation-vanilla-label';vanilla.textContent='Vanilla';rm.appendChild(vanilla);}
+        tr.appendChild(rm);tb.appendChild(tr);
+      });table.appendChild(tb);body.appendChild(table);
+      var add=document.createElement('div');add.className='combat-animation-add';var actionSel=document.createElement('select');actionSel.setAttribute('aria-label','Action');var ordered=[],seen={};[liveDef&&liveDef.b43Raw,liveDef&&liveDef.b45Raw,liveDef&&liveDef.b47Raw].forEach(function(id){var accepted=api.actionInfo(id);if(accepted&&!seen[id]){ordered.push(accepted);seen[id]=1;}});api.data.actions.forEach(function(a){if(!seen[a.id])ordered.push(a);});ordered.forEach(function(a){var op=document.createElement('option');op.value=a.id;op.textContent=a.name+' ('+fmt(a.id)+')';actionSel.appendChild(op);});var normalAdd=selectorControl('Normal (modes 0/1)',api.selectorOptions(classId)[0].id),blockedAdd=selectorControl('Blocked (mode 2)',api.selectorOptions(classId)[0].id);var addButton=document.createElement('button');addButton.type='button';addButton.textContent='Add / Replace';function updateCapacityBlock(){var aid=Number(actionSel.value),replacing=state.desired.some(function(x){return x.classId===classId&&x.actionId===aid;});addButton.disabled=state.desired.length>=api.capacity&&!replacing;}actionSel.addEventListener('change',updateCapacityBlock);updateCapacityBlock();addButton.addEventListener('click',function(){try{api.setEntry(state,{classId:classId,actionId:Number(actionSel.value),normalSelector:Number(normalAdd.value),blockedSelector:Number(blockedAdd.value)});changed();render();}catch(e){showErrorModal('Attack Animation override rejected',e.message);}});add.appendChild(actionSel);add.appendChild(normalAdd);add.appendChild(blockedAdd);add.appendChild(addButton);body.appendChild(add);
+    }
+    function paddedSelectorContext(values){return values.map(function(value,index){return 'mode '+index+' '+fmt(value);}).join(', ');}
+    render();document.body.appendChild(overlay);close.focus();
+  }
+
   function renderClasses(panel) {
     panel.innerHTML = '';
 
@@ -3693,7 +3810,7 @@ window.OB64 = window.OB64 || {};
     // name map, while the nine shared-dynamic-name records use their verified
     // resolver-template roles from data.js. Falls back to a raw byte cell if the
     // generated name module is not loaded.
-    function addActionCell(tr, def, field, label, extraTitle) {
+    function addActionCell(tr, cid, def, field, label, extraTitle) {
       if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
         return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
       }
@@ -3707,10 +3824,14 @@ window.OB64 = window.OB64 || {};
             title: label + ' — ' + (def.name || ''),
             options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
             onSelect: function(nv) {
-              def[field] = nv;
-              c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
-              c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
-              c.classList.add('modified');
+              try {
+                applyClassAttackSelection(cid, def, field, nv);
+                c.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
+                c.title = label + ' — ID ' + nv + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
+                c.classList.add('modified');
+              } catch (e) {
+                showErrorModal('Attack change rejected', e.message);
+              }
             }
           });
         });
@@ -3817,7 +3938,8 @@ window.OB64 = window.OB64 || {};
           { label: 'FixEq', title: 'B42 \u2014 fixed-equip-slots bitmask (0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head). Identified via CSV "Fixed Equips" column.', cls: 'col-raw' },
           { label: 'Front Attack', title: 'B43 \u2014 front-row attack (combat action table 0x60988, ID = record + 1). Ordinary names come from the ROM name pool; shared dynamic-name records show verified template roles.' },
           { label: 'Middle Attack', title: 'B45 \u2014 middle-row attack (combat action table 0x60988, ID = record + 1).' },
-          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). IDs 45-48, 51-54, and 145 are resolver templates whose concrete display spell may be composed later.' }
+          { label: 'Rear Attack', title: 'B47 \u2014 rear-row attack (combat action table 0x60988, ID = record + 1). IDs 45-48, 51-54, and 145 are resolver templates whose concrete display spell may be composed later.' },
+          { label: 'Attack Animations', title: 'Class/action fixed body-selector overrides (US Rev 0 only).' }
         ];
         fillRow = function(cid, tr, def) {
           addDropdownCell(tr, def, 'moveType', OB64.MOVEMENT_TYPES, OB64.moveTypeName);
@@ -3829,9 +3951,10 @@ window.OB64 = window.OB64 || {};
           addNumericCell(tr, def, 'physDef', 255);
           addNumericCell(tr, def, 'magDef', 255);
           addRawByteCell(tr, def, 'b42Raw', 'B42 \u2014 fixed-equip-slots bitmask: 0x01=Wpn, 0x02=Offhand, 0x04=Body, 0x08=Head');
-          addActionCell(tr, def, 'b43Raw', 'Front attack (B43)');
-          addActionCell(tr, def, 'b45Raw', 'Middle attack (B45)');
-          addActionCell(tr, def, 'b47Raw', 'Rear attack (B47)', 'Caster IDs 45-48/51-54 display element-composed names in-game.');
+          addActionCell(tr, cid, def, 'b43Raw', 'Front attack (B43)');
+          addActionCell(tr, cid, def, 'b45Raw', 'Middle attack (B45)');
+          addActionCell(tr, cid, def, 'b47Raw', 'Rear attack (B47)', 'Caster IDs 45-48/51-54 display element-composed names in-game.');
+          var animationCell=document.createElement('td'); animationCell.appendChild(combatOverrideButton(cid)); tr.appendChild(animationCell);
         };
       } else if (activeSubview === 'growth') {
         var STAT_GROWTH_FIELDS = ['strGrowth', 'vitGrowth', 'intGrowth', 'menGrowth', 'agiGrowth', 'dexGrowth'];
@@ -4407,9 +4530,13 @@ window.OB64 = window.OB64 || {};
                 title: label + ' \u2014 ' + (def.name || ''),
                 options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
                 onSelect: function(nv) {
-                  def[field] = nv;
-                  vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
-                  entry.classList.add('modified');
+                  try {
+                    applyClassAttackSelection(cid, def, field, nv);
+                    vs.textContent = formatByteChoice(nv, nv > 0 ? OB64.actionEditorName(nv) : 'None');
+                    entry.classList.add('modified');
+                  } catch (e) {
+                    showErrorModal('Attack change rejected', e.message);
+                  }
                 }
               });
             });
@@ -4422,6 +4549,7 @@ window.OB64 = window.OB64 || {};
           combatGrid.appendChild(actionTile('b47Raw', 'Rear Attack',
             'B47 \u2014 rear-row attack (IDs 45-48, 51-54, and 145 show verified resolver-template roles; concrete element-dependent spells resolve later)'));
           combatSec.appendChild(combatGrid);
+          var animationControl=document.createElement('div');animationControl.className='combat-animation-card-control';animationControl.appendChild(combatOverrideButton(cid));combatSec.appendChild(animationControl);
           card.appendChild(combatSec);
 
           // --- Generated growth history and actual promotion gates (collapsible)

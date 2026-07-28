@@ -314,7 +314,9 @@ safety behavior.
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
   consumable-effect magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v13 adds absolute `magnitude` entries for IDs 1–5 and preserves the v12 range
+  v15 stores independent Normal/Blocked combat-animation selectors; v14 projects
+  migrate their single selector into both lanes. v13 adds absolute `magnitude`
+  entries for IDs 1–5 and preserves the v12 range
   entries, including one `11-16` key for all six linked stat items. v12 accepts
   only the older range keys; v11 and older retain their prior behavior.
   Effect collection compares against the compatible values imported from the
@@ -528,6 +530,39 @@ on the US retail ROM:
 Built with vanilla JavaScript — no framework, no build step. Single bundled
 dependency: [fflate](https://github.com/101arrowz/fflate) for RetroArch RZIP
 save-state decompression.
+
+### Combat Attack Animation selector overrides
+
+Classes > Combat now exposes one shared **Attack Animations** editor in both
+table and card views. It maps an ordinary class and accepted action ID to two
+independent class-compatible body selectors: **Normal (modes 0/1)** and
+**Blocked (mode 2)**. The game continues to choose the raw mode; the editor
+never chooses or stores one. Multiple actions may share either or both
+selectors, no-longer-assigned action mappings remain available, and each
+class/action row consumes one record in the exact global `N / 128` OBSO v2
+table capacity.
+
+Changing a live Front, Middle, or Rear attack now uses one shared operation in
+both Classes presentations. It captures the pre-change rear action, preserves
+any explicit mapping for the newly selected action, and otherwise inserts the
+rear action's resolved vanilla Normal/Blocked pair. Rear changes use the
+previous rear action; `None` creates no row; a full table rejects the class-field
+and mapping change together. The modal derives `currently assigned` rank names
+from live B43/B45/B47 fields and labels generated action/mode data as vanilla
+reference context. Its mapping table also shows each untouched live vanilla action
+with the generated Normal/Blocked pair and a `vanilla (no override record)` label;
+these display-only rows do not consume global capacity until their selector is
+changed. **Attack Animations** uses the parchment/gold beveled button
+treatment shared visually with Scenario controls.
+
+This feature is **US Rev 0 only** and requires **8 MiB RDRAM / Expansion Pak**.
+Structural selector availability is not visual compatibility. The seeded
+Normal/Blocked runtime logic is accepted, but Joe must cold-boot test every
+exported ROM and judge its visible animation compatibility. Outcome/reaction
+and hit/spell effects remain separate. Exact ordinary OBSO v1 installs migrate
+without becoming dirty and upgrade to v2 on the first actual edit/export;
+advanced or foreign/partial selector lanes remain preserved read-only. Rev 1
+leaves normal editor features available while this control is disabled.
 
 ## Planned features
 
