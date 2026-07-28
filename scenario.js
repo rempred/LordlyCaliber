@@ -1172,7 +1172,6 @@ window.OB64 = window.OB64 || {};
             // user's edits, so it reads as noise in the toolbar. Re-enable by removing the
             // style attribute if a support workflow needs one-click verification again.
             '<button type="button" id="sc-run-gate" class="btn-secondary" style="display:none" title="Self-test: rebuilds all 63 vanilla mission archives through the editor codec and confirms every one is byte-identical. Does not change your ROM or edits.">Validate Missions</button>' +
-            '<button type="button" id="sc-add-squad">Add Squad</button>' +
           '</div>' +
         '</div>' +
         '<div class="sc-layout">' +
@@ -1232,10 +1231,6 @@ window.OB64 = window.OB64 || {};
       ui.gateText = 'Mission validation: ' + result.summary.passed + '/' + result.summary.files + ' vanilla missions rebuild byte-identical, errors=' + result.summary.errors +
         (result.summary.errors === 0 && result.summary.passed === result.summary.files ? ' - mission editing is healthy.' : ' - REPORT THIS: the codec disagrees with this ROM.');
       renderScenarioTab(panel);
-    };
-    var add = panel.querySelector('#sc-add-squad');
-    if (add) add.onclick = function() {
-      beginAddSquadPlacement(rom, ui.selectedKey);
     };
   }
 
@@ -1658,7 +1653,8 @@ window.OB64 = window.OB64 || {};
   function renderSquadRoster(host, rom, key, model) {
     if (!host || !model) return;
     var points = pointsForAllRows(rom, key);
-    var html = '<div class="sc-roster-head"><span class="sc-label" style="margin:0">Squads in this scenario (' + points.length + ')</span></div>' +
+    var html = '<div class="sc-roster-head"><span class="sc-label" style="margin:0">Squads in this scenario (' + points.length + ')</span>' +
+      '<button type="button" class="sc-inline-btn" id="sc-add-squad">Add Squad</button></div>' +
       '<div class="sc-roster-list">';
     points.forEach(function(point) {
       var row = model.section1[point.section1Row];
@@ -1687,6 +1683,8 @@ window.OB64 = window.OB64 || {};
     if (!points.length) html += '<div class="sc-node">No squads in this scenario.</div>';
     html += '</div>';
     host.innerHTML = html;
+    var addSquad = host.querySelector('#sc-add-squad');
+    if (addSquad) addSquad.onclick = function() { beginAddSquadPlacement(rom, key); };
     host.querySelectorAll('.sc-roster-row').forEach(function(rowEl) {
       rowEl.onclick = function(ev) {
         if (ev.target.classList && ev.target.classList.contains('sc-roster-del')) return;

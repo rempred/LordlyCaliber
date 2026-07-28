@@ -111,6 +111,8 @@ OB64.ROM_LAYOUTS = {
     supportsTools: true,
     supportsSquadOverrides: true,
     supportsShopOverrides: true,
+    supportsCombatAnimationOverrides: true,
+    combatAnimationOverridesReason: '',
     unsupportedTools: {},
     unsupportedFeaturesReason: '',
     squadPatch: {
@@ -155,6 +157,8 @@ OB64.ROM_LAYOUTS = {
     supportsTools: true,
     supportsSquadOverrides: true,
     supportsShopOverrides: true,
+    supportsCombatAnimationOverrides: false,
+    combatAnimationOverridesReason: 'Attack Animation selector overrides are available only for US Rev 0; the Rev 1 hook and allocation have not been verified.',
     unsupportedTools: {
       'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.'
     },
