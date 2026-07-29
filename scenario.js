@@ -6002,11 +6002,16 @@ window.OB64 = window.OB64 || {};
     if (!project || !owns.call(project, 'format') || project.format !== 'ob64-scenario-project') {
       throw new Error('Not an OB64 Scenario project file');
     }
-    var projectVersion = owns.call(project, 'version') ? project.version : null;
-    if (projectVersion != null && projectVersion > 4) {
-      throw new Error('Scenario project version ' + projectVersion + ' is newer than this editor supports (max 4).');
+    if (!owns.call(project, 'version') || typeof project.version !== 'number' ||
+        !Number.isFinite(project.version) || !Number.isInteger(project.version) ||
+        project.version < 1) {
+      throw new Error('Scenario Project version must be an own finite integer number in the supported range 1..4.');
     }
-    var strictV4 = Number(projectVersion) === 4;
+    var projectVersion = project.version;
+    if (projectVersion > 4) {
+      throw new Error('Scenario Project version ' + projectVersion + ' is newer than this editor supports (max 4).');
+    }
+    var strictV4 = projectVersion === 4;
     if (strictV4) validateProjectV4Schema(project);
     // Normalize the JSON-shaped input to own enumerable data only. This keeps
     // inherited prototype members from becoming Project fields in either v4
