@@ -326,6 +326,16 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    var scenarioPatch = p.scenario || null;
+    var preparedScenario = null;
+    if (scenarioPatch && OB64.scenario && OB64.scenario.prepareProject) {
+      try {
+        preparedScenario = OB64.scenario.prepareProject(rom, scenarioPatch);
+      } catch (scenarioError) {
+        throw new PatchFormatError('Scenario Project data is invalid: ' + scenarioError.message);
+      }
+    }
+
     var warnings = [];
     if (patch.rom_hint && patch.rom_hint.archives_count &&
         patch.rom_hint.archives_count !== rom.archives.length) {
@@ -537,9 +547,8 @@ window.OB64 = window.OB64 || {};
     }
     if (squadOverridesApplied > 0) dirtyFlags.squadOverrides = true;
 
-    var scenarioPatch = p.scenario || null;
     if (scenarioPatch) {
-      scenarioApplied = applyScenarioPatch(rom, scenarioPatch, warnings);
+      scenarioApplied = applyScenarioPatch(rom, scenarioPatch, warnings, preparedScenario);
       if (scenarioApplied > 0) {
         dirtyFlags.scenario = true;
         dirtyFlags.squadOverrides = true;
@@ -827,11 +836,15 @@ window.OB64 = window.OB64 || {};
     return scenarioPatchCount(project) ? project : null;
   }
 
-  function applyScenarioPatch(rom, project, warnings) {
+  function applyScenarioPatch(rom, project, warnings, prepared) {
     if (!project || typeof project !== 'object') return 0;
     if (!OB64.scenario || !OB64.scenario.loadProject) {
       warnings.push('Patch includes scenario data, but this editor build has no Scenario tab loader - skipping.');
       return 0;
+    }
+    if (prepared && OB64.scenario.applyPreparedProject) {
+      OB64.scenario.applyPreparedProject(rom, prepared);
+      return scenarioPatchCount(project);
     }
     try {
       OB64.scenario.loadProject(rom, project);

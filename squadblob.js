@@ -291,10 +291,30 @@
     return b;
   }
 
+  function canonicalOverrideOrder(overrides) {
+    return (overrides || []).map(function(override, index) {
+      return { override: override, index: index };
+    }).sort(function(a, b) {
+      var ak = Number(a.override && a.override.runtimeKey);
+      var bk = Number(b.override && b.override.runtimeKey);
+      var ae = Number(a.override && a.override.edatId);
+      var be = Number(b.override && b.override.edatId);
+      var aIdentified = Number.isInteger(ak) && Number.isInteger(ae);
+      var bIdentified = Number.isInteger(bk) && Number.isInteger(be);
+      if (aIdentified && bIdentified) return ak - bk || ae - be || a.index - b.index;
+      if (aIdentified !== bIdentified) return aIdentified ? -1 : 1;
+      return a.index - b.index;
+    }).map(function(entry) { return entry.override; });
+  }
+
   // ---- blob (sentinel + count + resolver + table) ----
-  // overrides: [{ gateId:int, original:Uint8Array(35), record:Uint8Array(35) }]
+  // Production overrides carry runtimeKey/edatId so every path reaching this
+  // shared builder serializes in one numeric semantic order. Legacy low-level
+  // callers without that identity retain their supplied relative order.
+  // overrides: [{ runtimeKey:int, edatId:int, gateId:int, original:Uint8Array(35), record:Uint8Array(35) }]
   function buildBlob(overrides, layout) {
     layout = layout || patchLayout();
+    overrides = canonicalOverrideOrder(overrides);
     var resolver = buildResolver(layout);
     var resolverEnd = RESOLVER_OFF + resolver.length * 4;
     if (resolverEnd > ENTRIES_OFF) throw new Error('resolver overruns the table offset');
@@ -439,6 +459,7 @@
     recordFromSpec: recordFromSpec,
     specFromRecord: specFromRecord,
     memberCount: memberCount,
+    canonicalOverrideOrder: canonicalOverrideOrder,
     wordsToBytes: wordsToBytes,
     _enc: M, _assemble: assemble,
     consts: {

@@ -5746,6 +5746,153 @@ window.OB64 = window.OB64 || {};
     return squadLevelInfo(rom, runtimeKey, rowIndex);
   }
 
+  var PROJECT_V4_FIELDS = [
+    'format', 'version', 'created_at', 'source', 'settings', 'levelBaseEdits',
+    'modifiedEsets', 'modifiedTreasures', 'siteAllegiances', 'strongholdFields',
+    'addedSquads', 'squadLevelCopies', 'layers'
+  ];
+  var PROJECT_V4_BASE_FIELDS = ['resourcePath', 'original', 'value'];
+  var PROJECT_V4_COPY_FIELDS = [
+    'runtimeKey', 'resourcePath', 'resourceSha256', 'section1Row', 'sourceId',
+    'originalEdatId', 'originalEdatOneBased', 'originalRecordSha256',
+    'originalRecordHex', 'sourceRecordHex', 'originalOffsetsRaw',
+    'requestedOffsetsRaw', 'customEdatId', 'customEdatOneBased',
+    'resourceAliasKeys', 'customRecordHex', 'aliasRecordHexByKey'
+  ];
+  var PROJECT_V4_ADDED_FIELDS = [
+    'runtimeKey', 'sourceId', 'edatId', 'section1Row', 'status', 'createdAt',
+    'resourcePath', 'identity', 'originalLevelOffsetsRaw', 'levelOffsetsRaw',
+    'compRecHex'
+  ];
+  var PROJECT_V4_ESET_FIELDS = [
+    'runtimeKey', 'archive', 'filename', 'resourcePath', 'sourceSha256', 'rawHex'
+  ];
+  var PROJECT_V4_TREASURE_FIELDS = ['archive', 'filename', 'rawHex'];
+
+  function projectRecord(value, path) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(path + ' must be an object.');
+    }
+    return value;
+  }
+
+  function assertProjectFields(value, allowed, path) {
+    projectRecord(value, path);
+    var set = {};
+    allowed.forEach(function(field) { set[field] = true; });
+    Object.keys(value).forEach(function(field) {
+      if (!set[field]) {
+        throw new Error(path + '.' + field + ' is not supported by Scenario Project v4.');
+      }
+    });
+  }
+
+  function assertProjectArray(value, path) {
+    if (!Array.isArray(value)) throw new Error(path + ' must be an array.');
+    Object.keys(value).forEach(function(key) {
+      if (!/^\d+$/.test(key) || Number(key) >= value.length) {
+        throw new Error(path + '.' + key + ' is not supported by Scenario Project v4.');
+      }
+    });
+  }
+
+  function validateProjectOffsetShape(value, path) {
+    assertProjectFields(value, ['A', 'B', 'C'], path);
+  }
+
+  function validateProjectV4Schema(project) {
+    assertProjectFields(project, PROJECT_V4_FIELDS, 'Scenario Project');
+    if (project.created_at != null && typeof project.created_at !== 'string') {
+      throw new Error('Scenario Project.created_at must be a string.');
+    }
+    if (project.source != null && typeof project.source !== 'string') {
+      throw new Error('Scenario Project.source must be a string.');
+    }
+    if (project.settings != null) {
+      assertProjectFields(project.settings, ['imageBasePath'], 'Scenario Project.settings');
+    }
+    if (project.layers != null) {
+      assertProjectFields(project.layers, [], 'Scenario Project.layers');
+    }
+
+    var baseEdits = project.levelBaseEdits == null ? [] : project.levelBaseEdits;
+    assertProjectArray(baseEdits, 'Scenario Project.levelBaseEdits');
+    baseEdits.forEach(function(entry, index) {
+      assertProjectFields(entry, PROJECT_V4_BASE_FIELDS, 'Scenario Project.levelBaseEdits[' + index + ']');
+    });
+
+    var copies = project.squadLevelCopies == null ? [] : project.squadLevelCopies;
+    assertProjectArray(copies, 'Scenario Project.squadLevelCopies');
+    copies.forEach(function(entry, index) {
+      var path = 'Scenario Project.squadLevelCopies[' + index + ']';
+      assertProjectFields(entry, PROJECT_V4_COPY_FIELDS, path);
+      if (entry.originalOffsetsRaw != null) validateProjectOffsetShape(entry.originalOffsetsRaw, path + '.originalOffsetsRaw');
+      if (entry.requestedOffsetsRaw != null) validateProjectOffsetShape(entry.requestedOffsetsRaw, path + '.requestedOffsetsRaw');
+      if (entry.resourceAliasKeys != null) assertProjectArray(entry.resourceAliasKeys, path + '.resourceAliasKeys');
+      if (entry.aliasRecordHexByKey != null) projectRecord(entry.aliasRecordHexByKey, path + '.aliasRecordHexByKey');
+    });
+
+    var added = project.addedSquads == null ? [] : project.addedSquads;
+    assertProjectArray(added, 'Scenario Project.addedSquads');
+    added.forEach(function(entry, index) {
+      var path = 'Scenario Project.addedSquads[' + index + ']';
+      assertProjectFields(entry, PROJECT_V4_ADDED_FIELDS, path);
+      if (entry.status != null && typeof entry.status !== 'string') throw new Error(path + '.status must be a string.');
+      if (entry.createdAt != null && typeof entry.createdAt !== 'string') throw new Error(path + '.createdAt must be a string.');
+      if (entry.identity != null) {
+        assertProjectFields(entry.identity, ['kind', 'runtimeKey', 'sourceId', 'section1Row'], path + '.identity');
+      }
+      if (entry.originalLevelOffsetsRaw != null) validateProjectOffsetShape(entry.originalLevelOffsetsRaw, path + '.originalLevelOffsetsRaw');
+      if (entry.levelOffsetsRaw != null) validateProjectOffsetShape(entry.levelOffsetsRaw, path + '.levelOffsetsRaw');
+    });
+
+    var esets = project.modifiedEsets == null ? {} : project.modifiedEsets;
+    projectRecord(esets, 'Scenario Project.modifiedEsets');
+    Object.keys(esets).forEach(function(key) {
+      assertProjectFields(esets[key], PROJECT_V4_ESET_FIELDS, 'Scenario Project.modifiedEsets[' + JSON.stringify(key) + ']');
+    });
+
+    var treasures = project.modifiedTreasures == null ? {} : project.modifiedTreasures;
+    projectRecord(treasures, 'Scenario Project.modifiedTreasures');
+    Object.keys(treasures).forEach(function(key) {
+      assertProjectFields(treasures[key], PROJECT_V4_TREASURE_FIELDS, 'Scenario Project.modifiedTreasures[' + JSON.stringify(key) + ']');
+    });
+
+    var allegiances = project.siteAllegiances == null ? {} : project.siteAllegiances;
+    projectRecord(allegiances, 'Scenario Project.siteAllegiances');
+    Object.keys(allegiances).forEach(function(key) {
+      projectRecord(allegiances[key], 'Scenario Project.siteAllegiances[' + JSON.stringify(key) + ']');
+    });
+
+    var strongholds = project.strongholdFields == null ? {} : project.strongholdFields;
+    projectRecord(strongholds, 'Scenario Project.strongholdFields');
+    Object.keys(strongholds).forEach(function(key) {
+      assertProjectFields(strongholds[key], ['population', 'morale'], 'Scenario Project.strongholdFields[' + JSON.stringify(key) + ']');
+    });
+  }
+
+  function cloneProjectValue(value) {
+    if (Array.isArray(value)) return value.map(cloneProjectValue);
+    if (!value || typeof value !== 'object') return value;
+    var out = {};
+    Object.keys(value).forEach(function(key) {
+      Object.defineProperty(out, key, {
+        value: cloneProjectValue(value[key]), enumerable: true, writable: true, configurable: true,
+      });
+    });
+    return out;
+  }
+
+  function exactProjectHex(value, byteLength, path, strict) {
+    if (typeof value !== 'string') throw new Error(path + ' must be a hexadecimal string.');
+    if (strict && !/^[0-9a-f]+$/i.test(value)) throw new Error(path + ' must contain only hexadecimal digits.');
+    var bytes = OB64.scenarioCodec.compactHexToBytes(value);
+    if (byteLength != null && bytes.length !== byteLength) {
+      throw new Error(path + ' must contain exactly ' + byteLength + ' bytes.');
+    }
+    return bytes;
+  }
+
   function collectProject(rom) {
     var state = ensureState(rom);
     var modifiedEsets = {};
@@ -5777,7 +5924,7 @@ window.OB64 = window.OB64 || {};
       version: 4,
       created_at: new Date().toISOString(),
       source: 'LordlyCaliber Scenario tab',
-      settings: state.settings,
+      settings: { imageBasePath: state.settings && state.settings.imageBasePath || defaultImageBase() },
       levelBaseEdits: Object.keys(state.levelBaseEdits || {}).sort().map(function(resourcePath) {
         var edit = state.levelBaseEdits[resourcePath];
         return { resourcePath: resourcePath, original: edit.original, value: edit.value };
@@ -5789,15 +5936,53 @@ window.OB64 = window.OB64 || {};
       // Carry each added squad's comp record (its squad override) so a project reload
       // restores the sidebar-editable composition, not just the placement row.
       addedSquads: state.addedSquads.map(function(r) {
-        var copy = {};
-        for (var f in r) copy[f] = r[f];
+        var copy = {
+          runtimeKey: r.runtimeKey,
+          sourceId: r.sourceId,
+          edatId: r.edatId,
+          section1Row: r.section1Row,
+          status: r.status,
+          createdAt: r.createdAt,
+          resourcePath: r.resourcePath,
+          identity: r.identity && {
+            kind: r.identity.kind,
+            runtimeKey: r.identity.runtimeKey,
+            sourceId: r.identity.sourceId,
+            section1Row: r.identity.section1Row,
+          },
+          originalLevelOffsetsRaw: r.originalLevelOffsetsRaw && {
+            A: r.originalLevelOffsetsRaw.A, B: r.originalLevelOffsetsRaw.B, C: r.originalLevelOffsetsRaw.C,
+          },
+          levelOffsetsRaw: r.levelOffsetsRaw && {
+            A: r.levelOffsetsRaw.A, B: r.levelOffsetsRaw.B, C: r.levelOffsetsRaw.C,
+          },
+        };
         var over = rom.squadOverrides && rom.squadOverrides[r.runtimeKey + ':' + r.edatId];
         if (over) copy.compRecHex = OB64.scenarioCodec.bytesToCompactHex(over);
         return copy;
       }),
       squadLevelCopies: (state.squadLevelCopies || []).map(function(r) {
-        var copy = {};
-        for (var f in r) copy[f] = r[f];
+        var copy = {
+          runtimeKey: r.runtimeKey,
+          resourcePath: r.resourcePath,
+          resourceSha256: r.resourceSha256,
+          section1Row: r.section1Row,
+          sourceId: r.sourceId,
+          originalEdatId: r.originalEdatId,
+          originalEdatOneBased: r.originalEdatOneBased,
+          originalRecordSha256: r.originalRecordSha256,
+          originalRecordHex: r.originalRecordHex,
+          sourceRecordHex: r.sourceRecordHex,
+          originalOffsetsRaw: r.originalOffsetsRaw && {
+            A: r.originalOffsetsRaw.A, B: r.originalOffsetsRaw.B, C: r.originalOffsetsRaw.C,
+          },
+          requestedOffsetsRaw: r.requestedOffsetsRaw && {
+            A: r.requestedOffsetsRaw.A, B: r.requestedOffsetsRaw.B, C: r.requestedOffsetsRaw.C,
+          },
+          customEdatId: r.customEdatId,
+          customEdatOneBased: r.customEdatOneBased,
+          resourceAliasKeys: (r.resourceAliasKeys || [r.runtimeKey]).slice(),
+        };
         var over = rom.squadOverrides && rom.squadOverrides[r.runtimeKey + ':' + r.customEdatId];
         if (over) copy.customRecordHex = OB64.scenarioCodec.bytesToCompactHex(over);
         var aliasRecords = {};
@@ -5812,11 +5997,53 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function loadProject(rom, project) {
-    if (!project || project.format !== 'ob64-scenario-project') throw new Error('Not an OB64 Scenario project file');
-    if (project.version != null && project.version > 4) {
-      throw new Error('Scenario project version ' + project.version + ' is newer than this editor supports (max 4).');
+  function prepareProject(rom, project) {
+    var owns = Object.prototype.hasOwnProperty;
+    if (!project || !owns.call(project, 'format') || project.format !== 'ob64-scenario-project') {
+      throw new Error('Not an OB64 Scenario project file');
     }
+    var projectVersion = owns.call(project, 'version') ? project.version : null;
+    if (projectVersion != null && projectVersion > 4) {
+      throw new Error('Scenario project version ' + projectVersion + ' is newer than this editor supports (max 4).');
+    }
+    var strictV4 = Number(projectVersion) === 4;
+    if (strictV4) validateProjectV4Schema(project);
+    // Normalize the JSON-shaped input to own enumerable data only. This keeps
+    // inherited prototype members from becoming Project fields in either v4
+    // or the explicitly supported legacy readers.
+    project = cloneProjectValue(project);
+
+    var targetRom = rom;
+    var sourceState = rom.scenarioEditor || createScenarioState();
+    var nextOverrides = {};
+    var removedOverrideKeys = {};
+    Object.keys(rom.squadOverrides || {}).forEach(function(key) {
+      nextOverrides[key] = cloneRecord(rom.squadOverrides[key]);
+    });
+    (sourceState.addedSquads || []).forEach(function(entry) {
+      var key = entry.runtimeKey + ':' + entry.edatId;
+      removedOverrideKeys[key] = true;
+      delete nextOverrides[key];
+    });
+    (sourceState.squadLevelCopies || []).forEach(function(entry) {
+      (entry.resourceAliasKeys || [entry.runtimeKey]).forEach(function(aliasKey) {
+        var key = aliasKey + ':' + entry.customEdatId;
+        removedOverrideKeys[key] = true;
+        delete nextOverrides[key];
+      });
+    });
+    var candidateState = createScenarioState({
+      settings: cloneProjectValue(sourceState.settings || { imageBasePath: defaultImageBase() }),
+      archiveOriginalSlots: cloneProjectValue(sourceState.archiveOriginalSlots || {}),
+      slotOwnedArchives: cloneProjectValue(sourceState.slotOwnedArchives || {}),
+      relocationOwnedWindows: cloneProjectValue(sourceState.relocationOwnedWindows || []),
+      levelResourceVerification: cloneProjectValue(sourceState.levelResourceVerification || {}),
+    });
+    var candidateRom = Object.create(rom);
+    candidateRom.scenarioEditor = candidateState;
+    candidateRom.squadOverrides = nextOverrides;
+    rom = candidateRom;
+
     var loadedStrongholdFields = {};
     Object.keys(project.strongholdFields || {}).forEach(function(indexKey) {
       var recordIndex = Number(indexKey);
@@ -5909,11 +6136,22 @@ window.OB64 = window.OB64 || {};
           throw new Error('squadLevelCopies[' + index + '] loaded original EDAT record/hash mismatch.');
         }
       }
-      if (source.originalRecordHex && !bytesEqual(stock, OB64.scenarioCodec.compactHexToBytes(source.originalRecordHex))) {
+      if (source.originalRecordHex && !bytesEqual(stock, exactProjectHex(
+        source.originalRecordHex, 35, 'squadLevelCopies[' + index + '].originalRecordHex', strictV4
+      ))) {
         throw new Error('squadLevelCopies[' + index + '] original EDAT bytes mismatch.');
+      }
+      if (source.sourceRecordHex) {
+        exactProjectHex(source.sourceRecordHex, 35, 'squadLevelCopies[' + index + '].sourceRecordHex', strictV4);
+      }
+      if (source.originalEdatOneBased != null && Number(source.originalEdatOneBased) !== originalEdatId + 1) {
+        throw new Error('squadLevelCopies[' + index + '] original EDAT one-based identity mismatch.');
       }
       if (!Number.isInteger(customEdatId) || customEdatId < 0 || customEdatId > 0xFFFE || !stockRecordBytes(customEdatId)) {
         throw new Error('squadLevelCopies[' + index + '] custom EDAT allocation is invalid.');
+      }
+      if (source.customEdatOneBased != null && Number(source.customEdatOneBased) !== customEdatId + 1) {
+        throw new Error('squadLevelCopies[' + index + '] custom EDAT one-based identity mismatch.');
       }
       if (rom && rom.enemySquads) {
         var loadedDonor = loadedStockRecordBytes(rom, customEdatId);
@@ -5930,23 +6168,64 @@ window.OB64 = window.OB64 || {};
           throw new Error('Key 25 EDAT 199 ambiguous selector ' + selector + ' edit is blocked.');
         }
       });
-      if (typeof source.customRecordHex !== 'string' || source.customRecordHex.length !== 70) {
-        throw new Error('squadLevelCopies[' + index + '] requires one complete 35-byte customRecordHex.');
-      }
-      var custom = OB64.scenarioCodec.compactHexToBytes(source.customRecordHex);
+      var originalOffsets = source.originalOffsetsRaw || levelOffsetsRaw(stock);
+      Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
+        if (!Number.isInteger(originalOffsets[selector]) ||
+            originalOffsets[selector] !== stock[LEVEL_SELECTORS[selector].offset]) {
+          throw new Error('squadLevelCopies[' + index + '] original ' + selector + ' offset mismatch.');
+        }
+      });
+      var custom = exactProjectHex(
+        source.customRecordHex, 35, 'squadLevelCopies[' + index + '].customRecordHex', strictV4
+      );
       Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
         if (custom[LEVEL_SELECTORS[selector].offset] !== requested[selector]) {
           throw new Error('squadLevelCopies[' + index + '] custom record and requested ' + selector + ' offset disagree.');
         }
       });
+      var expectedAliases = resourceAliasKeys(rom, runtimeKey).map(Number);
+      var suppliedAliases = source.resourceAliasKeys == null ? expectedAliases : source.resourceAliasKeys.map(Number);
+      var uniqueAliases = {};
+      suppliedAliases.forEach(function(aliasKey) {
+        if (!Number.isInteger(aliasKey) || !scenarioData(aliasKey) || uniqueAliases[aliasKey]) {
+          throw new Error('squadLevelCopies[' + index + '] has an invalid/duplicate physical alias key.');
+        }
+        uniqueAliases[aliasKey] = true;
+      });
+      var expectedSorted = expectedAliases.slice().sort(function(a, b) { return a - b; });
+      var suppliedSorted = suppliedAliases.slice().sort(function(a, b) { return a - b; });
+      if (expectedSorted.join(',') !== suppliedSorted.join(',')) {
+        throw new Error('squadLevelCopies[' + index + '] physical alias set mismatch.');
+      }
+      var normalizedAliasRecords = {};
+      Object.keys(source.aliasRecordHexByKey || {}).forEach(function(aliasKeyText) {
+        var aliasKey = Number(aliasKeyText);
+        if (!Number.isInteger(aliasKey) || !uniqueAliases[aliasKey]) {
+          throw new Error('squadLevelCopies[' + index + '] alias record key ' + aliasKeyText + ' is invalid.');
+        }
+        var aliasBytes = exactProjectHex(
+          source.aliasRecordHexByKey[aliasKeyText], 35,
+          'squadLevelCopies[' + index + '].aliasRecordHexByKey[' + JSON.stringify(aliasKeyText) + ']', strictV4
+        );
+        normalizedAliasRecords[aliasKey] = OB64.scenarioCodec.bytesToCompactHex(aliasBytes);
+      });
+      if (strictV4) {
+        suppliedAliases.forEach(function(aliasKey) {
+          if (!Object.prototype.hasOwnProperty.call(normalizedAliasRecords, aliasKey)) {
+            throw new Error('squadLevelCopies[' + index + '] is missing alias record content for key ' + aliasKey + '.');
+          }
+        });
+      }
       var identityKey = runtimeKey + '|' + path + '|' + rowIndex + '|' + sourceId;
-      var normalizedSignature = [originalEdatId, customEdatId, stockHash, requested.A, requested.B, requested.C, source.customRecordHex].join('|');
+      var normalizedSignature = [
+        originalEdatId, customEdatId, stockHash, requested.A, requested.B, requested.C,
+        OB64.scenarioCodec.bytesToCompactHex(custom), JSON.stringify(normalizedAliasRecords)
+      ].join('|');
       if (copyByIdentity[identityKey] && copyByIdentity[identityKey].signature !== normalizedSignature) {
         throw new Error('Conflicting duplicate squad-level intent for ' + identityKey + '.');
       }
       if (copyByIdentity[identityKey]) return;
       var copy = {};
-      for (var f in source) copy[f] = source[f];
       copy.runtimeKey = runtimeKey;
       copy.section1Row = rowIndex;
       copy.sourceId = sourceId;
@@ -5956,31 +6235,49 @@ window.OB64 = window.OB64 || {};
       copy.resourceSha256 = meta.sha256;
       copy.originalRecordSha256 = stockHash;
       copy.originalRecordHex = OB64.scenarioCodec.bytesToCompactHex(stock);
+      if (source.sourceRecordHex) copy.sourceRecordHex = source.sourceRecordHex;
+      copy.originalEdatOneBased = originalEdatId + 1;
       copy.originalOffsetsRaw = levelOffsetsRaw(stock);
       copy.requestedOffsetsRaw = { A: requested.A, B: requested.B, C: requested.C };
-      copy.resourceAliasKeys = (source.resourceAliasKeys || meta.resourceAliasKeys || [runtimeKey]).map(Number);
+      copy.customEdatOneBased = customEdatId + 1;
+      copy.resourceAliasKeys = suppliedAliases;
+      copy.customRecordHex = OB64.scenarioCodec.bytesToCompactHex(custom);
+      copy.aliasRecordHexByKey = normalizedAliasRecords;
       normalizedCopies.push(copy);
       copyByIdentity[identityKey] = { signature: normalizedSignature, copy: copy, custom: custom };
     });
 
-    var oldState = ensureState(rom);
-    var oldOverrides = rom.squadOverrides;
-    var nextOverrides = {};
-    Object.keys(oldOverrides || {}).forEach(function(key) {
-      nextOverrides[key] = cloneRecord(oldOverrides[key]);
-    });
-    (oldState.addedSquads || []).forEach(function(r) { delete nextOverrides[r.runtimeKey + ':' + r.edatId]; });
-    (oldState.squadLevelCopies || []).forEach(function(r) {
-      (r.resourceAliasKeys || [r.runtimeKey]).forEach(function(aliasKey) {
-        delete nextOverrides[aliasKey + ':' + r.customEdatId];
+      var state = candidateState;
+      if (project.settings) {
+        if (project.settings.imageBasePath != null && typeof project.settings.imageBasePath !== 'string') {
+          throw new Error('Scenario Project.settings.imageBasePath must be a string.');
+        }
+        state.settings = { imageBasePath: project.settings.imageBasePath || defaultImageBase() };
+      }
+      state.siteAllegiances = {};
+      Object.keys(project.siteAllegiances || {}).forEach(function(keyText) {
+        var runtimeKey = Number(keyText);
+        if (!Number.isInteger(runtimeKey) || !scenarioData(runtimeKey)) {
+          throw new Error('Scenario Project site allegiance runtime key ' + keyText + ' is invalid.');
+        }
+        var bucket = project.siteAllegiances[keyText];
+        if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) {
+          throw new Error('Scenario Project site allegiance key ' + keyText + ' must be an object.');
+        }
+        var normalizedBucket = {};
+        Object.keys(bucket).forEach(function(selectorText) {
+          var selector = Number(selectorText);
+          var allegiance = bucket[selectorText];
+          if (!Number.isInteger(selector) || !siteForSelector(rom, runtimeKey, selector)) {
+            throw new Error('Scenario Project site allegiance selector ' + keyText + '.' + selectorText + ' is invalid.');
+          }
+          if (allegiance !== 'enemy' && allegiance !== 'neutral' && allegiance !== 'allied') {
+            throw new Error('Scenario Project site allegiance ' + keyText + '.' + selectorText + ' is invalid.');
+          }
+          normalizedBucket[selector] = allegiance;
+        });
+        if (Object.keys(normalizedBucket).length) state.siteAllegiances[runtimeKey] = normalizedBucket;
       });
-    });
-
-    try {
-      rom.squadOverrides = nextOverrides;
-      var state = resetScenarioState(rom);
-      if (project.settings) state.settings = project.settings;
-      state.siteAllegiances = project.siteAllegiances || {};
       state.strongholdFields = loadedStrongholdFields;
 
       var esets = project.modifiedEsets || {};
@@ -5990,10 +6287,14 @@ window.OB64 = window.OB64 || {};
         var meta = scenarioData(runtimeKey);
         if (!meta || typeof entry.rawHex !== 'string') throw new Error('Invalid modified ESET entry for key ' + keyText + '.');
         var path = meta.resourcePath || meta.relPath;
-        if ((entry.resourcePath && entry.resourcePath !== path) || (entry.sourceSha256 && entry.sourceSha256 !== meta.sha256)) {
+        if ((entry.runtimeKey != null && Number(entry.runtimeKey) !== runtimeKey) ||
+            (entry.archive != null && Number(entry.archive) !== Number(meta.archive)) ||
+            (entry.filename && entry.filename !== meta.filename) ||
+            (entry.resourcePath && entry.resourcePath !== path) ||
+            (entry.sourceSha256 && entry.sourceSha256 !== meta.sha256)) {
           throw new Error('Modified ESET source identity/hash mismatch for key ' + runtimeKey + '.');
         }
-        var raw = OB64.scenarioCodec.compactHexToBytes(entry.rawHex);
+        var raw = exactProjectHex(entry.rawHex, null, 'modifiedEsets[' + keyText + '].rawHex', strictV4);
         var parsed = OB64.scenarioCodec.parseEset(raw, { sourcePath: path });
         var baseEdit = normalizedBaseEdits[path];
         if (baseEdit && parsed.scenarioBaseLevel !== baseEdit.value) {
@@ -6025,22 +6326,127 @@ window.OB64 = window.OB64 || {};
         state.levelBaseEdits[path] = edit;
       });
 
-      state.addedSquads = (project.addedSquads || []).map(function(source) {
+      var deploymentOwners = {};
+      var allocationOwners = {};
+      var overrideClaims = {};
+      var physicalOwners = {};
+
+      function claimDeployment(identity, signature, label) {
+        var prior = deploymentOwners[identity];
+        if (prior && prior.signature !== signature) {
+          throw new Error('Conflicting duplicate deployment intent for ' + identity + '.');
+        }
+        if (!prior) deploymentOwners[identity] = { signature: signature, label: label };
+        return !prior;
+      }
+
+      function claimAllocation(runtimeKey, edatId, owner) {
+        var key = runtimeKey + ':' + edatId;
+        if (allocationOwners[key] && allocationOwners[key] !== owner) {
+          throw new Error('Custom EDAT allocation ' + key + ' is reused by multiple deployment owners.');
+        }
+        allocationOwners[key] = owner;
+      }
+
+      function claimOverride(runtimeKey, edatId, record, owner) {
+        var key = runtimeKey + ':' + edatId;
+        if (!record || record.length !== 35) {
+          throw new Error('Scenario Project override ' + key + ' is not a complete 35-byte record.');
+        }
+        if (overrideClaims[key] && !bytesEqual(overrideClaims[key].record, record)) {
+          throw new Error('Scenario Project override ' + key + ' has conflicting record content.');
+        }
+        if (!overrideClaims[key] && Object.prototype.hasOwnProperty.call(rom.squadOverrides, key) &&
+            !bytesEqual(rom.squadOverrides[key], record)) {
+          throw new Error('Scenario Project override ' + key + ' conflicts with an existing override record.');
+        }
+        overrideClaims[key] = { record: cloneRecord(record), owner: owner };
+        rom.squadOverrides[key] = cloneRecord(record);
+      }
+
+      state.addedSquads = [];
+      (project.addedSquads || []).forEach(function(source, index) {
+        var runtimeKey = Number(source.runtimeKey);
+        var sourceId = Number(source.sourceId);
+        var edatId = Number(source.edatId);
+        var rowIndex = Number(source.section1Row);
+        var meta = scenarioData(runtimeKey);
+        if (!meta || !Number.isInteger(sourceId) || !Number.isInteger(edatId) ||
+            edatId < 0 || edatId > 0xFFFE || !Number.isInteger(rowIndex) || rowIndex < 0) {
+          throw new Error('addedSquads[' + index + '] project identity is invalid.');
+        }
+        var path = meta.resourcePath || meta.relPath;
+        if (source.resourcePath != null && source.resourcePath !== path) {
+          throw new Error('addedSquads[' + index + '] resource identity mismatch.');
+        }
+        if (strictV4 && source.resourcePath !== path) {
+          throw new Error('addedSquads[' + index + '] requires its canonical resourcePath.');
+        }
+        var row = state.models[runtimeKey] && state.models[runtimeKey].section1[rowIndex];
+        if (!row || row.sourceId !== sourceId || rowEdatId(row) !== edatId) {
+          throw new Error('addedSquads[' + index + '] deployment row/reference mismatch.');
+        }
+        var donor = stockRecordBytes(edatId);
+        if (!donor || donor.length !== 35) {
+          throw new Error('addedSquads[' + index + '] custom EDAT allocation is invalid.');
+        }
+        if (rom.enemySquads) {
+          var loadedDonor = loadedStockRecordBytes(rom, edatId);
+          if (!loadedDonor || !bytesEqual(loadedDonor, donor)) {
+            throw new Error('addedSquads[' + index + '] custom EDAT donor record/hash mismatch.');
+          }
+        }
+        if (source.identity != null) {
+          if (source.identity.kind !== 'added' || Number(source.identity.runtimeKey) !== runtimeKey ||
+              Number(source.identity.sourceId) !== sourceId || Number(source.identity.section1Row) !== rowIndex) {
+            throw new Error('addedSquads[' + index + '] nested identity mismatch.');
+          }
+        } else if (strictV4) {
+          throw new Error('addedSquads[' + index + '] requires its canonical nested identity.');
+        }
+
+        var rec = null;
+        if (source.compRecHex != null) {
+          rec = exactProjectHex(source.compRecHex, 35, 'addedSquads[' + index + '].compRecHex', strictV4);
+        } else if (strictV4) {
+          throw new Error('addedSquads[' + index + '] requires one complete 35-byte compRecHex.');
+        }
+        var originalOffsets = source.originalLevelOffsetsRaw || { A: 0, B: 0, C: 0 };
+        Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
+          if (!Number.isInteger(originalOffsets[selector]) || originalOffsets[selector] !== 0) {
+            throw new Error('addedSquads[' + index + '] original ' + selector + ' offset must be zero.');
+          }
+        });
+        var currentOffsets = rec ? levelOffsetsRaw(rec) : (source.levelOffsetsRaw || originalOffsets);
+        if (source.levelOffsetsRaw) {
+          Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
+            if (!Number.isInteger(source.levelOffsetsRaw[selector]) ||
+                source.levelOffsetsRaw[selector] !== currentOffsets[selector]) {
+              throw new Error('addedSquads[' + index + '] level ' + selector + ' offset/content mismatch.');
+            }
+          });
+        }
+        var identityKey = runtimeKey + '|' + path + '|' + rowIndex + '|' + sourceId;
+        var signature = [edatId, rec && OB64.scenarioCodec.bytesToCompactHex(rec),
+          currentOffsets.A, currentOffsets.B, currentOffsets.C].join('|');
+        if (!claimDeployment(identityKey, signature, 'added squad ' + index)) return;
+        var owner = 'added|' + identityKey;
+        claimAllocation(runtimeKey, edatId, owner);
+        if (rec) claimOverride(runtimeKey, edatId, rec, owner);
+
         var copy = {};
-        for (var f in source) copy[f] = source[f];
-        if (!Number.isInteger(Number(copy.runtimeKey)) || !Number.isInteger(Number(copy.edatId))) {
-          throw new Error('Added-squad project identity is invalid.');
-        }
-        copy.runtimeKey = Number(copy.runtimeKey);
-        copy.edatId = Number(copy.edatId);
-        if (copy.compRecHex) {
-          var rec = OB64.scenarioCodec.compactHexToBytes(copy.compRecHex);
-          if (rec.length !== 35) throw new Error('Added squad custom record must be 35 bytes.');
-          rom.squadOverrides[copy.runtimeKey + ':' + copy.edatId] = rec;
-          copy.originalLevelOffsetsRaw = copy.originalLevelOffsetsRaw || { A: 0, B: 0, C: 0 };
-          copy.levelOffsetsRaw = levelOffsetsRaw(rec);
-        }
-        return copy;
+        copy.runtimeKey = runtimeKey;
+        copy.sourceId = sourceId;
+        copy.edatId = edatId;
+        copy.section1Row = rowIndex;
+        if (source.status != null) copy.status = source.status;
+        if (source.createdAt != null) copy.createdAt = source.createdAt;
+        copy.resourcePath = path;
+        copy.identity = { kind: 'added', runtimeKey: runtimeKey, sourceId: sourceId, section1Row: rowIndex };
+        copy.originalLevelOffsetsRaw = { A: 0, B: 0, C: 0 };
+        copy.levelOffsetsRaw = { A: currentOffsets.A, B: currentOffsets.B, C: currentOffsets.C };
+        if (rec) copy.compRecHex = OB64.scenarioCodec.bytesToCompactHex(rec);
+        state.addedSquads.push(copy);
       });
 
       state.squadLevelCopies = [];
@@ -6048,25 +6454,42 @@ window.OB64 = window.OB64 || {};
         var meta = scenarioData(copy.runtimeKey);
         var sourceCheck = verifyLevelResourceSource(rom, copy.runtimeKey);
         if (!sourceCheck.ok) throw new Error(sourceCheck.message);
+        var identityKey = copy.runtimeKey + '|' + copy.resourcePath + '|' + copy.section1Row + '|' + copy.sourceId;
+        var signature = [copy.originalEdatId, copy.customEdatId, copy.originalRecordSha256,
+          copy.requestedOffsetsRaw.A, copy.requestedOffsetsRaw.B, copy.requestedOffsetsRaw.C,
+          copy.customRecordHex, JSON.stringify(copy.aliasRecordHexByKey || {})].join('|');
+        if (!claimDeployment(identityKey, signature, 'squad-level copy')) return;
+        var owner = 'copy|' + identityKey;
+        claimAllocation(copy.runtimeKey, copy.customEdatId, owner);
+        var physicalIdentity = copy.resourcePath + '|' + copy.section1Row + '|' + copy.sourceId;
+        if (physicalOwners[physicalIdentity] != null && physicalOwners[physicalIdentity] !== copy.customEdatId) {
+          throw new Error('Physical Scenario deployment ' + physicalIdentity + ' has conflicting custom EDAT allocations.');
+        }
+        physicalOwners[physicalIdentity] = copy.customEdatId;
         var row = state.models[copy.runtimeKey] && state.models[copy.runtimeKey].section1[copy.section1Row];
         if (!row || row.sourceId !== copy.sourceId || rowEdatId(row) !== copy.customEdatId) {
           throw new Error('Custom-copy deployment row/reference mismatch for key ' + copy.runtimeKey + ' row ' + copy.section1Row + '.');
         }
-        var selectedRecord = OB64.scenarioCodec.compactHexToBytes(copy.customRecordHex);
-        rom.squadOverrides[copy.runtimeKey + ':' + copy.customEdatId] = selectedRecord;
+        var selectedRecord = exactProjectHex(copy.customRecordHex, 35, 'squadLevelCopies customRecordHex', strictV4);
+        claimOverride(copy.runtimeKey, copy.customEdatId, selectedRecord, owner);
         var aliasRecords = copy.aliasRecordHexByKey || {};
         (copy.resourceAliasKeys || [copy.runtimeKey]).forEach(function(aliasKey) {
+          var aliasMeta = scenarioData(aliasKey);
           var aliasRow = state.models[aliasKey] && state.models[aliasKey].section1[copy.section1Row];
-          if (!aliasRow || aliasRow.sourceId !== copy.sourceId || rowEdatId(aliasRow) !== copy.customEdatId) {
+          if (!aliasMeta || (aliasMeta.resourcePath || aliasMeta.relPath) !== copy.resourcePath ||
+              !aliasRow || aliasRow.sourceId !== copy.sourceId || rowEdatId(aliasRow) !== copy.customEdatId) {
             throw new Error('Custom-copy physical alias row mismatch for key ' + aliasKey + '.');
           }
-          var aliasHex = aliasRecords[aliasKey] || aliasRecords[String(aliasKey)];
+          var aliasHex = Object.prototype.hasOwnProperty.call(aliasRecords, aliasKey)
+            ? aliasRecords[aliasKey]
+            : aliasRecords[String(aliasKey)];
           if (aliasHex) {
-            var aliasRecord = OB64.scenarioCodec.compactHexToBytes(aliasHex);
-            if (aliasRecord.length !== 35) throw new Error('Alias custom record for key ' + aliasKey + ' is not 35 bytes.');
-            rom.squadOverrides[aliasKey + ':' + copy.customEdatId] = aliasRecord;
+            var aliasRecord = exactProjectHex(aliasHex, 35, 'squadLevelCopies alias record for key ' + aliasKey, strictV4);
+            claimOverride(aliasKey, copy.customEdatId, aliasRecord, owner);
+          } else if (strictV4) {
+            throw new Error('Squad-level copy is missing alias record content for key ' + aliasKey + '.');
           } else if (!rom.squadOverrides[aliasKey + ':' + copy.customEdatId]) {
-            rom.squadOverrides[aliasKey + ':' + copy.customEdatId] = stockRecordBytes(copy.originalEdatId);
+            claimOverride(aliasKey, copy.customEdatId, stockRecordBytes(copy.originalEdatId), owner);
           }
         });
         state.squadLevelCopies.push(copy);
@@ -6094,18 +6517,75 @@ window.OB64 = window.OB64 || {};
       var treasures = project.modifiedTreasures || {};
       Object.keys(treasures).forEach(function(archiveKey) {
         var archive = Number(archiveKey);
-        var entry = treasureArchiveEntry(archive) || { filename: treasures[archiveKey].filename };
-        var raw = OB64.scenarioCodec.compactHexToBytes(treasures[archiveKey].rawHex);
+        var payload = treasures[archiveKey] || {};
+        var entry = treasureArchiveEntry(archive);
+        if (!Number.isInteger(archive) || (strictV4 && !entry)) {
+          throw new Error('Modified treasure archive ' + archiveKey + ' is invalid.');
+        }
+        entry = entry || { filename: payload.filename };
+        if ((payload.archive != null && Number(payload.archive) !== archive) ||
+            (payload.filename && entry.filename && payload.filename !== entry.filename)) {
+          throw new Error('Modified treasure archive ' + archiveKey + ' identity mismatch.');
+        }
+        var raw = exactProjectHex(payload.rawHex, null, 'modifiedTreasures[' + archiveKey + '].rawHex', strictV4);
+        if (!raw.length || raw.length !== 1 + raw[0] * 6) {
+          throw new Error('Modified treasure archive ' + archiveKey + ' has an invalid record payload length.');
+        }
         state.treasureArchives[archive] = parseTreasureBytes(raw, archive, entry);
         state.modifiedTreasureArchives[archive] = true;
       });
-      if (OB64._squadChanged) OB64._squadChanged();
-      changed();
-    } catch (error) {
-      rom.scenarioEditor = oldState;
-      rom.squadOverrides = oldOverrides;
-      throw error;
+
+      state.addedSquads.forEach(function(entry) {
+        var record = rom.squadOverrides[entry.runtimeKey + ':' + entry.edatId];
+        if (!record) return;
+        var arithmetic = validateLevelArithmetic(rom, entry.runtimeKey, currentBaseForKey(rom, entry.runtimeKey), {
+          runtimeKey: entry.runtimeKey,
+          rowIndex: entry.section1Row,
+          record: record,
+        });
+        if (!arithmetic.ok) throw new Error(arithmetic.issues.join(' '));
+      });
+      var collisionIssues = addedSquadCollisions(rom);
+      if (collisionIssues.length) {
+        throw new Error('Scenario Project donor content collision: ' + collisionIssues.join(' | '));
+      }
+      var preflightIssues = levelExportIssues(rom);
+      if (preflightIssues.length) {
+        throw new Error('Scenario Project level preflight failed: ' + preflightIssues.join(' | '));
+      }
+      var scenarioOverrides = {};
+      Object.keys(overrideClaims).forEach(function(key) {
+        scenarioOverrides[key] = cloneRecord(overrideClaims[key].record);
+      });
+      return {
+        targetRom: targetRom,
+        scenarioEditor: state,
+        squadOverrides: rom.squadOverrides,
+        scenarioOverrides: scenarioOverrides,
+        removedOverrideKeys: Object.keys(removedOverrideKeys),
+      };
+  }
+
+  function applyPreparedProject(rom, prepared) {
+    if (!prepared || prepared.targetRom !== rom || !prepared.scenarioEditor || !prepared.squadOverrides) {
+      throw new Error('Prepared Scenario Project does not belong to this ROM model.');
     }
+    var mergedOverrides = {};
+    Object.keys(rom.squadOverrides || {}).forEach(function(key) {
+      mergedOverrides[key] = cloneRecord(rom.squadOverrides[key]);
+    });
+    (prepared.removedOverrideKeys || []).forEach(function(key) { delete mergedOverrides[key]; });
+    Object.keys(prepared.scenarioOverrides || {}).forEach(function(key) {
+      mergedOverrides[key] = cloneRecord(prepared.scenarioOverrides[key]);
+    });
+    rom.scenarioEditor = prepared.scenarioEditor;
+    rom.squadOverrides = mergedOverrides;
+    if (OB64._squadChanged) OB64._squadChanged();
+    changed();
+  }
+
+  function loadProject(rom, project) {
+    applyPreparedProject(rom, prepareProject(rom, project));
   }
 
   // The override resolver matches on record CONTENT within a scenario gate. Every added
@@ -6769,6 +7249,8 @@ window.OB64 = window.OB64 || {};
   OB64.scenario = {
     ensureState: ensureState,
     collectProject: collectProject,
+    prepareProject: prepareProject,
+    applyPreparedProject: applyPreparedProject,
     loadProject: loadProject,
     exportScenarioArchives: exportScenarioArchives,
     patchRegions: publicRelocationRegions,

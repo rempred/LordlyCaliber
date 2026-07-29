@@ -658,13 +658,24 @@
   function collectSquadOverrides(rom) {
     var out = [];
     if (!rom.squadOverrides) return out;
-    for (var k in rom.squadOverrides) {
-      var sid = parseInt(k.split(':')[0]), eid = parseInt(k.split(':')[1]);
-      var scn = scenarioById(sid); if (!scn) continue;
+    Object.keys(rom.squadOverrides).forEach(function(k) {
+      var parts = k.split(':');
+      if (parts.length !== 2 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return;
+      var sid = Number(parts[0]), eid = Number(parts[1]);
+      var scn = scenarioById(sid); if (!scn) return;
       var van = vanillaRec(scn, eid) || donorOriginalRec(eid);
-      if (!van) continue;
-      out.push({ gateId: scn.gate || scn.id, original: van, record: rom.squadOverrides[k] });
-    }
+      if (!van) return;
+      out.push({
+        runtimeKey: sid,
+        edatId: eid,
+        gateId: scn.gate || scn.id,
+        original: van,
+        record: rom.squadOverrides[k]
+      });
+    });
+    out.sort(function(a, b) {
+      return a.runtimeKey - b.runtimeKey || a.edatId - b.edatId;
+    });
     return out;
   }
   function countUnmapped(rom) { return 0; }
