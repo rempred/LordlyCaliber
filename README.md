@@ -274,9 +274,10 @@ safety behavior.
   blocks only its accepted ambiguous B/C selectors, and internal key 54 remains
   fail-closed.
   The Scenario squad sidebar exposes **Starting equipment changes** for the
-  leader and follower groups B/C. Each group can choose up to two items from
-  **No change** or a known equipment ID through `0x0115`, displayed with name,
-  category/type, and full four-digit ID. The UI says which normal class slot
+  leader and follower groups B/C. Each of the two item-choice buttons opens the
+  editor's searchable shop-style modal with item icons. It offers **No change**
+  or a known equipment ID through `0x0115`, displayed with name, category/type,
+  and full four-digit ID. The UI says which normal class slot
   each choice replaces, explains when a choice cannot be used, and warns that
   Choice 2 wins when both choices replace the same slot. Every member of the
   group receives the change; these are not individual inventory slots. Stock

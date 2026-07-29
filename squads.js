@@ -98,20 +98,68 @@
   }
   OB64.squadItemResolution = itemResolution;
 
-  function itemOptionsHtml(rom, current) {
-    var html = '<option value="0"' + (current === 0 ? ' selected' : '') + '>0x0000 No change (keep normal equipment)</option>';
+  function itemPickerEntry(rom, id) {
+    if (id === 0) {
+      return {
+        id: 0,
+        name: 'No change (keep normal equipment)',
+        kind: 'none',
+        kindLabel: 'Keep normal class equipment',
+        idLabel: hx4(0),
+        withIcon: false,
+        iconPlaceholder: '\u2014'
+      };
+    }
+    var name = OB64.itemName ? OB64.itemName(id) : ('Item ' + hx4(id));
+    var category = OB64.itemCategory ? OB64.itemCategory(id) : 'Equipment';
+    var type = itemTypeFor(rom, id);
+    var typeName = type == null ? 'type unknown' : (OB64.equipTypeName ? OB64.equipTypeName(type) : hx2(type));
+    return {
+      id: id,
+      name: name,
+      kind: 'equipment',
+      kindLabel: category + ' / ' + typeName,
+      idLabel: hx4(id),
+      iconName: name
+    };
+  }
+
+  function itemPickerItems(rom) {
+    var items = [itemPickerEntry(rom, 0)];
     for (var id = 1; id <= 0x115; id++) {
-      var name = OB64.itemName ? OB64.itemName(id) : ('Item ' + hx4(id));
-      var category = OB64.itemCategory ? OB64.itemCategory(id) : 'Equipment';
-      var type = itemTypeFor(rom, id);
-      var typeName = type == null ? 'type unknown' : (OB64.equipTypeName ? OB64.equipTypeName(type) : hx2(type));
-      html += '<option value="' + id + '"' + (current === id ? ' selected' : '') + '>' +
-        hx4(id) + ' ' + esc(name) + ' - ' + esc(category) + ' / ' + esc(typeName) + '</option>';
+      items.push(itemPickerEntry(rom, id));
     }
-    if (current > 0x115) {
-      html += '<option value="' + current + '" selected disabled>' + hx4(current) + ' Unproven existing value (preserved)</option>';
+    return items;
+  }
+  OB64.squadItemPickerItems = itemPickerItems;
+
+  function itemPickerButtonHtml(rom, value, role, candidate, disabled, inactiveText) {
+    var known = value > 0 && value <= 0x115;
+    var entry = value <= 0x115 ? itemPickerEntry(rom, value) : null;
+    var name = entry ? entry.name : 'Unknown existing item value';
+    var detail = entry
+      ? entry.idLabel + ' \u00B7 ' + entry.kindLabel
+      : hx4(value) + ' \u00B7 Kept until you choose another item';
+    var iconUrl = known && OB64.itemIconURL ? OB64.itemIconURL(entry.iconName) : '';
+    var title = disabled ? inactiveText : 'Open the item picker for equipment choice ' + candidate;
+    return '<button type="button" class="sq-item-picker" data-role="' + role + '" data-candidate="' + candidate + '" data-value="' + value + '"' +
+      ' aria-haspopup="dialog" aria-label="Choose ' + esc(itemGroupName(role)) + ' equipment choice ' + candidate + '" title="' + esc(title) + '"' +
+      (disabled ? ' disabled' : '') + '>' +
+      (iconUrl ? '<img src="' + esc(iconUrl) + '" alt="">' : '<span class="sq-item-picker-empty" aria-hidden="true">\u2014</span>') +
+      '<span class="sq-item-picker-copy"><strong>' + esc(name) + '</strong><small>' + esc(detail) + '</small></span>' +
+      '<span class="sq-item-picker-action" aria-hidden="true">Choose</span></button>';
+  }
+
+  function setItemOverrideFromPicker(rom, scn, role, candidate, id) {
+    try {
+      OB64.scenario.setSquadItemOverride(rom, scn.id, embeddedRowIndex, role, candidate, id);
+      ui.notice = itemGroupName(role) + ', equipment choice ' + candidate + ' set to ' +
+        (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'No change ' + hx4(0)) + '.';
+    } catch (e) {
+      ui.notice = e && e.message ? e.message : String(e);
     }
-    return html;
+    var scenarioPanel = document.getElementById('panel-scenario');
+    if (scenarioPanel && OB64.renderScenarioTab) OB64.renderScenarioTab(scenarioPanel);
   }
 
   function itemOverridesHtml(rom, rec) {
@@ -129,8 +177,8 @@
       values.forEach(function(value, index) {
         var r = resolutions[index];
         var disabled = !info.cohorts[role].materialized;
-        html += '<label>Equipment choice ' + (index + 1) + '<select class="sq-item-select" data-role="' + role + '" data-candidate="' + (index + 1) + '"' +
-          (disabled ? ' disabled title="' + esc(inactiveText) + '"' : '') + '>' + itemOptionsHtml(rom, value) + '</select></label>' +
+        html += '<div class="sq-item-field"><span class="sq-item-label">Equipment choice ' + (index + 1) + '</span>' +
+          itemPickerButtonHtml(rom, value, role, index + 1, disabled, inactiveText) + '</div>' +
           '<div class="sq-item-resolution ' + (r.status === 'compatible' ? 'ok' : (r.status === 'none' ? '' : 'warn')) + '">' + esc(r.text) + '</div>';
       });
       if (collision && info.cohorts[role].materialized) {
@@ -375,8 +423,19 @@
       '#panel-squads .sq-item-overrides{margin-top:14px;padding-top:12px;border-top:1px solid var(--sq-line)}',
       '#panel-squads .sq-item-cohort{border:1px solid var(--sq-line);border-radius:6px;margin:9px 0;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:7px 10px}',
       '#panel-squads .sq-item-cohort legend{font-size:var(--ob-text-sm);font-weight:800;padding:0 4px}',
-      '#panel-squads .sq-item-cohort label{font-size:var(--ob-text-xs);font-weight:700}',
-      '#panel-squads .sq-item-select{display:block;width:100%;height:32px;margin-top:3px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink)}',
+      '#panel-squads .sq-item-field{min-width:0}',
+      '#panel-squads .sq-item-label{display:block;font-size:var(--ob-text-xs);font-weight:700;margin-bottom:3px}',
+      '#panel-squads .sq-item-picker{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:8px;align-items:center;width:100%;min-height:46px;padding:5px 8px;text-align:left;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink);cursor:pointer}',
+      '#panel-squads .sq-item-picker:hover{background:var(--ob-parchment-2);border-color:var(--ob-gold)}',
+      '#panel-squads .sq-item-picker:disabled{opacity:.52;cursor:not-allowed;background:#ead7a8;border-color:var(--ob-parchment-edge)}',
+      '#panel-squads .sq-item-picker img,#panel-squads .sq-item-picker-empty{width:28px;height:28px;object-fit:contain;image-rendering:pixelated}',
+      '#panel-squads .sq-item-picker img{display:block}',
+      '#panel-squads .sq-item-picker-empty{display:flex;align-items:center;justify-content:center;border:1px dashed var(--ob-parchment-edge);border-radius:4px;color:var(--ob-ink-soft);font-weight:800}',
+      '#panel-squads .sq-item-picker-copy{min-width:0}',
+      '#panel-squads .sq-item-picker strong,#panel-squads .sq-item-picker small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '#panel-squads .sq-item-picker strong{font-size:var(--ob-text-sm)}',
+      '#panel-squads .sq-item-picker small{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);margin-top:1px}',
+      '#panel-squads .sq-item-picker-action{font-size:var(--ob-text-xs);font-weight:800;color:var(--ob-wax-red)}',
       '#panel-squads .sq-item-resolution{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);line-height:1.35}',
       '#panel-squads .sq-item-resolution.ok{color:#1f5f3c}',
       '#panel-squads .sq-item-resolution.warn{color:var(--ob-wax-red)}',
@@ -694,18 +753,26 @@
     };
     if (over) wireDetail(rom, scn, rec, k);
     if (detailHost && embeddedRowIndex != null && OB64.scenario) {
-      el.querySelectorAll('.sq-item-select').forEach(function(select) {
-        select.onchange = function() {
-          try {
-            var id = Number(this.value);
-            OB64.scenario.setSquadItemOverride(rom, scn.id, embeddedRowIndex, this.dataset.role, Number(this.dataset.candidate), id);
-            ui.notice = itemGroupName(this.dataset.role) + ', equipment choice ' + this.dataset.candidate + ' set to ' +
-              (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'No change 0x0000') + '.';
-          } catch (e) {
-            ui.notice = e && e.message ? e.message : String(e);
+      el.querySelectorAll('.sq-item-picker').forEach(function(button) {
+        button.onclick = function() {
+          var role = this.dataset.role;
+          var candidate = Number(this.dataset.candidate);
+          var current = Number(this.dataset.value);
+          if (!OB64.openSaveItemPickerModal) {
+            ui.notice = 'The item picker is unavailable. Reload the editor and try again.';
+            var unavailablePanel = document.getElementById('panel-scenario');
+            if (unavailablePanel && OB64.renderScenarioTab) OB64.renderScenarioTab(unavailablePanel);
+            return;
           }
-          var scenarioPanel = document.getElementById('panel-scenario');
-          if (scenarioPanel && OB64.renderScenarioTab) OB64.renderScenarioTab(scenarioPanel);
+          OB64.openSaveItemPickerModal({
+            title: 'Choose starting equipment \u2014 ' + itemGroupName(role) + ', choice ' + candidate,
+            items: itemPickerItems(rom),
+            currentId: current <= 0x115 ? current : undefined,
+            withIcons: true,
+            onSelect: function(id) {
+              setItemOverrideFromPicker(rom, scn, role, candidate, id);
+            }
+          });
         };
       });
       var itemRevert = el.querySelector('#sq-item-revert');

@@ -6357,7 +6357,8 @@ window.OB64 = window.OB64 || {};
   OB64.saveItemsForTab = saveItemsForTab;
 
   // Shop-tab-style modal: list of icon + name rows, click to select.
-  //   opts = { title, items, currentId, includeNone, onSelect(id) }
+  //   opts = { title, items, currentId, includeNone, withIcons, onSelect(id) }
+  // Item rows may provide iconName, withIcon=false, iconPlaceholder, and idLabel.
   function openSaveItemPickerModal(opts) {
     var overlay = document.createElement('div');
     overlay.className = 'item-modal-overlay';
@@ -6404,12 +6405,20 @@ window.OB64 = window.OB64 || {};
       row.className = 'item-modal-row';
       if (item.id === opts.currentId) row.classList.add('selected');
       if (opts.withIcons !== false) {
-        var img = document.createElement('img');
-        img.className = 'item-modal-icon';
-        img.src = itemIconURL(item.name);
-        img.alt = '';
-        img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
-        row.appendChild(img);
+        if (item.withIcon === false) {
+          var iconPlaceholder = document.createElement('span');
+          iconPlaceholder.className = 'item-modal-icon item-modal-icon-empty';
+          iconPlaceholder.textContent = item.iconPlaceholder || '';
+          iconPlaceholder.setAttribute('aria-hidden', 'true');
+          row.appendChild(iconPlaceholder);
+        } else {
+          var img = document.createElement('img');
+          img.className = 'item-modal-icon';
+          img.src = itemIconURL(item.iconName || item.name);
+          img.alt = '';
+          img.addEventListener('error', function() { img.style.visibility = 'hidden'; });
+          row.appendChild(img);
+        }
       }
       var name = document.createElement('span');
       name.className = 'item-modal-name';
@@ -6423,7 +6432,7 @@ window.OB64 = window.OB64 || {};
       row.appendChild(name);
       var idHint = document.createElement('span');
       idHint.className = 'item-modal-price';
-      idHint.textContent = item.id ? ('0x' + item.id.toString(16)) : '';
+      idHint.textContent = item.idLabel != null ? item.idLabel : (item.id ? ('0x' + item.id.toString(16)) : '');
       row.appendChild(idHint);
       row.addEventListener('click', function() {
         var sameId = opts.currentId !== undefined && String(item.id) === String(opts.currentId);
@@ -6434,7 +6443,7 @@ window.OB64 = window.OB64 || {};
         close();
       });
       col.appendChild(row);
-      entries.push({ row: row, needle: (item.name + ' ' + (item.kindLabel || '')).toLowerCase() });
+      entries.push({ row: row, needle: (item.name + ' ' + (item.kindLabel || '') + ' ' + (item.idLabel || '')).toLowerCase() });
     });
     body.appendChild(col);
     modal.appendChild(body);
