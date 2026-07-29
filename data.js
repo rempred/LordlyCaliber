@@ -849,20 +849,6 @@ OB64.shopTowns = function(shopStrongholds, idx) {
 };
 
 // ============================================================
-// SCINCSV FLAG NAMES
-// ============================================================
-OB64.SCINCSV_FLAGS = {
-  0x0000: "None",
-  0x0004: "Normal",
-  0x2002: "Rare",
-  0x2012: "Boss",
-};
-
-OB64.scincsvFlagName = function(flags) {
-  return OB64.SCINCSV_FLAGS[flags] || ("0x" + flags.toString(16).padStart(4, "0"));
-};
-
-// ============================================================
 // MOVEMENT TYPES (class def B32)
 // ============================================================
 // B32 uses ROM byte values, not the printed guide's "TYPE 1..7" row numbers.

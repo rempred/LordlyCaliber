@@ -1513,44 +1513,6 @@ td.raw-hex {
 }
 
 /* ============================================================
-   FLAG BADGES (scincsv)
-   ============================================================ */
-.flag-badge {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-family: var(--ob-display);
-  font-size: var(--ob-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  margin-left: 3px;
-  border: 1px solid transparent;
-  box-shadow: inset 0 1px 0 rgba(255,245,210,0.35);
-}
-
-.flag-boss {
-  background: linear-gradient(180deg, #d44840, var(--ob-wax-red));
-  color: #fff3d2;
-  border-color: #5a0a10;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
-}
-
-.flag-normal {
-  background: linear-gradient(180deg, #5a7ac0, var(--ob-seal-blue));
-  color: #f0f4ff;
-  border-color: #1a2a55;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
-}
-
-.flag-rare {
-  background: linear-gradient(180deg, var(--ob-gold-bright), var(--ob-gold));
-  color: var(--ob-ink);
-  border-color: var(--ob-gold-dim);
-  text-shadow: 0 1px 0 rgba(255,245,210,0.4);
-}
-
-/* ============================================================
    CLASSES TAB
    ============================================================ */
 

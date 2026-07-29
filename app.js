@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -208,7 +208,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -264,7 +264,7 @@ window.OB64 = window.OB64 || {};
         OB64.combatAnimationOverrides.initialize(nextRom);
         OB64.patch.snapshotOriginal(nextRom);   // baseline for later diffing
         OB64.tools.initState(nextRom);          // detect Tools-tab features in the ROM
-        var nextDirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         if (nextRom.squadOverrides) nextRom.squadOverrides = {};
         if (OB64.scenario) OB64.scenario.ensureState(nextRom);
         // A ROM patched by an older build of a Tools feature upgrades on the
@@ -460,19 +460,6 @@ window.OB64 = window.OB64 || {};
         OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners);
       }
 
-      // Enemydat (archive #647)
-      if (dirty.enemies) {
-        var edBuf = OB64.serializeEnemydat(rom.enemySquads);
-        var edComp = OB64.lh5Compress(edBuf);
-        var edArc = OB64.buildLHAArchive(edComp, edBuf, 'enemydat.bin');
-        var edResult = OB64.spliceArchive(candidateRom.z64, rom.archives[647], edArc);
-        if (!edResult.success) {
-          statusBar.textContent = 'Export failed (enemydat): ' + edResult.error;
-          return;
-        }
-        touched.push('enemies');
-      }
-
       // Item stats (direct z64 patch at 0x62310)
       if (dirty.items) {
         OB64.serializeItemStats(rom.itemStats, candidateRom.z64);
@@ -646,8 +633,8 @@ window.OB64 = window.OB64 || {};
       }
 
       // CRC must be recalculated whenever we patch the CIC-6102 window
-      // (z64 0x1000-0x101000). Shop/enemydat archive data, encounter/drop
-      // tables, and stat gates live past that window; items/classes/
+      // (z64 0x1000-0x101000). Encounter/drop tables and stat gates live
+      // past that window; items/classes/
       // consumables, Tools-tab features, and the shared runtime bootstrap do not.
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
         toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc);
@@ -754,7 +741,7 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, enemies: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       changes = 0;
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
@@ -1289,9 +1276,7 @@ window.OB64 = window.OB64 || {};
 
   function setDirtyFlagForActiveTab() {
     // Map the currently-active tab to a dirty flag so export can skip
-    // subsystems the user never touched. This avoids LH5 round-trip
-    // bloat rewriting untouched archives (e.g. enemydat was growing
-    // 358 B past its ROM slot on every export).
+    // subsystems the user never touched.
     switch (activeTab) {
       case 'shops':    dirty.shops = true; break;
       case 'consumables':
@@ -1323,7 +1308,7 @@ window.OB64 = window.OB64 || {};
         break;
       // Consumable edits happen inside the Shops tab's Expendable modal;
       // that modal sets dirty.consumables directly before calling markChanged().
-      // missions/scenarios/map aren't editable in the current UI
+      // Map is not editable in the current UI.
     }
   }
 
@@ -2440,369 +2425,6 @@ window.OB64 = window.OB64 || {};
     shop.consumables = Object.keys(selected).map(function(k) { return parseInt(k, 10); });
     if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
     markChanged('shops');
-  }
-
-  // ============================================================
-  // ENEMIES TAB
-  // ============================================================
-  function renderEnemies(panel) {
-    panel.innerHTML = '';
-    var filter = makeFilterBar('Filter by index, class, or item name...', function(q) {
-      var rows = panel.querySelectorAll('tbody tr');
-      for (var i = 0; i < rows.length; i++) {
-        rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
-      }
-    });
-    panel.appendChild(filter);
-
-    // Class options map including 0=None
-    var classOpts = {0: 'None'};
-    for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
-    var table = document.createElement('table');
-    table.innerHTML = '<thead><tr>' +
-      '<th>#</th>' +
-      '<th title="Byte 0: leader class">Leader</th>' +
-      '<th title="Byte 1: selector-A raw level offset (signed display)">A Level Offset</th>' +
-      '<th title="Bytes 2-5: two cohort-wide big-endian equipment override IDs">A Item Overrides</th>' +
-      '<th title="Byte 6: leader formation cell">Leader Cell</th>' +
-      '<th title="Byte 7: first follower class group">Follower B</th>' +
-      '<th title="Byte 8: selector-B raw level offset (signed display)">B Level Offset</th>' +
-      '<th title="Bytes 9-12: two cohort-wide big-endian equipment override IDs">B Item Overrides</th>' +
-      '<th title="Byte 13: first follower-B formation cell">B Cell 1</th>' +
-      '<th title="Byte 14: second follower-B formation cell; 0 means none">B Cell 2</th>' +
-      '<th title="Byte 15: third follower-B formation cell; rare">B Cell 3</th>' +
-      '<th title="Byte 16: second follower class group">Follower C</th>' +
-      '<th title="Byte 17: selector-C raw level offset (signed display)">C Level Offset</th>' +
-      '<th title="Bytes 18-21: two cohort-wide big-endian equipment override IDs">C Item Overrides</th>' +
-      '<th title="Byte 22: first follower-C formation cell">C Cell 1</th>' +
-      '<th title="Byte 23: second follower-C formation cell; 0 means none">C Cell 2</th>' +
-      '<th title="Byte 24: third follower-C formation cell; rare">C Cell 3</th>' +
-      '</tr></thead>';
-    var tbody = document.createElement('tbody');
-
-    for (var i = 0; i < rom.enemySquads.length; i++) {
-      var s = rom.enemySquads[i];
-      if (!s.classA && !s.classB && !s.classC) continue;
-
-      var tr = document.createElement('tr');
-      tr.id = 'enemy-' + i;
-      td(tr, i);
-
-      // Leader class (searchable dropdown)
-      (function(sq) {
-        var c = td(tr, sq.classA ? OB64.className(sq.classA) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          makeSearchableInput(c, classOpts, sq.classA, function(v) {
-            sq.classA = v;
-            c.textContent = v ? OB64.className(v) : '\u2014';
-          });
-        });
-      })(s);
-
-      // Level offsets are edited on a selected Scenario deployment row. This
-      // global record census is intentionally read-only for those bytes.
-      td(tr, (s.levelOffsetA >= 0x80 ? s.levelOffsetA - 0x100 : s.levelOffsetA) +
-        ' (0x' + s.levelOffsetA.toString(16).padStart(2, '0') + ')');
-      td(tr, '0x' + s.itemOverrideA1.toString(16).padStart(4, '0') + ' / 0x' + s.itemOverrideA2.toString(16).padStart(4, '0'));
-
-      // Leader formation cell (byte 6)
-      (function(sq) {
-        var c = td(tr, sq.posA);
-        c.className = 'editable num';
-        c.title = 'Byte 6: leader formation cell, 1-9';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posA, 0, 9, function(v) {
-            sq.posA = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      // Follower-B class group (searchable dropdown)
-      (function(sq) {
-        var c = td(tr, sq.classB ? OB64.className(sq.classB) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          makeSearchableInput(c, classOpts, sq.classB, function(v) {
-            sq.classB = v;
-            c.textContent = v ? OB64.className(v) : '\u2014';
-          });
-        });
-      })(s);
-
-      td(tr, (s.levelOffsetB >= 0x80 ? s.levelOffsetB - 0x100 : s.levelOffsetB) +
-        ' (0x' + s.levelOffsetB.toString(16).padStart(2, '0') + ')');
-      td(tr, '0x' + s.itemOverrideB1.toString(16).padStart(4, '0') + ' / 0x' + s.itemOverrideB2.toString(16).padStart(4, '0'));
-
-      // First Class-B member formation cell
-      (function(sq) {
-        var c = td(tr, sq.posB1);
-        c.className = 'editable num';
-        c.title = 'Byte 13: first follower-B formation cell';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posB1, 0, 9, function(v) {
-            sq.posB1 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      // Additional Class-B member formation cells
-      (function(sq) {
-        var c = td(tr, sq.posB2);
-        c.className = 'editable num';
-        c.title = 'Byte 14: second follower-B formation cell; 0 means none';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posB2, 0, 9, function(v) {
-            sq.posB2 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      (function(sq) {
-        var c = td(tr, sq.posB3);
-        c.className = 'editable num';
-        c.title = 'Byte 15: third follower-B formation cell; rare';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posB3, 0, 9, function(v) {
-            sq.posB3 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      // Follower-C class group (searchable dropdown)
-      (function(sq) {
-        var c = td(tr, sq.classC ? OB64.className(sq.classC) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          makeSearchableInput(c, classOpts, sq.classC, function(v) {
-            sq.classC = v;
-            c.textContent = v ? OB64.className(v) : '\u2014';
-          });
-        });
-      })(s);
-
-      td(tr, (s.levelOffsetC >= 0x80 ? s.levelOffsetC - 0x100 : s.levelOffsetC) +
-        ' (0x' + s.levelOffsetC.toString(16).padStart(2, '0') + ')');
-      td(tr, '0x' + s.itemOverrideC1.toString(16).padStart(4, '0') + ' / 0x' + s.itemOverrideC2.toString(16).padStart(4, '0'));
-
-      // Class-C member formation cells
-      (function(sq) {
-        var c = td(tr, sq.posC1);
-        c.className = 'editable num';
-        c.title = 'Byte 22: first follower-C formation cell';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posC1, 0, 9, function(v) {
-            sq.posC1 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      (function(sq) {
-        var c = td(tr, sq.posC2);
-        c.className = 'editable num';
-        c.title = 'Byte 23: second follower-C formation cell; 0 means none';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posC2, 0, 9, function(v) {
-            sq.posC2 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      (function(sq) {
-        var c = td(tr, sq.posC3);
-        c.className = 'editable num';
-        c.title = 'Byte 24: third follower-C formation cell; rare';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.posC3, 0, 9, function(v) {
-            sq.posC3 = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
-
-      // Level-offset bytes are not global equipment fields. Scenario-local
-      // offset controls live in the selected deployment-row editor.
-
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    panel.appendChild(table);
-    makeSortable(table);
-  }
-
-  // ============================================================
-  // MISSIONS TAB
-  // ============================================================
-  function renderMissions(panel) {
-    panel.innerHTML = '';
-    var filter = makeFilterBar('Filter by archive # or class name...', function(q) {
-      var rows = panel.querySelectorAll('tbody tr');
-      for (var i = 0; i < rows.length; i++) {
-        rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
-      }
-    });
-    panel.appendChild(filter);
-
-    var table = document.createElement('table');
-    table.innerHTML = '<thead><tr><th>Archive</th><th>Enemy Base</th><th>Squads</th><th>Nodes</th><th>Extra</th><th>Squad Details</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-
-    for (var m = 0; m < rom.esets.length; m++) {
-      var eset = rom.esets[m];
-      var tr = document.createElement('tr');
-
-      td(tr, '#' + eset.archive);
-      td(tr, eset.enemyBaseLevel);
-      td(tr, eset.squadCount);
-      td(tr, eset.mapNodeCount);
-      td(tr, eset.extraCount);
-
-      // Squad summary with cross-refs
-      var tdSquads = document.createElement('td');
-      for (var sq = 0; sq < Math.min(eset.squads.length, 8); sq++) {
-        var entry = eset.squads[sq];
-        var edIdx = entry.enemydatIdx;
-        var span = document.createElement('span');
-        span.className = 'xref';
-        span.textContent = '[' + edIdx + ']';
-        span.dataset.enemyIdx = edIdx;
-        span.addEventListener('click', jumpToEnemy);
-        tdSquads.appendChild(span);
-
-        var label = document.createTextNode(' ' + getSquadLabel(edIdx));
-        tdSquads.appendChild(label);
-
-        if (entry.entryType) {
-          var tag = document.createTextNode(' (type:' + entry.entryType + ')');
-          tdSquads.appendChild(tag);
-        }
-
-        if (sq < eset.squads.length - 1) tdSquads.appendChild(document.createElement('br'));
-      }
-      if (eset.squads.length > 8) {
-        tdSquads.appendChild(document.createTextNode('... +' + (eset.squads.length - 8) + ' more'));
-      }
-      tr.appendChild(tdSquads);
-
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    panel.appendChild(table);
-    makeSortable(table);
-  }
-
-  function getSquadLabel(edIdx) {
-    if (!rom || edIdx >= rom.enemySquads.length) return '(invalid)';
-    var s = rom.enemySquads[edIdx];
-    if (!s.classA && !s.classB) return '(empty)';
-    var members = s.classA && s.posA ? 1 : 0;
-    [s.posB1, s.posB2, s.posB3, s.posC1, s.posC2, s.posC3].forEach(function(cell) { if (cell) members++; });
-    var label = members + ' units: ' + OB64.className(s.classA);
-    if (s.classB) label += ' + ' + OB64.className(s.classB);
-    if (s.classC) label += ' + ' + OB64.className(s.classC);
-    return label;
-  }
-
-  function jumpToEnemy(e) {
-    var idx = parseInt(e.target.dataset.enemyIdx);
-    // Switch to enemies tab
-    activeTab = 'enemies';
-    var buttons = tabBar.querySelectorAll('button');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].classList.toggle('active', buttons[i].dataset.tab === 'enemies');
-    }
-    var panels = document.querySelectorAll('.tab-panel');
-    for (var i = 0; i < panels.length; i++) {
-      panels[i].classList.toggle('active', panels[i].id === 'panel-enemies');
-    }
-    renderEnemies(document.getElementById('panel-enemies'));
-    var row = document.getElementById('enemy-' + idx);
-    if (row) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      row.style.outline = '2px solid #e94560';
-      setTimeout(function() { row.style.outline = ''; }, 2000);
-    }
-  }
-
-  // ============================================================
-  // SCENARIOS TAB
-  // ============================================================
-  function renderScenarios(panel) {
-    panel.innerHTML = '';
-    var filter = makeFilterBar('Filter by archive #, class name, or flag...', function(q) {
-      var rows = panel.querySelectorAll('tbody tr');
-      for (var i = 0; i < rows.length; i++) {
-        rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
-      }
-    });
-    panel.appendChild(filter);
-
-    var table = document.createElement('table');
-    table.innerHTML = '<thead><tr><th>Archive</th><th>Entries</th><th>EnemyDat Range</th><th>Squad Details</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-
-    for (var s = 0; s < rom.scincsvs.length; s++) {
-      var sc = rom.scincsvs[s];
-      var tr = document.createElement('tr');
-
-      td(tr, '#' + sc.archive);
-      td(tr, sc.count);
-
-      // EnemyDat range (min-max index)
-      var minIdx = Infinity, maxIdx = -Infinity;
-      for (var e = 0; e < sc.entries.length; e++) {
-        var idx = sc.entries[e].enemydatIdx;
-        if (idx < minIdx) minIdx = idx;
-        if (idx > maxIdx) maxIdx = idx;
-      }
-      td(tr, minIdx === maxIdx ? '' + minIdx : minIdx + '-' + maxIdx);
-
-      // Squad details: enemydat cross-ref + flag label + squad composition
-      var tdDetail = document.createElement('td');
-      for (var e = 0; e < sc.entries.length; e++) {
-        var entry = sc.entries[e];
-        var edIdx = entry.enemydatIdx;
-
-        // Cross-ref link to Enemies tab
-        var span = document.createElement('span');
-        span.className = 'xref';
-        span.textContent = '[' + edIdx + ']';
-        span.dataset.enemyIdx = edIdx;
-        span.addEventListener('click', jumpToEnemy);
-        tdDetail.appendChild(span);
-
-        // Squad composition label
-        var label = document.createTextNode(' ' + getSquadLabel(edIdx));
-        tdDetail.appendChild(label);
-
-        // Flag badge
-        var flagName = OB64.scincsvFlagName(entry.flags);
-        if (flagName !== 'None') {
-          var badge = document.createElement('span');
-          badge.className = 'flag-badge flag-' + flagName.toLowerCase();
-          badge.textContent = flagName;
-          tdDetail.appendChild(document.createTextNode(' '));
-          tdDetail.appendChild(badge);
-        }
-
-        if (e < sc.entries.length - 1) tdDetail.appendChild(document.createElement('br'));
-      }
-      tr.appendChild(tdDetail);
-
-      tbody.appendChild(tr);
-    }
-
-    table.appendChild(tbody);
-    panel.appendChild(table);
-    makeSortable(table);
   }
 
   // ============================================================

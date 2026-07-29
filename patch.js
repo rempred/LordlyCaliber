@@ -260,9 +260,7 @@ window.OB64 = window.OB64 || {};
         squadOverrides: squadOverridesOut,
         scenario:     scenarioOut,
         consumableEffects: consumableEffectsOut,
-        combatAnimationOverrides: combatAnimationOverridesOut,
-        // Reserved for future tabs.
-        enemies:      {},
+        combatAnimationOverrides: combatAnimationOverridesOut
       },
     };
   }
@@ -285,6 +283,15 @@ window.OB64 = window.OB64 || {};
     }
 
     var p = patch.patches || {};
+    if (Object.prototype.hasOwnProperty.call(p, 'enemies')) {
+      var retiredEnemies = p.enemies;
+      if (retiredEnemies === null || typeof retiredEnemies !== 'object' ||
+          Array.isArray(retiredEnemies) || Object.keys(retiredEnemies).length !== 0) {
+        throw new PatchFormatError(
+          'Retired patches.enemies Project data is unsupported; only the historical empty object is accepted.'
+        );
+      }
+    }
     var hasEffectPayload = Object.prototype.hasOwnProperty.call(p, 'consumableEffects');
     var effectPayload = hasEffectPayload ? p.consumableEffects : undefined;
     var validatedEffects = { entries: {}, modelCount: 0 };
@@ -671,8 +678,7 @@ window.OB64 = window.OB64 || {};
       squadOverrides: {},
       scenario: null,
       consumableEffects: {},
-      combatAnimationOverrides: null,
-      enemies: {},
+      combatAnimationOverrides: null
     };
   }
 

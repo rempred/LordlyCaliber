@@ -676,7 +676,7 @@ window.OB64 = window.OB64 || {};
       neutral_encounters: true, creatureDrops: true, consumables: true,
       statGates: true, neutral_global_rate: true, tools: true,
       squadOverrides: true, scenario: true, consumableEffects: true,
-      combatAnimationOverrides: true, enemies: true
+      combatAnimationOverrides: true
     };
     Object.keys(patches).sort().forEach(function(key) {
       if (handled[key] || isEmptyValue(patches[key])) return;

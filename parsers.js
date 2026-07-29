@@ -1228,76 +1228,6 @@ OB64.parseShops = function(buf) {
 };
 
 // ============================================================
-// Parse eset file — header + 3 sections
-// ============================================================
-OB64.parseEset = function(buf, archiveIdx) {
-  var sec2off = OB64.readU16BE(buf, 4);
-  var sec3off = OB64.readU16BE(buf, 6);
-  var enemyBaseLevel = buf[8];
-  var fmtVariant = buf[10];
-  var subFlag = buf[11];
-  var squadCount = OB64.readU16BE(buf, 14);
-
-  var squads = [];
-  for (var e = 0; e < squadCount; e++) {
-    var off = 16 + e * 18;
-    squads.push({
-      flags: (buf[off] << 8) | buf[off + 1],
-      enemydatIdx: buf[off + 2],
-      entryType: buf[off + 3],
-      params: buf.subarray(off + 4, off + 15),
-    });
-  }
-
-  var sec2count = buf[sec2off] || 0;
-  var mapNodes = [];
-  for (var e = 0; e < sec2count; e++) {
-    var off = sec2off + 1 + e * 18;
-    mapNodes.push({
-      nodeId: buf[off + 1],
-      data: buf.subarray(off, off + 18),
-    });
-  }
-
-  var sec3count = sec3off ? (buf[sec3off] || 0) : 0;
-  var extra = [];
-  for (var e = 0; e < sec3count; e++) {
-    var off = sec3off + 1 + e * 10;
-    extra.push(buf.subarray(off, off + 10));
-  }
-
-  return {
-    archive: archiveIdx,
-    enemyBaseLevel: enemyBaseLevel,
-    headerByte09: buf[9],
-    fmtVariant: fmtVariant,
-    subFlag: subFlag,
-    squadCount: squadCount,
-    squads: squads,
-    mapNodeCount: sec2count,
-    mapNodes: mapNodes,
-    extraCount: sec3count,
-    extra: extra,
-  };
-};
-
-// ============================================================
-// Parse scincsv file — 1 byte count + N x 4-byte entries
-// ============================================================
-OB64.parseScincsv = function(buf, archiveIdx) {
-  var count = buf[0];
-  var entries = [];
-  for (var i = 0; i < count; i++) {
-    var off = 1 + i * 4;
-    entries.push({
-      enemydatIdx: OB64.readU16BE(buf, off),      // bytes 0-1: enemydat record index
-      flags: OB64.readU16BE(buf, off + 2),         // bytes 2-3: squad flags
-    });
-  }
-  return { archive: archiveIdx, count: count, entries: entries };
-};
-
-// ============================================================
 // Parse item stat table — 278 logical 32B records from ROM: ID 0 sentinel
 // plus equipment IDs 0x01-0x115. ITEM_STAT_OFFSET is stat-framed: B0 begins
 // there, while the current record's logical B28-B31 name pointer is stored at
@@ -2086,28 +2016,6 @@ OB64.loadROM = function(romData) {
   var ktenmainBuf = OB64.extractArchive(z64, archives[691]);
   var shopBuf = OB64.extractArchive(z64, archives[751]);
 
-  // Parse eset files (archives 752-814)
-  var esets = [];
-  for (var i = 752; i <= 814; i++) {
-    if (i < archives.length) {
-      try {
-        var buf = OB64.extractArchive(z64, archives[i]);
-        esets.push(OB64.parseEset(buf, i));
-      } catch(e) { /* skip invalid */ }
-    }
-  }
-
-  // Parse scincsv files (archives 692-750)
-  var scincsvs = [];
-  for (var i = 692; i <= 750; i++) {
-    if (i < archives.length) {
-      try {
-        var buf = OB64.extractArchive(z64, archives[i]);
-        scincsvs.push(OB64.parseScincsv(buf, i));
-      } catch(e) { /* skip invalid */ }
-    }
-  }
-
   var strongholds = OB64.parseKtenmain(ktenmainBuf);
 
   return {
@@ -2121,8 +2029,6 @@ OB64.loadROM = function(romData) {
     strongholds: strongholds,
     shopStrongholds: OB64.buildShopStrongholds(strongholds),
     shops: OB64.parseShops(shopBuf),
-    esets: esets,
-    scincsvs: scincsvs,
     itemStats: OB64.parseItemStats(z64),
     worldMap: OB64.parseWorldMap(z64),
     classGrowth: OB64.parseClassGrowth(z64),

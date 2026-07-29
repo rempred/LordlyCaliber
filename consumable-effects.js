@@ -5446,14 +5446,6 @@
     function add(id, name, category, regions) {
       if (regions && regions.length) owners.push({ id: id, name: name, category: category, regions: regions });
     }
-    if (dirty && dirty.enemies && rom.archives && rom.archives[647]) {
-      var enemyArchive = rom.archives[647];
-      add('enemy-squads', 'Enemy Squads', 'enemies', [{
-        kind: 'rom', start: enemyArchive.offset,
-        size: enemyArchive.totalHeaderSize + enemyArchive.compSize,
-        label: 'enemydat archive'
-      }]);
-    }
     if (dirty && dirty.items) add('items', 'Items', 'items', [{
       kind: 'rom', start: OB64.ITEM_STAT_OFFSET || 0x62310,
       size: (OB64.ITEM_STAT_COUNT || 278) * (OB64.ITEM_STAT_SIZE || 32),
