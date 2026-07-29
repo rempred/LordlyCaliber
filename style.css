@@ -2647,6 +2647,7 @@ td.attack-list {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 10px 16px;
   background:
     linear-gradient(180deg, var(--ob-gold-bright), var(--ob-gold) 50%, var(--ob-gold-dim));
@@ -2658,6 +2659,9 @@ td.attack-list {
 }
 
 .item-modal-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   font-family: var(--ob-display);
   font-size: var(--ob-text-md);
   font-weight: 700;
@@ -2672,10 +2676,18 @@ td.attack-list {
     radial-gradient(circle at 35% 30%, var(--ob-wax-red-bright), var(--ob-wax-red));
   border: 1px solid var(--ob-wood-darkest);
   color: #fff3d2;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   border-radius: 50%;
-  font-size: var(--ob-text-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -2930,6 +2942,7 @@ td.attack-list {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 10px 16px;
   border-bottom: 2px solid var(--ob-wax-red);
   background:
@@ -2939,6 +2952,9 @@ td.attack-list {
 }
 
 .error-modal-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   font-family: var(--ob-display);
   font-size: var(--ob-text-md);
   font-weight: 700;
@@ -2952,10 +2968,18 @@ td.attack-list {
   background: transparent;
   border: 1px solid rgba(255,243,210,0.4);
   color: #fff3d2;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   border-radius: 50%;
-  font-size: var(--ob-text-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
