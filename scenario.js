@@ -5647,9 +5647,9 @@ window.OB64 = window.OB64 || {};
     candidateIndex = Number(candidateIndex);
     value = Number(value);
     if (!ITEM_OVERRIDE_FIELDS[selector]) throw new Error('Item selector must be A, B, or C.');
-    if (candidateIndex !== 1 && candidateIndex !== 2) throw new Error('Item override index must be 1 or 2.');
+    if (candidateIndex !== 1 && candidateIndex !== 2) throw new Error('Equipment choice must be 1 or 2.');
     if (!Number.isInteger(value) || value < 0 || value > 0x115) {
-      throw new Error('Item override must be None or a known equipment ID from 0x0001 through 0x0115.');
+      throw new Error('Starting equipment must be No change (0x0000) or a known equipment item from 0x0001 through 0x0115.');
     }
     var meta = levelMetaForKey(rom, runtimeKey);
     if (!meta) throw new Error('Unknown Scenario runtime key ' + runtimeKey + '.');

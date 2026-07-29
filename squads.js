@@ -53,12 +53,23 @@
     var raw0 = role === 'A' ? 2 : (role === 'B' ? 9 : 18);
     var raw1 = role === 'A' ? 4 : (role === 'B' ? 11 : 20);
     return '<div class="sq-level-readout"><strong>Selector ' + role + ' level offset: ' + signedOffset(rec[off]) +
-      '</strong><small>raw ' + hx2(rec[off]) + ' / item overrides ' + hx4(readU16(rec, raw0)) +
+      '</strong><small>raw ' + hx2(rec[off]) + ' / starting equipment ' + hx4(readU16(rec, raw0)) +
       ' and ' + hx4(readU16(rec, raw1)) + '</small></div>';
   }
 
   var ITEM_FIELDS = { A: [2, 4], B: [9, 11], C: [18, 20] };
   var ITEM_SLOT_NAMES = ['weapon', 'body armor', 'shield/off-hand', 'headgear/accessory'];
+  var ITEM_GROUP_NAMES = { A: 'Leader (Group A)', B: 'Follower Group B', C: 'Follower Group C' };
+
+  function itemGroupName(role) {
+    return ITEM_GROUP_NAMES[role] || ('Group ' + role);
+  }
+
+  function inactiveItemGroupText(role) {
+    return role === 'A'
+      ? 'This squad has no leader assigned, so these choices are unavailable.'
+      : 'This squad has no Group ' + role + ' followers, so these choices are unavailable.';
+  }
 
   function itemTypeFor(rom, itemId) {
     var item = rom && rom.itemStats && rom.itemStats[itemId];
@@ -66,8 +77,8 @@
   }
 
   function itemResolution(rom, rec, role, value) {
-    if (value === 0) return { status: 'none', slot: null, text: 'No override.' };
-    if (value > 0x115) return { status: 'unsafe', slot: null, text: 'Unproven ID preserved read-only; choose a known item to replace it.' };
+    if (value === 0) return { status: 'none', slot: null, text: 'No change. Units keep their normal class equipment.' };
+    if (value > 0x115) return { status: 'unsafe', slot: null, text: 'This existing value is outside the proven item list. It will be preserved unless you choose a known item.' };
     var classOffset = role === 'A' ? 0 : (role === 'B' ? 7 : 16);
     var primary = rec[classOffset] || 0;
     var primaryDef = rom && rom.classDefs && rom.classDefs[primary + 1];
@@ -75,20 +86,20 @@
     var def = rom && rom.classDefs && rom.classDefs[effective + 1];
     var type = itemTypeFor(rom, value);
     if (!def || !def.defaultEquip || type == null) {
-      return { status: 'unknown', slot: null, text: 'Cannot resolve this item against the current effective class.' };
+      return { status: 'unknown', slot: null, text: 'The editor cannot determine which normal equipment slot this item would replace for ' + cn(effective) + '.' };
     }
     for (var i = 0; i < def.defaultEquip.length; i++) {
       var current = def.defaultEquip[i];
       if (current && itemTypeFor(rom, current) === type) {
-        return { status: 'compatible', slot: i + 1, text: 'Initializes slot ' + (i + 1) + ' (' + ITEM_SLOT_NAMES[i] + ') for effective class ' + cn(effective) + '.' };
+        return { status: 'compatible', slot: i + 1, text: 'Will replace the ' + ITEM_SLOT_NAMES[i] + ' normally used by ' + cn(effective) + '.' };
       }
     }
-    return { status: 'incompatible', slot: null, text: 'Incompatible with effective class ' + cn(effective) + '; initialization is a no-op.' };
+    return { status: 'incompatible', slot: null, text: 'Will not be used. ' + cn(effective) + ' has no normal equipment slot for this item type.' };
   }
   OB64.squadItemResolution = itemResolution;
 
   function itemOptionsHtml(rom, current) {
-    var html = '<option value="0"' + (current === 0 ? ' selected' : '') + '>0x0000 None</option>';
+    var html = '<option value="0"' + (current === 0 ? ' selected' : '') + '>0x0000 No change (keep normal equipment)</option>';
     for (var id = 1; id <= 0x115; id++) {
       var name = OB64.itemName ? OB64.itemName(id) : ('Item ' + hx4(id));
       var category = OB64.itemCategory ? OB64.itemCategory(id) : 'Equipment';
@@ -107,25 +118,29 @@
     if (!detailHost || embeddedRowIndex == null || !OB64.scenario || !OB64.scenario.squadItemInfo) return '';
     var info = OB64.scenario.squadItemInfo(rom, sel.scenarioId, embeddedRowIndex);
     if (!info) return '';
-    var html = '<div class="sq-item-overrides"><div class="sq-section-label">Cohort item overrides</div>' +
-      '<div class="sq-field-help">Each pair is shared by every deployed member of that cohort. Compatible items replace the first same-type effective-class default slot during initialization; this does not describe later item use.</div>';
+    var html = '<div class="sq-item-overrides"><div class="sq-section-label">Starting equipment changes</div>' +
+      '<div class="sq-field-help">Choose up to two starting-equipment changes for each unit group in this squad. A selected item replaces the group\'s normal class equipment of the same type (weapon, armor, shield, or headgear). If the class has no matching slot, that choice is not used. Every unit in the group receives the change. If both choices replace the same slot, Choice 2 wins. This changes starting equipment; it does not add items to inventory.</div>';
     ['A', 'B', 'C'].forEach(function(role) {
       var values = ITEM_FIELDS[role].map(function(off) { return readU16(rec, off); });
       var resolutions = values.map(function(value) { return itemResolution(rom, rec, role, value); });
       var collision = resolutions[0].slot != null && resolutions[0].slot === resolutions[1].slot;
-      html += '<fieldset class="sq-item-cohort"><legend>Cohort ' + role + '</legend>';
+      var inactiveText = inactiveItemGroupText(role);
+      html += '<fieldset class="sq-item-cohort"><legend>' + itemGroupName(role) + '</legend>';
       values.forEach(function(value, index) {
         var r = resolutions[index];
         var disabled = !info.cohorts[role].materialized;
-        html += '<label>Item override ' + (index + 1) + '<select class="sq-item-select" data-role="' + role + '" data-candidate="' + (index + 1) + '"' +
-          (disabled ? ' disabled title="This cohort has no deployed member"' : '') + '>' + itemOptionsHtml(rom, value) + '</select></label>' +
-          '<div class="sq-item-resolution ' + (r.status === 'compatible' ? 'ok' : (r.status === 'none' ? '' : 'warn')) + '">' + esc(r.text) +
-          (collision && index === 0 ? ' Item override 2 resolves to the same slot and takes precedence.' : '') + '</div>';
+        html += '<label>Equipment choice ' + (index + 1) + '<select class="sq-item-select" data-role="' + role + '" data-candidate="' + (index + 1) + '"' +
+          (disabled ? ' disabled title="' + esc(inactiveText) + '"' : '') + '>' + itemOptionsHtml(rom, value) + '</select></label>' +
+          '<div class="sq-item-resolution ' + (r.status === 'compatible' ? 'ok' : (r.status === 'none' ? '' : 'warn')) + '">' + esc(r.text) + '</div>';
       });
-      if (!info.cohorts[role].materialized) html += '<div class="sq-item-resolution">No deployed member currently uses this cohort.</div>';
+      if (collision && info.cohorts[role].materialized) {
+        html += '<div class="sq-item-resolution sq-item-group-note warn">Both choices replace the same ' +
+          ITEM_SLOT_NAMES[resolutions[0].slot - 1] + '. Choice 2 wins, so Choice 1 will not be used.</div>';
+      }
+      if (!info.cohorts[role].materialized) html += '<div class="sq-item-resolution sq-item-group-note">' + esc(inactiveText) + '</div>';
       html += '</fieldset>';
     });
-    html += '<div class="sq-action-row"><button type="button" id="sq-item-revert" class="btn-secondary">Revert item overrides</button></div></div>';
+    html += '<div class="sq-action-row"><button type="button" id="sq-item-revert" class="btn-secondary">Restore original starting equipment</button></div></div>';
     return html;
   }
   function isLarge(cls) { return !!(OB64.SQUAD_DATA.largeSizes && OB64.SQUAD_DATA.largeSizes[cls]); }
@@ -365,6 +380,7 @@
       '#panel-squads .sq-item-resolution{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);line-height:1.35}',
       '#panel-squads .sq-item-resolution.ok{color:#1f5f3c}',
       '#panel-squads .sq-item-resolution.warn{color:var(--ob-wax-red)}',
+      '#panel-squads .sq-item-group-note{grid-column:1/-1;font-weight:700}',
       '#panel-squads .sq-group-row{display:flex;gap:6px;align-items:center}',
       '#panel-squads .sq-group-row select{flex:1;min-width:0}',
       '#panel-squads .sq-add-member{width:32px;height:32px;flex:0 0 32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:var(--ob-gold);color:var(--ob-ink);font-size:var(--ob-text-md);font-weight:800;line-height:1;cursor:pointer;padding:0}',
@@ -683,8 +699,8 @@
           try {
             var id = Number(this.value);
             OB64.scenario.setSquadItemOverride(rom, scn.id, embeddedRowIndex, this.dataset.role, Number(this.dataset.candidate), id);
-            ui.notice = 'Cohort ' + this.dataset.role + ' item override ' + this.dataset.candidate + ' set to ' +
-              (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'None 0x0000') + '.';
+            ui.notice = itemGroupName(this.dataset.role) + ', equipment choice ' + this.dataset.candidate + ' set to ' +
+              (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'No change 0x0000') + '.';
           } catch (e) {
             ui.notice = e && e.message ? e.message : String(e);
           }
@@ -696,7 +712,7 @@
       if (itemRevert) itemRevert.onclick = function() {
         try {
           OB64.scenario.revertSquadItemOverrides(rom, scn.id, embeddedRowIndex);
-          ui.notice = 'Item overrides restored to this deployment\'s source values.';
+          ui.notice = 'Starting equipment restored to this squad\'s original values.';
         } catch (e) {
           ui.notice = e && e.message ? e.message : String(e);
         }

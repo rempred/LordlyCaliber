@@ -527,7 +527,7 @@ window.OB64 = window.OB64 || {};
   function itemOverrideLabel(id) {
     id = Number(id) & 0xFFFF;
     var hex = '0x' + id.toString(16).toUpperCase().padStart(4, '0');
-    return id ? ((OB64.itemName ? OB64.itemName(id) : 'Equipment') + ' (' + hex + ')') : 'None (' + hex + ')';
+    return id ? ((OB64.itemName ? OB64.itemName(id) : 'Equipment') + ' (' + hex + ')') : 'No change (' + hex + ')';
   }
 
   function itemOverrideChanges(before, after) {
@@ -537,7 +537,8 @@ window.OB64 = window.OB64 || {};
       var newValue = readU16BE(after, field[2]);
       if (before && oldValue === newValue) return;
       if (!before && !newValue) return;
-      lines.push('Cohort ' + field[0] + ' item override ' + field[1] + ': ' +
+      var groupName = field[0] === 'A' ? 'Leader (Group A)' : 'Follower Group ' + field[0];
+      lines.push(groupName + ', equipment choice ' + field[1] + ': ' +
         (before ? itemOverrideLabel(oldValue) + ' -> ' : '') + itemOverrideLabel(newValue) + '.');
     });
     return lines;

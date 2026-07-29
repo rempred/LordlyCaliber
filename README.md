@@ -273,13 +273,15 @@ safety behavior.
   stock row's original reference and removes its level-copy allocation. Key 25
   blocks only its accepted ambiguous B/C selectors, and internal key 54 remains
   fail-closed.
-  Each deployed A/B/C cohort also has two **Item override** selectors in the
-  Scenario squad sidebar. Choices are None or a known equipment ID through
-  `0x0115`, displayed with name, category/type, and full four-digit ID. The UI
-  reports the statically resolved effective-class destination slot,
-  incompatible/no-op values, and candidate-2 precedence when both resolve the
-  same slot. Values are cohort-wide, not per occupant. Stock edits reuse the
-  same complete Scenario-local custom record as level/class/formation edits;
+  The Scenario squad sidebar exposes **Starting equipment changes** for the
+  leader and follower groups B/C. Each group can choose up to two items from
+  **No change** or a known equipment ID through `0x0115`, displayed with name,
+  category/type, and full four-digit ID. The UI says which normal class slot
+  each choice replaces, explains when a choice cannot be used, and warns that
+  Choice 2 wins when both choices replace the same slot. Every member of the
+  group receives the change; these are not individual inventory slots. Stock
+  edits reuse the same complete Scenario-local custom record as
+  level/class/formation edits;
   added squads edit their owned record. Project v4 and the existing export lane
   preserve the full u16 values. Existing source IDs beyond the proven range are
   shown and preserved read-only. This feature proves initialization only; it
