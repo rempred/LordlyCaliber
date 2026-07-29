@@ -520,6 +520,29 @@ window.OB64 = window.OB64 || {};
     return count;
   }
 
+  function readU16BE(bytes, offset) {
+    return bytes && bytes.length > offset + 1 ? (((bytes[offset] << 8) | bytes[offset + 1]) & 0xFFFF) : 0;
+  }
+
+  function itemOverrideLabel(id) {
+    id = Number(id) & 0xFFFF;
+    var hex = '0x' + id.toString(16).toUpperCase().padStart(4, '0');
+    return id ? ((OB64.itemName ? OB64.itemName(id) : 'Equipment') + ' (' + hex + ')') : 'None (' + hex + ')';
+  }
+
+  function itemOverrideChanges(before, after) {
+    var lines = [];
+    [['A',1,2],['A',2,4],['B',1,9],['B',2,11],['C',1,18],['C',2,20]].forEach(function(field) {
+      var oldValue = readU16BE(before, field[2]);
+      var newValue = readU16BE(after, field[2]);
+      if (before && oldValue === newValue) return;
+      if (!before && !newValue) return;
+      lines.push('Cohort ' + field[0] + ' item override ' + field[1] + ': ' +
+        (before ? itemOverrideLabel(oldValue) + ' -> ' : '') + itemOverrideLabel(newValue) + '.');
+    });
+    return lines;
+  }
+
   function buildSquadSection(patches, sections) {
     var entries = [];
     Object.keys(patches.squadOverrides || {}).sort().forEach(function(key) {
@@ -529,6 +552,7 @@ window.OB64 = window.OB64 || {};
       var lines = [];
       if (before) lines.push('Before: ' + squadSummary(before));
       lines.push('After: ' + squadSummary(after));
+      lines = lines.concat(itemOverrideChanges(before, after));
       var byteCount = changedByteCount(before, after);
       if (byteCount != null) lines.push(byteCount + ' of 35 composition bytes changed.');
       entries.push({
@@ -552,6 +576,8 @@ window.OB64 = window.OB64 || {};
     });
     (project.squadLevelCopies || []).forEach(function(copy) {
       var requested = copy.requestedOffsetsRaw || {};
+      var sourceRecord = hexBytes(copy.sourceRecordHex || copy.originalRecordHex);
+      var customRecord = hexBytes(copy.customRecordHex);
       function signed(raw) { raw = Number(raw) & 0xFF; return raw >= 0x80 ? raw - 0x100 : raw; }
       entries.push({
         title: scenarioLabel(copy.runtimeKey) + ', deployment row #' + scalar(copy.section1Row),
@@ -560,7 +586,7 @@ window.OB64 = window.OB64 || {};
             ' → custom #' + scalar(copy.customEdatId) + '.',
           'Selector offsets A/B/C: ' + signed(requested.A) + ' / ' + signed(requested.B) + ' / ' + signed(requested.C) +
             ' (raw ' + scalar(requested.A) + ' / ' + scalar(requested.B) + ' / ' + scalar(requested.C) + ').'
-        ]
+        ].concat(itemOverrideChanges(sourceRecord, customRecord))
       });
     });
     numericKeys(project.modifiedEsets).forEach(function(key) {
@@ -604,6 +630,7 @@ window.OB64 = window.OB64 || {};
       ];
       var comp = hexBytes(added.compRecHex);
       if (comp) lines.push('Composition: ' + squadSummary(comp) + '.');
+      if (comp) lines = lines.concat(itemOverrideChanges(null, comp));
       entries.push({ title: scenarioLabel(added.runtimeKey), lines: lines });
     });
     addSection(sections, 'Scenarios', entries);

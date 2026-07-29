@@ -28,16 +28,17 @@
   // Embed the full squad comp editor (override toggle, grid, pickers, drag cells) into an
   // arbitrary container - used by the Scenario tab's right sidebar. Re-renders on every commit
   // because renderDetail keeps writing into the host until released.
-  OB64.renderSquadCompEditor = function(container, rom, scenarioId, edatId) {
+  OB64.renderSquadCompEditor = function(container, rom, scenarioId, edatId, rowIndex) {
     injectStyle();
     ensureInit(rom);
     sel.scenarioId = scenarioId;
     sel.edatId = edatId;
     ui.notice = '';
     detailHost = container;
+    embeddedRowIndex = Number.isInteger(rowIndex) ? rowIndex : null;
     renderDetail(rom);
   };
-  OB64.releaseSquadCompEditor = function() { detailHost = null; };
+  OB64.releaseSquadCompEditor = function() { detailHost = null; embeddedRowIndex = null; };
   var STYLE_ID = 'squads-style';
 
   function hexToBytes(h) { var b = new Uint8Array(h.length / 2); for (var i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16); return b; }
@@ -52,8 +53,80 @@
     var raw0 = role === 'A' ? 2 : (role === 'B' ? 9 : 18);
     var raw1 = role === 'A' ? 4 : (role === 'B' ? 11 : 20);
     return '<div class="sq-level-readout"><strong>Selector ' + role + ' level offset: ' + signedOffset(rec[off]) +
-      '</strong><small>raw ' + hx2(rec[off]) + ' / preserved u16 fields ' + hx4(readU16(rec, raw0)) +
+      '</strong><small>raw ' + hx2(rec[off]) + ' / item overrides ' + hx4(readU16(rec, raw0)) +
       ' and ' + hx4(readU16(rec, raw1)) + '</small></div>';
+  }
+
+  var ITEM_FIELDS = { A: [2, 4], B: [9, 11], C: [18, 20] };
+  var ITEM_SLOT_NAMES = ['weapon', 'body armor', 'shield/off-hand', 'headgear/accessory'];
+
+  function itemTypeFor(rom, itemId) {
+    var item = rom && rom.itemStats && rom.itemStats[itemId];
+    return item ? item.equipType : null;
+  }
+
+  function itemResolution(rom, rec, role, value) {
+    if (value === 0) return { status: 'none', slot: null, text: 'No override.' };
+    if (value > 0x115) return { status: 'unsafe', slot: null, text: 'Unproven ID preserved read-only; choose a known item to replace it.' };
+    var classOffset = role === 'A' ? 0 : (role === 'B' ? 7 : 16);
+    var primary = rec[classOffset] || 0;
+    var primaryDef = rom && rom.classDefs && rom.classDefs[primary + 1];
+    var effective = primaryDef && primaryDef.classCopyMatch ? primaryDef.classCopyMatch : primary;
+    var def = rom && rom.classDefs && rom.classDefs[effective + 1];
+    var type = itemTypeFor(rom, value);
+    if (!def || !def.defaultEquip || type == null) {
+      return { status: 'unknown', slot: null, text: 'Cannot resolve this item against the current effective class.' };
+    }
+    for (var i = 0; i < def.defaultEquip.length; i++) {
+      var current = def.defaultEquip[i];
+      if (current && itemTypeFor(rom, current) === type) {
+        return { status: 'compatible', slot: i + 1, text: 'Initializes slot ' + (i + 1) + ' (' + ITEM_SLOT_NAMES[i] + ') for effective class ' + cn(effective) + '.' };
+      }
+    }
+    return { status: 'incompatible', slot: null, text: 'Incompatible with effective class ' + cn(effective) + '; initialization is a no-op.' };
+  }
+  OB64.squadItemResolution = itemResolution;
+
+  function itemOptionsHtml(rom, current) {
+    var html = '<option value="0"' + (current === 0 ? ' selected' : '') + '>0x0000 None</option>';
+    for (var id = 1; id <= 0x115; id++) {
+      var name = OB64.itemName ? OB64.itemName(id) : ('Item ' + hx4(id));
+      var category = OB64.itemCategory ? OB64.itemCategory(id) : 'Equipment';
+      var type = itemTypeFor(rom, id);
+      var typeName = type == null ? 'type unknown' : (OB64.equipTypeName ? OB64.equipTypeName(type) : hx2(type));
+      html += '<option value="' + id + '"' + (current === id ? ' selected' : '') + '>' +
+        hx4(id) + ' ' + esc(name) + ' - ' + esc(category) + ' / ' + esc(typeName) + '</option>';
+    }
+    if (current > 0x115) {
+      html += '<option value="' + current + '" selected disabled>' + hx4(current) + ' Unproven existing value (preserved)</option>';
+    }
+    return html;
+  }
+
+  function itemOverridesHtml(rom, rec) {
+    if (!detailHost || embeddedRowIndex == null || !OB64.scenario || !OB64.scenario.squadItemInfo) return '';
+    var info = OB64.scenario.squadItemInfo(rom, sel.scenarioId, embeddedRowIndex);
+    if (!info) return '';
+    var html = '<div class="sq-item-overrides"><div class="sq-section-label">Cohort item overrides</div>' +
+      '<div class="sq-field-help">Each pair is shared by every deployed member of that cohort. Compatible items replace the first same-type effective-class default slot during initialization; this does not describe later item use.</div>';
+    ['A', 'B', 'C'].forEach(function(role) {
+      var values = ITEM_FIELDS[role].map(function(off) { return readU16(rec, off); });
+      var resolutions = values.map(function(value) { return itemResolution(rom, rec, role, value); });
+      var collision = resolutions[0].slot != null && resolutions[0].slot === resolutions[1].slot;
+      html += '<fieldset class="sq-item-cohort"><legend>Cohort ' + role + '</legend>';
+      values.forEach(function(value, index) {
+        var r = resolutions[index];
+        var disabled = !info.cohorts[role].materialized;
+        html += '<label>Item override ' + (index + 1) + '<select class="sq-item-select" data-role="' + role + '" data-candidate="' + (index + 1) + '"' +
+          (disabled ? ' disabled title="This cohort has no deployed member"' : '') + '>' + itemOptionsHtml(rom, value) + '</select></label>' +
+          '<div class="sq-item-resolution ' + (r.status === 'compatible' ? 'ok' : (r.status === 'none' ? '' : 'warn')) + '">' + esc(r.text) +
+          (collision && index === 0 ? ' Item override 2 resolves to the same slot and takes precedence.' : '') + '</div>';
+      });
+      if (!info.cohorts[role].materialized) html += '<div class="sq-item-resolution">No deployed member currently uses this cohort.</div>';
+      html += '</fieldset>';
+    });
+    html += '<div class="sq-action-row"><button type="button" id="sq-item-revert" class="btn-secondary">Revert item overrides</button></div></div>';
+    return html;
   }
   function isLarge(cls) { return !!(OB64.SQUAD_DATA.largeSizes && OB64.SQUAD_DATA.largeSizes[cls]); }
   function slotCost(cls) { return isLarge(cls) ? 2 : 1; }
@@ -284,6 +357,14 @@
       '#panel-squads .sq-level-readout strong{font-size:var(--ob-text-xs)}',
       '#panel-squads .sq-level-readout small{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);margin-top:2px}',
       '#panel-squads .sq-field-help{margin-top:4px;color:var(--ob-ink-soft);font-size:var(--ob-text-xs);line-height:1.35}',
+      '#panel-squads .sq-item-overrides{margin-top:14px;padding-top:12px;border-top:1px solid var(--sq-line)}',
+      '#panel-squads .sq-item-cohort{border:1px solid var(--sq-line);border-radius:6px;margin:9px 0;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:7px 10px}',
+      '#panel-squads .sq-item-cohort legend{font-size:var(--ob-text-sm);font-weight:800;padding:0 4px}',
+      '#panel-squads .sq-item-cohort label{font-size:var(--ob-text-xs);font-weight:700}',
+      '#panel-squads .sq-item-select{display:block;width:100%;height:32px;margin-top:3px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:#f7ebce;color:var(--ob-ink)}',
+      '#panel-squads .sq-item-resolution{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);line-height:1.35}',
+      '#panel-squads .sq-item-resolution.ok{color:#1f5f3c}',
+      '#panel-squads .sq-item-resolution.warn{color:var(--ob-wax-red)}',
       '#panel-squads .sq-group-row{display:flex;gap:6px;align-items:center}',
       '#panel-squads .sq-group-row select{flex:1;min-width:0}',
       '#panel-squads .sq-add-member{width:32px;height:32px;flex:0 0 32px;border:1px solid var(--ob-parchment-edge);border-radius:5px;background:var(--ob-gold);color:var(--ob-ink);font-size:var(--ob-text-md);font-weight:800;line-height:1;cursor:pointer;padding:0}',
@@ -512,6 +593,7 @@
   // When set, the squad comp editor renders into this element instead of #sq-detail
   // (used by the Scenario tab's right sidebar).
   var detailHost = null;
+  var embeddedRowIndex = null;
 
   function renderDetail(rom) {
     var el = detailHost || document.getElementById('sq-detail'); if (!el) return;
@@ -524,16 +606,20 @@
       renderKeyOverview(el, rom, scn);
       return;
     }
-    var van = vanillaRec(scn, sel.edatId), k = key(scn.id, sel.edatId), over = rom.squadOverrides[k], rec = over || van;
+    var deploymentInfo = detailHost && embeddedRowIndex != null && OB64.scenario && OB64.scenario.squadLevelInfo
+      ? OB64.scenario.squadLevelInfo(rom, scn.id, embeddedRowIndex)
+      : null;
+    var sourceEdatId = deploymentInfo ? deploymentInfo.originalEdatId : sel.edatId;
+    var van = vanillaRec(scn, sourceEdatId), k = key(scn.id, sel.edatId), over = rom.squadOverrides[k], rec = over || van;
     // Added squads (Scenario tab) have no vanilla record; their override IS the record.
-    var isAdded = !van;
+    var isAdded = deploymentInfo ? deploymentInfo.added : !van;
     if (!rec) {
       el.innerHTML = '<div class="sq-detail-head"><div><div class="sq-head">' + esc(scn.name) + ' / edat ' + sel.edatId + '</div>' +
         '<div class="sq-sub">No record: this edat has no vanilla squad and no override.</div></div></div>';
       return;
     }
     var selected = null;
-    for (var si = 0; si < scn.squads.length; si++) if (scn.squads[si].e === sel.edatId) { selected = scn.squads[si]; break; }
+    for (var si = 0; si < scn.squads.length; si++) if (scn.squads[si].e === sourceEdatId) { selected = scn.squads[si]; break; }
     var bn = selected ? bossName(selected) : '';
     var trace = selected ? squadTraceText(selected) : '';
     var headChips = scenarioHeadChips(scn);
@@ -548,7 +634,7 @@
       (trace ? ' - ' + esc(trace) : '') + '</div>' +
       '</div>' +
       '<span class="sq-row-meta">' + headChips + '</span></div>';
-    if (!isAdded) html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
+    if (!isAdded && !detailHost) html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
     if (over) {
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
@@ -564,13 +650,15 @@
       var capacity = ui.rawCapacity ? (n + '/7 raw anchors - large size ignored') : (slots + '/5 slots');
       html += '<div class="sq-foot"><span class="' + (ok && !ui.rawCapacity ? 'sq-status' : 'sq-warn') + '">' + status + ' - ' + n + ' units - ' + capacity + ' - ' + followerTypeCount(rec) + '/2 follower types</span>' +
         '<span>' + esc(scenarioTraceText(scn)) + '</span></div>';
-      html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">' + (isAdded ? 'Reset to lone leader' : 'Reset to vanilla') + '</button></div>';
+      html += '<div class="sq-action-row"><button type="button" id="sq-reset" class="btn-secondary">' +
+        (isAdded ? 'Reset to lone leader' : (detailHost ? 'Reset composition to source' : 'Reset to vanilla')) + '</button></div>';
     } else {
       html += '<div class="sq-editor-grid">' + gridHtml(van, false) +
         '<div class="sq-readout"><div class="sq-section-label">Vanilla squad</div>' +
         '<div class="sq-sub">' + esc(compLabel(van)) + '</div>' +
         '<div class="sq-sub">' + esc(scenarioTraceText(scn)) + '</div></div></div>';
     }
+    html += itemOverridesHtml(rom, rec);
     el.innerHTML = html;
     var toggle = el.querySelector('#sq-override');
     if (toggle) toggle.onchange = function () {
@@ -589,6 +677,33 @@
       renderDetail(rom);
     };
     if (over) wireDetail(rom, scn, rec, k);
+    if (detailHost && embeddedRowIndex != null && OB64.scenario) {
+      el.querySelectorAll('.sq-item-select').forEach(function(select) {
+        select.onchange = function() {
+          try {
+            var id = Number(this.value);
+            OB64.scenario.setSquadItemOverride(rom, scn.id, embeddedRowIndex, this.dataset.role, Number(this.dataset.candidate), id);
+            ui.notice = 'Cohort ' + this.dataset.role + ' item override ' + this.dataset.candidate + ' set to ' +
+              (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'None 0x0000') + '.';
+          } catch (e) {
+            ui.notice = e && e.message ? e.message : String(e);
+          }
+          var scenarioPanel = document.getElementById('panel-scenario');
+          if (scenarioPanel && OB64.renderScenarioTab) OB64.renderScenarioTab(scenarioPanel);
+        };
+      });
+      var itemRevert = el.querySelector('#sq-item-revert');
+      if (itemRevert) itemRevert.onclick = function() {
+        try {
+          OB64.scenario.revertSquadItemOverrides(rom, scn.id, embeddedRowIndex);
+          ui.notice = 'Item overrides restored to this deployment\'s source values.';
+        } catch (e) {
+          ui.notice = e && e.message ? e.message : String(e);
+        }
+        var scenarioPanel = document.getElementById('panel-scenario');
+        if (scenarioPanel && OB64.renderScenarioTab) OB64.renderScenarioTab(scenarioPanel);
+      };
+    }
   }
 
   function wireDetail(rom, scn, rec, k) {
@@ -621,7 +736,19 @@
     el.querySelectorAll('.sq-remove').forEach(function (x) { x.onclick = function (e) { e.stopPropagation(); removeCell(rec, parseInt(this.dataset.cell)); commit(rom, scn); }; });
     var rb = el.querySelector('#sq-reset'); if (rb) rb.onclick = function () {
       var v = vanillaRec(scn, sel.edatId);
-      if (v) {
+      if (detailHost && embeddedRowIndex != null) {
+        var sourceInfo = OB64.scenario && OB64.scenario.squadLevelInfo
+          ? OB64.scenario.squadLevelInfo(rom, scn.id, embeddedRowIndex)
+          : null;
+        var source = sourceInfo && vanillaRec(scn, sourceInfo.originalEdatId);
+        if (source) {
+          [0, 6, 7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { rec[offset] = source[offset]; });
+        } else {
+          rec[0] = rec[0] || 1;
+          rec[6] = 5;
+          [7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { rec[offset] = 0; });
+        }
+      } else if (v) {
         rom.squadOverrides[k] = v.slice(0);
       } else {
         // Added squad: no vanilla to restore - reset to a lone leader in the center cell.

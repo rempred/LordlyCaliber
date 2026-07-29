@@ -600,20 +600,20 @@ OB64.serializeEnemydat = function(squads) {
     }
     buf[off + 0] = s.classA;
     buf[off + 1] = s.levelOffsetA;
-    OB64.writeU16BE(buf, off + 2, s.rawA0);
-    OB64.writeU16BE(buf, off + 4, s.rawA1);
+    OB64.writeU16BE(buf, off + 2, s.itemOverrideA1);
+    OB64.writeU16BE(buf, off + 4, s.itemOverrideA2);
     buf[off + 6] = s.posA;
     buf[off + 7] = s.classB;
     buf[off + 8] = s.levelOffsetB;
-    OB64.writeU16BE(buf, off + 9, s.rawB0);
-    OB64.writeU16BE(buf, off + 11, s.rawB1);
+    OB64.writeU16BE(buf, off + 9, s.itemOverrideB1);
+    OB64.writeU16BE(buf, off + 11, s.itemOverrideB2);
     buf[off + 13] = s.posB1;
     buf[off + 14] = s.posB2;
     buf[off + 15] = s.posB3;
     buf[off + 16] = s.classC;
     buf[off + 17] = s.levelOffsetC;
-    OB64.writeU16BE(buf, off + 18, s.rawC0);
-    OB64.writeU16BE(buf, off + 20, s.rawC1);
+    OB64.writeU16BE(buf, off + 18, s.itemOverrideC1);
+    OB64.writeU16BE(buf, off + 20, s.itemOverrideC2);
     buf[off + 22] = s.posC1;
     buf[off + 23] = s.posC2;
     buf[off + 24] = s.posC3;

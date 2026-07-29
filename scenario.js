@@ -502,6 +502,12 @@ window.OB64 = window.OB64 || {};
     C: { offset: 17, classOffset: 16, cells: [22, 23, 24] },
   };
 
+  var ITEM_OVERRIDE_FIELDS = {
+    A: [2, 4],
+    B: [9, 11],
+    C: [18, 20],
+  };
+
   function levelMetaForKey(rom, runtimeKey) {
     return ensureState(rom).metadata[runtimeKey] || scenarioData(runtimeKey);
   }
@@ -4060,7 +4066,7 @@ window.OB64 = window.OB64 || {};
     // class pickers, drag cells) - renders live against the same override state.
     var compHost = el.querySelector('#sc-comp-host');
     if (compHost && OB64.renderSquadCompEditor) {
-      OB64.renderSquadCompEditor(compHost, rom, key, detailPoint.edat);
+      OB64.renderSquadCompEditor(compHost, rom, key, detailPoint.edat, rowIndex);
     }
     var mode = el.querySelector('#sc-placement-mode');
     if (mode) mode.onchange = function() {
@@ -5241,6 +5247,7 @@ window.OB64 = window.OB64 || {};
     out[1] = 0;
     out[8] = 0;
     out[17] = 0;
+    [2, 3, 4, 5, 9, 10, 11, 12, 18, 19, 20, 21].forEach(function(f) { out[f] = 0; });
     if (!out[0]) out[0] = 0x01; // Fighter
     return out;
   }
@@ -5573,6 +5580,197 @@ window.OB64 = window.OB64 || {};
     return squadLevelInfo(rom, runtimeKey, rowIndex);
   }
 
+  function readRecordU16(record, offset) {
+    return (((record[offset] || 0) << 8) | (record[offset + 1] || 0)) & 0xFFFF;
+  }
+
+  function writeRecordU16(record, offset, value) {
+    record[offset] = (value >>> 8) & 0xFF;
+    record[offset + 1] = value & 0xFF;
+  }
+
+  function squadItemInfo(rom, runtimeKey, rowIndex) {
+    var state = ensureState(rom);
+    var row = state.models[runtimeKey] && state.models[runtimeKey].section1[rowIndex];
+    if (!row) return null;
+    var added = addedSquadForRow(rom, runtimeKey, rowIndex);
+    var copy = levelCopyForRow(rom, runtimeKey, rowIndex, row.sourceId);
+    var current = effectiveRecordForRow(rom, runtimeKey, rowIndex);
+    if (!current || current.length !== 35) return null;
+    var source = added
+      ? new Uint8Array(35)
+      : (copy && copy.sourceRecordHex
+        ? OB64.scenarioCodec.compactHexToBytes(copy.sourceRecordHex)
+        : stockRecordBytes(copy ? copy.originalEdatId : rowEdatId(originalRowFor(rom, runtimeKey, rowIndex))));
+    var cohorts = {};
+    Object.keys(ITEM_OVERRIDE_FIELDS).forEach(function(selector) {
+      var offsets = ITEM_OVERRIDE_FIELDS[selector];
+      cohorts[selector] = {
+        materialized: selectorMaterialized(current, selector),
+        values: offsets.map(function(offset) { return readRecordU16(current, offset); }),
+        sourceValues: offsets.map(function(offset) { return source ? readRecordU16(source, offset) : 0; }),
+      };
+    });
+    return {
+      runtimeKey: runtimeKey,
+      rowIndex: rowIndex,
+      sourceId: row.sourceId,
+      currentEdatId: rowEdatId(row),
+      customCopy: !!copy,
+      added: !!added,
+      cohorts: cohorts,
+    };
+  }
+
+  function setAddedSquadItemOverride(rom, runtimeKey, rowIndex, selector, candidateIndex, value) {
+    var entry = addedSquadForRow(rom, runtimeKey, rowIndex);
+    var row = modelFor(rom, runtimeKey).section1[rowIndex];
+    if (!entry || !row || row.sourceId !== entry.sourceId || rowEdatId(row) !== entry.edatId) {
+      throw new Error('Added-squad identity/reference mismatch.');
+    }
+    var allocationKey = runtimeKey + ':' + entry.edatId;
+    var current = rom.squadOverrides && rom.squadOverrides[allocationKey];
+    if (!current || current.length !== 35) throw new Error('Added squad has no complete scenario-local custom record.');
+    if (!selectorMaterialized(current, selector)) throw new Error('Selector ' + selector + ' has no deployed member in this squad.');
+    var next = cloneRecord(current);
+    writeRecordU16(next, ITEM_OVERRIDE_FIELDS[selector][candidateIndex - 1], value);
+    rom.squadOverrides[allocationKey] = next;
+    entry.levelOffsetsRaw = levelOffsetsRaw(next);
+    ensureState(rom).modifiedKeys[runtimeKey] = true;
+    if (OB64._squadChanged) OB64._squadChanged();
+    changed();
+    return squadItemInfo(rom, runtimeKey, rowIndex);
+  }
+
+  function setSquadItemOverride(rom, runtimeKey, rowIndex, selector, candidateIndex, value) {
+    selector = String(selector || '').toUpperCase();
+    candidateIndex = Number(candidateIndex);
+    value = Number(value);
+    if (!ITEM_OVERRIDE_FIELDS[selector]) throw new Error('Item selector must be A, B, or C.');
+    if (candidateIndex !== 1 && candidateIndex !== 2) throw new Error('Item override index must be 1 or 2.');
+    if (!Number.isInteger(value) || value < 0 || value > 0x115) {
+      throw new Error('Item override must be None or a known equipment ID from 0x0001 through 0x0115.');
+    }
+    var meta = levelMetaForKey(rom, runtimeKey);
+    if (!meta) throw new Error('Unknown Scenario runtime key ' + runtimeKey + '.');
+    if (meta.levelEditing && meta.levelEditing.excluded) throw new Error(meta.levelEditing.reason);
+    var sourceCheck = verifyLevelResourceSource(rom, runtimeKey);
+    if (!sourceCheck.ok) throw new Error(sourceCheck.message);
+    if (addedSquadForRow(rom, runtimeKey, rowIndex)) {
+      return setAddedSquadItemOverride(rom, runtimeKey, rowIndex, selector, candidateIndex, value);
+    }
+
+    var identity = assertStockLevelIdentity(rom, runtimeKey, rowIndex);
+    var state = ensureState(rom);
+    var row = state.models[runtimeKey].section1[rowIndex];
+    var existing = levelCopyForRow(rom, runtimeKey, rowIndex, row.sourceId);
+    var preliminaryPhysical = physicalCopiesForRow(rom, resourcePathForKey(rom, runtimeKey), rowIndex, row.sourceId);
+    if (!existing && !preliminaryPhysical.length && rowEdatId(row) !== identity.originalEdatId) {
+      throw new Error('Original deployment EDAT reference mismatch; no custom copy was created.');
+    }
+    var current = effectiveRecordForRow(rom, runtimeKey, rowIndex);
+    if (!current || current.length !== 35) throw new Error('Selected deployment has no complete effective EDAT record.');
+    if (!selectorMaterialized(current, selector)) throw new Error('Selector ' + selector + ' has no deployed member in this squad.');
+    var fieldOffset = ITEM_OVERRIDE_FIELDS[selector][candidateIndex - 1];
+    if (!existing && readRecordU16(current, fieldOffset) === value) return squadItemInfo(rom, runtimeKey, rowIndex);
+    var candidate = cloneRecord(current);
+    writeRecordU16(candidate, fieldOffset, value);
+
+    var resourcePath = resourcePathForKey(rom, runtimeKey);
+    var aliases = resourceAliasKeys(rom, runtimeKey);
+    var physical = preliminaryPhysical;
+    var customEdatId = existing ? existing.customEdatId : (physical[0] && physical[0].customEdatId);
+    var aliasRecords = {};
+    if (customEdatId == null) {
+      aliases.forEach(function(aliasKey) {
+        var aliasIdentity = assertStockLevelIdentity(rom, aliasKey, rowIndex);
+        var aliasRow = modelFor(rom, aliasKey).section1[rowIndex];
+        if (aliasRow.sourceId !== row.sourceId || rowEdatId(aliasRow) !== aliasIdentity.originalEdatId) {
+          throw new Error('Physical resource alias row identity/reference mismatch at key ' + aliasKey + ' row ' + rowIndex + '.');
+        }
+        aliasRecords[aliasKey] = cloneRecord(effectiveRecordForRow(rom, aliasKey, rowIndex));
+      });
+      customEdatId = firstFreeEdat(rom, runtimeKey, state.models[runtimeKey]);
+      if (customEdatId == null || customEdatId < 0 || customEdatId > 0xFFFE || !stockRecordBytes(customEdatId)) {
+        throw new Error('No verified custom-squad EDAT donor is available; no deployment was changed.');
+      }
+      aliases.forEach(function(aliasKey) {
+        if (rom.squadOverrides && rom.squadOverrides[aliasKey + ':' + customEdatId]) {
+          throw new Error('Custom EDAT donor ' + customEdatId + ' already has an override for Scenario key ' + aliasKey + '.');
+        }
+      });
+    }
+    if (!rom.squadOverrides) rom.squadOverrides = {};
+    if (!existing) {
+      if (!physical.length) {
+        aliases.forEach(function(aliasKey) {
+          writeRowEdat(state.models[aliasKey].section1[rowIndex], customEdatId);
+          rom.squadOverrides[aliasKey + ':' + customEdatId] = aliasKey === runtimeKey ? candidate : aliasRecords[aliasKey];
+          state.modifiedKeys[aliasKey] = true;
+        });
+      } else {
+        rom.squadOverrides[runtimeKey + ':' + customEdatId] = candidate;
+      }
+      existing = {
+        runtimeKey: runtimeKey,
+        resourcePath: resourcePath,
+        resourceSha256: meta.sha256,
+        section1Row: rowIndex,
+        sourceId: row.sourceId,
+        originalEdatId: identity.originalEdatId,
+        originalEdatOneBased: identity.originalEdatId + 1,
+        originalRecordSha256: identity.originalRecordSha256,
+        originalRecordHex: OB64.scenarioCodec.bytesToCompactHex(identity.originalRecord),
+        sourceRecordHex: OB64.scenarioCodec.bytesToCompactHex(current),
+        originalOffsetsRaw: levelOffsetsRaw(identity.originalRecord),
+        requestedOffsetsRaw: levelOffsetsRaw(candidate),
+        customEdatId: customEdatId,
+        customEdatOneBased: customEdatId + 1,
+        resourceAliasKeys: aliases,
+      };
+      state.squadLevelCopies.push(existing);
+    } else {
+      if (rowEdatId(row) !== existing.customEdatId) throw new Error('Custom-copy deployment reference mismatch.');
+      rom.squadOverrides[runtimeKey + ':' + existing.customEdatId] = candidate;
+      existing.requestedOffsetsRaw = levelOffsetsRaw(candidate);
+    }
+    state.modifiedKeys[runtimeKey] = true;
+    if (OB64._squadChanged) OB64._squadChanged();
+    changed();
+    return squadItemInfo(rom, runtimeKey, rowIndex);
+  }
+
+  function revertSquadItemOverrides(rom, runtimeKey, rowIndex) {
+    var state = ensureState(rom);
+    var added = addedSquadForRow(rom, runtimeKey, rowIndex);
+    var row = state.models[runtimeKey] && state.models[runtimeKey].section1[rowIndex];
+    if (!row) return null;
+    var allocationId = added ? added.edatId : rowEdatId(row);
+    var current = rom.squadOverrides && rom.squadOverrides[runtimeKey + ':' + allocationId];
+    if (!current || current.length !== 35) return squadItemInfo(rom, runtimeKey, rowIndex);
+    var copy = added ? null : levelCopyForRow(rom, runtimeKey, rowIndex, row.sourceId);
+    var source = added ? new Uint8Array(35) : (copy && copy.sourceRecordHex
+      ? OB64.scenarioCodec.compactHexToBytes(copy.sourceRecordHex)
+      : null);
+    if (!source) return squadItemInfo(rom, runtimeKey, rowIndex);
+    var candidate = cloneRecord(current);
+    Object.keys(ITEM_OVERRIDE_FIELDS).forEach(function(selector) {
+      ITEM_OVERRIDE_FIELDS[selector].forEach(function(offset) {
+        writeRecordU16(candidate, offset, readRecordU16(source, offset));
+      });
+    });
+    rom.squadOverrides[runtimeKey + ':' + allocationId] = candidate;
+    if (copy) copy.requestedOffsetsRaw = levelOffsetsRaw(candidate);
+    if (added) added.levelOffsetsRaw = levelOffsetsRaw(candidate);
+    state.modifiedKeys[runtimeKey] = true;
+    if (OB64._squadChanged) OB64._squadChanged();
+    if (copy && bytesEqual(candidate, OB64.scenarioCodec.compactHexToBytes(copy.originalRecordHex))) {
+      return revertSquadLevelOffsets(rom, runtimeKey, rowIndex);
+    }
+    changed();
+    return squadItemInfo(rom, runtimeKey, rowIndex);
+  }
+
   function setSquadLevelOffsetRaw(rom, runtimeKey, rowIndex, selector, raw) {
     selector = String(selector || '').toUpperCase();
     raw = Number(raw);
@@ -5673,7 +5871,8 @@ window.OB64 = window.OB64 || {};
     state.modifiedKeys[runtimeKey] = true;
     if (OB64._squadChanged) OB64._squadChanged();
 
-    if (sameLevelOffsets(existing.requestedOffsetsRaw, existing.originalOffsetsRaw)) {
+    if (sameLevelOffsets(existing.requestedOffsetsRaw, existing.originalOffsetsRaw) &&
+        bytesEqual(candidate, identity.originalRecord)) {
       return revertSquadLevelOffsets(rom, runtimeKey, rowIndex);
     }
     changed();
@@ -5717,6 +5916,20 @@ window.OB64 = window.OB64 || {};
     var row = state.models[runtimeKey] && state.models[runtimeKey].section1[rowIndex];
     var copy = row && levelCopyForRow(rom, runtimeKey, rowIndex, row.sourceId);
     if (!copy) return squadLevelInfo(rom, runtimeKey, rowIndex);
+    var currentRecord = rom.squadOverrides && rom.squadOverrides[runtimeKey + ':' + copy.customEdatId];
+    if (!currentRecord || currentRecord.length !== 35) throw new Error('Custom copy has no complete EDAT record.');
+    var restoredRecord = cloneRecord(currentRecord);
+    Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
+      restoredRecord[LEVEL_SELECTORS[selector].offset] = copy.originalOffsetsRaw[selector] & 0xFF;
+    });
+    copy.requestedOffsetsRaw = levelOffsetsRaw(restoredRecord);
+    if (!bytesEqual(restoredRecord, OB64.scenarioCodec.compactHexToBytes(copy.originalRecordHex))) {
+      rom.squadOverrides[runtimeKey + ':' + copy.customEdatId] = restoredRecord;
+      state.modifiedKeys[runtimeKey] = true;
+      if (OB64._squadChanged) OB64._squadChanged();
+      changed();
+      return squadLevelInfo(rom, runtimeKey, rowIndex);
+    }
     var physical = physicalCopiesForRow(rom, copy.resourcePath, copy.section1Row, copy.sourceId);
     var remaining = physical.filter(function(entry) { return entry !== copy; });
     var aliasRows = [];
@@ -7268,6 +7481,9 @@ window.OB64 = window.OB64 || {};
     setSquadLevelOffsetRaw: setSquadLevelOffsetRaw,
     setSquadLevelOffsetSigned: setSquadLevelOffsetSigned,
     revertSquadLevelOffsets: revertSquadLevelOffsets,
+    squadItemInfo: squadItemInfo,
+    setSquadItemOverride: setSquadItemOverride,
+    revertSquadItemOverrides: revertSquadItemOverrides,
     validateLevelArithmetic: validateLevelArithmetic,
     verifyLevelResourceSource: verifyLevelResourceSource,
     levelExportIssues: levelExportIssues,
