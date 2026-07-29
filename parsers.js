@@ -1130,29 +1130,24 @@ OB64.parseEnemydat = function(buf) {
       index: r,
       rawBytes: Array.prototype.slice.call(buf.subarray(off, off + RECSZ)),
       classA:  buf[off + 0],
-      countA:  buf[off + 1],
-      equipA:  buf[off + 3],
-      flagA:   buf[off + 5],
-      posA:    buf[off + 6],  // leader formation cell; posB kept as legacy alias
-      posB:    buf[off + 6],
+      levelOffsetA: buf[off + 1],
+      rawA0: OB64.readU16BE(buf, off + 2),
+      rawA1: OB64.readU16BE(buf, off + 4),
+      posA:    buf[off + 6],
       classB:  buf[off + 7],
-      equipB:  buf[off + 8],
-      flagB:   buf[off + 10],
+      levelOffsetB: buf[off + 8],
+      rawB0: OB64.readU16BE(buf, off + 9),
+      rawB1: OB64.readU16BE(buf, off + 11),
       posB1:   buf[off + 13],
       posB2:   buf[off + 14],
       posB3:   buf[off + 15],
-      field13: buf[off + 13],
-      field14: buf[off + 14],
-      field15: buf[off + 15],
       classC:  buf[off + 16],
-      equipC:  buf[off + 17],
-      field19: buf[off + 19],
+      levelOffsetC: buf[off + 17],
+      rawC0: OB64.readU16BE(buf, off + 18),
+      rawC1: OB64.readU16BE(buf, off + 20),
       posC1:   buf[off + 22],
       posC2:   buf[off + 23],
       posC3:   buf[off + 24],
-      field22: buf[off + 22],
-      field23: buf[off + 23],
-      field24: buf[off + 24],
     });
   }
   return squads;
@@ -1238,7 +1233,7 @@ OB64.parseShops = function(buf) {
 OB64.parseEset = function(buf, archiveIdx) {
   var sec2off = OB64.readU16BE(buf, 4);
   var sec3off = OB64.readU16BE(buf, 6);
-  var missionSeq = buf[8];
+  var enemyBaseLevel = buf[8];
   var fmtVariant = buf[10];
   var subFlag = buf[11];
   var squadCount = OB64.readU16BE(buf, 14);
@@ -1273,7 +1268,8 @@ OB64.parseEset = function(buf, archiveIdx) {
 
   return {
     archive: archiveIdx,
-    missionSeq: missionSeq,
+    enemyBaseLevel: enemyBaseLevel,
+    headerByte09: buf[9],
     fmtVariant: fmtVariant,
     subFlag: subFlag,
     squadCount: squadCount,

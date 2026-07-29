@@ -45,8 +45,9 @@ Optional desktop utilities are kept separate from its runtime:
   atlas and holds runtime-key-to-edat rows. Do not hand-edit.
 - `squads.js` renders the squad composition editor (embedded in the Scenario
   tab sidebar; the standalone Squads tab is retired).
-- `scenario.js` renders the map-first Scenario tab: placement, routes,
-  triggers, buried treasure, added squads, and the ESET export/relocation lane.
+- `scenario.js` renders the map-first Scenario tab: resource-scoped enemy base
+  levels, scenario-local squad level copies, placement, routes, triggers,
+  buried treasure, added squads, and the ESET export/relocation lane.
 - `scenario-eset-codec.js` parses and rebuilds the per-mission ESET archives
   (validated round-trip against all 64 selected runtime-key payloads).
 - `scenario-eset-data.js` and `scenario-map-calibration.js` are generated from
@@ -261,6 +262,17 @@ safety behavior.
   runtime overrides without changing global `enemydat.bin`; the default UI
   enforces vanilla-style formation limits, with the experimental raw-capacity
   mode still available for mod testing.
+  **Enemy base level** edits decompressed ESET byte `0x08` for the selected
+  physical resource, shows the resource path, alias keys, original value, and
+  the safe range that avoids byte wrap and the game's `1..99` clamp. A/B/C
+  offsets are selector-wide signed bytes, not per-occupant controls. The first
+  effective offset edit to a stock deployment copies its complete 35-byte EDAT
+  record into the verified custom-squad allocator and repoints only that row;
+  the shared stock EDAT and other Scenarios remain unchanged. Added squads own
+  their records and begin with all three offsets at zero. Revert restores a
+  stock row's original reference and removes its level-copy allocation. Key 25
+  blocks only its accepted ambiguous B/C selectors, and internal key 54 remains
+  fail-closed.
   Clicking a town exposes its scenario-specific starting Allegiance plus its
   global Population and Morale. Population/Morale rebuild the shared 316-record
   `ktenmain` table; Morale preserves B24 bit 7 and is locked on exact `0xFF`
@@ -314,8 +326,10 @@ safety behavior.
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
   consumable-effect magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v15 stores independent Normal/Blocked combat-animation selectors; v14 projects
-  migrate their single selector into both lanes. v13 adds absolute `magnitude`
+  v16 adds explicit Scenario enemy-base intents and scenario-local squad-copy
+  provenance while retaining older formats. v15 stores independent
+  Normal/Blocked combat-animation selectors; v14 projects migrate their single
+  selector into both lanes. v13 adds absolute `magnitude`
   entries for IDs 1–5 and preserves the v12 range
   entries, including one `11-16` key for all six linked stat items. v12 accepts
   only the older range keys; v11 and older retain their prior behavior.
@@ -324,9 +338,10 @@ safety behavior.
   custom import to retail remains an explicit Project request.
   Squad project data stores per-runtime-key 35-byte replacement records so a
   saved project can reproduce the exported squad override blob.
-  The Project JSON container embeds the full Scenario payload (modified mission
-  ESETs, buried treasures, added squads, squad comp records, site allegiance
-  intents, and global stronghold Population/Morale intents),
+  The Project JSON container embeds the full Scenario Project v4 payload
+  (explicit `levelBaseEdits`, validated scenario-local `squadLevelCopies`,
+  modified mission ESETs, buried treasures, added squads, squad comp records,
+  site allegiance intents, and global stronghold Population/Morale intents),
   so one file reproduces a complete scenario mod; older patch files and legacy
   Scenario-only project files still load.
   Save Game Editor changes are separate save-file edits; use that tab's Export

@@ -543,6 +543,26 @@ window.OB64 = window.OB64 || {};
     var project = patches.scenario;
     if (!project) return;
     var entries = [];
+    (project.levelBaseEdits || []).forEach(function(edit) {
+      entries.push({
+        title: 'Enemy base level - ' + scalar(edit.resourcePath),
+        lines: ['Scenario resource base: ' + changed(edit.original, edit.value) +
+          '. Physical runtime-key aliases of this resource share the change.']
+      });
+    });
+    (project.squadLevelCopies || []).forEach(function(copy) {
+      var requested = copy.requestedOffsetsRaw || {};
+      function signed(raw) { raw = Number(raw) & 0xFF; return raw >= 0x80 ? raw - 0x100 : raw; }
+      entries.push({
+        title: scenarioLabel(copy.runtimeKey) + ', deployment row #' + scalar(copy.section1Row),
+        lines: [
+          'Scenario-local EDAT copy: stock #' + scalar(copy.originalEdatId) +
+            ' → custom #' + scalar(copy.customEdatId) + '.',
+          'Selector offsets A/B/C: ' + signed(requested.A) + ' / ' + signed(requested.B) + ' / ' + signed(requested.C) +
+            ' (raw ' + scalar(requested.A) + ' / ' + scalar(requested.B) + ' / ' + scalar(requested.C) + ').'
+        ]
+      });
+    });
     numericKeys(project.modifiedEsets).forEach(function(key) {
       var entry = project.modifiedEsets[key] || {};
       entries.push({

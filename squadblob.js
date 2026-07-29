@@ -372,32 +372,54 @@
   }
 
   // ---- record <-> high-level squad spec (for the UI) ----
-  // spec = { leader:{cls,cell,equip}, classB:{cls,equip,cells:[]}, classC:{cls,equip,cells:[]} }
+  // Level offsets are selector-wide raw u8 values. The two adjacent values for
+  // each selector are opaque u16 BE fields and must be preserved atomically.
   function recordFromSpec(spec) {
+    var source = spec.rawBytes || spec.rawRecord || [];
     var rec = new Uint8Array(REC_LEN), i;
+    for (i = 0; i < Math.min(source.length || 0, REC_LEN); i++) rec[i] = source[i] & 0xFF;
+    function writeU16(off, value) {
+      if (!Number.isInteger(value)) return;
+      rec[off] = (value >>> 8) & 0xFF;
+      rec[off + 1] = value & 0xFF;
+    }
     rec[0] = spec.leader.cls & 0xFF;
-    rec[1] = 0x01;                       // B1 = 1 (matches all proven replacement records)
-    rec[3] = (spec.leader.equip || 0) & 0xFF;
+    rec[1] = (spec.leader.levelOffsetRaw || 0) & 0xFF;
+    writeU16(2, spec.leader.raw0);
+    writeU16(4, spec.leader.raw1);
     rec[6] = spec.leader.cell & 0xFF;
     if (spec.classB && spec.classB.cells && spec.classB.cells.length) {
       rec[7] = spec.classB.cls & 0xFF;
-      rec[8] = (spec.classB.equip || 0) & 0xFF;
+      rec[8] = (spec.classB.levelOffsetRaw || 0) & 0xFF;
+      writeU16(9, spec.classB.raw0);
+      writeU16(11, spec.classB.raw1);
       for (i = 0; i < spec.classB.cells.length && i < 3; i++) rec[13 + i] = spec.classB.cells[i] & 0xFF;
+    } else {
+      rec[7] = 0;
+      rec[13] = rec[14] = rec[15] = 0;
     }
     if (spec.classC && spec.classC.cells && spec.classC.cells.length) {
       rec[16] = spec.classC.cls & 0xFF;
-      rec[17] = (spec.classC.equip || 0) & 0xFF;
+      rec[17] = (spec.classC.levelOffsetRaw || 0) & 0xFF;
+      writeU16(18, spec.classC.raw0);
+      writeU16(20, spec.classC.raw1);
       for (i = 0; i < spec.classC.cells.length && i < 3; i++) rec[22 + i] = spec.classC.cells[i] & 0xFF;
+    } else {
+      rec[16] = 0;
+      rec[22] = rec[23] = rec[24] = 0;
     }
     return rec;
   }
 
   function specFromRecord(rec) {
     function nz(arr) { var o = []; for (var i = 0; i < arr.length; i++) if (rec[arr[i]]) o.push(rec[arr[i]]); return o; }
+    function u16(off) { return ((rec[off] << 8) | rec[off + 1]) & 0xFFFF; }
+    function signed(raw) { return raw >= 0x80 ? raw - 0x100 : raw; }
     return {
-      leader: { cls: rec[0], cell: rec[6], equip: rec[3] },
-      classB: { cls: rec[7], equip: rec[8], cells: nz([13, 14, 15]) },
-      classC: { cls: rec[16], equip: rec[17], cells: nz([22, 23, 24]) }
+      rawBytes: Array.prototype.slice.call(rec, 0, REC_LEN),
+      leader: { cls: rec[0], cell: rec[6], levelOffsetRaw: rec[1], levelOffsetSigned: signed(rec[1]), raw0: u16(2), raw1: u16(4) },
+      classB: { cls: rec[7], levelOffsetRaw: rec[8], levelOffsetSigned: signed(rec[8]), raw0: u16(9), raw1: u16(11), cells: nz([13, 14, 15]) },
+      classC: { cls: rec[16], levelOffsetRaw: rec[17], levelOffsetSigned: signed(rec[17]), raw0: u16(18), raw1: u16(20), cells: nz([22, 23, 24]) }
     };
   }
 

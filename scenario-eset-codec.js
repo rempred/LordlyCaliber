@@ -183,8 +183,11 @@ window.OB64 = window.OB64 || {};
         section2: section2Offset,
         section3: section3Offset,
       },
-      mission: {
-        sequence: buf[8] || 0,
+      // Header byte 0x08 is the scenario enemy base level. Byte 0x09 remains
+      // preserved but unlabelled; it is not part of the verified level contract.
+      scenarioBaseLevel: buf[8] || 0,
+      headerByte09: buf[9] || 0,
+      formatInfo: {
         variant: buf[10] || 0,
         subFlag: buf[11] || 0,
         extendedField: readU16BE(buf, 12),
@@ -228,6 +231,7 @@ window.OB64 = window.OB64 || {};
     var offsets = computeOffsets(model);
     var out = new Uint8Array(offsets.byteLength);
     for (var h = 0; h < Math.min(16, model.header.length); h++) out[h] = model.header[h] & 0xFF;
+    if (Number.isInteger(model.scenarioBaseLevel)) out[8] = model.scenarioBaseLevel & 0xFF;
     writeU16BE(out, 0, 0x0008);
     writeU16BE(out, 2, 0x000F);
     writeU16BE(out, 4, offsets.section2Offset);
@@ -377,13 +381,17 @@ window.OB64 = window.OB64 || {};
   }
 
   function roundTripAll(data) {
-    var scenarios = (data && data.scenarios) || [];
+    // Round-trip physical files once. Runtime aliases are checked separately by
+    // the generator's 64-key selection map.
+    var scenarios = (data && data.resources && data.resources.length)
+      ? data.resources
+      : ((data && data.scenarios) || []);
     var results = [];
     var passed = 0;
     var errors = 0;
     scenarios.forEach(function(entry) {
       if (entry.missing || !entry.rawHex) {
-        results.push({ runtimeKey: entry.runtimeKey, missing: true, byteIdentical: false, errors: 1 });
+        results.push({ runtimeKey: entry.runtimeKey, resourcePath: entry.resourcePath || entry.relPath, missing: true, byteIdentical: false, errors: 1 });
         errors += 1;
         return;
       }
@@ -396,6 +404,7 @@ window.OB64 = window.OB64 || {};
       errors += validation.errors.length;
       results.push({
         runtimeKey: entry.runtimeKey,
+        resourcePath: entry.resourcePath || entry.relPath,
         archive: entry.archive,
         filename: entry.filename,
         byteIdentical: byteIdentical,

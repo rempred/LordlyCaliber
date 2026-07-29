@@ -35,7 +35,7 @@ window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 15;
+  var PATCH_VERSION = 16;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -806,6 +806,8 @@ window.OB64 = window.OB64 || {};
     if (!project) return 0;
     var n = 0;
     n += Object.keys(project.modifiedEsets || {}).length;
+    n += (project.levelBaseEdits || []).length;
+    n += (project.squadLevelCopies || []).length;
     n += Object.keys(project.modifiedTreasures || {}).length;
     n += (project.addedSquads || []).length;
     Object.keys(project.siteAllegiances || {}).forEach(function(key) {

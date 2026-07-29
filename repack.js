@@ -590,9 +590,6 @@ OB64.serializeShops = function(shops) {
 OB64.serializeEnemydat = function(squads) {
   var RECSZ = 35;
   var buf = new Uint8Array(squads.length * RECSZ);
-  function field(s, modern, legacy) {
-    return s[modern] !== undefined ? s[modern] : s[legacy];
-  }
   for (var r = 0; r < squads.length; r++) {
     var s = squads[r];
     var off = r * RECSZ;
@@ -602,22 +599,24 @@ OB64.serializeEnemydat = function(squads) {
       }
     }
     buf[off + 0] = s.classA;
-    buf[off + 1] = s.countA;
-    buf[off + 3] = s.equipA;
-    buf[off + 5] = s.flagA;
-    buf[off + 6] = field(s, 'posA', 'posB');
+    buf[off + 1] = s.levelOffsetA;
+    OB64.writeU16BE(buf, off + 2, s.rawA0);
+    OB64.writeU16BE(buf, off + 4, s.rawA1);
+    buf[off + 6] = s.posA;
     buf[off + 7] = s.classB;
-    buf[off + 8] = s.equipB;
-    buf[off + 10] = s.flagB;
-    buf[off + 13] = field(s, 'posB1', 'field13');
-    buf[off + 14] = field(s, 'posB2', 'field14');
-    buf[off + 15] = field(s, 'posB3', 'field15');
+    buf[off + 8] = s.levelOffsetB;
+    OB64.writeU16BE(buf, off + 9, s.rawB0);
+    OB64.writeU16BE(buf, off + 11, s.rawB1);
+    buf[off + 13] = s.posB1;
+    buf[off + 14] = s.posB2;
+    buf[off + 15] = s.posB3;
     buf[off + 16] = s.classC;
-    buf[off + 17] = s.equipC;
-    buf[off + 19] = s.field19;
-    buf[off + 22] = field(s, 'posC1', 'field22');
-    buf[off + 23] = field(s, 'posC2', 'field23');
-    buf[off + 24] = field(s, 'posC3', 'field24');
+    buf[off + 17] = s.levelOffsetC;
+    OB64.writeU16BE(buf, off + 18, s.rawC0);
+    OB64.writeU16BE(buf, off + 20, s.rawC1);
+    buf[off + 22] = s.posC1;
+    buf[off + 23] = s.posC2;
+    buf[off + 24] = s.posC3;
   }
   return buf;
 };

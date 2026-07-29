@@ -2458,27 +2458,25 @@ window.OB64 = window.OB64 || {};
     // Class options map including 0=None
     var classOpts = {0: 'None'};
     for (var k in OB64.CLASS_NAMES) classOpts[k] = OB64.CLASS_NAMES[k];
-    // Item options map including 0=None
-    var itemOpts = {0: 'None'};
-    for (var k in OB64.ITEM_NAMES) itemOpts[k] = OB64.ITEM_NAMES[k];
-
     var table = document.createElement('table');
     table.innerHTML = '<thead><tr>' +
       '<th>#</th>' +
       '<th title="Byte 0: leader class">Leader</th>' +
-      '<th title="Byte 1: leader-class copies; usually 1">Copies</th>' +
+      '<th title="Byte 1: selector-A raw level offset (signed display)">A Level Offset</th>' +
+      '<th title="Bytes 2-5: two preserved big-endian raw fields">A Raw u16s</th>' +
       '<th title="Byte 6: leader formation cell">Leader Cell</th>' +
       '<th title="Byte 7: first follower class group">Follower B</th>' +
+      '<th title="Byte 8: selector-B raw level offset (signed display)">B Level Offset</th>' +
+      '<th title="Bytes 9-12: two preserved big-endian raw fields">B Raw u16s</th>' +
       '<th title="Byte 13: first follower-B formation cell">B Cell 1</th>' +
       '<th title="Byte 14: second follower-B formation cell; 0 means none">B Cell 2</th>' +
       '<th title="Byte 15: third follower-B formation cell; rare">B Cell 3</th>' +
       '<th title="Byte 16: second follower class group">Follower C</th>' +
+      '<th title="Byte 17: selector-C raw level offset (signed display)">C Level Offset</th>' +
+      '<th title="Bytes 18-21: two preserved big-endian raw fields">C Raw u16s</th>' +
       '<th title="Byte 22: first follower-C formation cell">C Cell 1</th>' +
       '<th title="Byte 23: second follower-C formation cell; 0 means none">C Cell 2</th>' +
       '<th title="Byte 24: third follower-C formation cell; rare">C Cell 3</th>' +
-      '<th title="Byte 3: leader equipment override">Equip Leader</th>' +
-      '<th title="Byte 8: follower-B equipment override">Equip B</th>' +
-      '<th title="Byte 17: follower-C equipment override">Equip C</th>' +
       '</tr></thead>';
     var tbody = document.createElement('tbody');
 
@@ -2502,17 +2500,11 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
-      // Leader-class copy count (number)
-      (function(sq) {
-        var c = td(tr, sq.countA);
-        c.className = 'editable num';
-        c.addEventListener('click', function() {
-          makeNumericInput(c, sq.countA, 0, 10, function(v) {
-            sq.countA = v;
-            c.textContent = v;
-          });
-        });
-      })(s);
+      // Level offsets are edited on a selected Scenario deployment row. This
+      // global record census is intentionally read-only for those bytes.
+      td(tr, (s.levelOffsetA >= 0x80 ? s.levelOffsetA - 0x100 : s.levelOffsetA) +
+        ' (0x' + s.levelOffsetA.toString(16).padStart(2, '0') + ')');
+      td(tr, '0x' + s.rawA0.toString(16).padStart(4, '0') + ' / 0x' + s.rawA1.toString(16).padStart(4, '0'));
 
       // Leader formation cell (byte 6)
       (function(sq) {
@@ -2522,7 +2514,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posA, 0, 9, function(v) {
             sq.posA = v;
-            sq.posB = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2540,6 +2531,10 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
+      td(tr, (s.levelOffsetB >= 0x80 ? s.levelOffsetB - 0x100 : s.levelOffsetB) +
+        ' (0x' + s.levelOffsetB.toString(16).padStart(2, '0') + ')');
+      td(tr, '0x' + s.rawB0.toString(16).padStart(4, '0') + ' / 0x' + s.rawB1.toString(16).padStart(4, '0'));
+
       // First Class-B member formation cell
       (function(sq) {
         var c = td(tr, sq.posB1);
@@ -2548,7 +2543,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posB1, 0, 9, function(v) {
             sq.posB1 = v;
-            sq.field13 = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2562,7 +2556,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posB2, 0, 9, function(v) {
             sq.posB2 = v;
-            sq.field14 = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2575,7 +2568,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posB3, 0, 9, function(v) {
             sq.posB3 = v;
-            sq.field15 = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2593,6 +2585,10 @@ window.OB64 = window.OB64 || {};
         });
       })(s);
 
+      td(tr, (s.levelOffsetC >= 0x80 ? s.levelOffsetC - 0x100 : s.levelOffsetC) +
+        ' (0x' + s.levelOffsetC.toString(16).padStart(2, '0') + ')');
+      td(tr, '0x' + s.rawC0.toString(16).padStart(4, '0') + ' / 0x' + s.rawC1.toString(16).padStart(4, '0'));
+
       // Class-C member formation cells
       (function(sq) {
         var c = td(tr, sq.posC1);
@@ -2601,7 +2597,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posC1, 0, 9, function(v) {
             sq.posC1 = v;
-            sq.field22 = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2614,7 +2609,6 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posC2, 0, 9, function(v) {
             sq.posC2 = v;
-            sq.field23 = v; // legacy alias
             c.textContent = v;
           });
         });
@@ -2627,62 +2621,13 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, sq.posC3, 0, 9, function(v) {
             sq.posC3 = v;
-            sq.field24 = v; // legacy alias
             c.textContent = v;
           });
         });
       })(s);
 
-      // Equip A (pop-up item picker — shop-tab-style modal)
-      (function(sq) {
-        var c = td(tr, sq.equipA ? OB64.itemName(sq.equipA) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          openItemPickerFromDict({
-            title: 'Leader equipment override',
-            options: itemOpts, currentId: sq.equipA,
-            onSelect: function(v) {
-              sq.equipA = v;
-              c.textContent = v ? OB64.itemName(v) : '\u2014';
-              c.classList.add('modified');
-            }
-          });
-        });
-      })(s);
-
-      // Equip B (pop-up item picker)
-      (function(sq) {
-        var c = td(tr, sq.equipB ? OB64.itemName(sq.equipB) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          openItemPickerFromDict({
-            title: 'Follower-B equipment override',
-            options: itemOpts, currentId: sq.equipB,
-            onSelect: function(v) {
-              sq.equipB = v;
-              c.textContent = v ? OB64.itemName(v) : '\u2014';
-              c.classList.add('modified');
-            }
-          });
-        });
-      })(s);
-
-      // Equip C (pop-up item picker)
-      (function(sq) {
-        var c = td(tr, sq.equipC ? OB64.itemName(sq.equipC) : '\u2014');
-        c.className = 'editable';
-        c.addEventListener('click', function() {
-          openItemPickerFromDict({
-            title: 'Follower-C equipment override',
-            options: itemOpts, currentId: sq.equipC,
-            onSelect: function(v) {
-              sq.equipC = v;
-              c.textContent = v ? OB64.itemName(v) : '\u2014';
-              c.classList.add('modified');
-            }
-          });
-        });
-      })(s);
+      // Level-offset bytes are not global equipment fields. Scenario-local
+      // offset controls live in the selected deployment-row editor.
 
       tbody.appendChild(tr);
     }
@@ -2706,7 +2651,7 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(filter);
 
     var table = document.createElement('table');
-    table.innerHTML = '<thead><tr><th>Archive</th><th>Seq</th><th>Squads</th><th>Nodes</th><th>Extra</th><th>Squad Details</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Archive</th><th>Enemy Base</th><th>Squads</th><th>Nodes</th><th>Extra</th><th>Squad Details</th></tr></thead>';
     var tbody = document.createElement('tbody');
 
     for (var m = 0; m < rom.esets.length; m++) {
@@ -2714,7 +2659,7 @@ window.OB64 = window.OB64 || {};
       var tr = document.createElement('tr');
 
       td(tr, '#' + eset.archive);
-      td(tr, '0x' + eset.missionSeq.toString(16).padStart(2, '0'));
+      td(tr, eset.enemyBaseLevel);
       td(tr, eset.squadCount);
       td(tr, eset.mapNodeCount);
       td(tr, eset.extraCount);
@@ -2758,7 +2703,9 @@ window.OB64 = window.OB64 || {};
     if (!rom || edIdx >= rom.enemySquads.length) return '(invalid)';
     var s = rom.enemySquads[edIdx];
     if (!s.classA && !s.classB) return '(empty)';
-    var label = s.countA + 'x ' + OB64.className(s.classA);
+    var members = s.classA && s.posA ? 1 : 0;
+    [s.posB1, s.posB2, s.posB3, s.posC1, s.posC2, s.posC3].forEach(function(cell) { if (cell) members++; });
+    var label = members + ' units: ' + OB64.className(s.classA);
     if (s.classB) label += ' + ' + OB64.className(s.classB);
     if (s.classC) label += ' + ' + OB64.className(s.classC);
     return label;
