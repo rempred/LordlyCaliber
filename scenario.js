@@ -4704,8 +4704,8 @@ window.OB64 = window.OB64 || {};
     if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
     var delVanilla = el.querySelector('#sc-delete-squad');
     if (delVanilla) delVanilla.onclick = function() { deleteSquadRow(rom, key, rowIndex); };
-    // Embed the full Squads comp editor in the sidebar (override toggle, formation grid,
-    // class pickers, drag cells) - renders live against the same override state.
+    // Embed the full Squads comp editor in the sidebar. Formation/class/member edits
+    // automatically create or reuse this deployment row's scenario-local EDAT copy.
     var compHost = el.querySelector('#sc-comp-host');
     if (compHost && OB64.renderSquadCompEditor) {
       OB64.renderSquadCompEditor(compHost, rom, key, detailPoint.edat, rowIndex);
@@ -5124,7 +5124,7 @@ window.OB64 = window.OB64 || {};
         ' / safe range ' + info.minimum + '..' + info.maximum + '.</div>' +
       '<div class="sc-sub">Resource: <code>' + esc(info.resourcePath) + '</code></div>' +
       aliasText +
-      '<div class="sc-sub">The game adds this base to each selector-wide signed offset. It changes deployed level-derived HP, stats, and LCK, and can advance RNG enough to change later generated names or randomized stats.</div>' +
+      '<div class="sc-sub">The game adds each squad group\'s level adjustment to this Scenario scale. The resulting level determines deployed HP, stats, and LCK, and can also change later generated names or randomized stats.</div>' +
       (info.edited ? '<button type="button" class="sc-inline-btn" id="sc-base-revert">Revert base to ' + info.original + '</button>' : '') +
       '</div>';
   }
@@ -5136,22 +5136,24 @@ window.OB64 = window.OB64 || {};
       ? 'Added squad owns custom EDAT ' + info.currentEdatId + ' in this Scenario.'
       : (info.customCopy
         ? 'Scenario-local custom copy active: original EDAT ' + info.originalEdatId + ' → custom EDAT ' + info.currentEdatId + '.'
-        : 'Stock deployment: original EDAT ' + info.originalEdatId + '. The first effective offset edit creates a complete scenario-local custom copy.');
+        : 'Stock deployment: original EDAT ' + info.originalEdatId + '. Your first squad edit automatically creates a complete scenario-local custom copy.');
     var html = '<div class="sc-section"><span class="sc-label">Scenario-local squad levels</span>' +
       '<div class="sc-sub">' + esc(status) + '</div>' +
-      '<div class="sc-sub">Each A/B/C value is shared by every occupied formation cell for that selector; there is no independent per-unit level control.</div>';
+      '<div class="sc-sub">The leader and each follower group can have their own level adjustment. All Group B units share one setting, and all Group C units share one setting.</div>';
     if (info.excluded) {
       return html + '<div class="sc-warning">Editing disabled: ' + esc(info.exclusionReason) + '</div></div>';
     }
     Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
       var sel = info.selectors[selector];
       if (!sel.materialized) return;
-      html += '<div class="sc-form-row"><label class="sc-label" for="sc-level-offset-' + selector + '">Selector ' + selector + '</label>' +
+      var groupName = selector === 'A' ? 'Leader' : 'Group ' + selector;
+      var adjustment = sel.signed > 0 ? '+' + sel.signed : String(sel.signed);
+      html += '<div class="sc-form-row"><label class="sc-label" for="sc-level-offset-' + selector + '">' + groupName + ' adjustment</label>' +
         '<input id="sc-level-offset-' + selector + '" class="sc-level-offset" type="number" min="-128" max="127" step="1" data-selector="' + selector + '" value="' + sel.signed + '"' +
         (sel.ambiguous ? ' disabled title="Accepted key-25 B/C selector ambiguity"' : '') + '>' +
-        '<div class="sc-sub">signed ' + sel.signed + ' / raw ' + hx2(sel.raw) +
-        ' / effective level ' + sel.effectiveLevel + ' (base ' + info.base + ')' +
-        (sel.ambiguous ? ' / blocked: B/C selector identity is ambiguous' : '') + '</div></div>';
+        '<div class="sc-sub">Adjustment ' + adjustment + ' / resulting level ' + sel.effectiveLevel +
+        ' (Scenario scale ' + info.base + ') / raw ' + hx2(sel.raw) +
+        (sel.ambiguous ? ' / blocked: this source does not distinguish Group B from Group C' : '') + '</div></div>';
     });
     var addedOriginal = addedSquadForRow(rom, runtimeKey, rowIndex);
     var hasAddedEdit = info.added && addedOriginal && !sameLevelOffsets(
@@ -5159,7 +5161,7 @@ window.OB64 = window.OB64 || {};
       addedOriginal.originalLevelOffsetsRaw || { A: 0, B: 0, C: 0 });
     if (info.customCopy || hasAddedEdit) {
       html += '<button type="button" class="sc-inline-btn" id="sc-level-revert">' +
-        (info.added ? 'Reset A/B/C offsets' : 'Revert this squad to stock offsets') + '</button>';
+        (info.added ? 'Reset group level adjustments' : 'Restore stock group levels') + '</button>';
     }
     return html + '</div>';
   }
@@ -6199,6 +6201,153 @@ window.OB64 = window.OB64 || {};
       excluded: !!(meta && meta.levelEditing && meta.levelEditing.excluded),
       exclusionReason: meta && meta.levelEditing && meta.levelEditing.reason || '',
     };
+  }
+
+  // Replace one deployment row's complete EDAT record. Stock deployments use the
+  // same verified copy-on-write allocation as level and starting-equipment edits;
+  // added squads already own a scenario-local donor and are updated in place.
+  function setSquadRecord(rom, runtimeKey, rowIndex, record) {
+    runtimeKey = Number(runtimeKey);
+    rowIndex = Number(rowIndex);
+    if (!Number.isInteger(runtimeKey) || !Number.isInteger(rowIndex) || rowIndex < 0) {
+      throw new Error('Scenario key and deployment row must be valid integers.');
+    }
+    if (!record || record.length !== 35) {
+      throw new Error('A squad edit must provide one complete 35-byte EDAT record.');
+    }
+    var candidate = cloneRecord(record);
+    var meta = levelMetaForKey(rom, runtimeKey);
+    if (!meta) throw new Error('Unknown Scenario runtime key ' + runtimeKey + '.');
+    if (meta.levelEditing && meta.levelEditing.excluded) throw new Error(meta.levelEditing.reason);
+    var sourceCheck = verifyLevelResourceSource(rom, runtimeKey);
+    if (!sourceCheck.ok) throw new Error(sourceCheck.message);
+
+    var state = ensureState(rom);
+    var added = addedSquadForRow(rom, runtimeKey, rowIndex);
+    if (added) {
+      var addedRow = state.models[runtimeKey] && state.models[runtimeKey].section1[rowIndex];
+      var addedKey = runtimeKey + ':' + added.edatId;
+      var addedCurrent = rom.squadOverrides && rom.squadOverrides[addedKey];
+      if (!addedRow || addedRow.sourceId !== added.sourceId || rowEdatId(addedRow) !== added.edatId) {
+        throw new Error('Added-squad stable identity/reference mismatch.');
+      }
+      if (!addedCurrent || addedCurrent.length !== 35) {
+        throw new Error('Added squad has no complete scenario-local custom record.');
+      }
+      if (bytesEqual(candidate, addedCurrent)) return squadLevelInfo(rom, runtimeKey, rowIndex);
+      var addedArithmetic = validateLevelArithmetic(rom, runtimeKey, currentBaseForKey(rom, runtimeKey), {
+        runtimeKey: runtimeKey,
+        rowIndex: rowIndex,
+        record: candidate,
+      });
+      if (!addedArithmetic.ok) throw new Error(addedArithmetic.issues.join(' '));
+      rom.squadOverrides[addedKey] = candidate;
+      added.levelOffsetsRaw = levelOffsetsRaw(candidate);
+      added.originalLevelOffsetsRaw = added.originalLevelOffsetsRaw || { A: 0, B: 0, C: 0 };
+      state.modifiedKeys[runtimeKey] = true;
+      if (OB64._squadChanged) OB64._squadChanged();
+      changed();
+      return squadLevelInfo(rom, runtimeKey, rowIndex);
+    }
+
+    var identity = assertStockLevelIdentity(rom, runtimeKey, rowIndex);
+    var row = state.models[runtimeKey].section1[rowIndex];
+    var existing = levelCopyForRow(rom, runtimeKey, rowIndex, row.sourceId);
+    var resourcePath = resourcePathForKey(rom, runtimeKey);
+    var physical = physicalCopiesForRow(rom, resourcePath, rowIndex, row.sourceId);
+    if (!existing && !physical.length && rowEdatId(row) !== identity.originalEdatId) {
+      throw new Error('Original deployment EDAT reference mismatch; no custom copy was created.');
+    }
+    var current = effectiveRecordForRow(rom, runtimeKey, rowIndex);
+    if (!current || current.length !== 35) {
+      throw new Error('Selected deployment has no complete effective EDAT record.');
+    }
+    if (bytesEqual(candidate, current)) return squadLevelInfo(rom, runtimeKey, rowIndex);
+    var arithmetic = validateLevelArithmetic(rom, runtimeKey, currentBaseForKey(rom, runtimeKey), {
+      runtimeKey: runtimeKey,
+      rowIndex: rowIndex,
+      record: candidate,
+    });
+    if (!arithmetic.ok) throw new Error(arithmetic.issues.join(' '));
+
+    var aliases = resourceAliasKeys(rom, runtimeKey);
+    var customEdatId = existing ? existing.customEdatId : (physical[0] && physical[0].customEdatId);
+    var aliasRecords = {};
+    if (customEdatId == null) {
+      aliases.forEach(function(aliasKey) {
+        var aliasIdentity = assertStockLevelIdentity(rom, aliasKey, rowIndex);
+        var aliasRow = modelFor(rom, aliasKey).section1[rowIndex];
+        if (aliasRow.sourceId !== row.sourceId || rowEdatId(aliasRow) !== aliasIdentity.originalEdatId) {
+          throw new Error('Physical resource alias row identity/reference mismatch at key ' + aliasKey + ' row ' + rowIndex + '.');
+        }
+        var aliasRecord = effectiveRecordForRow(rom, aliasKey, rowIndex);
+        if (!aliasRecord || aliasRecord.length !== 35) {
+          throw new Error('Physical resource alias key ' + aliasKey + ' has no complete EDAT record.');
+        }
+        aliasRecords[aliasKey] = cloneRecord(aliasRecord);
+      });
+      customEdatId = firstFreeEdat(rom, runtimeKey, state.models[runtimeKey]);
+      if (customEdatId == null || customEdatId < 0 || customEdatId > 0xFFFE || !stockRecordBytes(customEdatId)) {
+        throw new Error('No verified custom-squad EDAT donor is available; no deployment was changed.');
+      }
+      aliases.forEach(function(aliasKey) {
+        if (rom.squadOverrides && rom.squadOverrides[aliasKey + ':' + customEdatId]) {
+          throw new Error('Custom EDAT donor ' + customEdatId + ' already has an override for Scenario key ' + aliasKey + '.');
+        }
+      });
+    }
+
+    if (!rom.squadOverrides) rom.squadOverrides = {};
+    if (!existing) {
+      if (!physical.length) {
+        aliases.forEach(function(aliasKey) {
+          writeRowEdat(state.models[aliasKey].section1[rowIndex], customEdatId);
+          rom.squadOverrides[aliasKey + ':' + customEdatId] = aliasKey === runtimeKey
+            ? candidate
+            : aliasRecords[aliasKey];
+          state.modifiedKeys[aliasKey] = true;
+        });
+      } else {
+        rom.squadOverrides[runtimeKey + ':' + customEdatId] = candidate;
+      }
+      existing = {
+        runtimeKey: runtimeKey,
+        resourcePath: resourcePath,
+        resourceSha256: meta.sha256,
+        section1Row: rowIndex,
+        sourceId: row.sourceId,
+        originalEdatId: identity.originalEdatId,
+        originalEdatOneBased: identity.originalEdatId + 1,
+        originalRecordSha256: identity.originalRecordSha256,
+        originalRecordHex: OB64.scenarioCodec.bytesToCompactHex(identity.originalRecord),
+        sourceRecordHex: OB64.scenarioCodec.bytesToCompactHex(current),
+        originalOffsetsRaw: levelOffsetsRaw(identity.originalRecord),
+        requestedOffsetsRaw: levelOffsetsRaw(candidate),
+        customEdatId: customEdatId,
+        customEdatOneBased: customEdatId + 1,
+        resourceAliasKeys: aliases,
+      };
+      state.squadLevelCopies.push(existing);
+    } else {
+      if (rowEdatId(row) !== existing.customEdatId) {
+        throw new Error('Custom-copy deployment reference mismatch.');
+      }
+      rom.squadOverrides[runtimeKey + ':' + existing.customEdatId] = candidate;
+      existing.requestedOffsetsRaw = levelOffsetsRaw(candidate);
+    }
+    state.modifiedKeys[runtimeKey] = true;
+    var copySource = existing.sourceRecordHex
+      ? OB64.scenarioCodec.compactHexToBytes(existing.sourceRecordHex)
+      : null;
+    // Only collapse the allocation when this row originally came from stock. A
+    // legacy scenario-wide override may still target the original EDAT; keeping
+    // the row-local stock-valued copy is what isolates this deployment from it.
+    if (bytesEqual(candidate, identity.originalRecord) && bytesEqual(copySource, identity.originalRecord)) {
+      return revertSquadLevelOffsets(rom, runtimeKey, rowIndex);
+    }
+    if (OB64._squadChanged) OB64._squadChanged();
+    changed();
+    return squadLevelInfo(rom, runtimeKey, rowIndex);
   }
 
   function setAddedSquadLevelOffsetRaw(rom, runtimeKey, rowIndex, selector, raw) {
@@ -8151,6 +8300,7 @@ window.OB64 = window.OB64 || {};
     setEnemyBaseLevel: setEnemyBaseLevel,
     revertEnemyBaseLevel: revertEnemyBaseLevel,
     squadLevelInfo: squadLevelInfo,
+    setSquadRecord: setSquadRecord,
     setSquadLevelOffsetRaw: setSquadLevelOffsetRaw,
     setSquadLevelOffsetSigned: setSquadLevelOffsetSigned,
     revertSquadLevelOffsets: revertSquadLevelOffsets,

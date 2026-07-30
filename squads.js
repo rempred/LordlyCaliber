@@ -25,9 +25,8 @@
     ui.notice = '';
   };
 
-  // Embed the full squad comp editor (override toggle, grid, pickers, drag cells) into an
-  // arbitrary container - used by the Scenario tab's right sidebar. Re-renders on every commit
-  // because renderDetail keeps writing into the host until released.
+  // Embed the full squad comp editor (grid, pickers, drag cells) into an arbitrary
+  // container. Scenario edits automatically create or reuse a row-local custom EDAT copy.
   OB64.renderSquadCompEditor = function(container, rom, scenarioId, edatId, rowIndex) {
     injectStyle();
     ensureInit(rom);
@@ -52,7 +51,8 @@
     var off = role === 'A' ? 1 : (role === 'B' ? 8 : 17);
     var raw0 = role === 'A' ? 2 : (role === 'B' ? 9 : 18);
     var raw1 = role === 'A' ? 4 : (role === 'B' ? 11 : 20);
-    return '<div class="sq-level-readout"><strong>Selector ' + role + ' level offset: ' + signedOffset(rec[off]) +
+    var label = role === 'A' ? 'Leader' : 'Group ' + role;
+    return '<div class="sq-level-readout"><strong>' + label + ' level adjustment: ' + signedOffset(rec[off]) +
       '</strong><small>raw ' + hx2(rec[off]) + ' / starting equipment ' + hx4(readU16(rec, raw0)) +
       ' and ' + hx4(readU16(rec, raw1)) + '</small></div>';
   }
@@ -400,14 +400,14 @@
       '#panel-squads .sq-editor-grid{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px;align-items:start}',
       '#panel-squads .sq-section-label{font-size:var(--ob-text-sm);font-weight:700;color:var(--ob-ink-soft);margin:0 0 6px;text-transform:uppercase;letter-spacing:.35px}',
       '#panel-squads .sq-grid{display:grid;grid-template-columns:repeat(3,76px);grid-template-rows:repeat(3,76px);gap:6px}',
-      '#panel-squads .sq-cell{border:1px dashed var(--ob-parchment-dark);border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px;font-size:var(--ob-text-xs);line-height:1.1;text-align:center;position:relative;min-width:0;overflow:hidden;background:rgba(255,255,255,.16);padding:8px 3px 4px}',
+      '#panel-squads .sq-cell{border:1px dashed var(--ob-parchment-dark);border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:1px;font-size:var(--ob-text-xs);line-height:1.1;text-align:center;position:relative;min-width:0;overflow:hidden;background:rgba(255,255,255,.16);padding:17px 3px 3px}',
       '#panel-squads .sq-cell.u{border-style:solid;cursor:grab;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}',
       '#panel-squads .sq-cell.readonly{cursor:default}',
       '#panel-squads .sq-cell.lead{background:var(--ob-gold);border-color:var(--ob-gold-dim);color:var(--ob-ink)}',
       '#panel-squads .sq-cell.mem{background:var(--ob-bar-teal);border-color:#1d6e56;color:#04261f}',
       '#panel-squads .sq-cell.large{box-shadow:inset 0 0 0 2px rgba(0,0,0,.34)}',
-      '#panel-squads .sq-cell-role{position:absolute;top:3px;left:4px;font-size:var(--ob-text-xs);font-weight:800;opacity:.74}',
-      '#panel-squads .sq-cell-portrait{width:58px;height:50px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));flex:0 0 auto}',
+      '#panel-squads .sq-cell-role{position:absolute;z-index:2;top:3px;left:4px;font-size:var(--ob-text-xs);font-weight:800;line-height:1;opacity:.8}',
+      '#panel-squads .sq-cell-portrait{width:52px;height:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));flex:0 0 auto}',
       '#panel-squads .sq-cell-name{display:block;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}',
       '#panel-squads .sq-remove{position:absolute;top:2px;right:2px;width:17px;height:17px;border:0;border-radius:3px;background:rgba(0,0,0,.18);color:inherit;cursor:pointer;font-size:var(--ob-text-sm);line-height:17px;padding:0}',
       '#panel-squads .sq-pick{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:10px 12px}',
@@ -615,7 +615,7 @@
     var h = '<div class="sq-pick">';
     h += '<div class="sq-field leader"><label>Leader class</label><select data-grp="L">' + classOptionsHtml(rec[0], rom, true) + '</select>' +
       selectorLevelReadout(rec, 'A') +
-      '<div class="sq-field-help">A leader must be marked Yes or Centurion. Level offsets are selector-wide, not per occupant. Edit them on the exact deployment row in the Scenario tab. Classes without a direct map sprite can use the sprite of the ordinary class linked by B57.</div></div>';
+      '<div class="sq-field-help">A leader must be marked Yes or Centurion. The leader has its own level adjustment; every Group B unit shares one setting, and every Group C unit shares one setting. Edit levels on this deployment row in the Scenario tab. Classes without a direct map sprite can use the sprite of the ordinary class linked by B57.</div></div>';
     ['B', 'C'].forEach(function (role) {
       var cls = rec[groupClassField(role)], count = groupCount(rec, role);
       var reason = groupAddDisabledReason(rec, role);
@@ -686,10 +686,14 @@
     var deploymentInfo = detailHost && embeddedRowIndex != null && OB64.scenario && OB64.scenario.squadLevelInfo
       ? OB64.scenario.squadLevelInfo(rom, scn.id, embeddedRowIndex)
       : null;
+    var embedded = !!(detailHost && embeddedRowIndex != null);
     var sourceEdatId = deploymentInfo ? deploymentInfo.originalEdatId : sel.edatId;
     var van = vanillaRec(scn, sourceEdatId), k = key(scn.id, sel.edatId), over = rom.squadOverrides[k], rec = over || van;
     // Added squads (Scenario tab) have no vanilla record; their override IS the record.
     var isAdded = deploymentInfo ? deploymentInfo.added : !van;
+    // The embedded Scenario editor is always editable. Its first actual record change
+    // atomically creates a deployment-local custom copy through Scenario.setSquadRecord.
+    var editable = !!over || embedded;
     if (!rec) {
       el.innerHTML = '<div class="sq-detail-head"><div><div class="sq-head">' + esc(scn.name) + ' / edat ' + sel.edatId + '</div>' +
         '<div class="sq-sub">No record: this edat has no vanilla squad and no override.</div></div></div>';
@@ -712,7 +716,7 @@
       '</div>' +
       '<span class="sq-row-meta">' + headChips + '</span></div>';
     if (!isAdded && !detailHost) html += '<label class="sq-toggle"><input type="checkbox" id="sq-override"' + (over ? ' checked' : '') + '> <span>Override in this scenario</span></label>';
-    if (over) {
+    if (editable) {
       html += '<label class="sq-toggle sq-exp-toggle"><input type="checkbox" id="sq-raw-capacity"' + (ui.rawCapacity ? ' checked' : '') + '> ' +
         '<span class="sq-exp-copy"><strong>Experimental raw EDAT capacity</strong>' +
         'Allow full raw EDAT capacity: Leader + Bx3 + Cx3. This can exceed the game placement assumptions; over-cap squads may hide units in map inspection, place them off-grid in battle, or make them untargetable.</span></label>';
@@ -753,7 +757,7 @@
       ui.rawCapacity = !!this.checked;
       renderDetail(rom);
     };
-    if (over) wireDetail(rom, scn, rec, k);
+    if (editable) wireDetail(rom, scn, rec, k);
     if (detailHost && embeddedRowIndex != null && OB64.scenario) {
       el.querySelectorAll('.sq-item-picker').forEach(function(button) {
         button.onclick = function() {
@@ -795,31 +799,39 @@
     var el = detailHost || document.getElementById('sq-detail');
     el.querySelectorAll('select[data-grp]').forEach(function (s) {
       s.onchange = function () {
+        var candidate = rec.slice(0);
         var v = parseInt(this.value), grp = this.dataset.grp;
         if (grp === 'L') {
           if (!v) { ui.notice = 'Leader class is required.'; renderDetail(rom); return; }
-          rec[0] = v;
+          candidate[0] = v;
         } else if (!v) {
-          clearGroup(rec, grp);
-        } else if (groupCount(rec, grp) === 0) {
-          var err = addUnitToGroup(rec, grp, v);
+          clearGroup(candidate, grp);
+        } else if (groupCount(candidate, grp) === 0) {
+          var err = addUnitToGroup(candidate, grp, v);
           if (err) { ui.notice = err; renderDetail(rom); return; }
         } else {
-          setGroupClass(rec, grp, v);
+          setGroupClass(candidate, grp, v);
         }
-        commit(rom, scn);
+        commit(rom, scn, candidate, k);
       };
     });
     el.querySelectorAll('.sq-add-member').forEach(function (btn) {
       btn.onclick = function () {
         var grp = this.dataset.grp;
-        var err = addUnitToGroup(rec, grp, rec[groupClassField(grp)]);
+        var candidate = rec.slice(0);
+        var err = addUnitToGroup(candidate, grp, candidate[groupClassField(grp)]);
         if (err) { ui.notice = err; renderDetail(rom); return; }
-        commit(rom, scn);
+        commit(rom, scn, candidate, k);
       };
     });
-    el.querySelectorAll('.sq-remove').forEach(function (x) { x.onclick = function (e) { e.stopPropagation(); removeCell(rec, parseInt(this.dataset.cell)); commit(rom, scn); }; });
+    el.querySelectorAll('.sq-remove').forEach(function (x) { x.onclick = function (e) {
+      e.stopPropagation();
+      var candidate = rec.slice(0);
+      removeCell(candidate, parseInt(this.dataset.cell));
+      commit(rom, scn, candidate, k);
+    }; });
     var rb = el.querySelector('#sq-reset'); if (rb) rb.onclick = function () {
+      var candidate = rec.slice(0);
       var v = vanillaRec(scn, sel.edatId);
       if (detailHost && embeddedRowIndex != null) {
         var sourceInfo = OB64.scenario && OB64.scenario.squadLevelInfo
@@ -827,34 +839,57 @@
           : null;
         var source = sourceInfo && vanillaRec(scn, sourceInfo.originalEdatId);
         if (source) {
-          [0, 6, 7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { rec[offset] = source[offset]; });
+          [0, 6, 7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { candidate[offset] = source[offset]; });
         } else {
-          rec[0] = rec[0] || 1;
-          rec[6] = 5;
-          [7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { rec[offset] = 0; });
+          candidate[0] = candidate[0] || 1;
+          candidate[6] = 5;
+          [7, 13, 14, 15, 16, 22, 23, 24].forEach(function(offset) { candidate[offset] = 0; });
         }
       } else if (v) {
-        rom.squadOverrides[k] = v.slice(0);
+        candidate = v.slice(0);
       } else {
         // Added squad: no vanilla to restore - reset to a lone leader in the center cell.
-        var d = new Uint8Array(35);
-        d[0] = rec[0] || 1;
-        d[6] = 5;
-        rom.squadOverrides[k] = d;
+        candidate = new Uint8Array(35);
+        candidate[0] = rec[0] || 1;
+        candidate[6] = 5;
       }
-      commit(rom, scn);
+      commit(rom, scn, candidate, k);
     };
     el.querySelectorAll('.sq-cell').forEach(function (c) {
       c.ondragstart = function (e) { e.dataTransfer.setData('text/plain', this.dataset.cell); e.dataTransfer.effectAllowed = 'move'; };
       c.ondragover = function (e) { e.preventDefault(); this.style.outline = '2px solid var(--ob-gold-bright)'; };
       c.ondragleave = function () { this.style.outline = ''; };
-      c.ondrop = function (e) { e.preventDefault(); this.style.outline = ''; var from = parseInt(e.dataTransfer.getData('text/plain')), to = parseInt(this.dataset.cell); if (!isNaN(from) && !isNaN(to)) { moveUnit(rec, from, to); commit(rom, scn); } };
+      c.ondrop = function (e) {
+        e.preventDefault();
+        this.style.outline = '';
+        var from = parseInt(e.dataTransfer.getData('text/plain')), to = parseInt(this.dataset.cell);
+        if (!isNaN(from) && !isNaN(to)) {
+          var candidate = rec.slice(0);
+          moveUnit(candidate, from, to);
+          commit(rom, scn, candidate, k);
+        }
+      };
     });
   }
 
-  function commit(rom, scn) {
-    ui.notice = '';
-    if (OB64._squadChanged) OB64._squadChanged();
+  function commit(rom, scn, candidate, k) {
+    try {
+      if (detailHost && embeddedRowIndex != null) {
+        if (!OB64.scenario || !OB64.scenario.setSquadRecord) {
+          throw new Error('Scenario-local squad editing is unavailable. Reload the editor and try again.');
+        }
+        var info = OB64.scenario.setSquadRecord(rom, scn.id, embeddedRowIndex, candidate);
+        if (info && Number.isInteger(info.currentEdatId)) sel.edatId = info.currentEdatId;
+      } else {
+        rom.squadOverrides[k] = candidate;
+        if (OB64._squadChanged) OB64._squadChanged();
+      }
+      ui.notice = '';
+    } catch (e) {
+      ui.notice = e && e.message ? e.message : String(e);
+      renderDetail(rom);
+      return;
+    }
     renderDetail(rom); renderList(rom);
     // Embedded in the Scenario sidebar: let the map refresh its markers (leader icon lives there).
     if (detailHost && OB64._scenarioSquadEdit) OB64._scenarioSquadEdit();

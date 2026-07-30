@@ -249,8 +249,11 @@ safety behavior.
   scenario keys. The 62 renderable mission keys use site-fitted full-art map
   registrations, while internal/no-image keys keep the schematic fallback.
   Enemy squads appear as draggable portrait markers; click a squad to edit its
-  composition and formation in the sidebar (the former Squads tab, embedded);
-  drag-draw movement routes with editable waypoints. The squad detail links to
+  composition and formation in the sidebar (the former Squads tab, embedded).
+  The first class, member, or formation change automatically creates a
+  scenario-local copy for that deployment; there is no separate override
+  checkbox. The shared stock EDAT remains unchanged. You can also drag-draw
+  movement routes with editable waypoints. The squad detail links to
   its shared route nodes, and clicking a linked node opens the node editor for
   exact movement, gate, and waypoint-target edits. Squad-level Behavior
   templates are limited to row-local guard/sally presets so shared node edits do
@@ -264,11 +267,13 @@ safety behavior.
   mode still available for mod testing.
   **Enemy base level** edits decompressed ESET byte `0x08` for the selected
   physical resource, shows the resource path, alias keys, original value, and
-  the safe range that avoids byte wrap and the game's `1..99` clamp. A/B/C
-  offsets are selector-wide signed bytes, not per-occupant controls. The first
-  effective offset edit to a stock deployment copies its complete 35-byte EDAT
-  record into the verified custom-squad allocator and repoints only that row;
-  the shared stock EDAT and other Scenarios remain unchanged. Added squads own
+  the safe range that avoids byte wrap and the game's `1..99` clamp. The leader
+  has its own adjustment; every Group B unit shares one setting, and every
+  Group C unit shares one setting. The first EDAT-record edit to a stock
+  deployment—composition, formation, group level, or starting equipment—copies
+  its complete 35-byte record into the verified custom-squad allocator and
+  repoints only that row. The shared stock EDAT and other Scenarios remain
+  unchanged. Added squads own
   their records and begin with all three offsets at zero. Revert restores a
   stock row's original reference and removes its level-copy allocation. Key 25
   blocks only its accepted ambiguous B/C selectors, and internal key 54 remains
