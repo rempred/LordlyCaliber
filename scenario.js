@@ -4470,7 +4470,7 @@ window.OB64 = window.OB64 || {};
       (added ? 'ADDED squad' : 'vanilla squad') + ' / ' + (dormant ? 'deploys dormant (ambush)' : 'deploys active'),
       'drop raw ' + OB64.scenarioCodec.hexByte(row.dropRaw, 4),
     ]);
-    html += squadLevelEditorHtml(rom, key, rowIndex);
+    html += '<div id="sc-squad-level-host">' + squadLevelEditorHtml(rom, key, rowIndex) + '</div>';
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
       '<div id="sc-comp-host"></div></div>';
     html += supplyPresetEditorHtml(rom, key, rowIndex);
@@ -5145,15 +5145,23 @@ window.OB64 = window.OB64 || {};
     }
     Object.keys(LEVEL_SELECTORS).forEach(function(selector) {
       var sel = info.selectors[selector];
-      if (!sel.materialized) return;
       var groupName = selector === 'A' ? 'Leader' : 'Group ' + selector;
       var adjustment = sel.signed > 0 ? '+' + sel.signed : String(sel.signed);
+      var unavailable = !sel.materialized
+        ? (selector === 'A'
+          ? 'Assign a leader in Squad Comp to enable this adjustment.'
+          : 'Add a ' + groupName + ' member in Squad Comp to enable this adjustment.')
+        : '';
       html += '<div class="sc-form-row"><label class="sc-label" for="sc-level-offset-' + selector + '">' + groupName + ' adjustment</label>' +
         '<input id="sc-level-offset-' + selector + '" class="sc-level-offset" type="number" min="-128" max="127" step="1" data-selector="' + selector + '" value="' + sel.signed + '"' +
-        (sel.ambiguous ? ' disabled title="Accepted key-25 B/C selector ambiguity"' : '') + '>' +
-        '<div class="sc-sub">Adjustment ' + adjustment + ' / resulting level ' + sel.effectiveLevel +
-        ' (Scenario scale ' + info.base + ') / raw ' + hx2(sel.raw) +
-        (sel.ambiguous ? ' / blocked: this source does not distinguish Group B from Group C' : '') + '</div></div>';
+        (!sel.materialized || sel.ambiguous ? ' disabled' : '') +
+        (sel.ambiguous ? ' title="Accepted key-25 B/C selector ambiguity"' : '') + '>' +
+        '<div class="sc-sub">' + (unavailable
+          ? unavailable + ' Preserved raw value: ' + hx2(sel.raw) + '.'
+          : 'Adjustment ' + adjustment + ' / resulting level ' + sel.effectiveLevel +
+            ' (Scenario scale ' + info.base + ') / raw ' + hx2(sel.raw) +
+            (sel.ambiguous ? ' / blocked: this source does not distinguish Group B from Group C' : '')) +
+        '</div></div>';
     });
     var addedOriginal = addedSquadForRow(rom, runtimeKey, rowIndex);
     var hasAddedEdit = info.added && addedOriginal && !sameLevelOffsets(
@@ -5200,7 +5208,8 @@ window.OB64 = window.OB64 || {};
       input.onchange = function() {
         try {
           setSquadLevelOffsetSigned(rom, runtimeKey, rowIndex, this.dataset.selector, Number(this.value));
-          ui.gateText = 'Selector ' + this.dataset.selector + ' level offset updated through a scenario-local custom record.';
+          var groupName = this.dataset.selector === 'A' ? 'Leader' : 'Group ' + this.dataset.selector;
+          ui.gateText = groupName + ' level adjustment updated through a scenario-local custom record.';
         } catch (e) {
           reportLevelEditError('Squad level edit blocked', e);
         }
@@ -5211,7 +5220,7 @@ window.OB64 = window.OB64 || {};
     if (revert) revert.onclick = function() {
       try {
         revertSquadLevelOffsets(rom, runtimeKey, rowIndex);
-        ui.gateText = 'This squad\'s A/B/C offsets were reverted without changing the Scenario base or other rows.';
+        ui.gateText = 'This squad\'s group level adjustments were restored without changing the Scenario scale or other squads.';
       } catch (e) {
         reportLevelEditError('Squad level revert blocked', e);
       }
@@ -8268,15 +8277,22 @@ window.OB64 = window.OB64 || {};
     return { summary: totals, keys: keys };
   }
 
-  // The embedded Squads comp editor calls this on every commit so squad markers repaint with
-  // the current leader icon without a full tab re-render (scroll and focus stay put).
-  OB64._scenarioSquadEdit = function() {
+  // The embedded Squads comp editor calls this on every commit so the level controls,
+  // supply preview, and squad markers refresh without a full tab re-render.
+  OB64._scenarioSquadEdit = function(runtimeKey, rowIndex) {
     var panel = document.getElementById('panel-scenario');
     if (!panel) return;
-    var mapPanel = panel.querySelector('#sc-map-panel');
     var rom = OB64._romRef && OB64._romRef();
     if (!rom) return;
+    runtimeKey = Number.isInteger(runtimeKey) ? runtimeKey : ui.selectedKey;
+    rowIndex = Number.isInteger(rowIndex) ? rowIndex : ui.selectedPoint;
+    var levelHost = panel.querySelector('#sc-squad-level-host');
+    if (levelHost && runtimeKey != null && rowIndex != null) {
+      levelHost.innerHTML = squadLevelEditorHtml(rom, runtimeKey, rowIndex);
+      wireSquadLevelEditor(levelHost, rom, runtimeKey, rowIndex);
+    }
     refreshSupplyPreview(rom);
+    var mapPanel = panel.querySelector('#sc-map-panel');
     if (!mapPanel) return;
     var scroller = mapPanel.querySelector('.sc-map-scroll');
     var saved = scroller ? { left: scroller.scrollLeft, top: scroller.scrollTop } : null;

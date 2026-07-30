@@ -269,8 +269,10 @@ safety behavior.
   physical resource, shows the resource path, alias keys, original value, and
   the safe range that avoids byte wrap and the game's `1..99` clamp. The leader
   has its own adjustment; every Group B unit shares one setting, and every
-  Group C unit shares one setting. The first EDAT-record edit to a stock
-  deployment—composition, formation, group level, or starting equipment—copies
+  Group C unit shares one setting. Empty group controls remain visible and
+  enable as soon as that group gains a member. The first EDAT-record edit to a
+  stock deployment—composition, formation, group level, or starting
+  equipment—copies
   its complete 35-byte record into the verified custom-squad allocator and
   repoints only that row. The shared stock EDAT and other Scenarios remain
   unchanged. Added squads own

@@ -891,8 +891,8 @@
       return;
     }
     renderDetail(rom); renderList(rom);
-    // Embedded in the Scenario sidebar: let the map refresh its markers (leader icon lives there).
-    if (detailHost && OB64._scenarioSquadEdit) OB64._scenarioSquadEdit();
+    // Embedded in the Scenario sidebar: refresh the related level, supply, and map views.
+    if (detailHost && OB64._scenarioSquadEdit) OB64._scenarioSquadEdit(scn.id, embeddedRowIndex);
   }
 
   // Added squads (Scenario tab) have no vanilla card; their override's match key is the
