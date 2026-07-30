@@ -86,7 +86,14 @@ window.OB64 = window.OB64 || {};
       tierByte: bytes[9] || 0,
       dropFlag: bytes[10] || 0,
       dropRaw: readU16BE(bytes, 11),
-      routeHelperBytes: [bytes[13] || 0, bytes[14] || 0, bytes[15] || 0],
+      healingSupplyPreset: bytes[13] || 0,
+      fruitSupplyPreset: bytes[14] || 0,
+      revivalSupplyPreset: bytes[15] || 0,
+      supplyPresets: {
+        healing: bytes[13] || 0,
+        fruit: bytes[14] || 0,
+        revival: bytes[15] || 0,
+      },
       tail: [bytes[16] || 0, bytes[17] || 0],
     };
   }
@@ -371,7 +378,31 @@ window.OB64 = window.OB64 || {};
   }
 
   function cloneModel(model) {
-    return parseEset(serializeEset(model), { sourcePath: model.sourcePath || null });
+    var copy = {
+      format: model.format,
+      sourcePath: model.sourcePath || null,
+      byteLength: model.byteLength,
+      header: cloneBytes(model.header),
+      seed: cloneBytes(model.seed),
+      offsets: {
+        stream0: model.offsets.stream0,
+        countStream: model.offsets.countStream,
+        section2: model.offsets.section2,
+        section3: model.offsets.section3,
+      },
+      scenarioBaseLevel: model.scenarioBaseLevel,
+      headerByte09: model.headerByte09,
+      formatInfo: {
+        variant: model.formatInfo.variant,
+        subFlag: model.formatInfo.subFlag,
+        extendedField: model.formatInfo.extendedField,
+      },
+      section3Present: !!model.section3Present,
+      section1: model.section1.map(function(row) { return { bytes: cloneBytes(row.bytes) }; }),
+      section2: model.section2.map(function(row) { return { bytes: cloneBytes(row.bytes) }; }),
+      section3: model.section3.map(function(row) { return { bytes: cloneBytes(row.bytes) }; }),
+    };
+    return refreshDecodedRows(copy);
   }
 
   function equalBytes(a, b) {

@@ -287,6 +287,28 @@ safety behavior.
   preserve the full u16 values. Existing source IDs beyond the proven range are
   shown and preserved read-only. This feature proves initialization only; it
   makes no claim about later AI choice, use, consumption, effects, or drops.
+  The same sidebar also has **Starting consumable supplies**. Choose a healing,
+  fruit, or revival supply preset from the searchable parchment modal; every
+  choice shows its item icons, names, and duplicate counts. These three bytes
+  are category presets expanded by the scenario initializer, not three direct
+  carried-item slots. **Clear supplies** writes the canonical `00 00 00`, while
+  **Revert supplies** restores the row's three original bytes without undoing
+  composition, levels, starting equipment, normal drops, placement, or other
+  Scenario work. Existing unknown bytes (including fruit preset `04`, the
+  alternate empty encoding) are shown and preserved until a known preset is
+  chosen; preserve-only values are never offered as new choices.
+  Supply presets belong to the physical ESET deployment row. Runtime keys that
+  select that same physical ESET update together, while an equal EDAT reference
+  in another ESET remains isolated; no global or custom `enemydat` record is
+  allocated merely for supplies. The Initialization preview uses the current
+  five-member composition and the exact class-B59 sum. The engine does not
+  clamp that sum before writing its ten-byte destination, so preset mutation
+  and export fail closed unless capacity is `1..10`; compositions with more
+  than five occupied anchors are also blocked instead of receiving an invented
+  preview. Complete modified ESET `rawHex` persists through canonical Scenario
+  Project v4, so direct and Project-reloaded exports use the same bytes. The
+  preview describes only the sorted scenario-start mix after capacity is
+  applied; it does not claim which item the AI later chooses, uses, or consumes.
   Clicking a town exposes its scenario-specific starting Allegiance plus its
   global Population and Morale. Population/Morale rebuild the shared 316-record
   `ktenmain` table; Morale preserves B24 bit 7 and is locked on exact `0xFF`

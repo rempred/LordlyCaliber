@@ -1710,7 +1710,7 @@ OB64.parseClassDefs = function(z64) {
     var dragonElement = z64[off + 58];
 
     // B59 = per-character contribution to the squad's carried-item capacity.
-    // Effective squad capacity is min(sum(member B59), 10 physical item slots).
+    // The five-member sum is not clamped before the engine writes its ten-byte destination.
     var itemCapacity = z64[off + 59];
     var category = itemCapacity; // Backward-compatible alias for older class-object consumers.
 

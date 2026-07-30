@@ -564,6 +564,60 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Enemy Squads', entries);
   }
 
+  function scenarioSourceEntry(runtimeKey) {
+    var scenarios = (OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.scenarios) || [];
+    for (var i = 0; i < scenarios.length; i++) if (Number(scenarios[i].runtimeKey) === Number(runtimeKey)) return scenarios[i];
+    return null;
+  }
+
+  function supplyPresetChangelogLabel(category, value) {
+    var display = OB64.scenario && OB64.scenario.supplyPresetDisplay
+      ? OB64.scenario.supplyPresetDisplay(category, value)
+      : null;
+    if (!display) return 'Raw preset ' + scalar(value);
+    return display.label + ' [' + display.mix + ']' + (!display.selectable ? ' (' + display.rawHex + ', preserved)' : '');
+  }
+
+  function scenarioSupplyPresetChanges(runtimeKey, entry) {
+    if (!OB64.scenarioCodec || !OB64.scenario || !OB64.scenario.supplyPresetDisplay || !entry || !entry.rawHex) return [];
+    var source = scenarioSourceEntry(runtimeKey);
+    if (!source || !source.rawHex) return [];
+    var beforeModel;
+    var afterModel;
+    try {
+      beforeModel = OB64.scenarioCodec.parseEset(OB64.scenarioCodec.compactHexToBytes(source.rawHex));
+      afterModel = OB64.scenarioCodec.parseEset(OB64.scenarioCodec.compactHexToBytes(entry.rawHex));
+    } catch (e) {
+      return [];
+    }
+    var originalBySource = {};
+    beforeModel.section1.forEach(function(row) { originalBySource[row.sourceId] = row; });
+    var categories = [
+      { key: 'healing', label: 'Healing supplies', offset: 13 },
+      { key: 'fruit', label: 'Fruit supplies', offset: 14 },
+      { key: 'revival', label: 'Revival supplies', offset: 15 },
+    ];
+    var entries = [];
+    afterModel.section1.forEach(function(row, rowIndex) {
+      var original = originalBySource[row.sourceId] || null;
+      var lines = [];
+      categories.forEach(function(category) {
+        var oldValue = original ? original.bytes[category.offset] : 0;
+        var newValue = row.bytes[category.offset];
+        if (oldValue === newValue) return;
+        lines.push(category.label + ': ' + supplyPresetChangelogLabel(category.key, oldValue) +
+          ' -> ' + supplyPresetChangelogLabel(category.key, newValue) + '.');
+      });
+      if (!lines.length) return;
+      entries.push({
+        title: scenarioLabel(runtimeKey) + ', squad source #' + row.sourceId +
+          ' / EDAT #' + (row.edatOneBased - 1) + ' / deployment row #' + rowIndex,
+        lines: lines,
+      });
+    });
+    return entries;
+  }
+
   function buildScenarioSection(rom, patches, sections) {
     var project = patches.scenario;
     if (!project) return;
@@ -592,6 +646,7 @@ window.OB64 = window.OB64 || {};
     });
     numericKeys(project.modifiedEsets).forEach(function(key) {
       var entry = project.modifiedEsets[key] || {};
+      entries = entries.concat(scenarioSupplyPresetChanges(key, entry));
       entries.push({
         title: scenarioLabel(key),
         lines: ['Mission squads, placements, routes, triggers, or behaviors changed' +

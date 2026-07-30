@@ -2843,7 +2843,7 @@ window.OB64 = window.OB64 || {};
     historyLink: 'B57 is compared with the character\'s secondary class byte (+0x12) to decide whether this class row\'s growth history applies or the secondary class row is used. That operation is proven; the design name "Class History Link" remains descriptive.'
   };
   var CLASS_ITEM_CAPACITY_HELP = 'B59 is this character class\'s contribution to its squad\'s carried-item limit. ' +
-    'Squad item capacity = min(sum of member B59 values, 10 slots).';
+    'The game sums the five initialized members without clamping; Scenario starting-supply edits and export require the result to stay within the 10-slot destination.';
   var CLASS_HP_GROWTH_HELP = 'nameOff+10 / statOff-2 is the class base/minimum HP gain per level. For ordinary classes: gain = this byte + two independent 0/1 RNG rolls + equipped HP/STR growth. The class-only range is the stored value through stored value + 2, and its long-run mean is stored value + 1.';
   var CLASS_BASE_STAT_WARNING = 'This starting value only comes into play when this class is used as a base growth class in Growth. It does not directly set the stats of a character merely because this is their current class.';
   var CLASS_SEX_VOICE_HELP = 'Logical B65 (H+5): nameOff+5 / statOff-7. Sex/type classification; exact values and consumer are not fully traced. Edit with caution.';

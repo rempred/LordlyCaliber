@@ -265,6 +265,21 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-item-choice strong,#panel-scenario .sc-item-choice small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '#panel-scenario .sc-item-choice strong{font-size:var(--ob-text-sm)}',
       '#panel-scenario .sc-item-choice small{font-size:var(--ob-text-xs);color:var(--ob-ink-soft);margin-top:1px}',
+      '#panel-scenario .sc-supply-actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:9px}',
+      '#panel-scenario .sc-supply-choice{grid-template-columns:minmax(64px,auto) minmax(0,1fr) auto;margin:0;min-width:0}',
+      '#panel-scenario .sc-supply-choice:disabled{cursor:not-allowed;filter:grayscale(.45);opacity:.62}',
+      '#panel-scenario .sc-supply-choice:disabled:active{transform:none}',
+      '#panel-scenario .sc-supply-icons{display:flex;gap:3px;align-items:center;flex-wrap:wrap;max-width:104px}',
+      '#panel-scenario .sc-supply-icons img,#panel-scenario .sc-supply-icons .sc-item-choice-empty{width:26px;height:26px;object-fit:contain;image-rendering:pixelated;display:block;background:rgba(255,245,210,.28);border:1px solid rgba(91,58,24,.38);border-radius:4px}',
+      '#panel-scenario .sc-supply-action-word{font-family:var(--ob-display);font-size:var(--ob-text-xs);font-weight:800;text-transform:uppercase;color:var(--ob-wax-red)}',
+      '#panel-scenario .sc-supply-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}',
+      '#panel-scenario .sc-supply-preview{border:1px solid var(--sc-line);border-radius:6px;background:rgba(255,255,255,.14);padding:8px;margin-top:10px;min-width:0}',
+      '#panel-scenario .sc-supply-preview-title{font-family:var(--ob-display);font-size:var(--ob-text-sm);font-weight:800;text-transform:uppercase;letter-spacing:.5px}',
+      '#panel-scenario .sc-supply-members{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}',
+      '#panel-scenario .sc-supply-member{border:1px solid var(--sc-line);border-radius:4px;padding:3px 6px;font-size:var(--ob-text-xs);background:rgba(255,255,255,.18)}',
+      '#panel-scenario .sc-supply-preview-list{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}',
+      '#panel-scenario .sc-supply-preview-item{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--sc-line);border-radius:4px;padding:3px 6px;background:rgba(255,255,255,.22);font-size:var(--ob-text-xs);font-weight:700}',
+      '#panel-scenario .sc-supply-preview-item img{width:24px;height:24px;object-fit:contain;image-rendering:pixelated;flex:0 0 24px}',
       '#panel-scenario .sc-field-value{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}',
       '#panel-scenario .sc-field-value>.sc-sub{grid-column:1/-1;margin-top:0}',
       '#panel-scenario .sc-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}',
@@ -292,7 +307,7 @@ window.OB64 = window.OB64 || {};
       '#panel-scenario .sc-roster-row .sc-chips{display:flex;gap:4px;justify-content:flex-end}',
       '@media (max-width:1800px){#panel-scenario .sc-layout.sc-overview-layout{grid-template-columns:280px var(--sc-map-window) minmax(0,1fr)}#panel-scenario .sc-overview-layout .sc-detail{grid-column:1/-1}}',
       '@media (max-width:1180px){#panel-scenario .sc-layout,#panel-scenario .sc-layout.sc-overview-layout{grid-template-columns:1fr}#panel-scenario .sc-list{min-height:240px;max-height:320px}#panel-scenario .sc-map-panel{width:var(--sc-map-window);max-width:100%}#panel-scenario .sc-detail,#panel-scenario .sc-overview-layout .sc-detail{grid-column:auto;min-height:360px}#panel-scenario .sc-map-scroll{height:520px}}',
-      '@media (max-width:860px){#panel-scenario .sc-overview-grid{grid-template-columns:1fr}#panel-scenario .sc-overview-column{max-height:none;overflow:visible}}'
+      '@media (max-width:860px){#panel-scenario .sc-overview-grid{grid-template-columns:1fr}#panel-scenario .sc-overview-column{max-height:none;overflow:visible}#panel-scenario .sc-supply-choice{grid-template-columns:minmax(52px,auto) minmax(0,1fr)}#panel-scenario .sc-supply-action-word{grid-column:1/-1;text-align:right}.supply-preset-modal{min-width:0;width:calc(100vw - 20px)}}'
     ].join('');
     var style = document.createElement('style');
     style.id = STYLE_ID;
@@ -510,6 +525,218 @@ window.OB64 = window.OB64 || {};
     C: [18, 20],
   };
 
+  var SUPPLY_CATEGORY_ORDER = ['healing', 'fruit', 'revival'];
+  var SUPPLY_CATEGORIES = {
+    healing: {
+      label: 'Healing supplies',
+      offset: 13,
+      selectable: [0, 1, 2, 3, 4, 5, 6],
+      presets: {
+        0: { label: 'No healing supplies', description: 'Seeds no healing consumables.', expansion: [] },
+        1: { label: 'Light leaf kit', description: 'Seeds one Heal Leaf; the remaining healing allocation is empty.', expansion: [1, 0, 0, 0, 0] },
+        2: { label: 'Leaf pair', description: 'Seeds two Heal Leaves.', expansion: [1, 1, 0, 0] },
+        3: { label: 'Leaf-and-seed kit', description: 'Seeds two Heal Leaves and one Heal Seed.', expansion: [1, 1, 2, 0, 0, 0] },
+        4: { label: 'Seed pair', description: 'Seeds two Heal Seeds.', expansion: [2, 2, 0, 0] },
+        5: { label: 'Seed-and-pack kit', description: 'Seeds two Heal Seeds and one Heal Pack.', expansion: [2, 2, 3, 0, 0, 0] },
+        6: { label: 'Heal Pack pair', description: 'Seeds two Heal Packs.', expansion: [3, 3, 0, 0] },
+      },
+    },
+    fruit: {
+      label: 'Fruit supplies',
+      offset: 14,
+      selectable: [0, 1, 2, 3],
+      presets: {
+        0: { label: 'No fruit supplies', description: 'Seeds no fruit consumables.', expansion: [] },
+        1: { label: 'Power Fruit pair', description: 'Seeds two Power Fruits.', expansion: [4, 4] },
+        2: { label: 'Mixed fruit pair', description: 'Seeds one Power Fruit and one Angel Fruit.', expansion: [4, 5] },
+        3: { label: 'Angel Fruit pair', description: 'Seeds two Angel Fruits.', expansion: [5, 5] },
+        4: { label: 'Alternate empty encoding', description: 'This preserved retail encoding seeds no fruit items.', expansion: [], preserveOnly: true },
+      },
+    },
+    revival: {
+      label: 'Revival supplies',
+      offset: 15,
+      selectable: [0, 1, 2],
+      presets: {
+        0: { label: 'No revival supplies', description: 'Seeds no revival consumables.', expansion: [] },
+        1: { label: 'One Revive Stone', description: 'Seeds one Revive Stone.', expansion: [6] },
+        2: { label: 'Revive Stone pair', description: 'Seeds two Revive Stones.', expansion: [6, 6] },
+      },
+    },
+  };
+
+  function supplyItemName(id) {
+    var accepted = {
+      1: 'Heal Leaf', 2: 'Heal Seed', 3: 'Heal Pack',
+      4: 'Power Fruit', 5: 'Angel Fruit', 6: 'Revive Stone',
+    };
+    return (OB64.consumableName && OB64.consumableName(id)) || accepted[id] || ('Consumable ' + id);
+  }
+
+  function supplyItemInfo(id) {
+    var name = supplyItemName(id);
+    return {
+      id: id,
+      name: name,
+      iconUrl: OB64.itemIconURL ? OB64.itemIconURL(name) : ('resources/Item%20Icons/' + encodeURIComponent(name) + '.png'),
+    };
+  }
+
+  function supplyMixSummary(expansion) {
+    var counts = {};
+    (expansion || []).forEach(function(id) { if (id) counts[id] = (counts[id] || 0) + 1; });
+    var parts = Object.keys(counts).map(Number).sort(function(a, b) { return a - b; }).map(function(id) {
+      return supplyItemName(id) + (counts[id] > 1 ? ' ×' + counts[id] : '');
+    });
+    return parts.length ? parts.join(', ') : 'No starting items';
+  }
+
+  function supplyPresetDisplay(category, value) {
+    var def = SUPPLY_CATEGORIES[category];
+    value = Number(value);
+    if (!def || !Number.isInteger(value) || value < 0 || value > 0xFF) return null;
+    var preset = def.presets[value];
+    if (!preset) {
+      return {
+        category: category,
+        categoryLabel: def.label,
+        value: value,
+        rawHex: hx2(value),
+        known: false,
+        selectable: false,
+        preserveOnly: true,
+        label: 'Preserved raw ' + hx2(value),
+        description: 'This source value is outside the known preset list and will be preserved until a known preset is selected.',
+        expansion: null,
+        mix: 'Initialization mix unavailable for this preserved raw value',
+      };
+    }
+    return {
+      category: category,
+      categoryLabel: def.label,
+      value: value,
+      rawHex: hx2(value),
+      known: true,
+      selectable: def.selectable.indexOf(value) !== -1,
+      preserveOnly: !!preset.preserveOnly,
+      label: preset.label,
+      description: preset.description,
+      expansion: preset.expansion.slice(),
+      mix: supplyMixSummary(preset.expansion),
+    };
+  }
+
+  function supplyTupleForRow(row) {
+    if (!row || !row.bytes || row.bytes.length !== 18) return null;
+    return [row.bytes[13] & 0xFF, row.bytes[14] & 0xFF, row.bytes[15] & 0xFF];
+  }
+
+  function supplyTupleObject(tuple) {
+    return { healing: tuple[0], fruit: tuple[1], revival: tuple[2] };
+  }
+
+  function supplyTuplesEqual(a, b) {
+    return !!a && !!b && a.length === 3 && b.length === 3 &&
+      a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+  }
+
+  function supplyMembersForRecord(record) {
+    var members = [];
+    if (!record || record.length !== 35) return members;
+    if (record[0] && record[6]) members.push({ role: 'Leader', anchor: record[6], classId: record[0] });
+    [13, 14, 15].forEach(function(offset, index) {
+      if (record[offset] && record[7]) members.push({ role: 'Group B member ' + (index + 1), anchor: record[offset], classId: record[7] });
+    });
+    [22, 23, 24].forEach(function(offset, index) {
+      if (record[offset] && record[16]) members.push({ role: 'Group C member ' + (index + 1), anchor: record[offset], classId: record[16] });
+    });
+    return members;
+  }
+
+  function calculateSupplyCapacityForRecord(rom, record) {
+    var members = supplyMembersForRecord(record);
+    var issues = [];
+    var contributing = [];
+    var capacity = 0;
+    if (!record || record.length !== 35) issues.push('The squad has no complete 35-byte composition record.');
+    if (members.length > 5) {
+      issues.push('This composition has ' + members.length + ' occupied anchors, but the runtime initializer consumes exactly five members. Reduce it to five members before editing supplies or exporting.');
+    }
+    members.slice(0, 5).forEach(function(member) {
+      var classDef = rom && rom.classDefs && rom.classDefs[member.classId + 1];
+      var contribution = classDef && Number(classDef.itemCapacity);
+      if (!Number.isInteger(contribution) || contribution < 0 || contribution > 0xFF) {
+        issues.push(member.role + ' has no valid class-B59 capacity contribution.');
+        contribution = 0;
+      }
+      capacity += contribution;
+      contributing.push({
+        role: member.role,
+        anchor: member.anchor,
+        classId: member.classId,
+        className: OB64.className ? OB64.className(member.classId) : ('Class ' + member.classId),
+        contribution: contribution,
+      });
+    });
+    if (!issues.length && (capacity < 1 || capacity > 10)) {
+      issues.push('The five-member class-B59 capacity is ' + capacity + '; the safe destination boundary is 1..10 and the engine does not clamp it.');
+    }
+    return {
+      capacity: capacity,
+      members: contributing,
+      memberCount: members.length,
+      safe: issues.length === 0 && capacity >= 1 && capacity <= 10,
+      issues: issues,
+    };
+  }
+
+  function calculateSquadSupplyCapacity(rom, runtimeKey, rowIndex) {
+    var record = effectiveRecordForRow(rom, runtimeKey, rowIndex);
+    return calculateSupplyCapacityForRecord(rom, record);
+  }
+
+  function initializedSupplyPreview(rom, runtimeKey, rowIndex, tuple) {
+    var capacity = calculateSquadSupplyCapacity(rom, runtimeKey, rowIndex);
+    var row = modelFor(rom, runtimeKey) && modelFor(rom, runtimeKey).section1[rowIndex];
+    tuple = tuple || supplyTupleForRow(row);
+    var displays = tuple && SUPPLY_CATEGORY_ORDER.map(function(category, index) {
+      return supplyPresetDisplay(category, tuple[index]);
+    });
+    var unknown = displays && displays.filter(function(display) { return !display || !display.known; });
+    if (!capacity.safe || !tuple || !displays || unknown.length) {
+      return {
+        available: false,
+        capacity: capacity,
+        tuple: tuple && supplyTupleObject(tuple),
+        items: [],
+        ids: [],
+        work: [],
+        issue: !capacity.safe
+          ? capacity.issues.join(' ')
+          : 'The exact initialization mix is unavailable while a preserved unknown preset value remains selected.',
+      };
+    }
+    var work = [];
+    displays.forEach(function(display) {
+      if (work.length >= capacity.capacity) return;
+      work = work.concat(display.expansion);
+    });
+    work = work.slice(0, capacity.capacity);
+    var ids = [];
+    for (var id = 1; id <= 6; id++) {
+      work.forEach(function(candidate) { if (candidate === id) ids.push(id); });
+    }
+    return {
+      available: true,
+      capacity: capacity,
+      tuple: supplyTupleObject(tuple),
+      work: work,
+      ids: ids,
+      items: ids.map(supplyItemInfo),
+      issue: '',
+    };
+  }
+
   function levelMetaForKey(rom, runtimeKey) {
     return ensureState(rom).metadata[runtimeKey] || scenarioData(runtimeKey);
   }
@@ -590,6 +817,179 @@ window.OB64 = window.OB64 || {};
     var state = ensureState(rom);
     var model = state.originalModels && state.originalModels[runtimeKey];
     return model && model.section1[rowIndex] || null;
+  }
+
+  function originalSupplyTupleForRow(rom, runtimeKey, rowIndex, sourceId) {
+    if (addedSquadForRow(rom, runtimeKey, rowIndex)) return [0, 0, 0];
+    var originalModel = ensureState(rom).originalModels[runtimeKey];
+    if (!originalModel) return null;
+    var original = originalModel.section1[rowIndex];
+    if (!original || (sourceId != null && original.sourceId !== sourceId)) {
+      original = originalModel.section1.filter(function(row) { return row.sourceId === sourceId; })[0] || null;
+    }
+    return supplyTupleForRow(original);
+  }
+
+  function validateSupplyTuple(candidate, preservedTuples) {
+    if (!candidate || candidate.length !== 3) throw new Error('Starting-supply preset state must contain exactly three bytes.');
+    preservedTuples = preservedTuples || [];
+    SUPPLY_CATEGORY_ORDER.forEach(function(category, index) {
+      var value = Number(candidate[index]);
+      var def = SUPPLY_CATEGORIES[category];
+      if (!Number.isInteger(value) || value < 0 || value > 0xFF) {
+        throw new Error(def.label + ' must be one byte.');
+      }
+      if (def.selectable.indexOf(value) !== -1) return;
+      var preserved = preservedTuples.some(function(tuple) { return tuple && tuple[index] === value; });
+      if (!preserved) {
+        throw new Error(def.label + ' preset ' + hx2(value) + ' is preserve-only and cannot be newly selected.');
+      }
+    });
+    return candidate.map(function(value) { return Number(value) & 0xFF; });
+  }
+
+  function supplyPresetInfo(rom, runtimeKey, rowIndex) {
+    var state = ensureState(rom);
+    var model = state.models[runtimeKey];
+    var row = model && model.section1[rowIndex];
+    if (!row) return null;
+    var current = supplyTupleForRow(row);
+    var original = originalSupplyTupleForRow(rom, runtimeKey, rowIndex, row.sourceId);
+    return {
+      runtimeKey: runtimeKey,
+      rowIndex: rowIndex,
+      sourceId: row.sourceId,
+      edatId: rowEdatId(row),
+      resourcePath: resourcePathForKey(rom, runtimeKey),
+      aliases: resourceAliasKeys(rom, runtimeKey),
+      current: supplyTupleObject(current),
+      currentTuple: current,
+      original: original && supplyTupleObject(original),
+      originalTuple: original,
+      edited: !!original && !supplyTuplesEqual(current, original),
+      categories: SUPPLY_CATEGORY_ORDER.map(function(category, index) {
+        return supplyPresetDisplay(category, current[index]);
+      }),
+      capacity: calculateSquadSupplyCapacity(rom, runtimeKey, rowIndex),
+      preview: initializedSupplyPreview(rom, runtimeKey, rowIndex, current),
+    };
+  }
+
+  function prepareSupplyPresetModels(rom, runtimeKey, rowIndex, candidate, preservedTuples) {
+    var state = ensureState(rom);
+    var model = state.models[runtimeKey];
+    var selectedRow = model && model.section1[rowIndex];
+    if (!selectedRow) throw new Error('Selected Scenario deployment row is unavailable.');
+    var sourceCheck = verifyLevelResourceSource(rom, runtimeKey);
+    if (!sourceCheck.ok) throw new Error(sourceCheck.message);
+    candidate = validateSupplyTuple(candidate, preservedTuples);
+    var aliases = resourceAliasKeys(rom, runtimeKey);
+    var resourcePath = resourcePathForKey(rom, runtimeKey);
+    var current = supplyTupleForRow(selectedRow);
+    var prepared = {};
+    aliases.forEach(function(aliasKey) {
+      if (resourcePathForKey(rom, aliasKey) !== resourcePath) {
+        throw new Error('Physical ESET alias key ' + aliasKey + ' does not resolve to ' + resourcePath + '.');
+      }
+      var aliasModel = state.models[aliasKey];
+      var aliasRow = aliasModel && aliasModel.section1[rowIndex];
+      if (!aliasRow || aliasRow.sourceId !== selectedRow.sourceId) {
+        throw new Error('Physical ESET alias row identity mismatch at Scenario key ' + aliasKey + '.');
+      }
+      if (!supplyTuplesEqual(supplyTupleForRow(aliasRow), current)) {
+        throw new Error('Physical ESET alias preset bytes disagree before the edit; no deployment was changed.');
+      }
+      var capacity = calculateSquadSupplyCapacity(rom, aliasKey, rowIndex);
+      if (!capacity.safe) {
+        throw new Error('Scenario key ' + aliasKey + ', source ' + selectedRow.sourceId + ': ' + capacity.issues.join(' '));
+      }
+      var clone = OB64.scenarioCodec.cloneModel(aliasModel);
+      var cloneRow = clone.section1[rowIndex];
+      cloneRow.bytes[13] = candidate[0];
+      cloneRow.bytes[14] = candidate[1];
+      cloneRow.bytes[15] = candidate[2];
+      OB64.scenarioCodec.refreshDecodedRows(clone);
+      var validation = OB64.scenarioCodec.validateEset(clone);
+      if (validation.errors.length) {
+        throw new Error('Scenario key ' + aliasKey + ' ESET validation rejected the starting-supply edit: ' +
+          validation.errors.map(function(issue) { return issue.code; }).join(', ') + '.');
+      }
+      prepared[aliasKey] = clone;
+    });
+    return { aliases: aliases, models: prepared, current: current, candidate: candidate };
+  }
+
+  function applySupplyPresetTuple(rom, runtimeKey, rowIndex, candidate, preservedTuples) {
+    var state = ensureState(rom);
+    var prepared = prepareSupplyPresetModels(rom, runtimeKey, rowIndex, candidate, preservedTuples);
+    if (supplyTuplesEqual(prepared.current, prepared.candidate)) return supplyPresetInfo(rom, runtimeKey, rowIndex);
+    prepared.aliases.forEach(function(aliasKey) { state.models[aliasKey] = prepared.models[aliasKey]; });
+    commitScenarioEdit(rom, runtimeKey, prepared.aliases);
+    return supplyPresetInfo(rom, runtimeKey, rowIndex);
+  }
+
+  function setSupplyPreset(rom, runtimeKey, rowIndex, category, value) {
+    var def = SUPPLY_CATEGORIES[category];
+    value = Number(value);
+    if (!def) throw new Error('Unknown starting-supply category ' + category + '.');
+    if (!Number.isInteger(value) || def.selectable.indexOf(value) === -1) {
+      throw new Error(def.label + ' accepts preset values ' + def.selectable.join(', ') + '.');
+    }
+    var info = supplyPresetInfo(rom, runtimeKey, rowIndex);
+    if (!info) throw new Error('Selected Scenario deployment row is unavailable.');
+    var candidate = info.currentTuple.slice();
+    candidate[SUPPLY_CATEGORY_ORDER.indexOf(category)] = value;
+    return applySupplyPresetTuple(rom, runtimeKey, rowIndex, candidate, [info.currentTuple]);
+  }
+
+  function clearSupplyPresets(rom, runtimeKey, rowIndex) {
+    var info = supplyPresetInfo(rom, runtimeKey, rowIndex);
+    if (!info) throw new Error('Selected Scenario deployment row is unavailable.');
+    return applySupplyPresetTuple(rom, runtimeKey, rowIndex, [0, 0, 0], [info.currentTuple]);
+  }
+
+  function revertSupplyPresets(rom, runtimeKey, rowIndex) {
+    var info = supplyPresetInfo(rom, runtimeKey, rowIndex);
+    if (!info || !info.originalTuple) throw new Error('Original starting-supply bytes are unavailable for this deployment row.');
+    return applySupplyPresetTuple(rom, runtimeKey, rowIndex, info.originalTuple.slice(), [info.currentTuple, info.originalTuple]);
+  }
+
+  function supplyCapacityIssues(rom) {
+    var state = ensureState(rom);
+    var issues = [];
+    Object.keys(state.models).map(Number).sort(function(a, b) { return a - b; }).forEach(function(runtimeKey) {
+      var model = state.models[runtimeKey];
+      model.section1.forEach(function(row, rowIndex) {
+        var capacity = calculateSquadSupplyCapacity(rom, runtimeKey, rowIndex);
+        if (!capacity.safe) {
+          issues.push('Scenario key ' + runtimeKey + ', source ' + row.sourceId + ', deployment row ' + rowIndex + ': ' + capacity.issues.join(' '));
+        }
+      });
+    });
+    return issues;
+  }
+
+  function validateSupplyModelsForLoad(rom) {
+    var state = ensureState(rom);
+    Object.keys(state.models).forEach(function(keyText) {
+      var runtimeKey = Number(keyText);
+      state.models[runtimeKey].section1.forEach(function(row, rowIndex) {
+        var tuple = supplyTupleForRow(row);
+        try {
+          // A Project's complete rawHex is an existing persisted source. Unknown
+          // bytes therefore remain preserve-only after load; the authoring API
+          // still refuses to select them from another value.
+          validateSupplyTuple(tuple, [tuple]);
+        } catch (e) {
+          throw new Error('Scenario Project key ' + runtimeKey + ', deployment row ' + rowIndex + ': ' + e.message);
+        }
+      });
+      var validation = OB64.scenarioCodec.validateEset(state.models[runtimeKey]);
+      if (validation.errors.length) {
+        throw new Error('Scenario Project key ' + runtimeKey + ' has ESET validation errors: ' +
+          validation.errors.map(function(issue) { return issue.code; }).join(', ') + '.');
+      }
+    });
   }
 
   function levelCopyForRow(rom, runtimeKey, rowIndex, sourceId) {
@@ -976,6 +1376,16 @@ window.OB64 = window.OB64 || {};
     return OB64.scenarioCodec.serializeEset(model);
   }
 
+  function supplyPresetsDiffer(model, originalModel) {
+    var rowCount = Math.max(model.section1.length, originalModel.section1.length);
+    for (var rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      var currentTuple = supplyTupleForRow(model.section1[rowIndex]) || [0, 0, 0];
+      var originalTuple = supplyTupleForRow(originalModel.section1[rowIndex]) || [0, 0, 0];
+      if (!supplyTuplesEqual(currentTuple, originalTuple)) return true;
+    }
+    return false;
+  }
+
   function keyModified(rom, runtimeKey) {
     var state = ensureState(rom);
     var model = state.models[runtimeKey];
@@ -987,7 +1397,8 @@ window.OB64 = window.OB64 || {};
   // Live archive-fit prediction: values over the fixed slot now route to the grow/relocate
   // lane at export time. The fit flag is still useful in the UI as a note, not a block.
   function archiveFitInfo(rom, key) {
-    var meta = ensureState(rom).metadata[key] || scenarioData(key);
+    var state = ensureState(rom);
+    var meta = state.metadata[key] || scenarioData(key);
     var model = modelFor(rom, key);
     if (!meta || !model || !rom.archives || !rom.archives[meta.archive] || !OB64.lh5Compress || !OB64.buildLHAArchive) return null;
     var arc = rom.archives[meta.archive];
@@ -995,7 +1406,13 @@ window.OB64 = window.OB64 || {};
     if (!slot) return null;
     var raw = modelBytes(model);
     var built = OB64.buildLHAArchive(OB64.lh5Compress(raw), raw, meta.filename || 'eset.bin');
-    return { size: built.length - 1, slot: slot, fits: (built.length - 1) <= slot };
+    var original = state.originalBytes[key];
+    var supplyChanged = original && supplyPresetsDiffer(
+      model,
+      OB64.scenarioCodec.parseEset(original, { sourcePath: meta.resourcePath || meta.filename || null })
+    );
+    var writtenSize = supplyChanged ? built.length : built.length - 1;
+    return { size: writtenSize, slot: slot, fits: writtenSize <= slot };
   }
 
   function archiveSlotSize(archiveDir) {
@@ -3817,6 +4234,225 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function supplyIconsHtml(expansion, className) {
+    var ids = (expansion || []).filter(function(id) { return id >= 1 && id <= 6; });
+    var cls = className || 'sc-supply-icons';
+    if (!ids.length) return '<span class="' + cls + '"><span class="sc-item-choice-empty" aria-hidden="true">—</span></span>';
+    return '<span class="' + cls + '">' + ids.map(function(id) {
+      var item = supplyItemInfo(id);
+      return '<img src="' + esc(item.iconUrl) + '" alt="' + esc(item.name) + '" title="' + esc(item.name) + '">';
+    }).join('') + '</span>';
+  }
+
+  function supplyPreviewHtml(info) {
+    var capacity = info.capacity;
+    var preview = info.preview;
+    var html = '<div class="sc-supply-preview-title">Initialization preview</div>';
+    html += '<div class="sc-sub">Calculated capacity: <b>' + capacity.capacity + '</b> / safe destination 1..10. The engine does not clamp this sum.</div>';
+    html += '<div class="sc-supply-members">';
+    if (capacity.members.length) {
+      capacity.members.forEach(function(member) {
+        html += '<span class="sc-supply-member">' + esc(member.role + ': ' + member.className) + ' <b>+' + member.contribution + '</b></span>';
+      });
+    } else {
+      html += '<span class="sc-supply-member">No initialized members resolved</span>';
+    }
+    html += '</div>';
+    if (!preview.available) {
+      html += '<div class="sc-warning">Initialization preview blocked: ' + esc(preview.issue) + '</div>';
+    } else if (!preview.items.length) {
+      html += '<div class="sc-ok">Exact sorted starting mix: empty.</div>';
+    } else {
+      html += '<div class="sc-sub">Exact sorted starting mix after capacity is applied:</div><div class="sc-supply-preview-list">';
+      preview.items.forEach(function(item) {
+        html += '<span class="sc-supply-preview-item"><img src="' + esc(item.iconUrl) + '" alt=""><span>' + esc(item.name) + ' <small>ID ' + item.id + '</small></span></span>';
+      });
+      html += '</div>';
+    }
+    html += '<div class="sc-sub">This is the scenario-start initialization result. It does not predict which consumable the AI later chooses or uses.</div>';
+    return html;
+  }
+
+  function supplyPresetEditorHtml(rom, runtimeKey, rowIndex) {
+    var info = supplyPresetInfo(rom, runtimeKey, rowIndex);
+    if (!info) return '<div class="sc-section sc-supply-section"><div class="sc-warning">Starting consumable supplies are unavailable for this row.</div></div>';
+    var disabled = info.capacity.safe ? '' : ' disabled';
+    var html = '<div class="sc-section sc-supply-section"><span class="sc-label">Starting consumable supplies</span>' +
+      '<div class="sc-sub">These three categories choose the squad\'s starting consumable mix when the scenario initializes. They are supply presets, not three individual carried slots, equipment choices, drops, or instructions for later AI use.</div>' +
+      '<div class="sc-supply-actions">';
+    info.categories.forEach(function(display) {
+      html += '<button type="button" class="sc-item-choice sc-supply-choice" data-supply-category="' + display.category + '" aria-haspopup="dialog"' + disabled + '>' +
+        supplyIconsHtml(display.expansion) +
+        '<span><strong>' + esc(display.categoryLabel + ': ' + display.label) + '</strong><small>' + esc(display.mix) + '</small></span>' +
+        '<span class="sc-supply-action-word">Choose preset</span></button>';
+      if (display.preserveOnly || !display.known) {
+        html += '<div class="sc-warning">' + esc(display.categoryLabel) + ' currently uses ' + esc(display.label) + ' (' + esc(display.rawHex) + '). ' + esc(display.description) + '</div>';
+      }
+    });
+    html += '</div><div class="sc-supply-toolbar">' +
+      '<button type="button" class="sc-inline-btn" id="sc-supply-clear"' + disabled + '>Clear supplies</button>' +
+      '<button type="button" class="sc-inline-btn" id="sc-supply-revert"' + ((!info.originalTuple || !info.edited || !info.capacity.safe) ? ' disabled' : '') + '>Revert supplies</button></div>' +
+      '<div id="sc-supply-preview" class="sc-supply-preview">' + supplyPreviewHtml(info) + '</div></div>';
+    return html;
+  }
+
+  function openSupplyPresetModal(category, currentValue, onSelect) {
+    var def = SUPPLY_CATEGORIES[category];
+    if (!def || !document.body) return;
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    var modal = document.createElement('div');
+    modal.className = 'item-modal save-item-picker supply-preset-modal';
+    overlay.appendChild(modal);
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var title = document.createElement('h2');
+    title.textContent = 'Choose ' + def.label.toLowerCase() + ' preset';
+    header.appendChild(title);
+    var closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'item-modal-close';
+    closeButton.setAttribute('aria-label', 'Close preset selector');
+    closeButton.textContent = '×';
+    header.appendChild(closeButton);
+    modal.appendChild(header);
+    var searchWrap = document.createElement('div');
+    searchWrap.className = 'item-modal-search-wrap';
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.className = 'item-modal-search';
+    search.placeholder = 'Search presets or items…';
+    searchWrap.appendChild(search);
+    modal.appendChild(searchWrap);
+    var body = document.createElement('div');
+    body.className = 'item-modal-body save-item-picker-body supply-preset-body';
+    var col = document.createElement('div');
+    col.className = 'item-modal-col supply-preset-list';
+    var entries = [];
+    def.selectable.forEach(function(value) {
+      var display = supplyPresetDisplay(category, value);
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'item-modal-row supply-preset-row';
+      if (value === currentValue) row.classList.add('selected');
+      var icons = document.createElement('span');
+      icons.className = 'supply-preset-icons';
+      var ids = display.expansion.filter(function(id) { return !!id; });
+      if (!ids.length) {
+        var empty = document.createElement('span');
+        empty.className = 'item-modal-icon item-modal-icon-empty';
+        empty.textContent = '—';
+        icons.appendChild(empty);
+      } else {
+        ids.forEach(function(id) {
+          var item = supplyItemInfo(id);
+          var img = document.createElement('img');
+          img.className = 'item-modal-icon';
+          img.src = item.iconUrl;
+          img.alt = item.name;
+          img.title = item.name;
+          icons.appendChild(img);
+        });
+      }
+      row.appendChild(icons);
+      var copy = document.createElement('span');
+      copy.className = 'supply-preset-copy';
+      var name = document.createElement('strong');
+      name.textContent = display.label;
+      copy.appendChild(name);
+      var description = document.createElement('span');
+      description.textContent = display.description;
+      copy.appendChild(description);
+      var mix = document.createElement('small');
+      mix.textContent = display.mix;
+      copy.appendChild(mix);
+      row.appendChild(copy);
+      var badge = document.createElement('span');
+      badge.className = 'item-modal-price';
+      badge.textContent = 'Preset ' + value;
+      row.appendChild(badge);
+      row.addEventListener('click', function() {
+        if (value !== currentValue) onSelect(value);
+        close();
+      });
+      col.appendChild(row);
+      entries.push({ row: row, needle: (display.label + ' ' + display.description + ' ' + display.mix + ' preset ' + value).toLowerCase() });
+    });
+    body.appendChild(col);
+    modal.appendChild(body);
+    function applyFilter() {
+      var query = search.value.trim().toLowerCase();
+      entries.forEach(function(entry) { entry.row.style.display = !query || entry.needle.indexOf(query) !== -1 ? '' : 'none'; });
+    }
+    function onKey(ev) { if (ev.key === 'Escape') close(); }
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', onKey);
+    }
+    closeButton.addEventListener('click', close);
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) close(); });
+    search.addEventListener('input', applyFilter);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    setTimeout(function() { search.focus(); }, 0);
+  }
+
+  function wireSupplyPresetEditor(el, rom, runtimeKey, rowIndex) {
+    el.querySelectorAll('.sc-supply-choice').forEach(function(button) {
+      button.onclick = function() {
+        var category = this.dataset.supplyCategory;
+        var info = supplyPresetInfo(rom, runtimeKey, rowIndex);
+        if (!info) return;
+        var display = info.categories[SUPPLY_CATEGORY_ORDER.indexOf(category)];
+        openSupplyPresetModal(category, display.value, function(value) {
+          try {
+            setSupplyPreset(rom, runtimeKey, rowIndex, category, value);
+            ui.gateText = display.categoryLabel + ' updated for every runtime key sharing this physical ESET.';
+          } catch (e) {
+            reportLevelEditError('Starting supplies edit blocked', e);
+            renderScenarioTab(document.getElementById('panel-scenario'));
+          }
+        });
+      };
+    });
+    var clear = el.querySelector('#sc-supply-clear');
+    if (clear) clear.onclick = function() {
+      try {
+        clearSupplyPresets(rom, runtimeKey, rowIndex);
+        ui.gateText = 'All three starting-supply categories were cleared to the canonical empty presets.';
+      } catch (e) {
+        reportLevelEditError('Clear supplies blocked', e);
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      }
+    };
+    var revert = el.querySelector('#sc-supply-revert');
+    if (revert) revert.onclick = function() {
+      try {
+        revertSupplyPresets(rom, runtimeKey, rowIndex);
+        ui.gateText = 'The original three deployment-row supply presets were restored; other squad and Scenario edits were kept.';
+      } catch (e) {
+        reportLevelEditError('Revert supplies blocked', e);
+        renderScenarioTab(document.getElementById('panel-scenario'));
+      }
+    };
+  }
+
+  function refreshSupplyPreview(rom) {
+    if (ui.selectedPoint == null) return;
+    var host = document.getElementById('sc-supply-preview');
+    if (!host) return;
+    var info = supplyPresetInfo(rom, ui.selectedKey, ui.selectedPoint);
+    if (!info) return;
+    host.innerHTML = supplyPreviewHtml(info);
+    var panel = document.getElementById('panel-scenario');
+    if (!panel) return;
+    panel.querySelectorAll('.sc-supply-choice').forEach(function(button) { button.disabled = !info.capacity.safe; });
+    var clear = panel.querySelector('#sc-supply-clear');
+    if (clear) clear.disabled = !info.capacity.safe;
+    var revert = panel.querySelector('#sc-supply-revert');
+    if (revert) revert.disabled = !info.capacity.safe || !info.originalTuple || !info.edited;
+  }
+
   function renderSquadDetail(el, rom, key, rowIndex) {
     var model = modelFor(rom, key);
     var row = model.section1[rowIndex];
@@ -3837,6 +4473,7 @@ window.OB64 = window.OB64 || {};
     html += squadLevelEditorHtml(rom, key, rowIndex);
     html += '<div class="sc-section"><span class="sc-label">Squad Comp</span>' +
       '<div id="sc-comp-host"></div></div>';
+    html += supplyPresetEditorHtml(rom, key, rowIndex);
     html += '<div class="sc-section"><span class="sc-label">Placement</span>' + placementEditorHtml(rom, key, row, point) + '</div>';
     html += normalDropEditorHtml(row);
     var bld = builderFor(key, rowIndex);
@@ -4050,7 +4687,9 @@ window.OB64 = window.OB64 || {};
   function rawGridHtml(prefix, bytes, rowIndex, kind, extraClass) {
     var html = '<div class="sc-raw-grid' + (extraClass ? ' ' + esc(extraClass) : '') + '">';
     for (var i = 0; i < bytes.length; i++) {
-      html += '<label class="sc-byte">' + i + '<input class="sc-byte-input" data-kind="' + esc(kind || 's1') + '" data-prefix="' + prefix + '" data-row="' + rowIndex + '" data-off="' + i + '" value="' + hx2(bytes[i]) + '"></label>';
+      var supplyOwned = (kind || 's1') === 's1' && i >= 13 && i <= 15;
+      html += '<label class="sc-byte">' + i + '<input class="sc-byte-input" data-kind="' + esc(kind || 's1') + '" data-prefix="' + prefix + '" data-row="' + rowIndex + '" data-off="' + i + '" value="' + hx2(bytes[i]) + '"' +
+        (supplyOwned ? ' readonly data-supply-owned="true" title="Managed by Starting consumable supplies"' : '') + '></label>';
     }
     return html + '</div>';
   }
@@ -4060,6 +4699,7 @@ window.OB64 = window.OB64 || {};
     var detailPoint = resolvePointForRow(rom, key, rowIndex);
     wireBackButton(el);
     wireSquadLevelEditor(el, rom, key, rowIndex);
+    wireSupplyPresetEditor(el, rom, key, rowIndex);
     var del = el.querySelector('#sc-delete-added');
     if (del) del.onclick = function() { deleteAddedSquad(rom, key, rowIndex); };
     var delVanilla = el.querySelector('#sc-delete-squad');
@@ -4338,6 +4978,7 @@ window.OB64 = window.OB64 || {};
     if (editNode) editNode.onclick = function() { selectNode(model.section1[rowIndex].bytes[6]); };
     el.querySelectorAll('.sc-byte-input').forEach(function(inp) {
       inp.onchange = function() {
+        if (this.dataset.supplyOwned) return;
         var kind = this.dataset.kind || 's1';
         var row = parseInt(this.dataset.row, 10);
         var off = parseInt(this.dataset.off, 10);
@@ -4576,11 +5217,16 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function commitScenarioEdit(rom, key) {
+  function commitScenarioEdit(rom, key, relatedKeys) {
     var state = ensureState(rom);
-    var model = state.models[key];
-    OB64.scenarioCodec.refreshDecodedRows(model);
-    state.modifiedKeys[key] = true;
+    var keys = relatedKeys && relatedKeys.length ? relatedKeys.slice() : [key];
+    if (keys.indexOf(key) === -1) keys.push(key);
+    keys.forEach(function(runtimeKey) {
+      var model = state.models[runtimeKey];
+      if (!model) throw new Error('Scenario key ' + runtimeKey + ' has no ESET model.');
+      OB64.scenarioCodec.refreshDecodedRows(model);
+      state.modifiedKeys[runtimeKey] = true;
+    });
     changed();
     renderScenarioTab(document.getElementById('panel-scenario'));
   }
@@ -6723,6 +7369,12 @@ window.OB64 = window.OB64 || {};
         if (!arithmetic.ok) throw new Error(arithmetic.issues.join(' '));
       });
 
+      validateSupplyModelsForLoad(rom);
+      var projectSupplyIssues = supplyCapacityIssues(rom);
+      if (projectSupplyIssues.length) {
+        throw new Error('Scenario Project starting-consumable capacity preflight failed: ' + projectSupplyIssues.join(' | '));
+      }
+
       var resourceBytes = {};
       Object.keys(state.models).forEach(function(keyText) {
         var runtimeKey = Number(keyText);
@@ -7156,6 +7808,10 @@ window.OB64 = window.OB64 || {};
     if (strongholdPlan.blocked.length) blocked = blocked.concat(strongholdPlan.blocked);
     var levelIssues = levelExportIssues(rom);
     if (levelIssues.length) blocked = blocked.concat(levelIssues);
+    var supplyIssues = supplyCapacityIssues(rom);
+    if (supplyIssues.length) {
+      blocked.push('Unsafe starting-consumable capacity must be fixed before export: ' + supplyIssues.join(' | '));
+    }
     var stubs = anyProjectStub(rom);
     // Slot overflow is handled below by the relocation lane. Keep the fit number as
     // a user-facing note, not an export blocker.
@@ -7251,16 +7907,29 @@ window.OB64 = window.OB64 || {};
         blocked.push('Missing ROM archive for runtime key ' + runtimeKey);
         return;
       }
+      var originalModel = OB64.scenarioCodec.parseEset(original, { sourcePath: meta.resourcePath || meta.filename || null });
+      var supplyChanged = supplyPresetsDiffer(model, originalModel);
       var comp = OB64.lh5Compress(raw);
+      var compVerify = OB64.lh5Decompress(comp, raw.length);
+      if (supplyChanged && !OB64.scenarioCodec.equalBytes(compVerify, raw)) {
+        blocked.push('Scenario key ' + runtimeKey + ' LH5 verification failed; the ESET resource was not written.');
+        return;
+      }
       var arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
-      var arcBody = arc.slice ? arc.slice(0, arc.length - 1) : arc.subarray(0, arc.length - 1);
-      if (arcBody.length <= archiveSlotSize(archiveDir)) {
+      // Supply-preset exports keep the complete verified compressed stream. The
+      // older generic Scenario lane omits its final encoder byte; preserving that
+      // established behavior for unrelated edits avoids changing their archive
+      // layout, while the semantic supply path must be byte-exact end to end.
+      var arcBody = supplyChanged ? arc :
+        (arc.slice ? arc.slice(0, arc.length - 1) : arc.subarray(0, arc.length - 1));
+      var slotSize = archiveSlotSize(archiveDir);
+      if (arcBody.length <= slotSize) {
         inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: arcBody, label: 'scenario key ' + runtimeKey });
         return;
       }
       var moved;
       try {
-        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
+        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: supplyChanged });
         assertRelocationTailFree(rom, moved, ownedWindows);
       } catch (e2) {
         blocked.push('Scenario key ' + runtimeKey + ' ' + e2.message);
@@ -7457,7 +8126,9 @@ window.OB64 = window.OB64 || {};
     if (!panel) return;
     var mapPanel = panel.querySelector('#sc-map-panel');
     var rom = OB64._romRef && OB64._romRef();
-    if (!mapPanel || !rom) return;
+    if (!rom) return;
+    refreshSupplyPreview(rom);
+    if (!mapPanel) return;
     var scroller = mapPanel.querySelector('.sc-map-scroll');
     var saved = scroller ? { left: scroller.scrollLeft, top: scroller.scrollTop } : null;
     renderMapPanel(mapPanel, rom);
@@ -7486,6 +8157,15 @@ window.OB64 = window.OB64 || {};
     squadItemInfo: squadItemInfo,
     setSquadItemOverride: setSquadItemOverride,
     revertSquadItemOverrides: revertSquadItemOverrides,
+    supplyPresetInfo: supplyPresetInfo,
+    supplyPresetDisplay: supplyPresetDisplay,
+    calculateSupplyCapacityForRecord: calculateSupplyCapacityForRecord,
+    calculateSquadSupplyCapacity: calculateSquadSupplyCapacity,
+    initializedSupplyPreview: initializedSupplyPreview,
+    setSupplyPreset: setSupplyPreset,
+    clearSupplyPresets: clearSupplyPresets,
+    revertSupplyPresets: revertSupplyPresets,
+    supplyCapacityIssues: supplyCapacityIssues,
     validateLevelArithmetic: validateLevelArithmetic,
     verifyLevelResourceSource: verifyLevelResourceSource,
     levelExportIssues: levelExportIssues,
@@ -7527,6 +8207,7 @@ window.OB64 = window.OB64 || {};
       deleteAddedSquad: deleteAddedSquad,
       levelBaseEditorHtml: levelBaseEditorHtml,
       squadLevelEditorHtml: squadLevelEditorHtml,
+      supplyPresetEditorHtml: supplyPresetEditorHtml,
     },
   };
 })(window.OB64);

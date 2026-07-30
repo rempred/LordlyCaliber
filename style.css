@@ -4333,6 +4333,32 @@ td.attack-list {
 .save-item-picker-body { max-height: 70vh; }
 .save-item-picker .item-modal-col { min-width: 420px; }
 
+/* Scenario starting-consumable preset selector: the shared parchment modal
+   shell with richer, duplicate-preserving item mixes in each authoring row. */
+.supply-preset-modal { min-width: 560px; max-width: 720px; }
+.supply-preset-body { max-height: 70vh; }
+.supply-preset-list { min-width: 0; width: 100%; gap: 5px; }
+.supply-preset-row {
+  width: 100%;
+  border: 1px solid rgba(91,58,24,.28);
+  background: rgba(255,255,255,.12);
+  text-align: left;
+  grid-template-columns: minmax(62px,auto) minmax(0,1fr) auto;
+  display: grid;
+  min-height: 58px;
+  color: var(--ob-ink);
+}
+.supply-preset-icons { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.supply-preset-copy { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.supply-preset-copy strong { font-family: var(--ob-display); font-size: var(--ob-text-sm); }
+.supply-preset-copy span { color: var(--ob-ink-soft); font-size: var(--ob-text-sm); line-height: 1.25; }
+.supply-preset-copy small { color: var(--ob-wax-red); font-size: var(--ob-text-xs); font-weight: 700; }
+@media (max-width: 620px) {
+  .supply-preset-modal { min-width: 0; width: calc(100vw - 20px); }
+  .supply-preset-row { grid-template-columns: minmax(52px,auto) minmax(0,1fr); }
+  .supply-preset-row > .item-modal-price { grid-column: 1/-1; text-align: right; }
+}
+
 /* Search bar shared by every item-picker modal (Save tab, shops, encounters,
    classes) — sits between the header and the scrollable body. */
 .item-modal-search-wrap {
