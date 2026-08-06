@@ -1405,13 +1405,9 @@ window.OB64 = window.OB64 || {};
     var slot = (arc.totalHeaderSize || 0) + (arc.compSize || 0);
     if (!slot) return null;
     var raw = modelBytes(model);
-    var built = OB64.buildLHAArchive(OB64.lh5Compress(raw), raw, meta.filename || 'eset.bin');
-    var original = state.originalBytes[key];
-    var supplyChanged = original && supplyPresetsDiffer(
-      model,
-      OB64.scenarioCodec.parseEset(original, { sourcePath: meta.resourcePath || meta.filename || null })
-    );
-    var writtenSize = supplyChanged ? built.length : built.length - 1;
+    var writtenSize = OB64.buildLHAArchive(
+      OB64.lh5Compress(raw), raw, meta.filename || 'eset.bin'
+    ).length;
     return { size: writtenSize, slot: slot, fits: writtenSize <= slot };
   }
 
@@ -1599,10 +1595,9 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function planRelocationToTail(rom, arc, builtArchive, tailCursor, opts) {
-    opts = opts || {};
+  function planRelocationToTail(rom, arc, builtArchive, tailCursor) {
     var win = dmaWindowForArchive(arc);
-    var archiveSize = opts.fullArchiveLength ? builtArchive.length : builtArchive.length - 1;
+    var archiveSize = builtArchive.length;
     // The proven redirect exact-matches ONE window-start cart address and the loader sizes
     // its fetch from the original resource, so relocation is only safe when the original
     // fetch was a single window AND the rebuilt archive still fits that same window.
@@ -8012,18 +8007,28 @@ window.OB64 = window.OB64 || {};
         if (!OB64.scenarioCodec.equalBytes(ktenmainVerify, strongholdPlan.payload)) {
           blocked.push('Archive #691 LH5 verification failed; Population/Morale edits were not written.');
         } else {
-          var ktenmainArc = OB64.buildLHAArchive(ktenmainComp, strongholdPlan.payload, 'ktenmain.bin');
           var ktenmainSlot = archiveSlotSize(ktenmainDir);
-          if (ktenmainArc.length > ktenmainSlot) {
-            blocked.push('Population/Morale archive #691 is ' + (ktenmainArc.length - ktenmainSlot) +
+          var ktenmainBuilt = OB64.buildLHAArchive(ktenmainComp, strongholdPlan.payload, 'ktenmain.bin');
+          var ktenmainEncodedSize = ktenmainBuilt.length;
+          if (ktenmainEncodedSize > ktenmainSlot) {
+            blocked.push('Population/Morale archive #691 is ' + (ktenmainEncodedSize - ktenmainSlot) +
               ' bytes larger than its fixed ROM slot after compression. Reduce the number or entropy of edits.');
           } else {
-            inlineWrites.push({
-              archive: ktenmainArchive,
-              archiveDir: ktenmainDir,
-              bytes: ktenmainArc,
-              label: 'Population/Morale (ktenmain, ' + strongholdPlan.changes + ' field' + (strongholdPlan.changes === 1 ? '' : 's') + ')',
-            });
+            try {
+              var ktenmainHeaderSize = ktenmainBuilt.length - ktenmainComp.length;
+              var ktenmainTemplate = ktenmainBuilt.slice(0, ktenmainHeaderSize);
+              var ktenmainArc = OB64.buildLHAArchiveFixedSlot(
+                ktenmainComp, strongholdPlan.payload, ktenmainTemplate, ktenmainSlot
+              );
+              inlineWrites.push({
+                archive: ktenmainArchive,
+                archiveDir: ktenmainDir,
+                bytes: ktenmainArc,
+                label: 'Population/Morale (ktenmain, ' + strongholdPlan.changes + ' field' + (strongholdPlan.changes === 1 ? '' : 's') + ')',
+              });
+            } catch (ktenmainBuildError) {
+              blocked.push('Population/Morale archive #691 fixed-slot rebuild failed: ' + ktenmainBuildError.message);
+            }
           }
         }
       }
@@ -8065,29 +8070,33 @@ window.OB64 = window.OB64 || {};
         blocked.push('Missing ROM archive for runtime key ' + runtimeKey);
         return;
       }
-      var originalModel = OB64.scenarioCodec.parseEset(original, { sourcePath: meta.resourcePath || meta.filename || null });
-      var supplyChanged = supplyPresetsDiffer(model, originalModel);
       var comp = OB64.lh5Compress(raw);
       var compVerify = OB64.lh5Decompress(comp, raw.length);
-      if (supplyChanged && !OB64.scenarioCodec.equalBytes(compVerify, raw)) {
+      if (!OB64.scenarioCodec.equalBytes(compVerify, raw)) {
         blocked.push('Scenario key ' + runtimeKey + ' LH5 verification failed; the ESET resource was not written.');
         return;
       }
-      var arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
-      // Supply-preset exports keep the complete verified compressed stream. The
-      // older generic Scenario lane omits its final encoder byte; preserving that
-      // established behavior for unrelated edits avoids changing their archive
-      // layout, while the semantic supply path must be byte-exact end to end.
-      var arcBody = supplyChanged ? arc :
-        (arc.slice ? arc.slice(0, arc.length - 1) : arc.subarray(0, arc.length - 1));
       var slotSize = archiveSlotSize(archiveDir);
-      if (arcBody.length <= slotSize) {
-        inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: arcBody, label: 'scenario key ' + runtimeKey });
+      var arc;
+      try {
+        arc = OB64.buildLHAArchive(comp, raw, meta.filename || ('eset_key_' + runtimeKey + '.bin'));
+      } catch (archiveBuildError) {
+        blocked.push('Scenario key ' + runtimeKey + ' LHA header rebuild failed: ' + archiveBuildError.message);
+        return;
+      }
+      if (arc.length <= slotSize) {
+        try {
+          var templateHeader = arc.slice(0, arc.length - comp.length);
+          var fixedArc = OB64.buildLHAArchiveFixedSlot(comp, raw, templateHeader, slotSize);
+          inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: fixedArc, label: 'scenario key ' + runtimeKey });
+        } catch (fixedBuildError) {
+          blocked.push('Scenario key ' + runtimeKey + ' fixed-slot LHA rebuild failed: ' + fixedBuildError.message);
+        }
         return;
       }
       var moved;
       try {
-        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: supplyChanged });
+        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
         assertRelocationTailFree(rom, moved, ownedWindows);
       } catch (e2) {
         blocked.push('Scenario key ' + runtimeKey + ' ' + e2.message);
@@ -8151,17 +8160,18 @@ window.OB64 = window.OB64 || {};
         blocked.push('Missing ROM archive ' + plan.archive + ' for town allegiance edit');
         return;
       }
-      // Store the descriptor stream UNCOMPRESSED (-lh0-). scincsv payloads are tiny, the game's
-      // loader accepts -lh0- (index 750 ships that way), and this dodges an lh5Compress bug on
-      // small payloads. The stored body still fits the original slot (headers are ~74 B).
-      var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'), archiveDir.totalHeaderSize);
-      if (arc.length <= archiveSlotSize(archiveDir)) {
+      // Store the descriptor stream UNCOMPRESSED (-lh0-). Resize its level-2
+      // header so the logical member ends exactly at the next archive.
+      var scincsvSlot = archiveSlotSize(archiveDir);
+      var scincsvHeaderSize = scincsvSlot - payload.length;
+      var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'), scincsvHeaderSize);
+      if (arc.length === scincsvSlot) {
         inlineWrites.push({ archive: plan.archive, archiveDir: archiveDir, bytes: arc, label: 'town allegiance (scincsv ' + plan.archive + ')' });
         return;
       }
       var moved;
       try {
-        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor, { fullArchiveLength: true });
+        moved = planRelocationToTail(rom, archiveDir, arc, tailCursor);
         assertRelocationTailFree(rom, moved, ownedWindows);
       } catch (e) {
         blocked.push('Town allegiance scincsv ' + plan.archive + ' ' + e.message);

@@ -313,9 +313,11 @@ safety behavior.
   and export fail closed unless capacity is `1..10`; compositions with more
   than five occupied anchors are also blocked instead of receiving an invented
   preview. Complete modified ESET `rawHex` persists through canonical Scenario
-  Project v4, so direct and Project-reloaded exports use the same bytes. The
-  preview describes only the sorted scenario-start mix after capacity is
-  applied; it does not claim which item the AI later chooses, uses, or consumes.
+  Project v4, so direct and Project-reloaded exports use the same bytes.
+  Fixed-slot ESET exports keep each level-2 member's declared length at the
+  original next-member boundary. This preserves the game's sequential archive
+  walk. The preview describes only the sorted scenario-start mix after capacity
+  is applied; it does not claim which item the AI later chooses, uses, or consumes.
   Clicking a town exposes its scenario-specific starting Allegiance plus its
   global Population and Morale. Population/Morale rebuild the shared 316-record
   `ktenmain` table; Morale preserves B24 bit 7 and is locked on exact `0xFF`

@@ -372,7 +372,8 @@ OB64.buildLHAArchive = function(compressedData, originalData, filename) {
   for (var i = 0; i < filename.length; i++) fnBytes.push(filename.charCodeAt(i));
   var fnLen = fnBytes.length;
   var extFnSize = 1 + fnLen + 2;
-  var totalHeaderSize = 24 + 2 + extFnSize;
+  var commonCrcExtSize = 5;
+  var totalHeaderSize = 24 + extFnSize + commonCrcExtSize + 2;
 
   var header = new Uint8Array(totalHeaderSize);
   var compSize = compressedData.length;
@@ -412,15 +413,97 @@ OB64.buildLHAArchive = function(compressedData, originalData, filename) {
   header[25] = (extFnSize >>> 8) & 0xFF;
   header[26] = 0x01; // filename type
   for (var i = 0; i < fnLen; i++) header[27 + i] = fnBytes[i];
-  // End of chain
-  header[27 + fnLen] = 0;
-  header[28 + fnLen] = 0;
+  // Common-header CRC extension, followed by the chain terminator.
+  var commonOff = 27 + fnLen;
+  header[commonOff] = commonCrcExtSize;
+  header[commonOff + 1] = 0;
+  header[commonOff + 2] = 0x00;
+  header[commonOff + 3] = 0;
+  header[commonOff + 4] = 0;
+  header[commonOff + 5] = 0;
+  header[commonOff + 6] = 0;
+  var headerCRC = OB64.crc16(header);
+  header[commonOff + 3] = headerCRC & 0xFF;
+  header[commonOff + 4] = (headerCRC >>> 8) & 0xFF;
 
   // Combine header + compressed data
   var result = new Uint8Array(totalHeaderSize + compressedData.length);
   result.set(header, 0);
   result.set(compressedData, totalHeaderSize);
   return result;
+};
+
+// Rebuild a level-2 member from a CRC-bearing header template. OB64's cluster-3 loader
+// advances to the next member with headerSize + compressedSize; an in-place
+// replacement must therefore declare the complete fixed-slot payload, even
+// when the new LH5 stream is shorter. The unused payload bytes are zero and
+// are ignored after the requested uncompressed byte count has been produced.
+// Keeping the supplied template also preserves its extended-header chain.
+OB64.buildLHAArchiveFromTemplate = function(compressedData, originalData, templateHeader, declaredCompressedSize) {
+  function readU16LE(bytes, off) {
+    return (bytes[off] | (bytes[off + 1] << 8)) >>> 0;
+  }
+  function writeU32LE(bytes, off, value) {
+    value >>>= 0;
+    bytes[off] = value & 0xFF;
+    bytes[off + 1] = (value >>> 8) & 0xFF;
+    bytes[off + 2] = (value >>> 16) & 0xFF;
+    bytes[off + 3] = (value >>> 24) & 0xFF;
+  }
+
+  if (!templateHeader || templateHeader.length < 26) throw new Error('LHA template header is missing or truncated.');
+  var headerSize = readU16LE(templateHeader, 0);
+  if (headerSize < 26 || headerSize > templateHeader.length) throw new Error('LHA template header size is invalid.');
+  if (templateHeader[20] !== 2) throw new Error('LHA template must use a level-2 header.');
+  if (String.fromCharCode(templateHeader[2], templateHeader[3], templateHeader[4], templateHeader[5], templateHeader[6]) !== '-lh5-') {
+    throw new Error('LHA template must use the -lh5- method.');
+  }
+
+  var declared = declaredCompressedSize == null ? compressedData.length : Number(declaredCompressedSize);
+  if (!Number.isInteger(declared) || declared < compressedData.length) {
+    throw new Error('Declared LHA compressed size cannot be smaller than the encoded stream.');
+  }
+  var header = new Uint8Array(headerSize);
+  header.set(templateHeader.subarray(0, headerSize));
+  writeU32LE(header, 7, declared);
+  writeU32LE(header, 11, originalData.length);
+  var dataCrc = OB64.crc16(originalData);
+  header[21] = dataCrc & 0xFF;
+  header[22] = (dataCrc >>> 8) & 0xFF;
+
+  var extOff = 24;
+  var headerCrcOff = -1;
+  while (extOff + 2 <= header.length) {
+    var extSize = readU16LE(header, extOff);
+    if (extSize === 0) break;
+    if (extSize < 3 || extOff + extSize > header.length) throw new Error('LHA template extended-header chain is invalid.');
+    if (header[extOff + 2] === 0 && extSize >= 5) {
+      headerCrcOff = extOff + 3;
+      break;
+    }
+    extOff += extSize;
+  }
+  if (headerCrcOff < 0) throw new Error('LHA template has no common-header CRC extension.');
+  header[headerCrcOff] = 0;
+  header[headerCrcOff + 1] = 0;
+  var headerCrc = OB64.crc16(header);
+  header[headerCrcOff] = headerCrc & 0xFF;
+  header[headerCrcOff + 1] = (headerCrc >>> 8) & 0xFF;
+
+  var result = new Uint8Array(headerSize + declared);
+  result.set(header, 0);
+  result.set(compressedData, headerSize);
+  return result;
+};
+
+OB64.buildLHAArchiveFixedSlot = function(compressedData, originalData, templateHeader, slotSize) {
+  if (!templateHeader || templateHeader.length < 2) throw new Error('LHA fixed-slot template is missing.');
+  var headerSize = (templateHeader[0] | (templateHeader[1] << 8)) >>> 0;
+  var declaredCompressedSize = Number(slotSize) - headerSize;
+  if (!Number.isInteger(declaredCompressedSize) || declaredCompressedSize < 0) {
+    throw new Error('LHA fixed-slot size is invalid.');
+  }
+  return OB64.buildLHAArchiveFromTemplate(compressedData, originalData, templateHeader, declaredCompressedSize);
 };
 
 // Build a STORED (-lh0-, uncompressed) level-2 LHA archive: same header layout as buildLHAArchive
