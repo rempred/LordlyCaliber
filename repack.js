@@ -519,7 +519,8 @@ OB64.buildLHAArchiveUncompressed = function(payload, filename, totalHeaderSizeOv
   for (var i = 0; i < filename.length; i++) fnBytes.push(filename.charCodeAt(i));
   var fnLen = fnBytes.length;
   var extFnSize = 1 + fnLen + 2;
-  var minHeaderSize = 24 + 2 + extFnSize;
+  var commonCrcExtSize = 5;
+  var minHeaderSize = 24 + extFnSize + commonCrcExtSize + 2;
   var totalHeaderSize = Math.max(minHeaderSize, totalHeaderSizeOverride || 0);
 
   var header = new Uint8Array(totalHeaderSize);
@@ -556,8 +557,23 @@ OB64.buildLHAArchiveUncompressed = function(payload, filename, totalHeaderSizeOv
   header[25] = (extFnSize >>> 8) & 0xFF;
   header[26] = 0x01;
   for (var j = 0; j < fnLen; j++) header[27 + j] = fnBytes[j];
-  header[27 + fnLen] = 0;
-  header[28 + fnLen] = 0;
+
+  // Common-header CRC extension. The field itself remains zero while the
+  // checksum is calculated, matching the level-2 LHA format and the retail
+  // headers used by the game. The two zero bytes after it terminate the
+  // extension chain; a larger caller-supplied header keeps zero padding after
+  // that terminator so a fixed archive slot can retain its original boundary.
+  var commonOff = 27 + fnLen;
+  header[commonOff] = commonCrcExtSize;
+  header[commonOff + 1] = 0;
+  header[commonOff + 2] = 0x00;
+  header[commonOff + 3] = 0;
+  header[commonOff + 4] = 0;
+  header[commonOff + 5] = 0;
+  header[commonOff + 6] = 0;
+  var headerCRC = OB64.crc16(header);
+  header[commonOff + 3] = headerCRC & 0xFF;
+  header[commonOff + 4] = (headerCRC >>> 8) & 0xFF;
 
   var result = new Uint8Array(totalHeaderSize + payload.length);
   result.set(header, 0);

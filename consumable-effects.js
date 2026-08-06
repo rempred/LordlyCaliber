@@ -5447,8 +5447,11 @@
       if (regions && regions.length) owners.push({ id: id, name: name, category: category, regions: regions });
     }
     if (dirty && dirty.items) add('items', 'Items', 'items', [{
-      kind: 'rom', start: OB64.ITEM_STAT_OFFSET || 0x62310,
-      size: (OB64.ITEM_STAT_COUNT || 278) * (OB64.ITEM_STAT_SIZE || 32),
+      // The first logical item name pointer is stored four bytes before the
+      // stat-framed table. The serializer can write that pointer, so the audit
+      // owner must cover it as well as every 32-byte stat frame.
+      kind: 'rom', start: (OB64.ITEM_STAT_OFFSET || 0x62310) - 4,
+      size: (OB64.ITEM_STAT_COUNT || 278) * (OB64.ITEM_STAT_SIZE || 32) + 4,
       label: 'item records'
     }]);
     if (dirty && dirty.classDefs) add('classes', 'Classes', 'classDefs', [{

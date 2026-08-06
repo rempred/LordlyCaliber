@@ -410,7 +410,23 @@ safety behavior.
   owners. The combined transaction then recalculates CIC-6102 once after all
   writes, independently verifies it, restores the loaded byte order, computes
   the candidate hash and complete concrete-owner ledger in memory, and
-  downloads exactly one ROM. ROM export never creates a JSON sidecar.
+  downloads exactly one ROM.
+  Every finished candidate now passes an automatic export validation gate
+  before the normal ROM download starts. A themed progress dialog shows the
+  active build or validation stage and its completion percentage. The gate
+  checks the ROM format, revision,
+  byte order, CIC-6102 checksum, deterministic serialization, archive catalog,
+  authorized changed-byte ownership, and patch integrity. Edited values are
+  parsed from the finished ROM and compared with the requested model.
+  Rebuilt scenario archives also verify their level-2 header checksum, data
+  checksum, assigned boundary, and exact extracted payload. ESET payloads pass
+  the scenario structure validator again after extraction.
+  A failure opens the themed error dialog with plain-language problems and
+  stops the automatic ROM download. **Download Error Report** saves the full
+  machine-readable JSON report with stable error codes, hashes, changed ranges,
+  and technical details. **Download Anyway** saves the failed candidate but
+  does not adopt it or clear the current editor changes.
+  Successful ROM exports do not create a JSON sidecar.
   **Save Project** is the sole user-facing JSON export and records every
   supported current ROM-edit family, including consumable effects.
 

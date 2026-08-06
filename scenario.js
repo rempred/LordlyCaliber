@@ -1571,6 +1571,117 @@ window.OB64 = window.OB64 || {};
     return true;
   }
 
+  function validateRelocationRedirect(rom, entries, requireClearedCave) {
+    entries = entries || [];
+    var z64 = rom && rom.z64;
+    if (!(z64 instanceof Uint8Array)) {
+      return { ok: false, reason: 'Finished ROM bytes are unavailable.' };
+    }
+
+    var hookState = relocationHookState(rom);
+    if (!entries.length) {
+      if (!hookState.clean) {
+        return {
+          ok: false,
+          reason: 'The scenario archive redirect hook was not restored to the retail instructions.',
+          hookWord: hookState.hookWord,
+          delayWord: hookState.delayWord,
+        };
+      }
+      if (requireClearedCave) {
+        for (var clearIndex = 0; clearIndex < RELOC_CAVE_SIZE; clearIndex++) {
+          if (z64[RELOC_CAVE_ROM + clearIndex] !== 0) {
+            return {
+              ok: false,
+              reason: 'The removed scenario archive redirect left data in its reserved code area.',
+              offset: RELOC_CAVE_ROM + clearIndex,
+              actual: z64[RELOC_CAVE_ROM + clearIndex],
+            };
+          }
+        }
+      }
+      return { ok: true, state: 'retail', entryCount: 0 };
+    }
+
+    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - RELOC_ENTRY_BYTES) / RELOC_ENTRY_BYTES);
+    if (entries.length > maxEntries) {
+      return {
+        ok: false,
+        reason: 'The scenario archive redirect table has too many entries.',
+        entryCount: entries.length,
+        maximumEntries: maxEntries,
+      };
+    }
+    if (!hookState.installed) {
+      return {
+        ok: false,
+        reason: 'The scenario archive redirect hook does not call the installed redirect code.',
+        hookWord: hookState.hookWord,
+        delayWord: hookState.delayWord,
+        expectedHookWord: hookState.expectedJal,
+      };
+    }
+
+    var words = relocationStubWords();
+    for (var wordIndex = 0; wordIndex < words.length; wordIndex++) {
+      var wordOffset = RELOC_CAVE_ROM + wordIndex * 4;
+      var actualWord = readU32(z64, wordOffset);
+      if (actualWord !== words[wordIndex]) {
+        return {
+          ok: false,
+          reason: 'The scenario archive redirect code is incomplete or damaged.',
+          offset: wordOffset,
+          expected: words[wordIndex],
+          actual: actualWord,
+        };
+      }
+    }
+
+    var table = RELOC_CAVE_ROM + RELOC_STUB_BYTES;
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      var entry = entries[entryIndex] || {};
+      if (!Number.isInteger(entry.originalDmaStart) || !Number.isInteger(entry.tailDmaStart)) {
+        return {
+          ok: false,
+          reason: 'A scenario archive redirect entry is missing its source or destination.',
+          entryIndex: entryIndex,
+        };
+      }
+      var entryOffset = table + entryIndex * RELOC_ENTRY_BYTES;
+      var expectedSource = cartAddress(entry.originalDmaStart);
+      var expectedDestination = cartAddress(entry.tailDmaStart);
+      var actualSource = readU32(z64, entryOffset);
+      var actualDestination = readU32(z64, entryOffset + 4);
+      if (actualSource !== expectedSource || actualDestination !== expectedDestination) {
+        return {
+          ok: false,
+          reason: 'A scenario archive redirect entry does not point to the rebuilt archive.',
+          entryIndex: entryIndex,
+          offset: entryOffset,
+          expectedSource: expectedSource,
+          actualSource: actualSource,
+          expectedDestination: expectedDestination,
+          actualDestination: actualDestination,
+        };
+      }
+    }
+
+    var terminatorOffset = table + entries.length * RELOC_ENTRY_BYTES;
+    var terminatorSource = readU32(z64, terminatorOffset);
+    var terminatorDestination = readU32(z64, terminatorOffset + 4);
+    if (terminatorSource !== 0 || terminatorDestination !== 0) {
+      return {
+        ok: false,
+        reason: 'The scenario archive redirect table has no valid ending marker.',
+        offset: terminatorOffset,
+        source: terminatorSource,
+        destination: terminatorDestination,
+      };
+    }
+
+    return { ok: true, state: 'installed', entryCount: entries.length };
+  }
+
   function relocationPatchRegions(relocations) {
     var regions = [
       { kind: 'rom', start: RELOC_HOOK_ROM, size: 8, label: 'scenario relocation DMA hook' },
@@ -8025,6 +8136,8 @@ window.OB64 = window.OB64 || {};
                 archiveDir: ktenmainDir,
                 bytes: ktenmainArc,
                 label: 'Population/Morale (ktenmain, ' + strongholdPlan.changes + ' field' + (strongholdPlan.changes === 1 ? '' : 's') + ')',
+                contentKind: 'ktenmain',
+                expectedRaw: strongholdPlan.payload,
               });
             } catch (ktenmainBuildError) {
               blocked.push('Population/Morale archive #691 fixed-slot rebuild failed: ' + ktenmainBuildError.message);
@@ -8088,7 +8201,15 @@ window.OB64 = window.OB64 || {};
         try {
           var templateHeader = arc.slice(0, arc.length - comp.length);
           var fixedArc = OB64.buildLHAArchiveFixedSlot(comp, raw, templateHeader, slotSize);
-          inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: fixedArc, label: 'scenario key ' + runtimeKey });
+          inlineWrites.push({
+            archive: archive,
+            archiveDir: archiveDir,
+            bytes: fixedArc,
+            label: 'scenario key ' + runtimeKey,
+            contentKind: 'eset',
+            runtimeKey: runtimeKey,
+            expectedRaw: raw,
+          });
         } catch (fixedBuildError) {
           blocked.push('Scenario key ' + runtimeKey + ' fixed-slot LHA rebuild failed: ' + fixedBuildError.message);
         }
@@ -8106,7 +8227,14 @@ window.OB64 = window.OB64 || {};
       moved.runtimeKey = runtimeKey;
       moved.archive = archive;
       relocations.push(moved);
-      relocationWrites.push({ moved: moved, archive: arc });
+      relocationWrites.push({
+        moved: moved,
+        archive: arc,
+        label: 'scenario key ' + runtimeKey,
+        contentKind: 'eset',
+        runtimeKey: runtimeKey,
+        expectedRaw: raw,
+      });
       if (state.slotOwnedArchives[archive]) restoreSlots.push({ archive: archive, label: 'scenario key ' + runtimeKey + ' fixed slot restored before relocation' });
     });
 
@@ -8130,7 +8258,7 @@ window.OB64 = window.OB64 || {};
       }
       var filename = model.filename || ((treasureArchiveEntry(archive) || {}).filename) || ('maizo' + archive + '.bin');
       var slotSize = archiveSlotSize(archiveDir);
-      var minHeaderSize = 24 + 2 + (1 + filename.length + 2);
+      var minHeaderSize = 24 + (1 + filename.length + 2) + 5 + 2;
       var treasureHeaderSize = slotSize - payload.length;
       if (treasureHeaderSize < minHeaderSize || treasureHeaderSize > 0xFFFF) {
         blocked.push('Buried treasure maizo archive ' + archive + ' does not fit its fixed -lh0- slot');
@@ -8141,7 +8269,14 @@ window.OB64 = window.OB64 || {};
         blocked.push('Buried treasure maizo archive ' + archive + ' new archive is ' + (arc.length - slotSize) + ' bytes larger than original slot');
         return;
       }
-      inlineWrites.push({ archive: archive, archiveDir: archiveDir, bytes: arc, label: 'buried treasure (maizo archive ' + archive + ')' });
+      inlineWrites.push({
+        archive: archive,
+        archiveDir: archiveDir,
+        bytes: arc,
+        label: 'buried treasure (maizo archive ' + archive + ')',
+        contentKind: 'treasure',
+        expectedRaw: payload,
+      });
     });
 
     // Town-allegiance edits: one rebuilt scincsv archive per shared descriptor stream. Same
@@ -8166,7 +8301,14 @@ window.OB64 = window.OB64 || {};
       var scincsvHeaderSize = scincsvSlot - payload.length;
       var arc = OB64.buildLHAArchiveUncompressed(payload, plan.filename || ('scincsv_' + plan.archive + '.bin'), scincsvHeaderSize);
       if (arc.length === scincsvSlot) {
-        inlineWrites.push({ archive: plan.archive, archiveDir: archiveDir, bytes: arc, label: 'town allegiance (scincsv ' + plan.archive + ')' });
+        inlineWrites.push({
+          archive: plan.archive,
+          archiveDir: archiveDir,
+          bytes: arc,
+          label: 'town allegiance (scincsv ' + plan.archive + ')',
+          contentKind: 'scincsv',
+          expectedRaw: payload,
+        });
         return;
       }
       var moved;
@@ -8180,7 +8322,13 @@ window.OB64 = window.OB64 || {};
       tailCursor = moved.nextTailCursor;
       moved.archive = plan.archive;
       relocations.push(moved);
-      relocationWrites.push({ moved: moved, archive: arc });
+      relocationWrites.push({
+        moved: moved,
+        archive: arc,
+        label: 'town allegiance (scincsv ' + plan.archive + ')',
+        contentKind: 'scincsv',
+        expectedRaw: payload,
+      });
       if (state.slotOwnedArchives[plan.archive]) restoreSlots.push({ archive: plan.archive, label: 'town allegiance (scincsv ' + plan.archive + ') fixed slot restored before relocation' });
     });
 
@@ -8201,7 +8349,14 @@ window.OB64 = window.OB64 || {};
         blocked.push(e3.message);
       }
     }
-    if (blocked.length) return { touched: [], blocked: blocked, relocations: rom.scenarioRelocations || [] };
+    if (blocked.length) {
+      return {
+        touched: [],
+        blocked: blocked,
+        relocations: rom.scenarioRelocations || [],
+        validationTargets: [],
+      };
+    }
 
     resetOwnedRelocationWindows(rom, state);
 
@@ -8209,6 +8364,7 @@ window.OB64 = window.OB64 || {};
       if (restoreArchiveSlot(rom, state, w.archive)) touched.push(w.label);
     });
 
+    var validationTargets = [];
     inlineWrites.forEach(function(w) {
       snapshotArchiveSlot(rom, state, w.archive);
       rom.z64.set(w.bytes, w.archiveDir.offset);
@@ -8217,6 +8373,17 @@ window.OB64 = window.OB64 || {};
       }
       state.slotOwnedArchives[w.archive] = true;
       touched.push(w.label);
+      validationTargets.push({
+        kind: 'fixed',
+        archive: w.archive,
+        label: w.label,
+        contentKind: w.contentKind,
+        runtimeKey: w.runtimeKey,
+        offset: w.archiveDir.offset,
+        slotSize: archiveSlotSize(w.archiveDir),
+        slotEnd: w.archiveDir.offset + archiveSlotSize(w.archiveDir),
+        expectedRaw: w.expectedRaw,
+      });
     });
 
     var newOwnedWindows = [];
@@ -8225,12 +8392,29 @@ window.OB64 = window.OB64 || {};
       writeRelocatedArchive(rom, w.archive, w.moved);
       newOwnedWindows.push(owned);
       touched.push(w.moved.runtimeKey != null ? ('scenario key ' + w.moved.runtimeKey + ' relocated') : ('town allegiance (archive ' + w.moved.archive + ') relocated'));
+      validationTargets.push({
+        kind: 'relocated',
+        archive: w.moved.archive,
+        label: w.label,
+        contentKind: w.contentKind,
+        runtimeKey: w.runtimeKey,
+        offset: w.moved.tailArchiveOffset,
+        memberSize: w.archive.length,
+        terminatorOffset: w.moved.tailArchiveOffset + w.archive.length,
+        expectedRaw: w.expectedRaw,
+      });
     });
     state.relocationOwnedWindows = newOwnedWindows;
     var redirectChanged = installRelocationRedirect(rom, publicRelocations);
     if (redirectChanged && !publicRelocations.length) touched.push('scenario relocation redirect removed');
     rom.scenarioRelocations = publicRelocations;
-    return { touched: touched, blocked: [], relocations: publicRelocations, crc: !!redirectChanged };
+    return {
+      touched: touched,
+      blocked: [],
+      relocations: publicRelocations,
+      crc: !!redirectChanged,
+      validationTargets: validationTargets,
+    };
   }
 
   function siteAllegianceCensus(rom) {
@@ -8319,6 +8503,7 @@ window.OB64 = window.OB64 || {};
     applyPreparedProject: applyPreparedProject,
     loadProject: loadProject,
     exportScenarioArchives: exportScenarioArchives,
+    validateRelocationRedirect: validateRelocationRedirect,
     patchRegions: publicRelocationRegions,
     iconProvider: iconProvider,
     keyModified: keyModified,

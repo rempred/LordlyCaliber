@@ -375,15 +375,23 @@ window.OB64 = window.OB64 || {};
       exportContent.setAttribute('aria-busy', 'true');
     }
     statusBar.textContent = 'Exporting...';
+    var exportProgress = showRomExportProgressModal();
     var sourceWorkingZ64 = rom.z64;
-    var candidateRom = createExportCandidate(exportRom);
+    var candidateRom = null;
     var effectTransaction = null;
     var effectAdoption = null;
     var effectOwners = [];
     var selectorPlan = null;
+    var toolsResult = null;
+    var runtimeWritePlan = null;
+    var runtimeMode = 'none';
+    var scenarioResult = null;
     var exportDirty = Object.assign({}, dirty);
     try {
+      await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
+      candidateRom = createExportCandidate(exportRom);
       var touched = [];
+      await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
       var shopOverridesForRuntime = OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectShopOverrides(rom)
@@ -460,6 +468,7 @@ window.OB64 = window.OB64 || {};
         OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners);
       }
 
+      await paintRomExportProgress(exportProgress, 14, 'Writing edited ROM data tables');
       // Item stats (direct z64 patch at 0x62310)
       if (dirty.items) {
         OB64.serializeItemStats(rom.itemStats, candidateRom.z64);
@@ -507,13 +516,14 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      await paintRomExportProgress(exportProgress, 25, 'Applying Tools-tab patches');
       // Tools-tab features (byte-level ROM patches, e.g. the Chaos Frame
       // counter). applyDesired writes pending toggles into rom.z64 and
       // restores originals for disabled ones; foreign-state features are
       // skipped and reported.
       var toolsCrc = false;
       if (dirty.tools) {
-        var toolsResult = OB64.tools.applyDesired(candidateRom);
+        toolsResult = OB64.tools.applyDesired(candidateRom);
         if (toolsResult.skipped.length) {
           showErrorModal('Tool skipped — unrecognized bytes',
             'These features could not be toggled because their ROM bytes ' +
@@ -532,6 +542,7 @@ window.OB64 = window.OB64 || {};
         toolsCrc = toolsResult.crc;
       }
 
+      await paintRomExportProgress(exportProgress, 36, 'Building shops and squads runtime patches');
       // Shared runtime overrides. Shop edits use the same one-time loader,
       // tail lane, and upper-RAM module as Squads. Squad-only exports retain
       // the already-proven squadblob byte path.
@@ -544,6 +555,8 @@ window.OB64 = window.OB64 || {};
           for (var rwi = 0; rwi < rtw.writes.length; rwi++) {
             candidateRom.z64.set(rtw.writes[rwi].bytes, rtw.writes[rwi].offset);
           }
+          runtimeWritePlan = rtw;
+          runtimeMode = 'write';
           runtimeCrc = rtw.crcWindow;
           if (dirty.shops) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
           if (dirty.squadOverrides && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
@@ -566,6 +579,20 @@ window.OB64 = window.OB64 || {};
           for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
             candidateRom.z64.set(sqw.writes[sqi].bytes, sqw.writes[sqi].offset);
           }
+          runtimeWritePlan = sqw;
+          runtimeMode = 'write';
+          if (dirty.shops && OB64.runtimeOverrides) {
+            var restoredShopLayout = OB64.runtimeOverrides.patchLayout(candidateRom);
+            runtimeWritePlan = Object.assign({}, sqw, {
+              writes: sqw.writes.concat([{
+                offset: restoredShopLayout.SHOP_HOOK_ROM,
+                label: 'restored retail shop source-list hook',
+                bytes: OB64.squad.wordsToBytes(
+                  OB64.runtimeOverrides.consts.SHOP_ORIGINAL_WORDS
+                ),
+              }]),
+            });
+          }
           runtimeCrc = sqw.crcWindow;
           if (dirty.squadOverrides) touched.push('squad overrides (' + ovs.length + ')');
           var unmapped = OB64.squadCountUnmapped(rom);
@@ -579,12 +606,14 @@ window.OB64 = window.OB64 || {};
           // canonical loader/cave/tail allocation.
           if (OB64.runtimeOverrides) OB64.runtimeOverrides.restoreAll(candidateRom.z64, candidateRom);
           else OB64.squad.restoreVanilla(candidateRom.z64, candidateRom);
+          runtimeMode = 'restore';
           runtimeCrc = true;
           if (dirty.shops) touched.push('runtime shops removed');
           if (dirty.squadOverrides) touched.push('squad overrides removed');
         }
       }
 
+      await paintRomExportProgress(exportProgress, 49, 'Rebuilding edited scenario archives');
       // Scenario tab edits. Unsupported authoring cases, such as towns with no
       // scincsv descriptor row or add-squad donor collisions, block export with
       // an actionable reason from the Scenario module.
@@ -592,7 +621,6 @@ window.OB64 = window.OB64 || {};
       if (dirty.scenario && OB64.scenario) {
         var scenarioRequestedCrc = false;
         var recalcAfterAllWrites = OB64.recalcN64CRC;
-        var scenarioResult;
         OB64.recalcN64CRC = function() { scenarioRequestedCrc = true; };
         try {
           scenarioResult = OB64.scenario.exportScenarioArchives(candidateRom);
@@ -610,6 +638,7 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      await paintRomExportProgress(exportProgress, 59, 'Applying code and animation overrides');
       var effectWrites = [];
       if (effectTransaction) {
         effectWrites = OB64.consumableEffects.applyTransaction(
@@ -636,10 +665,73 @@ window.OB64 = window.OB64 || {};
       // (z64 0x1000-0x101000). Encounter/drop tables and stat gates live
       // past that window; items/classes/
       // consumables, Tools-tab features, and the shared runtime bootstrap do not.
+      await paintRomExportProgress(exportProgress, 66, 'Finalizing the N64 boot checksum');
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
         toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc);
       if (crcChanged) {
         OB64.recalcN64CRC(candidateRom.z64);
+      }
+
+      var finalLedgerOwners = effectOwners.slice();
+      if (exportDirty.scenario) {
+        finalLedgerOwners = finalLedgerOwners.concat(
+          OB64.consumableEffects.scenarioPatchOwners(candidateRom)
+        );
+      }
+      if (effectTransaction) {
+        finalLedgerOwners.push(effectTransaction.deltaOwner);
+        if (effectTransaction.textOwner) {
+          finalLedgerOwners.push(effectTransaction.textOwner);
+        }
+      }
+
+      var validationOptions = {
+        sourceRom: exportRom,
+        candidateRom: candidateRom,
+        dirty: exportDirty,
+        touched: touched,
+        owners: finalLedgerOwners,
+        scenarioResult: scenarioResult,
+        runtimeWritePlan: runtimeWritePlan,
+        runtimeMode: runtimeMode,
+        shopOverrides: shopOverridesForRuntime,
+        toolsResult: toolsResult,
+        selectorPlan: selectorPlan,
+        effectTransaction: effectTransaction,
+      };
+      await paintRomExportProgress(exportProgress, 70, 'Starting finished-ROM safety tests');
+      var validationReport;
+      if (OB64.romExportValidator.validateAsync) {
+        validationReport = await OB64.romExportValidator.validateAsync(
+          validationOptions,
+          function(progress) {
+            var completed = Math.max(0, progress.index - (progress.complete ? 0 : 1));
+            var fraction = progress.total ? completed / progress.total : 0;
+            exportProgress.update(
+              progress.complete ? progress.name : ('Testing: ' + progress.name),
+              70 + Math.round(fraction * 25)
+            );
+          }
+        );
+      } else {
+        validationReport = OB64.romExportValidator.validate(validationOptions);
+      }
+      if (!validationReport.ok) {
+        statusBar.textContent = 'Export blocked: ' + validationReport.errors.length +
+          ' ROM validation error' + (validationReport.errors.length === 1 ? '' : 's') + '.';
+        exportProgress.close();
+        showRomValidationModal(validationReport, {
+          onDownloadAnyway: function() {
+            if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) {
+              throw new Error('The loaded ROM changed after validation. Start a new export instead.');
+            }
+            var unsafeName = OB64.exportROM(candidateRom);
+            statusBar.textContent = 'Unvalidated ROM download initiated as ' + unsafeName +
+              '. The failed candidate was not adopted by the editor.';
+            return unsafeName;
+          },
+        });
+        return;
       }
 
       if (touched.length === 0) {
@@ -647,14 +739,9 @@ window.OB64 = window.OB64 || {};
         return;
       }
 
+      await paintRomExportProgress(exportProgress, 97, 'Preparing the validated ROM download');
       var exportedName;
       var provenance = null;
-      var finalLedgerOwners = effectOwners.slice();
-      if (exportDirty.scenario) {
-        finalLedgerOwners = finalLedgerOwners.concat(
-          OB64.consumableEffects.scenarioPatchOwners(candidateRom)
-        );
-      }
       if (effectTransaction) {
         OB64.consumableEffects.validateFinalAfterImage(
           effectTransaction,
@@ -731,6 +818,7 @@ window.OB64 = window.OB64 || {};
       }
       adoptExportCandidate(exportRom, candidateRom, effectAdoption);
       OB64.combatAnimationOverrides.adopt(exportRom);
+      await paintRomExportProgress(exportProgress, 100, 'ROM download started');
       var exportMsg = 'ROM export initiated as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
@@ -749,9 +837,17 @@ window.OB64 = window.OB64 || {};
     } catch(err) {
       if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
       statusBar.textContent = 'Export error: ' + err.message;
-      showErrorModal('Export failed', err.message);
+      exportProgress.close();
+      if (OB64.romExportValidator && OB64.romExportValidator.unexpectedReport) {
+        showRomValidationModal(
+          OB64.romExportValidator.unexpectedReport(err, 'candidate-build')
+        );
+      } else {
+        showErrorModal('Export failed', err.message);
+      }
       console.error(err);
     } finally {
+      exportProgress.close();
       fileInput.disabled = false;
       btnExport.disabled = !rom;
       btnSavePatch.disabled = !rom;
@@ -2353,6 +2449,254 @@ window.OB64 = window.OB64 || {};
     document.addEventListener('keydown', escHandler);
   }
 
+  var romExportProgressModalSerial = 0;
+
+  function showRomExportProgressModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay rom-export-progress-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-export-progress-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    var titleId = 'rom-export-progress-title-' + (++romExportProgressModalSerial);
+    modal.setAttribute('aria-labelledby', titleId);
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var title = document.createElement('h2');
+    title.id = titleId;
+    title.textContent = 'Exporting ROM';
+    header.appendChild(title);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-export-progress-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-export-progress-intro';
+    intro.textContent = 'The editor is building and testing the finished ROM.';
+    body.appendChild(intro);
+
+    var stageLabel = document.createElement('label');
+    stageLabel.className = 'rom-export-progress-label';
+    stageLabel.textContent = 'Active stage';
+    var stageField = document.createElement('input');
+    stageField.type = 'text';
+    stageField.className = 'rom-export-progress-stage';
+    stageField.readOnly = true;
+    stageField.value = 'Starting export';
+    stageField.setAttribute('aria-live', 'polite');
+    stageLabel.appendChild(stageField);
+    body.appendChild(stageLabel);
+
+    var track = document.createElement('div');
+    track.className = 'rom-export-progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', 'ROM export progress');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', '0');
+    var fill = document.createElement('div');
+    fill.className = 'rom-export-progress-fill';
+    fill.style.width = '0%';
+    track.appendChild(fill);
+    body.appendChild(track);
+
+    var percentText = document.createElement('p');
+    percentText.className = 'rom-export-progress-percent';
+    percentText.textContent = '0%';
+    body.appendChild(percentText);
+    modal.appendChild(body);
+
+    document.body.appendChild(overlay);
+    modal.focus();
+
+    return {
+      update: function(stage, percent) {
+        var value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        stageField.value = String(stage || 'Working');
+        track.setAttribute('aria-valuenow', String(value));
+        track.setAttribute('aria-valuetext', stageField.value);
+        fill.style.width = value + '%';
+        percentText.textContent = value + '%';
+      },
+      close: function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      },
+      element: overlay,
+    };
+  }
+
+  function paintRomExportProgress(progress, percent, stage) {
+    if (progress) progress.update(stage, percent);
+    return new Promise(function(resolve) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(function() { setTimeout(resolve, 0); });
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+  }
+
+  var romValidationModalSerial = 0;
+
+  function romValidationReportFilename(report) {
+    var generatedAt = report && report.generatedAt
+      ? String(report.generatedAt)
+      : new Date().toISOString();
+    var stamp = generatedAt.replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '');
+    return 'ob64-rom-export-errors-' + stamp + '.json';
+  }
+
+  function downloadRomValidationReport(report) {
+    var json = JSON.stringify(report, null, 2) + '\n';
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = romValidationReportFilename(report);
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+    return link.download;
+  }
+
+  // Blocked export results use the same parchment/wax-red modal chrome as
+  // other editor errors. Only plain-language fields appear here; offsets,
+  // hashes, exception text, and check evidence remain in the JSON report.
+  function showRomValidationModal(report, actions) {
+    actions = actions || {};
+    var errors = report && Array.isArray(report.errors) ? report.errors : [];
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-validation-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    var titleId = 'rom-validation-title-' + (++romValidationModalSerial);
+    modal.setAttribute('aria-labelledby', titleId);
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var h2 = document.createElement('h2');
+    h2.id = titleId;
+    h2.textContent = 'ROM Export Blocked';
+    header.appendChild(h2);
+    var btnX = document.createElement('button');
+    btnX.type = 'button';
+    btnX.className = 'error-modal-close';
+    btnX.setAttribute('aria-label', 'Close ROM validation errors');
+    btnX.textContent = '×';
+    btnX.addEventListener('click', closeValidation);
+    header.appendChild(btnX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-validation-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-validation-intro';
+    intro.textContent = errors.length === 1
+      ? 'The editor found one problem and stopped the automatic ROM download.'
+      : 'The editor found ' + errors.length + ' problems and stopped the automatic ROM download.';
+    body.appendChild(intro);
+
+    var list = document.createElement('div');
+    list.className = 'rom-validation-error-list';
+    errors.forEach(function(found, index) {
+      var card = document.createElement('section');
+      card.className = 'rom-validation-error';
+      var cardTitle = document.createElement('h3');
+      cardTitle.textContent = (index + 1) + '. ' +
+        (found.title || 'ROM validation problem');
+      card.appendChild(cardTitle);
+      var message = document.createElement('p');
+      message.textContent = found.message ||
+        'The finished ROM did not pass an export safety check.';
+      card.appendChild(message);
+      if (found.suggestion) {
+        var suggestion = document.createElement('p');
+        suggestion.className = 'rom-validation-suggestion';
+        suggestion.textContent = found.suggestion;
+        card.appendChild(suggestion);
+      }
+      list.appendChild(card);
+    });
+    body.appendChild(list);
+
+    var reportNote = document.createElement('p');
+    reportNote.className = 'rom-validation-report-note';
+    reportNote.textContent = 'Download the error report for check results, hashes, and technical details.';
+    body.appendChild(reportNote);
+    if (typeof actions.onDownloadAnyway === 'function') {
+      var bypassNote = document.createElement('p');
+      bypassNote.className = 'rom-validation-bypass-note';
+      bypassNote.textContent = 'Download Anyway saves the failed candidate without adopting it into the editor.';
+      body.appendChild(bypassNote);
+    }
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer rom-validation-footer';
+    var btnReport = document.createElement('button');
+    btnReport.type = 'button';
+    btnReport.className = 'error-modal-ok rom-validation-download';
+    btnReport.textContent = 'Download Error Report';
+    btnReport.addEventListener('click', function() {
+      downloadRomValidationReport(report);
+    });
+    footer.appendChild(btnReport);
+    if (typeof actions.onDownloadAnyway === 'function') {
+      var btnAnyway = document.createElement('button');
+      btnAnyway.type = 'button';
+      btnAnyway.className = 'error-modal-ok rom-validation-anyway';
+      btnAnyway.textContent = 'Download Anyway';
+      btnAnyway.addEventListener('click', function() {
+        btnAnyway.disabled = true;
+        try {
+          actions.onDownloadAnyway();
+          closeValidation();
+        } catch (downloadError) {
+          closeValidation();
+          if (OB64.romExportValidator && OB64.romExportValidator.unexpectedReport) {
+            showRomValidationModal(
+              OB64.romExportValidator.unexpectedReport(downloadError, 'download-anyway')
+            );
+          } else {
+            showErrorModal('Download failed', downloadError.message);
+          }
+          console.error(downloadError);
+        }
+      });
+      footer.appendChild(btnAnyway);
+    }
+    var btnClose = document.createElement('button');
+    btnClose.type = 'button';
+    btnClose.className = 'error-modal-ok rom-validation-close';
+    btnClose.textContent = 'Close';
+    btnClose.addEventListener('click', closeValidation);
+    footer.appendChild(btnClose);
+    modal.appendChild(footer);
+
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) closeValidation();
+    });
+    document.body.appendChild(overlay);
+    btnReport.focus();
+
+    function closeValidation() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+    }
+    var escHandler = function(ev) {
+      if (ev.key === 'Escape') closeValidation();
+    };
+    document.addEventListener('keydown', escHandler);
+  }
+
   // Themed confirm dialog on the error-modal chrome (native window.confirm looks foreign
   // against the parchment UI). onConfirm runs only when the user clicks the confirm button;
   // overlay click, x, Cancel, and Escape all dismiss without confirming.
@@ -2410,6 +2754,9 @@ window.OB64 = window.OB64 || {};
   }
   OB64.showErrorModal = showErrorModal;
   OB64.showConfirmModal = showConfirmModal;
+  OB64.showRomExportProgressModal = showRomExportProgressModal;
+  OB64.showRomValidationModal = showRomValidationModal;
+  OB64.downloadRomValidationReport = downloadRomValidationReport;
 
   function commitSelectionToShop(shopIdx, category, selected) {
     var shop = rom.shops[shopIdx];
