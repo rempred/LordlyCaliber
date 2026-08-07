@@ -357,6 +357,25 @@ window.OB64 = window.OB64 || {};
     if (candidateRom.scenarioRelocations) {
       targetRom.scenarioRelocations = candidateRom.scenarioRelocations;
     }
+    if (candidateRom.statGatePlan && OB64.statGateRelocation) {
+      var adoptedStatGates = OB64.statGateRelocation.parse(
+        candidateRom.z64,
+        targetRom.layout
+      );
+      targetRom.statGates.raw = adoptedStatGates.raw;
+      targetRom.statGates.meta = adoptedStatGates.meta;
+      Object.keys(adoptedStatGates.byClass).forEach(function(classId) {
+        if (targetRom.statGates.byClass[classId]) {
+          Object.assign(
+            targetRom.statGates.byClass[classId],
+            adoptedStatGates.byClass[classId]
+          );
+        } else {
+          targetRom.statGates.byClass[classId] =
+            adoptedStatGates.byClass[classId];
+        }
+      });
+    }
   }
 
   btnExport.addEventListener('click', async function() {
@@ -386,6 +405,9 @@ window.OB64 = window.OB64 || {};
     var runtimeWritePlan = null;
     var runtimeMode = 'none';
     var scenarioResult = null;
+    var statGatePlan = null;
+    var sourceRedirectPlan = null;
+    var sourceRedirectResult = null;
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
@@ -412,6 +434,65 @@ window.OB64 = window.OB64 || {};
       var squadOverridesForConflict = (OB64.squad && OB64.collectSquadOverrides)
         ? OB64.collectSquadOverrides(rom)
         : [];
+      var currentStatRedirectRequests = OB64.statGateRelocation
+        ? OB64.statGateRelocation.currentRequests(rom.statGates)
+        : [];
+      var currentScenarioRedirectRequests = OB64.sourceRedirect && OB64.scenario
+        ? OB64.sourceRedirect.scenarioRequests(rom.scenarioRelocations || [])
+        : [];
+      try {
+        if (dirty.statGates) {
+          if (!OB64.statGateRelocation) {
+            throw new Error('The stat-gate relocation component is unavailable. Reload the editor and try again.');
+          }
+          statGatePlan = OB64.statGateRelocation.prepare(
+            rom.statGates,
+            candidateRom.z64,
+            rom.layout
+          );
+        }
+
+        // Scenario planning writes only to the detached candidate. The shared
+        // redirect hook stays untouched until stat and Scenario requests have
+        // been merged and checked below.
+        if (dirty.scenario && OB64.scenario) {
+          scenarioResult = OB64.scenario.exportScenarioArchives(candidateRom, {
+            deferRedirect: true,
+          });
+          if (scenarioResult.blocked && scenarioResult.blocked.length) {
+            showErrorModal('Export blocked - scenario edits',
+              scenarioResult.blocked.join('\n\n'));
+            statusBar.textContent = 'Export blocked (scenario edits)';
+            return;
+          }
+        }
+
+        var knownRedirectRequests = currentStatRedirectRequests.concat(
+          currentScenarioRedirectRequests
+        );
+        var desiredStatRedirectRequests = statGatePlan
+          ? statGatePlan.redirectRequests
+          : currentStatRedirectRequests;
+        var desiredScenarioRedirectRequests = scenarioResult
+          ? scenarioResult.redirectRequests
+          : currentScenarioRedirectRequests;
+        if (dirty.statGates || dirty.scenario || knownRedirectRequests.length) {
+          if (!OB64.sourceRedirect) {
+            throw new Error('The shared PI-source redirect controller is unavailable. Reload the editor and try again.');
+          }
+          sourceRedirectPlan = OB64.sourceRedirect.prepare(
+            candidateRom.z64,
+            desiredStatRedirectRequests.concat(desiredScenarioRedirectRequests),
+            { knownCurrentRequests: knownRedirectRequests }
+          );
+        }
+      } catch (relocationError) {
+        showErrorModal('Export blocked - relocation ownership',
+          relocationError.message);
+        statusBar.textContent = 'Export blocked (relocation ownership): ' +
+          relocationError.message;
+        return;
+      }
       var sharedRegionOwners = [];
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
@@ -426,14 +507,10 @@ window.OB64 = window.OB64 || {};
             : OB64.squad.patchRegions(rom)
         });
       }
-      if (OB64.scenario && OB64.scenario.patchRegions &&
-          rom.scenarioRelocations && rom.scenarioRelocations.length) {
-        sharedRegionOwners.push({
-          id: 'scenario-eset-relocation',
-          name: 'Scenario ESET Relocation',
-          category: 'scenario',
-          regions: OB64.scenario.patchRegions(rom.scenarioRelocations)
-        });
+      if (sourceRedirectPlan && OB64.sourceRedirect &&
+          (sourceRedirectPlan.changed || sourceRedirectPlan.requests.length ||
+            sourceRedirectPlan.currentEntries.length)) {
+        sharedRegionOwners.push(OB64.sourceRedirect.patchOwner());
       }
       if (dirty.squadOverrides && rom.layout && rom.layout.supportsSquadOverrides === false) {
         showErrorModal('Export failed - squad overrides unavailable',
@@ -453,14 +530,32 @@ window.OB64 = window.OB64 || {};
         }
       }
 
-      effectOwners = OB64.consumableEffects.standardPatchOwners(rom, dirty)
+      effectOwners = OB64.consumableEffects.standardPatchOwners(candidateRom, dirty)
         .concat(sharedRegionOwners);
+      var plannedOwnerConflicts = OB64.consumableEffects.findRegionConflicts(
+        effectOwners
+      );
+      if (plannedOwnerConflicts.length) {
+        showErrorModal('Export blocked - feature collision',
+          plannedOwnerConflicts.map(function(conflict) {
+            return conflict.a.ownerName + ' (' + conflict.a.label +
+              ') overlaps ' + conflict.b.ownerName + ' (' +
+              conflict.b.label + ').';
+          }).join('\n\n'));
+        statusBar.textContent = 'Export blocked (feature collision)';
+        return;
+      }
       effectTransaction = OB64.consumableEffects.prepareTransaction(
         rom.consumableEffects,
         sourceWorkingZ64,
         effectOwners
       );
-      var toolCompatibilityOwners = sharedRegionOwners.slice();
+      // Tools adds its own selected feature owners internally. Supply every
+      // other planned owner once so same-feature regions are not duplicated
+      // under the standard ledger's `tool-*` IDs.
+      var toolCompatibilityOwners = effectOwners.filter(function(owner) {
+        return owner.category !== 'tools';
+      });
       if (effectTransaction) {
         toolCompatibilityOwners.push(effectTransaction.collisionOwner);
       }
@@ -499,21 +594,20 @@ window.OB64 = window.OB64 || {};
         touched.push('consumables');
       }
 
-      // Stat gate thresholds — LZSS block at GAP_START + 0x3A960C.
-      // Recompresses and splices back into the same slot; throws on overfill.
-      // Past CRC window — no recalc needed.
+      // Stat gates keep fitting streams in the retail slot and place only
+      // oversized streams in the bounded ROM-tail owner. The shared redirect
+      // is applied once after Scenario writes below.
       if (dirty.statGates) {
-        try {
-          OB64.serializeStatGates(rom.statGates, candidateRom.z64);
-          touched.push('stat gates');
-        } catch (e) {
-          showErrorModal('Export failed — stat-gate recompress',
-            e.message + '\n\nRevert some stat-gate edits and try again, ' +
-            'or file a follow-up to teach the compressor about long ' +
-            'back-references (would gain ~10-20% compression headroom).');
-          statusBar.textContent = 'Export failed (stat gates): ' + e.message;
-          return;
-        }
+        var statGateResult = OB64.statGateRelocation.apply(
+          statGatePlan,
+          candidateRom.z64
+        );
+        candidateRom.statGatePlan = statGatePlan;
+        touched.push(statGateResult.relocated
+          ? ('stat gates relocated (' + statGateResult.logicalStreamBytes +
+            ' logical bytes)')
+          : ('stat gates in retail slot (' +
+            statGateResult.logicalStreamBytes + ' logical bytes)'));
       }
 
       await paintRomExportProgress(exportProgress, 25, 'Applying Tools-tab patches');
@@ -616,25 +710,24 @@ window.OB64 = window.OB64 || {};
       await paintRomExportProgress(exportProgress, 49, 'Rebuilding edited scenario archives');
       // Scenario tab edits. Unsupported authoring cases, such as towns with no
       // scincsv descriptor row or add-squad donor collisions, block export with
-      // an actionable reason from the Scenario module.
+      // an actionable reason from the Scenario module. Planning already wrote
+      // the detached archive candidate; publish its result here.
       var scenarioCrc = false;
-      if (dirty.scenario && OB64.scenario) {
-        var scenarioRequestedCrc = false;
-        var recalcAfterAllWrites = OB64.recalcN64CRC;
-        OB64.recalcN64CRC = function() { scenarioRequestedCrc = true; };
-        try {
-          scenarioResult = OB64.scenario.exportScenarioArchives(candidateRom);
-        } finally {
-          OB64.recalcN64CRC = recalcAfterAllWrites;
-        }
-        if (scenarioResult.blocked && scenarioResult.blocked.length) {
-          showErrorModal('Export blocked - scenario edits', scenarioResult.blocked.join('\n\n'));
-          statusBar.textContent = 'Export blocked (scenario edits)';
-          return;
-        }
-        scenarioCrc = !!scenarioResult.crc || scenarioRequestedCrc;
-        if (scenarioResult.touched.length) {
-          touched.push('scenarios: ' + scenarioResult.touched.join(', '));
+      if (scenarioResult && scenarioResult.touched.length) {
+        touched.push('scenarios: ' + scenarioResult.touched.join(', '));
+      }
+
+      if (sourceRedirectPlan) {
+        sourceRedirectResult = OB64.sourceRedirect.apply(
+          candidateRom.z64,
+          sourceRedirectPlan
+        );
+        scenarioCrc = !!sourceRedirectResult.crc;
+        if (sourceRedirectResult.changed) {
+          touched.push(sourceRedirectResult.entryCount
+            ? ('shared PI-source redirect (' + sourceRedirectResult.entryCount +
+              ' entries)')
+            : 'shared PI-source redirect removed');
         }
       }
 
@@ -673,11 +766,6 @@ window.OB64 = window.OB64 || {};
       }
 
       var finalLedgerOwners = effectOwners.slice();
-      if (exportDirty.scenario) {
-        finalLedgerOwners = finalLedgerOwners.concat(
-          OB64.consumableEffects.scenarioPatchOwners(candidateRom)
-        );
-      }
       if (effectTransaction) {
         finalLedgerOwners.push(effectTransaction.deltaOwner);
         if (effectTransaction.textOwner) {
@@ -692,6 +780,8 @@ window.OB64 = window.OB64 || {};
         touched: touched,
         owners: finalLedgerOwners,
         scenarioResult: scenarioResult,
+        statGatePlan: statGatePlan,
+        sourceRedirectPlan: sourceRedirectPlan,
         runtimeWritePlan: runtimeWritePlan,
         runtimeMode: runtimeMode,
         shopOverrides: shopOverridesForRuntime,

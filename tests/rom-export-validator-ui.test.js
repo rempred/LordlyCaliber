@@ -269,12 +269,33 @@ progress.close();
 check('progress popup closes after export', body.children.length === 0);
 
 const indexSource = fs.readFileSync(path.join(EDITOR, 'index.html'), 'utf8');
+const sourceRedirectIndex = indexSource.indexOf('source-redirect.js');
+const statGateRelocationIndex = indexSource.indexOf('stat-gate-relocation.js');
+const scenarioIndex = indexSource.indexOf('scenario.js');
 const validatorIndex = indexSource.indexOf('rom-export-validator.js');
 const appIndex = indexSource.indexOf('app.js');
+check('shared redirect module loads before stat, Scenario, and validation',
+  sourceRedirectIndex >= 0 &&
+    sourceRedirectIndex < statGateRelocationIndex &&
+    sourceRedirectIndex < scenarioIndex &&
+    sourceRedirectIndex < validatorIndex);
+check('stat-gate relocation module loads before validation and export',
+  statGateRelocationIndex >= 0 &&
+    statGateRelocationIndex < validatorIndex &&
+    statGateRelocationIndex < appIndex);
 check('validator module loads before the export controller',
   validatorIndex >= 0 && validatorIndex < appIndex);
+const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
 check('export controller uses cooperative validation progress',
-  fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8').includes('validateAsync'));
+  appSource.includes('validateAsync'));
+check('export controller defers Scenario redirect writes for shared planning',
+  /exportScenarioArchives\(candidateRom,\s*\{\s*deferRedirect:\s*true/.test(
+    appSource
+  ));
+check('Tools compatibility receives planned non-Tools owners exactly once',
+  /toolCompatibilityOwners\s*=\s*effectOwners\.filter[\s\S]*?owner\.category\s*!==\s*'tools'/.test(
+    appSource
+  ));
 
 const cssSource = fs.readFileSync(path.join(EDITOR, 'style.css'), 'utf8');
 for (const selector of [

@@ -5472,10 +5472,16 @@
     if (dirty && dirty.consumables) add('consumable-metadata', 'Consumable Metadata', 'consumables',
       consumableChangedByteRegions(rom));
     if (dirty && dirty.statGates && rom.statGates && rom.statGates.meta) {
-      var meta = rom.statGates.meta;
-      add('stat-gates', 'Class-change Stat Gates', 'statGates', [{
-        kind: 'rom', start: meta.compDataOff - 8, size: meta.compDataSize + 8, label: 'stat-gate LZSS slot'
-      }]);
+      if (OB64.statGateRelocation && OB64.statGateRelocation.patchRegions) {
+        add('stat-gates', 'Class-change Stat Gates', 'statGates',
+          OB64.statGateRelocation.patchRegions(rom.statGates));
+      } else {
+        var meta = rom.statGates.meta;
+        add('stat-gates', 'Class-change Stat Gates', 'statGates', [{
+          kind: 'rom', start: meta.compDataOff - 8,
+          size: meta.compDataSize + 8, label: 'stat-gate LZSS slot'
+        }]);
+      }
     }
     if (dirty && dirty.tools && rom && rom.tools && OB64.tools && OB64.tools.features) {
       var features = OB64.tools.features();

@@ -147,6 +147,12 @@ safety behavior.
 - **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
+  Promotion-gate exports keep compressed streams through 376 logical bytes in
+  the retail slot. Larger valid streams relocate automatically through the
+  exact 659-byte compressor maximum, using a bounded ROM-tail container and
+  the same exact-source redirect controller as Scenario archive relocation.
+  Stat and Scenario redirects compose in one ownership-checked table, and
+  removing either feature preserves entries still owned by the other.
   Class cards expose equipment defaults, the B53-B57 level-progression chain,
   promotion stat gates, unit type,
   movement type, corrected same-class unit size, base HP, HP growth fields, and
@@ -519,6 +525,13 @@ features install code/data in the free upper-RDRAM lanes at `0x80400000+`; a
 strict 4 MB setup can hang, black-screen, or fault when the patched ROM tries to
 load the module.
 
+Promotion stat-gate relocation is not an upper-RDRAM override. It redirects
+the game's existing bounded resource reads to another ROM container, adds no
+permanent RAM allocation, and does not require the Expansion Pak. Automated
+tests cover both US revisions, every supported ROM byte order, exact sizes,
+checksums, semantic reload, and coexistence with Scenario relocation. Natural
+cold-boot behavior on both revisions remains an explicit human acceptance gate.
+
 Most override-patched ROMs do **not** require interpreter core just for
 gameplay. Current High Attack Streamsplit is the exception: v21 passed its
 first-menu cold boot under Project64 Interpreter, while the default recompiler
@@ -590,8 +603,14 @@ on the US retail ROM:
   terrain-rate tables, and the 28-byte stronghold record decoded against
   in-game testing and emulator memory diffs.
 - Custom LZSS compressor / decompressor for editing dialogue scripts and the
-  stat-gate region, plus a pinned deterministic full-slot plan for the three
+  stat-gate region, including a bounded 376-byte in-place / 659-byte relocated
+  export plan with revision-tagged ownership metadata and exact semantic
+  readback, plus a pinned deterministic full-slot plan for the three
   synchronized healing-description numbers.
+- One canonical PI-source redirect controller shared by oversized stat-gate
+  containers and Scenario archives. It recognizes only retail or exact owned
+  state, rejects source conflicts and foreign bytes before product writes, and
+  restores the retail hook only after the final owned entry is removed.
 - N64 CIC-6102 CRC re-calculation to keep patched ROMs bootable.
 - Per-class data cross-validated against the GameShark Class Hacking Guide
   and community wiki tables.

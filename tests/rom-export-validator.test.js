@@ -22,6 +22,8 @@ for (const filename of [
   'portraits.js',
   'parsers.js',
   'repack.js',
+  'source-redirect.js',
+  'stat-gate-relocation.js',
   'combat-animation-overrides-data.js',
   'combat-animation-overrides.js',
   'consumable-effects.js',
@@ -52,6 +54,14 @@ function check(name, condition, detail) {
   if (!condition) failures++;
 }
 
+function equalBytes(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
 function loadRom() {
   return OB64.loadROM(masterBytes.slice().buffer);
 }
@@ -74,6 +84,54 @@ function candidateFor(source) {
   candidate.scenarioRelocations = (source.scenarioRelocations || []).map(entry =>
     Object.assign({}, entry));
   return candidate;
+}
+
+function applyScenarioRedirect(source, candidate, scenarioResult) {
+  const currentRequests = OB64.sourceRedirect.scenarioRequests(
+    source.scenarioRelocations || []
+  );
+  const plan = OB64.sourceRedirect.prepare(
+    candidate.z64,
+    scenarioResult.redirectRequests || [],
+    { knownCurrentRequests: currentRequests }
+  );
+  const result = OB64.sourceRedirect.apply(candidate.z64, plan);
+  if (result.crc) OB64.recalcN64CRC(candidate.z64);
+  scenarioResult.crc = result.crc;
+  return plan;
+}
+
+function statModelFromBytes(base, decoded) {
+  const fields = ['str', 'vit', 'int', 'men', 'agi', 'dex', 'alnMin', 'alnMax'];
+  const byClass = {};
+  for (let classId = 0; classId < 81; classId++) {
+    const offset = classId * 8;
+    const row = { classId, offset };
+    fields.forEach((field, index) => { row[field] = decoded[offset + index]; });
+    byClass[classId] = row;
+  }
+  return { raw: decoded.slice(), byClass, meta: base.meta };
+}
+
+function maximumStatWitness() {
+  const a = new Array(9 * 3 + 1).fill(0);
+  const sequence = [];
+  function db(t, p) {
+    if (t > 3) {
+      if (3 % p === 0) {
+        for (let index = 1; index <= p; index++) sequence.push(a[index]);
+      }
+      return;
+    }
+    a[t] = a[t - p];
+    db(t + 1, p);
+    for (let value = a[t - p] + 1; value < 9; value++) {
+      a[t] = value;
+      db(t + 1, t);
+    }
+  }
+  db(1, 1);
+  return Uint8Array.from(sequence.slice(0, 648), value => value + 1);
 }
 
 function dirtyFlags(overrides) {
@@ -147,23 +205,22 @@ function buildEditedScenarioCandidate() {
   OB64.scenarioCodec.refreshDecodedRows(model);
 
   const candidate = candidateFor(source);
-  let requestedCrc = false;
-  const recalc = OB64.recalcN64CRC;
-  OB64.recalcN64CRC = function() { requestedCrc = true; };
-  let scenarioResult;
-  try {
-    scenarioResult = OB64.scenario.exportScenarioArchives(candidate);
-  } finally {
-    OB64.recalcN64CRC = recalc;
-  }
+  const scenarioResult = OB64.scenario.exportScenarioArchives(candidate, {
+    deferRedirect: true,
+  });
   if (scenarioResult.blocked.length) {
     throw new Error(scenarioResult.blocked.join('\n'));
   }
-  if (requestedCrc || scenarioResult.crc) OB64.recalcN64CRC(candidate.z64);
+  const sourceRedirectPlan = applyScenarioRedirect(
+    source,
+    candidate,
+    scenarioResult
+  );
   const dirty = dirtyFlags({ scenario: true });
   const owners = OB64.consumableEffects.standardPatchOwners(source, dirty)
     .concat(OB64.consumableEffects.scenarioPatchOwners(candidate));
-  return { source, candidate, dirty, owners, scenarioResult };
+  if (sourceRedirectPlan.changed) owners.push(OB64.sourceRedirect.patchOwner());
+  return { source, candidate, dirty, owners, scenarioResult, sourceRedirectPlan };
 }
 
 function buildRelocatedScenarioCandidate() {
@@ -191,17 +248,25 @@ function buildRelocatedScenarioCandidate() {
   }
 
   const candidate = candidateFor(source);
-  const scenarioResult = OB64.scenario.exportScenarioArchives(candidate);
+  const scenarioResult = OB64.scenario.exportScenarioArchives(candidate, {
+    deferRedirect: true,
+  });
   if (scenarioResult.blocked.length) {
     throw new Error(scenarioResult.blocked.join('\n'));
   }
   if (!scenarioResult.relocations.length) {
     throw new Error('test scenario did not grow enough to require relocation');
   }
+  const sourceRedirectPlan = applyScenarioRedirect(
+    source,
+    candidate,
+    scenarioResult
+  );
   const dirty = dirtyFlags({ scenario: true });
   const owners = OB64.consumableEffects.standardPatchOwners(source, dirty)
     .concat(OB64.consumableEffects.scenarioPatchOwners(candidate));
-  return { source, candidate, dirty, owners, scenarioResult };
+  owners.push(OB64.sourceRedirect.patchOwner());
+  return { source, candidate, dirty, owners, scenarioResult, sourceRedirectPlan };
 }
 
 function runEditedScenarioValidation() {
@@ -213,6 +278,7 @@ function runEditedScenarioValidation() {
     touched: built.scenarioResult.touched,
     owners: built.owners,
     scenarioResult: built.scenarioResult,
+    sourceRedirectPlan: built.sourceRedirectPlan,
     shopOverrides: [],
   });
   check('edited scenario ROM passes complete validation', report.ok,
@@ -238,13 +304,14 @@ function runRelocationFailureClassification() {
     touched: built.scenarioResult.touched,
     owners: built.owners,
     scenarioResult: built.scenarioResult,
+    sourceRedirectPlan: built.sourceRedirectPlan,
     shopOverrides: [],
   });
   check('installed scenario redirect passes the complete export validator',
     report.ok, JSON.stringify(report.errors));
 
-  const cave = OB64.scenario.patchRegions(built.scenarioResult.relocations)[1];
-  built.candidate.z64[cave.start] ^= 1;
+  const cave = OB64.sourceRedirect.constants.CAVE_ROM;
+  built.candidate.z64[cave] ^= 1;
   OB64.recalcN64CRC(built.candidate.z64);
   report = OB64.romExportValidator.validate({
     sourceRom: built.source,
@@ -253,6 +320,7 @@ function runRelocationFailureClassification() {
     touched: built.scenarioResult.touched,
     owners: built.owners,
     scenarioResult: built.scenarioResult,
+    sourceRedirectPlan: built.sourceRedirectPlan,
     shopOverrides: [],
   });
   check('damaged scenario redirect has a stable machine error code',
@@ -393,6 +461,129 @@ function runValidDirectTableMatrix() {
   check('every changed direct table passes semantic readback',
     semanticChecks.length === 6 && semanticChecks.every(entry => entry.status === 'passed'),
     JSON.stringify(semanticChecks));
+}
+
+function buildMaximumStatCandidate() {
+  const source = loadRom();
+  const witness = maximumStatWitness();
+  source.statGates = statModelFromBytes(source.statGates, witness);
+  const candidate = candidateFor(source);
+  const statGatePlan = OB64.statGateRelocation.prepare(
+    source.statGates,
+    candidate.z64,
+    source.layout
+  );
+  OB64.statGateRelocation.apply(statGatePlan, candidate.z64);
+  const sourceRedirectPlan = OB64.sourceRedirect.prepare(
+    candidate.z64,
+    statGatePlan.redirectRequests,
+    { knownCurrentRequests: [] }
+  );
+  const redirectResult = OB64.sourceRedirect.apply(
+    candidate.z64,
+    sourceRedirectPlan
+  );
+  if (redirectResult.crc) OB64.recalcN64CRC(candidate.z64);
+  const dirty = dirtyFlags({ statGates: true });
+  const owners = OB64.consumableEffects.standardPatchOwners(source, dirty)
+    .concat([OB64.sourceRedirect.patchOwner()]);
+  return {
+    source,
+    candidate,
+    dirty,
+    owners,
+    witness,
+    statGatePlan,
+    sourceRedirectPlan,
+  };
+}
+
+function runMaximumStatValidation() {
+  const built = buildMaximumStatCandidate();
+  let report = OB64.romExportValidator.validate({
+    sourceRom: built.source,
+    candidateRom: built.candidate,
+    dirty: built.dirty,
+    touched: ['stat gates relocated (659 logical bytes)'],
+    owners: built.owners,
+    statGatePlan: built.statGatePlan,
+    sourceRedirectPlan: built.sourceRedirectPlan,
+    shopOverrides: [],
+  });
+  check('maximum 659-byte stat container passes complete export validation',
+    report.ok, JSON.stringify(report.errors));
+  const statCheck = report.checks.find(entry =>
+    entry.id === 'stat-gate-relocation-integrity');
+  check('complete validator reports exact maximum container sizes',
+    statCheck && statCheck.status === 'passed' &&
+      statCheck.details.logicalStreamBytes === 659 &&
+      statCheck.details.storedStreamBytes === 660 &&
+      statCheck.details.payloadBytes === 664 &&
+      statCheck.details.containerBytes === 668,
+    statCheck && JSON.stringify(statCheck.details));
+  const redirectCheck = report.checks.find(entry =>
+    entry.id === 'source-redirect-integrity');
+  check('complete validator checks all three maximum stat redirects',
+    redirectCheck && redirectCheck.status === 'passed' &&
+      redirectCheck.details.entryCount === 3,
+    redirectCheck && JSON.stringify(redirectCheck.details));
+
+  const badDescriptor = candidateFor(built.candidate);
+  badDescriptor.z64[
+    OB64.statGateRelocation.constants.DESCRIPTOR_OFFSET + 28
+  ] ^= 1;
+  report = OB64.romExportValidator.validate({
+    sourceRom: built.source,
+    candidateRom: badDescriptor,
+    dirty: built.dirty,
+    touched: ['damaged stat descriptor fixture'],
+    owners: built.owners,
+    statGatePlan: built.statGatePlan,
+    sourceRedirectPlan: built.sourceRedirectPlan,
+    shopOverrides: [],
+  });
+  check('damaged OBSG descriptor has a stable validator error code',
+    reportCodes(report).includes('STAT_GATE_RELOCATION_INTEGRITY'),
+    reportCodes(report).join(','));
+
+  const badRedirect = candidateFor(built.candidate);
+  badRedirect.z64[OB64.sourceRedirect.constants.CAVE_ROM] ^= 1;
+  OB64.recalcN64CRC(badRedirect.z64);
+  report = OB64.romExportValidator.validate({
+    sourceRom: built.source,
+    candidateRom: badRedirect,
+    dirty: built.dirty,
+    touched: ['damaged shared redirect fixture'],
+    owners: built.owners,
+    statGatePlan: built.statGatePlan,
+    sourceRedirectPlan: built.sourceRedirectPlan,
+    shopOverrides: [],
+  });
+  check('damaged shared redirect has a stable validator error code',
+    reportCodes(report).includes('SOURCE_REDIRECT_INTEGRITY'),
+    reportCodes(report).join(','));
+
+  const clean = built.source.z64.slice();
+  let conflictMessage = '';
+  try {
+    OB64.sourceRedirect.prepare(clean, [
+      {
+        owner: 'stat-gates',
+        sourceRomOffset: 0x200000,
+        destinationRomOffset: 0x210000,
+      },
+      {
+        owner: 'scenario',
+        sourceRomOffset: 0x200000,
+        destinationRomOffset: 0x220000,
+      },
+    ], { knownCurrentRequests: [] });
+  } catch (error) {
+    conflictMessage = error.message;
+  }
+  check('conflicting redirect ownership is rejected before candidate mutation',
+    conflictMessage.includes('two features requested different destinations') &&
+      equalBytes(clean, built.source.z64), conflictMessage);
 }
 
 function runValidRuntimeShopExport() {
@@ -543,6 +734,7 @@ async function runArchiveMethodTransitionRegression() {
   runCombinedFailureReport();
   runStoredArchiveHeaderTest();
   runValidDirectTableMatrix();
+  runMaximumStatValidation();
   runValidRuntimeShopExport();
   runValidCombatOverrideExport();
   await runArchiveMethodTransitionRegression();

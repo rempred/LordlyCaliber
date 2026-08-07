@@ -935,6 +935,117 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    yield* runCheckStep(report, 'source-redirect-integrity', 'Shared PI-source redirect', {
+      code: 'SOURCE_REDIRECT_INTEGRITY',
+      title: 'Shared ROM redirect failed',
+      message: 'The finished ROM does not contain the exact planned PI-source redirect table.',
+      suggestion: 'Keep the error report and recreate the ROM after updating the editor.',
+    }, function() {
+      if (!options.sourceRedirectPlan) {
+        return skipped('No shared PI-source redirect change or owned entry participated in this export.');
+      }
+      if (!OB64.sourceRedirect || !OB64.sourceRedirect.validate) {
+        throw issue(
+          'VALIDATOR_DEPENDENCY_MISSING',
+          'Validation component is missing',
+          'The editor could not load its shared PI-source redirect checker.',
+          'Reload the editor and try the export again.',
+          { dependency: 'OB64.sourceRedirect.validate' }
+        );
+      }
+      var sharedRedirect = OB64.sourceRedirect.validate(
+        candidateRom.z64,
+        options.sourceRedirectPlan.requests || []
+      );
+      if (!sharedRedirect.ok) {
+        throw issue(
+          'SOURCE_REDIRECT_INTEGRITY',
+          'Shared ROM redirect failed',
+          'The finished ROM does not contain the exact planned PI-source redirect table.',
+          'Keep the error report and recreate the ROM after updating the editor.',
+          sharedRedirect
+        );
+      }
+      return {
+        summary: sharedRedirect.entryCount
+          ? ('Verified ' + sharedRedirect.entryCount + ' shared PI-source redirect entries.')
+          : 'The shared PI-source redirect is safely disabled.',
+        details: sharedRedirect,
+      };
+    });
+
+    yield* runCheckStep(report, 'stat-gate-relocation-integrity', 'Class-change stat-gate container', {
+      code: 'STAT_GATE_RELOCATION_INTEGRITY',
+      title: 'Stat-gate container failed',
+      message: 'The finished ROM does not contain a complete bounded stat-gate container.',
+      suggestion: 'Keep the error report and recreate the ROM after updating the editor.',
+    }, function() {
+      if (!dirty.statGates) {
+        return skipped('Class-change stat gates did not change during this export.');
+      }
+      if (!OB64.statGateRelocation || !OB64.statGateRelocation.validate) {
+        throw issue(
+          'VALIDATOR_DEPENDENCY_MISSING',
+          'Validation component is missing',
+          'The editor could not load its stat-gate relocation checker.',
+          'Reload the editor and try the export again.',
+          { dependency: 'OB64.statGateRelocation.validate' }
+        );
+      }
+      var intendedStatBytes = OB64.statGateRelocation.buildDecoded(
+        sourceRom.statGates
+      );
+      var statValidation = OB64.statGateRelocation.validate(
+        candidateRom.z64,
+        candidateRom.layout || sourceRom.layout,
+        intendedStatBytes
+      );
+      if (!statValidation.ok) {
+        throw issue(
+          'STAT_GATE_RELOCATION_INTEGRITY',
+          'Stat-gate container failed',
+          'The finished ROM does not contain a complete bounded stat-gate container.',
+          'Keep the error report and recreate the ROM after updating the editor.',
+          statValidation
+        );
+      }
+      if (options.statGatePlan) {
+        var expectedState = options.statGatePlan.mode === 'relocated'
+          ? 'owned'
+          : 'in-place';
+        if (statValidation.state !== expectedState ||
+            statValidation.logicalStreamBytes !==
+              options.statGatePlan.logicalStreamBytes ||
+            statValidation.payloadBytes !== options.statGatePlan.payloadBytes ||
+            statValidation.containerBytes !==
+              options.statGatePlan.containerBytes) {
+          throw issue(
+            'STAT_GATE_RELOCATION_INTEGRITY',
+            'Stat-gate container failed',
+            'The finished stat-gate container sizes or ownership state differ from the export plan.',
+            'Keep the error report and recreate the ROM after updating the editor.',
+            {
+              expectedState: expectedState,
+              expectedLogicalStreamBytes: options.statGatePlan.logicalStreamBytes,
+              expectedPayloadBytes: options.statGatePlan.payloadBytes,
+              expectedContainerBytes: options.statGatePlan.containerBytes,
+              actual: statValidation,
+            }
+          );
+        }
+      }
+      return {
+        summary: statValidation.active
+          ? ('Verified relocated stat gates: ' +
+            statValidation.logicalStreamBytes + ' logical, ' +
+            statValidation.payloadBytes + ' payload, ' +
+            statValidation.containerBytes + ' container bytes.')
+          : ('Verified in-place stat gates: ' +
+            statValidation.logicalStreamBytes + ' logical bytes and no relocation artifact.'),
+        details: statValidation,
+      };
+    });
+
     yield* runCheckStep(report, 'scenario-relocation-integrity', 'Scenario archive redirect', {
       code: 'SCENARIO_RELOCATION_INTEGRITY',
       title: 'Scenario archive redirect failed',
@@ -1123,12 +1234,16 @@ window.OB64 = window.OB64 || {};
       },
       {
         dirty: 'statGates', property: 'statGates', label: 'class-change stat gate',
-        serializer: OB64.serializeStatGates,
-        regions: sourceRom.statGates && sourceRom.statGates.meta ? [{
-          start: sourceRom.statGates.meta.compDataOff - 8,
-          size: sourceRom.statGates.meta.compDataSize + 8,
-          label: 'stat-gate compressed slot',
-        }] : [],
+        serializer: OB64.serializeStatGatesForComparison ||
+          OB64.serializeStatGates,
+        regions: sourceRom.statGates && sourceRom.statGates.meta &&
+          OB64.statGateRelocation
+          ? OB64.statGateRelocation.patchRegions(sourceRom.statGates)
+          : (sourceRom.statGates && sourceRom.statGates.meta ? [{
+            start: sourceRom.statGates.meta.compDataOff - 8,
+            size: sourceRom.statGates.meta.compDataSize + 8,
+            label: 'stat-gate compressed slot',
+          }] : []),
       },
     ];
 

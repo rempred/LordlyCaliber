@@ -26,13 +26,6 @@ window.OB64 = window.OB64 || {};
   // trailing click event cannot deselect.
   var mapTool = null;
   var RELOC_TAIL_START = 0x027C0000;
-  var RELOC_HOOK_ROM = 0x0001BFE4;
-  var RELOC_HOOK_DELAY_ROM = 0x0001BFE8;
-  var RELOC_CAVE_ROM = 0x000318DC;
-  var RELOC_CAVE_SIZE = 0x320;
-  var RELOC_BOOT_RAM_BASE = 0x8006FC00;
-  var RELOC_STUB_BYTES = 0x80;
-  var RELOC_ENTRY_BYTES = 8;
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
   // A fixed image-pixel radius shrinks with zoom-to-fit (~14 screen px), making it easy to
   // miss a town and silently write near-town coordinate bytes instead of the site selector.
@@ -1430,61 +1423,6 @@ window.OB64 = window.OB64 || {};
     return true;
   }
 
-  function readU32(z64, off) {
-    return ((z64[off] << 24) | (z64[off + 1] << 16) | (z64[off + 2] << 8) | z64[off + 3]) >>> 0;
-  }
-
-  function writeU32(z64, off, value) {
-    value >>>= 0;
-    z64[off] = (value >>> 24) & 0xFF;
-    z64[off + 1] = (value >>> 16) & 0xFF;
-    z64[off + 2] = (value >>> 8) & 0xFF;
-    z64[off + 3] = value & 0xFF;
-  }
-
-  function mipsJ(ramAddr) { return (0x08000000 | ((ramAddr >>> 2) & 0x03FFFFFF)) >>> 0; }
-  function mipsJal(ramAddr) { return (0x0C000000 | ((ramAddr >>> 2) & 0x03FFFFFF)) >>> 0; }
-  function mipsLui(rt, imm) { return ((0x0F << 26) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
-  function mipsOri(rt, rs, imm) { return ((0x0D << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
-  function mipsLw(rt, base, off) { return ((0x23 << 26) | (base << 21) | (rt << 16) | (off & 0xFFFF)) >>> 0; }
-  function mipsSw(rt, base, off) { return ((0x2B << 26) | (base << 21) | (rt << 16) | (off & 0xFFFF)) >>> 0; }
-  function mipsAddiu(rt, rs, imm) { return ((0x09 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
-  function mipsAddu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x21) >>> 0; }
-  function mipsSubu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x23) >>> 0; }
-  function mipsSltu(rd, rs, rt) { return ((rs << 21) | (rt << 16) | (rd << 11) | 0x2B) >>> 0; }
-  function mipsBeq(rs, rt, imm) { return ((0x04 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
-  function mipsBne(rs, rt, imm) { return ((0x05 << 26) | (rs << 21) | (rt << 16) | (imm & 0xFFFF)) >>> 0; }
-
-  function relocationStubWords() {
-    var caveRam = (RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0;
-    var tableRam = (caveRam + RELOC_STUB_BYTES) >>> 0;
-    return [
-      mipsLui(25, tableRam >>> 16),            // lui   t9,hi(table)
-      mipsOri(25, 25, tableRam & 0xFFFF),      // ori   t9,t9,lo(table)
-      mipsLw(24, 25, 0),                       // loop: lw t8,0(t9)
-      mipsBeq(24, 0, 9),                       // beq   t8,zero,store
-      0x00000000,                              // nop
-      mipsBne(2, 24, 4),                       // bne   v0,t8,next
-      0x00000000,                              // nop
-      mipsLw(2, 25, 4),                        // lw    v0,4(t9)
-      mipsJ(caveRam + 0x34),                   // j     store
-      0x00000000,                              // nop
-      mipsAddiu(25, 25, RELOC_ENTRY_BYTES),    // next: addiu t9,t9,8
-      mipsJ(caveRam + 0x08),                   // j     loop
-      0x00000000,                              // nop
-      mipsSw(2, 4, 0),                         // store: sw v0,0(a0)
-      0x03E00008,                              // jr    ra
-      0x00000000,
-    ];
-  }
-
-  function assertRelocationCaveClean(z64) {
-    for (var i = 0; i < RELOC_CAVE_SIZE; i++) {
-      var b = z64[RELOC_CAVE_ROM + i];
-      if (b !== 0x00) throw new Error('Scenario relocation cave is not clean at z64 0x' + (RELOC_CAVE_ROM + i).toString(16).toUpperCase());
-    }
-  }
-
   // ESET fetches DMA in 0x200-byte windows on a fixed grid at phase 0x3E (observed live:
   // key1 archive 0x27478C2 <- window 0x274783E, key30 0x2749AC3 <- 0x2749A3E, and key6's
   // 0x2747D90 <- TWO windows 0x2747C3E/0x2747E3E, which refutes any fixed archive-relative
@@ -1504,189 +1442,32 @@ window.OB64 = window.OB64 || {};
     return Math.ceil(n / step) * step;
   }
 
-  function cartAddress(romOffset) {
-    return (0x10000000 | (romOffset >>> 0)) >>> 0;
-  }
-
-  function relocationExpectedJal() {
-    return mipsJal((RELOC_BOOT_RAM_BASE + RELOC_CAVE_ROM) >>> 0);
-  }
-
-  function relocationHookState(rom) {
-    var hookWord = readU32(rom.z64, RELOC_HOOK_ROM);
-    var delayWord = readU32(rom.z64, RELOC_HOOK_DELAY_ROM);
-    var expectedJal = relocationExpectedJal();
-    return {
-      hookWord: hookWord,
-      delayWord: delayWord,
-      clean: hookWord === 0x00431024 && delayWord === 0xAC820000,
-      installed: hookWord === expectedJal && delayWord === 0x00431024,
-      expectedJal: expectedJal,
-    };
-  }
-
-  function hasKnownRelocationOwnership(rom, state) {
-    return !!((rom.scenarioRelocations && rom.scenarioRelocations.length) ||
-      (state.relocationOwnedWindows && state.relocationOwnedWindows.length));
-  }
-
-  function restoreRelocationRedirect(rom) {
-    var state = relocationHookState(rom);
-    if (state.clean) return false;
-    if (!state.installed) {
-      throw new Error('Scenario relocation hook site is not clean (0x' + state.hookWord.toString(16).toUpperCase() +
-        '/0x' + state.delayWord.toString(16).toUpperCase() + ').');
+  function scenarioRedirectRequests(relocations) {
+    if (!OB64.sourceRedirect || !OB64.sourceRedirect.scenarioRequests) {
+      throw new Error('The shared PI-source redirect controller is unavailable.');
     }
-    writeU32(rom.z64, RELOC_HOOK_ROM, 0x00431024);
-    writeU32(rom.z64, RELOC_HOOK_DELAY_ROM, 0xAC820000);
-    for (var i = 0; i < RELOC_CAVE_SIZE; i++) rom.z64[RELOC_CAVE_ROM + i] = 0;
-    if (OB64.recalcN64CRC) OB64.recalcN64CRC(rom.z64);
-    return true;
+    return OB64.sourceRedirect.scenarioRequests(relocations || []);
   }
 
-  function installRelocationRedirect(rom, entries) {
-    var z64 = rom.z64;
-    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - RELOC_ENTRY_BYTES) / RELOC_ENTRY_BYTES);
-    if (entries.length > maxEntries) throw new Error('Too many relocated scenario archives for the redirect table (' + entries.length + '/' + maxEntries + ').');
-    if (!entries.length) return restoreRelocationRedirect(rom);
-    var hookState = relocationHookState(rom);
-    if (!(hookState.clean || hookState.installed)) {
-      throw new Error('Scenario relocation hook site is not clean (0x' + hookState.hookWord.toString(16).toUpperCase() + '/0x' + hookState.delayWord.toString(16).toUpperCase() + ').');
-    }
-    if (!hookState.installed) assertRelocationCaveClean(z64);
-
-    var words = relocationStubWords();
-    for (var i = 0; i < words.length; i++) writeU32(z64, RELOC_CAVE_ROM + i * 4, words[i]);
-    var table = RELOC_CAVE_ROM + RELOC_STUB_BYTES;
-    entries.forEach(function(entry, idx) {
-      var off = table + idx * RELOC_ENTRY_BYTES;
-      writeU32(z64, off, cartAddress(entry.originalDmaStart));
-      writeU32(z64, off + 4, cartAddress(entry.tailDmaStart));
-    });
-    writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES, 0);
-    writeU32(z64, table + entries.length * RELOC_ENTRY_BYTES + 4, 0);
-    writeU32(z64, RELOC_HOOK_ROM, hookState.expectedJal);
-    writeU32(z64, RELOC_HOOK_DELAY_ROM, 0x00431024);
-    if (OB64.recalcN64CRC) OB64.recalcN64CRC(z64);
-    return true;
-  }
-
-  function validateRelocationRedirect(rom, entries, requireClearedCave) {
-    entries = entries || [];
+  function validateRelocationRedirect(rom, entries) {
     var z64 = rom && rom.z64;
     if (!(z64 instanceof Uint8Array)) {
       return { ok: false, reason: 'Finished ROM bytes are unavailable.' };
     }
-
-    var hookState = relocationHookState(rom);
-    if (!entries.length) {
-      if (!hookState.clean) {
-        return {
-          ok: false,
-          reason: 'The scenario archive redirect hook was not restored to the retail instructions.',
-          hookWord: hookState.hookWord,
-          delayWord: hookState.delayWord,
-        };
-      }
-      if (requireClearedCave) {
-        for (var clearIndex = 0; clearIndex < RELOC_CAVE_SIZE; clearIndex++) {
-          if (z64[RELOC_CAVE_ROM + clearIndex] !== 0) {
-            return {
-              ok: false,
-              reason: 'The removed scenario archive redirect left data in its reserved code area.',
-              offset: RELOC_CAVE_ROM + clearIndex,
-              actual: z64[RELOC_CAVE_ROM + clearIndex],
-            };
-          }
-        }
-      }
-      return { ok: true, state: 'retail', entryCount: 0 };
-    }
-
-    var maxEntries = Math.floor((RELOC_CAVE_SIZE - RELOC_STUB_BYTES - RELOC_ENTRY_BYTES) / RELOC_ENTRY_BYTES);
-    if (entries.length > maxEntries) {
+    if (!OB64.sourceRedirect || !OB64.sourceRedirect.validateSubset) {
       return {
         ok: false,
-        reason: 'The scenario archive redirect table has too many entries.',
-        entryCount: entries.length,
-        maximumEntries: maxEntries,
+        reason: 'The shared PI-source redirect controller is unavailable.',
       };
     }
-    if (!hookState.installed) {
-      return {
-        ok: false,
-        reason: 'The scenario archive redirect hook does not call the installed redirect code.',
-        hookWord: hookState.hookWord,
-        delayWord: hookState.delayWord,
-        expectedHookWord: hookState.expectedJal,
-      };
-    }
-
-    var words = relocationStubWords();
-    for (var wordIndex = 0; wordIndex < words.length; wordIndex++) {
-      var wordOffset = RELOC_CAVE_ROM + wordIndex * 4;
-      var actualWord = readU32(z64, wordOffset);
-      if (actualWord !== words[wordIndex]) {
-        return {
-          ok: false,
-          reason: 'The scenario archive redirect code is incomplete or damaged.',
-          offset: wordOffset,
-          expected: words[wordIndex],
-          actual: actualWord,
-        };
-      }
-    }
-
-    var table = RELOC_CAVE_ROM + RELOC_STUB_BYTES;
-    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
-      var entry = entries[entryIndex] || {};
-      if (!Number.isInteger(entry.originalDmaStart) || !Number.isInteger(entry.tailDmaStart)) {
-        return {
-          ok: false,
-          reason: 'A scenario archive redirect entry is missing its source or destination.',
-          entryIndex: entryIndex,
-        };
-      }
-      var entryOffset = table + entryIndex * RELOC_ENTRY_BYTES;
-      var expectedSource = cartAddress(entry.originalDmaStart);
-      var expectedDestination = cartAddress(entry.tailDmaStart);
-      var actualSource = readU32(z64, entryOffset);
-      var actualDestination = readU32(z64, entryOffset + 4);
-      if (actualSource !== expectedSource || actualDestination !== expectedDestination) {
-        return {
-          ok: false,
-          reason: 'A scenario archive redirect entry does not point to the rebuilt archive.',
-          entryIndex: entryIndex,
-          offset: entryOffset,
-          expectedSource: expectedSource,
-          actualSource: actualSource,
-          expectedDestination: expectedDestination,
-          actualDestination: actualDestination,
-        };
-      }
-    }
-
-    var terminatorOffset = table + entries.length * RELOC_ENTRY_BYTES;
-    var terminatorSource = readU32(z64, terminatorOffset);
-    var terminatorDestination = readU32(z64, terminatorOffset + 4);
-    if (terminatorSource !== 0 || terminatorDestination !== 0) {
-      return {
-        ok: false,
-        reason: 'The scenario archive redirect table has no valid ending marker.',
-        offset: terminatorOffset,
-        source: terminatorSource,
-        destination: terminatorDestination,
-      };
-    }
-
-    return { ok: true, state: 'installed', entryCount: entries.length };
+    return OB64.sourceRedirect.validateSubset(
+      z64,
+      scenarioRedirectRequests(entries || [])
+    );
   }
 
   function relocationPatchRegions(relocations) {
-    var regions = [
-      { kind: 'rom', start: RELOC_HOOK_ROM, size: 8, label: 'scenario relocation DMA hook' },
-      { kind: 'rom', start: RELOC_CAVE_ROM, size: RELOC_CAVE_SIZE, label: 'scenario relocation cave/table' },
-    ];
+    var regions = [];
     (relocations || []).forEach(function(entry, idx) {
       regions.push({
         kind: 'rom',
@@ -1696,14 +1477,6 @@ window.OB64 = window.OB64 || {};
       });
     });
     return regions;
-  }
-
-  function relocationPatchOwner(relocations) {
-    return {
-      id: 'scenario-eset-relocation',
-      name: 'Scenario ESET Relocation',
-      regions: relocationPatchRegions(relocations),
-    };
   }
 
   function planRelocationToTail(rom, arc, builtArchive, tailCursor) {
@@ -8053,14 +7826,21 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function exportScenarioArchives(rom) {
+  function exportScenarioArchives(rom, options) {
+    options = options || {};
+    var deferRedirect = !!options.deferRedirect;
+    var priorRelocations = (rom.scenarioRelocations || []).slice();
     var state = ensureState(rom);
     var blocked = [];
-    var hookState = relocationHookState(rom);
-    if (hookState.installed && !hasKnownRelocationOwnership(rom, state)) {
-      blocked.push('Scenario relocation hook is already installed in this ROM, but this editor session did not create or adopt its redirect table. Load a clean ROM or the source project JSON before exporting scenario edits; pre-relocated ROM adoption is not implemented yet.');
-    } else if (!hookState.clean && !hookState.installed) {
-      blocked.push('Scenario relocation hook site is not clean (0x' + hookState.hookWord.toString(16).toUpperCase() + '/0x' + hookState.delayWord.toString(16).toUpperCase() + ').');
+    var redirectState = null;
+    if (!OB64.sourceRedirect || !OB64.sourceRedirect.classify) {
+      blocked.push('The shared PI-source redirect controller is unavailable. Reload the editor before exporting Scenario changes.');
+    } else {
+      redirectState = OB64.sourceRedirect.classify(rom.z64);
+      if (!redirectState.ok) {
+        blocked.push('Shared PI-source redirect ownership is malformed: ' +
+          redirectState.reason);
+      }
     }
 
     // Town allegiance now exports: intents rewrite the scincsv descriptor addend halfword in a
@@ -8342,11 +8122,29 @@ window.OB64 = window.OB64 || {};
         archive: moved.archive,
       };
     });
-    if (publicRelocations.length && OB64.tools) {
-      try {
-        OB64.tools.assertDesiredCompatible(rom, [relocationPatchOwner(publicRelocations)]);
-      } catch (e3) {
-        blocked.push(e3.message);
+    var redirectRequests = scenarioRedirectRequests(publicRelocations);
+    var directRedirectPlan = null;
+    if (!blocked.length && !deferRedirect) {
+      var currentStatRequests = OB64.statGateRelocation &&
+        OB64.statGateRelocation.currentRequests
+        ? OB64.statGateRelocation.currentRequests(rom.statGates)
+        : [];
+      var knownRedirectRequests = currentStatRequests.concat(
+        scenarioRedirectRequests(priorRelocations)
+      );
+      if (redirectState && redirectState.state === 'installed' &&
+          !knownRedirectRequests.length) {
+        blocked.push('Scenario pre-relocated ROM adoption is not implemented; load the matching project or a clean ROM before exporting.');
+      } else {
+        try {
+          directRedirectPlan = OB64.sourceRedirect.prepare(
+            rom.z64,
+            currentStatRequests.concat(redirectRequests),
+            { knownCurrentRequests: knownRedirectRequests }
+          );
+        } catch (redirectPlanError) {
+          blocked.push(redirectPlanError.message);
+        }
       }
     }
     if (blocked.length) {
@@ -8354,6 +8152,8 @@ window.OB64 = window.OB64 || {};
         touched: [],
         blocked: blocked,
         relocations: rom.scenarioRelocations || [],
+        redirectRequests: [],
+        crc: false,
         validationTargets: [],
       };
     }
@@ -8405,14 +8205,23 @@ window.OB64 = window.OB64 || {};
       });
     });
     state.relocationOwnedWindows = newOwnedWindows;
-    var redirectChanged = installRelocationRedirect(rom, publicRelocations);
-    if (redirectChanged && !publicRelocations.length) touched.push('scenario relocation redirect removed');
+    var directRedirectResult = { crc: false };
+    if (directRedirectPlan) {
+      directRedirectResult = OB64.sourceRedirect.apply(
+        rom.z64,
+        directRedirectPlan
+      );
+      if (directRedirectResult.crc && OB64.recalcN64CRC) {
+        OB64.recalcN64CRC(rom.z64);
+      }
+    }
     rom.scenarioRelocations = publicRelocations;
     return {
       touched: touched,
       blocked: [],
       relocations: publicRelocations,
-      crc: !!redirectChanged,
+      redirectRequests: redirectRequests,
+      crc: !!directRedirectResult.crc,
       validationTargets: validationTargets,
     };
   }
@@ -8504,6 +8313,7 @@ window.OB64 = window.OB64 || {};
     loadProject: loadProject,
     exportScenarioArchives: exportScenarioArchives,
     validateRelocationRedirect: validateRelocationRedirect,
+    redirectRequests: scenarioRedirectRequests,
     patchRegions: publicRelocationRegions,
     iconProvider: iconProvider,
     keyModified: keyModified,

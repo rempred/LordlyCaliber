@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "tests/stat-gate-relocation.test.js",
+  "revisions": {
+    "us-rev0": {
+      "profile": {
+        "revision": 0,
+        "headerOffset": 37543630,
+        "sizeSourceOffset": 37543630,
+        "payloadSourceOffset": 37543634,
+        "secondPayloadSourceOffset": 37544146
+      },
+      "cases": {
+        "boundary376": {
+          "logicalStreamBytes": 376,
+          "storedStreamBytes": 376,
+          "payloadBytes": 380,
+          "containerBytes": 384,
+          "redirectCount": 0,
+          "decodedSha256": "6F734870DFF8ED87C403862724629EE13F68071A885A4D7231B71BF5D69E7355",
+          "compressedSha256": "A683A334B531B30FCC32161B9B0FE8B0AF3356F5612FE98A4D9A60108FBDF27A",
+          "descriptorSha256": null,
+          "ownerSha256": null
+        },
+        "boundary377": {
+          "logicalStreamBytes": 377,
+          "storedStreamBytes": 378,
+          "payloadBytes": 382,
+          "containerBytes": 386,
+          "redirectCount": 2,
+          "decodedSha256": "E5452F73410800529C038C8EE116A2B1936F084C37326AD2A8AF3525589A5B7B",
+          "compressedSha256": "F1E49C975459EF36335F653AA0E915A6FA75AD66351D25B6106BCEF33E627038",
+          "descriptorSha256": "606AA513F4784962B1C845E7D5990BDAC8830DF6EB87E6AA4865EE5B24A408A9",
+          "ownerSha256": "5CA8A28DD8E9606D1345264107CFC37FE3CE0EF5AA8B34290F1600AB01D03F09"
+        },
+        "relocatedEven": {
+          "logicalStreamBytes": 378,
+          "storedStreamBytes": 378,
+          "payloadBytes": 382,
+          "containerBytes": 386,
+          "redirectCount": 2,
+          "decodedSha256": "7462C5F34688457F4258E29D2C8616C102156AE61D020E666B967B775FEF1275",
+          "compressedSha256": "C19F75469EF3E5D5EA3B5F7A5D77C68FB649B908DFF012144BD40D2FED6DFD3F",
+          "descriptorSha256": "7509D47EB07483C1A3E43D7FD1A8D4E5422C854E0C39820C9554CB5E78D9669C",
+          "ownerSha256": "E703CA1BF626CA739CFB9EF9FFC0BB5B8AAF8D85341D9ACB18BC90ABCC6AF73B"
+        },
+        "maximum659": {
+          "logicalStreamBytes": 659,
+          "storedStreamBytes": 660,
+          "payloadBytes": 664,
+          "containerBytes": 668,
+          "redirectCount": 3,
+          "decodedSha256": "7017A5EBEA97F2CA39ABCD9BEE7925D1DD62E06C96CA0D65CF38DE01A83B7C03",
+          "compressedSha256": "314C386B0F8A184208D828CD68267D7792904566102EC4A0460864145A20F2F3",
+          "descriptorSha256": "FCA39BA69E3C1305767781AA39F0326BFCAC959F2CA78B0197F98B9ACCA2E009",
+          "ownerSha256": "284E7CCC46243E6CE8421AD0A96AD91232D37A02578CC6A489A0E29D6B7B0996"
+        }
+      }
+    },
+    "us-rev1": {
+      "profile": {
+        "revision": 1,
+        "headerOffset": 37542690,
+        "sizeSourceOffset": 37542690,
+        "payloadSourceOffset": 37542694,
+        "secondPayloadSourceOffset": 37543206
+      },
+      "cases": {
+        "boundary376": {
+          "logicalStreamBytes": 376,
+          "storedStreamBytes": 376,
+          "payloadBytes": 380,
+          "containerBytes": 384,
+          "redirectCount": 0,
+          "decodedSha256": "6F734870DFF8ED87C403862724629EE13F68071A885A4D7231B71BF5D69E7355",
+          "compressedSha256": "A683A334B531B30FCC32161B9B0FE8B0AF3356F5612FE98A4D9A60108FBDF27A",
+          "descriptorSha256": null,
+          "ownerSha256": null
+        },
+        "boundary377": {
+          "logicalStreamBytes": 377,
+          "storedStreamBytes": 378,
+          "payloadBytes": 382,
+          "containerBytes": 386,
+          "redirectCount": 2,
+          "decodedSha256": "E5452F73410800529C038C8EE116A2B1936F084C37326AD2A8AF3525589A5B7B",
+          "compressedSha256": "F1E49C975459EF36335F653AA0E915A6FA75AD66351D25B6106BCEF33E627038",
+          "descriptorSha256": "5A3483B21661A1333836771E80A53AC421DF6CAE7345E9F1B1FBDC9B94CF6E55",
+          "ownerSha256": "A7DDC90234A250443F55525320E3FA581BE3D7B39B077CB113FC2B1A0771D31F"
+        },
+        "relocatedEven": {
+          "logicalStreamBytes": 378,
+          "storedStreamBytes": 378,
+          "payloadBytes": 382,
+          "containerBytes": 386,
+          "redirectCount": 2,
+          "decodedSha256": "7462C5F34688457F4258E29D2C8616C102156AE61D020E666B967B775FEF1275",
+          "compressedSha256": "C19F75469EF3E5D5EA3B5F7A5D77C68FB649B908DFF012144BD40D2FED6DFD3F",
+          "descriptorSha256": "9DD346B797E48CEDEC976E274F1C3CF943749F115C87BCBDFC8B23D9F674D0D3",
+          "ownerSha256": "0995CEEA8033487901583C77B6F8A8EF05C837A1A7FC4224B14F883074EAA38A"
+        },
+        "maximum659": {
+          "logicalStreamBytes": 659,
+          "storedStreamBytes": 660,
+          "payloadBytes": 664,
+          "containerBytes": 668,
+          "redirectCount": 3,
+          "decodedSha256": "7017A5EBEA97F2CA39ABCD9BEE7925D1DD62E06C96CA0D65CF38DE01A83B7C03",
+          "compressedSha256": "314C386B0F8A184208D828CD68267D7792904566102EC4A0460864145A20F2F3",
+          "descriptorSha256": "037B09B8A09CDE1472C520EEF8223389D2FA5D3C9EFD57AA02648A00AAF10CD2",
+          "ownerSha256": "65D8FD032E150269DA65ACBFF4CC6650FD87C53E38ED64E7D4CA319E71E702D2"
+        }
+      }
+    }
+  }
+}
