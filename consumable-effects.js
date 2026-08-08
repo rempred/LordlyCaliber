@@ -2334,6 +2334,8 @@
       guardManifest: revisionManifest && revisionManifest.rangeProfile ||
         sourceMetadata && sourceMetadata.guardManifest || GUARD_MANIFEST,
       models: initialModels,
+      // Immutable Project-diff baseline from the source ROM loaded by the user.
+      // Verified export adoption advances the ledger, not this baseline.
       importedModels: cloneModels(initialModels),
       availability: {
         range: { ok: false, reason: 'No supported revision profile is selected.' },
@@ -3640,7 +3642,10 @@
       nextLedger.descriptionOwnedWrite = null;
     }
 
-    var nextImportedModels = cloneModels(transaction.models);
+    // Project data remains relative to the ROM that the user loaded. Export
+    // adoption advances the live word ledger, but it must not redefine that
+    // immutable source baseline or a later Save Project will omit the edits.
+    var nextImportedModels = cloneModels(session.importedModels);
     var nextAvailability = Object.assign({}, session.availability);
     nextAvailability.magnitudes = Object.assign(
       {},
@@ -5505,6 +5510,22 @@
     return owners;
   }
 
+  function toolCompatibilityOwners(plannedOwners, effectTransaction) {
+    var collisionOwner = effectTransaction && effectTransaction.collisionOwner;
+    var owners = (plannedOwners || []).filter(function(owner) {
+      if (!owner || owner.category === 'tools') return false;
+      if (!collisionOwner) return true;
+      // The broad guard replaces these internal effect owners when comparing
+      // against selected Tools features. Keeping both makes the subsystem
+      // collide with its own previously adopted byte ranges.
+      return owner.id !== 'consumable-effects' &&
+        owner.id !== 'consumable-healing-descriptions' &&
+        owner.id !== collisionOwner.id;
+    });
+    if (collisionOwner) owners.push(collisionOwner);
+    return owners;
+  }
+
   return {
     PROJECT_VERSION: PROJECT_VERSION,
     EDITOR_VERSION: EDITOR_VERSION,
@@ -5572,6 +5593,7 @@
     effectDeltaOwner: effectDeltaOwner,
     healingDescriptionOwner: healingDescriptionOwner,
     standardPatchOwners: standardPatchOwners,
+    toolCompatibilityOwners: toolCompatibilityOwners,
     scenarioPatchOwners: scenarioPatchOwners,
     findRegionConflicts: findRegionConflicts,
     assertPreparedTransactionIntegrity: assertPreparedTransactionIntegrity,

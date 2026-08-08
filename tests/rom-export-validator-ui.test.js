@@ -292,8 +292,8 @@ check('export controller defers Scenario redirect writes for shared planning',
   /exportScenarioArchives\(candidateRom,\s*\{\s*deferRedirect:\s*true/.test(
     appSource
   ));
-check('Tools compatibility receives planned non-Tools owners exactly once',
-  /toolCompatibilityOwners\s*=\s*effectOwners\.filter[\s\S]*?owner\.category\s*!==\s*'tools'/.test(
+check('Tools compatibility uses the Consumable Effects ownership bridge',
+  /consumableEffects\.toolCompatibilityOwners\(\s*effectOwners,\s*effectTransaction\s*\)/.test(
     appSource
   ));
 

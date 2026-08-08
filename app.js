@@ -550,15 +550,13 @@ window.OB64 = window.OB64 || {};
         sourceWorkingZ64,
         effectOwners
       );
-      // Tools adds its own selected feature owners internally. Supply every
-      // other planned owner once so same-feature regions are not duplicated
-      // under the standard ledger's `tool-*` IDs.
-      var toolCompatibilityOwners = effectOwners.filter(function(owner) {
-        return owner.category !== 'tools';
-      });
-      if (effectTransaction) {
-        toolCompatibilityOwners.push(effectTransaction.collisionOwner);
-      }
+      // Tools adds its selected feature owners internally. Replace concrete
+      // same-session effect ranges with the one broad effect collision guard.
+      var toolCompatibilityOwners =
+        OB64.consumableEffects.toolCompatibilityOwners(
+          effectOwners,
+          effectTransaction
+        );
       if (OB64.tools && toolCompatibilityOwners.length) {
         OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners);
       }

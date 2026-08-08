@@ -726,6 +726,240 @@ async function runArchiveMethodTransitionRegression() {
     reportCodes(untrusted).join(','));
 }
 
+async function runConsumableEffectExportLifecycleRegression() {
+  const source = loadRom();
+  const sourceIdentity = await OB64.consumableEffects.inspectSourceIdentity(
+    masterBytes,
+    'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'
+  );
+  OB64.consumableEffects.initializeSession(source, sourceIdentity, {
+    filename: 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64',
+  });
+  OB64.patch.snapshotOriginal(source);
+  OB64.tools.initState(source);
+
+  OB64.consumableEffects.setModelRange(
+    source.consumableEffects,
+    'scrollOfDiscipline',
+    7,
+    7
+  );
+  OB64.consumableEffects.setModelRange(
+    source.consumableEffects,
+    'urnOfChaos',
+    -7,
+    -7
+  );
+  OB64.consumableEffects.setModelRange(
+    source.consumableEffects,
+    'gobletOfDestiny',
+    7,
+    7
+  );
+  OB64.consumableEffects.setModelMagnitude(
+    source.consumableEffects,
+    'powerFruit',
+    21
+  );
+
+  const projectBeforeExport = OB64.patch.collectPatch(source);
+  const firstDirty = dirtyFlags({ consumableEffects: true });
+  const firstOwners = OB64.consumableEffects.standardPatchOwners(
+    source,
+    firstDirty
+  );
+  const firstTransaction = OB64.consumableEffects.prepareTransaction(
+    source.consumableEffects,
+    source.z64,
+    firstOwners
+  );
+  const firstCandidate = candidateFor(source);
+  OB64.consumableEffects.applyTransaction(
+    firstTransaction,
+    firstCandidate.z64,
+    source.consumableEffects
+  );
+  OB64.recalcN64CRC(firstCandidate.z64);
+  OB64.consumableEffects.validateFinalAfterImage(
+    firstTransaction,
+    firstCandidate.z64,
+    source.consumableEffects
+  );
+  const finalOwners = firstOwners.concat([firstTransaction.deltaOwner]);
+  const packageToken = OB64.consumableEffects.createVerifiedCandidatePackage(
+    source,
+    firstCandidate,
+    source.consumableEffects,
+    firstTransaction,
+    'ob64_modified.v64'
+  );
+  const provenance = await OB64.consumableEffects.buildProvenance(
+    packageToken,
+    finalOwners,
+    firstDirty
+  );
+  OB64.consumableEffects.finalizeVerifiedCandidatePackage(
+    packageToken,
+    provenance
+  );
+
+  const originalDocument = global.document;
+  const originalUrl = global.URL;
+  const originalSetTimeout = global.setTimeout;
+  global.document = {
+    body: {
+      appendChild() {},
+      removeChild() {},
+    },
+    createElement() {
+      return { href: '', download: '', click() {} };
+    },
+  };
+  global.URL = {
+    createObjectURL() { return 'blob:consumable-effects-lifecycle-test'; },
+    revokeObjectURL() {},
+  };
+  global.setTimeout = function() { return 0; };
+  let receipt;
+  try {
+    receipt = OB64.consumableEffects.downloadRomCandidate(
+      packageToken,
+      provenance
+    );
+  } finally {
+    global.document = originalDocument;
+    global.URL = originalUrl;
+    global.setTimeout = originalSetTimeout;
+  }
+  OB64.consumableEffects.commitAndAdoptTransaction(
+    source.consumableEffects,
+    firstTransaction,
+    packageToken,
+    provenance,
+    receipt,
+    source,
+    firstCandidate
+  );
+
+  const projectAfterExport = OB64.patch.collectPatch(source);
+  check('Consumable Effects Project payload survives verified export adoption',
+    JSON.stringify(projectAfterExport.patches.consumableEffects) ===
+      JSON.stringify(projectBeforeExport.patches.consumableEffects),
+    JSON.stringify({
+      before: projectBeforeExport.patches.consumableEffects,
+      after: projectAfterExport.patches.consumableEffects,
+    }));
+  check('Consumable Effects Project summary survives verified export adoption',
+    projectAfterExport.summary.consumable_effect_models_modified === 4,
+    String(projectAfterExport.summary.consumable_effect_models_modified));
+
+  const repeatOwners = OB64.consumableEffects.standardPatchOwners(
+    source,
+    dirtyFlags()
+  );
+  const repeatTransaction = OB64.consumableEffects.prepareTransaction(
+    source.consumableEffects,
+    source.z64,
+    repeatOwners
+  );
+  const repeatToolOwners = OB64.consumableEffects.toolCompatibilityOwners(
+    repeatOwners,
+    repeatTransaction
+  );
+  check('second export starts with concrete prior effect ownership',
+    repeatOwners.some(owner => owner.id === 'consumable-effects'));
+  check('Tools compatibility replaces internal effect ranges with one guard',
+    !repeatToolOwners.some(owner =>
+      owner.id === 'consumable-effects' ||
+      owner.id === 'consumable-healing-descriptions') &&
+      repeatToolOwners.filter(owner =>
+        owner.id === 'consumable-effects-guard-collision').length === 1,
+    repeatToolOwners.map(owner => owner.id).join(','));
+  let repeatCompatibilityError = null;
+  try {
+    OB64.tools.assertDesiredCompatible(
+      source,
+      repeatToolOwners
+    );
+  } catch (error) {
+    repeatCompatibilityError = error;
+  }
+  check('same-session second export accepts prior editor-owned effect ranges',
+    !repeatCompatibilityError,
+    repeatCompatibilityError && repeatCompatibilityError.message);
+  check('same-session second export retains an effect guard transaction',
+    repeatTransaction && repeatTransaction.writes.length === 0,
+    repeatTransaction && String(repeatTransaction.writes.length));
+
+  const guardedRegion = repeatTransaction.collisionOwner.regions[0];
+  const foreignOwner = {
+    id: 'foreign-overlap-regression',
+    name: 'Foreign overlap regression',
+    category: 'scenario',
+    regions: [{
+      kind: 'rom',
+      start: guardedRegion.start,
+      size: 1,
+      label: 'hostile guarded-path byte',
+    }],
+  };
+  let foreignCollisionError = null;
+  try {
+    OB64.tools.assertDesiredCompatible(
+      source,
+      OB64.consumableEffects.toolCompatibilityOwners(
+        repeatOwners.concat([foreignOwner]),
+        repeatTransaction
+      )
+    );
+  } catch (error) {
+    foreignCollisionError = error;
+  }
+  check('foreign overlap with Consumable Effects remains fail-closed',
+    foreignCollisionError &&
+      /Foreign overlap regression/.test(foreignCollisionError.message) &&
+      /Consumable Effects Guard\/Collision Surface/.test(foreignCollisionError.message),
+    foreignCollisionError && foreignCollisionError.message);
+
+  const reloaded = loadRom();
+  OB64.consumableEffects.initializeSession(reloaded, sourceIdentity, {
+    filename: 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64',
+  });
+  OB64.patch.snapshotOriginal(reloaded);
+  OB64.tools.initState(reloaded);
+  const reloadDirty = dirtyFlags();
+  const applied = OB64.patch.applyPatch(
+    reloaded,
+    JSON.parse(JSON.stringify(projectAfterExport)),
+    reloadDirty
+  );
+  const reloadOwners = OB64.consumableEffects.standardPatchOwners(
+    reloaded,
+    reloadDirty
+  );
+  const reloadTransaction = OB64.consumableEffects.prepareTransaction(
+    reloaded.consumableEffects,
+    reloaded.z64,
+    reloadOwners
+  );
+  const reloadCandidate = candidateFor(reloaded);
+  OB64.consumableEffects.applyTransaction(
+    reloadTransaction,
+    reloadCandidate.z64,
+    reloaded.consumableEffects
+  );
+  const restoredWordsMatch = OB64.consumableEffects.EDITABLE_WORD_GUARDS.every(
+    entry => OB64.readU32BE(reloadCandidate.z64, entry.offset) ===
+      OB64.readU32BE(source.z64, entry.offset)
+  );
+  check('original ROM plus saved Project restores all edited effect models',
+    applied.applied.consumableEffects === 4 && restoredWordsMatch,
+    JSON.stringify({
+      applied: applied.applied.consumableEffects,
+      restoredWordsMatch: restoredWordsMatch,
+    }));
+}
+
 (async function main() {
   runNoOpValidation();
   runEditedScenarioValidation();
@@ -738,6 +972,7 @@ async function runArchiveMethodTransitionRegression() {
   runValidRuntimeShopExport();
   runValidCombatOverrideExport();
   await runArchiveMethodTransitionRegression();
+  await runConsumableEffectExportLifecycleRegression();
 
   if (failures) {
     console.error('\n' + failures + ' ROM export validator test(s) failed.');
