@@ -6781,6 +6781,80 @@ window.OB64 = window.OB64 || {};
     return out;
   }
 
+  // Scenario Project v4 originally grouped byte-identical ESET filenames as one
+  // physical resource. The master-ROM selector proves that some of those files
+  // are separate archive targets. Canonicalize only when the project's recorded
+  // source SHA-256 still matches the runtime key's current generated resource.
+  function migrateV4PhysicalResourceAliases(project) {
+    var pathTargets = {};
+    function rememberPathTarget(oldPath, newPath) {
+      if (!oldPath || !newPath || oldPath === newPath) return;
+      if (!pathTargets[oldPath]) pathTargets[oldPath] = {};
+      pathTargets[oldPath][newPath] = true;
+    }
+    function metaFor(runtimeKey) {
+      return dataScenarios().filter(function(entry) { return Number(entry.runtimeKey) === runtimeKey; })[0] || null;
+    }
+    function canonicalPath(meta) {
+      return meta && (meta.resourcePath || meta.relPath) || null;
+    }
+
+    Object.keys(project.modifiedEsets || {}).forEach(function(keyText) {
+      var runtimeKey = Number(keyText);
+      var entry = project.modifiedEsets[keyText];
+      var meta = metaFor(runtimeKey);
+      var path = canonicalPath(meta);
+      if (!entry || !meta || Number(entry.runtimeKey) !== runtimeKey ||
+          !entry.sourceSha256 || entry.sourceSha256 !== meta.sha256 ||
+          !entry.resourcePath || entry.resourcePath === path) return;
+      rememberPathTarget(entry.resourcePath, path);
+      entry.archive = meta.archive;
+      entry.filename = meta.filename;
+      entry.resourcePath = path;
+    });
+
+    (project.squadLevelCopies || []).forEach(function(entry) {
+      if (!entry) return;
+      var runtimeKey = Number(entry.runtimeKey);
+      var meta = metaFor(runtimeKey);
+      var path = canonicalPath(meta);
+      var oldAliases = (entry.resourceAliasKeys || [runtimeKey]).map(Number);
+      var expectedAliases = meta && meta.resourceAliasKeys && meta.resourceAliasKeys.length
+        ? meta.resourceAliasKeys.map(Number) : [runtimeKey];
+      var aliasesDiffer = oldAliases.slice().sort(function(a, b) { return a - b; }).join(',') !==
+        expectedAliases.slice().sort(function(a, b) { return a - b; }).join(',');
+      if (!meta || !entry.resourceSha256 || entry.resourceSha256 !== meta.sha256 ||
+          oldAliases.indexOf(runtimeKey) < 0 || (!aliasesDiffer && entry.resourcePath === path)) return;
+      rememberPathTarget(entry.resourcePath, path);
+      entry.resourcePath = path;
+      entry.resourceSha256 = meta.sha256;
+      entry.resourceAliasKeys = expectedAliases;
+      var oldRecords = entry.aliasRecordHexByKey || {};
+      var canonicalRecords = {};
+      expectedAliases.forEach(function(aliasKey) {
+        if (Object.prototype.hasOwnProperty.call(oldRecords, aliasKey)) canonicalRecords[aliasKey] = oldRecords[aliasKey];
+        else if (Object.prototype.hasOwnProperty.call(oldRecords, String(aliasKey))) canonicalRecords[aliasKey] = oldRecords[String(aliasKey)];
+      });
+      entry.aliasRecordHexByKey = canonicalRecords;
+    });
+
+    (project.addedSquads || []).forEach(function(entry) {
+      if (!entry || !entry.resourcePath) return;
+      var meta = metaFor(Number(entry.runtimeKey));
+      var path = canonicalPath(meta);
+      if (pathTargets[entry.resourcePath] && pathTargets[entry.resourcePath][path]) entry.resourcePath = path;
+    });
+
+    var expandedBaseEdits = [];
+    (project.levelBaseEdits || []).forEach(function(entry) {
+      expandedBaseEdits.push(entry);
+      Object.keys(pathTargets[entry.resourcePath] || {}).sort().forEach(function(resourcePath) {
+        expandedBaseEdits.push({ resourcePath: resourcePath, original: entry.original, value: entry.value });
+      });
+    });
+    project.levelBaseEdits = expandedBaseEdits;
+  }
+
   function exactProjectHex(value, byteLength, path, strict) {
     if (typeof value !== 'string') throw new Error(path + ' must be a hexadecimal string.');
     if (strict && !/^[0-9a-f]+$/i.test(value)) throw new Error(path + ' must contain only hexadecimal digits.');
@@ -6915,6 +6989,7 @@ window.OB64 = window.OB64 || {};
     // inherited prototype members from becoming Project fields in either v4
     // or the explicitly supported legacy readers.
     project = cloneProjectValue(project);
+    if (strictV4) migrateV4PhysicalResourceAliases(project);
 
     var targetRom = rom;
     var sourceState = rom.scenarioEditor || createScenarioState();
