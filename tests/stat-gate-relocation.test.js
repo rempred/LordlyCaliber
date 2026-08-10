@@ -25,6 +25,7 @@ for (const filename of [
   'data.js',
   'parsers.js',
   'repack.js',
+  'description-codec.js',
   'source-redirect.js',
   'stat-gate-relocation.js',
 ]) {

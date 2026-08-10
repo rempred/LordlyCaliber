@@ -1233,6 +1233,30 @@ window.OB64 = window.OB64 || {};
           size: sourceRom.consumables.length * OB64.CONSUMABLE_RECORD_SIZE, label: 'consumable records' }],
       },
       {
+        dirty: 'itemDescriptions', property: 'itemDescriptions',
+        label: 'item description', serializer: OB64.serializeItemDescriptions,
+        regions: sourceRom.itemDescriptions && OB64.descriptionCodec
+          ? [OB64.descriptionCodec.ownerRegion(sourceRom.itemDescriptions)] : [],
+      },
+      {
+        dirty: 'consumableDescriptions', property: 'consumableDescriptions',
+        label: 'consumable description', serializer: OB64.serializeConsumableDescriptions,
+        regions: sourceRom.consumableDescriptions && OB64.descriptionCodec
+          ? [OB64.descriptionCodec.ownerRegion(sourceRom.consumableDescriptions)] : [],
+      },
+      {
+        dirty: 'classDescriptions', property: 'classDescriptions',
+        label: 'class description', serializer: OB64.serializeClassDescriptions,
+        regions: sourceRom.classDescriptions && OB64.descriptionCodec
+          ? [OB64.descriptionCodec.ownerRegion(sourceRom.classDescriptions)] : [],
+      },
+      {
+        dirty: 'actionDescriptions', property: 'actionDescriptions',
+        label: 'action description', serializer: OB64.serializeActionDescriptions,
+        regions: sourceRom.actionDescriptions && OB64.descriptionCodec
+          ? [OB64.descriptionCodec.ownerRegion(sourceRom.actionDescriptions)] : [],
+      },
+      {
         dirty: 'statGates', property: 'statGates', label: 'class-change stat gate',
         serializer: OB64.serializeStatGatesForComparison ||
           OB64.serializeStatGates,

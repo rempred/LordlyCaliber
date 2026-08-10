@@ -111,6 +111,14 @@ window.OB64 = window.OB64 || {};
     return (name || ('Consumable ' + n)) + ' (#' + n + ')';
   }
 
+  function actionName(id) {
+    var n = Number(id) || 0;
+    var name = OB64.actionEditorName
+      ? OB64.actionEditorName(n)
+      : (OB64.actionName ? OB64.actionName(n) : ('Action ' + n));
+    return name + ' (' + hex(n, 2) + ')';
+  }
+
   function scenarioLabel(runtimeKey) {
     var key = Number(runtimeKey);
     var info = OB64.scenarioKeyInfo ? OB64.scenarioKeyInfo(key) : null;
@@ -387,6 +395,34 @@ window.OB64 = window.OB64 || {};
       entries.push({ title: consumableName(rom, index), lines: lines });
     });
     addSection(sections, 'Consumables', entries);
+  }
+
+  function descriptionValue(value) {
+    return JSON.stringify(value == null ? '' : String(value));
+  }
+
+  function buildDescriptionSection(rom, patches, sections) {
+    var payload = patches.descriptions || {};
+    var baseline = rom.original && rom.original.descriptions || {};
+    var entries = [];
+    var groups = [
+      ['items', 'Item', itemName],
+      ['consumables', 'Consumable', function(id) { return consumableName(rom, id); }],
+      ['classes', 'Class', className],
+      ['actions', 'Action', actionName]
+    ];
+    groups.forEach(function(group) {
+      numericKeys(payload[group[0]]).forEach(function(key) {
+        var id = Number(key);
+        var before = baseline[group[0]] && baseline[group[0]][id];
+        entries.push({
+          title: group[1] + ': ' + group[2](id),
+          lines: ['Description: ' + descriptionValue(before) + ' -> ' +
+            descriptionValue(payload[group[0]][key])]
+        });
+      });
+    });
+    addSection(sections, 'Descriptions', entries);
   }
 
   function signedNumber(value) {
@@ -729,6 +765,7 @@ window.OB64 = window.OB64 || {};
     var handled = {
       shops: true, item_prices: true, items: true, classDefs: true,
       neutral_encounters: true, creatureDrops: true, consumables: true,
+      descriptions: true,
       statGates: true, neutral_global_rate: true, tools: true,
       squadOverrides: true, scenario: true, consumableEffects: true,
       combatAnimationOverrides: true
@@ -789,6 +826,7 @@ window.OB64 = window.OB64 || {};
     buildEncounterSection(rom, patches, sections);
     buildDropSection(rom, patches, sections);
     buildConsumableSection(rom, patches, sections);
+    buildDescriptionSection(rom, patches, sections);
     buildConsumableEffectSection(rom, patches, sections);
     buildStatGateSection(rom, patches, sections);
     buildToolSection(patches, sections);

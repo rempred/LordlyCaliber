@@ -2017,6 +2017,12 @@ OB64.loadROM = function(romData) {
   var shopBuf = OB64.extractArchive(z64, archives[751]);
 
   var strongholds = OB64.parseKtenmain(ktenmainBuf);
+  // Standalone research scripts historically load parsers.js without the full
+  // browser bundle. The product page loads description-codec.js before this
+  // function is called and receives all four parsed text blocks.
+  var descriptions = OB64.descriptionCodec
+    ? OB64.descriptionCodec.parseAll(z64)
+    : null;
 
   return {
     z64: z64,
@@ -2038,6 +2044,10 @@ OB64.loadROM = function(romData) {
     classDefs: OB64.parseClassDefs(z64),
     actionDefs: OB64.parseActionDefs(z64),
     consumables: OB64.parseConsumables(z64),
+    itemDescriptions: descriptions && descriptions.items,
+    consumableDescriptions: descriptions && descriptions.consumables,
+    classDescriptions: descriptions && descriptions.classes,
+    actionDescriptions: descriptions && descriptions.actions,
     statGates: OB64.parseStatGates(z64),
     neutralEncounters: OB64.parseNeutralEncounters(z64),
     creatureDrops: OB64.parseCreatureDrops(z64),

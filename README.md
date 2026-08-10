@@ -23,6 +23,8 @@ Optional desktop utilities are kept separate from its runtime:
   structures into editor-friendly objects.
 - `repack.js` serializes edits back into ROM/save formats, including LHA/LZSS
   repacking and N64 CRC repair.
+- `description-codec.js` parses, edits, recompresses, and verifies the fixed
+  item, consumable, class, and combat-action text blocks.
 - `patch.js` imports/exports portable Project JSON files for supported edits
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
@@ -125,6 +127,8 @@ safety behavior.
   searchable item pickers.
 - **Consumables** — view consumable IDs 1–31 with the same parsed names and
   item icons used by Shops; quest/story IDs 32–44 are intentionally omitted.
+  The tab uses a responsive card grid. Each visible item has an
+  **Edit description** control below its icon.
   Fifteen rows are editable when their local normalized structures match:
   Heal Leaf, Heal Seed, Heal Pack, Power Fruit, Angel Fruit, Cup of Life, six
   linked stat boosters, Scroll of Discipline, Urn of Chaos, and Goblet of
@@ -144,9 +148,16 @@ safety behavior.
   [consumable-effects verification guide](scratch/CONSUMABLE_EFFECTS_TESTING.md)
   for the prepared Joe runtime matrix. Runtime acceptance of IDs 1–5 remains
   pending that execution.
+- **Descriptions** — edit Item, Consumable, Class, and combat-action text.
+  Every description editor shows the expected compressed size for its complete
+  table, the fixed table capacity, and the remaining bytes.
 - **Classes** — edit base stats, per-level base gains, resistances, class combat coefficients,
   promotion gates, and row-attack counts for all 164 classes (0x01–0xA4) using
   the authoritative GameShark mapping.
+  Class names include **Edit description** controls in both table and card
+  views. Every class-table column starts at a readable width and can be
+  resized, with widths saved per subview. Combat-action picker rows include an
+  **Edit** control for the selected action's description.
   Promotion-gate exports keep compressed streams through 376 logical bytes in
   the retail slot. Larger valid streams relocate automatically through the
   exact 659-byte compressor maximum, using a bounded ROM-tail container and
@@ -246,6 +257,8 @@ safety behavior.
   Director-correction disposition; Joe's final browser smoke remains pending**.
 - **Items** — change weapon/armor/spellbook stats, prices, resistances, and the
   packed B20-B21 permanent level-up additions for all 277 equipment entries.
+  Each Name cell includes **Edit description**, and every table column can be
+  resized with its width saved locally.
   Every logical byte in the 32-byte item record is editable; unknown/tail bytes
   and the runtime name pointer are shaded and carry caution tooltips. The table
   covers all 278 logical records (ID 0 sentinel plus IDs 0x01-0x115), and every
@@ -375,10 +388,12 @@ safety behavior.
 - **Projects** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
   the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
-  consumable-effect magnitudes/ranges, and Tools-tab feature toggles) to a
+  item/consumable/class/action descriptions, consumable-effect
+  magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v16 adds explicit Scenario enemy-base intents and scenario-local squad-copy
-  provenance while retaining older formats. v15 stores independent
+  v17 adds the four description groups. v16 adds explicit Scenario enemy-base
+  intents and scenario-local squad-copy provenance while retaining older
+  formats. v15 stores independent
   Normal/Blocked combat-animation selectors; v14 projects migrate their single
   selector into both lanes. v13 adds absolute `magnitude`
   entries for IDs 1–5 and preserves the v12 range

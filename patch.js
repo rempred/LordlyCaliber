@@ -30,12 +30,14 @@
 // the v12 range schemas and per-key backward compatibility.
 // v14 adds the legacy one-selector combat-animation override table.
 // v15 replaces each v14 selector with Normal (modes 0/1) and Blocked (mode 2).
+// v16 carries Scenario treasure state and shared treasure ownership metadata.
+// v17 carries item, consumable, class, and combat-action descriptions.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 16;
+  var PATCH_VERSION = 17;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -108,6 +110,9 @@ window.OB64 = window.OB64 || {};
       ? rom.consumables.map(snapshotConsumable)
       : [];
     rom.original.statGates = snapshotStatGates(rom.statGates);
+    rom.original.descriptions = OB64.descriptionCodec
+      ? OB64.descriptionCodec.snapshotAll(rom)
+      : { items: [], consumables: [], classes: [], actions: [] };
 
     var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
     rom.original.neutralGlobalRate = globalRate ? {
@@ -175,6 +180,12 @@ window.OB64 = window.OB64 || {};
     var creatureDropsOut = diffCreatureDrops(rom.creatureDrops, rom.original.creatureDrops);
     var consumablesOut = diffConsumables(rom.consumables, rom.original.consumables);
     var statGatesOut = diffStatGates(rom.statGates, rom.original.statGates);
+    var descriptionsOut = OB64.descriptionCodec
+      ? OB64.descriptionCodec.collectProjectPayload(
+          rom,
+          rom.original.descriptions || {}
+        )
+      : { items: {}, consumables: {}, classes: {}, actions: {} };
 
     var globalRateOut = null;
     var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
@@ -224,7 +235,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-07-24',
+      editor_version: '2026-08-10',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -238,6 +249,10 @@ window.OB64 = window.OB64 || {};
         terrain_rates_modified:  Object.keys(neutralOut.terrain_rates).length,
         creature_drop_records_modified: Object.keys(creatureDropsOut).length,
         consumables_modified:   Object.keys(consumablesOut).length,
+        item_descriptions_modified: Object.keys(descriptionsOut.items).length,
+        consumable_descriptions_modified: Object.keys(descriptionsOut.consumables).length,
+        class_descriptions_modified: Object.keys(descriptionsOut.classes).length,
+        action_descriptions_modified: Object.keys(descriptionsOut.actions).length,
         stat_gates_modified:    Object.keys(statGatesOut).length,
         neutral_global_rate_modified: globalRateOut ? 1 : 0,
         tools_modified:         Object.keys(toolsOut).length,
@@ -254,6 +269,7 @@ window.OB64 = window.OB64 || {};
         neutral_encounters: neutralOut,
         creatureDrops: creatureDropsOut,
         consumables:  consumablesOut,
+        descriptions: descriptionsOut,
         statGates:    statGatesOut,
         neutral_global_rate: globalRateOut,
         tools:        toolsOut,
@@ -283,6 +299,18 @@ window.OB64 = window.OB64 || {};
     }
 
     var p = patch.patches || {};
+    var preparedDescriptions = null;
+    try {
+      preparedDescriptions = OB64.descriptionCodec.prepareProjectChanges(
+        rom,
+        Object.prototype.hasOwnProperty.call(p, 'descriptions')
+          ? p.descriptions : {}
+      );
+    } catch (descriptionError) {
+      throw new PatchFormatError(
+        'Description Project data is invalid: ' + descriptionError.message
+      );
+    }
     if (Object.prototype.hasOwnProperty.call(p, 'enemies')) {
       var retiredEnemies = p.enemies;
       if (retiredEnemies === null || typeof retiredEnemies !== 'object' ||
@@ -364,6 +392,10 @@ window.OB64 = window.OB64 || {};
     var terrainRatesApplied = 0;
     var creatureDropsApplied = 0;
     var consumablesApplied = 0;
+    var itemDescriptionsApplied = 0;
+    var consumableDescriptionsApplied = 0;
+    var classDescriptionsApplied = 0;
+    var actionDescriptionsApplied = 0;
     var statGatesApplied = 0;
     var neutralGlobalRateApplied = 0;
     var toolsApplied = 0;
@@ -485,6 +517,31 @@ window.OB64 = window.OB64 || {};
     consumablesApplied = applyConsumablesPatch(rom, p.consumables, warnings);
     if (consumablesApplied > 0) dirtyFlags.consumables = true;
 
+    if (preparedDescriptions) {
+      var descriptionKinds = [
+        ['items', 'itemDescriptions', 'itemDescriptions'],
+        ['consumables', 'consumableDescriptions', 'consumableDescriptions'],
+        ['classes', 'classDescriptions', 'classDescriptions'],
+        ['actions', 'actionDescriptions', 'actionDescriptions']
+      ];
+      for (var descriptionIndex = 0;
+          descriptionIndex < descriptionKinds.length; descriptionIndex++) {
+        var descriptionKind = descriptionKinds[descriptionIndex];
+        var descriptionCount = preparedDescriptions.counts[descriptionKind[0]] || 0;
+        if (!descriptionCount) continue;
+        rom[descriptionKind[1]] = preparedDescriptions.blocks[descriptionKind[1]];
+        dirtyFlags[descriptionKind[2]] = OB64.descriptionCodec.hasTextChanges(
+          rom[descriptionKind[1]],
+          rom.original && rom.original.descriptions &&
+            rom.original.descriptions[descriptionKind[0]]
+        );
+      }
+      itemDescriptionsApplied = preparedDescriptions.counts.items || 0;
+      consumableDescriptionsApplied = preparedDescriptions.counts.consumables || 0;
+      classDescriptionsApplied = preparedDescriptions.counts.classes || 0;
+      actionDescriptionsApplied = preparedDescriptions.counts.actions || 0;
+    }
+
     statGatesApplied = applyStatGatesPatch(rom, p.statGates, warnings);
     if (statGatesApplied > 0) dirtyFlags.statGates = true;
 
@@ -590,6 +647,10 @@ window.OB64 = window.OB64 || {};
         terrainRates: terrainRatesApplied,
         creatureDrops: creatureDropsApplied,
         consumables: consumablesApplied,
+        itemDescriptions: itemDescriptionsApplied,
+        consumableDescriptions: consumableDescriptionsApplied,
+        classDescriptions: classDescriptionsApplied,
+        actionDescriptions: actionDescriptionsApplied,
         statGates: statGatesApplied,
         neutralGlobalRate: neutralGlobalRateApplied,
         tools: toolsApplied,
@@ -653,6 +714,10 @@ window.OB64 = window.OB64 || {};
       terrain_rates_modified: 0,
       creature_drop_records_modified: 0,
       consumables_modified: 0,
+      item_descriptions_modified: 0,
+      consumable_descriptions_modified: 0,
+      class_descriptions_modified: 0,
+      action_descriptions_modified: 0,
       stat_gates_modified: 0,
       neutral_global_rate_modified: 0,
       tools_modified: 0,
@@ -672,6 +737,7 @@ window.OB64 = window.OB64 || {};
       neutral_encounters: { scenario_slices: {}, terrain_rates: {} },
       creatureDrops: {},
       consumables: {},
+      descriptions: { items: {}, consumables: {}, classes: {}, actions: {} },
       statGates: {},
       neutral_global_rate: null,
       tools: {},

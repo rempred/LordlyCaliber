@@ -3217,7 +3217,8 @@
       // Same-session prior effect ranges are concrete restoration ownership,
       // not a foreign subsystem collision.
       return otherOwner.id !== deltaOwner.id &&
-        otherOwner.id !== 'consumable-healing-descriptions';
+        otherOwner.id !== 'consumable-healing-descriptions' &&
+        otherOwner.id !== 'consumable-descriptions-adopted';
     });
     owners.push(collisionOwner);
     var conflicts = findRegionConflicts(owners).filter(function(conflict) {
@@ -4708,15 +4709,18 @@
     });
   }
 
-  function commitOrdinaryExport(session, prepared) {
+  function commitOrdinaryExport(session, prepared, adoptedZ64) {
     if (!prepared || session.generation !== prepared.baseGeneration) {
       throw new Error('Cannot commit a stale ordinary export ledger.');
     }
     var ranges = prepared.ranges || [];
     var candidate = prepared.candidate || {};
     session.ledger.priorOwnerRegions = ranges.map(function(range) {
+      var adoptedConsumableDescriptions =
+        range.ownerId === 'consumable-descriptions-pending';
       return {
-        id: range.ownerId,
+        id: adoptedConsumableDescriptions
+          ? 'consumable-descriptions-adopted' : range.ownerId,
         name: range.owner,
         category: range.category,
         regions: [{
@@ -4743,6 +4747,26 @@
       headerCrcWrites: session.ledger.headerCrcWrites.length,
       changeRanges: ranges.length
     });
+    if (adoptedZ64 && session.revisionManifest &&
+        session.revisionManifest.description) {
+      var description = session.revisionManifest.description;
+      session.ledger.currentDescriptionSlot = adoptedZ64.slice(
+        description.start,
+        description.end
+      );
+      var descriptionFacet = inspectHealingDescription(
+        adoptedZ64,
+        session.revisionManifest
+      );
+      session.availability.descriptions = descriptionFacet;
+      if (descriptionFacet.ok) {
+        session.ledger.currentDescriptionDecoded = descriptionFacet.decoded.slice();
+        session.ledger.currentDescriptionValues = descriptionFacet.values.slice();
+      } else {
+        session.ledger.currentDescriptionDecoded = null;
+        session.ledger.currentDescriptionValues = null;
+      }
+    }
   }
 
   function expectedLoadedWordsForCandidate(z64) {
@@ -5237,7 +5261,8 @@
     list.setAttribute('role', 'list');
     for (var i = 0; i < catalog.length; i++) {
       (function(row) {
-        var card = createElement(doc, 'article', 'consumable-row' + (row.editable ? ' is-editable' : ' is-locked'));
+        var card = createElement(doc, 'article', 'consumable-card consumable-row' +
+          (row.editable ? ' is-editable' : ' is-locked'));
         card.setAttribute('role', 'listitem');
         card.setAttribute('data-consumable-row', '');
         card.setAttribute('data-item-id', String(row.id));
@@ -5245,6 +5270,7 @@
         card.setAttribute('data-search', row.id + ' #' + row.id + ' ' + row.name + ' ' + row.category);
 
         var identity = createElement(doc, 'div', 'consumable-identity');
+        var iconColumn = createElement(doc, 'div', 'consumable-icon-column');
         var iconWrap = createElement(doc, 'div', 'consumable-icon-wrap');
         var image = createElement(doc, 'img', 'consumable-icon');
         image.alt = '';
@@ -5260,7 +5286,21 @@
         });
         iconWrap.appendChild(image);
         iconWrap.appendChild(fallback);
-        identity.appendChild(iconWrap);
+        iconColumn.appendChild(iconWrap);
+        var editDescription = createElement(
+          doc,
+          'button',
+          'consumable-description-button',
+          'Edit description'
+        );
+        editDescription.type = 'button';
+        editDescription.addEventListener('click', function() {
+          if (options && options.onEditDescription) {
+            options.onEditDescription(row.id);
+          }
+        });
+        iconColumn.appendChild(editDescription);
+        identity.appendChild(iconColumn);
         var nameBlock = createElement(doc, 'div');
         nameBlock.appendChild(createElement(doc, 'div', 'consumable-id', 'ID ' + row.id));
         nameBlock.appendChild(createElement(doc, 'h3', 'consumable-name', row.name));
@@ -5476,6 +5516,28 @@
     }]);
     if (dirty && dirty.consumables) add('consumable-metadata', 'Consumable Metadata', 'consumables',
       consumableChangedByteRegions(rom));
+    if (dirty && dirty.itemDescriptions && rom.itemDescriptions && OB64.descriptionCodec) {
+      add('item-descriptions', 'Item Descriptions', 'itemDescriptions', [
+        OB64.descriptionCodec.ownerRegion(rom.itemDescriptions)
+      ]);
+    }
+    if (dirty && dirty.consumableDescriptions && rom.consumableDescriptions &&
+        OB64.descriptionCodec) {
+      add('consumable-descriptions-pending', 'Consumable Descriptions',
+        'consumableDescriptions', [
+          OB64.descriptionCodec.ownerRegion(rom.consumableDescriptions)
+        ]);
+    }
+    if (dirty && dirty.classDescriptions && rom.classDescriptions && OB64.descriptionCodec) {
+      add('class-descriptions', 'Class Descriptions', 'classDescriptions', [
+        OB64.descriptionCodec.ownerRegion(rom.classDescriptions)
+      ]);
+    }
+    if (dirty && dirty.actionDescriptions && rom.actionDescriptions && OB64.descriptionCodec) {
+      add('action-descriptions', 'Action Descriptions', 'actionDescriptions', [
+        OB64.descriptionCodec.ownerRegion(rom.actionDescriptions)
+      ]);
+    }
     if (dirty && dirty.statGates && rom.statGates && rom.statGates.meta) {
       if (OB64.statGateRelocation && OB64.statGateRelocation.patchRegions) {
         add('stat-gates', 'Class-change Stat Gates', 'statGates',
@@ -5505,7 +5567,13 @@
     if (dirty && dirty.scenario) owners = owners.concat(scenarioPatchOwners(rom));
     var session = sessionFor(rom);
     if (session && session.ledger && session.ledger.priorOwnerRegions) {
-      owners = owners.concat(session.ledger.priorOwnerRegions);
+      var priorOwners = session.ledger.priorOwnerRegions;
+      if (dirty && dirty.consumableDescriptions) {
+        priorOwners = priorOwners.filter(function(owner) {
+          return owner.id !== 'consumable-descriptions-adopted';
+        });
+      }
+      owners = owners.concat(priorOwners);
     }
     return owners;
   }
@@ -5520,6 +5588,7 @@
       // collide with its own previously adopted byte ranges.
       return owner.id !== 'consumable-effects' &&
         owner.id !== 'consumable-healing-descriptions' &&
+        owner.id !== 'consumable-descriptions-adopted' &&
         owner.id !== collisionOwner.id;
     });
     if (collisionOwner) owners.push(collisionOwner);

@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -208,7 +208,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -264,7 +264,7 @@ window.OB64 = window.OB64 || {};
         OB64.combatAnimationOverrides.initialize(nextRom);
         OB64.patch.snapshotOriginal(nextRom);   // baseline for later diffing
         OB64.tools.initState(nextRom);          // detect Tools-tab features in the ROM
-        var nextDirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         if (nextRom.squadOverrides) nextRom.squadOverrides = {};
         if (OB64.scenario) OB64.scenario.ensureState(nextRom);
         // A ROM patched by an older build of a Tools feature upgrades on the
@@ -592,6 +592,26 @@ window.OB64 = window.OB64 || {};
         touched.push('consumables');
       }
 
+      if (dirty.itemDescriptions) {
+        OB64.serializeItemDescriptions(rom.itemDescriptions, candidateRom.z64);
+        touched.push('item descriptions');
+      }
+      if (dirty.consumableDescriptions) {
+        OB64.serializeConsumableDescriptions(
+          rom.consumableDescriptions,
+          candidateRom.z64
+        );
+        touched.push('consumable descriptions');
+      }
+      if (dirty.classDescriptions) {
+        OB64.serializeClassDescriptions(rom.classDescriptions, candidateRom.z64);
+        touched.push('class descriptions');
+      }
+      if (dirty.actionDescriptions) {
+        OB64.serializeActionDescriptions(rom.actionDescriptions, candidateRom.z64);
+        touched.push('action descriptions');
+      }
+
       // Stat gates keep fitting streams in the retail slot and place only
       // oversized streams in the bounded ROM-tail owner. The shared redirect
       // is applied once after Scenario writes below.
@@ -900,7 +920,8 @@ window.OB64 = window.OB64 || {};
         if (ordinaryLedger) {
           OB64.consumableEffects.commitOrdinaryExport(
             rom.consumableEffects,
-            ordinaryLedger
+            ordinaryLedger,
+            dirty.consumableDescriptions ? candidateRom.z64 : null
           );
         }
       }
@@ -917,7 +938,7 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, items: false, classDefs: false, encounters: false, creatureDrops: false, consumables: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       changes = 0;
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
@@ -1010,6 +1031,10 @@ window.OB64 = window.OB64 || {};
       var terrainRatesN = patch.summary.terrain_rates_modified || 0;
       var creatureDropsN = patch.summary.creature_drop_records_modified || 0;
       var consumablesN = patch.summary.consumables_modified || 0;
+      var itemDescriptionsN = patch.summary.item_descriptions_modified || 0;
+      var consumableDescriptionsN = patch.summary.consumable_descriptions_modified || 0;
+      var classDescriptionsN = patch.summary.class_descriptions_modified || 0;
+      var actionDescriptionsN = patch.summary.action_descriptions_modified || 0;
       var statGatesN = patch.summary.stat_gates_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
       var toolsN = patch.summary.tools_modified || 0;
@@ -1018,7 +1043,9 @@ window.OB64 = window.OB64 || {};
       var consumableEffectsN = patch.summary.consumable_effect_models_modified || 0;
       var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
-          terrainRatesN + creatureDropsN + consumablesN + statGatesN +
+          terrainRatesN + creatureDropsN + consumablesN +
+          itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
+          actionDescriptionsN + statGatesN +
           globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
@@ -1036,6 +1063,10 @@ window.OB64 = window.OB64 || {};
       if (terrainRatesN) parts.push(terrainRatesN + ' terrain rate' + (terrainRatesN === 1 ? '' : 's'));
       if (creatureDropsN) parts.push(creatureDropsN + ' creature drop record' + (creatureDropsN === 1 ? '' : 's'));
       if (consumablesN) parts.push(consumablesN + ' consumable' + (consumablesN === 1 ? '' : 's'));
+      if (itemDescriptionsN) parts.push(itemDescriptionsN + ' item description' + (itemDescriptionsN === 1 ? '' : 's'));
+      if (consumableDescriptionsN) parts.push(consumableDescriptionsN + ' consumable description' + (consumableDescriptionsN === 1 ? '' : 's'));
+      if (classDescriptionsN) parts.push(classDescriptionsN + ' class description' + (classDescriptionsN === 1 ? '' : 's'));
+      if (actionDescriptionsN) parts.push(actionDescriptionsN + ' action description' + (actionDescriptionsN === 1 ? '' : 's'));
       if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
       if (globalRateN) parts.push('global encounter roll');
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
@@ -1066,6 +1097,10 @@ window.OB64 = window.OB64 || {};
           (result.applied.itemStats || 0) + (result.applied.classDefs || 0) +
           (result.applied.neutralSlices || 0) + (result.applied.terrainRates || 0) +
           (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
+          (result.applied.itemDescriptions || 0) +
+          (result.applied.consumableDescriptions || 0) +
+          (result.applied.classDescriptions || 0) +
+          (result.applied.actionDescriptions || 0) +
           (result.applied.statGates || 0) +
           (result.applied.neutralGlobalRate || 0) +
           (result.applied.tools || 0) +
@@ -1086,6 +1121,10 @@ window.OB64 = window.OB64 || {};
         if (result.applied.terrainRates) loadedParts.push(result.applied.terrainRates + ' terrain rate' + (result.applied.terrainRates === 1 ? '' : 's'));
         if (result.applied.creatureDrops) loadedParts.push(result.applied.creatureDrops + ' creature drop record' + (result.applied.creatureDrops === 1 ? '' : 's'));
         if (result.applied.consumables) loadedParts.push(result.applied.consumables + ' consumable' + (result.applied.consumables === 1 ? '' : 's'));
+        if (result.applied.itemDescriptions) loadedParts.push(result.applied.itemDescriptions + ' item description' + (result.applied.itemDescriptions === 1 ? '' : 's'));
+        if (result.applied.consumableDescriptions) loadedParts.push(result.applied.consumableDescriptions + ' consumable description' + (result.applied.consumableDescriptions === 1 ? '' : 's'));
+        if (result.applied.classDescriptions) loadedParts.push(result.applied.classDescriptions + ' class description' + (result.applied.classDescriptions === 1 ? '' : 's'));
+        if (result.applied.actionDescriptions) loadedParts.push(result.applied.actionDescriptions + ' action description' + (result.applied.actionDescriptions === 1 ? '' : 's'));
         if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
         if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
         if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
@@ -1179,7 +1218,10 @@ window.OB64 = window.OB64 || {};
       case 'shops':     renderShops(panel); break;
       case 'consumables':
         OB64.consumableEffects.render(panel, rom, {
-          onChange: function() { markChanged(); }
+          onChange: function() { markChanged(); },
+          onEditDescription: function(id) {
+            openDescriptionEditor('consumables', id);
+          }
         });
         break;
       case 'squads':    OB64.renderSquads(panel); break;
@@ -1713,6 +1755,10 @@ window.OB64 = window.OB64 || {};
       items:     items,
       currentId: opts.currentId,
       withIcons: opts.withIcons !== false, // default true for items
+      rowActionLabel: opts.rowActionLabel,
+      onRowAction: opts.onRowAction ? function(item) {
+        opts.onRowAction(item.id, item);
+      } : null,
       onSelect:  function(id) {
         if (opts.currentId !== undefined && String(id) === String(opts.currentId)) return;
         beginChangeBatch();
@@ -1821,6 +1867,295 @@ window.OB64 = window.OB64 || {};
         }
       });
     }
+  }
+
+  function makeColumnsResizable(table, storageKey, options) {
+    options = options || {};
+    var headers = Array.prototype.slice.call(table.querySelectorAll('thead th'));
+    if (!headers.length) return;
+    function minimumWidth(index) {
+      var configured = Number(options.minimumWidths && options.minimumWidths[index]);
+      return Number.isFinite(configured) && configured >= 48 ? configured : 48;
+    }
+    var saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    } catch (error) {
+      saved = null;
+    }
+    var widths = headers.map(function(header, index) {
+      var measured = Math.ceil(header.getBoundingClientRect().width);
+      var stored = saved && Number(saved[index]);
+      var minimum = minimumWidth(index);
+      var initial = Number(options.initialMinimumWidths &&
+        options.initialMinimumWidths[index]);
+      var fallback = Math.max(minimum, measured,
+        Number.isFinite(initial) ? initial : 0);
+      return Number.isFinite(stored) && stored >= minimum ? stored : fallback;
+    });
+    var colgroup = document.createElement('colgroup');
+    var columns = widths.map(function(width) {
+      var col = document.createElement('col');
+      col.style.width = width + 'px';
+      colgroup.appendChild(col);
+      return col;
+    });
+    table.insertBefore(colgroup, table.firstChild);
+    table.classList.add('resizable-columns');
+
+    function applyWidths(persist) {
+      var total = 0;
+      for (var i = 0; i < widths.length; i++) {
+        columns[i].style.width = widths[i] + 'px';
+        total += widths[i];
+      }
+      table.style.width = total + 'px';
+      table.style.minWidth = total + 'px';
+      if (options.stickyOffsetColumn != null) {
+        table.style.setProperty('--class-id-column-width',
+          widths[options.stickyOffsetColumn] + 'px');
+      }
+      if (persist) {
+        try { localStorage.setItem(storageKey, JSON.stringify(widths)); }
+        catch (error) { /* Column resizing still works without persistence. */ }
+      }
+    }
+
+    headers.forEach(function(header, index) {
+      var handle = document.createElement('span');
+      handle.className = 'column-resize-handle';
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      handle.setAttribute('aria-label', 'Resize ' + header.textContent.trim() + ' column');
+      handle.tabIndex = 0;
+      handle.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      handle.addEventListener('pointerdown', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var startX = event.clientX;
+        var startWidth = widths[index];
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add('is-resizing-column');
+        function move(moveEvent) {
+          widths[index] = Math.max(minimumWidth(index),
+            Math.round(startWidth + moveEvent.clientX - startX));
+          applyWidths(false);
+        }
+        function finish(finishEvent) {
+          if (handle.hasPointerCapture(finishEvent.pointerId)) {
+            handle.releasePointerCapture(finishEvent.pointerId);
+          }
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', finish);
+          handle.removeEventListener('pointercancel', finish);
+          document.body.classList.remove('is-resizing-column');
+          applyWidths(true);
+        }
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', finish);
+        handle.addEventListener('pointercancel', finish);
+      });
+      handle.addEventListener('keydown', function(event) {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        event.stopPropagation();
+        widths[index] = Math.max(minimumWidth(index),
+          widths[index] + (event.key === 'ArrowRight' ? 8 : -8));
+        applyWidths(true);
+      });
+      header.appendChild(handle);
+    });
+    applyWidths(false);
+  }
+
+  function descriptionTitle(kind, id) {
+    if (kind === 'items') return OB64.itemName(id);
+    if (kind === 'consumables') {
+      var consumable = rom && rom.consumables && rom.consumables[id];
+      return consumable && consumable.name
+        ? consumable.name : OB64.consumableName(id);
+    }
+    if (kind === 'classes') return OB64.className(id);
+    if (kind === 'actions') {
+      return OB64.actionEditorName ? OB64.actionEditorName(id) : ('Action ' + id);
+    }
+    return 'Description';
+  }
+
+  function isTopItemModal(overlay) {
+    var overlays = document.querySelectorAll('.item-modal-overlay');
+    return overlays.length && overlays[overlays.length - 1] === overlay;
+  }
+
+  function openDescriptionEditor(kind, id) {
+    if (!rom || !OB64.descriptionCodec) return;
+    var spec = OB64.descriptionCodec.specs[kind];
+    var block = spec && rom[spec.property];
+    var record = block && block.records[id];
+    if (!spec || !record) {
+      showErrorModal('Description unavailable', 'No description record exists for this selection.');
+      return;
+    }
+
+    var overlay = document.createElement('div');
+    overlay.className = 'item-modal-overlay';
+    var modal = document.createElement('div');
+    modal.className = 'item-modal description-editor-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'item-modal-header';
+    var heading = document.createElement('h2');
+    heading.textContent = 'Edit description — ' + descriptionTitle(kind, id);
+    header.appendChild(heading);
+    var closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'item-modal-close';
+    closeButton.textContent = '\u00D7';
+    header.appendChild(closeButton);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'description-editor-body';
+    var textarea = document.createElement('textarea');
+    textarea.className = 'description-editor-text';
+    textarea.rows = 4;
+    textarea.value = record.editableText;
+    textarea.setAttribute('aria-label', descriptionTitle(kind, id) + ' description');
+    body.appendChild(textarea);
+    var capacity = document.createElement('div');
+    capacity.className = 'description-editor-capacity';
+    capacity.setAttribute('role', 'status');
+    capacity.setAttribute('aria-live', 'polite');
+    var capacitySummary = document.createElement('strong');
+    var capacityRemaining = document.createElement('span');
+    capacity.appendChild(capacitySummary);
+    capacity.appendChild(capacityRemaining);
+    body.appendChild(capacity);
+    var error = document.createElement('div');
+    error.className = 'description-editor-error';
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+    body.appendChild(error);
+    modal.appendChild(body);
+
+    var actions = document.createElement('div');
+    actions.className = 'description-editor-actions';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'primary';
+    save.textContent = 'Save';
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    modal.appendChild(actions);
+
+    var capacityTimer = null;
+    function byteCount(value) {
+      return Number(value).toLocaleString('en-US');
+    }
+    function calculateCapacity() {
+      capacityTimer = null;
+      try {
+        var measurement = OB64.descriptionCodec.measureText(
+          block,
+          id,
+          textarea.value
+        );
+        capacity.classList.toggle('is-over', !measurement.fits);
+        capacity.classList.remove('is-calculating');
+        capacitySummary.textContent = 'Expected compressed table: ' +
+          byteCount(measurement.compressedSize) + ' / ' +
+          byteCount(measurement.compressedCapacity) + ' bytes';
+        capacityRemaining.textContent = measurement.fits
+          ? '· ' + byteCount(measurement.remaining) + ' bytes available'
+          : '· ' + byteCount(Math.abs(measurement.remaining)) + ' bytes over';
+        save.disabled = !measurement.fits;
+      } catch (capacityError) {
+        capacity.classList.remove('is-calculating');
+        capacity.classList.add('is-over');
+        capacitySummary.textContent = 'Expected compressed table size unavailable';
+        capacityRemaining.textContent = capacityError.message;
+        save.disabled = true;
+      }
+    }
+    function queueCapacity() {
+      if (capacityTimer !== null) clearTimeout(capacityTimer);
+      capacity.classList.add('is-calculating');
+      capacity.classList.remove('is-over');
+      capacitySummary.textContent = 'Calculating expected compressed table size…';
+      capacityRemaining.textContent = '';
+      save.disabled = true;
+      capacityTimer = setTimeout(calculateCapacity, 120);
+    }
+    function close() {
+      if (capacityTimer !== null) clearTimeout(capacityTimer);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escape);
+    }
+    function escape(event) {
+      if (event.key === 'Escape' && isTopItemModal(overlay)) close();
+    }
+    function commit() {
+      error.hidden = true;
+      if (textarea.value === record.editableText) {
+        close();
+        return;
+      }
+      try {
+        var updated = OB64.descriptionCodec.withText(block, id, textarea.value);
+        rom[spec.property] = updated;
+        markChanged(spec.dirty);
+        dirty[spec.dirty] = OB64.descriptionCodec.hasTextChanges(
+          updated,
+          rom.original && rom.original.descriptions &&
+            rom.original.descriptions[kind]
+        );
+        updateStatus();
+        close();
+      } catch (descriptionError) {
+        error.textContent = descriptionError.message;
+        error.hidden = false;
+        textarea.focus();
+      }
+    }
+    closeButton.addEventListener('click', close);
+    cancel.addEventListener('click', close);
+    save.addEventListener('click', commit);
+    overlay.addEventListener('click', function(event) {
+      if (event.target === overlay) close();
+    });
+    textarea.addEventListener('keydown', function(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      }
+    });
+    textarea.addEventListener('input', queueCapacity);
+    document.addEventListener('keydown', escape);
+    document.body.appendChild(overlay);
+    calculateCapacity();
+    setTimeout(function() { textarea.focus(); textarea.select(); }, 0);
+  }
+
+  function descriptionEditButton(kind, id, compact) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = compact ? 'description-edit-button compact' : 'description-edit-button';
+    button.textContent = compact ? 'Edit' : 'Edit description';
+    button.addEventListener('click', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openDescriptionEditor(kind, id);
+    });
+    return button;
   }
 
   // ============================================================
@@ -2998,8 +3333,16 @@ window.OB64 = window.OB64 || {};
       td(tr, '0x' + item.gameId.toString(16).padStart(2, '0'));
 
       // Name
-      var tdName = td(tr, OB64.itemName(item.gameId));
+      var tdName = td(tr, '');
       tdName.className = 'item-name';
+      var itemNameText = document.createElement('span');
+      itemNameText.className = 'description-name-text';
+      itemNameText.textContent = OB64.itemName(item.gameId);
+      var itemNameControl = document.createElement('div');
+      itemNameControl.className = 'description-name-control';
+      itemNameControl.appendChild(itemNameText);
+      itemNameControl.appendChild(descriptionEditButton('items', item.gameId, false));
+      tdName.appendChild(itemNameControl);
 
       // Equip Type (dropdown)
       (function(itm) {
@@ -3128,6 +3471,10 @@ window.OB64 = window.OB64 || {};
     tableWrap.className = 'items-table-wrap';
     tableWrap.appendChild(table);
     panel.appendChild(tableWrap);
+    makeColumnsResizable(table, 'ob64_items_column_widths', {
+      minimumWidths: { 1: 128 },
+      initialMinimumWidths: { 1: 224 }
+    });
     makeSortable(table);
   }
 
@@ -3622,6 +3969,31 @@ window.OB64 = window.OB64 || {};
       { id: 'gates',     label: 'Promotion' },
       { id: 'raw',       label: 'Raw Bytes ⚠' }
     ];
+    var CLASS_SUBVIEW_INITIAL_WIDTHS = {
+      unit: [64, 300, 110, 130, 110, 72, 72, 130, 110, 72, 72, 72, 72, 72, 72, 72],
+      combat: [64, 300, 130, 90, 90, 90, 110, 110, 110, 110, 84, 190, 190, 190, 180],
+      growth: [64, 300, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92,
+        92, 92, 160, 100, 160, 100, 160, 200, 180],
+      gates: [64, 300, 84, 84, 84, 84, 84, 84, 96, 96, 180, 180, 180, 180],
+      raw: [64, 300, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88]
+    };
+    function classColumnWidthOptions(columns, subview) {
+      var profile = CLASS_SUBVIEW_INITIAL_WIDTHS[subview] || [];
+      var minimums = {};
+      var initials = {};
+      for (var widthIndex = 0; widthIndex < columns.length; widthIndex++) {
+        minimums[widthIndex] = widthIndex === 0 ? 56 : (widthIndex === 1 ? 160 : 64);
+        initials[widthIndex] = profile[widthIndex] || Math.max(
+          minimums[widthIndex],
+          Math.min(180, columns[widthIndex].label.length * 10 + 30)
+        );
+      }
+      return {
+        stickyOffsetColumn: 0,
+        minimumWidths: minimums,
+        initialMinimumWidths: initials
+      };
+    }
     var activeSubview = localStorage.getItem('ob64_classes_subview') || 'unit';
     if (activeSubview === 'stats') activeSubview = 'unit';
     if (activeSubview === 'promotion') activeSubview = 'growth';
@@ -3827,6 +4199,10 @@ window.OB64 = window.OB64 || {};
           openItemPickerFromDict({
             title: label + ' — ' + (def.name || ''),
             options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
+            rowActionLabel: 'Edit',
+            onRowAction: function(actionId) {
+              if (actionId > 0) openDescriptionEditor('actions', actionId);
+            },
             onSelect: function(nv) {
               try {
                 applyClassAttackSelection(cid, def, field, nv);
@@ -4099,13 +4475,26 @@ window.OB64 = window.OB64 || {};
         tr.dataset.classId = cid;
         var tdId = td(tr, '0x' + cid.toString(16).padStart(2, '0'));
         tdId.className = 'col-sticky';
-        var tdName = td(tr, OB64.className(cid));
+        var tdName = td(tr, '');
         tdName.className = 'class-name col-sticky-name';
+        var classNameText = document.createElement('span');
+        classNameText.className = 'description-name-text';
+        classNameText.textContent = OB64.className(cid);
+        var classNameControl = document.createElement('div');
+        classNameControl.className = 'description-name-control';
+        classNameControl.appendChild(classNameText);
+        classNameControl.appendChild(descriptionEditButton('classes', cid, false));
+        tdName.appendChild(classNameControl);
         fillRow(cid, tr, def);
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
       tableHost.appendChild(table);
+      makeColumnsResizable(
+        table,
+        'ob64_classes_column_widths_v2_' + activeSubview,
+        classColumnWidthOptions(cols, activeSubview)
+      );
       makeSortable(table, {
         sortCol: classSortState && classSortState.subview === activeSubview ? classSortState.col : -1,
         sortAsc: !classSortState || classSortState.asc !== false,
@@ -4253,13 +4642,17 @@ window.OB64 = window.OB64 || {};
         // Header
         var cardHeader = document.createElement('div');
         cardHeader.className = 'class-card-header';
+        var cardHeaderName = document.createElement('div');
+        cardHeaderName.className = 'class-card-name-row';
         var hName = document.createElement('span');
         hName.className = 'class-card-name';
         hName.textContent = name;
         var hId = document.createElement('span');
         hId.className = 'class-card-id';
         hId.textContent = '0x' + cid.toString(16).padStart(2, '0');
-        cardHeader.appendChild(hName);
+        cardHeaderName.appendChild(hName);
+        cardHeaderName.appendChild(descriptionEditButton('classes', cid, false));
+        cardHeader.appendChild(cardHeaderName);
         cardHeader.appendChild(hId);
         card.appendChild(cardHeader);
 
@@ -4533,6 +4926,10 @@ window.OB64 = window.OB64 || {};
               openItemPickerFromDict({
                 title: label + ' \u2014 ' + (def.name || ''),
                 options: OB64.actionEditorOptions(), currentId: def[field] || 0, withIcons: false,
+                rowActionLabel: 'Edit',
+                onRowAction: function(actionId) {
+                  if (actionId > 0) openDescriptionEditor('actions', actionId);
+                },
                 onSelect: function(nv) {
                   try {
                     applyClassAttackSelection(cid, def, field, nv);
@@ -6487,6 +6884,18 @@ window.OB64 = window.OB64 || {};
         name.appendChild(tag);
       }
       row.appendChild(name);
+      if (opts.onRowAction && item.id > 0) {
+        var rowAction = document.createElement('button');
+        rowAction.type = 'button';
+        rowAction.className = 'item-modal-row-action';
+        rowAction.textContent = opts.rowActionLabel || 'Edit';
+        rowAction.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          opts.onRowAction(item);
+        });
+        row.appendChild(rowAction);
+      }
       var idHint = document.createElement('span');
       idHint.className = 'item-modal-price';
       idHint.textContent = item.idLabel != null ? item.idLabel : (item.id ? ('0x' + item.id.toString(16)) : '');
@@ -6523,7 +6932,9 @@ window.OB64 = window.OB64 || {};
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       document.removeEventListener('keydown', esc);
     }
-    var esc = function(ev) { if (ev.key === 'Escape') close(); };
+    var esc = function(ev) {
+      if (ev.key === 'Escape' && isTopItemModal(overlay)) close();
+    };
     document.addEventListener('keydown', esc);
   }
   OB64.openSaveItemPickerModal = openSaveItemPickerModal;

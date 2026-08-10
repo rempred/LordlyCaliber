@@ -22,6 +22,7 @@ for (const filename of [
   'portraits.js',
   'parsers.js',
   'repack.js',
+  'description-codec.js',
   'source-redirect.js',
   'stat-gate-relocation.js',
   'combat-animation-overrides-data.js',
@@ -138,10 +139,14 @@ function dirtyFlags(overrides) {
   return Object.assign({
     shops: false,
     items: false,
+    itemDescriptions: false,
     classDefs: false,
+    classDescriptions: false,
+    actionDescriptions: false,
     encounters: false,
     creatureDrops: false,
     consumables: false,
+    consumableDescriptions: false,
     consumableEffects: false,
     combatAnimationOverrides: false,
     statGates: false,
@@ -428,6 +433,20 @@ function runValidDirectTableMatrix() {
   source.creatureDrops.records[0].classId ^= 1;
   source.consumables[1].price = (source.consumables[1].price + 1) & 0xFFFF;
   source.statGates.byClass[1].str = (source.statGates.byClass[1].str + 1) & 0xFF;
+  source.itemDescriptions = OB64.descriptionCodec.withText(
+    source.itemDescriptions, 1, 'Validator item description.'
+  );
+  source.consumableDescriptions = OB64.descriptionCodec.withText(
+    source.consumableDescriptions, 1, 'Validator consumable description.'
+  );
+  source.classDescriptions = OB64.descriptionCodec.withText(
+    source.classDescriptions, 1, 'Validator class description.'
+  );
+  const actionId = source.actionDescriptions.records.find(record =>
+    record.id > 0 && !record.tokens.some(token => token.type === 'reference')).id;
+  source.actionDescriptions = OB64.descriptionCodec.withText(
+    source.actionDescriptions, actionId, 'Validator action description.'
+  );
 
   const candidate = candidateFor(source);
   OB64.serializeItemStats(source.itemStats, candidate.z64);
@@ -435,6 +454,10 @@ function runValidDirectTableMatrix() {
   OB64.serializeNeutralEncounters(source.neutralEncounters, candidate.z64);
   OB64.serializeCreatureDrops(source.creatureDrops, candidate.z64);
   OB64.serializeConsumables(source.consumables, candidate.z64);
+  OB64.serializeItemDescriptions(source.itemDescriptions, candidate.z64);
+  OB64.serializeConsumableDescriptions(source.consumableDescriptions, candidate.z64);
+  OB64.serializeClassDescriptions(source.classDescriptions, candidate.z64);
+  OB64.serializeActionDescriptions(source.actionDescriptions, candidate.z64);
   OB64.serializeStatGates(source.statGates, candidate.z64);
   OB64.recalcN64CRC(candidate.z64);
 
@@ -444,13 +467,19 @@ function runValidDirectTableMatrix() {
     encounters: true,
     creatureDrops: true,
     consumables: true,
+    itemDescriptions: true,
+    consumableDescriptions: true,
+    classDescriptions: true,
+    actionDescriptions: true,
     statGates: true,
   });
   const report = OB64.romExportValidator.validate({
     sourceRom: source,
     candidateRom: candidate,
     dirty: dirty,
-    touched: ['items', 'classes', 'encounters', 'creature drops', 'consumables', 'stat gates'],
+    touched: ['items', 'classes', 'encounters', 'creature drops', 'consumables',
+      'item descriptions', 'consumable descriptions', 'class descriptions',
+      'action descriptions', 'stat gates'],
     owners: OB64.consumableEffects.standardPatchOwners(source, dirty),
     shopOverrides: [],
   });
@@ -459,8 +488,80 @@ function runValidDirectTableMatrix() {
   const semanticChecks = report.checks.filter(entry =>
     entry.id.indexOf('semantic-readback-') === 0);
   check('every changed direct table passes semantic readback',
-    semanticChecks.length === 6 && semanticChecks.every(entry => entry.status === 'passed'),
+    semanticChecks.length === 10 && semanticChecks.every(entry => entry.status === 'passed'),
     JSON.stringify(semanticChecks));
+}
+
+function runDescriptionProjectRoundTrip() {
+  const source = loadRom();
+  OB64.patch.snapshotOriginal(source);
+  const actionId = source.actionDescriptions.records.find(record =>
+    record.id > 0 && !record.tokens.some(token => token.type === 'reference')).id;
+  source.itemDescriptions = OB64.descriptionCodec.withText(
+    source.itemDescriptions, 3, 'Project item description.'
+  );
+  source.consumableDescriptions = OB64.descriptionCodec.withText(
+    source.consumableDescriptions, 3, 'Project consumable description.'
+  );
+  source.classDescriptions = OB64.descriptionCodec.withText(
+    source.classDescriptions, 3, 'Project class description.'
+  );
+  source.actionDescriptions = OB64.descriptionCodec.withText(
+    source.actionDescriptions, actionId, 'Project action description.'
+  );
+  const project = OB64.patch.collectPatch(source);
+  check('description Project uses schema version 17', project.version === 17,
+    String(project.version));
+  check('description Project summary counts all four text kinds',
+    project.summary.item_descriptions_modified === 1 &&
+    project.summary.consumable_descriptions_modified === 1 &&
+    project.summary.class_descriptions_modified === 1 &&
+    project.summary.action_descriptions_modified === 1,
+    JSON.stringify(project.summary));
+
+  const target = loadRom();
+  OB64.patch.snapshotOriginal(target);
+  const dirty = dirtyFlags();
+  const applied = OB64.patch.applyPatch(
+    target,
+    JSON.parse(JSON.stringify(project)),
+    dirty
+  );
+  check('description Project restores every edited text record',
+    target.itemDescriptions.records[3].editableText === 'Project item description.' &&
+    target.consumableDescriptions.records[3].editableText === 'Project consumable description.' &&
+    target.classDescriptions.records[3].editableText === 'Project class description.' &&
+    target.actionDescriptions.records[actionId].editableText === 'Project action description.');
+  check('description Project marks all four export owners dirty',
+    dirty.itemDescriptions && dirty.consumableDescriptions &&
+    dirty.classDescriptions && dirty.actionDescriptions,
+    JSON.stringify(dirty));
+  check('description Project reports all four applied records',
+    applied.applied.itemDescriptions === 1 &&
+    applied.applied.consumableDescriptions === 1 &&
+    applied.applied.classDescriptions === 1 &&
+    applied.applied.actionDescriptions === 1,
+    JSON.stringify(applied.applied));
+
+  const atomicTarget = loadRom();
+  OB64.patch.snapshotOriginal(atomicTarget);
+  const originalItemText = atomicTarget.itemDescriptions.records[4].editableText;
+  const invalid = JSON.parse(JSON.stringify(project));
+  invalid.patches.descriptions = {
+    items: { 4: 'This valid item edit must not apply.' },
+    consumables: { 4: 'one\ntwo\nthree\nfour\nfive' },
+    classes: {},
+    actions: {},
+  };
+  let atomicError = null;
+  try {
+    OB64.patch.applyPatch(atomicTarget, invalid, dirtyFlags());
+  } catch (error) {
+    atomicError = error;
+  }
+  check('invalid description Project data is rejected before any text mutation',
+    atomicError && atomicTarget.itemDescriptions.records[4].editableText === originalItemText,
+    atomicError && atomicError.message);
 }
 
 function buildMaximumStatCandidate() {
@@ -968,6 +1069,7 @@ async function runConsumableEffectExportLifecycleRegression() {
   runCombinedFailureReport();
   runStoredArchiveHeaderTest();
   runValidDirectTableMatrix();
+  runDescriptionProjectRoundTrip();
   runMaximumStatValidation();
   runValidRuntimeShopExport();
   runValidCombatOverrideExport();
