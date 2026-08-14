@@ -768,7 +768,7 @@ window.OB64 = window.OB64 || {};
       descriptions: true,
       statGates: true, neutral_global_rate: true, tools: true,
       squadOverrides: true, scenario: true, consumableEffects: true,
-      combatAnimationOverrides: true
+      combatAnimationOverrides: true, art: true
     };
     Object.keys(patches).sort().forEach(function(key) {
       if (handled[key] || isEmptyValue(patches[key])) return;
@@ -776,6 +776,40 @@ window.OB64 = window.OB64 || {};
       genericLines(patches[key], friendlyKey(key), lines, 0);
       addSection(sections, friendlyKey(key), [{ title: 'Additional project changes', lines: lines }]);
     });
+  }
+
+  function buildArtSection(rom, patches, sections) {
+    var payload = patches.art;
+    if (!payload || typeof payload !== 'object') return;
+    var avatarEntries = [];
+    numericKeys(payload.avatars).forEach(function(key) {
+      var entry = payload.avatars[key] || {};
+      var classId = Number(entry.classId);
+      var selectors = Array.isArray(entry.selectorIndices) ? entry.selectorIndices : [];
+      var selectorLabel = selectors.map(function(selector) {
+        return selector ? 'route B' : 'route A';
+      }).join(' and ') || 'routed appearance';
+      avatarEntries.push({
+        title: className(classId),
+        lines: ['Edited ' + selectorLabel + ' as an independent detached 40x48 avatar.']
+      });
+    });
+    addSection(sections, 'Class-card Avatars', avatarEntries);
+
+    var iconEntries = [];
+    numericKeys(payload.icons).forEach(function(key) {
+      var entry = payload.icons[key] || {};
+      var itemId = Number(entry.itemId);
+      var pack = entry.pack === 'special-item' ? 'Special Item' : 'Equipment';
+      var name = entry.pack === 'special-item'
+        ? (OB64.consumableName ? OB64.consumableName(itemId) : ('Special Item ' + itemId))
+        : (OB64.itemName ? OB64.itemName(itemId) : ('Equipment ' + itemId));
+      iconEntries.push({
+        title: name + ' (' + pack + ' ID ' + itemId + ')',
+        lines: ['Edited the 16x16 icon; export rebuilds its complete shared ' + pack + ' icon pack.']
+      });
+    });
+    addSection(sections, 'Item Icons', iconEntries);
   }
 
   function buildCombatAnimationOverrideSection(rom, patches, sections) {
@@ -833,6 +867,7 @@ window.OB64 = window.OB64 || {};
     buildSquadSection(patches, sections);
     buildScenarioSection(rom, patches, sections);
     buildCombatAnimationOverrideSection(rom, patches, sections);
+    buildArtSection(rom, patches, sections);
     addUnknownSections(patches, sections);
 
     options = options || {};

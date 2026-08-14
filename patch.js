@@ -32,12 +32,13 @@
 // v15 replaces each v14 selector with Normal (modes 0/1) and Blocked (mode 2).
 // v16 carries Scenario treasure state and shared treasure ownership metadata.
 // v17 carries item, consumable, class, and combat-action descriptions.
+// v18 carries exact RGBA5551 pixels for edited route-scoped avatars and item icons.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 17;
+  var PATCH_VERSION = 18;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -230,6 +231,11 @@ window.OB64 = window.OB64 || {};
           rom.combatAnimationOverrides.desired
         ).count
       : 0;
+    var artOut = OB64.art
+      ? OB64.art.collectProjectPayload(rom)
+      : { schemaVersion: 1, avatars: {}, icons: {} };
+    var avatarArtChanges = Object.keys(artOut.avatars || {}).length;
+    var iconArtChanges = Object.keys(artOut.icons || {}).length;
 
     return {
       format: PATCH_FORMAT,
@@ -260,6 +266,8 @@ window.OB64 = window.OB64 || {};
         scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
         consumable_effect_models_modified: Object.keys(consumableEffectsOut).length,
         combat_animation_overrides_modified: combatAnimationOverrideChanges,
+        avatar_art_modified: avatarArtChanges,
+        item_icon_art_modified: iconArtChanges,
       },
       patches: {
         shops:        shopsOut,
@@ -276,7 +284,8 @@ window.OB64 = window.OB64 || {};
         squadOverrides: squadOverridesOut,
         scenario:     scenarioOut,
         consumableEffects: consumableEffectsOut,
-        combatAnimationOverrides: combatAnimationOverridesOut
+        combatAnimationOverrides: combatAnimationOverridesOut,
+        art: artOut
       },
     };
   }
@@ -370,6 +379,28 @@ window.OB64 = window.OB64 || {};
         throw new PatchFormatError('Scenario Project data is invalid: ' + scenarioError.message);
       }
     }
+    var preparedArt = { avatars: {}, icons: {}, count: 0 };
+    var artPayload = Object.prototype.hasOwnProperty.call(p, 'art') ? p.art : undefined;
+    var hasArtRecords = artPayload && typeof artPayload === 'object' &&
+      (Object.keys(artPayload.avatars || {}).length ||
+       Object.keys(artPayload.icons || {}).length);
+    if (hasArtRecords && patch.version < 18) {
+      throw new PatchFormatError(
+        'Art and Animation Project data requires Project schema version 18 or newer.'
+      );
+    }
+    if (OB64.art) {
+      try {
+        preparedArt = OB64.art.prepareProjectPayload(
+          rom, artPayload
+        );
+      } catch (artError) {
+        throw new PatchFormatError('Art and Animation Project data is invalid: ' + artError.message);
+      }
+    } else if (p.art && (Object.keys(p.art.avatars || {}).length ||
+        Object.keys(p.art.icons || {}).length)) {
+      throw new PatchFormatError('This editor build cannot load Art and Animation Project records.');
+    }
 
     var warnings = [];
     if (patch.rom_hint && patch.rom_hint.archives_count &&
@@ -403,6 +434,7 @@ window.OB64 = window.OB64 || {};
     var scenarioApplied = 0;
     var consumableEffectsApplied = 0;
     var combatAnimationOverridesApplied = 0;
+    var artApplied = 0;
 
     // Shops.
     var shopsPatch = p.shops || {};
@@ -636,6 +668,10 @@ window.OB64 = window.OB64 || {};
       );
       dirtyFlags.combatAnimationOverrides = rom.combatAnimationOverrides.dirty;
     }
+    if (preparedArt.count) {
+      artApplied = OB64.art.applyPreparedProjectPayload(rom, preparedArt);
+      dirtyFlags.art = OB64.art.hasPendingExport(rom.art);
+    }
 
     return {
       applied: {
@@ -657,7 +693,8 @@ window.OB64 = window.OB64 || {};
         squadOverrides: squadOverridesApplied,
         scenario: scenarioApplied,
         consumableEffects: consumableEffectsApplied,
-        combatAnimationOverrides: combatAnimationOverridesApplied
+        combatAnimationOverrides: combatAnimationOverridesApplied,
+        art: artApplied
       },
       warnings: warnings,
     };
@@ -725,6 +762,8 @@ window.OB64 = window.OB64 || {};
       scenario_modified: 0,
       consumable_effect_models_modified: 0,
       combat_animation_overrides_modified: 0,
+      avatar_art_modified: 0,
+      item_icon_art_modified: 0,
     };
   }
 
@@ -744,7 +783,8 @@ window.OB64 = window.OB64 || {};
       squadOverrides: {},
       scenario: null,
       consumableEffects: {},
-      combatAnimationOverrides: null
+      combatAnimationOverrides: null,
+      art: { schemaVersion: 1, avatars: {}, icons: {} }
     };
   }
 

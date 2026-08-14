@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -208,7 +208,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -255,6 +255,9 @@ window.OB64 = window.OB64 || {};
         // Parse and initialize the complete candidate session locally. Nothing
         // below this point may expose a partial ROM through OB64._romRef().
         var nextRom = OB64.loadROM(ev.target.result);
+        // The product accepts only exact vanilla retail inputs. Art state keeps
+        // that immutable baseline so exported ROMs are resumed through Project JSON.
+        await OB64.art.initialize(nextRom);
         OB64.consumableEffects.initializeSession(nextRom, sourceIdentity, {
           filename: file.name
         });
@@ -264,7 +267,7 @@ window.OB64 = window.OB64 || {};
         OB64.combatAnimationOverrides.initialize(nextRom);
         OB64.patch.snapshotOriginal(nextRom);   // baseline for later diffing
         OB64.tools.initState(nextRom);          // detect Tools-tab features in the ROM
-        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         if (nextRom.squadOverrides) nextRom.squadOverrides = {};
         if (OB64.scenario) OB64.scenario.ensureState(nextRom);
         // A ROM patched by an older build of a Tools feature upgrades on the
@@ -408,11 +411,19 @@ window.OB64 = window.OB64 || {};
     var statGatePlan = null;
     var sourceRedirectPlan = null;
     var sourceRedirectResult = null;
+    var artPlan = null;
+    var artResult = null;
+    var artTouchedIndex = -1;
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
       candidateRom = createExportCandidate(exportRom);
       var touched = [];
+      if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
+        await paintRomExportProgress(exportProgress, 4,
+          'Planning and verifying all native avatar and icon resources');
+        artPlan = OB64.art.prepareExport(rom, candidateRom);
+      }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
       var shopOverridesForRuntime = OB64.runtimeOverrides
@@ -494,6 +505,8 @@ window.OB64 = window.OB64 || {};
         return;
       }
       var sharedRegionOwners = [];
+      var artOwner = OB64.art && artPlan ? OB64.art.patchOwner(artPlan) : null;
+      if (artOwner) sharedRegionOwners.push(artOwner);
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
       if (OB64.squad && (dirty.shops || dirty.squadOverrides ||
@@ -772,15 +785,31 @@ window.OB64 = window.OB64 || {};
           OB64.combatAnimationOverrides.capacity + ')');
       }
 
+      if (artPlan) {
+        artResult = OB64.art.applyExport(rom, candidateRom, artPlan);
+        if (artResult) {
+          artTouchedIndex = touched.length;
+          touched.push('art: ' + artResult.summary);
+          for (var artLogIndex = 0; artLogIndex < artResult.log.length; artLogIndex++) {
+            console.info('[art export] ' + artResult.log[artLogIndex]);
+          }
+        }
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Encounter/drop tables and stat gates live
       // past that window; items/classes/
       // consumables, Tools-tab features, and the shared runtime bootstrap do not.
       await paintRomExportProgress(exportProgress, 66, 'Finalizing the N64 boot checksum');
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
-        toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc);
+        toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc ||
+        (artResult && artResult.crc));
       if (crcChanged) {
         OB64.recalcN64CRC(candidateRom.z64);
+      }
+      if (artResult) {
+        OB64.art.finalizeExportSummary(artResult, candidateRom.z64);
+        touched[artTouchedIndex] = 'art: ' + artResult.summary;
       }
 
       var finalLedgerOwners = effectOwners.slice();
@@ -806,6 +835,8 @@ window.OB64 = window.OB64 || {};
         toolsResult: toolsResult,
         selectorPlan: selectorPlan,
         effectTransaction: effectTransaction,
+        artPlan: artPlan,
+        artResult: artResult,
       };
       await paintRomExportProgress(exportProgress, 70, 'Starting finished-ROM safety tests');
       var validationReport;
@@ -927,7 +958,9 @@ window.OB64 = window.OB64 || {};
       }
       adoptExportCandidate(exportRom, candidateRom, effectAdoption);
       OB64.combatAnimationOverrides.adopt(exportRom);
+      if (artResult) OB64.art.adoptExport(exportRom, artResult);
       await paintRomExportProgress(exportProgress, 100, 'ROM download started');
+      if (artResult) console.info('[art export] ' + artResult.summary);
       var exportMsg = 'ROM export initiated as ' + exportedName + ' ('
         + touched.join(', ') + ') | ' + changes + ' changes applied';
       // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
@@ -938,10 +971,13 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
-      changes = 0;
+      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      // Art records remain Project edits after a successful ROM download.
+      // This lets the user keep authoring and export the same detached assets again.
+      changes = OB64.art.editCount(exportRom.art);
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
+      if (activeTab === 'art') renderTab('art');
       statusBar.textContent = exportMsg;
     } catch(err) {
       if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
@@ -1042,11 +1078,14 @@ window.OB64 = window.OB64 || {};
       var scenarioN = patch.summary.scenario_modified || 0;
       var consumableEffectsN = patch.summary.consumable_effect_models_modified || 0;
       var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
+      var avatarArtN = patch.summary.avatar_art_modified || 0;
+      var iconArtN = patch.summary.item_icon_art_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
-          globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN === 0) {
+          globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN +
+          avatarArtN + iconArtN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
@@ -1073,6 +1112,8 @@ window.OB64 = window.OB64 || {};
       if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
       if (selectorOverridesN) parts.push(selectorOverridesN + ' attack animation override change' + (selectorOverridesN === 1 ? '' : 's'));
+      if (avatarArtN) parts.push(avatarArtN + ' detached avatar' + (avatarArtN === 1 ? '' : 's'));
+      if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
       parts = parts.concat(consumableEffectSummaryParts(
         patch.patches && patch.patches.consumableEffects
       ));
@@ -1107,7 +1148,8 @@ window.OB64 = window.OB64 || {};
           (result.applied.squadOverrides || 0) +
           (result.applied.scenario || 0) +
           (result.applied.consumableEffects || 0) +
-          (result.applied.combatAnimationOverrides || 0);
+          (result.applied.combatAnimationOverrides || 0) +
+          (result.applied.art || 0);
         lastProjectFilename = file.name;
         updatePatchChip();
         renderTab(activeTab);
@@ -1131,6 +1173,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
         if (result.applied.scenario) loadedParts.push(result.applied.scenario + ' scenario change' + (result.applied.scenario === 1 ? '' : 's'));
         if (result.applied.combatAnimationOverrides) loadedParts.push(result.applied.combatAnimationOverrides + ' attack animation override change' + (result.applied.combatAnimationOverrides === 1 ? '' : 's'));
+        if (result.applied.art) loadedParts.push(result.applied.art + ' art asset' + (result.applied.art === 1 ? '' : 's'));
         if (result.applied.consumableEffects) {
           loadedParts = loadedParts.concat(consumableEffectSummaryParts(
             patch.patches && patch.patches.consumableEffects
@@ -1228,6 +1271,12 @@ window.OB64 = window.OB64 || {};
       case 'scenario':  OB64.renderScenarioTab(panel); break;
       case 'classes':   renderClasses(panel); break;
       case 'items':     renderItems(panel); break;
+      case 'art':
+        OB64.artUI.render(panel, rom, {
+          onChange: function() { markChanged(); },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
       case 'encounters': renderEncounters(panel); break;
       case 'tools':     renderTools(panel); break;
       case 'changelog': renderChangelog(panel); break;
@@ -1514,6 +1563,7 @@ window.OB64 = window.OB64 || {};
       case 'scenario': dirty.scenario = true; break;
       case 'items':    dirty.items = true; break;
       case 'classes':  dirty.classDefs = true; break;
+      case 'art':      dirty.art = OB64.art.hasPendingExport(rom.art); break;
       case 'encounters':
         // Encounters tab edits can touch either the neutral-encounter pool,
         // the creature drop table, or both. The renderer sets the specific

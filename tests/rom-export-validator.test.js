@@ -510,7 +510,7 @@ function runDescriptionProjectRoundTrip() {
     source.actionDescriptions, actionId, 'Project action description.'
   );
   const project = OB64.patch.collectPatch(source);
-  check('description Project uses schema version 17', project.version === 17,
+  check('description Project uses schema version 18', project.version === 18,
     String(project.version));
   check('description Project summary counts all four text kinds',
     project.summary.item_descriptions_modified === 1 &&

@@ -25,6 +25,11 @@ Optional desktop utilities are kept separate from its runtime:
   repacking and N64 CRC repair.
 - `description-codec.js` parses, edits, recompresses, and verifies the fixed
   item, consumable, class, and combat-action text blocks.
+- `art.js` parses native class-card avatars and item-icon packs. It owns exact
+  RGBA5551 Project records, CI8 palette rebuilding, compression, route-scoped
+  avatar detachment, allocation, pointer repair, and export readback.
+- `art-ui.js` renders the Art and Animation asset browsers, native color
+  wheels, avatar image import, pixel tools, previews, counters, and resets.
 - `patch.js` imports/exports portable Project JSON files for supported edits
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
@@ -76,8 +81,8 @@ in your own copy of the US retail ROM, and start modding.
 > American (USA) retail header revision 0 dump:
 > `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64` (41,943,040 bytes,
 > .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
-> It also supports the common USA header revision 1 dump in `.z64`, `.v64`, or
-> `.n64` byte order for data editing/export. Header revision 1 supports the Chaos
+> It also accepts the exact common USA header revision 1 dump in `.z64`, `.v64`,
+> or `.n64` byte order for data editing/export. Header revision 1 supports the Chaos
 > Frame Counter and Squads runtime override export; High Attack Streamsplit
 > remains header revision 0-only until its changed header revision 1 code path is
 > rebuilt.
@@ -90,10 +95,11 @@ in your own copy of the US retail ROM, and start modding.
 >
 > Filenames are not compatibility checks. The loader recognizes `.z64`, `.v64`,
 > and `.n64` from their contents, normalizes them internally, and preserves the
-> input byte order on export. Japanese, European, debug, and prototype layouts
-> remain unsupported. Modified US ROMs may load when their header and archives
-> remain parseable; feature-specific checks disable only operations whose
-> required code/data no longer matches and report the first relevant mismatch.
+> input byte order on export. It then requires an exact approved vanilla SHA-256.
+> Modified, exported, prepatched, Japanese, European, debug, and prototype ROMs
+> are rejected. Resume work by loading an exact vanilla ROM, then its Project.
+> Native Art and Animation editing is currently revision 0-only. Revision 1
+> remains usable for its other supported editor features.
 
 ## Releases and Downloads
 
@@ -358,6 +364,43 @@ safety behavior.
   encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
   vanilla, `x3` normal cap, optional `x100` test cap).
   Creature drop entries are editable from the same tab.
+- **Art and Animation** — edit native class-card avatars and item icons with
+  exact native colors. The Avatars browser exposes 217 routed 40x48 appearances.
+  Identical routes for one class collapse into one card. The first material edit
+  stages an independent one-palette avatar and detaches only that class route on
+  export. Each detached avatar remains limited to 80 opaque colors. Its large
+  circular wheel and exact five-bit controls expose all 32,768 opaque RGB555
+  colors. The 3,464 colors rendered by retail avatars remain an observed corpus,
+  not an authoring whitelist.
+  The Item Icons browser exposes all 277 Equipment and 44 Special Item 16x16
+  icons. Each pack shares one 256-entry palette with one transparent entry.
+  Its large circular wheel snaps only to the selected pack's 255 opaque palette
+  entries. Transparency remains separate. The editor rebuilds the complete
+  selected pack and reports `Pack colors used: N / 255`.
+  Both wheels and their Brightness sliders update continuously while dragged.
+  Art-browser search fields retain focus while their filtered lists update.
+  Both workspaces provide pencil, fill, eyedropper, replace-color, rectangular
+  selection, copy, paste, undo, redo, PNG export, and reset controls. There is
+  also PNG and JPEG avatar import with a conversion preview. The importer
+  center-crops any source aspect ratio and provides a position control for the
+  cropped axis. `Pixel Art` uses nearest-neighbor resizing. `Smooth` uses area
+  downsampling or bilinear upscaling. Transparent pixels flatten onto the
+  selected avatar's original background color. The result converts to RGB555
+  before its color count is checked. Images using 80 colors or fewer keep those
+  native colors. Larger images use deterministic RGB555-aware Wu quantization.
+  Optional ordered dithering is off by default. Applying the preview stages the
+  converted 40x48 image and its normal route detachment. Icon PNG import is not
+  implemented.
+  On 2026-08-14, Joe cold-booted an editor export containing a converted
+  non-40x48 avatar source and an edited item icon. Both rendered correctly
+  in-game. Independent static readback then matched two avatar records and one
+  icon record exactly against Project v18. Automated regression and independent
+  review remain pending.
+  Previews are at least 4x native size.
+  Export chooses in-place placement when a rebuilt icon pack fits. It relocates
+  overflow and every detached avatar into the verified native-resource arena.
+  All art writes are planned and read back before the ROM download begins.
+  Combat sprite pixels, timelines, and weapon-art references remain deferred.
 - **Tools** — toggleable ROM fixes and quality-of-life features applied on
   export and removable again (the original bytes are restored). Features
   already present in a loaded ROM are detected; unrecognized bytes at a
@@ -391,7 +434,9 @@ safety behavior.
   item/consumable/class/action descriptions, consumable-effect
   magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v17 adds the four description groups. v16 adds explicit Scenario enemy-base
+  v18 adds exact assembled RGBA5551 records for edited avatars and item icons.
+  It stores no PNG, compressed resource, rebuilt palette, relocation address,
+  or undo history. v17 adds the four description groups. v16 adds explicit Scenario enemy-base
   intents and scenario-local squad-copy provenance while retaining older
   formats. v15 stores independent
   Normal/Blocked combat-animation selectors; v14 projects migrate their single
@@ -447,16 +492,24 @@ safety behavior.
   machine-readable JSON report with stable error codes, hashes, changed ranges,
   and technical details. **Download Anyway** saves the failed candidate but
   does not adopt it or clear the current editor changes.
-  Successful ROM exports do not create a JSON sidecar.
+  Art export composes with the same transaction. It owns each detached route,
+  expanded avatar descriptor, rebuilt icon-pack envelope or pointer set, and
+  shared relocation-arena span. The global export ledger remains the sole owner
+  of the checksum header. Successful ROM exports do not create a JSON sidecar.
   **Save Project** is the sole user-facing JSON export and records every
   supported current ROM-edit family, including consumable effects.
 
 ## Current Limitations
 
-- Only North American retail header revision 0/1 layouts are supported.
-  Other regions and prototypes are rejected. Modified US images are
-  experimenter inputs: compatible features remain available, while operations
-  with a known structural mismatch are disabled or rejected with a diagnostic.
+- Only exact approved North American retail header revision 0/1 images are
+  accepted. Modified images, other regions, and prototypes are rejected.
+- Native Art and Animation editing is revision 0-only. Revision 1 can use its
+  other supported editor features.
+- Avatar image import accepts PNG and JPEG files. It converts arbitrary source
+  dimensions and colors into a 40x48 opaque RGB555 image with at most 80
+  colors. The preparation dialog requires user approval before changing the
+  selected avatar. Icon PNG import remains unavailable. Combat sprite editing
+  remains deferred.
 - Healing/Fatigue consumable controls have accepted static ownership, codec,
   and synthetic product verification, but their prepared cold-boot and
   gameplay matrix has not yet been executed by Joe. Do not treat this as
