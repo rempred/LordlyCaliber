@@ -1160,12 +1160,14 @@ window.OB64 = window.OB64 || {};
   }
 
   function editCount(state) {
-    return Object.keys(state.avatar.edits).length + Object.keys(state.icons.edits).length;
+    return Object.keys(state.avatar.edits).length + Object.keys(state.icons.edits).length +
+      (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0);
   }
 
   function blockedCount(state) {
     if (!state || !state.blocked) return 0;
-    return Object.keys(state.blocked.avatars).length + Object.keys(state.blocked.icons).length;
+    return Object.keys(state.blocked.avatars).length + Object.keys(state.blocked.icons).length +
+      (OB64.animationArt ? OB64.animationArt.blockedCount(state.animations) : 0);
   }
 
   function hasPendingExport(state) {
@@ -1182,7 +1184,7 @@ window.OB64 = window.OB64 || {};
       exactRetail: !!expectedHash && hash === expectedHash,
       supported: false,
       unavailableReason: '', lastExport: null, selectedTab: 'avatars',
-      blocked: { avatars: {}, icons: {} }
+      blocked: { avatars: {}, icons: {}, animations: {} }
     };
     if (!rom.layout || rom.layout.id !== 'us-rev0') {
       state.unavailableReason = 'Art editing is verified for US retail header rev 0 only. Other readable editor tabs remain available for this ROM.';
@@ -1201,13 +1203,22 @@ window.OB64 = window.OB64 || {};
     state.supported = true;
     state.avatarRetailColorSet = new Set(state.avatar.colorLibrary);
     state.iconRetailColorSet = new Set(state.icons.colorLibrary);
+    state.animations = OB64.animationArt
+      ? OB64.animationArt.initialize(rom.z64)
+      : {
+          supported: false,
+          unavailableReason: 'Combat sprite component is not loaded.',
+          specs: [], byKey: {}, artByKey: {}, edits: {}, history: {}, blocked: {}
+        };
     rom.art = state;
     return state;
   }
 
   function collectProjectPayload(rom) {
     var state = rom && rom.art;
-    if (!state || !state.supported) return { schemaVersion: 1, avatars: {}, icons: {} };
+    if (!state || !state.supported) {
+      return { schemaVersion: 2, avatars: {}, icons: {}, animations: {} };
+    }
     var avatars = {}, icons = {};
     Object.keys(state.avatar.edits).sort().forEach(function(key) {
       var appearance = state.avatar.byKey[key];
@@ -1224,23 +1235,35 @@ window.OB64 = window.OB64 || {};
         pixelsRgba5551BeBase64: wordArrayToBase64(state.icons.edits[key].words)
       };
     });
-    return { schemaVersion: 1, avatars: avatars, icons: icons };
+    var animations = OB64.animationArt
+      ? OB64.animationArt.collectProject(state.animations)
+      : {};
+    return { schemaVersion: 2, avatars: avatars, icons: icons, animations: animations };
   }
 
   function prepareProjectPayload(rom, payload) {
     var state = rom && rom.art;
-    if (payload === undefined || payload === null) return { avatars: {}, icons: {}, count: 0 };
+    if (payload === undefined || payload === null) {
+      return { avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0 };
+    }
     if (!state || !state.supported) {
       if (payload && typeof payload === 'object' &&
-          !Object.keys(payload.avatars || {}).length && !Object.keys(payload.icons || {}).length) {
-        return { avatars: {}, icons: {}, count: 0 };
+          !Object.keys(payload.avatars || {}).length && !Object.keys(payload.icons || {}).length &&
+          !Object.keys(payload.animations || {}).length) {
+        return { avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0 };
       }
       throw new ArtError('This ROM revision cannot load Art and Animation Project records');
     }
-    if (typeof payload !== 'object' || Array.isArray(payload) || payload.schemaVersion !== 1) {
-      throw new ArtError('patches.art must use schemaVersion 1');
+    if (typeof payload !== 'object' || Array.isArray(payload) ||
+        (payload.schemaVersion !== 1 && payload.schemaVersion !== 2)) {
+      throw new ArtError('patches.art must use schemaVersion 1 or 2');
     }
-    var prepared = { avatars: {}, icons: {}, count: 0 };
+    if (payload.schemaVersion === 1 && Object.keys(payload.animations || {}).length) {
+      throw new ArtError('combat-sprite records require patches.art schemaVersion 2');
+    }
+    var prepared = {
+      avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0
+    };
     Object.keys(payload.avatars || {}).forEach(function(key) {
       var entry = payload.avatars[key], appearance = state.avatar.byKey[key];
       if (!appearance || !entry || entry.classId !== appearance.classId ||
@@ -1273,6 +1296,15 @@ window.OB64 = window.OB64 || {};
       if (colors.size > 255) throw new ArtError(pack.spec.label +
         ' Project records require ' + colors.size + ' opaque colors; maximum is 255');
     });
+    if (Object.keys(payload.animations || {}).length && !OB64.animationArt) {
+      throw new ArtError('This editor build cannot load combat-sprite Project records');
+    }
+    if (OB64.animationArt) {
+      prepared.animations = OB64.animationArt.prepareProject(
+        state.animations, payload.animations || {}
+      );
+      prepared.count += prepared.animations.count;
+    }
     return prepared;
   }
 
@@ -1284,6 +1316,9 @@ window.OB64 = window.OB64 || {};
     Object.keys(prepared.icons).forEach(function(key) {
       if (setEditWords(state, 'icon', key, prepared.icons[key])) applied++;
     });
+    if (OB64.animationArt && prepared.animations) {
+      applied += OB64.animationArt.applyPrepared(state.animations, prepared.animations);
+    }
     return applied;
   }
 
@@ -1387,7 +1422,7 @@ window.OB64 = window.OB64 || {};
       };
       if (row.end > C.ARENA_END) exportFailure('native art relocation arena',
         'capacity', hex(row.end), '<= ' + hex(C.ARENA_END),
-        'reduce detached avatars or icon-pack size');
+        'reduce detached avatars, relocated icon packs, or combat-sprite edits');
       allocations.push(row); cursor = row.end;
     });
     return allocations;
@@ -1444,10 +1479,17 @@ window.OB64 = window.OB64 || {};
         placement: built.stored.length <= pack.spec.capacity ? 'in-place' : 'relocated'
       };
     });
+    var animations = OB64.animationArt
+      ? OB64.animationArt.buildResources(state.animations)
+      : [];
     var relocatedResources = avatars.map(function(row) {
       return { name: row.name, stored: row.built.stored };
     }).concat(iconPacks.filter(function(row) { return row.placement === 'relocated'; })
-      .map(function(row) { return { name: row.name, stored: row.built.stored }; }));
+      .map(function(row) { return { name: row.name, stored: row.built.stored }; }))
+      .concat(animations.filter(function(row) { return row.placement === 'relocated'; })
+      .map(function(row) {
+        return { name: row.name, stored: row.built.stored };
+      }));
     var descriptorPlaceholder = null;
     if (avatars.length) {
       descriptorPlaceholder = {
@@ -1477,8 +1519,13 @@ window.OB64 = window.OB64 || {};
     iconPacks.forEach(function(row) {
       if (row.placement === 'relocated') row.allocation = allocationByName[row.name];
     });
+    animations.forEach(function(row) {
+      if (row.placement === 'relocated') row.allocation = allocationByName[row.name];
+      row.edit = state.animations.edits[row.key];
+    });
     return {
-      avatars: avatars, iconPacks: iconPacks, allocations: allocations,
+      avatars: avatars, iconPacks: iconPacks, animations: animations,
+      allocations: allocations,
       descriptorSlots: descriptorSlots, descriptorAllocation: descriptorAllocation,
       cleanBase: cleanBase, log: [], ownedRanges: [], crc: false
     };
@@ -1511,6 +1558,10 @@ window.OB64 = window.OB64 || {};
     if (plan.descriptorAllocation) {
       patchSplitKey(bytes, C.AVATAR_DESCRIPTOR_SITES, C.AVATAR_DESCRIPTOR_KEY,
         plan.descriptorAllocation.key, ranges, log, 'avatar descriptor');
+    }
+
+    if (OB64.animationArt && plan.animations.length) {
+      OB64.animationArt.applyResources(plan.animations, bytes, ranges, log);
     }
 
     plan.iconPacks.forEach(function(row) {
@@ -1547,6 +1598,15 @@ window.OB64 = window.OB64 || {};
     if (plan.descriptorAllocation) C.AVATAR_DESCRIPTOR_SITES.forEach(function(site) {
       currentRanges.push([site.lui, site.lui + 4], [site.ori, site.ori + 4]);
     });
+    plan.animations.forEach(function(row) {
+      if (row.placement === 'in-place') {
+        currentRanges.push([row.source.resource.entry,
+          row.source.resource.entry + 4 + row.originalCapacity]);
+      } else {
+        currentRanges.push([row.source.descriptorEntryOffset,
+          row.source.descriptorEntryOffset + 4]);
+      }
+    });
     plan.iconPacks.forEach(function(row) {
       if (row.placement === 'in-place') {
         currentRanges.push([row.pack.spec.sizeWord,
@@ -1582,6 +1642,9 @@ window.OB64 = window.OB64 || {};
           row.appearance.className, 'route readback', 'mismatch', 'exact token', 'report this editor defect');
       });
     });
+    if (OB64.animationArt && plan.animations.length) {
+      OB64.animationArt.verifyResources(plan.animations, bytes);
+    }
     plan.iconPacks.forEach(function(row) {
       var key = row.placement === 'relocated' ? row.allocation.key : row.pack.spec.resourceKey;
       if (row.placement === 'relocated') {
@@ -1617,11 +1680,18 @@ window.OB64 = window.OB64 || {};
       iconCounts[rom.art.icons.byKey[key].pack]++;
     });
     var relocatedCount = plan.allocations.length;
+    var inPlaceCombatSpriteCount = plan.animations.filter(function(row) {
+      return row.placement === 'in-place';
+    }).length;
+    var relocatedCombatSpriteCount = plan.animations.length - inPlaceCombatSpriteCount;
     var arenaEnd = plan.allocations.length ? plan.allocations[plan.allocations.length - 1].end : C.ARENA_START;
     return {
       crc: plan.crc,
       currentCrcAffected: plan.currentCrcAffected,
       detachedAvatarCount: plan.avatars.length,
+      editedCombatSpriteCount: plan.animations.length,
+      inPlaceCombatSpriteCount: inPlaceCombatSpriteCount,
+      relocatedCombatSpriteCount: relocatedCombatSpriteCount,
       editedIconCounts: iconCounts,
       relocatedResourceCount: relocatedCount,
       arenaStart: C.ARENA_START, arenaEnd: arenaEnd,
@@ -1630,6 +1700,10 @@ window.OB64 = window.OB64 || {};
       summary: plan.avatars.length + ' detached avatar' + (plan.avatars.length === 1 ? '' : 's') +
         ', ' + iconCounts.equipment + ' equipment icon' + (iconCounts.equipment === 1 ? '' : 's') +
         ', ' + iconCounts['special-item'] + ' special-item icon' + (iconCounts['special-item'] === 1 ? '' : 's') +
+        ', ' + plan.animations.length + ' combat-sprite art object' +
+          (plan.animations.length === 1 ? '' : 's') +
+        ' (' + inPlaceCombatSpriteCount + ' in place, ' +
+          relocatedCombatSpriteCount + ' relocated)' +
         ', ' + relocatedCount + ' relocated resource' + (relocatedCount === 1 ? '' : 's') +
         ', ROM span ' + hex(C.ARENA_START) + '..' + hex(arenaEnd)
     };
@@ -1684,18 +1758,22 @@ window.OB64 = window.OB64 || {};
     if (!state || !state.supported || (!editCount(state) && !blockedCount(state))) return false;
     state.bulkUndo = collectStateEdits(state);
     state.avatar.edits = {}; state.icons.edits = {};
-    state.blocked = { avatars: {}, icons: {} };
+    if (OB64.animationArt) OB64.animationArt.resetAll(state.animations);
+    state.blocked = { avatars: {}, icons: {}, animations: {} };
     return true;
   }
 
   function collectStateEdits(state) {
-    var snapshot = { avatars: {}, icons: {} };
+    var snapshot = { avatars: {}, icons: {}, animations: {} };
     Object.keys(state.avatar.edits).forEach(function(key) {
       snapshot.avatars[key] = state.avatar.edits[key].words.slice();
     });
     Object.keys(state.icons.edits).forEach(function(key) {
       snapshot.icons[key] = state.icons.edits[key].words.slice();
     });
+    if (OB64.animationArt) {
+      snapshot.animations = OB64.animationArt.snapshotEdits(state.animations);
+    }
     return snapshot;
   }
 
@@ -1708,6 +1786,9 @@ window.OB64 = window.OB64 || {};
     Object.keys(snapshot.icons).forEach(function(key) {
       state.icons.edits[key] = { words: snapshot.icons[key].slice() };
     });
+    if (OB64.animationArt) {
+      OB64.animationArt.restoreEdits(state.animations, snapshot.animations || {});
+    }
     Object.keys(state.icons.packs).forEach(function(slug) {
       refreshIconPackBlocked(state, slug);
     });
@@ -1754,6 +1835,11 @@ window.OB64 = window.OB64 || {};
     bootLzDecode: bootLzDecode,
     bootLzCompress: bootLzCompress,
     readCompressedResource: readCompressedResource,
+    readResource: readResource,
+    readU16: readU16,
+    readU32: readU32,
+    writeU16: writeU16,
+    writeU32: writeU32,
     resolveSplitKey: resolveSplitKey,
     mergeRanges: mergeRanges
   };

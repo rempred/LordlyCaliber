@@ -33,12 +33,13 @@
 // v16 carries Scenario treasure state and shared treasure ownership metadata.
 // v17 carries item, consumable, class, and combat-action descriptions.
 // v18 carries exact RGBA5551 pixels for edited route-scoped avatars and item icons.
+// v19 carries bounded combat-sprite CI8/I4 pixels grouped by source and child.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 18;
+  var PATCH_VERSION = 19;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -233,15 +234,16 @@ window.OB64 = window.OB64 || {};
       : 0;
     var artOut = OB64.art
       ? OB64.art.collectProjectPayload(rom)
-      : { schemaVersion: 1, avatars: {}, icons: {} };
+      : { schemaVersion: 2, avatars: {}, icons: {}, animations: {} };
     var avatarArtChanges = Object.keys(artOut.avatars || {}).length;
     var iconArtChanges = Object.keys(artOut.icons || {}).length;
+    var combatSpriteArtChanges = Object.keys(artOut.animations || {}).length;
 
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-08-10',
+      editor_version: '2026-08-14',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -268,6 +270,7 @@ window.OB64 = window.OB64 || {};
         combat_animation_overrides_modified: combatAnimationOverrideChanges,
         avatar_art_modified: avatarArtChanges,
         item_icon_art_modified: iconArtChanges,
+        combat_sprite_art_modified: combatSpriteArtChanges,
       },
       patches: {
         shops:        shopsOut,
@@ -379,14 +382,24 @@ window.OB64 = window.OB64 || {};
         throw new PatchFormatError('Scenario Project data is invalid: ' + scenarioError.message);
       }
     }
-    var preparedArt = { avatars: {}, icons: {}, count: 0 };
+    var preparedArt = {
+      avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0
+    };
     var artPayload = Object.prototype.hasOwnProperty.call(p, 'art') ? p.art : undefined;
     var hasArtRecords = artPayload && typeof artPayload === 'object' &&
       (Object.keys(artPayload.avatars || {}).length ||
-       Object.keys(artPayload.icons || {}).length);
+       Object.keys(artPayload.icons || {}).length ||
+       Object.keys(artPayload.animations || {}).length);
+    var hasCombatSpriteRecords = artPayload && typeof artPayload === 'object' &&
+      Object.keys(artPayload.animations || {}).length;
     if (hasArtRecords && patch.version < 18) {
       throw new PatchFormatError(
         'Art and Animation Project data requires Project schema version 18 or newer.'
+      );
+    }
+    if (hasCombatSpriteRecords && patch.version < 19) {
+      throw new PatchFormatError(
+        'Combat sprite Project data requires Project schema version 19 or newer.'
       );
     }
     if (OB64.art) {
@@ -398,7 +411,8 @@ window.OB64 = window.OB64 || {};
         throw new PatchFormatError('Art and Animation Project data is invalid: ' + artError.message);
       }
     } else if (p.art && (Object.keys(p.art.avatars || {}).length ||
-        Object.keys(p.art.icons || {}).length)) {
+        Object.keys(p.art.icons || {}).length ||
+        Object.keys(p.art.animations || {}).length)) {
       throw new PatchFormatError('This editor build cannot load Art and Animation Project records.');
     }
 
@@ -764,6 +778,7 @@ window.OB64 = window.OB64 || {};
       combat_animation_overrides_modified: 0,
       avatar_art_modified: 0,
       item_icon_art_modified: 0,
+      combat_sprite_art_modified: 0,
     };
   }
 
@@ -784,7 +799,7 @@ window.OB64 = window.OB64 || {};
       scenario: null,
       consumableEffects: {},
       combatAnimationOverrides: null,
-      art: { schemaVersion: 1, avatars: {}, icons: {} }
+      art: { schemaVersion: 2, avatars: {}, icons: {}, animations: {} }
     };
   }
 

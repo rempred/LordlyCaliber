@@ -32,6 +32,7 @@ for (const filename of [
   'parsers.js',
   'repack.js',
   'art.js',
+  'animation-art.js',
   'description-codec.js',
   'source-redirect.js',
   'stat-gate-relocation.js',
@@ -71,7 +72,10 @@ function component(report, id) {
 
 async function initializeReadableFeatures(rom, sourceIdentity, filename) {
   const run = (spec, action) => OB64.romCompatibility.runInitializer(rom, spec, action);
-  await run({ id: 'native-art', label: 'Avatars and item icons', affectsTabs: ['art'] },
+  await run({
+    id: 'native-art', label: 'Avatars, item icons, and bounded combat sprites',
+    affectsTabs: ['art']
+  },
     () => OB64.art.initialize(rom));
   await run({
     id: 'consumable-effects', label: 'Consumable effect code and text',

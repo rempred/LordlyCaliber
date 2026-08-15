@@ -289,7 +289,8 @@ window.OB64 = window.OB64 || {};
         // not discard the readable parts of the ROM or hide its own diagnostic.
         if (nextRom.compatibility.canEdit) {
           await OB64.romCompatibility.runInitializer(nextRom, {
-            id: 'native-art', label: 'Avatars and item icons', affectsTabs: ['art']
+            id: 'native-art', label: 'Avatars, item icons, and bounded combat sprites',
+            affectsTabs: ['art']
           }, function() { return OB64.art.initialize(nextRom); });
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'consumable-effects', label: 'Consumable effect code and text',
@@ -504,7 +505,7 @@ window.OB64 = window.OB64 || {};
       var touched = [];
       if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
         await paintRomExportProgress(exportProgress, 4,
-          'Planning and verifying all native avatar and icon resources');
+          'Planning and verifying all native art resources');
         artPlan = OB64.art.prepareExport(rom, candidateRom);
       }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
@@ -1162,12 +1163,13 @@ window.OB64 = window.OB64 || {};
       var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
       var avatarArtN = patch.summary.avatar_art_modified || 0;
       var iconArtN = patch.summary.item_icon_art_modified || 0;
+      var combatSpriteArtN = patch.summary.combat_sprite_art_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
           globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN +
-          avatarArtN + iconArtN === 0) {
+          avatarArtN + iconArtN + combatSpriteArtN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
@@ -1196,6 +1198,8 @@ window.OB64 = window.OB64 || {};
       if (selectorOverridesN) parts.push(selectorOverridesN + ' attack animation override change' + (selectorOverridesN === 1 ? '' : 's'));
       if (avatarArtN) parts.push(avatarArtN + ' detached avatar' + (avatarArtN === 1 ? '' : 's'));
       if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
+      if (combatSpriteArtN) parts.push(combatSpriteArtN + ' edited combat-sprite source' +
+        (combatSpriteArtN === 1 ? '' : 's'));
       parts = parts.concat(consumableEffectSummaryParts(
         patch.patches && patch.patches.consumableEffects
       ));

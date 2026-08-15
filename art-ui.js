@@ -25,6 +25,15 @@ window.OB64 = window.OB64 || {};
   function ensureUi(state) {
     if (state.ui) {
       if (!state.ui.browserScroll) state.ui.browserScroll = {};
+      if (!state.ui.animationKey && state.animations && state.animations.specs.length) {
+        state.ui.animationKey = state.animations.specs[0].key;
+      }
+      if (!Number.isInteger(state.ui.animationFrame)) state.ui.animationFrame = 0;
+      if (!Number.isInteger(state.ui.animationLayer)) state.ui.animationLayer = 0;
+      if (!Number.isInteger(state.ui.animationPaletteIndex)) state.ui.animationPaletteIndex = 0;
+      if (!Number.isInteger(state.ui.animationIntensity)) state.ui.animationIntensity = 15;
+      if (!Number.isInteger(state.ui.animationWeaponChild)) state.ui.animationWeaponChild = 0;
+      if (!state.ui.animationWeaponChildren) state.ui.animationWeaponChildren = {};
       return state.ui;
     }
     var firstAvatar = state.avatar && state.avatar.appearances[0];
@@ -44,33 +53,61 @@ window.OB64 = window.OB64 || {};
         (avatarColor >>> 6) & 31, (avatarColor >>> 1) & 31),
       iconWheelValue: 31,
       selection: null, clipboard: null,
+      animationKey: state.animations && state.animations.specs.length
+        ? state.animations.specs[0].key : null,
+      animationFrame: 0, animationLayer: 0,
+      animationPaletteIndex: 0, animationIntensity: 15,
+      animationWeaponChild: 0,
+      animationWeaponChildren: {},
       browserScroll: {}
     };
     return state.ui;
   }
 
-  function captureBrowserScroll(ui, panel) {
-    if (!ui || !panel || !panel.querySelector) return;
-    var list = panel.querySelector('[data-art-scroll-key]');
-    if (!list) return;
-    var key = list.getAttribute('data-art-scroll-key');
-    if (!key) return;
-    if (!ui.browserScroll) ui.browserScroll = {};
-    ui.browserScroll[key] = {
-      top: Number(list.scrollTop) || 0,
-      left: Number(list.scrollLeft) || 0
-    };
+  function scrollContainers(panel, includeViewport) {
+    if (!panel) return [];
+    var containers = [];
+    if (panel.querySelectorAll) {
+      containers = Array.prototype.slice.call(
+        panel.querySelectorAll('[data-art-scroll-key]'));
+    } else if (panel.querySelector) {
+      var one = panel.querySelector('[data-art-scroll-key]');
+      if (one) containers.push(one);
+    }
+    if (includeViewport && panel.closest) {
+      var viewport = panel.closest('.content');
+      if (viewport && containers.indexOf(viewport) < 0) {
+        if (!viewport.getAttribute('data-art-scroll-key')) {
+          viewport.setAttribute('data-art-scroll-key', 'art:viewport');
+        }
+        containers.unshift(viewport);
+      }
+    }
+    return containers;
   }
 
-  function restoreBrowserScroll(ui, panel) {
-    if (!ui || !ui.browserScroll || !panel || !panel.querySelector) return;
-    var list = panel.querySelector('[data-art-scroll-key]');
-    if (!list) return;
-    var key = list.getAttribute('data-art-scroll-key');
-    var saved = key && ui.browserScroll[key];
-    if (!saved) return;
-    list.scrollTop = saved.top;
-    list.scrollLeft = saved.left;
+  function captureBrowserScroll(ui, panel, includeViewport) {
+    if (!ui) return;
+    if (!ui.browserScroll) ui.browserScroll = {};
+    scrollContainers(panel, includeViewport).forEach(function(list) {
+      var key = list.getAttribute('data-art-scroll-key');
+      if (!key) return;
+      ui.browserScroll[key] = {
+        top: Number(list.scrollTop) || 0,
+        left: Number(list.scrollLeft) || 0
+      };
+    });
+  }
+
+  function restoreBrowserScroll(ui, panel, includeViewport) {
+    if (!ui || !ui.browserScroll) return;
+    scrollContainers(panel, includeViewport).forEach(function(list) {
+      var key = list.getAttribute('data-art-scroll-key');
+      var saved = key && ui.browserScroll[key];
+      if (!saved) return;
+      list.scrollTop = saved.top;
+      list.scrollLeft = saved.left;
+    });
   }
 
   function drawWords(canvas, words, width, height, scale, selection) {
@@ -661,20 +698,20 @@ window.OB64 = window.OB64 || {};
     var copy = element('div');
     copy.appendChild(element('h2', '', 'Art and Animation'));
     copy.appendChild(element('p', '',
-      'Edit class-card avatars with opaque RGB555 colors and item icons with their pack palette. Combat animation authoring is deferred.'));
+      'Edit class-card avatars, item icons, and verified bounded combat-sprite sequences.'));
     header.appendChild(copy);
     var actions = element('div', 'art-heading-actions');
     var reset = button('Reset All Art', 'btn-secondary', function() {
       function execute() {
         if (!A.resetAll(state)) return;
-        changed(options); notify(options, 'All avatar and icon edits reset to the vanilla ROM. Use Undo Reset All to restore them this session.');
+        changed(options); notify(options, 'All avatar, icon, and combat-sprite edits reset to the vanilla ROM. Use Undo Reset All to restore them this session.');
         rerender();
       }
       if (OB64.showConfirmModal) {
         OB64.showConfirmModal('Reset all art?',
-          'This removes every avatar and item-icon Project record. The reset remains undoable during this editor session.',
+          'This removes every avatar, item-icon, and combat-sprite Project record. The reset remains undoable during this editor session.',
           execute, 'Reset All Art');
-      } else if (window.confirm('Reset every avatar and item-icon edit?')) execute();
+      } else if (window.confirm('Reset every avatar, item-icon, and combat-sprite edit?')) execute();
     });
     reset.disabled = A.editCount(state) === 0 && A.blockedCount(state) === 0;
     actions.appendChild(reset);
@@ -688,11 +725,16 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(header);
 
     var tabs = element('div', 'art-subtabs');
-    [['avatars', 'Avatars'], ['icons', 'Item Icons']].forEach(function(row) {
+    [['avatars', 'Avatars'], ['icons', 'Item Icons'],
+      ['animations', 'Combat Animation']].forEach(function(row) {
       var tab = button(row[1], ui.subtab === row[0] ? 'active' : '', function() {
         ui.subtab = row[0]; state.selectedTab = row[0]; ui.selection = null; rerender();
       });
-      var count = row[0] === 'avatars' ? Object.keys(state.avatar.edits).length : Object.keys(state.icons.edits).length;
+      var count = row[0] === 'avatars'
+        ? Object.keys(state.avatar.edits).length
+        : (row[0] === 'icons'
+          ? Object.keys(state.icons.edits).length
+          : (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0));
       if (count) tab.appendChild(makeBadge(String(count), 'count'));
       tabs.appendChild(tab);
     });
@@ -1133,7 +1175,7 @@ window.OB64 = window.OB64 || {};
     return editor;
   }
 
-  function render(panel, rom, options) {
+  function render(panel, rom, options, preserveViewport) {
     var active = document.activeElement;
     var focus = null;
     if (active && panel.contains(active)) {
@@ -1148,7 +1190,7 @@ window.OB64 = window.OB64 || {};
     }
     var state = rom && rom.art;
     var ui = state && state.supported ? ensureUi(state) : null;
-    captureBrowserScroll(ui, panel);
+    captureBrowserScroll(ui, panel, preserveViewport);
     panel.innerHTML = '';
     if (!state) return;
     if (!state.supported) {
@@ -1157,18 +1199,24 @@ window.OB64 = window.OB64 || {};
       unavailable.appendChild(element('p', '', state.unavailableReason));
       panel.appendChild(unavailable); return;
     }
-    function rerender() { render(panel, rom, options); }
+    function rerender() { render(panel, rom, options, true); }
     topHeader(panel, rom, state, ui, options, rerender);
     var shell = element('div', 'art-shell');
     if (ui.subtab === 'avatars') {
       shell.appendChild(avatarBrowser(state, ui, rerender));
       shell.appendChild(avatarEditor(state, ui, options, rerender));
-    } else {
+    } else if (ui.subtab === 'icons') {
       shell.appendChild(iconBrowser(state, ui, rerender));
       shell.appendChild(iconEditor(state, ui, options, rerender));
+    } else if (OB64.animationUI) {
+      shell.classList.add('art-animation-shell');
+      shell.appendChild(OB64.animationUI.render(state, ui, options, rerender));
+    } else {
+      shell.appendChild(element('div', 'art-unavailable',
+        'Combat animation component is not loaded.'));
     }
     panel.appendChild(shell);
-    restoreBrowserScroll(ui, panel);
+    restoreBrowserScroll(ui, panel, preserveViewport);
     if (focus) {
       var replacement = panel.querySelector('[data-art-focus-key="' + focus.key + '"]');
       if (replacement) {

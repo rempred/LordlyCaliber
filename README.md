@@ -30,6 +30,10 @@ Optional desktop utilities are kept separate from its runtime:
   avatar detachment, allocation, pointer repair, and export readback.
 - `art-ui.js` renders the Art and Animation asset browsers, native color
   wheels, avatar image import, pixel tools, previews, counters, and resets.
+- `animation-art.js` parses, edits, rebuilds, places, and verifies the bounded
+  combat-sprite corpus.
+- `animation-ui.js` renders its frame sequence, composed-frame context, layer
+  editor, exact lookup colors, and four-bit visibility controls.
 - `patch.js` imports/exports portable Project JSON files for supported edits
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
@@ -68,6 +72,32 @@ Optional desktop utilities are kept separate from its runtime:
 
 Research-only scripts and emulator probes are kept outside this repository.
 Only concrete, tested findings are ported into LordlyCaliber.
+
+## UI Change Regression Rule
+
+Every editor UI change must check the following behaviors before completion:
+
+- A rerender must preserve every visible scroll container's horizontal and
+  vertical position unless the user selected a different context.
+- Typing must preserve input focus, caret position, and selection. Filtering
+  must not drop focus after each character.
+- A rerender must preserve the active tab, asset, frame, layer, tool, color,
+  selection, and open dialog when those choices remain valid.
+- Pointer controls must support continuous drag. Test pointer down, movement,
+  release, cancellation, and release outside the original control.
+- Undo, redo, reset, import, and Project load must refresh the UI without stale
+  controls, duplicate handlers, or incorrect disabled states.
+- Keyboard controls must retain their documented target and must not trigger
+  while focus belongs to an unrelated text field or dialog.
+- A reproduced UI bug must receive the smallest deterministic regression test.
+  Test state preservation without a browser when possible.
+- When browser testing is authorized, manually exercise the changed control at
+  normal and narrow window sizes. Browser testing never replaces the static
+  regression test.
+
+For DOM-replacing rerenders, capture transient UI state before replacement and
+restore it afterward. `tests/art-ui-scroll.test.js` is the current scroll-state
+example for avatar, icon, and animation selectors.
 
 A browser-based mod editor for *Ogre Battle 64: Person of Lordly Caliber*
 (Quest, N64, 1999). Edit shops, classes, items, neutral encounters, entire
@@ -192,8 +222,9 @@ safety behavior.
   inspecting and editing terminator or sentinel story/NPC class slots. Card
   View and the Raw Bytes table subview expose every logical record byte;
   uncertain and runtime-pointer fields are shaded with warnings.
-  Story duplicate classes are labeled Special/Boss unless behavior is proven
-  actually buggy. Row-action pickers retain the raw action byte while replacing
+  Story and boss duplicate classes show their specific character identities.
+  Crash and deployment warnings remain separate from display names. Row-action
+  pickers retain the raw action byte while replacing
   the nine ambiguous `[Elemental Magic]` placeholders with verified Tier 1,
   Tier 2, Tier 3, summon/high-level, fixed-spell, and elemental Blast template
   roles.
@@ -409,13 +440,60 @@ safety behavior.
   On 2026-08-14, Joe cold-booted an editor export containing a converted
   non-40x48 avatar source and an edited item icon. Both rendered correctly
   in-game. Independent static readback then matched two avatar records and one
-  icon record exactly against Project v18. Automated regression and independent
-  review remain pending.
+  icon record exactly against Project v18. Automated regression passed. The
+  first independent review required final CRC1/CRC2 values in the success
+  summary. That correction is present; proportional re-review remains pending.
   Previews are at least 4x native size.
   Export chooses in-place placement when a rebuilt icon pack fits. It relocates
   overflow and every detached avatar into the verified native-resource arena.
+  The bounded Combat Animation browser supports 11 verified sequences. Fighter,
+  Soldier, Berserker, and Black Knight each expose normal and blocked physical
+  attacks. Black Knight, Wizard, and Siren expose Elemental Magic sequences.
+  Together they contain 139 frames, 453 layer occurrences, and 157 distinct
+  physical source objects. The parser consumes every selected pose program
+  exactly.
+  Tick counts appear above 4x frame previews.
+  Selecting a frame shows its complete layer stack. Selecting a layer shades
+  every context layer while outlining the editable source in gold.
+  Fighter exposes 17 physical weapon-group children across seven weapon
+  sources. Berserker exposes 12 children across 12 weapon sources. Black Knight
+  exposes 13 physical children across eight weapon sources; retail item mapping
+  is confirmed for its first 12. Wizard exposes 12 staff children across four
+  weapon sources. Siren exposes 11 staff children across five weapon sources.
+  Retail staff data selects Wizard ordinals `0,1,3,5,6,8,9,10,11` and Siren
+  ordinals `0,1,3,5,6,8,9,10`. Their 4x weapon picker
+  remains visible while any frame layer is selected. Each animation remembers
+  its own selected child. Choosing one child updates that ordinal across every
+  preview for the selected sequence. The picker does not override runtime
+  equipment selection. Soldier Thrust has no verified equipment-child group,
+  so the editor reports that limit and edits child zero only.
+  Each weapon sprite has independent CI8 pixels and I4 visibility values.
+  Each non-weapon source remains limited to its verified class/body child.
+  Siren body art uses child two. The other current class/body sources use child
+  zero.
+  Unmapped physical weapon records remain visible. Black Knight child 12 and
+  Siren children 2, 4, and 7 are empty in every verified weapon pose. Wizard
+  children 2, 4, and 7 have visible art but no known retail item mapping.
+  Each source exposes its exact 256-entry lookup bank. The intensity control
+  starts at 15/15 and updates every color swatch while dragged. Swatches group
+  neutral colors together, then group colors by hue and shade without changing
+  their original ROM palette indices. Timing, offsets, art references, lookup
+  palettes, and non-weapon child selection remain locked.
+  Export rebuilds one complete source object for all its edited children. Every
+  unedited child remains byte-identical.
+  A source stays in place when one combat descriptor references it and the new
+  compressed stream fits. Other sources move copy-on-write into the verified
+  native-resource arena. Project v19 groups semantic CI8 and I4 pixel records
+  by source and child ordinal.
+  The preview is an inspection blend, not a cycle-exact Nintendo 64 render.
+  Other pose variants, cross-family weapon remapping, and the remaining class
+  corpus remain deferred. The model accepts later verified corpus entries as
+  data.
+  Static tests cover exact pose-program consumption, all 45 composites, each
+  weapon-child domain, Project round-trip, both placement paths, and compressed
+  readback. Runtime cold-boot testing of the expanded corpus remains deferred
+  until editor iteration is complete.
   All art writes are planned and read back before the ROM download begins.
-  Combat sprite pixels, timelines, and weapon-art references remain deferred.
 - **Tools** — toggleable ROM fixes and quality-of-life features applied on
   export and removable again (the original bytes are restored). Features
   already present in a loaded ROM are detected; unrecognized bytes at a
@@ -449,9 +527,10 @@ safety behavior.
   item/consumable/class/action descriptions, consumable-effect
   magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v18 adds exact assembled RGBA5551 records for edited avatars and item icons.
-  It stores no PNG, compressed resource, rebuilt palette, relocation address,
-  or undo history. v17 adds the four description groups. v16 adds explicit Scenario enemy-base
+  v19 adds bounded combat-sprite CI8 indices and I4 visibility pixels. v18 adds
+  exact assembled RGBA5551 records for edited avatars and item icons. Art data
+  stores no PNG, compressed resource, rebuilt palette, relocation address, or
+  undo history. v17 adds the four description groups. v16 adds explicit Scenario enemy-base
   intents and scenario-local squad-copy provenance while retaining older
   formats. v15 stores independent
   Normal/Blocked combat-animation selectors; v14 projects migrate their single
@@ -528,8 +607,18 @@ safety behavior.
 - Avatar image import accepts PNG and JPEG files. It converts arbitrary source
   dimensions and colors into a 40x48 opaque RGB555 image with at most 80
   colors. The preparation dialog requires user approval before changing the
-  selected avatar. Icon PNG import remains unavailable. Combat sprite editing
-  remains deferred.
+  selected avatar. Icon PNG import remains unavailable.
+- Combat sprite editing is limited to 11 verified pose sequences. Fighter,
+  Soldier, Berserker, and Black Knight expose normal and blocked physical
+  attacks. Black Knight, Wizard, and Siren expose Elemental Magic. Fighter,
+  Berserker, Black Knight, Wizard, and Siren expose 17-, 12-, 13-, 12-, and
+  11-child equipment groups. Soldier has no verified equipment-child group.
+  Non-weapon sources edit only their verified class/body child. Siren uses
+  child two; the other current class/body sources use child zero. Siren's
+  unused staff children 2, 4, and 7 remain visible and are labeled as empty in
+  the retail ROM. Timeline metadata, layer offsets, art references, and lookup
+  palettes remain read-only. Other poses and class/action corpora remain
+  unavailable.
 - Healing/Fatigue consumable controls have accepted static ownership, codec,
   and synthetic product verification, but their prepared cold-boot and
   gameplay matrix has not yet been executed by Joe. Do not treat this as

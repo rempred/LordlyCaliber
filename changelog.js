@@ -810,6 +810,31 @@ window.OB64 = window.OB64 || {};
       });
     });
     addSection(sections, 'Item Icons', iconEntries);
+
+    var animationEntries = [];
+    numericKeys(payload.animations).forEach(function(key) {
+      var entry = payload.animations[key] || {};
+      var animation = rom.art && rom.art.animations &&
+        rom.art.animations.byKey[entry.animation];
+      var animationName = animation
+        ? animation.spec.className + ' ' + animation.spec.actionName
+        : (entry.animation || 'Combat animation');
+      var childOrdinals = numericKeys(entry.children).map(Number);
+      if (!childOrdinals.length && Number.isInteger(entry.childOrdinal)) {
+        childOrdinals = [entry.childOrdinal];
+      }
+      animationEntries.push({
+        title: animationName + ' art ' + hex(entry.artId, 2),
+        lines: [
+          'Edited child sprite' + (childOrdinals.length === 1 ? ' ' : 's ') +
+            childOrdinals.join(', ') + ' of the ' +
+            Number(entry.width || 0) + 'x' + Number(entry.height || 0) +
+            ' source object.',
+          'Export preserves every other child and relocates only when the rebuilt object does not fit.'
+        ]
+      });
+    });
+    addSection(sections, 'Combat Sprite Art', animationEntries);
   }
 
   function buildCombatAnimationOverrideSection(rom, patches, sections) {
