@@ -23,7 +23,10 @@ window.OB64 = window.OB64 || {};
   }
 
   function ensureUi(state) {
-    if (state.ui) return state.ui;
+    if (state.ui) {
+      if (!state.ui.browserScroll) state.ui.browserScroll = {};
+      return state.ui;
+    }
     var firstAvatar = state.avatar && state.avatar.appearances[0];
     var firstIconPack = state.icons && state.icons.packs.equipment;
     var avatarColor = firstAvatar ? firstAvatar.originalWords[0] : A.rgba5551Word(31, 31, 31);
@@ -40,9 +43,34 @@ window.OB64 = window.OB64 || {};
       avatarWheelValue: Math.max((avatarColor >>> 11) & 31,
         (avatarColor >>> 6) & 31, (avatarColor >>> 1) & 31),
       iconWheelValue: 31,
-      selection: null, clipboard: null
+      selection: null, clipboard: null,
+      browserScroll: {}
     };
     return state.ui;
+  }
+
+  function captureBrowserScroll(ui, panel) {
+    if (!ui || !panel || !panel.querySelector) return;
+    var list = panel.querySelector('[data-art-scroll-key]');
+    if (!list) return;
+    var key = list.getAttribute('data-art-scroll-key');
+    if (!key) return;
+    if (!ui.browserScroll) ui.browserScroll = {};
+    ui.browserScroll[key] = {
+      top: Number(list.scrollTop) || 0,
+      left: Number(list.scrollLeft) || 0
+    };
+  }
+
+  function restoreBrowserScroll(ui, panel) {
+    if (!ui || !ui.browserScroll || !panel || !panel.querySelector) return;
+    var list = panel.querySelector('[data-art-scroll-key]');
+    if (!list) return;
+    var key = list.getAttribute('data-art-scroll-key');
+    var saved = key && ui.browserScroll[key];
+    if (!saved) return;
+    list.scrollTop = saved.top;
+    list.scrollLeft = saved.left;
   }
 
   function drawWords(canvas, words, width, height, scale, selection) {
@@ -711,6 +739,7 @@ window.OB64 = window.OB64 || {};
     var summary = element('div', 'art-browser-summary', rows.length + ' routed appearance' + (rows.length === 1 ? '' : 's'));
     browser.appendChild(summary);
     var list = element('div', 'art-browser-list');
+    list.setAttribute('data-art-scroll-key', 'avatars');
     rows.forEach(function(appearance) {
       var card = element('button', 'art-browser-card' + (ui.avatarKey === appearance.key ? ' selected' : ''));
       card.type = 'button';
@@ -756,6 +785,7 @@ window.OB64 = window.OB64 || {};
     });
     browser.appendChild(element('div', 'art-browser-summary', rows.length + ' icon' + (rows.length === 1 ? '' : 's')));
     var list = element('div', 'art-browser-list art-icon-list');
+    list.setAttribute('data-art-scroll-key', 'icons:' + ui.iconPack);
     rows.forEach(function(icon) {
       var card = element('button', 'art-browser-card' + (ui.iconKey === icon.key ? ' selected' : ''));
       card.type = 'button';
@@ -1116,16 +1146,17 @@ window.OB64 = window.OB64 || {};
         };
       }
     }
+    var state = rom && rom.art;
+    var ui = state && state.supported ? ensureUi(state) : null;
+    captureBrowserScroll(ui, panel);
     panel.innerHTML = '';
-    if (!rom || !rom.art) return;
-    var state = rom.art;
+    if (!state) return;
     if (!state.supported) {
       var unavailable = element('div', 'art-unavailable');
       unavailable.appendChild(element('h2', '', 'Art and Animation'));
       unavailable.appendChild(element('p', '', state.unavailableReason));
       panel.appendChild(unavailable); return;
     }
-    var ui = ensureUi(state);
     function rerender() { render(panel, rom, options); }
     topHeader(panel, rom, state, ui, options, rerender);
     var shell = element('div', 'art-shell');
@@ -1137,6 +1168,7 @@ window.OB64 = window.OB64 || {};
       shell.appendChild(iconEditor(state, ui, options, rerender));
     }
     panel.appendChild(shell);
+    restoreBrowserScroll(ui, panel);
     if (focus) {
       var replacement = panel.querySelector('[data-art-focus-key="' + focus.key + '"]');
       if (replacement) {
@@ -1154,6 +1186,8 @@ window.OB64 = window.OB64 || {};
     hsvForWord: hsvForWord,
     wordForHsv: wordForHsv,
     nearestPaletteWord: nearestPaletteWord,
+    captureBrowserScroll: captureBrowserScroll,
+    restoreBrowserScroll: restoreBrowserScroll,
     decodeAvatarImageSource: decodeAvatarImageSource,
     decodeAvatarPngSource: decodeAvatarPngSource,
     decodeAvatarPngFile: decodeAvatarPngFile
