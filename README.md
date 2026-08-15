@@ -77,11 +77,11 @@ files, then export a patched ROM.
 No installation, no build step. Open `index.html` in any modern browser, drop
 in your own copy of the US retail ROM, and start modding.
 
-> **ROM compatibility:** the editor is built and tested against the North
+> **ROM compatibility:** the editor's strongest verified baselines are the North
 > American (USA) retail header revision 0 dump:
 > `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64` (41,943,040 bytes,
 > .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
-> It also accepts the exact common USA header revision 1 dump in `.z64`, `.v64`,
+> It also verifies the common USA header revision 1 dump in `.z64`, `.v64`,
 > or `.n64` byte order for data editing/export. Header revision 1 supports the Chaos
 > Frame Counter and Squads runtime override export; High Attack Streamsplit
 > remains header revision 0-only until its changed header revision 1 code path is
@@ -95,11 +95,26 @@ in your own copy of the US retail ROM, and start modding.
 >
 > Filenames are not compatibility checks. The loader recognizes `.z64`, `.v64`,
 > and `.n64` from their contents, normalizes them internally, and preserves the
-> input byte order on export. It then requires an exact approved vanilla SHA-256.
-> Modified, exported, prepatched, Japanese, European, debug, and prototype ROMs
-> are rejected. Resume work by loading an exact vanilla ROM, then its Project.
-> Native Art and Animation editing is currently revision 0-only. Revision 1
-> remains usable for its other supported editor features.
+> input byte order on export. Exact approved SHA-256 values receive a verified
+> identity. Modified revision 0/1 images load against their known offset profile,
+> then every parser and patch owner is checked separately.
+>
+> A compatibility report opens automatically when any check needs attention.
+> `Readable` means the expected structure was found. `Warning` means the structure
+> is readable but differs from the strongest verified baseline. `Conflict` means
+> a safety check failed, often because foreign bytes occupy a guarded write area. `Blocked` means that
+> parser or feature cannot be used safely. A failed required parser blocks its
+> dependent tabs and complete ROM export; unrelated readable tabs remain usable.
+> The report can be reopened from the header and downloaded as detailed JSON.
+> An invalid source ROM checksum also disables export until the source is repaired.
+>
+> ROMs with an unknown region, game ID, or header revision load diagnostic-only.
+> The editor reports their headers but does not guess fixed offsets. Files whose
+> N64 byte order cannot be recognized still fail at intake because their bytes
+> cannot be normalized safely. Modified and prepatched ROMs are not automatically
+> runtime-compatible; review every conflict and cold-boot every exported result.
+> Native Art and Animation editing remains revision 0-only, and already-relocated
+> native art currently loads as a blocked Art feature rather than being guessed.
 
 ## Releases and Downloads
 
@@ -501,8 +516,13 @@ safety behavior.
 
 ## Current Limitations
 
-- Only exact approved North American retail header revision 0/1 images are
-  accepted. Modified images, other regions, and prototypes are rejected.
+- Exact approved North American retail header revision 0/1 images are the fully
+  verified baselines. Modified revision 0/1 images receive parser-by-parser and
+  patch-owner diagnostics. Other regions, revisions, and prototypes are
+  diagnostic-only because no fixed-offset profile exists for them.
+- A readable modified ROM is not proof that the game will run. The editor can
+  identify known structures and ownership conflicts, but it cannot prove every
+  unknown modification. Cold-boot and test each exported ROM.
 - Native Art and Animation editing is revision 0-only. Revision 1 can use its
   other supported editor features.
 - Avatar image import accepts PNG and JPEG files. It converts arbitrary source
@@ -568,7 +588,7 @@ safety behavior.
    ```
    Or open `index.html` directly in a browser (most features work, but file
    downloads need a real `http://` origin in some browsers).
-2. Click **Load ROM** and select your legally-obtained supported US retail ROM.
+2. Click **Load ROM** and select your legally-obtained ROM image.
 3. Use the tabs to make edits — pending changes show in the status bar.
 4. **Export ROM** writes a fresh ROM in the loaded byte order to your downloads.
 5. (Optional) **Save Project** writes your edits as JSON. **Load Project** re-applies

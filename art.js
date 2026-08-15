@@ -858,7 +858,7 @@ window.OB64 = window.OB64 || {};
           ((ori >>> 21) & 31) !== register || ((ori >>> 16) & 31) !== register ||
           observed !== expected) {
         exportFailure(asset, 'pointer owner preimage', hex(observed), hex(expected),
-          'reload the exact vanilla ROM and reapply the Project');
+          'reload the original source ROM and reapply the Project');
       }
       writeU32(bytes, site.lui, ((lui & 0xFFFF0000) | ((replacement >>> 16) & 0xFFFF)) >>> 0);
       writeU32(bytes, site.ori, ((ori & 0xFFFF0000) | (replacement & 0xFFFF)) >>> 0);
@@ -979,6 +979,12 @@ window.OB64 = window.OB64 || {};
   }
 
   function parseIconPack(z64, spec) {
+    var activeKey = resolveSplitKey(z64, spec.sites, spec.label + ' icon pack');
+    if (activeKey !== spec.resourceKey) {
+      throw new ArtError(spec.label + ' icon pointers select ' + hex(activeKey) +
+        ' instead of the verified retail resource ' + hex(spec.resourceKey) +
+        '. Loading an already-relocated icon pack is not implemented.');
+    }
     var resource = readCompressedResource(z64, spec.resourceKey);
     if (resource.entry !== spec.sizeWord || resource.storedLength !== spec.retailStoredLength) {
       throw new ArtError(spec.label + ' icon pack retail envelope differs from verified layout');
@@ -1168,27 +1174,31 @@ window.OB64 = window.OB64 || {};
 
   async function initialize(rom) {
     var hash = await sha256Hex(rom.z64);
-    var supportedHashes = [C.REV0_Z64_SHA256, C.REV1_Z64_SHA256];
-    if (supportedHashes.indexOf(hash) === -1) {
-      throw new ArtError(
-        'Unsupported ROM identity. This editor accepts only exact vanilla US retail ROMs. ' +
-        'Observed normalized SHA-256 ' + hash + '; expected ' + supportedHashes.join(' or ') +
-        '. To resume an edit, load a vanilla ROM and then load its Project JSON.'
-      );
-    }
+    var expectedHash = rom.layout && rom.layout.id === 'us-rev0'
+      ? C.REV0_Z64_SHA256
+      : (rom.layout && rom.layout.id === 'us-rev1' ? C.REV1_Z64_SHA256 : '');
     var state = {
       schemaVersion: 1, identityHash: hash, retailZ64: rom.z64.slice(),
-      supported: rom.layout && rom.layout.id === 'us-rev0',
+      exactRetail: !!expectedHash && hash === expectedHash,
+      supported: false,
       unavailableReason: '', lastExport: null, selectedTab: 'avatars',
       blocked: { avatars: {}, icons: {} }
     };
-    if (!state.supported) {
-      state.unavailableReason = 'Art editing is verified for US retail header rev 0 only. This exact vanilla ROM remains available for the other editor tabs.';
+    if (!rom.layout || rom.layout.id !== 'us-rev0') {
+      state.unavailableReason = 'Art editing is verified for US retail header rev 0 only. Other readable editor tabs remain available for this ROM.';
       rom.art = state;
       return state;
     }
-    state.avatar = parseAvatars(rom.z64);
-    state.icons = parseIcons(rom.z64);
+    try {
+      state.avatar = parseAvatars(rom.z64);
+      state.icons = parseIcons(rom.z64);
+    } catch (error) {
+      state.unavailableReason = 'Native art is unavailable for this ROM: ' +
+        (error && error.message ? error.message : String(error));
+      rom.art = state;
+      return state;
+    }
+    state.supported = true;
     state.avatarRetailColorSet = new Set(state.avatar.colorLibrary);
     state.iconRetailColorSet = new Set(state.icons.colorLibrary);
     rom.art = state;
@@ -1387,7 +1397,7 @@ window.OB64 = window.OB64 || {};
     for (var offset = C.ARENA_START; offset < C.ARENA_END; offset++) {
       if (bytes[offset] !== C.ARENA_FILL) exportFailure('native art relocation arena',
         'retail fill ownership', hex(bytes[offset], 2) + ' at z64 ' + hex(offset),
-        '0xFF', 'reload the exact vanilla ROM and reapply the Project');
+        '0xFF', 'use a ROM with an unoccupied native-art relocation arena');
     }
   }
 
@@ -1481,7 +1491,7 @@ window.OB64 = window.OB64 || {};
       : [];
     var log = [];
     restorePreviousArt(state, bytes);
-    if (state.lastExport) log.push('Restored the prior session art allocation to the vanilla baseline before rebuilding.');
+    if (state.lastExport) log.push('Restored the prior session art allocation to the loaded source baseline before rebuilding.');
     if (plan.allocations.length) assertArenaFill(bytes);
     plan.allocations.forEach(function(allocation) { writeEnvelope(bytes, allocation, ranges); });
 
@@ -1491,7 +1501,7 @@ window.OB64 = window.OB64 || {};
         var observed = readU16(bytes, route.routeOffset);
         if (observed !== route.token) exportFailure(row.appearance.className + ' ' + row.appearance.label,
           'class route preimage', hex(observed, 4), hex(route.token, 4),
-          'reload the exact vanilla ROM and reapply the Project');
+          'reload the original source ROM and reapply the Project');
         writeU16(bytes, route.routeOffset, token);
         ranges.push([route.routeOffset, route.routeOffset + 2]);
         log.push(row.appearance.className + ' ' + row.appearance.label +

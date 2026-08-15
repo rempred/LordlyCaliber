@@ -23,6 +23,10 @@
         <button id="btn-save-patch" class="btn-secondary" disabled>Save Project</button>
         <span id="patch-chip" class="patch-chip" hidden></span>
 
+        <button id="btn-rom-compatibility" class="btn-secondary rom-compatibility-button" hidden>
+          ROM Compatibility
+        </button>
+
         <div class="header-button-stack">
           <button id="btn-export" disabled>Export ROM</button>
           <button id="btn-changelog" class="btn-secondary" disabled>Changelog</button>
@@ -51,9 +55,9 @@
   <div class="content" id="content">
     <div class="empty-state" id="empty-state">
       <h2>No ROM Loaded</h2>
-      <p>Click "Load ROM" to open a supported Ogre Battle 64 ROM.</p>
+      <p>Click "Load ROM" to open an Ogre Battle 64 ROM or inspect an incompatible ROM.</p>
       <div class="supported-roms">
-        <p>Supported ROMs (SHA-256)</p>
+        <p>Verified vanilla reference ROMs (SHA-256)</p>
         <dl>
           <dt>Header rev 0</dt>
           <dd>
@@ -66,6 +70,7 @@
             <span>3BFBAF0AF968795102F6D136713665E347C22723B4CA75BD5494FDC97DF5919E</span>
           </dd>
         </dl>
+        <p>Modified Rev 0/1 ROMs load cautiously. The editor reports readable parsers, unavailable systems, and patch conflicts before editing.</p>
       </div>
     </div>
 
@@ -115,6 +120,7 @@
   <script src="scenario-eset-codec.js"></script>
   <script src="scenario.js"></script>
   <script src="rom-export-validator.js"></script>
+  <script src="rom-compatibility.js"></script>
   <script src="changelog.js"></script>
   <script src="damage-calculator.js"></script>
   <script src="app.js"></script>

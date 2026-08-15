@@ -153,6 +153,7 @@ window.OB64 = window.OB64 || {};
   var btnExport = document.getElementById('btn-export');
   var btnChangelog = document.getElementById('btn-changelog');
   var btnSavePatch = document.getElementById('btn-save-patch');
+  var btnRomCompatibility = document.getElementById('btn-rom-compatibility');
   var patchFileInput = document.getElementById('patch-file');
   var btnLoadPatchLabel = document.getElementById('btn-load-patch-label');
   var patchChip = document.getElementById('patch-chip');
@@ -184,12 +185,13 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // ROM Loading
   // ============================================================
-  function setRomMutationControlsEnabled(enabled) {
-    btnExport.disabled = !enabled;
-    btnChangelog.disabled = !enabled;
-    btnSavePatch.disabled = !enabled;
-    patchFileInput.disabled = !enabled;
-    btnLoadPatchLabel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+  function setRomMutationControlsEnabled(editEnabled, exportEnabled) {
+    if (exportEnabled == null) exportEnabled = editEnabled;
+    btnExport.disabled = !exportEnabled;
+    btnChangelog.disabled = !editEnabled;
+    btnSavePatch.disabled = !editEnabled;
+    patchFileInput.disabled = !editEnabled;
+    btnLoadPatchLabel.setAttribute('aria-disabled', editEnabled ? 'false' : 'true');
   }
 
   function setRomEditingContentUnavailable(busy) {
@@ -212,6 +214,11 @@ window.OB64 = window.OB64 || {};
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
+    if (btnRomCompatibility) {
+      btnRomCompatibility.hidden = true;
+      btnRomCompatibility.disabled = true;
+      btnRomCompatibility.classList.remove('is-warning', 'is-blocked', 'is-verified');
+    }
     fileInput.disabled = false;
     setRomEditingContentUnavailable(!!loadBusy);
     emptyState.style.display = '';
@@ -246,33 +253,84 @@ window.OB64 = window.OB64 || {};
     reader.onload = async function(ev) {
       if (generation !== romLoadGeneration || activeRomReader !== reader) return;
       try {
-        var sourceIdentity = await OB64.consumableEffects.inspectSourceIdentity(
-          new Uint8Array(ev.target.result),
-          file.name
-        );
+        var sourceIdentity = null;
+        var sourceIdentityError = null;
+        try {
+          sourceIdentity = await OB64.consumableEffects.inspectSourceIdentity(
+            new Uint8Array(ev.target.result),
+            file.name
+          );
+        } catch (identityError) {
+          sourceIdentityError = identityError;
+          sourceIdentity = { facts: { filename: file.name } };
+        }
         if (generation !== romLoadGeneration || activeRomReader !== reader) return;
 
         // Parse and initialize the complete candidate session locally. Nothing
         // below this point may expose a partial ROM through OB64._romRef().
         var nextRom = OB64.loadROM(ev.target.result);
-        // The product accepts only exact vanilla retail inputs. Art state keeps
-        // that immutable baseline so exported ROMs are resumed through Project JSON.
-        await OB64.art.initialize(nextRom);
-        OB64.consumableEffects.initializeSession(nextRom, sourceIdentity, {
-          filename: file.name
-        });
-        // Rehydrate an existing shared ROM-tail shop table before taking the
-        // project baseline, so reopening a patched ROM preserves its shops.
-        if (OB64.runtimeOverrides) OB64.runtimeOverrides.applyParsedShopOverrides(nextRom);
-        OB64.combatAnimationOverrides.initialize(nextRom);
-        OB64.patch.snapshotOriginal(nextRom);   // baseline for later diffing
-        OB64.tools.initState(nextRom);          // detect Tools-tab features in the ROM
+        await OB64.romCompatibility.identify(nextRom, sourceIdentity);
+        if (sourceIdentityError) {
+          OB64.romCompatibility.setComponent(nextRom.compatibility, {
+            id: 'source-identity',
+            label: 'Source container identity',
+            category: 'identity',
+            status: 'blocked',
+            reason: sourceIdentityError.message || String(sourceIdentityError),
+            details: { exception: sourceIdentityError.name || 'Error' },
+            affectsTabs: ['consumables'],
+            requiredForExport: true
+          });
+          OB64.romCompatibility.recompute(nextRom.compatibility);
+        }
+
+        // A recognized layout with at least one readable editor surface can
+        // initialize each feature independently. One incompatible feature must
+        // not discard the readable parts of the ROM or hide its own diagnostic.
+        if (nextRom.compatibility.canEdit) {
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'native-art', label: 'Avatars and item icons', affectsTabs: ['art']
+          }, function() { return OB64.art.initialize(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'consumable-effects', label: 'Consumable effect code and text',
+            affectsTabs: ['consumables'], requiredForExport: true
+          }, function() {
+            return OB64.consumableEffects.initializeSession(nextRom, sourceIdentity, {
+              filename: file.name
+            });
+          });
+          // Rehydrate an existing shared ROM-tail shop table before taking the
+          // project baseline, so reopening a patched ROM preserves its shops.
+          if (OB64.runtimeOverrides) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'runtime-shop-readback', label: 'Runtime shop override readback',
+              affectsTabs: ['shops']
+            }, function() { return OB64.runtimeOverrides.applyParsedShopOverrides(nextRom); });
+          }
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'combat-animation-overrides', label: 'Combat animation override lane',
+            affectsTabs: ['classes']
+          }, function() { return OB64.combatAnimationOverrides.initialize(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'project-baseline', label: 'Project and export baseline',
+            requiredForExport: true
+          }, function() { return OB64.patch.snapshotOriginal(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'tools-patches', label: 'Tools patch regions', affectsTabs: ['tools']
+          }, function() { return OB64.tools.initState(nextRom); });
+          if (nextRom.squadOverrides) nextRom.squadOverrides = {};
+          if (OB64.scenario) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'scenario-models', label: 'Scenario authoring models', affectsTabs: ['scenario']
+            }, function() { return OB64.scenario.ensureState(nextRom); });
+          }
+        }
+
+        OB64.romCompatibility.assessFeatures(nextRom);
         var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
-        if (nextRom.squadOverrides) nextRom.squadOverrides = {};
-        if (OB64.scenario) OB64.scenario.ensureState(nextRom);
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
-        nextDirty.tools = OB64.tools.pendingChanges(nextRom) > 0;
+        nextDirty.tools = !!nextRom.tools && OB64.tools.pendingChanges(nextRom) > 0;
 
         // This is the single shared-state/UI commit for the current selection.
         if (generation !== romLoadGeneration || activeRomReader !== reader) return;
@@ -283,11 +341,31 @@ window.OB64 = window.OB64 || {};
         emptyState.style.display = 'none';
         updatePatchChip();
         renderTab(activeTab);
-        setRomMutationControlsEnabled(true);
+        setRomMutationControlsEnabled(
+          rom.compatibility.canEdit,
+          rom.compatibility.canExport
+        );
+        updateRomCompatibilityButton(rom.compatibility);
         setRomEditingContentAvailable();
-        statusBar.textContent = 'ROM loaded: ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' +
+        var compatibilityCounts = OB64.romCompatibility.counts(rom.compatibility);
+        var loadDisposition = rom.compatibility.overall === 'verified'
+          ? ''
+          : (rom.compatibility.overall === 'blocked'
+            ? ' with blocked systems'
+            : ' with compatibility warnings');
+        statusBar.textContent = 'ROM loaded' + loadDisposition +
+          ': ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' +
           (rom.layout ? rom.layout.name : 'Unknown layout') + ' .' + (rom.byteOrder || 'v64') +
-          ' | ' + rom.archives.length + ' archives | 0 pending changes';
+          ' | ' + rom.archives.length + ' archives | ' +
+          compatibilityCounts.conflict + ' conflict' + (compatibilityCounts.conflict === 1 ? '' : 's') +
+          ', ' + compatibilityCounts.blocked + ' blocked check' + (compatibilityCounts.blocked === 1 ? '' : 's') +
+          ' | 0 pending changes';
+        var compatibilityLog = OB64.romCompatibility.logLine(rom.compatibility);
+        if (rom.compatibility.overall === 'verified') console.info(compatibilityLog);
+        else console.warn(compatibilityLog, rom.compatibility);
+        if (rom.compatibility.overall !== 'verified') {
+          showRomCompatibilityModal(rom.compatibility);
+        }
       } catch(err) {
         currentRomLoadFailed(generation, reader, err.message, err);
       } finally {
@@ -383,6 +461,11 @@ window.OB64 = window.OB64 || {};
 
   btnExport.addEventListener('click', async function() {
     if (!rom) return;
+    if (!rom.compatibility || !rom.compatibility.canExport) {
+      statusBar.textContent = 'ROM export is blocked by the compatibility report.';
+      if (rom.compatibility) showRomCompatibilityModal(rom.compatibility);
+      return;
+    }
     var exportRom = rom;
     var exportLoadGeneration = romLoadGeneration;
     btnExport.disabled = true;
@@ -994,11 +1077,10 @@ window.OB64 = window.OB64 || {};
     } finally {
       exportProgress.close();
       fileInput.disabled = false;
-      btnExport.disabled = !rom;
-      btnSavePatch.disabled = !rom;
-      btnChangelog.disabled = !rom;
-      patchFileInput.disabled = !rom;
-      btnLoadPatchLabel.setAttribute('aria-disabled', rom ? 'false' : 'true');
+      setRomMutationControlsEnabled(
+        !!(rom && rom.compatibility && rom.compatibility.canEdit),
+        !!(rom && rom.compatibility && rom.compatibility.canExport)
+      );
       if (exportContent && romLoadGeneration === exportLoadGeneration &&
           rom === exportRom) {
         setRomEditingContentAvailable();
@@ -1209,6 +1291,234 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function updateRomCompatibilityButton(report) {
+    if (!btnRomCompatibility) return;
+    btnRomCompatibility.hidden = !report;
+    btnRomCompatibility.disabled = !report;
+    btnRomCompatibility.classList.remove('is-warning', 'is-blocked', 'is-verified');
+    if (!report) {
+      btnRomCompatibility.textContent = 'ROM Compatibility';
+      return;
+    }
+    var label = report.overall === 'verified'
+      ? 'Verified'
+      : (report.overall === 'blocked' ? 'Blocked' : 'Warning');
+    btnRomCompatibility.textContent = 'ROM Compatibility: ' + label;
+    btnRomCompatibility.classList.add('is-' + report.overall);
+  }
+
+  function romCompatibilityFilename(report) {
+    var hash = report && report.source && report.source.normalizedSha256 || 'unknown';
+    return 'ob64-rom-compatibility-' + hash.slice(0, 12).toLowerCase() + '.json';
+  }
+
+  function downloadRomCompatibilityReport(report) {
+    var blob = new Blob([JSON.stringify(report, null, 2) + '\n'], {
+      type: 'application/json'
+    });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = romCompatibilityFilename(report);
+    link.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+    return link.download;
+  }
+
+  function showRomCompatibilityModal(report) {
+    if (!report) return;
+    var previous = document.querySelector('.rom-compatibility-overlay');
+    if (previous && previous.parentNode) previous.parentNode.removeChild(previous);
+
+    var overlay = document.createElement('div');
+    overlay.className = 'error-modal-overlay rom-compatibility-overlay';
+    var modal = document.createElement('div');
+    modal.className = 'error-modal rom-validation-modal rom-compatibility-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('tabindex', '-1');
+    modal.setAttribute('aria-labelledby', 'rom-compatibility-title');
+    overlay.appendChild(modal);
+
+    var header = document.createElement('div');
+    header.className = 'error-modal-header';
+    var title = document.createElement('h2');
+    title.id = 'rom-compatibility-title';
+    title.textContent = report.overall === 'verified'
+      ? 'ROM Compatibility Verified'
+      : (report.overall === 'blocked' ? 'ROM Loaded for Diagnosis' : 'ROM Compatibility Warning');
+    header.appendChild(title);
+    var closeX = document.createElement('button');
+    closeX.type = 'button';
+    closeX.className = 'error-modal-close';
+    closeX.setAttribute('aria-label', 'Close ROM compatibility report');
+    closeX.textContent = '×';
+    closeX.addEventListener('click', close);
+    header.appendChild(closeX);
+    modal.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'error-modal-body rom-validation-body rom-compatibility-body';
+    var intro = document.createElement('p');
+    intro.className = 'rom-validation-intro';
+    intro.textContent = report.summary;
+    body.appendChild(intro);
+
+    var identity = document.createElement('dl');
+    identity.className = 'rom-compatibility-identity';
+    [
+      ['Classification', report.classification],
+      ['Selected layout', report.source.selectedLayout || 'None'],
+      ['Header revision', report.source.headerRevision == null ? 'Unknown' : String(report.source.headerRevision)],
+      ['Byte order', report.source.byteOrder],
+      ['ROM size', Number(report.source.size || 0).toLocaleString() + ' bytes'],
+      ['Normalized SHA-256', report.source.normalizedSha256 || 'Unavailable'],
+      ['Editing', report.canEdit ? 'Enabled for readable systems' : 'Disabled'],
+      ['Export', report.canExport ? 'Enabled with per-feature validation' : 'Disabled']
+    ].forEach(function(pair) {
+      var dt = document.createElement('dt'); dt.textContent = pair[0];
+      var dd = document.createElement('dd'); dd.textContent = pair[1];
+      identity.appendChild(dt); identity.appendChild(dd);
+    });
+    body.appendChild(identity);
+
+    if (report.reasons && report.reasons.length) {
+      var runtime = document.createElement('section');
+      runtime.className = 'rom-compatibility-runtime';
+      var runtimeTitle = document.createElement('h3');
+      runtimeTitle.textContent = 'Why this ROM may not work';
+      runtime.appendChild(runtimeTitle);
+      var runtimeList = document.createElement('ul');
+      report.reasons.forEach(function(foundReason) {
+        var runtimeItem = document.createElement('li');
+        runtimeItem.textContent = foundReason;
+        runtimeList.appendChild(runtimeItem);
+      });
+      runtime.appendChild(runtimeList);
+      body.appendChild(runtime);
+    }
+
+    var list = document.createElement('div');
+    list.className = 'rom-validation-error-list rom-compatibility-list';
+    report.components.forEach(function(found) {
+      var card = document.createElement('section');
+      card.className = 'rom-validation-error rom-compatibility-check is-' + found.status;
+      var heading = document.createElement('h3');
+      var badge = document.createElement('span');
+      badge.className = 'rom-compatibility-status';
+      badge.textContent = found.status === 'readable' ? 'READABLE' : found.status.toUpperCase();
+      heading.appendChild(badge);
+      heading.appendChild(document.createTextNode(found.label));
+      card.appendChild(heading);
+      var reason = document.createElement('p');
+      reason.textContent = found.reason;
+      card.appendChild(reason);
+      if (found.affectsTabs && found.affectsTabs.length) {
+        var affected = document.createElement('p');
+        affected.className = 'rom-compatibility-affects';
+        affected.textContent = 'Affects: ' + found.affectsTabs.join(', ') + '.';
+        card.appendChild(affected);
+      }
+      list.appendChild(card);
+    });
+    body.appendChild(list);
+
+    var note = document.createElement('p');
+    note.className = 'rom-validation-report-note';
+    note.textContent = 'Download the report for hashes, parser counts, offsets, ownership states, and exact technical details.';
+    body.appendChild(note);
+    modal.appendChild(body);
+
+    var footer = document.createElement('div');
+    footer.className = 'error-modal-footer rom-validation-footer';
+    var download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'error-modal-ok rom-validation-download';
+    download.textContent = 'Download Compatibility Report';
+    download.addEventListener('click', function() {
+      var filename = downloadRomCompatibilityReport(report);
+      statusBar.textContent = 'ROM compatibility report downloaded as ' + filename + '.';
+    });
+    footer.appendChild(download);
+    var done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'error-modal-ok rom-validation-close';
+    done.textContent = 'Close';
+    done.addEventListener('click', close);
+    footer.appendChild(done);
+    modal.appendChild(footer);
+
+    overlay.addEventListener('click', function(event) {
+      if (event.target === overlay) close();
+    });
+    document.body.appendChild(overlay);
+    modal.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(event) {
+      if (event.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+  }
+
+  function renderCompatibilityBlockedPanel(panel, tab, state) {
+    panel.innerHTML = '';
+    var shell = document.createElement('section');
+    shell.className = 'rom-compatibility-tab-block';
+    var title = document.createElement('h2');
+    title.textContent = 'This part of the ROM could not be read safely';
+    shell.appendChild(title);
+    var intro = document.createElement('p');
+    intro.textContent = 'The ROM remains loaded. The editor did not guess at missing offsets or structures for the ' + tab + ' tab.';
+    shell.appendChild(intro);
+    var list = document.createElement('ul');
+    (state.reasons || []).forEach(function(reason) {
+      var item = document.createElement('li');
+      item.textContent = reason;
+      list.appendChild(item);
+    });
+    shell.appendChild(list);
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn-secondary';
+    open.textContent = 'Open ROM Compatibility Report';
+    open.addEventListener('click', function() {
+      showRomCompatibilityModal(rom.compatibility);
+    });
+    shell.appendChild(open);
+    panel.appendChild(shell);
+  }
+
+  function prependCompatibilityWarning(panel, state) {
+    if (!panel || !state || state.status !== 'warning') return;
+    var warning = document.createElement('section');
+    warning.className = 'rom-compatibility-tab-warning';
+    var title = document.createElement('strong');
+    title.textContent = 'Compatibility warning';
+    warning.appendChild(title);
+    var summary = document.createElement('span');
+    summary.textContent = ' ' + state.reasons.join(' ');
+    warning.appendChild(summary);
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn-secondary';
+    open.textContent = 'Details';
+    open.addEventListener('click', function() {
+      showRomCompatibilityModal(rom.compatibility);
+    });
+    warning.appendChild(open);
+    panel.insertBefore(warning, panel.firstChild);
+  }
+
+  if (btnRomCompatibility) {
+    btnRomCompatibility.addEventListener('click', function() {
+      if (rom && rom.compatibility) showRomCompatibilityModal(rom.compatibility);
+    });
+  }
+
   // ============================================================
   // Tab Switching
   // ============================================================
@@ -1257,6 +1567,17 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   function renderTab(tab) {
     var panel = document.getElementById('panel-' + tab);
+    var compatibilityState = null;
+    if (rom && rom.compatibility && tab !== 'save') {
+      compatibilityState = OB64.romCompatibility.tabState(
+        rom.compatibility,
+        tab
+      );
+      if (compatibilityState.status === 'blocked') {
+        renderCompatibilityBlockedPanel(panel, tab, compatibilityState);
+        return;
+      }
+    }
     switch(tab) {
       case 'shops':     renderShops(panel); break;
       case 'consumables':
@@ -1290,6 +1611,7 @@ window.OB64 = window.OB64 || {};
         break;
       case 'map':       renderMap(panel); break;
     }
+    prependCompatibilityWarning(panel, compatibilityState);
   }
 
   function renderChangelog(panel) {

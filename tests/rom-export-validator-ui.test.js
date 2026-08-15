@@ -273,6 +273,7 @@ const sourceRedirectIndex = indexSource.indexOf('source-redirect.js');
 const statGateRelocationIndex = indexSource.indexOf('stat-gate-relocation.js');
 const scenarioIndex = indexSource.indexOf('scenario.js');
 const validatorIndex = indexSource.indexOf('rom-export-validator.js');
+const compatibilityIndex = indexSource.indexOf('rom-compatibility.js');
 const appIndex = indexSource.indexOf('app.js');
 check('shared redirect module loads before stat, Scenario, and validation',
   sourceRedirectIndex >= 0 &&
@@ -285,6 +286,10 @@ check('stat-gate relocation module loads before validation and export',
     statGateRelocationIndex < appIndex);
 check('validator module loads before the export controller',
   validatorIndex >= 0 && validatorIndex < appIndex);
+check('compatibility assessment loads after validation and before the controller',
+  compatibilityIndex > validatorIndex && compatibilityIndex < appIndex);
+check('header exposes the ROM compatibility report',
+  indexSource.includes('id="btn-rom-compatibility"'));
 const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
 check('export controller uses cooperative validation progress',
   appSource.includes('validateAsync'));
@@ -296,6 +301,12 @@ check('Tools compatibility uses the Consumable Effects ownership bridge',
   /consumableEffects\.toolCompatibilityOwners\(\s*effectOwners,\s*effectTransaction\s*\)/.test(
     appSource
   ));
+check('ROM load performs identity and feature compatibility assessment',
+  appSource.includes('romCompatibility.identify') &&
+    appSource.includes('romCompatibility.assessFeatures'));
+check('ROM load keeps a detailed compatibility report available',
+  appSource.includes('showRomCompatibilityModal') &&
+    appSource.includes('downloadRomCompatibilityReport'));
 
 const cssSource = fs.readFileSync(path.join(EDITOR, 'style.css'), 'utf8');
 for (const selector of [
@@ -309,6 +320,11 @@ for (const selector of [
   '.rom-export-progress-stage',
   '.rom-export-progress-track',
   '.rom-export-progress-fill',
+  '.rom-compatibility-modal',
+  '.rom-compatibility-check',
+  '.rom-compatibility-runtime',
+  '.rom-compatibility-tab-block',
+  '.rom-compatibility-tab-warning',
 ]) {
   check('validation popup CSS defines ' + selector, cssSource.includes(selector));
 }

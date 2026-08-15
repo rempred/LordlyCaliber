@@ -240,6 +240,23 @@ OB64.detectRomLayout = function(z64) {
   return out;
 };
 
+OB64.inspectRomHeader = function(z64) {
+  if (!z64 || z64.length < 0x40) {
+    return {
+      imageName: '', gameId: '', country: '', version: null,
+      crc1: null, crc2: null
+    };
+  }
+  return {
+    imageName: OB64.romHeaderText(z64, 0x20, 20).trim(),
+    gameId: OB64.romHeaderText(z64, 0x3B, 2),
+    country: OB64.romHeaderText(z64, 0x3E, 1),
+    version: z64[0x3F],
+    crc1: OB64.readU32BE(z64, 0x10),
+    crc2: OB64.readU32BE(z64, 0x14)
+  };
+};
+
 OB64.applyRomLayout = function(layout) {
   if (!layout || !layout.offsets) throw new Error('Missing ROM layout profile');
   for (var k in layout.offsets) OB64[k] = layout.offsets[k];
@@ -1998,60 +2015,363 @@ OB64.shopExpendables = function(consumables) {
 // ============================================================
 // Master ROM loader — loads and parses everything
 // ============================================================
-OB64.loadROM = function(romData) {
-  var normalized = OB64.normalizeRomImage(romData);
-  if (!normalized.z64) {
-    throw new Error('Unsupported or unrecognized ROM image. Please load a US retail header revision 0 or 1 .v64/.z64/.n64 ROM.');
+OB64.ROM_RETAIL_SIZE = 0x02800000;
+
+OB64.makeRomCompatibilityReport = function(z64, byteOrder, layout) {
+  var header = OB64.inspectRomHeader(z64);
+  return {
+    schema: 'ob64-rom-compatibility-report',
+    version: 1,
+    overall: 'pending',
+    classification: layout ? 'supported-layout-unverified-identity' : 'unknown-layout',
+    exactVanilla: false,
+    canEdit: false,
+    canExport: false,
+    source: {
+      size: z64 ? z64.length : 0,
+      byteOrder: byteOrder || 'unknown',
+      normalizedSha256: '',
+      imageName: header.imageName,
+      gameId: header.gameId,
+      country: header.country,
+      headerRevision: header.version,
+      crc1: header.crc1,
+      crc2: header.crc2,
+      selectedLayout: layout && layout.id || null
+    },
+    components: [],
+    tabs: {},
+    summary: '',
+    reasons: []
+  };
+};
+
+OB64.setRomCompatibilityComponent = function(report, component) {
+  if (!report || !component || !component.id) return component;
+  for (var i = 0; i < report.components.length; i++) {
+    if (report.components[i].id === component.id) {
+      report.components[i] = component;
+      return component;
+    }
   }
-  var z64 = normalized.z64;
-  var layout = OB64.detectRomLayout(z64);
-  if (!layout) {
-    throw new Error('Unsupported ROM revision. This editor supports US retail header revision 0 and 1 only.');
-  }
-  OB64.applyRomLayout(layout);
-  var archives = OB64.findArchives(z64);
+  report.components.push(component);
+  return component;
+};
 
-  // Extract key archives
-  var enemydatBuf = OB64.extractArchive(z64, archives[647]);
-  var ktenmainBuf = OB64.extractArchive(z64, archives[691]);
-  var shopBuf = OB64.extractArchive(z64, archives[751]);
+function romCompatibilityComponent(report, id, label, status, reason, details, options) {
+  options = options || {};
+  return OB64.setRomCompatibilityComponent(report, {
+    id: id,
+    label: label,
+    category: options.category || 'parser',
+    status: status,
+    reason: reason || '',
+    details: details || {},
+    affectsTabs: (options.affectsTabs || []).slice(),
+    requiredForEditing: options.requiredForEditing !== false
+  });
+}
 
-  var strongholds = OB64.parseKtenmain(ktenmainBuf);
-  // Standalone research scripts historically load parsers.js without the full
-  // browser bundle. The product page loads description-codec.js before this
-  // function is called and receives all four parsed text blocks.
-  var descriptions = OB64.descriptionCodec
-    ? OB64.descriptionCodec.parseAll(z64)
-    : null;
-
+function emptyRomModel(z64, normalized, layout, report) {
   return {
     z64: z64,
     byteOrder: normalized.byteOrder,
     exportByteOrder: normalized.byteOrder,
     layout: layout,
-    archives: archives,
-    enemySquads: OB64.parseEnemydat(enemydatBuf),
-    ktenmainRaw: ktenmainBuf.slice ? ktenmainBuf.slice(0) : new Uint8Array(ktenmainBuf),
-    strongholds: strongholds,
-    shopStrongholds: OB64.buildShopStrongholds(strongholds),
-    shops: OB64.parseShops(shopBuf),
-    itemStats: OB64.parseItemStats(z64),
-    worldMap: OB64.parseWorldMap(z64),
-    classGrowth: OB64.parseClassGrowth(z64),
-    growthCurves: OB64.parseGrowthCurves(z64),
-    classEvolution: OB64.parseClassEvolution(z64),
-    classGroups: OB64.parseClassGroups(z64),
-    classDefs: OB64.parseClassDefs(z64),
-    actionDefs: OB64.parseActionDefs(z64),
-    consumables: OB64.parseConsumables(z64),
-    itemDescriptions: descriptions && descriptions.items,
-    consumableDescriptions: descriptions && descriptions.consumables,
-    classDescriptions: descriptions && descriptions.classes,
-    actionDescriptions: descriptions && descriptions.actions,
-    statGates: OB64.parseStatGates(z64),
-    neutralEncounters: OB64.parseNeutralEncounters(z64),
-    creatureDrops: OB64.parseCreatureDrops(z64),
+    archives: [],
+    enemySquads: [],
+    ktenmainRaw: new Uint8Array(0),
+    strongholds: [],
+    shopStrongholds: {},
+    shops: [],
+    itemStats: [],
+    worldMap: { edges: [], locations: OB64.LOCATION_NAMES || {} },
+    classGrowth: [],
+    growthCurves: [],
+    classEvolution: [],
+    classGroups: [],
+    classDefs: [],
+    actionDefs: [],
+    consumables: [],
+    itemDescriptions: null,
+    consumableDescriptions: null,
+    classDescriptions: null,
+    actionDescriptions: null,
+    statGates: {
+      byClass: {}, raw: new Uint8Array(0),
+      meta: { relocation: { state: 'unavailable', error: 'The stat-gate parser did not run.' } }
+    },
+    neutralEncounters: { records: [], terrainRates: [], globalRate: null },
+    creatureDrops: { records: [], byClass: {} },
+    compatibility: report
   };
+}
+
+function parserShapeError(actual, expected, unit) {
+  if (actual === expected) return '';
+  return 'Expected ' + expected + ' ' + unit + ', but the parser found ' + actual + '.';
+}
+
+function runRomParser(rom, spec) {
+  var report = rom.compatibility;
+  try {
+    var value = spec.read();
+    var issue = spec.validate ? spec.validate(value) : '';
+    if (issue) throw new Error(issue);
+    spec.assign(value);
+    romCompatibilityComponent(
+      report, spec.id, spec.label, 'readable',
+      spec.successReason || 'The parser returned the expected structure.',
+      spec.details ? spec.details(value) : {}, spec
+    );
+    return value;
+  } catch (error) {
+    spec.assign(spec.fallback());
+    romCompatibilityComponent(
+      report, spec.id, spec.label, 'blocked',
+      error && error.message ? error.message : String(error),
+      { exception: error && error.name || 'Error' }, spec
+    );
+    return null;
+  }
+}
+
+OB64.loadROM = function(romData) {
+  var normalized = OB64.normalizeRomImage(romData);
+  if (!normalized.z64) {
+    throw new Error('The file is not a recognized .v64, .z64, or .n64 ROM image. Its byte order cannot be normalized safely.');
+  }
+  var z64 = normalized.z64;
+  var layout = OB64.detectRomLayout(z64);
+  var report = OB64.makeRomCompatibilityReport(z64, normalized.byteOrder, layout);
+  var rom = emptyRomModel(z64, normalized, layout, report);
+  if (!layout) {
+    OB64.currentRomLayout = null;
+    romCompatibilityComponent(
+      report, 'layout', 'ROM layout', 'blocked',
+      'No verified parser layout matches this ROM header. The file is loaded for diagnosis, but fixed-offset parsers were not run.',
+      report.source,
+      { category: 'identity', affectsTabs: ['shops', 'consumables', 'scenario', 'classes', 'items', 'art', 'encounters', 'tools', 'damage'] }
+    );
+    report.overall = 'blocked';
+    report.summary = 'The ROM loaded in diagnostic-only mode because its layout is unknown.';
+    report.reasons.push('Only US retail header revisions 0 and 1 have verified fixed-offset parser profiles.');
+    return rom;
+  }
+  OB64.applyRomLayout(layout);
+  romCompatibilityComponent(
+    report, 'layout', 'ROM layout', 'readable',
+    'The header selects the verified ' + layout.name + ' offset profile.',
+    { layout: layout.id, headerRevision: layout.version },
+    { category: 'identity', affectsTabs: [] }
+  );
+
+  if (z64.length < OB64.ROM_RETAIL_SIZE) {
+    romCompatibilityComponent(
+      report, 'rom-size', 'ROM size', 'blocked',
+      'The ROM is truncated. Fixed-offset data and relocation lanes extend through the 40 MiB retail image.',
+      { observedBytes: z64.length, minimumBytes: OB64.ROM_RETAIL_SIZE },
+      { category: 'identity', affectsTabs: ['shops', 'consumables', 'scenario', 'classes', 'items', 'art', 'encounters', 'tools', 'damage'] }
+    );
+    report.overall = 'blocked';
+    report.summary = 'The ROM header is recognized, but the image is too small to parse safely.';
+    report.reasons.push('The file must contain at least the complete 40 MiB retail address space.');
+    return rom;
+  }
+  romCompatibilityComponent(
+    report, 'rom-size', 'ROM size',
+    z64.length === OB64.ROM_RETAIL_SIZE ? 'readable' : 'warning',
+    z64.length === OB64.ROM_RETAIL_SIZE
+      ? 'The ROM has the complete 40 MiB retail address space.'
+      : 'The ROM is larger than retail. Known offsets can be parsed, but appended data may overlap an editor relocation lane.',
+    { observedBytes: z64.length, retailBytes: OB64.ROM_RETAIL_SIZE },
+    { category: 'identity', affectsTabs: [] }
+  );
+
+  var archives = runRomParser(rom, {
+    id: 'archive-catalog', label: 'LHA archive catalog',
+    affectsTabs: ['shops', 'scenario'],
+    read: function() { return OB64.findArchives(z64); },
+    validate: function(value) {
+      if (value.length < 752) return 'The scan found only ' + value.length + ' LHA members; archive #751 is unavailable.';
+      var expected = { 647: 19460, 691: 8848, 751: 1098 };
+      for (var key in expected) {
+        if (!value[key] || value[key].uncompSize !== expected[key]) {
+          return 'Archive #' + key + ' does not have its expected decoded size of ' + expected[key] + ' bytes. Earlier inserted, removed, or damaged LHA members may have shifted the catalog.';
+        }
+      }
+      return '';
+    },
+    assign: function(value) { rom.archives = value; },
+    fallback: function() { return []; },
+    details: function(value) { return { archiveCount: value.length, retailArchiveCount: 825 }; }
+  }) || [];
+
+  var enemydatBuf = null;
+  runRomParser(rom, {
+    id: 'enemy-squads', label: 'Enemy squad records', affectsTabs: ['scenario'],
+    read: function() {
+      enemydatBuf = OB64.extractArchive(z64, archives[647]);
+      return OB64.parseEnemydat(enemydatBuf);
+    },
+    validate: function(value) { return parserShapeError(value.length, 556, '35-byte squad records'); },
+    assign: function(value) { rom.enemySquads = value; }, fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, decodedBytes: enemydatBuf && enemydatBuf.length }; }
+  });
+
+  var ktenmainBuf = null;
+  runRomParser(rom, {
+    id: 'strongholds', label: 'Stronghold records', affectsTabs: ['shops', 'scenario'],
+    read: function() {
+      ktenmainBuf = OB64.extractArchive(z64, archives[691]);
+      return OB64.parseKtenmain(ktenmainBuf);
+    },
+    validate: function(value) { return parserShapeError(value.length, 316, '28-byte stronghold records'); },
+    assign: function(value) {
+      rom.ktenmainRaw = ktenmainBuf && ktenmainBuf.slice
+        ? ktenmainBuf.slice(0) : new Uint8Array(ktenmainBuf || 0);
+      rom.strongholds = value;
+      rom.shopStrongholds = OB64.buildShopStrongholds(value);
+    },
+    fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, decodedBytes: ktenmainBuf && ktenmainBuf.length }; }
+  });
+
+  var shopBuf = null;
+  runRomParser(rom, {
+    id: 'shops', label: 'Shop records', affectsTabs: ['shops'],
+    read: function() {
+      shopBuf = OB64.extractArchive(z64, archives[751]);
+      return OB64.parseShops(shopBuf);
+    },
+    validate: function(value) { return parserShapeError(value.length, 256, 'shop slots'); },
+    assign: function(value) { rom.shops = value; }, fallback: function() { return []; },
+    details: function(value) { return { slotCount: value.length, decodedBytes: shopBuf && shopBuf.length }; }
+  });
+
+  runRomParser(rom, {
+    id: 'items', label: 'Equipment item table', affectsTabs: ['shops', 'items', 'classes', 'damage'],
+    read: function() { return OB64.parseItemStats(z64); },
+    validate: function(value) { return parserShapeError(value.length, OB64.ITEM_STAT_COUNT, 'item records'); },
+    assign: function(value) { rom.itemStats = value; }, fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, offset: OB64.ITEM_STAT_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'world-map', label: 'World-map links', affectsTabs: ['map'], requiredForEditing: false,
+    read: function() { return OB64.parseWorldMap(z64); },
+    validate: function(value) { return parserShapeError(value.edges.length, OB64.MAP_EDGE_COUNT, 'map edges'); },
+    assign: function(value) { rom.worldMap = value; },
+    fallback: function() { return { edges: [], locations: OB64.LOCATION_NAMES || {} }; },
+    details: function(value) { return { edgeCount: value.edges.length, offset: OB64.MAP_EDGE_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'class-support', label: 'Class support tables', affectsTabs: ['classes'],
+    read: function() {
+      return {
+        growth: OB64.parseClassGrowth(z64), curves: OB64.parseGrowthCurves(z64),
+        evolution: OB64.parseClassEvolution(z64), groups: OB64.parseClassGroups(z64)
+      };
+    },
+    validate: function(value) {
+      return parserShapeError(value.growth.length, OB64.GROWTH_TIER_COUNT, 'legacy class-support rows') ||
+        parserShapeError(value.curves.length, OB64.GROWTH_CURVE_TIERS, 'legacy curve rows') ||
+        parserShapeError(value.evolution.length, OB64.EVOLUTION_COUNT, 'class-evolution rows') ||
+        parserShapeError(value.groups.length, 8, 'class groups');
+    },
+    assign: function(value) {
+      rom.classGrowth = value.growth; rom.growthCurves = value.curves;
+      rom.classEvolution = value.evolution; rom.classGroups = value.groups;
+    },
+    fallback: function() { return { growth: [], curves: [], evolution: [], groups: [] }; },
+    details: function(value) { return { evolutionRows: value.evolution.length, classGroups: value.groups.length }; }
+  });
+
+  runRomParser(rom, {
+    id: 'classes', label: 'Class definition table', affectsTabs: ['classes', 'scenario', 'damage'],
+    read: function() { return OB64.parseClassDefs(z64); },
+    validate: function(value) { return parserShapeError(value.length, OB64.CLASS_DEF_TOTAL, 'class records'); },
+    assign: function(value) { rom.classDefs = value; }, fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, offset: OB64.CLASS_DEF_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'actions', label: 'Combat action table', affectsTabs: ['classes', 'damage'],
+    read: function() { return OB64.parseActionDefs(z64); },
+    validate: function(value) { return parserShapeError(value.length, OB64.ACTION_DEF_COUNT, 'action records'); },
+    assign: function(value) { rom.actionDefs = value; }, fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, offset: OB64.ACTION_DEF_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'consumables', label: 'Consumable item table', affectsTabs: ['shops', 'consumables', 'damage'],
+    read: function() { return OB64.parseConsumables(z64); },
+    validate: function(value) { return parserShapeError(value.length, 45, 'consumable records'); },
+    assign: function(value) { rom.consumables = value; }, fallback: function() { return []; },
+    details: function(value) { return { recordCount: value.length, offset: OB64.CONSUMABLE_TABLE_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'descriptions', label: 'Compressed description blocks',
+    affectsTabs: ['items', 'classes', 'consumables'], requiredForEditing: false,
+    read: function() {
+      if (!OB64.descriptionCodec) throw new Error('The description codec is not loaded.');
+      return OB64.descriptionCodec.parseAll(z64);
+    },
+    validate: function(value) {
+      if (!value || !value.items || !value.consumables || !value.classes || !value.actions) {
+        return 'One or more description blocks are missing.';
+      }
+      return parserShapeError(value.items.records.length, 278, 'item descriptions') ||
+        parserShapeError(value.consumables.records.length, 50, 'consumable descriptions') ||
+        parserShapeError(value.classes.records.length, 225, 'class descriptions') ||
+        parserShapeError(value.actions.records.length, 159, 'action descriptions');
+    },
+    assign: function(value) {
+      rom.itemDescriptions = value.items; rom.consumableDescriptions = value.consumables;
+      rom.classDescriptions = value.classes; rom.actionDescriptions = value.actions;
+    },
+    fallback: function() { return { items: null, consumables: null, classes: null, actions: null }; },
+    details: function(value) {
+      return {
+        itemRecords: value.items.records.length,
+        consumableRecords: value.consumables.records.length,
+        classRecords: value.classes.records.length,
+        actionRecords: value.actions.records.length
+      };
+    }
+  });
+
+  runRomParser(rom, {
+    id: 'stat-gates', label: 'Class promotion stat gates', affectsTabs: ['classes'],
+    read: function() { return OB64.parseStatGates(z64); },
+    validate: function(value) { return parserShapeError(Object.keys(value.byClass || {}).length, OB64.STAT_GATE_COUNT, 'stat-gate records'); },
+    assign: function(value) { rom.statGates = value; },
+    fallback: function() { return { byClass: {}, raw: new Uint8Array(0), meta: { relocation: { state: 'unavailable' } } }; },
+    details: function(value) { return { recordCount: Object.keys(value.byClass || {}).length, relocation: value.meta && value.meta.relocation || null }; }
+  });
+
+  runRomParser(rom, {
+    id: 'encounters', label: 'Neutral encounter table', affectsTabs: ['encounters'],
+    read: function() { return OB64.parseNeutralEncounters(z64); },
+    validate: function(value) { return parserShapeError(value.records.length, OB64.NEUTRAL_ENCOUNTER_COUNT, 'scenario encounter rows'); },
+    assign: function(value) { rom.neutralEncounters = value; },
+    fallback: function() { return { records: [], terrainRates: [], globalRate: null }; },
+    details: function(value) { return { recordCount: value.records.length, offset: OB64.NEUTRAL_ENCOUNTER_OFFSET }; }
+  });
+
+  runRomParser(rom, {
+    id: 'creature-drops', label: 'Creature drop table', affectsTabs: ['encounters'],
+    read: function() { return OB64.parseCreatureDrops(z64); },
+    validate: function(value) { return parserShapeError(value.records.length, OB64.CREATURE_DROP_COUNT, 'drop records'); },
+    assign: function(value) { rom.creatureDrops = value; },
+    fallback: function() { return { records: [], byClass: {} }; },
+    details: function(value) { return { recordCount: value.records.length, offset: OB64.CREATURE_DROP_OFFSET }; }
+  });
+
+  report.summary = 'The known ' + layout.name + ' layout was selected and each parser was checked independently.';
+  return rom;
 };
 
 /* ============================================================================
