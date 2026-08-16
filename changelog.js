@@ -812,6 +812,8 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Item Icons', iconEntries);
 
     var animationEntries = [];
+    var animationGroups = {};
+    var animationGroupOrder = [];
     numericKeys(payload.animations).forEach(function(key) {
       var entry = payload.animations[key] || {};
       var animation = rom.art && rom.art.animations &&
@@ -823,14 +825,79 @@ window.OB64 = window.OB64 || {};
       if (!childOrdinals.length && Number.isInteger(entry.childOrdinal)) {
         childOrdinals = [entry.childOrdinal];
       }
+      var groupKey = entry.animation || ('unmapped-source-' + key);
+      if (!animationGroups[groupKey]) {
+        animationGroups[groupKey] = { title: animationName, sources: [] };
+        animationGroupOrder.push(groupKey);
+      }
+      animationGroups[groupKey].sources.push({
+        artId: entry.artId,
+        childOrdinals: childOrdinals,
+        width: Number(entry.width || 0),
+        height: Number(entry.height || 0)
+      });
+    });
+    animationGroupOrder.forEach(function(groupKey) {
+      var group = animationGroups[groupKey];
+      group.sources.sort(function(left, right) {
+        return Number(left.artId) - Number(right.artId);
+      });
+      var lines = [
+        'Edited ' + group.sources.length + ' sprite source object' +
+          (group.sources.length === 1 ? '' : 's') + ' in this sequence.'
+      ];
+      group.sources.forEach(function(source) {
+        var children = 'edited children';
+        if (source.childOrdinals.length === 1) {
+          children = 'child ' + source.childOrdinals[0];
+        } else if (source.childOrdinals.length > 1) {
+          children = 'children ' + source.childOrdinals.slice(0, -1).join(', ') +
+            ' and ' + source.childOrdinals[source.childOrdinals.length - 1];
+        }
+        lines.push('Art ' + hex(source.artId, 2) + ': ' + children + ' at ' +
+          source.width + 'x' + source.height + ' pixels.');
+      });
+      lines.push('Export preserves unedited children and relocates only source objects that no longer fit.');
+      animationEntries.push({ title: group.title, lines: lines });
+    });
+
+    var separated = payload.separations && payload.separations.entries;
+    numericKeys(separated).forEach(function(key) {
+      var entry = separated[key] || {};
+      var animations = rom.art && rom.art.animations;
+      var reference = entry.targetRef || {};
+      var animation = animations &&
+        ((animations.byKey && animations.byKey[reference.key]) ||
+          (animations.idleAnimationsByKey &&
+            animations.idleAnimationsByKey[reference.key]) ||
+          (animations.selectorCandidates &&
+            animations.selectorCandidates[reference.key]));
+      var idle = entry.laneKey === 'idle';
+      var title = animation
+        ? animation.spec.className + ' ' + animation.spec.actionName
+        : className(entry.classId) + ' ' +
+          (idle ? 'Idle / Rest' : actionName(entry.actionId));
+      if (animation && OB64.animationUI) {
+        title += ' · ' + OB64.animationUI.animationSideLabel(animation) +
+          ' · ' + OB64.animationUI.animationArtVariantLabel(animation);
+      } else if (Number.isInteger(entry.bodyFlags)) {
+        title += ' · art route ' + Math.floor(entry.bodyFlags / 2) + '/' +
+          (entry.bodyFlags & 1);
+      }
+      title += ' · ' + (idle ? 'Idle Loop' : (entry.laneKey === 'blocked'
+        ? 'Attack Blocked' : 'Normal Attack'));
+      var structure = entry.structure || entry;
+      var frameCount = Array.isArray(structure.frames) ? structure.frames.length : 0;
+      var sourceCount = Object.keys(structure.sources || {}).length;
       animationEntries.push({
-        title: animationName + ' art ' + hex(entry.artId, 2),
+        title: title,
         lines: [
-          'Edited child sprite' + (childOrdinals.length === 1 ? ' ' : 's ') +
-            childOrdinals.join(', ') + ' of the ' +
-            Number(entry.width || 0) + 'x' + Number(entry.height || 0) +
-            ' source object.',
-          'Export preserves every other child and relocates only when the rebuilt object does not fit.'
+          'Created a private editable copy with ' + frameCount + ' frames and ' +
+            sourceCount + ' sprite source object' + (sourceCount === 1 ? '' : 's') + '.',
+          'The copy includes its weapon sprites and ordered frame-layer metadata.',
+          idle
+            ? 'Export relocates the private idle loop and points this art route\'s selector 0x00 to it.'
+            : 'Export relocates the private sequence and assigns this route to it.'
         ]
       });
     });

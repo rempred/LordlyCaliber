@@ -668,7 +668,7 @@ window.OB64 = window.OB64 || {};
       var expected = OB64.combatAnimationOverrides.validateLogicalEntries(
         selectorPlan.state && selectorPlan.state.desired || []
       );
-      if (classified.kind !== 'owned-v2' || classified.advanced ||
+      if (classified.kind !== 'owned-v3' || classified.advanced ||
           JSON.stringify(classified.logical || []) !== JSON.stringify(expected)) {
         throw issue(
           'PATCH_INTEGRITY',
@@ -676,7 +676,7 @@ window.OB64 = window.OB64 || {};
           'The finished ROM does not contain the intended attack-animation mappings.',
           'Keep the error report and recreate the ROM after updating the editor.',
           {
-            expectedState: 'owned-v2',
+            expectedState: 'owned-v3',
             actualState: classified.kind,
             reason: classified.reason,
             expectedEntries: expected,

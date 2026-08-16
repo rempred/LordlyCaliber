@@ -34,12 +34,20 @@
 // v17 carries item, consumable, class, and combat-action descriptions.
 // v18 carries exact RGBA5551 pixels for edited route-scoped avatars and item icons.
 // v19 carries bounded combat-sprite CI8/I4 pixels grouped by source and child.
+// v20 expands combat art to the accepted complete sequence corpus. New records
+// use stable logical binding and physical-source identities; v19 records remain
+// readable through the frozen eleven-sequence compatibility map.
+// v21 adds exact class/body animation assignments and private, relocatable
+// complete-sequence copies with Project round-trip support.
+// v22 stores private copied sprites and complete ordered frame-layer metadata.
+// v23 stores stable private frame identities so removed frames round-trip exactly.
+// v24 stores the exact private body program so added and reordered frames round-trip.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 19;
+  var PATCH_VERSION = 24;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -234,16 +242,18 @@ window.OB64 = window.OB64 || {};
       : 0;
     var artOut = OB64.art
       ? OB64.art.collectProjectPayload(rom)
-      : { schemaVersion: 2, avatars: {}, icons: {}, animations: {} };
+      : { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null };
     var avatarArtChanges = Object.keys(artOut.avatars || {}).length;
     var iconArtChanges = Object.keys(artOut.icons || {}).length;
     var combatSpriteArtChanges = Object.keys(artOut.animations || {}).length;
+    var separatedAnimationChanges = artOut.separations && artOut.separations.entries
+      ? Object.keys(artOut.separations.entries).length : 0;
 
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-08-14',
+      editor_version: '2026-08-16',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -271,6 +281,7 @@ window.OB64 = window.OB64 || {};
         avatar_art_modified: avatarArtChanges,
         item_icon_art_modified: iconArtChanges,
         combat_sprite_art_modified: combatSpriteArtChanges,
+        separated_animation_sequences_modified: separatedAnimationChanges,
       },
       patches: {
         shops:        shopsOut,
@@ -383,15 +394,21 @@ window.OB64 = window.OB64 || {};
       }
     }
     var preparedArt = {
-      avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0
+      avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+      separations: null, count: 0
     };
     var artPayload = Object.prototype.hasOwnProperty.call(p, 'art') ? p.art : undefined;
     var hasArtRecords = artPayload && typeof artPayload === 'object' &&
       (Object.keys(artPayload.avatars || {}).length ||
        Object.keys(artPayload.icons || {}).length ||
-       Object.keys(artPayload.animations || {}).length);
+       Object.keys(artPayload.animations || {}).length ||
+       (artPayload.separations && artPayload.separations.entries &&
+        Object.keys(artPayload.separations.entries).length));
     var hasCombatSpriteRecords = artPayload && typeof artPayload === 'object' &&
       Object.keys(artPayload.animations || {}).length;
+    var hasSeparatedAnimationRecords = artPayload && typeof artPayload === 'object' &&
+      artPayload.separations && artPayload.separations.entries &&
+      Object.keys(artPayload.separations.entries).length;
     if (hasArtRecords && patch.version < 18) {
       throw new PatchFormatError(
         'Art and Animation Project data requires Project schema version 18 or newer.'
@@ -400,6 +417,29 @@ window.OB64 = window.OB64 || {};
     if (hasCombatSpriteRecords && patch.version < 19) {
       throw new PatchFormatError(
         'Combat sprite Project data requires Project schema version 19 or newer.'
+      );
+    }
+    if (hasSeparatedAnimationRecords && patch.version < 21) {
+      throw new PatchFormatError(
+        'Separated animation Project data requires Project schema version 21 or newer.'
+      );
+    }
+    if (hasSeparatedAnimationRecords && artPayload.separations.schemaVersion >= 2 &&
+        patch.version < 22) {
+      throw new PatchFormatError(
+        'Structural private animation data requires Project schema version 22 or newer.'
+      );
+    }
+    if (hasSeparatedAnimationRecords && artPayload.separations.schemaVersion >= 3 &&
+        patch.version < 23) {
+      throw new PatchFormatError(
+        'Private animation frame removal requires Project schema version 23 or newer.'
+      );
+    }
+    if (hasSeparatedAnimationRecords && artPayload.separations.schemaVersion >= 4 &&
+        patch.version < 24) {
+      throw new PatchFormatError(
+        'Private animation frame insertion and reorder require Project schema version 24 or newer.'
       );
     }
     if (OB64.art) {
@@ -412,7 +452,9 @@ window.OB64 = window.OB64 || {};
       }
     } else if (p.art && (Object.keys(p.art.avatars || {}).length ||
         Object.keys(p.art.icons || {}).length ||
-        Object.keys(p.art.animations || {}).length)) {
+        Object.keys(p.art.animations || {}).length ||
+        (p.art.separations && p.art.separations.entries &&
+          Object.keys(p.art.separations.entries).length))) {
       throw new PatchFormatError('This editor build cannot load Art and Animation Project records.');
     }
 
@@ -779,6 +821,7 @@ window.OB64 = window.OB64 || {};
       avatar_art_modified: 0,
       item_icon_art_modified: 0,
       combat_sprite_art_modified: 0,
+      separated_animation_sequences_modified: 0,
     };
   }
 
@@ -799,7 +842,7 @@ window.OB64 = window.OB64 || {};
       scenario: null,
       consumableEffects: {},
       combatAnimationOverrides: null,
-      art: { schemaVersion: 2, avatars: {}, icons: {}, animations: {} }
+      art: { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null }
     };
   }
 

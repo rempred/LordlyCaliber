@@ -289,7 +289,7 @@ window.OB64 = window.OB64 || {};
         // not discard the readable parts of the ROM or hide its own diagnostic.
         if (nextRom.compatibility.canEdit) {
           await OB64.romCompatibility.runInitializer(nextRom, {
-            id: 'native-art', label: 'Avatars, item icons, and bounded combat sprites',
+            id: 'native-art', label: 'Avatars, item icons, and combat sprites',
             affectsTabs: ['art']
           }, function() { return OB64.art.initialize(nextRom); });
           await OB64.romCompatibility.runInitializer(nextRom, {
@@ -312,6 +312,13 @@ window.OB64 = window.OB64 || {};
             id: 'combat-animation-overrides', label: 'Combat animation override lane',
             affectsTabs: ['classes']
           }, function() { return OB64.combatAnimationOverrides.initialize(nextRom); });
+          if (OB64.animationSequences) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'combat-animation-sequences',
+              label: 'Combat animation separated sequence lane',
+              affectsTabs: ['art']
+            }, function() { return OB64.animationSequences.initialize(nextRom); });
+          }
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'project-baseline', label: 'Project and export baseline',
             requiredForExport: true
@@ -506,7 +513,16 @@ window.OB64 = window.OB64 || {};
       if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
         await paintRomExportProgress(exportProgress, 4,
           'Planning and verifying all native art resources');
-        artPlan = OB64.art.prepareExport(rom, candidateRom);
+        if (OB64.art.prepareExportAsync) {
+          artPlan = await OB64.art.prepareExportAsync(
+            rom, candidateRom, function(detail, fraction) {
+              exportProgress.update('Native art · ' + detail + ' · ' +
+                Math.round(Math.max(0, Math.min(1, fraction)) * 100) + '%',
+                4 + Math.max(0, Math.min(1, fraction)) * 3);
+            });
+        } else {
+          artPlan = OB64.art.prepareExport(rom, candidateRom);
+        }
       }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
@@ -1164,6 +1180,8 @@ window.OB64 = window.OB64 || {};
       var avatarArtN = patch.summary.avatar_art_modified || 0;
       var iconArtN = patch.summary.item_icon_art_modified || 0;
       var combatSpriteArtN = patch.summary.combat_sprite_art_modified || 0;
+      var separatedAnimationN =
+        patch.summary.separated_animation_sequences_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + creatureDropsN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
@@ -1200,6 +1218,8 @@ window.OB64 = window.OB64 || {};
       if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
       if (combatSpriteArtN) parts.push(combatSpriteArtN + ' edited combat-sprite source' +
         (combatSpriteArtN === 1 ? '' : 's'));
+      if (separatedAnimationN) parts.push(separatedAnimationN +
+        ' separated animation sequence' + (separatedAnimationN === 1 ? '' : 's'));
       parts = parts.concat(consumableEffectSummaryParts(
         patch.patches && patch.patches.consumableEffects
       ));
@@ -1599,6 +1619,15 @@ window.OB64 = window.OB64 || {};
       case 'art':
         OB64.artUI.render(panel, rom, {
           onChange: function() { markChanged(); },
+          onAnimationMappingChange: function() {
+            markChanged('combatAnimationOverrides');
+          },
+          onAnimationRouteChange: function() {
+            beginChangeBatch();
+            markChanged();
+            markChanged('combatAnimationOverrides');
+            endChangeBatch();
+          },
           onStatus: function(message) { statusBar.textContent = message; }
         });
         break;
@@ -4047,19 +4076,6 @@ window.OB64 = window.OB64 || {};
     def.ptr = def.namePtr;
   }
 
-  function combatOverrideCountForClass(classId) {
-    var state = rom && rom.combatAnimationOverrides;
-    if (!state) return 0;
-    return state.desired.filter(function(row) { return row.classId === Number(classId); }).length;
-  }
-
-  function refreshCombatOverrideButtons(classId) {
-    var buttons = document.querySelectorAll('[data-combat-animation-class="' + classId + '"]');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].textContent = 'Attack Animations (' + combatOverrideCountForClass(classId) + ')';
-    }
-  }
-
   function applyClassAttackSelection(classId, def, field, actionId) {
     var api = OB64.combatAnimationOverrides;
     var state = rom && rom.combatAnimationOverrides;
@@ -4068,82 +4084,47 @@ window.OB64 = window.OB64 || {};
     try {
       result = api.applyLiveAttackChange(state, def, classId, field, actionId);
       if (result.classChanged) markChanged('classDefs');
-      if (result.overrideAdded) markChanged('combatAnimationOverrides');
     } finally {
       endChangeBatch();
     }
-    if (result.overrideAdded) dirty.combatAnimationOverrides = state.dirty;
-    refreshCombatOverrideButtons(classId);
+    if (result.requiresAnimationSelection) {
+      statusBar.textContent = 'Attack changed. Choose its body animation in ' +
+        'Art and Animation. Until then, the game uses fallback selector 0x28.';
+    } else if (result.classChanged && result.newAction) {
+      statusBar.textContent = 'Attack changed. Its existing body-animation ' +
+        'mapping remains selected.';
+    }
     return result;
   }
 
   function combatOverrideButton(classId) {
-    var state = rom && rom.combatAnimationOverrides;
     var button = document.createElement('button');
     button.type = 'button';
     button.className = 'combat-animation-override-button';
     button.dataset.combatAnimationClass = classId;
-    button.textContent = 'Attack Animations (' + combatOverrideCountForClass(classId) + ')';
-    var disabled = !state || !state.supported || state.readOnly;
+    button.textContent = 'Animations';
+    var animationState = rom && rom.art && rom.art.animations;
+    var disabled = !rom || !rom.art || !rom.art.supported ||
+      !animationState || !animationState.supported;
     button.disabled = disabled;
-    if (disabled) button.title = state
-      ? (state.disabledReason || state.diagnostic) : 'Attack Animation overrides are unavailable.';
-    else button.addEventListener('click', function() { openCombatAnimationOverrideEditor(classId); });
+    if (disabled) button.title = animationState
+      ? animationState.unavailableReason : 'Combat animation art is unavailable.';
+    else button.addEventListener('click', function() {
+      openCombatAnimationClass(classId);
+    });
     return button;
   }
 
-  function openCombatAnimationOverrideEditor(classId) {
-    var api = OB64.combatAnimationOverrides, state = rom.combatAnimationOverrides;
-    function fmt(value) { return '0x' + Number(value).toString(16).toUpperCase().padStart(2, '0'); }
-    if (!state.supported || state.readOnly) {
-      showErrorModal('Attack Animations unavailable', state.disabledReason || state.diagnostic);
+  function openCombatAnimationClass(classId) {
+    if (!rom || !rom.art || !OB64.artUI.openAnimationRoute(rom.art, {
+      classId: classId
+    })) {
+      showErrorModal('Combat Animation unavailable',
+        'The Art and Animation tab cannot preview this ROM.');
       return;
     }
-    var ci = api.classInfo(classId), liveDef = classDefFor(classId);
-    var overlay = document.createElement('div');
-    overlay.className = 'item-modal-overlay combat-animation-overlay';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', 'Attack Animations for ' + ci.name);
-    var modal = document.createElement('div'); modal.className = 'item-modal combat-animation-modal'; overlay.appendChild(modal);
-    var header = document.createElement('div'); header.className = 'item-modal-header';
-    var title = document.createElement('h2'); title.textContent = 'Attack Animations — ' + ci.name + ' (' + fmt(classId) + ')'; header.appendChild(title);
-    var close = document.createElement('button'); close.type='button'; close.className='item-modal-close'; close.setAttribute('aria-label','Close'); close.textContent='×'; close.addEventListener('click',function(){overlay.remove();}); header.appendChild(close); modal.appendChild(header);
-    var body=document.createElement('div'); body.className='item-modal-body combat-animation-body'; modal.appendChild(body);
-    function changed() {
-      api.refresh(state); markChanged('combatAnimationOverrides'); dirty.combatAnimationOverrides=state.dirty;
-      refreshCombatOverrideButtons(classId);
-    }
-    function render() {
-      body.innerHTML='';
-      var usage=document.createElement('div'); usage.className='combat-animation-capacity'; usage.textContent='Global capacity: '+state.desired.length+' / '+api.capacity+' records'; body.appendChild(usage);
-      var warnings=document.createElement('div'); warnings.className='combat-animation-warnings'; warnings.setAttribute('role','note');
-      warnings.innerHTML='<p><strong>The game chooses the mode.</strong> Normal applies to game-selected modes 0/1; Blocked applies when the game selects mode 2. The editor does not choose or store a mode.</p><p>Game outcome/reaction and hit/spell effects remain separate.</p><p><strong>Structural availability does not prove visual compatibility; cold-boot test the exported ROM.</strong></p><p>Requires 8 MiB RDRAM / Expansion Pak.</p>'; body.appendChild(warnings);
-      var context=document.createElement('section'); context.className='combat-animation-context';
-      var ch=document.createElement('h3'); ch.textContent='Vanilla reference context'; context.appendChild(ch);
-      var referenceNote=document.createElement('p');referenceNote.textContent='Generated reference only; live rank assignments are shown in the mapping table below.';context.appendChild(referenceNote);
-      if(!ci.currentActions.length){var none=document.createElement('p');none.textContent='No resolved current rank context is available.';context.appendChild(none);}
-      ci.currentActions.forEach(function(a){var p=document.createElement('p');var contexts=a.contexts.map(function(x){return x.row+': '+(x.selectorsByRawMode?paddedSelectorContext(x.selectorsByRawMode):'unresolved selector context');});p.textContent=(a.name||'Unassigned')+' ('+fmt(a.id)+') — '+contexts.join('; ');context.appendChild(p);}); body.appendChild(context);
-      function selectorControl(label,value){var sel=document.createElement('select');sel.setAttribute('aria-label',label);if(value===null){var unresolved=document.createElement('option');unresolved.textContent='No resolved vanilla selector';unresolved.disabled=true;unresolved.selected=true;sel.appendChild(unresolved);}api.selectorOptions(classId).forEach(function(o){var op=document.createElement('option');op.value=o.id;op.textContent=fmt(o.id)+' — '+(o.status==='current_explicit'?'current explicit use':'structurally available / unassigned');op.selected=o.id===value;sel.appendChild(op);});return sel;}
-      var table=document.createElement('table');table.className='combat-animation-table';table.innerHTML='<thead><tr><th>Action</th><th>Normal (modes 0/1)</th><th>Blocked (mode 2)</th><th>Status</th><th></th></tr></thead>';var tb=document.createElement('tbody');
-      api.modalRows(state,liveDef,classId).forEach(function(row){
-        var tr=document.createElement('tr'),a=api.actionInfo(row.actionId);
-        if(!row.overridden)tr.className='combat-animation-vanilla-row';
-        var td=document.createElement('td');td.textContent=(a?a.name:'Action')+' ('+fmt(row.actionId)+')';tr.appendChild(td);
-        var normalSel=selectorControl((a?a.name:'Action')+' Normal (modes 0/1)',row.normalSelector),blockedSel=selectorControl((a?a.name:'Action')+' Blocked (mode 2)',row.blockedSelector);
-        function savePair(){try{api.setEntry(state,{classId:classId,actionId:row.actionId,normalSelector:Number(normalSel.value),blockedSelector:Number(blockedSel.value)});changed();render();}catch(e){showErrorModal('Attack Animation override rejected',e.message);render();}}
-        normalSel.addEventListener('change',savePair);blockedSel.addEventListener('change',savePair);
-        var normalTd=document.createElement('td');normalTd.appendChild(normalSel);tr.appendChild(normalTd);var blockedTd=document.createElement('td');blockedTd.appendChild(blockedSel);tr.appendChild(blockedTd);
-        var st=document.createElement('td');st.textContent=api.liveRankStatus(liveDef,row.actionId)+(row.overridden?' — override record':' — vanilla (no override record)');tr.appendChild(st);
-        var rm=document.createElement('td');
-        if(row.overridden){var rb=document.createElement('button');rb.type='button';rb.textContent='Remove';rb.addEventListener('click',function(){api.removeEntry(state,classId,row.actionId);changed();render();});rm.appendChild(rb);}
-        else {var vanilla=document.createElement('span');vanilla.className='combat-animation-vanilla-label';vanilla.textContent='Vanilla';rm.appendChild(vanilla);}
-        tr.appendChild(rm);tb.appendChild(tr);
-      });table.appendChild(tb);body.appendChild(table);
-      var add=document.createElement('div');add.className='combat-animation-add';var actionSel=document.createElement('select');actionSel.setAttribute('aria-label','Action');var ordered=[],seen={};[liveDef&&liveDef.b43Raw,liveDef&&liveDef.b45Raw,liveDef&&liveDef.b47Raw].forEach(function(id){var accepted=api.actionInfo(id);if(accepted&&!seen[id]){ordered.push(accepted);seen[id]=1;}});api.data.actions.forEach(function(a){if(!seen[a.id])ordered.push(a);});ordered.forEach(function(a){var op=document.createElement('option');op.value=a.id;op.textContent=a.name+' ('+fmt(a.id)+')';actionSel.appendChild(op);});var normalAdd=selectorControl('Normal (modes 0/1)',api.selectorOptions(classId)[0].id),blockedAdd=selectorControl('Blocked (mode 2)',api.selectorOptions(classId)[0].id);var addButton=document.createElement('button');addButton.type='button';addButton.textContent='Add / Replace';function updateCapacityBlock(){var aid=Number(actionSel.value),replacing=state.desired.some(function(x){return x.classId===classId&&x.actionId===aid;});addButton.disabled=state.desired.length>=api.capacity&&!replacing;}actionSel.addEventListener('change',updateCapacityBlock);updateCapacityBlock();addButton.addEventListener('click',function(){try{api.setEntry(state,{classId:classId,actionId:Number(actionSel.value),normalSelector:Number(normalAdd.value),blockedSelector:Number(blockedAdd.value)});changed();render();}catch(e){showErrorModal('Attack Animation override rejected',e.message);}});add.appendChild(actionSel);add.appendChild(normalAdd);add.appendChild(blockedAdd);add.appendChild(addButton);body.appendChild(add);
-    }
-    function paddedSelectorContext(values){return values.map(function(value,index){return 'mode '+index+' '+fmt(value);}).join(', ');}
-    render();document.body.appendChild(overlay);close.focus();
+    activateTab('art');
+    statusBar.textContent = 'Opened this class in Art and Animation.';
   }
 
   function renderClasses(panel) {

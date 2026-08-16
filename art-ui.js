@@ -26,7 +26,9 @@ window.OB64 = window.OB64 || {};
     if (state.ui) {
       if (!state.ui.browserScroll) state.ui.browserScroll = {};
       if (!state.ui.animationKey && state.animations && state.animations.specs.length) {
-        state.ui.animationKey = state.animations.specs[0].key;
+        state.ui.animationKey = state.animations.byKey['fighter-slash']
+          ? state.animations.byKey['fighter-slash'].key
+          : state.animations.specs[0].key;
       }
       if (!Number.isInteger(state.ui.animationFrame)) state.ui.animationFrame = 0;
       if (!Number.isInteger(state.ui.animationLayer)) state.ui.animationLayer = 0;
@@ -61,7 +63,20 @@ window.OB64 = window.OB64 || {};
       animationWeaponChildren: {},
       browserScroll: {}
     };
+    if (state.animations && state.animations.byKey['fighter-slash']) {
+      state.ui.animationKey = state.animations.byKey['fighter-slash'].key;
+    }
     return state.ui;
+  }
+
+  function openAnimationRoute(state, request) {
+    if (!state || !state.supported || !state.animations ||
+        !state.animations.supported || !OB64.animationUI) return false;
+    var ui = ensureUi(state);
+    ui.subtab = 'animations';
+    state.selectedTab = 'animations';
+    OB64.animationUI.requestAnimationRoute(ui, request);
+    return true;
   }
 
   function scrollContainers(panel, includeViewport) {
@@ -698,12 +713,12 @@ window.OB64 = window.OB64 || {};
     var copy = element('div');
     copy.appendChild(element('h2', '', 'Art and Animation'));
     copy.appendChild(element('p', '',
-      'Edit class-card avatars, item icons, and verified bounded combat-sprite sequences.'));
+      'Edit class-card avatars, item icons, and the complete verified combat-sprite sequence corpus.'));
     header.appendChild(copy);
     var actions = element('div', 'art-heading-actions');
     var reset = button('Reset All Art', 'btn-secondary', function() {
       function execute() {
-        if (!A.resetAll(state)) return;
+        if (!A.resetAll(state, rom)) return;
         changed(options); notify(options, 'All avatar, icon, and combat-sprite edits reset to the vanilla ROM. Use Undo Reset All to restore them this session.');
         rerender();
       }
@@ -716,7 +731,7 @@ window.OB64 = window.OB64 || {};
     reset.disabled = A.editCount(state) === 0 && A.blockedCount(state) === 0;
     actions.appendChild(reset);
     var undoReset = button('Undo Reset All', 'btn-secondary', function() {
-      if (!A.undoResetAll(state)) return;
+      if (!A.undoResetAll(state, rom)) return;
       changed(options); notify(options, 'Restored all art edits removed by Reset All Art.'); rerender();
     });
     undoReset.disabled = !state.bulkUndo;
@@ -1210,7 +1225,7 @@ window.OB64 = window.OB64 || {};
       shell.appendChild(iconEditor(state, ui, options, rerender));
     } else if (OB64.animationUI) {
       shell.classList.add('art-animation-shell');
-      shell.appendChild(OB64.animationUI.render(state, ui, options, rerender));
+      shell.appendChild(OB64.animationUI.render(state, ui, options, rerender, rom));
     } else {
       shell.appendChild(element('div', 'art-unavailable',
         'Combat animation component is not loaded.'));
@@ -1234,8 +1249,10 @@ window.OB64 = window.OB64 || {};
     hsvForWord: hsvForWord,
     wordForHsv: wordForHsv,
     nearestPaletteWord: nearestPaletteWord,
+    openAnimationRoute: openAnimationRoute,
     captureBrowserScroll: captureBrowserScroll,
     restoreBrowserScroll: restoreBrowserScroll,
+    decodeImageSource: decodeAvatarImageSource,
     decodeAvatarImageSource: decodeAvatarImageSource,
     decodeAvatarPngSource: decodeAvatarPngSource,
     decodeAvatarPngFile: decodeAvatarPngFile

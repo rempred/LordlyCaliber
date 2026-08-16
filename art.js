@@ -277,13 +277,17 @@ window.OB64 = window.OB64 || {};
     return exact >= 0 ? exact : clamp(Math.round(value * 31 / 255), 0, 31);
   }
 
-  function avatarCropRect(width, height, panX, panY) {
+  function imageCropRect(width, height, targetWidth, targetHeight, panX, panY) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
-      throw new ArtError('Avatar source dimensions must be positive integers');
+      throw new ArtError('Image source dimensions must be positive integers');
+    }
+    if (!Number.isInteger(targetWidth) || !Number.isInteger(targetHeight) ||
+        targetWidth < 1 || targetHeight < 1) {
+      throw new ArtError('Image target dimensions must be positive integers');
     }
     panX = clamp(Number.isFinite(panX) ? panX : 0.5, 0, 1);
     panY = clamp(Number.isFinite(panY) ? panY : 0.5, 0, 1);
-    var targetAspect = C.AVATAR_WIDTH / C.AVATAR_HEIGHT;
+    var targetAspect = targetWidth / targetHeight;
     var sourceAspect = width / height;
     if (sourceAspect > targetAspect) {
       var cropWidth = height * targetAspect;
@@ -301,6 +305,11 @@ window.OB64 = window.OB64 || {};
       horizontalPanAvailable: false,
       verticalPanAvailable: height - cropHeight > 0.0001
     };
+  }
+
+  function avatarCropRect(width, height, panX, panY) {
+    return imageCropRect(width, height, C.AVATAR_WIDTH, C.AVATAR_HEIGHT,
+      panX, panY);
   }
 
   function opaqueSourceChannels(rgba, pixel, background) {
@@ -498,15 +507,28 @@ window.OB64 = window.OB64 || {};
     return best;
   }
 
-  function wuQuantizeAvatarWords(words, maximum, dither) {
-    maximum = Math.max(1, Math.min(C.AVATAR_PALETTE_WORDS, maximum ||
-      C.AVATAR_PALETTE_WORDS));
-    var unique = new Set(words);
+  function wuQuantizeWords(words, maximum, dither, rowWidth, included) {
+    maximum = Math.max(1, Math.min(256, maximum || 256));
+    rowWidth = Number.isInteger(rowWidth) && rowWidth > 0
+      ? rowWidth : words.length;
+    var unique = new Set();
+    for (var uniquePixel = 0; uniquePixel < words.length; uniquePixel++) {
+      if (!included || included[uniquePixel]) unique.add(words[uniquePixel]);
+    }
+    if (!unique.size) unique.add(rgba5551Word(0, 0, 0, true));
     if (unique.size <= maximum) {
+      var exactPalette = Array.from(unique).sort(function(a, b) {
+        return a - b;
+      });
+      var exactWords = words.slice();
+      if (included) {
+        for (var exactPixel = 0; exactPixel < exactWords.length; exactPixel++) {
+          if (!included[exactPixel]) exactWords[exactPixel] = exactPalette[0];
+        }
+      }
       return {
-        words: words.slice(), paletteWords: Array.from(unique).sort(function(a, b) {
-          return a - b;
-        }), quantized: false, dithered: false
+        words: exactWords, paletteWords: exactPalette,
+        quantized: false, dithered: false
       };
     }
     var moments = {
@@ -517,6 +539,7 @@ window.OB64 = window.OB64 || {};
       square: new Float64Array(WU_LENGTH)
     };
     for (var pixel = 0; pixel < words.length; pixel++) {
+      if (included && !included[pixel]) continue;
       var channels = wordChannels(words[pixel]);
       var index = wuIndex(channels[0] + 1, channels[1] + 1, channels[2] + 1);
       moments.weight[index]++;
@@ -560,14 +583,17 @@ window.OB64 = window.OB64 || {};
       15, 7, 13, 5
     ];
     for (var outputPixel = 0; outputPixel < words.length; outputPixel++) {
+      if (included && !included[outputPixel]) {
+        output[outputPixel] = palette[0]; continue;
+      }
       var inputWord = words[outputPixel];
       if (!dither && cache.has(inputWord)) {
         output[outputPixel] = cache.get(inputWord); continue;
       }
       var input = wordChannels(inputWord);
       var offset = dither
-        ? (bayer[(outputPixel % C.AVATAR_WIDTH) % 4 +
-          (Math.floor(outputPixel / C.AVATAR_WIDTH) % 4) * 4] - 7.5) / 8
+        ? (bayer[(outputPixel % rowWidth) % 4 +
+          (Math.floor(outputPixel / rowWidth) % 4) * 4] - 7.5) / 8
         : 0;
       var nearest = nearestPaletteWordForChannels(
         palette, input[0] + offset, input[1] + offset, input[2] + offset);
@@ -578,6 +604,139 @@ window.OB64 = window.OB64 || {};
       words: output, paletteWords: palette,
       quantized: true, dithered: !!dither
     };
+  }
+
+  function wuQuantizeAvatarWords(words, maximum, dither) {
+    maximum = Math.max(1, Math.min(C.AVATAR_PALETTE_WORDS, maximum ||
+      C.AVATAR_PALETTE_WORDS));
+    return wuQuantizeWords(words, maximum, dither, C.AVATAR_WIDTH, null);
+  }
+
+  function sourceRgbaChannels(rgba, pixel) {
+    var offset = pixel * 4;
+    return [rgba[offset], rgba[offset + 1], rgba[offset + 2], rgba[offset + 3]];
+  }
+
+  function nearestImageResize(rgba, width, height, crop, targetWidth, targetHeight) {
+    var output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    for (var y = 0; y < targetHeight; y++) {
+      var sourceY = clamp(Math.floor(crop.y + (y + 0.5) * crop.height /
+        targetHeight), 0, height - 1);
+      for (var x = 0; x < targetWidth; x++) {
+        var sourceX = clamp(Math.floor(crop.x + (x + 0.5) * crop.width /
+          targetWidth), 0, width - 1);
+        var sourceOffset = (sourceY * width + sourceX) * 4;
+        var outputOffset = (y * targetWidth + x) * 4;
+        output[outputOffset] = rgba[sourceOffset];
+        output[outputOffset + 1] = rgba[sourceOffset + 1];
+        output[outputOffset + 2] = rgba[sourceOffset + 2];
+        output[outputOffset + 3] = rgba[sourceOffset + 3];
+      }
+    }
+    return output;
+  }
+
+  function premultipliedSample(channels, channel) {
+    return channels[channel] * channels[3] / 255;
+  }
+
+  function writePremultipliedPixel(output, offset, sums, totalWeight) {
+    var alpha = totalWeight ? sums[3] / totalWeight : 0;
+    output[offset + 3] = Math.round(clamp(alpha, 0, 255));
+    if (alpha <= 0.0001) {
+      output[offset] = output[offset + 1] = output[offset + 2] = 0;
+      return;
+    }
+    for (var channel = 0; channel < 3; channel++) {
+      var premultiplied = sums[channel] / totalWeight;
+      output[offset + channel] = Math.round(clamp(
+        premultiplied * 255 / alpha, 0, 255));
+    }
+  }
+
+  function bilinearImageResize(rgba, width, height, crop,
+      targetWidth, targetHeight) {
+    var output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    for (var y = 0; y < targetHeight; y++) {
+      var sourceY = crop.y + (y + 0.5) * crop.height / targetHeight - 0.5;
+      var rawY0 = Math.floor(sourceY);
+      var y0 = clamp(rawY0, 0, height - 1);
+      var y1 = clamp(rawY0 + 1, 0, height - 1);
+      var fy = clamp(sourceY - rawY0, 0, 1);
+      for (var x = 0; x < targetWidth; x++) {
+        var sourceX = crop.x + (x + 0.5) * crop.width / targetWidth - 0.5;
+        var rawX0 = Math.floor(sourceX);
+        var x0 = clamp(rawX0, 0, width - 1);
+        var x1 = clamp(rawX0 + 1, 0, width - 1);
+        var fx = clamp(sourceX - rawX0, 0, 1);
+        var samples = [
+          [sourceRgbaChannels(rgba, y0 * width + x0), (1 - fx) * (1 - fy)],
+          [sourceRgbaChannels(rgba, y0 * width + x1), fx * (1 - fy)],
+          [sourceRgbaChannels(rgba, y1 * width + x0), (1 - fx) * fy],
+          [sourceRgbaChannels(rgba, y1 * width + x1), fx * fy]
+        ];
+        var sums = [0, 0, 0, 0];
+        samples.forEach(function(sample) {
+          sums[0] += premultipliedSample(sample[0], 0) * sample[1];
+          sums[1] += premultipliedSample(sample[0], 1) * sample[1];
+          sums[2] += premultipliedSample(sample[0], 2) * sample[1];
+          sums[3] += sample[0][3] * sample[1];
+        });
+        writePremultipliedPixel(
+          output, (y * targetWidth + x) * 4, sums, 1);
+      }
+    }
+    return output;
+  }
+
+  function areaImageResize(rgba, width, height, crop,
+      targetWidth, targetHeight) {
+    var output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    for (var y = 0; y < targetHeight; y++) {
+      var sourceTop = crop.y + y * crop.height / targetHeight;
+      var sourceBottom = crop.y + (y + 1) * crop.height / targetHeight;
+      var firstY = clamp(Math.floor(sourceTop), 0, height - 1);
+      var lastY = clamp(Math.ceil(sourceBottom) - 1, 0, height - 1);
+      for (var x = 0; x < targetWidth; x++) {
+        var sourceLeft = crop.x + x * crop.width / targetWidth;
+        var sourceRight = crop.x + (x + 1) * crop.width / targetWidth;
+        var firstX = clamp(Math.floor(sourceLeft), 0, width - 1);
+        var lastX = clamp(Math.ceil(sourceRight) - 1, 0, width - 1);
+        var sums = [0, 0, 0, 0], total = 0;
+        for (var sourceY = firstY; sourceY <= lastY; sourceY++) {
+          var yWeight = Math.max(0, Math.min(sourceBottom, sourceY + 1) -
+            Math.max(sourceTop, sourceY));
+          for (var sourceX = firstX; sourceX <= lastX; sourceX++) {
+            var xWeight = Math.max(0, Math.min(sourceRight, sourceX + 1) -
+              Math.max(sourceLeft, sourceX));
+            var weight = xWeight * yWeight;
+            if (!weight) continue;
+            var channels = sourceRgbaChannels(
+              rgba, sourceY * width + sourceX);
+            sums[0] += premultipliedSample(channels, 0) * weight;
+            sums[1] += premultipliedSample(channels, 1) * weight;
+            sums[2] += premultipliedSample(channels, 2) * weight;
+            sums[3] += channels[3] * weight;
+            total += weight;
+          }
+        }
+        writePremultipliedPixel(
+          output, (y * targetWidth + x) * 4, sums, total);
+      }
+    }
+    return output;
+  }
+
+  function resizeImageSource(rgba, width, height, crop,
+      targetWidth, targetHeight, mode) {
+    if (mode === 'nearest') {
+      return nearestImageResize(
+        rgba, width, height, crop, targetWidth, targetHeight);
+    }
+    if (mode !== 'smooth') throw new ArtError('Image resize mode is invalid');
+    return crop.width >= targetWidth || crop.height >= targetHeight
+      ? areaImageResize(rgba, width, height, crop, targetWidth, targetHeight)
+      : bilinearImageResize(rgba, width, height, crop, targetWidth, targetHeight);
   }
 
   function prepareAvatarImport(rgba, width, height, options) {
@@ -618,6 +777,87 @@ window.OB64 = window.OB64 || {};
       resizeMode: mode,
       backgroundWord: backgroundWord,
       transparentSourcePixels: transparentSourcePixels
+    };
+  }
+
+  function prepareAnimationFrameImport(rgba, width, height,
+      targetWidth, targetHeight, options) {
+    options = options || {};
+    if (!ArrayBuffer.isView(rgba) || rgba.length !== width * height * 4) {
+      throw new ArtError(
+        'Animation frame source did not decode to the declared RGBA dimensions');
+    }
+    if (!Number.isInteger(targetWidth) || !Number.isInteger(targetHeight) ||
+        targetWidth < 1 || targetWidth > 0xFFFF ||
+        targetHeight < 1 || targetHeight > 0xFFFF) {
+      throw new ArtError('Animation frame target dimensions are invalid');
+    }
+    var crop = imageCropRect(width, height, targetWidth, targetHeight,
+      options.panX, options.panY);
+    var mode = options.resizeMode || 'nearest';
+    var resized = resizeImageSource(
+      rgba, width, height, crop, targetWidth, targetHeight, mode);
+    var pixelCount = targetWidth * targetHeight;
+    var nativeWords = new Uint16Array(pixelCount);
+    var intensity = new Uint8Array(pixelCount);
+    var visible = new Uint8Array(pixelCount);
+    var sourceNativeColors = new Set();
+    for (var pixel = 0; pixel < pixelCount; pixel++) {
+      var offset = pixel * 4;
+      intensity[pixel] = clamp(
+        Math.round(resized[offset + 3] * 15 / 255), 0, 15);
+      nativeWords[pixel] = rgba5551Word(
+        importChannel5(resized[offset]),
+        importChannel5(resized[offset + 1]),
+        importChannel5(resized[offset + 2]), true);
+      if (intensity[pixel]) {
+        visible[pixel] = 1;
+        sourceNativeColors.add(nativeWords[pixel]);
+      }
+    }
+    var quantized = wuQuantizeWords(
+      nativeWords, 256, !!options.dither, targetWidth, visible);
+    var palette = quantized.paletteWords.slice(0, 256);
+    if (!palette.length) palette.push(rgba5551Word(0, 0, 0, true));
+    var paletteIndex = new Map();
+    palette.forEach(function(word, index) { paletteIndex.set(word, index); });
+    var indices = new Uint8Array(pixelCount);
+    var paletteWords = new Uint16Array(256);
+    paletteWords.fill(palette[0]);
+    paletteWords.set(palette);
+    var outputRgba = new Uint8ClampedArray(pixelCount * 4);
+    var visiblePixels = 0;
+    for (var outputPixel = 0; outputPixel < pixelCount; outputPixel++) {
+      var word = quantized.words[outputPixel];
+      indices[outputPixel] = paletteIndex.get(word) || 0;
+      var color = rgba5551(word);
+      var outputOffset = outputPixel * 4;
+      outputRgba[outputOffset] = color[0];
+      outputRgba[outputOffset + 1] = color[1];
+      outputRgba[outputOffset + 2] = color[2];
+      outputRgba[outputOffset + 3] = intensity[outputPixel] * 17;
+      if (intensity[outputPixel]) visiblePixels++;
+    }
+    var sourceTransparentPixels = 0;
+    for (var sourcePixel = 0; sourcePixel < width * height; sourcePixel++) {
+      if (rgba[sourcePixel * 4 + 3] !== 255) sourceTransparentPixels++;
+    }
+    return {
+      indices: indices,
+      intensity: intensity,
+      paletteWords: paletteWords,
+      rgba: outputRgba,
+      colorCount: palette.length,
+      sourceNativeColorCount: sourceNativeColors.size,
+      quantized: quantized.quantized,
+      dithered: quantized.dithered,
+      crop: crop,
+      resizeMode: mode,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+      visiblePixels: visiblePixels,
+      transparentPixels: pixelCount - visiblePixels,
+      sourceTransparentPixels: sourceTransparentPixels
     };
   }
 
@@ -821,6 +1061,213 @@ window.OB64 = window.OB64 || {};
     return output;
   }
 
+  function compressionClock() {
+    return typeof performance !== 'undefined' && performance &&
+      typeof performance.now === 'function' ? performance.now() : Date.now();
+  }
+
+  function yieldCompressionTask() {
+    return new Promise(function(resolve) { setTimeout(resolve, 0); });
+  }
+
+  // This is the same minimum-byte planner as bootLzCompressTokens. It yields
+  // periodically so large native-art resources do not monopolize the browser.
+  async function bootLzCompressTokensAsync(input, onProgress) {
+    var size = input.length;
+    if (!size) {
+      if (onProgress) onProgress(1);
+      return new Uint8Array(0);
+    }
+    var lastYield = compressionClock();
+    async function checkpoint(fraction, force) {
+      var now = compressionClock();
+      if (!force && now - lastYield < 8) return;
+      if (onProgress) onProgress(Math.max(0, Math.min(1, fraction)));
+      await yieldCompressionTask();
+      lastYield = compressionClock();
+    }
+    if (onProgress) onProgress(0);
+    await yieldCompressionTask();
+    lastYield = compressionClock();
+
+    var shortLength = new Uint16Array(size);
+    var mediumLength = new Uint16Array(size);
+    var longLength = new Uint16Array(size);
+    var shortDistance = new Uint32Array(size);
+    var mediumDistance = new Uint32Array(size);
+    var longDistance = new Uint32Array(size);
+    var previous = new Int32Array(size);
+    previous.fill(-1);
+    var heads = new Map();
+    function record(lengths, distances, pos, length, distance, maximum) {
+      var capped = Math.min(length, maximum);
+      if (capped > lengths[pos] || (capped === lengths[pos] &&
+          (!distances[pos] || distance < distances[pos]))) {
+        lengths[pos] = capped;
+        distances[pos] = distance;
+      }
+    }
+    var candidateChecks = 0;
+    for (var pos = 0; pos + 2 < size; pos++) {
+      var prefix = (input[pos] << 16) | (input[pos + 1] << 8) | input[pos + 2];
+      var candidate = heads.has(prefix) ? heads.get(prefix) : -1;
+      previous[pos] = candidate;
+      heads.set(prefix, pos);
+      var maximumLength = Math.min(260, size - pos);
+      while (candidate >= 0) {
+        var distance = pos - candidate;
+        if (distance > 0x10000) break;
+        var length = 3;
+        while (length < maximumLength &&
+            input[pos + length] === input[pos + length - distance]) length++;
+        if (distance <= 2048) record(shortLength, shortDistance, pos, length, distance, 18);
+        if (distance <= 16384 && length >= 4) {
+          record(mediumLength, mediumDistance, pos, length, distance, 67);
+        }
+        if (length >= 5) record(longLength, longDistance, pos, length, distance, 260);
+        var shortDone = shortLength[pos] === Math.min(18, maximumLength);
+        var mediumDone = maximumLength < 4 ||
+          mediumLength[pos] === Math.min(67, maximumLength);
+        var longDone = maximumLength < 5 || longLength[pos] === maximumLength;
+        if (shortDone && mediumDone && longDone) break;
+        candidate = previous[candidate];
+        candidateChecks++;
+        if ((candidateChecks & 0x7FF) === 0) {
+          await checkpoint(0.55 * pos / size, false);
+        }
+      }
+      if ((pos & 0x7F) === 0) await checkpoint(0.55 * pos / size, false);
+    }
+
+    var zeroRun = new Uint16Array(size + 1);
+    var ffRun = new Uint16Array(size + 1);
+    for (var runPos = size - 1; runPos >= 0; runPos--) {
+      if (input[runPos] === 0) {
+        zeroRun[runPos] = Math.min(258, zeroRun[runPos + 1] + 1);
+      }
+      if (input[runPos] === 0xFF) {
+        ffRun[runPos] = Math.min(258, ffRun[runPos + 1] + 1);
+      }
+      if ((runPos & 0x3FF) === 0) {
+        await checkpoint(0.55 + 0.05 * (size - runPos) / size, false);
+      }
+    }
+
+    var byteCost = new Uint32Array(size + 1);
+    var commandCost = new Uint32Array(size + 1);
+    var choiceToken = new Uint8Array(size);
+    var choiceLength = new Uint16Array(size);
+    var choiceDistance = new Uint32Array(size);
+    for (var planPos = size - 1; planPos >= 0; planPos--) {
+      var bestBytes = Number.MAX_SAFE_INTEGER;
+      var bestCommands = Number.MAX_SAFE_INTEGER;
+      var bestToken = 0;
+      var bestLength = 0;
+      var bestDistance = 0;
+      var bestPriority = 99;
+      function consider(token, candidateLength, candidateDistance,
+          tokenBytes, priority) {
+        var totalBytes = tokenBytes + byteCost[planPos + candidateLength];
+        var totalCommands = 1 + commandCost[planPos + candidateLength];
+        var better = totalBytes < bestBytes ||
+          (totalBytes === bestBytes && totalCommands < bestCommands) ||
+          (totalBytes === bestBytes && totalCommands === bestCommands &&
+            priority < bestPriority) ||
+          (totalBytes === bestBytes && totalCommands === bestCommands &&
+            priority === bestPriority && candidateLength > bestLength) ||
+          (totalBytes === bestBytes && totalCommands === bestCommands &&
+            priority === bestPriority && candidateLength === bestLength &&
+            candidateDistance < bestDistance);
+        if (!better) return;
+        bestBytes = totalBytes;
+        bestCommands = totalCommands;
+        bestToken = token;
+        bestLength = candidateLength;
+        bestDistance = candidateDistance;
+        bestPriority = priority;
+      }
+      var planLength;
+      for (planLength = 1; planLength <= 64 &&
+          planPos + planLength <= size; planLength++) {
+        consider(1, planLength, 0, planLength + 1, 6);
+      }
+      for (planLength = 2;
+          planLength <= Math.min(33, zeroRun[planPos]); planLength++) {
+        consider(2, planLength, 0, 1, 0);
+      }
+      for (planLength = 3; planLength <= ffRun[planPos]; planLength++) {
+        consider(3, planLength, 0, 2, 1);
+      }
+      for (planLength = 3; planLength <= zeroRun[planPos]; planLength++) {
+        consider(4, planLength, 0, 2, 2);
+      }
+      for (planLength = 3; planLength <= shortLength[planPos]; planLength++) {
+        consider(5, planLength, shortDistance[planPos], 2, 3);
+      }
+      for (planLength = 4; planLength <= mediumLength[planPos]; planLength++) {
+        consider(6, planLength, mediumDistance[planPos], 3, 4);
+      }
+      for (planLength = 5; planLength <= longLength[planPos]; planLength++) {
+        consider(7, planLength, longDistance[planPos], 4, 5);
+      }
+      if (!bestToken) {
+        throw new ArtError('boot-LZ planner could not encode byte ' + planPos);
+      }
+      byteCost[planPos] = bestBytes;
+      commandCost[planPos] = bestCommands;
+      choiceToken[planPos] = bestToken;
+      choiceLength[planPos] = bestLength;
+      choiceDistance[planPos] = bestDistance;
+      if ((planPos & 0x7F) === 0) {
+        await checkpoint(0.60 + 0.35 * (size - planPos) / size, false);
+      }
+    }
+
+    var output = new Uint8Array(byteCost[0]);
+    var inputPos = 0;
+    var outputPos = 0;
+    while (inputPos < size) {
+      var token = choiceToken[inputPos];
+      var len = choiceLength[inputPos];
+      var dist = choiceDistance[inputPos];
+      var encodedDistance = dist - 1;
+      if (token === 1) {
+        output[outputPos++] = 0x40 | (len - 1);
+        output.set(input.subarray(inputPos, inputPos + len), outputPos);
+        outputPos += len;
+      } else if (token === 2) {
+        output[outputPos++] = 0x20 | (len - 2);
+      } else if (token === 3) {
+        output[outputPos++] = 1;
+        output[outputPos++] = len - 3;
+      } else if (token === 4) {
+        output[outputPos++] = 2;
+        output[outputPos++] = len - 3;
+      } else if (token === 5) {
+        output[outputPos++] = 0x80 | ((len - 3) << 3) |
+          ((encodedDistance >>> 8) & 7);
+        output[outputPos++] = encodedDistance & 0xFF;
+      } else if (token === 6) {
+        var encodedLength = len - 4;
+        output[outputPos++] = 0x10 | (encodedLength & 15);
+        output[outputPos++] = ((encodedLength & 48) << 2) |
+          ((encodedDistance >>> 8) & 63);
+        output[outputPos++] = encodedDistance & 0xFF;
+      } else {
+        output[outputPos++] = 0;
+        output[outputPos++] = len - 5;
+        output[outputPos++] = (encodedDistance >>> 8) & 0xFF;
+        output[outputPos++] = encodedDistance & 0xFF;
+      }
+      inputPos += len;
+      if ((inputPos & 0x3FF) === 0) {
+        await checkpoint(0.95 + 0.05 * inputPos / size, false);
+      }
+    }
+    await checkpoint(1, true);
+    return output;
+  }
+
   function bootLzCompress(decoded) {
     var tokens = bootLzCompressTokens(decoded);
     var stored = new Uint8Array(tokens.length + 4);
@@ -828,6 +1275,19 @@ window.OB64 = window.OB64 || {};
     stored.set(tokens, 4);
     var verified = bootLzDecode(stored);
     if (verified.bytesConsumed !== stored.length || !equalBytes(verified.output, decoded)) {
+      throw new ArtError('boot-LZ compressor failed exact independent round trip');
+    }
+    return stored;
+  }
+
+  async function bootLzCompressAsync(decoded, onProgress) {
+    var tokens = await bootLzCompressTokensAsync(decoded, onProgress);
+    var stored = new Uint8Array(tokens.length + 4);
+    writeU32(stored, 0, decoded.length);
+    stored.set(tokens, 4);
+    var verified = bootLzDecode(stored);
+    if (verified.bytesConsumed !== stored.length ||
+        !equalBytes(verified.output, decoded)) {
       throw new ArtError('boot-LZ compressor failed exact independent round trip');
     }
     return stored;
@@ -1161,7 +1621,9 @@ window.OB64 = window.OB64 || {};
 
   function editCount(state) {
     return Object.keys(state.avatar.edits).length + Object.keys(state.icons.edits).length +
-      (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0);
+      (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0) +
+      (OB64.animationSequences
+        ? OB64.animationSequences.count(state.sequenceCopies) : 0);
   }
 
   function blockedCount(state) {
@@ -1217,7 +1679,7 @@ window.OB64 = window.OB64 || {};
   function collectProjectPayload(rom) {
     var state = rom && rom.art;
     if (!state || !state.supported) {
-      return { schemaVersion: 2, avatars: {}, icons: {}, animations: {} };
+      return { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null };
     }
     var avatars = {}, icons = {};
     Object.keys(state.avatar.edits).sort().forEach(function(key) {
@@ -1238,31 +1700,47 @@ window.OB64 = window.OB64 || {};
     var animations = OB64.animationArt
       ? OB64.animationArt.collectProject(state.animations)
       : {};
-    return { schemaVersion: 2, avatars: avatars, icons: icons, animations: animations };
+    var separations = OB64.animationSequences
+      ? OB64.animationSequences.collectProject(rom) : null;
+    return {
+      schemaVersion: 3, avatars: avatars, icons: icons,
+      animations: animations, separations: separations
+    };
   }
 
   function prepareProjectPayload(rom, payload) {
     var state = rom && rom.art;
     if (payload === undefined || payload === null) {
-      return { avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0 };
+      return {
+        avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+        separations: null, count: 0
+      };
     }
     if (!state || !state.supported) {
       if (payload && typeof payload === 'object' &&
           !Object.keys(payload.avatars || {}).length && !Object.keys(payload.icons || {}).length &&
-          !Object.keys(payload.animations || {}).length) {
-        return { avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0 };
+          !Object.keys(payload.animations || {}).length && !payload.separations) {
+        return {
+          avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+          separations: null, count: 0
+        };
       }
       throw new ArtError('This ROM revision cannot load Art and Animation Project records');
     }
     if (typeof payload !== 'object' || Array.isArray(payload) ||
-        (payload.schemaVersion !== 1 && payload.schemaVersion !== 2)) {
-      throw new ArtError('patches.art must use schemaVersion 1 or 2');
+        (payload.schemaVersion !== 1 && payload.schemaVersion !== 2 &&
+          payload.schemaVersion !== 3)) {
+      throw new ArtError('patches.art must use schemaVersion 1, 2, or 3');
     }
     if (payload.schemaVersion === 1 && Object.keys(payload.animations || {}).length) {
       throw new ArtError('combat-sprite records require patches.art schemaVersion 2');
     }
+    if (payload.schemaVersion < 3 && payload.separations) {
+      throw new ArtError('separated animation records require patches.art schemaVersion 3');
+    }
     var prepared = {
-      avatars: {}, icons: {}, animations: { edits: {}, count: 0 }, count: 0
+      avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+      separations: null, count: 0
     };
     Object.keys(payload.avatars || {}).forEach(function(key) {
       var entry = payload.avatars[key], appearance = state.avatar.byKey[key];
@@ -1305,6 +1783,10 @@ window.OB64 = window.OB64 || {};
       );
       prepared.count += prepared.animations.count;
     }
+    prepared.separations = OB64.animationSequences
+      ? OB64.animationSequences.prepareProject(rom, payload.separations)
+      : null;
+    if (prepared.separations) prepared.count += prepared.separations.entries.length;
     return prepared;
   }
 
@@ -1319,10 +1801,13 @@ window.OB64 = window.OB64 || {};
     if (OB64.animationArt && prepared.animations) {
       applied += OB64.animationArt.applyPrepared(state.animations, prepared.animations);
     }
+    if (OB64.animationSequences && prepared.separations) {
+      applied += OB64.animationSequences.applyProject(rom, prepared.separations);
+    }
     return applied;
   }
 
-  function buildIndependentAvatar(state, appearance, words) {
+  function buildIndependentAvatarData(state, appearance, words) {
     validateAvatarWords(state, words, appearance.className + ' ' + appearance.label);
     var route = appearance.routes[0];
     var source = state.avatar.bundleCache[route.resourceKey];
@@ -1352,10 +1837,23 @@ window.OB64 = window.OB64 || {};
         'CI8 round trip', 'pixel mismatch', 'exact match', 'reset the avatar and retry the edit');
     }
     var decoded = concatBytes([indices, bytesFromWords(palette)]);
-    return { decoded: decoded, stored: bootLzCompress(decoded), colorCount: required.length };
+    return { decoded: decoded, colorCount: required.length };
   }
 
-  function buildIconPack(state, pack) {
+  function buildIndependentAvatar(state, appearance, words) {
+    var built = buildIndependentAvatarData(state, appearance, words);
+    built.stored = bootLzCompress(built.decoded);
+    return built;
+  }
+
+  async function buildIndependentAvatarAsync(state, appearance, words,
+      onProgress) {
+    var built = buildIndependentAvatarData(state, appearance, words);
+    built.stored = await bootLzCompressAsync(built.decoded, onProgress);
+    return built;
+  }
+
+  function buildIconPackData(state, pack) {
     var wordsByIcon = {}, required = [], requiredSet = new Set();
     pack.icons.forEach(function(icon) {
       var words = currentWords(state, 'icon', icon.key);
@@ -1399,7 +1897,19 @@ window.OB64 = window.OB64 || {};
       exportFailure(pack.spec.label, 'decoded pack size', decoded.length,
         pack.spec.decodedLength, 'reload the vanilla ROM and reapply the Project');
     }
-    return { decoded: decoded, stored: bootLzCompress(decoded), colorCount: required.length };
+    return { decoded: decoded, colorCount: required.length };
+  }
+
+  function buildIconPack(state, pack) {
+    var built = buildIconPackData(state, pack);
+    built.stored = bootLzCompress(built.decoded);
+    return built;
+  }
+
+  async function buildIconPackAsync(state, pack, onProgress) {
+    var built = buildIconPackData(state, pack);
+    built.stored = await bootLzCompressAsync(built.decoded, onProgress);
+    return built;
   }
 
   function resourceKeyForEntry(entry) {
@@ -1482,6 +1992,16 @@ window.OB64 = window.OB64 || {};
     var animations = OB64.animationArt
       ? OB64.animationArt.buildResources(state.animations)
       : [];
+    var animationSequences = OB64.animationSequences
+      ? OB64.animationSequences.buildPlan(rom, cleanBase)
+      : null;
+    return finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
+      animations, animationSequences);
+  }
+
+  function finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
+      animations, animationSequences) {
+    var state = rom.art;
     var relocatedResources = avatars.map(function(row) {
       return { name: row.name, stored: row.built.stored };
     }).concat(iconPacks.filter(function(row) { return row.placement === 'relocated'; })
@@ -1489,7 +2009,8 @@ window.OB64 = window.OB64 || {};
       .concat(animations.filter(function(row) { return row.placement === 'relocated'; })
       .map(function(row) {
         return { name: row.name, stored: row.built.stored };
-      }));
+      }))
+      .concat(animationSequences ? animationSequences.relocatedResources : []);
     var descriptorPlaceholder = null;
     if (avatars.length) {
       descriptorPlaceholder = {
@@ -1523,12 +2044,106 @@ window.OB64 = window.OB64 || {};
       if (row.placement === 'relocated') row.allocation = allocationByName[row.name];
       row.edit = state.animations.edits[row.key];
     });
+    if (animationSequences) {
+      OB64.animationSequences.finalizeAllocations(
+        animationSequences, allocationByName);
+    }
     return {
       avatars: avatars, iconPacks: iconPacks, animations: animations,
+      animationSequences: animationSequences,
       allocations: allocations,
       descriptorSlots: descriptorSlots, descriptorAllocation: descriptorAllocation,
       cleanBase: cleanBase, log: [], ownedRanges: [], crc: false
     };
+  }
+
+  async function makeExportPlanAsync(rom, cleanBase, onProgress) {
+    var state = rom.art;
+    var avatarKeys = Object.keys(state.avatar.edits).sort();
+    var changedPackSlugs = Object.keys(state.icons.packs).filter(function(slug) {
+      return state.icons.packs[slug].icons.some(function(icon) {
+        return !!state.icons.edits[icon.key];
+      });
+    });
+    var hasAnimationArt = !!(OB64.animationArt && state.animations &&
+      Object.keys(state.animations.edits || {}).some(function(key) {
+        var source = state.animations.artByKey[key];
+        return !(source && source.separationId);
+      }));
+    var hasSequences = !!(OB64.animationSequences && rom.animationSequences &&
+      Object.keys(rom.animationSequences.separations || {}).length);
+    var stageCount = (avatarKeys.length ? 1 : 0) +
+      (changedPackSlugs.length ? 1 : 0) + (hasAnimationArt ? 1 : 0) +
+      (hasSequences ? 1 : 0);
+    var stageIndex = 0;
+    function stageProgress(detail, fraction) {
+      if (!onProgress) return;
+      onProgress(detail, (stageIndex + Math.max(0, Math.min(1, fraction))) /
+        Math.max(1, stageCount));
+    }
+
+    var avatars = [];
+    for (var avatarOrdinal = 0; avatarOrdinal < avatarKeys.length;
+        avatarOrdinal++) {
+      var avatarKey = avatarKeys[avatarOrdinal];
+      var appearance = state.avatar.byKey[avatarKey];
+      var avatarLabel = 'avatar ' + (avatarOrdinal + 1) + ' of ' +
+        avatarKeys.length;
+      var builtAvatar = await buildIndependentAvatarAsync(
+        state, appearance, state.avatar.edits[avatarKey].words,
+        function(fraction) {
+          stageProgress(avatarLabel,
+            (avatarOrdinal + fraction) / Math.max(1, avatarKeys.length));
+        });
+      avatars.push({
+        name: 'avatar-' + avatarOrdinal,
+        key: avatarKey,
+        appearance: appearance,
+        built: builtAvatar
+      });
+    }
+    if (avatarKeys.length) stageIndex++;
+
+    var iconPacks = [];
+    for (var iconOrdinal = 0; iconOrdinal < changedPackSlugs.length;
+        iconOrdinal++) {
+      var slug = changedPackSlugs[iconOrdinal];
+      var pack = state.icons.packs[slug];
+      var iconLabel = 'icon pack ' + (iconOrdinal + 1) + ' of ' +
+        changedPackSlugs.length;
+      var builtPack = await buildIconPackAsync(state, pack, function(fraction) {
+        stageProgress(iconLabel,
+          (iconOrdinal + fraction) / Math.max(1, changedPackSlugs.length));
+      });
+      iconPacks.push({
+        name: 'icon-' + slug,
+        slug: slug,
+        pack: pack,
+        built: builtPack,
+        placement: builtPack.stored.length <= pack.spec.capacity
+          ? 'in-place' : 'relocated'
+      });
+    }
+    if (changedPackSlugs.length) stageIndex++;
+
+    var animations = [];
+    if (OB64.animationArt) {
+      animations = hasAnimationArt
+        ? await OB64.animationArt.buildResourcesAsync(
+          state.animations, stageProgress)
+        : [];
+    }
+    if (hasAnimationArt) stageIndex++;
+
+    var animationSequences = null;
+    if (OB64.animationSequences && hasSequences) {
+      animationSequences = await OB64.animationSequences.buildPlanAsync(
+        rom, cleanBase, stageProgress);
+    }
+    if (hasSequences) stageIndex++;
+    if (onProgress) onProgress('finalizing native art plan', 1);
+    return finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
+      animations, animationSequences);
   }
 
   function applyPlanToBytes(rom, plan, bytes) {
@@ -1562,6 +2177,10 @@ window.OB64 = window.OB64 || {};
 
     if (OB64.animationArt && plan.animations.length) {
       OB64.animationArt.applyResources(plan.animations, bytes, ranges, log);
+    }
+    if (OB64.animationSequences && plan.animationSequences) {
+      OB64.animationSequences.applyPlan(
+        plan.animationSequences, bytes, ranges, log);
     }
 
     plan.iconPacks.forEach(function(row) {
@@ -1607,6 +2226,10 @@ window.OB64 = window.OB64 || {};
           row.source.descriptorEntryOffset + 4]);
       }
     });
+    if (OB64.animationSequences && plan.animationSequences) {
+      currentRanges = currentRanges.concat(
+        OB64.animationSequences.currentRanges(plan.animationSequences));
+    }
     plan.iconPacks.forEach(function(row) {
       if (row.placement === 'in-place') {
         currentRanges.push([row.pack.spec.sizeWord,
@@ -1645,6 +2268,9 @@ window.OB64 = window.OB64 || {};
     if (OB64.animationArt && plan.animations.length) {
       OB64.animationArt.verifyResources(plan.animations, bytes);
     }
+    if (OB64.animationSequences && plan.animationSequences) {
+      OB64.animationSequences.verifyPlan(plan.animationSequences, bytes);
+    }
     plan.iconPacks.forEach(function(row) {
       var key = row.placement === 'relocated' ? row.allocation.key : row.pack.spec.resourceKey;
       if (row.placement === 'relocated') {
@@ -1671,6 +2297,29 @@ window.OB64 = window.OB64 || {};
     return plan;
   }
 
+  async function prepareExportAsync(rom, candidateRom, onProgress) {
+    var state = rom && rom.art;
+    if (!state || !state.supported || !hasPendingExport(state)) return null;
+    if (onProgress) onProgress('restoring the clean native-art base', 0);
+    var cleanBase = candidateRom.z64.slice();
+    restorePreviousArt(state, cleanBase);
+    var plan = await makeExportPlanAsync(rom, cleanBase,
+      function(detail, fraction) {
+        if (onProgress) onProgress(detail, fraction * 0.85);
+      });
+    if (onProgress) onProgress('simulating native-art placement', 0.88);
+    await yieldCompressionTask();
+    var simulated = cleanBase.slice();
+    applyPlanToBytes(rom, plan, simulated);
+    if (onProgress) onProgress('verifying native-art readback', 0.94);
+    await yieldCompressionTask();
+    verifyAppliedPlan(rom, plan, simulated);
+    plan.simulated = simulated;
+    if (onProgress) onProgress('native-art plan verified', 1);
+    await yieldCompressionTask();
+    return plan;
+  }
+
   function applyExport(rom, candidateRom, plan) {
     if (!plan) return null;
     applyPlanToBytes(rom, plan, candidateRom.z64);
@@ -1684,12 +2333,17 @@ window.OB64 = window.OB64 || {};
       return row.placement === 'in-place';
     }).length;
     var relocatedCombatSpriteCount = plan.animations.length - inPlaceCombatSpriteCount;
+    var separatedSequenceCount = plan.animationSequences
+      ? plan.animationSequences.groups.reduce(function(total, group) {
+        return total + group.separations.length;
+      }, 0) : 0;
     var arenaEnd = plan.allocations.length ? plan.allocations[plan.allocations.length - 1].end : C.ARENA_START;
     return {
       crc: plan.crc,
       currentCrcAffected: plan.currentCrcAffected,
       detachedAvatarCount: plan.avatars.length,
       editedCombatSpriteCount: plan.animations.length,
+      separatedAnimationSequenceCount: separatedSequenceCount,
       inPlaceCombatSpriteCount: inPlaceCombatSpriteCount,
       relocatedCombatSpriteCount: relocatedCombatSpriteCount,
       editedIconCounts: iconCounts,
@@ -1704,6 +2358,8 @@ window.OB64 = window.OB64 || {};
           (plan.animations.length === 1 ? '' : 's') +
         ' (' + inPlaceCombatSpriteCount + ' in place, ' +
           relocatedCombatSpriteCount + ' relocated)' +
+        ', ' + separatedSequenceCount + ' separated animation sequence' +
+          (separatedSequenceCount === 1 ? '' : 's') +
         ', ' + relocatedCount + ' relocated resource' + (relocatedCount === 1 ? '' : 's') +
         ', ROM span ' + hex(C.ARENA_START) + '..' + hex(arenaEnd)
     };
@@ -1754,17 +2410,18 @@ window.OB64 = window.OB64 || {};
     };
   }
 
-  function resetAll(state) {
+  function resetAll(state, rom) {
     if (!state || !state.supported || (!editCount(state) && !blockedCount(state))) return false;
-    state.bulkUndo = collectStateEdits(state);
+    state.bulkUndo = collectStateEdits(state, rom);
     state.avatar.edits = {}; state.icons.edits = {};
+    if (OB64.animationSequences && rom) OB64.animationSequences.resetAll(rom);
     if (OB64.animationArt) OB64.animationArt.resetAll(state.animations);
     state.blocked = { avatars: {}, icons: {}, animations: {} };
     return true;
   }
 
-  function collectStateEdits(state) {
-    var snapshot = { avatars: {}, icons: {}, animations: {} };
+  function collectStateEdits(state, rom) {
+    var snapshot = { avatars: {}, icons: {}, animations: {}, separations: null };
     Object.keys(state.avatar.edits).forEach(function(key) {
       snapshot.avatars[key] = state.avatar.edits[key].words.slice();
     });
@@ -1774,10 +2431,13 @@ window.OB64 = window.OB64 || {};
     if (OB64.animationArt) {
       snapshot.animations = OB64.animationArt.snapshotEdits(state.animations);
     }
+    if (OB64.animationSequences && rom) {
+      snapshot.separations = OB64.animationSequences.collectProject(rom);
+    }
     return snapshot;
   }
 
-  function undoResetAll(state) {
+  function undoResetAll(state, rom) {
     if (!state || !state.bulkUndo) return false;
     var snapshot = state.bulkUndo; state.bulkUndo = null;
     Object.keys(snapshot.avatars).forEach(function(key) {
@@ -1788,6 +2448,10 @@ window.OB64 = window.OB64 || {};
     });
     if (OB64.animationArt) {
       OB64.animationArt.restoreEdits(state.animations, snapshot.animations || {});
+    }
+    if (OB64.animationSequences && rom && snapshot.separations) {
+      var prepared = OB64.animationSequences.prepareProject(rom, snapshot.separations);
+      OB64.animationSequences.applyProject(rom, prepared);
     }
     Object.keys(state.icons.packs).forEach(function(slug) {
       refreshIconPackBlocked(state, slug);
@@ -1803,9 +2467,12 @@ window.OB64 = window.OB64 || {};
     rgba5551Word: rgba5551Word,
     nativeChannel5: nativeChannel5,
     avatarWordsFromRgbaBytes: avatarWordsFromRgbaBytes,
+    imageCropRect: imageCropRect,
     avatarCropRect: avatarCropRect,
+    wuQuantizeWords: wuQuantizeWords,
     wuQuantizeAvatarWords: wuQuantizeAvatarWords,
     prepareAvatarImport: prepareAvatarImport,
+    prepareAnimationFrameImport: prepareAnimationFrameImport,
     colorCss: colorCss,
     hex: hex,
     currentWords: currentWords,
@@ -1824,6 +2491,7 @@ window.OB64 = window.OB64 || {};
     prepareProjectPayload: prepareProjectPayload,
     applyPreparedProjectPayload: applyPreparedProjectPayload,
     prepareExport: prepareExport,
+    prepareExportAsync: prepareExportAsync,
     applyExport: applyExport,
     finalizeExportSummary: finalizeExportSummary,
     adoptExport: adoptExport,
@@ -1834,6 +2502,7 @@ window.OB64 = window.OB64 || {};
     wordArrayFromBase64: wordArrayFromBase64,
     bootLzDecode: bootLzDecode,
     bootLzCompress: bootLzCompress,
+    bootLzCompressAsync: bootLzCompressAsync,
     readCompressedResource: readCompressedResource,
     readResource: readResource,
     readU16: readU16,

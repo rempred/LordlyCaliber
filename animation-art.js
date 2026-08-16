@@ -1,4 +1,4 @@
-// OB64 Mod Editor - bounded combat-sprite model and repacker
+// OB64 Mod Editor - complete verified combat-sprite model and repacker
 //
 // Each supported corpus entry pins one verified class/action pose program and
 // its complete metadata/art descriptor. Timeline records, metadata, art
@@ -20,7 +20,53 @@ window.OB64 = window.OB64 || {};
     1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4
   ];
 
-  var SPECS = [
+  // Vanilla equipment items whose appearance-table ordinals address the
+  // weapon children exposed by the frozen Project-v19 fixtures. Multiple items can
+  // intentionally share one child. An ordinal outside a source's child count
+  // is handled by the game as a child-zero fallback.
+  var WEAPON_ITEM_FAMILIES = {
+    'one-handed-sword': {
+      label: 'One-handed sword',
+      equipType: 0x01,
+      items: [
+        [0x01, 0], [0x02, 1], [0x03, 2], [0x04, 3], [0x05, 4],
+        [0x06, 5], [0x07, 6], [0x08, 7], [0x09, 8], [0x0A, 8],
+        [0x0B, 9], [0x0C, 10], [0x0D, 11], [0x0E, 11], [0x0F, 12],
+        [0x10, 13], [0x11, 12], [0x12, 14], [0x13, 15], [0x14, 16],
+        [0x15, 0]
+      ]
+    },
+    'one-handed-axe': {
+      label: 'One-handed axe/hammer',
+      equipType: 0x04,
+      items: [
+        [0x30, 0], [0x31, 1], [0x32, 2], [0x33, 3], [0x34, 4],
+        [0x35, 5], [0x36, 6], [0x37, 7], [0x38, 8], [0x39, 9],
+        [0x3A, 10], [0x3B, 11], [0x3C, 11]
+      ]
+    },
+    'two-handed-axe': {
+      label: 'Two-handed axe/hammer',
+      equipType: 0x05,
+      items: [
+        [0x3D, 0], [0x3E, 1], [0x3F, 2], [0x40, 3], [0x41, 4],
+        [0x42, 5], [0x43, 6], [0x44, 7], [0x45, 8], [0x46, 9],
+        [0x47, 10], [0x48, 11]
+      ]
+    },
+    staff: {
+      label: 'Staff',
+      equipType: 0x0C,
+      items: [
+        [0x75, 0], [0x76, 6], [0x77, 1], [0x78, 3], [0x79, 5],
+        [0x7A, 9], [0x7B, 8], [0x7C, 10], [0x7D, 11], [0x7E, 12]
+      ]
+    }
+  };
+
+  // Retained only as a Project-v19 compatibility ledger. Runtime selection
+  // comes from the generated, independently reviewed complete corpus below.
+  var LEGACY_SPECS = [
     {
       key: 'fighter-slash',
       classId: 0x02,
@@ -38,6 +84,7 @@ window.OB64 = window.OB64 || {};
       variantLabel: 'Normal',
       selectedChildOrdinal: 0,
       weaponChildCount: 17,
+      weaponItemFamilyKey: 'one-handed-sword',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
         12, 13, 14, 15, 16],
       consumerSummary: 'Fighter and Lycanthrope',
@@ -87,6 +134,7 @@ window.OB64 = window.OB64 || {};
       variantLabel: 'Normal',
       selectedChildOrdinal: 0,
       weaponChildCount: 12,
+      weaponItemFamilyKey: 'one-handed-axe',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       consumerSummary: 'Berserker, Berserker (Asnabel), ' +
         'Berserker (Stabil), and Berserker (Makisi)',
@@ -113,6 +161,7 @@ window.OB64 = window.OB64 || {};
       variantLabel: 'Normal',
       selectedChildOrdinal: 0,
       weaponChildCount: 13,
+      weaponItemFamilyKey: 'two-handed-axe',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       consumerSummary: 'Black Knight, Black Knight (Carth), and ' +
         'Black Knight (Jeal)',
@@ -139,6 +188,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 651,
       selectedChildOrdinal: 0,
       weaponChildCount: 17,
+      weaponItemFamilyKey: 'one-handed-sword',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
         12, 13, 14, 15, 16],
       consumerSummary: 'Fighter and Lycanthrope',
@@ -188,6 +238,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 696,
       selectedChildOrdinal: 0,
       weaponChildCount: 12,
+      weaponItemFamilyKey: 'one-handed-axe',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       consumerSummary: 'Berserker, Berserker (Asnabel), ' +
         'Berserker (Stabil), and Berserker (Makisi)',
@@ -214,6 +265,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 767,
       selectedChildOrdinal: 0,
       weaponChildCount: 13,
+      weaponItemFamilyKey: 'two-handed-axe',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       consumerSummary: 'Black Knight, Black Knight (Carth), and ' +
         'Black Knight (Jeal)',
@@ -238,6 +290,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 767,
       selectedChildOrdinal: 0,
       weaponChildCount: 13,
+      weaponItemFamilyKey: 'two-handed-axe',
       retailMappedWeaponOrdinals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
       consumerSummary: 'Black Knight, Black Knight (Carth), and ' +
         'Black Knight (Jeal)',
@@ -263,6 +316,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 618,
       selectedChildOrdinal: 0,
       weaponChildCount: 12,
+      weaponItemFamilyKey: 'staff',
       retailMappedWeaponOrdinals: [0, 1, 3, 5, 6, 8, 9, 10, 11],
       consumerSummary: 'Wizard, Archmage, Warlock (Saradin), ' +
         'Wizard (Zhontac), and Archmage (Giolse)',
@@ -288,6 +342,7 @@ window.OB64 = window.OB64 || {};
       poseDecodedLength: 817,
       selectedChildOrdinal: 2,
       weaponChildCount: 11,
+      weaponItemFamilyKey: 'staff',
       retailMappedWeaponOrdinals: [0, 1, 3, 5, 6, 8, 9, 10],
       consumerSummary: 'Sorceress, Siren, Siren (Meredia), and Siren (Eudika)',
       frames: [
@@ -299,6 +354,11 @@ window.OB64 = window.OB64 || {};
       ]
     }
   ];
+
+  var CORPUS = OB64.animationCorpusData || null;
+  var SPECS = CORPUS && Array.isArray(CORPUS.sequences)
+    ? CORPUS.sequences
+    : [];
 
   function AnimationArtError(message) {
     this.name = 'AnimationArtError';
@@ -334,6 +394,10 @@ window.OB64 = window.OB64 || {};
     if (!left || !right || left.length !== right.length) return false;
     for (var i = 0; i < left.length; i++) if (left[i] !== right[i]) return false;
     return true;
+  }
+
+  function equalOptionalBytes(left, right) {
+    return left === null && right === null || equalBytes(left, right);
   }
 
   function rowBytes(formatIndex, width) {
@@ -388,8 +452,110 @@ window.OB64 = window.OB64 || {};
       flags: flags, width: width, height: height,
       firstFormat: firstFormat, secondFormat: secondFormat,
       firstStride: firstStride, secondStride: secondStride,
-      firstSize: firstSize, secondSize: secondSize, children: children
+      firstSize: firstSize, secondSize: secondSize, children: children,
+      materializedChildren: {}
     };
+  }
+
+  function laneBytes(sprite, child, offset, size, label) {
+    if (offset === null) return null;
+    if (offset < 0 || offset + size > sprite.decoded.length) {
+      fail('resource ' + hex(sprite.resourceKey) + ' child ' + child.ordinal +
+        ' ' + label + ' lies outside its decoded object');
+    }
+    return sprite.decoded.slice(offset, offset + size);
+  }
+
+  function combineDeltaLane(base, delta, format, label, resourceKey, childOrdinal) {
+    if (!(base instanceof Uint8Array) || !(delta instanceof Uint8Array) ||
+        base.length !== delta.length) {
+      fail('resource ' + hex(resourceKey) + ' child ' + childOrdinal + ' ' +
+        label + ' lacks a matching discriminator base lane');
+    }
+    var output = new Uint8Array(delta.length);
+    var offset, baseWord, deltaWord, value;
+    if (format === 0) {
+      for (offset = 0; offset < delta.length; offset++) {
+        output[offset] = ((((base[offset] >>> 4) - (delta[offset] >>> 4)) & 15) << 4) |
+          (((base[offset] & 15) - (delta[offset] & 15)) & 15);
+      }
+      return output;
+    }
+    if (format === 1) {
+      for (offset = 0; offset < delta.length; offset++) {
+        output[offset] = (base[offset] - delta[offset]) & 0xFF;
+      }
+      return output;
+    }
+    if (format === 2) {
+      if (delta.length & 1) {
+        fail('resource ' + hex(resourceKey) + ' child ' + childOrdinal + ' ' +
+          label + ' has an odd direct-color lane length');
+      }
+      for (offset = 0; offset < delta.length; offset += 2) {
+        baseWord = (base[offset] << 8) | base[offset + 1];
+        deltaWord = (delta[offset] << 8) | delta[offset + 1];
+        value = (baseWord - deltaWord) & 0xFFFF;
+        output[offset] = value >>> 8;
+        output[offset + 1] = value & 0xFF;
+      }
+      return output;
+    }
+    if (format === 3) {
+      if (delta.length & 3) {
+        fail('resource ' + hex(resourceKey) + ' child ' + childOrdinal + ' ' +
+          label + ' has a non-word-aligned 32-bit lane length');
+      }
+      for (offset = 0; offset < delta.length; offset++) {
+        output[offset] = base[offset] ^ delta[offset];
+      }
+      return output;
+    }
+    fail('resource ' + hex(resourceKey) + ' child ' + childOrdinal +
+      ' uses unknown ' + label + ' format ' + format);
+  }
+
+  function materializeChildLanes(sprite, childOrdinal, visiting) {
+    var cached = sprite.materializedChildren[childOrdinal];
+    if (cached) return cached;
+    var child = sprite.children[childOrdinal];
+    if (!child) fail('resource ' + hex(sprite.resourceKey) + ' lacks child ' + childOrdinal);
+    visiting = visiting || {};
+    if (visiting[childOrdinal]) {
+      fail('resource ' + hex(sprite.resourceKey) + ' has a cyclic child discriminator at ' +
+        childOrdinal);
+    }
+    visiting[childOrdinal] = true;
+    var first = laneBytes(sprite, child, child.firstOffset, sprite.firstSize, 'first lane');
+    var second = laneBytes(sprite, child, child.secondOffset, sprite.secondSize, 'second lane');
+    var lookup = laneBytes(sprite, child, child.lookupOffset, 0x200, 'embedded lookup');
+    var transformed = child.discriminator !== child.ordinal;
+    if (transformed) {
+      if (child.discriminator < 0 || child.discriminator >= sprite.childCount) {
+        fail('resource ' + hex(sprite.resourceKey) + ' child ' + childOrdinal +
+          ' has invalid discriminator ' + child.discriminator);
+      }
+      var base = materializeChildLanes(sprite, child.discriminator, visiting);
+      if (!(child.flags & 0x08)) {
+        if (first) first = combineDeltaLane(base.first, first, sprite.firstFormat,
+          'first lane', sprite.resourceKey, childOrdinal);
+        if (second) second = combineDeltaLane(base.second, second, sprite.secondFormat,
+          'second lane', sprite.resourceKey, childOrdinal);
+        if (lookup) lookup = combineDeltaLane(base.lookup, lookup, 2,
+          'embedded lookup', sprite.resourceKey, childOrdinal);
+      }
+    }
+    delete visiting[childOrdinal];
+    cached = {
+      ordinal: childOrdinal,
+      discriminator: child.discriminator,
+      transformed: transformed,
+      first: first,
+      second: second,
+      lookup: lookup
+    };
+    sprite.materializedChildren[childOrdinal] = cached;
+    return cached;
   }
 
   function parseConfig(decoded, artCount, label) {
@@ -398,8 +564,22 @@ window.OB64 = window.OB64 || {};
     if (storedCount !== artCount) {
       fail(label + ' describes ' + storedCount + ' art members; descriptor has ' + artCount);
     }
+    if (0x20 + artCount > decoded.length) fail(label + ' selector-policy bytes exceed its resource');
     if (mapOffset + artCount > decoded.length) fail(label + ' lookup-bank map exceeds its resource');
-    return { artCount: artCount, mapOffset: mapOffset, bankMap: decoded.slice(mapOffset, mapOffset + artCount) };
+    var selectorPolicies = decoded.slice(0x20, 0x20 + artCount);
+    for (var artId = 0; artId < selectorPolicies.length; artId++) {
+      if (selectorPolicies[artId] > 2) {
+        fail(label + ' art ' + artId + ' has unknown selector policy ' +
+          selectorPolicies[artId]);
+      }
+    }
+    return {
+      artCount: artCount,
+      policyOffset: 0x20,
+      selectorPolicies: selectorPolicies,
+      mapOffset: mapOffset,
+      bankMap: decoded.slice(mapOffset, mapOffset + artCount)
+    };
   }
 
   function parseMetadataFrame(decoded, token) {
@@ -433,21 +613,90 @@ window.OB64 = window.OB64 || {};
     if (sprite.firstFormat !== 1 || sprite.secondFormat !== 0 ||
         child.firstOffset === null || child.secondOffset === null) {
       fail('resource ' + hex(sprite.resourceKey) +
-        ' is outside the bounded CI8 + I4 combat-sprite editor format');
+        ' is outside the editable CI8 + I4 combat-sprite format');
     }
+    var lanes = materializeChildLanes(sprite, childOrdinal);
     var indices = new Uint8Array(sprite.width * sprite.height);
     var intensity = new Uint8Array(sprite.width * sprite.height);
     var pixel = 0;
     for (var y = 0; y < sprite.height; y++) {
-      var firstRow = child.firstOffset + y * sprite.firstStride;
-      var secondRow = child.secondOffset + y * sprite.secondStride;
+      var firstRow = y * sprite.firstStride;
+      var secondRow = y * sprite.secondStride;
       for (var x = 0; x < sprite.width; x++, pixel++) {
-        indices[pixel] = sprite.decoded[firstRow + x];
-        var packed = sprite.decoded[secondRow + (x >>> 1)];
+        indices[pixel] = lanes.first[firstRow + x];
+        var packed = lanes.second[secondRow + (x >>> 1)];
         intensity[pixel] = x & 1 ? packed & 15 : packed >>> 4;
       }
     }
     return { indices: indices, intensity: intensity };
+  }
+
+  function decodeDirectChild(sprite, childOrdinal) {
+    var child = sprite.children[childOrdinal];
+    if (!child) fail('resource ' + hex(sprite.resourceKey) + ' lacks child ' + childOrdinal);
+    if (sprite.firstFormat !== 2 || child.firstOffset === null) {
+      fail('resource ' + hex(sprite.resourceKey) +
+        ' is not a direct RGBA5551 combat-sprite source');
+    }
+    var lanes = materializeChildLanes(sprite, childOrdinal);
+    var words = new Uint16Array(sprite.width * sprite.height);
+    var alpha = new Uint8Array(sprite.width * sprite.height);
+    var pixel = 0;
+    for (var y = 0; y < sprite.height; y++) {
+      var firstRow = y * sprite.firstStride;
+      var secondRow = child.secondOffset === null
+        ? null : y * sprite.secondStride;
+      for (var x = 0; x < sprite.width; x++, pixel++) {
+        var word = readU16(lanes.first, firstRow + x * 2);
+        words[pixel] = word;
+        if (secondRow === null) {
+          alpha[pixel] = word & 1 ? 255 : 0;
+        } else if (sprite.secondFormat === 1) {
+          alpha[pixel] = lanes.second[secondRow + x];
+        } else if (sprite.secondFormat === 0) {
+          var packed = lanes.second[secondRow + (x >>> 1)];
+          alpha[pixel] = (x & 1 ? packed & 15 : packed >>> 4) * 17;
+        } else {
+          fail('resource ' + hex(sprite.resourceKey) +
+            ' has unsupported direct-source alpha format ' + sprite.secondFormat);
+        }
+      }
+    }
+    return { words: words, alpha: alpha };
+  }
+
+  function childOrdinalOrFallback(source, childOrdinal) {
+    return Number.isInteger(childOrdinal) && childOrdinal >= 0 &&
+      childOrdinal < source.sprite.childCount ? childOrdinal : 0;
+  }
+
+  function childPalette(source, childOrdinal) {
+    childOrdinal = childOrdinalOrFallback(source, childOrdinal);
+    var child = source.sprite.children[childOrdinal];
+    if (child.lookupOffset === null) return source.palette;
+    var words = source.embeddedPalettes[childOrdinal];
+    if (words) return words;
+    var lookup = materializeChildLanes(source.sprite, childOrdinal).lookup;
+    words = new Uint16Array(256);
+    for (var index = 0; index < 256; index++) {
+      words[index] = readU16(lookup, index * 2);
+    }
+    source.embeddedPalettes[childOrdinal] = words;
+    return words;
+  }
+
+  function ensureOriginalChild(source, childOrdinal) {
+    childOrdinal = childOrdinalOrFallback(source, childOrdinal);
+    if (source.formatKind === 'indexed-ci8') {
+      if (!source.originalChildren[childOrdinal]) {
+        source.originalChildren[childOrdinal] = decodeChild(source.sprite, childOrdinal);
+      }
+      return source.originalChildren[childOrdinal];
+    }
+    if (!source.displayChildren[childOrdinal]) {
+      source.displayChildren[childOrdinal] = decodeDirectChild(source.sprite, childOrdinal);
+    }
+    return source.displayChildren[childOrdinal];
   }
 
   function lookupWords(decoded, bankCount) {
@@ -672,57 +921,738 @@ window.OB64 = window.OB64 || {};
     return counts;
   }
 
+  function cleanCorpusName(value) {
+    return String(value || '')
+      .replace(/\x10c/g, ' ')
+      .replace(/[\x00-\x1F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function sameNumberArray(left, right) {
+    return Array.isArray(left) && Array.isArray(right) &&
+      left.length === right.length && left.every(function(value, index) {
+        return value === right[index];
+      });
+  }
+
+  function validateCorpus() {
+    if (!CORPUS || CORPUS.schemaVersion !== 'ob64-combat-animation-product-data-v2') {
+      fail('the generated complete combat-animation corpus is missing or has an unknown schema');
+    }
+    if (CORPUS.corpusVersion !== '2026-08-15-r2' ||
+        CORPUS.sourceProjectionSha256 !==
+          '6D6FD9528E927B5EC5EFCBBB78CE8F098C049F8BFADE4E46551705E2BC10849F' ||
+        SPECS.length !== 2712 ||
+        Object.keys(CORPUS.physicalSources || {}).length !== 4707 ||
+        Object.keys(CORPUS.equipmentGroups || {}).length !== 84) {
+      fail('the generated complete combat-animation corpus identity or required counts changed');
+    }
+    var selectorZero = CORPUS.selectorZeroSourceClosure;
+    if (!selectorZero || selectorZero.selector !== 0 ||
+        selectorZero.poseProgramCount !== 129 ||
+        selectorZero.physicalSourceCount !== 1228 ||
+        selectorZero.addedPhysicalSourceCount !== 1016) {
+      fail('the generated selector-0 source closure is missing or changed');
+    }
+    var bindingByDescriptorArt = {}, bindingById = {}, physicalByBindingId = {};
+    Object.keys(CORPUS.physicalSources).forEach(function(physicalId) {
+      var physical = CORPUS.physicalSources[physicalId];
+      if (!physical || physical.id !== physicalId || physical.objectType !== '0x5554') {
+        fail('physical source ' + physicalId + ' has an invalid identity');
+      }
+      physical.bindings.forEach(function(binding) {
+        var identity = binding.descriptorKey + ':' + binding.artId;
+        if (bindingByDescriptorArt[identity] || bindingById[binding.id]) {
+          fail('combat-animation corpus repeats binding ' + binding.id);
+        }
+        if (binding.descriptorMemberOrdinal !== binding.artId + 4 ||
+            binding.descriptorMemberEntryZ64 !==
+              binding.descriptorEntryZ64 + 4 + binding.descriptorMemberOrdinal * 4) {
+          fail('binding ' + binding.id + ' has an invalid descriptor relationship');
+        }
+        bindingByDescriptorArt[identity] = binding;
+        bindingById[binding.id] = binding;
+        physicalByBindingId[binding.id] = physical;
+      });
+    });
+    if (Object.keys(bindingById).length !== 4900) {
+      fail('the complete combat-animation corpus must contain 4,900 logical bindings');
+    }
+    var compatibility = {};
+    SPECS.forEach(function(spec) {
+      if (spec.compatibilityKey) compatibility[spec.compatibilityKey] = spec;
+    });
+    if (Object.keys(compatibility).length !== LEGACY_SPECS.length) {
+      fail('the complete corpus does not expose all Project-v19 compatibility sequences');
+    }
+    LEGACY_SPECS.forEach(function(legacy) {
+      var spec = compatibility[legacy.key];
+      if (!spec || spec.classId !== legacy.classId || spec.selector !== legacy.selector ||
+          spec.descriptorKey !== legacy.descriptorKey ||
+          spec.descriptorMemberCount !== legacy.descriptorMemberCount ||
+          spec.metadataKey !== legacy.metadataKey || spec.poseKey !== legacy.poseKey ||
+          spec.configKey !== legacy.configKey || spec.lookupKey !== legacy.lookupKey ||
+          spec.poseDecodedLength !== legacy.poseDecodedLength ||
+          spec.selectedBodyChild !== legacy.selectedChildOrdinal ||
+          spec.weaponChildCount !== legacy.weaponChildCount ||
+          !sameNumberArray(spec.retailMappedWeaponOrdinals,
+            legacy.retailMappedWeaponOrdinals) ||
+          !sameNumberArray(spec.frames.flat(), legacy.frames.flat())) {
+        fail('compatibility sequence ' + legacy.key + ' differs from its frozen Project-v19 ledger');
+      }
+    });
+    return {
+      bindingByDescriptorArt: bindingByDescriptorArt,
+      bindingById: bindingById,
+      physicalByBindingId: physicalByBindingId,
+      bindingCount: Object.keys(bindingById).length
+    };
+  }
+
+  function corpusContext(z64, index) {
+    return {
+      z64: z64,
+      index: index,
+      descriptorCache: {},
+      resourceCache: {},
+      spriteCache: {},
+      configCache: {},
+      lookupCache: {},
+      poseCache: {},
+      metadataFrameCache: {},
+      equipmentGroupCache: {},
+      sourceByBindingId: {}
+    };
+  }
+
+  function cachedCompressed(context, key) {
+    if (!context.resourceCache[key]) {
+      context.resourceCache[key] = A.readCompressedResource(context.z64, key);
+    }
+    return context.resourceCache[key];
+  }
+
+  function corpusDescriptor(context, spec) {
+    var descriptor = context.descriptorCache[spec.descriptorKey];
+    if (!descriptor) {
+      var resource = A.readResource(context.z64, spec.descriptorKey);
+      if (resource.storedLength !== spec.descriptorMemberCount * 4) {
+        fail(cleanCorpusName(spec.className) + ' descriptor has ' +
+          (resource.storedLength / 4) + ' members; expected ' +
+          spec.descriptorMemberCount);
+      }
+      var members = [];
+      for (var member = 0; member < spec.descriptorMemberCount; member++) {
+        members.push(readU32(resource.stored, member * 4));
+      }
+      descriptor = { resource: resource, members: members };
+      context.descriptorCache[spec.descriptorKey] = descriptor;
+    }
+    if (descriptor.members.length !== spec.descriptorMemberCount) {
+      fail('descriptor ' + hex(spec.descriptorKey) + ' changed member count between sequences');
+    }
+    var controls = [spec.metadataKey, spec.poseKey, spec.configKey, spec.lookupKey];
+    for (var control = 0; control < controls.length; control++) {
+      if (descriptor.members[control] !== controls[control]) {
+        fail('descriptor ' + hex(spec.descriptorKey) + ' member ' + control +
+          ' is ' + hex(descriptor.members[control]) + '; expected ' +
+          hex(controls[control]));
+      }
+    }
+    return descriptor;
+  }
+
+  function corpusConfig(context, spec) {
+    var identity = spec.configKey + ':' + (spec.descriptorMemberCount - 4);
+    if (!context.configCache[identity]) {
+      context.configCache[identity] = parseConfig(
+        cachedCompressed(context, spec.configKey).decoded,
+        spec.descriptorMemberCount - 4,
+        cleanCorpusName(spec.className) + ' art configuration');
+    }
+    return context.configCache[identity];
+  }
+
+  function corpusLookup(context, spec) {
+    var lookup = context.lookupCache[spec.lookupKey];
+    if (!lookup) {
+      var resource = cachedCompressed(context, spec.lookupKey);
+      if (resource.decoded.length % 0x200) {
+        fail('lookup resource ' + hex(spec.lookupKey) +
+          ' is not packed in 0x200-byte banks');
+      }
+      lookup = {
+        resource: resource,
+        banks: lookupWords(resource.decoded, resource.decoded.length / 0x200)
+      };
+      context.lookupCache[spec.lookupKey] = lookup;
+    }
+    return lookup;
+  }
+
+  function corpusPose(context, spec, label, acceptDynamicFrames) {
+    var identity = spec.poseKey + ':' + spec.selector;
+    var pose = context.poseCache[identity];
+    if (!pose) {
+      var resource = cachedCompressed(context, spec.poseKey);
+      if (resource.decoded.length !== spec.poseDecodedLength) {
+        fail(label + ' pose resource has ' + resource.decoded.length +
+          ' decoded bytes; expected ' + spec.poseDecodedLength);
+      }
+      pose = {
+        resource: resource,
+        program: parsePoseProgram(resource.decoded, spec.selector, label)
+      };
+      context.poseCache[identity] = pose;
+    }
+    if (!acceptDynamicFrames && pose.program.frames.length !== spec.frames.length) {
+      fail(label + ' pose program exposes ' + pose.program.frames.length +
+        ' frames; expected ' + spec.frames.length);
+    }
+    if (!acceptDynamicFrames) {
+      spec.frames.forEach(function(frame, index) {
+        if (pose.program.frames[index][0] !== frame[0] ||
+            pose.program.frames[index][1] !== frame[1]) {
+          fail(label + ' pose frame ' + (index + 1) +
+            ' differs from the accepted complete corpus');
+        }
+      });
+    }
+    return pose;
+  }
+
+  function corpusMetadataFrame(context, metadataKey, token) {
+    var identity = metadataKey + ':' + token;
+    if (!context.metadataFrameCache[identity]) {
+      context.metadataFrameCache[identity] = parseMetadataFrame(
+        cachedCompressed(context, metadataKey).decoded, token);
+    }
+    return context.metadataFrameCache[identity];
+  }
+
+  function validatePhysicalSprite(physical, resource, sprite) {
+    if (resource.key !== physical.resourceKey || resource.entry !== physical.entryZ64 ||
+        sprite.flags !== physical.objectSubtype || sprite.width !== physical.width ||
+        sprite.height !== physical.height || sprite.childCount !== physical.childCount ||
+        sprite.firstFormat !== physical.format.firstLaneFormat ||
+        sprite.secondFormat !== physical.format.secondLaneFormat ||
+        sprite.firstStride !== physical.format.firstRowBytes ||
+        sprite.secondStride !== physical.format.secondRowBytes) {
+      fail('physical source ' + physical.id +
+        ' does not match the loaded ROM resource structure');
+    }
+    var expectedKind = sprite.firstFormat === 1 && sprite.secondFormat === 0
+      ? 'indexed-ci8'
+      : (sprite.firstFormat === 2 ? 'direct-rgba5551' : 'unsupported');
+    if (expectedKind !== physical.format.kind) {
+      fail('physical source ' + physical.id + ' has an unexpected pixel format');
+    }
+  }
+
+  function corpusSource(context, spec, descriptor, config, lookup, artId, label) {
+    var identity = spec.descriptorKey + ':' + artId;
+    var binding = context.index.bindingByDescriptorArt[identity];
+    if (!binding) {
+      fail(label + ' art ' + hex(artId, 2) + ' has no accepted corpus binding');
+    }
+    var physical = context.index.physicalByBindingId[binding.id];
+    var source = context.sourceByBindingId[binding.id];
+    var resourceKey = descriptor.members[artId + 4];
+    if (resourceKey !== physical.resourceKey ||
+        descriptor.resource.entry !== binding.descriptorEntryZ64 ||
+        binding.descriptorMemberEntryZ64 !==
+          descriptor.resource.entry + 4 + binding.descriptorMemberOrdinal * 4 ||
+        config.selectorPolicies[artId] !== binding.selectorPolicy ||
+        config.bankMap[artId] !== binding.lookupBank ||
+        binding.lookupResourceKey !== spec.lookupKey ||
+        binding.lookupResourceDecodedLength !== lookup.resource.decoded.length ||
+        binding.lookupBankCount !== lookup.banks.length ||
+        binding.lookupBank >= lookup.banks.length) {
+      fail('binding ' + binding.id + ' does not match its loaded descriptor, policy, or lookup data');
+    }
+    if (source) return source;
+
+    var physicalCache = context.spriteCache[physical.id];
+    if (!physicalCache) {
+      var resource = cachedCompressed(context, physical.resourceKey);
+      var sprite = parseSpriteObject(resource.decoded, physical.resourceKey);
+      validatePhysicalSprite(physical, resource, sprite);
+      physicalCache = { resource: resource, sprite: sprite };
+      context.spriteCache[physical.id] = physicalCache;
+    }
+    var editable = physical.format.kind === 'indexed-ci8';
+    source = {
+      key: binding.id,
+      bindingId: binding.id,
+      physicalSourceId: physical.id,
+      binding: binding,
+      physicalSource: physical,
+      sourceRole: binding.sourceRole,
+      selectorPolicy: binding.selectorPolicy,
+      childSelectionPolicy: binding.childSelectionPolicy,
+      palettePolicy: binding.palettePolicy,
+      elementSelection: binding.elementSelection,
+      formatKind: physical.format.kind,
+      editable: editable,
+      lockedReason: editable ? '' :
+        'Direct RGBA5551 combat art is visible but is not editable in this release.',
+      animationKey: spec.key,
+      animationLabel: label,
+      animationKeys: [],
+      animationLabels: [],
+      legacyKeys: [],
+      legacyAnimationKeys: [],
+      artId: artId,
+      descriptorKey: spec.descriptorKey,
+      descriptorMemberIndex: binding.descriptorMemberOrdinal,
+      descriptorEntryOffset: binding.descriptorMemberEntryZ64,
+      resourceKey: physical.resourceKey,
+      resource: physicalCache.resource,
+      sprite: physicalCache.sprite,
+      childOrdinal: null,
+      weaponSelectable: binding.sourceRole === 'equipment',
+      selectableChildOrdinals: binding.sourceRole === 'equipment'
+        ? physicalCache.sprite.children.map(function(child) { return child.ordinal; })
+        : [],
+      editableChildOrdinals: [],
+      originalChildren: {},
+      displayChildren: {},
+      embeddedPalettes: {},
+      lookupBank: binding.lookupBank,
+      palette: lookup.banks[binding.lookupBank],
+      usageFrames: [],
+      usageFramesByAnimation: {}
+    };
+    if (source.weaponSelectable && source.editable) {
+      source.editableChildOrdinals = source.selectableChildOrdinals.slice();
+    }
+    context.sourceByBindingId[binding.id] = source;
+    return source;
+  }
+
+  function addSourceUsage(source, spec, label, frameIndex, childOrdinal,
+      trackRouteUsage) {
+    if (trackRouteUsage !== false) {
+      if (source.animationKeys.indexOf(spec.key) < 0) {
+        source.animationKeys.push(spec.key);
+        source.animationLabels.push(label);
+        source.usageFramesByAnimation[spec.key] = [];
+      }
+      var usage = source.usageFramesByAnimation[spec.key];
+      if (usage.indexOf(frameIndex) < 0) usage.push(frameIndex);
+    }
+    if (source.childOrdinal === null) source.childOrdinal = childOrdinal;
+    if (source.editable && source.editableChildOrdinals.indexOf(childOrdinal) < 0) {
+      source.editableChildOrdinals.push(childOrdinal);
+      source.editableChildOrdinals.sort(function(left, right) { return left - right; });
+    }
+    if (source.editable && !source.originalIndices) {
+      var original = ensureOriginalChild(source, childOrdinal);
+      source.originalIndices = original.indices;
+      source.originalIntensity = original.intensity;
+    }
+  }
+
+  function compareCanvas(actual, expected, label) {
+    ['originX', 'originY', 'endX', 'endY', 'width', 'height'].forEach(function(field) {
+      if (actual[field] !== expected[field]) {
+        fail(label + ' computed canvas ' + field + ' is ' + actual[field] +
+          '; accepted corpus expects ' + expected[field]);
+      }
+    });
+  }
+
+  function corpusEquipmentGroup(context, groupId) {
+    if (context.equipmentGroupCache[groupId]) {
+      return context.equipmentGroupCache[groupId];
+    }
+    var accepted = CORPUS.equipmentGroups[groupId];
+    if (!accepted) fail('unknown accepted equipment group ' + groupId);
+    var group = Object.assign({}, accepted, {
+      children: accepted.children.map(function(child) {
+        return Object.assign({}, child, {
+          mappedItems: child.mappedItems.map(function(item) {
+            return Object.assign({}, item);
+          })
+        });
+      }),
+      fallbackItems: []
+    });
+    var equipmentTypes = {};
+    group.children.forEach(function(child) {
+      child.mappedItems.forEach(function(item) {
+        equipmentTypes[item.equipmentType] = item.equipmentTypeName;
+      });
+    });
+    var selection = group.selectionTable;
+    var start = selection && selection.rangeZ64 && selection.rangeZ64[0];
+    if (Number.isInteger(start)) {
+      var maximum = Math.min(0x115, selection.entryCount - 1);
+      for (var itemId = 1; itemId <= maximum; itemId++) {
+        var equipmentTypeOffset = 0x62310 + itemId * 32;
+        if (equipmentTypeOffset >= context.z64.length) break;
+        var equipmentType = context.z64[equipmentTypeOffset];
+        if (!Object.prototype.hasOwnProperty.call(equipmentTypes, equipmentType)) continue;
+        var requestedOrdinal = context.z64[start + itemId];
+        if (requestedOrdinal >= group.expectedChildCount) {
+          group.fallbackItems.push({
+            itemId: itemId,
+            itemName: OB64.ITEM_NAMES && OB64.ITEM_NAMES[itemId]
+              ? OB64.ITEM_NAMES[itemId] : 'Item ' + hex(itemId, 2),
+            equipmentType: equipmentType,
+            equipmentTypeName: equipmentTypes[equipmentType],
+            requestedOrdinal: requestedOrdinal,
+            renderedOrdinal: selection.outOfRangeFallbackChild
+          });
+        }
+      }
+    }
+    context.equipmentGroupCache[groupId] = group;
+    return group;
+  }
+
+  function parseCorpusSequence(context, corpusSpec, parseOptions) {
+    parseOptions = parseOptions || {};
+    var className = OB64.CLASS_NAMES && OB64.CLASS_NAMES[corpusSpec.classId]
+      ? OB64.CLASS_NAMES[corpusSpec.classId]
+      : cleanCorpusName(corpusSpec.className);
+    var actionName = cleanCorpusName(corpusSpec.actionName);
+    var spec = Object.assign({}, corpusSpec, {
+      className: className,
+      actionName: actionName,
+      consumerSummary: cleanCorpusName(corpusSpec.consumerSummary),
+      selectedChildOrdinal: corpusSpec.selectedBodyChild
+    });
+    var label = className + ' ' + actionName;
+    var descriptor = corpusDescriptor(context, spec);
+    var config = corpusConfig(context, spec);
+    var lookup = corpusLookup(context, spec);
+    var pose = corpusPose(context, spec, label, !!parseOptions.dynamicFrames);
+    if (parseOptions.dynamicFrames) {
+      spec.frames = pose.program.frames.map(function(frame) {
+        return [frame[0], frame[1]];
+      });
+    }
+    var artById = {}, artByKey = {}, frames = [];
+    var originX = 0, originY = 0, endX = 0, endY = 0, hasBounds = false;
+
+    spec.frames.forEach(function(frameSpec, sequenceIndex) {
+      var parsed = corpusMetadataFrame(context, spec.metadataKey, frameSpec[0]);
+      var layers = parsed.layers.map(function(parsedLayer) {
+        if (parsedLayer.artId >= descriptor.members.length - 4) {
+          fail(label + ' frame ' + (sequenceIndex + 1) + ' selects art ' +
+            parsedLayer.artId + ' outside its descriptor');
+        }
+        var source = corpusSource(context, spec, descriptor, config, lookup,
+          parsedLayer.artId, label);
+        var requestedChild = source.sourceRole === 'body'
+          ? spec.selectedBodyChild : 0;
+        var selectedChild = childOrdinalOrFallback(source, requestedChild);
+        if (source.sourceRole === 'element-effect' && selectedChild !== 0) {
+          fail(source.key + ' element-effect binding must use physical child zero');
+        }
+        if (source.sprite.height !== parsedLayer.height ||
+            (source.formatKind === 'indexed-ci8' &&
+              source.sprite.width !== parsedLayer.width) ||
+            (source.formatKind === 'direct-rgba5551' &&
+              (parsedLayer.width > source.sprite.width ||
+                source.sprite.width - parsedLayer.width > 3))) {
+          fail(label + ' frame ' + (sequenceIndex + 1) + ' art ' +
+            parsedLayer.artId + ' dimensions differ from its accepted 0x5554 source');
+        }
+        addSourceUsage(source, spec, label, sequenceIndex, selectedChild,
+          parseOptions.trackRouteUsage);
+        artById[parsedLayer.artId] = source;
+        artByKey[source.key] = source;
+        var left = parsedLayer.drawOffsetX, top = parsedLayer.drawOffsetY;
+        var right = left + parsedLayer.width, bottom = top + parsedLayer.height;
+        if (!hasBounds) {
+          originX = left; originY = top; endX = right; endY = bottom; hasBounds = true;
+        } else {
+          originX = Math.min(originX, left); originY = Math.min(originY, top);
+          endX = Math.max(endX, right); endY = Math.max(endY, bottom);
+        }
+        return Object.assign({}, parsedLayer, {
+          sourceKey: source.key,
+          bindingId: source.bindingId,
+          physicalSourceId: source.physicalSourceId,
+          sourceRole: source.sourceRole,
+          resourceKey: source.resourceKey,
+          lookupBank: source.lookupBank,
+          childCount: source.sprite.childCount,
+          requestedChildOrdinal: requestedChild,
+          selectedChildOrdinal: selectedChild
+        });
+      });
+      frames.push({
+        sequenceIndex: sequenceIndex,
+        token: frameSpec[0],
+        ticks: frameSpec[1],
+        metadataTarget: parsed.target,
+        layers: layers
+      });
+    });
+    if (!hasBounds) fail(label + ' has no drawable layers');
+    var canvas = {
+      originX: originX, originY: originY, endX: endX, endY: endY,
+      width: endX - originX, height: endY - originY
+    };
+    if (parseOptions.dynamicFrames) spec.canvas = canvas;
+    else compareCanvas(canvas, spec.canvas, label);
+    var equipmentGroup = null;
+    if (spec.equipmentGroupIds.length > 1) {
+      fail(label + ' unexpectedly selects more than one equipment group');
+    }
+    if (spec.equipmentGroupIds.length) {
+      equipmentGroup = corpusEquipmentGroup(context, spec.equipmentGroupIds[0]);
+      if (!equipmentGroup || equipmentGroup.descriptorKey !== spec.descriptorKey ||
+          equipmentGroup.expectedChildCount !== spec.weaponChildCount) {
+        fail(label + ' equipment group does not match its descriptor or child count');
+      }
+    }
+    return {
+      key: spec.key,
+      corpusId: spec.id,
+      compatibilityKey: spec.compatibilityKey,
+      spec: spec,
+      descriptor: descriptor.resource,
+      members: descriptor.members,
+      metadata: cachedCompressed(context, spec.metadataKey).decoded,
+      pose: pose.resource.decoded,
+      poseProgram: pose.program,
+      config: config,
+      lookupBanks: lookup.banks,
+      frames: frames,
+      artById: artById,
+      artByKey: artByKey,
+      equipmentGroup: equipmentGroup,
+      canvas: canvas
+    };
+  }
+
+  function selectorFlagLabel(spec) {
+    var match = String(spec.variantLabel || '').match(/flags\s+(\d)\/(\d)/);
+    return match ? match[1] + '/' + match[2] : null;
+  }
+
+  function equipmentGroupIdsForDescriptor(descriptorKey) {
+    return Object.keys(CORPUS.equipmentGroups).filter(function(groupId) {
+      return CORPUS.equipmentGroups[groupId].descriptorKey === descriptorKey;
+    });
+  }
+
+  function mappedWeaponOrdinals(group) {
+    return group ? group.children.filter(function(child) {
+      return child.mappedItems && child.mappedItems.length;
+    }).map(function(child) { return child.ordinal; }) : [];
+  }
+
+  function selectorCandidateIndexKey(classId, flags, rawMode, selector) {
+    return [classId, flags, rawMode, selector].join(':');
+  }
+
+  function childHasVisiblePixels(source, childOrdinal) {
+    if (!source.visibleChildren) source.visibleChildren = {};
+    if (Object.prototype.hasOwnProperty.call(source.visibleChildren, childOrdinal)) {
+      return source.visibleChildren[childOrdinal];
+    }
+    var child = ensureOriginalChild(source, childOrdinal);
+    var values = source.editable ? child.intensity : child.alpha;
+    var visible = false;
+    for (var index = 0; index < values.length; index++) {
+      if (values[index]) { visible = true; break; }
+    }
+    source.visibleChildren[childOrdinal] = visible;
+    return visible;
+  }
+
+  function analyzeMappings(state) {
+    var expectedFlags = ['0/0', '0/1', '1/0', '1/1'];
+    var byClass = {};
+    var soldierDescriptors = {};
+    state.specs.forEach(function(animation) {
+      var spec = animation.spec;
+      var flagLabel = selectorFlagLabel(spec);
+      if (!byClass[spec.classId]) {
+        byClass[spec.classId] = {
+          classId: spec.classId,
+          className: spec.className,
+          presentFlags: {},
+          missingFlags: []
+        };
+      }
+      if (flagLabel) byClass[spec.classId].presentFlags[flagLabel] = true;
+      if (spec.classId === 0x01) {
+        soldierDescriptors[spec.descriptorKey + ':' + spec.selectedBodyChild] = true;
+      }
+    });
+    Object.keys(byClass).forEach(function(classId) {
+      var row = byClass[classId];
+      row.missingFlags = expectedFlags.filter(function(flagLabel) {
+        return !row.presentFlags[flagLabel];
+      });
+    });
+
+    var counts = {
+      mapped: 0,
+      sharedSpecial: 0,
+      dedicatedSpecial: 0,
+      soldierAlias: 0,
+      visibleFailure: 0,
+      missingVariantRows: Object.keys(byClass).reduce(function(total, classId) {
+        return total + byClass[classId].missingFlags.length;
+      }, 0)
+    };
+    state.specs.forEach(function(animation) {
+      var spec = animation.spec;
+      var emptyFrames = [];
+      var emptySources = {};
+      var transformedSources = {};
+      animation.frames.forEach(function(frame) {
+        var bodyLayers = 0, visibleBodyLayers = 0;
+        frame.layers.forEach(function(layer) {
+          var source = animation.artByKey[layer.sourceKey];
+          if (source.sourceRole !== 'body') return;
+          bodyLayers++;
+          var childOrdinal = layer.selectedChildOrdinal;
+          var identity = source.key + '#child-' + childOrdinal;
+          var child = source.sprite.children[childOrdinal];
+          if (child && child.discriminator !== child.ordinal) {
+            transformedSources[identity] = true;
+          }
+          if (childHasVisiblePixels(source, childOrdinal)) {
+            visibleBodyLayers++;
+          } else {
+            emptySources[identity] = true;
+          }
+        });
+        if (!bodyLayers || !visibleBodyLayers) emptyFrames.push(frame.sequenceIndex);
+      });
+
+      var isSpecial = spec.classId >= 0x87;
+      var soldierAlias = spec.classId !== 0x01 &&
+        soldierDescriptors[spec.descriptorKey + ':' + spec.selectedBodyChild];
+      var baseName = String(spec.className || '').replace(/\s+\([^)]*\)\s*$/, '');
+      var ordinaryMatch = isSpecial && !soldierAlias
+        ? state.specs.find(function(candidate) {
+          return candidate.spec.classId < 0x87 &&
+            candidate.spec.descriptorKey === spec.descriptorKey &&
+            candidate.spec.selectedBodyChild === spec.selectedBodyChild &&
+            candidate.spec.actionId === spec.actionId &&
+            candidate.spec.className === baseName;
+        }) || state.specs.find(function(candidate) {
+          return candidate.spec.classId < 0x87 &&
+            candidate.spec.descriptorKey === spec.descriptorKey &&
+            candidate.spec.selectedBodyChild === spec.selectedBodyChild &&
+            candidate.spec.actionId === spec.actionId;
+        }) : null;
+      var status;
+      if (soldierAlias) {
+        status = {
+          state: 'soldier-alias',
+          severity: 'alias',
+          artClassId: 0x01,
+          artClassName: 'Soldier',
+          title: 'Soldier descriptor alias',
+          detail: 'This ROM selector row points to the Soldier animation corpus. ' +
+            'The alias remains visible and is not treated as missing art.'
+        };
+        counts.soldierAlias++;
+      } else if (emptyFrames.length) {
+        status = {
+          state: 'visible-failure',
+          severity: 'failure',
+          artClassId: ordinaryMatch
+            ? ordinaryMatch.spec.classId : spec.classId,
+          artClassName: ordinaryMatch
+            ? ordinaryMatch.spec.className : spec.className,
+          title: 'Visible mapping failure',
+          detail: emptyFrames.length + ' of ' + animation.frames.length +
+            ' frames contain no visible body pixels after child-delta reconstruction. ' +
+            'The sequence and every layer remain available for inspection.'
+        };
+        counts.visibleFailure++;
+      } else if (ordinaryMatch) {
+        status = {
+          state: 'shared-special',
+          severity: 'shared',
+          artClassId: ordinaryMatch.spec.classId,
+          artClassName: ordinaryMatch.spec.className,
+          title: 'Shared ' + ordinaryMatch.spec.className + ' mapping',
+          detail: 'This special-class row resolves to the same descriptor, action, and body child as ' +
+            ordinaryMatch.spec.className + '. The ROM mapping is preserved.'
+        };
+        counts.sharedSpecial++;
+      } else if (isSpecial) {
+        status = {
+          state: 'dedicated-special',
+          severity: 'mapped',
+          artClassId: spec.classId,
+          artClassName: spec.className,
+          title: 'Dedicated special-class mapping',
+          detail: 'This selector row resolves to a dedicated descriptor and body-child mapping.'
+        };
+        counts.dedicatedSpecial++;
+      } else {
+        status = {
+          state: 'mapped',
+          severity: 'mapped',
+          artClassId: spec.classId,
+          artClassName: spec.className,
+          title: 'ROM mapping resolved',
+          detail: 'The descriptor, frames, layers, and selected body children resolve from the loaded ROM.'
+        };
+        counts.mapped++;
+      }
+      status.selectorFlags = selectorFlagLabel(spec);
+      status.emptyFrameIndices = emptyFrames;
+      status.emptySourceCount = Object.keys(emptySources).length;
+      status.transformedSourceCount = Object.keys(transformedSources).length;
+      if (status.emptySourceCount && !emptyFrames.length) {
+        status.detail += ' ' + status.emptySourceCount +
+          ' selected source record' + (status.emptySourceCount === 1 ? ' is' : 's are') +
+          ' empty and remain visible in the layer list.';
+      }
+      if (status.transformedSourceCount) {
+        status.detail += ' ' + status.transformedSourceCount +
+          ' source child' + (status.transformedSourceCount === 1 ? ' is' : 'ren are') +
+          ' reconstructed from the ROM delta relationship.';
+      }
+      animation.mappingStatus = status;
+    });
+    state.mappingAudit = { byClass: byClass, counts: counts };
+  }
+
   function initialize(z64) {
     var state = {
       supported: false, unavailableReason: '', specs: [], byKey: {}, artByKey: {},
-      edits: {}, history: {}, blocked: {}
+      sourceAliases: {}, selectorCandidates: {}, edits: {}, history: {}, editRevision: 0,
+      blocked: {}, corpus: null
     };
     try {
-      var sourceByDescriptorEntry = {};
+      var index = validateCorpus();
+      var context = corpusContext(z64, index);
       SPECS.forEach(function(spec) {
-        var parsed = parseSpec(z64, spec);
-        var mergedByKey = {};
-        Object.keys(parsed.artById).forEach(function(artId) {
-          var source = parsed.artById[artId];
-          var identity = String(source.descriptorEntryOffset);
-          var canonical = sourceByDescriptorEntry[identity];
-          if (!canonical) {
-            sourceByDescriptorEntry[identity] = source;
-            canonical = source;
-          } else {
-            if (canonical.resourceKey !== source.resourceKey ||
-                canonical.artId !== source.artId ||
-                canonical.sprite.width !== source.sprite.width ||
-                canonical.sprite.height !== source.sprite.height ||
-                canonical.sprite.childCount !== source.sprite.childCount ||
-                canonical.lookupBank !== source.lookupBank ||
-                canonical.weaponSelectable !== source.weaponSelectable ||
-                !equalBytes(canonical.palette, source.palette) ||
-                canonical.editableChildOrdinals.join(',') !==
-                  source.editableChildOrdinals.join(',')) {
-              fail('shared combat descriptor member ' +
-                hex(source.descriptorEntryOffset) +
-                ' differs between bounded animation sequences');
-            }
-            canonical.animationKeys.push(spec.key);
-            canonical.animationLabels.push(
-              spec.className + ' ' + spec.actionName);
-            canonical.usageFramesByAnimation[spec.key] = source.usageFrames;
-          }
-          parsed.artById[artId] = canonical;
-          mergedByKey[canonical.key] = canonical;
-        });
-        parsed.frames.forEach(function(frame) {
-          frame.layers.forEach(function(layer) {
-            layer.sourceKey = parsed.artById[layer.artId].key;
-          });
-        });
-        parsed.artByKey = mergedByKey;
+        var parsed = parseCorpusSequence(context, spec);
         state.specs.push(parsed); state.byKey[parsed.key] = parsed;
+        if (parsed.compatibilityKey) state.byKey[parsed.compatibilityKey] = parsed;
         Object.keys(parsed.artByKey).forEach(function(key) {
           if (!state.artByKey[key]) state.artByKey[key] = parsed.artByKey[key];
         });
+        if (parsed.compatibilityKey) {
+          Object.keys(parsed.artById).forEach(function(artId) {
+            var source = parsed.artById[artId];
+            var legacyKey = parsed.compatibilityKey + ':' + artId;
+            state.sourceAliases[legacyKey] = source.key;
+            if (source.legacyKeys.indexOf(legacyKey) < 0) source.legacyKeys.push(legacyKey);
+            if (source.legacyAnimationKeys.indexOf(parsed.compatibilityKey) < 0) {
+              source.legacyAnimationKeys.push(parsed.compatibilityKey);
+            }
+          });
+        }
       });
+      analyzeMappings(state);
       var references = descriptorReferenceCounts(z64);
       Object.keys(state.artByKey).forEach(function(key) {
         var source = state.artByKey[key];
@@ -732,6 +1662,146 @@ window.OB64 = window.OB64 || {};
         }
         source.inPlaceEligible = source.descriptorReferenceCount === 1;
       });
+      state.corpus = {
+        version: CORPUS.corpusVersion,
+        projectionSha256: CORPUS.sourceProjectionSha256,
+        sequenceCount: state.specs.length,
+        physicalSourceCount: Object.keys(CORPUS.physicalSources).length,
+        bindingCount: index.bindingCount,
+        usedBindingCount: Object.keys(state.artByKey).length,
+        dormantBindingCount: index.bindingCount - Object.keys(state.artByKey).length,
+        equipmentGroupCount: Object.keys(CORPUS.equipmentGroups).length
+      };
+      var canonicalSelectorIndex = {};
+      var templateByDescriptor = {};
+      state.specs.forEach(function(animation) {
+        if (!templateByDescriptor[animation.spec.descriptorKey]) {
+          templateByDescriptor[animation.spec.descriptorKey] = animation;
+        }
+        canonicalSelectorIndex[selectorCandidateIndexKey(
+          animation.spec.classId, selectorFlagLabel(animation.spec),
+          animation.spec.rawMode, animation.spec.selector)] = animation;
+      });
+      state.resolveBindingSource = function(bindingId, childOrdinal) {
+        if (state.artByKey[bindingId]) {
+          var existingSource = state.artByKey[bindingId];
+          if (!Number.isInteger(childOrdinal) || childOrdinal < 0 ||
+              childOrdinal >= existingSource.sprite.childCount) {
+            fail('binding ' + bindingId + ' child ordinal is outside its source');
+          }
+          addSourceUsage(existingSource, { key: existingSource.animationKey },
+            existingSource.animationLabel, 0, childOrdinal, false);
+          return existingSource;
+        }
+        var binding = index.bindingById[bindingId];
+        if (!binding) return null;
+        var templateAnimation = templateByDescriptor[binding.descriptorKey];
+        if (!templateAnimation) {
+          fail('binding ' + bindingId + ' has no accepted descriptor template');
+        }
+        var template = templateAnimation.spec;
+        var descriptor = corpusDescriptor(context, template);
+        var config = corpusConfig(context, template);
+        var lookup = corpusLookup(context, template);
+        var source = corpusSource(context, template, descriptor, config, lookup,
+          binding.artId, cleanCorpusName(template.className) + ' dormant binding');
+        if (!Number.isInteger(childOrdinal) || childOrdinal < 0 ||
+            childOrdinal >= source.sprite.childCount) {
+          fail('binding ' + bindingId + ' child ordinal is outside its source');
+        }
+        addSourceUsage(source, template,
+          cleanCorpusName(template.className) + ' dormant binding', 0,
+          childOrdinal, false);
+        source.descriptorReferenceCount = references[source.resourceKey] || 0;
+        if (!source.descriptorReferenceCount) {
+          fail(source.key + ' is not referenced by the combat descriptor corpus');
+        }
+        source.inPlaceEligible = source.descriptorReferenceCount === 1;
+        source.onDemandBinding = true;
+        state.artByKey[source.key] = source;
+        return source;
+      };
+      state.resolveSelectorCandidate = function(templateAnimation, selector, rawMode) {
+        if (!templateAnimation || !templateAnimation.spec) {
+          fail('selector candidate requires a mapped class-art template');
+        }
+        selector = Number(selector); rawMode = Number(rawMode);
+        if (!Number.isInteger(selector) || selector < 0 || selector > 255) {
+          fail('selector candidate must use a u8 selector');
+        }
+        if (rawMode !== 0 && rawMode !== 1 && rawMode !== 2) {
+          fail('selector candidate raw mode must be 0, 1, or 2');
+        }
+        var template = templateAnimation.spec;
+        var flags = selectorFlagLabel(template);
+        var identity = selectorCandidateIndexKey(template.classId, flags,
+          rawMode, selector);
+        if (canonicalSelectorIndex[identity]) return canonicalSelectorIndex[identity];
+        if (state.selectorCandidates[identity]) return state.selectorCandidates[identity];
+        var groupIds = equipmentGroupIdsForDescriptor(template.descriptorKey);
+        if (groupIds.length > 1) {
+          fail('descriptor ' + hex(template.descriptorKey) +
+            ' has more than one accepted equipment group');
+        }
+        var group = groupIds.length ? CORPUS.equipmentGroups[groupIds[0]] : null;
+        var candidateKey = 'selector-candidate-' +
+          Number(template.classId).toString(16).padStart(3, '0') + '-' +
+          String(flags || 'unknown').replace('/', '-') + '-mode-' + rawMode +
+          '-selector-' + selector.toString(16).padStart(2, '0');
+        var candidateSpec = Object.assign({}, template, {
+          key: candidateKey,
+          id: candidateKey,
+          compatibilityKey: null,
+          rawMode: rawMode,
+          modeLabel: 'Raw mode ' + rawMode,
+          selector: selector,
+          frames: [],
+          canvas: null,
+          frozenParity: null,
+          equipmentGroupIds: groupIds,
+          weaponChildCount: group ? group.expectedChildCount : 0,
+          retailMappedWeaponOrdinals: mappedWeaponOrdinals(group),
+          dynamicSelectorCandidate: true
+        });
+        var parsed = parseCorpusSequence(context, candidateSpec, {
+          dynamicFrames: true,
+          trackRouteUsage: false
+        });
+        var usesEquipment = Object.keys(parsed.artByKey).some(function(key) {
+          return parsed.artByKey[key].weaponSelectable;
+        });
+        if (!usesEquipment) {
+          parsed.equipmentGroup = null;
+          parsed.spec.equipmentGroupIds = [];
+          parsed.spec.weaponChildCount = 0;
+          parsed.spec.retailMappedWeaponOrdinals = [];
+        }
+        parsed.mappingStatus = Object.assign({}, templateAnimation.mappingStatus || {}, {
+          selectorFlags: flags
+        });
+        Object.keys(parsed.artByKey).forEach(function(key) {
+          var source = parsed.artByKey[key];
+          if (!source.descriptorReferenceCount) {
+            source.descriptorReferenceCount = references[source.resourceKey] || 0;
+            if (!source.descriptorReferenceCount) {
+              fail(source.key + ' is not referenced by the combat descriptor corpus');
+            }
+            source.inPlaceEligible = source.descriptorReferenceCount === 1;
+          }
+          if (!state.artByKey[key]) {
+            var stableTemplate = templateByDescriptor[source.descriptorKey];
+            if (stableTemplate) {
+              source.animationKey = stableTemplate.key;
+              source.animationLabel = stableTemplate.spec.className + ' ' +
+                stableTemplate.spec.actionName;
+            }
+            source.onDemandBinding = true;
+            state.artByKey[key] = source;
+          }
+        });
+        state.selectorCandidates[identity] = parsed;
+        return parsed;
+      };
       state.supported = state.specs.length > 0;
     } catch (error) {
       state.unavailableReason = 'Combat sprite editing is unavailable for this ROM: ' +
@@ -745,12 +1815,21 @@ window.OB64 = window.OB64 || {};
   }
 
   function originalChild(source, childOrdinal) {
-    if (!Number.isInteger(childOrdinal) ||
-        source.editableChildOrdinals.indexOf(childOrdinal) < 0 ||
-        !source.originalChildren[childOrdinal]) {
-      fail(source.key + ' child ' + childOrdinal + ' is not editable in this bounded corpus');
+    if (!source.editable || !Number.isInteger(childOrdinal) ||
+        source.editableChildOrdinals.indexOf(childOrdinal) < 0) {
+      fail(source.key + ' child ' + childOrdinal + ' is not editable');
     }
-    return source.originalChildren[childOrdinal];
+    return ensureOriginalChild(source, childOrdinal);
+  }
+
+  function displayChild(state, key, childOrdinal) {
+    var source = state.artByKey[key];
+    if (!source) fail('unknown combat-sprite source ' + key);
+    childOrdinal = childOrdinalOrFallback(source,
+      childOrdinal === undefined ? source.childOrdinal : childOrdinal);
+    return source.editable
+      ? currentEdit(state, key, childOrdinal)
+      : ensureOriginalChild(source, childOrdinal);
   }
 
   function currentEdit(state, key, childOrdinal) {
@@ -818,6 +1897,7 @@ window.OB64 = window.OB64 || {};
       };
     }
     delete state.blocked[childKey(key, childOrdinal)];
+    state.editRevision = (Number(state.editRevision) || 0) + 1;
     return true;
   }
 
@@ -863,6 +1943,7 @@ window.OB64 = window.OB64 || {};
     if (!state || !state.supported) return output;
     Object.keys(state.edits).sort().forEach(function(key) {
       var source = state.artByKey[key], group = state.edits[key], children = {};
+      if (source && source.separationId) return;
       Object.keys(group.children).sort(function(left, right) {
         return Number(left) - Number(right);
       }).forEach(function(childOrdinal) {
@@ -873,6 +1954,11 @@ window.OB64 = window.OB64 || {};
         };
       });
       output[key] = {
+        bindingId: source.bindingId,
+        physicalSourceId: source.physicalSourceId,
+        descriptorKey: hex(source.descriptorKey),
+        descriptorMemberOrdinal: source.descriptorMemberIndex,
+        sourceRole: source.sourceRole,
         animation: source.animationKey, artId: source.artId,
         resourceKey: hex(source.resourceKey),
         width: source.sprite.width, height: source.sprite.height,
@@ -886,11 +1972,51 @@ window.OB64 = window.OB64 || {};
     var prepared = {}, count = 0;
     payload = payload || {};
     if (Object.keys(payload).length && (!state || !state.supported)) {
-      fail('This ROM cannot load bounded combat-sprite Project records');
+      fail('This ROM cannot load combat-sprite Project records');
     }
     Object.keys(payload).forEach(function(key) {
-      var entry = payload[key], source = state.artByKey[key];
-      if (!source || !entry || entry.animation !== source.animationKey ||
+      var entry = payload[key];
+      var requestedChildren = entry && entry.children;
+      var requestedOrdinals = entry && Number.isInteger(entry.childOrdinal)
+        ? [entry.childOrdinal] : [];
+      if (!requestedOrdinals.length && requestedChildren &&
+          typeof requestedChildren === 'object' &&
+          !Array.isArray(requestedChildren)) {
+        Object.keys(requestedChildren).forEach(function(requestedKey) {
+          if (/^(0|[1-9][0-9]*)$/.test(requestedKey)) {
+            requestedOrdinals.push(Number(requestedKey));
+          }
+        });
+      }
+      var canonicalKey = state.artByKey[key]
+        ? key : state.sourceAliases[key];
+      if (!canonicalKey && entry && typeof state.resolveBindingSource === 'function') {
+        requestedOrdinals.forEach(function(requestedChild) {
+          var resolvedSource = state.resolveBindingSource(entry.bindingId || key,
+            requestedChild);
+          if (resolvedSource) canonicalKey = resolvedSource.key;
+        });
+      }
+      var source = canonicalKey && state.artByKey[canonicalKey];
+      if (source && source.onDemandBinding &&
+          typeof state.resolveBindingSource === 'function') {
+        requestedOrdinals.forEach(function(requestedChild) {
+          state.resolveBindingSource(source.bindingId, requestedChild);
+        });
+      }
+      var animationMatches = source && entry &&
+        (entry.animation === source.animationKey ||
+          source.animationKeys.indexOf(entry.animation) >= 0 ||
+          source.legacyAnimationKeys.indexOf(entry.animation) >= 0);
+      var newIdentityMatches = source && entry &&
+        (!entry.bindingId || entry.bindingId === source.bindingId) &&
+        (!entry.physicalSourceId ||
+          entry.physicalSourceId === source.physicalSourceId) &&
+        (!entry.descriptorKey || entry.descriptorKey === hex(source.descriptorKey)) &&
+        (entry.descriptorMemberOrdinal === undefined ||
+          entry.descriptorMemberOrdinal === source.descriptorMemberIndex) &&
+        (!entry.sourceRole || entry.sourceRole === source.sourceRole);
+      if (!source || !entry || !animationMatches || !newIdentityMatches ||
           entry.artId !== source.artId || entry.resourceKey !== hex(source.resourceKey) ||
           entry.width !== source.sprite.width || entry.height !== source.sprite.height) {
         fail('combat-sprite Project record ' + key + ' does not match its verified source');
@@ -907,7 +2033,7 @@ window.OB64 = window.OB64 || {};
           Array.isArray(childPayloads) || !Object.keys(childPayloads).length) {
         fail('combat-sprite Project record ' + key + ' has no edited children');
       }
-      var group = { children: {} };
+      var group = prepared[canonicalKey] || { children: {} };
       Object.keys(childPayloads).forEach(function(childKeyText) {
         if (!/^(0|[1-9][0-9]*)$/.test(childKeyText)) {
           fail(key + ' child key ' + childKeyText + ' is not a canonical ordinal');
@@ -915,7 +2041,7 @@ window.OB64 = window.OB64 || {};
         var childOrdinal = Number(childKeyText), childEntry = childPayloads[childKeyText];
         originalChild(source, childOrdinal);
         if (group.children[childOrdinal]) {
-          fail(key + ' repeats child ' + childOrdinal);
+          fail(key + ' repeats binding ' + source.bindingId + ' child ' + childOrdinal);
         }
         if (!childEntry || typeof childEntry !== 'object') {
           fail(key + ' child ' + childOrdinal + ' is not a Project pixel record');
@@ -928,7 +2054,7 @@ window.OB64 = window.OB64 || {};
         group.children[childOrdinal] = { indices: indices, intensity: intensity };
         count++;
       });
-      prepared[key] = group;
+      prepared[canonicalKey] = group;
     });
     return { edits: prepared, count: count };
   }
@@ -947,37 +2073,75 @@ window.OB64 = window.OB64 || {};
     return applied;
   }
 
+  function cloneMaterializedLanes(sprite, childOrdinal) {
+    var lanes = materializeChildLanes(sprite, childOrdinal);
+    return {
+      first: lanes.first ? lanes.first.slice() : null,
+      second: lanes.second ? lanes.second.slice() : null,
+      lookup: lanes.lookup ? lanes.lookup.slice() : null
+    };
+  }
+
+  function applyVisibleEdit(sprite, target, edit) {
+    var pixel = 0;
+    for (var y = 0; y < sprite.height; y++) {
+      var firstRow = y * sprite.firstStride;
+      var secondRow = y * sprite.secondStride;
+      for (var x = 0; x < sprite.width; x++, pixel++) {
+        target.first[firstRow + x] = edit.indices[pixel];
+        var packedOffset = secondRow + (x >>> 1);
+        if (x & 1) {
+          target.second[packedOffset] = (target.second[packedOffset] & 0xF0) |
+            edit.intensity[pixel];
+        } else {
+          target.second[packedOffset] = (target.second[packedOffset] & 0x0F) |
+            (edit.intensity[pixel] << 4);
+        }
+      }
+    }
+  }
+
+  function encodedLane(sprite, child, target, base, lane, format) {
+    if (!target[lane]) return null;
+    if (child.discriminator === child.ordinal || child.flags & 0x08) {
+      return target[lane];
+    }
+    return combineDeltaLane(base && base[lane], target[lane], format,
+      lane === 'lookup' ? 'embedded lookup' : lane + ' lane',
+      sprite.resourceKey, child.ordinal);
+  }
+
   function buildDecoded(source, childEdits) {
     var sprite = source.sprite, decoded = sprite.decoded.slice();
+    var targets = sprite.children.map(function(child) {
+      return cloneMaterializedLanes(sprite, child.ordinal);
+    });
     Object.keys(childEdits || {}).forEach(function(childOrdinalText) {
       var childOrdinal = Number(childOrdinalText), edit = childEdits[childOrdinalText];
       originalChild(source, childOrdinal);
       validatePixels(source, edit.indices, edit.intensity);
-      var child = sprite.children[childOrdinal], pixel = 0;
-      for (var y = 0; y < sprite.height; y++) {
-        var firstRow = child.firstOffset + y * sprite.firstStride;
-        var secondRow = child.secondOffset + y * sprite.secondStride;
-        for (var x = 0; x < sprite.width; x++, pixel++) {
-          decoded[firstRow + x] = edit.indices[pixel];
-          var packedOffset = secondRow + (x >>> 1);
-          if (x & 1) {
-            decoded[packedOffset] = (decoded[packedOffset] & 0xF0) |
-              edit.intensity[pixel];
-          } else {
-            decoded[packedOffset] = (decoded[packedOffset] & 0x0F) |
-              (edit.intensity[pixel] << 4);
-          }
-        }
-      }
+      applyVisibleEdit(sprite, targets[childOrdinal], edit);
+    });
+    sprite.children.forEach(function(child) {
+      var target = targets[child.ordinal];
+      var base = child.discriminator === child.ordinal
+        ? null : targets[child.discriminator];
+      var first = encodedLane(sprite, child, target, base, 'first', sprite.firstFormat);
+      var second = encodedLane(sprite, child, target, base, 'second', sprite.secondFormat);
+      var lookup = encodedLane(sprite, child, target, base, 'lookup', 2);
+      if (first) decoded.set(first, child.firstOffset);
+      if (second) decoded.set(second, child.secondOffset);
+      if (lookup) decoded.set(lookup, child.lookupOffset);
     });
     var reparsed = parseSpriteObject(decoded, source.resourceKey);
-    Object.keys(childEdits || {}).forEach(function(childOrdinalText) {
-      var edit = childEdits[childOrdinalText];
-      var rebuilt = decodeChild(reparsed, Number(childOrdinalText));
-      if (!equalBytes(rebuilt.indices, edit.indices) ||
-          !equalBytes(rebuilt.intensity, edit.intensity)) {
-        fail(source.key + ' child ' + childOrdinalText +
-          ' decoded-plane readback differs after rebuild');
+    reparsed.children.forEach(function(child) {
+      var rebuilt = materializeChildLanes(reparsed, child.ordinal);
+      var target = targets[child.ordinal];
+      if (!equalOptionalBytes(rebuilt.first, target.first) ||
+          !equalOptionalBytes(rebuilt.second, target.second) ||
+          !equalOptionalBytes(rebuilt.lookup, target.lookup)) {
+        fail(source.key + ' child ' + child.ordinal +
+          ' runtime-materialized readback differs after delta rebuild');
       }
     });
     return decoded;
@@ -988,6 +2152,7 @@ window.OB64 = window.OB64 || {};
     if (!state || !state.supported) return resources;
     Object.keys(state.edits).sort().forEach(function(key, ordinal) {
       var source = state.artByKey[key], edit = state.edits[key];
+      if (source && source.separationId) return;
       var decoded = buildDecoded(source, edit.children);
       var stored = A.bootLzCompress(decoded);
       var verified = A.bootLzDecode(stored);
@@ -1005,6 +2170,47 @@ window.OB64 = window.OB64 || {};
           ? 'in-place' : 'relocated'
       });
     });
+    return resources;
+  }
+
+  async function buildResourcesAsync(state, onProgress) {
+    var resources = [];
+    if (!state || !state.supported) return resources;
+    var keys = Object.keys(state.edits).sort();
+    var buildKeys = keys.filter(function(key) {
+      var source = state.artByKey[key];
+      return !(source && source.separationId);
+    });
+    for (var buildIndex = 0; buildIndex < buildKeys.length; buildIndex++) {
+      var key = buildKeys[buildIndex];
+      var source = state.artByKey[key];
+      var edit = state.edits[key];
+      var ordinal = keys.indexOf(key);
+      var decoded = buildDecoded(source, edit.children);
+      var label = 'combat sprite ' + (buildIndex + 1) + ' of ' + buildKeys.length;
+      var stored = await A.bootLzCompressAsync(decoded, function(fraction) {
+        if (onProgress) {
+          onProgress(label, (buildIndex + fraction) /
+            Math.max(1, buildKeys.length));
+        }
+      });
+      var verified = A.bootLzDecode(stored);
+      if (verified.bytesConsumed !== stored.length ||
+          !equalBytes(verified.output, decoded)) {
+        fail(source.key + ' compressed resource failed exact readback');
+      }
+      var originalCapacity = source.resource.storedLength +
+        (source.resource.storedLength & 1);
+      resources.push({
+        name: 'combat-sprite-' + ordinal, key: key, source: source,
+        edit: edit,
+        built: { decoded: decoded, stored: stored },
+        originalCapacity: originalCapacity,
+        placement: source.inPlaceEligible && stored.length <= originalCapacity
+          ? 'in-place' : 'relocated'
+      });
+    }
+    if (onProgress) onProgress('combat sprites complete', 1);
     return resources;
   }
 
@@ -1078,6 +2284,7 @@ window.OB64 = window.OB64 || {};
     var output = {};
     if (!state) return output;
     Object.keys(state.edits).forEach(function(key) {
+      if (state.artByKey[key] && state.artByKey[key].separationId) return;
       output[key] = { children: {} };
       Object.keys(state.edits[key].children).forEach(function(childOrdinal) {
         output[key].children[childOrdinal] = snapshot(
@@ -1105,11 +2312,13 @@ window.OB64 = window.OB64 || {};
       if (!Object.keys(state.edits[key].children).length) delete state.edits[key];
     });
     state.blocked = {};
+    state.editRevision = (Number(state.editRevision) || 0) + 1;
   }
 
   function resetAll(state) {
     if (!state) return;
     state.edits = {}; state.blocked = {};
+    state.editRevision = (Number(state.editRevision) || 0) + 1;
   }
 
   function sourceEditCount(state, key) {
@@ -1132,6 +2341,7 @@ window.OB64 = window.OB64 || {};
 
   OB64.animationArt = {
     specs: SPECS,
+    weaponItemFamilies: WEAPON_ITEM_FAMILIES,
     AnimationArtError: AnimationArtError,
     rowBytes: rowBytes,
     parseSpriteObject: parseSpriteObject,
@@ -1139,6 +2349,12 @@ window.OB64 = window.OB64 || {};
     parsePoseProgram: parsePoseProgram,
     descriptorReferenceCounts: descriptorReferenceCounts,
     decodeChild: decodeChild,
+    decodeDirectChild: decodeDirectChild,
+    materializeChildLanes: materializeChildLanes,
+    childOrdinalOrFallback: childOrdinalOrFallback,
+    childHasVisiblePixels: childHasVisiblePixels,
+    childPalette: childPalette,
+    displayChild: displayChild,
     parseSpec: parseSpec,
     initialize: initialize,
     childKey: childKey,
@@ -1153,6 +2369,7 @@ window.OB64 = window.OB64 || {};
     applyPrepared: applyPrepared,
     buildDecoded: buildDecoded,
     buildResources: buildResources,
+    buildResourcesAsync: buildResourcesAsync,
     applyResources: applyResources,
     verifyResources: verifyResources,
     snapshotEdits: snapshotEdits,

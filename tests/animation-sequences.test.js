@@ -1,0 +1,1166 @@
+'use strict';
+
+const assert = require('assert');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const EDITOR = path.resolve(__dirname, '..');
+const ROOT = path.resolve(EDITOR, '..');
+const ROM = path.join(ROOT,
+  'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
+
+global.window = global;
+global.module = undefined;
+if (!window.crypto || !window.crypto.subtle) {
+  Object.defineProperty(window, 'crypto', { value: crypto.webcrypto });
+}
+global.btoa = value => Buffer.from(value, 'binary').toString('base64');
+global.atob = value => Buffer.from(value, 'base64').toString('binary');
+
+vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');
+for (const filename of [
+  'data.js', 'parsers.js', 'art.js', 'animation-corpus-data.js',
+  'animation-art.js', 'combat-animation-overrides-data.js',
+  'combat-animation-overrides.js', 'animation-sequences.js', 'animation-ui.js'
+]) {
+  const fullPath = path.join(EDITOR, filename);
+  vm.runInThisContext(fs.readFileSync(fullPath, 'utf8'), { filename: fullPath });
+}
+
+function normalizeV64(bytes) {
+  const output = new Uint8Array(bytes);
+  for (let offset = 0; offset < output.length; offset += 2) {
+    const first = output[offset];
+    output[offset] = output[offset + 1];
+    output[offset + 1] = first;
+  }
+  return output;
+}
+
+async function freshRom(z64) {
+  const rom = { z64: z64.slice(), layout: { id: 'us-rev0' } };
+  await OB64.art.initialize(rom);
+  rom.classDefs = OB64.parseClassDefs(rom.z64);
+  OB64.combatAnimationOverrides.initialize(rom);
+  OB64.animationSequences.initialize(rom);
+  return rom;
+}
+
+function route(rom, classId, actionId, flags, rawMode) {
+  const catalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  return catalog.specs.find(animation =>
+    animation.spec.classId === classId &&
+    animation.spec.actionId === actionId &&
+    OB64.animationUI.selectorFlags(animation) === flags &&
+    animation.spec.rawMode === rawMode);
+}
+
+(async function run() {
+  assert.deepStrictEqual(
+    OB64.animationUI.animationBrushIndices(5, 5, 2, 2, 1), [12],
+    'a one-pixel brush must edit only the selected pixel');
+  assert.deepStrictEqual(
+    OB64.animationUI.animationBrushIndices(5, 5, 2, 2, 3),
+    [6, 7, 8, 11, 12, 13, 16, 17, 18],
+    'a three-pixel brush must edit a centered square');
+  assert.deepStrictEqual(
+    OB64.animationUI.animationBrushIndices(5, 5, 0, 0, 3),
+    [0, 1, 5, 6],
+    'a brush must clip cleanly at sprite bounds');
+  const transformIndices = new Uint8Array([1, 2, 3, 4, 5, 6]);
+  const transformIntensity = new Uint8Array([6, 5, 4, 3, 2, 1]);
+  const rotatedRight = OB64.animationSequences.rotateIndexedPixels(
+    transformIndices, transformIntensity, 2, 3, 'right');
+  assert.deepStrictEqual(
+    { width: rotatedRight.width, height: rotatedRight.height },
+    { width: 3, height: 2 });
+  assert.deepStrictEqual([...rotatedRight.indices], [5, 3, 1, 6, 4, 2],
+    'right rotation must preserve exact palette indexes');
+  assert.deepStrictEqual([...rotatedRight.intensity], [2, 4, 6, 1, 3, 5],
+    'right rotation must keep each I4 value with its source pixel');
+  const rotatedBack = OB64.animationSequences.rotateIndexedPixels(
+    rotatedRight.indices, rotatedRight.intensity,
+    rotatedRight.width, rotatedRight.height, 'left');
+  assert.deepStrictEqual([...rotatedBack.indices], [...transformIndices],
+    'left rotation must reverse a right rotation exactly');
+  assert.deepStrictEqual([...rotatedBack.intensity], [...transformIntensity]);
+  const resizedPixels = OB64.animationSequences.resizeIndexedPixels(
+    new Uint8Array([1, 2, 3, 4]), new Uint8Array([4, 3, 2, 1]),
+    2, 2, 4, 4);
+  assert.deepStrictEqual([...resizedPixels.indices], [
+    1, 1, 2, 2,
+    1, 1, 2, 2,
+    3, 3, 4, 4,
+    3, 3, 4, 4,
+  ], 'nearest-neighbor resize must replicate source pixels without blending');
+  assert.deepStrictEqual([...resizedPixels.intensity], [
+    4, 4, 3, 3,
+    4, 4, 3, 3,
+    2, 2, 1, 1,
+    2, 2, 1, 1,
+  ], 'nearest-neighbor resize must preserve the matching I4 values');
+  const colorRichRgba = new Uint8ClampedArray(17 * 17 * 4);
+  for (let pixel = 0; pixel < 17 * 17; pixel++) {
+    colorRichRgba[pixel * 4] = (pixel % 17) * 16;
+    colorRichRgba[pixel * 4 + 1] = Math.floor(pixel / 17) * 16;
+    colorRichRgba[pixel * 4 + 2] = (pixel * 37) & 0xFF;
+    colorRichRgba[pixel * 4 + 3] = pixel === 0 ? 0 : 255;
+  }
+  const quantizedFrame = OB64.art.prepareAnimationFrameImport(
+    colorRichRgba, 17, 17, 17, 17,
+    { resizeMode: 'nearest', dither: true });
+  assert(quantizedFrame.colorCount <= 256,
+    'frame import must fit the native CI8 palette limit');
+  assert.strictEqual(quantizedFrame.paletteWords.length, 256);
+  assert.strictEqual(quantizedFrame.intensity[0], 0,
+    'frame import must preserve transparent pixels in the I4 lane');
+  assert(quantizedFrame.intensity.slice(1).every(value => value === 15),
+    'opaque frame-import pixels must use maximum I4 intensity');
+
+  const z64 = normalizeV64(fs.readFileSync(ROM));
+  const rom = await freshRom(z64);
+  assert.strictEqual(rom.animationSequences.supported, true);
+  const initialCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  const bossCopySourceKey = 'binding-00453ec0-129-009e8358';
+  assert.strictEqual(initialCatalog.sourceAnimations[bossCopySourceKey].some(
+    animation => animation.spec.classId === 0xA0), false,
+  'the current-assignment catalog reproduces the missing boss-copy consumer');
+  rom.art.animations.activeSourceAnimations =
+    OB64.animationUI.editScopeSourceIndex(
+      rom.art.animations, initialCatalog, rom.animationSequences);
+  const bossCopyScope = OB64.animationUI.spriteEditScope(
+    rom.art.animations, bossCopySourceKey, 0);
+  assert.deepStrictEqual([...new Set(bossCopyScope.routes.map(route => route.classId))]
+    .sort((left, right) => left - right),
+  [0x13, 0x54, 0x55, 0xA0, 0xA2],
+  'shared-sprite scope must retain every vanilla boss-copy consumer');
+  assert(bossCopyScope.routes.filter(route =>
+    route.classId === 0xA0 || route.classId === 0xA2).every(route => !route.assigned),
+  'vanilla boss-copy routes outside the live assignment catalog must be labeled unassigned');
+
+  const grapplerSource = rom.art.animations.artByKey[
+    'binding-005da450-025-00b6e748'];
+  assert.deepStrictEqual(
+    OB64.animationUI.identicalSpriteSlots(grapplerSource, 5), [4],
+    'Vad Base Art must expose its pixel-identical but independent Grappler slot');
+  const vadBaseScope = OB64.animationUI.spriteEditScope(
+    rom.art.animations, grapplerSource.key, 5);
+  const grapplerSlotScope = OB64.animationUI.spriteEditScope(
+    rom.art.animations, grapplerSource.key, 4);
+  assert.deepStrictEqual([...new Set(vadBaseScope.routes.map(route => route.classId))],
+    [0x5D], 'Vad Base Art child 5 must remain an independent edit target');
+  assert.deepStrictEqual([...new Set(grapplerSlotScope.routes.map(route => route.classId))]
+    .sort((left, right) => left - right),
+  [0x5D, 0x72],
+  'Grappler child 4 must remain shared with Vad Alternate Art');
+  const descriptorRoot = OB64.art.readResource(z64, 0x003B6CD0);
+  const classHandles = OB64.art.readResource(z64, 0x00315736);
+  const handleContracts = new Map();
+  rom.art.animations.specs.forEach(animation => {
+    const index = OB64.animationSequences.handleIndex(rom, animation);
+    const rawHandle = OB64.art.readU16(
+      classHandles.stored, 0x24 + index * 2);
+    assert.strictEqual(rawHandle, animation.spec.route.rawHandleU16,
+      'the computed class/body handle index must contain the accepted raw handle');
+    const descriptorSlot = (rawHandle & 0x0FFF) - 1;
+    assert(descriptorSlot >= 0, 'the accepted descriptor handle must be one-based');
+    assert.strictEqual(
+      OB64.art.readU32(descriptorRoot.stored, descriptorSlot * 4),
+      animation.spec.descriptorKey,
+      'the accepted raw handle must resolve the selected descriptor key'
+    );
+    const contract = [
+      animation.spec.descriptorKey,
+      animation.spec.route.rawHandleU16,
+    ].join(':');
+    if (handleContracts.has(index)) {
+      assert.strictEqual(handleContracts.get(index), contract,
+        'one class/body handle index must not resolve incompatible descriptors');
+    } else {
+      handleContracts.set(index, contract);
+    }
+  });
+
+  const fighter = route(rom, 0x02, 0x04, '0/0', 0);
+  assert(fighter, 'Fighter Slash player/base normal route must resolve');
+  assert.strictEqual(OB64.animationSequences.handleIndex(rom, fighter), 8,
+    'ordinary Fighter flags 0/0 must use source-art handle index 8');
+  const ariosh = route(rom, 0x90, 0x04, '0/0', 0);
+  assert(ariosh, 'Ariosh Knight Slash player/base route must resolve');
+  const arioshFields = ariosh.spec.route.actorFields;
+  assert.strictEqual(
+    rom.classDefs[arioshFields.physicalClassRecord].classCopyMatch,
+    arioshFields.rawOwnerContext,
+    'Ariosh must exercise the MIPS class-copy-match branch'
+  );
+  assert.strictEqual(
+    OB64.animationSequences.handleIndex(rom, ariosh),
+    4 * arioshFields.sourceArtId,
+    'a boss copy whose B57 matches its owner must keep its own source-art handle'
+  );
+  assert.notStrictEqual(
+    OB64.animationSequences.handleIndex(rom, ariosh),
+    4 * arioshFields.rawOwnerContext,
+    'a boss copy must not overwrite the ordinary class handle it borrows as owner context'
+  );
+  const pair = OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+    0x02, rom.classDefs[0x03], 0x04);
+  assert(pair && Number.isInteger(pair.normalSelector) &&
+    Number.isInteger(pair.blockedSelector));
+
+  const idleRom = await freshRom(z64);
+  const fighterIdle = OB64.animationUI.idleAnimationRows(
+    idleRom.art.animations, 0x02).find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '0/0');
+  assert(fighterIdle, 'Fighter player-side Base Art idle loop must resolve');
+  assert.strictEqual(fighterIdle.spec.actionId, -1);
+  assert.strictEqual(fighterIdle.spec.selector, 0);
+  const idleDesiredBefore = JSON.stringify(
+    idleRom.combatAnimationOverrides.desired);
+  const idleFrameCount = fighterIdle.frames.length;
+  const idleSeparation = OB64.animationSequences.separateAndAssign(
+    idleRom, fighterIdle, null, fighterIdle);
+  assert.strictEqual(idleSeparation.id, '2:-1:0:idle');
+  assert.strictEqual(idleSeparation.selector, 0,
+    'a private idle loop must replace selector 0 inside its cloned art route');
+  assert.strictEqual(idleSeparation.syntheticAnimation.frames.length,
+    idleFrameCount);
+  assert.strictEqual(idleSeparation.syntheticAnimation.spec.idleSequence, true);
+  assert.strictEqual(JSON.stringify(idleRom.combatAnimationOverrides.desired),
+    idleDesiredBefore,
+  'idle separation must not consume or alter an attack assignment record');
+  assert.deepStrictEqual(idleRom.animationSequences.routeBaselines, {},
+    'idle separation must not create an attack selector baseline');
+  assert.strictEqual(OB64.animationSequences.routeSeparationFor(
+    fighterIdle, idleRom.animationSequences), idleSeparation);
+  const privateIdleRecords = idleSeparation.syntheticAnimation.poseProgram.records;
+  const privateIdleLoop = privateIdleRecords[privateIdleRecords.length - 1];
+  assert.strictEqual(privateIdleLoop.opcode, 0x04,
+    'a private idle body program must keep its final loop command');
+  assert.strictEqual(privateIdleRecords[privateIdleLoop.operands[0]].opcode, 0x01,
+    'the rebuilt idle loop must jump to a visible frame command');
+  assert.strictEqual(privateIdleRecords.slice(privateIdleLoop.operands[0])
+    .filter(record => record.opcode === 0x01).length, idleFrameCount,
+  'the rebuilt idle jump must cover every visible loop frame');
+  const idleCatalog = OB64.animationUI.animationSequenceCatalogRows(
+    idleRom.art.animations, idleRom.animationSequences, 0x02, 0,
+    { idleOnly: true, flags: '0/0' });
+  assert(idleCatalog.includes(fighterIdle));
+  assert(idleCatalog.includes(idleSeparation.syntheticAnimation),
+    'the private idle loop must remain selectable beside the original ROM loop');
+
+  const legacyStructurePayload = OB64.animationSequences.collectProject(idleRom);
+  legacyStructurePayload.schemaVersion = 3;
+  Object.values(legacyStructurePayload.entries).forEach(entry => {
+    delete entry.poseProgramBase64;
+  });
+  const legacyStructureRom = await freshRom(z64);
+  const preparedLegacyStructure = OB64.animationSequences.prepareProject(
+    legacyStructureRom, legacyStructurePayload);
+  assert.strictEqual(OB64.animationSequences.applyProject(
+    legacyStructureRom, preparedLegacyStructure), 1,
+  'schema 3 private sequences must remain readable after the body-program upgrade');
+
+  const privateIdleAnimation = idleSeparation.syntheticAnimation;
+  const idleTemplateLayer = privateIdleAnimation.frames[0].layers.find(layer =>
+    privateIdleAnimation.artByKey[layer.sourceKey].editable);
+  const addedIdleIndex = OB64.animationSequences.addBlankFrame(
+    idleRom, idleSeparation, 0, idleTemplateLayer.ordinal);
+  const addedIdleFrame = privateIdleAnimation.frames[addedIdleIndex];
+  OB64.animationSequences.moveFrame(idleRom, idleSeparation,
+    addedIdleIndex, privateIdleAnimation.frames.length - 1);
+  assert.strictEqual(privateIdleAnimation.frames[
+    privateIdleAnimation.frames.length - 1], addedIdleFrame,
+  'an added idle frame must be reorderable within the visible loop');
+  const changedIdleRecords = privateIdleAnimation.poseProgram.records;
+  const changedIdleLoop = changedIdleRecords[changedIdleRecords.length - 1];
+  assert.strictEqual(changedIdleRecords[changedIdleLoop.operands[0]].opcode, 0x01);
+  assert.strictEqual(changedIdleRecords.slice(changedIdleLoop.operands[0])
+    .filter(record => record.opcode === 0x01).length, idleFrameCount + 1,
+  'idle insertion and reorder must keep every visible frame inside the loop');
+  const changedIdleFrameCount = privateIdleAnimation.frames.length;
+
+  const idlePayload = OB64.animationSequences.collectProject(idleRom);
+  assert.deepStrictEqual(idlePayload.routeBaselines, {});
+  assert.strictEqual(idlePayload.entries[idleSeparation.id].laneKey, 'idle');
+  const restoredIdleRom = await freshRom(z64);
+  const preparedIdle = OB64.animationSequences.prepareProject(
+    restoredIdleRom, idlePayload);
+  assert.strictEqual(OB64.animationSequences.applyProject(
+    restoredIdleRom, preparedIdle), 1);
+  const restoredIdle = restoredIdleRom.animationSequences.separations[
+    idleSeparation.id];
+  assert(restoredIdle && restoredIdle.syntheticAnimation.spec.idleSequence,
+    'Project reload must restore the private idle route');
+  assert.strictEqual(restoredIdle.syntheticAnimation.frames.length,
+    changedIdleFrameCount);
+  assert.strictEqual(JSON.stringify(
+    restoredIdleRom.combatAnimationOverrides.desired), idleDesiredBefore,
+  'Project reload of an idle loop must not create an attack assignment');
+  OB64.animationSequences.removeSeparation(restoredIdleRom, restoredIdle);
+  assert.strictEqual(Object.keys(
+    restoredIdleRom.animationSequences.separations).length, 0);
+
+  const loopRom = await freshRom(z64);
+  const loopingAttack = loopRom.art.animations.specs.find(animation =>
+    animation.frames.length > 1 && animation.poseProgram.records.some(record =>
+      record.opcode === 0x04));
+  assert(loopingAttack,
+    'the retail corpus must retain an attack with a frame-loop command');
+  const loopFields = loopingAttack.spec.route.actorFields;
+  const loopPair = OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+    loopingAttack.spec.classId,
+    loopRom.classDefs[loopFields.physicalClassRecord],
+    loopingAttack.spec.actionId);
+  const loopSeparation = OB64.animationSequences.separateAndAssign(
+    loopRom, loopingAttack, loopPair, loopingAttack);
+  const loopAnimation = loopSeparation.syntheticAnimation;
+  const originalLoopRecord = loopAnimation.poseProgram.records.find(record =>
+    record.opcode === 0x04);
+  const loopTargetFrameIndex = loopAnimation.poseProgram.records
+    .filter(record => record.opcode === 0x01)
+    .findIndex(record => record.ordinal === originalLoopRecord.operands[0]);
+  assert(loopTargetFrameIndex >= 0,
+    'the retail attack loop must target a visible frame');
+  OB64.animationSequences.removeFrame(
+    loopRom, loopSeparation, loopTargetFrameIndex);
+  const updatedLoopRecord = loopAnimation.poseProgram.records.find(record =>
+    record.opcode === 0x04);
+  assert.strictEqual(loopAnimation.poseProgram.records[
+    updatedLoopRecord.operands[0]].opcode, 0x01,
+  'removing a loop target must retarget the jump to a surviving frame');
+  assert.notStrictEqual(updatedLoopRecord.operands[0], updatedLoopRecord.ordinal,
+    'removing a final loop frame must not turn the jump into a self-loop');
+
+  const crossActionRom = await freshRom(z64);
+  const crossDefinition = crossActionRom.classDefs[0x03];
+  crossDefinition.b43Raw = crossDefinition.b45Raw =
+    crossDefinition.b47Raw = 0x06;
+  const crossDonor = crossActionRom.art.animations.specs.find(animation =>
+    animation.spec.classId === 0x02 && animation.spec.actionId === 0x04 &&
+    OB64.animationUI.selectorFlags(animation) === '0/0' &&
+    animation.spec.rawMode === 0);
+  const crossBlockedDonor = crossActionRom.art.animations.specs.find(animation =>
+    animation.spec.classId === 0x02 && animation.spec.actionId === 0x04 &&
+    OB64.animationUI.selectorFlags(animation) === '0/0' &&
+    animation.spec.rawMode === 2);
+  OB64.combatAnimationOverrides.setEntry(
+    crossActionRom.combatAnimationOverrides, {
+      classId: 0x02, actionId: 0x06,
+      normalSelector: crossDonor.spec.selector,
+      blockedSelector: crossBlockedDonor.spec.selector,
+    });
+  const crossTargetNormal = route(crossActionRom, 0x02, 0x06, '0/0', 0);
+  const crossTargetBlocked = route(crossActionRom, 0x02, 0x06, '0/0', 2);
+  assert(crossTargetNormal && crossTargetBlocked && crossDonor,
+    'cross-action assignment requires live Rend and canonical Slash routes');
+  const crossPair = {
+    normalSelector: crossTargetNormal.spec.selector,
+    blockedSelector: crossTargetBlocked.spec.selector,
+  };
+  OB64.animationSequences.assignShared(crossActionRom, crossDonor, crossPair,
+    crossTargetNormal);
+  const crossExact = OB64.combatAnimationOverrides.exactEntry(
+    crossActionRom.combatAnimationOverrides, 0x02, 0x06, 0);
+  assert(crossExact, 'shared donor assignment must target the selected action');
+  assert.strictEqual(crossExact.normalSelector, crossDonor.spec.selector);
+  assert.strictEqual(OB64.combatAnimationOverrides.exactEntry(
+    crossActionRom.combatAnimationOverrides, 0x02, 0x04, 0), null,
+  'cross-action assignment must not rewrite the donor action');
+  assert.strictEqual(OB64.animationSequences.sharedAssignmentIssue(
+    crossDonor, crossTargetBlocked), '',
+  'the same art route may reuse a Normal source sequence for Blocked mode');
+  OB64.animationSequences.assignShared(crossActionRom, crossDonor, crossPair,
+    crossTargetBlocked);
+  assert.strictEqual(OB64.combatAnimationOverrides.exactEntry(
+    crossActionRom.combatAnimationOverrides, 0x02, 0x06, 0).blockedSelector,
+  crossDonor.spec.selector,
+  'the selected Blocked target must accept the Normal source selector');
+  const otherArtRoute = crossActionRom.art.animations.specs.find(animation =>
+    animation.spec.classId === 0x02 && animation.spec.actionId === 0x04 &&
+    OB64.animationUI.selectorFlags(animation) === '0/1' &&
+    animation.spec.rawMode === 0);
+  assert(OB64.animationSequences.sharedAssignmentIssue(
+    otherArtRoute, crossTargetBlocked).includes('sprite resource and body appearance'),
+  'direct assignment must not misrepresent a different art route as the same sequence');
+  const warriorBase = route(crossActionRom, 0x55, 0x04, '0/0', 0);
+  const warriorAlternateBlocked = route(crossActionRom, 0x55, 0x04, '1/0', 2);
+  assert(warriorBase && warriorAlternateBlocked,
+    'Warrior player-side Base and Alternate routes must resolve');
+  assert.notStrictEqual(OB64.animationUI.selectorFlags(warriorBase),
+    OB64.animationUI.selectorFlags(warriorAlternateBlocked));
+  assert.strictEqual(warriorBase.spec.descriptorKey,
+    warriorAlternateBlocked.spec.descriptorKey,
+    'the linked Warrior routes must use one sprite resource');
+  assert.strictEqual(warriorBase.spec.selectedBodyChild,
+    warriorAlternateBlocked.spec.selectedBodyChild,
+    'the linked Warrior routes must use one body appearance');
+  assert.strictEqual(OB64.animationSequences.sharedAssignmentIssue(
+    warriorAlternateBlocked, warriorBase), '',
+  'linked Base and Alternate labels must remain directly assignable');
+  const warriorActionRom = await freshRom(z64);
+  const warriorDefinition = warriorActionRom.classDefs[0x56];
+  const warriorActionChange =
+    OB64.combatAnimationOverrides.applyLiveAttackChange(
+    warriorActionRom.combatAnimationOverrides, warriorDefinition,
+    0x55, 'b45Raw', 0x2E);
+  assert.strictEqual(warriorActionChange.requiresAnimationSelection, true,
+    'a new unmapped action must wait for the user to choose its body animation');
+  assert.strictEqual(warriorActionRom.combatAnimationOverrides.desired.length, 0,
+    'changing an attack action must not silently create an animation override');
+  let warriorMagicTarget = route(
+    warriorActionRom, 0x55, 0x2E, '0/0', 0);
+  assert(warriorMagicTarget,
+    'the newly assigned Warrior Tier 2 action must expose its game fallback');
+  assert.strictEqual(warriorMagicTarget.spec.selector, 0x28);
+  assert.strictEqual(warriorMagicTarget.effectiveMapping.source, 'fallback');
+  assert.strictEqual(warriorMagicTarget.effectiveMapping.assignmentRequired, true);
+  const warriorChoices = OB64.animationUI.animationClassVariantChoices(
+    OB64.animationUI.animationSequenceCatalogRows(
+      warriorActionRom.art.animations, warriorActionRom.animationSequences,
+      0x55, 0));
+  const warriorNativeNormal = warriorChoices.filter(choice =>
+    choice.representative.spec.nativeSelectorCandidate &&
+    choice.flags === '0/0' && choice.laneKey === 'normal');
+  for (const selector of [0x28, 0x29, 0x2E]) {
+    assert(warriorNativeNormal.some(choice =>
+      choice.representative.spec.selector === selector),
+    'every distinct structurally valid Warrior native body program must remain selectable');
+  }
+  const warriorPose28 = OB64.animationUI.animationPoseOffsetSummary(
+    warriorNativeNormal.find(choice =>
+      choice.representative.spec.selector === 0x28).representative);
+  const warriorPose2A = OB64.animationUI.animationPoseOffsetSummary(
+    warriorChoices.find(choice => choice.flags === '0/0' &&
+      choice.laneKey === 'normal' &&
+      choice.representative.spec.selector === 0x2A).representative);
+  const warriorPose2E = OB64.animationUI.animationPoseOffsetSummary(
+    warriorNativeNormal.find(choice =>
+      choice.representative.spec.selector === 0x2E).representative);
+  assert.strictEqual(warriorPose28.label, 'Art Shifts and Returns');
+  assert.deepStrictEqual(warriorPose28.peak, [0, 0, 7]);
+  assert.strictEqual(warriorPose2A.label, 'Art Shifts and Returns');
+  assert.deepStrictEqual(warriorPose2A.peak, [0, 0, 3]);
+  assert.strictEqual(warriorPose2E.label, 'No Art Shift');
+  assert.deepStrictEqual(warriorPose2E.peak, [0, 0, 0]);
+  assert(warriorPose28.title.includes(
+    'not battlefield actor coordinates'));
+  assert(warriorPose28.title.includes(
+    'do not determine whether the character approaches'));
+  const signedPoseOffsets = OB64.animationUI.animationPoseOffsetSummary({
+    poseProgram: { records: [
+      { opcode: 0x0C, operands: [0x01, 0x02, 0x03] },
+      { opcode: 0x0C, operands: [0xFF, 0xFE, 0xFD] },
+    ] },
+  });
+  assert.deepStrictEqual(signedPoseOffsets.peak, [1, 2, 3]);
+  assert.deepStrictEqual(signedPoseOffsets.end, [0, 0, 0]);
+  assert.strictEqual(signedPoseOffsets.label, 'Art Shifts and Returns');
+  warriorChoices.forEach(choice => {
+    assert(!/Vanilla|Player Side|Enemy Side|Warrior \(Dio\) Art|Art Variant/.test(
+      choice.label));
+    assert(choice.label.includes(choice.poseOffsets.label));
+    assert(!/Advance|Stationary/.test(choice.label));
+  });
+  const warriorLinkedChoice = warriorChoices.find(choice => choice.linkedToKey);
+  assert(warriorLinkedChoice && warriorLinkedChoice.linkedTitle);
+  assert(!warriorLinkedChoice.label.includes('Linked'));
+  assert.strictEqual(OB64.animationUI.currentSequenceChoiceForTarget(
+    warriorChoices, warriorMagicTarget), null,
+  'an unmapped fallback must not be presented as a user-selected sequence');
+  const warriorMagicDonor = route(
+    warriorActionRom, 0x55, 0x2D, '0/0', 0);
+  assert(warriorMagicDonor,
+    'the Warrior Tier 1 magic sequence must remain available as a donor');
+  OB64.animationSequences.assignShared(warriorActionRom, warriorMagicDonor, {
+    normalSelector: 0x28,
+    blockedSelector: 0x28,
+  }, warriorMagicTarget);
+  warriorMagicTarget = route(
+    warriorActionRom, 0x55, 0x2E, '0/0', 0);
+  const warriorCurrentChoice =
+    OB64.animationUI.currentSequenceChoiceForTarget(
+      warriorChoices, warriorMagicTarget);
+  assert(warriorCurrentChoice,
+    'the user-selected Warrior Tier 2 body sequence must become current');
+  assert.strictEqual(warriorCurrentChoice.sourceActionId, 0x2D,
+    'the selected Tier 1 magic donor must label the Tier 2 body assignment');
+  const warriorExact = OB64.combatAnimationOverrides.exactEntry(
+    warriorActionRom.combatAnimationOverrides, 0x55, 0x2E, 0);
+  assert.strictEqual(warriorExact.normalSelector, 0x2A);
+  assert.strictEqual(warriorExact.blockedSelector, 0x28);
+  assert.strictEqual(OB64.animationUI.animationActionFamily(
+    warriorCurrentChoice.sourceActionId),
+  OB64.animationUI.animationActionFamily(warriorMagicTarget.spec.actionId),
+  'the presented current source must use the target action command family');
+  const warriorNative28 = warriorNativeNormal.find(choice =>
+    choice.representative.spec.selector === 0x28);
+  OB64.animationSequences.assignShared(warriorActionRom,
+    warriorNative28.representative, warriorExact, warriorMagicTarget);
+  warriorMagicTarget = route(
+    warriorActionRom, 0x55, 0x2E, '0/0', 0);
+  const warriorNativeCurrent = OB64.animationUI.currentSequenceChoiceForTarget(
+    warriorChoices, warriorMagicTarget);
+  assert(warriorNativeCurrent &&
+    warriorNativeCurrent.representative.spec.selector === 0x28,
+  'a distinct native program must remain assignable after another program was selected');
+  assert.strictEqual(OB64.combatAnimationOverrides.exactEntry(
+    warriorActionRom.combatAnimationOverrides, 0x55, 0x2E, 0).normalSelector,
+  0x28);
+  const crossSeparation = OB64.animationSequences.separateAndAssign(
+    crossActionRom, crossDonor, crossPair, crossTargetNormal);
+  assert.strictEqual(crossSeparation.actionId, 0x06);
+  assert.strictEqual(crossSeparation.targetRef.actionId, 0x06);
+  assert.strictEqual(crossSeparation.donorRef.actionId, 0x04);
+  assert.strictEqual(crossSeparation.syntheticAnimation.spec.actionId, 0x06);
+  assert.strictEqual(crossSeparation.syntheticAnimation.spec.actionName, 'Rend');
+  assert.strictEqual(crossSeparation.syntheticAnimation.frames.length,
+    crossDonor.frames.length);
+  const crossPayload = OB64.animationSequences.collectProject(crossActionRom);
+  const crossRestored = await freshRom(z64);
+  const crossPrepared = OB64.animationSequences.prepareProject(
+    crossRestored, crossPayload);
+  assert.strictEqual(OB64.animationSequences.applyProject(
+    crossRestored, crossPrepared), 1);
+  const restoredCrossSeparation = crossRestored.animationSequences.separations[
+    crossSeparation.id];
+  assert(restoredCrossSeparation);
+  assert.strictEqual(restoredCrossSeparation.targetRef.actionId, 0x06);
+  assert.strictEqual(restoredCrossSeparation.donorRef.actionId, 0x04);
+  assert.strictEqual(restoredCrossSeparation.syntheticAnimation.spec.actionId,
+    0x06);
+
+  crossDefinition.b43Raw = 0x04;
+  const crossSlashTarget = route(crossActionRom, 0x02, 0x04, '0/0', 0);
+  const crossSlashPair = OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+    0x02, crossDefinition, 0x04);
+  assert(crossSlashTarget && crossSlashPair,
+    'the modified-sequence reuse check requires a live Slash target');
+  OB64.animationSequences.assignShared(crossActionRom,
+    crossSeparation.syntheticAnimation, crossSlashPair, crossSlashTarget);
+  const reusedModified = route(crossActionRom, 0x02, 0x04, '0/0', 0);
+  assert(reusedModified && reusedModified.separationId === crossSeparation.id,
+    'an action assigned to a modified selector must resolve that project sequence');
+  assert.strictEqual(reusedModified.spec.actionId, 0x04,
+    'a reused modified sequence must retain the consumer action identity');
+  assert.strictEqual(OB64.animationSequences.separationConsumers(
+    crossActionRom, crossSeparation).length, 1);
+  assert.throws(() => OB64.animationSequences.removeSeparation(
+    crossActionRom, crossSeparation), /still assigned/,
+  'a modified sequence must not disappear while another target uses it');
+  const modifiedDonorSource = Object.values(
+    crossSeparation.syntheticAnimation.artByKey).find(source => source.editable);
+  const modifiedDonorChild = modifiedDonorSource.editableChildOrdinals[0];
+  const modifiedDonorPixels = OB64.animationArt.currentEdit(
+    crossActionRom.art.animations, modifiedDonorSource.key, modifiedDonorChild);
+  const modifiedIndices = modifiedDonorPixels.indices.slice();
+  const modifiedIntensity = modifiedDonorPixels.intensity.slice();
+  modifiedIndices[0] = (modifiedIndices[0] + 1) & 0xFF;
+  OB64.animationArt.setEdit(crossActionRom.art.animations,
+    modifiedDonorSource.key, modifiedDonorChild,
+    modifiedIndices, modifiedIntensity);
+  const crossSlashBlockedTarget = route(
+    crossActionRom, 0x02, 0x04, '0/0', 2);
+  assert(crossSlashBlockedTarget,
+    'selector-reindex testing requires the Slash blocked target');
+  OB64.animationSequences.separateAndAssign(
+    crossActionRom, crossDonor, crossSlashPair, crossSlashBlockedTarget);
+  const refreshedModifiedDonorSource = Object.values(
+    crossSeparation.syntheticAnimation.artByKey).find(source =>
+    source.separationSourceOrdinal === modifiedDonorSource.separationSourceOrdinal);
+  assert.strictEqual(OB64.animationArt.currentEdit(
+    crossActionRom.art.animations, refreshedModifiedDonorSource.key,
+    modifiedDonorChild).indices[0], modifiedIndices[0],
+  'adding another modified sequence must preserve existing staged pixels');
+  assert.strictEqual(route(crossActionRom, 0x02, 0x04, '0/0', 0).separationId,
+    crossSeparation.id,
+  'selector reindexing must preserve actions that share a modified sequence');
+  assert.strictEqual(OB64.animationSequences.separationConsumers(
+    crossActionRom, crossSeparation).length, 1);
+  OB64.animationSequences.assignShared(
+    crossActionRom, crossDonor, crossSlashPair, crossSlashTarget);
+  assert.strictEqual(OB64.animationSequences.separationConsumers(
+    crossActionRom, crossSeparation).length, 0);
+  const enemyCopyTarget = route(crossActionRom, 0x02, 0x04, '0/1', 0);
+  assert(enemyCopyTarget, 'modified-sequence copying requires an enemy-side target');
+  const copiedModified = OB64.animationSequences.separateAndAssign(
+    crossActionRom, crossSeparation.syntheticAnimation,
+    crossSlashPair, enemyCopyTarget);
+  const copiedModifiedSource = Object.values(copiedModified.syntheticAnimation.artByKey)
+    .find(source => source.separationSourceOrdinal ===
+      refreshedModifiedDonorSource.separationSourceOrdinal);
+  assert(copiedModifiedSource, 'the copied modified source ordinal must remain stable');
+  assert.strictEqual(OB64.animationArt.currentEdit(
+    crossActionRom.art.animations, copiedModifiedSource.key,
+    modifiedDonorChild).indices[0], modifiedIndices[0],
+  'Copy From and Separate must preserve staged pixels from a modified donor');
+  const copiedModifiedPayload = OB64.animationSequences.collectProject(
+    crossActionRom).entries[copiedModified.id];
+  assert.strictEqual(copiedModifiedPayload.donorRef.selector,
+    crossDonor.spec.selector,
+  'a modified donor copy must retain a vanilla-resolvable structural reference');
+  assert.strictEqual(atob(copiedModifiedPayload.sources[
+    copiedModifiedSource.separationSourceOrdinal].children[
+      modifiedDonorChild].ci8IndicesBase64).charCodeAt(0), modifiedIndices[0],
+  'Project serialization must retain pixels copied from a modified donor');
+
+  OB64.animationSequences.assignShared(rom, fighter, pair);
+  let exact = OB64.combatAnimationOverrides.exactEntry(
+    rom.combatAnimationOverrides, 0x02, 0x04, 0);
+  assert(exact);
+  assert.strictEqual(exact.normalSelector, fighter.spec.selector);
+  let compiled = OB64.combatAnimationOverrides.compileTable(
+    rom.combatAnimationOverrides.desired);
+  const exactRecord = compiled.records.find(record =>
+    record.action === 0x04 && record.flags === 2 && record.bodyFlags === 0);
+  assert(exactRecord, 'shared assignment must compile as one exact body-route record');
+  assert.strictEqual(OB64.combatAnimationOverrides.lookupRecords(
+    compiled.records, exactRecord.sourceArt, exactRecord.rawOwner,
+    exactRecord.action, 0x7F, 0, 0), fighter.spec.selector);
+  assert.strictEqual(OB64.combatAnimationOverrides.lookupRecords(
+    compiled.records, exactRecord.sourceArt, exactRecord.rawOwner,
+    exactRecord.action, 0x7F, 0, 1), 0x7F,
+  'an exact route assignment must not affect another body-flag route');
+
+  const separation = OB64.animationSequences.separateAndAssign(
+    rom, fighter, pair);
+  const revisionAfterSeparation = rom.animationSequences.revision;
+  assert(revisionAfterSeparation > 0,
+    'sequence creation must invalidate the effective animation catalog');
+  assert.strictEqual(separation.classId, 0x02);
+  assert.strictEqual(separation.actionId, 0x04);
+  assert.strictEqual(separation.bodyFlags, 0);
+  assert.strictEqual(separation.laneKey, 'normal');
+  assert(separation.selector >= fighter.poseProgram.stateCount);
+  const synthetic = separation.syntheticAnimation;
+  assert.strictEqual(synthetic.frames.length, fighter.frames.length);
+  assert.strictEqual(synthetic.spec.classId, fighter.spec.classId);
+  assert.strictEqual(synthetic.spec.actionId, fighter.spec.actionId);
+  Object.values(synthetic.artByKey).forEach(source => {
+    assert.strictEqual(source.resource.storedLength, 0,
+      'sequence cloning must defer compression until ROM export');
+    assert.strictEqual(source.resource.stored.length, 0,
+      'sequence cloning must not retain a duplicate compressed payload');
+  });
+  const sequenceCatalog = OB64.animationUI.animationSequenceCatalogRows(
+    rom.art.animations, rom.animationSequences, fighter.spec.classId, 0);
+  assert(sequenceCatalog.includes(synthetic),
+    'a separated project sequence must enter its class and side catalog');
+  assert(!OB64.animationUI.animationSequenceCatalogRows(
+    rom.art.animations, rom.animationSequences, fighter.spec.classId, 1)
+    .includes(synthetic),
+  'a modified player-side sequence must not appear on the enemy side');
+  const sequenceChoices = OB64.animationUI.animationClassVariantChoices(
+    sequenceCatalog);
+  assert(sequenceChoices.some(choice => choice.sequenceKind === 'modified' &&
+    choice.representative === synthetic &&
+    !/Modified|Vanilla/.test(choice.label)),
+  'the sequence dropdown must distinguish the modified project sequence');
+  assert(sequenceChoices.some(choice => choice.sequenceKind === 'vanilla'),
+    'the modified sequence must not replace the fixed vanilla catalog');
+  const modifiedPreviewUi = {
+    animationKey: synthetic.key,
+    animationTargetClassId: fighter.spec.classId,
+    animationTargetActionId: fighter.spec.actionId,
+    animationTargetFlags: '0/0',
+    animationTargetLaneKey: 'normal',
+  };
+  assert.strictEqual(OB64.animationUI.selectedAnimation(
+    rom.art, modifiedPreviewUi,
+    OB64.animationUI.effectiveAnimationCatalog(rom.art, rom)), synthetic,
+  'a modified catalog entry must remain directly previewable');
+  Object.values(synthetic.artByKey).forEach(source => {
+    if (source.sourceRole === 'body') assert.strictEqual(source.sprite.childCount, 1);
+    if (source.weaponSelectable) {
+      assert(source.sprite.childCount > 0);
+      assert.strictEqual(source.selectableChildOrdinals.length,
+        source.sprite.childCount);
+    }
+  });
+  exact = OB64.combatAnimationOverrides.exactEntry(
+    rom.combatAnimationOverrides, 0x02, 0x04, 0);
+  assert.strictEqual(exact.normalSelector, separation.selector);
+
+  const separatedRoute = route(rom, 0x02, 0x04, '0/0', 0);
+  assert(separatedRoute && separatedRoute.separationId === separation.id);
+  assert.strictEqual(separatedRoute.effectiveMapping.source, 'separated');
+  assert.strictEqual(route(rom, 0x02, 0x04, '0/0', 1).separationId,
+    separation.id, 'normal raw modes 0 and 1 must share the separated copy');
+
+  const editableSource = Object.values(synthetic.artByKey).find(source =>
+    source.editable);
+  assert(editableSource);
+  const child = editableSource.editableChildOrdinals[0];
+  const original = OB64.animationArt.currentEdit(
+    rom.art.animations, editableSource.key, child);
+  const indices = original.indices.slice();
+  const intensity = original.intensity.slice();
+  indices[0] = (indices[0] + 1) & 0xFF;
+  OB64.animationArt.setEdit(
+    rom.art.animations, editableSource.key, child, indices, intensity);
+  assert.strictEqual(OB64.animationArt.currentEdit(
+    rom.art.animations, editableSource.key, child).indices[0], indices[0]);
+
+  const wizard = rom.art.animations.specs.find(animation =>
+    animation.spec.classId === 0x15 && animation.spec.rawMode === 0 &&
+    animation.frames.length > 0);
+  assert(wizard, 'Wizard source sequence must exist');
+  OB64.animationSequences.copyFrom(rom, separation, wizard);
+  assert(rom.animationSequences.revision > revisionAfterSeparation,
+    'donor replacement must invalidate the effective animation catalog');
+  assert.strictEqual(separation.syntheticAnimation.frames.length,
+    wizard.frames.length);
+  assert.strictEqual(separation.syntheticAnimation.spec.classId, 0x02,
+    'Copy From must retain the target class route');
+  assert.strictEqual(separation.syntheticAnimation.spec.actionId, 0x04,
+    'Copy From must retain the target attack route');
+  Object.values(separation.syntheticAnimation.artByKey).forEach(source => {
+    assert.strictEqual(source.resource.storedLength, 0,
+      'Replace From must defer cloned-source compression until ROM export');
+  });
+  const copiedWeapons = Object.values(separation.syntheticAnimation.artByKey)
+    .filter(source => source.weaponSelectable);
+  const wizardWeapons = Object.values(wizard.artByKey)
+    .filter(source => source.weaponSelectable);
+  assert.deepStrictEqual(copiedWeapons.map(source => source.sprite.childCount),
+    wizardWeapons.map(source => source.sprite.childCount),
+  'Copy From must retain every physical weapon child from its donor');
+
+  const privateAnimation = separation.syntheticAnimation;
+  const bodyLayerUses = [];
+  privateAnimation.frames.forEach(frame => frame.layers.forEach(layer => {
+    const source = privateAnimation.artByKey[layer.sourceKey];
+    if (source && source.editable && !source.weaponSelectable) {
+      bodyLayerUses.push({ frame, layer, source });
+    }
+  }));
+  const rotatedBodyUse = bodyLayerUses[0];
+  assert(rotatedBodyUse,
+    'the private donor must expose an editable body layer');
+  const untouchedBodyUse = bodyLayerUses.find(use =>
+    use.frame !== rotatedBodyUse.frame);
+  assert(untouchedBodyUse,
+    'the private donor must expose editable body layers in two frames');
+  const sharedBodySource = rotatedBodyUse.source;
+  Object.assign(untouchedBodyUse.layer, {
+    artId: rotatedBodyUse.layer.artId,
+    sourceKey: sharedBodySource.key,
+    bindingId: sharedBodySource.bindingId,
+    physicalSourceId: sharedBodySource.physicalSourceId,
+    sourceRole: sharedBodySource.sourceRole,
+    resourceKey: sharedBodySource.resourceKey,
+    childCount: sharedBodySource.sprite.childCount,
+    requestedChildOrdinal: 0,
+    selectedChildOrdinal: 0,
+    width: sharedBodySource.sprite.width,
+    height: sharedBodySource.sprite.height,
+  });
+  const oldBodyKey = sharedBodySource.key;
+  const oldBodyWidth = sharedBodySource.sprite.width;
+  const oldBodyHeight = sharedBodySource.sprite.height;
+  const oldBodyX = rotatedBodyUse.layer.drawOffsetX;
+  const oldBodyY = rotatedBodyUse.layer.drawOffsetY;
+  const oldBodyPixels = OB64.animationArt.currentEdit(
+    rom.art.animations, oldBodyKey, 0);
+  const expectedBodyRotation = OB64.animationSequences.rotateIndexedPixels(
+    oldBodyPixels.indices, oldBodyPixels.intensity,
+    oldBodyWidth, oldBodyHeight, 17);
+  const rotatedBodyOrdinal = OB64.animationSequences.rotateLayer(
+    rom, separation, rotatedBodyUse.frame.sequenceIndex,
+    rotatedBodyUse.layer.ordinal, 17);
+  const rotatedBodyLayer = rotatedBodyUse.frame.layers[rotatedBodyOrdinal];
+  const rotatedBodySource = privateAnimation.artByKey[rotatedBodyLayer.sourceKey];
+  assert.notStrictEqual(rotatedBodySource.key, oldBodyKey,
+    'a layer transform must create a private copy-on-write source');
+  assert.strictEqual(untouchedBodyUse.frame.layers[
+    untouchedBodyUse.layer.ordinal].sourceKey, oldBodyKey,
+  'another frame using the original sprite must remain unchanged');
+  assert(privateAnimation.artByKey[oldBodyKey],
+    'the original source must remain while another frame still uses it');
+  assert.strictEqual(rotatedBodyLayer.width, expectedBodyRotation.width);
+  assert.strictEqual(rotatedBodyLayer.height, expectedBodyRotation.height);
+  assert.strictEqual(rotatedBodyLayer.drawOffsetX,
+    oldBodyX + Math.floor((oldBodyWidth - expectedBodyRotation.width) / 2));
+  assert.strictEqual(rotatedBodyLayer.drawOffsetY,
+    oldBodyY + Math.floor((oldBodyHeight - expectedBodyRotation.height) / 2));
+  assert.deepStrictEqual(OB64.animationArt.currentEdit(
+    rom.art.animations, rotatedBodySource.key, 0).indices,
+  expectedBodyRotation.indices,
+  'a structural rotation must preserve the exact rotated CI8 pixels');
+  assert.deepStrictEqual(OB64.animationArt.currentEdit(
+    rom.art.animations, rotatedBodySource.key, 0).intensity,
+  expectedBodyRotation.intensity,
+  'a structural rotation must preserve the exact rotated I4 pixels');
+
+  const resizedBodyWidth = rotatedBodySource.sprite.width + 1;
+  const resizedBodyHeight = rotatedBodySource.sprite.height + 2;
+  const expectedBodyResize = OB64.animationSequences.resizeIndexedPixels(
+    expectedBodyRotation.indices, expectedBodyRotation.intensity,
+    rotatedBodySource.sprite.width, rotatedBodySource.sprite.height,
+    resizedBodyWidth, resizedBodyHeight);
+  OB64.animationSequences.resizeLayer(
+    rom, separation, rotatedBodyUse.frame.sequenceIndex,
+    rotatedBodyOrdinal, resizedBodyWidth, resizedBodyHeight);
+  const resizedBodyLayer = rotatedBodyUse.frame.layers[rotatedBodyOrdinal];
+  const resizedBodySource = privateAnimation.artByKey[resizedBodyLayer.sourceKey];
+  assert.notStrictEqual(resizedBodySource.key, rotatedBodySource.key,
+    'resizing must replace only the selected private layer source');
+  assert.deepStrictEqual(OB64.animationArt.currentEdit(
+    rom.art.animations, resizedBodySource.key, 0).indices,
+  expectedBodyResize.indices,
+  'a structural resize must use exact nearest-neighbor CI8 pixels');
+  assert.strictEqual(privateAnimation.artByKey[rotatedBodySource.key], undefined,
+    'an otherwise-unused intermediate transform source must be pruned');
+
+  const weaponTransformSource = Object.values(privateAnimation.artByKey)
+    .find(source => source.editable && source.weaponSelectable &&
+      source.sprite.childCount > 1);
+  assert(weaponTransformSource,
+    'the private donor must include a multi-child equipment sprite');
+  let weaponTransformUse = null;
+  privateAnimation.frames.some(frame => frame.layers.some(layer => {
+    if (layer.sourceKey !== weaponTransformSource.key) return false;
+    weaponTransformUse = { frame, layer }; return true;
+  }));
+  assert(weaponTransformUse);
+  const weaponChildrenBefore = weaponTransformSource.sprite.children.map(child => ({
+    pixels: OB64.animationArt.currentEdit(
+      rom.art.animations, weaponTransformSource.key, child.ordinal),
+    palette: OB64.animationArt.childPalette(
+      weaponTransformSource, child.ordinal).slice(),
+  }));
+  const weaponWidthBefore = weaponTransformSource.sprite.width;
+  const weaponHeightBefore = weaponTransformSource.sprite.height;
+  const rotatedWeaponOrdinal = OB64.animationSequences.rotateLayer(
+    rom, separation, weaponTransformUse.frame.sequenceIndex,
+    weaponTransformUse.layer.ordinal, 'left');
+  const rotatedWeaponLayer =
+    weaponTransformUse.frame.layers[rotatedWeaponOrdinal];
+  const rotatedWeaponSource =
+    privateAnimation.artByKey[rotatedWeaponLayer.sourceKey];
+  assert.strictEqual(rotatedWeaponSource.sprite.childCount,
+    weaponTransformSource.sprite.childCount,
+  'weapon transforms must retain every equipped-item appearance');
+  weaponChildrenBefore.forEach((child, childOrdinal) => {
+    const expected = OB64.animationSequences.rotateIndexedPixels(
+      child.pixels.indices, child.pixels.intensity,
+      weaponWidthBefore, weaponHeightBefore, 'left');
+    const observed = OB64.animationArt.currentEdit(
+      rom.art.animations, rotatedWeaponSource.key, childOrdinal);
+    assert.deepStrictEqual(observed.indices, expected.indices,
+      'weapon child ' + childOrdinal + ' must rotate with its pose');
+    assert.deepStrictEqual(observed.intensity, expected.intensity);
+    assert.deepStrictEqual(OB64.animationArt.childPalette(
+      rotatedWeaponSource, childOrdinal), child.palette,
+    'weapon child ' + childOrdinal + ' must retain its palette');
+  });
+  const targetFrame = privateAnimation.frames[0];
+  const blankTemplateLayer = targetFrame.layers.find(layer =>
+    privateAnimation.artByKey[layer.sourceKey].editable);
+  assert(blankTemplateLayer,
+    'a private frame must expose an editable palette for a blank layer');
+  const blankTemplateSource = privateAnimation.artByKey[
+    blankTemplateLayer.sourceKey];
+  const blankTemplatePalette = OB64.animationArt.childPalette(
+    blankTemplateSource, blankTemplateLayer.selectedChildOrdinal).slice();
+  const blankLayerOrdinal = OB64.animationSequences.addBlankLayer(
+    rom, separation, targetFrame.sequenceIndex, blankTemplateLayer.ordinal);
+  const blankLayer = targetFrame.layers[blankLayerOrdinal];
+  const blankLayerSource = privateAnimation.artByKey[blankLayer.sourceKey];
+  assert.strictEqual(blankLayer.width, privateAnimation.canvas.width);
+  assert.strictEqual(blankLayer.height, privateAnimation.canvas.height);
+  assert.strictEqual(blankLayer.drawOffsetX, privateAnimation.canvas.originX);
+  assert.strictEqual(blankLayer.drawOffsetY, privateAnimation.canvas.originY);
+  assert.deepStrictEqual(blankLayerSource.palette, blankTemplatePalette,
+    'a blank layer must copy the selected layer palette');
+  assert(OB64.animationArt.currentEdit(
+    rom.art.animations, blankLayerSource.key, 0).intensity.every(value => !value),
+  'a blank layer must start fully transparent');
+  const blankLayerSourceOrdinal = blankLayerSource.separationSourceOrdinal;
+  const addedDonorFrame = fighter.frames[0];
+  const addedDonorLayer = addedDonorFrame.layers[0];
+  const originalLayerCount = targetFrame.layers.length;
+  const addedOrdinal = OB64.animationSequences.addLayerFrom(
+    rom, separation, targetFrame.sequenceIndex, fighter,
+    addedDonorFrame.sequenceIndex, addedDonorLayer.ordinal);
+  assert.strictEqual(targetFrame.layers.length, originalLayerCount + 1,
+    'a private frame must accept a copied layer');
+  assert.strictEqual(addedOrdinal, targetFrame.layers.length - 1);
+  const addedLayer = targetFrame.layers[addedOrdinal];
+  assert(privateAnimation.artByKey[addedLayer.sourceKey].separationId === separation.id,
+    'an added layer must own a private cloned sprite source');
+  const movedOrdinal = OB64.animationSequences.moveLayer(
+    rom, separation, targetFrame.sequenceIndex, addedOrdinal, 0);
+  assert.strictEqual(movedOrdinal, 0);
+  assert.strictEqual(targetFrame.layers[0], addedLayer,
+    'layer reordering must change the serialized draw order');
+  assert.strictEqual(OB64.animationSequences.setLayerPosition(
+    rom, separation, targetFrame.sequenceIndex, 0, -123, 45), true);
+  assert.strictEqual(targetFrame.layers[0].drawOffsetX, -123);
+  assert.strictEqual(targetFrame.layers[0].drawOffsetY, 45);
+  OB64.animationSequences.copyLayerFrom(
+    rom, separation, targetFrame.sequenceIndex, 0, fighter,
+    fighter.frames[1].sequenceIndex, fighter.frames[1].layers[0].ordinal);
+  assert.strictEqual(targetFrame.layers[0].drawOffsetX, -123,
+    'sprite-only Copy From must preserve the target layer X position');
+  assert.strictEqual(targetFrame.layers[0].drawOffsetY, 45,
+    'sprite-only Copy From must preserve the target layer Y position');
+  const copiedFrameTarget = privateAnimation.frames[1];
+  const copiedFrameToken = copiedFrameTarget.token;
+  const copiedFrameTicks = copiedFrameTarget.ticks;
+  OB64.animationSequences.copyFrameFrom(
+    rom, separation, copiedFrameTarget.sequenceIndex, fighter,
+    fighter.frames[0].sequenceIndex);
+  assert.strictEqual(copiedFrameTarget.layers.length, fighter.frames[0].layers.length,
+    'frame Copy From must replace the complete layer stack');
+  assert.strictEqual(copiedFrameTarget.token, copiedFrameToken,
+    'frame Copy From must retain the target body-program token');
+  assert.strictEqual(copiedFrameTarget.ticks, copiedFrameTicks,
+    'frame Copy From must retain the target body-program timing');
+
+  const importedFrame = privateAnimation.frames[2];
+  const equipmentLayersBeforeImport = importedFrame.layers.filter(layer =>
+    privateAnimation.artByKey[layer.sourceKey].sourceRole === 'equipment').length;
+  const importedRgba = new Uint8ClampedArray([
+    255, 0, 0, 255, 0, 255, 0, 255,
+    0, 0, 255, 128, 255, 255, 255, 0,
+  ]);
+  const preparedFrame = OB64.art.prepareAnimationFrameImport(
+    importedRgba, 2, 2, privateAnimation.canvas.width,
+    privateAnimation.canvas.height, { resizeMode: 'nearest' });
+  const importedLayerOrdinal = OB64.animationSequences.importFrame(
+    rom, separation, importedFrame.sequenceIndex, preparedFrame,
+    { keepEquipment: true });
+  assert.strictEqual(importedFrame.layers.length, equipmentLayersBeforeImport + 1,
+    'frame import must flatten body art while retaining equipment layers');
+  const importedLayer = importedFrame.layers[importedLayerOrdinal];
+  const importedSource = privateAnimation.artByKey[importedLayer.sourceKey];
+  assert.strictEqual(importedSource.sourceRole, 'body');
+  assert.strictEqual(importedSource.sprite.width, privateAnimation.canvas.width);
+  assert.strictEqual(importedSource.sprite.height, privateAnimation.canvas.height);
+  assert.strictEqual(importedSource.sprite.firstFormat, 1);
+  assert.strictEqual(importedSource.sprite.secondFormat, 0);
+  assert.strictEqual(importedSource.palette.length, 256);
+  assert.deepStrictEqual(
+    OB64.animationArt.decodeChild(importedSource.sprite, 0).indices,
+    preparedFrame.indices,
+    'imported CI8 pixels must round-trip through the native sprite object');
+  assert.deepStrictEqual(
+    OB64.animationArt.decodeChild(importedSource.sprite, 0).intensity,
+    preparedFrame.intensity,
+    'imported I4 intensity must round-trip through the native sprite object');
+  const importedStableFrame = importedFrame.sourceFrameIndex;
+  const importedSourceOrdinal = importedSource.separationSourceOrdinal;
+
+  const removableLayerOrdinal = OB64.animationSequences.addLayerFrom(
+    rom, separation, targetFrame.sequenceIndex, fighter,
+    addedDonorFrame.sequenceIndex, addedDonorLayer.ordinal);
+  const removableLayerKey = targetFrame.layers[removableLayerOrdinal].sourceKey;
+  const layerCountBeforeRemoval = targetFrame.layers.length;
+  const survivingLayerOrdinal = OB64.animationSequences.removeLayer(
+    rom, separation, targetFrame.sequenceIndex, removableLayerOrdinal);
+  assert.strictEqual(targetFrame.layers.length, layerCountBeforeRemoval - 1,
+    'a private frame must remove the selected sprite layer');
+  assert.strictEqual(survivingLayerOrdinal, targetFrame.layers.length - 1);
+  assert.deepStrictEqual(targetFrame.layers.map(layer => layer.ordinal),
+    targetFrame.layers.map((layer, ordinal) => ordinal),
+    'remaining private layers must be renumbered');
+  assert.strictEqual(privateAnimation.artByKey[removableLayerKey], undefined,
+    'a removed layer must release its otherwise-unused private sprite source');
+
+  const frameCountBeforeRemoval = privateAnimation.frames.length;
+  const removedFrameIndex = frameCountBeforeRemoval - 1;
+  const removedStableFrame = privateAnimation.frames[removedFrameIndex].sourceFrameIndex;
+  const survivingFrameIndex = OB64.animationSequences.removeFrame(
+    rom, separation, removedFrameIndex);
+  assert.strictEqual(privateAnimation.frames.length, frameCountBeforeRemoval - 1,
+    'a private sequence must remove the selected frame');
+  assert.strictEqual(survivingFrameIndex, privateAnimation.frames.length - 1);
+  assert.strictEqual(privateAnimation.poseProgram.frames.length,
+    privateAnimation.frames.length,
+    'frame removal must remove the matching body-program frame command');
+  assert(!privateAnimation.frames.some(frame =>
+    frame.sourceFrameIndex === removedStableFrame));
+  assert.deepStrictEqual(privateAnimation.frames.map(frame => frame.sequenceIndex),
+    privateAnimation.frames.map((frame, ordinal) => ordinal),
+    'remaining private frames must be renumbered');
+
+  const frameCountBeforeAddition = privateAnimation.frames.length;
+  const blankFrameTemplate = privateAnimation.frames[0];
+  const blankFrameTemplateLayer = blankFrameTemplate.layers.find(layer =>
+    privateAnimation.artByKey[layer.sourceKey].editable);
+  const blankFrameIndex = OB64.animationSequences.addBlankFrame(
+    rom, separation, blankFrameTemplate.sequenceIndex,
+    blankFrameTemplateLayer.ordinal);
+  const blankFrame = privateAnimation.frames[blankFrameIndex];
+  assert.strictEqual(privateAnimation.frames.length, frameCountBeforeAddition + 1,
+    'a private sequence must accept a new blank frame');
+  assert.strictEqual(blankFrame.ticks, blankFrameTemplate.ticks,
+    'a blank frame must copy the selected frame duration');
+  assert.strictEqual(blankFrame.layers.length, 1,
+    'a blank frame must begin with one full-frame sprite layer');
+  const blankFrameSource = privateAnimation.artByKey[
+    blankFrame.layers[0].sourceKey];
+  assert(OB64.animationArt.currentEdit(
+    rom.art.animations, blankFrameSource.key, 0).intensity.every(value => !value),
+  'a blank frame must start fully transparent');
+  const blankFrameStableIdentity = blankFrame.sourceFrameIndex;
+  const blankFrameSourceOrdinal = blankFrameSource.separationSourceOrdinal;
+  const frameOrderBeforeMove = privateAnimation.frames.map(frame =>
+    frame.sourceFrameIndex);
+  const movedFrameIndex = OB64.animationSequences.moveFrame(
+    rom, separation, blankFrameIndex, privateAnimation.frames.length - 1);
+  assert.strictEqual(movedFrameIndex, privateAnimation.frames.length - 1);
+  assert.strictEqual(privateAnimation.frames[movedFrameIndex], blankFrame,
+    'frame dragging must change the serialized frame order');
+  assert.notDeepStrictEqual(privateAnimation.frames.map(frame =>
+    frame.sourceFrameIndex), frameOrderBeforeMove);
+  assert.deepStrictEqual(privateAnimation.poseProgram.frames,
+    privateAnimation.frames.map(frame => [frame.token, frame.ticks]),
+  'frame reordering must rewrite the visible frame commands in body-program order');
+  const remainingFrameCount = privateAnimation.frames.length;
+
+  const payload = OB64.animationSequences.collectProject(rom);
+  assert.strictEqual(payload.schemaVersion, 4);
+  assert(payload.entries[separation.id]);
+  assert(payload.entries[separation.id].poseProgramBase64,
+    'Project data must store the exact private body program');
+  const restored = await freshRom(z64);
+  const malformed = JSON.parse(JSON.stringify(payload));
+  const malformedEntry = malformed.entries[separation.id];
+  const malformedSource = malformedEntry.sources[Object.keys(malformedEntry.sources)[0]];
+  const malformedChild = malformedSource.children[Object.keys(malformedSource.children)[0]];
+  malformedChild.ci8IndicesBase64 = '';
+  const beforeMalformedDesired = JSON.stringify(
+    restored.combatAnimationOverrides.desired);
+  assert.throws(() => OB64.animationSequences.prepareProject(restored, malformed),
+    /expected/);
+  assert.strictEqual(Object.keys(restored.animationSequences.separations).length, 0,
+    'Project preparation must not create a partial separated sequence');
+  assert.strictEqual(JSON.stringify(restored.combatAnimationOverrides.desired),
+    beforeMalformedDesired,
+  'Project preparation must not create a partial selector assignment');
+  const malformedPose = JSON.parse(JSON.stringify(payload));
+  malformedPose.entries[separation.id].poseProgramBase64 = btoa('\x00');
+  assert.throws(() => OB64.animationSequences.prepareProject(
+    restored, malformedPose), /body program/,
+  'Project preparation must reject a malformed private body program');
+  const controlRecord = privateAnimation.poseProgram.records.find(record =>
+    record.opcode !== 0x01 && record.opcode !== 0x04 &&
+    record.operands.length > 0);
+  assert(controlRecord,
+    'the private donor must retain a non-frame control operand for validation');
+  const changedControl = JSON.parse(JSON.stringify(payload));
+  const changedControlBytes = Buffer.from(
+    changedControl.entries[separation.id].poseProgramBase64, 'base64');
+  const changedControlOffset = controlRecord.offset -
+    privateAnimation.poseProgram.start + 1;
+  changedControlBytes[changedControlOffset] ^= 1;
+  changedControl.entries[separation.id].poseProgramBase64 =
+    changedControlBytes.toString('base64');
+  assert.throws(() => OB64.animationSequences.prepareProject(
+    restored, changedControl), /non-frame control operand/,
+  'Project preparation must reject edits to locked non-frame controls');
+  const prepared = OB64.animationSequences.prepareProject(restored, payload);
+  assert.strictEqual(OB64.animationSequences.applyProject(restored, prepared), 1);
+  const restoredSeparation = restored.animationSequences.separations[separation.id];
+  assert(restoredSeparation);
+  assert.strictEqual(restoredSeparation.syntheticAnimation.frames.length,
+    remainingFrameCount);
+  assert.strictEqual(restoredSeparation.syntheticAnimation.poseProgram.frames.length,
+    remainingFrameCount,
+    'Project reload must preserve the changed private body program');
+  assert.deepStrictEqual(
+    Array.from(restoredSeparation.syntheticAnimation.poseProgram.program),
+    Array.from(privateAnimation.poseProgram.program),
+    'Project reload must preserve exact private body-program bytes');
+  assert.deepStrictEqual(restoredSeparation.syntheticAnimation.frames.map(frame =>
+    frame.sourceFrameIndex), privateAnimation.frames.map(frame =>
+    frame.sourceFrameIndex),
+  'Project reload must preserve added-frame identity and reordered frame order');
+  assert.strictEqual(restoredSeparation.syntheticAnimation.frames[0]
+    .layers[0].drawOffsetX, -123,
+  'Project reload must preserve private layer positions');
+  assert.strictEqual(restoredSeparation.syntheticAnimation.frames[0]
+    .layers[0].drawOffsetY, 45,
+  'Project reload must preserve private layer positions');
+  assert.strictEqual(restoredSeparation.syntheticAnimation.frames[1].layers.length,
+    fighter.frames[0].layers.length,
+  'Project reload must preserve a copied frame layer stack');
+  const restoredImportedFrame = restoredSeparation.syntheticAnimation.frames
+    .find(frame => frame.sourceFrameIndex === importedStableFrame);
+  const restoredImportedSource = Object.values(
+    restoredSeparation.syntheticAnimation.artByKey).find(source =>
+      source.separationSourceOrdinal === importedSourceOrdinal);
+  assert(restoredImportedSource,
+    'Project reload must preserve an imported frame sprite source');
+  assert(restoredImportedFrame.layers.some(layer =>
+    layer.sourceKey === restoredImportedSource.key),
+  'Project reload must preserve the imported frame layer');
+  assert.deepStrictEqual(restoredImportedSource.palette,
+    importedSource.palette,
+  'Project reload must preserve the imported frame palette');
+  const restoredBlankLayerSource = Object.values(
+    restoredSeparation.syntheticAnimation.artByKey).find(source =>
+      source.separationSourceOrdinal === blankLayerSourceOrdinal);
+  assert(restoredBlankLayerSource,
+    'Project reload must preserve a blank layer sprite source');
+  assert(OB64.animationArt.currentEdit(
+    restored.art.animations, restoredBlankLayerSource.key, 0)
+    .intensity.every(value => !value),
+  'Project reload must preserve blank layer transparency');
+  const restoredBlankFrame = restoredSeparation.syntheticAnimation.frames
+    .find(frame => frame.sourceFrameIndex === blankFrameStableIdentity);
+  assert(restoredBlankFrame,
+    'Project reload must preserve an added frame');
+  assert(restoredBlankFrame.layers.some(layer =>
+    restoredSeparation.syntheticAnimation.artByKey[layer.sourceKey]
+      .separationSourceOrdinal === blankFrameSourceOrdinal),
+  'Project reload must preserve the added frame blank source');
+  assert(OB64.combatAnimationOverrides.exactEntry(
+    restored.combatAnimationOverrides, 0x02, 0x04, 0));
+
+  vm.runInThisContext(fs.readFileSync(path.join(EDITOR, 'patch.js'), 'utf8'), {
+    filename: 'patch.js',
+  });
+  assert.strictEqual(OB64.patch.VERSION, 24);
+
+  OB64.animationSequences.removeSeparation(rom, separation);
+  assert.strictEqual(rom.animationSequences.separations[separation.id], undefined);
+  exact = OB64.combatAnimationOverrides.exactEntry(
+    rom.combatAnimationOverrides, 0x02, 0x04, 0);
+  assert(exact, 'removal must restore the pre-separation exact assignment');
+  assert.strictEqual(exact.normalSelector, fighter.spec.selector);
+
+  OB64.animationSequences.removeSeparation(restored, restoredSeparation);
+  OB64.combatAnimationOverrides.removeEntry(
+    restored.combatAnimationOverrides, 0x02, 0x04, 0);
+  const cleanNormal = route(restored, 0x02, 0x04, '0/0', 0);
+  const cleanBlocked = route(restored, 0x02, 0x04, '0/0', 2);
+  const cleanPair = OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+    0x02, restored.classDefs[0x03], 0x04);
+  const laneSeparation = OB64.animationSequences.separateAndAssign(
+    restored, cleanNormal, cleanPair);
+  assert.strictEqual(
+    restored.animationSequences.routeBaselines['2:4:0'].entry,
+    null,
+    'a first separation without an earlier exact assignment must retain a null baseline'
+  );
+  OB64.animationSequences.assignShared(restored, cleanBlocked, cleanPair);
+  assert(restored.animationSequences.routeBaselines['2:4:0'].entry,
+    'a shared Blocked assignment beside a Normal separation must become the new baseline');
+  OB64.animationSequences.removeSeparation(restored, laneSeparation);
+  const retainedLane = OB64.combatAnimationOverrides.exactEntry(
+    restored.combatAnimationOverrides, 0x02, 0x04, 0);
+  assert(retainedLane,
+    'removing the Normal separation must retain the later shared Blocked assignment');
+  assert.strictEqual(retainedLane.normalSelector, cleanPair.normalSelector);
+  assert.strictEqual(retainedLane.blockedSelector, cleanBlocked.spec.selector);
+
+  console.log('PASS stable sequence catalog, assignment, separation, reuse, and Project round-trip');
+})().catch(error => {
+  console.error(error && error.stack ? error.stack : error);
+  process.exitCode = 1;
+});

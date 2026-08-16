@@ -30,8 +30,8 @@ Optional desktop utilities are kept separate from its runtime:
   avatar detachment, allocation, pointer repair, and export readback.
 - `art-ui.js` renders the Art and Animation asset browsers, native color
   wheels, avatar image import, pixel tools, previews, counters, and resets.
-- `animation-art.js` parses, edits, rebuilds, places, and verifies the bounded
-  combat-sprite corpus.
+- `animation-art.js` parses, edits, rebuilds, places, and verifies the complete
+  accepted combat-sprite corpus.
 - `animation-ui.js` renders its frame sequence, composed-frame context, layer
   editor, exact lookup colors, and four-bit visibility controls.
 - `patch.js` imports/exports portable Project JSON files for supported edits
@@ -446,52 +446,160 @@ safety behavior.
   Previews are at least 4x native size.
   Export chooses in-place placement when a rebuilt icon pack fits. It relocates
   overflow and every detached avatar into the verified native-resource arena.
-  The bounded Combat Animation browser supports 11 verified sequences. Fighter,
-  Soldier, Berserker, and Black Knight each expose normal and blocked physical
-  attacks. Black Knight, Wizard, and Siren expose Elemental Magic sequences.
-  Together they contain 139 frames, 453 layer occurrences, and 157 distinct
-  physical source objects. The parser consumes every selected pose program
-  exactly.
-  Tick counts appear above 4x frame previews.
-  Selecting a frame shows its complete layer stack. Selecting a layer shades
-  every context layer while outlining the editable source in gold.
-  Fighter exposes 17 physical weapon-group children across seven weapon
-  sources. Berserker exposes 12 children across 12 weapon sources. Black Knight
-  exposes 13 physical children across eight weapon sources; retail item mapping
-  is confirmed for its first 12. Wizard exposes 12 staff children across four
-  weapon sources. Siren exposes 11 staff children across five weapon sources.
-  Retail staff data selects Wizard ordinals `0,1,3,5,6,8,9,10,11` and Siren
-  ordinals `0,1,3,5,6,8,9,10`. Their 4x weapon picker
-  remains visible while any frame layer is selected. Each animation remembers
-  its own selected child. Choosing one child updates that ordinal across every
-  preview for the selected sequence. The picker does not override runtime
-  equipment selection. Soldier Thrust has no verified equipment-child group,
-  so the editor reports that limit and edits child zero only.
-  Each weapon sprite has independent CI8 pixels and I4 visibility values.
-  Each non-weapon source remains limited to its verified class/body child.
-  Siren body art uses child two. The other current class/body sources use child
-  zero.
-  Unmapped physical weapon records remain visible. Black Knight child 12 and
-  Siren children 2, 4, and 7 are empty in every verified weapon pose. Wizard
-  children 2, 4, and 7 have visible art but no known retail item mapping.
-  Each source exposes its exact 256-entry lookup bank. The intensity control
-  starts at 15/15 and updates every color swatch while dragged. Swatches group
-  neutral colors together, then group colors by hue and shade without changing
-  their original ROM palette indices. Timing, offsets, art references, lookup
-  palettes, and non-weapon child selection remain locked.
-  Export rebuilds one complete source object for all its edited children. Every
-  unedited child remains byte-identical.
+  The Combat Animation browser consumes the independently accepted R2 corpus.
+  It exposes 2,712 verified sequences for 152 classes and 234 class/action-ID
+  pairs. Those sequences contain 36,335 frames and 120,410 layer uses.
+  The product data retains 4,707 physical sources, 4,900 logical descriptor
+  bindings, and 84 equipment groups. Accepted attack sequences draw 3,807
+  bindings. The remaining 1,093 on-demand bindings include the selector `0x00`
+  idle-loop closure and the 54 bindings unused by accepted attack sequences.
+  Class, action, art-variant, and mode selectors replace the former bounded card
+  list. The Action selector also exposes **Idle / Rest**. It loads the selected
+  class and art route's selector `0x00` repeating loop without treating it as an
+  attack assignment. Action IDs remain visible because eight same-name action
+  groups use different IDs. Opening the class selector reveals an integrated search field
+  above its class table. It filters by name, hexadecimal ID, or decimal ID
+  without rerendering while the user types. The table lists all 164 vanilla
+  classes. The 12 classes without an accepted animation sequence remain visible
+  as disabled `No mapped sequence` rows. Fighter Slash remains the initial
+  sequence for an unchanged vanilla ROM. The class and action lists follow the
+  pending Class Combat fields and Normal/Blocked selector overrides. A compact
+  line identifies the effective selector as `Class Combat vanilla`,
+  `Class Combat override`, `Exact route assignment`, `Separated sequence`, or
+  an accepted corpus trace where the vanilla selector table is unresolved. It
+  also lists the assigned ranks.
+  Base/Alternate art and weapon preview choices stay separate.
+  The mode selector groups exact raw modes 0 and 1 as `Normal Attack`.
+  Raw mode 2 remains a separate `Attack Blocked` lane, even when it currently
+  points to the Normal resources. The Art Variant control names the resolved art
+  class and side. It distinguishes `Base Art` from `Alternate Art`. A later
+  sequence option that points to the exact
+  descriptor, selected children, frames, layer bindings, and metadata of an
+  earlier option shows an outlined `Linked` badge. Its hover explanation names
+  the shared route and states that both labels refer to one program. Independently stored
+  lookalikes are not labeled as linked. Raw modes and numeric flags remain
+  available in option tooltips. Player-side sequence rows use blue text.
+  Enemy-side rows use red text, so their compact labels omit the side and class
+  name. Each label states `Base Art` or `Alternate Art`, the mode, and the body
+  program's local pose-offset behavior. The sequence menu is a stable catalog of ROM
+  sequences plus separated project sequences. Class-tab action changes never
+  add entries. The selected Art Variant limits entries to its exact side and
+  Base/Alternate art route. Every attack-sequence row has **Assign**. Assign links that exact class,
+  attack, side, art variant, and Normal/Blocked lane to a compatible shared
+  sequence without copying art.
+  Separation follows the game's class-copy branch exactly. Class byte B57
+  decides whether the handle table uses source art or owner context before the
+  two side/art flags are added. This keeps special boss copies on their own
+  accepted descriptor handle instead of overwriting the ordinary owner class.
+  Valkyrie and Freya enemy art stores the Base and Alternate appearances in the
+  opposite raw flag slots. The editor corrects those two labels while preserving
+  the ROM flags. Special classes that resolve to Valkyrie art inherit the same
+  correction.
+  New class and action selections choose a class-aware default preview. The
+  editor prefers mapped class art on the expected player or enemy side, then
+  chooses base bank 0 before alternate bank 1. Boss-category and special-class
+  rows prefer the enemy side. A non-Soldier class uses Soldier art only when no
+  mapped class-art row exists.
+  Variant options identify mapping failures and name Soldier art directly.
+  Missing selector rows and sequences with no visible body pixels remain listed
+  as issues instead of disappearing from the picker.
+  Tick counts appear above 4x frame previews. Selecting a frame shows its full
+  layer stack. The edit workspace keeps a 4x full-frame preview on the left and
+  plays the complete 4x sequence on the right. Playback treats 30 ticks as one
+  second. **Export Animation WebM** downloads one complete 4x loop. It writes
+  one video frame per game tick at 30 frames per second and uses the selected
+  weapon preview. The center pixel editor is about 15 percent smaller than its prior
+  maximum size. Selecting a layer shades every context layer. Editable indexed
+  art receives a gold outline. Read-only direct-color art receives a red
+  outline.
+  The edit-scope panel lists every affected route from the complete vanilla
+  corpus and current project assignments, including boss copies. Its count is
+  specific to the selected sprite slot. Pixel-identical slots in one bundle
+  remain independent, and the panel identifies that relationship explicitly.
+  **Copy From and Separate…** appears above a shared frame sequence. It opens a
+  class and complete sequence chooser. That sequence list uses the same stable
+  catalog as the main picker, including unused native programs and edited private
+  copies. Applying it creates a private copy of every
+  frame and weapon sprite and assigns that copy to the target. The new project
+  sequence then appears once with an `Edited` badge. Assigning it to
+  more actions does not add menu entries. An owned private route instead shows
+  **Replace From…**, which replaces that project sequence while keeping its
+  target assignment.
+  Structural frame editing is available only inside these private sequences.
+  **Add Layer** creates a transparent full-canvas layer using the selected
+  layer's 256-color palette. **Copy From…** on a layer replaces its sprite while
+  retaining the target layer's position. **Copy Frame From…** replaces the
+  complete layer stack while retaining the target frame's body-program token
+  and timing. **Add Frame** inserts a transparent frame after the selected
+  frame and copies its duration. Private frames can be dragged in the frame
+  strip to change their order while preserving non-frame body-program commands.
+  Private layers can be dragged in the layer list to change their draw order.
+  **Move Layer** lets the user drag the selected layer to a new signed X/Y
+  position in the composed frame. The preview canvas expands after the move when
+  the new position extends beyond the prior bounds. **Rotate…** and **Resize…**
+  sit in the toolbar above the frame editor. Rotation accepts any whole-degree
+  angle, provides one-degree and larger shortcuts, and previews the expanded
+  pixel bounds. Resizing changes pixel dimensions with nearest-neighbor sampling.
+  Both tools keep the layer center in place. These transforms create a private
+  sprite source, so another frame using the old source remains unchanged. A
+  weapon-layer transform applies to every equipped-item appearance in that pose.
+  Creating or replacing a private sequence now stores decoded clone data only.
+  Boot-LZ compression is deferred until ROM export. The modal enters a disabled
+  busy state before cloning begins, so the browser can paint its progress text.
+  Each editable layer shows a compact edit-scope line. Shared sprites report
+  affected frame, variant, and class counts. Expanding the line lists every
+  exact consumer. A staged edit appears immediately in every route using the
+  same logical binding and child. Other bindings and children remain separate.
+  Layer roles and child rules come from each accepted config binding. The
+  editor never identifies weapons by counting children. Body layers use the
+  selected class child. Equipment layers use the equipped-item appearance
+  child. Element-effect layers use physical child zero and the accepted static
+  element-zero preview palette. The frame-layer list names only weapon layers;
+  all other buttons use their numbered `Layer N` label.
+  The left vertical weapon rail remains visible while any frame layer is
+  selected. It covers every accepted equipment family, not only the original
+  Fighter, axe, and staff fixtures. Every mapped card names all vanilla items
+  that select its child. Cards also identify populated or empty unmapped
+  children. Items whose requested appearance is outside the source group are
+  named on the child-zero fallback card. Each sequence remembers its selected
+  preview child. This preview choice does not override runtime equipment
+  selection.
+  The 3,688 indexed physical sources use CI8 color indices plus I4 visibility.
+  Their selected children are editable. Each selected child exposes its exact
+  256-entry descriptor or embedded lookup palette. The intensity control starts
+  at 15/15. Swatches group neutral colors, then group colors by hue and shade,
+  without changing ROM indices. Pencil and eraser use a selectable square brush
+  from 1 through 16 pixels. Fill, eyedropper, and replace remain single-action
+  tools.
+  Three physical direct RGBA5551 sources appear through six logical bindings.
+  These uncommon weapon layers render in complete frames and weapon previews.
+  They remain read-only in this release. Their different pixel format is stated
+  beside the selected layer.
+  Shared ROM sequences keep frame timing, offsets, art references, lookup
+  palettes, selector policies, and child-selection rules locked. A private
+  sequence can add, remove, and reorder frames and layers. It can also change
+  layer positions and copied art sources. Existing frame timing values and
+  non-frame body-program control records remain locked.
+  Export rebuilds one complete source object for all its edited children.
+  Child records that reference another child are reconstructed before display.
+  If an edited base child affects those records, export re-encodes their stored
+  deltas so every unedited child keeps the same rendered pixels.
   A source stays in place when one combat descriptor references it and the new
   compressed stream fits. Other sources move copy-on-write into the verified
-  native-resource arena. Project v19 groups semantic CI8 and I4 pixel records
-  by source and child ordinal.
+  native-resource arena. Project v24 records the exact private body program so
+  added and reordered frames round-trip. Project v23 records stable frame
+  identities and removed frames. Project v22 records each private sequence's complete copied source data
+  and ordered frame-layer metadata. Project v21 records exact
+  route assignments and private complete-sequence copies. Project v20 records stable logical binding
+  and physical source identities with each CI8/I4 child edit. The frozen 11-sequence map
+  keeps Project v19 combat-art records readable.
   The preview is an inspection blend, not a cycle-exact Nintendo 64 render.
-  Other pose variants, cross-family weapon remapping, and the remaining class
-  corpus remain deferred. The model accepts later verified corpus entries as
-  data.
-  Static tests cover exact pose-program consumption, all 45 composites, each
-  weapon-child domain, Project round-trip, both placement paths, and compressed
-  readback. Runtime cold-boot testing of the expanded corpus remains deferred
+  Cross-family weapon remapping and direct RGBA5551 editing remain deferred.
+  Static tests cover complete corpus counts and explicit roles, exact
+  pose-program consumption, all 139 frozen composites, direct-color rendering,
+  Project v19/v20 compatibility, Project v21-v24 separated-sequence round trips,
+  copy-on-write relocation, and compressed
+  readback. Runtime cold-boot testing of the complete corpus remains deferred
   until editor iteration is complete.
   All art writes are planned and read back before the ROM download begins.
 - **Tools** — toggleable ROM fixes and quality-of-life features applied on
@@ -527,7 +635,13 @@ safety behavior.
   item/consumable/class/action descriptions, consumable-effect
   magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v19 adds bounded combat-sprite CI8 indices and I4 visibility pixels. v18 adds
+  v24 stores exact private body programs for added and reordered frames. v23
+  adds private frame removal with exact body-program and Project round trips.
+  v22 adds structural private-sequence layers, positions, draw order, and copied
+  sprite sources. v21 adds exact body-route animation assignments and private
+  relocatable sequence copies. v20 expands combat art to the complete accepted corpus and
+  stores stable binding/source identities. v19 adds bounded combat-sprite CI8 indices and I4
+  visibility pixels and remains readable. v18 adds
   exact assembled RGBA5551 records for edited avatars and item icons. Art data
   stores no PNG, compressed resource, rebuilt palette, relocation address, or
   undo history. v17 adds the four description groups. v16 adds explicit Scenario enemy-base
@@ -553,6 +667,9 @@ safety behavior.
   Save control for them.
 - **Changelog** — previews every currently recorded ROM-project change in
   readable categories with before/after values where the baseline is known.
+  Combat sprite edits use one card per animation sequence. Each card lists its
+  edited source objects, and each private sequence receives one route-specific
+  entry.
   The tab downloads the same report as a plain-text file suitable for release
   notes. It is derived from the Project JSON diff, so there is no second list
   for users to maintain manually. Save-game edits remain separate.
@@ -608,17 +725,13 @@ safety behavior.
   dimensions and colors into a 40x48 opaque RGB555 image with at most 80
   colors. The preparation dialog requires user approval before changing the
   selected avatar. Icon PNG import remains unavailable.
-- Combat sprite editing is limited to 11 verified pose sequences. Fighter,
-  Soldier, Berserker, and Black Knight expose normal and blocked physical
-  attacks. Black Knight, Wizard, and Siren expose Elemental Magic. Fighter,
-  Berserker, Black Knight, Wizard, and Siren expose 17-, 12-, 13-, 12-, and
-  11-child equipment groups. Soldier has no verified equipment-child group.
-  Non-weapon sources edit only their verified class/body child. Siren uses
-  child two; the other current class/body sources use child zero. Siren's
-  unused staff children 2, 4, and 7 remain visible and are labeled as empty in
-  the retail ROM. Timeline metadata, layer offsets, art references, and lookup
-  palettes remain read-only. Other poses and class/action corpora remain
-  unavailable.
+- Combat sprite editing covers all 2,712 sequences in the accepted R2 corpus.
+  Indexed CI8/I4 children are editable. Three physical direct RGBA5551 weapon
+  sources are rendered but remain read-only. The corpus identifies 54 dormant
+  descriptor bindings that no accepted attack sequence draws. Idle-loop bindings
+  become selectable when **Idle / Rest** is open. Other dormant bindings have no
+  frame layer to select. Timeline metadata, offsets, art references, palettes,
+  selector policies, and cross-family weapon remapping remain read-only.
 - Healing/Fatigue consumable controls have accepted static ownership, codec,
   and synthetic product verification, but their prepared cold-boot and
   gameplay matrix has not yet been executed by Joe. Do not treat this as
@@ -805,34 +918,99 @@ save-state decompression.
 
 ### Combat Attack Animation selector overrides
 
-Classes > Combat now exposes one shared **Attack Animations** editor in both
-table and card views. It maps an ordinary class and accepted action ID to two
-independent class-compatible body selectors: **Normal (modes 0/1)** and
-**Blocked (mode 2)**. The game continues to choose the raw mode; the editor
-never chooses or stores one. Multiple actions may share either or both
-selectors, no-longer-assigned action mappings remain available, and each
-class/action row consumes one record in the exact global `N / 128` OBSO v2
-table capacity.
+The **Animations** button in each Classes presentation opens that class directly
+in Art and Animation. The animation workspace selects the target action and art
+variant before choosing a sequence. Attack actions also select a mode.
+**Normal (modes 0/1)** and **Attack Blocked (mode 2)** are independent targets.
+The game still chooses the runtime attack mode. **Idle / Rest** is a separate
+selector `0x00` loop and therefore has no attack-mode control.
+
+For attack actions, the **Action** choice and body selector form the runtime
+mapping. The
+action chooses the attack command, effect path, and battlefield approach
+behavior. The body program contains sprite frames, timing, and local pose-source
+controls. The **Body Sprite Sequence** menu changes that program selector. The
+menu lists only the selected class, Player/Enemy side, and Base/Alternate art
+route. When **Idle / Rest** is selected, it lists only that art route's repeating
+idle loop. Idle is a separate editable lane; it does not create an attack
+assignment.
+Stable attack entries come from the vanilla ROM corpus and separated project
+sequences. It also lists structurally valid native programs that vanilla actions
+do not currently select. Class-tab action additions and assignments do not
+create entries.
+Each sequence label says **Art Shifts and Returns** when opcode `0x0C` changes
+local sprite-art offsets and later returns them to zero. A sequence that keeps
+those offsets says **Art Shift Remains**. A program without a nonzero shift says
+**No Art Shift**. The hover text reports the three affected source fields and
+their peak values. These values are not the actor's battlefield coordinates.
+They cannot prove that the character approaches or stands in place. The exact
+battlefield-movement classifier remains unresolved, so the editor does not
+claim one from these offsets.
+When several source labels use the same body-program selector, the current label
+prefers the source with the selected action's command family. Other aliases show
+an outlined `Linked` badge. Its hover text identifies the exact shared program
+and explains that no copy exists. The ROM stores only that selector byte, not the
+source label. Original ROM sequences have no origin tag. User-created private
+sequences show an `Edited` badge.
+The menu also exposes structurally valid native body programs that no mapped
+vanilla action currently uses. These remain assignable after another program is
+selected.
+**Assign** reuses a selector when the source and target resolve the same sprite
+resource and body appearance. Base Art and Alternate Art labels can still link to
+that same art. **Copy From and Separate…** creates and assigns a private sequence
+when an independent copy or a different sprite resource is required. **Replace From…** updates
+an owned private sequence. Its modal uses the same complete sequence catalog as
+the main picker, including unused native programs. Multiple actions and modes may share one edited
+  sequence without duplicating its menu entry. Each shared class/action row or
+  exact class/action/body-route row consumes one record in the global `N / 128`
+  OBSO v3 table capacity.
+
+For **Idle / Rest**, **Copy From and Separate…** clones the selected class,
+side, and art-route descriptor. The clone replaces selector `0x00` with the
+private loop. It preserves the original hidden idle setup commands and exposes
+the repeating frames for editing. This idle copy consumes native-art tail space,
+but it consumes no OBSO attack-assignment record.
+
+Private sequences also own their frame-layer metadata and copied sprite
+resources. A frame can add a copied layer, replace one layer's sprite, or copy a
+complete frame stack from any corpus source. Layer-list dragging changes draw
+order. **Move Layer** changes the selected layer's signed X/Y metadata offsets.
+Layer rotation and nearest-neighbor resizing use copy-on-write sources and
+preserve every weapon child and palette in an equipment layer.
+Private sequences can also remove frames or layers. Removing a frame removes its
+matching visual-frame command while preserving the remaining timing and control
+records. A sequence and each frame must retain at least one frame or layer.
+
+The exact assignment record stores Normal and Blocked selector bytes. It does
+not store a per-action descriptor pointer. Therefore a same-route **Assign** uses
+no native-art tail space. A cross-route private assignment still needs a copied
+  descriptor and sequence resources in the native-art arena.
+
+Native-art export uses the existing minimum-byte Boot-LZ planner in cooperative
+work slices. It yields to the browser without changing the compressed bytes.
+The export modal identifies the current avatar, icon pack, combat sprite, or
+separated-sequence resource. Static tests prove byte-identical synchronous and
+cooperative compression. Browser responsiveness remains pending user retest.
+
+The preview resolver follows an edited selector from every assigned action.
+Adding or removing another private sequence preserves existing selector links
+and staged pixels. An edited sequence cannot be removed while another action
+or mode still assigns it.
 
 Changing a live Front, Middle, or Rear attack now uses one shared operation in
-both Classes presentations. It captures the pre-change rear action, preserves
-any explicit mapping for the newly selected action, and otherwise inserts the
-rear action's resolved vanilla Normal/Blocked pair. Rear changes use the
-previous rear action; `None` creates no row; a full table rejects the class-field
-and mapping change together. The modal derives `currently assigned` rank names
-from live B43/B45/B47 fields and labels generated action/mode data as vanilla
-reference context. Its mapping table also shows each untouched live vanilla action
-with the generated Normal/Blocked pair and a `vanilla (no override record)` label;
-these display-only rows do not consume global capacity until their selector is
-changed. **Attack Animations** uses the parchment/gold beveled button
-treatment shared visually with Scenario controls.
+both Classes presentations. It changes only the selected class attack field.
+An existing explicit or vanilla mapping for the new action remains available.
+Otherwise, Art and Animation shows the game's `0x28` fallback and waits for the
+user to assign Normal and Attack Blocked programs. The action change consumes no
+OBSO record. Pending class-field and sequence assignments appear immediately in
+Art and Animation.
 
 This feature is **US Rev 0 only** and requires **8 MiB RDRAM / Expansion Pak**.
 Structural selector availability is not visual compatibility. The seeded
 Normal/Blocked runtime logic is accepted, but Joe must cold-boot test every
 exported ROM and judge its visible animation compatibility. Outcome/reaction
 and hit/spell effects remain separate. Exact ordinary OBSO v1 installs migrate
-without becoming dirty and upgrade to v2 on the first actual edit/export;
+  without becoming dirty and upgrade to v3 on the first actual edit/export;
 advanced or foreign/partial selector lanes remain preserved read-only. Rev 1
 leaves normal editor features available while this control is disabled.
 
