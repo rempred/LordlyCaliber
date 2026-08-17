@@ -152,15 +152,49 @@ function changedPixels(source, childOrdinal) {
   assert(OB64.animationUI.classSearchMatches(gatekeeperSearchRow, '113'));
   assert(OB64.animationUI.classSearchMatches(gatekeeperSearchRow, ''));
   assert(!OB64.animationUI.classSearchMatches(gatekeeperSearchRow, 'siren'));
-  const classChoices = OB64.animationUI.animationClassChoices(state.specs);
+  const classChoices = OB64.animationUI.animationClassChoices(
+    state.artRouteTemplates);
   assert.strictEqual(classChoices.length, 164);
   assert.deepStrictEqual(classChoices.filter(row => row.missingAnimation)
-    .map(row => row.spec.classId), [
-    0x4D, 0x64, 0x7D, 0x7E, 0x7F, 0x80,
-    0x81, 0x82, 0x83, 0x84, 0x85, 0x86,
-  ]);
+    .map(row => row.spec.classId), [],
+  'every named class must expose at least one readable combat-art route');
   assert(OB64.animationUI.classSearchMatches(
     classChoices.find(row => row.spec.classId === 0x64), '0x64'));
+  assert.strictEqual(state.artRouteTemplates.length, 164 * 4,
+    'every class must expose all four ROM class-art handles');
+  assert.deepStrictEqual(state.artRouteFailures, [],
+    'all class-art table rows must parse directly from the loaded ROM');
+  for (const classId of Object.keys(OB64.CLASS_NAMES).map(Number)
+      .filter(classId => classId > 0)) {
+    assert.deepStrictEqual(Object.keys(state.artRouteTemplatesByClass[classId]).sort(),
+      ['0/0', '0/1', '1/0', '1/1'],
+    `class 0x${classId.toString(16)} must expose all four art routes`);
+  }
+  const amriusPlayerArt = state.artRouteTemplatesByClass[0x63]['1/0'];
+  assert.strictEqual(amriusPlayerArt.spec.route.rawHandleU16, 0x00A5);
+  assert.strictEqual(amriusPlayerArt.spec.descriptorKey, 0x00F3BBD6);
+  assert(amriusPlayerArt.frames.length > 0,
+    'Dark Prince player art must contain readable frames');
+  const discoveredSource = Object.values(amriusPlayerArt.artByKey).find(source =>
+    source.key.startsWith('dynamic-binding-') && source.editable);
+  assert(discoveredSource,
+    'newly exposed class art must create a stable editable ROM binding');
+  const discoveredChild = discoveredSource.editableChildOrdinals[0];
+  const discoveredOriginal = OB64.animationArt.originalChild(
+    discoveredSource, discoveredChild);
+  const discoveredEdit = changedPixels(discoveredSource, discoveredChild);
+  assert.strictEqual(OB64.animationArt.setEdit(state, discoveredSource.key,
+    discoveredChild, discoveredEdit.indices, discoveredEdit.intensity), true);
+  const discoveredPayload = OB64.animationArt.collectProject(state);
+  assert(discoveredPayload[discoveredSource.key]);
+  const discoveredReload = OB64.animationArt.initialize(rom.z64);
+  const discoveredPrepared = OB64.animationArt.prepareProject(
+    discoveredReload, discoveredPayload);
+  assert(discoveredPrepared.edits[discoveredSource.key],
+    'directly discovered class art edits must survive Project validation');
+  assert.strictEqual(OB64.animationArt.setEdit(state, discoveredSource.key,
+    discoveredChild, discoveredOriginal.indices,
+    discoveredOriginal.intensity), true);
 
   assert.deepStrictEqual(state.mappingAudit.counts, {
     mapped: 1938,
@@ -168,17 +202,14 @@ function changedPixels(source, childOrdinal) {
     dedicatedSpecial: 48,
     soldierAlias: 504,
     visibleFailure: 12,
-    missingVariantRows: 13,
+    missingVariantRows: 0,
   });
-  assert.deepStrictEqual(state.mappingAudit.byClass[0x93].missingFlags, ['1/0']);
-  assert.deepStrictEqual(state.mappingAudit.byClass[0x9B].missingFlags, ['1/0']);
+  assert.deepStrictEqual(state.mappingAudit.byClass[0x93].missingFlags, []);
+  assert.deepStrictEqual(state.mappingAudit.byClass[0x9B].missingFlags, []);
   const missingFlagClasses = Object.values(state.mappingAudit.byClass)
     .filter(row => row.missingFlags.length)
     .map(row => row.classId);
-  assert.deepStrictEqual(missingFlagClasses, [
-    0x63, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B,
-    0x6C, 0x6D, 0x6E, 0x73, 0x93, 0x9B,
-  ]);
+  assert.deepStrictEqual(missingFlagClasses, []);
   for (let classId = 0x87; classId <= 0xA4; classId++) {
     assert(state.mappingAudit.byClass[classId],
       `special class 0x${classId.toString(16)} must remain in the selector`);
@@ -435,10 +466,11 @@ function changedPixels(source, childOrdinal) {
       else deltaChildren++;
     }
   }
-  assert.strictEqual(uniqueSources.size, 3722,
-    'attack sources plus Fighter selector-0 sources must be loaded once');
-  assert.strictEqual(directChildren, 10831);
-  assert.strictEqual(deltaChildren, 3950);
+  assert.strictEqual(uniqueSources.size, 3811,
+    'attack sources, complete class-art routes, and Fighter selector-0 sources ' +
+      'must be loaded once');
+  assert.strictEqual(directChildren, 11103);
+  assert.strictEqual(deltaChildren, 3967);
 
   const deltaSource = Object.values(state.artByKey).find(source =>
     source.editable && source.editableChildOrdinals.some(ordinal =>
@@ -469,10 +501,18 @@ function changedPixels(source, childOrdinal) {
   rom.classDefs = OB64.parseClassDefs(rom.z64);
   OB64.combatAnimationOverrides.initialize(rom);
   let effectiveCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
-  assert.deepStrictEqual(effectiveCatalog.failures, [],
-    'the corrected complete corpus must resolve every effective selector');
-  assert.strictEqual(effectiveCatalog.specs.length, state.specs.length + 18,
-    'the effective catalog must include the 18 corrected special-class routes');
+  assert.strictEqual(effectiveCatalog.failures.length, 78,
+    '13 newly exposed art routes must report both actions and all three raw modes');
+  assert(effectiveCatalog.failures.every(failure =>
+    failure.flags === '1/0' && failure.selector === 0x28 &&
+    failure.message.includes('no drawable layers')),
+  'unreferenced player art must remain visible as an exact selector issue');
+  assert.strictEqual(effectiveCatalog.specs.filter(animation =>
+    animation.spec.assignmentPlaceholder).length, 78,
+  'every unresolved body program must retain a visible assignment target');
+  assert.strictEqual(effectiveCatalog.specs.length, state.specs.length + 144,
+    'the effective catalog must add corrected special routes, visible unresolved ' +
+      'routes, and four idle routes for each formerly disabled class');
   let effectiveFighter = effectiveCatalog.specs.filter(animation =>
     animation.spec.classId === 0x02);
   assert.strictEqual(effectiveFighter.length, 12);
@@ -656,20 +696,20 @@ function changedPixels(source, childOrdinal) {
   assert.strictEqual(preparedDormant.count, 1);
   assert(preparedDormant.edits[dormantSource.key]);
 
-  const idleClassIds = [...new Set(state.specs.map(animation =>
-    animation.spec.classId))];
+  const idleClassIds = Object.keys(OB64.CLASS_NAMES).map(Number)
+    .filter(classId => classId > 0);
   const allIdleRows = idleClassIds.flatMap(classId =>
     OB64.animationUI.idleAnimationRows(state, classId));
-  assert.strictEqual(idleClassIds.length, 152);
-  assert.strictEqual(allIdleRows.length, 595,
-    'every mapped class art route must expose its selector-0 idle loop');
+  assert.strictEqual(idleClassIds.length, 164);
+  assert.strictEqual(allIdleRows.length, 656,
+    'every class and art route must expose its selector-0 idle loop');
   assert.strictEqual(Object.values(state.idleSequenceFailures).flat().length, 0);
   assert(allIdleRows.every(animation =>
     animation.spec.selector === 0 && animation.frames.length > 0 &&
     animation.frames.every((frame, index) => frame.sequenceIndex === index)));
   assert.strictEqual(new Set(Object.values(state.artByKey).map(source =>
-    source.physicalSourceId)).size, 4707,
-  'all accepted selector-0 sources must resolve through the generated product corpus');
+    source.physicalSourceId)).size, 4781,
+  'all accepted and directly discovered class-art sources must load once');
 
   console.log('PASS combat mapping, live Class Combat routes, and selector previews');
 })().catch(error => {

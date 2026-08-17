@@ -123,6 +123,34 @@ function route(rom, classId, actionId, flags, rawMode) {
   const rom = await freshRom(z64);
   assert.strictEqual(rom.animationSequences.supported, true);
   const initialCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  const allClassChoices = OB64.animationUI.animationClassChoices(
+    initialCatalog.specs);
+  assert.strictEqual(allClassChoices.length, 164);
+  assert.deepStrictEqual(allClassChoices.filter(row => row.missingAnimation), [],
+    'the effective animation catalog must keep every class selectable');
+  const formerlyDisabled = [
+    0x4D, 0x64, 0x7D, 0x7E, 0x7F, 0x80,
+    0x81, 0x82, 0x83, 0x84, 0x85, 0x86,
+  ];
+  formerlyDisabled.forEach(classId => {
+    const rows = initialCatalog.specs.filter(animation =>
+      animation.spec.classId === classId);
+    assert.strictEqual(rows.length, 4,
+      `class 0x${classId.toString(16)} must expose four idle art routes`);
+    assert(rows.every(OB64.animationUI.isIdleAnimation));
+    assert.deepStrictEqual(rows.map(OB64.animationUI.selectorFlags).sort(),
+      ['0/0', '0/1', '1/0', '1/1']);
+  });
+  const amriusPlayerRoute = route(rom, 0x63, 0x04, '1/0', 0);
+  assert(amriusPlayerRoute,
+    'Dark Prince player-side art must remain selectable without a vanilla attack route');
+  assert.strictEqual(amriusPlayerRoute.spec.assignmentPlaceholder, true);
+  assert.strictEqual(amriusPlayerRoute.spec.descriptorKey, 0x00F3BBD6);
+  assert.strictEqual(amriusPlayerRoute.spec.route.rawHandleU16, 0x00A5);
+  assert.strictEqual(amriusPlayerRoute.effectiveMapping.assignmentRequired, true);
+  assert.strictEqual(amriusPlayerRoute.effectiveMapping.selector, 0x28);
+  assert(amriusPlayerRoute.frames.length > 0,
+    'an unassigned art route must still provide a visible editable preview');
   const bossCopySourceKey = 'binding-00453ec0-129-009e8358';
   assert.strictEqual(initialCatalog.sourceAnimations[bossCopySourceKey].some(
     animation => animation.spec.classId === 0xA0), false,
@@ -228,6 +256,35 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert.strictEqual(idleSeparation.syntheticAnimation.frames.length,
     idleFrameCount);
   assert.strictEqual(idleSeparation.syntheticAnimation.spec.idleSequence, true);
+
+  const specialIdleRom = await freshRom(z64);
+  const specialClassIdle = OB64.animationUI.idleAnimationRows(
+    specialIdleRom.art.animations, 0x64).find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '1/0');
+  assert(specialClassIdle,
+    'a class with no vanilla attack must still expose its player-side art route');
+  const specialClassSeparation = OB64.animationSequences.separateAndAssign(
+    specialIdleRom, specialClassIdle, null, specialClassIdle);
+  assert.strictEqual(specialClassSeparation.classId, 0x64);
+  assert.strictEqual(specialClassSeparation.bodyFlags, 2);
+  assert.strictEqual(specialClassSeparation.syntheticAnimation.frames.length,
+    specialClassIdle.frames.length,
+  'a previously disabled class must accept a private editable sequence');
+
+  const unassignedRom = await freshRom(z64);
+  const amriusUnassigned = route(unassignedRom, 0x63, 0x04, '1/0', 0);
+  assert(amriusUnassigned && amriusUnassigned.spec.assignmentPlaceholder);
+  const amriusSeparation = OB64.animationSequences.separateAndAssign(
+    unassignedRom, amriusUnassigned,
+    { normalSelector: 0x28, blockedSelector: 0x28 }, amriusUnassigned);
+  assert.strictEqual(amriusSeparation.classId, 0x63);
+  assert.strictEqual(amriusSeparation.bodyFlags, 2);
+  assert.strictEqual(OB64.animationSequences.handleIndex(
+    unassignedRom, amriusUnassigned), 0x63 * 4 + 2,
+  'a newly exposed player route must repoint its own class-art handle');
+  assert(OB64.combatAnimationOverrides.exactEntry(
+    unassignedRom.combatAnimationOverrides, 0x63, 0x04, 2),
+  'copying an unassigned player route must create an exact route assignment');
   assert.strictEqual(JSON.stringify(idleRom.combatAnimationOverrides.desired),
     idleDesiredBefore,
   'idle separation must not consume or alter an attack assignment record');

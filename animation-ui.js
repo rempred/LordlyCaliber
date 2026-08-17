@@ -634,12 +634,19 @@ window.OB64 = window.OB64 || {};
       return animationState.idleAnimationsByClass[classId];
     }
     var templates = [], byFlags = {};
-    animationState.specs.filter(function(animation) {
-      return animation.spec.classId === classId;
-    }).sort(function(left, right) {
-      return left.spec.rawMode - right.spec.rawMode ||
-        left.spec.displayOrder - right.spec.displayOrder;
-    }).forEach(function(animation) {
+    var routeTable = animationState.artRouteTemplatesByClass &&
+      animationState.artRouteTemplatesByClass[classId];
+    var routeTemplates = routeTable
+      ? ['0/0', '0/1', '1/0', '1/1'].map(function(flags) {
+        return routeTable[flags];
+      }).filter(Boolean)
+      : animationState.specs.filter(function(animation) {
+        return animation.spec.classId === classId;
+      }).sort(function(left, right) {
+        return left.spec.rawMode - right.spec.rawMode ||
+          left.spec.displayOrder - right.spec.displayOrder;
+      });
+    routeTemplates.forEach(function(animation) {
       var flags = selectorFlags(animation);
       if (!flags || byFlags[flags]) return;
       byFlags[flags] = true;
@@ -1037,6 +1044,16 @@ window.OB64 = window.OB64 || {};
 
   function canonicalAnimationCatalog(state) {
     var specs = state.animations.specs.slice();
+    Object.keys(state.animations.artRouteTemplatesByClass || {})
+      .map(Number).sort(function(left, right) { return left - right; })
+      .forEach(function(classId) {
+        if (specs.some(function(animation) {
+          return animation.spec.classId === classId;
+        })) return;
+        idleAnimationRows(state.animations, classId).forEach(function(animation) {
+          specs.push(animation);
+        });
+      });
     var byKey = {};
     specs.forEach(function(animation) { byKey[animation.key] = animation; });
     return {
@@ -1114,6 +1131,50 @@ window.OB64 = window.OB64 || {};
         ranks: mapping.ranks.slice(),
         assigned: mapping.ranks.length > 0,
         candidateKey: candidate.key
+      }
+    });
+  }
+
+  function unassignedRouteAnimation(template, mapping, action, rawMode,
+      selector, displayOrder, message) {
+    var flags = selectorFlags(template);
+    var key = effectiveRouteKey(template.spec.classId, mapping.actionId,
+      flags, rawMode, 'unassigned-' + selector);
+    var spec = Object.assign({}, template.spec, {
+      key: key,
+      id: key,
+      compatibilityKey: null,
+      classId: template.spec.classId,
+      className: template.spec.className,
+      actionId: mapping.actionId,
+      actionName: action ? action.name : 'Action ' + M.hex(mapping.actionId, 2),
+      consumerSummary: template.spec.className +
+        ' unassigned Class Combat art route',
+      rawMode: rawMode,
+      modeLabel: 'Raw mode ' + rawMode,
+      displayOrder: displayOrder,
+      frozenParity: null,
+      effectiveRoute: true,
+      assignmentPlaceholder: true
+    });
+    return Object.assign({}, template, {
+      key: key,
+      corpusId: key,
+      compatibilityKey: null,
+      spec: spec,
+      mappingStatus: template.mappingStatus,
+      effectiveMapping: {
+        source: 'unassigned',
+        overridden: false,
+        assignmentRequired: true,
+        classId: template.spec.classId,
+        actionId: mapping.actionId,
+        selector: Number(selector),
+        laneKey: rawMode === 2 ? 'blocked' : 'normal',
+        ranks: mapping.ranks.slice(),
+        assigned: mapping.ranks.length > 0,
+        candidateKey: template.key,
+        reason: message || 'This art route has no body program assignment.'
       }
     });
   }
@@ -1297,6 +1358,10 @@ window.OB64 = window.OB64 || {};
       if (!byClass[classId]) byClass[classId] = [];
       byClass[classId].push(animation);
     });
+    Object.keys(animationState.artRouteTemplatesByClass || {})
+      .forEach(function(classId) {
+        if (!byClass[classId]) byClass[classId] = [];
+      });
     var specs = [], failures = [], displayOrder = 0;
     function appendCanonicalRows(rows) {
       rows.slice().sort(function(left, right) {
@@ -1311,19 +1376,29 @@ window.OB64 = window.OB64 || {};
       return left - right;
     }).forEach(function(classId) {
       var classRows = byClass[classId];
+      var routeTable = animationState.artRouteTemplatesByClass &&
+        animationState.artRouteTemplatesByClass[classId];
+      var routeTemplates = routeTable
+        ? ['0/0', '0/1', '1/0', '1/1'].map(function(flags) {
+          return routeTable[flags];
+        }).filter(Boolean)
+        : classRows;
       var classInfo = api.classInfo(classId);
       var definition = classDefinition(rom, classId);
       if (!classInfo || !definition || definition.isTerm || definition.isSentinel) {
         appendCanonicalRows(classRows);
+        if (!classRows.length) appendCanonicalRows(
+          idleAnimationRows(animationState, classId));
         return;
       }
       var mappings = orderedLiveMappings(api, overrideState, definition, classId);
       if (!mappings.length) {
         appendCanonicalRows(classRows);
+        appendCanonicalRows(idleAnimationRows(animationState, classId));
         return;
       }
       var templates = [], seenFlags = {};
-      classRows.slice().sort(function(left, right) {
+      routeTemplates.slice().sort(function(left, right) {
         return left.spec.displayOrder - right.spec.displayOrder;
       }).forEach(function(animation) {
         var flags = selectorFlags(animation);
@@ -1380,6 +1455,10 @@ window.OB64 = window.OB64 || {};
                   selector: selector,
                   message: 'No selector or accepted corpus route is resolved.'
                 });
+                specs.push(unassignedRouteAnimation(template, mapping, action,
+                  rawMode, Number.isInteger(selector) ? selector : 0x28,
+                  displayOrder++,
+                  'No selector or accepted corpus route is resolved.'));
                 return;
               }
               selector = canonical.spec.selector;
@@ -1393,12 +1472,15 @@ window.OB64 = window.OB64 || {};
               specs.push(effectiveRouteAnimation(candidate, template, routeMapping,
                 action, rawMode, selector, displayOrder++));
             } catch (error) {
+              var message = error && error.message ? error.message : String(error);
               failures.push({
                 classId: classId, actionId: mapping.actionId,
                 flags: selectorFlags(template), rawMode: rawMode,
                 selector: selector,
-                message: error && error.message ? error.message : String(error)
+                message: message
               });
+              specs.push(unassignedRouteAnimation(template, mapping, action,
+                rawMode, selector, displayOrder++, message));
             }
           });
         });

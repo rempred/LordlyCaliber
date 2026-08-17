@@ -15,6 +15,9 @@ window.OB64 = window.OB64 || {};
   var A = OB64.art;
   var COMBAT_DESCRIPTOR_TABLE_KEY = 0x003B6CD0;
   var COMBAT_DESCRIPTOR_COUNT = 208;
+  var CLASS_HANDLE_RESOURCE_KEY = 0x00315736;
+  var CLASS_HANDLE_TABLE_OFFSET = 0x24;
+  var CLASS_HANDLE_COUNT = 688;
   var POSE_OPCODE_WIDTHS = [
     1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
     1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4
@@ -1022,6 +1025,7 @@ window.OB64 = window.OB64 || {};
       poseCache: {},
       metadataFrameCache: {},
       equipmentGroupCache: {},
+      dynamicPhysicalByResourceKey: {},
       sourceByBindingId: {}
     };
   }
@@ -1150,12 +1154,89 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function dynamicCorpusBinding(context, spec, descriptor, config, lookup,
+      artId) {
+    var identity = spec.descriptorKey + ':' + artId;
+    var resourceKey = descriptor.members[artId + 4];
+    if (!resourceKey) return null;
+    var resource = cachedCompressed(context, resourceKey);
+    var sprite = parseSpriteObject(resource.decoded, resourceKey);
+    var selectorPolicy = config.selectorPolicies[artId];
+    if (selectorPolicy !== 0 && selectorPolicy !== 1) {
+      fail('unprojected binding ' + identity +
+        ' uses unsupported dynamic selector policy ' + selectorPolicy);
+    }
+    var formatKind = sprite.firstFormat === 1 && sprite.secondFormat === 0
+      ? 'indexed-ci8' : (sprite.firstFormat === 2
+        ? 'direct-rgba5551' : 'unsupported');
+    var physicalId = 'dynamic-source-' +
+      resourceKey.toString(16).padStart(8, '0');
+    var physical = context.dynamicPhysicalByResourceKey[resourceKey];
+    if (!physical) {
+      physical = {
+        id: physicalId,
+        objectType: '0x5554',
+        objectSubtype: sprite.flags,
+        resourceKey: resourceKey,
+        entryZ64: resource.entry,
+        childCount: sprite.childCount,
+        width: sprite.width,
+        height: sprite.height,
+        format: {
+          kind: formatKind,
+          firstLaneFormat: sprite.firstFormat,
+          secondLaneFormat: sprite.secondFormat,
+          firstRowBytes: sprite.firstStride,
+          secondRowBytes: sprite.secondStride,
+          rowPaddingRule: 'read directly from the loaded ROM resource'
+        },
+        children: sprite.children.map(function(child) {
+          return { ordinal: child.ordinal, state: 'loaded-from-rom' };
+        }),
+        bindings: []
+      };
+      context.dynamicPhysicalByResourceKey[resourceKey] = physical;
+    }
+    var role = selectorPolicy === 1 ? 'equipment' : 'body';
+    var bindingId = 'dynamic-binding-' +
+      spec.descriptorKey.toString(16).padStart(8, '0') + '-' +
+      artId.toString(16).padStart(3, '0') + '-' +
+      resourceKey.toString(16).padStart(8, '0');
+    var binding = {
+      id: bindingId,
+      artId: artId,
+      descriptorKey: spec.descriptorKey,
+      descriptorEntryZ64: descriptor.resource.entry,
+      descriptorMemberOrdinal: artId + 4,
+      descriptorMemberEntryZ64: descriptor.resource.entry + 4 +
+        (artId + 4) * 4,
+      lookupResourceKey: spec.lookupKey,
+      lookupResourceDecodedLength: lookup.resource.decoded.length,
+      lookupBankCount: lookup.banks.length,
+      lookupBank: config.bankMap[artId],
+      selectorPolicy: selectorPolicy,
+      sourceRole: role,
+      childSelectionPolicy: selectorPolicy === 1
+        ? 'equipped-item-appearance-table' : 'class-handle-high-nibble',
+      palettePolicy: 'descriptor-lookup-bank-or-child-embedded-lookup',
+      elementSelection: null
+    };
+    physical.bindings.push(binding);
+    context.index.bindingByDescriptorArt[identity] = binding;
+    context.index.bindingById[bindingId] = binding;
+    context.index.physicalByBindingId[bindingId] = physical;
+    context.index.dynamicBindingCount =
+      (context.index.dynamicBindingCount || 0) + 1;
+    return binding;
+  }
+
   function corpusSource(context, spec, descriptor, config, lookup, artId, label) {
     var identity = spec.descriptorKey + ':' + artId;
     var binding = context.index.bindingByDescriptorArt[identity];
-    if (!binding) {
-      fail(label + ' art ' + hex(artId, 2) + ' has no accepted corpus binding');
-    }
+    if (!binding) binding = dynamicCorpusBinding(
+      context, spec, descriptor, config, lookup, artId);
+    if (!binding) fail(label + ' art ' + hex(artId, 2) +
+      ' has no readable ROM binding');
     var physical = context.index.physicalByBindingId[binding.id];
     var source = context.sourceByBindingId[binding.id];
     var resourceKey = descriptor.members[artId + 4];
@@ -1448,6 +1529,165 @@ window.OB64 = window.OB64 || {};
     }).map(function(child) { return child.ordinal; }) : [];
   }
 
+  function buildClassArtRouteTemplates(state, context) {
+    var handles = A.readResource(context.z64, CLASS_HANDLE_RESOURCE_KEY);
+    var expectedLength = CLASS_HANDLE_TABLE_OFFSET + CLASS_HANDLE_COUNT * 2;
+    if (handles.storedLength < expectedLength) {
+      fail('class combat-art handle resource has ' + handles.storedLength +
+        ' bytes; expected at least ' + expectedLength);
+    }
+    var descriptorRoot = A.readResource(
+      context.z64, COMBAT_DESCRIPTOR_TABLE_KEY);
+    if (descriptorRoot.storedLength !== COMBAT_DESCRIPTOR_COUNT * 4) {
+      fail('combat descriptor table has ' +
+        (descriptorRoot.storedLength / 4) + ' entries; expected ' +
+        COMBAT_DESCRIPTOR_COUNT);
+    }
+    var byClass = {}, dynamic = [], failures = [];
+    state.specs.slice().sort(function(left, right) {
+      return left.spec.rawMode - right.spec.rawMode ||
+        left.spec.displayOrder - right.spec.displayOrder;
+    }).forEach(function(animation) {
+      var classId = Number(animation.spec.classId);
+      var flags = selectorFlagLabel(animation.spec);
+      if (!flags) return;
+      if (!byClass[classId]) byClass[classId] = {};
+      if (!byClass[classId][flags]) byClass[classId][flags] = animation;
+    });
+
+    Object.keys(OB64.CLASS_NAMES || {}).map(Number).filter(function(classId) {
+      return classId > 0 && classId * 4 + 3 < CLASS_HANDLE_COUNT;
+    }).sort(function(left, right) { return left - right; })
+      .forEach(function(classId) {
+        if (!byClass[classId]) byClass[classId] = {};
+        for (var bodyFlags = 0; bodyFlags < 4; bodyFlags++) {
+          var flagA = Math.floor(bodyFlags / 2);
+          var flagB = bodyFlags & 1;
+          var flagLabel = flagA + '/' + flagB;
+          if (byClass[classId][flagLabel]) continue;
+          var handleIndex = classId * 4 + bodyFlags;
+          var rawHandle = readU16(handles.stored,
+            CLASS_HANDLE_TABLE_OFFSET + handleIndex * 2);
+          var descriptorSlot = (rawHandle & 0x0FFF) - 1;
+          try {
+            if (descriptorSlot < 0 || descriptorSlot >= COMBAT_DESCRIPTOR_COUNT) {
+              fail('class ' + hex(classId, 2) + ' flags ' + flagLabel +
+                ' has invalid descriptor handle ' + hex(rawHandle, 4));
+            }
+            var descriptorKey = readU32(
+              descriptorRoot.stored, descriptorSlot * 4);
+            if (!descriptorKey) {
+              fail('class ' + hex(classId, 2) + ' flags ' + flagLabel +
+                ' selects an empty descriptor slot');
+            }
+            var descriptor = A.readResource(context.z64, descriptorKey);
+            if (descriptor.storedLength < 16 || descriptor.storedLength % 4) {
+              fail('class ' + hex(classId, 2) + ' flags ' + flagLabel +
+                ' descriptor is not a raw u32 member list');
+            }
+            var descriptorMemberCount = descriptor.storedLength / 4;
+            var controls = [0, 4, 8, 12].map(function(offset) {
+              return readU32(descriptor.stored, offset);
+            });
+            if (controls.some(function(key) { return !key; })) {
+              fail('class ' + hex(classId, 2) + ' flags ' + flagLabel +
+                ' descriptor lacks a control resource');
+            }
+            var groupIds = equipmentGroupIdsForDescriptor(descriptorKey);
+            if (groupIds.length > 1) {
+              fail('descriptor ' + hex(descriptorKey) +
+                ' has more than one accepted equipment group');
+            }
+            var group = groupIds.length ? CORPUS.equipmentGroups[groupIds[0]] : null;
+            var key = 'class-art-route-' +
+              classId.toString(16).padStart(3, '0') + '-flags-' +
+              flagA + '-' + flagB;
+            var className = OB64.CLASS_NAMES[classId] ||
+              ('Class ' + hex(classId, 2));
+            var spec = {
+              key: key,
+              id: key,
+              compatibilityKey: null,
+              classId: classId,
+              className: className,
+              actionId: -1,
+              actionName: 'Idle / Rest',
+              rawMode: 0,
+              modeLabel: 'Idle loop source',
+              selector: 0,
+              descriptorKey: descriptorKey,
+              descriptorMemberCount: descriptorMemberCount,
+              metadataKey: controls[0],
+              poseKey: controls[1],
+              configKey: controls[2],
+              lookupKey: controls[3],
+              poseDecodedLength: cachedCompressed(
+                context, controls[1]).decoded.length,
+              displayOrder: 100000 + handleIndex,
+              variantLabel: 'flags ' + flagLabel + ' · class-' +
+                classId.toString(16).padStart(3, '0').toUpperCase() +
+                '-table-flags-' + flagA + '-' + flagB,
+              selectedBodyChild: rawHandle >>> 12,
+              selectedChildOrdinal: rawHandle >>> 12,
+              weaponChildCount: group ? group.expectedChildCount : 0,
+              equipmentGroupIds: groupIds,
+              retailMappedWeaponOrdinals: mappedWeaponOrdinals(group),
+              consumerSummary: className + ' class combat-art handle table',
+              frames: [],
+              canvas: null,
+              frozenParity: null,
+              artRouteTemplate: true,
+              route: {
+                actorFields: {
+                  flagA: flagA,
+                  flagB: flagB,
+                  physicalClassRecord: classId + 1,
+                  rawOwnerContext: classId,
+                  sourceArtId: classId
+                },
+                defaultDescriptorHandle: rawHandle,
+                rawHandleU16: rawHandle,
+                variantId: 'class-' +
+                  classId.toString(16).padStart(3, '0').toUpperCase() +
+                  '-table-flags-' + flagA + '-' + flagB
+              }
+            };
+            var parsed = parseCorpusSequence(context, spec, {
+              dynamicFrames: true,
+              trackRouteUsage: false
+            });
+            parsed.artRouteHandleIndex = handleIndex;
+            byClass[classId][flagLabel] = parsed;
+            dynamic.push(parsed);
+            Object.keys(parsed.artByKey).forEach(function(sourceKey) {
+              if (!state.artByKey[sourceKey]) {
+                state.artByKey[sourceKey] = parsed.artByKey[sourceKey];
+              }
+            });
+          } catch (error) {
+            failures.push({
+              classId: classId,
+              flags: flagLabel,
+              handleIndex: handleIndex,
+              rawHandleU16: rawHandle,
+              message: error && error.message ? error.message : String(error)
+            });
+          }
+        }
+      });
+    state.artRouteTemplatesByClass = byClass;
+    state.artRouteTemplates = Object.keys(byClass).map(Number)
+      .sort(function(left, right) { return left - right; })
+      .reduce(function(rows, classId) {
+        ['0/0', '0/1', '1/0', '1/1'].forEach(function(flags) {
+          if (byClass[classId][flags]) rows.push(byClass[classId][flags]);
+        });
+        return rows;
+      }, []);
+    state.dynamicArtRouteTemplates = dynamic;
+    state.artRouteFailures = failures;
+  }
+
   function selectorCandidateIndexKey(classId, flags, rawMode, selector) {
     return [classId, flags, rawMode, selector].join(':');
   }
@@ -1471,7 +1711,9 @@ window.OB64 = window.OB64 || {};
     var expectedFlags = ['0/0', '0/1', '1/0', '1/1'];
     var byClass = {};
     var soldierDescriptors = {};
-    state.specs.forEach(function(animation) {
+    var routeRows = state.artRouteTemplates && state.artRouteTemplates.length
+      ? state.artRouteTemplates : state.specs;
+    routeRows.forEach(function(animation) {
       var spec = animation.spec;
       var flagLabel = selectorFlagLabel(spec);
       if (!byClass[spec.classId]) {
@@ -1504,7 +1746,7 @@ window.OB64 = window.OB64 || {};
         return total + byClass[classId].missingFlags.length;
       }, 0)
     };
-    state.specs.forEach(function(animation) {
+    function classifyAnimation(animation, countStatus) {
       var spec = animation.spec;
       var emptyFrames = [];
       var emptySources = {};
@@ -1558,7 +1800,7 @@ window.OB64 = window.OB64 || {};
           detail: 'This ROM selector row points to the Soldier animation corpus. ' +
             'The alias remains visible and is not treated as missing art.'
         };
-        counts.soldierAlias++;
+        if (countStatus) counts.soldierAlias++;
       } else if (emptyFrames.length) {
         status = {
           state: 'visible-failure',
@@ -1572,7 +1814,7 @@ window.OB64 = window.OB64 || {};
             ' frames contain no visible body pixels after child-delta reconstruction. ' +
             'The sequence and every layer remain available for inspection.'
         };
-        counts.visibleFailure++;
+        if (countStatus) counts.visibleFailure++;
       } else if (ordinaryMatch) {
         status = {
           state: 'shared-special',
@@ -1583,7 +1825,7 @@ window.OB64 = window.OB64 || {};
           detail: 'This special-class row resolves to the same descriptor, action, and body child as ' +
             ordinaryMatch.spec.className + '. The ROM mapping is preserved.'
         };
-        counts.sharedSpecial++;
+        if (countStatus) counts.sharedSpecial++;
       } else if (isSpecial) {
         status = {
           state: 'dedicated-special',
@@ -1593,7 +1835,7 @@ window.OB64 = window.OB64 || {};
           title: 'Dedicated special-class mapping',
           detail: 'This selector row resolves to a dedicated descriptor and body-child mapping.'
         };
-        counts.dedicatedSpecial++;
+        if (countStatus) counts.dedicatedSpecial++;
       } else {
         status = {
           state: 'mapped',
@@ -1603,7 +1845,7 @@ window.OB64 = window.OB64 || {};
           title: 'ROM mapping resolved',
           detail: 'The descriptor, frames, layers, and selected body children resolve from the loaded ROM.'
         };
-        counts.mapped++;
+        if (countStatus) counts.mapped++;
       }
       status.selectorFlags = selectorFlagLabel(spec);
       status.emptyFrameIndices = emptyFrames;
@@ -1620,6 +1862,12 @@ window.OB64 = window.OB64 || {};
           ' reconstructed from the ROM delta relationship.';
       }
       animation.mappingStatus = status;
+    }
+    state.specs.forEach(function(animation) {
+      classifyAnimation(animation, true);
+    });
+    (state.dynamicArtRouteTemplates || []).forEach(function(animation) {
+      classifyAnimation(animation, false);
     });
     state.mappingAudit = { byClass: byClass, counts: counts };
   }
@@ -1652,6 +1900,8 @@ window.OB64 = window.OB64 || {};
           });
         }
       });
+      var acceptedAttackUsedBindingCount = Object.keys(state.artByKey).length;
+      buildClassArtRouteTemplates(state, context);
       analyzeMappings(state);
       var references = descriptorReferenceCounts(z64);
       Object.keys(state.artByKey).forEach(function(key) {
@@ -1668,20 +1918,21 @@ window.OB64 = window.OB64 || {};
         sequenceCount: state.specs.length,
         physicalSourceCount: Object.keys(CORPUS.physicalSources).length,
         bindingCount: index.bindingCount,
-        usedBindingCount: Object.keys(state.artByKey).length,
-        dormantBindingCount: index.bindingCount - Object.keys(state.artByKey).length,
+        usedBindingCount: acceptedAttackUsedBindingCount,
+        dormantBindingCount: index.bindingCount - acceptedAttackUsedBindingCount,
         equipmentGroupCount: Object.keys(CORPUS.equipmentGroups).length
       };
       var canonicalSelectorIndex = {};
       var templateByDescriptor = {};
-      state.specs.forEach(function(animation) {
-        if (!templateByDescriptor[animation.spec.descriptorKey]) {
-          templateByDescriptor[animation.spec.descriptorKey] = animation;
-        }
-        canonicalSelectorIndex[selectorCandidateIndexKey(
-          animation.spec.classId, selectorFlagLabel(animation.spec),
-          animation.spec.rawMode, animation.spec.selector)] = animation;
-      });
+      state.specs.concat(state.dynamicArtRouteTemplates || [])
+        .forEach(function(animation) {
+          if (!templateByDescriptor[animation.spec.descriptorKey]) {
+            templateByDescriptor[animation.spec.descriptorKey] = animation;
+          }
+          canonicalSelectorIndex[selectorCandidateIndexKey(
+            animation.spec.classId, selectorFlagLabel(animation.spec),
+            animation.spec.rawMode, animation.spec.selector)] = animation;
+        });
       state.resolveBindingSource = function(bindingId, childOrdinal) {
         if (state.artByKey[bindingId]) {
           var existingSource = state.artByKey[bindingId];

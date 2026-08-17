@@ -447,8 +447,11 @@ safety behavior.
   Export chooses in-place placement when a rebuilt icon pack fits. It relocates
   overflow and every detached avatar into the verified native-resource arena.
   The Combat Animation browser consumes the independently accepted R2 corpus.
-  It exposes 2,712 verified sequences for 152 classes and 234 class/action-ID
-  pairs. Those sequences contain 36,335 frames and 120,410 layer uses.
+  Its accepted attack corpus contains 2,712 verified sequences for 152 classes
+  and 234 class/action-ID pairs. Those sequences contain 36,335 frames and
+  120,410 layer uses. The editor also reads all four class-art handles directly
+  from the loaded ROM for every one of the 164 named classes. This exposes
+  player-side art that an accepted vanilla attack route never references.
   The product data retains 4,707 physical sources, 4,900 logical descriptor
   bindings, and 84 equipment groups. Accepted attack sequences draw 3,807
   bindings. The remaining 1,093 on-demand bindings include the selector `0x00`
@@ -460,9 +463,11 @@ safety behavior.
   groups use different IDs. Opening the class selector reveals an integrated search field
   above its class table. It filters by name, hexadecimal ID, or decimal ID
   without rerendering while the user types. The table lists all 164 vanilla
-  classes. The 12 classes without an accepted animation sequence remain visible
-  as disabled `No mapped sequence` rows. Fighter Slash remains the initial
-  sequence for an unchanged vanilla ROM. The class and action lists follow the
+  classes, and every row is selectable. Classes without a vanilla attack open
+  on their four **Idle / Rest** art routes. The player can create a private
+  editable sequence there. An attack must first be assigned in the Classes tab
+  before an attack body sequence can be assigned. Fighter Slash remains the
+  initial sequence for an unchanged vanilla ROM. The class and action lists follow the
   pending Class Combat fields and Normal/Blocked selector overrides. A compact
   line identifies the effective selector as `Class Combat vanilla`,
   `Class Combat override`, `Exact route assignment`, `Separated sequence`, or
@@ -501,8 +506,10 @@ safety behavior.
   rows prefer the enemy side. A non-Soldier class uses Soldier art only when no
   mapped class-art row exists.
   Variant options identify mapping failures and name Soldier art directly.
-  Missing selector rows and sequences with no visible body pixels remain listed
-  as issues instead of disappearing from the picker.
+  An art route without a body program for the selected attack remains visible
+  as an unassigned preview. The editor can copy and separate a compatible
+  sequence into that route. Missing selector programs and sequences with no
+  visible body pixels remain listed as issues instead of disappearing.
   Tick counts appear above 4x frame previews. Selecting a frame shows its full
   layer stack. The edit workspace keeps a 4x full-frame preview on the left and
   plays the complete 4x sequence on the right. Playback treats 30 ticks as one

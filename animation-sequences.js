@@ -141,7 +141,8 @@ window.OB64 = window.OB64 || {};
     if (Number(animation.spec.classId) === Number(reference.classId) &&
         Number(animation.spec.actionId) === Number(reference.actionId) &&
         Number(animation.spec.rawMode) === Number(reference.rawMode) &&
-        Number(animation.spec.selector) === Number(reference.selector)) {
+        Number(animation.spec.selector) === Number(reference.selector) &&
+        !!animation.spec.idleSequence === !!reference.idleSequence) {
       return animation;
     }
     var actionInfo = OB64.combatAnimationOverrides &&
@@ -182,7 +183,8 @@ window.OB64 = window.OB64 || {};
         direct.spec.rawMode === reference.rawMode) {
       return routeReferenceView(direct, reference);
     }
-    var candidates = animationState.specs.filter(function(animation) {
+    var candidates = animationState.specs.concat(
+      animationState.dynamicArtRouteTemplates || []).filter(function(animation) {
       return animation.spec.classId === reference.classId &&
         bodyFlagsFor(animation) === reference.bodyFlags &&
         animation.spec.descriptorKey === reference.descriptorKey;
