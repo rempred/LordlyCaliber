@@ -728,6 +728,39 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Scenarios', entries);
   }
 
+  function buildCutsceneSection(patches, sections) {
+    var project = patches.cutscenes;
+    if (!project || !Array.isArray(project.scenes)) return;
+    var entries = project.scenes.map(function(row) {
+      var document = row.document || {};
+      var identity = document.identity || {};
+      var actors = Array.isArray(document.actors) ? document.actors : [];
+      var tracks = Array.isArray(document.tracks) ? document.tracks : [];
+      var clips = [];
+      tracks.forEach(function(track) {
+        (track.clips || []).forEach(function(clip) { clips.push(clip); });
+      });
+      var nativeClips = clips.filter(function(clip) { return clip.capability === 'native'; }).length;
+      var previewClips = clips.length - nativeClips;
+      var lines = [
+        actors.length + ' actor' + (actors.length === 1 ? '' : 's') + ' and ' +
+          clips.length + ' Storyboard card' + (clips.length === 1 ? '' : 's') + '.',
+        nativeClips + ' Native card' + (nativeClips === 1 ? '' : 's') +
+          (previewClips ? '; ' + previewClips + ' Preview-only or Needs-research card' +
+            (previewClips === 1 ? '' : 's') : '') + '.'
+      ];
+      if (document.background && document.background.assetId) {
+        lines.push('Stage background: ' + document.background.assetId +
+          ' (' + document.background.capability + ').');
+      }
+      return {
+        title: identity.friendlyName || identity.technicalName || row.sceneId,
+        lines: lines
+      };
+    });
+    addSection(sections, 'Cutscenes', entries);
+  }
+
   function isEmptyValue(value) {
     if (value === null || value === undefined) return true;
     if (Array.isArray(value)) return value.length === 0;
@@ -767,7 +800,7 @@ window.OB64 = window.OB64 || {};
       neutral_encounters: true, creatureDrops: true, consumables: true,
       descriptions: true,
       statGates: true, neutral_global_rate: true, tools: true,
-      squadOverrides: true, scenario: true, consumableEffects: true,
+      squadOverrides: true, scenario: true, cutscenes: true, consumableEffects: true,
       combatAnimationOverrides: true, art: true
     };
     Object.keys(patches).sort().forEach(function(key) {
@@ -958,6 +991,7 @@ window.OB64 = window.OB64 || {};
     buildToolSection(patches, sections);
     buildSquadSection(patches, sections);
     buildScenarioSection(rom, patches, sections);
+    buildCutsceneSection(patches, sections);
     buildCombatAnimationOverrideSection(rom, patches, sections);
     buildArtSection(rom, patches, sections);
     addUnknownSections(patches, sections);

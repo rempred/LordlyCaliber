@@ -42,12 +42,14 @@
 // v22 stores private copied sprites and complete ordered frame-layer metadata.
 // v23 stores stable private frame identities so removed frames round-trip exactly.
 // v24 stores the exact private body program so added and reordered frames round-trip.
+// v25 carries validated Cutscene Studio SceneDocuments and view state for edited
+// physical director resources. Native source words remain byte-preserved.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 24;
+  var PATCH_VERSION = 25;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -228,6 +230,8 @@ window.OB64 = window.OB64 || {};
 
     var squadOverridesOut = collectSquadOverridePatch(rom);
     var scenarioOut = collectScenarioPatch(rom);
+    var cutscenesOut = OB64.cutsceneProject && rom.cutsceneStudio
+      ? OB64.cutsceneProject.collect(rom.cutsceneStudio) : null;
     var consumableEffectsOut = OB64.consumableEffects
       ? OB64.consumableEffects.collectProjectPayload(rom.consumableEffects)
       : {};
@@ -253,7 +257,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-08-16',
+      editor_version: '2026-08-20',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -276,6 +280,7 @@ window.OB64 = window.OB64 || {};
         tools_modified:         Object.keys(toolsOut).length,
         squad_overrides_modified: Object.keys(squadOverridesOut).length,
         scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
+        cutscenes_modified: cutscenesOut ? cutscenesOut.scenes.length : 0,
         consumable_effect_models_modified: Object.keys(consumableEffectsOut).length,
         combat_animation_overrides_modified: combatAnimationOverrideChanges,
         avatar_art_modified: avatarArtChanges,
@@ -297,6 +302,7 @@ window.OB64 = window.OB64 || {};
         tools:        toolsOut,
         squadOverrides: squadOverridesOut,
         scenario:     scenarioOut,
+        cutscenes:    cutscenesOut,
         consumableEffects: consumableEffectsOut,
         combatAnimationOverrides: combatAnimationOverridesOut,
         art: artOut
@@ -312,7 +318,7 @@ window.OB64 = window.OB64 || {};
   function PatchFormatError(msg) { this.name = 'PatchFormatError'; this.message = msg; }
   PatchFormatError.prototype = new Error();
 
-  function applyPatch(rom, patch, dirtyFlags) {
+  function applyPatch(rom, patch, dirtyFlags, preparedImports) {
     if (!patch || patch.format !== PATCH_FORMAT) {
       throw new PatchFormatError('Not an ob64-patch file (format field missing or wrong)');
     }
@@ -322,6 +328,7 @@ window.OB64 = window.OB64 || {};
     }
 
     var p = patch.patches || {};
+    preparedImports = preparedImports || {};
     var preparedDescriptions = null;
     try {
       preparedDescriptions = OB64.descriptionCodec.prepareProjectChanges(
@@ -391,6 +398,18 @@ window.OB64 = window.OB64 || {};
         preparedScenario = OB64.scenario.prepareProject(rom, scenarioPatch);
       } catch (scenarioError) {
         throw new PatchFormatError('Scenario Project data is invalid: ' + scenarioError.message);
+      }
+    }
+    var cutscenePatch = p.cutscenes || null;
+    var preparedCutscenes = preparedImports.cutscenes || null;
+    if (cutscenePatch) {
+      if (patch.version < 25) {
+        throw new PatchFormatError(
+          'Cutscene Studio Project data requires Project schema version 25 or newer.');
+      }
+      if (!OB64.cutsceneProject || !rom.cutsceneStudio || !preparedCutscenes) {
+        throw new PatchFormatError(
+          'Cutscene Studio Project data must be verified against the loaded ROM before it is applied.');
       }
     }
     var preparedArt = {
@@ -488,6 +507,7 @@ window.OB64 = window.OB64 || {};
     var toolsApplied = 0;
     var squadOverridesApplied = 0;
     var scenarioApplied = 0;
+    var cutscenesApplied = 0;
     var consumableEffectsApplied = 0;
     var combatAnimationOverridesApplied = 0;
     var artApplied = 0;
@@ -707,6 +727,17 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    if (cutscenePatch) {
+      try {
+        cutscenesApplied = OB64.cutsceneProject.applyPrepared(
+          rom.cutsceneStudio, preparedCutscenes);
+      } catch (cutsceneError) {
+        throw new PatchFormatError('Cutscene Studio Project data is invalid: ' +
+          cutsceneError.message);
+      }
+      if (cutscenesApplied > 0) dirtyFlags.cutscenes = true;
+    }
+
     if (validatedEffects.modelCount) {
       consumableEffectsApplied = OB64.consumableEffects.applyProjectPayload(
         rom.consumableEffects,
@@ -748,6 +779,7 @@ window.OB64 = window.OB64 || {};
         tools: toolsApplied,
         squadOverrides: squadOverridesApplied,
         scenario: scenarioApplied,
+        cutscenes: cutscenesApplied,
         consumableEffects: consumableEffectsApplied,
         combatAnimationOverrides: combatAnimationOverridesApplied,
         art: artApplied
@@ -816,6 +848,7 @@ window.OB64 = window.OB64 || {};
       tools_modified: 0,
       squad_overrides_modified: 0,
       scenario_modified: 0,
+      cutscenes_modified: 0,
       consumable_effect_models_modified: 0,
       combat_animation_overrides_modified: 0,
       avatar_art_modified: 0,
@@ -840,6 +873,7 @@ window.OB64 = window.OB64 || {};
       tools: {},
       squadOverrides: {},
       scenario: null,
+      cutscenes: null,
       consumableEffects: {},
       combatAnimationOverrides: null,
       art: { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null }

@@ -1086,6 +1086,28 @@ window.OB64 = window.OB64 || {};
       };
     });
 
+    yield* runCheckStep(report, 'cutscene-fixed-slot-readback',
+      'Cutscene director payload semantic readback', {
+        code: 'CUTSCENE_READBACK_FAILED',
+        title: 'Cutscene payload did not verify',
+        message: 'A finished Cutscene payload differs from its planned SceneDocument.',
+        suggestion: 'Keep the error report and shorten or restore the affected scene.',
+      }, function() {
+        if (!options.cutscenePlan || !options.cutscenePlan.changedEntries.length) {
+          return skipped('No Cutscene director payload changed during this export.');
+        }
+        if (!OB64.cutsceneExport || !OB64.cutsceneExport.validateApplied) {
+          throw issue(
+            'VALIDATOR_DEPENDENCY_MISSING',
+            'Validation component is missing',
+            'The editor could not load its Cutscene payload readback checker.',
+            'Reload the editor and try the export again.',
+            { dependency: 'OB64.cutsceneExport.validateApplied' }
+          );
+        }
+        return OB64.cutsceneExport.validateApplied(candidateRom, options.cutscenePlan);
+      });
+
     yield* runCheckStep(report, 'authorized-write-audit', 'Authorized ROM changes and patch collisions', {
       code: 'ROM_CHANGE_AUDIT_FAILED',
       title: 'ROM change audit failed',
@@ -1380,7 +1402,7 @@ window.OB64 = window.OB64 || {};
   function validationStepCount(options) {
     var targets = options && options.scenarioResult &&
       options.scenarioResult.validationTargets || [];
-    return 18 + Math.max(targets.length, 1);
+    return 19 + Math.max(targets.length, 1);
   }
 
   function yieldForProgressPaint() {

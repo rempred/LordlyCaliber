@@ -13,6 +13,7 @@ window.OB64 = window.OB64 || {};
     classes: ['classes', 'class-support', 'items', 'actions', 'stat-gates'],
     items: ['items'],
     art: ['native-art'],
+    cutscenes: ['cutscene-studio'],
     encounters: ['encounters', 'creature-drops'],
     tools: ['tools-patches'],
     damage: ['classes', 'items', 'actions', 'consumables'],

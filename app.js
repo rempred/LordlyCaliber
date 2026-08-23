@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -210,7 +210,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -319,6 +319,12 @@ window.OB64 = window.OB64 || {};
               affectsTabs: ['art']
             }, function() { return OB64.animationSequences.initialize(nextRom); });
           }
+          if (OB64.cutsceneUI) {
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'cutscene-studio', label: 'Cutscene Studio scene and presentation catalog',
+              affectsTabs: ['cutscenes']
+            }, function() { return OB64.cutsceneUI.initialize(nextRom); });
+          }
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'project-baseline', label: 'Project and export baseline',
             requiredForExport: true
@@ -335,7 +341,7 @@ window.OB64 = window.OB64 || {};
         }
 
         OB64.romCompatibility.assessFeatures(nextRom);
-        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
         nextDirty.tools = !!nextRom.tools && OB64.tools.pendingChanges(nextRom) > 0;
@@ -505,6 +511,8 @@ window.OB64 = window.OB64 || {};
     var artPlan = null;
     var artResult = null;
     var artTouchedIndex = -1;
+    var cutscenePlan = null;
+    var cutsceneResult = null;
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
@@ -523,6 +531,11 @@ window.OB64 = window.OB64 || {};
         } else {
           artPlan = OB64.art.prepareExport(rom, candidateRom);
         }
+      }
+      if (dirty.cutscenes && OB64.cutsceneExport) {
+        await paintRomExportProgress(exportProgress, 6,
+          'Planning and verifying edited Cutscene director payloads');
+        cutscenePlan = await OB64.cutsceneExport.prepare(exportRom, candidateRom);
       }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
@@ -607,6 +620,9 @@ window.OB64 = window.OB64 || {};
       var sharedRegionOwners = [];
       var artOwner = OB64.art && artPlan ? OB64.art.patchOwner(artPlan) : null;
       if (artOwner) sharedRegionOwners.push(artOwner);
+      var cutsceneOwner = OB64.cutsceneExport && cutscenePlan
+        ? OB64.cutsceneExport.patchOwner(cutscenePlan) : null;
+      if (cutsceneOwner) sharedRegionOwners.push(cutsceneOwner);
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
       if (OB64.squad && (dirty.shops || dirty.squadOverrides ||
@@ -675,6 +691,13 @@ window.OB64 = window.OB64 || {};
       }
 
       await paintRomExportProgress(exportProgress, 14, 'Writing edited ROM data tables');
+      if (cutscenePlan && cutscenePlan.changedEntries.length) {
+        cutsceneResult = OB64.cutsceneExport.apply(candidateRom, cutscenePlan);
+        touched.push('cutscenes (' + cutsceneResult.changedSceneCount + ' scene' +
+          (cutsceneResult.changedSceneCount === 1 ? '' : 's') +
+          (cutsceneResult.relocatedSceneCount
+            ? ', ' + cutsceneResult.relocatedSceneCount + ' relocated' : '') + ')');
+      }
       // Item stats (direct z64 patch at 0x62310)
       if (dirty.items) {
         OB64.serializeItemStats(rom.itemStats, candidateRom.z64);
@@ -937,6 +960,7 @@ window.OB64 = window.OB64 || {};
         effectTransaction: effectTransaction,
         artPlan: artPlan,
         artResult: artResult,
+        cutscenePlan: cutscenePlan,
       };
       await paintRomExportProgress(exportProgress, 70, 'Starting finished-ROM safety tests');
       var validationReport;
@@ -1057,6 +1081,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       adoptExportCandidate(exportRom, candidateRom, effectAdoption);
+      if (cutscenePlan) OB64.cutsceneExport.adopt(exportRom, cutscenePlan);
       OB64.combatAnimationOverrides.adopt(exportRom);
       if (artResult) OB64.art.adoptExport(exportRom, artResult);
       await paintRomExportProgress(exportProgress, 100, 'ROM download started');
@@ -1071,13 +1096,15 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), cutscenes: !!(exportRom.cutsceneStudio && OB64.cutsceneUI.editCount(exportRom.cutsceneStudio)), encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       // Art records remain Project edits after a successful ROM download.
       // This lets the user keep authoring and export the same detached assets again.
-      changes = OB64.art.editCount(exportRom.art);
+      changes = OB64.art.editCount(exportRom.art) +
+        (exportRom.cutsceneStudio ? OB64.cutsceneUI.editCount(exportRom.cutsceneStudio) : 0);
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
       if (activeTab === 'art') renderTab('art');
+      if (activeTab === 'cutscenes') renderTab('cutscenes');
       statusBar.textContent = exportMsg;
     } catch(err) {
       if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
@@ -1175,6 +1202,7 @@ window.OB64 = window.OB64 || {};
       var toolsN = patch.summary.tools_modified || 0;
       var squadsN = patch.summary.squad_overrides_modified || 0;
       var scenarioN = patch.summary.scenario_modified || 0;
+      var cutscenesN = patch.summary.cutscenes_modified || 0;
       var consumableEffectsN = patch.summary.consumable_effect_models_modified || 0;
       var selectorOverridesN = patch.summary.combat_animation_overrides_modified || 0;
       var avatarArtN = patch.summary.avatar_art_modified || 0;
@@ -1186,7 +1214,7 @@ window.OB64 = window.OB64 || {};
           terrainRatesN + creatureDropsN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
-          globalRateN + toolsN + squadsN + scenarioN + consumableEffectsN + selectorOverridesN +
+          globalRateN + toolsN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
           avatarArtN + iconArtN + combatSpriteArtN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
@@ -1213,6 +1241,7 @@ window.OB64 = window.OB64 || {};
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
       if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
+      if (cutscenesN) parts.push(cutscenesN + ' edited cutscene' + (cutscenesN === 1 ? '' : 's'));
       if (selectorOverridesN) parts.push(selectorOverridesN + ' attack animation override change' + (selectorOverridesN === 1 ? '' : 's'));
       if (avatarArtN) parts.push(avatarArtN + ' detached avatar' + (avatarArtN === 1 ? '' : 's'));
       if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
@@ -1234,11 +1263,22 @@ window.OB64 = window.OB64 || {};
   patchFileInput.addEventListener('change', function(e) {
     var file = e.target.files[0];
     if (!file || !rom) return;
+    var projectRom = rom;
+    var projectLoadGeneration = romLoadGeneration;
     var reader = new FileReader();
-    reader.onload = function(ev) {
+    reader.onload = async function(ev) {
       try {
         var patch = OB64.patch.parsePatchFile(ev.target.result);
-        var result = OB64.patch.applyPatch(rom, patch, dirty);
+        var preparedImports = {};
+        if (patch.patches && patch.patches.cutscenes) {
+          statusBar.textContent = 'Verifying Cutscene Project sources…';
+          preparedImports.cutscenes = await OB64.cutsceneProject.prepareImport(
+            projectRom, patch.patches.cutscenes);
+        }
+        if (romLoadGeneration !== projectLoadGeneration || rom !== projectRom) {
+          throw new Error('The loaded ROM changed while the Project was being verified. Load the Project again.');
+        }
+        var result = OB64.patch.applyPatch(rom, patch, dirty, preparedImports);
         // Count applied changes so status + export modal show the right counts
         changes += result.applied.shops + result.applied.prices +
           (result.applied.itemStats || 0) + (result.applied.classDefs || 0) +
@@ -1253,6 +1293,7 @@ window.OB64 = window.OB64 || {};
           (result.applied.tools || 0) +
           (result.applied.squadOverrides || 0) +
           (result.applied.scenario || 0) +
+          (result.applied.cutscenes || 0) +
           (result.applied.consumableEffects || 0) +
           (result.applied.combatAnimationOverrides || 0) +
           (result.applied.art || 0);
@@ -1278,6 +1319,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
         if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
         if (result.applied.scenario) loadedParts.push(result.applied.scenario + ' scenario change' + (result.applied.scenario === 1 ? '' : 's'));
+        if (result.applied.cutscenes) loadedParts.push(result.applied.cutscenes + ' edited cutscene' + (result.applied.cutscenes === 1 ? '' : 's'));
         if (result.applied.combatAnimationOverrides) loadedParts.push(result.applied.combatAnimationOverrides + ' attack animation override change' + (result.applied.combatAnimationOverrides === 1 ? '' : 's'));
         if (result.applied.art) loadedParts.push(result.applied.art + ' art asset' + (result.applied.art === 1 ? '' : 's'));
         if (result.applied.consumableEffects) {
@@ -1547,6 +1589,10 @@ window.OB64 = window.OB64 || {};
   // Tab Switching
   // ============================================================
   function activateTab(tab) {
+    if (activeTab === 'cutscenes' && tab !== 'cutscenes' && rom &&
+        rom.cutsceneStudio && OB64.cutsceneUI) {
+      OB64.cutsceneUI.pause(rom.cutsceneStudio);
+    }
     activeTab = tab;
 
     var buttons = tabBar.querySelectorAll('button');
@@ -1628,6 +1674,12 @@ window.OB64 = window.OB64 || {};
             markChanged('combatAnimationOverrides');
             endChangeBatch();
           },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
+      case 'cutscenes':
+        OB64.cutsceneUI.render(panel, rom, {
+          onChange: function() { markChanged('cutscenes'); },
           onStatus: function(message) { statusBar.textContent = message; }
         });
         break;
@@ -1919,6 +1971,9 @@ window.OB64 = window.OB64 || {};
       case 'items':    dirty.items = true; break;
       case 'classes':  dirty.classDefs = true; break;
       case 'art':      dirty.art = OB64.art.hasPendingExport(rom.art); break;
+      case 'cutscenes':
+        dirty.cutscenes = OB64.cutsceneUI.editCount(rom.cutsceneStudio) > 0;
+        break;
       case 'encounters':
         // Encounters tab edits can touch either the neutral-encounter pool,
         // the creature drop table, or both. The renderer sets the specific

@@ -83,6 +83,8 @@ Every editor UI change must check the following behaviors before completion:
   must not drop focus after each character.
 - A rerender must preserve the active tab, asset, frame, layer, tool, color,
   selection, and open dialog when those choices remain valid.
+- A dropdown change must reach durable model or view state before rerender. A
+  rebuilt dropdown must restore that value while its option remains valid.
 - Pointer controls must support continuous drag. Test pointer down, movement,
   release, cancellation, and release outside the original control.
 - Undo, redo, reset, import, and Project load must refresh the UI without stale
