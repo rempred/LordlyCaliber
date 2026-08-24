@@ -2,8 +2,9 @@
 'use strict';
 
 // Build the metadata-only Cutscene Studio catalog from accepted parent-side
-// products. This tool never reads or embeds the master ROM and never embeds
-// decoded pixels or native command words.
+// products and a read-only US Rev 0 retail ROM. The ROM supplies the complete
+// native Director selector inventory and source-envelope fingerprints. This
+// tool never writes the ROM and never embeds decoded pixels or command words.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -11,6 +12,8 @@ const path = require('path');
 
 const editorRoot = path.resolve(__dirname, '..');
 const workspaceRoot = path.resolve(editorRoot, '..');
+const defaultMasterRom = path.join(
+  workspaceRoot, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 const defaultAssetManifest = path.join(
   workspaceRoot, 'tools', 'cutscene-workbench', 'generated', 'asset-manifest.json');
 const defaultDirectorCorpusRoot = path.join(
@@ -243,11 +246,13 @@ const SCENARIO_1_BRIEFING_ACTORS = Object.freeze([
   { slot: 15, bank: 57, animationKey: 103, facing: 1, x: 59, y: 0, z: 96, variantSelector: 0 }
 ]);
 
-// These tables are byte-exact static resource selectors. Director opcode
-// 0x80000006 uses the scene table only when the runtime Director mode is not 2.
-// In mode 2, the command operand is ignored and a separate runtime byte selects
-// the battle table. Stored-state observations below close the mode for a bounded
-// set of assets. Every other row remains a conditional route.
+// These tables are byte-exact static resource selectors. The launch pre-scan in
+// func_0004ED60 reads structural opcode 0x80000006 before the Director VM starts.
+// func_00067FA8 routes terminal classes 4 and 5 through the 31-entry scene-group
+// table and preloads its first member. Other terminal classes can seed the
+// independent mode-2 environment selector. The runtime command handler tests
+// scene mode 2: mode 2 copies the environment selector into foreground storage,
+// while non-mode-2 contexts expand the 31-entry scene group.
 const SCENE_BACKGROUND_GROUP_KEYS = Object.freeze([
   0x016CD5E2, 0x016CF8FE, 0x016D1B0A, 0x016D3C90, 0x01702ACC,
   0x0173153A, 0x0175DE04, 0x017627A0, 0x0177C0F2, 0x017AB50E,
@@ -475,6 +480,26 @@ const COMMON_MODE_TWO_ACTOR_CAMERA = Object.freeze({
   target: Object.freeze({ x: -1.5, y: 0, z: -1.2699999809265137 })
 });
 
+const COMMON_MODE_TWO_ACTOR_PROJECTION = Object.freeze({
+  mode: 'native-perspective-runtime',
+  coordinateSpace: 'Director fixed-point coordinates divided by 1000; native Actor model scale is 0.1',
+  screenWidth: 320,
+  screenHeight: 240,
+  modelScale: 0.10000000149011612,
+  fovYDegrees: COMMON_MODE_TWO_ACTOR_CAMERA.fovYDegrees,
+  aspect: 1.3333333333333333,
+  near: 1,
+  far: 5000,
+  eye: COMMON_MODE_TWO_ACTOR_CAMERA.eye,
+  target: COMMON_MODE_TWO_ACTOR_CAMERA.target,
+  up: Object.freeze({ x: 0, y: 1, z: 0 }),
+  evidenceStatus: 'native-static',
+  calibrationStatus: 'validated mode-two overlay camera constants',
+  calibrationResult: 'The immutable overlay initializer supplies the exact common mode-two Actor camera before Director execution.',
+  sourceZ64Range: '0x00211D5C..0x00211D7C',
+  sourceRamRange: '0x801CE8CC..0x801CE8E8'
+});
+
 const PROLOGUE_MODE_TWO_ACTOR_CAMERA = Object.freeze({
   fovYDegrees: 35,
   eye: Object.freeze({ x: 0, y: -120, z: 150 }),
@@ -633,7 +658,7 @@ const DIRECTOR_ACTOR_CAMERA_RUNTIME_OBSERVATIONS = Object.freeze({
     'The Prologue Title capture contains its distinct complete mode-two Actor camera bank.')
 });
 
-// Stored Project64 states close the runtime selector for these scene loads.
+// Stored Project64 states close the independent runtime selectors for these scene loads.
 // Scene-group resources load every member in ascending ordinal order. Final
 // depth and blend semantics remain unresolved for multi-member groups.
 const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
@@ -645,8 +670,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 0,
     commandOperand: 10,
-    mode2SelectorByte: 0,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:017F4B24']),
     exactAssetIds: Object.freeze(['archive:102']),
@@ -697,8 +720,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     ]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 57,
-    scalarSelectorMirror: 0x39,
+    environmentSelector: 57,
+    foregroundSelector: 57,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['mode2-environment:00236B58', 'archive:49']),
@@ -775,8 +798,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     ]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 51,
-    scalarSelectorMirror: 0x33,
+    environmentSelector: 51,
+    foregroundSelector: 51,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['archive:12', 'archive:45']),
@@ -814,8 +837,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 0,
     commandOperand: 2,
-    mode2SelectorByte: 51,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:016D1B0A']),
     exactAssetIds: Object.freeze(['archive:94']),
@@ -829,8 +850,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 0,
     commandOperand: 22,
-    mode2SelectorByte: 57,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:018854DC']),
     exactAssetIds: Object.freeze([
@@ -856,8 +875,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 61,
-    scalarSelectorMirror: 0x3D,
+    environmentSelector: 61,
+    foregroundSelector: 61,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['mode2-environment:0026CA20']),
@@ -879,8 +898,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 60,
-    scalarSelectorMirror: 0x3C,
+    environmentSelector: 60,
+    foregroundSelector: 60,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['archive:15']),
@@ -904,8 +923,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 0,
     commandOperand: 21,
-    mode2SelectorByte: 60,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:01876580']),
     exactAssetIds: Object.freeze(['archive:113', 'archive:114']),
@@ -919,8 +936,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 62,
-    scalarSelectorMirror: 0x3E,
+    environmentSelector: 62,
+    foregroundSelector: 62,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['mode2-environment:0027C5F4', 'archive:51']),
@@ -942,8 +959,8 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     })]),
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 62,
-    scalarSelectorMirror: 0,
+    environmentSelector: 62,
+    foregroundSelector: null,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze(['mode2-environment:0027C5F4']),
@@ -967,8 +984,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     directorPartialAssetId: 'rom-director:01F3F70A',
     directorMode: 0,
     commandOperand: 2,
-    mode2SelectorByte: 51,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:016D1B0A']),
     exactAssetIds: Object.freeze(['archive:94']),
@@ -984,8 +999,6 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     directorPartialAssetId: 'rom-director:01F3F70A',
     directorMode: 0,
     commandOperand: 2,
-    mode2SelectorByte: 51,
-    scalarSelectorMirror: 1,
     selectorTableId: 'background-table:scene:31',
     candidateGroupIds: Object.freeze(['scene-resource-group:016D1B0A']),
     exactAssetIds: Object.freeze(['archive:94']),
@@ -1000,13 +1013,11 @@ const DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS = Object.freeze({
     directorPartialAssetId: 'rom-director:01FAA540',
     directorMode: 2,
     commandOperand: null,
-    mode2SelectorByte: 51,
-    scalarSelectorMirror: 0,
     selectorTableId: 'background-table:mode2-environment:80',
     candidateGroupIds: Object.freeze([]),
     exactAssetIds: Object.freeze([]),
     candidateAssetIds: Object.freeze([]),
-    associationStatus: 'the Director Partial prefix has no accepted background request, and the stored scalar mirror does not show selector consumption'
+    associationStatus: 'the Director Partial prefix has no accepted background request, and the stored state does not prove environment or foreground selector consumption'
   })
 });
 
@@ -1309,14 +1320,177 @@ const SECTION_C_ASSETS = Object.freeze([
 ]);
 const SECTION_C_ANALYSIS_SHA256 =
   'C9F9AE135B12C7C4A1C98CC70131559163AFD2B77477C0307D09B2490D30BC96';
+const RAW_US_REV0_V64_SHA256 =
+  '6CA0A1AFE224831E202857AD64EF26BD429A034A4EA48404BB09621641A07B12';
 const NORMALIZED_US_REV0_Z64_SHA256 =
   '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A';
+const DIRECTOR_RESOURCE_BASE_Z64 = 0x00594280;
+const CLASS_EVOLUTION_MEDIA_TABLE_Z64 = 0x000654A0;
+const CLASS_EVOLUTION_MEDIA_ROW_COUNT = 69;
+const CLASS_EVOLUTION_MEDIA_ROW_BYTES = 9;
+const CLASS_EVOLUTION_MEDIA_SELECTOR_OFFSET = 3;
+const CLASS_EVOLUTION_MEDIA_TABLE_SHA256 =
+  '540C6836EB33DF804CF1B9AD5F03FC381F96BB8052A05EA258A4FDE195A1FF74';
+const OVERSIZED_IMAGE_ROOT_KEY = 0x018BD022;
+const OVERSIZED_IMAGE_ROOT_CHILD_COUNT = 41;
+const OVERSIZED_IMAGE_ROOT_PAYLOAD_SHA256 =
+  '484B728AA0C5CF5C5F51797FE639D14DAD4594B7EFB652928AAE42E606D65CE2';
+const SCENE_RESOURCE_PATH_ROOT_KEY = 0x01A8D7A6;
+const SCENE_RESOURCE_PATH_GROUP_COUNT = 59;
+const SCENE_RESOURCE_PATH_ENTRY_COUNT = 134;
+const SCENE_RESOURCE_PATH_POPULATED_COUNT = 121;
+const MODE_TWO_STAGE_PLACEMENT_RESOURCE_KEY = 0x00315736;
+const MODE_TWO_STAGE_PLACEMENT_PREFIX_Z64 = 0x008A99B6;
+const MODE_TWO_STAGE_PLACEMENT_PAYLOAD_Z64 = 0x008A99BA;
+const MODE_TWO_STAGE_PLACEMENT_PAYLOAD_BYTES = 0x2B00;
+const MODE_TWO_STAGE_PLACEMENT_PAYLOAD_SHA256 =
+  '94248DB2C97D0B6E4169200ED13C7F19FAC0E35DD4D85189DD292736D612C7E6';
+const MODE_TWO_STAGE_ORTHOGRAPHIC_HEADER_ENTRY = 9;
+const MODE_TWO_STAGE_PERSPECTIVE_HEADER_ENTRY = 10;
+const MODE_TWO_STAGE_ORTHOGRAPHIC_TABLE_OFFSET = 0x12D8;
+const MODE_TWO_STAGE_PERSPECTIVE_TABLE_OFFSET = 0x1CB4;
+const MODE_TWO_STAGE_SELECTOR_COUNT = 80;
+const MODE_TWO_STAGE_ORTHOGRAPHIC_ROW_BYTES = 22;
+const MODE_TWO_STAGE_PERSPECTIVE_ROW_BYTES = 26;
+const MODE_TWO_STAGE_ORTHOGRAPHIC_ROWS = 105;
+const MODE_TWO_STAGE_PERSPECTIVE_ROWS = 63;
+const MODE_TWO_STAGE_SPECIAL_ROWS = 3;
+const MODE_TWO_STAGE_NORMAL_ROWS = 165;
+const MODE_TWO_STAGE_NONEMPTY_SELECTORS = 25;
+const MODE_TWO_STAGE_DESCRIPTOR_TABLE_KEY = 0x003B6CD0;
+const MODE_TWO_STAGE_DESCRIPTOR_TABLE_PAYLOAD_Z64 = 0x0094AF54;
+const MODE_TWO_STAGE_DESCRIPTOR_TABLE_BYTES = 0x340;
+const MODE_TWO_STAGE_DESCRIPTOR_TABLE_SHA256 =
+  'D85D920B576BEAA6141979CFFD7D885932E6B35517715453C680E73EA2E63374';
+const MODE_TWO_STAGE_DESCRIPTOR_COUNT = 208;
+const MODE_TWO_SIGNED_TERRAIN_TABLE_Z64 = 0x000694B0;
+const MODE_TWO_SIGNED_SCENARIO_TABLE_Z64 = 0x00069518;
+const MODE_TWO_UNSIGNED_TERRAIN_TABLE_Z64 = 0x00069560;
+const MODE_TWO_UNSIGNED_SCENARIO_TABLE_Z64 = 0x000695C8;
+const MODE_TWO_DERIVED_TERRAIN_TABLE_BYTES = 0x68;
+const MODE_TWO_DERIVED_SCENARIO_TABLE_BYTES = 0x3E;
+const MODE_TWO_DERIVED_TERRAIN_TABLE_SHA256 =
+  'A22515B3603C7FD2DD66A4FFEBEDC289F3D12AE13D3FA452206AD2A723AD666B';
+const MODE_TWO_DERIVED_SCENARIO_TABLE_SHA256 =
+  'C292DB825ECF4C40838FF69B45F40625F94FDC104828BFAF297F7DCA2D330402';
+const MODE_TWO_DERIVED_SCENARIO_OVERRIDES = Object.freeze([
+  [1, 31, 1], [2, 35, 1], [3, 31, 2], [8, 31, 1],
+  [12, 31, 2], [39, 31, 55], [45, 31, 51], [46, 31, 51],
+  [47, 31, 57], [52, 31, 1], [60, 31, 57]
+]);
+const DIRECTOR_SELECTOR_TABLE_KEY = 0x019A8804;
+const DIRECTOR_SELECTOR_TABLE_PREFIX_Z64 = 0x01F3CA84;
+const DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64 = 0x01F3CA88;
+const DIRECTOR_SELECTOR_TABLE_BYTES = 0x1A74;
+const DIRECTOR_SELECTOR_ROWS = 1693;
+const DIRECTOR_CONTINUATION_TABLE_KEY = 0x0189099E;
+const DIRECTOR_CONTINUATION_TABLE_BYTES = 0x14;
+const DIRECTOR_CONTINUATION_KEYS = Object.freeze([
+  0x018909B6, 0x01890A14, 0x01890A52, 0x01890A8A, 0x01890ACC
+]);
+const DIRECTOR_CONTINUATION_DECODED_BYTES = Object.freeze([
+  260, 144, 96, 124, 92
+]);
+const DIRECTOR_TERMINAL_CLASS_DISPATCH_ROUTES = Object.freeze({
+  1: -3,
+  2: -6,
+  3: -5,
+  4: -4,
+  5: -7,
+  6: -8,
+  7: -9,
+  8: -10
+});
+const RETAIL_DIRECTOR_POPULATED_ROWS = 1548;
+const RETAIL_DIRECTOR_UNIQUE_RESOURCES = 1498;
+const RETAIL_DIRECTOR_WORDS = 550019;
+const RETAIL_DIRECTOR_SUBSTREAM_CALLS = 247;
+const RETAIL_DIRECTOR_SELECTOR_EXPANDED_SUBSTREAM_CALLS = 248;
+const RETAIL_DIRECTOR_TAIL_CALLS = 4;
+const RETAIL_DIRECTOR_OPCODE_5E_OCCURRENCES = 10;
+const EVENT_DIRECTORY_KEY = 0x003A5668;
+const EVENT_DIRECTORY_ROWS = 115;
+const EVENT_DIRECTORY_POPULATED_ROWS = 113;
+const EVENT_SCHEDULER_LAST_ROW = 109;
+const EVENT_SCHEDULER_OUTER_ENTRY_COUNT = 6;
+const EVENT_SPECIAL_OUTER_ENTRY_COUNT = 1;
+const EVENT_OUTER_ENTRY_ROWS = 653;
+const EVENT_DISTINCT_OUTER_CURSORS = 640;
+const EVENT_SEQUENCE_TABLES = 623;
+const EVENT_SEQUENCE_ENTRY_ROWS = 1496;
+const EVENT_DIRECT_OUTER_SEQUENCES = 17;
+const EVENT_DISTINCT_SEQUENCE_CURSORS = 1513;
+const EVENT_LAUNCH_SEQUENCE_CURSORS = 1443;
+const DIRECT_EVENT_DIRECTOR_LAUNCHES = 1998;
+const DIRECT_EVENT_DIRECTOR_SELECTORS = 1520;
+const DIRECT_EVENT_DIRECTOR_RESOURCES = 1472;
+const EVENT_TRANSLATION_TABLE_TRACKED_ENTRIES = 17;
+const EVENT_STATIC_INVOCATION_CONTEXTS = 2076;
+const EVENT_MULTI_INVOCATION_LAUNCHES = 38;
+const EVENT_DISTINCT_INVOCATION_CURSORS = 1717;
+const EVENT_EXTERNAL_REQUEST_PHYSICAL_SITES = 45;
+const EVENT_EXTERNAL_REQUEST_HANDOFFS = 47;
+const EVENT_TRANSLATION_PHYSICAL_SITES = 69;
+const EVENT_TRANSLATION_WRITE_CONTEXTS = 416;
+const EVENT_TRANSLATION_EXACT_CONTEXTS = 128;
+const EVENT_TRANSLATION_UNRESOLVED_CONTEXTS = 288;
+const EVENT_SUBSTITUTION_SOURCE_PHYSICAL_SITES = 42;
+const EVENT_SUBSTITUTION_SOURCE_WRITE_CONTEXTS = 42;
+const EVENT_SUBSTITUTION_SOURCE_A_WRITE_CONTEXTS = 21;
+const EVENT_SUBSTITUTION_SOURCE_B_WRITE_CONTEXTS = 21;
+const EVENT_SUBSTITUTION_SOURCE_EXACT_INDEX_CONTEXTS = 2;
+const EVENT_SUBSTITUTION_SOURCE_UNRESOLVED_INDEX_CONTEXTS = 40;
+const EVENT_SUBSTITUTION_SOURCE_EXACT_VALUE_CONTEXTS = 4;
+const EVENT_SUBSTITUTION_SOURCE_UNRESOLVED_VALUE_CONTEXTS = 38;
+const EVENT_RETAIL_TRANSLATION_PHYSICAL_SITES = 21;
+const EVENT_RETAIL_TRANSLATION_WRITE_CONTEXTS = 344;
+const EVENT_RETAIL_TRANSLATION_EXACT_CONTEXTS = 74;
+const EVENT_RETAIL_TRANSLATION_UNRESOLVED_CONTEXTS = 270;
+const EVENT_NONRETAIL_TRANSLATION_PHYSICAL_SITES = 48;
+const EVENT_NONRETAIL_TRANSLATION_WRITE_CONTEXTS = 72;
+const EVENT_SUBSTITUTION_SOURCES = [
+  {
+    sourceId: 'A',
+    semantic: 'primary-class-id',
+    characterRecordBaseRamAddress: '0x80193BC0',
+    characterRecordFieldOffset: 0x11,
+    characterRecordStride: 56,
+    storageRamRange: '0x8019367C..0x80193680',
+    slotCount: 5,
+    getterFunctionZ64: '0x00046314',
+    setterFunctionZ64: '0x0004649C',
+    evidenceStatus: 'native-static-event-vm-and-character-record'
+  },
+  {
+    sourceId: 'B',
+    semantic: 'secondary-class-id',
+    characterRecordBaseRamAddress: '0x80193BC0',
+    characterRecordFieldOffset: 0x12,
+    characterRecordStride: 56,
+    storageRamRange: '0x80193681..0x80193685',
+    slotCount: 5,
+    getterFunctionZ64: '0x00046324',
+    setterFunctionZ64: '0x000464AC',
+    evidenceStatus: 'native-static-event-vm-and-character-record'
+  }
+];
+const EVENT_SPECIAL_PROPERTY_WIDTHS = new Map([
+  [0xE4, 8], [0xE5, 8], [0xE6, 16], [0xE7, 8], [0xE8, 8], [0xE9, 8],
+  [0xEB, 8], [0xEC, 16], [0xED, 8], [0xEE, 16], [0xEF, 8], [0xF0, 8],
+  [0xF9, 8], [0xFA, 16], [0xFB, 8], [0xFD, 8], [0xFE, 8], [0xFF, 8]
+]);
+const EVENT_SPECIAL_GETTER_OPERANDS = new Set([
+  0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xF0,
+  0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC,
+  0xFD, 0xFE, 0xFF
+]);
 
 function usage() {
   return [
     'Usage: node tools/generate-cutscene-data.js [options]',
     '',
     'Options:',
+    '  --rom PATH              Read-only US Rev 0 master V64',
     '  --asset-manifest PATH   Workbench asset-manifest.json',
     '  --director-corpus-assets PATH  Corrected 153-command asset JSONL',
     '  --director-corpus-grammar PATH  Corrected 153-command grammar JSONL',
@@ -1341,6 +1515,7 @@ function usage() {
 
 function parseArgs(argv) {
   const options = {
+    rom: defaultMasterRom,
     assetManifest: defaultAssetManifest,
     directorCorpusAssets: defaultDirectorCorpusAssets,
     directorCorpusGrammar: defaultDirectorCorpusGrammar,
@@ -1371,6 +1546,7 @@ function parseArgs(argv) {
       continue;
     }
     const field = {
+      '--rom': 'rom',
       '--asset-manifest': 'assetManifest',
       '--director-corpus-assets': 'directorCorpusAssets',
       '--director-corpus-grammar': 'directorCorpusGrammar',
@@ -1412,6 +1588,655 @@ function sha256(bytes) {
 
 function sha256File(filePath) {
   return sha256(fs.readFileSync(filePath));
+}
+
+function readU32(bytes, offset, label) {
+  if (!Buffer.isBuffer(bytes) || offset < 0 || offset + 4 > bytes.length) {
+    throw new Error((label || 'ROM word') + ' lies outside its byte source.');
+  }
+  return bytes.readUInt32BE(offset);
+}
+
+function readU16(bytes, offset, label) {
+  if (!Buffer.isBuffer(bytes) || offset < 0 || offset + 2 > bytes.length) {
+    throw new Error((label || 'ROM halfword') + ' lies outside its byte source.');
+  }
+  return bytes.readUInt16BE(offset);
+}
+
+function readI16(bytes, offset, label) {
+  if (!Buffer.isBuffer(bytes) || offset < 0 || offset + 2 > bytes.length) {
+    throw new Error((label || 'ROM signed halfword') + ' lies outside its byte source.');
+  }
+  return bytes.readInt16BE(offset);
+}
+
+function readI32(bytes, offset, label) {
+  if (!Buffer.isBuffer(bytes) || offset < 0 || offset + 4 > bytes.length) {
+    throw new Error((label || 'ROM signed word') + ' lies outside its byte source.');
+  }
+  return bytes.readInt32BE(offset);
+}
+
+function signed(value) {
+  return Number(value) | 0;
+}
+
+function normalizeV64(raw) {
+  if (!Buffer.isBuffer(raw) || raw.length % 2) {
+    throw new Error('The source V64 must contain an even number of bytes.');
+  }
+  const output = Buffer.allocUnsafe(raw.length);
+  for (let offset = 0; offset < raw.length; offset += 2) {
+    output[offset] = raw[offset + 1];
+    output[offset + 1] = raw[offset];
+  }
+  return output;
+}
+
+function nativeResourceEnvelope(z64, resourceKey, label) {
+  const normalizedKey = Number(resourceKey) & 0x0FFFFFFF;
+  const prefixStart = DIRECTOR_RESOURCE_BASE_Z64 + normalizedKey;
+  const storedLength = readU32(z64, prefixStart, label + ' size prefix');
+  const payloadStart = prefixStart + 4;
+  const payloadEndExclusive = payloadStart + storedLength;
+  if (storedLength < 1 || payloadEndExclusive > z64.length) {
+    throw new Error(label + ' has an invalid native resource envelope.');
+  }
+  return {
+    resourceKey: normalizedKey,
+    prefixStart,
+    payloadStart,
+    payloadEndExclusive,
+    storedLength,
+    payload: z64.subarray(payloadStart, payloadEndExclusive),
+    payloadSha256: sha256(z64.subarray(payloadStart, payloadEndExclusive))
+  };
+}
+
+function f32(value) {
+  return Math.fround(value);
+}
+
+function f32Add(left, right) {
+  return f32(f32(left) + f32(right));
+}
+
+function f32Subtract(left, right) {
+  return f32(f32(left) - f32(right));
+}
+
+function f32Multiply(left, right) {
+  return f32(f32(left) * f32(right));
+}
+
+function f32Divide(left, right) {
+  return f32(f32(left) / f32(right));
+}
+
+function f32Distance2d(leftX, leftY, rightX, rightY) {
+  const deltaX = f32Subtract(rightX, leftX);
+  const deltaY = f32Subtract(rightY, leftY);
+  return f32(Math.sqrt(f32Add(
+    f32Multiply(deltaX, deltaX), f32Multiply(deltaY, deltaY))));
+}
+
+// func_002A1860 solves the natural cubic system with coefficients scaled by
+// one third. func_002A1CF4 consumes that scale directly in its cubic formula.
+function nativeNaturalSplineCoefficients(parameters, values) {
+  const count = parameters.length;
+  const coefficients = Array(count).fill(0);
+  if (count <= 2) return coefficients;
+  const upper = Array(count).fill(0);
+  const right = Array(count).fill(0);
+  for (let index = 1; index < count - 1; index += 1) {
+    const previousWidth = Number(parameters[index]) - Number(parameters[index - 1]);
+    const nextWidth = Number(parameters[index + 1]) - Number(parameters[index]);
+    const previousSlope = (Number(values[index]) - Number(values[index - 1])) /
+      previousWidth;
+    const nextSlope = (Number(values[index + 1]) - Number(values[index])) /
+      nextWidth;
+    const diagonal = 2 * (previousWidth + nextWidth) -
+      previousWidth * upper[index - 1];
+    upper[index] = nextWidth / diagonal;
+    right[index] = ((nextSlope - previousSlope) -
+      previousWidth * right[index - 1]) / diagonal;
+  }
+  for (let index = count - 2; index > 0; index -= 1) {
+    coefficients[index] = f32(right[index] -
+      upper[index] * coefficients[index + 1]);
+  }
+  return coefficients;
+}
+
+function nativeSplineValue(parameter, parameters, values, coefficients) {
+  let low = 0;
+  let high = parameters.length - 1;
+  while (low < high) {
+    const middle = Math.trunc((low + high) / 2);
+    if (parameters[middle] < parameter) low = middle + 1;
+    else high = middle;
+  }
+  const interval = Math.max(0, low - (low > 0 ? 1 : 0));
+  const offset = f32Subtract(parameter, parameters[interval]);
+  const width = f32Subtract(parameters[interval + 1], parameters[interval]);
+  const coefficient = coefficients[interval];
+  const nextCoefficient = coefficients[interval + 1];
+  const slope = f32Divide(
+    f32Subtract(values[interval + 1], values[interval]), width);
+  const linear = f32Subtract(slope, f32Multiply(width,
+    f32Add(f32Add(coefficient, coefficient), nextCoefficient)));
+  const quadratic = f32Add(f32Multiply(3, coefficient),
+    f32Multiply(offset, f32Divide(
+      f32Subtract(nextCoefficient, coefficient), width)));
+  return f32Add(values[interval], f32Multiply(offset,
+    f32Add(linear, f32Multiply(offset, quadratic))));
+}
+
+// This reproduces the two-axis path sampler at func_002A1EC4. Output sample
+// zero is the first authored point and the final authored endpoint is omitted.
+function nativeSampleScenePath(points, sampleCount) {
+  if (!Array.isArray(points) || points.length < 2 || !Number.isInteger(sampleCount) ||
+      sampleCount < 1) {
+    throw new Error('Native scene-path sampling requires two points and a positive count.');
+  }
+  const sourceX = points.map((point) => f32(point.x));
+  const sourceY = points.map((point) => f32(point.y));
+  const output = [];
+  if (points.length === 2) {
+    const stepX = f32Divide(f32Subtract(sourceX[1], sourceX[0]), sampleCount);
+    const stepY = f32Divide(f32Subtract(sourceY[1], sourceY[0]), sampleCount);
+    output.push({ x: sourceX[0], y: sourceY[0] });
+    for (let index = 1; index < sampleCount; index += 1) {
+      output.push({
+        x: f32Add(output[index - 1].x, stepX),
+        y: f32Add(output[index - 1].y, stepY)
+      });
+    }
+    return output;
+  }
+  const parameters = Array(points.length).fill(0);
+  for (let index = 1; index < points.length; index += 1) {
+    parameters[index] = f32Add(parameters[index - 1], f32Distance2d(
+      sourceX[index - 1], sourceY[index - 1], sourceX[index], sourceY[index]));
+  }
+  const total = parameters[parameters.length - 1];
+  if (!(total > 0)) throw new Error('Native scene path has zero two-dimensional length.');
+  for (let index = 1; index < parameters.length; index += 1) {
+    parameters[index] = f32Divide(parameters[index], total);
+  }
+  const coefficientX = nativeNaturalSplineCoefficients(parameters, sourceX);
+  const coefficientY = nativeNaturalSplineCoefficients(parameters, sourceY);
+  const step = 1 / sampleCount;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const parameter = f32(step * index);
+    output.push({
+      x: nativeSplineValue(parameter, parameters, sourceX, coefficientX),
+      y: nativeSplineValue(parameter, parameters, sourceY, coefficientY)
+    });
+  }
+  return output;
+}
+
+function nativeSampledPathLength(samples) {
+  let length = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    length = f32Add(length, f32Distance2d(samples[index - 1].x,
+      samples[index - 1].y, samples[index].x, samples[index].y));
+  }
+  return length;
+}
+
+function nativeScenePathHeading(points) {
+  const coarseSamples = nativeSampleScenePath(points, 400);
+  const measuredLength = nativeSampledPathLength(coarseSamples);
+  const denseSampleCount = Math.trunc(measuredLength / 2) * 2;
+  if (denseSampleCount < 3) {
+    throw new Error('Native scene path is too short to produce its starting heading.');
+  }
+  const denseSamples = nativeSampleScenePath(points, denseSampleCount);
+  const deltaX = f32Subtract(denseSamples[2].x, denseSamples[0].x);
+  const deltaY = f32Subtract(denseSamples[2].y, denseSamples[0].y);
+  const storedHeading = Math.trunc(Math.atan2(deltaY, deltaX) * 180 / Math.PI);
+  return {
+    measuredLength,
+    denseSampleCount,
+    deltaX,
+    deltaY,
+    storedHeading,
+    rotationDegrees: storedHeading === 180 ? 0 : storedHeading + 180
+  };
+}
+
+function readSceneResourcePaths(z64) {
+  const root = nativeResourceEnvelope(z64, SCENE_RESOURCE_PATH_ROOT_KEY,
+    'Scene resource-path root');
+  if (root.storedLength !== SCENE_RESOURCE_PATH_GROUP_COUNT * 4) {
+    throw new Error('Scene resource-path root must contain exactly 59 group keys.');
+  }
+  const entries = [];
+  const groups = [];
+  for (let groupIndex = 0; groupIndex < SCENE_RESOURCE_PATH_GROUP_COUNT;
+      groupIndex += 1) {
+    const groupKey = readU32(root.payload, groupIndex * 4,
+      'Scene resource-path group key');
+    const group = nativeResourceEnvelope(z64, groupKey,
+      'Scene resource-path group ' + groupIndex);
+    if (group.storedLength % 4) {
+      throw new Error('Scene resource-path group ' + groupIndex +
+        ' is not a word array.');
+    }
+    const entryCount = group.storedLength / 4;
+    groups.push({
+      groupIndex,
+      resourceKey: groupKey,
+      entryCount,
+      z64PrefixStart: group.prefixStart,
+      z64PayloadStart: group.payloadStart,
+      storedLength: group.storedLength,
+      payloadSha256: group.payloadSha256
+    });
+    for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+      const resourceKey = readU32(group.payload, entryIndex * 4,
+        'Scene resource-path entry key');
+      if (resourceKey === 0) {
+        entries.push({
+          pathId: 'scene-resource-path:' + groupIndex + ':' + entryIndex,
+          groupIndex,
+          entryIndex,
+          groupResourceKey: groupKey,
+          resourceKey: null,
+          status: 'empty-native-entry',
+          pointCount: 0,
+          nativeStoredHeading: null,
+          rotationDegrees: null
+        });
+        continue;
+      }
+      const envelope = nativeResourceEnvelope(z64, resourceKey,
+        'Scene resource path ' + groupIndex + ':' + entryIndex);
+      const decoded = decodeCustomLz(envelope.payload,
+        'Scene resource path ' + groupIndex + ':' + entryIndex).bytes;
+      if (decoded.length < 24 || decoded.length % 12) {
+        throw new Error('Scene resource path ' + groupIndex + ':' + entryIndex +
+          ' must contain at least two complete 12-byte points.');
+      }
+      const points = [];
+      for (let offset = 0; offset < decoded.length; offset += 12) {
+        points.push({
+          linkedSpriteSlot: readI32(decoded, offset, 'Scene path point link'),
+          x: readI32(decoded, offset + 4, 'Scene path point X'),
+          y: readI32(decoded, offset + 8, 'Scene path point Y')
+        });
+      }
+      if (points.some((point) => point.linkedSpriteSlot !== -1)) {
+        throw new Error('Retail scene resource path ' + groupIndex + ':' + entryIndex +
+          ' unexpectedly depends on an animated-sprite slot.');
+      }
+      const heading = nativeScenePathHeading(points);
+      entries.push({
+        pathId: 'scene-resource-path:' + groupIndex + ':' + entryIndex,
+        groupIndex,
+        entryIndex,
+        groupResourceKey: groupKey,
+        resourceKey,
+        status: 'native-static-path-heading',
+        pointCount: points.length,
+        firstPoint: points[0],
+        secondPoint: points[1],
+        finalPoint: points[points.length - 1],
+        nativeMeasuredLength: heading.measuredLength,
+        nativeDenseSampleCount: heading.denseSampleCount,
+        nativeHeadingDeltaX: heading.deltaX,
+        nativeHeadingDeltaY: heading.deltaY,
+        nativeStoredHeading: heading.storedHeading,
+        rotationDegrees: heading.rotationDegrees,
+        z64PrefixStart: envelope.prefixStart,
+        z64PayloadStart: envelope.payloadStart,
+        storedLength: envelope.storedLength,
+        storedPayloadSha256: envelope.payloadSha256,
+        decodedLength: decoded.length,
+        decodedSha256: sha256(decoded)
+      });
+    }
+  }
+  if (entries.length !== SCENE_RESOURCE_PATH_ENTRY_COUNT ||
+      entries.filter((entry) => entry.resourceKey !== null).length !==
+        SCENE_RESOURCE_PATH_POPULATED_COUNT) {
+    throw new Error('Scene resource-path inventory changed from 134 entries and 121 paths.');
+  }
+  return {
+    resourceKey: SCENE_RESOURCE_PATH_ROOT_KEY,
+    z64PrefixStart: root.prefixStart,
+    z64PayloadStart: root.payloadStart,
+    storedLength: root.storedLength,
+    payloadSha256: root.payloadSha256,
+    groups,
+    entries
+  };
+}
+
+function corpusInteger(value, label) {
+  if (Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value)) {
+    return Number.parseInt(value.slice(2), 16);
+  }
+  throw new Error(label + ' is not an integer or hexadecimal integer.');
+}
+
+function modeTwoStageSource(descriptorHandle, descriptorKeys, descriptorsByKey) {
+  if (!Number.isInteger(descriptorHandle) || descriptorHandle < 1 ||
+      descriptorHandle > MODE_TWO_STAGE_DESCRIPTOR_COUNT) {
+    throw new Error('Mode-two Stage descriptor handle ' + descriptorHandle +
+      ' lies outside the direct descriptor table.');
+  }
+  const descriptorKey = readU32(descriptorKeys, (descriptorHandle - 1) * 4,
+    'Mode-two Stage descriptor handle ' + descriptorHandle);
+  const descriptor = descriptorsByKey.get(descriptorKey);
+  if (!descriptor) {
+    throw new Error('Mode-two Stage descriptor handle ' + descriptorHandle +
+      ' selects uncatalogued descriptor 0x' + hex(descriptorKey, 8) + '.');
+  }
+  return nativeStagePropSource({
+    bank: 'mode2-stage:' + hex(descriptorKey, 8),
+    descriptorKey,
+    descriptorMemberCount: descriptor.memberCount,
+    metadataKey: corpusInteger(descriptor.metadataKey,
+      'Mode-two Stage descriptor metadata key'),
+    poseKey: corpusInteger(descriptor.poseKey,
+      'Mode-two Stage descriptor pose key'),
+    configKey: corpusInteger(descriptor.configKey,
+      'Mode-two Stage descriptor config key'),
+    lookupKey: corpusInteger(descriptor.lookupKey,
+      'Mode-two Stage descriptor lookup key'),
+    metadataDecodedLength: descriptor.metadataDecodedLength,
+    poseDecodedLength: descriptor.poseDecodedLength,
+    configDecodedLength: descriptor.configDecodedLength,
+    lookupDecodedLength: descriptor.lookupDecodedLength,
+    artCount: descriptor.artCount,
+    lookupBankCount: descriptor.lookupBankCount
+  });
+}
+
+function modeTwoPlacementFingerprint(placements) {
+  return placements.map((placement) => [
+    placement.poseSelector, placement.x, placement.y, placement.z
+  ]);
+}
+
+function assertModeTwoPlacementMatch(actual, expected, label) {
+  ['orthographicPlacements', 'perspectivePlacements'].forEach((field) => {
+    if (JSON.stringify(modeTwoPlacementFingerprint(actual[field])) !==
+        JSON.stringify(modeTwoPlacementFingerprint(expected[field]))) {
+      throw new Error(label + ' no longer matches the accepted native Stage placements.');
+    }
+    if (actual[field].some((placement) =>
+      placement.source.descriptorKey !== expected.source.descriptorKey)) {
+      throw new Error(label + ' no longer selects its accepted Stage sprite descriptor.');
+    }
+  });
+}
+
+function compactModeTwoStagePlacementProfiles(z64, spriteCorpus) {
+  const placement = nativeResourceEnvelope(z64,
+    MODE_TWO_STAGE_PLACEMENT_RESOURCE_KEY, 'Mode-two Stage placement resource');
+  if (placement.prefixStart !== MODE_TWO_STAGE_PLACEMENT_PREFIX_Z64 ||
+      placement.payloadStart !== MODE_TWO_STAGE_PLACEMENT_PAYLOAD_Z64 ||
+      placement.storedLength !== MODE_TWO_STAGE_PLACEMENT_PAYLOAD_BYTES ||
+      placement.payloadSha256 !== MODE_TWO_STAGE_PLACEMENT_PAYLOAD_SHA256) {
+    throw new Error('The mode-two Stage placement resource identity changed.');
+  }
+  const descriptorTable = nativeResourceEnvelope(z64,
+    MODE_TWO_STAGE_DESCRIPTOR_TABLE_KEY, 'Mode-two direct descriptor table');
+  if (descriptorTable.payloadStart !== MODE_TWO_STAGE_DESCRIPTOR_TABLE_PAYLOAD_Z64 ||
+      descriptorTable.storedLength !== MODE_TWO_STAGE_DESCRIPTOR_TABLE_BYTES ||
+      descriptorTable.payloadSha256 !== MODE_TWO_STAGE_DESCRIPTOR_TABLE_SHA256) {
+    throw new Error('The mode-two direct descriptor table identity changed.');
+  }
+  if (descriptorTable.storedLength !== MODE_TWO_STAGE_DESCRIPTOR_COUNT * 4) {
+    throw new Error('The mode-two direct descriptor table row count changed.');
+  }
+  const corpusDescriptors = spriteCorpus && spriteCorpus.combat &&
+    spriteCorpus.combat.descriptors;
+  if (!Array.isArray(corpusDescriptors)) {
+    throw new Error('The combat sprite corpus lacks its descriptor inventory.');
+  }
+  const descriptorsByKey = new Map(corpusDescriptors.map((descriptor) => [
+    corpusInteger(descriptor.descriptorKey, 'Combat sprite descriptor key'), descriptor
+  ]));
+  const payload = placement.payload;
+  const orthographicTableOffset = readU16(payload,
+    MODE_TWO_STAGE_ORTHOGRAPHIC_HEADER_ENTRY * 2,
+    'Mode-two orthographic placement table pointer');
+  const perspectiveTableOffset = readU16(payload,
+    MODE_TWO_STAGE_PERSPECTIVE_HEADER_ENTRY * 2,
+    'Mode-two perspective placement table pointer');
+  if (orthographicTableOffset !== MODE_TWO_STAGE_ORTHOGRAPHIC_TABLE_OFFSET ||
+      perspectiveTableOffset !== MODE_TWO_STAGE_PERSPECTIVE_TABLE_OFFSET) {
+    throw new Error('The mode-two Stage placement table headers changed.');
+  }
+
+  function placementRows(tableKind, tableOffset, rowBytes) {
+    return Array.from({ length: MODE_TWO_STAGE_SELECTOR_COUNT }, (_, foregroundSelector) => {
+      const listOffset = readI16(payload, tableOffset + foregroundSelector * 2,
+        'Mode-two ' + tableKind + ' selector ' + foregroundSelector + ' list offset');
+      let rowOffset = tableOffset + listOffset;
+      const rows = [];
+      for (let rowIndex = 0; rowIndex < 512; rowIndex += 1, rowOffset += rowBytes) {
+        const status = readI16(payload, rowOffset,
+          'Mode-two ' + tableKind + ' selector ' + foregroundSelector + ' row');
+        if (status === -1) return rows;
+        const rawFields = Array.from({ length: rowBytes / 2 }, (_, fieldIndex) =>
+          readI16(payload, rowOffset + fieldIndex * 2,
+            'Mode-two ' + tableKind + ' selector ' + foregroundSelector + ' field'));
+        rows.push({ status, rowIndex, rawFields });
+      }
+      throw new Error('Mode-two ' + tableKind + ' selector ' + foregroundSelector +
+        ' has no terminating row.');
+    });
+  }
+
+  const orthographicRows = placementRows('orthographic', orthographicTableOffset,
+    MODE_TWO_STAGE_ORTHOGRAPHIC_ROW_BYTES);
+  const perspectiveRows = placementRows('perspective', perspectiveTableOffset,
+    MODE_TWO_STAGE_PERSPECTIVE_ROW_BYTES);
+  let orthographicRowCount = 0;
+  let perspectiveRowCount = 0;
+  let specialRowCount = 0;
+  let normalRowCount = 0;
+  const profiles = Array.from({ length: MODE_TWO_STAGE_SELECTOR_COUNT },
+    (_, foregroundSelector) => {
+      const specialRows = [];
+      function compactRows(rows, tableKind) {
+        return rows.flatMap((row) => {
+          if (tableKind === 'orthographic') orthographicRowCount += 1;
+          else perspectiveRowCount += 1;
+          const id = 'mode2-stage:' + hex(foregroundSelector, 2) + ':' +
+            tableKind + ':' + row.rowIndex;
+          if (row.status === -2) {
+            specialRowCount += 1;
+            const descriptorHandle = row.rawFields[1];
+            specialRows.push({
+              id,
+              tableKind,
+              status: -2,
+              descriptorHandle,
+              source: modeTwoStageSource(descriptorHandle,
+                descriptorTable.payload, descriptorsByKey),
+              rawFields: row.rawFields,
+              evidenceStatus: 'native-special-builder-row-preserved',
+              renderStatus: 'withheld until the native special-status builder branch is modeled'
+            });
+            return [];
+          }
+          normalRowCount += 1;
+          const values = row.rawFields;
+          const source = modeTwoStageSource(row.status,
+            descriptorTable.payload, descriptorsByKey);
+          return [{
+            id,
+            projection: tableKind === 'orthographic'
+              ? 'native-320x240-orthographic' : 'native-actor-perspective',
+            descriptorHandle: row.status,
+            rowParameter: values[1],
+            poseSelector: values[2],
+            x: values[3],
+            y: values[4],
+            z: values[5],
+            depthPass: tableKind === 'orthographic'
+              ? (values[5] <= -500 ? 'far' : 'near') : 'perspective',
+            source,
+            rawFields: values,
+            evidenceStatus: 'native-static'
+          }];
+        });
+      }
+      return {
+        foregroundSelector,
+        coordinateSpace:
+          'centered 320x240 orthographic pixels plus native Actor-camera objects',
+        placementResourceKey: MODE_TWO_STAGE_PLACEMENT_RESOURCE_KEY,
+        orthographicTableHeaderEntry: MODE_TWO_STAGE_ORTHOGRAPHIC_HEADER_ENTRY,
+        perspectiveTableHeaderEntry: MODE_TWO_STAGE_PERSPECTIVE_HEADER_ENTRY,
+        orthographicPlacements: compactRows(
+          orthographicRows[foregroundSelector], 'orthographic'),
+        perspectivePlacements: compactRows(
+          perspectiveRows[foregroundSelector], 'perspective'),
+        specialRows,
+        evidenceStatus:
+          'byte-exact native placement resource, row resolvers, descriptor table, and Stage builder'
+      };
+    });
+  const nonemptySelectorCount = profiles.filter((profile) =>
+    profile.orthographicPlacements.length || profile.perspectivePlacements.length ||
+      profile.specialRows.length).length;
+  if (orthographicRowCount !== MODE_TWO_STAGE_ORTHOGRAPHIC_ROWS ||
+      perspectiveRowCount !== MODE_TWO_STAGE_PERSPECTIVE_ROWS ||
+      specialRowCount !== MODE_TWO_STAGE_SPECIAL_ROWS ||
+      normalRowCount !== MODE_TWO_STAGE_NORMAL_ROWS ||
+      nonemptySelectorCount !== MODE_TWO_STAGE_NONEMPTY_SELECTORS) {
+    throw new Error('The mode-two Stage placement census changed: orthographic=' +
+      orthographicRowCount + ', perspective=' + perspectiveRowCount +
+      ', normal=' + normalRowCount + ', special=' + specialRowCount +
+      ', selectors=' + nonemptySelectorCount + '.');
+  }
+  assertModeTwoPlacementMatch(profiles[51], FORMATION_NATIVE_STAGE_PROPS,
+    'Formation selector 51');
+  assertModeTwoPlacementMatch(profiles[57], GRADUATION_NATIVE_STAGE_PROPS,
+    'Graduation selector 57');
+  return {
+    profiles,
+    orthographicRowCount,
+    perspectiveRowCount,
+    specialRowCount,
+    normalRowCount,
+    nonemptySelectorCount,
+    placementResource: placement,
+    descriptorTable
+  };
+}
+
+function decodeCustomLz(source, label) {
+  if (!Buffer.isBuffer(source) || source.length < 4) {
+    throw new Error((label || 'Custom-LZ source') + ' is missing its size header.');
+  }
+  const outputSize = readU32(source, 0, label);
+  if (outputSize > 16 * 1024 * 1024) {
+    throw new Error((label || 'Custom-LZ source') + ' exceeds the decoded-size limit.');
+  }
+  const output = Buffer.alloc(outputSize);
+  let sourceOffset = 4;
+  let outputOffset = 0;
+  function needSource(count, tokenOffset) {
+    if (sourceOffset + count > source.length) {
+      throw new Error((label || 'Custom-LZ source') + ' has a truncated token at +' +
+        hex(tokenOffset, 4) + '.');
+    }
+  }
+  function needOutput(count, tokenOffset) {
+    if (outputOffset + count > output.length) {
+      throw new Error((label || 'Custom-LZ source') + ' exceeds its declared output at +' +
+        hex(tokenOffset, 4) + '.');
+    }
+  }
+  function copyBackReference(distance, length, tokenOffset) {
+    const start = outputOffset - distance - 1;
+    if (start < 0) {
+      throw new Error((label || 'Custom-LZ source') + ' has an invalid back-reference at +' +
+        hex(tokenOffset, 4) + '.');
+    }
+    needOutput(length, tokenOffset);
+    for (let index = 0; index < length; index += 1) {
+      const readOffset = start + index;
+      if (readOffset >= outputOffset + index) {
+        throw new Error((label || 'Custom-LZ source') +
+          ' reads unwritten output at +' + hex(tokenOffset, 4) + '.');
+      }
+      output[outputOffset++] = output[readOffset];
+    }
+  }
+  while (outputOffset < output.length) {
+    needSource(1, sourceOffset);
+    const tokenOffset = sourceOffset;
+    const control = source[sourceOffset++];
+    let length;
+    let distance;
+    if (control & 0x80) {
+      needSource(1, tokenOffset);
+      distance = ((control & 7) << 8) | source[sourceOffset++];
+      length = ((control >> 3) & 15) + 3;
+      copyBackReference(distance, length, tokenOffset);
+    } else if (control & 0x40) {
+      length = (control & 63) + 1;
+      needSource(length, tokenOffset);
+      needOutput(length, tokenOffset);
+      source.copy(output, outputOffset, sourceOffset, sourceOffset + length);
+      sourceOffset += length;
+      outputOffset += length;
+    } else if (control & 0x20) {
+      length = (control & 31) + 2;
+      needOutput(length, tokenOffset);
+      output.fill(0, outputOffset, outputOffset + length);
+      outputOffset += length;
+    } else if (control & 0x10) {
+      needSource(2, tokenOffset);
+      const byte1 = source[sourceOffset++];
+      const byte2 = source[sourceOffset++];
+      distance = ((byte1 & 63) << 8) | byte2;
+      length = ((control & 15) | ((byte1 >> 2) & 48)) + 4;
+      copyBackReference(distance, length, tokenOffset);
+    } else if (control === 0) {
+      needSource(3, tokenOffset);
+      length = source[sourceOffset++] + 5;
+      distance = (source[sourceOffset++] << 8) | source[sourceOffset++];
+      copyBackReference(distance, length, tokenOffset);
+    } else if (control === 1 || control === 2) {
+      needSource(1, tokenOffset);
+      length = source[sourceOffset++] + 3;
+      needOutput(length, tokenOffset);
+      output.fill(control === 1 ? 0xFF : 0, outputOffset, outputOffset + length);
+      outputOffset += length;
+    } else {
+      throw new Error((label || 'Custom-LZ source') + ' has unknown control 0x' +
+        hex(control, 2) + ' at +' + hex(tokenOffset, 4) + '.');
+    }
+  }
+  if (sourceOffset !== source.length) {
+    throw new Error((label || 'Custom-LZ source') +
+      ' was not consumed exactly; consumed ' + sourceOffset + ' of ' + source.length + ' bytes.');
+  }
+  return { bytes: output, consumed: sourceOffset };
+}
+
+function wordsFromBytes(bytes, label) {
+  if (!Buffer.isBuffer(bytes) || bytes.length % 4) {
+    throw new Error((label || 'Director payload') + ' is not word-aligned.');
+  }
+  const words = new Array(bytes.length / 4);
+  for (let index = 0; index < words.length; index += 1) {
+    words[index] = readU32(bytes, index * 4, label);
+  }
+  return words;
 }
 
 function titleFromSlug(slug) {
@@ -1848,13 +2673,455 @@ function sceneGroupAssetIds(selector) {
   return sceneGroupMembers(selector).map((member) => member.assetId);
 }
 
-function backgroundRequestsForAsset(asset, runtimeObservation) {
+function readOversizedImagePresentationRules(z64, archiveCatalog) {
+  const tableBytes = z64.subarray(CLASS_EVOLUTION_MEDIA_TABLE_Z64,
+    CLASS_EVOLUTION_MEDIA_TABLE_Z64 +
+      CLASS_EVOLUTION_MEDIA_ROW_COUNT * CLASS_EVOLUTION_MEDIA_ROW_BYTES);
+  if (tableBytes.length !==
+      CLASS_EVOLUTION_MEDIA_ROW_COUNT * CLASS_EVOLUTION_MEDIA_ROW_BYTES ||
+      sha256(tableBytes) !== CLASS_EVOLUTION_MEDIA_TABLE_SHA256) {
+    throw new Error('The resident class-evolution media rows changed.');
+  }
+
+  const root = nativeResourceEnvelope(z64, OVERSIZED_IMAGE_ROOT_KEY,
+    'Oversized-image root');
+  if (root.storedLength !== OVERSIZED_IMAGE_ROOT_CHILD_COUNT * 4 ||
+      sha256(root.payload) !== OVERSIZED_IMAGE_ROOT_PAYLOAD_SHA256) {
+    throw new Error('The oversized-image child root changed.');
+  }
+
+  const archiveByHeader = new Map(archiveCatalog.map((archive) => [
+    parseInt(archive.romOffset, 16), archive
+  ]));
+  const children = [];
+  for (let childSelector = 0;
+      childSelector < OVERSIZED_IMAGE_ROOT_CHILD_COUNT; childSelector += 1) {
+    const resourceKey = readU32(root.payload, childSelector * 4,
+      'Oversized-image child ' + childSelector);
+    if (resourceKey === 0) {
+      children.push({
+        childSelector,
+        resourceKey: null,
+        resourcePrefixZ64: null,
+        archiveIndex: null,
+        assetId: null,
+        filename: null,
+        disposition: 'native-null-child'
+      });
+      continue;
+    }
+    const resourcePrefixZ64 = DIRECTOR_RESOURCE_BASE_Z64 + resourceKey;
+    const archive = archiveByHeader.get(resourcePrefixZ64 + 4);
+    if (!archive) {
+      throw new Error('Oversized-image child ' + childSelector +
+        ' does not resolve to a catalogued archive header.');
+    }
+    children.push({
+      childSelector,
+      resourceKey,
+      resourcePrefixZ64,
+      archiveIndex: archive.index,
+      assetId: 'archive:' + archive.index,
+      filename: archive.filename,
+      disposition: 'exact-native-resource-child'
+    });
+  }
+  const populated = children.filter((child) => child.assetId !== null);
+  const nullChildren = children.filter((child) => child.assetId === null)
+    .map((child) => child.childSelector);
+  if (populated.length !== 38 || nullChildren.join(',') !== '0,34,37' ||
+      populated[0].archiveIndex !== 120 ||
+      populated[populated.length - 1].archiveIndex !== 157 ||
+      populated.some((child, index) => child.archiveIndex !== 120 + index)) {
+    throw new Error('Oversized-image archive ownership changed.');
+  }
+
+  const rows = [];
+  for (let rowSelector = 0;
+      rowSelector < CLASS_EVOLUTION_MEDIA_ROW_COUNT; rowSelector += 1) {
+    const mediaSelector = tableBytes.readInt8(
+      rowSelector * CLASS_EVOLUTION_MEDIA_ROW_BYTES +
+        CLASS_EVOLUTION_MEDIA_SELECTOR_OFFSET);
+    const childSelector = mediaSelector - 4;
+    const child = childSelector >= 0 && childSelector < children.length
+      ? children[childSelector] : null;
+    rows.push({
+      rowSelector,
+      mediaSelector,
+      childSelector,
+      resourceKey: child && child.resourceKey || null,
+      archiveIndex: child && child.archiveIndex !== null ? child.archiveIndex : null,
+      assetId: child && child.assetId || null,
+      disposition: !child ? 'child-selector-outside-root' : child.disposition
+    });
+  }
+  return {
+    classTableZ64: CLASS_EVOLUTION_MEDIA_TABLE_Z64,
+    classTableRowCount: CLASS_EVOLUTION_MEDIA_ROW_COUNT,
+    classTableRowBytes: CLASS_EVOLUTION_MEDIA_ROW_BYTES,
+    classTableSelectorOffset: CLASS_EVOLUTION_MEDIA_SELECTOR_OFFSET,
+    classTableSha256: CLASS_EVOLUTION_MEDIA_TABLE_SHA256,
+    rootResourceKey: OVERSIZED_IMAGE_ROOT_KEY,
+    rootPrefixZ64: root.prefixStart,
+    rootPayloadZ64: root.payloadStart,
+    rootPayloadSha256: OVERSIZED_IMAGE_ROOT_PAYLOAD_SHA256,
+    children,
+    rows
+  };
+}
+
+function signedHalfword(value) {
+  return Number(value) << 16 >> 16;
+}
+
+function oversizedImagePresentationProfile(asset, launchContext,
+    parentEventLaunches, rules) {
+  if (!launchContext || launchContext.classId !== 4) return null;
+  const nodes = (asset.nodes || []).filter((node) =>
+    String(node.opcode).toUpperCase() === '0X80000007');
+  if (nodes.length > 1) {
+    throw new Error(asset.assetId +
+      ' has more than one oversized-image launch-row selector.');
+  }
+
+  const contextRows = (parentEventLaunches || []).flatMap((launch) =>
+    (launch.eventInvocationContexts || []).map((context) => ({
+      launchId: launch.launchId,
+      eventDirectoryRow: launch.eventDirectoryRow,
+      eventEntryCursor: launch.eventEntryCursor,
+      eventInvocationCursor: context.eventInvocationCursor,
+      rowSelector: Number.isInteger(eventContextProperty(context, 0xE9))
+        ? eventContextProperty(context, 0xE9) : null
+    })));
+  const exactContextRows = contextRows.map((context) => context.rowSelector)
+    .filter(Number.isInteger);
+  const exactContextRowSet = new Set(exactContextRows);
+  const node = nodes[0] || null;
+  const rawRowSelector = node && Array.isArray(node.operands) &&
+      Number.isInteger(node.operands[0]) ? node.operands[0] : null;
+  const rowSelector = node ? signedHalfword(rawRowSelector) :
+    (contextRows.length > 0 && exactContextRows.length === contextRows.length &&
+      exactContextRowSet.size === 1 ? exactContextRows[0] : null);
+  const row = Number.isInteger(rowSelector) && rowSelector >= 0 &&
+      rowSelector < rules.rows.length ? rules.rows[rowSelector] : null;
+  const source = node ? 'director-launch-prescan-opcode-0x80000007' :
+    (row ? 'event-property-0xE9-fallback' : 'event-property-0xE9-unresolved');
+  return {
+    active: true,
+    source,
+    sourceNodeId: node ? node.id : null,
+    wordStart: node ? node.startWord : null,
+    rawRowSelector,
+    rowSelector,
+    mediaSelector: row ? row.mediaSelector : null,
+    childSelector: row ? row.childSelector : null,
+    resourceKey: row ? row.resourceKey : null,
+    archiveIndex: row ? row.archiveIndex : null,
+    assetId: row ? row.assetId : null,
+    contextCount: contextRows.length,
+    exactContextCount: exactContextRows.length,
+    contexts: contextRows,
+    evidenceStatus: row && row.assetId
+      ? 'native-static-exact'
+      : (row ? row.disposition : 'launch-inputs-unresolved'),
+    status: row && row.assetId
+      ? 'The class-4 launch row selects this exact oversized-image archive through the resident class-evolution table and resource root.'
+      : (row
+        ? 'The native launch row selects an empty or invalid oversized-image child.'
+        : 'The class-4 owner falls back to event property 0xE9, which is unresolved for this launch context.'),
+    initialView: { x: 0, y: 0, scale: 1, zoomState: 4 }
+  };
+}
+
+function readModeTwoDerivedEnvironmentRules(z64) {
+  function readTable(start, length, expectedSha256, label) {
+    const bytes = z64.subarray(start, start + length);
+    if (bytes.length !== length || sha256(bytes) !== expectedSha256) {
+      throw new Error(label + ' no longer matches the retail ROM.');
+    }
+    return Array.from(bytes);
+  }
+  const signedTerrain = readTable(
+    MODE_TWO_SIGNED_TERRAIN_TABLE_Z64,
+    MODE_TWO_DERIVED_TERRAIN_TABLE_BYTES,
+    MODE_TWO_DERIVED_TERRAIN_TABLE_SHA256,
+    'Signed derived-environment terrain table');
+  const unsignedTerrain = readTable(
+    MODE_TWO_UNSIGNED_TERRAIN_TABLE_Z64,
+    MODE_TWO_DERIVED_TERRAIN_TABLE_BYTES,
+    MODE_TWO_DERIVED_TERRAIN_TABLE_SHA256,
+    'Unsigned derived-environment terrain table');
+  const signedScenario = readTable(
+    MODE_TWO_SIGNED_SCENARIO_TABLE_Z64,
+    MODE_TWO_DERIVED_SCENARIO_TABLE_BYTES,
+    MODE_TWO_DERIVED_SCENARIO_TABLE_SHA256,
+    'Signed derived-environment scenario table');
+  const unsignedScenario = readTable(
+    MODE_TWO_UNSIGNED_SCENARIO_TABLE_Z64,
+    MODE_TWO_DERIVED_SCENARIO_TABLE_BYTES,
+    MODE_TWO_DERIVED_SCENARIO_TABLE_SHA256,
+    'Unsigned derived-environment scenario table');
+  if (signedTerrain.some((value, index) => value !== unsignedTerrain[index]) ||
+      signedScenario.some((value, index) => value !== unsignedScenario[index])) {
+    throw new Error('The paired derived-environment lookup tables no longer match.');
+  }
+  function mapper(mapperId, functionZ64, terrainTableZ64, scenarioTableZ64,
+      signedScenarioBytes) {
+    return {
+      mapperId,
+      functionZ64,
+      terrainTableZ64,
+      terrainTableSha256: MODE_TWO_DERIVED_TERRAIN_TABLE_SHA256,
+      terrainRows: Array.from({ length: signedTerrain.length / 4 }, (_, index) =>
+        signedTerrain.slice(index * 4, index * 4 + 4)),
+      scenarioTableZ64,
+      scenarioTableSha256: MODE_TWO_DERIVED_SCENARIO_TABLE_SHA256,
+      scenarioValues: signedScenario.slice(),
+      signedScenarioBytes
+    };
+  }
+  return {
+    evidenceStatus: 'native-static-launch-mappers',
+    selectorConversion: 'one-based mapper output minus one',
+    inputProperties: {
+      scenarioKey: 0xE9,
+      currentUnitSelector: 0xFD,
+      battleTerrain: 0xFC
+    },
+    randomChoiceSourceRam: '0x8009C7CC',
+    scenarioOverrides: MODE_TWO_DERIVED_SCENARIO_OVERRIDES.map((row) => ({
+      scenarioKey: row[0],
+      currentUnitSelector: row[1],
+      nativeEnvironmentNumber: row[2],
+      environmentSelector: row[2] - 1
+    })),
+    mappers: [
+      mapper('signed-direct-loader', '0x000670DC',
+        MODE_TWO_SIGNED_TERRAIN_TABLE_Z64, MODE_TWO_SIGNED_SCENARIO_TABLE_Z64, true),
+      mapper('unsigned-existing-context-loader', '0x00067600',
+        MODE_TWO_UNSIGNED_TERRAIN_TABLE_Z64,
+        MODE_TWO_UNSIGNED_SCENARIO_TABLE_Z64, false)
+    ],
+    status: 'The launch mappers consume event properties 0xE9 and 0xFD, battle terrain, and selected native query or unit-record state. Their one-based result is decremented before environment-table lookup.'
+  };
+}
+
+function modeTwoDerivedMapper(rules, mapperId) {
+  const mapper = rules.mappers.find((row) => row.mapperId === mapperId);
+  if (!mapper) throw new Error('Unknown derived-environment mapper ' + mapperId + '.');
+  return mapper;
+}
+
+function eventContextProperty(context, propertyOperand) {
+  const row = (context.eventPropertyValues || []).find((property) =>
+    property.propertyOperand === propertyOperand);
+  return row ? row.value : null;
+}
+
+function exactModeTwoDerivedEnvironment(rules, mapperId, inputs) {
+  const mapper = modeTwoDerivedMapper(rules, mapperId);
+  const scenarioKey = inputs.scenarioKey;
+  const currentUnitSelector = inputs.currentUnitSelector;
+  const battleTerrain = inputs.battleTerrain;
+  const randomChoice = inputs.randomChoice;
+  if (Number.isInteger(scenarioKey) && Number.isInteger(currentUnitSelector)) {
+    const special = rules.scenarioOverrides.find((row) =>
+      row.scenarioKey === scenarioKey &&
+      row.currentUnitSelector === currentUnitSelector);
+    if (special) {
+      return {
+        nativeEnvironmentNumber: special.nativeEnvironmentNumber,
+        source: 'scenario-unit-override'
+      };
+    }
+    if (currentUnitSelector === 30 && scenarioKey >= 0 &&
+        scenarioKey < mapper.scenarioValues.length) {
+      const rawValue = mapper.scenarioValues[scenarioKey];
+      const nativeEnvironmentNumber = mapper.signedScenarioBytes
+        ? eventSigned8(rawValue) : rawValue;
+      if (nativeEnvironmentNumber !== -1) {
+        return {
+          nativeEnvironmentNumber,
+          source: mapper.signedScenarioBytes
+            ? 'signed-scenario-table' : 'unsigned-scenario-table'
+        };
+      }
+    }
+  }
+  if (!Number.isInteger(battleTerrain)) return null;
+  const terrain = battleTerrain & 0xFF;
+  if (terrain === 100) {
+    return { nativeEnvironmentNumber: 24, source: 'terrain-100' };
+  }
+  if ((terrain & 0x80) !== 0) return null;
+  if (terrain === 15 || terrain === 19) {
+    return { nativeEnvironmentNumber: 30, source: 'terrain-15-or-19' };
+  }
+  const rowIndex = Math.floor((terrain - 1) / 26);
+  if (rowIndex < 0 || rowIndex >= mapper.terrainRows.length ||
+      !Number.isInteger(randomChoice)) return null;
+  const choice = ((randomChoice % 4) + 4) % 4;
+  return {
+    nativeEnvironmentNumber: mapper.terrainRows[rowIndex][choice],
+    source: 'terrain-four-choice-table'
+  };
+}
+
+function modeTwoDerivedEnvironmentCandidates(rules, mapperId, inputs) {
+  const exact = exactModeTwoDerivedEnvironment(rules, mapperId, inputs);
+  if (exact) {
+    const selector = exact.nativeEnvironmentNumber - 1;
+    return {
+      nativeEnvironmentNumbers: [exact.nativeEnvironmentNumber],
+      environmentSelectors: selector >= 0 && selector < 80 ? [selector] : [],
+      outOfRangeEnvironmentSelectors: selector >= 0 && selector < 80 ? [] : [selector]
+    };
+  }
+  const mapper = modeTwoDerivedMapper(rules, mapperId);
+  const outputs = new Set();
+  function addOutput(value) {
+    if (Number.isInteger(value)) outputs.add(value);
+  }
+  const scenarioKey = inputs.scenarioKey;
+  const currentUnitSelector = inputs.currentUnitSelector;
+  rules.scenarioOverrides.forEach((row) => {
+    if ((scenarioKey === null || row.scenarioKey === scenarioKey) &&
+        (currentUnitSelector === null ||
+          row.currentUnitSelector === currentUnitSelector)) {
+      addOutput(row.nativeEnvironmentNumber);
+    }
+  });
+  if (currentUnitSelector === null || currentUnitSelector === 30) {
+    if (Number.isInteger(scenarioKey) && scenarioKey >= 0 &&
+        scenarioKey < mapper.scenarioValues.length) {
+      const rawValue = mapper.scenarioValues[scenarioKey];
+      const value = mapper.signedScenarioBytes ? eventSigned8(rawValue) : rawValue;
+      if (value !== -1) addOutput(value);
+    } else if (scenarioKey === null) {
+      mapper.scenarioValues.forEach((rawValue) => {
+        const value = mapper.signedScenarioBytes ? eventSigned8(rawValue) : rawValue;
+        if (value !== -1) addOutput(value);
+      });
+    }
+  }
+  const battleTerrain = inputs.battleTerrain;
+  if (Number.isInteger(battleTerrain)) {
+    const terrain = battleTerrain & 0xFF;
+    if (terrain === 100) {
+      addOutput(24);
+    } else if ((terrain & 0x80) !== 0) {
+      [21, 22, 24, 40, 59].forEach(addOutput);
+    } else if (terrain === 15 || terrain === 19) {
+      addOutput(30);
+    } else {
+      const rowIndex = Math.floor((terrain - 1) / 26);
+      if (rowIndex >= 0 && rowIndex < mapper.terrainRows.length) {
+        mapper.terrainRows[rowIndex].forEach(addOutput);
+      }
+    }
+  } else {
+    mapper.terrainRows.flat().forEach(addOutput);
+    [21, 22, 24, 30, 40, 59].forEach(addOutput);
+  }
+  const nativeEnvironmentNumbers = Array.from(outputs).sort((left, right) => left - right);
+  const selectors = nativeEnvironmentNumbers.map((value) => value - 1);
+  return {
+    nativeEnvironmentNumbers,
+    environmentSelectors: selectors.filter((selector) => selector >= 0 && selector < 80),
+    outOfRangeEnvironmentSelectors:
+      selectors.filter((selector) => selector < 0 || selector >= 80)
+  };
+}
+
+function modeTwoDerivedEnvironmentProfile(parentEventLaunches, rules) {
+  const mapperId = 'unsigned-existing-context-loader';
+  const contexts = (parentEventLaunches || []).flatMap((launch) =>
+    (launch.eventInvocationContexts || []).map((context) => {
+      const inputs = {
+        scenarioKey: eventContextProperty(context, 0xE9),
+        currentUnitSelector: eventContextProperty(context, 0xFD),
+        battleTerrain: eventContextProperty(context, 0xFC),
+        randomChoice: null,
+        unitRecordFlags: null,
+        auxiliaryHighTerrainState: null
+      };
+      const exact = exactModeTwoDerivedEnvironment(rules, mapperId, inputs);
+      const candidates = modeTwoDerivedEnvironmentCandidates(rules, mapperId, inputs);
+      const selector = exact ? exact.nativeEnvironmentNumber - 1 : null;
+      return {
+        launchId: launch.launchId,
+        eventDirectoryRow: launch.eventDirectoryRow,
+        eventEntryCursor: launch.eventEntryCursor,
+        eventInvocationCursor: context.eventInvocationCursor,
+        mapperId,
+        inputs,
+        nativeEnvironmentNumber: exact ? exact.nativeEnvironmentNumber : null,
+        environmentSelector: selector,
+        resolutionSource: exact ? exact.source : null,
+        environmentSelectorCandidates: candidates.environmentSelectors,
+        outOfRangeEnvironmentSelectorCandidates:
+          candidates.outOfRangeEnvironmentSelectors,
+        resolutionStatus: exact ? 'exact-native-mapper-result' : 'launch-inputs-unresolved',
+        evidenceStatus: 'native-static-event-vm-and-launch-mapper'
+      };
+    }));
+  const contextCandidates = contexts.length ? contexts.map((context) => ({
+    environmentSelectors: context.environmentSelectorCandidates,
+    outOfRangeEnvironmentSelectors: context.outOfRangeEnvironmentSelectorCandidates
+  })) : [modeTwoDerivedEnvironmentCandidates(rules, mapperId, {
+    scenarioKey: null,
+    currentUnitSelector: null,
+    battleTerrain: null,
+    randomChoice: null
+  })];
+  const environmentSelectorCandidates = Array.from(new Set(contextCandidates.flatMap((row) =>
+    row.environmentSelectors))).sort((left, right) => left - right);
+  const outOfRangeEnvironmentSelectorCandidates = Array.from(new Set(
+    contextCandidates.flatMap((row) => row.outOfRangeEnvironmentSelectors)))
+    .sort((left, right) => left - right);
+  const exactSelectors = contexts.map((context) => context.environmentSelector)
+    .filter((selector) => selector !== null);
+  const exactSelectorSet = new Set(exactSelectors);
+  const environmentSelector = contexts.length > 0 &&
+      exactSelectors.length === contexts.length && exactSelectorSet.size === 1
+    ? exactSelectors[0] : null;
+  return {
+    mapperId,
+    mapperFunctionZ64: modeTwoDerivedMapper(rules, mapperId).functionZ64,
+    selectorConversion: rules.selectorConversion,
+    contextCount: contexts.length,
+    exactContextCount: exactSelectors.length,
+    unresolvedContextCount: contexts.length - exactSelectors.length,
+    environmentSelector,
+    environmentSelectorCandidates,
+    outOfRangeEnvironmentSelectorCandidates,
+    requiredInputs: [
+      'event-property-0xE9-scenario-key',
+      'event-property-0xFD-current-unit-selector',
+      'event-property-0xFC-battle-terrain',
+      'four-choice-query-or-high-terrain-unit-state'
+    ],
+    contexts,
+    evidenceStatus: environmentSelector === null
+      ? 'native-static-launch-inputs-unresolved' : 'native-static-exact',
+    status: environmentSelector === null
+      ? 'The native mapper is exact, but this launch lacks enough static scenario, unit, terrain, or query state to select one environment.'
+      : 'Every reachable launch context produces the same exact environment selector.'
+  };
+}
+
+function backgroundRequestsForAsset(asset, runtimeObservation, launchContext) {
+  const launchClass = launchContext && Number.isInteger(launchContext.classId)
+    ? launchContext.classId : null;
+  const classPreloadsSceneGroup = launchClass === 4 || launchClass === 5;
   return (asset.nodes || []).filter((node) =>
     String(node.opcode).toUpperCase() === '0X80000006').map((node) => {
     const operand = Array.isArray(node.operands) && Number.isInteger(node.operands[0])
       ? node.operands[0] : null;
     const inSceneTable = Number.isInteger(operand) && operand >= 0 &&
       operand < SCENE_BACKGROUND_GROUP_KEYS.length;
+    const inModeTwoEnvironmentTable = Number.isInteger(operand) && operand >= 0 &&
+      operand < MODE_TWO_ENVIRONMENT_RESOURCE_KEYS.length;
     const sceneMembers = inSceneTable ? sceneGroupMembers(operand) : [];
     return {
       requestId: asset.assetId + ':background-request:w' +
@@ -1865,13 +3132,42 @@ function backgroundRequestsForAsset(asset, runtimeObservation) {
       modeStatus: runtimeObservation && Number.isInteger(runtimeObservation.directorMode)
         ? 'runtime-observed Director mode ' + runtimeObservation.directorMode
         : 'runtime Director mode byte 0x8018FC19 unresolved for this asset',
+      launchPreloadRoute: {
+        terminalClass: launchClass,
+        condition: 'terminal trailer class equals 4 or 5',
+        active: classPreloadsSceneGroup,
+        commandOperandDisposition: classPreloadsSceneGroup && inSceneTable
+          ? 'exact scene-table selector' : 'not selected by this terminal class',
+        selector: classPreloadsSceneGroup ? operand : null,
+        selectorTableId: 'background-table:scene:31',
+        groupResourceKey: classPreloadsSceneGroup && inSceneTable
+          ? SCENE_BACKGROUND_GROUP_KEYS[operand] : null,
+        members: classPreloadsSceneGroup ? sceneMembers : [],
+        archiveAssetIds: classPreloadsSceneGroup
+          ? sceneMembers.map((member) => member.assetId) : [],
+        associationStatus: classPreloadsSceneGroup && inSceneTable
+          ? 'exact launch-time scene-group preload; ordinal zero is cached for the later non-mode-2 materializer'
+          : 'terminal class does not select the scene-group preload path'
+      },
       mode2Route: {
-        condition: 'mode byte equals 2',
-        commandOperandDisposition: 'ignored by the selected handler branch',
-        selectorSource: 'environment byte 0x80196AED; the overlay selector is stored independently at 0x801CEAB0',
+        condition: 'terminal class is not 4 or 5 and runtime mode byte equals 2',
+        commandOperandDisposition: classPreloadsSceneGroup
+          ? 'terminal class routes the operand to the scene-group preload'
+          : (inModeTwoEnvironmentTable
+          ? 'exact launch environment selector'
+          : (operand === -1
+            ? 'native derived-environment sentinel'
+            : 'outside the 80-entry environment table')),
+        selectorSource: 'func_0004ED60 output +2 seeds environment byte 0x80196AED only outside terminal classes 4 and 5; foreground scalar 0x801CEAB0 remains independently mutable',
         selectorTableId: 'background-table:mode2-environment:80',
         overlaySelectorTableId: 'background-table:mode2-overlay:80',
-        associationStatus: 'runtime environment and overlay selector values unresolved'
+        associationStatus: classPreloadsSceneGroup
+          ? 'inactive because the launch pre-scan selected the scene-group preload'
+          : (inModeTwoEnvironmentTable
+          ? 'exact launch environment; final foreground depends on an external mode-2 flag'
+          : (operand === -1
+            ? 'environment and foreground are derived from launch state'
+            : 'mode-2 launch route is outside the located selector table'))
       },
       nonMode2Route: {
         condition: 'mode byte does not equal 2',
@@ -1902,7 +3198,64 @@ function directorOpcodeSet(asset, canonicalNodes) {
   }));
 }
 
-function directorLaunchMode(asset, runtimeObservation, canonicalNodes) {
+function launchTranslationIndex(word) {
+  const value = Number(word) >>> 0;
+  return (value & 0xFFFFFF00) === 0x08880000 ? value & 0xFF : null;
+}
+
+function launchOperandTranslationProfile(nodes, parentEventLaunches) {
+  const occurrences = [];
+  (nodes || []).forEach((node) => {
+    const words = Array.isArray(node.rawWords)
+      ? node.rawWords : [node.opcode_u32].concat(node.operands || []);
+    words.forEach((word, wordOffset) => {
+      const tableIndex = launchTranslationIndex(word);
+      if (tableIndex === null) return;
+      occurrences.push({
+        nodeId: node.id,
+        wordStart: Number.isInteger(node.startWord) ? node.startWord : node.word_start,
+        wordOffset,
+        sourceWord: (Number.isInteger(node.startWord) ? node.startWord : node.word_start) +
+          wordOffset,
+        tableIndex,
+        operandRole: wordOffset === 0 ? 'opcode' :
+          ((node.definition && node.definition.operandRoles || [])[wordOffset - 1] ||
+            'operand_' + (wordOffset - 1))
+      });
+    });
+  });
+  const tableIndexes = Array.from(new Set(occurrences.map((row) => row.tableIndex)))
+    .sort((left, right) => left - right);
+  const launchContexts = tableIndexes.length === 0 ? [] :
+    (parentEventLaunches || []).flatMap((launch) =>
+      (launch.eventInvocationContexts || []).map((context) => ({
+        launchId: launch.launchId,
+        eventInvocationCursor: context.eventInvocationCursor,
+        precedingDirectorLaunchCount: context.precedingDirectorLaunchCount,
+        tableValues: tableIndexes.map((tableIndex) =>
+          context.launchTranslationTable[tableIndex]),
+        evidenceStatus: 'native-static-event-vm'
+      })));
+  const resolvedContextCount = launchContexts.filter((context) =>
+    context.tableValues.every((value) => value !== null)).length;
+  return {
+    required: occurrences.length > 0,
+    placeholderCount: occurrences.length,
+    tableIndexes,
+    occurrences,
+    launchContexts,
+    resolvedContextCount,
+    unresolvedContextCount: launchContexts.length - resolvedContextCount,
+    evidenceStatus: occurrences.length
+      ? 'native-static-loader-and-event-vm' : 'not-required',
+    status: occurrences.length
+      ? 'The native Director loader replaces these operands from its launch-populated halfword table before parsing. Event-VM constants are attached per invocation; unresolved values remain explicit preview inputs.'
+      : 'This Director resource contains no launch-translation placeholders.'
+  };
+}
+
+function directorLaunchMode(asset, runtimeObservation, canonicalNodes,
+    parentEventLaunches, launchContext) {
   if (runtimeObservation && Number.isInteger(runtimeObservation.directorMode)) {
     return {
       value: runtimeObservation.directorMode,
@@ -1916,8 +3269,25 @@ function directorLaunchMode(asset, runtimeObservation, canonicalNodes) {
     opcodes.has(opcode));
   const modeTwoMarkers = MODE_TWO_ONLY_DIRECTOR_OPCODES.filter((opcode) =>
     opcodes.has(opcode));
+  if (launchContext && (launchContext.classId === 4 || launchContext.classId === 5)) {
+    return {
+      value: 0,
+      evidenceStatus: 'native-static-launch-class',
+      source: 'terminal class 4/5 scene-group preload',
+      sourceOpcodes: modeZeroMarkers.concat(modeTwoMarkers).map((opcode) =>
+        '0x' + opcode.toString(16).toUpperCase()),
+      status: 'The launch class selects the non-mode-two scene-group presentation path; mode-specific commands outside the selected embedded sequence do not override it.'
+    };
+  }
   if (modeZeroMarkers.length && modeTwoMarkers.length) {
-    throw new Error(asset.assetId + ' contains conflicting Director launch-mode markers.');
+    return {
+      value: null,
+      evidenceStatus: 'stream-multi-context',
+      source: 'mode-guarded commands from more than one launch context',
+      sourceOpcodes: modeZeroMarkers.concat(modeTwoMarkers).map((opcode) =>
+        '0x' + opcode.toString(16).toUpperCase()),
+      status: 'The physical stream contains mode-guarded commands from more than one context; its caller owns the launch mode.'
+    };
   }
   if (modeZeroMarkers.length) {
     return {
@@ -1939,54 +3309,19 @@ function directorLaunchMode(asset, runtimeObservation, canonicalNodes) {
       status: 'Mode-two-only commands identify this stream as a mode-two scene.'
     };
   }
+  if (Array.isArray(parentEventLaunches) && parentEventLaunches.length) {
+    return {
+      value: null,
+      evidenceStatus: 'parent-event-context-unresolved',
+      source: 'direct event opcode-0x10 preserves parent scene mode',
+      status: 'The exact parent-event launch selects this Director but preserves a scene mode initialized outside the launch opcode.'
+    };
+  }
   return {
     value: null,
     evidenceStatus: 'external-unresolved',
     source: 'launch caller outside the Director stream',
     status: 'This stream has no mode-specific command that identifies its launch mode.'
-  };
-}
-
-function modeTwoBackgroundMirrorEvidence(assets) {
-  const rows = [];
-  (assets || []).forEach((asset) => {
-    const observation = DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS[asset.assetId] || null;
-    if (!observation || observation.directorMode !== 2 ||
-        !Number.isInteger(observation.mode2SelectorByte)) return;
-    backgroundRequestsForAsset(asset, observation).forEach((request) => {
-      if (!Number.isInteger(request.commandOperand)) return;
-      rows.push({
-        assetId: asset.assetId,
-        commandOperand: request.commandOperand,
-        runtimeSelector: observation.mode2SelectorByte,
-        matches: request.commandOperand === observation.mode2SelectorByte
-      });
-    });
-  });
-  return {
-    observedRequestCount: rows.length,
-    matchingRequestCount: rows.filter((row) => row.matches).length,
-    allObservedRequestsMatch: rows.length > 0 && rows.every((row) => row.matches),
-    rows
-  };
-}
-
-function launchCameraProjection(values, calibrationStatus, calibrationResult) {
-  return {
-    mode: 'native-perspective-profile',
-    coordinateSpace: 'Director fixed-point coordinates divided by 1000; native Actor model scale is 0.1',
-    screenWidth: 320,
-    screenHeight: 240,
-    modelScale: 0.1,
-    fovYDegrees: values.fovYDegrees,
-    aspect: 4 / 3,
-    near: 1,
-    far: 5000,
-    eye: { ...values.eye },
-    target: { ...values.target },
-    up: { x: 0, y: 1, z: 0 },
-    calibrationStatus,
-    calibrationResult
   };
 }
 
@@ -2021,15 +3356,10 @@ function launchCameraProfiles(mode, actorCameraObservation) {
     };
   } else if (mode.value === 2) {
     actor = {
-      kind: 'mode-two-corpus-family',
-      evidenceStatus: 'corpus-family-inferred',
-      status: 'Five stored non-title mode-two scenes share this complete Actor camera bank.',
-      basisCaptureCount: 5,
-      projection: launchCameraProjection(
-        COMMON_MODE_TWO_ACTOR_CAMERA,
-        'five-capture mode-two family',
-        'Five stored non-title mode-two scenes contain identical Actor camera values.'
-      )
+      kind: 'mode-two-overlay-initializer',
+      evidenceStatus: 'native-static',
+      status: 'The mode-two initializer copies immutable overlay camera constants into the Actor camera bank.',
+      projection: JSON.parse(JSON.stringify(COMMON_MODE_TWO_ACTOR_PROJECTION))
     };
   } else {
     actor = {
@@ -2040,6 +3370,40 @@ function launchCameraProfiles(mode, actorCameraObservation) {
     };
   }
   return { registered, actor };
+}
+
+function directorLaunchContextProfile(nodes) {
+  const terminal = Array.isArray(nodes) && nodes.length ? nodes[nodes.length - 1] : null;
+  if (!terminal || terminal.opcode !== 0x80000001 || terminal.wordCount !== 2) {
+    throw new Error('Director launch context requires an exact terminal-with-trailer node.');
+  }
+  const classId = Number(terminal.rawWords[1]) & 0xFF;
+  const effectiveResourceRoute = DIRECTOR_TERMINAL_CLASS_DISPATCH_ROUTES[classId];
+  if (!Number.isInteger(effectiveResourceRoute)) {
+    throw new Error('Director terminal class ' + classId +
+      ' is outside the native resource-class dispatcher table.');
+  }
+  const resourceLoaderModeWrite = classId === 2 ? 1 : (classId === 7 ? 2 : null);
+  return {
+    classId,
+    source: 'terminal-trailer-low-byte',
+    evidenceStatus: 'native-static',
+    directEventInitialResourceRoute: -5,
+    effectiveResourceRoute,
+    resourceRouteSource: 'decoded-terminal-class-resource-mapper',
+    resourceClassMapperFunctionZ64: '0x00283E14',
+    resourceClassJumpTableZ64: '0x00286B90',
+    resourceLoaderModeWrite,
+    resourceLoaderModeEffect: resourceLoaderModeWrite === null
+      ? 'dispatcher-route-preserves-entry-value'
+      : 'dispatcher-route-writes-' + resourceLoaderModeWrite,
+    backgroundPreload: classId === 4 || classId === 5
+      ? 'scene-group-first-member' : 'mode-two-environment-or-derived-state',
+    eventRequestFlagEffect: classId === 2 || classId === 7
+      ? 'event-launch-preserves-request-flags'
+      : 'event-launch-adds-0x0800',
+    status: 'The Director terminal trailer supplies the native launch-context class and replaces a below-minus-two dispatcher hint with its class-owned resource route.'
+  };
 }
 
 function launchBackgroundRoute(tableId, selector, overlaySelector) {
@@ -2058,7 +3422,7 @@ function launchBackgroundRoute(tableId, selector, overlaySelector) {
     };
   }
   if (tableId === 'background-table:mode2-environment:80') {
-    const selectedOverlay = Number.isInteger(overlaySelector) ? overlaySelector : selector;
+    const selectedOverlay = Number.isInteger(overlaySelector) ? overlaySelector : null;
     const stageLayers = modeTwoStageLayers(selector, selectedOverlay)
       .map((layer) => ({ ...layer }));
     const assetIds = stageLayers.map((layer) => layer.assetId);
@@ -2073,62 +3437,149 @@ function launchBackgroundRoute(tableId, selector, overlaySelector) {
       environmentAssetId: modeTwoEnvironmentAssetId(selector),
       overlaySelector: selectedOverlay,
       overlayResourceKey:
-        selectedOverlay >= 0 && selectedOverlay < MODE_TWO_OVERLAY_RESOURCE_KEYS.length
+        Number.isInteger(selectedOverlay) && selectedOverlay >= 0 &&
+          selectedOverlay < MODE_TWO_OVERLAY_RESOURCE_KEYS.length
           ? MODE_TWO_OVERLAY_RESOURCE_KEYS[selectedOverlay] || null : null,
-      overlayAssetIds: archiveAssetIds(BATTLE_BACKGROUND_ARCHIVE_ROWS[selectedOverlay] || []),
+      overlayAssetIds: Number.isInteger(selectedOverlay)
+        ? archiveAssetIds(BATTLE_BACKGROUND_ARCHIVE_ROWS[selectedOverlay] || []) : [],
       stageLayers
     };
   }
   return { members: [], assetIds: [], resourceKey: null, stageLayers: [] };
 }
 
-function launchBackgroundProfiles(mode, requests, runtimeObservation, mirrorEvidence) {
-  const mirrorUsable = mirrorEvidence.observedRequestCount >= 3 &&
-    mirrorEvidence.allObservedRequestsMatch;
+function launchBackgroundProfiles(mode, requests, runtimeObservation, launchContext,
+    parentEventLaunches, derivedEnvironmentRules) {
   return requests.map((request) => {
     let selectorTableId = null;
     let selector = null;
+    let foregroundSelectorTableId = null;
+    let foregroundSelector = null;
     let selectorSource = 'external-unresolved';
+    let foregroundSelectorSource = 'not-applicable';
     let evidenceStatus = 'external-unresolved';
     let status = 'The active background route depends on launch state outside this stream.';
-    if (mode.value === 0) {
+    let foregroundStatus = 'No foreground selector applies to this launch route.';
+    let environmentSelectorCandidates = [];
+    let foregroundSelectorCandidates = [];
+    let derivedEnvironment = null;
+    const classPreloadsSceneGroup = launchContext &&
+      (launchContext.classId === 4 || launchContext.classId === 5);
+    if (mode.value === 2 && runtimeObservation &&
+        Number.isInteger(runtimeObservation.environmentSelector)) {
+      selectorTableId = 'background-table:mode2-environment:80';
+      selector = runtimeObservation.environmentSelector;
+      environmentSelectorCandidates = [selector];
+      foregroundSelectorTableId = 'background-table:mode2-overlay:80';
+      foregroundSelector = Number.isInteger(runtimeObservation.foregroundSelector)
+        ? runtimeObservation.foregroundSelector : null;
+      selectorSource = 'runtime-observed-environment-selector';
+      foregroundSelectorSource = foregroundSelector === null
+        ? 'runtime-observed-inactive' : 'runtime-observed-foreground-selector';
+      foregroundSelectorCandidates = foregroundSelector === null
+        ? [] : [foregroundSelector];
+      evidenceStatus = 'runtime-observed';
+      status = 'Stored launch state independently supplies the mode-two environment and foreground selectors.';
+      foregroundStatus = foregroundSelector === null
+        ? 'The stored launch has no active foreground selector.'
+        : 'Stored launch state supplies the exact foreground selector.';
+    } else if (classPreloadsSceneGroup) {
       selectorTableId = 'background-table:scene:31';
       selector = request.commandOperand;
+      environmentSelectorCandidates = Number.isInteger(selector) ? [selector] : [];
+      selectorSource = 'director-launch-prescan-class-4-or-5-scene-group';
+      evidenceStatus = 'native-static-launch-prescan';
+      status = 'Terminal class ' + launchContext.classId +
+        ' makes the native launch pre-scan load this scene group and cache its first member.';
+    } else if (mode.value === 0) {
+      selectorTableId = 'background-table:scene:31';
+      selector = request.commandOperand;
+      environmentSelectorCandidates = Number.isInteger(selector) ? [selector] : [];
       selectorSource = 'director-command-operand';
       evidenceStatus = mode.evidenceStatus === 'runtime-observed'
         ? 'runtime-observed-mode-native-command' : 'stream-structural-mode-native-command';
       status = 'The active non-mode-two handler uses the Director command operand.';
-    } else if (mode.value === 2 && runtimeObservation &&
-        Number.isInteger(runtimeObservation.mode2SelectorByte)) {
+    } else if (mode.value === 2) {
       selectorTableId = 'background-table:mode2-environment:80';
-      selector = runtimeObservation.mode2SelectorByte;
-      selectorSource = 'runtime-observed-external-byte';
-      evidenceStatus = 'runtime-observed';
-      status = 'Stored scene state supplies the external mode-two background selector.';
-    } else if (mode.value === 2 && mirrorUsable &&
-        Number.isInteger(request.commandOperand)) {
-      selectorTableId = 'background-table:mode2-environment:80';
-      selector = request.commandOperand;
-      selectorSource = 'corpus-coordinated-command-mirror';
-      evidenceStatus = 'corpus-pattern-inferred';
-      status = mirrorEvidence.matchingRequestCount + ' of ' +
-        mirrorEvidence.observedRequestCount +
-        ' stored mode-two requests mirror the external selector in this operand.';
+      foregroundSelectorTableId = 'background-table:mode2-overlay:80';
+      const parentEventContext = Array.isArray(parentEventLaunches) &&
+        parentEventLaunches.length > 0;
+      const commandSeedsEnvironment = Number.isInteger(request.commandOperand) &&
+        request.commandOperand >= 0 &&
+        request.commandOperand < MODE_TWO_ENVIRONMENT_RESOURCE_KEYS.length;
+      if (commandSeedsEnvironment) {
+        selector = request.commandOperand;
+        environmentSelectorCandidates = [request.commandOperand];
+        selectorSource = 'director-launch-prescan-command-operand';
+        foregroundSelector = parentEventContext ? request.commandOperand : null;
+        foregroundSelectorSource = parentEventContext
+          ? 'event-context-mode-two-environment-copy'
+          : 'source-only-launch-route-unresolved';
+        foregroundSelectorCandidates = parentEventContext
+          ? [request.commandOperand]
+          : [];
+        evidenceStatus = 'native-static-launch-prescan';
+        status = 'The native launch pre-scan uses the Director command operand as the mode-two environment selector. Both mode-two Stage constructors apply the shared identity B5 launch crop before Director transforms run.';
+        foregroundStatus = parentEventContext
+          ? 'The event-context mode-two Director initializer copies the environment selector into independent foreground storage.'
+          : 'No parent event owns this source-only resource. The fixed-overlay request is statically limited to Director selector zero, so this resource needs its external launch caller before choosing a foreground.';
+      } else if (request.commandOperand === -1) {
+        derivedEnvironment = modeTwoDerivedEnvironmentProfile(
+          parentEventLaunches, derivedEnvironmentRules);
+        selector = derivedEnvironment.environmentSelector;
+        environmentSelectorCandidates =
+          derivedEnvironment.environmentSelectorCandidates.slice();
+        selectorSource = 'director-launch-prescan-derived-sentinel';
+        foregroundSelector = parentEventContext ? selector : null;
+        foregroundSelectorSource = parentEventContext
+          ? 'event-context-mode-two-derived-environment-copy'
+          : 'source-only-launch-route-unresolved';
+        foregroundSelectorCandidates = parentEventContext
+          ? environmentSelectorCandidates.slice() : [];
+        evidenceStatus = derivedEnvironment.evidenceStatus;
+        status = derivedEnvironment.status;
+        foregroundStatus = parentEventContext
+          ? 'The event-context mode-two initializer copies the derived environment selector after the mapper resolves its launch inputs.'
+          : 'No parent event owns this source-only resource. The fixed-overlay request is statically limited to Director selector zero, so this resource needs its external launch caller before choosing a foreground.';
+      } else {
+        foregroundSelectorSource = 'external-unresolved';
+        status = 'The Director launch pre-scan does not resolve this mode-two environment selector.';
+        foregroundStatus = 'The final foreground selector remains external and unresolved.';
+      }
     }
-    const route = launchBackgroundRoute(selectorTableId, selector);
+    const route = launchBackgroundRoute(selectorTableId, selector, foregroundSelector);
     const observedStageLayers = runtimeObservation &&
       Array.isArray(runtimeObservation.stageLayers)
       ? runtimeObservation.stageLayers.map((layer) => ({ ...layer })) : [];
+    const staticSceneGroupLayers = selectorTableId === 'background-table:scene:31'
+      ? route.members.map((member, index) => ({
+        assetId: member.assetId,
+        role: index === 0 ? 'environment-base' : 'ordered-layer',
+        depth: member.ordinal,
+        nativeOrdinal: member.ordinal,
+        evidenceStatus,
+        associationStatus: 'exact ordered member of the command-selected scene group'
+      })) : [];
     const stageLayers = observedStageLayers.length
       ? observedStageLayers
-      : (mode.value === 2 ? route.stageLayers : []);
+      : (selectorTableId === 'background-table:mode2-environment:80'
+        ? route.stageLayers : staticSceneGroupLayers);
     return {
       requestId: request.requestId,
       wordStart: request.wordStart,
       commandOperand: request.commandOperand,
       selectorTableId,
       selector,
+      environmentSelector: selectorTableId === 'background-table:mode2-environment:80'
+        ? selector : null,
+      foregroundSelectorTableId,
+      foregroundSelector,
       selectorSource,
+      environmentSelectorCandidates,
+      foregroundSelectorSource,
+      foregroundSelectorCandidates,
+      foregroundStatus,
+      derivedEnvironment,
       evidenceStatus,
       status,
       resourceKey: route.resourceKey,
@@ -2137,12 +3588,13 @@ function launchBackgroundProfiles(mode, requests, runtimeObservation, mirrorEvid
       stageLayers,
       stageAssetIds: stageLayers.length
         ? stageLayers.map((layer) => layer.assetId)
-        : (mode.value === 0 ? route.assetIds.slice() : [])
+        : (selectorTableId === 'background-table:scene:31'
+          ? route.assetIds.slice() : [])
     };
   });
 }
 
-function launchRosterProfile(asset, actors, canonicalNodes) {
+function launchRosterProfile(asset, actors, canonicalNodes, parentEventLaunches) {
   const nodes = Array.isArray(canonicalNodes) && canonicalNodes.length
     ? canonicalNodes : (asset.nodes || []);
   const materializers = nodes.filter((node) => {
@@ -2166,6 +3618,14 @@ function launchRosterProfile(asset, actors, canonicalNodes) {
     externalTemplateSlots,
     materializationWordStarts: materializers.map((node) =>
       Number.isInteger(node.word_start) ? node.word_start : node.startWord),
+    nativeActorInputSource: 'current-gameplay-unit-members',
+    nativeActorInputRowCapacity: 20,
+    nativeUnitMemberCapacity: 5,
+    nativeMaximumCurrentUnitRows: 10,
+    modeTwoForceInitialization: true,
+    fixedOverlayForceInitialization: false,
+    secondUnitLeaderOnlyPropertyMask: 0x8000,
+    externalRosterDependency: true,
     evidenceStatus: materializers.length || externalTemplateSlots.length
       ? 'stream-context-roster' : 'same-stream-records',
     status: materializers.length
@@ -2176,19 +3636,76 @@ function launchRosterProfile(asset, actors, canonicalNodes) {
   };
 }
 
+function launchPreservationSnapshotProfile(parentEventLaunches) {
+  const contexts = (parentEventLaunches || []).flatMap((launch) =>
+    (launch.eventInvocationContexts || []).map((context) =>
+      context.launchPreservationSnapshot));
+  const exactContexts = contexts.filter((value) => value !== null);
+  return {
+    condition: 'launch-flag-bit-0x08-or-event-property-0xE6-nonzero',
+    directEventLaunchFlagBit08: contexts.length ? false : null,
+    contextCount: contexts.length,
+    exactContextCount: exactContexts.length,
+    requiredContextCount: exactContexts.filter(Boolean).length,
+    notRequiredContextCount: exactContexts.filter((value) => !value).length,
+    unresolvedContextCount: contexts.length - exactContexts.length,
+    evidenceStatus: contexts.length
+      ? 'native-static-mode-two-initializer-and-event-vm'
+      : 'external-launch-context-unresolved',
+    status: contexts.length
+      ? 'Direct event launches keep flag bit 0x08 clear. Exact event-property 0xE6 values therefore resolve the separate gameplay-state preservation snapshot per invocation.'
+      : 'This stream has no direct event invocation from which to resolve the gameplay-state preservation snapshot.'
+  };
+}
+
+function launchStageTransformProfile(directorMode) {
+  const modeTwo = directorMode && directorMode.value === 2;
+  return {
+    initial: {
+      translateX: 0,
+      translateY: 0,
+      scaleX: 1,
+      scaleY: 1
+    },
+    evidenceStatus: modeTwo
+      ? 'native-static-mode-two-stage-initializers'
+      : 'editor-preview-default',
+    ownerFunctionsZ64: modeTwo
+      ? ['0x001FFA8C', '0x001FFAD0', '0x001FB32C'] : [],
+    status: modeTwo
+      ? 'Both Director mode-two Stage constructors clear shared Stage state, initialize identity X/Y translation and scale, then build the selected B5 Stage.'
+      : 'The editor starts this non-mode-two or unresolved presentation at identity; this profile does not claim a native non-mode-two transform initializer.'
+  };
+}
+
 function buildLaunchProfile(asset, actors, backgroundObservation,
-    actorCameraObservation, backgroundRequests, mirrorEvidence, canonicalNodes) {
-  const directorMode = directorLaunchMode(asset, backgroundObservation, canonicalNodes);
+    actorCameraObservation, backgroundRequests, canonicalNodes,
+    parentEventLaunches, operandTranslation, launchContext,
+    derivedEnvironmentRules, oversizedImageRules) {
+  const eventLaunches = Array.isArray(parentEventLaunches)
+    ? parentEventLaunches.map((row) => ({ ...row })) : [];
+  const directorMode = directorLaunchMode(
+    asset, backgroundObservation, canonicalNodes, eventLaunches, launchContext);
   return {
     profileId: 'launch-profile:' + asset.assetId,
     directorMode,
+    launchContext: launchContext || null,
+    parentEventLaunches: eventLaunches,
+    operandTranslation: operandTranslation || launchOperandTranslationProfile([]),
+    launchPreservationSnapshot: launchPreservationSnapshotProfile(eventLaunches),
+    stageTransform: launchStageTransformProfile(directorMode),
     cameras: launchCameraProfiles(directorMode, actorCameraObservation),
     background: {
       requestCount: backgroundRequests.length,
       requests: launchBackgroundProfiles(
-        directorMode, backgroundRequests, backgroundObservation, mirrorEvidence)
+        directorMode, backgroundRequests, backgroundObservation, launchContext,
+        eventLaunches, derivedEnvironmentRules),
+      inheritedPresentation: null,
+      inheritanceContexts: []
     },
-    roster: launchRosterProfile(asset, actors, canonicalNodes)
+    oversizedImagePresentation: oversizedImagePresentationProfile(
+      asset, launchContext, eventLaunches, oversizedImageRules),
+    roster: launchRosterProfile(asset, actors, canonicalNodes, eventLaunches)
   };
 }
 
@@ -2242,7 +3759,8 @@ function compactRegisteredWait(wait) {
 }
 
 function compactScene(asset, canonicalAsset, canonicalNodes, registeredWaits,
-    selectors, selectorOwner, mirrorEvidence) {
+    selectors, selectorOwner, retailResource, derivedEnvironmentRules,
+    oversizedImageRules) {
   const rawIdentity = asset.assetId.split(':').pop();
   if (!canonicalAsset || canonicalAsset.asset_id !== asset.assetId ||
       canonicalAsset.decoded_word_count !== asset.decodedWordCount ||
@@ -2269,9 +3787,14 @@ function compactScene(asset, canonicalAsset, canonicalNodes, registeredWaits,
   const backgroundObservation = DIRECTOR_BACKGROUND_RUNTIME_OBSERVATIONS[asset.assetId] || null;
   const actorCameraObservation =
     DIRECTOR_ACTOR_CAMERA_RUNTIME_OBSERVATIONS[asset.assetId] || null;
-  const backgroundRequests = backgroundRequestsForAsset(asset, backgroundObservation);
+  const backgroundRequests = backgroundRequestsForAsset(asset, backgroundObservation,
+    retailResource && retailResource.launchContext);
   const launchProfile = buildLaunchProfile(asset, actors, backgroundObservation,
-    actorCameraObservation, backgroundRequests, mirrorEvidence, canonicalNodes);
+    actorCameraObservation, backgroundRequests, canonicalNodes,
+    retailResource && retailResource.parentEventLaunches,
+    retailResource && retailResource.operandTranslation,
+    retailResource && retailResource.launchContext,
+    derivedEnvironmentRules, oversizedImageRules);
   const nativeBackgroundGroup = backgroundObservation &&
     backgroundObservation.directorMode === 0;
   const backgroundAssetIds = backgroundObservation
@@ -2321,7 +3844,7 @@ function compactScene(asset, canonicalAsset, canonicalNodes, registeredWaits,
     backgroundAssociationStatus: backgroundObservation
       ? backgroundObservation.associationStatus
       : (profiledStageRequests.length
-        ? 'The stream background value matches a registered complete scene and its foreground piece; launch state still supplies the active scene in-game.'
+        ? 'Native launch routing selects a renderable environment from the Director command without changing the stream.'
         : (backgroundRequests.length
           ? 'The game supplies the complete scene through launch state; this Director stream contains no complete background image.'
           : 'This Director stream contains no background command; its launch context supplies any scenery.')),
@@ -2801,36 +4324,29 @@ function semanticLabel(name) {
     part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }
 
-function compactDirectorEvents(scenes, grammar) {
-  const occurrenceMap = {};
-  scenes.forEach((scene) => {
-    scene.source.nodes.forEach((node) => {
-      const opcode = String(node.opcode || '').toUpperCase();
-      if (!occurrenceMap[opcode]) occurrenceMap[opcode] = { count: 0, scenes: new Set() };
-      occurrenceMap[opcode].count += 1;
-      occurrenceMap[opcode].scenes.add(scene.sceneId);
-    });
-  });
+function compactDirectorEvents(grammar, opcodeStats) {
   return grammar.map((definition) => {
-    const opcode = '0x' + Number(definition.opcode_u32).toString(16).toUpperCase();
-    const occurrence = occurrenceMap[definition.opcode.toUpperCase()] ||
-      occurrenceMap[opcode.toUpperCase()] || { count: 0, scenes: new Set() };
+    const opcodeValue = Number(definition.opcodeU32) >>> 0;
+    const opcode = '0x' + opcodeValue.toString(16).toUpperCase();
+    const occurrence = opcodeStats.get(opcodeValue) || { count: 0, scenes: new Set() };
     return {
-      eventId: 'director-opcode:' + Number(definition.opcode_u32)
+      eventId: 'director-opcode:' + opcodeValue
         .toString(16).toUpperCase().padStart(8, '0'),
       opcode,
       family: directorSemanticFamily(definition.name),
       label: semanticLabel(definition.name),
       semanticName: definition.name,
-      semanticSummary: definition.semantic_summary,
+      semanticSummary: definition.semanticSummary,
       confidence: definition.confidence,
-      widthKind: definition.width_kind,
-      sourceWordSpan: definition.source_word_span,
+      widthKind: definition.widthKind,
+      sourceWordSpan: definition.sourceWordSpan,
       capability: 'preview-only',
-      unresolvedJoin: null,
+      unresolvedJoin: definition.semanticStatus === 'structural-width-only'
+        ? 'active native callee meaning' : null,
       occurrenceCount: occurrence.count,
       sceneCount: occurrence.scenes.size,
-      associationStatus: occurrence.count ? 'observed-in-corpus' : 'defined-but-unobserved'
+      associationStatus: occurrence.count
+        ? 'observed-in-retail-selector-table' : 'defined-but-unobserved-in-retail-table'
     };
   });
 }
@@ -2850,7 +4366,7 @@ function compactBackgroundSelectorTables() {
   });
   const environmentEntries = MODE_TWO_ENVIRONMENT_RESOURCE_KEYS.map((resourceKey, selector) => {
     const assetId = modeTwoEnvironmentAssetId(selector);
-    const stageLayers = modeTwoStageLayers(selector, selector).map((layer) => ({ ...layer }));
+    const stageLayers = modeTwoStageLayers(selector, null).map((layer) => ({ ...layer }));
     return {
       selector,
       resourceKey: resourceKey || null,
@@ -2859,7 +4375,7 @@ function compactBackgroundSelectorTables() {
       stageLayers,
       stageAssetIds: stageLayers.map((layer) => layer.assetId),
       associationStatus: assetId
-        ? 'exact resource-4 environment base; same-index overlay shown separately'
+        ? 'exact resource-4 environment base selected independently of foreground state'
         : 'empty environment selector row'
     };
   });
@@ -2879,7 +4395,7 @@ function compactBackgroundSelectorTables() {
       tableId: 'background-table:scene:31',
       label: 'Scene resource groups',
       owner: 'func_002B0D30',
-      selectionCondition: 'Director opcode 0x80000006 with runtime mode not equal to 2',
+      selectionCondition: 'terminal class 4/5 launch preload or runtime Director opcode 0x80000006 with mode not equal to 2',
       selectorSource: 'command operand',
       tableResourceKey: 0x016B3D18,
       tableEntryZ64: 0x01C47F98,
@@ -2889,9 +4405,9 @@ function compactBackgroundSelectorTables() {
     {
       tableId: 'background-table:mode2-environment:80',
       label: 'Mode-2 environment bases',
-      owner: 'func_00067320 and func_00067B48',
-      selectionCondition: 'mode-2 initialization loads the complete environment independently of Director overlays',
-      selectorSource: 'runtime byte at RAM 0x80196AED',
+      owner: 'func_0004ED60, func_00067FA8, func_00067320, and func_00067B48',
+      selectionCondition: 'mode-2 launch pre-scan seeds a nonnegative opcode-0x80000006 operand before the environment loader runs',
+      selectorSource: 'launch environment byte at RAM 0x80196AED; opcode-0x80000006 operand or external derived state',
       tableResourceKey: 0x00000004,
       tableSizeWordZ64: 0x00594284,
       tableEntryZ64: 0x00594288,
@@ -2901,9 +4417,9 @@ function compactBackgroundSelectorTables() {
     {
       tableId: 'background-table:mode2-overlay:80',
       label: 'Mode-2 foreground and occlusion resources',
-      owner: 'func_001E4C74 and func_001FB32C',
-      selectionCondition: 'the mode-2 stage builder selects overlays independently of the environment loader',
-      selectorSource: 'runtime scalar at RAM 0x801CEAB0',
+      owner: 'func_001F309C, func_002ABFD4, func_001E4C74, and func_001FB32C',
+      selectionCondition: 'the event-context initializer copies the environment selector; the fixed-overlay initializer maps launch-property bit 0x08 to selector 0 or 49; other callers remain independent',
+      selectorSource: 'independent runtime scalar at RAM 0x801CEAB0',
       tableResourceKey: 0x002938C8,
       tableSizeWordZ64: 0x00827B48,
       tableEntryZ64: 0x00827B4C,
@@ -3379,12 +4895,18 @@ function canonicalPoseRecords(program) {
   let cursor = 1;
   const frames = [];
   const controlOpcodes = [];
+  const records = [];
   for (let ordinal = 0; ordinal < recordCount; ordinal++) {
     const opcode = bytes[cursor];
     const width = POSE_OPCODE_WIDTHS[opcode];
     if (!width || cursor + width > bytes.length) {
       throw new Error(program.id + ' has an invalid pose opcode at record ' + ordinal + '.');
     }
+    records.push({
+      ordinal,
+      opcode,
+      operands: Array.from(bytes.subarray(cursor + 1, cursor + width))
+    });
     if (opcode === 1) {
       frames.push({ frameToken: bytes[cursor + 1], durationFrames: bytes[cursor + 2] });
     } else if (opcode === 0x15) {
@@ -3399,13 +4921,14 @@ function canonicalPoseRecords(program) {
     cursor += width;
   }
   if (cursor !== bytes.length) throw new Error(program.id + ' canonical pose bytes have a trailing gap.');
-  return { frames, controlOpcodes };
+  return { frames, controlOpcodes, records };
 }
 
 function compactPoseProgram(program) {
   const decoded = canonicalPoseRecords(program);
   const frames = decoded.frames;
   const controlOpcodes = decoded.controlOpcodes;
+  const records = decoded.records;
   return {
     poseId: 'cutscene-pose:' + program.bank + ':' + program.key + ':' + program.facing,
     programId: program.id,
@@ -3419,6 +4942,7 @@ function compactPoseProgram(program) {
     sourceProgramDefined: program.sourceProgramDefined,
     sourceProgramIdentityIds: program.sourceProgramIdentityIds.slice(),
     frames,
+    records,
     durationFrames: frames.reduce((total, frame) => total + frame.durationFrames, 0),
     controlOpcodes,
     emptyProgram: frames.length === 0 && controlOpcodes.length === 0,
@@ -3580,6 +5104,1762 @@ function compactPoseSelectors(rows) {
     left.stateIndex - right.stateIndex);
 }
 
+function buildRetailDirectorGrammar(corpusGrammar, corpusNodes) {
+  const samples = new Map();
+  corpusNodes.forEach((node) => {
+    const opcode = Number(node.opcode_u32) >>> 0;
+    if (!samples.has(opcode)) samples.set(opcode, node);
+  });
+  const definitions = corpusGrammar.map((definition) => {
+    const opcode = Number(definition.opcode_u32) >>> 0;
+    const sample = samples.get(opcode) || null;
+    const wordCount = Number(definition.source_word_span);
+    let operandRoles = sample && Array.isArray(sample.operands)
+      ? sample.operands.map((operand) => operand.role) : [];
+    if (sample && sample.termination && operandRoles.length === wordCount - 2) {
+      operandRoles.push('termination_trailer');
+    }
+    if (!sample) {
+      if (definition.width_kind === 'query') {
+        operandRoles = ['compare_mode', 'target'];
+        if (wordCount === 4) operandRoles.push('producer_input');
+      } else if (definition.width_kind === 'terminal-with-trailer') {
+        operandRoles = ['termination_trailer'];
+      } else {
+        operandRoles = Array.from({ length: wordCount - 1 }, (_, index) =>
+          'operand_' + index);
+      }
+    }
+    if (operandRoles.length !== wordCount - 1) {
+      throw new Error('Director grammar operand roles are incomplete for ' +
+        definition.opcode + '.');
+    }
+    return {
+      opcodeU32: opcode,
+      name: definition.name,
+      semanticSummary: definition.semantic_summary,
+      confidence: definition.confidence,
+      sourceWordSpan: wordCount,
+      widthKind: definition.width_kind,
+      nodeType: sample ? sample.node_type :
+        (definition.width_kind === 'query' ? 'query' :
+          (definition.width_kind === 'terminal-with-trailer' ? 'termination' : 'command')),
+      operandRoles,
+      queryRecordKind: definition.width_kind === 'query'
+        ? (wordCount === 4 ? 'Q4' : 'Q3') : null,
+      terminationKind: definition.width_kind === 'terminal-with-trailer'
+        ? 'stream_terminator_with_trailer' : null,
+      newlyRecoveredFromDispatch: definition.newly_recovered_from_dispatch === true,
+      semanticStatus: 'accepted-153-command-definition'
+    };
+  });
+  definitions.push({
+    opcodeU32: 0x5E,
+    name: 'unresolved_native_command_5e',
+    semanticSummary:
+      'Consumes three native operands. The parser width and dispatch are exact; the active callee meaning remains unresolved.',
+    confidence: 'Structural',
+    sourceWordSpan: 4,
+    widthKind: 'fixed',
+    nodeType: 'command',
+    operandRoles: ['operand_0', 'operand_1', 'operand_2'],
+    queryRecordKind: null,
+    terminationKind: null,
+    newlyRecoveredFromDispatch: true,
+    semanticStatus: 'structural-width-only'
+  });
+  definitions.sort((left, right) => left.opcodeU32 - right.opcodeU32);
+  if (definitions.length !== 154 ||
+      new Set(definitions.map((definition) => definition.opcodeU32)).size !== 154) {
+    throw new Error('Retail Director grammar must contain 154 unique command values.');
+  }
+  return definitions;
+}
+
+function tileRetailDirector(words, assetId, grammarByOpcode, options = {}) {
+  const prefix = assetId.split(':').pop().toUpperCase();
+  const nodes = [];
+  let cursor = 0;
+  while (cursor < words.length) {
+    const opcode = Number(words[cursor]) >>> 0;
+    const definition = grammarByOpcode.get(opcode);
+    if (!definition) {
+      throw new Error(assetId + ' has no grammar for opcode 0x' + hex(opcode, 8) +
+        ' at word ' + cursor + '.');
+    }
+    const terminalWithoutTrailer = options.terminalWithoutTrailer === true &&
+      opcode === 0x80000001 && cursor === words.length - 1;
+    const wordCount = terminalWithoutTrailer ? 1 : definition.sourceWordSpan;
+    const endWord = cursor + wordCount;
+    if (endWord > words.length) {
+      throw new Error(assetId + ' command at word ' + cursor +
+        ' extends beyond its decoded payload.');
+    }
+    nodes.push({
+      id: 'node:' + prefix + ':w' + hex(cursor, 4),
+      startWord: cursor,
+      endWord,
+      wordCount,
+      opcode,
+      opcode_u32: opcode,
+      opcodeText: '0x' + opcode.toString(16).toUpperCase(),
+      operands: words.slice(cursor + 1, endWord).map(signed),
+      rawWords: words.slice(cursor, endWord),
+      definition
+    });
+    cursor = endWord;
+  }
+  const terminal = nodes[nodes.length - 1];
+  const expectedTerminalWords = options.terminalWithoutTrailer === true ? 1 : 2;
+  if (!terminal || terminal.opcode !== 0x80000001 ||
+      terminal.wordCount !== expectedTerminalWords) {
+    throw new Error(assetId + ' lacks its exact ' +
+      (expectedTerminalWords === 1 ? 'continuation terminal' :
+        'terminal-with-trailer boundary') + '.');
+  }
+  return nodes;
+}
+
+function animatedSceneSpriteRotationRouteCounts(nodes) {
+  const counts = { directOperand: 0, sampledScenePath: 0, resourcePath: 0 };
+  nodes.forEach((node) => {
+    if (node.opcode !== 0x63) return;
+    if (signed(node.rawWords[9]) === -1) counts.directOperand += 1;
+    else if (signed(node.rawWords[8]) === -1) counts.sampledScenePath += 1;
+    else counts.resourcePath += 1;
+  });
+  return counts;
+}
+
+function readDirectorContinuationStreams(z64, grammar) {
+  const grammarByOpcode = new Map(grammar.map((definition) => [
+    definition.opcodeU32, definition
+  ]));
+  const tablePrefixStart = DIRECTOR_RESOURCE_BASE_Z64 +
+    DIRECTOR_CONTINUATION_TABLE_KEY;
+  if (readU32(z64, tablePrefixStart, 'Director continuation table prefix') !==
+      DIRECTOR_CONTINUATION_TABLE_BYTES) {
+    throw new Error('The Director continuation table size prefix changed.');
+  }
+  const tablePayloadStart = tablePrefixStart + 4;
+  const keys = DIRECTOR_CONTINUATION_KEYS.map((expectedKey, selector) => {
+    const key = readU32(z64, tablePayloadStart + selector * 4,
+      'Director continuation selector ' + selector);
+    if (key !== expectedKey) {
+      throw new Error('Director continuation selector ' + selector +
+        ' changed from 0x' + hex(expectedKey, 8) + '.');
+    }
+    return key;
+  });
+  return keys.map((resourceKey, selector) => {
+    const z64PrefixStart = DIRECTOR_RESOURCE_BASE_Z64 + resourceKey;
+    const storedPayloadLength = readU32(z64, z64PrefixStart,
+      'Director continuation ' + selector + ' prefix');
+    const z64PayloadStart = z64PrefixStart + 4;
+    const z64PayloadEndExclusive = z64PayloadStart + storedPayloadLength;
+    if (storedPayloadLength < 4 || z64PayloadEndExclusive > z64.length) {
+      throw new Error('Director continuation ' + selector +
+        ' has an invalid stored envelope.');
+    }
+    const payload = z64.subarray(z64PayloadStart, z64PayloadEndExclusive);
+    const decoded = decodeCustomLz(payload,
+      'Director continuation ' + selector);
+    if (decoded.bytes.length !== DIRECTOR_CONTINUATION_DECODED_BYTES[selector]) {
+      throw new Error('Director continuation ' + selector +
+        ' decoded length changed.');
+    }
+    const words = wordsFromBytes(decoded.bytes,
+      'Director continuation ' + selector);
+    const assetId = 'director-continuation:' + selector;
+    const nodes = tileRetailDirector(words, assetId, grammarByOpcode, {
+      terminalWithoutTrailer: true
+    });
+    return {
+      selector,
+      assetId,
+      resourceKey,
+      z64PrefixStart,
+      z64PayloadStart,
+      z64PayloadEndExclusive,
+      storedPayloadLength,
+      decodedLength: decoded.bytes.length,
+      decodedWordCount: words.length,
+      decodedSha256: sha256(decoded.bytes),
+      runtimeNodeCount: nodes.length,
+      queryCount: nodes.filter((node) =>
+        node.definition.widthKind === 'query').length,
+      animatedSceneSpriteRotationRoutes:
+        animatedSceneSpriteRotationRouteCounts(nodes),
+      terminalWordStart: nodes[nodes.length - 1].startWord,
+      terminalWithoutTrailer: true,
+      evidenceStatus: 'native-static-continuation-table'
+    };
+  });
+}
+
+function retailActorTemplates(assetId, nodes, selectors) {
+  const firstPlaceBySlot = new Map();
+  nodes.forEach((node) => {
+    if (node.opcode !== 0x14 || node.wordCount !== 10) return;
+    const slot = Number(node.rawWords[1]) >>> 0;
+    if (!firstPlaceBySlot.has(slot)) firstPlaceBySlot.set(slot, node);
+  });
+  return Array.from(firstPlaceBySlot.entries()).sort((left, right) => left[0] - right[0])
+    .map(([slot, node]) => {
+      const bank = signed(node.rawWords[2]);
+      const animationKey = signed(node.rawWords[3]);
+      const facing = signed(node.rawWords[4]);
+      const selector = selectors.get(actorSelectorKey(bank, animationKey, facing)) || null;
+      const rawVariantSelector = signed(node.rawWords[9]);
+      const variantTranslationIndex = launchTranslationIndex(node.rawWords[9]);
+      const variantSelector = variantTranslationIndex === null
+        ? rawVariantSelector & 0xFF : 0;
+      function coordinate(raw) {
+        raw = signed(raw);
+        return raw === -1000 ? null : raw / 1000;
+      }
+      const actorId = 'actor:' + assetId.split(':').pop().toLowerCase() + ':slot:' +
+        String(slot).padStart(2, '0');
+      return {
+        actorId,
+        slot,
+        label: null,
+        bank,
+        animationKey,
+        facing,
+        x: coordinate(node.rawWords[5]),
+        y: coordinate(node.rawWords[6]),
+        z: coordinate(node.rawWords[7]),
+        poseResolutionId: selector
+          ? 'cutscene-pose:' + bank + ':' + animationKey + ':' + facing : null,
+        sourcePoseResolutionId: null,
+        physicalStateId: selector ? selector.physicalStateId : null,
+        stateIndex: selector ? selector.stateIndex : null,
+        sourceProgramDefined: selector ? selector.sourceProgramDefined === true : false,
+        initializationCandidateId: null,
+        initializationSourceOpcode: '0X14',
+        initializationStatus: selector
+          ? 'opcode 0x14 record producer with located physical state'
+          : 'opcode 0x14 record producer with resolver-invalid selector',
+        controlEntryAlias: null,
+        recordProducer: true,
+        variantSelector,
+        rawVariantSelector,
+        variantSelectorTranslationIndex: variantTranslationIndex,
+        variantSelectorStatus: variantTranslationIndex === null
+          ? 'exact opcode-0x14 operand 9 narrowed to its runtime byte'
+          : 'native launch-table operand unresolved; appearance zero is an explicit preview fallback',
+        selectorStatus: selector
+          ? (selector.sourceProgramDefined
+            ? 'physical state and source program located'
+            : 'exact physical ROM state located; scene-local source publication is absent')
+          : 'record produced but selector resolver fails',
+        visibilityStatus: 'record producer is exact; runtime reachability remains unresolved'
+      };
+    });
+}
+
+function sourceNodesForRetailProfile(nodes) {
+  return nodes.map((node) => ({
+    id: node.id,
+    startWord: node.startWord,
+    endWord: node.endWord,
+    opcode: node.opcodeText,
+    opcode_u32: node.opcode,
+    operands: node.operands.slice()
+  }));
+}
+
+function tryReadTerminatedEventCursorTable(decoded, tableCursor) {
+  const entries = [];
+  for (let offset = tableCursor; offset + 1 < decoded.length; offset += 2) {
+    const cursor = decoded.readUInt16BE(offset);
+    if (cursor === 0xFFFF) {
+      return { tableCursor, entries, terminatorOffset: offset };
+    }
+    if ((cursor & 1) !== 0 || cursor >= decoded.length) return null;
+    entries.push({ entryIndex: entries.length, cursor });
+  }
+  return null;
+}
+
+function readEventSequenceInventory(decoded, eventRow, label) {
+  const outerEntryCount = eventRow <= EVENT_SCHEDULER_LAST_ROW
+    ? EVENT_SCHEDULER_OUTER_ENTRY_COUNT : EVENT_SPECIAL_OUTER_ENTRY_COUNT;
+  if (decoded.length < outerEntryCount * 2) {
+    throw new Error(label + ' is shorter than its outer cursor table.');
+  }
+  const outerEntries = [];
+  for (let outerIndex = 0; outerIndex < outerEntryCount; outerIndex += 1) {
+    const cursor = decoded.readUInt16BE(outerIndex * 2);
+    if (cursor !== 0 && cursor !== 0xFFFF &&
+        ((cursor & 1) !== 0 || cursor >= decoded.length)) {
+      throw new Error(label + ' has invalid outer cursor 0x' + hex(cursor, 4) +
+        ' at index ' + outerIndex + '.');
+    }
+    outerEntries.push({ outerIndex, cursor });
+  }
+  const outerIndexesByCursor = new Map();
+  outerEntries.forEach((entry) => {
+    if (entry.cursor === 0 || entry.cursor === 0xFFFF) return;
+    if (!outerIndexesByCursor.has(entry.cursor)) outerIndexesByCursor.set(entry.cursor, []);
+    outerIndexesByCursor.get(entry.cursor).push(entry.outerIndex);
+  });
+  const sequenceTables = [];
+  const sequenceByCursor = new Map();
+  function addSequence(cursor, path) {
+    if (!sequenceByCursor.has(cursor)) {
+      sequenceByCursor.set(cursor, { cursor, paths: [] });
+    }
+    sequenceByCursor.get(cursor).paths.push(path);
+  }
+  outerIndexesByCursor.forEach((outerEntryIndexes, outerCursor) => {
+    const table = tryReadTerminatedEventCursorTable(decoded, outerCursor);
+    if (!table) {
+      addSequence(outerCursor, {
+        kind: 'direct-outer-sequence',
+        outerEntryIndexes: outerEntryIndexes.slice(),
+        sequenceTableCursor: null,
+        sequenceEntryIndexes: []
+      });
+      return;
+    }
+    sequenceTables.push(table);
+    const entryIndexesByCursor = new Map();
+    table.entries.forEach((entry) => {
+      if (!entryIndexesByCursor.has(entry.cursor)) entryIndexesByCursor.set(entry.cursor, []);
+      entryIndexesByCursor.get(entry.cursor).push(entry.entryIndex);
+    });
+    entryIndexesByCursor.forEach((sequenceEntryIndexes, cursor) => {
+      addSequence(cursor, {
+        kind: 'nested-scheduler-sequence',
+        outerEntryIndexes: outerEntryIndexes.slice(),
+        sequenceTableCursor: outerCursor,
+        sequenceEntryIndexes: sequenceEntryIndexes.slice()
+      });
+    });
+  });
+  const sequences = Array.from(sequenceByCursor.values())
+    .sort((left, right) => left.cursor - right.cursor);
+  return {
+    outerEntries,
+    distinctOuterCursorCount: outerIndexesByCursor.size,
+    sequenceTables,
+    sequenceEntryCount: sequenceTables.reduce((total, table) =>
+      total + table.entries.length, 0),
+    directOuterSequenceCount: sequences.filter((sequence) => sequence.paths.some((path) =>
+      path.kind === 'direct-outer-sequence')).length,
+    sequences
+  };
+}
+
+function eventLaunchEntryOwner(sequenceInventory, launchOffset, label) {
+  const eligible = sequenceInventory.sequences.filter((sequence) =>
+    sequence.cursor <= launchOffset);
+  if (!eligible.length) {
+    throw new Error(label + ' at byte 0x' + hex(launchOffset, 4) +
+      ' precedes every event bytecode-sequence cursor.');
+  }
+  const sequence = eligible[eligible.length - 1];
+  return {
+    entryCursor: sequence.cursor,
+    entryOffset: launchOffset - sequence.cursor,
+    entryPaths: sequence.paths.map((path) => ({
+      kind: path.kind,
+      outerEntryIndexes: path.outerEntryIndexes.slice(),
+      sequenceTableCursor: path.sequenceTableCursor,
+      sequenceEntryIndexes: path.sequenceEntryIndexes.slice()
+    }))
+  };
+}
+
+function eventUnsigned16(value) {
+  return value & 0xFFFF;
+}
+
+function eventSigned16(value) {
+  return value & 0x8000 ? value - 0x10000 : value;
+}
+
+function eventSigned8(value) {
+  return value & 0x80 ? value - 0x100 : value;
+}
+
+function eventRelativeByteCursor(currentByteCursor, relativeWords) {
+  return (((currentByteCursor / 2) + 1 + relativeWords) & 0xFFFF) * 2;
+}
+
+function initialEventTranslationTable() {
+  return new Map(Array.from({ length: EVENT_TRANSLATION_TABLE_TRACKED_ENTRIES },
+    (_, index) => [index, 0]));
+}
+
+function eventExternalRequestProfile(operand) {
+  const requestCodes = [
+    0x8002, 0x8003, 0x8005, 0x8007,
+    0xFFFE, 0xFFFE, 0xFFFE, 0xFFFE, 0xFFFE, 0xFFFE,
+    0x0002, 0x0003, 0x0005, 0x0007,
+    0xFFFE, 0xFFFE, 0xFFFE,
+    0x0013, 0x0011, 0x8007, 0x8007,
+    0x8016, 0x8016, 0x8016, 0x8016, 0xFFFD, 0x8016
+  ];
+  const stateWrites = [];
+  if (operand === 4 || operand === 14 || operand === 20 || operand === 21) {
+    stateWrites.push({
+      field: 'request-variant',
+      ramAddress: '0x801939D1',
+      value: operand === 20 ? 2 : (operand === 21 ? 0 : 1)
+    });
+  }
+  if (operand >= 22 && operand <= 25 || operand === 27) {
+    const modeA = operand === 22 ? 1 : (operand === 27 ? 3 : 0);
+    stateWrites.push({
+      field: 'request-mode-a',
+      ramAddress: '0x8018FAE0',
+      value: modeA
+    });
+    if (operand >= 23 && operand <= 25) {
+      stateWrites.push({
+        field: 'request-mode-b',
+        ramAddress: '0x8018FBDC',
+        value: operand - 23
+      });
+    }
+  }
+  return {
+    operand,
+    requestCode: operand >= 1 && operand <= requestCodes.length
+      ? requestCodes[operand - 1] : 0xFFFE,
+    requestCodeStorage: 'RAM halfword 0x8018F1A2',
+    stateWrites,
+    requestAcceptanceSignal: 'RAM byte 0x80197B02',
+    requestAcceptanceCondition: 'set-synchronously-by-opcode-0x13',
+    resumeTiming: 'next-event-state-processor-call',
+    evidenceStatus: 'native-static-event-vm'
+  };
+}
+
+function cloneEventStaticState(state) {
+  return {
+    pc: state.pc,
+    invocationCursor: state.invocationCursor,
+    registers: state.registers.slice(),
+    callStack: state.callStack.slice(),
+    valueStack: state.valueStack.slice(),
+    properties: new Map(state.properties),
+    translations: new Map(state.translations),
+    substitutionSourceA: new Map(state.substitutionSourceA),
+    substitutionSourceB: new Map(state.substitutionSourceB),
+    precedingDirectorSelector: state.precedingDirectorSelector,
+    precedingDirectorLaunchOffset: state.precedingDirectorLaunchOffset,
+    precedingDirectorInvocationCursor: state.precedingDirectorInvocationCursor,
+    updatesSincePrecedingDirectorRequest: state.updatesSincePrecedingDirectorRequest,
+    precedingDirectorLaunchCount: state.precedingDirectorLaunchCount,
+    precedingExternalRequest: state.precedingExternalRequest === null
+      ? null : {
+        ...state.precedingExternalRequest,
+        stateWrites: state.precedingExternalRequest.stateWrites.map((write) => ({ ...write }))
+      }
+  };
+}
+
+function eventStaticStateKey(state) {
+  return state.pc + ':' + state.invocationCursor + ':' +
+    state.callStack.map((value) => value === null ? '?' : value).join(',') + ':' +
+    state.valueStack.length + ':' + state.precedingDirectorLaunchCount + ':' +
+    (state.precedingDirectorLaunchOffset === null
+      ? '?' : state.precedingDirectorLaunchOffset) + ':' +
+    (state.updatesSincePrecedingDirectorRequest === null
+      ? '?' : state.updatesSincePrecedingDirectorRequest);
+}
+
+function joinEventStaticValue(left, right) {
+  return left === right ? left : null;
+}
+
+function mergeEventStaticState(target, incoming) {
+  let changed = false;
+  for (let index = 0; index < target.registers.length; index += 1) {
+    const joined = joinEventStaticValue(target.registers[index], incoming.registers[index]);
+    if (joined !== target.registers[index]) {
+      target.registers[index] = joined;
+      changed = true;
+    }
+  }
+  for (let index = 0; index < target.callStack.length; index += 1) {
+    const joined = joinEventStaticValue(target.callStack[index], incoming.callStack[index]);
+    if (joined !== target.callStack[index]) {
+      target.callStack[index] = joined;
+      changed = true;
+    }
+  }
+  for (let index = 0; index < target.valueStack.length; index += 1) {
+    const joined = joinEventStaticValue(target.valueStack[index], incoming.valueStack[index]);
+    if (joined !== target.valueStack[index]) {
+      target.valueStack[index] = joined;
+      changed = true;
+    }
+  }
+  for (const key of Array.from(target.properties.keys())) {
+    if (!incoming.properties.has(key) ||
+        incoming.properties.get(key) !== target.properties.get(key)) {
+      target.properties.delete(key);
+      changed = true;
+    }
+  }
+  for (const key of Array.from(target.translations.keys())) {
+    if (!incoming.translations.has(key) ||
+        incoming.translations.get(key) !== target.translations.get(key)) {
+      target.translations.delete(key);
+      changed = true;
+    }
+  }
+  for (const key of Array.from(target.substitutionSourceA.keys())) {
+    if (!incoming.substitutionSourceA.has(key) ||
+        incoming.substitutionSourceA.get(key) !== target.substitutionSourceA.get(key)) {
+      target.substitutionSourceA.delete(key);
+      changed = true;
+    }
+  }
+  for (const key of Array.from(target.substitutionSourceB.keys())) {
+    if (!incoming.substitutionSourceB.has(key) ||
+        incoming.substitutionSourceB.get(key) !== target.substitutionSourceB.get(key)) {
+      target.substitutionSourceB.delete(key);
+      changed = true;
+    }
+  }
+  const precedingDirectorSelector = joinEventStaticValue(
+    target.precedingDirectorSelector, incoming.precedingDirectorSelector);
+  if (precedingDirectorSelector !== target.precedingDirectorSelector) {
+    target.precedingDirectorSelector = precedingDirectorSelector;
+    changed = true;
+  }
+  [
+    'precedingDirectorLaunchOffset',
+    'precedingDirectorInvocationCursor',
+    'updatesSincePrecedingDirectorRequest'
+  ].forEach((field) => {
+    const joined = joinEventStaticValue(target[field], incoming[field]);
+    if (joined !== target[field]) {
+      target[field] = joined;
+      changed = true;
+    }
+  });
+  if (JSON.stringify(target.precedingExternalRequest) !==
+      JSON.stringify(incoming.precedingExternalRequest) &&
+      target.precedingExternalRequest !== null) {
+    target.precedingExternalRequest = null;
+    changed = true;
+  }
+  return changed;
+}
+
+function eventConditionalBranchResult(opcode, registers) {
+  const family = opcode & 0xF0;
+  const low = opcode & 0x0F;
+  const pair = [1, 2, 3, 6, 7, 11].includes(low);
+  const single = low >= 12;
+  if (!pair && !single) return undefined;
+  if (pair) {
+    const left = registers[opcode & 3];
+    const right = registers[(opcode & 0x0C) >> 2];
+    if (left === null || right === null) return null;
+    if (family === 0xA0) return left === right;
+    if (family === 0xB0) return left !== right;
+    if (family === 0xC0) return eventSigned16(left) < eventSigned16(right);
+    if (family === 0xD0) return eventSigned16(left) > eventSigned16(right);
+    if (family === 0xE0) return eventSigned16(left) <= eventSigned16(right);
+    if (family === 0xF0) return eventSigned16(left) >= eventSigned16(right);
+  }
+  if (single) {
+    const value = registers[opcode & 3];
+    if (value === null) return null;
+    if (family === 0xA0) return value === 0;
+    if (family === 0xB0) return value !== 0;
+    if (family === 0xC0) return eventSigned16(value) > 0;
+    if (family === 0xD0) return eventSigned16(value) < 0;
+    if (family === 0xE0) return eventSigned16(value) >= 0;
+    if (family === 0xF0) return eventSigned16(value) <= 0;
+  }
+  return undefined;
+}
+
+function eventInvocationContext(state, launchOffset) {
+  const eventPropertyE6 = state.properties.has(0xE6)
+    ? state.properties.get(0xE6) : null;
+  const eventPropertyE9 = state.properties.has(0xE9)
+    ? state.properties.get(0xE9) : null;
+  const eventPropertyFB = state.properties.has(0xFB)
+    ? state.properties.get(0xFB) : null;
+  const eventPropertyFC = state.properties.has(0xFC)
+    ? state.properties.get(0xFC) : null;
+  const eventPropertyFD = state.properties.has(0xFD)
+    ? state.properties.get(0xFD) : null;
+  return {
+    eventInvocationCursor: state.invocationCursor,
+    eventInvocationOffset: launchOffset - state.invocationCursor,
+    precedingDirectorLaunchCount: state.precedingDirectorLaunchCount,
+    precedingDirectorSelector: state.precedingDirectorSelector,
+    precedingDirectorLaunchOffset: state.precedingDirectorLaunchOffset,
+    precedingDirectorInvocationCursor: state.precedingDirectorInvocationCursor,
+    concurrentDirectorTickOffset: state.updatesSincePrecedingDirectorRequest,
+    launchTranslationTable: Array.from({
+      length: EVENT_TRANSLATION_TABLE_TRACKED_ENTRIES
+    }, (_, index) => state.translations.has(index)
+      ? state.translations.get(index) : null),
+    eventPropertyValues: Array.from(state.properties.entries())
+      .sort((left, right) => left[0] - right[0])
+      .map(([propertyOperand, value]) => ({ propertyOperand, value })),
+    launchFlagBit08: false,
+    eventPropertyE6,
+    eventPropertyE9,
+    eventPropertyFB,
+    eventPropertyFC,
+    eventPropertyFD,
+    scenarioKey: eventPropertyE9,
+    battleTerrain: eventPropertyFC,
+    currentUnitSelector: eventPropertyFD,
+    launchPreservationSnapshot: eventPropertyE6 === null
+      ? null : eventPropertyE6 !== 0,
+    secondRosterUnitLeaderOnly: eventPropertyE6 === null
+      ? null : (eventPropertyE6 & 0x8000) !== 0,
+    precedingExternalRequest: state.precedingExternalRequest === null
+      ? null : {
+        ...state.precedingExternalRequest,
+        stateWrites: state.precedingExternalRequest.stateWrites.map((write) => ({ ...write }))
+      },
+    evidenceStatus: 'native-static-event-vm'
+  };
+}
+
+function analyzeEventSequenceLaunches(decoded, entryCursor, targetOffsets, eventRow) {
+  const initial = {
+    pc: entryCursor,
+    invocationCursor: entryCursor,
+    registers: Array(8).fill(null),
+    callStack: [],
+    valueStack: [],
+    properties: new Map([[0xE8, eventRow]]),
+    translations: initialEventTranslationTable(),
+    substitutionSourceA: new Map(),
+    substitutionSourceB: new Map(),
+    precedingDirectorSelector: null,
+    precedingDirectorLaunchOffset: null,
+    precedingDirectorInvocationCursor: null,
+    updatesSincePrecedingDirectorRequest: null,
+    precedingDirectorLaunchCount: 0,
+    precedingExternalRequest: null
+  };
+  const states = new Map();
+  const queue = [];
+  const hits = new Map();
+  const externalRequestSites = new Map();
+  const externalRequestHandoffs = new Map();
+  const translationWrites = new Map();
+  const substitutionSourceWrites = new Map();
+  let unknownLongJumps = 0;
+  function enqueue(state) {
+    if (state.pc < 0 || state.pc + 1 >= decoded.length || (state.pc & 1) !== 0 ||
+        state.callStack.length > 16 || state.valueStack.length > 32 ||
+        state.precedingDirectorLaunchCount > 64) return;
+    const key = eventStaticStateKey(state);
+    const prior = states.get(key);
+    if (!prior) {
+      states.set(key, state);
+      queue.push(state);
+    } else if (mergeEventStaticState(prior, state)) {
+      queue.push(prior);
+    }
+  }
+  enqueue(initial);
+  let steps = 0;
+  while (queue.length && steps < 500000) {
+    steps += 1;
+    const state = queue.shift();
+    const opcode = decoded[state.pc];
+    const operand = decoded[state.pc + 1];
+    const nextPc = state.pc + 2;
+    if (opcode === 0x10) {
+      if (targetOffsets.has(state.pc)) {
+        if (!hits.has(state.pc)) hits.set(state.pc, new Map());
+        const hitKey = state.invocationCursor + ':' +
+          state.precedingDirectorLaunchCount;
+        const prior = hits.get(state.pc).get(hitKey);
+        if (!prior) hits.get(state.pc).set(hitKey, cloneEventStaticState(state));
+        else mergeEventStaticState(prior, state);
+      }
+      const resumed = cloneEventStaticState(state);
+      resumed.pc = nextPc;
+      resumed.invocationCursor = nextPc;
+      resumed.registers.fill(null);
+      resumed.callStack = [];
+      resumed.valueStack = [];
+      resumed.translations = initialEventTranslationTable();
+      resumed.precedingDirectorSelector = state.registers[0] === null
+        ? null : eventUnsigned16(state.registers[0]);
+      resumed.precedingDirectorLaunchOffset = state.pc;
+      resumed.precedingDirectorInvocationCursor = state.invocationCursor;
+      resumed.updatesSincePrecedingDirectorRequest = 1;
+      resumed.precedingDirectorLaunchCount += 1;
+      resumed.precedingExternalRequest = null;
+      enqueue(resumed);
+      continue;
+    }
+    if (opcode === 0x11 || opcode === 0x12 || opcode === 0x2F) continue;
+    if (opcode === 0x13) {
+      const request = eventExternalRequestProfile(operand);
+      externalRequestSites.set(state.pc, request);
+      externalRequestHandoffs.set([
+        state.pc,
+        state.invocationCursor,
+        state.precedingDirectorLaunchCount
+      ].join(':'), {
+        decodedByteOffset: state.pc,
+        eventInvocationCursor: state.invocationCursor,
+        eventInvocationOffset: state.pc - state.invocationCursor,
+        precedingDirectorLaunchCount: state.precedingDirectorLaunchCount,
+        precedingDirectorSelector: state.precedingDirectorSelector,
+        ...request,
+        stateWrites: request.stateWrites.map((write) => ({ ...write }))
+      });
+      const resumed = cloneEventStaticState(state);
+      resumed.pc = nextPc;
+      resumed.invocationCursor = nextPc;
+      resumed.registers.fill(null);
+      resumed.callStack = [];
+      resumed.valueStack = [];
+      resumed.translations = initialEventTranslationTable();
+      if (resumed.updatesSincePrecedingDirectorRequest !== null) {
+        resumed.updatesSincePrecedingDirectorRequest += 1;
+      }
+      resumed.precedingExternalRequest = {
+        decodedByteOffset: state.pc,
+        ...request,
+        stateWrites: request.stateWrites.map((write) => ({ ...write }))
+      };
+      enqueue(resumed);
+      continue;
+    }
+    if (opcode === 0x01) {
+      const next = cloneEventStaticState(state);
+      next.pc = eventRelativeByteCursor(state.pc, eventSigned8(operand));
+      enqueue(next);
+      continue;
+    }
+    if (opcode === 0x02 || opcode === 0x03) {
+      const low = state.registers[0] === null ? null : state.registers[0] & 0xFF;
+      if (low === null) {
+        unknownLongJumps += 1;
+        continue;
+      }
+      const next = cloneEventStaticState(state);
+      if (opcode === 0x03) next.callStack.push(state.pc);
+      next.pc = eventRelativeByteCursor(state.pc, (operand << 8) | low);
+      enqueue(next);
+      continue;
+    }
+    if (opcode === 0x04) {
+      if (!state.callStack.length) continue;
+      const next = cloneEventStaticState(state);
+      const returnCursor = next.callStack.pop();
+      if (returnCursor !== null) {
+        next.pc = eventRelativeByteCursor(returnCursor, 0);
+        enqueue(next);
+      }
+      continue;
+    }
+    if (opcode === 0x05) {
+      const next = cloneEventStaticState(state);
+      next.valueStack.push(next.registers[operand & 7]);
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode === 0x06) {
+      if (!state.valueStack.length) continue;
+      const next = cloneEventStaticState(state);
+      next.registers[operand & 7] = next.valueStack.pop();
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x60 && opcode <= 0x67) {
+      const next = cloneEventStaticState(state);
+      let value = null;
+      if (operand >= 0xC0 && operand <= 0xC7) {
+        const sourceIndex = next.registers[operand & 7];
+        if (sourceIndex !== null &&
+            next.substitutionSourceA.has(sourceIndex & 0xFFFF)) {
+          value = next.substitutionSourceA.get(sourceIndex & 0xFFFF);
+        }
+      } else if (operand >= 0xC8 && operand <= 0xCF) {
+        const sourceIndex = next.registers[operand & 7];
+        if (sourceIndex !== null &&
+            next.substitutionSourceB.has(sourceIndex & 0xFFFF)) {
+          value = next.substitutionSourceB.get(sourceIndex & 0xFFFF);
+        }
+      } else if (EVENT_SPECIAL_GETTER_OPERANDS.has(operand) &&
+          next.properties.has(operand)) {
+        value = next.properties.get(operand);
+      }
+      if (operand === 0xF8 && next.properties.has(0xFD)) {
+        value = eventUnsigned16(next.properties.get(0xFD) + 1);
+      }
+      next.registers[opcode & 7] = value;
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x68 && opcode <= 0x6F) {
+      const next = cloneEventStaticState(state);
+      next.registers[opcode & 7] = operand;
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x70 && opcode <= 0x77) {
+      const next = cloneEventStaticState(state);
+      const value = next.registers[opcode & 7];
+      if (EVENT_SPECIAL_PROPERTY_WIDTHS.has(operand)) {
+        if (value === null) next.properties.delete(operand);
+        else next.properties.set(operand,
+          EVENT_SPECIAL_PROPERTY_WIDTHS.get(operand) === 8
+            ? value & 0xFF : value & 0xFFFF);
+      } else if (operand >= 0xC0 && operand <= 0xCF) {
+        const sourceId = operand < 0xC8 ? 'A' : 'B';
+        const source = sourceId === 'A'
+          ? next.substitutionSourceA : next.substitutionSourceB;
+        const sourceIndex = next.registers[operand & 7];
+        substitutionSourceWrites.set([
+          state.pc,
+          state.invocationCursor,
+          state.precedingDirectorLaunchCount
+        ].join(':'), {
+          decodedByteOffset: state.pc,
+          eventInvocationCursor: state.invocationCursor,
+          eventInvocationOffset: state.pc - state.invocationCursor,
+          precedingDirectorLaunchCount: state.precedingDirectorLaunchCount,
+          opcode,
+          operand,
+          sourceRegister: opcode & 7,
+          indexRegister: operand & 7,
+          sourceId,
+          sourceSemantic: sourceId === 'A'
+            ? 'primary-class-id' : 'secondary-class-id',
+          characterRecordFieldOffset: sourceId === 'A' ? 0x11 : 0x12,
+          characterRecordStride: 56,
+          sourceIndex,
+          value,
+          sourceValueOrigin: value === null
+            ? 'runtime-character-record-or-branch-dependent'
+            : 'event-program-constant',
+          resolutionStatus: sourceIndex === null
+            ? 'source-index-unresolved'
+            : (value === null ? 'source-value-unresolved' : 'exact'),
+          evidenceStatus: 'native-static-event-vm'
+        });
+        if (sourceIndex === null) {
+          source.clear();
+        } else if (sourceIndex >= 0 && sourceIndex < 5) {
+          if (value === null) source.delete(sourceIndex);
+          else source.set(sourceIndex, value & 0xFF);
+        }
+      } else if (operand >= 0xD0 && operand <= 0xD7) {
+        const tableIndex = next.registers[operand & 7];
+        translationWrites.set([
+          state.pc,
+          state.invocationCursor,
+          state.precedingDirectorLaunchCount
+        ].join(':'), {
+          decodedByteOffset: state.pc,
+          eventInvocationCursor: state.invocationCursor,
+          eventInvocationOffset: state.pc - state.invocationCursor,
+          precedingDirectorLaunchCount: state.precedingDirectorLaunchCount,
+          opcode,
+          operand,
+          sourceRegister: opcode & 7,
+          indexRegister: operand & 7,
+          tableIndex,
+          value,
+          resolutionStatus: tableIndex === null
+            ? 'table-index-unresolved'
+            : (value === null ? 'replacement-value-unresolved' : 'exact'),
+          evidenceStatus: 'native-static-event-vm'
+        });
+        if (tableIndex !== null && tableIndex >= 0 && tableIndex < 256) {
+          if (value === null) next.translations.delete(tableIndex);
+          else next.translations.set(tableIndex, value & 0xFFFF);
+        } else {
+          next.translations.clear();
+        }
+      }
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x78 && opcode <= 0x7F) {
+      const next = cloneEventStaticState(state);
+      next.registers[opcode & 7] = null;
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x80 && opcode <= 0x87) {
+      const next = cloneEventStaticState(state);
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x88 && opcode <= 0x8F) {
+      const next = cloneEventStaticState(state);
+      const register = opcode & 7;
+      next.registers[register] = next.registers[register] === null ? null :
+        (operand << 8) | (next.registers[register] & 0xFF);
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x90 && opcode <= 0x97) {
+      const next = cloneEventStaticState(state);
+      const destination = opcode & 7;
+      const source = operand & 7;
+      const operation = operand >> 3;
+      const left = next.registers[destination];
+      const right = next.registers[source];
+      let value = null;
+      if (left !== null && right !== null && operation < 7 &&
+          !(operation >= 5 && right === 0)) {
+        if (operation === 0) value = left & right;
+        if (operation === 1) value = left | right;
+        if (operation === 2) value = eventUnsigned16(left + right);
+        if (operation === 3) value = eventUnsigned16(left - right);
+        if (operation === 4) value = eventUnsigned16(left * right);
+        if (operation === 5) value = eventUnsigned16(Math.floor(left / right));
+        if (operation === 6) value = eventUnsigned16(left % right);
+      }
+      next.registers[destination] = value;
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0x98 && opcode <= 0x9F) {
+      const next = cloneEventStaticState(state);
+      const destination = opcode & 7;
+      const immediate = operand & 0x1F;
+      const operation = operand >> 5;
+      const left = next.registers[destination];
+      let value = null;
+      if (left !== null && operation < 7 && !(operation >= 5 && immediate === 0)) {
+        if (operation === 0) value = left & immediate;
+        if (operation === 1) value = left | immediate;
+        if (operation === 2) value = eventUnsigned16(left + immediate);
+        if (operation === 3) value = eventUnsigned16(left - immediate);
+        if (operation === 4) value = eventUnsigned16(left * immediate);
+        if (operation === 5) {
+          value = eventUnsigned16(Math.trunc(eventSigned16(left) / immediate));
+        }
+        if (operation === 6) value = eventUnsigned16(eventSigned16(left) % immediate);
+      }
+      next.registers[destination] = value;
+      next.pc = nextPc;
+      enqueue(next);
+      continue;
+    }
+    if (opcode >= 0xA1) {
+      const condition = eventConditionalBranchResult(opcode, state.registers);
+      if (condition === undefined) {
+        const next = cloneEventStaticState(state);
+        next.pc = nextPc;
+        enqueue(next);
+      } else {
+        if (condition !== false) {
+          const taken = cloneEventStaticState(state);
+          taken.pc = eventRelativeByteCursor(state.pc, eventSigned8(operand));
+          enqueue(taken);
+        }
+        if (condition !== true) {
+          const untaken = cloneEventStaticState(state);
+          untaken.pc = nextPc;
+          enqueue(untaken);
+        }
+      }
+      continue;
+    }
+    const next = cloneEventStaticState(state);
+    if (opcode === 0x1B) {
+      next.registers[7] = next.registers[7] === null ? null :
+        eventUnsigned16(next.registers[7] + 1);
+    }
+    if (opcode === 0x28) {
+      next.registers[6] = null;
+      next.registers[7] = null;
+    }
+    if (opcode === 0x2D) {
+      const taken = cloneEventStaticState(next);
+      taken.pc = eventRelativeByteCursor(state.pc, eventSigned8(operand));
+      enqueue(taken);
+    }
+    next.pc = nextPc;
+    enqueue(next);
+  }
+  const contextsByOffset = new Map();
+  hits.forEach((statesAtOffset, launchOffset) => {
+    contextsByOffset.set(launchOffset, Array.from(statesAtOffset.values())
+      .map((state) => eventInvocationContext(state, launchOffset))
+      .sort((left, right) =>
+        left.eventInvocationCursor - right.eventInvocationCursor ||
+        left.precedingDirectorLaunchCount - right.precedingDirectorLaunchCount));
+  });
+  return {
+    contextsByOffset,
+    externalRequestSites: Array.from(externalRequestSites.entries())
+      .map(([decodedByteOffset, request]) => ({
+        decodedByteOffset,
+        ...request,
+        stateWrites: request.stateWrites.map((write) => ({ ...write }))
+      }))
+      .sort((left, right) => left.decodedByteOffset - right.decodedByteOffset),
+    externalRequestHandoffs: Array.from(externalRequestHandoffs.values())
+      .sort((left, right) =>
+        left.decodedByteOffset - right.decodedByteOffset ||
+        left.eventInvocationCursor - right.eventInvocationCursor ||
+        left.precedingDirectorLaunchCount - right.precedingDirectorLaunchCount),
+    translationWrites: Array.from(translationWrites.values())
+      .sort((left, right) =>
+        left.decodedByteOffset - right.decodedByteOffset ||
+        left.eventInvocationCursor - right.eventInvocationCursor ||
+        left.precedingDirectorLaunchCount - right.precedingDirectorLaunchCount),
+    substitutionSourceWrites: Array.from(substitutionSourceWrites.values())
+      .sort((left, right) =>
+        left.decodedByteOffset - right.decodedByteOffset ||
+        left.eventInvocationCursor - right.eventInvocationCursor ||
+        left.precedingDirectorLaunchCount - right.precedingDirectorLaunchCount),
+    unknownLongJumps,
+    capped: steps >= 500000
+  };
+}
+
+function readEventDirectorLaunchInventory(z64, directorSelectorTable) {
+  const prefixStart = DIRECTOR_RESOURCE_BASE_Z64 + EVENT_DIRECTORY_KEY;
+  const directoryLength = readU32(z64, prefixStart, 'Parent event directory prefix');
+  if (directoryLength !== EVENT_DIRECTORY_ROWS * 4) {
+    throw new Error('The parent event directory no longer contains 115 rows.');
+  }
+  const directory = z64.subarray(prefixStart + 4, prefixStart + 4 + directoryLength);
+  const launches = [];
+  let populatedRows = 0;
+  let outerEntryCount = 0;
+  let distinctOuterCursorCount = 0;
+  let sequenceTableCount = 0;
+  let sequenceEntryCount = 0;
+  let directOuterSequenceCount = 0;
+  let distinctSequenceCursorCount = 0;
+  let unknownLongJumps = 0;
+  let cappedSequenceAnalyses = 0;
+  const externalRequestPhysicalSites = new Set();
+  const externalRequests = [];
+  const translationWrites = [];
+  const substitutionSourceWrites = [];
+  for (let eventRow = 0; eventRow < EVENT_DIRECTORY_ROWS; eventRow += 1) {
+    const eventResourceKey = readU32(directory, eventRow * 4, 'Parent event directory row');
+    if (!eventResourceKey) continue;
+    populatedRows += 1;
+    const eventPrefix = DIRECTOR_RESOURCE_BASE_Z64 + eventResourceKey;
+    const storedLength = readU32(z64, eventPrefix, 'Parent event resource prefix');
+    const payload = z64.subarray(eventPrefix + 4, eventPrefix + 4 + storedLength);
+    const decoded = decodeCustomLz(payload,
+      'Parent event resource 0x' + hex(eventResourceKey, 8)).bytes;
+    const sequenceInventory = readEventSequenceInventory(decoded, eventRow,
+      'Parent event resource 0x' + hex(eventResourceKey, 8));
+    outerEntryCount += sequenceInventory.outerEntries.length;
+    distinctOuterCursorCount += sequenceInventory.distinctOuterCursorCount;
+    sequenceTableCount += sequenceInventory.sequenceTables.length;
+    sequenceEntryCount += sequenceInventory.sequenceEntryCount;
+    directOuterSequenceCount += sequenceInventory.directOuterSequenceCount;
+    distinctSequenceCursorCount += sequenceInventory.sequences.length;
+    const rowLaunches = [];
+    for (let offset = 4; offset + 1 < decoded.length; offset += 2) {
+      if (decoded[offset] !== 0x10 || decoded[offset + 1] !== 0x00) continue;
+      let selector = null;
+      if (decoded[offset - 4] === 0x68 && decoded[offset - 2] === 0x88) {
+        selector = decoded[offset - 3] | decoded[offset - 1] << 8;
+      } else if (decoded[offset - 2] === 0x68) {
+        selector = decoded[offset - 1];
+      }
+      if (!Number.isInteger(selector) || selector < 0 || selector >= DIRECTOR_SELECTOR_ROWS) {
+        throw new Error('Parent event row ' + eventRow + ' has an unrecognized direct ' +
+          'Director launch at decoded byte 0x' + hex(offset, 4) + '.');
+      }
+      const directorKey = readU32(directorSelectorTable, selector * 4,
+        'Parent event Director selector');
+      if (!directorKey) {
+        throw new Error('Parent event row ' + eventRow +
+          ' launches an empty Director selector ' + selector + '.');
+      }
+      const entryOwner = eventLaunchEntryOwner(sequenceInventory, offset,
+        'Parent event row ' + eventRow + ' launch');
+      rowLaunches.push({
+        launchId: 'event-director:' + eventRow + ':b' + hex(offset, 4),
+        eventDirectoryRow: eventRow,
+        eventResourceKey: '0x' + hex(eventResourceKey, 8),
+        decodedByteOffset: offset,
+        eventEntryCursor: entryOwner.entryCursor,
+        eventEntryOffset: entryOwner.entryOffset,
+        eventEntryPaths: entryOwner.entryPaths,
+        directorSelector: selector,
+        directorResourceKey: '0x' + hex(directorKey, 8),
+        evidenceStatus: 'direct-static-event-launch'
+      });
+    }
+    sequenceInventory.sequences.forEach((sequence) => {
+      const ownedLaunches = rowLaunches.filter((launch) =>
+        launch.eventEntryCursor === sequence.cursor);
+      const analysis = analyzeEventSequenceLaunches(decoded, sequence.cursor,
+        new Set(ownedLaunches.map((launch) => launch.decodedByteOffset)), eventRow);
+      unknownLongJumps += analysis.unknownLongJumps;
+      if (analysis.capped) cappedSequenceAnalyses += 1;
+      analysis.externalRequestSites.forEach((request) => {
+        externalRequestPhysicalSites.add(eventRow + ':' + request.decodedByteOffset);
+      });
+      analysis.externalRequestHandoffs.forEach((request) => {
+        externalRequests.push({
+          eventDirectoryRow: eventRow,
+          eventResourceKey: '0x' + hex(eventResourceKey, 8),
+          eventEntryCursor: sequence.cursor,
+          ...request,
+          stateWrites: request.stateWrites.map((write) => ({ ...write }))
+        });
+      });
+      analysis.translationWrites.forEach((write) => {
+        translationWrites.push({
+          eventDirectoryRow: eventRow,
+          eventResourceKey: '0x' + hex(eventResourceKey, 8),
+          eventEntryCursor: sequence.cursor,
+          ...write
+        });
+      });
+      analysis.substitutionSourceWrites.forEach((write) => {
+        substitutionSourceWrites.push({
+          eventDirectoryRow: eventRow,
+          eventResourceKey: '0x' + hex(eventResourceKey, 8),
+          eventEntryCursor: sequence.cursor,
+          ...write
+        });
+      });
+      if (!ownedLaunches.length) return;
+      ownedLaunches.forEach((launch) => {
+        const contexts = analysis.contextsByOffset.get(launch.decodedByteOffset) || [];
+        if (!contexts.length) {
+          throw new Error(launch.launchId +
+            ' is not reachable from its native event sequence cursor.');
+        }
+        contexts.forEach((context) => {
+          if (context.precedingDirectorSelector === null) {
+            context.precedingDirectorResourceKey = null;
+            context.precedingDirectorLaunchId = null;
+            return;
+          }
+          if (context.precedingDirectorSelector < 0 ||
+              context.precedingDirectorSelector >= DIRECTOR_SELECTOR_ROWS) {
+            throw new Error(launch.launchId + ' has an out-of-range preceding Director ' +
+              'selector ' + context.precedingDirectorSelector + '.');
+          }
+          const precedingKey = readU32(directorSelectorTable,
+            context.precedingDirectorSelector * 4,
+            'Preceding parent-event Director selector');
+          context.precedingDirectorResourceKey = precedingKey
+            ? '0x' + hex(precedingKey, 8) : null;
+          const precedingLaunch = Number.isInteger(context.precedingDirectorLaunchOffset)
+            ? rowLaunches.find((candidate) =>
+              candidate.decodedByteOffset === context.precedingDirectorLaunchOffset &&
+              candidate.directorSelector === context.precedingDirectorSelector)
+            : null;
+          context.precedingDirectorLaunchId = precedingLaunch
+            ? precedingLaunch.launchId : null;
+        });
+        launch.eventInvocationContexts = contexts;
+      });
+    });
+    rowLaunches.forEach((launch) => {
+      if (!Array.isArray(launch.eventInvocationContexts) ||
+          launch.eventInvocationContexts.length === 0) {
+        throw new Error(launch.launchId + ' has no event invocation context.');
+      }
+    });
+    launches.push(...rowLaunches);
+  }
+  const selectors = new Set(launches.map((row) => row.directorSelector));
+  const resources = new Set(launches.map((row) => row.directorResourceKey));
+  const launchEntryCursorCount = new Set(launches.map((launch) =>
+    launch.eventDirectoryRow + ':' + launch.eventEntryCursor)).size;
+  const invocationContextCount = launches.reduce((total, launch) =>
+    total + launch.eventInvocationContexts.length, 0);
+  const multiInvocationLaunchCount = launches.filter((launch) =>
+    launch.eventInvocationContexts.length > 1).length;
+  const distinctInvocationCursorCount = new Set(launches.flatMap((launch) =>
+    launch.eventInvocationContexts.map((context) =>
+      launch.eventDirectoryRow + ':' + context.eventInvocationCursor))).size;
+  const translationPhysicalSiteCount = new Set(translationWrites.map((write) =>
+    write.eventDirectoryRow + ':' + write.decodedByteOffset)).size;
+  const exactTranslationWrites = translationWrites.filter((write) =>
+    write.resolutionStatus === 'exact');
+  const unresolvedTranslationWrites = translationWrites.filter((write) =>
+    write.resolutionStatus === 'replacement-value-unresolved');
+  const retailTranslationWrites = translationWrites.filter((write) =>
+    Number.isInteger(write.tableIndex) &&
+    write.tableIndex >= 0 && write.tableIndex < EVENT_TRANSLATION_TABLE_TRACKED_ENTRIES);
+  const retailTranslationPhysicalSiteCount = new Set(retailTranslationWrites.map((write) =>
+    write.eventDirectoryRow + ':' + write.decodedByteOffset)).size;
+  const exactRetailTranslationWrites = retailTranslationWrites.filter((write) =>
+    write.resolutionStatus === 'exact');
+  const unresolvedRetailTranslationWrites = retailTranslationWrites.filter((write) =>
+    write.resolutionStatus === 'replacement-value-unresolved');
+  const nonretailTranslationWrites = translationWrites.filter((write) =>
+    write.tableIndex === 0xFF);
+  const nonretailTranslationPhysicalSiteCount = new Set(
+    nonretailTranslationWrites.map((write) =>
+      write.eventDirectoryRow + ':' + write.decodedByteOffset)).size;
+  const substitutionSourcePhysicalSiteCount = new Set(substitutionSourceWrites.map((write) =>
+    write.eventDirectoryRow + ':' + write.decodedByteOffset)).size;
+  const substitutionSourceAWrites = substitutionSourceWrites.filter((write) =>
+    write.sourceId === 'A');
+  const substitutionSourceBWrites = substitutionSourceWrites.filter((write) =>
+    write.sourceId === 'B');
+  const exactSubstitutionSourceIndexWrites = substitutionSourceWrites.filter((write) =>
+    write.sourceIndex !== null);
+  const unresolvedSubstitutionSourceIndexWrites = substitutionSourceWrites.filter((write) =>
+    write.sourceIndex === null);
+  const exactSubstitutionSourceValueWrites = substitutionSourceWrites.filter((write) =>
+    write.value !== null);
+  const unresolvedSubstitutionSourceValueWrites = substitutionSourceWrites.filter((write) =>
+    write.value === null);
+  if (populatedRows !== EVENT_DIRECTORY_POPULATED_ROWS ||
+      launches.length !== DIRECT_EVENT_DIRECTOR_LAUNCHES ||
+      selectors.size !== DIRECT_EVENT_DIRECTOR_SELECTORS ||
+      resources.size !== DIRECT_EVENT_DIRECTOR_RESOURCES ||
+      outerEntryCount !== EVENT_OUTER_ENTRY_ROWS ||
+      distinctOuterCursorCount !== EVENT_DISTINCT_OUTER_CURSORS ||
+      sequenceTableCount !== EVENT_SEQUENCE_TABLES ||
+      sequenceEntryCount !== EVENT_SEQUENCE_ENTRY_ROWS ||
+      directOuterSequenceCount !== EVENT_DIRECT_OUTER_SEQUENCES ||
+      distinctSequenceCursorCount !== EVENT_DISTINCT_SEQUENCE_CURSORS ||
+      launchEntryCursorCount !== EVENT_LAUNCH_SEQUENCE_CURSORS ||
+      invocationContextCount !== EVENT_STATIC_INVOCATION_CONTEXTS ||
+      multiInvocationLaunchCount !== EVENT_MULTI_INVOCATION_LAUNCHES ||
+      distinctInvocationCursorCount !== EVENT_DISTINCT_INVOCATION_CURSORS ||
+      externalRequestPhysicalSites.size !== EVENT_EXTERNAL_REQUEST_PHYSICAL_SITES ||
+      externalRequests.length !== EVENT_EXTERNAL_REQUEST_HANDOFFS ||
+      translationPhysicalSiteCount !== EVENT_TRANSLATION_PHYSICAL_SITES ||
+      translationWrites.length !== EVENT_TRANSLATION_WRITE_CONTEXTS ||
+      exactTranslationWrites.length !== EVENT_TRANSLATION_EXACT_CONTEXTS ||
+      unresolvedTranslationWrites.length !== EVENT_TRANSLATION_UNRESOLVED_CONTEXTS ||
+      substitutionSourcePhysicalSiteCount !== EVENT_SUBSTITUTION_SOURCE_PHYSICAL_SITES ||
+      substitutionSourceWrites.length !== EVENT_SUBSTITUTION_SOURCE_WRITE_CONTEXTS ||
+      substitutionSourceAWrites.length !== EVENT_SUBSTITUTION_SOURCE_A_WRITE_CONTEXTS ||
+      substitutionSourceBWrites.length !== EVENT_SUBSTITUTION_SOURCE_B_WRITE_CONTEXTS ||
+      exactSubstitutionSourceIndexWrites.length !==
+        EVENT_SUBSTITUTION_SOURCE_EXACT_INDEX_CONTEXTS ||
+      unresolvedSubstitutionSourceIndexWrites.length !==
+        EVENT_SUBSTITUTION_SOURCE_UNRESOLVED_INDEX_CONTEXTS ||
+      exactSubstitutionSourceValueWrites.length !==
+        EVENT_SUBSTITUTION_SOURCE_EXACT_VALUE_CONTEXTS ||
+      unresolvedSubstitutionSourceValueWrites.length !==
+        EVENT_SUBSTITUTION_SOURCE_UNRESOLVED_VALUE_CONTEXTS ||
+      retailTranslationPhysicalSiteCount !== EVENT_RETAIL_TRANSLATION_PHYSICAL_SITES ||
+      retailTranslationWrites.length !== EVENT_RETAIL_TRANSLATION_WRITE_CONTEXTS ||
+      exactRetailTranslationWrites.length !== EVENT_RETAIL_TRANSLATION_EXACT_CONTEXTS ||
+      unresolvedRetailTranslationWrites.length !==
+        EVENT_RETAIL_TRANSLATION_UNRESOLVED_CONTEXTS ||
+      nonretailTranslationPhysicalSiteCount !==
+        EVENT_NONRETAIL_TRANSLATION_PHYSICAL_SITES ||
+      nonretailTranslationWrites.length !== EVENT_NONRETAIL_TRANSLATION_WRITE_CONTEXTS ||
+      unknownLongJumps !== 0 || cappedSequenceAnalyses !== 0) {
+    throw new Error('The direct parent-event Director launch inventory changed: rows=' +
+      populatedRows + ', launches=' + launches.length + ', selectors=' + selectors.size +
+      ', resources=' + resources.size + ', outer=' + outerEntryCount +
+      ', tables=' + sequenceTableCount + ', sequences=' +
+      distinctSequenceCursorCount + ', launchEntries=' + launchEntryCursorCount +
+      ', contexts=' + invocationContextCount + ', multiContexts=' +
+      multiInvocationLaunchCount + ', invocationCursors=' +
+      distinctInvocationCursorCount + ', requestSites=' +
+      externalRequestPhysicalSites.size + ', requestHandoffs=' +
+      externalRequests.length + ', translationSites=' + translationPhysicalSiteCount +
+      ', translationWrites=' + translationWrites.length +
+      ', sourceSites=' + substitutionSourcePhysicalSiteCount +
+      ', sourceWrites=' + substitutionSourceWrites.length +
+      ', sourceA=' + substitutionSourceAWrites.length +
+      ', sourceB=' + substitutionSourceBWrites.length +
+      ', sourceExactIndexes=' + exactSubstitutionSourceIndexWrites.length +
+      ', sourceUnresolvedIndexes=' + unresolvedSubstitutionSourceIndexWrites.length +
+      ', sourceExactValues=' + substitutionSourceWrites.filter((write) =>
+        write.value !== null).length +
+      ', retailTranslationSites=' + retailTranslationPhysicalSiteCount +
+      ', retailTranslationWrites=' + retailTranslationWrites.length +
+      ', unknownLongJumps=' + unknownLongJumps +
+      ', capped=' + cappedSequenceAnalyses + '.');
+  }
+  const bySelector = new Map();
+  launches.forEach((launch) => {
+    if (!bySelector.has(launch.directorSelector)) bySelector.set(launch.directorSelector, []);
+    bySelector.get(launch.directorSelector).push(launch);
+  });
+  return {
+    launches,
+    bySelector,
+    populatedRows,
+    outerEntryCount,
+    distinctOuterCursorCount,
+    sequenceTableCount,
+    sequenceEntryCount,
+    directOuterSequenceCount,
+    distinctSequenceCursorCount,
+    launchEntryCursorCount,
+    invocationContextCount,
+    multiInvocationLaunchCount,
+    distinctInvocationCursorCount,
+    externalRequests,
+    externalRequestPhysicalSiteCount: externalRequestPhysicalSites.size,
+    externalRequestHandoffCount: externalRequests.length,
+    translationWrites,
+    substitutionSourceWrites,
+    translationPhysicalSiteCount,
+    substitutionSourcePhysicalSiteCount,
+    substitutionSourceAWriteCount: substitutionSourceAWrites.length,
+    substitutionSourceBWriteCount: substitutionSourceBWrites.length,
+    exactSubstitutionSourceIndexWriteCount: exactSubstitutionSourceIndexWrites.length,
+    unresolvedSubstitutionSourceIndexWriteCount:
+      unresolvedSubstitutionSourceIndexWrites.length,
+    exactSubstitutionSourceValueWriteCount: exactSubstitutionSourceValueWrites.length,
+    unresolvedSubstitutionSourceValueWriteCount:
+      unresolvedSubstitutionSourceValueWrites.length,
+    exactTranslationWriteCount: exactTranslationWrites.length,
+    unresolvedTranslationWriteCount: unresolvedTranslationWrites.length,
+    retailTranslationPhysicalSiteCount,
+    retailTranslationWriteCount: retailTranslationWrites.length,
+    exactRetailTranslationWriteCount: exactRetailTranslationWrites.length,
+    unresolvedRetailTranslationWriteCount: unresolvedRetailTranslationWrites.length,
+    nonretailTranslationPhysicalSiteCount,
+    nonretailTranslationWriteCount: nonretailTranslationWrites.length,
+    selectorCount: selectors.size,
+    resourceCount: resources.size,
+    directorySha256: sha256(directory)
+  };
+}
+
+function readRetailDirectorInventory(options, manifest, grammar) {
+  const raw = fs.readFileSync(options.rom);
+  const rawSha256 = sha256(raw);
+  if (rawSha256 !== RAW_US_REV0_V64_SHA256) {
+    throw new Error('The source V64 hash does not match Ogre Battle 64 US Rev 0.');
+  }
+  const z64 = normalizeV64(raw);
+  const normalizedSha256 = sha256(z64);
+  if (normalizedSha256 !== NORMALIZED_US_REV0_Z64_SHA256) {
+    throw new Error('The normalized z64 hash does not match Ogre Battle 64 US Rev 0.');
+  }
+  if (readU32(z64, DIRECTOR_SELECTOR_TABLE_PREFIX_Z64,
+      'Director selector-table prefix') !== DIRECTOR_SELECTOR_TABLE_BYTES) {
+    throw new Error('The Director selector-table size prefix changed.');
+  }
+  const table = z64.subarray(DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64,
+    DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64 + DIRECTOR_SELECTOR_TABLE_BYTES);
+  const eventLaunchInventory = readEventDirectorLaunchInventory(z64, table);
+  const selectorRowsByKey = new Map();
+  for (let row = 0; row < DIRECTOR_SELECTOR_ROWS; row += 1) {
+    const key = readU32(table, row * 4, 'Director selector-table row');
+    if (!selectorRowsByKey.has(key)) selectorRowsByKey.set(key, []);
+    selectorRowsByKey.get(key).push(row);
+  }
+  const populatedRows = Array.from(selectorRowsByKey.entries())
+    .filter(([key]) => key !== 0).reduce((total, entry) => total + entry[1].length, 0);
+  const uniqueKeys = Array.from(selectorRowsByKey.keys()).filter((key) => key !== 0);
+  if (populatedRows !== RETAIL_DIRECTOR_POPULATED_ROWS ||
+      uniqueKeys.length !== RETAIL_DIRECTOR_UNIQUE_RESOURCES) {
+    throw new Error('The native Director selector inventory changed.');
+  }
+  const manifestByKey = new Map(manifest.assets.map((asset) => [
+    Number(asset.cutsceneLoadKey) >>> 0, asset
+  ]));
+  const grammarByOpcode = new Map(grammar.map((definition) => [
+    definition.opcodeU32, definition
+  ]));
+  const opcodeStats = new Map();
+  const resources = uniqueKeys.map((key) => {
+    const prefixStart = DIRECTOR_RESOURCE_BASE_Z64 + key;
+    const storedPayloadLength = readU32(z64, prefixStart,
+      'Director resource 0x' + hex(key, 8) + ' prefix');
+    const payloadStart = prefixStart + 4;
+    const payloadEnd = payloadStart + storedPayloadLength;
+    if (storedPayloadLength < 4 || payloadEnd > z64.length) {
+      throw new Error('Director resource 0x' + hex(key, 8) +
+        ' has an invalid stored envelope.');
+    }
+    const payload = z64.subarray(payloadStart, payloadEnd);
+    const decoded = decodeCustomLz(payload, 'Director resource 0x' + hex(key, 8));
+    const decodedWords = wordsFromBytes(decoded.bytes,
+      'Director resource 0x' + hex(key, 8));
+    const manifestAsset = manifestByKey.get(key) || null;
+    const assetId = manifestAsset ? manifestAsset.assetId :
+      'rom-director:' + hex(payloadStart, 8);
+    const nodes = tileRetailDirector(decodedWords, assetId, grammarByOpcode);
+    const selectorRows = selectorRowsByKey.get(key).slice();
+    const parentEventLaunches = selectorRows.flatMap((row) =>
+      eventLaunchInventory.bySelector.get(row) || []);
+    nodes.forEach((node) => {
+      if (!opcodeStats.has(node.opcode)) {
+        opcodeStats.set(node.opcode, { count: 0, scenes: new Set() });
+      }
+      const stats = opcodeStats.get(node.opcode);
+      stats.count += 1;
+      stats.scenes.add(assetId);
+    });
+    const decodedSha256 = sha256(decoded.bytes);
+    if (manifestAsset && (manifestAsset.z64PrefixStart !== prefixStart ||
+        manifestAsset.z64PayloadStart !== payloadStart ||
+        manifestAsset.storedPayloadLength !== storedPayloadLength ||
+        manifestAsset.decodedLength !== decoded.bytes.length ||
+        manifestAsset.decodedSha256 !== decodedSha256)) {
+      throw new Error(manifestAsset.assetId +
+        ' does not match the retail Director inventory.');
+    }
+    return {
+      assetId,
+      manifestAsset,
+      directorKeyValue: key,
+      selectorRows,
+      selectorWordZ64: selectorRows.map((row) =>
+        DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64 + row * 4),
+      z64PrefixStart: prefixStart,
+      z64PayloadStart: payloadStart,
+      z64PayloadEndExclusive: payloadEnd,
+      rawV64PayloadStart: payloadStart ^ 1,
+      storedPayloadLength,
+      dmaExtent: (storedPayloadLength + 1) & ~1,
+      decodedLength: decoded.bytes.length,
+      decodedWordCount: decodedWords.length,
+      decodedSha256,
+      runtimeNodeCount: nodes.length,
+      queryCount: nodes.filter((node) => node.definition.widthKind === 'query').length,
+      terminationWordStart: nodes[nodes.length - 1].startWord,
+      terminationWordEndExclusive: nodes[nodes.length - 1].endWord,
+      launchContext: directorLaunchContextProfile(nodes),
+      parentEventLaunches,
+      operandTranslation: launchOperandTranslationProfile(nodes, parentEventLaunches),
+      nodes
+    };
+  }).sort((left, right) => left.z64PayloadStart - right.z64PayloadStart);
+  const totalWords = resources.reduce((total, resource) =>
+    total + resource.decodedWordCount, 0);
+  const totalNodes = resources.reduce((total, resource) =>
+    total + resource.runtimeNodeCount, 0);
+  const selectorExpandedSubstreamCalls = resources.reduce((total, resource) =>
+    total + resource.nodes.filter((node) => node.opcode === 0x99).length *
+      resource.selectorRows.length, 0);
+  const substreamCalls = opcodeStats.get(0x99) || { count: 0 };
+  const tailCalls = opcodeStats.get(0x80000003) || { count: 0 };
+  const opcode5E = opcodeStats.get(0x5E) || { count: 0 };
+  if (totalWords !== RETAIL_DIRECTOR_WORDS ||
+      substreamCalls.count !== RETAIL_DIRECTOR_SUBSTREAM_CALLS ||
+      selectorExpandedSubstreamCalls !== RETAIL_DIRECTOR_SELECTOR_EXPANDED_SUBSTREAM_CALLS ||
+      tailCalls.count !== RETAIL_DIRECTOR_TAIL_CALLS ||
+      opcode5E.count !== RETAIL_DIRECTOR_OPCODE_5E_OCCURRENCES) {
+    throw new Error('The retail Director grammar scan no longer matches the native table: ' +
+      'words=' + totalWords + ', calls=' + substreamCalls.count +
+      ', selectorCalls=' + selectorExpandedSubstreamCalls +
+      ', tailCalls=' + tailCalls.count + ', opcode5E=' + opcode5E.count + '.');
+  }
+  return {
+    z64,
+    resources,
+    opcodeStats,
+    totalWords,
+    totalNodes,
+    selectorExpandedSubstreamCalls,
+    populatedRows,
+    uniqueResources: resources.length,
+    tableSha256: sha256(table),
+    eventLaunchInventory,
+    rawSha256,
+    normalizedSha256
+  };
+}
+
+function compactRetailScene(resource, selectors, derivedEnvironmentRules,
+    oversizedImageRules) {
+  const rawIdentity = resource.assetId.split(':').pop();
+  const profileNodes = sourceNodesForRetailProfile(resource.nodes);
+  const profileAsset = { assetId: resource.assetId, nodes: profileNodes };
+  const actors = retailActorTemplates(resource.assetId, resource.nodes, selectors);
+  const backgroundRequests = backgroundRequestsForAsset(
+    profileAsset, null, resource.launchContext);
+  const launchProfile = buildLaunchProfile(profileAsset, actors, null, null,
+    backgroundRequests, profileNodes, resource.parentEventLaunches,
+    resource.operandTranslation, resource.launchContext, derivedEnvironmentRules,
+    oversizedImageRules);
+  const profiledStageRequests = launchProfile.background.requests.filter((request) =>
+    request.stageAssetIds.length > 0);
+  const backgroundCandidateAssetIds = Array.from(new Set(backgroundRequests.flatMap((request) =>
+    request.nonMode2Route.archiveAssetIds).concat(
+      launchProfile.background.requests.flatMap((request) => request.stageAssetIds))));
+  return {
+    sceneId: 'scene:director:' + rawIdentity.toLowerCase(),
+    storageId: resource.assetId,
+    assetId: resource.assetId,
+    canonicalScene: null,
+    technicalName: 'Director resource ' + rawIdentity,
+    friendlyName: null,
+    aliases: resource.selectorRows.map((row) => 'director-selector-' + row),
+    aliasNames: resource.selectorRows.map((row) => 'Director selector ' + row),
+    reviewedTimelineOverlay: null,
+    engine: 'director',
+    sourceRevision: 'us-rev0',
+    directorKey: hex(resource.directorKeyValue, 8),
+    triggerStatus: 'native-selector-table-static',
+    runtimeProof: 'native-selector-table-static',
+    parseStatus: 'retail-grammar-complete',
+    actorBearing: actors.length > 0,
+    actorCount: actors.length,
+    actors,
+    backgroundAssetIds: [],
+    backgroundCandidateAssetIds,
+    backgroundAssociationStatus: profiledStageRequests.length
+      ? 'Native launch routing selects a renderable environment from the structural Director command.'
+      : (backgroundRequests.length
+        ? 'The launch context still owns the active background route for this stream.'
+        : 'This stream has no background initialization command; launch context owns any scenery.'),
+    backgroundRuntimeObservation: null,
+    actorCameraObservation: null,
+    launchProfile,
+    backgroundRequests,
+    dialogueAssociations: [],
+    audioAssociations: directorAudioAssociations(profileAsset),
+    recoveredMediaRequests: [],
+    recoveredActorEvents: [],
+    recoveredNativeSpriteEffects: [],
+    previewCapability: 'preview-only',
+    exportCapability: 'needs-research',
+    source: {
+      masterRomSha256: RAW_US_REV0_V64_SHA256,
+      z64PrefixStart: resource.z64PrefixStart,
+      z64PrefixEndExclusive: resource.z64PayloadStart,
+      z64PayloadStart: resource.z64PayloadStart,
+      z64PayloadEndExclusive: resource.z64PayloadEndExclusive,
+      rawV64PayloadStart: resource.rawV64PayloadStart,
+      storedPayloadLength: resource.storedPayloadLength,
+      dmaExtent: resource.dmaExtent,
+      decodedLength: resource.decodedLength,
+      decodedWordCount: resource.decodedWordCount,
+      decodedSha256: resource.decodedSha256,
+      directorSelectorTableResourceKey: '0x' + hex(DIRECTOR_SELECTOR_TABLE_KEY, 8),
+      directorSelectorTablePayloadZ64: DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64,
+      directorSelectorRows: resource.selectorRows.slice(),
+      directorSelectorWordZ64: resource.selectorWordZ64.slice(),
+      crcWindowOverlap: false,
+      codecVersion: '2026-08-23.retail-director-table-custom-lz-v1',
+      corpusNodeCount: 0,
+      corpusQueryCount: 0,
+      corpusRegisteredWaitCount: 0,
+      runtimeNodeCount: resource.runtimeNodeCount,
+      runtimeQueryCount: resource.queryCount,
+      dynamicGrammar: true,
+      terminationWordStart: resource.terminationWordStart,
+      terminationWordEndExclusive: resource.terminationWordEndExclusive,
+      nodes: [],
+      registeredWaits: [],
+      gaps: [],
+      historicalGaps: [],
+      tailRecovery: null
+    }
+  };
+}
+
+function directorResourceKeyValue(value) {
+  if (Number.isInteger(value)) return value >>> 0;
+  const parsed = Number.parseInt(String(value || '').replace(/^0x/i, ''), 16);
+  return Number.isFinite(parsed) ? parsed >>> 0 : null;
+}
+
+function stagePresentationFingerprint(presentation) {
+  return sha256(JSON.stringify({
+    selectorTableId: presentation.selectorTableId,
+    selector: presentation.selector,
+    environmentSelector: presentation.environmentSelector,
+    foregroundSelectorTableId: presentation.foregroundSelectorTableId,
+    foregroundSelector: presentation.foregroundSelector,
+    resourceKey: presentation.resourceKey,
+    stageLayers: presentation.stageLayers,
+    stageAssetIds: presentation.stageAssetIds
+  }));
+}
+
+function attachConcurrentDirectorContextOwners(scenes) {
+  const sceneByDirectorKey = new Map(scenes.map((scene) => [
+    directorResourceKeyValue(scene.directorKey), scene
+  ]));
+  let contextCount = 0;
+  let exactOwnerCount = 0;
+  let exactLaunchCount = 0;
+  scenes.forEach((scene) => {
+    scene.launchProfile.parentEventLaunches.forEach((launch) => {
+      launch.eventInvocationContexts.forEach((context) => {
+        contextCount += 1;
+        const resourceKey = directorResourceKeyValue(
+          context.precedingDirectorResourceKey);
+        const owner = resourceKey === null
+          ? null : sceneByDirectorKey.get(resourceKey) || null;
+        context.concurrentDirectorSceneId = owner ? owner.sceneId : null;
+        context.concurrentDirectorAssetId = owner ? owner.assetId : null;
+        context.sceneStateRelation = owner
+          ? 'previous-event-request-concurrent-scene-state'
+          : 'no-exact-previous-director-request';
+        if (owner) exactOwnerCount += 1;
+        if (owner && context.precedingDirectorLaunchId) exactLaunchCount += 1;
+      });
+    });
+  });
+  return { contextCount, exactOwnerCount, exactLaunchCount };
+}
+
+function attachInheritedStagePresentations(scenes) {
+  const sceneByDirectorKey = new Map(scenes.map((scene) => [
+    directorResourceKeyValue(scene.directorKey), scene
+  ]));
+  const resolvedBySceneId = new Map();
+  scenes.forEach((scene) => {
+    const presentations = scene.launchProfile.background.requests.filter((request) =>
+      Array.isArray(request.stageAssetIds) && request.stageAssetIds.length > 0);
+    if (presentations.length !== 1) return;
+    resolvedBySceneId.set(scene.sceneId, {
+      presentation: presentations[0],
+      fingerprint: stagePresentationFingerprint(presentations[0]),
+      lineageDepth: 0,
+      rootRequestIds: [presentations[0].requestId]
+    });
+  });
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    scenes.forEach((scene) => {
+      if (resolvedBySceneId.has(scene.sceneId) ||
+          scene.launchProfile.background.requests.length > 0) return;
+      const contexts = scene.launchProfile.parentEventLaunches.flatMap((launch) =>
+        launch.eventInvocationContexts.map((context) => ({ launch, context })));
+      if (!contexts.length) return;
+      const predecessors = contexts.map((row) => {
+        const resourceKey = directorResourceKeyValue(
+          row.context.precedingDirectorResourceKey);
+        const predecessor = resourceKey === null
+          ? null : sceneByDirectorKey.get(resourceKey);
+        const resolution = predecessor
+          ? resolvedBySceneId.get(predecessor.sceneId) : null;
+        return { predecessor, resolution };
+      });
+      if (predecessors.some((row) => !row.resolution)) return;
+      const fingerprints = new Set(predecessors.map((row) =>
+        row.resolution.fingerprint));
+      if (fingerprints.size !== 1) return;
+      const source = predecessors[0].resolution;
+      const immediatePredecessorSceneIds = Array.from(new Set(predecessors.map((row) =>
+        row.predecessor.sceneId))).sort();
+      const immediatePredecessorResourceKeys = Array.from(new Set(contexts.map((row) =>
+        row.context.precedingDirectorResourceKey))).sort();
+      const rootRequestIds = Array.from(new Set(predecessors.flatMap((row) =>
+        row.resolution.rootRequestIds))).sort();
+      const lineageDepth = Math.max(...predecessors.map((row) =>
+        row.resolution.lineageDepth)) + 1;
+      const presentation = {
+        presentationId: scene.assetId + ':inherited-stage',
+        sourceKind: 'parent-event-predecessor',
+        selectorTableId: source.presentation.selectorTableId,
+        selector: source.presentation.selector,
+        environmentSelector: source.presentation.environmentSelector,
+        foregroundSelectorTableId: source.presentation.foregroundSelectorTableId,
+        foregroundSelector: source.presentation.foregroundSelector,
+        foregroundSelectorCandidates:
+          (source.presentation.foregroundSelectorCandidates || []).slice(),
+        foregroundStatus: source.presentation.foregroundStatus,
+        resourceKey: source.presentation.resourceKey,
+        members: stableCopy(source.presentation.members || []),
+        assetIds: (source.presentation.assetIds || []).slice(),
+        stageLayers: stableCopy(source.presentation.stageLayers || []),
+        stageAssetIds: (source.presentation.stageAssetIds || []).slice(),
+        immediatePredecessorSceneIds,
+        immediatePredecessorResourceKeys,
+        rootRequestIds,
+        contextCount: contexts.length,
+        lineageDepth,
+        sentinel: -2,
+        evidenceStatus: 'native-static-parent-event-inheritance',
+        status: 'The native -2 launch sentinel preserves the unanimous Stage established by the preceding Director request.'
+      };
+      scene.launchProfile.background.inheritedPresentation = presentation;
+      resolvedBySceneId.set(scene.sceneId, {
+        presentation,
+        fingerprint: source.fingerprint,
+        lineageDepth,
+        rootRequestIds
+      });
+      changed = true;
+    });
+  }
+
+  scenes.forEach((scene) => {
+    if (scene.launchProfile.background.requests.length > 0) return;
+    const inherited = scene.launchProfile.background.inheritedPresentation;
+    const contexts = scene.launchProfile.parentEventLaunches.flatMap((launch) =>
+      launch.eventInvocationContexts.map((context) => {
+        const resourceKey = directorResourceKeyValue(
+          context.precedingDirectorResourceKey);
+        const predecessor = resourceKey === null
+          ? null : sceneByDirectorKey.get(resourceKey);
+        const resolution = predecessor
+          ? resolvedBySceneId.get(predecessor.sceneId) : null;
+        return {
+          launchId: launch.launchId,
+          eventDirectoryRow: launch.eventDirectoryRow,
+          eventInvocationCursor: context.eventInvocationCursor,
+          precedingDirectorLaunchCount: context.precedingDirectorLaunchCount,
+          precedingDirectorSelector: context.precedingDirectorSelector,
+          precedingDirectorResourceKey: context.precedingDirectorResourceKey,
+          precedingSceneId: predecessor ? predecessor.sceneId : null,
+          presentationFingerprint: resolution ? resolution.fingerprint : null,
+          resolutionStatus: !context.precedingDirectorResourceKey
+            ? 'no-preceding-director'
+            : (resolution
+              ? (inherited
+                ? 'resolved-unanimous-stage'
+                : 'context-stage-resolved-launch-selection-required')
+              : 'predecessor-stage-unresolved')
+        };
+      }));
+    scene.launchProfile.background.inheritanceContexts = contexts;
+    if (!inherited) return;
+    scene.backgroundCandidateAssetIds = Array.from(new Set(
+      scene.backgroundCandidateAssetIds.concat(inherited.stageAssetIds)));
+    if (!scene.backgroundRuntimeObservation) {
+      scene.backgroundAssociationStatus =
+        'The native -2 launch sentinel preserves one unanimous Stage from the preceding Director request.';
+    }
+  });
+
+  return {
+    exactSceneCount: scenes.filter((scene) =>
+      scene.launchProfile.background.inheritedPresentation !== null).length,
+    exactContextCount: scenes.reduce((total, scene) => total +
+      (scene.launchProfile.background.inheritedPresentation
+        ? scene.launchProfile.background.inheritanceContexts.length : 0), 0),
+    contextOnlyResolvedCount: scenes.reduce((total, scene) => total +
+      scene.launchProfile.background.inheritanceContexts.filter((context) =>
+        context.resolutionStatus ===
+          'context-stage-resolved-launch-selection-required').length, 0),
+    unresolvedContextCount: scenes.reduce((total, scene) => total +
+      scene.launchProfile.background.inheritanceContexts.filter((context) =>
+        context.resolutionStatus === 'no-preceding-director' ||
+        context.resolutionStatus === 'predecessor-stage-unresolved').length, 0)
+  };
+}
+
 function stableCopy(value) {
   if (Array.isArray(value)) return value.map(stableCopy);
   if (value && Object.prototype.toString.call(value) === '[object Object]') {
@@ -3670,6 +6950,40 @@ function build(options) {
       serifuPresentationSelectors.counts.populatedSelectors !== 348) {
     throw new Error('Serifu presentation selector artifact must contain 503 slots and 348 archives.');
   }
+  const retailDirectorGrammar = buildRetailDirectorGrammar(
+    directorCorpusGrammar, directorCorpusNodes);
+  const retailDirectorInventory = readRetailDirectorInventory(
+    options, manifest, retailDirectorGrammar);
+  const directorContinuationStreams = readDirectorContinuationStreams(
+    retailDirectorInventory.z64, retailDirectorGrammar);
+  const animatedSceneSpriteRotationRoutes = retailDirectorInventory.resources
+    .reduce((counts, resource) => {
+      const routes = animatedSceneSpriteRotationRouteCounts(resource.nodes);
+      counts.directOperand += routes.directOperand;
+      counts.sampledScenePath += routes.sampledScenePath;
+      counts.resourcePath += routes.resourcePath;
+      return counts;
+    }, { directOperand: 0, sampledScenePath: 0, resourcePath: 0 });
+  directorContinuationStreams.forEach((stream) => {
+    const routes = stream.animatedSceneSpriteRotationRoutes;
+    animatedSceneSpriteRotationRoutes.directOperand += routes.directOperand;
+    animatedSceneSpriteRotationRoutes.sampledScenePath += routes.sampledScenePath;
+    animatedSceneSpriteRotationRoutes.resourcePath += routes.resourcePath;
+  });
+  if (animatedSceneSpriteRotationRoutes.directOperand !== 2001 ||
+      animatedSceneSpriteRotationRoutes.sampledScenePath !== 0 ||
+      animatedSceneSpriteRotationRoutes.resourcePath !== 0) {
+    throw new Error('Retail Director animated scene-sprite rotation routes changed: ' +
+      JSON.stringify(animatedSceneSpriteRotationRoutes) + '.');
+  }
+  const modeTwoStagePlacementInventory = compactModeTwoStagePlacementProfiles(
+    retailDirectorInventory.z64, spriteCorpus);
+  const modeTwoDerivedEnvironmentRules = readModeTwoDerivedEnvironmentRules(
+    retailDirectorInventory.z64);
+  const oversizedImagePresentationRules = readOversizedImagePresentationRules(
+    retailDirectorInventory.z64, archiveCatalog);
+  const sceneResourcePathInventory = readSceneResourcePaths(
+    retailDirectorInventory.z64);
   const tailRecoveryMap = new Map();
   directorTailRecovery.assets.forEach((recovery) => {
     if (tailRecoveryMap.has(recovery.assetId)) {
@@ -3718,26 +7032,36 @@ function build(options) {
       throw new Error('Corrected Director asset counts are stale for ' + assetId + '.');
     }
   });
-  const directorSelectorOwners = new Map(directorSelectorTable.assets.map((row) => [
-    row.assetId,
+  const directorSelectorOwners = new Map(retailDirectorInventory.resources.map((resource) => [
+    resource.assetId,
     {
-      tableResourceKey: directorSelectorTable.owner.resourceKey,
-      tablePayloadZ64: directorSelectorTable.owner.payloadZ64,
-      selectorRows: row.selectorRows,
-      selectorWordZ64: row.selectorWordZ64
+      tableResourceKey: '0x' + hex(DIRECTOR_SELECTOR_TABLE_KEY, 8),
+      tablePayloadZ64: DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64,
+      selectorRows: resource.selectorRows,
+      selectorWordZ64: resource.selectorWordZ64
     }
   ]));
+  const retailResourceByAssetId = new Map(retailDirectorInventory.resources.map((resource) =>
+    [resource.assetId, resource]));
   const recoveredAssets = manifest.assets.map((asset) =>
     applyDirectorTailRecovery(asset, tailRecoveryMap.get(asset.assetId)));
-  const backgroundMirrorEvidence = modeTwoBackgroundMirrorEvidence(recoveredAssets);
-  const scenes = recoveredAssets.map((asset) => {
+  const profiledScenes = recoveredAssets.map((asset) => {
     const selectorOwner = directorSelectorOwners.get(asset.assetId);
     if (!selectorOwner) throw new Error('Director selector owner is missing for ' + asset.assetId + '.');
     return compactScene(asset, corpusAssetMap.get(asset.assetId),
       corpusNodesByAsset.get(asset.assetId), corpusWaitsByAsset.get(asset.assetId),
-      selectors, selectorOwner, backgroundMirrorEvidence);
-  })
-    .sort((left, right) => left.source.z64PayloadStart - right.source.z64PayloadStart);
+      selectors, selectorOwner, retailResourceByAssetId.get(asset.assetId),
+      modeTwoDerivedEnvironmentRules, oversizedImagePresentationRules);
+  });
+  const profiledSceneByAssetId = new Map(profiledScenes.map((scene) =>
+    [scene.assetId, scene]));
+  const scenes = retailDirectorInventory.resources.map((resource) =>
+    profiledSceneByAssetId.get(resource.assetId) || compactRetailScene(
+      resource, selectors, modeTwoDerivedEnvironmentRules,
+      oversizedImagePresentationRules));
+  const concurrentDirectorContextInventory =
+    attachConcurrentDirectorContextOwners(scenes);
+  const inheritedStageInventory = attachInheritedStagePresentations(scenes);
   const partialDirectorResources = PARTIAL_DIRECTOR_RESOURCE_IDS.map((resourceId) => {
     const row = directorAssetCensus.find((candidate) => candidate.assetId === resourceId);
     if (!row || row.disposition !== 'director-partial') {
@@ -3768,7 +7092,8 @@ function build(options) {
   const dialogueEntries = dialogueArchives.reduce((total, archive) =>
     total + archive.entryCount, 0);
   const audioBlocks = compactAudioBlocks(audioCatalog);
-  const directorEvents = compactDirectorEvents(scenes, directorCorpusGrammar);
+  const directorEvents = compactDirectorEvents(
+    retailDirectorGrammar, retailDirectorInventory.opcodeStats);
   const backgroundSelectorTables = compactBackgroundSelectorTables();
   const spriteArtResources = spriteCorpus.cutscene.artResources;
   const distinctSpriteChildren = spriteArtResources.reduce((total, resource) =>
@@ -3776,15 +7101,248 @@ function build(options) {
   const catalogPoseIds = new Set(poseCatalog.posePrograms.map((program) => program.poseId));
   const renderablePoseIds = new Set(poseCatalog.posePrograms
     .filter((program) => program.frames.length).map((program) => program.poseId));
+  const modeTwoDirectorScenes = scenes.filter((scene) =>
+    scene.launchProfile.directorMode.value === 2);
+  const modeTwoBackgroundRequests = modeTwoDirectorScenes.flatMap((scene) =>
+    scene.launchProfile.background.requests);
+  const sceneHasProfiledStage = (scene) =>
+    (scene.backgroundRuntimeObservation &&
+      Array.isArray(scene.backgroundRuntimeObservation.stageLayers) &&
+      scene.backgroundRuntimeObservation.stageLayers.length) ||
+    scene.launchProfile.background.requests.some((request) =>
+      request.stageAssetIds.length) ||
+    (scene.launchProfile.background.inheritedPresentation &&
+      scene.launchProfile.background.inheritedPresentation.stageAssetIds.length);
+  const modeTwoCommandSeededEnvironmentScenes = modeTwoDirectorScenes.filter((scene) =>
+    scene.launchProfile.background.requests.some((request) =>
+      Number.isInteger(request.commandOperand) && request.commandOperand >= 0 &&
+      request.commandOperand < MODE_TWO_ENVIRONMENT_RESOURCE_KEYS.length));
+  const unresolvedModeTwoForegroundScenes = modeTwoDirectorScenes.filter((scene) =>
+    scene.launchProfile.background.requests.length === 0 ||
+    !scene.launchProfile.background.requests.some((request) =>
+      Number.isInteger(request.foregroundSelector)));
+  const modeTwoDerivedEnvironmentRequests = modeTwoBackgroundRequests.filter((request) =>
+    request.commandOperand === -1);
+  const modeTwoDerivedEnvironmentContexts = modeTwoDerivedEnvironmentRequests.flatMap((request) =>
+    request.derivedEnvironment ? request.derivedEnvironment.contexts : []);
+  if (modeTwoDirectorScenes.length !== 1175 || modeTwoBackgroundRequests.length !== 1163 ||
+      modeTwoCommandSeededEnvironmentScenes.length !== 1146 ||
+      modeTwoDerivedEnvironmentRequests.length !== 17 ||
+      modeTwoDerivedEnvironmentContexts.some((context) =>
+        context.resolutionStatus !== 'launch-inputs-unresolved') ||
+      modeTwoBackgroundRequests.some((request) => request.wordStart !== 0) ||
+      unresolvedModeTwoForegroundScenes.length !== 43) {
+    throw new Error('Mode-two launch pre-scan coverage is stale.');
+  }
+  const sceneGroupPreloadScenes = scenes.filter((scene) =>
+    scene.launchProfile.launchContext &&
+    [4, 5].includes(scene.launchProfile.launchContext.classId));
+  const sceneGroupPreloadRequests = sceneGroupPreloadScenes.flatMap((scene) =>
+    scene.launchProfile.background.requests);
+  if (sceneGroupPreloadScenes.length !== 209 || sceneGroupPreloadRequests.length !== 191 ||
+      sceneGroupPreloadRequests.some((request) =>
+        request.selectorTableId !== 'background-table:scene:31' ||
+        request.selectorSource !== 'director-launch-prescan-class-4-or-5-scene-group')) {
+    throw new Error('Terminal-class scene-group preload coverage is stale.');
+  }
+  const oversizedImageScenes = scenes.filter((scene) =>
+    scene.launchProfile.oversizedImagePresentation !== null);
+  const exactOversizedImageScenes = oversizedImageScenes.filter((scene) =>
+    scene.launchProfile.oversizedImagePresentation.assetId !== null);
+  const structuralOversizedImageScenes = oversizedImageScenes.filter((scene) =>
+    scene.launchProfile.oversizedImagePresentation.source ===
+      'director-launch-prescan-opcode-0x80000007');
+  if (oversizedImageScenes.length !== 117 || exactOversizedImageScenes.length !== 106 ||
+      structuralOversizedImageScenes.length !== 106) {
+    throw new Error('Terminal-class-4 oversized-image coverage is stale.');
+  }
+  const sceneVignetteCommands = scenes.flatMap((scene) => {
+    const resource = retailResourceByAssetId.get(scene.assetId);
+    return (resource ? resource.nodes : []).filter((node) => node.opcode === 0x3A)
+      .map((node) => ({ scene, node }));
+  });
+  const sceneVignetteScenes = new Set(sceneVignetteCommands.map((row) =>
+    row.scene.assetId));
+  const exactSceneVignetteScenes = new Set(sceneVignetteCommands.filter((row) =>
+    row.scene.launchProfile.oversizedImagePresentation &&
+      row.scene.launchProfile.oversizedImagePresentation.assetId !== null)
+    .map((row) => row.scene.assetId));
+  if (sceneVignetteCommands.length !== 107 || sceneVignetteScenes.size !== 107 ||
+      exactSceneVignetteScenes.size !== 106 ||
+      sceneVignetteCommands.some(({ scene, node }) =>
+        scene.launchProfile.launchContext.classId !== 4 ||
+        node.rawWords.length !== 9 ||
+        signed(node.rawWords[1]) !== 2 ||
+        signed(node.rawWords[4]) !== 0 ||
+        signed(node.rawWords[5]) <= 0 ||
+        signed(node.rawWords[5]) !== signed(node.rawWords[6]) ||
+        signed(node.rawWords[7]) !== 130 ||
+        ![4, 8].includes(Number(node.rawWords[8]) >>> 0))) {
+    throw new Error('Opcode-0x3A scene-vignette coverage is stale.');
+  }
+  const launchTranslatedScenes = scenes.filter((scene) =>
+    scene.launchProfile.operandTranslation.required === true);
+  const launchTranslationPlaceholders = launchTranslatedScenes.reduce((total, scene) =>
+    total + scene.launchProfile.operandTranslation.placeholderCount, 0);
+  const launchTranslationIndexes = new Set(launchTranslatedScenes.flatMap((scene) =>
+    scene.launchProfile.operandTranslation.tableIndexes));
+  if (launchTranslatedScenes.length !== 19 || launchTranslationPlaceholders !== 398 ||
+      launchTranslationIndexes.size !== 17) {
+    throw new Error('Director launch-translation placeholder coverage is stale.');
+  }
+  const directEventInvocationContexts =
+    retailDirectorInventory.eventLaunchInventory.launches.flatMap((launch) =>
+      launch.eventInvocationContexts);
+  const exactEventPropertyE6Contexts = directEventInvocationContexts.filter((context) =>
+    context.eventPropertyE6 !== null);
+  const exactEventPropertyE9Contexts = directEventInvocationContexts.filter((context) =>
+    context.eventPropertyE9 !== null);
+  const exactEventPropertyFCContexts = directEventInvocationContexts.filter((context) =>
+    context.eventPropertyFC !== null);
+  const exactEventPropertyFDContexts = directEventInvocationContexts.filter((context) =>
+    context.eventPropertyFD !== null);
+  const requiredLaunchPreservationSnapshotContexts =
+    exactEventPropertyE6Contexts.filter((context) =>
+      context.launchPreservationSnapshot === true);
+  const omittedLaunchPreservationSnapshotContexts =
+    exactEventPropertyE6Contexts.filter((context) =>
+      context.launchPreservationSnapshot === false);
+  const secondRosterUnitLeaderOnlyContexts =
+    exactEventPropertyE6Contexts.filter((context) =>
+      context.secondRosterUnitLeaderOnly === true);
+  if (directEventInvocationContexts.length !== EVENT_STATIC_INVOCATION_CONTEXTS ||
+      exactEventPropertyE6Contexts.length !== 18 ||
+      requiredLaunchPreservationSnapshotContexts.length !== 16 ||
+      omittedLaunchPreservationSnapshotContexts.length !== 2 ||
+      secondRosterUnitLeaderOnlyContexts.length !== 4 ||
+      directEventInvocationContexts.some((context) => context.launchFlagBit08 !== false)) {
+    throw new Error('Direct-event launch preservation and roster coverage is stale.');
+  }
+  if (exactEventPropertyE9Contexts.length !== 183 ||
+      exactEventPropertyFCContexts.length !== 0 ||
+      exactEventPropertyFDContexts.length !== 25) {
+    throw new Error('Direct-event derived-environment input coverage is stale.');
+  }
+  if (inheritedStageInventory.exactSceneCount !== 90 ||
+      inheritedStageInventory.exactContextCount !== 177 ||
+      inheritedStageInventory.contextOnlyResolvedCount !== 18 ||
+      inheritedStageInventory.unresolvedContextCount !== 209) {
+    throw new Error('Parent-event Stage inheritance coverage is stale: ' +
+      'scenes=' + inheritedStageInventory.exactSceneCount + ', contexts=' +
+      inheritedStageInventory.exactContextCount + ', contextOnly=' +
+      inheritedStageInventory.contextOnlyResolvedCount + ', unresolved=' +
+      inheritedStageInventory.unresolvedContextCount + '.');
+  }
   const data = {
     format: 'ob64-cutscene-catalog',
-    schemaVersion: 4,
+    schemaVersion: 16,
     sourceRevision: 'us-rev0',
     counts: {
       scenes: scenes.length,
       presentationScenes: presentationScenes.length,
       partialDirectorResources: partialDirectorResources.length,
-      runtimeTiledDirectorResources: directorCorpusAssets.length,
+      profiledDirectorResources: directorCorpusAssets.length,
+      runtimeTiledDirectorResources: retailDirectorInventory.uniqueResources,
+      retailDirectorSelectorRows: DIRECTOR_SELECTOR_ROWS,
+      populatedRetailDirectorSelectorRows: retailDirectorInventory.populatedRows,
+      retailDirectorResources: retailDirectorInventory.uniqueResources,
+      retailDirectorWords: retailDirectorInventory.totalWords,
+      retailDirectorNodes: retailDirectorInventory.totalNodes,
+      retailDirectorOpcodeDefinitions: retailDirectorGrammar.length,
+      retailDirectorSubstreamCalls: RETAIL_DIRECTOR_SUBSTREAM_CALLS,
+      retailDirectorSelectorSubstreamCalls:
+        retailDirectorInventory.selectorExpandedSubstreamCalls,
+      directorContinuationStreams: directorContinuationStreams.length,
+      retailDirectorTailCalls: RETAIL_DIRECTOR_TAIL_CALLS,
+      directEventDirectorLaunches:
+        retailDirectorInventory.eventLaunchInventory.launches.length,
+      directEventDirectorSelectors:
+        retailDirectorInventory.eventLaunchInventory.selectorCount,
+      directEventDirectorResources:
+        retailDirectorInventory.eventLaunchInventory.resourceCount,
+      parentEventOuterEntries:
+        retailDirectorInventory.eventLaunchInventory.outerEntryCount,
+      parentEventDistinctOuterCursors:
+        retailDirectorInventory.eventLaunchInventory.distinctOuterCursorCount,
+      parentEventSequenceTables:
+        retailDirectorInventory.eventLaunchInventory.sequenceTableCount,
+      parentEventSequenceEntries:
+        retailDirectorInventory.eventLaunchInventory.sequenceEntryCount,
+      parentEventDirectOuterSequences:
+        retailDirectorInventory.eventLaunchInventory.directOuterSequenceCount,
+      parentEventDistinctSequenceCursors:
+        retailDirectorInventory.eventLaunchInventory.distinctSequenceCursorCount,
+      directEventLaunchEntryCursors:
+        retailDirectorInventory.eventLaunchInventory.launchEntryCursorCount,
+      directEventInvocationContexts:
+        retailDirectorInventory.eventLaunchInventory.invocationContextCount,
+      directEventConcurrentContextOwners:
+        concurrentDirectorContextInventory.exactOwnerCount,
+      directEventExactConcurrentLaunchOwners:
+        concurrentDirectorContextInventory.exactLaunchCount,
+      directEventMultiInvocationLaunches:
+        retailDirectorInventory.eventLaunchInventory.multiInvocationLaunchCount,
+      parentEventDistinctInvocationCursors:
+        retailDirectorInventory.eventLaunchInventory.distinctInvocationCursorCount,
+      parentEventExternalRequestPhysicalSites:
+        retailDirectorInventory.eventLaunchInventory.externalRequestPhysicalSiteCount,
+      parentEventExternalRequestHandoffs:
+        retailDirectorInventory.eventLaunchInventory.externalRequestHandoffCount,
+      parentEventTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.translationWrites.length,
+      parentEventSubstitutionSourceWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.substitutionSourceWrites.length,
+      parentEventSubstitutionSourcePhysicalSites:
+        retailDirectorInventory.eventLaunchInventory.substitutionSourcePhysicalSiteCount,
+      parentEventSubstitutionSourceAWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.substitutionSourceAWriteCount,
+      parentEventSubstitutionSourceBWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.substitutionSourceBWriteCount,
+      parentEventExactSubstitutionSourceIndexContexts:
+        retailDirectorInventory.eventLaunchInventory.exactSubstitutionSourceIndexWriteCount,
+      parentEventUnresolvedSubstitutionSourceIndexContexts:
+        retailDirectorInventory.eventLaunchInventory.unresolvedSubstitutionSourceIndexWriteCount,
+      parentEventExactSubstitutionSourceValueContexts:
+        retailDirectorInventory.eventLaunchInventory.exactSubstitutionSourceValueWriteCount,
+      parentEventUnresolvedSubstitutionSourceValueContexts:
+        retailDirectorInventory.eventLaunchInventory.unresolvedSubstitutionSourceValueWriteCount,
+      parentEventTranslationPhysicalSites:
+        retailDirectorInventory.eventLaunchInventory.translationPhysicalSiteCount,
+      parentEventExactTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.exactTranslationWriteCount,
+      parentEventUnresolvedTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.unresolvedTranslationWriteCount,
+      parentEventRetailTranslationPhysicalSites:
+        retailDirectorInventory.eventLaunchInventory.retailTranslationPhysicalSiteCount,
+      parentEventRetailTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.retailTranslationWriteCount,
+      parentEventExactRetailTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.exactRetailTranslationWriteCount,
+      parentEventUnresolvedRetailTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.unresolvedRetailTranslationWriteCount,
+      parentEventNonretailTranslationPhysicalSites:
+        retailDirectorInventory.eventLaunchInventory.nonretailTranslationPhysicalSiteCount,
+      parentEventNonretailTranslationWriteContexts:
+        retailDirectorInventory.eventLaunchInventory.nonretailTranslationWriteCount,
+      directEventExactPropertyE6Contexts: exactEventPropertyE6Contexts.length,
+      directEventExactPropertyE9Contexts: exactEventPropertyE9Contexts.length,
+      directEventExactPropertyFCContexts: exactEventPropertyFCContexts.length,
+      directEventExactPropertyFDContexts: exactEventPropertyFDContexts.length,
+      directEventRequiredLaunchPreservationSnapshotContexts:
+        requiredLaunchPreservationSnapshotContexts.length,
+      directEventOmittedLaunchPreservationSnapshotContexts:
+        omittedLaunchPreservationSnapshotContexts.length,
+      directEventSecondRosterUnitLeaderOnlyContexts:
+        secondRosterUnitLeaderOnlyContexts.length,
+      retailDirectorLaunchContextClasses: retailDirectorInventory.resources.reduce(
+        (counts, resource) => {
+          const classId = resource.launchContext.classId;
+          counts[classId] = (counts[classId] || 0) + 1;
+          return counts;
+        }, {}),
+      launchTranslatedDirectorResources: launchTranslatedScenes.length,
+      launchTranslationPlaceholders,
+      launchTranslationIndexes: launchTranslationIndexes.size,
       recoveredDirectorTailNodes: directorTailRecovery.counts.recoveredNodes,
       remainingDirectorGapWords: 0,
       directorWords: directorCorpusNodes.reduce((total, node) => total + node.word_count, 0),
@@ -3831,6 +7389,50 @@ function build(options) {
       backgroundSelectorTables: backgroundSelectorTables.length,
       backgroundSelectorRows: backgroundSelectorTables.reduce((total, table) =>
         total + table.entryCount, 0),
+      modeTwoStagePlacementProfiles:
+        modeTwoStagePlacementInventory.profiles.length,
+      modeTwoStagePlacementSelectors:
+        modeTwoStagePlacementInventory.nonemptySelectorCount,
+      modeTwoOrthographicStagePlacementRows:
+        modeTwoStagePlacementInventory.orthographicRowCount,
+      modeTwoPerspectiveStagePlacementRows:
+        modeTwoStagePlacementInventory.perspectiveRowCount,
+      modeTwoNormalStagePlacements:
+        modeTwoStagePlacementInventory.normalRowCount,
+      modeTwoSpecialStagePlacementRows:
+        modeTwoStagePlacementInventory.specialRowCount,
+      evidenceBackedDirectorStages: scenes.filter(sceneHasProfiledStage).length,
+      inheritedStageDirectorResources: inheritedStageInventory.exactSceneCount,
+      inheritedStageLaunchContexts: inheritedStageInventory.exactContextCount,
+      contextOnlyResolvedStageInheritanceContexts:
+        inheritedStageInventory.contextOnlyResolvedCount,
+      unresolvedStageInheritanceContexts: inheritedStageInventory.unresolvedContextCount,
+      sceneGroupPreloadDirectorResources: sceneGroupPreloadScenes.length,
+      sceneGroupPreloadBackgroundCommands: sceneGroupPreloadRequests.length,
+      classFourOversizedImageScenes: oversizedImageScenes.length,
+      exactClassFourOversizedImageScenes: exactOversizedImageScenes.length,
+      unresolvedClassFourOversizedImageScenes:
+        oversizedImageScenes.length - exactOversizedImageScenes.length,
+      sceneVignetteDirectorResources: sceneVignetteScenes.size,
+      exactSceneVignetteDirectorResources: exactSceneVignetteScenes.size,
+      unresolvedSceneVignetteDirectorResources:
+        sceneVignetteScenes.size - exactSceneVignetteScenes.size,
+      modeTwoCommandSeededEnvironmentStages: modeTwoCommandSeededEnvironmentScenes.length,
+      modeTwoDerivedEnvironmentSentinels: modeTwoDirectorScenes.filter((scene) =>
+        scene.launchProfile.background.requests.some((request) =>
+          request.commandOperand === -1)).length,
+      modeTwoDerivedEnvironmentInvocationContexts:
+        modeTwoDerivedEnvironmentContexts.length,
+      exactModeTwoDerivedEnvironmentInvocationContexts:
+        modeTwoDerivedEnvironmentContexts.filter((context) =>
+          context.resolutionStatus === 'exact-native-mapper-result').length,
+      modeTwoScenesWithoutBackgroundCommand: modeTwoDirectorScenes.filter((scene) =>
+        scene.launchProfile.background.requests.length === 0).length,
+      unresolvedModeTwoLaunchStages: modeTwoDirectorScenes.filter((scene) =>
+        !sceneHasProfiledStage(scene)).length,
+      unresolvedModeTwoForegroundSelections: unresolvedModeTwoForegroundScenes.length,
+      observedActorLaunchCameras: scenes.filter((scene) =>
+        scene.launchProfile.cameras.actor.evidenceStatus === 'runtime-observed').length,
       actorArtSources: poseCatalog.actorArtSources.length,
       actorArtResources: spriteArtResources.length,
       actorArtChildren: distinctSpriteChildren,
@@ -3847,7 +7449,17 @@ function build(options) {
       structuralPoseStates: compactSelectors.filter((selector) =>
         !catalogPoseIds.has(selector.poseId)).length,
       sourceUnpublishedPoseStates: compactSelectors.filter((selector) =>
-        !selector.sourceProgramDefined).length
+        !selector.sourceProgramDefined).length,
+      sceneResourcePathGroups: sceneResourcePathInventory.groups.length,
+      sceneResourcePathEntries: sceneResourcePathInventory.entries.length,
+      populatedSceneResourcePaths: sceneResourcePathInventory.entries.filter((entry) =>
+        entry.resourceKey !== null).length,
+      animatedSceneSpriteDirectRotationCommands:
+        animatedSceneSpriteRotationRoutes.directOperand,
+      animatedSceneSpriteSampledPathRotationCommands:
+        animatedSceneSpriteRotationRoutes.sampledScenePath,
+      animatedSceneSpriteResourcePathRotationCommands:
+        animatedSceneSpriteRotationRoutes.resourcePath
     },
     provenance: {
       generator: 'tools/generate-cutscene-data.js',
@@ -3868,6 +7480,29 @@ function build(options) {
       directorCorpusRegisteredWaitsSha256: sha256File(options.directorCorpusWaits),
       directorCorpusStatus:
         'all 60 resources, 8,451 nodes, and 21,927 words use the corrected 153-command grammar with zero raw gaps',
+      retailDirectorStatus:
+        'all 1,498 unique nonzero resources from 1,548 populated selector rows decode, tile, and end in an exact terminal boundary; interactive execution loops remain runtime inputs; opcode 0x5E remains structural-width-only',
+      parentEventDirectorLaunchStatus:
+        'all 1,998 direct 0x68/[0x88]/0x10 0x00 launch sites are statically reachable from their native event entry cursors; 2,076 admissible invocation contexts preserve post-Director resumes, one-call external-request handoffs, and 16-bit wrapping calls',
+      parentEventExternalRequestStatus:
+        '45 physical opcode-0x13 sites produce 47 statically distinct invocation handoffs; each writes its request code and acceptance byte synchronously, then resumes at the following instruction on the next event-state processor call; the former 84-loop count came from an invalid dual-edge model',
+      parentEventRosterStatus:
+        'mode-two launch Actor-input rows come from one or two current gameplay units, not the preservation snapshot; 18 direct-event contexts have exact event-property 0xE6 values, and four set bit 0x8000 to limit the second unit to its leader',
+      parentEventPreservationStatus:
+        'direct event programs keep launch flag bit 0x08 clear; exact event-property 0xE6 values require the separate gameplay-state preservation snapshot in 16 contexts and omit it in two',
+      parentEventDirectoryResourceKey: '0x' + hex(EVENT_DIRECTORY_KEY, 8),
+      parentEventDirectorySha256:
+        retailDirectorInventory.eventLaunchInventory.directorySha256,
+      launchOperandTranslationStatus:
+        'all 1,513 event sequences reach 416 writes at 69 physical translation-setter sites; the 1,443 launch-owning sequences account for 411 writes at 64 sites; 344 contexts from 21 sites target retail placeholder indexes zero through 16, with 74 exact values and 270 roster-dependent values; event-VM propagation attaches only path-safe launch halfwords',
+      launchSubstitutionSourceStatus:
+        'event row 67 contains all 42 source-bank setter sites; 21 writes target primary-class slots and 21 target secondary-class slots; 38 values come from roster-dependent paths and four are fixed fallback class values; the native program compacts matching 56-byte character records into five source pairs before the translated Director family launches',
+      masterRomPath: path.basename(options.rom),
+      rawV64Sha256: retailDirectorInventory.rawSha256,
+      normalizedZ64Sha256: retailDirectorInventory.normalizedSha256,
+      retailDirectorSelectorTableResourceKey: '0x' + hex(DIRECTOR_SELECTOR_TABLE_KEY, 8),
+      retailDirectorSelectorTablePayloadZ64: DIRECTOR_SELECTOR_TABLE_PAYLOAD_Z64,
+      retailDirectorSelectorTableSha256: retailDirectorInventory.tableSha256,
       archiveCatalogPath: 'scripts/ob64_archive_catalog.json',
       archiveCatalogSha256: sha256File(options.archiveCatalog),
       audioCatalogPath: 'scripts/ob64_anim_block_catalog.json',
@@ -3880,14 +7515,49 @@ function build(options) {
       recoveredActorStatus:
         '135 recovered opcode-0x03 and 17 recovered opcode-0x14 boundaries contain 142 applied actor updates, eight exact control overlaps, one no-record event, and one resolver-invalid event',
       backgroundSelectorStatus:
-        'two exact static tables plus stored-state associations; selectors 21 and 22 load complete ordered groups, selectors 57 and 62 select exact archives, and unobserved assets retain unresolved runtime selection',
+        'three exact static tables plus stored-state associations; command 0x80000006 seeds new environments, while the native -2 pre-scan sentinel preserves 90 unanimous predecessor Stages without changing Director bytes',
+      modeTwoDerivedEnvironmentStatus:
+        'the signed and unsigned launch mappers use byte-identical scenario and terrain tables with distinct signedness; all 17 current -1 Director requests remain context-dependent because their event paths do not fix scenario, current unit, or battle terrain',
+      modeTwoDerivedEnvironmentTerrainTableSha256:
+        MODE_TWO_DERIVED_TERRAIN_TABLE_SHA256,
+      modeTwoDerivedEnvironmentScenarioTableSha256:
+        MODE_TWO_DERIVED_SCENARIO_TABLE_SHA256,
+      oversizedImageClassTableZ64:
+        oversizedImagePresentationRules.classTableZ64,
+      oversizedImageClassTableSha256:
+        oversizedImagePresentationRules.classTableSha256,
+      oversizedImageRootResourceKey:
+        '0x' + hex(oversizedImagePresentationRules.rootResourceKey, 8),
+      oversizedImageRootPayloadZ64:
+        oversizedImagePresentationRules.rootPayloadZ64,
+      oversizedImageRootPayloadSha256:
+        oversizedImagePresentationRules.rootPayloadSha256,
+      oversizedImagePresentationStatus:
+        'terminal class 4 resolves 106 Director-owned launch rows through the resident class-evolution table and 41-child image root; 11 fallback contexts still require event property 0xE9',
+      sceneVignetteStatus:
+        '107 terminal-class-4 resources execute one physical opcode 0x3A; 106 have exact launch-owned media and one still requires event property 0xE9; every retail command uses positive equal-axis scale, alpha cap 130, and orientation flags 4 or 8',
+      modeTwoStagePlacementResourceKey:
+        '0x' + hex(MODE_TWO_STAGE_PLACEMENT_RESOURCE_KEY, 8),
+      modeTwoStagePlacementPayloadZ64:
+        modeTwoStagePlacementInventory.placementResource.payloadStart,
+      modeTwoStagePlacementPayloadSha256:
+        modeTwoStagePlacementInventory.placementResource.payloadSha256,
+      modeTwoStageDescriptorTableResourceKey:
+        '0x' + hex(MODE_TWO_STAGE_DESCRIPTOR_TABLE_KEY, 8),
+      modeTwoStageDescriptorTablePayloadZ64:
+        modeTwoStagePlacementInventory.descriptorTable.payloadStart,
+      modeTwoStageDescriptorTableSha256:
+        modeTwoStagePlacementInventory.descriptorTable.payloadSha256,
+      modeTwoStagePlacementStatus:
+        'both native placement tables contain 80 foreground-selector lists; 165 normal rows resolve through the direct descriptor table, while three special-status rows remain byte-preserved and withheld from rendering',
       rawImageConsumerStatus:
         'archives 517 and 518 have exact native materializers; archives 619 through 622 have selector-stage evidence; archive 645 remains a numeric-only candidate',
       formatFiveBackgroundStatus:
         'archive 102 declares six native records; archives 103 through 107 supply the five external records and form one 607×511 background',
       sectionCAnalysisPath: 'OB64 Decomp/build/huff-section-c/section-c-huff-analysis.json',
       sectionCAnalysisSha256: SECTION_C_ANALYSIS_SHA256,
-      sectionCConsumerStatus: 'unresolved',
+      sectionCConsumerStatus:
+        'resource-4 mode-two environment ownership is exact; other Section C consumers remain unresolved',
       poseVocabularyPath: 'tools/cutscene-workbench/generated/pose-vocabulary.json',
       poseVocabularySha256: sha256File(options.poseVocabulary),
       poseVocabularySchemaVersion: poseVocabulary.schemaVersion,
@@ -3899,6 +7569,16 @@ function build(options) {
       posePhysicalStatesSha256: sha256File(options.posePhysicalStates),
       posePhysicalStateStatus:
         'all 2,275 selector states have exact decoded ROM bytecode; scene-local publication is provenance, not availability',
+      sceneResourcePathRootKey:
+        '0x' + hex(sceneResourcePathInventory.resourceKey, 8),
+      sceneResourcePathRootPayloadZ64:
+        sceneResourcePathInventory.z64PayloadStart,
+      sceneResourcePathRootSha256:
+        sceneResourcePathInventory.payloadSha256,
+      sceneResourcePathStatus:
+        'all 59 native groups and 134 entries are catalogued; 121 populated paths use exact decoded points and the native two-pass spline sampler to produce their stored starting headings',
+      animatedSceneSpriteRotationStatus:
+        'all 2,001 opcode-0x63 commands across the 1,498 retail Director resources and five continuation streams select the direct rotation operand; none select sampled or resource paths',
       partialDirectorAssetsPath:
         'wiki/cutscene-rom-wide-director-asset-census-static-r2-20260712-director-review/exports/director-assets.jsonl',
       partialDirectorAssetsSha256: sha256File(options.partialDirectors),
@@ -3913,7 +7593,13 @@ function build(options) {
       directorSelectorTableSha256: sha256File(options.directorSelectorTable),
       directorSelectorTableSchemaVersion: directorSelectorTable.schemaVersion,
       directorSelectorTableStatus:
-        'all 60 accepted Director keys occupy 76 exact owner rows in the 1,693-row table',
+        'the native 1,693-row table contains 1,548 populated rows and 1,498 unique resources; the reviewed 60-resource subset occupies 76 rows',
+      directorContinuationTableResourceKey:
+        '0x' + hex(DIRECTOR_CONTINUATION_TABLE_KEY, 8),
+      directorContinuationTableZ64:
+        DIRECTOR_RESOURCE_BASE_Z64 + DIRECTOR_CONTINUATION_TABLE_KEY,
+      directorContinuationStatus:
+        'five exact one-level continuation streams use a terminal word without a top-level class trailer',
       serifuPresentationSelectorsPath:
         'tools/cutscene-workbench/generated/serifu-presentation-selectors.json',
       serifuPresentationSelectorsSha256: sha256File(options.serifuPresentationSelectors),
@@ -3927,7 +7613,7 @@ function build(options) {
         'actor record +0x146 selects child 0..7; each art resource falls back to child 0 when out of range',
       masterRomSha256: manifest.masterRomSha256,
       contentPolicy:
-        'metadata-only; semantic names, operand roles, and boundaries are included without decoded pixels or native command words'
+        'metadata-only; the generator reads the retail ROM without mutation and emits hashes, envelopes, selector ownership, grammar templates, and semantic profiles without native command words or pixels'
     },
     scenes,
     presentationScenes,
@@ -3953,8 +7639,21 @@ function build(options) {
         payloadSha256: request.payloadSha256 || null
       }
     })),
+    directorGrammar: retailDirectorGrammar,
+    directorContinuationStreams,
     directorEvents,
     backgroundSelectorTables,
+    parentEventExternalRequests:
+      retailDirectorInventory.eventLaunchInventory.externalRequests,
+    parentEventTranslationWrites:
+      retailDirectorInventory.eventLaunchInventory.translationWrites,
+    parentEventSubstitutionSources: EVENT_SUBSTITUTION_SOURCES,
+    parentEventSubstitutionSourceWrites:
+      retailDirectorInventory.eventLaunchInventory.substitutionSourceWrites,
+    modeTwoDerivedEnvironmentRules,
+    oversizedImagePresentationRules,
+    modeTwoStagePlacementProfiles: modeTwoStagePlacementInventory.profiles,
+    sceneResourcePaths: sceneResourcePathInventory.entries,
     actorArtSources: poseCatalog.actorArtSources,
     poseSelectors: compactSelectors,
     posePrograms: poseCatalog.posePrograms

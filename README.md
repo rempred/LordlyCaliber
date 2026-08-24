@@ -34,6 +34,11 @@ Optional desktop utilities are kept separate from its runtime:
   accepted combat-sprite corpus.
 - `animation-ui.js` renders its frame sequence, composed-frame context, layer
   editor, exact lookup colors, and four-bit visibility controls.
+- `cutscene-data.js` is generated metadata for Cutscene Studio. It catalogs all
+  1,498 unique nonzero US Rev 0 Director resources from 1,548 populated native
+  selector rows. Do not hand-edit it.
+- `cutscene-codec.js`, `cutscene-runtime.js`, and `cutscene-renderer.js` decode,
+  tile, stage, and display Director streams without embedding native words.
 - `patch.js` imports/exports portable Project JSON files for supported edits
   and still accepts older patch/Scenario-project JSON.
 - `changelog.js` turns that same canonical Project diff into a plain-English
@@ -100,6 +105,127 @@ Every editor UI change must check the following behaviors before completion:
 For DOM-replacing rerenders, capture transient UI state before replacement and
 restore it afterward. `tests/art-ui-scroll.test.js` is the current scroll-state
 example for avatar, icon, and animation selectors.
+
+## Cutscene Studio data generation
+
+Run `node tools/generate-cutscene-data.js` from this repository to rebuild the
+Cutscene Studio catalog. The generator reads the parent US Rev 0 master V64 as
+a hash-checked, read-only source. It never modifies the ROM or embeds Director
+words in `cutscene-data.js`.
+
+The 60 reviewed streams retain their richer actor, Stage, dialogue, and timing
+profiles. The other 1,438 retail resources use the same native grammar to tile
+their decoded words when selected. Their commands remain source-preserving.
+
+The generator also executes the parent event bytecode symbolically. It reaches
+all 1,998 physical Director requests from their native two-level entry tables.
+Each request records the exact admissible invocation cursor set, including
+resumption after an earlier Director request and 16-bit wrapping event calls.
+
+Event opcode `0x10` synchronously accepts one Director request. The next event
+invocation starts at the following instruction with a cleared launch-translation
+table while the earlier Director stream can remain active.
+
+The generated context retains the exact earlier launch site and request-to-request
+update offset when static execution proves them. It resolves a concurrent
+Director owner for 433 invocation contexts.
+
+Cutscene Studio exposes these event invocations as durable view choices. The
+selected invocation supplies exact `0x0888xx` values and evaluates its concurrent
+Director timeline without changing any source word.
+
+Selector 154 demonstrates this path. Its four contexts evaluate selector 152 or
+153 one update ahead, which supplies the inherited Stage, dialogue-window gate,
+and nine shared Actors that a standalone stream cannot contain.
+
+An unresolved launch Actor camera uses a labeled fit-to-scene preview so valid
+sprite art remains visible. One Actor bound covers the complete runtime, which
+keeps authored X/Z spacing stable while scrubbing. This display fallback does
+not replace native coordinates, model scale, or camera evidence. Mode-2
+environment bases now load when the native launch pre-scan can recover their
+selector. Exact camera crops and conditional foreground choices remain labeled
+when launch state does not resolve them.
+
+When no measured capture owns the opening frame, the editor initially selects
+the first clear runtime state containing a native Actor. It falls back to the
+first clear visual state when the stream has no produced Actor. This viewer
+choice does not change tick zero or any Director word.
+
+Runtime preview also honors Director opcode `0x59`. The command ends the
+current preview tick and resumes at the first matching native label on the next
+tick. Source words skipped by that cursor replacement are not executed.
+
+Failed Director queries move only the current parser invocation's scan cursor.
+They do not overwrite the persistent resume cursor. A marker followed by a
+bridge is the native owner of persistent progress.
+
+Mode-2 scenes expose separate launch-environment and launch-foreground
+selectors in the inspector. These project inputs use the two native 80-entry
+tables and survive rerenders and Project round-trips. They do not rewrite the
+Director background command or make an unresolved camera and B5 crop exact.
+
+Structural command `0x80000006` has two native consumers. The launch pre-scan
+routes terminal classes 4 and 5 through the native 31-entry scene-group table.
+It preloads that group's first member before the Director VM starts. Other
+terminal classes can use a nonnegative operand to seed the mode-2 environment
+selector. The later command handler tests the preserved parent scene mode.
+
+Event-context mode-2 initialization copies the environment selector into
+separate foreground storage. It allocates a gameplay-state preservation
+snapshot when launch flag bit `0x08` or event property `0xE6` is nonzero.
+Actor-input rows come from the current gameplay unit roster. Direct retail event programs keep
+bit `0x08` clear. The generated event model resolves property `0xE6` in 18
+invocation contexts. Sixteen require the allocation, two omit it, and all
+other contexts remain explicit launch inputs. This condition does not select
+foreground 49. The fixed-overlay initializer maps launch-property bit `0x08`
+to foreground selector 0 or 49. Static request ownership limits that route to
+Director selector zero. Source-only resources therefore keep their foreground
+unresolved until their external caller is identified.
+
+Environment sentinel `-1` calls the unsigned native launch mapper. The generated
+catalog carries event properties `0xE9`, `0xFC`, and `0xFD` into each mapper
+invocation. It also preserves the native scenario, terrain, and query candidate
+sets. The current 17 resources produce 18 unresolved invocations because their
+event paths do not fix those launch inputs. The editor never chooses one of
+those candidates automatically.
+
+The generated catalog also reads the parent event directory. It records 1,998
+direct Director launch sites covering 1,520 selector rows and 1,472 Director
+resources. Event opcode `0x10` preserves the parent scene mode. It no longer
+forces mode two in Cutscene Studio. The scheduler resolves each launch through
+an outer state cursor and a nested sequence cursor. Two exceptional launches
+use direct outer sequences. The catalog supplies 1,338 evidence-backed
+Stages, including 1,146 mode-2 environments and 191 class-owned scene-group
+commands. Parent-event inheritance raises total evidence-backed Stages to
+1,428. Forty-three mode-two scenes still lack one exact foreground selector.
+A source launch site does not resolve its parent mode or camera.
+
+Nineteen Director resources contain 398 `0x0888xx` operands. These values are
+native loader placeholders, not Actor IDs or literal command values. The game
+replaces them from a launch-populated halfword table before parsing. Cutscene
+Studio preserves every source word and accepts the table as a runtime input.
+When a required value is unavailable, the preview withholds that dependent
+mutation instead of parsing the placeholder literally. An unresolved body-pose
+change therefore keeps the preceding renderable Actor pose and remains labeled
+as a missing launch input; it is not presented as an exact native appearance.
+
+Non-mode-two background command `0x80000006` has different ownership. Its
+operand selects the exact ordered group from the native 31-entry scene table.
+Cutscene Studio routes those members automatically. Terminal classes 4 and 5
+prove this presentation for 209 resources. Of these, 191 contain a background
+command and 18 depend on launch state outside that command.
+
+Actor commands require a real runtime record. Opcode `0x03` and other record
+consumers remain no-ops when the stream did not create that record. Roster
+materializers `0x45` and `0xAB` remain unresolved until the caller's 20
+Actor-input rows are available. Catalog templates are never promoted into fake
+launch records, and a genuine zero-entry native pose remains visually empty.
+
+Mode-zero Stage objects and Actors use related camera paths. Stage pieces retain
+the registered-object camera path. Each Actor first receives a bottom-origin
+screen anchor and local scale from that camera. The renderer centers that anchor,
+applies the assigned scene transform, and then uses the Actor camera once. This
+is not two ordinary world projections of the same Actor coordinate.
 
 A browser-based mod editor for *Ogre Battle 64: Person of Lordly Caliber*
 (Quest, N64, 1999). Edit shops, classes, items, neutral encounters, entire

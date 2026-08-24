@@ -67,6 +67,8 @@ window.OB64 = window.OB64 || {};
       z64: rom.z64,
       sourceErrors: {},
       loadingByAssetId: {},
+      projectionLoadingByAssetId: {},
+      concurrentRuntimeByLaunchContext: {},
       views: {},
       imageCache: {},
       imageLoading: {},
@@ -114,13 +116,21 @@ window.OB64 = window.OB64 || {};
           Array.isArray(runtimeState.background.layers) && runtimeState.background.layers.length ||
         Array.isArray(runtimeState.actors) && runtimeState.actors.some(function(actor) {
           return actor.visible;
-        }) || Array.isArray(runtimeState.effects) && runtimeState.effects.length;
+        }) || Array.isArray(runtimeState.effects) && runtimeState.effects.length ||
+        runtimeState.sceneVignette && runtimeState.sceneVignette.sourceAssetId;
       var overlayClear = !Array.isArray(runtimeState.overlays) ||
         runtimeState.overlays.every(function(overlay) { return overlay.alpha <= 0; });
       var color = runtimeState.sceneColor || { red: 255, green: 255, blue: 255 };
       return !!hasVisual && overlayClear && Math.max(color.red, color.green, color.blue) > 0;
     }
     if (preferred != null && inspectable(runtime.states[preferred])) return preferred;
+    for (var actorIndex = 0; actorIndex < runtime.states.length; actorIndex++) {
+      var actorState = runtime.states[actorIndex];
+      if (inspectable(actorState) && Array.isArray(actorState.actors) &&
+          actorState.actors.some(function(actor) { return actor.visible; })) {
+        return actorIndex;
+      }
+    }
     for (var index = 0; index < runtime.states.length; index++) {
       if (inspectable(runtime.states[index])) return index;
     }
@@ -132,10 +142,78 @@ window.OB64 = window.OB64 || {};
       state.views[sceneId] = {
         frame: initialViewFrame(state, sceneId), pathId: 'default', selectedActorId: null,
         selectedClipId: null, selectedSourceId: null, timelineMode: 'runtime',
-        loop: false, snap: 'frame', zoom: 1
+        launchContextId: null, loop: false, snap: 'frame', zoom: 1
       };
     }
     return state.views[sceneId];
+  }
+
+  function launchContextChoices(state, scene) {
+    if (!scene || !scene.launchProfile ||
+        !Array.isArray(scene.launchProfile.parentEventLaunches)) return [];
+    var choices = [];
+    scene.launchProfile.parentEventLaunches.forEach(function(launch) {
+      (launch.eventInvocationContexts || []).forEach(function(context, contextIndex) {
+        var owner = context.concurrentDirectorSceneId
+          ? state.catalog.getScene(context.concurrentDirectorSceneId) : null;
+        var id = launch.launchId + ':invocation:' + context.eventInvocationCursor +
+          ':context:' + contextIndex;
+        var ownerLabel = owner
+          ? 'after ' + OB64.cutsceneCatalog.displayName(owner)
+          : 'no exact earlier Director';
+        choices.push({
+          id: id,
+          label: 'Event row ' + launch.eventDirectoryRow + ' · byte 0x' +
+            launch.decodedByteOffset.toString(16).toUpperCase().padStart(4, '0') +
+            ' · ' + ownerLabel,
+          launch: launch,
+          context: context,
+          contextScene: owner
+        });
+      });
+    });
+    return choices;
+  }
+
+  function launchContextChoice(state, scene, preferredId) {
+    var choices = launchContextChoices(state, scene);
+    if (!choices.length) return null;
+    var view = viewFor(state, scene.sceneId);
+    var selectedId = preferredId || view.launchContextId;
+    var selected = choices.find(function(choice) { return choice.id === selectedId; }) ||
+      choices[0];
+    if (!preferredId) view.launchContextId = selected.id;
+    return selected;
+  }
+
+  function precedingLaunchContextChoice(state, scene, parentContext) {
+    var choices = launchContextChoices(state, scene);
+    var exact = choices.find(function(choice) {
+      return choice.launch.launchId === parentContext.precedingDirectorLaunchId &&
+        (parentContext.precedingDirectorInvocationCursor === null ||
+          choice.context.eventInvocationCursor ===
+            parentContext.precedingDirectorInvocationCursor);
+    });
+    return exact || launchContextChoice(state, scene, null);
+  }
+
+  function launchContextCacheKey(scene, choice) {
+    return scene.assetId + '|' + (choice ? choice.id : 'standalone');
+  }
+
+  function launchOperandTranslations(scene, choice) {
+    var output = {};
+    var context = choice && choice.context;
+    var values = context && context.launchTranslationTable;
+    var indexes = scene.launchProfile && scene.launchProfile.operandTranslation &&
+      scene.launchProfile.operandTranslation.tableIndexes || [];
+    if (!Array.isArray(values)) return output;
+    indexes.forEach(function(tableIndex) {
+      if (Number.isInteger(values[tableIndex])) {
+        output[tableIndex] = values[tableIndex];
+      }
+    });
+    return output;
   }
 
   function historyFor(state, scene) {
@@ -189,7 +267,7 @@ window.OB64 = window.OB64 || {};
     return document;
   }
 
-  function storeLoadedDocument(state, scene, document, source, program) {
+  function cacheLoadedDocument(state, scene, document, source, program) {
     if (source && OB64.cutsceneExport) {
       document.exportRequirements = {
         capability: 'native',
@@ -205,22 +283,45 @@ window.OB64 = window.OB64 || {};
     if (source) state.sourceByAssetId[scene.assetId] = source;
     if (program) state.programByAssetId[scene.assetId] = program;
     delete state.sourceErrors[scene.assetId];
-    refreshRuntime(state, scene, history.present);
     return history.present;
+  }
+
+  function compileRuntimeDocument(state, scene, document, choice, contextRuntime) {
+    var program = state.programByAssetId[scene.assetId];
+    if (!program) return null;
+    var runtimeOptions = {
+      z64: state.z64,
+      launchContext: choice ? choice.context : null,
+      launchOperandTranslations: launchOperandTranslations(scene, choice)
+    };
+    if (contextRuntime) {
+      runtimeOptions.contextRuntime = contextRuntime;
+      runtimeOptions.contextTickOffset = Number.isInteger(
+        choice.context.concurrentDirectorTickOffset)
+        ? choice.context.concurrentDirectorTickOffset : 1;
+    }
+    return OB64.cutsceneRuntime.compile(
+      document, program, scene, state.catalog, runtimeOptions);
+  }
+
+  function publishRuntime(state, scene, document, runtime) {
+    if (!runtime) return null;
+    state.runtimeByAssetId[scene.assetId] = runtime;
+    OB64.cutsceneRuntime.bind(document, runtime);
+    delete state.sourceErrors['runtime:' + scene.assetId];
+    return runtime;
   }
 
   function refreshRuntime(state, scene, document) {
     if (!OB64.cutsceneRuntime || scene.engine !== 'director') return null;
-    var program = state.programByAssetId[scene.assetId];
-    if (!program) return null;
+    var choice = launchContextChoice(state, scene, null);
+    var contextRuntime = choice && state.concurrentRuntimeByLaunchContext
+      ? state.concurrentRuntimeByLaunchContext[
+        launchContextCacheKey(scene, choice)] || null
+      : null;
     try {
-      var runtime = OB64.cutsceneRuntime.compile(document, program, scene, state.catalog, {
-        z64: state.z64
-      });
-      state.runtimeByAssetId[scene.assetId] = runtime;
-      OB64.cutsceneRuntime.bind(document, runtime);
-      delete state.sourceErrors['runtime:' + scene.assetId];
-      return runtime;
+      return publishRuntime(state, scene, document,
+        compileRuntimeDocument(state, scene, document, choice, contextRuntime));
     } catch (error) {
       delete state.runtimeByAssetId[scene.assetId];
       state.sourceErrors['runtime:' + scene.assetId] = error && error.message || String(error);
@@ -228,27 +329,93 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function loadScene(rom, state, scene) {
+  function ensureProjectedDocument(rom, state, scene) {
+    state.projectionLoadingByAssetId = state.projectionLoadingByAssetId || {};
     var existing = historyFor(state, scene);
     if (existing) return Promise.resolve(existing.present);
-    if (state.loadingByAssetId[scene.assetId]) return state.loadingByAssetId[scene.assetId];
+    if (state.projectionLoadingByAssetId[scene.assetId]) {
+      return state.projectionLoadingByAssetId[scene.assetId];
+    }
     if (scene.engine !== 'director') {
-      return Promise.resolve(storeLoadedDocument(
+      return Promise.resolve(cacheLoadedDocument(
         state, scene, presentationDocument(state, scene), null, null));
     }
     var promise = OB64.cutsceneCodec.loadSceneSource(rom.z64, scene).then(function(source) {
       var projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, state.catalog);
-      return storeLoadedDocument(state, scene, projected.document, source, projected.program);
+      return cacheLoadedDocument(
+        state, scene, projected.document, source, projected.program);
     }).catch(function(error) {
-      // Catalog-only fallback keeps every row inspectable. It stays blocked
-      // from ROM export because no verified source object exists.
       var document = OB64.cutsceneCatalog.createSceneDocument(scene);
-      var history = OB64.cutsceneModel.createHistory(document, 200);
-      state.histories[scene.storageId] = history;
-      state.originalSerialized[scene.storageId] =
-        OB64.cutsceneModel.serializeSceneDocument(history.present, 0);
+      cacheLoadedDocument(state, scene, document, null, null);
       state.sourceErrors[scene.assetId] = error && error.message || String(error);
-      return history.present;
+      return document;
+    }).finally(function() {
+      delete state.projectionLoadingByAssetId[scene.assetId];
+    });
+    state.projectionLoadingByAssetId[scene.assetId] = promise;
+    return promise;
+  }
+
+  function ensureContextualRuntime(rom, state, scene, document, forcedChoice, ancestry,
+      compactOutput) {
+    state.concurrentRuntimeByLaunchContext =
+      state.concurrentRuntimeByLaunchContext || {};
+    var choice = forcedChoice || launchContextChoice(state, scene, null);
+    var contextScene = choice && choice.contextScene;
+    ancestry = ancestry || [];
+    if (!contextScene) {
+      var standaloneRuntime = compileRuntimeDocument(
+        state, scene, document, choice, null);
+      return Promise.resolve(compactOutput
+        ? OB64.cutsceneRuntime.compactContextRuntime(standaloneRuntime)
+        : standaloneRuntime);
+    }
+    if (ancestry.indexOf(contextScene.assetId) !== -1 ||
+        contextScene.assetId === scene.assetId) {
+      state.sourceErrors['runtime-context:' + scene.assetId] =
+        'The parent event launch chain is cyclic; this preview stops before reusing ' +
+        contextScene.assetId + '.';
+      var boundedRuntime = compileRuntimeDocument(
+        state, scene, document, choice, null);
+      return Promise.resolve(compactOutput
+        ? OB64.cutsceneRuntime.compactContextRuntime(boundedRuntime)
+        : boundedRuntime);
+    }
+    return ensureProjectedDocument(rom, state, contextScene).then(function(contextDocument) {
+      var precedingChoice = precedingLaunchContextChoice(
+        state, contextScene, choice.context);
+      return ensureContextualRuntime(rom, state, contextScene, contextDocument,
+        precedingChoice, ancestry.concat(scene.assetId), true);
+    }).then(function(contextRuntime) {
+      state.concurrentRuntimeByLaunchContext[
+        launchContextCacheKey(scene, choice)] = contextRuntime;
+      delete state.sourceErrors['runtime-context:' + scene.assetId];
+      var runtime = compileRuntimeDocument(
+        state, scene, document, choice, contextRuntime);
+      return compactOutput
+        ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
+    });
+  }
+
+  function loadScene(rom, state, scene) {
+    if (state.loadingByAssetId[scene.assetId]) return state.loadingByAssetId[scene.assetId];
+    var promise = ensureProjectedDocument(rom, state, scene).then(function(document) {
+      if (scene.engine !== 'director' || !state.programByAssetId[scene.assetId]) {
+        return document;
+      }
+      return ensureContextualRuntime(rom, state, scene, document, null, [])
+        .then(function(runtime) {
+          publishRuntime(state, scene, document, runtime);
+          return document;
+        });
+    }).catch(function(error) {
+      var history = historyFor(state, scene);
+      if (history && state.programByAssetId[scene.assetId]) {
+        refreshRuntime(state, scene, history.present);
+      }
+      state.sourceErrors['runtime-context:' + scene.assetId] =
+        error && error.message || String(error);
+      return history ? history.present : null;
     }).finally(function() {
       delete state.loadingByAssetId[scene.assetId];
     });
@@ -705,13 +872,17 @@ window.OB64 = window.OB64 || {};
           variantSelector: row.payload.variantSelector,
           poseFrame: Number.isFinite(row.payload.poseFrame)
             ? row.payload.poseFrame : Math.max(0, preview.frame - row.startFrame),
-          poseLoop: row.payload.poseLoop
+          poseLoop: row.payload.poseLoop,
+          displayedFrameToken: Number.isInteger(row.payload.displayedFrameToken)
+            ? row.payload.displayedFrameToken : null
         });
         return cutsceneImage ? {
           image: cutsceneImage,
           x: Number.isFinite(row.payload.stageX) ? row.payload.stageX : 160,
           y: Number.isFinite(row.payload.stageY) ? row.payload.stageY : 120,
           scale: Number.isFinite(row.payload.scale) ? row.payload.scale : 1,
+          rotationDegrees: Number.isFinite(row.payload.rotationDegrees)
+            ? row.payload.rotationDegrees : 0,
           anchorX: cutsceneImage.anchorX,
           anchorY: cutsceneImage.anchorY
         } : null;
@@ -754,9 +925,28 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  function selectedStageImageRows(state, source) {
+    var rows = selectedBackgroundLayers(state, source);
+    var vignetteAssetId = source && source.sceneVignette &&
+      source.sceneVignette.sourceAssetId;
+    if (vignetteAssetId && !rows.some(function(entry) {
+      return entry.layer.assetId === vignetteAssetId;
+    })) {
+      rows.push({
+        layer: {
+          assetId: vignetteAssetId,
+          role: 'scene-vignette-source',
+          visible: true
+        },
+        cached: state.imageCache[vignetteAssetId] || null
+      });
+    }
+    return rows;
+  }
+
   function requestBackground(rom, state, document) {
     var preview = previewState(state);
-    var layers = selectedBackgroundLayers(state, preview || document);
+    var layers = selectedStageImageRows(state, preview || document);
     if (!layers.length) return;
     var request = ++state.imageRequest;
     Promise.all(layers.map(function(entry) {
@@ -799,7 +989,8 @@ window.OB64 = window.OB64 || {};
     if (!scene || !document || !preview) return;
     var view = viewFor(state, scene.sceneId);
     var backgroundRows = selectedBackgroundLayers(state, preview);
-    if (backgroundRows.some(function(entry) {
+    var stageImageRows = selectedStageImageRows(state, preview);
+    if (stageImageRows.some(function(entry) {
       return !entry.cached && !state.imageLoading[entry.layer.assetId];
     })) requestBackground(rom, state, document);
     var backgrounds = backgroundRows.map(function(entry) {
@@ -813,6 +1004,9 @@ window.OB64 = window.OB64 || {};
       ? OB64.cutsceneSprites.framesForPreview(state.spriteState, preview) : {};
     var backgroundProjection = preview.background && preview.background.projection ||
       document.background.projection;
+    var vignetteAssetId = preview.sceneVignette &&
+      preview.sceneVignette.sourceAssetId;
+    var vignetteCached = vignetteAssetId && state.imageCache[vignetteAssetId];
     var scenePropFrames = state.spriteState
       ? OB64.cutsceneSprites.framesForStageProps(
         state.spriteState, backgroundProjection, preview.frame) : [];
@@ -826,6 +1020,11 @@ window.OB64 = window.OB64 || {};
       camera: preview.cameraState,
       overlays: preview.overlays || [],
       colorModulation: preview.sceneColor || null,
+      screenTransition: preview.screenTransition || null,
+      sceneVignette: preview.sceneVignette || null,
+      sceneVignetteImage: vignetteCached && vignetteCached.result.renderable
+        ? vignetteCached.result : null,
+      oversizedImageView: preview.oversizedImageView || null,
       selectedActorId: view.selectedActorId
     });
     state.renderedStage = rendered;
@@ -1144,13 +1343,21 @@ window.OB64 = window.OB64 || {};
     var nativeRuntime = stageRuntime && stageRuntime.states.length &&
       stageRuntime.states[0].actorProjection &&
       stageRuntime.states[0].actorProjection.mode === 'native-perspective-runtime';
+    var launchActorCamera = scene.launchProfile && scene.launchProfile.cameras &&
+      scene.launchProfile.cameras.actor || null;
     var calibrationText;
     if (nativeRuntime && stageRuntime.directorMode === 0) {
-      calibrationText = 'Native mode-zero staging: registered camera → scene transform → Actor camera.';
+      calibrationText = 'Native mode-zero staging: registered-camera Actor prepass → centered scene transform → Actor camera.';
+    } else if (nativeRuntime && stageRuntime.directorMode === 2 &&
+        launchActorCamera && launchActorCamera.evidenceStatus === 'external-unresolved') {
+      calibrationText = 'Mode-two runtime active; the unresolved launch Actor camera uses a fit-to-scene preview.';
     } else if (nativeRuntime && stageRuntime.directorMode === 2) {
       calibrationText = 'Native mode-two Actor camera and scene-projection staging.';
     } else if (nativeRuntime) {
-      calibrationText = 'Native Director Actor-camera staging.';
+      calibrationText = stageRuntime.states[0].actorProjection.evidenceStatus ===
+        'external-unresolved'
+        ? 'The unresolved launch Actor camera uses a fit-to-scene preview.'
+        : 'Native Director Actor-camera staging.';
     } else if (calibrated) {
       calibrationText = 'Native actor projection and B5 layering match the stored Graduation capture.';
     } else {
@@ -1158,7 +1365,7 @@ window.OB64 = window.OB64 || {};
     }
     if (nativeRuntime && stageRuntime.missingInputs.length) {
       calibrationText += ' ' + stageRuntime.missingInputs.length +
-        ' launch inputs are synthesized because they live outside this stream.';
+        ' launch inputs remain unresolved because they live outside this stream.';
     }
     var calibration = node('span', 'cutscene-stage-calibration', calibrationText);
     calibration.title = nativeRuntime
@@ -3491,14 +3698,64 @@ window.OB64 = window.OB64 || {};
         : 'Mode ' + launchMode.value + ' · ' + launchMode.evidenceStatus.replace(/-/g, ' ')]);
       var launchActorCamera = scene.launchProfile.cameras.actor;
       sourceRows.push(['Actor camera', launchActorCamera.evidenceStatus.replace(/-/g, ' ')]);
-      var launchBackground = scene.launchProfile.background.requests[0] || null;
-      sourceRows.push(['Background route', launchBackground &&
-          launchBackground.selectorTableId !== null
-        ? (launchBackground.selectorTableId.indexOf(':battle:') !== -1 ? 'Battle ' : 'Scene ') +
-          launchBackground.selector + ' · ' + launchBackground.evidenceStatus.replace(/-/g, ' ')
-        : (launchBackground ? 'External · unresolved' : 'No Director request')]);
+      var launchBackground = scene.launchProfile.background.requests[0] ||
+        scene.launchProfile.background.inheritedPresentation || null;
+      var launchObservation = scene.backgroundRuntimeObservation || null;
+      var launchContext = document.background && document.background.projection &&
+        document.background.projection.launchContext;
+      var activeLaunchContext = launchContext && launchContext.override === true &&
+        launchContext.mode === 2 ? launchContext : null;
+      if (launchMode.value === 2) {
+        var environmentSelector = activeLaunchContext
+          ? activeLaunchContext.environmentSelector
+          : (launchObservation && Number.isInteger(launchObservation.environmentSelector)
+            ? launchObservation.environmentSelector
+            : (launchBackground ? launchBackground.environmentSelector : null));
+        var foregroundSelector = activeLaunchContext
+          ? activeLaunchContext.foregroundSelector
+          : (launchObservation && Number.isInteger(launchObservation.foregroundSelector)
+            ? launchObservation.foregroundSelector
+            : (launchBackground ? launchBackground.foregroundSelector : null));
+        var backgroundEvidence = activeLaunchContext
+          ? 'document launch input'
+          : (launchObservation ? 'runtime observed'
+            : (launchBackground
+              ? launchBackground.evidenceStatus.replace(/-/g, ' ')
+              : 'external unresolved'));
+        sourceRows.push(['Environment selector', Number.isInteger(environmentSelector)
+          ? environmentSelector + ' · ' + backgroundEvidence : 'External · unresolved']);
+        sourceRows.push(['Foreground selector', Number.isInteger(foregroundSelector)
+          ? foregroundSelector + ' · ' + backgroundEvidence
+          : (!activeLaunchContext && launchObservation &&
+              Object.prototype.hasOwnProperty.call(launchObservation, 'foregroundSelector')
+            ? 'Inactive in stored launch' : 'External · unresolved')]);
+      } else {
+        sourceRows.push(['Background route', launchBackground &&
+            launchBackground.selectorTableId !== null && launchBackground.selector !== null
+          ? 'Scene ' + launchBackground.selector + ' · ' +
+            launchBackground.evidenceStatus.replace(/-/g, ' ')
+          : (launchBackground ? 'External · unresolved' : 'No Director request')]);
+      }
       sourceRows.push(['Launch roster', scene.launchProfile.roster.templateCount +
         ' templates · ' + scene.launchProfile.roster.evidenceStatus.replace(/-/g, ' ')]);
+      if (scene.launchProfile.parentEventLaunches.length) {
+        sourceRows.push(['Parent event launches',
+          scene.launchProfile.parentEventLaunches.length +
+          ' direct Director source site' +
+          (scene.launchProfile.parentEventLaunches.length === 1 ? '' : 's')]);
+      }
+      var operandTranslation = scene.launchProfile.operandTranslation;
+      if (operandTranslation.required) {
+        var selectedEventContext = launchContextChoice(state, scene, null);
+        var translatedValues = launchOperandTranslations(scene, selectedEventContext);
+        var translationResolved = operandTranslation.tableIndexes.every(function(index) {
+          return Number.isInteger(translatedValues[index]);
+        });
+        sourceRows.push(['Launch operand table',
+          operandTranslation.placeholderCount + ' placeholders · indexes ' +
+          operandTranslation.tableIndexes.join(', ') + ' · ' +
+          (translationResolved ? 'selected event invocation resolved' : 'input required')]);
+      }
     }
     if (scene.source.tailRecovery) {
       sourceRows.push(['Recovered tail',
@@ -3547,6 +3804,52 @@ window.OB64 = window.OB64 || {};
     });
     inspector.appendChild(sourceSummary);
 
+    var eventContextChoices = launchContextChoices(state, scene);
+    if (eventContextChoices.length) {
+      inspector.appendChild(node('h3', '', 'Native launch context'));
+      var activeEventContext = launchContextChoice(state, scene, null);
+      var eventContextSelect = node('select', 'cutscene-background-select');
+      eventContextSelect.setAttribute('data-cutscene-focus-key', 'native-launch-context');
+      eventContextChoices.forEach(function(choice) {
+        var option = node('option', '', choice.label);
+        option.value = choice.id;
+        eventContextSelect.appendChild(option);
+      });
+      eventContextSelect.value = activeEventContext.id;
+      eventContextSelect.addEventListener('change', function() {
+        var selectedId = eventContextSelect.value;
+        var view = viewFor(state, scene.sceneId);
+        view.launchContextId = selectedId;
+        var selectedChoice = launchContextChoice(state, scene, selectedId);
+        if (state.callbacks.onStatus) {
+          state.callbacks.onStatus('Loading ' + selectedChoice.label + '…');
+        }
+        ensureContextualRuntime(rom, state, scene, document, selectedChoice, [])
+          .then(function(runtime) {
+            if (view.launchContextId !== selectedId) return;
+            publishRuntime(state, scene, document, runtime);
+            var duration = OB64.cutscenePreview.sceneDurationFrames(
+              document, view.pathId);
+            view.frame = Math.min(view.frame, Math.max(0, duration - 1));
+            rerender(rom, state);
+          }).catch(function(error) {
+            state.sourceErrors['runtime-context:' + scene.assetId] =
+              error && error.message || String(error);
+            rerender(rom, state);
+          });
+      });
+      inspector.appendChild(field('Event invocation', eventContextSelect,
+        'This selection changes launch-time constants and concurrent shared scene state. It never edits Director words.'));
+      if (activeEventContext.contextScene) {
+        inspector.appendChild(node('p', 'cutscene-field-hint',
+          'Concurrent state source: ' +
+          OB64.cutsceneCatalog.displayName(activeEventContext.contextScene) +
+          ' · offset ' + activeEventContext.context.concurrentDirectorTickOffset +
+          ' native update' +
+          (activeEventContext.context.concurrentDirectorTickOffset === 1 ? '' : 's') + '.'));
+      }
+    }
+
     var untimedDialogueCaptures = capturedStages.filter(function(capture) {
       return capture.dialogueAssociation;
     });
@@ -3572,6 +3875,104 @@ window.OB64 = window.OB64 || {};
 
     inspector.appendChild(node('h3', '', 'Background'));
     var backgroundProjection = document.background.projection || {};
+    var modeTwoLaunch = scene.launchProfile &&
+      scene.launchProfile.directorMode.value === 2;
+    if (modeTwoLaunch) {
+      var environmentTable = state.catalog.getBackgroundSelectorTable(
+        'background-table:mode2-environment:80');
+      var foregroundTable = state.catalog.getBackgroundSelectorTable(
+        'background-table:mode2-overlay:80');
+      var launchBackground = scene.launchProfile.background.requests[0] ||
+        scene.launchProfile.background.inheritedPresentation || null;
+      var modeTwoContext = Object.assign({
+        mode: 2,
+        environmentSelector: launchBackground &&
+          Number.isInteger(launchBackground.environmentSelector)
+          ? launchBackground.environmentSelector : null,
+        foregroundSelector: launchBackground &&
+          Number.isInteger(launchBackground.foregroundSelector)
+          ? launchBackground.foregroundSelector : null
+      }, backgroundProjection.launchContext || {});
+      inspector.appendChild(node('p', 'cutscene-field-hint',
+        'The native launch pre-scan can seed the mode-two environment from the Director command. Foreground stays independent because launch flag bit 0x08 can replace the initializer copy. These controls override launch state without editing the stream.'));
+      if (launchBackground && launchBackground.foregroundStatus) {
+        inspector.appendChild(node('p', 'cutscene-field-hint',
+          launchBackground.foregroundStatus));
+      }
+
+      function selectorLabel(entry, role) {
+        var assetIds = role === 'environment'
+          ? (entry.stageLayers || []).map(function(layer) { return layer.assetId; })
+          : (entry.archiveAssetIds || []);
+        var labels = assetIds.map(function(assetId) {
+          var asset = state.catalog.getImageAsset(assetId);
+          return asset ? asset.displayName : assetId;
+        });
+        return 'Selector ' + entry.selector + ' · ' +
+          (labels.length ? labels.join(' + ') : 'inactive / empty');
+      }
+
+      function launchSelectorControl(label, field, table, role) {
+        var wrapper = node('label', 'cutscene-field');
+        wrapper.appendChild(node('span', '', label));
+        var select = node('select', 'cutscene-background-select');
+        select.setAttribute('data-cutscene-focus-key', 'mode-two-' + role + '-selector');
+        var unresolved = node('option', '', 'External / unresolved');
+        unresolved.value = '';
+        select.appendChild(unresolved);
+        (table && table.entries || []).forEach(function(entry) {
+          var hasEnvironment = (entry.stageLayers || []).length > 0;
+          if (role === 'environment' && !hasEnvironment) return;
+          var option = node('option', '', selectorLabel(entry, role));
+          option.value = String(entry.selector);
+          option.title = entry.associationStatus;
+          select.appendChild(option);
+        });
+        select.value = Number.isInteger(modeTwoContext[field])
+          ? String(modeTwoContext[field]) : '';
+        select.addEventListener('change', function() {
+          var selector = select.value === '' ? null : Number(select.value);
+          executeEdit(rom, state, 'Set mode-two launch ' + role + ' selector', function(next) {
+            var projection = Object.assign({}, next.background.projection || {});
+            var context = Object.assign({
+              mode: 2,
+              environmentSelector: launchBackground &&
+                Number.isInteger(launchBackground.environmentSelector)
+                ? launchBackground.environmentSelector : null,
+              foregroundSelector: launchBackground &&
+                Number.isInteger(launchBackground.foregroundSelector)
+                ? launchBackground.foregroundSelector : null,
+              evidenceStatus: 'user-supplied-launch-context'
+            }, projection.launchContext || {});
+            context[field] = selector;
+            context.override = Number.isInteger(context.environmentSelector) ||
+              Number.isInteger(context.foregroundSelector);
+            projection.launchContext = context;
+            if (context.override) {
+              projection.mode = 'stage-fit';
+              projection.previewOverride = false;
+            }
+            next.background.projection = projection;
+            next.exportRequirements.capability = 'preview-only';
+            next.exportRequirements.reasons = (next.exportRequirements.reasons || [])
+              .filter(function(reason) {
+                return !/mode-two launch selectors/i.test(reason);
+              });
+            if (context.override) {
+              next.exportRequirements.reasons.push(
+                'Mode-two launch selectors are project context and are not encoded in the Director stream.');
+            }
+          });
+        });
+        wrapper.appendChild(select);
+        return wrapper;
+      }
+
+      inspector.appendChild(launchSelectorControl(
+        'Native launch environment', 'environmentSelector', environmentTable, 'environment'));
+      inspector.appendChild(launchSelectorControl(
+        'Native launch foreground', 'foregroundSelector', foregroundTable, 'foreground'));
+    }
     if (backgroundProjection.nativeEditable === true &&
         Array.isArray(backgroundProjection.nativeGroups) &&
         backgroundProjection.nativeGroups.length) {
@@ -3956,7 +4357,10 @@ window.OB64 = window.OB64 || {};
     pauseAnimation(state);
     var scene = selectedScene(state);
     var history = historyFor(state, scene);
-    if (!history) {
+    var runtimeMissing = history && scene.engine === 'director' &&
+      state.programByAssetId[scene.assetId] &&
+      !state.runtimeByAssetId[scene.assetId];
+    if (!history || runtimeMissing) {
       state.ui = { panel: panel };
       renderLoading(panel, scene);
       restoreUi(panel, restoreSnapshot);
@@ -3986,6 +4390,8 @@ window.OB64 = window.OB64 || {};
     state.sourceByAssetId = {};
     state.programByAssetId = {};
     state.runtimeByAssetId = {};
+    state.projectionLoadingByAssetId = {};
+    state.concurrentRuntimeByLaunchContext = {};
     state.sourceErrors = {};
     state.views = {};
     state.imageCache = {};
@@ -4001,6 +4407,9 @@ window.OB64 = window.OB64 || {};
     selectedScene: selectedScene,
     selectedDocument: selectedDocument,
     initialViewFrame: initialViewFrame,
+    launchContextChoices: launchContextChoices,
+    launchContextChoice: launchContextChoice,
+    launchOperandTranslations: launchOperandTranslations,
     loadScene: loadScene,
     presentationDocument: presentationDocument,
     decodeImageAsset: decodeImageAsset,

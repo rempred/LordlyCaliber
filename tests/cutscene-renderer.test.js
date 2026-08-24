@@ -172,6 +172,24 @@ assert.deepStrictEqual(renderedPixel(backgroundRender, 159, 119), [0, 255, 0, 25
 assert.deepStrictEqual(renderedPixel(backgroundRender, 158, 120), [0, 0, 255, 255]);
 assert.deepStrictEqual(renderedPixel(backgroundRender, 159, 120), [255, 255, 255, 255]);
 
+const rotatedEffectImage = {
+  width: 2, height: 1, anchorX: 0, anchorY: 0,
+  rgba: new Uint8ClampedArray([
+    255, 0, 0, 255,
+    0, 255, 0, 255,
+  ]),
+};
+const rotatedEffectRender = R.renderFrame(backgroundDocument, { actors: [] }, {
+  effectFrames: [{
+    image: rotatedEffectImage, x: 20, y: 30,
+    anchorX: 0, anchorY: 0, scale: 1, rotationDegrees: 180,
+  }],
+});
+assert.deepStrictEqual(renderedPixel(rotatedEffectRender, 19, 29), [255, 0, 0, 255]);
+assert.deepStrictEqual(renderedPixel(rotatedEffectRender, 18, 29), [0, 255, 0, 255]);
+assert.notDeepStrictEqual(renderedPixel(rotatedEffectRender, 20, 30), [255, 0, 0, 255],
+  'native effect rotation must operate around the sprite anchor instead of its top-left box');
+
 const solidStage = {
   width: 320, height: 240,
   rgba: new Uint8ClampedArray(320 * 240 * 4).fill(255),
@@ -189,6 +207,30 @@ assert.deepStrictEqual(renderedPixel(viewportRender, 160, 23), [255, 255, 255, 2
 assert.deepStrictEqual(renderedPixel(viewportRender, 160, 213), [255, 255, 255, 255]);
 assert.deepStrictEqual(renderedPixel(viewportRender, 160, 214), [0, 0, 0, 255],
   'the native cutscene viewport must mask rows below the scene');
+
+const screenCropRender = R.renderFrame(backgroundDocument, { actors: [] }, {
+  backgrounds: [{ image: solidStage, layer: { role: 'environment-base' } }],
+  backgroundProjection: { mode: 'stage-fit', scale: 1 },
+  screenTransition: {
+    presentationKind: 'cutscene-crop', currentFirst: 24, currentSecond: 24,
+  },
+});
+assert.deepStrictEqual(renderedPixel(screenCropRender, 160, 23), [0, 0, 0, 255],
+  'the Director screen transition must mask rows above its current first edge');
+assert.deepStrictEqual(renderedPixel(screenCropRender, 160, 24), [255, 255, 255, 255]);
+assert.deepStrictEqual(renderedPixel(screenCropRender, 160, 215), [255, 255, 255, 255]);
+assert.deepStrictEqual(renderedPixel(screenCropRender, 160, 216), [0, 0, 0, 255],
+  'the Director screen transition must mask rows below its current second edge');
+
+const titleRevealRender = R.renderFrame(backgroundDocument, { actors: [] }, {
+  backgrounds: [{ image: solidStage, layer: { role: 'environment-base' } }],
+  backgroundProjection: { mode: 'stage-fit', scale: 1 },
+  screenTransition: {
+    presentationKind: 'title-card-reveal', currentFirst: 24, currentSecond: 24,
+  },
+});
+assert.deepStrictEqual(renderedPixel(titleRevealRender, 160, 0), [255, 255, 255, 255],
+  'selector zero uses the separate title-card reveal and must not receive cutscene scissoring');
 
 const wideStage = {
   width: 400, height: 240,
@@ -263,6 +305,16 @@ assert.deepStrictEqual(nativeLayerRegion,
   'native metadata offsets and per-layer scales must remain relative to the Actor origin');
 assert.deepStrictEqual(renderedPixel(nativeLayerRender, 158, 119), [255, 0, 0, 255]);
 assert.deepStrictEqual(renderedPixel(nativeLayerRender, 162, 120), [0, 255, 0, 255]);
+const emptyPoseActor = Object.assign({}, nativeLayerActor, {
+  id: 'actor:empty-native-pose',
+  poseProgramStatus: 'empty-native-program'
+});
+const emptyPoseRender = R.renderFrame(backgroundDocument, { actors: [emptyPoseActor] }, {
+  projection: nativeProjection,
+  actorFrames: {}
+});
+assert.strictEqual(emptyPoseRender.hitRegions.length, 0,
+  'a genuine zero-entry native pose must remain empty instead of becoming a schematic Actor');
 const spriteRender = R.renderFrame(document, spritePreview, {
   actorFrames: { 'actor:left': whiteSprite },
 });
@@ -301,9 +353,62 @@ assert.strictEqual(renderPassActor(1, 0).hitRegions.length, 0,
 assert.strictEqual(renderPassActor(3, 255).hitRegions.length, 0,
   'render mode 3 must remain hidden because it selects neither Actor pass');
 
+const vignetteSource = {
+  width: 64,
+  height: 64,
+  rgba: new Uint8ClampedArray(64 * 64 * 4),
+};
+for (let y = 0; y < vignetteSource.height; y++) {
+  for (let x = 0; x < vignetteSource.width; x++) {
+    const offset = (y * vignetteSource.width + x) * 4;
+    vignetteSource.rgba[offset] = x;
+    vignetteSource.rgba[offset + 1] = y;
+    vignetteSource.rgba[offset + 2] = x ^ y;
+    vignetteSource.rgba[offset + 3] = 255;
+  }
+}
+const nativeVignette = R.buildSceneVignetteImage(vignetteSource, 130);
+assert.deepStrictEqual([
+  nativeVignette.width,
+  nativeVignette.height,
+  nativeVignette.nativeHorizontalRadius,
+  nativeVignette.nativeVerticalRadius,
+  nativeVignette.nativeDownsampleDivisor,
+], [32, 32, 16, 18, 2]);
+assert.deepStrictEqual(Array.from(nativeVignette.rgba.slice((7 * 32 + 5) * 4,
+  (7 * 32 + 5) * 4 + 3)), [10, 14, 4],
+'the native scene-image builder must sample every second source pixel');
+assert.strictEqual(nativeVignette.rgba[(16 * 32 + 16) * 4 + 3], 130,
+  'the vignette center must retain the opcode alpha cap');
+assert.strictEqual(nativeVignette.rgba[3], 0,
+  'the native elliptical mask must clear pixels outside its radii');
+const vignetteRender = R.renderFrame(backgroundDocument, { actors: [] }, {
+  sceneVignetteImage: vignetteSource,
+  sceneVignette: {
+    sourceAssetId: 'archive:fixture',
+    translateX: 10,
+    translateY: 20,
+    scaleXPercent: 100,
+    scaleYPercent: 100,
+    alphaCap: 255,
+    baseRotationDegrees: { x: 0, y: 0, z: 0 },
+    evidenceStatus: 'native-static-exact',
+  },
+  oversizedImageView: { x: 3, y: 4, scale: 1 },
+});
+assert.deepStrictEqual([
+  vignetteRender.sceneVignette.centerX,
+  vignetteRender.sceneVignette.centerY,
+  vignetteRender.sceneVignette.width,
+  vignetteRender.sceneVignette.height,
+  vignetteRender.sceneVignette.sourceAssetId,
+], [173, 96, 32, 32, 'archive:fixture']);
+assert.deepStrictEqual(renderedPixel(vignetteRender, 173, 96), [32, 32, 0, 255],
+  'the scene image must combine opcode translation with the independent pan view');
+
 const overlayRender = R.renderFrame(document, preview, {
   overlays: [{ red: 0, green: 0, blue: 255, alpha: 255 }],
 });
 assert.deepStrictEqual(Array.from(overlayRender.rgba.slice(0, 4)), [0, 0, 255, 255]);
 
-console.log('PASS Cutscene Stage rendering is deterministic with native projection, scale, tint, overlays, actor hit regions, and movement paths.');
+console.log('PASS Cutscene Stage rendering is deterministic with native projection, scale, tint, scene vignettes, overlays, actor hit regions, and movement paths.');

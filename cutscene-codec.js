@@ -330,6 +330,75 @@ window.OB64 = window.OB64 || {};
     return entry;
   }
 
+  function dynamicDirectorDefinitions(scene, decodedBytes) {
+    var source = scene && scene.source;
+    if (!source || source.dynamicGrammar !== true) return source && source.nodes || [];
+    var grammar = OB64.cutsceneData && OB64.cutsceneData.directorGrammar;
+    if (!Array.isArray(grammar) || !grammar.length) {
+      fail('The retail Director grammar is not loaded.', 'module-order');
+    }
+    var byOpcode = {};
+    grammar.forEach(function(template) {
+      byOpcode[unsigned(template.opcodeU32)] = template;
+    });
+    var allWords = wordsFromBytes(decodedBytes);
+    var cursor = 0;
+    var prefix = scene.assetId.split(':').pop().toUpperCase();
+    var definitions = [];
+    while (cursor < allWords.length) {
+      var opcode = unsigned(allWords[cursor]);
+      var template = byOpcode[opcode];
+      if (!template) {
+        fail('Retail Director opcode 0x' + opcode.toString(16).toUpperCase() +
+          ' has no structural grammar at word ' + cursor + '.', 'source-boundary');
+      }
+      var continuationTerminal = source.terminalWithoutTrailer === true &&
+        opcode === 0x80000001 && cursor === allWords.length - 1;
+      var wordCount = continuationTerminal ? 1 : Number(template.sourceWordSpan);
+      if (!Number.isInteger(wordCount) || wordCount < 1 || cursor + wordCount > allWords.length) {
+        fail('Retail Director command at word ' + cursor +
+          ' exceeds the decoded payload.', 'source-boundary');
+      }
+      var roles = continuationTerminal ? [] : (Array.isArray(template.operandRoles)
+        ? template.operandRoles.slice() : []);
+      if (roles.length !== wordCount - 1) {
+        fail('Retail Director opcode 0x' + opcode.toString(16).toUpperCase() +
+          ' has an incomplete operand-role template.', 'source-boundary');
+      }
+      definitions.push({
+        id: 'node:' + prefix + ':w' + cursor.toString(16).toUpperCase().padStart(4, '0'),
+        startWord: cursor,
+        endWord: cursor + wordCount,
+        wordCount: wordCount,
+        nodeType: template.nodeType,
+        name: template.name,
+        semanticSummary: template.semanticSummary,
+        confidence: template.confidence,
+        opcode: '0x' + opcode.toString(16).toUpperCase().padStart(8, '0'),
+        opcodeU32: opcode,
+        operandRoles: roles,
+        queryRecordKind: template.queryRecordKind || null,
+        terminationKind: continuationTerminal
+          ? 'stream_terminator_without_trailer'
+          : template.terminationKind || null,
+        runtimeReachability: 'not established by static source order',
+        newlyRecoveredFromDispatch: template.newlyRecoveredFromDispatch === true,
+        editPolicy: 'preserve-native',
+        insertBefore: false,
+        segmentId: null,
+        segmentIds: [],
+        unknown: template.semanticStatus === 'structural-width-only'
+      });
+      cursor += wordCount;
+    }
+    if (Number.isInteger(source.runtimeNodeCount) &&
+        definitions.length !== source.runtimeNodeCount) {
+      fail('Retail Director runtime tiling no longer matches the generated catalog.',
+        'source-boundary');
+    }
+    return definitions;
+  }
+
   function loadSceneSource(z64Input, scene, options) {
     var z64 = bytes(z64Input, 'Normalized ROM');
     options = options || {};
@@ -379,18 +448,20 @@ window.OB64 = window.OB64 || {};
         payload: payload,
         decodedBytes: decoded.bytes,
         decodedSha256: hash,
-        consumedEncodedBytes: decoded.consumed
+        consumedEncodedBytes: decoded.consumed,
+        nodeDefinitions: dynamicDirectorDefinitions(scene, decoded.bytes)
       };
     });
   }
 
-  function createIr(scene, decodedInput) {
+  function createIr(scene, decodedInput, nodeDefinitions) {
     var decodedBytes = bytes(decodedInput, 'Decoded director payload');
     if (decodedBytes.length !== scene.source.decodedLength) {
       fail('Decoded director payload length does not match the catalog.', 'source-preimage');
     }
     var allWords = wordsFromBytes(decodedBytes);
-    var nodes = scene.source.nodes.map(function(definition) {
+    nodeDefinitions = nodeDefinitions || dynamicDirectorDefinitions(scene, decodedBytes);
+    var nodes = nodeDefinitions.map(function(definition) {
       var rawWords = allWords.slice(definition.startWord, definition.endWord);
       if (rawWords.length !== definition.wordCount) {
         fail('Director boundary falls outside the decoded payload.', 'source-boundary');
@@ -414,6 +485,11 @@ window.OB64 = window.OB64 || {};
   function coordinate(word) {
     var value = signed(word);
     return value === -1000 ? null : value / 1000;
+  }
+
+  function launchTranslationIndex(word) {
+    word = unsigned(word);
+    return (word & 0xFFFFFF00) === 0x08880000 ? word & 0xFF : null;
   }
 
   function actorSelectorValid(bank, key, facing) {
@@ -442,11 +518,17 @@ window.OB64 = window.OB64 || {};
     if (words[0] === 0x14 && words.length === 10) {
       var placeBank = signed(words[2]), placeKey = signed(words[3]);
       var placeFacing = signed(words[4]);
+      var placeVariantTranslationIndex = launchTranslationIndex(words[9]);
       return { type: 'place', slot: words[1], bank: placeBank, key: placeKey,
         facing: placeFacing, selectorValid: actorSelectorValid(placeBank, placeKey, placeFacing),
         x: coordinate(words[5]), y: coordinate(words[6]), z: coordinate(words[7]),
         renderMode: words[8] & 0xFF, rawRenderMode: signed(words[8]),
-        variantSelector: words[9] & 0xFF, rawVariantSelector: signed(words[9]) };
+        variantSelector: placeVariantTranslationIndex === null ? words[9] & 0xFF : 0,
+        rawVariantSelector: signed(words[9]),
+        variantSelectorTranslationIndex: placeVariantTranslationIndex,
+        variantSelectorStatus: placeVariantTranslationIndex === null
+          ? 'exact opcode-0x14 operand 9'
+          : 'launch-translation input unresolved; appearance zero is a preview fallback' };
     }
     if (words[0] === 3 && words.length === 9) {
       var stateBank = signed(words[2]), stateKey = signed(words[3]);
@@ -802,7 +884,7 @@ window.OB64 = window.OB64 || {};
   function projectSceneDocument(scene, source, catalog) {
     var M = OB64.cutsceneModel;
     if (!M || !OB64.cutsceneCatalog) fail('Cutscene model and catalog modules are required.', 'module-order');
-    var ir = createIr(scene, source.decodedBytes || source);
+    var ir = createIr(scene, source.decodedBytes || source, source.nodeDefinitions);
     var document = OB64.cutsceneCatalog.createSceneDocument(scene);
     document.native.commands = [];
     document.tracks = [];
@@ -891,9 +973,11 @@ window.OB64 = window.OB64 || {};
         var calibratedStageProjection = backgroundObservation &&
           backgroundObservation.stageProjection
           ? JSON.parse(JSON.stringify(backgroundObservation.stageProjection)) : null;
+        var launchDirectorMode = scene.launchProfile &&
+          scene.launchProfile.directorMode || null;
         var nativeBackgroundEditable = scene.engine === 'director' &&
           node.definition.editPolicy === 'typed-background-group' &&
-          backgroundObservation && backgroundObservation.directorMode === 0;
+          launchDirectorMode && launchDirectorMode.value === 0;
         var nativeGroups = nativeBackgroundEditable && backgroundTable
           ? backgroundTable.entries.filter(function(entry) {
             return Array.isArray(entry.archiveAssetIds) && entry.archiveAssetIds.length;
@@ -926,7 +1010,8 @@ window.OB64 = window.OB64 || {};
           nativeGroups: nativeGroups,
           modeStatus: backgroundObservation && Number.isInteger(backgroundObservation.directorMode)
             ? 'runtime-observed Director mode ' + backgroundObservation.directorMode
-            : 'runtime Director mode unresolved for this asset',
+            : (launchDirectorMode ? launchDirectorMode.status :
+              'runtime Director mode unresolved for this asset'),
           previewOverride: false
         });
         if (nativeBackgroundEditable && backgroundEntry) {
@@ -952,8 +1037,10 @@ window.OB64 = window.OB64 || {};
         actor.initial.y = act.y == null ? actor.initial.y : act.y;
         actor.initial.z = act.z == null ? actor.initial.z : act.z;
         if (placeSelectorResolved) {
-          actor.capability = placeProgram || !catalog
-            ? M.capabilities.NATIVE : M.capabilities.NEEDS_RESEARCH;
+          actor.capability = act.variantSelectorTranslationIndex !== null
+            ? M.capabilities.NEEDS_RESEARCH
+            : (placeProgram || !catalog
+              ? M.capabilities.NATIVE : M.capabilities.NEEDS_RESEARCH);
           actor.artSourceId = 'cutscene-art-bank:' + act.bank;
           actor.initial.facing = 'native-' + act.facing;
           actor.initial.poseId = poseIdentity(act);
@@ -963,7 +1050,9 @@ window.OB64 = window.OB64 || {};
           actor.source.renderModeStatus =
             'exact opcode-0x14 actor render-mode byte; native values 0 through 3 are observed';
           actor.source.variantSelector = act.variantSelector;
-          actor.source.variantSelectorStatus = 'exact opcode-0x14 operand 9';
+          actor.source.variantSelectorStatus = act.variantSelectorStatus;
+          actor.source.variantSelectorTranslationIndex =
+            act.variantSelectorTranslationIndex;
           actor.source.physicalStateId = placeSelector ? placeSelector.physicalStateId : null;
           actor.source.stateIndex = placeSelector ? placeSelector.stateIndex : null;
           actor.source.selectorStatus = placeProgram || !catalog
@@ -1372,9 +1461,12 @@ window.OB64 = window.OB64 || {};
   }
 
   function clipMatchesState(clip, slot, act) {
+    var variantMatches = act.variantSelector === -1
+      ? clip.payload.variantSelectorStatus === 'preserve current runtime selector'
+      : clip.payload.variantSelector === act.variantSelector;
     return slot === act.slot && clip.payload.bank === act.bank &&
       clip.payload.animationKey === act.key && clip.payload.nativeFacing === act.facing &&
-      clip.payload.variantSelector === act.variantSelector &&
+      variantMatches &&
       sameNumber(clip.payload.x, act.x) && sameNumber(clip.payload.y, act.y) &&
       sameNumber(clip.payload.z, act.z);
   }
@@ -1438,6 +1530,12 @@ window.OB64 = window.OB64 || {};
       ? (original.renderMode == null ? 0 : original.renderMode) : actor.source.renderMode;
     var renderModeWord = rawWords && renderMode === original.renderMode
       ? unsigned(rawWords[8]) : integer(renderMode, 'Actor render mode', 0, 255);
+    var variantSelector = actor.source.variantSelector == null
+      ? (rawWords ? unsigned(rawWords[9]) & 0xFF : 0) : actor.source.variantSelector;
+    var variantWord = rawWords && original.variantSelectorTranslationIndex != null &&
+      variantSelector === original.variantSelector
+      ? unsigned(rawWords[9])
+      : integer(variantSelector, 'Appearance selector', 0, 255);
     function compiledCoordinate(axis) {
       return original[axis] == null && sameNumber(actor.initial[axis], displayed[axis])
         ? null : actor.initial[axis];
@@ -1451,9 +1549,7 @@ window.OB64 = window.OB64 || {};
       fixed(compiledCoordinate('y'), 'Actor Y', true),
       fixed(compiledCoordinate('z'), 'Actor Z', true),
       renderModeWord,
-      integer(actor.source.variantSelector == null
-        ? (rawWords ? unsigned(rawWords[9]) & 0xFF : 0) : actor.source.variantSelector,
-      'Appearance selector', 0, 255)];
+      variantWord];
   }
 
   function compileEnter(clip, actor) {
@@ -1629,7 +1725,7 @@ window.OB64 = window.OB64 || {};
       fail('Only the matching US Rev 0 Director source can use native export.',
         'unsupported-revision');
     }
-    var ir = createIr(scene, source.decodedBytes || source);
+    var ir = createIr(scene, source.decodedBytes || source, source.nodeDefinitions);
     var counterTiming = registeredCounterTiming(ir);
     var nativeByNode = {};
     document.native.commands.forEach(function(command) {

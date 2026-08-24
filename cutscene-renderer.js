@@ -111,6 +111,169 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function blitScaledRotated(output, image, originX, originY, targetWidth, targetHeight,
+      anchorX, anchorY, rotationDegrees, opacityByte, tint) {
+    var normalizedRotation = Number.isFinite(rotationDegrees)
+      ? ((rotationDegrees % 360) + 360) % 360 : 0;
+    if (normalizedRotation < 0.000001 || Math.abs(normalizedRotation - 360) < 0.000001) {
+      blitScaled(output, image, Math.round(originX - anchorX),
+        Math.round(originY - anchorY), targetWidth, targetHeight, opacityByte, tint);
+      return;
+    }
+    if (!image || !Number.isInteger(image.width) || !Number.isInteger(image.height) ||
+        !(image.rgba instanceof Uint8Array) && !(image.rgba instanceof Uint8ClampedArray) ||
+        image.rgba.length !== image.width * image.height * 4) {
+      fail('Renderable Stage image has invalid RGBA data.');
+    }
+    var radians = normalizedRotation * Math.PI / 180;
+    var cosine = Math.cos(radians), sine = Math.sin(radians);
+    var corners = [
+      { x: -anchorX, y: -anchorY },
+      { x: targetWidth - anchorX, y: -anchorY },
+      { x: targetWidth - anchorX, y: targetHeight - anchorY },
+      { x: -anchorX, y: targetHeight - anchorY }
+    ].map(function(point) {
+      return {
+        x: originX + point.x * cosine - point.y * sine,
+        y: originY + point.x * sine + point.y * cosine
+      };
+    });
+    var minimumX = Math.max(0, Math.floor(Math.min.apply(null,
+      corners.map(function(point) { return point.x; }))));
+    var maximumX = Math.min(output.width - 1, Math.ceil(Math.max.apply(null,
+      corners.map(function(point) { return point.x; }))));
+    var minimumY = Math.max(0, Math.floor(Math.min.apply(null,
+      corners.map(function(point) { return point.y; }))));
+    var maximumY = Math.min(output.height - 1, Math.ceil(Math.max.apply(null,
+      corners.map(function(point) { return point.y; }))));
+    var opacity = Number.isFinite(opacityByte) ? clamp(opacityByte, 0, 255) / 255 : 1;
+    tint = tint || { red: 255, green: 255, blue: 255 };
+    var tintRed = clamp(Number.isFinite(tint.red) ? tint.red : 255, 0, 255) / 255;
+    var tintGreen = clamp(Number.isFinite(tint.green) ? tint.green : 255, 0, 255) / 255;
+    var tintBlue = clamp(Number.isFinite(tint.blue) ? tint.blue : 255, 0, 255) / 255;
+    for (var y = minimumY; y <= maximumY; y++) {
+      for (var x = minimumX; x <= maximumX; x++) {
+        var deltaX = x + 0.5 - originX;
+        var deltaY = y + 0.5 - originY;
+        var localX = deltaX * cosine + deltaY * sine + anchorX;
+        var localY = -deltaX * sine + deltaY * cosine + anchorY;
+        if (localX < 0 || localY < 0 || localX >= targetWidth || localY >= targetHeight) continue;
+        var sourceX = Math.min(image.width - 1,
+          Math.floor(localX * image.width / targetWidth));
+        var sourceY = Math.min(image.height - 1,
+          Math.floor(localY * image.height / targetHeight));
+        var sourceOffset = (sourceY * image.width + sourceX) * 4;
+        pixel(output, x, y, [
+          Math.round(image.rgba[sourceOffset] * tintRed),
+          Math.round(image.rgba[sourceOffset + 1] * tintGreen),
+          Math.round(image.rgba[sourceOffset + 2] * tintBlue),
+          Math.round(image.rgba[sourceOffset + 3] * opacity)
+        ]);
+      }
+    }
+  }
+
+  function nativeVignetteEllipseAlpha(x, y, radiusX, radiusY, alphaCap) {
+    if (!radiusX || !radiusY) return 0;
+    var normalizedX = Math.fround(x / radiusX);
+    var normalizedY = Math.fround(y / radiusY);
+    var distanceSquared = Math.fround(
+      Math.fround(normalizedX * normalizedX) +
+      Math.fround(normalizedY * normalizedY));
+    var remaining = Math.fround(1 - distanceSquared);
+    if (!(remaining > 0)) return x === 0 && y === 0 ? alphaCap : 0;
+    return Math.trunc(Math.fround(remaining * alphaCap));
+  }
+
+  function nativeVignetteEdgeAlpha(x, y, width, height, alpha) {
+    var halfWidth = Math.trunc(width / 2);
+    var halfHeight = Math.trunc(height / 2);
+    var absoluteX = Math.abs(x);
+    var absoluteY = Math.abs(y);
+    for (var edgeStep = 0; edgeStep < 16; edgeStep++) {
+      if (halfHeight - edgeStep < absoluteY ||
+          halfWidth - edgeStep < absoluteX) {
+        return edgeStep < 8 ? Math.min(alpha, edgeStep * 16) : alpha;
+      }
+    }
+    return alpha;
+  }
+
+  function buildSceneVignetteImage(source, alphaCap) {
+    if (!source || !Number.isInteger(source.width) || !Number.isInteger(source.height) ||
+        !(source.rgba instanceof Uint8Array) &&
+          !(source.rgba instanceof Uint8ClampedArray) ||
+        source.rgba.length !== source.width * source.height * 4) {
+      fail('Scene vignette source has invalid RGBA data.');
+    }
+    if (!Number.isInteger(alphaCap) || alphaCap < 0 || alphaCap > 255) {
+      fail('Scene vignette alpha cap must be an unsigned byte.');
+    }
+    var width = Math.floor(source.width / 2);
+    var height = Math.floor(source.height / 2);
+    var output = surface(Math.max(1, width), Math.max(1, height));
+    var radiusX = Math.trunc(width * 0.5);
+    var radiusY = Math.trunc(Math.fround(height * Math.fround(0.58)));
+    var startX = Math.trunc(-width / 2);
+    var startY = Math.trunc(-height / 2);
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        var sourceOffset = ((y * 2) * source.width + x * 2) * 4;
+        var centeredX = startX + x;
+        var centeredY = startY + y;
+        var alpha = nativeVignetteEllipseAlpha(
+          centeredX, centeredY, radiusX, radiusY, alphaCap);
+        alpha = nativeVignetteEdgeAlpha(
+          centeredX, centeredY, width, height, alpha);
+        var outputOffset = (y * width + x) * 4;
+        output.rgba[outputOffset] = source.rgba[sourceOffset];
+        output.rgba[outputOffset + 1] = source.rgba[sourceOffset + 1];
+        output.rgba[outputOffset + 2] = source.rgba[sourceOffset + 2];
+        output.rgba[outputOffset + 3] = alpha & 0xFF;
+      }
+    }
+    output.nativeSourceWidth = source.width;
+    output.nativeSourceHeight = source.height;
+    output.nativeAlphaCap = alphaCap;
+    output.nativeHorizontalRadius = radiusX;
+    output.nativeVerticalRadius = radiusY;
+    output.nativeDownsampleDivisor = 2;
+    return output;
+  }
+
+  function renderSceneVignette(output, source, presentation, view, camera) {
+    if (!source || !presentation) return null;
+    view = view || { x: 0, y: 0, scale: 1 };
+    camera = camera || cameraTransform();
+    var image = buildSceneVignetteImage(source, presentation.alphaCap);
+    var viewScale = Number.isFinite(view.scale) ? view.scale : 1;
+    var scaleX = presentation.scaleXPercent / 100 * viewScale;
+    var scaleY = presentation.scaleYPercent / 100 * viewScale;
+    if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) ||
+        scaleX === 0 || scaleY === 0) return null;
+    var width = Math.max(1, Math.round(image.width * Math.abs(scaleX) * camera.scaleX));
+    var height = Math.max(1, Math.round(image.height * Math.abs(scaleY) * camera.scaleY));
+    var center = transformStagePoint({
+      x: WIDTH / 2 + presentation.translateX + (Number(view.x) || 0),
+      y: HEIGHT / 2 - presentation.translateY - (Number(view.y) || 0)
+    }, camera);
+    var rotation = presentation.baseRotationDegrees &&
+      Number(presentation.baseRotationDegrees.z) || 0;
+    if (scaleX < 0) rotation += 180;
+    blitScaledRotated(output, image, center.x, center.y, width, height,
+      width / 2, height / 2, rotation);
+    return {
+      image: image,
+      centerX: center.x,
+      centerY: center.y,
+      width: width,
+      height: height,
+      rotationDegrees: rotation,
+      sourceAssetId: presentation.sourceAssetId,
+      evidenceStatus: presentation.evidenceStatus
+    };
+  }
+
   function invertMatrix3(matrix) {
     var a = matrix[0], b = matrix[1], c = matrix[2];
     var d = matrix[3], e = matrix[4], f = matrix[5];
@@ -305,6 +468,20 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  function applyScreenTransitionMask(output, transition) {
+    if (!transition || transition.presentationKind !== 'cutscene-crop' ||
+        !Number.isFinite(transition.currentFirst) ||
+        !Number.isFinite(transition.currentSecond)) return;
+    var top = clamp(Math.round(transition.currentFirst), 0, output.height);
+    var bottomMargin = clamp(Math.round(transition.currentSecond), 0, output.height);
+    var bottom = Math.max(top, output.height - bottomMargin);
+    if (top > 0) fillRect(output, 0, 0, output.width, top, [0, 0, 0, 255]);
+    if (bottom < output.height) {
+      fillRect(output, 0, bottom, output.width, output.height - bottom,
+        [0, 0, 0, 255]);
+    }
+  }
+
   function cameraTransform(value) {
     value = value || {};
     return {
@@ -486,19 +663,31 @@ window.OB64 = window.OB64 || {};
     return projection && projection.mode === 'native-perspective-capture' ? projection : null;
   }
 
-  function computeProjection(document) {
+  function computeProjection(document, previewState) {
     var captured = capturedActorProjection(document);
     if (captured) return captured;
-    var points = scenePoints(document);
-    var xMin = Math.min.apply(null, points.map(function(point) { return point.x; }));
-    var xMax = Math.max.apply(null, points.map(function(point) { return point.x; }));
-    var zMin = Math.min.apply(null, points.map(function(point) { return point.z; }));
-    var zMax = Math.max.apply(null, points.map(function(point) { return point.z; }));
+    var runtimeBounds = previewState && previewState.actorProjection &&
+      previewState.actorProjection.previewFitBounds;
+    var points = runtimeBounds ? null : scenePoints(document);
+    var xMin = runtimeBounds && Number.isFinite(runtimeBounds.xMin)
+      ? runtimeBounds.xMin
+      : Math.min.apply(null, points.map(function(point) { return point.x; }));
+    var xMax = runtimeBounds && Number.isFinite(runtimeBounds.xMax)
+      ? runtimeBounds.xMax
+      : Math.max.apply(null, points.map(function(point) { return point.x; }));
+    var zMin = runtimeBounds && Number.isFinite(runtimeBounds.zMin)
+      ? runtimeBounds.zMin
+      : Math.min.apply(null, points.map(function(point) { return point.z; }));
+    var zMax = runtimeBounds && Number.isFinite(runtimeBounds.zMax)
+      ? runtimeBounds.zMax
+      : Math.max.apply(null, points.map(function(point) { return point.z; }));
     if (xMax - xMin < 80) { var xMid = (xMin + xMax) / 2; xMin = xMid - 40; xMax = xMid + 40; }
     if (zMax - zMin < 80) { var zMid = (zMin + zMax) / 2; zMin = zMid - 40; zMax = zMid + 40; }
     return {
       mode: 'fit-native-preview',
-      status: 'approximate',
+      status: runtimeBounds
+        ? 'stable full-runtime Actor fit because the native launch camera is unresolved'
+        : 'approximate',
       xMin: xMin, xMax: xMax, zMin: zMin, zMax: zMax,
       left: 28, right: WIDTH - 28, top: 55, bottom: HEIGHT - 30
     };
@@ -652,42 +841,60 @@ window.OB64 = window.OB64 || {};
   }
 
   function modeZeroActorGeometry(actor, previewState, actorProjection) {
-    if (!actor || actor.renderPipeline !== 'mode-zero-two-camera' ||
-        !previewState || !previewState.registeredProjection || !actorProjection) return null;
-    var registeredProjection = previewState.registeredProjection;
-    var stageSource = {
+    if (!actor || actor.renderPipeline !== 'mode-zero-registered-prepass-actor-camera' ||
+        !previewState || !nativePerspectiveProjection(actorProjection) ||
+        !nativePerspectiveProjection(previewState.registeredProjection)) return null;
+    var sourcePoint = {
       x: Number(actor.x) || 0,
+      // func_002AE654 projects the Actor's X/Z placement with a zero Y origin.
+      // The Actor height at +0x120 enters the later matrix composition.
       y: 0,
       z: Number(actor.z) || 0
     };
-    var registeredProjected = projectPointFloat(stageSource, registeredProjection);
-    // func_002AE654 keeps the registered-camera vertical coordinate in its
-    // mathematical, upward-positive convention. The Actor camera later turns
-    // the composed point into the final downward-positive framebuffer value.
-    var registeredScreen = {
-      x: registeredProjected.x,
-      y: registeredProjection.screenHeight - registeredProjected.y
+    var registeredProjection = previewState.registeredProjection;
+    var projected = projectPointFloat(sourcePoint, registeredProjection);
+    if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) return null;
+    // func_0029CBDC writes framebuffer Y from the bottom edge. The editor's
+    // ordinary projection helper uses the canvas top edge, so convert it here.
+    var registeredScreenPoint = {
+      x: projected.x,
+      y: registeredProjection.screenHeight - projected.y
     };
-    var stageCenterX = registeredProjection.screenWidth / 2;
-    var stageCenterY = registeredProjection.screenHeight / 2;
-    var scenePoint = transformModeZeroStagePoint({
-      x: registeredScreen.x - stageCenterX,
-      y: registeredScreen.y - stageCenterY + (Number(actor.y) || 0),
+    var centeredPoint = {
+      x: registeredScreenPoint.x - registeredProjection.screenWidth / 2,
+      y: registeredScreenPoint.y - registeredProjection.screenHeight / 2 +
+        (Number(actor.y) || 0),
       z: 0
-    }, actor.sceneTransform, actorProjection);
-    var finalProjection = Object.assign({}, actorProjection, { modelScale: 1 });
+    };
+    var channel = actor.sceneTransform || {};
+    var scenePoint = transformModeZeroStagePoint(centeredPoint, channel, actorProjection);
+    var normalization = actorCameraNormalization(actorProjection);
+    var finalProjection = Object.assign({}, actorProjection, {
+      // transformModeZeroStagePoint has already applied the Actor-camera
+      // normalization, so this matrix consumes the composed scene point once.
+      modelScale: 1
+    });
+    var channelScale = Number.isFinite(channel.uniformScale) ? channel.uniformScale : 1;
     var nativeActorScale = Number.isFinite(actor.nativeUniformScale)
-      ? actor.nativeUniformScale : (Number.isFinite(actor.uniformScale) ? actor.uniformScale : 1);
-    var channelScale = actor.sceneTransform && Number.isFinite(actor.sceneTransform.uniformScale)
-      ? actor.sceneTransform.uniformScale : 1;
+      ? actor.nativeUniformScale
+      : ((Number.isFinite(actor.uniformScale) ? actor.uniformScale : 1) /
+        (channelScale || 1));
+    var registeredScale = perspectivePixelsPerModelUnit(sourcePoint, registeredProjection);
+    // func_002AE654 applies the Actor scale while measuring the registered-camera
+    // basis. func_002AEB48 multiplies that basis by the same record scale again,
+    // then by the scene channel and Actor-camera normalization.
+    var actorPlaneScale = nativeActorScale * nativeActorScale * channelScale *
+      registeredScale * normalization;
     return {
-      registeredScreen: registeredScreen,
+      sourcePoint: sourcePoint,
+      registeredScreenPoint: registeredScreenPoint,
+      centeredPoint: centeredPoint,
       scenePoint: scenePoint,
       projection: finalProjection,
       screenPoint: projectPoint(scenePoint, finalProjection),
-      scale: nativeActorScale * nativeActorScale * channelScale *
-        perspectivePixelsPerModelUnit(stageSource, registeredProjection) *
-        spritePerspectiveScale(scenePoint, finalProjection)
+      registeredScale: registeredScale,
+      actorPlaneScale: actorPlaneScale,
+      scale: actorPlaneScale * perspectivePixelsPerModelUnit(scenePoint, finalProjection)
     };
   }
 
@@ -899,6 +1106,12 @@ window.OB64 = window.OB64 || {};
     var backgroundProjection = options.backgroundProjection ||
       document.background && document.background.projection || {};
     var projection = options.projection || computeProjection(document);
+    if (projection.mode === 'native-perspective-runtime' &&
+        projection.evidenceStatus === 'external-unresolved') {
+      projection = computeProjection(document, previewState);
+      projection.status = 'fit preview because the native launch Actor camera is unresolved';
+      projection.evidenceStatus = 'preview-fallback';
+    }
     var camera = cameraTransform(options.camera);
     var scenePropFrames = Array.isArray(options.scenePropFrames)
       ? options.scenePropFrames : [];
@@ -925,10 +1138,14 @@ window.OB64 = window.OB64 || {};
       return actor.visible && actorHasRenderablePass(actor) && actorSpriteOpacity(actor) > 0;
     });
     var renderQueue = renderActors.map(function(actor, index) {
+      var modeZeroGeometry = modeZeroActorGeometry(actor, previewState, projection);
       return {
-        kind: 'actor', actor: actor, order: index,
-        depth: nativePerspectiveProjection(projection)
+        kind: 'actor', actor: actor, geometry: modeZeroGeometry, order: index,
+        depth: modeZeroGeometry
+          ? projectionDepth(modeZeroGeometry.scenePoint, modeZeroGeometry.projection)
+          : (nativePerspectiveProjection(projection)
           ? projectionDepth(actor, projection) : null
+          )
       };
     });
     scenePropFrames.filter(function(entry) {
@@ -959,7 +1176,7 @@ window.OB64 = window.OB64 || {};
         return;
       }
       var actor = renderEntry.actor;
-      var modeZeroGeometry = modeZeroActorGeometry(actor, previewState, projection);
+      var modeZeroGeometry = renderEntry.geometry;
       var point = modeZeroGeometry ? modeZeroGeometry.screenPoint : projectPointFloat(actor, projection);
       point = transformStagePoint(point, camera);
       var frame = options.actorFrames && options.actorFrames[actor.id];
@@ -988,7 +1205,7 @@ window.OB64 = window.OB64 || {};
           actorSpriteOpacity(actor), actor.tint);
         hitRegions.push({ actorId: actor.id, left: left, top: top,
           right: left + width, bottom: top + height });
-      } else {
+      } else if (actor.poseProgramStatus !== 'empty-native-program') {
         drawFallbackActor(output, actor, point, actor.id === options.selectedActorId);
         hitRegions.push({ actorId: actor.id, left: point.x - 10, top: point.y - 25,
           right: point.x + 10, bottom: point.y + 13 });
@@ -1008,9 +1225,12 @@ window.OB64 = window.OB64 || {};
         ? effect.anchorX * scale * camera.scaleX : width / 2;
       var anchorY = Number.isFinite(effect.anchorY)
         ? effect.anchorY * scale * camera.scaleY : height / 2;
-      blitScaled(output, image, Math.round(center.x - anchorX),
-        Math.round(center.y - anchorY), width, height);
+      blitScaledRotated(output, image, center.x, center.y, width, height,
+        anchorX, anchorY, effect.rotationDegrees);
     });
+    var renderedSceneVignette = renderSceneVignette(
+      output, options.sceneVignetteImage, options.sceneVignette,
+      options.oversizedImageView, camera);
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
       'foreground', backgroundCamera);
     modulateSurface(output, options.colorModulation);
@@ -1025,12 +1245,15 @@ window.OB64 = window.OB64 || {};
     if (backgroundProjection.viewport) {
       applyViewportMask(output, backgroundProjection.viewport);
     }
+    applyScreenTransitionMask(output, options.screenTransition);
     return {
       width: WIDTH,
       height: HEIGHT,
       rgba: output.rgba,
       projection: projection,
       camera: camera,
+      screenTransition: options.screenTransition || null,
+      sceneVignette: renderedSceneVignette,
       hitRegions: hitRegions,
       movementPaths: paths
     };
@@ -1080,6 +1303,8 @@ window.OB64 = window.OB64 || {};
     hitTest: hitTest,
     paintCanvas: paintCanvas,
     blitScaled: blitScaled,
-    blitProjectedQuad: blitProjectedQuad
+    blitProjectedQuad: blitProjectedQuad,
+    buildSceneVignetteImage: buildSceneVignetteImage,
+    renderSceneVignette: renderSceneVignette
   };
 })(window.OB64);

@@ -6,7 +6,7 @@ window.OB64 = window.OB64 || {};
   'use strict';
 
   var FORMAT = 'ob64-cutscene-catalog';
-  var SCHEMA_VERSION = 4;
+  var SCHEMA_VERSION = 16;
 
   function CatalogError(message) {
     this.name = 'CutsceneCatalogError';
@@ -67,16 +67,7 @@ window.OB64 = window.OB64 || {};
     nonEmptyString(actorProjection.calibrationResult, label + ' calibration result');
   }
 
-  function validateNativeSceneProps(stageProps, label) {
-    object(stageProps, label);
-    nonEmptyString(stageProps.coordinateSpace, label + ' coordinate space');
-    integer(stageProps.placementResourceKey, label + ' placement resource key', 1);
-    integer(stageProps.orthographicTableHeaderEntry,
-      label + ' orthographic table header entry', 0);
-    integer(stageProps.perspectiveTableHeaderEntry,
-      label + ' perspective table header entry', 0);
-    nonEmptyString(stageProps.evidenceStatus, label + ' evidence status');
-    var source = stageProps.source;
+  function validateNativeStagePropSource(source, label) {
     object(source, label + ' sprite source');
     nonEmptyString(source.bank, label + ' sprite bank');
     [
@@ -86,8 +77,26 @@ window.OB64 = window.OB64 || {};
       'lookupBankCount', 'selectedChildOrdinal'
     ].forEach(function(field) {
       integer(source[field], label + ' sprite source ' + field,
-        field === 'selectedChildOrdinal' ? 0 : 1);
+        field === 'selectedChildOrdinal' || field === 'lookupDecodedLength' ||
+          field === 'lookupBankCount' ? 0 : 1);
     });
+  }
+
+  function validateNativeSceneProps(stageProps, label) {
+    object(stageProps, label);
+    nonEmptyString(stageProps.coordinateSpace, label + ' coordinate space');
+    integer(stageProps.placementResourceKey, label + ' placement resource key', 1);
+    integer(stageProps.orthographicTableHeaderEntry,
+      label + ' orthographic table header entry', 0);
+    integer(stageProps.perspectiveTableHeaderEntry,
+      label + ' perspective table header entry', 0);
+    nonEmptyString(stageProps.evidenceStatus, label + ' evidence status');
+    if (stageProps.foregroundSelector != null) {
+      integer(stageProps.foregroundSelector, label + ' foreground selector', 0);
+    }
+    if (stageProps.source != null) {
+      validateNativeStagePropSource(stageProps.source, label);
+    }
     if (!Array.isArray(stageProps.orthographicPlacements) ||
         !Array.isArray(stageProps.perspectivePlacements)) {
       fail(label + ' placements must be arrays.');
@@ -106,7 +115,41 @@ window.OB64 = window.OB64 || {};
         ['x', 'y', 'z'].forEach(function(field) {
           finiteNumber(placement[field], placementLabel + ' ' + field);
         });
+        if (placement.descriptorHandle != null) {
+          integer(placement.descriptorHandle, placementLabel + ' descriptor handle', 1);
+        }
+        if (placement.rowParameter != null && !Number.isInteger(placement.rowParameter)) {
+          fail(placementLabel + ' row parameter must be an integer.');
+        }
+        if (placement.rawFields != null) {
+          if (!Array.isArray(placement.rawFields) || placement.rawFields.some(function(value) {
+            return !Number.isInteger(value);
+          })) {
+            fail(placementLabel + ' raw fields must be an integer array.');
+          }
+        }
+        var placementSource = placement.source || stageProps.source;
+        if (!placementSource) fail(placementLabel + ' lacks a sprite source.');
+        validateNativeStagePropSource(placementSource, placementLabel);
       });
+    var specialRows = stageProps.specialRows || [];
+    if (!Array.isArray(specialRows)) fail(label + ' special rows must be an array.');
+    specialRows.forEach(function(row, index) {
+      var rowLabel = label + ' special row ' + index;
+      object(row, rowLabel);
+      nonEmptyString(row.id, rowLabel + ' id');
+      nonEmptyString(row.tableKind, rowLabel + ' table kind');
+      if (row.status !== -2) fail(rowLabel + ' must retain native status -2.');
+      integer(row.descriptorHandle, rowLabel + ' descriptor handle', 1);
+      if (!Array.isArray(row.rawFields) || row.rawFields.some(function(value) {
+        return !Number.isInteger(value);
+      })) {
+        fail(rowLabel + ' raw fields must be an integer array.');
+      }
+      validateNativeStagePropSource(row.source, rowLabel);
+      nonEmptyString(row.evidenceStatus, rowLabel + ' evidence status');
+      nonEmptyString(row.renderStatus, rowLabel + ' render status');
+    });
   }
 
   function validateLaunchCamera(camera, label) {
@@ -120,6 +163,249 @@ window.OB64 = window.OB64 || {};
     if ((camera.kind === 'runtime-observed' ||
         camera.kind === 'mode-two-corpus-family') && camera.projection == null) {
       fail(label + ' requires a projection.');
+    }
+  }
+
+  function validateExternalRequestProfile(request, label) {
+    object(request, label);
+    integer(request.decodedByteOffset, label + ' decoded byte offset', 0);
+    integer(request.operand, label + ' operand', 0);
+    integer(request.requestCode, label + ' request code', 0);
+    if (request.operand > 0xFF || request.requestCode > 0xFFFF) {
+      fail(label + ' exceeds its native field width.');
+    }
+    nonEmptyString(request.requestCodeStorage, label + ' request code storage');
+    if (!Array.isArray(request.stateWrites)) {
+      fail(label + ' state writes must be an array.');
+    }
+    request.stateWrites.forEach(function(write, index) {
+      var writeLabel = label + ' state write ' + index;
+      object(write, writeLabel);
+      nonEmptyString(write.field, writeLabel + ' field');
+      nonEmptyString(write.ramAddress, writeLabel + ' RAM address');
+      integer(write.value, writeLabel + ' value', 0);
+      if (write.value > 0xFF) fail(writeLabel + ' exceeds one byte.');
+    });
+    nonEmptyString(request.requestAcceptanceSignal,
+      label + ' request acceptance signal');
+    nonEmptyString(request.requestAcceptanceCondition,
+      label + ' request acceptance condition');
+    nonEmptyString(request.resumeTiming, label + ' resume timing');
+    nonEmptyString(request.evidenceStatus, label + ' evidence status');
+  }
+
+  function validateTranslationWrite(write, label) {
+    object(write, label);
+    integer(write.eventDirectoryRow, label + ' event directory row', 0);
+    nonEmptyString(write.eventResourceKey, label + ' event resource key');
+    integer(write.eventEntryCursor, label + ' event entry cursor', 0);
+    integer(write.decodedByteOffset, label + ' decoded byte offset', 0);
+    integer(write.eventInvocationCursor, label + ' event invocation cursor', 0);
+    integer(write.eventInvocationOffset, label + ' event invocation offset', 0);
+    integer(write.precedingDirectorLaunchCount,
+      label + ' preceding Director launch count', 0);
+    if (write.eventInvocationCursor + write.eventInvocationOffset !==
+        write.decodedByteOffset) {
+      fail(label + ' invocation cursor does not reach its setter site.');
+    }
+    integer(write.opcode, label + ' opcode', 0x70);
+    integer(write.operand, label + ' operand', 0xD0);
+    integer(write.sourceRegister, label + ' source register', 0);
+    integer(write.indexRegister, label + ' index register', 0);
+    if (write.opcode > 0x77 || write.operand > 0xD7 ||
+        write.sourceRegister !== (write.opcode & 7) ||
+        write.indexRegister !== (write.operand & 7)) {
+      fail(label + ' does not match the native event translation-setter dispatch.');
+    }
+    if (write.tableIndex !== null) {
+      integer(write.tableIndex, label + ' table index', 0);
+      if (write.tableIndex > 0xFF) fail(label + ' table index exceeds one byte.');
+    }
+    if (write.value !== null) {
+      integer(write.value, label + ' replacement value', 0);
+      if (write.value > 0xFFFF) fail(label + ' replacement exceeds one halfword.');
+    }
+    var expectedStatus = write.tableIndex === null
+      ? 'table-index-unresolved'
+      : (write.value === null ? 'replacement-value-unresolved' : 'exact');
+    if (write.resolutionStatus !== expectedStatus) {
+      fail(label + ' resolution status is inconsistent.');
+    }
+    nonEmptyString(write.evidenceStatus, label + ' evidence status');
+  }
+
+  function validateSubstitutionSource(source, label) {
+    object(source, label);
+    if (source.sourceId !== 'A' && source.sourceId !== 'B') {
+      fail(label + ' source ID must be A or B.');
+    }
+    var expectedSemantic = source.sourceId === 'A'
+      ? 'primary-class-id' : 'secondary-class-id';
+    var expectedOffset = source.sourceId === 'A' ? 0x11 : 0x12;
+    if (source.semantic !== expectedSemantic ||
+        source.characterRecordBaseRamAddress !== '0x80193BC0' ||
+        source.characterRecordFieldOffset !== expectedOffset ||
+        source.characterRecordStride !== 56 || source.slotCount !== 5) {
+      fail(label + ' does not match the native character-record source contract.');
+    }
+    nonEmptyString(source.storageRamRange, label + ' storage RAM range');
+    nonEmptyString(source.getterFunctionZ64, label + ' getter function');
+    nonEmptyString(source.setterFunctionZ64, label + ' setter function');
+    nonEmptyString(source.evidenceStatus, label + ' evidence status');
+  }
+
+  function validateSubstitutionSourceWrite(write, label) {
+    object(write, label);
+    integer(write.eventDirectoryRow, label + ' event directory row', 0);
+    nonEmptyString(write.eventResourceKey, label + ' event resource key');
+    integer(write.eventEntryCursor, label + ' event entry cursor', 0);
+    integer(write.decodedByteOffset, label + ' decoded byte offset', 0);
+    integer(write.eventInvocationCursor, label + ' event invocation cursor', 0);
+    integer(write.eventInvocationOffset, label + ' event invocation offset', 0);
+    integer(write.precedingDirectorLaunchCount,
+      label + ' preceding Director launch count', 0);
+    if (write.eventInvocationCursor + write.eventInvocationOffset !==
+        write.decodedByteOffset) {
+      fail(label + ' invocation cursor does not reach its setter site.');
+    }
+    integer(write.opcode, label + ' opcode', 0x70);
+    integer(write.operand, label + ' operand', 0xC0);
+    integer(write.sourceRegister, label + ' source register', 0);
+    integer(write.indexRegister, label + ' index register', 0);
+    if (write.opcode > 0x77 || write.operand > 0xCF ||
+        write.sourceRegister !== (write.opcode & 7) ||
+        write.indexRegister !== (write.operand & 7)) {
+      fail(label + ' does not match the native source-bank setter dispatch.');
+    }
+    var expectedSourceId = write.operand < 0xC8 ? 'A' : 'B';
+    var expectedSemantic = expectedSourceId === 'A'
+      ? 'primary-class-id' : 'secondary-class-id';
+    var expectedOffset = expectedSourceId === 'A' ? 0x11 : 0x12;
+    if (write.sourceId !== expectedSourceId ||
+        write.sourceSemantic !== expectedSemantic ||
+        write.characterRecordFieldOffset !== expectedOffset ||
+        write.characterRecordStride !== 56) {
+      fail(label + ' character-record source identity is inconsistent.');
+    }
+    if (write.sourceIndex !== null) {
+      integer(write.sourceIndex, label + ' source index', 0);
+      if (write.sourceIndex >= 5) fail(label + ' source index exceeds five slots.');
+    }
+    if (write.value !== null) {
+      integer(write.value, label + ' source value', 0);
+      if (write.value > 0xFF) fail(label + ' source value exceeds one byte.');
+    }
+    var expectedOrigin = write.value === null
+      ? 'runtime-character-record-or-branch-dependent'
+      : 'event-program-constant';
+    if (write.sourceValueOrigin !== expectedOrigin) {
+      fail(label + ' value origin is inconsistent.');
+    }
+    var expectedStatus = write.sourceIndex === null
+      ? 'source-index-unresolved'
+      : (write.value === null ? 'source-value-unresolved' : 'exact');
+    if (write.resolutionStatus !== expectedStatus) {
+      fail(label + ' resolution status is inconsistent.');
+    }
+    nonEmptyString(write.evidenceStatus, label + ' evidence status');
+  }
+
+  function validateOversizedImagePresentation(scene, profile, launchIds) {
+    var presentation = profile.oversizedImagePresentation;
+    var classFour = profile.launchContext && profile.launchContext.classId === 4;
+    if (presentation === null) {
+      if (classFour) {
+        fail(scene.assetId + ' class-4 launch omits oversized-image ownership.');
+      }
+      return;
+    }
+    if (!classFour) {
+      fail(scene.assetId + ' attaches oversized-image ownership outside launch class 4.');
+    }
+    object(presentation, scene.assetId + ' oversized-image presentation');
+    if (presentation.active !== true ||
+        ['director-launch-prescan-opcode-0x80000007',
+          'event-property-0xE9-fallback',
+          'event-property-0xE9-unresolved'].indexOf(presentation.source) === -1) {
+      fail(scene.assetId + ' oversized-image source is unsupported.');
+    }
+    integer(presentation.contextCount,
+      scene.assetId + ' oversized-image context count', 0);
+    integer(presentation.exactContextCount,
+      scene.assetId + ' oversized-image exact context count', 0);
+    if (!Array.isArray(presentation.contexts) ||
+        presentation.contexts.length !== presentation.contextCount) {
+      fail(scene.assetId + ' oversized-image launch contexts are inconsistent.');
+    }
+    var exactContextCount = 0;
+    presentation.contexts.forEach(function(context, index) {
+      var label = scene.assetId + ' oversized-image context ' + index;
+      object(context, label);
+      nonEmptyString(context.launchId, label + ' launchId');
+      if (!launchIds[context.launchId]) {
+        fail(label + ' references an unknown parent event launch.');
+      }
+      integer(context.eventDirectoryRow, label + ' event directory row', 0);
+      integer(context.eventEntryCursor, label + ' event entry cursor', 0);
+      integer(context.eventInvocationCursor, label + ' event invocation cursor', 0);
+      if (context.rowSelector !== null) {
+        integer(context.rowSelector, label + ' row selector', 0);
+        if (context.rowSelector >= 69) fail(label + ' row selector exceeds row 68.');
+        exactContextCount += 1;
+      }
+    });
+    if (exactContextCount !== presentation.exactContextCount) {
+      fail(scene.assetId + ' oversized-image exact context count is stale.');
+    }
+    object(presentation.initialView,
+      scene.assetId + ' oversized-image initial view');
+    if (presentation.initialView.x !== 0 || presentation.initialView.y !== 0 ||
+        presentation.initialView.scale !== 1 || presentation.initialView.zoomState !== 4) {
+      fail(scene.assetId + ' oversized-image initial view is not the native initializer.');
+    }
+    nonEmptyString(presentation.evidenceStatus,
+      scene.assetId + ' oversized-image evidence status');
+    nonEmptyString(presentation.status,
+      scene.assetId + ' oversized-image status');
+    var structural = presentation.source ===
+      'director-launch-prescan-opcode-0x80000007';
+    if (structural) {
+      nonEmptyString(presentation.sourceNodeId,
+        scene.assetId + ' oversized-image source node');
+      integer(presentation.wordStart,
+        scene.assetId + ' oversized-image source word', 0);
+      integer(presentation.rawRowSelector,
+        scene.assetId + ' oversized-image raw row selector', 0);
+    } else if (presentation.sourceNodeId !== null ||
+        presentation.wordStart !== null || presentation.rawRowSelector !== null) {
+      fail(scene.assetId + ' event-owned oversized-image selector claims a Director word.');
+    }
+    if (presentation.rowSelector === null) {
+      if (presentation.mediaSelector !== null || presentation.childSelector !== null ||
+          presentation.resourceKey !== null || presentation.archiveIndex !== null ||
+          presentation.assetId !== null ||
+          presentation.evidenceStatus !== 'launch-inputs-unresolved') {
+        fail(scene.assetId + ' unresolved oversized-image launch claims native media.');
+      }
+      return;
+    }
+    integer(presentation.rowSelector,
+      scene.assetId + ' oversized-image row selector', 0);
+    integer(presentation.mediaSelector,
+      scene.assetId + ' oversized-image media selector');
+    integer(presentation.childSelector,
+      scene.assetId + ' oversized-image child selector');
+    integer(presentation.resourceKey,
+      scene.assetId + ' oversized-image resource key', 1);
+    integer(presentation.archiveIndex,
+      scene.assetId + ' oversized-image archive index', 120);
+    nonEmptyString(presentation.assetId,
+      scene.assetId + ' oversized-image assetId');
+    if (presentation.rowSelector >= 69 ||
+        presentation.childSelector !== presentation.mediaSelector - 4 ||
+        presentation.assetId !== 'archive:' + presentation.archiveIndex ||
+        presentation.evidenceStatus !== 'native-static-exact') {
+      fail(scene.assetId + ' oversized-image media projection is inconsistent.');
     }
   }
 
@@ -138,6 +424,333 @@ window.OB64 = window.OB64 || {};
       scene.assetId + ' launch Director mode source');
     nonEmptyString(profile.directorMode.status,
       scene.assetId + ' launch Director mode status');
+    object(profile.stageTransform, scene.assetId + ' launch Stage transform');
+    object(profile.stageTransform.initial,
+      scene.assetId + ' initial Stage transform');
+    ['translateX', 'translateY', 'scaleX', 'scaleY'].forEach(function(field) {
+      finiteNumber(profile.stageTransform.initial[field],
+        scene.assetId + ' initial Stage transform ' + field);
+    });
+    nonEmptyString(profile.stageTransform.evidenceStatus,
+      scene.assetId + ' launch Stage transform evidence');
+    nonEmptyString(profile.stageTransform.status,
+      scene.assetId + ' launch Stage transform status');
+    if (!Array.isArray(profile.stageTransform.ownerFunctionsZ64)) {
+      fail(scene.assetId + ' launch Stage transform owners must be an array.');
+    }
+    profile.stageTransform.ownerFunctionsZ64.forEach(function(owner, index) {
+      nonEmptyString(owner, scene.assetId + ' launch Stage transform owner ' + index);
+    });
+    if (profile.directorMode.value === 2 &&
+        (profile.stageTransform.evidenceStatus !==
+          'native-static-mode-two-stage-initializers' ||
+         profile.stageTransform.initial.translateX !== 0 ||
+         profile.stageTransform.initial.translateY !== 0 ||
+         profile.stageTransform.initial.scaleX !== 1 ||
+         profile.stageTransform.initial.scaleY !== 1 ||
+         profile.stageTransform.ownerFunctionsZ64.length !== 3)) {
+      fail(scene.assetId + ' mode-two launch Stage transform is inconsistent.');
+    }
+    if (!Array.isArray(profile.parentEventLaunches)) {
+      fail(scene.assetId + ' parent event launches must be an array.');
+    }
+    var launchIds = {};
+    profile.parentEventLaunches.forEach(function(launch, index) {
+      object(launch, scene.assetId + ' parent event launch ' + index);
+      unique(launch.launchId, launchIds, scene.assetId + ' parent event launchId');
+      integer(launch.eventDirectoryRow, launch.launchId + ' event directory row', 0);
+      nonEmptyString(launch.eventResourceKey, launch.launchId + ' event resource key');
+      integer(launch.decodedByteOffset, launch.launchId + ' decoded byte offset', 0);
+      integer(launch.eventEntryCursor, launch.launchId + ' event entry cursor', 0);
+      integer(launch.eventEntryOffset, launch.launchId + ' event entry offset', 0);
+      if (!Array.isArray(launch.eventEntryPaths) ||
+          launch.eventEntryPaths.length === 0) {
+        fail(launch.launchId + ' event entry paths must be a nonempty array.');
+      }
+      launch.eventEntryPaths.forEach(function(entryPath, pathIndex) {
+        var pathLabel = launch.launchId + ' event entry path ' + pathIndex;
+        object(entryPath, pathLabel);
+        if (entryPath.kind !== 'nested-scheduler-sequence' &&
+            entryPath.kind !== 'direct-outer-sequence') {
+          fail(pathLabel + ' has an unsupported kind.');
+        }
+        if (!Array.isArray(entryPath.outerEntryIndexes) ||
+            entryPath.outerEntryIndexes.length === 0) {
+          fail(pathLabel + ' outer entry indexes must be a nonempty array.');
+        }
+        entryPath.outerEntryIndexes.forEach(function(entryIndex) {
+          integer(entryIndex, pathLabel + ' outer entry index', 0);
+        });
+        if (entryPath.kind === 'nested-scheduler-sequence') {
+          integer(entryPath.sequenceTableCursor,
+            pathLabel + ' sequence table cursor', 0);
+          if (!Array.isArray(entryPath.sequenceEntryIndexes) ||
+              entryPath.sequenceEntryIndexes.length === 0) {
+            fail(pathLabel + ' sequence entry indexes must be a nonempty array.');
+          }
+        } else if (entryPath.sequenceTableCursor !== null ||
+            !Array.isArray(entryPath.sequenceEntryIndexes) ||
+            entryPath.sequenceEntryIndexes.length !== 0) {
+          fail(pathLabel + ' direct sequence must not identify a nested table entry.');
+        }
+        entryPath.sequenceEntryIndexes.forEach(function(entryIndex) {
+          integer(entryIndex, pathLabel + ' sequence entry index', 0);
+        });
+      });
+      if (!Array.isArray(launch.eventInvocationContexts) ||
+          launch.eventInvocationContexts.length === 0) {
+        fail(launch.launchId + ' event invocation contexts must be a nonempty array.');
+      }
+      launch.eventInvocationContexts.forEach(function(context, contextIndex) {
+        var contextLabel = launch.launchId + ' event invocation context ' + contextIndex;
+        object(context, contextLabel);
+        integer(context.eventInvocationCursor,
+          contextLabel + ' cursor', 0);
+        integer(context.eventInvocationOffset,
+          contextLabel + ' offset', 0);
+        if (context.eventInvocationCursor + context.eventInvocationOffset !==
+            launch.decodedByteOffset) {
+          fail(contextLabel + ' does not end at its Director launch.');
+        }
+        integer(context.precedingDirectorLaunchCount,
+          contextLabel + ' preceding Director launch count', 0);
+        if (context.precedingDirectorLaunchCount > 0) {
+          if (context.precedingDirectorLaunchOffset !== null) {
+            integer(context.precedingDirectorLaunchOffset,
+              contextLabel + ' preceding Director launch offset', 0);
+          }
+          if (context.precedingDirectorInvocationCursor !== null) {
+            integer(context.precedingDirectorInvocationCursor,
+              contextLabel + ' preceding Director invocation cursor', 0);
+          }
+          if (context.concurrentDirectorTickOffset !== null) {
+            integer(context.concurrentDirectorTickOffset,
+              contextLabel + ' concurrent Director tick offset', 1);
+          }
+        } else if (context.precedingDirectorLaunchOffset !== null ||
+            context.precedingDirectorInvocationCursor !== null ||
+            context.concurrentDirectorTickOffset !== null) {
+          fail(contextLabel + ' has timing fields without a preceding Director request.');
+        }
+        if (context.precedingDirectorSelector !== null) {
+          integer(context.precedingDirectorSelector,
+            contextLabel + ' preceding Director selector', 0);
+          if (context.precedingDirectorSelector >= 1693) {
+            fail(contextLabel + ' preceding Director selector exceeds the retail table.');
+          }
+          nonEmptyString(context.precedingDirectorResourceKey,
+            contextLabel + ' preceding Director resource key');
+          nonEmptyString(context.precedingDirectorLaunchId,
+            contextLabel + ' preceding Director launchId');
+          nonEmptyString(context.concurrentDirectorSceneId,
+            contextLabel + ' concurrent Director sceneId');
+          nonEmptyString(context.concurrentDirectorAssetId,
+            contextLabel + ' concurrent Director assetId');
+          if (context.precedingDirectorLaunchCount === 0) {
+            fail(contextLabel + ' has a predecessor selector without a prior launch.');
+          }
+          if (context.sceneStateRelation !==
+              'previous-event-request-concurrent-scene-state') {
+            fail(contextLabel + ' omits its concurrent scene-state relation.');
+          }
+        } else if (context.precedingDirectorResourceKey !== null ||
+            context.precedingDirectorLaunchId !== null ||
+            context.concurrentDirectorSceneId !== null ||
+            context.concurrentDirectorAssetId !== null) {
+          fail(contextLabel + ' has a partial concurrent Director owner.');
+        } else if (context.sceneStateRelation !==
+            'no-exact-previous-director-request') {
+          fail(contextLabel + ' has an unsupported unresolved scene-state relation.');
+        }
+        if (!Array.isArray(context.launchTranslationTable) ||
+            context.launchTranslationTable.length !== 17) {
+          fail(contextLabel + ' launch translation table must contain 17 entries.');
+        }
+        context.launchTranslationTable.forEach(function(value, tableIndex) {
+          if (value === null) return;
+          integer(value, contextLabel + ' translation ' + tableIndex, 0);
+          if (value > 0xFFFF) {
+            fail(contextLabel + ' translation ' + tableIndex + ' exceeds a halfword.');
+          }
+        });
+        if (!Array.isArray(context.eventPropertyValues)) {
+          fail(contextLabel + ' event property values must be an array.');
+        }
+        var propertyOperands = {};
+        context.eventPropertyValues.forEach(function(property, propertyIndex) {
+          var propertyLabel = contextLabel + ' event property ' + propertyIndex;
+          object(property, propertyLabel);
+          integer(property.propertyOperand, propertyLabel + ' operand', 0);
+          integer(property.value, propertyLabel + ' value', 0);
+          if (property.propertyOperand > 0xFF || property.value > 0xFFFF) {
+            fail(propertyLabel + ' exceeds its native field width.');
+          }
+          unique(String(property.propertyOperand), propertyOperands,
+            contextLabel + ' event property operand');
+        });
+        if (context.launchFlagBit08 !== false) {
+          fail(contextLabel + ' direct event launch flag bit 0x08 must be false.');
+        }
+        if (context.eventPropertyE6 !== null) {
+          integer(context.eventPropertyE6, contextLabel + ' event property 0xE6', 0);
+          if (context.eventPropertyE6 > 0xFFFF) {
+            fail(contextLabel + ' event property 0xE6 exceeds a halfword.');
+          }
+        }
+        [
+          ['eventPropertyE9', 0xE9],
+          ['eventPropertyFB', 0xFB],
+          ['eventPropertyFC', 0xFC],
+          ['eventPropertyFD', 0xFD]
+        ].forEach(function(field) {
+          var fieldValue = context[field[0]];
+          var property = context.eventPropertyValues.find(function(row) {
+            return row.propertyOperand === field[1];
+          });
+          if (fieldValue !== null) {
+            integer(fieldValue, contextLabel + ' event property 0x' +
+              field[1].toString(16).toUpperCase(), 0);
+            if (fieldValue > 0xFFFF || !property || property.value !== fieldValue) {
+              fail(contextLabel + ' event-property projection is inconsistent.');
+            }
+          } else if (property) {
+            fail(contextLabel + ' omits a statically exact event-property projection.');
+          }
+        });
+        if (context.scenarioKey !== context.eventPropertyE9 ||
+            context.battleTerrain !== context.eventPropertyFC ||
+            context.currentUnitSelector !== context.eventPropertyFD) {
+          fail(contextLabel + ' derived-environment inputs are inconsistent.');
+        }
+        if (context.launchPreservationSnapshot !== null &&
+            typeof context.launchPreservationSnapshot !== 'boolean') {
+          fail(contextLabel + ' launch preservation snapshot must be boolean or null.');
+        }
+        if (context.eventPropertyE6 === null !==
+            (context.launchPreservationSnapshot === null) ||
+            context.eventPropertyE6 !== null &&
+            context.launchPreservationSnapshot !== (context.eventPropertyE6 !== 0)) {
+          fail(contextLabel + ' launch preservation snapshot is inconsistent.');
+        }
+        if (context.secondRosterUnitLeaderOnly !== null &&
+            typeof context.secondRosterUnitLeaderOnly !== 'boolean') {
+          fail(contextLabel + ' second-roster-unit leader limit must be boolean or null.');
+        }
+        if (context.eventPropertyE6 === null !==
+            (context.secondRosterUnitLeaderOnly === null) ||
+            context.eventPropertyE6 !== null &&
+            context.secondRosterUnitLeaderOnly !==
+              ((context.eventPropertyE6 & 0x8000) !== 0)) {
+          fail(contextLabel + ' second-roster-unit leader limit is inconsistent.');
+        }
+        if (context.precedingExternalRequest !== null) {
+          validateExternalRequestProfile(context.precedingExternalRequest,
+            contextLabel + ' preceding external request');
+          if (context.eventInvocationCursor !==
+              context.precedingExternalRequest.decodedByteOffset + 2) {
+            fail(contextLabel + ' does not resume after its external request.');
+          }
+        }
+        nonEmptyString(context.evidenceStatus, contextLabel + ' evidence status');
+      });
+      integer(launch.directorSelector, launch.launchId + ' Director selector', 0);
+      nonEmptyString(launch.directorResourceKey,
+        launch.launchId + ' Director resource key');
+      nonEmptyString(launch.evidenceStatus, launch.launchId + ' evidence status');
+      if (scene.source && Array.isArray(scene.source.directorSelectorRows) &&
+          scene.source.directorSelectorRows.indexOf(launch.directorSelector) === -1) {
+        fail(launch.launchId + ' does not select this Director resource.');
+      }
+    });
+    object(profile.operandTranslation, scene.assetId + ' launch operand translation');
+    var translation = profile.operandTranslation;
+    if (typeof translation.required !== 'boolean') {
+      fail(scene.assetId + ' launch operand translation required flag must be boolean.');
+    }
+    integer(translation.placeholderCount,
+      scene.assetId + ' launch translation placeholder count');
+    if (!Array.isArray(translation.tableIndexes) ||
+        !Array.isArray(translation.occurrences) ||
+        translation.occurrences.length !== translation.placeholderCount) {
+      fail(scene.assetId + ' launch operand translation inventory is inconsistent.');
+    }
+    nonEmptyString(translation.evidenceStatus,
+      scene.assetId + ' launch translation evidence status');
+    nonEmptyString(translation.status, scene.assetId + ' launch translation status');
+    var translationIndexes = {};
+    translation.tableIndexes.forEach(function(tableIndex) {
+      integer(tableIndex, scene.assetId + ' launch translation table index', 0);
+      if (tableIndex > 255) {
+        fail(scene.assetId + ' launch translation table index exceeds 255.');
+      }
+      unique(String(tableIndex), translationIndexes,
+        scene.assetId + ' launch translation table index');
+    });
+    translation.occurrences.forEach(function(occurrence, index) {
+      object(occurrence, scene.assetId + ' launch translation occurrence ' + index);
+      nonEmptyString(occurrence.nodeId,
+        scene.assetId + ' launch translation occurrence nodeId');
+      integer(occurrence.wordStart,
+        scene.assetId + ' launch translation occurrence wordStart', 0);
+      integer(occurrence.wordOffset,
+        scene.assetId + ' launch translation occurrence wordOffset', 0);
+      integer(occurrence.sourceWord,
+        scene.assetId + ' launch translation occurrence sourceWord', 0);
+      integer(occurrence.tableIndex,
+        scene.assetId + ' launch translation occurrence tableIndex', 0);
+      if (occurrence.tableIndex > 255) {
+        fail(scene.assetId + ' launch translation occurrence tableIndex exceeds 255.');
+      }
+      nonEmptyString(occurrence.operandRole,
+        scene.assetId + ' launch translation occurrence operandRole');
+      if (!translationIndexes[String(occurrence.tableIndex)] ||
+          occurrence.sourceWord !== occurrence.wordStart + occurrence.wordOffset) {
+        fail(scene.assetId + ' launch translation occurrence is inconsistent.');
+      }
+    });
+    if (!Array.isArray(translation.launchContexts)) {
+      fail(scene.assetId + ' launch translation contexts must be an array.');
+    }
+    integer(translation.resolvedContextCount,
+      scene.assetId + ' resolved launch translation context count', 0);
+    integer(translation.unresolvedContextCount,
+      scene.assetId + ' unresolved launch translation context count', 0);
+    var resolvedTranslationContexts = 0;
+    translation.launchContexts.forEach(function(context, contextIndex) {
+      var contextLabel = scene.assetId + ' launch translation context ' + contextIndex;
+      object(context, contextLabel);
+      nonEmptyString(context.launchId, contextLabel + ' launchId');
+      if (!launchIds[context.launchId]) {
+        fail(contextLabel + ' references an unknown parent event launch.');
+      }
+      integer(context.eventInvocationCursor, contextLabel + ' invocation cursor', 0);
+      integer(context.precedingDirectorLaunchCount,
+        contextLabel + ' preceding Director launch count', 0);
+      if (!Array.isArray(context.tableValues) ||
+          context.tableValues.length !== translation.tableIndexes.length) {
+        fail(contextLabel + ' table values do not match the translation indexes.');
+      }
+      var resolved = true;
+      context.tableValues.forEach(function(value, valueIndex) {
+        if (value === null) {
+          resolved = false;
+          return;
+        }
+        integer(value, contextLabel + ' table value ' + valueIndex, 0);
+        if (value > 0xFFFF) fail(contextLabel + ' table value exceeds a halfword.');
+      });
+      if (resolved) resolvedTranslationContexts += 1;
+      nonEmptyString(context.evidenceStatus, contextLabel + ' evidence status');
+    });
+    if (resolvedTranslationContexts !== translation.resolvedContextCount ||
+        translation.launchContexts.length - resolvedTranslationContexts !==
+          translation.unresolvedContextCount) {
+      fail(scene.assetId + ' launch translation resolution totals are inconsistent.');
+    }
+    if (translation.required !== (translation.placeholderCount > 0) ||
+        translation.required !== (translation.tableIndexes.length > 0)) {
+      fail(scene.assetId + ' launch operand translation requirement is inconsistent.');
+    }
     object(profile.cameras, scene.assetId + ' launch cameras');
     validateLaunchCamera(profile.cameras.registered,
       scene.assetId + ' registered launch camera');
@@ -152,6 +765,99 @@ window.OB64 = window.OB64 || {};
         profile.background.requestCount !== scene.backgroundRequests.length) {
       fail(scene.assetId + ' launch background request count is inconsistent.');
     }
+    if (!Array.isArray(profile.background.inheritanceContexts)) {
+      fail(scene.assetId + ' launch background inheritance contexts must be an array.');
+    }
+    var inheritedPresentation = profile.background.inheritedPresentation;
+    if (inheritedPresentation !== null) {
+      object(inheritedPresentation, scene.assetId + ' inherited Stage presentation');
+      nonEmptyString(inheritedPresentation.presentationId,
+        scene.assetId + ' inherited Stage presentationId');
+      if (inheritedPresentation.sourceKind !== 'parent-event-predecessor' ||
+          inheritedPresentation.sentinel !== -2) {
+        fail(scene.assetId + ' inherited Stage must identify the native -2 predecessor route.');
+      }
+      integer(inheritedPresentation.contextCount,
+        scene.assetId + ' inherited Stage context count', 1);
+      integer(inheritedPresentation.lineageDepth,
+        scene.assetId + ' inherited Stage lineage depth', 1);
+      if (inheritedPresentation.contextCount !==
+          profile.background.inheritanceContexts.length) {
+        fail(scene.assetId + ' inherited Stage context count is inconsistent.');
+      }
+      if (!Array.isArray(inheritedPresentation.immediatePredecessorSceneIds) ||
+          !Array.isArray(inheritedPresentation.immediatePredecessorResourceKeys) ||
+          !Array.isArray(inheritedPresentation.rootRequestIds) ||
+          !Array.isArray(inheritedPresentation.members) ||
+          !Array.isArray(inheritedPresentation.assetIds) ||
+          !Array.isArray(inheritedPresentation.stageLayers) ||
+          !Array.isArray(inheritedPresentation.stageAssetIds) ||
+          inheritedPresentation.stageAssetIds.length === 0) {
+        fail(scene.assetId + ' inherited Stage ownership is incomplete.');
+      }
+      if (inheritedPresentation.members.length !==
+          inheritedPresentation.assetIds.length ||
+          inheritedPresentation.members.some(function(member, index) {
+            return !member || member.assetId !== inheritedPresentation.assetIds[index];
+          })) {
+        fail(scene.assetId + ' inherited Stage member order is inconsistent.');
+      }
+      inheritedPresentation.immediatePredecessorSceneIds.forEach(function(sceneId) {
+        nonEmptyString(sceneId, inheritedPresentation.presentationId + ' predecessor scene');
+      });
+      inheritedPresentation.immediatePredecessorResourceKeys.forEach(function(resourceKey) {
+        nonEmptyString(resourceKey,
+          inheritedPresentation.presentationId + ' predecessor resource');
+      });
+      inheritedPresentation.rootRequestIds.forEach(function(requestId) {
+        nonEmptyString(requestId, inheritedPresentation.presentationId + ' root request');
+      });
+      nonEmptyString(inheritedPresentation.evidenceStatus,
+        inheritedPresentation.presentationId + ' evidence status');
+      nonEmptyString(inheritedPresentation.status,
+        inheritedPresentation.presentationId + ' status');
+    }
+    profile.background.inheritanceContexts.forEach(function(context, contextIndex) {
+      var contextLabel = scene.assetId + ' Stage inheritance context ' + contextIndex;
+      object(context, contextLabel);
+      nonEmptyString(context.launchId, contextLabel + ' launchId');
+      if (!launchIds[context.launchId]) {
+        fail(contextLabel + ' references an unknown parent event launch.');
+      }
+      integer(context.eventDirectoryRow, contextLabel + ' event directory row', 0);
+      integer(context.eventInvocationCursor, contextLabel + ' invocation cursor', 0);
+      integer(context.precedingDirectorLaunchCount,
+        contextLabel + ' preceding Director launch count', 0);
+      if (context.precedingDirectorSelector !== null) {
+        integer(context.precedingDirectorSelector,
+          contextLabel + ' preceding Director selector', 0);
+        nonEmptyString(context.precedingDirectorResourceKey,
+          contextLabel + ' preceding Director resource key');
+        nonEmptyString(context.precedingSceneId,
+          contextLabel + ' preceding sceneId');
+      } else if (context.precedingDirectorResourceKey !== null ||
+          context.precedingSceneId !== null) {
+        fail(contextLabel + ' has partial predecessor ownership.');
+      }
+      if (context.presentationFingerprint !== null) {
+        nonEmptyString(context.presentationFingerprint,
+          contextLabel + ' presentation fingerprint');
+      }
+      if (['no-preceding-director', 'predecessor-stage-unresolved',
+        'context-stage-resolved-launch-selection-required',
+        'resolved-unanimous-stage'].indexOf(context.resolutionStatus) === -1) {
+        fail(contextLabel + ' has an unsupported resolution status.');
+      }
+      if ((context.presentationFingerprint === null) !==
+          (context.resolutionStatus === 'no-preceding-director' ||
+            context.resolutionStatus === 'predecessor-stage-unresolved')) {
+        fail(contextLabel + ' fingerprint and resolution status disagree.');
+      }
+      if (inheritedPresentation &&
+          context.resolutionStatus !== 'resolved-unanimous-stage') {
+        fail(contextLabel + ' disagrees with the inherited Stage presentation.');
+      }
+    });
     var requestWordStarts = {};
     profile.background.requests.forEach(function(request, index) {
       object(request, scene.assetId + ' launch background request ' + index);
@@ -165,7 +871,50 @@ window.OB64 = window.OB64 || {};
         nonEmptyString(request.selectorTableId, request.requestId + ' selector table');
       }
       if (request.selector !== null) integer(request.selector, request.requestId + ' selector');
+      if (request.foregroundSelectorTableId !== null) {
+        nonEmptyString(request.foregroundSelectorTableId,
+          request.requestId + ' foreground selector table');
+      }
+      if (request.foregroundSelector !== null) {
+        integer(request.foregroundSelector, request.requestId + ' foreground selector');
+        if (request.foregroundSelectorTableId === null) {
+          fail(request.requestId + ' foreground selector has no table.');
+        }
+      }
       nonEmptyString(request.selectorSource, request.requestId + ' selector source');
+      if (!Array.isArray(request.environmentSelectorCandidates)) {
+        fail(request.requestId + ' environment selector candidates must be an array.');
+      }
+      request.environmentSelectorCandidates.forEach(function(selector, candidateIndex) {
+        integer(selector, request.requestId + ' environment selector candidate ' +
+          candidateIndex, 0);
+        if (selector >= 80) {
+          fail(request.requestId + ' environment selector candidate is outside the 80 rows.');
+        }
+      });
+      nonEmptyString(request.foregroundSelectorSource,
+        request.requestId + ' foreground selector source');
+      if (!Array.isArray(request.foregroundSelectorCandidates)) {
+        fail(request.requestId + ' foreground selector candidates must be an array.');
+      }
+      request.foregroundSelectorCandidates.forEach(function(selector, candidateIndex) {
+        integer(selector, request.requestId + ' foreground selector candidate ' + candidateIndex,
+          0);
+        if (selector >= 80) {
+          fail(request.requestId + ' foreground selector candidate is outside the 80 rows.');
+        }
+      });
+      nonEmptyString(request.foregroundStatus, request.requestId + ' foreground status');
+      if (request.derivedEnvironment !== null) {
+        if (request.commandOperand !== -1 ||
+            request.selectorSource !== 'director-launch-prescan-derived-sentinel') {
+          fail(request.requestId + ' attaches a derived profile to a non-derived request.');
+        }
+        validateModeTwoDerivedEnvironmentProfile(
+          request.derivedEnvironment, request, launchIds);
+      } else if (request.selectorSource === 'director-launch-prescan-derived-sentinel') {
+        fail(request.requestId + ' omits its derived-environment profile.');
+      }
       nonEmptyString(request.evidenceStatus, request.requestId + ' evidence status');
       nonEmptyString(request.status, request.requestId + ' status');
       if (!Array.isArray(request.members) || !Array.isArray(request.assetIds) ||
@@ -190,6 +939,8 @@ window.OB64 = window.OB64 || {};
       }
     });
 
+    validateOversizedImagePresentation(scene, profile, launchIds);
+
     object(profile.roster, scene.assetId + ' launch roster');
     integer(profile.roster.templateCount, scene.assetId + ' launch roster template count');
     if (!Array.isArray(profile.roster.records) ||
@@ -203,6 +954,50 @@ window.OB64 = window.OB64 || {};
     nonEmptyString(profile.roster.evidenceStatus,
       scene.assetId + ' launch roster evidence status');
     nonEmptyString(profile.roster.status, scene.assetId + ' launch roster status');
+    nonEmptyString(profile.roster.nativeActorInputSource,
+      scene.assetId + ' native Actor-input source');
+    integer(profile.roster.nativeActorInputRowCapacity,
+      scene.assetId + ' native Actor-input row capacity', 1);
+    integer(profile.roster.nativeUnitMemberCapacity,
+      scene.assetId + ' native unit member capacity', 1);
+    integer(profile.roster.nativeMaximumCurrentUnitRows,
+      scene.assetId + ' native maximum current-unit rows', 1);
+    integer(profile.roster.secondUnitLeaderOnlyPropertyMask,
+      scene.assetId + ' second-unit leader-only property mask', 1);
+    if (profile.roster.modeTwoForceInitialization !== true ||
+        profile.roster.fixedOverlayForceInitialization !== false ||
+        profile.roster.externalRosterDependency !== true) {
+      fail(scene.assetId + ' native Actor-input ownership is inconsistent.');
+    }
+
+    var preservation = profile.launchPreservationSnapshot;
+    object(preservation, scene.assetId + ' launch preservation snapshot');
+    nonEmptyString(preservation.condition,
+      scene.assetId + ' launch preservation snapshot condition');
+    if (preservation.directEventLaunchFlagBit08 !== null &&
+        preservation.directEventLaunchFlagBit08 !== false) {
+      fail(scene.assetId + ' direct event launch flag bit 0x08 must be false or null.');
+    }
+    [
+      'contextCount', 'exactContextCount', 'requiredContextCount',
+      'notRequiredContextCount', 'unresolvedContextCount'
+    ].forEach(function(field) {
+      integer(preservation[field], scene.assetId + ' launch preservation ' + field, 0);
+    });
+    if (preservation.exactContextCount !== preservation.requiredContextCount +
+        preservation.notRequiredContextCount ||
+        preservation.contextCount !== preservation.exactContextCount +
+        preservation.unresolvedContextCount ||
+        preservation.contextCount !== profile.parentEventLaunches.reduce(
+          function(total, launch) {
+            return total + launch.eventInvocationContexts.length;
+          }, 0)) {
+      fail(scene.assetId + ' launch preservation snapshot counts are inconsistent.');
+    }
+    nonEmptyString(preservation.evidenceStatus,
+      scene.assetId + ' launch preservation snapshot evidence');
+    nonEmptyString(preservation.status,
+      scene.assetId + ' launch preservation snapshot status');
     profile.roster.records.forEach(function(record, index) {
       object(record, scene.assetId + ' launch roster record ' + index);
       nonEmptyString(record.actorId, scene.assetId + ' launch roster actorId');
@@ -223,6 +1018,19 @@ window.OB64 = window.OB64 || {};
 
   function validateNodes(scene) {
     var source = scene.source;
+    if (source.dynamicGrammar === true) {
+      if (!Array.isArray(source.nodes) || source.nodes.length !== 0 ||
+          !Array.isArray(source.registeredWaits) || source.registeredWaits.length !== 0 ||
+          source.corpusNodeCount !== 0 || source.corpusRegisteredWaitCount !== 0) {
+        fail(scene.assetId + ' runtime-tiled source must not embed Director boundaries.');
+      }
+      integer(source.runtimeNodeCount, scene.assetId + ' runtimeNodeCount', 1);
+      integer(source.runtimeQueryCount, scene.assetId + ' runtimeQueryCount');
+      if (source.decodedLength !== source.decodedWordCount * 4) {
+        fail(scene.assetId + ' runtime-tiled decoded size is inconsistent.');
+      }
+      return;
+    }
     if (!Array.isArray(source.nodes) || !source.nodes.length) {
       fail(scene.assetId + ' has no source-boundary catalog.');
     }
@@ -436,8 +1244,17 @@ window.OB64 = window.OB64 || {};
       object(request, scene.assetId + ' background request');
       unique(request.requestId, requestIds, scene.assetId + ' background requestId');
       integer(request.wordStart, request.requestId + ' wordStart');
+      object(request.launchPreloadRoute, request.requestId + ' launchPreloadRoute');
       object(request.mode2Route, request.requestId + ' mode2Route');
       object(request.nonMode2Route, request.requestId + ' nonMode2Route');
+      if (typeof request.launchPreloadRoute.active !== 'boolean') {
+        fail(request.requestId + ' launch preload active flag must be boolean.');
+      }
+      nonEmptyString(request.launchPreloadRoute.selectorTableId,
+        request.requestId + ' launch preload selectorTableId');
+      if (!Array.isArray(request.launchPreloadRoute.archiveAssetIds)) {
+        fail(request.requestId + ' launch preload archiveAssetIds must be an array.');
+      }
       nonEmptyString(request.mode2Route.selectorTableId,
         request.requestId + ' mode2 selectorTableId');
       nonEmptyString(request.nonMode2Route.selectorTableId,
@@ -746,8 +1563,9 @@ window.OB64 = window.OB64 || {};
     integer(program.durationFrames, program.programId + ' durationFrames');
     integer(program.alternativeProgramCount, program.programId + ' alternativeProgramCount', 1);
     integer(program.selectedChildOrdinal, program.programId + ' selectedChildOrdinal');
-    if (!Array.isArray(program.frames) || !Array.isArray(program.controlOpcodes)) {
-      fail(program.programId + ' frame and control metadata must be arrays.');
+    if (!Array.isArray(program.frames) || !Array.isArray(program.controlOpcodes) ||
+        !Array.isArray(program.records)) {
+      fail(program.programId + ' frame, control, and record metadata must be arrays.');
     }
     if (program.emptyProgram !== (!program.frames.length && !program.controlOpcodes.length)) {
       fail(program.programId + ' empty-program disposition disagrees with its records.');
@@ -756,6 +1574,18 @@ window.OB64 = window.OB64 || {};
       object(frame, program.programId + ' frame ' + index);
       integer(frame.frameToken, program.programId + ' frameToken');
       integer(frame.durationFrames, program.programId + ' frame duration');
+    });
+    program.records.forEach(function(record, index) {
+      object(record, program.programId + ' record ' + index);
+      integer(record.ordinal, program.programId + ' record ordinal');
+      integer(record.opcode, program.programId + ' record opcode', 0, 0x15);
+      if (record.ordinal !== index || !Array.isArray(record.operands)) {
+        fail(program.programId + ' record ' + index + ' has invalid physical ownership.');
+      }
+      record.operands.forEach(function(operand, operandIndex) {
+        integer(operand, program.programId + ' record ' + index +
+          ' operand ' + operandIndex, 0, 0xFF);
+      });
     });
   }
 
@@ -863,6 +1693,25 @@ window.OB64 = window.OB64 || {};
     integer(event.sceneCount, event.eventId + ' sceneCount');
   }
 
+  function validateDirectorGrammar(definition, seen) {
+    object(definition, 'Director grammar definition');
+    integer(definition.opcodeU32, definition.name + ' opcodeU32');
+    unique(String(definition.opcodeU32), seen, 'Director grammar opcode');
+    nonEmptyString(definition.name, 'Director grammar semantic name');
+    nonEmptyString(definition.semanticSummary, definition.name + ' semantic summary');
+    nonEmptyString(definition.confidence, definition.name + ' confidence');
+    integer(definition.sourceWordSpan, definition.name + ' sourceWordSpan', 1);
+    nonEmptyString(definition.widthKind, definition.name + ' widthKind');
+    nonEmptyString(definition.nodeType, definition.name + ' nodeType');
+    if (!Array.isArray(definition.operandRoles) ||
+        definition.operandRoles.length !== definition.sourceWordSpan - 1) {
+      fail(definition.name + ' operand roles do not match its source width.');
+    }
+    definition.operandRoles.forEach(function(role, index) {
+      nonEmptyString(role, definition.name + ' operand role ' + index);
+    });
+  }
+
   function validateBackgroundSelectorTable(table, seen) {
     object(table, 'background selector table');
     unique(table.tableId, seen, 'background selector tableId');
@@ -896,6 +1745,319 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  function validateModeTwoDerivedEnvironmentProfile(profile, request, launchIds) {
+    object(profile, request.requestId + ' derived-environment profile');
+    if (profile.mapperId !== 'unsigned-existing-context-loader') {
+      fail(request.requestId + ' uses an unsupported derived-environment mapper.');
+    }
+    nonEmptyString(profile.mapperFunctionZ64,
+      request.requestId + ' derived-environment mapper address');
+    nonEmptyString(profile.selectorConversion,
+      request.requestId + ' derived-environment selector conversion');
+    integer(profile.contextCount, request.requestId + ' derived context count', 0);
+    integer(profile.exactContextCount,
+      request.requestId + ' exact derived context count', 0);
+    integer(profile.unresolvedContextCount,
+      request.requestId + ' unresolved derived context count', 0);
+    if (!Array.isArray(profile.contexts) ||
+        profile.contexts.length !== profile.contextCount ||
+        profile.exactContextCount + profile.unresolvedContextCount !==
+          profile.contextCount) {
+      fail(request.requestId + ' derived-environment context totals are inconsistent.');
+    }
+    if (!Array.isArray(profile.environmentSelectorCandidates) ||
+        !Array.isArray(profile.outOfRangeEnvironmentSelectorCandidates) ||
+        !Array.isArray(profile.requiredInputs) || profile.requiredInputs.length !== 4) {
+      fail(request.requestId + ' derived-environment inputs or candidates are incomplete.');
+    }
+    var candidates = {};
+    profile.environmentSelectorCandidates.forEach(function(selector) {
+      integer(selector, request.requestId + ' derived environment candidate', 0);
+      if (selector >= 80) {
+        fail(request.requestId + ' derived environment candidate exceeds the native table.');
+      }
+      unique(String(selector), candidates,
+        request.requestId + ' derived environment candidate');
+    });
+    profile.outOfRangeEnvironmentSelectorCandidates.forEach(function(selector) {
+      integer(selector, request.requestId + ' out-of-range derived candidate', 0);
+      if (selector < 80) {
+        fail(request.requestId + ' mislabeled an in-range derived candidate.');
+      }
+    });
+    profile.requiredInputs.forEach(function(input, index) {
+      nonEmptyString(input, request.requestId + ' derived required input ' + index);
+    });
+    var exactContexts = 0;
+    var exactSelectors = {};
+    profile.contexts.forEach(function(context, index) {
+      var label = request.requestId + ' derived context ' + index;
+      object(context, label);
+      nonEmptyString(context.launchId, label + ' launchId');
+      if (!launchIds[context.launchId]) {
+        fail(label + ' references an unknown parent event launch.');
+      }
+      integer(context.eventDirectoryRow, label + ' event directory row', 0);
+      integer(context.eventEntryCursor, label + ' event entry cursor', 0);
+      integer(context.eventInvocationCursor, label + ' event invocation cursor', 0);
+      if (context.mapperId !== profile.mapperId) {
+        fail(label + ' mapper does not match its aggregate profile.');
+      }
+      object(context.inputs, label + ' inputs');
+      ['scenarioKey', 'currentUnitSelector', 'battleTerrain', 'randomChoice',
+        'unitRecordFlags', 'auxiliaryHighTerrainState'].forEach(function(field) {
+        var value = context.inputs[field];
+        if (value !== null) integer(value, label + ' input ' + field, 0);
+      });
+      if (!Array.isArray(context.environmentSelectorCandidates) ||
+          !Array.isArray(context.outOfRangeEnvironmentSelectorCandidates)) {
+        fail(label + ' candidate lists are missing.');
+      }
+      context.environmentSelectorCandidates.forEach(function(selector) {
+        integer(selector, label + ' environment candidate', 0);
+        if (selector >= 80) fail(label + ' environment candidate exceeds row 79.');
+      });
+      context.outOfRangeEnvironmentSelectorCandidates.forEach(function(selector) {
+        integer(selector, label + ' out-of-range environment candidate', 80);
+      });
+      if (context.resolutionStatus === 'exact-native-mapper-result') {
+        exactContexts += 1;
+        integer(context.nativeEnvironmentNumber,
+          label + ' native environment number', 1);
+        integer(context.environmentSelector, label + ' environment selector', 0);
+        if (context.environmentSelector !== context.nativeEnvironmentNumber - 1) {
+          fail(label + ' does not apply the native one-based conversion.');
+        }
+        nonEmptyString(context.resolutionSource, label + ' resolution source');
+        exactSelectors[String(context.environmentSelector)] = true;
+      } else if (context.resolutionStatus === 'launch-inputs-unresolved') {
+        if (context.nativeEnvironmentNumber !== null ||
+            context.environmentSelector !== null || context.resolutionSource !== null) {
+          fail(label + ' claims values despite unresolved launch inputs.');
+        }
+      } else {
+        fail(label + ' has an unsupported resolution status.');
+      }
+      nonEmptyString(context.evidenceStatus, label + ' evidence status');
+    });
+    if (exactContexts !== profile.exactContextCount) {
+      fail(request.requestId + ' exact derived context count is stale.');
+    }
+    if (profile.environmentSelector !== null) {
+      integer(profile.environmentSelector,
+        request.requestId + ' aggregate derived environment selector', 0);
+      if (profile.exactContextCount !== profile.contextCount ||
+          Object.keys(exactSelectors).length !== 1 ||
+          !exactSelectors[String(profile.environmentSelector)]) {
+        fail(request.requestId + ' aggregate derived selector is not unanimous.');
+      }
+    }
+    if (request.environmentSelector !== profile.environmentSelector) {
+      fail(request.requestId + ' does not apply its derived environment result.');
+    }
+    nonEmptyString(profile.evidenceStatus,
+      request.requestId + ' derived-environment evidence status');
+    nonEmptyString(profile.status, request.requestId + ' derived-environment status');
+  }
+
+  function validateModeTwoDerivedEnvironmentRules(rules) {
+    object(rules, 'Mode-two derived-environment rules');
+    nonEmptyString(rules.evidenceStatus,
+      'Mode-two derived-environment evidence status');
+    nonEmptyString(rules.selectorConversion,
+      'Mode-two derived-environment selector conversion');
+    object(rules.inputProperties, 'Mode-two derived-environment input properties');
+    if (rules.inputProperties.scenarioKey !== 0xE9 ||
+        rules.inputProperties.currentUnitSelector !== 0xFD ||
+        rules.inputProperties.battleTerrain !== 0xFC) {
+      fail('Mode-two derived-environment property ownership is stale.');
+    }
+    nonEmptyString(rules.randomChoiceSourceRam,
+      'Mode-two derived-environment random source');
+    if (!Array.isArray(rules.scenarioOverrides) ||
+        rules.scenarioOverrides.length !== 11 ||
+        !Array.isArray(rules.mappers) || rules.mappers.length !== 2) {
+      fail('Mode-two derived-environment rule inventory is incomplete.');
+    }
+    rules.scenarioOverrides.forEach(function(rule, index) {
+      var label = 'Mode-two derived-environment scenario override ' + index;
+      object(rule, label);
+      integer(rule.scenarioKey, label + ' scenario key', 0);
+      integer(rule.currentUnitSelector, label + ' current unit selector', 0);
+      integer(rule.nativeEnvironmentNumber, label + ' native environment number', 1);
+      integer(rule.environmentSelector, label + ' environment selector', 0);
+      if (rule.environmentSelector !== rule.nativeEnvironmentNumber - 1) {
+        fail(label + ' does not apply the native one-based conversion.');
+      }
+    });
+    var mapperIds = {};
+    rules.mappers.forEach(function(mapper, index) {
+      var label = 'Mode-two derived-environment mapper ' + index;
+      object(mapper, label);
+      nonEmptyString(mapper.mapperId, label + ' mapperId');
+      unique(mapper.mapperId, mapperIds, 'Mode-two derived-environment mapperId');
+      nonEmptyString(mapper.functionZ64, label + ' function address');
+      integer(mapper.terrainTableZ64, label + ' terrain table address', 0);
+      nonEmptyString(mapper.terrainTableSha256, label + ' terrain table hash');
+      integer(mapper.scenarioTableZ64, label + ' scenario table address', 0);
+      nonEmptyString(mapper.scenarioTableSha256, label + ' scenario table hash');
+      if (!Array.isArray(mapper.terrainRows) || mapper.terrainRows.length !== 26 ||
+          mapper.terrainRows.some(function(row) {
+            return !Array.isArray(row) || row.length !== 4 ||
+              row.some(function(value) {
+                return !Number.isInteger(value) || value < 0 || value > 0xFF;
+              });
+          }) || !Array.isArray(mapper.scenarioValues) ||
+          mapper.scenarioValues.length !== 62 ||
+          mapper.scenarioValues.some(function(value) {
+            return !Number.isInteger(value) || value < 0 || value > 0xFF;
+          }) || typeof mapper.signedScenarioBytes !== 'boolean') {
+        fail(label + ' lookup tables are malformed.');
+      }
+    });
+    if (!mapperIds['signed-direct-loader'] ||
+        !mapperIds['unsigned-existing-context-loader'] ||
+        JSON.stringify(rules.mappers[0].terrainRows) !==
+          JSON.stringify(rules.mappers[1].terrainRows) ||
+        JSON.stringify(rules.mappers[0].scenarioValues) !==
+          JSON.stringify(rules.mappers[1].scenarioValues)) {
+      fail('Mode-two derived-environment mapper pairing is stale.');
+    }
+    nonEmptyString(rules.status, 'Mode-two derived-environment status');
+  }
+
+  function validateOversizedImagePresentationRules(rules) {
+    object(rules, 'Oversized-image presentation rules');
+    if (rules.classTableZ64 !== 0x000654A0 ||
+        rules.classTableRowCount !== 69 || rules.classTableRowBytes !== 9 ||
+        rules.classTableSelectorOffset !== 3 ||
+        rules.rootResourceKey !== 0x018BD022 ||
+        rules.rootPrefixZ64 !== 0x01E512A2 ||
+        rules.rootPayloadZ64 !== 0x01E512A6) {
+      fail('Oversized-image native table ownership is stale.');
+    }
+    nonEmptyString(rules.classTableSha256,
+      'Oversized-image class table hash');
+    nonEmptyString(rules.rootPayloadSha256,
+      'Oversized-image resource-root hash');
+    if (!Array.isArray(rules.children) || rules.children.length !== 41 ||
+        !Array.isArray(rules.rows) || rules.rows.length !== 69) {
+      fail('Oversized-image native selector inventory is incomplete.');
+    }
+    var nullChildren = [];
+    rules.children.forEach(function(child, index) {
+      var label = 'Oversized-image root child ' + index;
+      object(child, label);
+      integer(child.childSelector, label + ' selector', 0);
+      if (child.childSelector !== index) {
+        fail(label + ' does not preserve its native ordinal.');
+      }
+      if (child.assetId === null) {
+        nullChildren.push(index);
+        if (child.archiveIndex !== null || child.filename !== null ||
+            child.resourceKey !== null || child.resourcePrefixZ64 !== null ||
+            child.disposition !== 'native-null-child') {
+          fail(label + ' has an inconsistent null-child record.');
+        }
+        return;
+      }
+      integer(child.archiveIndex, label + ' archive index', 120);
+      nonEmptyString(child.assetId, label + ' assetId');
+      nonEmptyString(child.filename, label + ' filename');
+      integer(child.resourceKey, label + ' resource key', 1);
+      integer(child.resourcePrefixZ64, label + ' resource prefix', 1);
+      if (child.archiveIndex !== 120 + index -
+          nullChildren.filter(function(nullIndex) { return nullIndex < index; }).length ||
+          child.assetId !== 'archive:' + child.archiveIndex ||
+          child.disposition !== 'exact-native-resource-child') {
+        fail(label + ' does not map to the contiguous oversized-image archives.');
+      }
+    });
+    if (JSON.stringify(nullChildren) !== JSON.stringify([0, 34, 37])) {
+      fail('Oversized-image null-child ownership is stale.');
+    }
+    rules.rows.forEach(function(row, index) {
+      var label = 'Oversized-image class row ' + index;
+      object(row, label);
+      integer(row.rowSelector, label + ' selector', 0);
+      if (!Number.isInteger(row.mediaSelector) || !Number.isInteger(row.childSelector)) {
+        fail(label + ' selectors must be signed integers.');
+      }
+      nonEmptyString(row.disposition, label + ' disposition');
+      if (row.rowSelector !== index || row.childSelector !== row.mediaSelector - 4) {
+        fail(label + ' does not apply the native minus-four child conversion.');
+      }
+      var child = row.childSelector >= 0 && row.childSelector < rules.children.length
+        ? rules.children[row.childSelector] : null;
+      if (!child) {
+        if (row.assetId !== null || row.archiveIndex !== null ||
+            row.resourceKey !== null || row.disposition !== 'child-selector-outside-root') {
+          fail(label + ' claims an out-of-range resource child.');
+        }
+        return;
+      }
+      if (row.assetId !== child.assetId || row.archiveIndex !== child.archiveIndex ||
+          row.resourceKey !== child.resourceKey || row.disposition !== child.disposition) {
+        fail(label + ' does not match its native resource child.');
+      }
+    });
+  }
+
+  function validateSceneResourcePathPoint(point, label) {
+    object(point, label);
+    if (!Number.isInteger(point.linkedSpriteSlot) ||
+        !Number.isInteger(point.x) || !Number.isInteger(point.y)) {
+      fail(label + ' must contain signed integer link and coordinates.');
+    }
+  }
+
+  function validateSceneResourcePath(path, index, seenIds, seenSlots, groupEntries) {
+    var label = 'Scene resource path ' + index;
+    object(path, label);
+    unique(path.pathId, seenIds, label + ' pathId');
+    integer(path.groupIndex, label + ' group index', 0);
+    integer(path.entryIndex, label + ' entry index', 0);
+    integer(path.groupResourceKey, label + ' group resource key', 1);
+    nonEmptyString(path.status, label + ' status');
+    integer(path.pointCount, label + ' point count', 0);
+    var slot = path.groupIndex + ':' + path.entryIndex;
+    unique(slot, seenSlots, label + ' group entry');
+    if (path.pathId !== 'scene-resource-path:' + slot) {
+      fail(label + ' pathId does not match its native group and entry.');
+    }
+    if (!groupEntries[path.groupIndex]) groupEntries[path.groupIndex] = [];
+    groupEntries[path.groupIndex].push(path.entryIndex);
+    if (path.resourceKey === null) {
+      if (path.status !== 'empty-native-entry' || path.pointCount !== 0 ||
+          path.nativeStoredHeading !== null || path.rotationDegrees !== null) {
+        fail(label + ' empty entry claims decoded path data.');
+      }
+      return;
+    }
+    integer(path.resourceKey, label + ' resource key', 1);
+    if (path.status !== 'native-static-path-heading' || path.pointCount < 2) {
+      fail(label + ' populated entry lacks its native path heading.');
+    }
+    ['firstPoint', 'secondPoint', 'finalPoint'].forEach(function(field) {
+      validateSceneResourcePathPoint(path[field], label + ' ' + field);
+    });
+    finiteNumber(path.nativeMeasuredLength, label + ' measured length', 0);
+    integer(path.nativeDenseSampleCount, label + ' dense sample count', 3);
+    finiteNumber(path.nativeHeadingDeltaX, label + ' heading delta X');
+    finiteNumber(path.nativeHeadingDeltaY, label + ' heading delta Y');
+    if (!Number.isInteger(path.nativeStoredHeading) ||
+        path.nativeStoredHeading < -180 || path.nativeStoredHeading > 180 ||
+        !Number.isInteger(path.rotationDegrees) || path.rotationDegrees < 0 ||
+        path.rotationDegrees > 359 || path.rotationDegrees !==
+          (path.nativeStoredHeading === 180 ? 0 : path.nativeStoredHeading + 180)) {
+      fail(label + ' native heading conversion is invalid.');
+    }
+    ['z64PrefixStart', 'z64PayloadStart', 'storedLength', 'decodedLength'].forEach(
+      function(field) { integer(path[field], label + ' ' + field, 1); });
+    nonEmptyString(path.storedPayloadSha256, label + ' stored payload hash');
+    nonEmptyString(path.decodedSha256, label + ' decoded hash');
+  }
+
   function validateData(data, options) {
     options = options || {};
     object(data, 'Cutscene catalog');
@@ -918,10 +2080,20 @@ window.OB64 = window.OB64 || {};
     if (!Array.isArray(data.dialogueArchives) ||
         !Array.isArray(data.serifuPresentationSelectors) ||
         !Array.isArray(data.audioBlocks) ||
-        !Array.isArray(data.registeredAudioRequests) || !Array.isArray(data.directorEvents) ||
-        !Array.isArray(data.backgroundSelectorTables)) {
+        !Array.isArray(data.registeredAudioRequests) || !Array.isArray(data.directorGrammar) ||
+        !Array.isArray(data.directorContinuationStreams) ||
+        !Array.isArray(data.directorEvents) ||
+        !Array.isArray(data.backgroundSelectorTables) ||
+        !Array.isArray(data.parentEventExternalRequests) ||
+        !Array.isArray(data.parentEventTranslationWrites) ||
+        !Array.isArray(data.parentEventSubstitutionSources) ||
+        !Array.isArray(data.parentEventSubstitutionSourceWrites) ||
+        !Array.isArray(data.modeTwoStagePlacementProfiles) ||
+        !Array.isArray(data.sceneResourcePaths)) {
       fail('Cutscene catalog dialogue, audio, and Director event assets must be arrays.');
     }
+    validateModeTwoDerivedEnvironmentRules(data.modeTwoDerivedEnvironmentRules);
+    validateOversizedImagePresentationRules(data.oversizedImagePresentationRules);
     var seen = { sceneIds: {}, assetIds: {}, storageIds: {}, directorKeys: {} };
     data.scenes.forEach(function(scene) { validateScene(scene, seen); });
     data.presentationScenes.forEach(function(scene) { validatePresentationScene(scene, seen); });
@@ -937,6 +2109,11 @@ window.OB64 = window.OB64 || {};
     });
     var imageIds = {};
     data.imageAssets.forEach(function(asset) { validateImageAsset(asset, imageIds); });
+    data.oversizedImagePresentationRules.children.forEach(function(child) {
+      if (child.assetId !== null && !imageIds[child.assetId]) {
+        fail('Oversized-image root references unknown image ' + child.assetId + '.');
+      }
+    });
     var backgroundTableIds = {};
     var backgroundTablesById = {};
     data.backgroundSelectorTables.forEach(function(table) {
@@ -948,6 +2125,37 @@ window.OB64 = window.OB64 || {};
         });
       });
     });
+    var modeTwoStagePlacementSelectors = {};
+    data.modeTwoStagePlacementProfiles.forEach(function(profile, index) {
+      validateNativeSceneProps(profile, 'Mode-two Stage placement profile ' + index);
+      integer(profile.foregroundSelector,
+        'Mode-two Stage placement profile foreground selector', 0);
+      if (profile.foregroundSelector !== index ||
+          modeTwoStagePlacementSelectors[profile.foregroundSelector]) {
+        fail('Mode-two Stage placement selectors must be unique and contiguous.');
+      }
+      modeTwoStagePlacementSelectors[profile.foregroundSelector] = true;
+    });
+    var sceneResourcePathIds = {};
+    var sceneResourcePathSlots = {};
+    var sceneResourcePathGroupEntries = {};
+    data.sceneResourcePaths.forEach(function(path, index) {
+      validateSceneResourcePath(path, index, sceneResourcePathIds,
+        sceneResourcePathSlots, sceneResourcePathGroupEntries);
+    });
+    var sceneResourcePathGroups = Object.keys(sceneResourcePathGroupEntries)
+      .map(Number).sort(function(left, right) { return left - right; });
+    if (sceneResourcePathGroups.length !== 59 ||
+        sceneResourcePathGroups.some(function(groupIndex, index) {
+          if (groupIndex !== index) return true;
+          var entries = sceneResourcePathGroupEntries[groupIndex]
+            .slice().sort(function(left, right) { return left - right; });
+          return entries.some(function(entryIndex, ordinal) {
+            return entryIndex !== ordinal;
+          });
+        })) {
+      fail('Scene resource-path groups must preserve all 59 native rows.');
+    }
     data.scenes.concat(data.presentationScenes).forEach(function(scene) {
       scene.backgroundAssetIds.concat(scene.backgroundCandidateAssetIds).forEach(function(assetId) {
         if (!imageIds[assetId]) fail(scene.assetId + ' references unknown background ' + assetId + '.');
@@ -960,14 +2168,29 @@ window.OB64 = window.OB64 || {};
         }
       });
       if (!scene.launchProfile) return;
+      var oversizedPresentation = scene.launchProfile.oversizedImagePresentation;
+      if (oversizedPresentation && oversizedPresentation.assetId !== null) {
+        if (!imageIds[oversizedPresentation.assetId]) {
+          fail(scene.assetId + ' references unknown oversized image ' +
+            oversizedPresentation.assetId + '.');
+        }
+        var oversizedRow = data.oversizedImagePresentationRules.rows[
+          oversizedPresentation.rowSelector];
+        if (!oversizedRow || oversizedRow.assetId !== oversizedPresentation.assetId ||
+            oversizedRow.archiveIndex !== oversizedPresentation.archiveIndex ||
+            oversizedRow.resourceKey !== oversizedPresentation.resourceKey) {
+          fail(scene.assetId + ' oversized image does not match its native class row.');
+        }
+      }
       scene.launchProfile.background.requests.forEach(function(request) {
         request.stageAssetIds.forEach(function(assetId) {
           if (!imageIds[assetId]) {
             fail(request.requestId + ' references unknown profiled Stage asset ' + assetId + '.');
           }
         });
-        if (request.selectorTableId === null) {
-          if (request.selector !== null || request.assetIds.length) {
+        if (request.selectorTableId === null || request.selector === null) {
+          if (request.selector !== null || request.assetIds.length ||
+              request.stageAssetIds.length) {
             fail(request.requestId + ' unresolved route claims a selector or table asset.');
           }
           return;
@@ -977,13 +2200,58 @@ window.OB64 = window.OB64 || {};
         if (!entry) {
           fail(request.requestId + ' references an unknown background selector route.');
         }
-        if (entry.archiveAssetIds.length !== request.assetIds.length ||
-            entry.archiveAssetIds.some(function(assetId, index) {
+        var expectedAssetIds = entry.archiveAssetIds.slice();
+        if (request.foregroundSelector !== null) {
+          var foregroundTable = backgroundTablesById[request.foregroundSelectorTableId];
+          var foregroundEntry = foregroundTable &&
+            foregroundTable.entries[request.foregroundSelector];
+          if (!foregroundEntry) {
+            fail(request.requestId + ' references an unknown foreground selector route.');
+          }
+          expectedAssetIds = expectedAssetIds.concat(foregroundEntry.archiveAssetIds);
+        }
+        if (expectedAssetIds.length !== request.assetIds.length ||
+            expectedAssetIds.some(function(assetId, index) {
               return assetId !== request.assetIds[index];
             })) {
-          fail(request.requestId + ' profiled assets do not match the selector table.');
+          fail(request.requestId +
+            ' profiled assets do not match the independent selector tables.');
         }
       });
+      var inherited = scene.launchProfile.background.inheritedPresentation;
+      if (inherited) {
+        inherited.stageAssetIds.forEach(function(assetId) {
+          if (!imageIds[assetId]) {
+            fail(inherited.presentationId +
+              ' references unknown inherited Stage asset ' + assetId + '.');
+          }
+        });
+        var inheritedTable = backgroundTablesById[inherited.selectorTableId];
+        var inheritedEntry = inheritedTable && inheritedTable.entries[inherited.selector];
+        if (!inheritedEntry) {
+          fail(inherited.presentationId + ' references an unknown selector route.');
+        }
+        var inheritedExpectedAssetIds = inheritedEntry.archiveAssetIds.slice();
+        if (inherited.foregroundSelector !== null) {
+          var inheritedForegroundTable =
+            backgroundTablesById[inherited.foregroundSelectorTableId];
+          var inheritedForegroundEntry = inheritedForegroundTable &&
+            inheritedForegroundTable.entries[inherited.foregroundSelector];
+          if (!inheritedForegroundEntry) {
+            fail(inherited.presentationId +
+              ' references an unknown foreground selector route.');
+          }
+          inheritedExpectedAssetIds = inheritedExpectedAssetIds.concat(
+            inheritedForegroundEntry.archiveAssetIds);
+        }
+        if (inheritedExpectedAssetIds.length !== inherited.assetIds.length ||
+            inheritedExpectedAssetIds.some(function(assetId, index) {
+              return assetId !== inherited.assetIds[index];
+            })) {
+          fail(inherited.presentationId +
+            ' assets do not match the inherited selector tables.');
+        }
+      }
     });
     var artIds = {}, artBanks = {};
     data.actorArtSources.forEach(function(asset) {
@@ -1044,30 +2312,267 @@ window.OB64 = window.OB64 || {};
       });
     });
     var directorEventIds = {};
+    var directorGrammarOpcodes = {};
+    data.directorGrammar.forEach(function(definition) {
+      validateDirectorGrammar(definition, directorGrammarOpcodes);
+    });
     data.directorEvents.forEach(function(event) { validateDirectorEvent(event, directorEventIds); });
-    if (data.directorEvents.length !== 153 || !data.counts ||
+    var continuationSelectors = {};
+    data.directorContinuationStreams.forEach(function(stream, index) {
+      object(stream, 'Director continuation stream ' + index);
+      integer(stream.selector, 'Director continuation selector', 0);
+      integer(stream.resourceKey, 'Director continuation resource key', 1);
+      integer(stream.z64PrefixStart, 'Director continuation prefix', 0);
+      integer(stream.z64PayloadStart, 'Director continuation payload', 0);
+      integer(stream.z64PayloadEndExclusive, 'Director continuation payload end', 1);
+      integer(stream.storedPayloadLength, 'Director continuation stored length', 1);
+      integer(stream.decodedLength, 'Director continuation decoded length', 1);
+      integer(stream.decodedWordCount, 'Director continuation decoded words', 1);
+      integer(stream.runtimeNodeCount, 'Director continuation runtime nodes', 1);
+      nonEmptyString(stream.assetId, 'Director continuation asset ID');
+      nonEmptyString(stream.decodedSha256, 'Director continuation decoded hash');
+      nonEmptyString(stream.evidenceStatus, 'Director continuation evidence status');
+      if (stream.selector !== index || stream.terminalWithoutTrailer !== true ||
+          continuationSelectors[stream.selector]) {
+        fail('Director continuation selector inventory is inconsistent.');
+      }
+      continuationSelectors[stream.selector] = true;
+    });
+    var externalRequestPhysicalSites = {};
+    data.parentEventExternalRequests.forEach(function(request, index) {
+      var requestLabel = 'Parent event external request ' + index;
+      validateExternalRequestProfile(request, requestLabel);
+      integer(request.eventDirectoryRow, requestLabel + ' event directory row', 0);
+      nonEmptyString(request.eventResourceKey, requestLabel + ' event resource key');
+      integer(request.eventEntryCursor, requestLabel + ' event entry cursor', 0);
+      integer(request.eventInvocationCursor,
+        requestLabel + ' event invocation cursor', 0);
+      integer(request.eventInvocationOffset,
+        requestLabel + ' event invocation offset', 0);
+      integer(request.precedingDirectorLaunchCount,
+        requestLabel + ' preceding Director launch count', 0);
+      if (request.eventInvocationCursor + request.eventInvocationOffset !==
+          request.decodedByteOffset) {
+        fail(requestLabel + ' invocation cursor does not reach its opcode site.');
+      }
+      if (request.precedingDirectorSelector !== null) {
+        integer(request.precedingDirectorSelector,
+          requestLabel + ' preceding Director selector', 0);
+        if (request.precedingDirectorSelector >= 1693) {
+          fail(requestLabel + ' preceding Director selector exceeds the retail table.');
+        }
+      }
+      externalRequestPhysicalSites[
+        request.eventDirectoryRow + ':' + request.decodedByteOffset
+      ] = true;
+    });
+    var translationPhysicalSites = {};
+    var retailTranslationPhysicalSites = {};
+    var nonretailTranslationPhysicalSites = {};
+    var exactTranslationWriteContexts = 0;
+    var unresolvedTranslationWriteContexts = 0;
+    var retailTranslationWriteContexts = 0;
+    var exactRetailTranslationWriteContexts = 0;
+    var unresolvedRetailTranslationWriteContexts = 0;
+    var nonretailTranslationWriteContexts = 0;
+    data.parentEventTranslationWrites.forEach(function(write, index) {
+      var writeLabel = 'Parent event translation write ' + index;
+      validateTranslationWrite(write, writeLabel);
+      var site = write.eventDirectoryRow + ':' + write.decodedByteOffset;
+      translationPhysicalSites[site] = true;
+      if (write.resolutionStatus === 'exact') exactTranslationWriteContexts += 1;
+      if (write.resolutionStatus === 'replacement-value-unresolved') {
+        unresolvedTranslationWriteContexts += 1;
+      }
+      if (write.tableIndex !== null && write.tableIndex < 17) {
+        retailTranslationPhysicalSites[site] = true;
+        retailTranslationWriteContexts += 1;
+        if (write.resolutionStatus === 'exact') exactRetailTranslationWriteContexts += 1;
+        if (write.resolutionStatus === 'replacement-value-unresolved') {
+          unresolvedRetailTranslationWriteContexts += 1;
+        }
+      } else if (write.tableIndex === 0xFF) {
+        nonretailTranslationPhysicalSites[site] = true;
+        nonretailTranslationWriteContexts += 1;
+      }
+    });
+    var substitutionSourceIds = {};
+    data.parentEventSubstitutionSources.forEach(function(source, index) {
+      var sourceLabel = 'Parent event substitution source ' + index;
+      validateSubstitutionSource(source, sourceLabel);
+      unique(source.sourceId, substitutionSourceIds, 'Parent event substitution source ID');
+    });
+    if (data.parentEventSubstitutionSources.length !== 2 ||
+        !substitutionSourceIds.A || !substitutionSourceIds.B) {
+      fail('Parent event substitution source definitions are incomplete.');
+    }
+    var substitutionSourcePhysicalSites = {};
+    var substitutionSourceAWriteContexts = 0;
+    var substitutionSourceBWriteContexts = 0;
+    var exactSubstitutionSourceIndexContexts = 0;
+    var unresolvedSubstitutionSourceIndexContexts = 0;
+    var exactSubstitutionSourceValueContexts = 0;
+    var unresolvedSubstitutionSourceValueContexts = 0;
+    data.parentEventSubstitutionSourceWrites.forEach(function(write, index) {
+      var writeLabel = 'Parent event substitution source write ' + index;
+      validateSubstitutionSourceWrite(write, writeLabel);
+      substitutionSourcePhysicalSites[
+        write.eventDirectoryRow + ':' + write.decodedByteOffset
+      ] = true;
+      if (write.sourceId === 'A') substitutionSourceAWriteContexts += 1;
+      if (write.sourceId === 'B') substitutionSourceBWriteContexts += 1;
+      if (write.sourceIndex === null) unresolvedSubstitutionSourceIndexContexts += 1;
+      else exactSubstitutionSourceIndexContexts += 1;
+      if (write.value === null) unresolvedSubstitutionSourceValueContexts += 1;
+      else exactSubstitutionSourceValueContexts += 1;
+    });
+    if (data.directorEvents.length !== 154 || data.directorGrammar.length !== 154 ||
+        !data.counts ||
         data.counts.directorOpcodeDefinitions !== 153 ||
         data.counts.directorNodes !== 8451 || data.counts.directorWords !== 21927 ||
         data.counts.registeredDirectorWaits !== 464 ||
         data.counts.remainingDirectorGapWords !== 0) {
       fail('Corrected 153-command Director corpus counts are stale.');
     }
-    var directorNodeCount = data.scenes.reduce(function(total, scene) {
+    if (data.counts.retailDirectorOpcodeDefinitions !== 154 ||
+        data.counts.retailDirectorSelectorRows !== 1693 ||
+        data.counts.populatedRetailDirectorSelectorRows !== 1548 ||
+        data.counts.retailDirectorResources !== 1498 ||
+        data.counts.directorContinuationStreams !== 5 ||
+        data.directorContinuationStreams.length !== 5 ||
+        data.counts.retailDirectorWords !== 550019 ||
+        data.counts.runtimeTiledDirectorResources !== 1498 ||
+        data.counts.profiledDirectorResources !== 60 ||
+        data.counts.directEventDirectorLaunches !== 1998 ||
+        data.counts.directEventDirectorSelectors !== 1520 ||
+        data.counts.directEventDirectorResources !== 1472 ||
+        data.counts.sceneGroupPreloadDirectorResources !== 209 ||
+        data.counts.sceneGroupPreloadBackgroundCommands !== 191 ||
+        data.counts.inheritedStageDirectorResources !== 90 ||
+        data.counts.inheritedStageLaunchContexts !== 177 ||
+        data.counts.contextOnlyResolvedStageInheritanceContexts !== 18 ||
+        data.counts.unresolvedStageInheritanceContexts !== 209 ||
+        data.counts.parentEventExternalRequestPhysicalSites !== 45 ||
+        data.counts.parentEventExternalRequestHandoffs !== 47 ||
+        data.parentEventExternalRequests.length !== 47 ||
+        Object.keys(externalRequestPhysicalSites).length !== 45 ||
+        data.counts.parentEventTranslationPhysicalSites !== 69 ||
+        data.counts.parentEventTranslationWriteContexts !== 416 ||
+        data.parentEventTranslationWrites.length !== 416 ||
+        Object.keys(translationPhysicalSites).length !== 69 ||
+        data.counts.parentEventExactTranslationWriteContexts !== 128 ||
+        exactTranslationWriteContexts !== 128 ||
+        data.counts.parentEventUnresolvedTranslationWriteContexts !== 288 ||
+        unresolvedTranslationWriteContexts !== 288 ||
+        data.counts.parentEventSubstitutionSourcePhysicalSites !== 42 ||
+        Object.keys(substitutionSourcePhysicalSites).length !== 42 ||
+        data.counts.parentEventSubstitutionSourceWriteContexts !== 42 ||
+        data.parentEventSubstitutionSourceWrites.length !== 42 ||
+        data.counts.parentEventSubstitutionSourceAWriteContexts !== 21 ||
+        substitutionSourceAWriteContexts !== 21 ||
+        data.counts.parentEventSubstitutionSourceBWriteContexts !== 21 ||
+        substitutionSourceBWriteContexts !== 21 ||
+        data.counts.parentEventExactSubstitutionSourceIndexContexts !== 2 ||
+        exactSubstitutionSourceIndexContexts !== 2 ||
+        data.counts.parentEventUnresolvedSubstitutionSourceIndexContexts !== 40 ||
+        unresolvedSubstitutionSourceIndexContexts !== 40 ||
+        data.counts.parentEventExactSubstitutionSourceValueContexts !== 4 ||
+        exactSubstitutionSourceValueContexts !== 4 ||
+        data.counts.parentEventUnresolvedSubstitutionSourceValueContexts !== 38 ||
+        unresolvedSubstitutionSourceValueContexts !== 38 ||
+        data.parentEventSubstitutionSourceWrites.some(function(write) {
+          return write.eventDirectoryRow !== 67 ||
+            write.eventResourceKey !== '0x003B0BBC';
+        }) ||
+        data.counts.parentEventRetailTranslationPhysicalSites !== 21 ||
+        Object.keys(retailTranslationPhysicalSites).length !== 21 ||
+        data.counts.parentEventRetailTranslationWriteContexts !== 344 ||
+        retailTranslationWriteContexts !== 344 ||
+        data.counts.parentEventExactRetailTranslationWriteContexts !== 74 ||
+        exactRetailTranslationWriteContexts !== 74 ||
+        data.counts.parentEventUnresolvedRetailTranslationWriteContexts !== 270 ||
+        unresolvedRetailTranslationWriteContexts !== 270 ||
+        data.counts.parentEventNonretailTranslationPhysicalSites !== 48 ||
+        Object.keys(nonretailTranslationPhysicalSites).length !== 48 ||
+        data.counts.parentEventNonretailTranslationWriteContexts !== 72 ||
+        nonretailTranslationWriteContexts !== 72 ||
+        data.counts.launchTranslatedDirectorResources !== 19 ||
+        data.counts.launchTranslationPlaceholders !== 398 ||
+        data.counts.launchTranslationIndexes !== 17) {
+      fail('Retail Director selector-table counts are stale.');
+    }
+    var profiledScenes = data.scenes.filter(function(scene) {
+      return scene.source.dynamicGrammar !== true;
+    });
+    var directorNodeCount = profiledScenes.reduce(function(total, scene) {
       return total + scene.source.nodes.length;
     }, 0);
-    var directorWordCount = data.scenes.reduce(function(total, scene) {
+    var directorWordCount = profiledScenes.reduce(function(total, scene) {
       return total + scene.source.decodedWordCount;
     }, 0);
-    var registeredWaitCount = data.scenes.reduce(function(total, scene) {
+    var retailDirectorWordCount = data.scenes.reduce(function(total, scene) {
+      return total + scene.source.decodedWordCount;
+    }, 0);
+    var retailDirectorNodeCount = data.scenes.reduce(function(total, scene) {
+      return total + (scene.source.dynamicGrammar === true
+        ? scene.source.runtimeNodeCount : scene.source.nodes.length);
+    }, 0);
+    var registeredWaitCount = profiledScenes.reduce(function(total, scene) {
       return total + scene.source.registeredWaits.length;
     }, 0);
+    var directEventLaunchCount = data.scenes.reduce(function(total, scene) {
+      return total + scene.launchProfile.parentEventLaunches.length;
+    }, 0);
+    var eventInvocationContextCount = 0;
+    var multiInvocationLaunchCount = 0;
+    var distinctInvocationCursors = {};
+    var exactEventPropertyE9Contexts = 0;
+    var exactEventPropertyFCContexts = 0;
+    var exactEventPropertyFDContexts = 0;
+    data.scenes.forEach(function(scene) {
+      scene.launchProfile.parentEventLaunches.forEach(function(launch) {
+        eventInvocationContextCount += launch.eventInvocationContexts.length;
+        if (launch.eventInvocationContexts.length > 1) multiInvocationLaunchCount += 1;
+        launch.eventInvocationContexts.forEach(function(context) {
+          if (context.eventPropertyE9 !== null) exactEventPropertyE9Contexts += 1;
+          if (context.eventPropertyFC !== null) exactEventPropertyFCContexts += 1;
+          if (context.eventPropertyFD !== null) exactEventPropertyFDContexts += 1;
+          distinctInvocationCursors[
+            launch.eventDirectoryRow + ':' + context.eventInvocationCursor
+          ] = true;
+        });
+      });
+    });
+    var launchTranslatedScenes = data.scenes.filter(function(scene) {
+      return scene.launchProfile.operandTranslation.required === true;
+    });
+    var launchTranslationPlaceholderCount = launchTranslatedScenes.reduce(
+      function(total, scene) {
+        return total + scene.launchProfile.operandTranslation.placeholderCount;
+      }, 0);
     if (directorNodeCount !== data.counts.directorNodes ||
         directorWordCount !== data.counts.directorWords ||
         registeredWaitCount !== data.counts.registeredDirectorWaits) {
       fail('Corrected Director scene totals do not match the catalog.');
     }
-    if (options.requireComplete !== false && data.scenes.length !== 60) {
-      fail('US Rev 0 Cutscene catalog must contain all 60 physical director resources.');
+    if (retailDirectorWordCount !== data.counts.retailDirectorWords ||
+        retailDirectorNodeCount !== data.counts.retailDirectorNodes) {
+      fail('Retail Director scene totals do not match the catalog.');
+    }
+    if (directEventLaunchCount !== data.counts.directEventDirectorLaunches ||
+        eventInvocationContextCount !== data.counts.directEventInvocationContexts ||
+        exactEventPropertyE9Contexts !== data.counts.directEventExactPropertyE9Contexts ||
+        exactEventPropertyFCContexts !== data.counts.directEventExactPropertyFCContexts ||
+        exactEventPropertyFDContexts !== data.counts.directEventExactPropertyFDContexts ||
+        multiInvocationLaunchCount !== data.counts.directEventMultiInvocationLaunches ||
+        Object.keys(distinctInvocationCursors).length !==
+          data.counts.parentEventDistinctInvocationCursors ||
+        launchTranslatedScenes.length !== data.counts.launchTranslatedDirectorResources ||
+        launchTranslationPlaceholderCount !== data.counts.launchTranslationPlaceholders) {
+      fail('Director launch-context totals do not match the catalog.');
+    }
+    if (options.requireComplete !== false && data.scenes.length !== 1498) {
+      fail('US Rev 0 Cutscene catalog must contain all 1,498 retail Director resources.');
     }
     if (data.counts && data.counts.scenes !== data.scenes.length) {
       fail('Cutscene catalog scene count is stale.');
@@ -1099,6 +2604,45 @@ window.OB64 = window.OB64 || {};
     if (data.counts && data.counts.backgroundSelectorTables !==
         data.backgroundSelectorTables.length) {
       fail('Cutscene catalog background selector-table count is stale.');
+    }
+    if (data.counts && data.counts.modeTwoStagePlacementProfiles !==
+        data.modeTwoStagePlacementProfiles.length) {
+      fail('Cutscene catalog mode-two Stage placement count is stale.');
+    }
+    if (data.counts && (data.counts.sceneResourcePathGroups !== 59 ||
+        data.counts.sceneResourcePathEntries !== data.sceneResourcePaths.length ||
+        data.counts.populatedSceneResourcePaths !==
+          data.sceneResourcePaths.filter(function(path) {
+            return path.resourceKey !== null;
+          }).length)) {
+      fail('Cutscene catalog scene resource-path counts are stale.');
+    }
+    var modeTwoScenes = data.scenes.filter(function(scene) {
+      return scene.launchProfile.directorMode.value === 2;
+    });
+    var derivedRequests = modeTwoScenes.reduce(function(rows, scene) {
+      return rows.concat(scene.launchProfile.background.requests.filter(function(request) {
+        return request.derivedEnvironment !== null;
+      }));
+    }, []);
+    var derivedContexts = derivedRequests.reduce(function(rows, request) {
+      return rows.concat(request.derivedEnvironment.contexts);
+    }, []);
+    var unresolvedForegroundScenes = modeTwoScenes.filter(function(scene) {
+      return scene.launchProfile.background.requests.length === 0 ||
+        !scene.launchProfile.background.requests.some(function(request) {
+          return Number.isInteger(request.foregroundSelector);
+        });
+    });
+    if (derivedRequests.length !== data.counts.modeTwoDerivedEnvironmentSentinels ||
+        derivedContexts.length !==
+          data.counts.modeTwoDerivedEnvironmentInvocationContexts ||
+        derivedContexts.filter(function(context) {
+          return context.resolutionStatus === 'exact-native-mapper-result';
+        }).length !== data.counts.exactModeTwoDerivedEnvironmentInvocationContexts ||
+        unresolvedForegroundScenes.length !==
+          data.counts.unresolvedModeTwoForegroundSelections) {
+      fail('Cutscene catalog derived-environment or foreground totals are stale.');
     }
     return data;
   }
@@ -1140,7 +2684,16 @@ window.OB64 = window.OB64 || {};
     var audioBlocks = data.audioBlocks.slice();
     var registeredAudioRequests = data.registeredAudioRequests.slice();
     var directorEvents = data.directorEvents.slice();
+    var directorContinuationStreams = data.directorContinuationStreams.slice();
     var backgroundSelectorTables = data.backgroundSelectorTables.slice();
+    var parentEventExternalRequests = data.parentEventExternalRequests.slice();
+    var parentEventTranslationWrites = data.parentEventTranslationWrites.slice();
+    var parentEventSubstitutionSources = data.parentEventSubstitutionSources.slice();
+    var parentEventSubstitutionSourceWrites =
+      data.parentEventSubstitutionSourceWrites.slice();
+    var modeTwoDerivedEnvironmentRules = data.modeTwoDerivedEnvironmentRules;
+    var modeTwoStagePlacementProfiles = data.modeTwoStagePlacementProfiles.slice();
+    var sceneResourcePaths = data.sceneResourcePaths.slice();
     var identities = {};
     scenes.forEach(function(scene) {
       [scene.sceneId, scene.assetId, scene.storageId, scene.directorKey,
@@ -1167,7 +2720,8 @@ window.OB64 = window.OB64 || {};
       if (!poseSelectorsByBank[selector.bank]) poseSelectorsByBank[selector.bank] = [];
       poseSelectorsByBank[selector.bank].push(selector);
     });
-    var poseById = {}, programById = {}, posesByBank = {}, poseByRuntimeSelector = {};
+    var poseById = {}, programById = {}, posesByBank = {}, poseByRuntimeSelector = {},
+      poseByStateIndex = {};
     posePrograms.forEach(function(program) {
       programById[program.programId] = program;
       if (!poseById[program.poseId] ||
@@ -1176,6 +2730,7 @@ window.OB64 = window.OB64 || {};
       }
       if (!posesByBank[program.bank]) posesByBank[program.bank] = [];
       posesByBank[program.bank].push(program);
+      poseByStateIndex[[program.bank, program.stateIndex].join(':')] = program;
       if (Number.isInteger(program.variant)) {
         var runtimeKey = [program.bank, program.animationKey,
           program.facing, program.variant].join(':');
@@ -1204,6 +2759,14 @@ window.OB64 = window.OB64 || {};
     directorEvents.forEach(function(event) { directorEventByOpcode[event.opcode.toUpperCase()] = event; });
     var backgroundTableById = {};
     backgroundSelectorTables.forEach(function(table) { backgroundTableById[table.tableId] = table; });
+    var modeTwoStagePlacementBySelector = {};
+    modeTwoStagePlacementProfiles.forEach(function(profile) {
+      modeTwoStagePlacementBySelector[profile.foregroundSelector] = profile;
+    });
+    var sceneResourcePathBySlot = {};
+    sceneResourcePaths.forEach(function(path) {
+      sceneResourcePathBySlot[path.groupIndex + ':' + path.entryIndex] = path;
+    });
     var partialDirectorById = {};
     partialDirectorResources.forEach(function(resource) {
       partialDirectorById[resource.resourceId] = resource;
@@ -1224,7 +2787,15 @@ window.OB64 = window.OB64 || {};
       audioBlocks: audioBlocks,
       registeredAudioRequests: registeredAudioRequests,
       directorEvents: directorEvents,
+      directorContinuationStreams: directorContinuationStreams,
       backgroundSelectorTables: backgroundSelectorTables,
+      parentEventExternalRequests: parentEventExternalRequests,
+      parentEventTranslationWrites: parentEventTranslationWrites,
+      parentEventSubstitutionSources: parentEventSubstitutionSources,
+      parentEventSubstitutionSourceWrites: parentEventSubstitutionSourceWrites,
+      modeTwoDerivedEnvironmentRules: modeTwoDerivedEnvironmentRules,
+      modeTwoStagePlacementProfiles: modeTwoStagePlacementProfiles,
+      sceneResourcePaths: sceneResourcePaths,
       getScene: function(identity) { return identities[identity] || null; },
       getPartialDirectorResource: function(resourceId) {
         return partialDirectorById[resourceId] || null;
@@ -1244,6 +2815,12 @@ window.OB64 = window.OB64 || {};
       getDirectorEvent: function(opcode) {
         return directorEventByOpcode[String(opcode || '').toUpperCase()] || null;
       },
+      getDirectorContinuationStream: function(selector) {
+        selector = Number(selector);
+        return Number.isInteger(selector) && selector >= 0 &&
+          selector < directorContinuationStreams.length
+          ? directorContinuationStreams[selector] : null;
+      },
       getBackgroundSelectorTable: function(tableId) {
         return backgroundTableById[tableId] || null;
       },
@@ -1252,6 +2829,13 @@ window.OB64 = window.OB64 || {};
         selector = Number(selector);
         return table && Number.isInteger(selector) && selector >= 0 && selector < table.entries.length
           ? table.entries[selector] : null;
+      },
+      getModeTwoStagePlacementProfile: function(foregroundSelector) {
+        return modeTwoStagePlacementBySelector[Number(foregroundSelector)] || null;
+      },
+      getSceneResourcePath: function(groupIndex, entryIndex) {
+        return sceneResourcePathBySlot[
+          Number(groupIndex) + ':' + Number(entryIndex)] || null;
       },
       getActorArtSource: function(identity) {
         return artById[identity] || artByBank[Number(identity)] || null;
@@ -1273,6 +2857,9 @@ window.OB64 = window.OB64 || {};
         return poseByRuntimeSelector[[Number(bank), Number(animationKey), Number(facing),
           Number(variantSelector)].join(':')] || poseById[
           'cutscene-pose:' + Number(bank) + ':' + Number(animationKey) + ':' + Number(facing)] || null;
+      },
+      getPhysicalPoseProgramByStateIndex: function(bank, stateIndex) {
+        return poseByStateIndex[[Number(bank), Number(stateIndex)].join(':')] || null;
       },
       poseProgramsForBank: function(bank, options) {
         options = options || {};
@@ -1358,7 +2945,8 @@ window.OB64 = window.OB64 || {};
     var launchBackgroundRequest = isDirector && scene.launchProfile &&
       scene.launchProfile.background.requests.find(function(request) {
         return request.stageAssetIds.length > 0;
-      }) || null;
+      }) || isDirector && scene.launchProfile &&
+        scene.launchProfile.background.inheritedPresentation || null;
     var profiledStageLayers = launchBackgroundRequest
       ? (launchBackgroundRequest.stageLayers.length
         ? launchBackgroundRequest.stageLayers
@@ -1369,7 +2957,8 @@ window.OB64 = window.OB64 || {};
             depth: member.ordinal,
             evidenceStatus: launchBackgroundRequest.evidenceStatus,
             associationStatus: launchBackgroundRequest.status,
-            sourceKind: 'launch-profile-selector'
+            sourceKind: launchBackgroundRequest.sourceKind === 'parent-event-predecessor'
+              ? 'parent-event-predecessor' : 'launch-profile-selector'
           };
         })) : null;
     var initialBackgroundLayers = observedStageLayers || profiledStageLayers ||
@@ -1427,7 +3016,16 @@ window.OB64 = window.OB64 || {};
         }),
         projection: backgroundObservation && backgroundObservation.stageProjection
           ? JSON.parse(JSON.stringify(backgroundObservation.stageProjection))
-          : { mode: initialBackgroundAssetId ? 'stage-fit' : 'unresolved' }
+          : {
+            mode: initialBackgroundAssetId ? 'stage-fit' : 'unresolved',
+            evidenceStatus: isDirector && scene.launchProfile
+              ? scene.launchProfile.stageTransform.evidenceStatus : 'unresolved',
+            calibrationStatus: isDirector && scene.launchProfile
+              ? scene.launchProfile.stageTransform.status :
+                'No launch Stage transform is registered.',
+            initialStageTransform: isDirector && scene.launchProfile
+              ? JSON.parse(JSON.stringify(scene.launchProfile.stageTransform.initial)) : null
+          }
       },
       native: {
         sourceAssetId: scene.assetId,

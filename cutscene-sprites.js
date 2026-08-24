@@ -653,7 +653,13 @@ window.OB64 = window.OB64 || {};
     if (!program || !program.frames.length) return null;
     try {
       var prepared = prepareProgram(state, program);
-      var frameIndex = frameIndexAt(prepared, actorState.poseFrame, actorState.poseLoop);
+      var frameIndex = Number.isInteger(actorState.displayedFrameToken)
+        ? prepared.frames.findIndex(function(frame) {
+          return frame.frameToken === actorState.displayedFrameToken;
+        }) : -1;
+      if (frameIndex < 0) {
+        frameIndex = frameIndexAt(prepared, actorState.poseFrame, actorState.poseLoop);
+      }
       var rendered = renderProgramFrame(state, prepared, frameIndex, actorState.variantSelector);
       delete state.errors[actorState.poseId];
       return rendered;
@@ -674,14 +680,16 @@ window.OB64 = window.OB64 || {};
 
   function framesForStageProps(state, stageProjection, previewFrame) {
     var stageProps = stageProjection && stageProjection.nativeSceneProps;
-    if (!stageProps || !stageProps.source) return [];
+    if (!stageProps) return [];
     var placements = []
       .concat(stageProps.orthographicPlacements || [])
       .concat(stageProps.perspectivePlacements || []);
     return placements.map(function(placement) {
       var errorId = 'stage-prop:' + placement.id;
       try {
-        var prepared = prepareStagePropProgram(state, stageProps.source, placement);
+        var source = placement.source || stageProps.source;
+        if (!source) fail('Mode-2 Stage prop lacks its native sprite descriptor.');
+        var prepared = prepareStagePropProgram(state, source, placement);
         var elapsed = Math.max(0, Math.floor(previewFrame || 0) -
           (Number.isInteger(placement.startFrame) ? placement.startFrame : 0));
         var frameIndex = frameIndexAt(prepared, elapsed, prepared.poseLoop);

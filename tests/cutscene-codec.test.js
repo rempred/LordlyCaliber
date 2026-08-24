@@ -34,7 +34,8 @@ function hashBytes(input) {
 
 (async function main() {
   const catalog = OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData);
-  const directorScenes = catalog.scenes.filter(scene => scene.engine === 'director');
+  const directorScenes = catalog.scenes.filter(scene =>
+    scene.engine === 'director' && scene.source.dynamicGrammar !== true);
   const z64 = normalizeV64(fs.readFileSync(MASTER));
   let totalNodes = 0;
   let actorTracks = 0;
@@ -69,6 +70,67 @@ function hashBytes(input) {
   assert.strictEqual(totalNodes, 8451);
   assert.strictEqual(actorTracks, 205, JSON.stringify(actorCountMismatches));
   assert.deepStrictEqual(actorCountMismatches, []);
+
+  const runtimeTiledScenes = catalog.directorScenes.filter(scene =>
+    scene.source.dynamicGrammar === true);
+  for (const scene of runtimeTiledScenes) {
+    const source = await OB64.cutsceneCodec.loadSceneSource(z64, scene, { hashBytes });
+    const projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, catalog);
+    const compiled = OB64.cutsceneCodec.compileSceneDocument(
+      scene, source, projected.document);
+    assert.strictEqual(compiled.noOp, true,
+      scene.assetId + ' runtime-tiled projection must compile byte-identically');
+    assert(OB64.cutsceneCodec.equalBytes(compiled.decodedBytes, source.decodedBytes),
+      scene.assetId + ' runtime-tiled projection must preserve every Director word');
+  }
+  assert.strictEqual(runtimeTiledScenes.length, 1438);
+
+  const launchContextScene = catalog.getScene('rom-director:01F53488');
+  const launchContextSource = await OB64.cutsceneCodec.loadSceneSource(
+    z64, launchContextScene, { hashBytes });
+  const launchContextProjected = OB64.cutsceneCodec.projectSceneDocument(
+    launchContextScene, launchContextSource, catalog);
+  assert.deepStrictEqual(launchContextProjected.document.background.layers.map(layer =>
+    layer.assetId), ['section-c-njpg:20', 'archive:32'],
+  'launch pre-scan interpretation must supply the independent environment and foreground without changing Director words');
+  launchContextProjected.document.background.projection.launchContext = {
+    mode: 2,
+    override: true,
+    environmentSelector: 57,
+    foregroundSelector: 57,
+    evidenceStatus: 'user-supplied-launch-context'
+  };
+  const contextCompiled = OB64.cutsceneCodec.compileSceneDocument(
+    launchContextScene, launchContextSource, launchContextProjected.document);
+  assert.strictEqual(contextCompiled.noOp, true,
+    'launch selectors are caller-owned project context, not Director operands');
+  assert(OB64.cutsceneCodec.equalBytes(
+    contextCompiled.decodedBytes, launchContextSource.decodedBytes));
+
+  const translatedScene = catalog.getScene('rom-director:01FA64D2');
+  const translatedSource = await OB64.cutsceneCodec.loadSceneSource(
+    z64, translatedScene, { hashBytes });
+  const translatedProjected = OB64.cutsceneCodec.projectSceneDocument(
+    translatedScene, translatedSource, catalog);
+  const translatedNoOp = OB64.cutsceneCodec.compileSceneDocument(
+    translatedScene, translatedSource, translatedProjected.document);
+  assert.strictEqual(translatedNoOp.noOp, true);
+  assert(OB64.cutsceneCodec.equalBytes(
+    translatedNoOp.decodedBytes, translatedSource.decodedBytes));
+  const translatedActor = translatedProjected.document.actors.find(actor =>
+    actor.source.variantSelectorTranslationIndex === 0);
+  assert(translatedActor);
+  translatedActor.initial.x += 1;
+  const translatedActorEdit = OB64.cutsceneCodec.compileSceneDocument(
+    translatedScene, translatedSource, translatedProjected.document);
+  const translatedActorNode = translatedProjected.program.primitives.find(node =>
+    node.id === translatedActor.source.placeNodeId);
+  const translatedReadback = new DataView(translatedActorEdit.decodedBytes.buffer,
+    translatedActorEdit.decodedBytes.byteOffset,
+    translatedActorEdit.decodedBytes.byteLength);
+  assert.strictEqual(translatedReadback.getUint32(
+    (translatedActorNode.startWord + 9) * 4, false), 0x08880000,
+  'editing another Actor field must preserve its launch-translated appearance word');
 
   const opening = catalog.getScene('opening-title-cutscene');
   const openingSource = await OB64.cutsceneCodec.loadSceneSource(
@@ -141,8 +203,9 @@ function hashBytes(input) {
   assert.strictEqual(waitReadback.getInt32((waitDefinition.startWord + 2) * 4, false),
     editedTicks, 'fixed-wait lowering must change only the Q3 target word');
 
-  console.log('PASS Cutscene codec verifies and byte-round-trips all 60 director resources (' +
-    totalNodes + ' preserved boundaries), then plans bounded native edits.');
+  console.log('PASS Cutscene codec byte-round-trips all 1,498 retail Director resources, preserves ' +
+    totalNodes + ' enriched boundaries and every runtime-tiled word, keeps caller-owned launch ' +
+    'selectors and placeholders intact, then plans bounded native edits.');
 })().catch(error => {
   console.error(error && error.stack || error);
   process.exitCode = 1;

@@ -41,7 +41,8 @@ function hashBytes(input) {
 
 (async function main() {
   const catalog = OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData);
-  const directorScenes = catalog.scenes.filter(scene => scene.engine === 'director');
+  const directorScenes = catalog.scenes.filter(scene =>
+    scene.engine === 'director' && scene.source.dynamicGrammar !== true);
   const z64 = normalizeV64(fs.readFileSync(MASTER));
   const beforeHash = hashBytes(z64);
   let nativeQueries = 0;
@@ -63,6 +64,88 @@ function hashBytes(input) {
   const spriteHashCache = new WeakMap();
   const spriteErrors = new Set();
   const imageCache = new Map();
+  const projectionCache = new Map();
+  const nativeRuntimeCache = new Map();
+
+  async function projectScene(scene) {
+    if (projectionCache.has(scene.assetId)) return projectionCache.get(scene.assetId);
+    const promise = OB64.cutsceneCodec.loadSceneSource(z64, scene, { hashBytes })
+      .then(source => ({
+        source,
+        projected: OB64.cutsceneCodec.projectSceneDocument(
+          scene, source, catalog),
+      }));
+    projectionCache.set(scene.assetId, promise);
+    return promise;
+  }
+
+  function launchChoices(scene) {
+    return (scene.launchProfile.parentEventLaunches || []).flatMap(launch =>
+      (launch.eventInvocationContexts || []).map((context, contextIndex) => ({
+        id: launch.launchId + ':' + context.eventInvocationCursor + ':' + contextIndex,
+        launch,
+        context,
+      })));
+  }
+
+  function precedingChoice(scene, parentContext) {
+    return launchChoices(scene).find(choice =>
+      choice.launch.launchId === parentContext.precedingDirectorLaunchId &&
+      (parentContext.precedingDirectorInvocationCursor === null ||
+        choice.context.eventInvocationCursor ===
+          parentContext.precedingDirectorInvocationCursor)) ||
+      launchChoices(scene)[0] || null;
+  }
+
+  function launchTranslations(scene, choice) {
+    const values = choice && choice.context.launchTranslationTable;
+    return Object.fromEntries((scene.launchProfile.operandTranslation.tableIndexes || [])
+      .filter(index => Array.isArray(values) && Number.isInteger(values[index]))
+      .map(index => [index, values[index]]));
+  }
+
+  async function compileNativeContext(scene, forcedChoice, ancestry, compactOutput) {
+    const choice = forcedChoice || launchChoices(scene)[0] || null;
+    const cacheKey = scene.assetId + '|' + (choice ? choice.id : 'standalone') +
+      '|' + (compactOutput ? 'compact' : 'full');
+    if (nativeRuntimeCache.has(cacheKey)) return nativeRuntimeCache.get(cacheKey);
+    ancestry = ancestry || [];
+    const promise = projectScene(scene).then(async loaded => {
+      let contextRuntime = null;
+      const contextSceneId = choice && choice.context.concurrentDirectorSceneId;
+      if (contextSceneId) {
+        const contextScene = catalog.getScene(contextSceneId);
+        if (contextScene && !ancestry.includes(contextScene.assetId) &&
+            contextScene.assetId !== scene.assetId) {
+          const owner = await compileNativeContext(
+            contextScene, precedingChoice(contextScene, choice.context),
+            ancestry.concat(scene.assetId), true);
+          contextRuntime = owner.runtime;
+        }
+      }
+      const options = {
+        z64,
+        launchContext: choice ? choice.context : null,
+        launchOperandTranslations: launchTranslations(scene, choice),
+      };
+      if (contextRuntime) {
+        options.contextRuntime = contextRuntime;
+        options.contextTickOffset = Number.isInteger(
+          choice.context.concurrentDirectorTickOffset)
+          ? choice.context.concurrentDirectorTickOffset : 1;
+      }
+      const runtime = OB64.cutsceneRuntime.compile(
+        loaded.projected.document, loaded.projected.program, scene, catalog, options);
+      return {
+        source: loaded.source,
+        projected: loaded.projected,
+        runtime: compactOutput
+          ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime,
+      };
+    });
+    nativeRuntimeCache.set(cacheKey, promise);
+    return promise;
+  }
 
   function imageForAsset(asset) {
     if (imageCache.has(asset.assetId)) return imageCache.get(asset.assetId);
@@ -109,11 +192,11 @@ function hashBytes(input) {
   }
 
   for (const scene of directorScenes) {
-    const source = await OB64.cutsceneCodec.loadSceneSource(z64, scene, { hashBytes });
-    const projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, catalog);
+    const compiled = await compileNativeContext(scene, null, [], false);
+    const source = compiled.source;
+    const projected = compiled.projected;
     const document = projected.document;
-    const runtime = OB64.cutsceneRuntime.compile(
-      document, projected.program, scene, catalog, { z64 });
+    const runtime = compiled.runtime;
     OB64.cutsceneRuntime.bind(document, runtime);
     assert.strictEqual(runtime.terminated, true,
       scene.sceneId + ' runtime must reach its native terminal hold');
@@ -292,25 +375,96 @@ function hashBytes(input) {
     }
   }
 
+  const launchTranslatedScenes = catalog.directorScenes.filter(scene =>
+    scene.launchProfile.operandTranslation.required === true);
+  let launchTranslatedVisibleActors = 0;
+  let launchTranslatedSpriteActors = 0;
+  for (const scene of launchTranslatedScenes) {
+    const source = await OB64.cutsceneCodec.loadSceneSource(z64, scene, { hashBytes });
+    const projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, catalog);
+    const runtime = OB64.cutsceneRuntime.compile(
+      projected.document, projected.program, scene, catalog, { z64, maxTicks: 2 });
+    const state = runtime.states[0];
+    const visibleActors = state.actors.filter(actor => actor.visible);
+    const actorFrames = OB64.cutsceneSprites.framesForPreview(spriteState, state);
+    launchTranslatedVisibleActors += visibleActors.length;
+    launchTranslatedSpriteActors += Object.keys(actorFrames).length;
+    assert.strictEqual(Object.keys(actorFrames).length, visibleActors.length,
+      scene.assetId +
+        ' must withhold unresolved launch-dependent mutations without hiding prior Actor art');
+  }
+
+  const screenshotRegressions = [
+    { assetId: 'rom-director:01F53488', tick: 144,
+      backgrounds: 2, visibleActors: 2, spriteActors: 2 },
+    { assetId: 'rom-director:01F56D8E', tick: 1,
+      backgrounds: 5, visibleActors: 9, spriteActors: 9 },
+    { assetId: 'rom-director:01F581EA', tick: 237,
+      backgrounds: 1, visibleActors: 7, spriteActors: 7 }
+  ];
+  for (const fixture of screenshotRegressions) {
+    const scene = catalog.getScene(fixture.assetId);
+    assert(scene, fixture.assetId + ' screenshot regression scene must remain catalogued');
+    const compiled = await compileNativeContext(scene, null, [], false);
+    const state = compiled.runtime.states[
+      Math.min(fixture.tick, compiled.runtime.states.length - 1)];
+    const backgrounds = backgroundEntries(state);
+    const actorFrames = OB64.cutsceneSprites.framesForPreview(spriteState, state);
+    const visibleActors = state.actors.filter(actor => actor.visible);
+    assert.strictEqual(backgrounds.length, fixture.backgrounds,
+      fixture.assetId + ' must retain its native launch-context Stage');
+    assert.strictEqual(visibleActors.length, fixture.visibleActors,
+      fixture.assetId + ' must retain its native visible Actor records');
+    assert.strictEqual(Object.keys(actorFrames).length, fixture.spriteActors,
+      fixture.assetId + ' must decode sprite art for every visible Actor');
+
+    const common = {
+      backgroundProjection: state.background.projection,
+      projection: state.actorProjection,
+      camera: state.cameraState,
+      overlays: [],
+      colorModulation: null,
+      scenePropFrames: []
+    };
+    const withoutBackground = OB64.cutsceneRenderer.renderFrame(
+      compiled.projected.document, Object.assign({}, state, { actors: [] }),
+      Object.assign({}, common, { backgrounds: [], actorFrames: {} }));
+    const withBackground = OB64.cutsceneRenderer.renderFrame(
+      compiled.projected.document, Object.assign({}, state, { actors: [] }),
+      Object.assign({}, common, { backgrounds, actorFrames: {} }));
+    assert.notStrictEqual(hashBytes(withoutBackground.rgba), hashBytes(withBackground.rgba),
+      fixture.assetId + ' Stage pixels must differ from the checkerboard fallback');
+
+    const actorRender = OB64.cutsceneRenderer.renderFrame(
+      compiled.projected.document, state,
+      Object.assign({}, common, { backgrounds: [], actorFrames }));
+    assert(actorRender.hitRegions.some(region =>
+      region.right - region.left >= 20 && region.bottom - region.top >= 35),
+    fixture.assetId + ' must render native Actor art at character scale');
+  }
+
   assert.strictEqual(hashBytes(z64), beforeHash, 'viewer corpus pass must not write the ROM');
   assert.strictEqual(nativeQueries, 1249);
-  assert.strictEqual(runtimeBackgroundScenes, 42);
-  assert.strictEqual(runtimeVisibleBackgroundScenes, 42);
-  assert.strictEqual(runtimeBackgroundAssetIds.size, 49);
-  assert.strictEqual(nativeStagePropScenes, 2);
-  assert.strictEqual(nativeStagePropCount, 22);
-  assert.strictEqual(runtimeCameraScenes, 44);
-  assert.strictEqual(runtimeActorScenes, 45);
-  assert.strictEqual(runtimeVisibleActorScenes, 45);
-  assert.strictEqual(runtimeAnimatedScenes, 45);
-  assert.strictEqual(runtimeSpriteScenes, 45);
-  assert.strictEqual(runtimePixelAnimatedScenes, 34);
-  assert.strictEqual(runtimeStaticPoseScenes, 11);
+  assert.strictEqual(runtimeBackgroundScenes, 57);
+  assert.strictEqual(runtimeVisibleBackgroundScenes, 57);
+  assert.strictEqual(runtimeBackgroundAssetIds.size, 59);
+  assert.strictEqual(nativeStagePropScenes, 19);
+  assert.strictEqual(nativeStagePropCount, 116);
+  assert.strictEqual(runtimeCameraScenes, 57);
+  assert.strictEqual(runtimeActorScenes, 54);
+  assert.strictEqual(runtimeVisibleActorScenes, 54);
+  assert.strictEqual(runtimeAnimatedScenes, 54);
+  assert.strictEqual(runtimeSpriteScenes, 54);
+  assert.strictEqual(runtimePixelAnimatedScenes, 44);
+  assert.strictEqual(runtimeStaticPoseScenes, 10);
+  assert.strictEqual(launchTranslatedScenes.length, 19);
+  assert.strictEqual(launchTranslatedVisibleActors, 164);
+  assert.strictEqual(launchTranslatedSpriteActors, 164);
   assert.deepStrictEqual(Array.from(spriteErrors), [],
     'every selected native sprite resource must decode without an art error');
   assert.strictEqual(runtimeDialogueScenes, 52);
   assert.strictEqual(runtimeTransformScenes, 12);
-  console.log('PASS all 60 Director scenes terminate; all 42 complete profiled Stages and all 45 native Actor scenes reach the preview, 22 native table-placed scene props render in the two measured mode-2 scenes, 44 scenes use native or profiled launch cameras, 34 show decoded pixel-changing animation, the other 11 use one-frame or empty native poses, and runtime staging scrubs deterministically');
+  console.log('PASS all 60 enriched Director scenes terminate through native launch contexts; 57 show Stage pixels from 59 assets, 54 show native Actor sprites, 164 launch-translated Actor templates retain sprite art while unresolved dynamic mutations are withheld, 116 native table-placed scene props render in 19 scenes, all 57 staged scenes use observed, native, stream-authored, or inherited cameras, 44 show decoded pixel-changing animation, the other 10 use one-frame or empty native poses, all three screenshot regressions show native backgrounds and character-scale sprite art, and runtime staging scrubs deterministically');
 })().catch(error => {
   console.error(error && error.stack || error);
   process.exitCode = 1;

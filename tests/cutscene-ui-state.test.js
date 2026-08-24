@@ -66,7 +66,61 @@ function hashBytes(input) {
   };
   assert.strictEqual(OB64.cutsceneUI.initialViewFrame(state, scene.sceneId), 2,
     'the editor must skip deliberate black opening frames when choosing its initial preview');
+  state.runtimeByAssetId[scene.assetId].states = [
+    { background: { layers: [{}] }, actors: [], effects: [], overlays: [],
+      sceneColor: { red: 255, green: 255, blue: 255 } },
+    { background: { layers: [{}] }, actors: [{ visible: true }], effects: [], overlays: [],
+      sceneColor: { red: 255, green: 255, blue: 255 } },
+  ];
+  assert.strictEqual(OB64.cutsceneUI.initialViewFrame(state, scene.sceneId), 1,
+    'an unmeasured scene must open on its first clear native Actor frame instead of a background-only frame');
   delete state.runtimeByAssetId;
+
+  const contextualRom = { z64, layout: { id: 'us-rev0' } };
+  const contextualState = OB64.cutsceneUI.ensureState(contextualRom);
+  const contextualScene = catalog.getScene('rom-director:01F56D8E');
+  contextualState.selectedSceneId = contextualScene.sceneId;
+  const contextualChoices = OB64.cutsceneUI.launchContextChoices(
+    contextualState, contextualScene);
+  assert.strictEqual(contextualChoices.length, 4);
+  assert.deepStrictEqual(contextualChoices.map(choice => [
+    choice.context.concurrentDirectorAssetId,
+    choice.context.concurrentDirectorTickOffset
+  ]), [
+    ['rom-director:01F5646A', 1],
+    ['rom-director:01F56900', 1],
+    ['rom-director:01F5646A', 1],
+    ['rom-director:01F56900', 1]
+  ]);
+  await OB64.cutsceneUI.loadScene(contextualRom, contextualState, contextualScene);
+  const contextualRuntime = contextualState.runtimeByAssetId[contextualScene.assetId];
+  assert(contextualRuntime && contextualRuntime.terminated,
+    'opening an event-chained stream must evaluate its native concurrent owner');
+  assert.strictEqual(contextualRuntime.concurrentContext.assetId,
+    'rom-director:01F5646A');
+  assert.strictEqual(contextualRuntime.states.at(-1).actors.filter(actor =>
+    actor.visible).length, 9,
+  'the editor launch path must expose shared Actors instead of the standalone blank roster');
+  assert.strictEqual(
+    contextualState.views[contextualScene.sceneId].launchContextId,
+    contextualChoices[0].id,
+  'the default exact event invocation must live in durable view state');
+
+  contextualState.views[contextualScene.sceneId].launchContextId = contextualChoices[1].id;
+  await OB64.cutsceneUI.loadScene(contextualRom, contextualState, contextualScene);
+  assert.strictEqual(
+    contextualState.runtimeByAssetId[contextualScene.assetId].concurrentContext.assetId,
+    'rom-director:01F56900',
+  'a durable context selection must recompile against the chosen native concurrent stream');
+
+  const translatedLaunchScene = catalog.getScene('rom-director:01FB91EC');
+  const translatedLaunchChoices = OB64.cutsceneUI.launchContextChoices(
+    contextualState, translatedLaunchScene);
+  assert.deepStrictEqual(translatedLaunchChoices.map(choice =>
+    OB64.cutsceneUI.launchOperandTranslations(translatedLaunchScene, choice)), [
+    { 0: 88 },
+    { 0: 90 }
+  ], 'event-program constants must reach the selected Director translation-table input');
 
   assert.strictEqual(baseline.branches.length, 1,
     'native query gates must not be invented as alternate movie paths');
@@ -387,7 +441,19 @@ function hashBytes(input) {
   assert(uiSource.includes("timelineMode: 'runtime'"));
   assert(uiSource.includes('Horizontal position is execution time'));
   assert(uiSource.includes('Horizontal position is physical Director-stream order'));
-  assert(uiSource.includes('Native mode-zero staging: registered camera'));
+  assert(uiSource.includes(
+    'Native mode-zero staging: registered-camera Actor prepass → centered scene transform → Actor camera'));
+  assert(uiSource.includes(
+    'Mode-two runtime active; the unresolved launch Actor camera uses a fit-to-scene preview.'));
+  assert(uiSource.includes("sourceRows.push(['Environment selector'"));
+  assert(uiSource.includes("sourceRows.push(['Foreground selector'"));
+  assert(uiSource.includes("sourceRows.push(['Parent event launches'"));
+  assert(uiSource.includes("sourceRows.push(['Launch operand table'"));
+  assert(uiSource.includes("'mode-two-' + role + '-selector'"));
+  assert(uiSource.includes('projection.launchContext = context'));
+  assert(uiSource.includes('The native launch pre-scan can seed the mode-two environment'));
+  assert(uiSource.includes('Number.isInteger(launchBackground.environmentSelector)'));
+  assert(!uiSource.includes('launch inputs are synthesized'));
   assert(uiSource.includes("browser.setAttribute('data-cutscene-scroll', 'browser')"));
   assert(uiSource.includes('focus({ preventScroll: true })'));
   assert(!uiSource.includes('Actor projection is approximate until visual calibration passes.'));
