@@ -46,6 +46,7 @@ const patch = {
   summary: {
     combat_sprite_art_modified: 4,
     separated_animation_sequences_modified: 1,
+    custom_neutral_squads_modified: 1,
   },
   patches: {
     art: {
@@ -86,6 +87,15 @@ const patch = {
         },
       },
     },
+    neutral_encounters: {
+      custom_squads: {
+        '1:0': {
+          record: '0501000000000847000000000003000000000000000000000000000000000000000000',
+          persuasion: { mode: 'fixed', chance: 10 },
+          retreat: { hp_threshold: 25 },
+        },
+      },
+    },
   },
 };
 
@@ -115,4 +125,11 @@ assert(idle, 'private idle sequence must use its idle route title');
 assert(idle.lines.includes(
   "Export relocates the private idle loop and points this art route's selector 0x00 to it."));
 
-console.log('PASS changelog groups combat sprite changes by animation sequence');
+const neutral = report.sections.find(row => row.title === 'Neutral Encounters');
+assert(neutral, 'neutral encounter section must exist');
+const customSquad = neutral.entries.find(row => row.title === 'Custom neutral squad 1:0');
+assert(customSquad, 'custom neutral squad entry must exist');
+assert(customSquad.lines.includes('Persuasion: 10%'));
+assert(customSquad.lines.includes('Retreat: at or below 25% HP'));
+
+console.log('PASS changelog groups combat sprites and reports custom neutral behavior');

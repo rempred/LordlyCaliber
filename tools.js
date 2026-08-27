@@ -175,6 +175,16 @@ window.OB64 = window.OB64 || {};
     return out;
   }
 
+  function runtimeRegistry() {
+    return OB64.RUNTIME_PATCH_REGISTRY || null;
+  }
+
+  function regionContained(inner, outer) {
+    var a = inner.ownerId ? inner : normalizeRegion({ id: 'inner', name: 'inner' }, inner, false);
+    var b = outer.ownerId ? outer : normalizeRegion({ id: 'outer', name: 'outer' }, outer, false);
+    return !!a && !!b && a.kind === b.kind && a.start >= b.start && a.end <= b.end;
+  }
+
   function validateFeatureRegistry(z64) {
     var list = features();
     for (var i = 0; i < list.length; i++) {
@@ -186,6 +196,39 @@ window.OB64 = window.OB64 || {};
     var conflicts = findRegionConflicts(list, { includeExclusive: false });
     if (conflicts.length) {
       throw new Error('Tool patch region collision:\n  ' + conflicts.map(describeConflict).join('\n  '));
+    }
+    var registry = runtimeRegistry();
+    if (!registry) throw new Error('The central runtime patch ownership registry is unavailable.');
+    var owners = registry.owners || [];
+    var ownerById = {};
+    for (var oi = 0; oi < owners.length; oi++) {
+      if (ownerById[owners[oi].id]) {
+        throw new Error('Duplicate central runtime owner id: ' + owners[oi].id);
+      }
+      ownerById[owners[oi].id] = owners[oi];
+    }
+    var registryConflicts = findRegionConflicts(owners, { includeExclusive: false });
+    if (registryConflicts.length) {
+      throw new Error('Central runtime patch region collision:\n  ' +
+        registryConflicts.map(describeConflict).join('\n  '));
+    }
+    for (var fi = 0; fi < list.length; fi++) {
+      var owner = ownerById[list[fi].id];
+      if (!owner) throw new Error('Tool feature has no central runtime owner: ' + list[fi].id);
+      var regions = featureRegions(list[fi]);
+      for (var ri = 0; ri < regions.length; ri++) {
+        var covered = false;
+        for (var cr = 0; cr < (owner.regions || []).length; cr++) {
+          if (regionContained(regions[ri], owner.regions[cr])) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          throw new Error('Tool feature region is missing from central ownership: ' +
+            list[fi].id + ' / ' + regions[ri].label);
+        }
+      }
     }
   }
 
@@ -239,7 +282,8 @@ window.OB64 = window.OB64 || {};
   }
 
   function features() {
-    return OB64.TOOLS_FEATURES || [];
+    var registry = runtimeRegistry();
+    return (registry && registry.toolFeatures) || OB64.TOOLS_FEATURES || [];
   }
 
   function getFeature(id) {
@@ -364,6 +408,7 @@ window.OB64 = window.OB64 || {};
     validateFeatureRegistry: validateFeatureRegistry,
     featureUnsupportedReason: featureUnsupportedReason,
     featureSupported: featureSupported,
+    runtimeRegistry: runtimeRegistry,
   };
 
 })();

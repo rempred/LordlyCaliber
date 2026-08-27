@@ -433,7 +433,7 @@ OB64.buildLHAArchive = function(compressedData, originalData, filename) {
   return result;
 };
 
-// Rebuild a level-2 member from a CRC-bearing header template. OB64's cluster-3 loader
+// Rebuild a level-1 or level-2 member from a CRC-bearing header template. OB64's cluster-3 loader
 // advances to the next member with headerSize + compressedSize; an in-place
 // replacement must therefore declare the complete fixed-slot payload, even
 // when the new LH5 stream is shorter. The unused payload bytes are zero and
@@ -452,9 +452,11 @@ OB64.buildLHAArchiveFromTemplate = function(compressedData, originalData, templa
   }
 
   if (!templateHeader || templateHeader.length < 26) throw new Error('LHA template header is missing or truncated.');
-  var headerSize = readU16LE(templateHeader, 0);
+  var level = templateHeader[20];
+  var headerSize = level === 2 ? readU16LE(templateHeader, 0) :
+    (level === 1 ? 2 + templateHeader[0] : 0);
   if (headerSize < 26 || headerSize > templateHeader.length) throw new Error('LHA template header size is invalid.');
-  if (templateHeader[20] !== 2) throw new Error('LHA template must use a level-2 header.');
+  if (level !== 1 && level !== 2) throw new Error('LHA template must use a level-1 or level-2 header.');
   if (String.fromCharCode(templateHeader[2], templateHeader[3], templateHeader[4], templateHeader[5], templateHeader[6]) !== '-lh5-') {
     throw new Error('LHA template must use the -lh5- method.');
   }
@@ -468,27 +470,40 @@ OB64.buildLHAArchiveFromTemplate = function(compressedData, originalData, templa
   writeU32LE(header, 7, declared);
   writeU32LE(header, 11, originalData.length);
   var dataCrc = OB64.crc16(originalData);
-  header[21] = dataCrc & 0xFF;
-  header[22] = (dataCrc >>> 8) & 0xFF;
-
-  var extOff = 24;
-  var headerCrcOff = -1;
-  while (extOff + 2 <= header.length) {
-    var extSize = readU16LE(header, extOff);
-    if (extSize === 0) break;
-    if (extSize < 3 || extOff + extSize > header.length) throw new Error('LHA template extended-header chain is invalid.');
-    if (header[extOff + 2] === 0 && extSize >= 5) {
-      headerCrcOff = extOff + 3;
-      break;
+  if (level === 1) {
+    var filenameLength = header[21];
+    var dataCrcOff = 22 + filenameLength;
+    if (dataCrcOff + 2 > header.length) throw new Error('LHA level-1 filename or data CRC is invalid.');
+    header[dataCrcOff] = dataCrc & 0xFF;
+    header[dataCrcOff + 1] = (dataCrc >>> 8) & 0xFF;
+    var checksum = 0;
+    for (var checksumOff = 2; checksumOff < header.length; checksumOff++) {
+      checksum = (checksum + header[checksumOff]) & 0xFF;
     }
-    extOff += extSize;
+    header[1] = checksum;
+  } else {
+    header[21] = dataCrc & 0xFF;
+    header[22] = (dataCrc >>> 8) & 0xFF;
+
+    var extOff = 24;
+    var headerCrcOff = -1;
+    while (extOff + 2 <= header.length) {
+      var extSize = readU16LE(header, extOff);
+      if (extSize === 0) break;
+      if (extSize < 3 || extOff + extSize > header.length) throw new Error('LHA template extended-header chain is invalid.');
+      if (header[extOff + 2] === 0 && extSize >= 5) {
+        headerCrcOff = extOff + 3;
+        break;
+      }
+      extOff += extSize;
+    }
+    if (headerCrcOff < 0) throw new Error('LHA template has no common-header CRC extension.');
+    header[headerCrcOff] = 0;
+    header[headerCrcOff + 1] = 0;
+    var headerCrc = OB64.crc16(header);
+    header[headerCrcOff] = headerCrc & 0xFF;
+    header[headerCrcOff + 1] = (headerCrc >>> 8) & 0xFF;
   }
-  if (headerCrcOff < 0) throw new Error('LHA template has no common-header CRC extension.');
-  header[headerCrcOff] = 0;
-  header[headerCrcOff + 1] = 0;
-  var headerCrc = OB64.crc16(header);
-  header[headerCrcOff] = headerCrc & 0xFF;
-  header[headerCrcOff + 1] = (headerCrc >>> 8) & 0xFF;
 
   var result = new Uint8Array(headerSize + declared);
   result.set(header, 0);
@@ -498,7 +513,10 @@ OB64.buildLHAArchiveFromTemplate = function(compressedData, originalData, templa
 
 OB64.buildLHAArchiveFixedSlot = function(compressedData, originalData, templateHeader, slotSize) {
   if (!templateHeader || templateHeader.length < 2) throw new Error('LHA fixed-slot template is missing.');
-  var headerSize = (templateHeader[0] | (templateHeader[1] << 8)) >>> 0;
+  var level = templateHeader[20];
+  var headerSize = level === 2
+    ? ((templateHeader[0] | (templateHeader[1] << 8)) >>> 0)
+    : (level === 1 ? 2 + templateHeader[0] : 0);
   var declaredCompressedSize = Number(slotSize) - headerSize;
   if (!Number.isInteger(declaredCompressedSize) || declaredCompressedSize < 0) {
     throw new Error('LHA fixed-slot size is invalid.');
@@ -869,12 +887,10 @@ OB64.serializeClassDefs = function(classDefs, z64) {
 OB64.serializeNeutralGlobalRate = function(globalRate, z64) {
   if (!globalRate || !globalRate.modified) return;
 
-  var microBasisPoints = globalRate.microBasisPoints != null
-    ? parseInt(globalRate.microBasisPoints, 10)
-    : Math.round(Number(globalRate.basisPoints || 0) * 100);
-  if (!isFinite(microBasisPoints)) microBasisPoints = 0;
-  if (microBasisPoints < 0) microBasisPoints = 0;
-  if (microBasisPoints > 1000000) microBasisPoints = 1000000;
+  var divisor = Number(globalRate.divisor);
+  if (!Number.isInteger(divisor) || divisor <= 0) {
+    divisor = OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
+  }
 
   function writeDivisor(divisor) {
     OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET,
@@ -883,28 +899,26 @@ OB64.serializeNeutralGlobalRate = function(globalRate, z64) {
       0x36310000 | (divisor & 0xFFFF));
   }
 
-  if (microBasisPoints === 0) {
-    writeDivisor(OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR);
-    // The comparison is unsigned, so threshold -1 would pass everything.
-    // Use an unconditional branch to the existing fail/exit target instead.
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, 0x24100000);
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, 0x24100000);
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_NEVER);
-  } else {
-    var smoothMaxPass = OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS || 0x8000;
-    var divisor = microBasisPoints <= smoothMaxPass
-      ? OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR
-      : OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR;
-    var passCount = divisor === OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR
-      ? microBasisPoints
-      : Math.max(1, Math.min(10000, Math.round(microBasisPoints / 100)));
-    var threshold = passCount - 1;
-    var thresholdWord = 0x24100000 | (threshold & 0xFFFF);
-    writeDivisor(divisor);
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, thresholdWord);
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET, thresholdWord);
-    OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_CHECK);
+  function passCount(prefix) {
+    var count = Number(globalRate[prefix + 'PassCount']);
+    if (!Number.isInteger(count)) {
+      var micro = Number(globalRate[prefix + 'MicroBasisPoints']);
+      if (!isFinite(micro)) micro = 0;
+      count = Math.round((Math.max(0, Math.min(1000000, micro)) * divisor) / 1000000);
+    }
+    // addiu's non-negative immediate range ends at 0x7FFF. The threshold is
+    // passCount - 1, so 0x8000 passing remainders remains representable.
+    return Math.max(1, Math.min(0x8000, count));
   }
+
+  var normalPassCount = passCount('normal');
+  var alternatePassCount = globalRate.linked ? normalPassCount : passCount('alternate');
+  writeDivisor(divisor);
+  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET,
+    0x24100000 | ((normalPassCount - 1) & 0xFFFF));
+  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_ALT_OFFSET,
+    0x24100000 | ((alternatePassCount - 1) & 0xFFFF));
+  OB64.writeU32BE(z64, OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, OB64.NEUTRAL_GLOBAL_BRANCH_CHECK);
 };
 
 OB64.serializeNeutralEncounters = function(encounters, z64) {
@@ -937,13 +951,14 @@ OB64.serializeNeutralEncounters = function(encounters, z64) {
 };
 
 // ============================================================
-// Creature drop table serializer — writes 36 × 8 B records back to
+// Creature drop table serializer — writes 37 × 8 B records back to
 // ROM 0x142258. Record layout: [pad, classId, slot1 u16BE × 3].
-// Drop slot high bit (0x8000) is preserved as raw bit 15; its runtime
-// meaning is unverified. Low 15 bits = item ID.
+// Drop slot bit 15 selects equipment (set) or consumable (clear).
 // Outside CIC-6102 CRC window.
 // ============================================================
 OB64.serializeCreatureDrops = function(drops, z64) {
+  var errors = OB64.validateCreatureDropTable(drops);
+  if (errors.length) throw new Error(errors.join(' '));
   var base = OB64.CREATURE_DROP_OFFSET;
   var stride = OB64.CREATURE_DROP_STRIDE;
   var records = drops && drops.records ? drops.records : [];

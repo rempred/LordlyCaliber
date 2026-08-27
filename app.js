@@ -16,7 +16,7 @@ window.OB64 = window.OB64 || {};
   // Per-subsystem dirty flags — only re-splice/rewrite archives that the
   // user actually edited. LH5 round-trip can inflate untouched archives
   // past their original ROM slot, which previously broke unrelated exports.
-  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+  var dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
   var activeInfoPopupAnchor = null;
 
   function infoPopupElement() {
@@ -210,7 +210,7 @@ window.OB64 = window.OB64 || {};
   function invalidateLoadedRomUi(loadBusy) {
     rom = null;
     changes = 0;
-    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+    dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
@@ -307,6 +307,10 @@ window.OB64 = window.OB64 || {};
               id: 'runtime-shop-readback', label: 'Runtime shop override readback',
               affectsTabs: ['shops']
             }, function() { return OB64.runtimeOverrides.applyParsedShopOverrides(nextRom); });
+            await OB64.romCompatibility.runInitializer(nextRom, {
+              id: 'runtime-neutral-readback', label: 'Neutral runtime override readback',
+              affectsTabs: ['encounters']
+            }, function() { return OB64.runtimeOverrides.applyParsedNeutralOverrides(nextRom); });
           }
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'combat-animation-overrides', label: 'Combat animation override lane',
@@ -341,7 +345,7 @@ window.OB64 = window.OB64 || {};
         }
 
         OB64.romCompatibility.assessFeatures(nextRom);
-        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+        var nextDirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: false, cutscenes: false, encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
         // A ROM patched by an older build of a Tools feature upgrades on the
         // next export unless the user switches the feature off.
         nextDirty.tools = !!nextRom.tools && OB64.tools.pendingChanges(nextRom) > 0;
@@ -542,6 +546,15 @@ window.OB64 = window.OB64 || {};
       var shopOverridesForRuntime = OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectShopOverrides(rom)
         : [];
+      var scenarioRateOverridesForRuntime = OB64.runtimeOverrides
+        ? OB64.runtimeOverrides.collectScenarioRateOverrides(rom)
+        : [];
+      var weightedDropOverridesForRuntime = OB64.runtimeOverrides
+        ? OB64.runtimeOverrides.collectWeightedDropOverrides(rom)
+        : [];
+      var customNeutralSquadsForRuntime = OB64.runtimeOverrides
+        ? OB64.runtimeOverrides.collectCustomNeutralSquads(rom)
+        : [];
 
       // Shop membership edits compile into the shared OBM2 runtime blob below.
       // Archive #751 remains the retail fallback for unchanged shop indices.
@@ -617,6 +630,22 @@ window.OB64 = window.OB64 || {};
           relocationError.message;
         return;
       }
+      if (dirty.neutralRuntime && (!OB64.runtimeOverrides ||
+          (rom.layout && rom.layout.supportsNeutralRuntimeOverrides === false))) {
+        showErrorModal('Export failed - neutral runtime unavailable',
+          'This ROM revision can edit retail encounter tables, but its ' +
+          'per-scenario rate and weighted-drop hooks are unavailable.');
+        statusBar.textContent = 'Export failed (neutral runtime unavailable)';
+        return;
+      }
+      if (customNeutralSquadsForRuntime.length && rom.layout &&
+          rom.layout.supportsNeutralCustomSquads === false) {
+        showErrorModal('Export failed - custom neutral squads unavailable',
+          'This ROM revision does not have verified custom neutral-squad hooks. ' +
+          'Remove the custom squads or export from a supported US revision 0 ROM.');
+        statusBar.textContent = 'Export failed (custom neutral squads unavailable)';
+        return;
+      }
       var sharedRegionOwners = [];
       var artOwner = OB64.art && artPlan ? OB64.art.patchOwner(artPlan) : null;
       if (artOwner) sharedRegionOwners.push(artOwner);
@@ -625,13 +654,17 @@ window.OB64 = window.OB64 || {};
       if (cutsceneOwner) sharedRegionOwners.push(cutsceneOwner);
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
-      if (OB64.squad && (dirty.shops || dirty.squadOverrides ||
-          squadOverridesForConflict.length || shopOverridesForRuntime.length)) {
+      if (OB64.squad && (dirty.shops || dirty.squadOverrides || dirty.neutralRuntime ||
+          squadOverridesForConflict.length || shopOverridesForRuntime.length ||
+          scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+          customNeutralSquadsForRuntime.length)) {
         sharedRegionOwners.push({
           id: 'runtime-overrides',
           name: 'Shared Runtime Overrides',
           category: 'runtimeOverrides',
-          regions: (shopOverridesForRuntime.length || dirty.shops) && OB64.runtimeOverrides
+          regions: (shopOverridesForRuntime.length || dirty.shops || dirty.neutralRuntime ||
+              scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+              customNeutralSquadsForRuntime.length) && OB64.runtimeOverrides
             ? OB64.runtimeOverrides.patchRegions(rom)
             : OB64.squad.patchRegions(rom)
         });
@@ -790,16 +823,23 @@ window.OB64 = window.OB64 || {};
         toolsCrc = toolsResult.crc;
       }
 
-      await paintRomExportProgress(exportProgress, 36, 'Building shops and squads runtime patches');
-      // Shared runtime overrides. Shop edits use the same one-time loader,
-      // tail lane, and upper-RAM module as Squads. Squad-only exports retain
-      // the already-proven squadblob byte path.
+      await paintRomExportProgress(exportProgress, 36, 'Building shared runtime patches');
+      // Shops, per-scenario neutral rates, custom neutral squads, and weighted drops share the
+      // Squads loader, ROM-tail lane, and upper-RAM module. A Squads-only
+      // export retains its already-proven byte path.
       var runtimeCrc = false;
-      if ((dirty.squadOverrides || dirty.shops) && OB64.squad) {
+      if ((dirty.squadOverrides || dirty.shops || dirty.neutralRuntime) && OB64.squad) {
         var ovs = squadOverridesForConflict;
-        if (shopOverridesForRuntime.length) {
+        var hasSharedRuntime = shopOverridesForRuntime.length ||
+          scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+          customNeutralSquadsForRuntime.length;
+        if (hasSharedRuntime) {
           var rtw = OB64.runtimeOverrides.buildRuntimeOverrideWrites(
-            ovs, shopOverridesForRuntime, rom.shops.length, candidateRom);
+            ovs, shopOverridesForRuntime, rom.shops.length, candidateRom, {
+              scenarioRateOverrides: scenarioRateOverridesForRuntime,
+              weightedDropOverrides: weightedDropOverridesForRuntime,
+              customNeutralSquads: customNeutralSquadsForRuntime
+            });
           for (var rwi = 0; rwi < rtw.writes.length; rwi++) {
             candidateRom.z64.set(rtw.writes[rwi].bytes, rtw.writes[rwi].offset);
           }
@@ -807,6 +847,11 @@ window.OB64 = window.OB64 || {};
           runtimeMode = 'write';
           runtimeCrc = rtw.crcWindow;
           if (dirty.shops) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
+          if (dirty.neutralRuntime) {
+            touched.push('scenario rates (' + scenarioRateOverridesForRuntime.length + ')');
+            touched.push('weighted drop classes (' + weightedDropOverridesForRuntime.length + ')');
+            touched.push('custom neutral squads (' + customNeutralSquadsForRuntime.length + ')');
+          }
           if (dirty.squadOverrides && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
           if (dirty.squadOverrides) {
             var sharedUnmapped = OB64.squadCountUnmapped(rom);
@@ -817,11 +862,11 @@ window.OB64 = window.OB64 || {};
             }
           }
         } else if (ovs.length) {
-          // Last shop override removed while squads remain: restore its hook,
-          // then install the proven Squads-only module.
-          if (dirty.shops && OB64.runtimeOverrides) {
+          // Last shared override removed while squads remain: restore every
+          // other hook, then install the proven Squads-only module.
+          if (OB64.runtimeOverrides) {
             OB64.runtimeOverrides.restoreShopHook(candidateRom.z64, candidateRom);
-            touched.push('runtime shops removed');
+            OB64.runtimeOverrides.restoreNeutralHooks(candidateRom.z64, candidateRom);
           }
           var sqw = OB64.squad.buildSquadOverrideWrites(ovs, candidateRom);
           for (var sqi = 0; sqi < sqw.writes.length; sqi++) {
@@ -829,19 +874,37 @@ window.OB64 = window.OB64 || {};
           }
           runtimeWritePlan = sqw;
           runtimeMode = 'write';
-          if (dirty.shops && OB64.runtimeOverrides) {
+          if (OB64.runtimeOverrides) {
             var restoredShopLayout = OB64.runtimeOverrides.patchLayout(candidateRom);
             runtimeWritePlan = Object.assign({}, sqw, {
-              writes: sqw.writes.concat([{
-                offset: restoredShopLayout.SHOP_HOOK_ROM,
-                label: 'restored retail shop source-list hook',
-                bytes: OB64.squad.wordsToBytes(
-                  OB64.runtimeOverrides.consts.SHOP_ORIGINAL_WORDS
-                ),
-              }]),
+              writes: sqw.writes.concat([
+                {
+                  offset: restoredShopLayout.SHOP_HOOK_ROM,
+                  label: 'restored retail shop source-list hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.SHOP_ORIGINAL_WORDS
+                  )
+                },
+                {
+                  offset: restoredShopLayout.RATE_HOOK_ROM,
+                  label: 'restored retail neutral-rate RNG hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.RATE_ORIGINAL_WORDS
+                  )
+                },
+                {
+                  offset: restoredShopLayout.DROP_HOOK_ROM,
+                  label: 'restored retail creature-drop RNG hook',
+                  bytes: OB64.squad.wordsToBytes(
+                    OB64.runtimeOverrides.consts.DROP_ORIGINAL_WORDS
+                  )
+                }
+              ])
             });
           }
           runtimeCrc = sqw.crcWindow;
+          if (dirty.shops) touched.push('runtime shops removed');
+          if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
           if (dirty.squadOverrides) touched.push('squad overrides (' + ovs.length + ')');
           var unmapped = OB64.squadCountUnmapped(rom);
           if (unmapped) {
@@ -858,6 +921,7 @@ window.OB64 = window.OB64 || {};
           runtimeCrc = true;
           if (dirty.shops) touched.push('runtime shops removed');
           if (dirty.squadOverrides) touched.push('squad overrides removed');
+          if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
         }
       }
 
@@ -955,6 +1019,9 @@ window.OB64 = window.OB64 || {};
         runtimeWritePlan: runtimeWritePlan,
         runtimeMode: runtimeMode,
         shopOverrides: shopOverridesForRuntime,
+        scenarioRateOverrides: scenarioRateOverridesForRuntime,
+        weightedDropOverrides: weightedDropOverridesForRuntime,
+        customNeutralSquads: customNeutralSquadsForRuntime,
         toolsResult: toolsResult,
         selectorPlan: selectorPlan,
         effectTransaction: effectTransaction,
@@ -1096,7 +1163,7 @@ window.OB64 = window.OB64 || {};
       }
       // Clear dirty so subsequent exports without edits do nothing,
       // but keep the success message visible in the status bar
-      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), cutscenes: !!(exportRom.cutsceneStudio && OB64.cutsceneUI.editCount(exportRom.cutsceneStudio)), encounters: false, creatureDrops: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
+      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), cutscenes: !!(exportRom.cutsceneStudio && OB64.cutsceneUI.editCount(exportRom.cutsceneStudio)), encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
       // Art records remain Project edits after a successful ROM download.
       // This lets the user keep authoring and export the same detached assets again.
       changes = OB64.art.editCount(exportRom.art) +
@@ -1191,7 +1258,10 @@ window.OB64 = window.OB64 || {};
       var classesN = patch.summary.class_defs_modified || 0;
       var neutralSlicesN = patch.summary.neutral_slices_modified || 0;
       var terrainRatesN = patch.summary.terrain_rates_modified || 0;
+      var scenarioRatesN = patch.summary.neutral_scenario_rates_modified || 0;
+      var customNeutralSquadsN = patch.summary.custom_neutral_squads_modified || 0;
       var creatureDropsN = patch.summary.creature_drop_records_modified || 0;
+      var weightedDropRatesN = patch.summary.weighted_drop_classes_modified || 0;
       var consumablesN = patch.summary.consumables_modified || 0;
       var itemDescriptionsN = patch.summary.item_descriptions_modified || 0;
       var consumableDescriptionsN = patch.summary.consumable_descriptions_modified || 0;
@@ -1211,7 +1281,8 @@ window.OB64 = window.OB64 || {};
       var separatedAnimationN =
         patch.summary.separated_animation_sequences_modified || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
-          terrainRatesN + creatureDropsN + consumablesN +
+          terrainRatesN + scenarioRatesN + customNeutralSquadsN +
+          creatureDropsN + weightedDropRatesN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
           globalRateN + toolsN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
@@ -1230,7 +1301,10 @@ window.OB64 = window.OB64 || {};
       if (classesN) parts.push(classesN + ' class' + (classesN === 1 ? '' : 'es'));
       if (neutralSlicesN) parts.push(neutralSlicesN + ' encounter slice' + (neutralSlicesN === 1 ? '' : 's'));
       if (terrainRatesN) parts.push(terrainRatesN + ' terrain rate' + (terrainRatesN === 1 ? '' : 's'));
+      if (scenarioRatesN) parts.push(scenarioRatesN + ' scenario rate override' + (scenarioRatesN === 1 ? '' : 's'));
+      if (customNeutralSquadsN) parts.push(customNeutralSquadsN + ' custom neutral squad' + (customNeutralSquadsN === 1 ? '' : 's'));
       if (creatureDropsN) parts.push(creatureDropsN + ' creature drop record' + (creatureDropsN === 1 ? '' : 's'));
+      if (weightedDropRatesN) parts.push(weightedDropRatesN + ' weighted drop class' + (weightedDropRatesN === 1 ? '' : 'es'));
       if (consumablesN) parts.push(consumablesN + ' consumable' + (consumablesN === 1 ? '' : 's'));
       if (itemDescriptionsN) parts.push(itemDescriptionsN + ' item description' + (itemDescriptionsN === 1 ? '' : 's'));
       if (consumableDescriptionsN) parts.push(consumableDescriptionsN + ' consumable description' + (consumableDescriptionsN === 1 ? '' : 's'));
@@ -1283,7 +1357,10 @@ window.OB64 = window.OB64 || {};
         changes += result.applied.shops + result.applied.prices +
           (result.applied.itemStats || 0) + (result.applied.classDefs || 0) +
           (result.applied.neutralSlices || 0) + (result.applied.terrainRates || 0) +
+          (result.applied.neutralScenarioRates || 0) +
+          (result.applied.customNeutralSquads || 0) +
           (result.applied.creatureDrops || 0) + (result.applied.consumables || 0) +
+          (result.applied.weightedDropRates || 0) +
           (result.applied.itemDescriptions || 0) +
           (result.applied.consumableDescriptions || 0) +
           (result.applied.classDescriptions || 0) +
@@ -1308,7 +1385,10 @@ window.OB64 = window.OB64 || {};
         if (result.applied.classDefs) loadedParts.push(result.applied.classDefs + ' class' + (result.applied.classDefs === 1 ? '' : 'es'));
         if (result.applied.neutralSlices) loadedParts.push(result.applied.neutralSlices + ' encounter slice' + (result.applied.neutralSlices === 1 ? '' : 's'));
         if (result.applied.terrainRates) loadedParts.push(result.applied.terrainRates + ' terrain rate' + (result.applied.terrainRates === 1 ? '' : 's'));
+        if (result.applied.neutralScenarioRates) loadedParts.push(result.applied.neutralScenarioRates + ' scenario rate override' + (result.applied.neutralScenarioRates === 1 ? '' : 's'));
+        if (result.applied.customNeutralSquads) loadedParts.push(result.applied.customNeutralSquads + ' custom neutral squad' + (result.applied.customNeutralSquads === 1 ? '' : 's'));
         if (result.applied.creatureDrops) loadedParts.push(result.applied.creatureDrops + ' creature drop record' + (result.applied.creatureDrops === 1 ? '' : 's'));
+        if (result.applied.weightedDropRates) loadedParts.push(result.applied.weightedDropRates + ' weighted drop class' + (result.applied.weightedDropRates === 1 ? '' : 'es'));
         if (result.applied.consumables) loadedParts.push(result.applied.consumables + ' consumable' + (result.applied.consumables === 1 ? '' : 's'));
         if (result.applied.itemDescriptions) loadedParts.push(result.applied.itemDescriptions + ' item description' + (result.applied.itemDescriptions === 1 ? '' : 's'));
         if (result.applied.consumableDescriptions) loadedParts.push(result.applied.consumableDescriptions + ' consumable description' + (result.applied.consumableDescriptions === 1 ? '' : 's'));
@@ -1687,13 +1767,6 @@ window.OB64 = window.OB64 || {};
       case 'tools':     renderTools(panel); break;
       case 'changelog': renderChangelog(panel); break;
       case 'save':      renderSaveGame(panel); break;
-      case 'damage':
-        if (OB64.damageCalculator) {
-          OB64.damageCalculator.render(panel, rom, {
-            openPicker: openSaveItemPickerModal
-          });
-        }
-        break;
       case 'map':       renderMap(panel); break;
     }
     prependCompatibilityWarning(panel, compatibilityState);
@@ -5563,21 +5636,17 @@ window.OB64 = window.OB64 || {};
   function renderEncounters(panel) {
     panel.innerHTML = '';
 
-    // Shared category helpers for the class-picker drop-availability badge.
-    // Story / NPC / special-boss classes (0x51+) get a stronger warning since
-    // they likely won't render as a tactical-map wild encounter.
+    // Drop availability remains one visual channel. Buggy, unverified, and
+    // story-class warnings are separate badges so none can hide another.
     function dropStatus(classId) {
       if (!classId) return 'empty';
       var hasDrops = rom.creatureDrops.byClass[classId] && !rom.creatureDrops.byClass[classId].isSentinel;
-      if (classId >= 0x51) return hasDrops ? 'story-drops' : 'story';
       return hasDrops ? 'ok' : 'no-drops';
     }
     function dropStatusLabel(status) {
       switch(status) {
         case 'ok':          return 'Drops OK';
         case 'no-drops':    return 'No drops';
-        case 'story':       return 'Story/NPC class — untested as wild';
-        case 'story-drops': return 'Story class with drops';
         default:            return '';
       }
     }
@@ -5596,10 +5665,12 @@ window.OB64 = window.OB64 || {};
     note.className = 'encounter-help';
     note.innerHTML =
       '<strong>Neutral encounters</strong> — wild creatures that spawn while walking a tactical map. ' +
-      'Each card is one scenario slice (20 B, 10 terrain slots) keyed by the dispatcher\u2019s <code>$s0</code> index. ' +
-      'Slot\u2192terrain mapping is globally consistent, and all 39 non-empty slices are named. ' +
+      'Each card is one creature-pool slice (20 B, 10 terrain slots). A scenario selector appears only when multiple runtime scenarios share that pool. ' +
+      'Each selected scenario has one optional direct rate override; leaving it untouched keeps the retail encounter-rate path. ' +
+      'Slot\u2192terrain mapping is globally consistent. Scenarios may share retail creature bytes without sharing runtime overrides. ' +
       '<em>Drops are class-keyed</em>: editing Wyrm\u2019s drops in any card changes them for every scenario using Wyrm. ' +
-      'Classes without a drop-table entry still spawn but yield no loot.';
+      'Each drop record has three retail slots with editable non-negative weights. Zero excludes a slot, while an empty positive-weight slot means no drop. ' +
+      'The confirmed adjacent spare permits one additional class record while retaining the final zero sentinel.';
     panel.appendChild(note);
 
     // Build the "vanilla encounter pool" class list once — the set of class
@@ -5612,80 +5683,63 @@ window.OB64 = window.OB64 || {};
 
       var SAFE_MAX_MULT = OB64.NEUTRAL_GLOBAL_SAFE_MAX_MULTIPLIER || 3;
       var HARD_MAX_MULT = OB64.NEUTRAL_GLOBAL_HARD_MAX_MULTIPLIER || 100;
-      var VANILLA_PATCH_BP = OB64.NEUTRAL_GLOBAL_VANILLA_BASIS_POINTS || 7;
-      var VANILLA_PATCH_MICRO_BP = OB64.NEUTRAL_GLOBAL_VANILLA_MICRO_BASIS_POINTS || (VANILLA_PATCH_BP * 100);
-      var VANILLA_EXACT_BP = ((OB64.NEUTRAL_GLOBAL_VANILLA_THRESHOLD + 1) * 10000) /
-        OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
-      var startMicroBp = OB64.neutralGlobalRateDisplayMicroBasisPoints(globalRate);
+      var divisor = Number.isInteger(globalRate.divisor) && globalRate.divisor > 0
+        ? globalRate.divisor : OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
+      var branches = [
+        { key: 'normal', label: 'Area Investigation', stateLabel: 'state bit 17 set', vanillaPassCount: 51 },
+        { key: 'alternate', label: 'In-Scenario Mission', stateLabel: 'state bit 17 clear', vanillaPassCount: 11 }
+      ];
 
       function fmtMult(mult) {
         return Number(mult).toFixed(2).replace(/\.00$/, '');
       }
-      function multiplierToMicroBp(mult) {
+      function clampMultiplier(mult) {
         mult = Number(mult);
         if (!isFinite(mult)) mult = 1;
-        mult = Math.max(1, Math.min(HARD_MAX_MULT, Math.round(mult * 100) / 100));
-        return Math.max(1, Math.min(1000000, Math.round(VANILLA_PATCH_MICRO_BP * mult)));
+        return Math.max(0.01, Math.min(HARD_MAX_MULT, Math.round(mult * 100) / 100));
       }
-      function multiplierFromMicroBp(microBp) {
-        if (!isFinite(microBp) || microBp <= 0) return 1;
-        return Math.max(1, Math.min(HARD_MAX_MULT, Math.round((microBp / VANILLA_PATCH_MICRO_BP) * 100) / 100));
-      }
-      function encodingForMicroBp(microBp) {
-        microBp = Math.max(0, Math.min(1000000, Math.round(microBp || 0)));
-        if (microBp === 0) return { threshold: 0, divisor: OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR || 10000 };
-        if (microBp <= (OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS || 0x8000)) {
-          return { threshold: microBp - 1, divisor: OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR || 1000000 };
+      function currentPassCount(config) {
+        var count = Number(globalRate[config.key + 'PassCount']);
+        if (!Number.isInteger(count) || count < 1) {
+          var micro = OB64.neutralGlobalBranchMicroBasisPoints(globalRate, config.key);
+          count = Math.round((micro * divisor) / 1000000);
         }
-        return {
-          threshold: Math.max(0, Math.min(9999, Math.round(microBp / 100) - 1)),
-          divisor: OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR || 10000
-        };
+        return Math.max(1, Math.min(0x8000, count));
       }
-      var startMult = multiplierFromMicroBp(startMicroBp);
-      var maxMult = startMult > SAFE_MAX_MULT ? HARD_MAX_MULT : SAFE_MAX_MULT;
-
-      function pct(microBp) {
-        return (microBp / 10000).toFixed(4) + '%';
+      function passCountForMultiplier(config, mult) {
+        return Math.max(1, Math.min(0x8000,
+          Math.round(config.vanillaPassCount * clampMultiplier(mult))));
       }
-      function exactChance(threshold, divisor) {
-        if (!divisor || threshold == null || threshold < 0) return 'unknown';
-        return (threshold + 1) + ' / ' + divisor + ' = ' + (((threshold + 1) * 100) / divisor).toFixed(4) + '%';
+      function percent(passCount) {
+        return ((passCount * 100) / divisor).toFixed(4) + '%';
+      }
+      function exactChance(passCount) {
+        return passCount + ' / ' + divisor + ' = ' + percent(passCount);
       }
       function describeMode() {
         if (globalRate.mode === 'never') return 'Current ROM: globally disabled by branch patch.';
         if (globalRate.mode === 'always') return 'Current ROM: global roll always passes by branch patch.';
         if (globalRate.mode === 'threshold') {
-          var normal = exactChance(globalRate.normalThreshold, globalRate.divisor);
-          var alt = exactChance(globalRate.alternateThreshold, globalRate.divisor);
-          if (globalRate.normalBasisPoints !== globalRate.alternateBasisPoints) {
-            return 'Current normal path: ' + normal + '. Alternate branch: ' + alt + '. Editing writes both branches to the selected rate.';
-          }
-          return 'Current ROM: ' + normal + '. Editing writes both state-bit branches to the selected rate.';
+          return 'Current Area Investigation rate: ' + exactChance(currentPassCount(branches[0])) +
+            '. In-Scenario Mission rate: ' + exactChance(currentPassCount(branches[1])) + '.';
         }
-        return 'Current ROM pattern is not recognized. Editing will overwrite the known global-roll sites with the standard slider patch.';
+        return 'Current ROM pattern is not recognized. Editing will replace only the known divisor, threshold, and comparison-branch words.';
       }
-      function sync(mult, numberInput, rangeInput, valueEl, thresholdEl) {
-        mult = Number(mult);
-        if (!isFinite(mult)) mult = 1;
-        mult = Math.max(1, Math.min(maxMult, Math.round(mult * 100) / 100));
-        var microBp = multiplierToMicroBp(mult);
-        var enc = encodingForMicroBp(microBp);
-        globalRate.multiplier = mult;
-        globalRate.microBasisPoints = microBp;
-        globalRate.basisPoints = microBp / 100;
-        numberInput.value = fmtMult(mult);
-        rangeInput.value = fmtMult(mult);
-        valueEl.textContent = 'x' + fmtMult(mult) + ' = ' + pct(microBp);
-        thresholdEl.textContent = enc.threshold + ' / ' + enc.divisor;
+      function recordPassCount(config, passCount) {
+        var microBp = Math.round((passCount * 1000000) / divisor);
+        globalRate[config.key + 'PassCount'] = passCount;
+        globalRate[config.key + 'Threshold'] = passCount - 1;
+        globalRate[config.key + 'MicroBasisPoints'] = microBp;
+        globalRate[config.key + 'BasisPoints'] = Math.round((passCount * 10000) / divisor);
+        globalRate[config.key + 'Modified'] = true;
+        if (config.key === 'normal') {
+          globalRate.microBasisPoints = microBp;
+          globalRate.basisPoints = microBp / 100;
+          globalRate.multiplier = passCount / config.vanillaPassCount;
+        }
       }
-      function updateVanillaMarker(markerEl) {
-        var span = Math.max(1, maxMult - 1);
-        var pos = ((1 - 1) / span) * 100;
-        markerEl.style.left = Math.max(0, Math.min(100, pos)).toFixed(3) + '%';
-      }
-      function commit(mult, numberInput, rangeInput, valueEl, thresholdEl) {
-        sync(mult, numberInput, rangeInput, valueEl, thresholdEl);
+      function markRateChanged() {
+        globalRate.mode = 'threshold';
         globalRate.modified = true;
         dirty.encounters = true;
         markChanged();
@@ -5708,7 +5762,7 @@ window.OB64 = window.OB64 || {};
 
       var help = document.createElement('div');
       help.className = 'terrain-rate-help';
-      help.textContent = 'This is the first neutral-encounter gate before unit selection and terrain rates. Use it as the main frequency knob: terrain rates mostly shape where encounters can happen after this global roll passes.';
+      help.textContent = 'This first gate has separate Area Investigation (state bit 17 set) and In-Scenario Mission (state bit 17 clear) rates. Each value is the exact number of passing RNG remainders.';
       wrap.appendChild(help);
 
       var current = document.createElement('div');
@@ -5716,66 +5770,94 @@ window.OB64 = window.OB64 || {};
       current.textContent = describeMode();
       wrap.appendChild(current);
 
-      var controls = document.createElement('div');
-      controls.className = 'global-rate-controls';
+      var initialMax = branches.some(function(config) {
+        return currentPassCount(config) / config.vanillaPassCount > SAFE_MAX_MULT;
+      }) ? HARD_MAX_MULT : SAFE_MAX_MULT;
+      var maxMult = initialMax;
+      var branchUis = {};
+      function syncUi(config, passCount) {
+        var ui = branchUis[config.key];
+        if (!ui) return;
+        var mult = passCount / config.vanillaPassCount;
+        ui.range.value = String(Math.max(0.01, Math.min(maxMult, mult)));
+        ui.number.value = fmtMult(mult);
+        ui.value.textContent = exactChance(passCount);
+        ui.threshold.textContent = 'threshold ' + (passCount - 1) + '; passes ' + passCount + ' remainders';
+      }
+      function commitBranch(config, mult) {
+        var passCount = passCountForMultiplier(config, mult);
+        recordPassCount(config, passCount);
+        syncUi(config, passCount);
+        if (globalRate.linked) {
+          var other = config.key === 'normal' ? branches[1] : branches[0];
+          recordPassCount(other, passCount);
+          syncUi(other, passCount);
+        }
+        markRateChanged();
+      }
+      function makeBranchControls(config) {
+        var passCount = currentPassCount(config);
+        var startMult = passCount / config.vanillaPassCount;
+        var controls = document.createElement('div');
+        controls.className = 'global-rate-controls global-rate-branch-' + config.key;
+        var label = document.createElement('div');
+        label.className = 'terrain-rate-label';
+        label.textContent = config.label + ' multiplier';
+        label.title = config.stateLabel;
+        controls.appendChild(label);
+        var range = document.createElement('input');
+        range.className = 'global-rate-range';
+        range.type = 'range';
+        range.min = '0.01';
+        range.max = String(maxMult);
+        range.step = '0.01';
+        controls.appendChild(range);
+        var number = document.createElement('input');
+        number.className = 'global-rate-number';
+        number.type = 'number';
+        number.min = '0.01';
+        number.max = String(maxMult);
+        number.step = '0.01';
+        controls.appendChild(number);
+        var value = document.createElement('div');
+        value.className = 'terrain-rate-value';
+        controls.appendChild(value);
+        var threshold = document.createElement('div');
+        threshold.className = 'global-rate-threshold';
+        controls.appendChild(threshold);
+        branchUis[config.key] = { range: range, number: number, value: value, threshold: threshold };
+        syncUi(config, passCount);
+        range.addEventListener('input', function() {
+          var preview = passCountForMultiplier(config, parseFloat(range.value));
+          number.value = fmtMult(preview / config.vanillaPassCount);
+          value.textContent = exactChance(preview);
+          threshold.textContent = 'threshold ' + (preview - 1) + '; passes ' + preview + ' remainders';
+        });
+        range.addEventListener('change', function() { commitBranch(config, parseFloat(range.value)); });
+        number.addEventListener('change', function() { commitBranch(config, parseFloat(number.value)); });
+        return controls;
+      }
+      branches.forEach(function(config) { wrap.appendChild(makeBranchControls(config)); });
 
-      var label = document.createElement('div');
-      label.className = 'terrain-rate-label';
-      label.textContent = 'Multiplier';
-      controls.appendChild(label);
-
-      var range = document.createElement('input');
-      range.className = 'global-rate-range';
-      range.type = 'range';
-      range.min = '1';
-      range.max = String(maxMult);
-      range.step = '0.01';
-      range.value = fmtMult(startMult);
-
-      var rangeWrap = document.createElement('div');
-      rangeWrap.className = 'global-rate-range-wrap';
-      rangeWrap.appendChild(range);
-      var vanillaMarker = document.createElement('div');
-      vanillaMarker.className = 'global-rate-vanilla-marker';
-      vanillaMarker.title = 'Vanilla global normal path: 51 / 72000 = 0.0708%. Editor x1 writes 7 / 10000 = 0.07%.';
-      var vanillaLabel = document.createElement('span');
-      vanillaLabel.textContent = 'Vanilla x1';
-      vanillaMarker.appendChild(vanillaLabel);
-      rangeWrap.appendChild(vanillaMarker);
-      updateVanillaMarker(vanillaMarker);
-      controls.appendChild(rangeWrap);
-
-      var number = document.createElement('input');
-      number.className = 'global-rate-number';
-      number.type = 'number';
-      number.min = '1';
-      number.max = String(maxMult);
-      number.step = '0.01';
-      number.value = fmtMult(startMult);
-      controls.appendChild(number);
-
-      var value = document.createElement('div');
-      value.className = 'terrain-rate-value';
-      value.textContent = 'x' + fmtMult(startMult) + ' = ' + pct(multiplierToMicroBp(startMult));
-      controls.appendChild(value);
-
-      var threshold = document.createElement('div');
-      threshold.className = 'global-rate-threshold';
-      var startEnc = encodingForMicroBp(multiplierToMicroBp(startMult));
-      threshold.textContent = startEnc.threshold + ' / ' + startEnc.divisor;
-      controls.appendChild(threshold);
-
-      range.addEventListener('input', function() {
-        sync(parseFloat(range.value), number, range, value, threshold);
+      var linkWrap = document.createElement('label');
+      linkWrap.className = 'global-rate-unlock';
+      var link = document.createElement('input');
+      link.type = 'checkbox';
+      link.checked = !!globalRate.linked;
+      linkWrap.appendChild(link);
+      var linkText = document.createElement('span');
+      linkText.innerHTML = '<strong>Link both encounter contexts</strong>. A linked edit gives both rates the same exact pass count.';
+      linkWrap.appendChild(linkText);
+      link.addEventListener('change', function() {
+        globalRate.linked = link.checked;
+        if (globalRate.linked) {
+          var passCount = currentPassCount(branches[0]);
+          recordPassCount(branches[1], passCount);
+          syncUi(branches[1], passCount);
+        }
+        markRateChanged();
       });
-      range.addEventListener('change', function() {
-        commit(parseFloat(range.value), number, range, value, threshold);
-      });
-      number.addEventListener('change', function() {
-        commit(parseFloat(number.value), number, range, value, threshold);
-      });
-
-      wrap.appendChild(controls);
+      wrap.appendChild(linkWrap);
 
       var unlockWrap = document.createElement('label');
       unlockWrap.className = 'global-rate-unlock';
@@ -5786,29 +5868,28 @@ window.OB64 = window.OB64 || {};
       var unlockText = document.createElement('span');
       unlockText.innerHTML =
         '<strong>Enable x100 test range</strong>. ' +
-        'Normal tuning is a smooth x1.00-x3.00 range; x100 writes a 7.0000% global pass rate before terrain, which is already very active in live play.';
+        'Normal tuning is x0.01-x3.00. The larger range remains intended for deliberate test builds.';
       unlockWrap.appendChild(unlockText);
       unlock.addEventListener('change', function() {
         maxMult = unlock.checked ? HARD_MAX_MULT : SAFE_MAX_MULT;
-        range.max = String(maxMult);
-        number.max = String(maxMult);
-        updateVanillaMarker(vanillaMarker);
-        var currentMult = multiplierFromMicroBp(globalRate.microBasisPoints || multiplierToMicroBp(startMult));
-        if (currentMult > maxMult) {
-          commit(maxMult, number, range, value, threshold);
-        } else {
-          sync(currentMult, number, range, value, threshold);
-        }
+        branches.forEach(function(config) {
+          var ui = branchUis[config.key];
+          ui.range.max = String(maxMult);
+          ui.number.max = String(maxMult);
+          var mult = currentPassCount(config) / config.vanillaPassCount;
+          if (mult > maxMult) commitBranch(config, maxMult);
+          else syncUi(config, currentPassCount(config));
+        });
       });
       wrap.appendChild(unlockWrap);
 
       var note = document.createElement('div');
       note.className = 'terrain-rate-global-note';
       note.innerHTML =
-        '<strong>Export behavior:</strong> once edited, this writes both state-bit branches to the same multiplier-based basis-point patch. ' +
-        'Vanilla exact is <code>51 / 72000 = ' + (VANILLA_EXACT_BP / 100).toFixed(4) + '%</code>; editor <code>x1.00</code> writes the nearest stable patch, <code>700 / 1000000 = 0.0700%</code>. ' +
-        '<code>x1.00</code> through <code>x3.00</code> is the normal smooth tuning range. The optional <code>x100</code> cap is encoded with the coarse high-range divisor as <code>700 / 10000 = 7.0000%</code>. ' +
-        'Terrain rates still apply after this gate, so <code>x100</code> with <code>50%</code> terrain is about <code>3.5%</code> per eligible check.';
+        '<strong>Export behavior:</strong> untouched ROMs keep both retail words exactly. ' +
+        'An unlinked edit preserves the other path’s pass count. Linked edits intentionally match both paths. ' +
+        'A threshold of <code>0</code> still passes one remainder, so this data-only control never labels either path disabled. ' +
+        'Retail Area Investigation is <code>51 / 72000</code>. Retail In-Scenario Mission is <code>11 / 72000</code>.';
       wrap.appendChild(note);
 
       return wrap;
@@ -5948,6 +6029,850 @@ window.OB64 = window.OB64 || {};
     }
     var vanillaClasses = computeVanillaClasses();
 
+    function globalRateBranchDefaults(key) {
+      var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate || {};
+      var divisor = Number(globalRate.divisor);
+      if (!Number.isInteger(divisor) || divisor <= 0 || divisor > 0xFFFFFFFF) {
+        divisor = OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR || 72000;
+      }
+      var passCount = Number(globalRate[key + 'PassCount']);
+      if (!Number.isInteger(passCount) || passCount < 1 ||
+          passCount > Math.min(0x10000, divisor)) {
+        var vanillaPassCount = key === 'normal' ? 51 : 11;
+        var micro = OB64.neutralGlobalBranchMicroBasisPoints
+          ? OB64.neutralGlobalBranchMicroBasisPoints(globalRate, key)
+          : Math.round((vanillaPassCount * 1000000) / divisor);
+        passCount = Math.round((micro * divisor) / 1000000);
+        passCount = Math.max(1, Math.min(0x10000, divisor, passCount));
+      }
+      return { passCount: passCount, divisor: divisor };
+    }
+
+    function formatScenarioRateBranch(branch) {
+      branch = branch || {};
+      if (branch.mode === 'disabled') return 'disabled';
+      if (branch.mode !== 'override') return 'retail rate';
+      var passCount = Number(branch.passCount);
+      var divisor = Number(branch.divisor);
+      if (!Number.isInteger(passCount) || !Number.isInteger(divisor) || divisor <= 0) {
+        return 'invalid override';
+      }
+      var percent = ((passCount * 100) / divisor).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+      return passCount + ' / ' + divisor + ' (' + percent + '%)';
+    }
+
+    function renderScenarioRateControls(rec, scope) {
+      scope = scope || {};
+      rec.rateOverride = rec.rateOverride || OB64.makeNeutralSliceRateOverride();
+      var titlePrefix = scope.title || 'Scenario encounter-rate override';
+      var runtimeAvailable = !rom.layout || rom.layout.supportsNeutralRuntimeOverrides !== false;
+      var details = document.createElement('details');
+      details.className = 'slice-rate-details';
+      if (!runtimeAvailable) details.classList.add('slice-rate-unavailable');
+      var summary = document.createElement('summary');
+      summary.className = 'slice-rate-summary';
+      details.appendChild(summary);
+
+      function updateSummary() {
+        var rate = rec.rateOverride;
+        var normal = formatScenarioRateBranch(rate.normal);
+        var alternate = formatScenarioRateBranch(rate.alternate);
+        if (normal === 'retail rate' && alternate === 'retail rate') {
+          summary.textContent = titlePrefix + ' — not set; both contexts use retail rates';
+        } else {
+          summary.textContent = titlePrefix + ' — Area Investigation: ' + normal +
+            '; In-Scenario Mission: ' + alternate;
+        }
+      }
+
+      var intro = document.createElement('div');
+      intro.className = 'slice-rate-help';
+      intro.textContent = runtimeAvailable
+        ? (scope.help || 'This optional override affects only the selected runtime scenario. Use retail rate follows the ordinary global encounter roll. Disabled always takes the existing rejection path.')
+        : 'Runtime encounter rates are not mapped for this ROM revision.';
+      details.appendChild(intro);
+
+      var configs = [
+        { key: 'normal', label: 'Area Investigation', stateLabel: 'state bit 17 set' },
+        { key: 'alternate', label: 'In-Scenario Mission', stateLabel: 'state bit 17 clear' }
+      ];
+      configs.forEach(function(config) {
+        var branch = rec.rateOverride[config.key] || OB64.makeNeutralSliceRateBranch();
+        rec.rateOverride[config.key] = branch;
+        var row = document.createElement('div');
+        row.className = 'slice-rate-row';
+
+        var label = document.createElement('div');
+        label.className = 'slice-rate-label';
+        label.textContent = config.label;
+        label.title = config.stateLabel;
+        row.appendChild(label);
+
+        var mode = document.createElement('select');
+        mode.className = 'slice-rate-mode';
+        [
+          ['inherit', 'Use retail rate'],
+          ['override', 'Override'],
+          ['disabled', 'Disabled']
+        ].forEach(function(optionInfo) {
+          var option = document.createElement('option');
+          option.value = optionInfo[0];
+          option.textContent = optionInfo[1];
+          mode.appendChild(option);
+        });
+        mode.value = branch.mode === 'override' || branch.mode === 'disabled'
+          ? branch.mode : 'inherit';
+        mode.disabled = !runtimeAvailable;
+        row.appendChild(mode);
+
+        var passWrap = document.createElement('label');
+        passWrap.className = 'slice-rate-number-wrap';
+        passWrap.appendChild(document.createTextNode('passing remainders '));
+        var passInput = document.createElement('input');
+        passInput.className = 'slice-rate-number';
+        passInput.type = 'number';
+        passInput.min = '1';
+        passInput.max = '65536';
+        passInput.step = '1';
+        passWrap.appendChild(passInput);
+        row.appendChild(passWrap);
+
+        var divisorWrap = document.createElement('label');
+        divisorWrap.className = 'slice-rate-number-wrap';
+        divisorWrap.appendChild(document.createTextNode('divisor '));
+        var divisorInput = document.createElement('input');
+        divisorInput.className = 'slice-rate-number slice-rate-divisor';
+        divisorInput.type = 'number';
+        divisorInput.min = '1';
+        divisorInput.max = '4294967295';
+        divisorInput.step = '1';
+        divisorWrap.appendChild(divisorInput);
+        row.appendChild(divisorWrap);
+
+        var exact = document.createElement('div');
+        exact.className = 'slice-rate-exact';
+        row.appendChild(exact);
+
+        function syncBranch() {
+          var defaults = scope.branchDefaults
+            ? scope.branchDefaults(config.key) : globalRateBranchDefaults(config.key);
+          var isOverride = branch.mode === 'override';
+          passInput.value = String(isOverride ? branch.passCount : defaults.passCount);
+          divisorInput.value = String(isOverride ? branch.divisor : defaults.divisor);
+          passInput.disabled = !runtimeAvailable || !isOverride;
+          divisorInput.disabled = !runtimeAvailable || !isOverride;
+          exact.textContent = formatScenarioRateBranch(branch);
+          updateSummary();
+        }
+
+        function markScenarioRateChanged() {
+          dirty.neutralRuntime = true;
+          markChanged();
+          syncBranch();
+        }
+
+        function commitNumbers() {
+          var passCount = Number(passInput.value);
+          var divisor = Number(divisorInput.value);
+          var validDivisor = Number.isInteger(divisor) && divisor >= 1 && divisor <= 0xFFFFFFFF;
+          var maxPass = validDivisor ? Math.min(0x10000, divisor) : 0;
+          var validPass = Number.isInteger(passCount) && passCount >= 1 && passCount <= maxPass;
+          passInput.setCustomValidity(validPass ? '' :
+            'Passing remainders must be an integer from 1 through ' + (maxPass || 1) + '.');
+          divisorInput.setCustomValidity(validDivisor ? '' :
+            'Divisor must be an integer from 1 through 4294967295.');
+          if (!validDivisor || !validPass) {
+            (validDivisor ? passInput : divisorInput).reportValidity();
+            syncBranch();
+            return;
+          }
+          passInput.setCustomValidity('');
+          divisorInput.setCustomValidity('');
+          if (branch.passCount === passCount && branch.divisor === divisor) return;
+          branch.passCount = passCount;
+          branch.divisor = divisor;
+          markScenarioRateChanged();
+        }
+
+        mode.addEventListener('change', function() {
+          var nextMode = mode.value;
+          if (branch.mode === nextMode) return;
+          branch.mode = nextMode;
+          if (nextMode === 'override') {
+            var defaults = scope.branchDefaults
+              ? scope.branchDefaults(config.key) : globalRateBranchDefaults(config.key);
+            branch.passCount = defaults.passCount;
+            branch.divisor = defaults.divisor;
+          } else {
+            branch.passCount = null;
+            branch.divisor = null;
+          }
+          markScenarioRateChanged();
+        });
+        passInput.addEventListener('change', commitNumbers);
+        divisorInput.addEventListener('change', commitNumbers);
+        syncBranch();
+        details.appendChild(row);
+      });
+      updateSummary();
+      return details;
+    }
+
+    function updateDropRowDisplay(dropsRow, classId) {
+      var dropsRec = rom.creatureDrops.byClass[classId];
+      if (!dropsRec) return;
+      var total = OB64.creatureDropTotalWeight(dropsRec);
+      var chips = dropsRow.querySelectorAll('.drop-chip[data-slot-index]');
+      for (var i = 0; i < chips.length; i++) {
+        var slotIndex = Number(chips[i].dataset.slotIndex);
+        var dropSlot = dropsRec.slots[slotIndex];
+        var weight = Number.isInteger(dropSlot.weight) && dropSlot.weight >= 0
+          ? dropSlot.weight : 1;
+        chips[i].className = 'drop-chip ' +
+          (dropSlot.isEquipment ? 'drop-chip-bit15-set' : 'drop-chip-bit15-clear');
+        chips[i].textContent = OB64.creatureDropLabel(dropSlot) + ' · ' +
+          (total ? (weight + '/' + total) : 'invalid');
+        chips[i].title = OB64.creatureDropKindLabel(dropSlot) +
+          ' — selector slot ' + (slotIndex + 1) + ' has weight ' + weight +
+          ' of ' + total + ' — namespace ID 0x' +
+          dropSlot.itemId.toString(16).padStart(4, '0') +
+          ' — affects all scenarios using ' + OB64.className(classId);
+      }
+      var inputs = dropsRow.querySelectorAll('.drop-weight-input[data-slot-index]');
+      for (i = 0; i < inputs.length; i++) {
+        var inputSlot = Number(inputs[i].dataset.slotIndex);
+        var inputWeight = dropsRec.slots[inputSlot].weight;
+        inputs[i].value = String(Number.isInteger(inputWeight) && inputWeight >= 0 ? inputWeight : 1);
+      }
+      var summaryEl = dropsRow.querySelector('.drop-odds-summary');
+      if (summaryEl) {
+        summaryEl.textContent = total
+          ? 'Outcomes: ' + OB64.creatureDropOutcomes(dropsRec).map(function(outcome) {
+              return outcome.label + ' ' + outcome.numerator + '/' + outcome.denominator;
+            }).join(' · ')
+          : 'Invalid: the three slot weights total zero.';
+      }
+    }
+
+    function refreshDropClassDisplays(classId) {
+      var rows = panel.querySelectorAll('.drops-row[data-drop-class-id="' + classId + '"]');
+      for (var i = 0; i < rows.length; i++) updateDropRowDisplay(rows[i], classId);
+    }
+
+    function markNeutralRuntimeChanged() {
+      dirty.neutralRuntime = true;
+      markChanged();
+    }
+
+    function customNeutralProfile(runtimeKey, terrainSlot) {
+      var profiles = rom.neutralEncounters.customSquads || [];
+      for (var i = 0; i < profiles.length; i++) {
+        if (profiles[i].runtimeKey === runtimeKey && profiles[i].terrainSlot === terrainSlot) {
+          return profiles[i];
+        }
+      }
+      return null;
+    }
+
+    function nextCustomNeutralProfileId() {
+      var used = {};
+      (rom.neutralEncounters.customSquads || []).forEach(function(profile) {
+        used[Number(profile.profileId)] = true;
+      });
+      for (var id = 1; id <= 255; id++) if (!used[id]) return id;
+      throw new Error('No custom neutral squad profile IDs remain.');
+    }
+
+    function defaultCustomNeutralMembers() {
+      if (OB64.makeDefaultNeutralSquadMembers) return OB64.makeDefaultNeutralSquadMembers();
+      return [
+        { cohort: 'A', classId: 0x05, levelOffsetRaw: 0x01, cell: 7 },
+        { cohort: 'B', classId: 0x47, levelOffsetRaw: 0x00, cell: 2 }
+      ];
+    }
+
+    function defaultCustomNeutralEquipment() {
+      return { A: [0, 0], B: [0, 0], C: [0, 0] };
+    }
+
+    function defaultCustomNeutralRewards() {
+      return { slots: [
+        { raw: 0, weight: 1 },
+        { raw: 0, weight: 1 },
+        { raw: 0, weight: 1 }
+      ] };
+    }
+
+    function removeCustomNeutralProfile(profile) {
+      var profiles = rom.neutralEncounters.customSquads || [];
+      var index = profiles.indexOf(profile);
+      if (index < 0) return false;
+      profiles.splice(index, 1);
+      markNeutralRuntimeChanged();
+      return true;
+    }
+
+    function openCustomNeutralSquadModal(profile, card, rec, scenarioRow, slot) {
+      try {
+        profile.label = OB64.runtimeOverrides.normalizeEncounterText(profile.label);
+      } catch (encounterTextError) {
+        profile.label = 'Bandits!';
+      }
+      var initialPersuasionChance = Number(profile.persuasion && profile.persuasion.chance);
+      if (!Number.isInteger(initialPersuasionChance) ||
+          initialPersuasionChance < 0 || initialPersuasionChance > 100) {
+        initialPersuasionChance = 10;
+      }
+      var initialClassBonuses = profile.persuasion && Array.isArray(profile.persuasion.classBonuses)
+        ? profile.persuasion.classBonuses.slice(0, 3).map(function(entry) {
+            return { classId: Number(entry.classId), bonus: Number(entry.bonus) };
+          }).filter(function(entry) {
+            return Number.isInteger(entry.classId) && entry.classId > 1 && entry.classId <= 0xFF &&
+              Number.isInteger(entry.bonus) && entry.bonus >= 1 && entry.bonus <= 100;
+          }) : [];
+      var seenBonusClasses = {};
+      initialClassBonuses = initialClassBonuses.filter(function(entry) {
+        if (seenBonusClasses[entry.classId]) return false;
+        seenBonusClasses[entry.classId] = true;
+        return true;
+      });
+      profile.persuasion = {
+        mode: 'fixed',
+        chance: initialPersuasionChance,
+        classBonuses: initialClassBonuses
+      };
+      var initialRetreatHpThreshold = Number(profile.retreat && profile.retreat.hpThreshold);
+      if (!Number.isInteger(initialRetreatHpThreshold) ||
+          initialRetreatHpThreshold < 0 || initialRetreatHpThreshold > 100) {
+        initialRetreatHpThreshold = 0;
+      }
+      profile.retreat = { hpThreshold: initialRetreatHpThreshold };
+      profile.members = Array.isArray(profile.members)
+        ? profile.members : defaultCustomNeutralMembers();
+      profile.equipment = profile.equipment || defaultCustomNeutralEquipment();
+      profile.rewards = profile.rewards && Array.isArray(profile.rewards.slots) &&
+        profile.rewards.slots.length === 3 ? {
+          slots: profile.rewards.slots.map(function(entry) {
+            var raw = Number(entry && entry.raw);
+            var weight = Number(entry && entry.weight);
+            return {
+              raw: Number.isInteger(raw) && raw >= 0 && raw <= 0xFFFF ? raw : 0,
+              weight: Number.isInteger(weight) && weight >= 0 && weight <= 0xFFFF ? weight : 1
+            };
+          })
+        } : defaultCustomNeutralRewards();
+      if (!profile.rewards.slots.some(function(entry) { return entry.weight > 0; })) {
+        profile.rewards = defaultCustomNeutralRewards();
+      }
+
+      var overlay = document.createElement('div');
+      overlay.className = 'item-modal-overlay neutral-squad-modal-overlay';
+      var modal = document.createElement('div');
+      modal.className = 'item-modal neutral-squad-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      overlay.appendChild(modal);
+
+      var header = document.createElement('div');
+      header.className = 'item-modal-header';
+      var title = document.createElement('h2');
+      title.id = 'neutral-squad-modal-title-' + profile.profileId;
+      title.textContent = profile.label + ' · ' + encounterScenarioLabel(scenarioRow.runtimeKey) +
+        ' · ' + slot.terrainName;
+      modal.setAttribute('aria-labelledby', title.id);
+      header.appendChild(title);
+      var closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'item-modal-close';
+      closeButton.textContent = '\u00d7';
+      closeButton.title = 'Close squad editor (Esc)';
+      closeButton.setAttribute('aria-label', 'Close squad editor');
+      closeButton.addEventListener('click', closeModal);
+      header.appendChild(closeButton);
+      modal.appendChild(header);
+
+      var body = document.createElement('div');
+      body.className = 'item-modal-body neutral-squad-modal-body';
+      var help = document.createElement('div');
+      help.className = 'neutral-squad-modal-help';
+      help.textContent = 'This profile replaces both retail creature choices for this scenario and terrain. Its encounter-card text is customizable below. This squad can keep fighting until the encounter resolves. Persuasion rolls only when exactly one eligible enemy remains; an early or failed Talk returns to the encounter without forcing a retreat. Retail creatures withdraw at a class-specific HP threshold; this squad uses the threshold below.';
+      body.appendChild(help);
+
+      var messageSection = document.createElement('div');
+      messageSection.className = 'neutral-profile-section neutral-message-section';
+      var messageLabel = document.createElement('label');
+      messageLabel.className = 'neutral-message-label';
+      messageLabel.textContent = 'Encounter card text';
+      var messageInput = document.createElement('input');
+      messageInput.className = 'neutral-message-input';
+      messageInput.type = 'text';
+      messageInput.maxLength = OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS;
+      messageInput.value = profile.label;
+      messageInput.setAttribute('aria-label', 'Encounter card text');
+      messageLabel.appendChild(messageInput);
+      messageSection.appendChild(messageLabel);
+      var messageHelp = document.createElement('div');
+      messageHelp.className = 'neutral-profile-section-help neutral-message-help';
+      messageHelp.textContent = 'Up to ' +
+        OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+        ' plain characters. The default is “Bandits!”.';
+      messageSection.appendChild(messageHelp);
+      messageInput.addEventListener('input', function() {
+        try {
+          var nextText = OB64.runtimeOverrides.normalizeEncounterText(messageInput.value);
+          messageInput.setCustomValidity('');
+          messageHelp.textContent = 'Up to ' +
+            OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+            ' plain characters. The default is “Bandits!”.';
+          if (profile.label === nextText) return;
+          profile.label = nextText;
+          title.textContent = profile.label + ' · ' +
+            encounterScenarioLabel(scenarioRow.runtimeKey) + ' · ' + slot.terrainName;
+          markNeutralRuntimeChanged();
+        } catch (messageError) {
+          messageInput.setCustomValidity(messageError.message);
+          messageHelp.textContent = messageError.message;
+        }
+      });
+      messageInput.addEventListener('blur', function() {
+        if (messageInput.checkValidity()) return;
+        messageInput.value = profile.label;
+        messageInput.setCustomValidity('');
+        messageHelp.textContent = 'Up to ' +
+          OB64.runtimeOverrides.consts.TYPED_MESSAGE_MAX_CHARS +
+          ' plain characters. The default is “Bandits!”.';
+      });
+      body.appendChild(messageSection);
+
+      var persuasion = document.createElement('div');
+      persuasion.className = 'neutral-persuasion-controls';
+      var persuasionLabel = document.createElement('label');
+      persuasionLabel.className = 'neutral-persuasion-slider-label';
+      var persuasionCaption = document.createElement('span');
+      persuasionCaption.className = 'neutral-persuasion-caption';
+      persuasionCaption.textContent = 'Persuasion chance';
+      persuasionLabel.appendChild(persuasionCaption);
+      var chance = document.createElement('input');
+      chance.className = 'neutral-persuasion-slider';
+      chance.type = 'range';
+      chance.min = '0';
+      chance.max = '100';
+      chance.step = '1';
+      chance.value = String(profile.persuasion.chance);
+      chance.setAttribute('aria-label', 'Persuasion chance');
+      chance.setAttribute('aria-valuetext', profile.persuasion.chance + ' percent');
+      persuasionLabel.appendChild(chance);
+      var chanceValue = document.createElement('output');
+      chanceValue.className = 'neutral-persuasion-value';
+      chanceValue.textContent = profile.persuasion.chance + '%';
+      persuasionLabel.appendChild(chanceValue);
+      persuasion.appendChild(persuasionLabel);
+      chance.addEventListener('input', function() {
+        var value = Number(chance.value);
+        chanceValue.textContent = value + '%';
+        chance.setAttribute('aria-valuetext', value + ' percent');
+        if (profile.persuasion.chance === value) return;
+        profile.persuasion.mode = 'fixed';
+        profile.persuasion.chance = value;
+        markNeutralRuntimeChanged();
+      });
+
+      var bonusSection = document.createElement('div');
+      bonusSection.className = 'neutral-profile-section neutral-class-bonuses';
+      var bonusTitle = document.createElement('div');
+      bonusTitle.className = 'neutral-profile-section-title';
+      bonusTitle.textContent = 'Player leader class bonuses';
+      bonusSection.appendChild(bonusTitle);
+      var bonusHelp = document.createElement('div');
+      bonusHelp.className = 'neutral-profile-section-help';
+      bonusHelp.textContent = 'Add up to three exact current leader-class matches. One matching bonus is added to the base chance, capped at 100%. Bonuses never stack.';
+      bonusSection.appendChild(bonusHelp);
+      var bonusRows = document.createElement('div');
+      bonusRows.className = 'neutral-class-bonus-rows';
+      bonusSection.appendChild(bonusRows);
+      var addBonus = document.createElement('button');
+      addBonus.type = 'button';
+      addBonus.className = 'btn-secondary neutral-add-class-bonus';
+      addBonus.textContent = 'Add Class Bonus';
+      bonusSection.appendChild(addBonus);
+
+      function availableBonusClass() {
+        var used = {};
+        profile.persuasion.classBonuses.forEach(function(entry) { used[entry.classId] = true; });
+        var ids = Object.keys(OB64.CLASS_NAMES || {}).map(Number).sort(function(a, b) { return a - b; });
+        for (var index = 0; index < ids.length; index++) {
+          if (ids[index] > 1 && ids[index] <= 0xFF && !used[ids[index]]) return ids[index];
+        }
+        return 0;
+      }
+
+      function renderClassBonuses() {
+        bonusRows.innerHTML = '';
+        var used = {};
+        profile.persuasion.classBonuses.forEach(function(entry) { used[entry.classId] = true; });
+        profile.persuasion.classBonuses.forEach(function(entry, rowIndex) {
+          var row = document.createElement('div');
+          row.className = 'neutral-class-bonus-row';
+          var select = document.createElement('select');
+          select.setAttribute('aria-label', 'Player leader bonus class ' + (rowIndex + 1));
+          Object.keys(OB64.CLASS_NAMES || {}).map(Number).sort(function(a, b) { return a - b; }).forEach(function(classId) {
+            if (!Number.isInteger(classId) || classId <= 1 || classId > 0xFF) return;
+            var option = document.createElement('option');
+            option.value = String(classId);
+            option.textContent = OB64.className ? OB64.className(classId) : OB64.CLASS_NAMES[classId];
+            option.selected = classId === entry.classId;
+            option.disabled = classId !== entry.classId && !!used[classId];
+            select.appendChild(option);
+          });
+          select.addEventListener('change', function() {
+            var classId = Number(select.value);
+            var duplicate = profile.persuasion.classBonuses.some(function(other, otherIndex) {
+              return otherIndex !== rowIndex && other.classId === classId;
+            });
+            if (duplicate) {
+              renderClassBonuses();
+              return;
+            }
+            entry.classId = classId;
+            markNeutralRuntimeChanged();
+            renderClassBonuses();
+          });
+          row.appendChild(select);
+          var plus = document.createElement('span');
+          plus.className = 'neutral-class-bonus-plus';
+          plus.textContent = '+';
+          row.appendChild(plus);
+          var amount = document.createElement('input');
+          amount.type = 'number';
+          amount.min = '1';
+          amount.max = '100';
+          amount.step = '1';
+          amount.value = String(entry.bonus);
+          amount.setAttribute('aria-label', 'Persuasion bonus percent for ' +
+            (OB64.className ? OB64.className(entry.classId) : entry.classId));
+          amount.addEventListener('change', function() {
+            var value = Number(amount.value);
+            if (!Number.isInteger(value) || value < 1 || value > 100) {
+              amount.value = String(entry.bonus);
+              return;
+            }
+            if (entry.bonus === value) return;
+            entry.bonus = value;
+            markNeutralRuntimeChanged();
+          });
+          row.appendChild(amount);
+          var percent = document.createElement('span');
+          percent.textContent = '%';
+          row.appendChild(percent);
+          var removeBonus = document.createElement('button');
+          removeBonus.type = 'button';
+          removeBonus.className = 'btn-secondary neutral-remove-class-bonus';
+          removeBonus.textContent = 'Remove';
+          removeBonus.addEventListener('click', function() {
+            profile.persuasion.classBonuses.splice(rowIndex, 1);
+            markNeutralRuntimeChanged();
+            renderClassBonuses();
+          });
+          row.appendChild(removeBonus);
+          bonusRows.appendChild(row);
+        });
+        addBonus.disabled = profile.persuasion.classBonuses.length >= 3 || !availableBonusClass();
+      }
+
+      addBonus.addEventListener('click', function() {
+        var classId = availableBonusClass();
+        if (!classId || profile.persuasion.classBonuses.length >= 3) return;
+        profile.persuasion.classBonuses.push({ classId: classId, bonus: 10 });
+        markNeutralRuntimeChanged();
+        renderClassBonuses();
+      });
+      renderClassBonuses();
+      persuasion.appendChild(bonusSection);
+
+      var retreatLabel = document.createElement('label');
+      retreatLabel.className = 'neutral-persuasion-slider-label neutral-retreat-slider-label';
+      var retreatCaption = document.createElement('span');
+      retreatCaption.className = 'neutral-persuasion-caption neutral-retreat-caption';
+      retreatCaption.textContent = 'Retreat at or below HP';
+      retreatLabel.appendChild(retreatCaption);
+      var retreatSlider = document.createElement('input');
+      retreatSlider.className = 'neutral-persuasion-slider neutral-retreat-slider';
+      retreatSlider.type = 'range';
+      retreatSlider.min = '0';
+      retreatSlider.max = '100';
+      retreatSlider.step = '1';
+      retreatSlider.value = String(profile.retreat.hpThreshold);
+      retreatSlider.setAttribute('aria-label', 'Retreat at or below HP');
+      retreatSlider.setAttribute('aria-valuetext', profile.retreat.hpThreshold === 0
+        ? 'Never retreat' : profile.retreat.hpThreshold + ' percent HP');
+      retreatLabel.appendChild(retreatSlider);
+      var retreatValue = document.createElement('output');
+      retreatValue.className = 'neutral-persuasion-value neutral-retreat-value';
+      retreatValue.textContent = profile.retreat.hpThreshold === 0
+        ? 'Never' : profile.retreat.hpThreshold + '%';
+      retreatLabel.appendChild(retreatValue);
+      persuasion.appendChild(retreatLabel);
+      retreatSlider.addEventListener('input', function() {
+        var value = Number(retreatSlider.value);
+        retreatValue.textContent = value === 0 ? 'Never' : value + '%';
+        retreatSlider.setAttribute('aria-valuetext', value === 0
+          ? 'Never retreat' : value + ' percent HP');
+        if (profile.retreat.hpThreshold === value) return;
+        profile.retreat.hpThreshold = value;
+        markNeutralRuntimeChanged();
+      });
+      body.appendChild(persuasion);
+
+      var rewards = document.createElement('div');
+      rewards.className = 'neutral-profile-section neutral-reward-section';
+      var rewardsTitle = document.createElement('div');
+      rewardsTitle.className = 'neutral-profile-section-title';
+      rewardsTitle.textContent = 'Squad victory reward';
+      rewards.appendChild(rewardsTitle);
+      var rewardsHelp = document.createElement('div');
+      rewardsHelp.className = 'neutral-profile-section-help';
+      rewardsHelp.textContent = 'Choose three weighted outcomes. “None” is a valid outcome. The game rolls this table once after defeating the squad; persuasion awards nothing.';
+      rewards.appendChild(rewardsHelp);
+      var rewardRows = document.createElement('div');
+      rewardRows.className = 'neutral-reward-rows';
+      rewards.appendChild(rewardRows);
+      var rewardSummary = document.createElement('div');
+      rewardSummary.className = 'neutral-reward-summary';
+      rewards.appendChild(rewardSummary);
+
+      function rewardDisplay(raw) {
+        var itemId = raw & 0x7FFF;
+        var isEquipment = !!(raw & 0x8000);
+        if (!itemId) return { label: '(none)', itemId: 0, isEquipment: false };
+        var slot = { itemId: itemId, isEquipment: isEquipment, raw: raw };
+        return {
+          label: OB64.creatureDropLabel ? OB64.creatureDropLabel(slot) :
+            ((isEquipment ? 'Equipment ' : 'Consumable ') + itemId),
+          itemId: itemId,
+          isEquipment: isEquipment
+        };
+      }
+
+      function renderRewards() {
+        rewardRows.innerHTML = '';
+        var total = 0;
+        profile.rewards.slots.forEach(function(entry, rewardIndex) {
+          total += entry.weight;
+          var display = rewardDisplay(entry.raw);
+          var row = document.createElement('div');
+          row.className = 'neutral-reward-row';
+          var label = document.createElement('span');
+          label.className = 'neutral-reward-label';
+          label.textContent = 'Choice ' + (rewardIndex + 1);
+          row.appendChild(label);
+          var pick = document.createElement('button');
+          pick.type = 'button';
+          pick.className = 'neutral-reward-picker';
+          pick.textContent = display.label;
+          pick.title = 'Choose reward outcome ' + (rewardIndex + 1);
+          pick.addEventListener('click', function() {
+            openItemPicker(pick, display.itemId, display.isEquipment, function(newItemId, kind) {
+              if (newItemId === undefined) return;
+              if (!newItemId || kind === 'none') entry.raw = 0;
+              else entry.raw = (newItemId & 0x7FFF) |
+                (kind === 'bit15-set' ? 0x8000 : 0);
+              markNeutralRuntimeChanged();
+              renderRewards();
+            });
+          });
+          row.appendChild(pick);
+          var weightLabel = document.createElement('label');
+          weightLabel.className = 'neutral-reward-weight';
+          weightLabel.textContent = 'Weight ';
+          var weight = document.createElement('input');
+          weight.type = 'number';
+          weight.min = '0';
+          weight.max = '65535';
+          weight.step = '1';
+          weight.value = String(entry.weight);
+          weight.setAttribute('aria-label', 'Reward choice ' + (rewardIndex + 1) + ' weight');
+          weight.addEventListener('change', function() {
+            var value = Number(weight.value);
+            if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) {
+              weight.value = String(entry.weight);
+              return;
+            }
+            var otherTotal = profile.rewards.slots.reduce(function(sum, slotEntry, index) {
+              return sum + (index === rewardIndex ? 0 : slotEntry.weight);
+            }, 0);
+            if (value + otherTotal === 0) {
+              weight.value = String(entry.weight);
+              return;
+            }
+            if (entry.weight === value) return;
+            entry.weight = value;
+            markNeutralRuntimeChanged();
+            renderRewards();
+          });
+          weightLabel.appendChild(weight);
+          row.appendChild(weightLabel);
+          rewardRows.appendChild(row);
+        });
+        rewardSummary.textContent = 'Total weight: ' + total;
+      }
+      renderRewards();
+      body.appendChild(rewards);
+
+      var editorHost = document.createElement('div');
+      editorHost.className = 'neutral-squad-editor-host';
+      body.appendChild(editorHost);
+      modal.appendChild(body);
+
+      var footer = document.createElement('div');
+      footer.className = 'neutral-squad-modal-footer';
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn-secondary neutral-remove-squad';
+      remove.textContent = 'Remove Squad';
+      remove.addEventListener('click', function() {
+        removeCustomNeutralProfile(profile);
+        closeModal();
+      });
+      footer.appendChild(remove);
+      var done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'neutral-squad-modal-done';
+      done.textContent = 'Done';
+      done.addEventListener('click', function() {
+        if (!messageInput.checkValidity()) {
+          messageInput.reportValidity();
+          messageInput.focus();
+          return;
+        }
+        closeModal();
+      });
+      footer.appendChild(done);
+      modal.appendChild(footer);
+
+      var closed = false;
+      function closeModal() {
+        if (closed) return;
+        closed = true;
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        if (card && card.isConnected) rebuildCardBody(card, rec);
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') closeModal();
+      }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', function(event) {
+        if (event.target === overlay) closeModal();
+      });
+
+      document.body.appendChild(overlay);
+      OB64.renderNeutralSquadEditor(editorHost, rom, profile, {
+        onChange: function() { markNeutralRuntimeChanged(); }
+      });
+      closeButton.focus();
+    }
+
+    function renderCustomNeutralSquad(tile, card, rec, scenarioRow, slot) {
+      var wrap = document.createElement('div');
+      wrap.className = 'neutral-custom-squad';
+      var customAvailable = (!rom.layout ||
+        rom.layout.supportsNeutralCustomSquads !== false) &&
+        !!OB64.renderNeutralSquadEditor;
+      if (!scenarioRow) {
+        wrap.classList.add('neutral-custom-unavailable');
+        wrap.textContent = 'Select a mapped scenario to add a squad.';
+        tile.appendChild(wrap);
+        return;
+      }
+      var profile = customNeutralProfile(scenarioRow.runtimeKey, slot.slotIdx);
+      if (!profile) {
+        var profileLimit = OB64.runtimeOverrides && OB64.runtimeOverrides.consts
+          ? OB64.runtimeOverrides.consts.TYPED_MAX_PROFILES : 113;
+        var profileCount = (rom.neutralEncounters.customSquads || []).length;
+        var profileCapacityReached = profileCount >= profileLimit;
+        var add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'neutral-add-squad';
+        add.textContent = 'Add Squad';
+        add.disabled = !customAvailable || profileCapacityReached;
+        add.title = !customAvailable
+          ? 'Custom neutral squads are unavailable for this ROM revision.'
+          : (profileCapacityReached
+            ? 'The custom neutral squad table is full (' + profileLimit + ' profiles).'
+            : 'Replace both retail creature choices for this scenario and terrain with a custom squad.');
+        add.addEventListener('click', function() {
+          rom.neutralEncounters.customSquads = rom.neutralEncounters.customSquads || [];
+          var newProfile = {
+            profileId: nextCustomNeutralProfileId(),
+            runtimeKey: scenarioRow.runtimeKey,
+            slice: rec.s0,
+            terrainSlot: slot.slotIdx,
+            members: defaultCustomNeutralMembers(),
+            equipment: defaultCustomNeutralEquipment(),
+            label: 'Bandits!',
+            persuasion: { mode: 'fixed', chance: 10, classBonuses: [] },
+            retreat: { hpThreshold: 0 },
+            rewards: defaultCustomNeutralRewards()
+          };
+          rom.neutralEncounters.customSquads.push(newProfile);
+          markNeutralRuntimeChanged();
+          rebuildCardBody(card, rec);
+          openCustomNeutralSquadModal(newProfile, card, rec, scenarioRow, slot);
+        });
+        wrap.appendChild(add);
+        var addHelp = document.createElement('div');
+        addHelp.className = 'neutral-custom-hint';
+        addHelp.textContent = 'Opens the Scenario-style squad and formation editor.';
+        wrap.appendChild(addHelp);
+        tile.appendChild(wrap);
+        return;
+      }
+
+      var head = document.createElement('div');
+      head.className = 'neutral-custom-head';
+      var title = document.createElement('div');
+      title.className = 'neutral-custom-title';
+      title.textContent = (profile.label || 'Bandits!') + ' · custom squad';
+      head.appendChild(title);
+      var actions = document.createElement('div');
+      actions.className = 'neutral-custom-actions';
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'neutral-edit-squad';
+      edit.textContent = 'Edit Squad';
+      edit.addEventListener('click', function() {
+        openCustomNeutralSquadModal(profile, card, rec, scenarioRow, slot);
+      });
+      actions.appendChild(edit);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn-secondary neutral-remove-squad';
+      remove.textContent = 'Remove Squad';
+      remove.addEventListener('click', function() {
+        if (removeCustomNeutralProfile(profile)) rebuildCardBody(card, rec);
+      });
+      actions.appendChild(remove);
+      head.appendChild(actions);
+      wrap.appendChild(head);
+
+      var memberTotal = Array.isArray(profile.members) ? profile.members.length : 2;
+      var persuasionChance = Number(profile.persuasion && profile.persuasion.chance);
+      if (!Number.isInteger(persuasionChance) || persuasionChance < 0 ||
+          persuasionChance > 100) persuasionChance = 10;
+      var persuasionSummary = persuasionChance + '% persuasion';
+      var retreatHpThreshold = Number(profile.retreat && profile.retreat.hpThreshold);
+      if (!Number.isInteger(retreatHpThreshold) || retreatHpThreshold < 0 ||
+          retreatHpThreshold > 100) retreatHpThreshold = 0;
+      var retreatSummary = retreatHpThreshold === 0
+        ? 'never retreats' : 'retreats at ≤' + retreatHpThreshold + '% HP';
+      var help = document.createElement('div');
+      help.className = 'neutral-custom-hint';
+      help.textContent = memberTotal + ' members · ' + persuasionSummary +
+        ' · ' + retreatSummary + ' · replaces both retail choices for this terrain.';
+      wrap.appendChild(help);
+      tile.appendChild(wrap);
+    }
+
     // Per-slot rendering helper.
     //   `linked` = true when classA === classB; picks commit to both fields.
     //   `which`  = 'classA' | 'classB' when linked=false; commits to just that side.
@@ -6002,6 +6927,16 @@ window.OB64 = window.OB64 || {};
       dot.title = dropStatusLabel(status);
       chip.appendChild(dot);
 
+      var classWarnings = OB64.neutralClassWarnings(classId, rom.creatureDrops);
+      for (var warningIndex = 0; warningIndex < classWarnings.length; warningIndex++) {
+        var warning = classWarnings[warningIndex];
+        var warningBadge = document.createElement('span');
+        warningBadge.className = 'neutral-class-warning neutral-class-warning-' + warning.id;
+        warningBadge.textContent = warning.label;
+        warningBadge.title = warning.detail;
+        chip.appendChild(warningBadge);
+      }
+
       chip.title = 'Class 0x' + classId.toString(16).padStart(2, '0') + ' \u2014 click to change (or remove)';
       chip.addEventListener('click', function(e) {
         if (e.target !== chip && e.target !== name && e.target !== dot) return;
@@ -6011,25 +6946,22 @@ window.OB64 = window.OB64 || {};
       // Inline drops strip below creature name
       var dropsRow = document.createElement('div');
       dropsRow.className = 'drops-row';
+      dropsRow.dataset.dropClassId = String(classId);
       var dropsRec = rom.creatureDrops.byClass[classId];
       if (dropsRec) {
         for (var s = 0; s < 3; s++) {
           (function(slotIdx) {
             var dropSlot = dropsRec.slots[slotIdx];
+            var slotControl = document.createElement('span');
+            slotControl.className = 'drop-slot-control';
             var dchip = document.createElement('span');
             dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-bit15-set' : ' drop-chip-bit15-clear');
-            dchip.textContent = dropSlot.itemId ? OB64.itemName(dropSlot.itemId) : '\u2014';
-            dchip.title = (dropSlot.isEquipment ? 'Bit 15 set' : 'Bit 15 clear')
-              + ' \u2014 raw item 0x' + dropSlot.itemId.toString(16).padStart(4, '0')
-              + ' (bit meaning unverified; affects all scenarios using ' + OB64.className(classId) + ')';
+            dchip.dataset.slotIndex = String(slotIdx);
             dchip.addEventListener('click', function(e) {
               e.stopPropagation();
               openItemPicker(dchip, dropSlot.itemId, dropSlot.isEquipment, function(newItemId, kind) {
                 if (newItemId === undefined) return;
                 dropSlot.itemId = newItemId;
-                // Preserve the raw high bit as an explicit set/clear choice.
-                // Its runtime meaning is still unverified, so avoid naming it
-                // equipment-vs-consumable in the UI.
                 if (kind === 'bit15-clear') {
                   dropSlot.isEquipment = false;
                 } else if (kind === 'bit15-set') {
@@ -6042,25 +6974,81 @@ window.OB64 = window.OB64 || {};
                 dropSlot.raw = (dropSlot.itemId & 0x7FFF) | (dropSlot.isEquipment ? 0x8000 : 0);
                 dirty.creatureDrops = true;
                 markChanged();
-                dchip.className = 'drop-chip' + (dropSlot.isEquipment ? ' drop-chip-bit15-set' : ' drop-chip-bit15-clear');
-                dchip.title = (dropSlot.isEquipment ? 'Bit 15 set' : 'Bit 15 clear')
-                  + ' \u2014 raw item 0x' + dropSlot.itemId.toString(16).padStart(4, '0')
-                  + ' (bit meaning unverified; affects all scenarios using ' + OB64.className(classId) + ')';
-                var displayName = kind === 'bit15-clear' && OB64.SAVE.CONSUMABLE_NAMES[newItemId]
-                  ? OB64.consumableName(newItemId)
-                  : (newItemId ? OB64.itemName(newItemId) : '\u2014');
-                dchip.textContent = displayName;
+                refreshDropClassDisplays(classId);
               });
             });
-            dropsRow.appendChild(dchip);
+            slotControl.appendChild(dchip);
+
+            var weightLabel = document.createElement('label');
+            weightLabel.className = 'drop-weight-label';
+            weightLabel.appendChild(document.createTextNode('weight '));
+            var weightInput = document.createElement('input');
+            weightInput.className = 'drop-weight-input';
+            weightInput.type = 'number';
+            weightInput.min = '0';
+            weightInput.max = '65535';
+            weightInput.step = '1';
+            weightInput.dataset.slotIndex = String(slotIdx);
+            weightInput.setAttribute('aria-label', OB64.className(classId) +
+              ' drop slot ' + (slotIdx + 1) + ' weight');
+            weightInput.addEventListener('click', function(e) { e.stopPropagation(); });
+            weightInput.addEventListener('change', function(e) {
+              e.stopPropagation();
+              var previous = Number.isInteger(dropSlot.weight) && dropSlot.weight >= 0
+                ? dropSlot.weight : 1;
+              var next = Number(weightInput.value);
+              var valid = Number.isInteger(next) && next >= 0 && next <= 0xFFFF;
+              var prospectiveTotal = 0;
+              for (var wi = 0; wi < 3; wi++) {
+                prospectiveTotal += wi === slotIdx ? next : Number(dropsRec.slots[wi].weight);
+              }
+              if (!valid || !prospectiveTotal) {
+                weightInput.setCustomValidity(!valid
+                  ? 'Weight must be an integer from 0 through 65535.'
+                  : 'At least one of the three slot weights must be positive.');
+                weightInput.reportValidity();
+                weightInput.value = String(previous);
+                weightInput.setCustomValidity('');
+                return;
+              }
+              if (next === previous) return;
+              dropSlot.weight = next;
+              dropsRec.weightedRuntimeOverride = dropsRec.slots.some(function(candidate) {
+                return Number(candidate.weight) !== 1;
+              });
+              dirty.neutralRuntime = true;
+              markChanged();
+              refreshDropClassDisplays(classId);
+            });
+            weightLabel.appendChild(weightInput);
+            slotControl.appendChild(weightLabel);
+            dropsRow.appendChild(slotControl);
           })(s);
         }
+        var outcomeSummary = document.createElement('span');
+        outcomeSummary.className = 'drop-odds-summary';
+        dropsRow.appendChild(outcomeSummary);
+        updateDropRowDisplay(dropsRow, classId);
       } else {
         var nodrop = document.createElement('span');
         nodrop.className = 'drops-missing';
         nodrop.textContent = 'no drop entry';
-        nodrop.title = OB64.className(classId) + ' is not in the creature drop table (ROM 0x142258). Extending that table is a follow-up.';
+        nodrop.title = OB64.className(classId) + ' is not in the active creature-drop table.';
         dropsRow.appendChild(nodrop);
+        if (rom.creatureDrops.remainingCapacity > 0) {
+          var addDrop = document.createElement('button');
+          addDrop.className = 'drops-add-record';
+          addDrop.textContent = 'Add drop record';
+          addDrop.title = 'Use the one confirmed adjacent zero record and retain the following zero sentinel.';
+          addDrop.addEventListener('click', function(e) {
+            e.stopPropagation();
+            OB64.allocateCreatureDropRecord(rom.creatureDrops, classId);
+            dirty.creatureDrops = true;
+            markChanged();
+            rebuildCardBody(card, rec);
+          });
+          dropsRow.appendChild(addDrop);
+        }
       }
       chip.appendChild(dropsRow);
       return chip;
@@ -6078,6 +7066,7 @@ window.OB64 = window.OB64 || {};
       warmSection.className = 'encounter-section encounter-section-warm';
       var coldSection = document.createElement('div');
       coldSection.className = 'encounter-section encounter-section-cold';
+      var scenarioRow = card._neutralScenarioRow || null;
       for (var s = 0; s < rec.slots.length; s++) {
         var slot = rec.slots[s];
         var tile = document.createElement('div');
@@ -6124,41 +7113,115 @@ window.OB64 = window.OB64 || {};
           })(slot);
         }
 
+        renderCustomNeutralSquad(tile, card, rec, scenarioRow, slot);
+
         (s < 6 ? warmSection : coldSection).appendChild(tile);
       }
       body.appendChild(warmSection);
       body.appendChild(coldSection);
     }
 
-    // Build cards — one per non-empty record
+    function encounterScenarioLabel(runtimeKey) {
+      var info = OB64.scenarioKeyInfo ? OB64.scenarioKeyInfo(runtimeKey) : null;
+      return info && info.label ? info.label : ('Runtime Key ' + runtimeKey);
+    }
+
+    // Build cards — one per shared creature-pool slice. Each card selects one
+    // concrete runtime scenario, so rates and custom squads never alias merely
+    // because two scenarios reuse the same retail creature bytes.
     var grid = document.createElement('div');
     grid.className = 'encounter-grid';
     var records = rom.neutralEncounters.records;
+    var scenarioRateRows = rom.neutralEncounters.scenarioRates || [];
     for (var i = 0; i < records.length; i++) {
       var rec = records[i];
       if (rec.isEmpty) continue;
       (function(rec) {
+        var aliases = scenarioRateRows.filter(function(row) { return row.slice === rec.s0; });
+        var selectedKey = Number(rec._neutralSelectedScenarioKey);
+        var selectedScenario = aliases.filter(function(row) {
+          return row.runtimeKey === selectedKey;
+        })[0] || aliases[0] || null;
+        if (selectedScenario) rec._neutralSelectedScenarioKey = selectedScenario.runtimeKey;
+
         var card = document.createElement('div');
         card.className = 'encounter-card';
+        card._neutralScenarioRow = selectedScenario;
 
         // Header
         var header = document.createElement('div');
         header.className = 'encounter-header';
-        var sceneName = OB64.ENCOUNTER_SCENARIO_NAMES[rec.s0];
         var nameEl = document.createElement('div');
         nameEl.className = 'encounter-name';
-        nameEl.textContent = sceneName || ('Scenario ' + rec.s0 + ' (unmapped)');
         header.appendChild(nameEl);
         var meta = document.createElement('div');
         meta.className = 'encounter-meta';
-        meta.textContent = '$s0 ' + rec.s0 + ' \u00b7 ROM 0x' + rec.offset.toString(16);
         header.appendChild(meta);
         card.appendChild(header);
+
+        var selector = null;
+        if (aliases.length > 1) {
+          var selectorWrap = document.createElement('label');
+          selectorWrap.className = 'encounter-scenario-selector';
+          selectorWrap.appendChild(document.createTextNode('Scenario '));
+          selector = document.createElement('select');
+          aliases.forEach(function(row) {
+            var option = document.createElement('option');
+            option.value = String(row.runtimeKey);
+            option.textContent = 'Key ' + row.runtimeKey + ' · ' +
+              encounterScenarioLabel(row.runtimeKey);
+            selector.appendChild(option);
+          });
+          selector.value = String(selectedScenario.runtimeKey);
+          selectorWrap.appendChild(selector);
+          card.appendChild(selectorWrap);
+          var sharedWarning = document.createElement('div');
+          sharedWarning.className = 'encounter-shared-warning';
+          sharedWarning.textContent =
+            'Changing either retail creature choice changes encounters for both scenarios. ' +
+            'Custom squads and rate overrides remain scenario-specific.';
+          card.appendChild(sharedWarning);
+        }
+
+        var scenarioRateHost = document.createElement('div');
+        scenarioRateHost.className = 'encounter-scenario-rate-host';
+        card.appendChild(scenarioRateHost);
 
         var body = document.createElement('div');
         body.className = 'encounter-body';
         card.appendChild(body);
-        rebuildCardBody(card, rec);
+
+        function refreshScenarioLayer() {
+          var row = card._neutralScenarioRow;
+          nameEl.textContent = row ? encounterScenarioLabel(row.runtimeKey) :
+            (OB64.ENCOUNTER_SCENARIO_NAMES[rec.s0] || ('Neutral slice ' + rec.s0));
+          meta.textContent = row
+            ? ('runtime key ' + row.runtimeKey + ' · shared slice ' + rec.s0 +
+              ' · ROM 0x' + rec.offset.toString(16))
+            : ('shared slice ' + rec.s0 + ' · ROM 0x' + rec.offset.toString(16));
+          scenarioRateHost.innerHTML = '';
+          if (row) {
+            scenarioRateHost.appendChild(renderScenarioRateControls(row, {
+              title: 'Scenario rate override',
+              help: 'This box belongs only to runtime scenario key ' +
+                row.runtimeKey + '. Leave either context on Use retail rate to keep the ordinary encounter path. ' +
+                'A Global encounter roll edit above still applies when no scenario override is set.'
+            }));
+          }
+          rebuildCardBody(card, rec);
+        }
+
+        if (selector) {
+          selector.addEventListener('change', function() {
+            var runtimeKey = Number(selector.value);
+            card._neutralScenarioRow = aliases.filter(function(row) {
+              return row.runtimeKey === runtimeKey;
+            })[0] || null;
+            rec._neutralSelectedScenarioKey = runtimeKey;
+            refreshScenarioLayer();
+          });
+        }
+        refreshScenarioLayer();
 
         grid.appendChild(card);
       })(rec);
@@ -6283,10 +7346,24 @@ window.OB64 = window.OB64 || {};
             idTag.className = 'class-picker-row-id';
             idTag.textContent = '0x' + cid.toString(16).padStart(2, '0');
             row.appendChild(idTag);
-            var statusTag = document.createElement('span');
-            statusTag.className = 'class-picker-row-status class-picker-status-' + status;
-            statusTag.textContent = dropStatusLabel(status);
-            row.appendChild(statusTag);
+            var statusWrap = document.createElement('span');
+            statusWrap.className = 'class-picker-status-wrap';
+            var warnings = OB64.neutralClassWarnings(cid, rom.creatureDrops);
+            if (!warnings.length) {
+              var okTag = document.createElement('span');
+              okTag.className = 'class-picker-row-status class-picker-status-ok';
+              okTag.textContent = 'Drops OK';
+              statusWrap.appendChild(okTag);
+            }
+            for (var warningIndex = 0; warningIndex < warnings.length; warningIndex++) {
+              var warning = warnings[warningIndex];
+              var statusTag = document.createElement('span');
+              statusTag.className = 'class-picker-row-status class-picker-status-' + warning.id;
+              statusTag.textContent = warning.label;
+              statusTag.title = warning.detail;
+              statusWrap.appendChild(statusTag);
+            }
+            row.appendChild(statusWrap);
             row.addEventListener('click', function() { commit(cid); });
             listEl.appendChild(row);
           })(id);
@@ -6336,14 +7413,14 @@ window.OB64 = window.OB64 || {};
       var items = [];
       items.push({ id: 0, name: '(none)', kind: 'none' });
       for (var id in OB64.ITEM_NAMES) {
-        items.push({ id: parseInt(id), name: OB64.ITEM_NAMES[id], kind: 'bit15-set', kindLabel: 'bit 15 set' });
+        items.push({ id: parseInt(id), name: OB64.ITEM_NAMES[id], kind: 'bit15-set', kindLabel: 'Equipment' });
       }
       for (var cid in OB64.SAVE.CONSUMABLE_NAMES) {
         var cn = parseInt(cid);
         if (cn === 0) continue;
         items.push({
           id: cn, name: OB64.SAVE.CONSUMABLE_NAMES[cid],
-          kind: 'bit15-clear', kindLabel: 'bit 15 clear'
+          kind: 'bit15-clear', kindLabel: 'Consumable'
         });
       }
       openSaveItemPickerModal({

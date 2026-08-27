@@ -145,6 +145,7 @@ function dirtyFlags(overrides) {
     actionDescriptions: false,
     encounters: false,
     creatureDrops: false,
+    neutralRuntime: false,
     consumables: false,
     consumableDescriptions: false,
     consumableEffects: false,
@@ -510,7 +511,7 @@ function runDescriptionProjectRoundTrip() {
     source.actionDescriptions, actionId, 'Project action description.'
   );
   const project = OB64.patch.collectPatch(source);
-  check('Project uses schema version 25', project.version === 25,
+  check('Project uses current schema version', project.version === OB64.patch.VERSION,
     String(project.version));
   check('description Project summary counts all four text kinds',
     project.summary.item_descriptions_modified === 1 &&
@@ -724,6 +725,96 @@ function runValidRuntimeShopExport() {
   });
   check('valid runtime-shop export has no validation false positives',
     report.ok, JSON.stringify(report.errors));
+}
+
+function runValidNeutralRuntimeExport() {
+  const source = loadRom();
+  const candidate = candidateFor(source);
+  const scenarioRow = source.neutralEncounters.scenarioRates.find(row =>
+    Number.isInteger(row.slice));
+  if (!scenarioRow) throw new Error('test ROM has no mapped neutral scenario rate row');
+  const scenarioRateOverrides = [{
+    runtimeKey: scenarioRow.runtimeKey,
+    normal: { mode: 'override', passCount: 102, divisor: 72000 },
+    alternate: { mode: 'disabled', passCount: null, divisor: null },
+  }];
+  const weightedDropOverrides = [{ classId: 0x45, weights: [1, 2, 3] }];
+  const customNeutralSquads = [{
+    profileId: 1,
+    runtimeKey: scenarioRow.runtimeKey,
+    slice: scenarioRow.slice,
+    terrainSlot: 2,
+    members: [
+      { classId: 0x1E, levelOffsetRaw: 0, cell: 0, cohort: 'A' },
+      { classId: 0x0F, levelOffsetRaw: 0, cell: 8, cohort: 'B' },
+    ],
+    label: 'Forest Raiders!',
+    persuasion: { mode: 'fixed', chance: 37 },
+    retreat: { hpThreshold: 25 },
+  }];
+  const runtimeWritePlan = OB64.runtimeOverrides.buildRuntimeOverrideWrites(
+    [],
+    [],
+    source.shops.length,
+    candidate,
+    { scenarioRateOverrides, weightedDropOverrides, customNeutralSquads }
+  );
+  runtimeWritePlan.writes.forEach(write =>
+    candidate.z64.set(write.bytes, write.offset));
+  OB64.recalcN64CRC(candidate.z64);
+  const dirty = dirtyFlags({ neutralRuntime: true });
+  const runtimeOwner = {
+    id: 'runtime-overrides',
+    name: 'Shared Runtime Overrides',
+    regions: OB64.runtimeOverrides.patchRegions(source),
+  };
+  const options = {
+    sourceRom: source,
+    candidateRom: candidate,
+    dirty,
+    touched: ['scenario rates (1)', 'weighted drop classes (1)', 'custom neutral squads (1)'],
+    owners: OB64.consumableEffects.standardPatchOwners(source, dirty)
+      .concat([runtimeOwner]),
+    runtimeWritePlan,
+    runtimeMode: 'write',
+    shopOverrides: [],
+    scenarioRateOverrides,
+    weightedDropOverrides,
+    customNeutralSquads,
+  };
+  let report = OB64.romExportValidator.validate(options);
+  check('valid neutral-runtime export passes exact and semantic validation',
+    report.ok, JSON.stringify(report.errors));
+  const rateCheck = report.checks.find(entry =>
+    entry.id === 'scenario-rate-override-readback');
+  const dropCheck = report.checks.find(entry =>
+    entry.id === 'weighted-drop-override-readback');
+  const customCheck = report.checks.find(entry =>
+    entry.id === 'custom-neutral-squad-readback');
+  check('neutral-runtime validator checks rates, drops, squads, and per-profile text',
+    rateCheck && rateCheck.status === 'passed' &&
+      dropCheck && dropCheck.status === 'passed' &&
+      customCheck && customCheck.status === 'passed' &&
+      JSON.stringify(customCheck.details.messages) === '["Forest Raiders!"]',
+    JSON.stringify({ rateCheck, dropCheck, customCheck }));
+
+  const damaged = candidateFor(candidate);
+  const tailWrite = runtimeWritePlan.writes.find(write =>
+    write.label === 'shared OBMB runtime blob');
+  if (!tailWrite) throw new Error('neutral runtime plan has no OBMB blob write');
+  damaged.z64[
+    tailWrite.offset + OB64.runtimeOverrides.consts.RATE_TABLE_OFF + 8 +
+      scenarioRow.runtimeKey * OB64.runtimeOverrides.consts.RATE_ENTRY_STRIDE + 3
+  ] ^= 1;
+  OB64.recalcN64CRC(damaged.z64);
+  report = OB64.romExportValidator.validate(Object.assign({}, options, {
+    candidateRom: damaged,
+    touched: ['damaged neutral-runtime rate fixture'],
+  }));
+  check('damaged neutral-runtime table has stable integrity and readback errors',
+    reportCodes(report).includes('PATCH_INTEGRITY') &&
+      reportCodes(report).includes('SEMANTIC_READBACK_MISMATCH'),
+    reportCodes(report).join(','));
 }
 
 function runValidCombatOverrideExport() {
@@ -1072,6 +1163,7 @@ async function runConsumableEffectExportLifecycleRegression() {
   runDescriptionProjectRoundTrip();
   runMaximumStatValidation();
   runValidRuntimeShopExport();
+  runValidNeutralRuntimeExport();
   runValidCombatOverrideExport();
   await runArchiveMethodTransitionRegression();
   await runConsumableEffectExportLifecycleRegression();

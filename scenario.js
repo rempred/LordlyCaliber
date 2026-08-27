@@ -26,6 +26,16 @@ window.OB64 = window.OB64 || {};
   // trailing click event cannot deselect.
   var mapTool = null;
   var RELOC_TAIL_START = 0x027C0000;
+  function relocationTailEnd() {
+    var registry = OB64.RUNTIME_PATCH_REGISTRY;
+    var lanes = registry && registry.dynamicLanes || [];
+    for (var i = 0; i < lanes.length; i++) {
+      if (lanes[i].id === 'scenario-relocation') return Number(lanes[i].endExclusive);
+    }
+    // Fail closed at the fixed display-module reservation even when an older
+    // embedding omits the generated registry.
+    return 0x027F0000;
+  }
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
   // A fixed image-pixel radius shrinks with zoom-to-fit (~14 screen px), making it easy to
   // miss a town and silently write near-town coordinate bytes instead of the site selector.
@@ -1500,6 +1510,13 @@ window.OB64 = window.OB64 || {};
     var tailArchiveOffset = tailDmaStart + win.delta;
     var total = win.delta + archiveSize;
     var windowSize = align(total + 0x200, 0x200);
+    var tailEnd = relocationTailEnd();
+    if (tailDmaStart + windowSize > tailEnd) {
+      throw new Error('relocation capacity exhausted: the next 0x' +
+        windowSize.toString(16).toUpperCase() + '-byte DMA window would end at z64 0x' +
+        (tailDmaStart + windowSize).toString(16).toUpperCase() +
+        ', beyond the central scenario lane limit 0x' + tailEnd.toString(16).toUpperCase());
+    }
     if (tailArchiveOffset + archiveSize > rom.z64.length) throw new Error('Scenario relocation tail write exceeds ROM size.');
     return {
       originalDmaStart: win.start,
@@ -8454,6 +8471,8 @@ window.OB64 = window.OB64 || {};
       levelBaseEditorHtml: levelBaseEditorHtml,
       squadLevelEditorHtml: squadLevelEditorHtml,
       supplyPresetEditorHtml: supplyPresetEditorHtml,
+      relocationTailEnd: relocationTailEnd,
+      planRelocationToTail: planRelocationToTail,
     },
   };
 })(window.OB64);

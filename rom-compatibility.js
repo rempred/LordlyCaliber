@@ -427,7 +427,7 @@ window.OB64 = window.OB64 || {};
     var start = layout.SHOP_HOOK_ROM;
     var observed = rom.z64.slice(start, start + 24);
     var installed = OB64.runtimeOverrides.buildShopHook(layout);
-    var retail = wordsToBytes(OB64.runtimeOverrides.consts.SHOP_ORIGINAL_WORDS);
+    var retail = wordsToBytes(layout.SHOP_ORIGINAL_WORDS);
     var status = 'readable';
     var reason = 'The shop producer hook is retail-clean.';
     if (equalBytes(observed, installed)) {

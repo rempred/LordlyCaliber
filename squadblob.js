@@ -109,8 +109,10 @@
     nop:  function () { return 0; },
     lui:  function (rt, imm) { return ((0x0F << 26) | (r(rt) << 16) | i16(imm)) >>> 0; },
     ori:  function (rt, rs, imm) { return ((0x0D << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
+    xori: function (rt, rs, imm) { return ((0x0E << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
     andi: function (rt, rs, imm) { return ((0x0C << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
     addiu:function (rt, rs, imm) { return ((0x09 << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
+    sltiu:function (rt, rs, imm) { return ((0x0B << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
     lw:   function (rt, imm, rs) { return ((0x23 << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
     lbu:  function (rt, imm, rs) { return ((0x24 << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
     lhu:  function (rt, imm, rs) { return ((0x25 << 26) | (r(rs) << 21) | (r(rt) << 16) | i16(imm)) >>> 0; },
@@ -126,7 +128,9 @@
     sll:  function (rd, rt, shamt) { return ((r(rt) << 16) | (r(rd) << 11) | ((shamt & 0x1F) << 6)) >>> 0; },
     addu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x21) >>> 0; },
     subu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x23) >>> 0; },
-    sltu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x2B) >>> 0; }
+    sltu: function (rd, rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | (r(rd) << 11) | 0x2B) >>> 0; },
+    divu: function (rs, rt) { return ((r(rs) << 21) | (r(rt) << 16) | 0x1B) >>> 0; },
+    mfhi: function (rd) { return ((r(rd) << 11) | 0x10) >>> 0; }
   };
 
   // ---- two-pass label assembler ----
@@ -367,15 +371,15 @@
 
   // Restore the three patch sites to retail (used when the last override is
   // removed): trampoline back to the displaced sltiu/xori, clear the cave, and
-  // zero the blob region. Only the trampoline + cave matter (the cave is in the
-  // CRC window); the tail is cleared for tidiness (outside CRC).
+  // restore the retail 0xFF tail padding. Exact padding keeps enable/remove
+  // round trips byte-clean even though the tail lies outside the CRC window.
   function restoreVanilla(z64, romOrLayout) {
     var layout = patchLayout(romOrLayout);
     z64.set(wordsToBytes([DISP_SLTIU, DISP_XORI]), layout.HOOK_ROM);
     var i;
     for (i = 0; i < 108; i++) z64[layout.BOOT_ROM + i] = 0;
     for (i = 0; i < CACHE_CONT_BYTES; i++) z64[layout.CACHE_CONT_Z64 + i] = 0;
-    for (i = 0; i < 0x10000; i++) z64[layout.TAIL_Z64 + i] = 0;
+    for (i = 0; i < 0x10000; i++) z64[layout.TAIL_Z64 + i] = 0xFF;
   }
 
   function patchRegions(romOrLayout) {

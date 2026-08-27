@@ -47,11 +47,6 @@ Optional desktop utilities are kept separate from its runtime:
   catalog, explicit Rev 0/Rev 1 feature manifests, deterministic healing-text
   codec, guard/transaction ledger, Project v13 payload, combined-diff
   provenance, and Consumables-tab renderer.
-- `damage-calculator.js` provides the read-only Physical damage model and one
-  evidence-bounded Magic product slice for native template 45 or 51 resolving
-  to action 55, plus expected class-growth projection, native-action filtering,
-  derived-variable overrides, and formula constants used by the Damage
-  Calculator tab.
 - `tools.js` detects, applies, and removes Tools-tab ROM features.
 - `tools-data.js` is generated from the research workspace's Tools feature
   builds and holds the Tools-tab feature byte definitions. Do not hand-edit.
@@ -241,9 +236,12 @@ in your own copy of the US retail ROM, and start modding.
 > .v64 byte-swapped, GoodN64-verified, Game ID `NOBE`).
 > It also verifies the common USA header revision 1 dump in `.z64`, `.v64`,
 > or `.n64` byte order for data editing/export. Header revision 1 supports the Chaos
-> Frame Counter and Squads runtime override export; High Attack Streamsplit
-> remains header revision 0-only until its changed header revision 1 code path is
-> rebuilt.
+> Frame Counter, Squads runtime overrides, per-scenario neutral rates, and weighted
+> creature drops. Character Card Luck, Squad Menu Alignment, and High Attack
+> Streamsplit remain header revision 0-only. Custom neutral squads remain header
+> revision 0-only until the revision 1 materializer and presentation hooks are verified.
+> Rev 1 runtime hooks, RAM globals, semantic readback, and exact removal pass
+> static checks against the approved retail image. Rev 1 cold boot remains pending.
 >
 > Verified reference images:
 > - Header rev 0: `Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64`
@@ -356,85 +354,6 @@ safety behavior.
   the nine ambiguous `[Elemental Magic]` placeholders with verified Tier 1,
   Tier 2, Tier 3, summon/high-level, fixed-spell, and elemental Blast template
   roles.
-- **Damage Calculator** — compare a native action against a selected defender.
-  Physical remains the initial/fallback mode with its existing controls,
-  normal/critical results and hit comparison. Both modes now show explicit
-  total-adjustment equations, current component arithmetic, and lookup/rule
-  derivations instead of presenting the adjustments as an unexplained list.
-  The enabled **Magic** mode is deliberately narrower: it keeps the class-native
-  template ID separate from the resolved spell ID and displays an amount only
-  for native T1 template 45 resolving to Wind/Lightning 55 or native fixed
-  Lightning template 51 resolving to 55. Effective action behavior must retain
-  D0/action family `3` and D1/Wind `1`; differing overrides fail closed, while
-  D2-D7 remain fixed by the exact accepted action-55 record rather than exposed
-  as calculator overrides. Flame, Earth, Water, Virtue, Bane, Drakonite,
-  Random/None, non-native, and every non-55 resolution are unavailable. Its
-  evidence panel labels the exact
-  action-55 ordinary single-caster selector-0/pattern-1 full-power primary-target
-  runtime anchor separately from supported-static inputs and resolution. Magic
-  exposes a selected random adjustment (default 0; the accepted fixture uses
-  +1), an explicitly supported-static endpoint range, and one nonlethal
-  Hit-Points result. It does not display Magic hit/success, critical/doubling,
-  satellite, combined-caster, healing/status/special, or lethal-branch numbers.
-  Every attacker/defender Growth Gear and Current Gear input must be an own
-  combatant property containing an exact four-slot array whose indices `0..3`
-  are own properties. Each positive ID must be a finite integer inside the
-  parsed table and resolve through an own, non-null item record; explicit own
-  `[0, 0, 0, 0]` remains valid. Missing, inherited, sparse, malformed, negative,
-  fractional, nonnumeric, nonfinite, or unknown-item data renders no supported
-  Magic amount, range, score, or Hit-Points result and cannot be materialized or
-  cleaned into eligibility. Product derivation and gear-card presentation now
-  keep the permanently tested `Symbol` ID and throwing-conversion object inert:
-  their raw slot remains invalid, the card uses the fixed `(invalid item ID)`
-  label without invoking conversion hooks, and render reaches the unavailable
-  result while clearing stale amount/range/Hit-Points cards. Valid finite-integer
-  item labels and ordinary numeric unknown/out-of-bound labels retain their
-  existing presentation.
-  The retail default Physical-to-Magic transition now evaluates each candidate
-  against the complete normalized attacker/defender state, installs the first
-  eligible route, and rechecks the exact installed state through the same
-  policy. Retail deterministically selects class 15, native fixed template 51,
-  rear row, resolved action 55, and default gear `[74, 167, 135, 235]`; it does
-  not invent a Generic Spellbook selector.
-  The browser global deliberately exposes only `render`; unrestricted formula
-  helpers remain available solely through CommonJS for Node tests.
-  An open-by-default, mode-aware variable guide explains the source, formula,
-  and effect of the calculator inputs, including independent terrain/movement
-  lookups and exact anti-dragon requirements. Every applicable selector, input,
-  derived variable, constant, and result also has a keyboard-accessible styled
-  `?` popup with explicit What, Source, Use, and Rule sections. Calculator
-  changes never enter the Project diff, Changelog, or ROM export. The own-data
-  re-review returned `Revision required` because rejected hostile IDs still
-  crashed gear-label rendering; permanent direct metadata, real CommonJS
-  render, and browser-like Node `vm` render regressions now cover both hostile
-  fixtures through the standard-library fake DOM, including stale-output
-  clearing and zero conversion hooks.
-  A later fresh critical complete-delta review preserved that behavior,
-  calculator arithmetic, and every accepted boundary, while returning
-  `Revision required` for three guidance defects. The bounded wording
-  correction states that Alignment comes directly from each resolved
-  selected class rather than level/Growth-Gear projection, keeps
-  attacker-Alignment out of accuracy, gives Physical and Magic separate
-  Luck/Character-stats/current-HP help, and describes STR as unused by the
-  enabled bounded action-55 Magic calculation without calling Magic dormant.
-  The reviewer's corrected 32-case fake-DOM/event/formula-edge harness remains
-  intact and a 33rd rendered semantic case covers CommonJS and browser-like
-  Node `vm` mode switches. The fresh re-review passed all 13 assigned guidance
-  instances but found one separate Physical Attack Score popup using the false
-  Dexterity factor `(+50)/50`. At Joe's explicit direction, the Director
-  corrected that one rule to the already-canonical `(+100)/100` value and
-  added a 34th rendered CommonJS/browser-like Node `vm` regression, including
-  registered return to Physical and the direct CommonJS API. All local gates
-  pass. See the
-  [review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-action55-own-data-transition-closure-correction-independent-review.md)
-  [hostile-ID correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-action55-hostile-id-render-closure-correction-aar.md),
-  [variable-guide/tooltip/formula-reference AAR](../wiki/after-action-reports/20260723-damage-calculator-physical-adjustment-formula-reference-aar.md),
-  [complete-delta review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-hostile-id-ui-reference-complete-delta-independent-review.md),
-  [mode-accurate guidance correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-guidance-mode-accuracy-correction-aar.md),
-  [guidance re-review AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-guidance-mode-accuracy-correction-independent-review.md),
-  and [popup correction AAR](../wiki/after-action-reports/20260723-b52-magic-calculator-physical-attack-dex-popup-correction-aar.md).
-  Status: **accepted for the tested non-browser product scope by Joe's explicit
-  Director-correction disposition; Joe's final browser smoke remains pending**.
 - **Items** — change weapon/armor/spellbook stats, prices, resistances, and the
   packed B20-B21 permanent level-up additions for all 277 equipment entries.
   Each Name cell includes **Edit description**, and every table column can be
@@ -535,9 +454,26 @@ safety behavior.
   Tools changes.
 - **Encounters** — adjust the neutral-encounter creature pool across all 40
   scenario slices, tune per-terrain encounter thresholds, and set the global
-  encounter-roll pass rate with a vanilla-relative multiplier slider (`x1`
-  vanilla, `x3` normal cap, optional `x100` test cap).
-  Creature drop entries are editable from the same tab.
+  encounter-roll pass rates independently for Area Investigation
+  (`51 / 72000`, state bit 17 set) and In-Scenario Mission
+  (`11 / 72000`, state bit 17 clear). Linked mode intentionally
+  keeps both values equal. Each concrete runtime scenario has one optional
+  override box with `Use retail rate`, `Override`, and `Disabled` modes for
+  both encounter contexts. Untouched scenarios store no override. The normal
+  and alternate values occupy separate runtime fields. A scenario selector
+  appears only when multiple scenarios share one retail creature pool.
+  Editing either retail creature choice on such a card affects both scenarios;
+  custom squads and rate overrides remain scenario-specific. Header revision 0 can also replace
+  both creature choices for one scenario/terrain with a two-to-five-member
+  custom squad. `Add Squad` opens the Scenario-style composition and formation
+  editor in a dedicated modal instead of expanding the encounter card. Its
+  encounter card says `Bandits!`. Persuasion uses one fixed `0..100%` slider
+  that defaults to `10%`.
+  Creature drop entries are editable from the same tab. Retail has 35 active
+  records; the editor can use one adjacent record while retaining the final
+  sentinel. Each existing record keeps three encoded reward slots. Per-slot
+  weights support `0..65535`, show exact weight/total odds, and reject a zero
+  total. A zero encoded reward remains an explicit no-drop outcome.
 - **Art and Animation** — edit native class-card avatars and item icons with
   exact native colors. The Avatars browser exposes 217 routed 40x48 appearances.
   Identical routes for one class collapse into one card. The first material edit
@@ -744,10 +680,15 @@ safety behavior.
   and declared ROM/RAM patch-region overlaps are rejected on export.
   **Chaos Frame Counter** shows the hidden Chaos Frame stat
   on the Army Management screen as a native parchment plate titled CHAOS
-  FRAME, in line with the SOLDIER/CHARACTER/UNIT labels. The current payload
-  uses a standalone ROM-tail/free-RAM module and gates on the Army graphics
+  FRAME, in line with the SOLDIER/CHARACTER/UNIT labels. Its packed v2 module
+  is `0x900` bytes. The payload uses a standalone ROM-tail/free-RAM module and gates on the Army graphics
   task buffers plus War Funds/header fingerprints, so it survives returning
   from Class Change without relying on volatile menu-state bytes. Experimental
+  **Character Card Luck** places `LCK` immediately right of the class name.
+  **Squad Menu Alignment** places one average `ALI` value right of every visible
+  squad row. Both display features are Rev 0 only. Their generated candidates
+  pass static readback, ownership, and removal checks; natural-load and visual
+  cold-boot acceptance remain pending. Experimental
   **High Attack Streamsplit** installs the high-attack battle-stream fix on a
   separate ROM/RAM lane, including interrupt-safe end-of-stream handling,
   first-menu separator handling, and relocated battle-menu state stores;
@@ -766,11 +707,15 @@ safety behavior.
   battery saves.
 - **Projects** — save supported edits (shops, item prices, item stats, class
   definitions, encounter pools/rates, creature drops, consumables, stat gates,
-  the global encounter-roll multiplier, squad overrides, Scenario-tab edits,
+  independent global encounter paths, per-scenario
+  runtime rates, custom neutral squads, weighted drop slots, squad overrides, Scenario-tab edits,
   item/consumable/class/action descriptions, consumable-effect
   magnitudes/ranges, and Tools-tab feature toggles) to a
   portable JSON project file for sharing or reapplying to a ROM. Project format
-  v24 stores exact private body programs for added and reordered frames. v23
+  v28 stores direct scenario rates, custom neutral formations, and fixed
+  persuasion percentages. The retired v27 slice-rate field is ignored; v27 also stores three weights for each modified drop
+  class. v26 Projects migrate to inherited slice rates and equal retail slot
+  weights. v24 stores exact private body programs for added and reordered frames. v23
   adds private frame removal with exact body-program and Project round trips.
   v22 adds structural private-sequence layers, positions, draw order, and copied
   sprite sources. v21 adds exact body-route animation assignments and private
@@ -945,7 +890,9 @@ same file name.
 
 Runtime override patches need the N64 Expansion Pak / 8 MB RDRAM. This applies
 to exported ROMs that include Squads runtime overrides, Scenario **Add Squad**
-composition overrides, Chaos Frame Counter, or High Attack Streamsplit. These
+  composition overrides, per-scenario neutral rates, custom neutral squads,
+  weighted creature drops, Chaos
+Frame Counter, or High Attack Streamsplit. These
 features install code/data in the free upper-RDRAM lanes at `0x80400000+`; a
 strict 4 MB setup can hang, black-screen, or fault when the patched ROM tries to
 load the module.

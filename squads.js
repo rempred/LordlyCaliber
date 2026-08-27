@@ -76,11 +76,9 @@
     return item ? item.equipType : null;
   }
 
-  function itemResolution(rom, rec, role, value) {
+  function itemResolutionForClass(rom, primary, value) {
     if (value === 0) return { status: 'none', slot: null, text: 'No change. Units keep their normal class equipment.' };
     if (value > 0x115) return { status: 'unsafe', slot: null, text: 'This existing value is outside the proven item list. It will be preserved unless you choose a known item.' };
-    var classOffset = role === 'A' ? 0 : (role === 'B' ? 7 : 16);
-    var primary = rec[classOffset] || 0;
     var primaryDef = rom && rom.classDefs && rom.classDefs[primary + 1];
     var effective = primaryDef && primaryDef.classCopyMatch ? primaryDef.classCopyMatch : primary;
     var def = rom && rom.classDefs && rom.classDefs[effective + 1];
@@ -96,7 +94,12 @@
     }
     return { status: 'incompatible', slot: null, text: 'Will not be used. ' + cn(effective) + ' has no normal equipment slot for this item type.' };
   }
+  function itemResolution(rom, rec, role, value) {
+    var classOffset = role === 'A' ? 0 : (role === 'B' ? 7 : 16);
+    return itemResolutionForClass(rom, rec[classOffset] || 0, value);
+  }
   OB64.squadItemResolution = itemResolution;
+  OB64.squadItemResolutionForClass = itemResolutionForClass;
 
   function itemPickerEntry(rom, id) {
     if (id === 0) {
@@ -265,18 +268,19 @@
   function groupClassField(role) { return role === 'B' ? 7 : 16; }
   function groupCapacity(role) { return 3; }
   function groupCount(rec, role) { var f = groupFields(role), n = 0; for (var i = 0; i < f.length; i++) if (rec[f[i]]) n++; return n; }
-  function groupAddDisabledReason(rec, role) {
+  function groupAddDisabledReason(rec, role, forceSafeCapacity) {
     var cls = rec[groupClassField(role)];
     if (!cls) return 'Pick a class first.';
     if (groupCount(rec, role) >= groupCapacity(role)) return 'Member ' + role + ' is full.';
-    if (ui.rawCapacity) return '';
+    if (ui.rawCapacity && !forceSafeCapacity) return '';
     if (formationSlotCount(rec) + slotCost(cls) > 5) return 'Formation slot limit reached.';
     return '';
   }
-  function addUnitToGroup(rec, role, cls) {
+  function addUnitToGroup(rec, role, cls, forceSafeCapacity) {
     if (!cls) return 'Pick a class for Member ' + role + ' first.';
     if (groupCount(rec, role) >= groupCapacity(role)) return 'Member ' + role + ' is full.';
-    if (!ui.rawCapacity && formationSlotCount(rec) + slotCost(cls) > 5) {
+    var rawCapacity = ui.rawCapacity && !forceSafeCapacity;
+    if (!rawCapacity && formationSlotCount(rec) + slotCost(cls) > 5) {
       return 'A squad can use up to 5 formation slots. Normal units use 1 slot; large units use 2.';
     }
     var f = groupFields(role), slot = 0, i;
@@ -287,11 +291,11 @@
     for (var c = 1; c <= 9; c++) {                 // first free cell that keeps adjacency valid
       if (occ[c]) continue;
       rec[slot] = c;
-      if (ui.rawCapacity || adjacencyOk(rec)) return null;
+      if (rawCapacity || adjacencyOk(rec)) return null;
       rec[slot] = 0;
     }
     rec[groupClassField(role)] = saved;
-    return ui.rawCapacity ? 'No open formation cell.' : 'No open cell. Large units cannot sit next to another unit.';
+    return rawCapacity ? 'No open formation cell.' : 'No open cell. Large units cannot sit next to another unit.';
   }
   function removeCell(rec, cell) {
     var u = unitAtCell(rec, cell); if (!u || u.role === 'L') return;
@@ -589,7 +593,7 @@
     };
   }
 
-  function gridHtml(rec, editable) {
+  function gridHtml(rec, editable, forceSafeCapacity) {
     editable = editable !== false;
     var h = '<div class="sq-board"><div class="sq-section-label">Formation</div><div class="sq-grid" aria-label="Formation grid">';
     GRID.forEach(function (cell) {
@@ -599,7 +603,7 @@
         var portraitUrl = OB64.classPortraitUrl ? OB64.classPortraitUrl(u.cls) : null;
         h += '<div class="sq-cell u ' + (editable ? '' : 'readonly ') + (u.role === 'L' ? 'lead' : 'mem') + (large ? ' large' : '') +
           '" ' + (editable ? 'draggable="true" ' : '') + 'data-cell="' + cell + '">' +
-          '<span class="sq-cell-role">' + role + (large && !ui.rawCapacity ? ' 2x' : '') + '</span>' +
+          '<span class="sq-cell-role">' + role + (large && (!ui.rawCapacity || forceSafeCapacity) ? ' 2x' : '') + '</span>' +
           (portraitUrl ? '<img class="sq-cell-portrait" src="' + esc(portraitUrl) + '" alt="" loading="lazy" decoding="async">' : '') +
           '<span class="sq-cell-name">' + esc(cn(u.cls)) + '</span>' +
           (editable && u.role !== 'L' ? '<button type="button" class="sq-remove" data-cell="' + cell + '" title="Remove">x</button>' : '') +
@@ -894,6 +898,402 @@
     // Embedded in the Scenario sidebar: refresh the related level, supply, and map views.
     if (detailHost && OB64._scenarioSquadEdit) OB64._scenarioSquadEdit(scn.id, embeddedRowIndex);
   }
+
+  var NEUTRAL_GRID = [2, 1, 0, 5, 4, 3, 8, 7, 6];
+
+  function defaultNeutralSquadMembers() {
+    return [
+      { cohort: 'A', classId: 0x05, levelOffsetRaw: 0x01, cell: 7 },
+      { cohort: 'B', classId: 0x47, levelOffsetRaw: 0x00, cell: 2 }
+    ];
+  }
+
+  function defaultNeutralEquipment() {
+    return { A: [0, 0], B: [0, 0], C: [0, 0] };
+  }
+
+  function cloneNeutralMembers(members) {
+    return (members || []).map(function(member) {
+      return {
+        cohort: member.cohort,
+        classId: Number(member.classId),
+        levelOffsetRaw: Number(member.levelOffsetRaw),
+        cell: Number(member.cell)
+      };
+    });
+  }
+
+  function neutralGroup(members, cohort) {
+    return members.filter(function(member) { return member.cohort === cohort; });
+  }
+
+  function neutralGroupClass(members, cohort) {
+    var group = neutralGroup(members, cohort);
+    return group.length ? group[0].classId : 0;
+  }
+
+  function neutralFormationSlotCount(members) {
+    var count = 0;
+    members.forEach(function(member) { count += slotCost(member.classId); });
+    return count;
+  }
+
+  function neutralAdjacent(a, b) {
+    var rowA = a / 3 | 0, colA = 2 - (a % 3);
+    var rowB = b / 3 | 0, colB = 2 - (b % 3);
+    return a !== b && Math.abs(rowA - rowB) <= 1 && Math.abs(colA - colB) <= 1;
+  }
+
+  function neutralClassOptionsHtml(current) {
+    var names = OB64.CLASS_NAMES || {};
+    var html = '<option value="0">-- pick a class --</option>';
+    Object.keys(names).map(Number).sort(function(a, b) { return a - b; }).forEach(function(id) {
+      // Class 0 is empty. Class 1 follows the retail special materializer and
+      // is deliberately excluded from the typed neutral constructor path.
+      if (!Number.isInteger(id) || id <= 1 || id > 0xFF) return;
+      html += '<option value="' + id + '"' + (id === current ? ' selected' : '') + '>' +
+        esc(names[id]) + (isLarge(id) ? ' (large)' : '') + '</option>';
+    });
+    return html;
+  }
+
+  function neutralMembersIssue(members) {
+    if (!Array.isArray(members)) return 'The custom squad member list is unavailable.';
+    if (members.length < 2 || members.length > 5) {
+      return 'A custom encounter squad must contain two through five members.';
+    }
+    if (neutralFormationSlotCount(members) > 5) {
+      return 'A custom encounter squad can use at most five formation slots.';
+    }
+    var cells = {};
+    var groups = { A: [], B: [], C: [] };
+    for (var i = 0; i < members.length; i++) {
+      var member = members[i] || {};
+      if (!groups[member.cohort] || member.classId <= 1 || member.classId > 0xFF ||
+          !Number.isInteger(member.levelOffsetRaw) || member.levelOffsetRaw < 0 ||
+          member.levelOffsetRaw > 0xFF || !Number.isInteger(member.cell) ||
+          member.cell < 0 || member.cell > 8 || cells[member.cell]) {
+        return 'Every member needs a cohort, supported class, level offset, and unique cell from 0 through 8.';
+      }
+      cells[member.cell] = true;
+      groups[member.cohort].push(member);
+    }
+    if (groups.A.length !== 1 || members[0].cohort !== 'A') {
+      return 'The first member must be the only Group A leader.';
+    }
+    ['B', 'C'].forEach(function(groupName) {
+      var group = groups[groupName];
+      if (group.length > 3) return;
+      for (i = 1; i < group.length; i++) {
+        if (group[i].classId !== group[0].classId ||
+            group[i].levelOffsetRaw !== group[0].levelOffsetRaw) {
+          group._invalid = true;
+        }
+      }
+    });
+    if (groups.B.length > 3) return 'Group B supports at most three members.';
+    if (groups.C.length > 3) return 'Group C supports at most three members.';
+    if (groups.B._invalid) return 'Every Group B member must share one class and level offset.';
+    if (groups.C._invalid) return 'Every Group C member must share one class and level offset.';
+    for (i = 0; i < members.length; i++) {
+      if (!isLarge(members[i].classId)) continue;
+      for (var other = 0; other < members.length; other++) {
+        if (i !== other && neutralAdjacent(members[i].cell, members[other].cell)) {
+          return 'Large units cannot sit next to another unit.';
+        }
+      }
+    }
+    return '';
+  }
+
+  function neutralMemberAtCell(members, cell) {
+    for (var i = 0; i < members.length; i++) if (members[i].cell === cell) return members[i];
+    return null;
+  }
+
+  function neutralGridHtml(members) {
+    var html = '<div class="sq-board"><div class="sq-section-label">Formation</div>' +
+      '<div class="sq-grid" aria-label="Formation grid">';
+    NEUTRAL_GRID.forEach(function(cell) {
+      var member = neutralMemberAtCell(members, cell);
+      if (!member) {
+        html += '<div class="sq-cell" data-cell="' + cell + '" title="Formation cell ' + cell + '"></div>';
+        return;
+      }
+      var leader = member.cohort === 'A';
+      var large = isLarge(member.classId);
+      var portraitUrl = OB64.classPortraitUrl ? OB64.classPortraitUrl(member.classId) : null;
+      html += '<div class="sq-cell u ' + (leader ? 'lead' : 'mem') + (large ? ' large' : '') +
+        '" draggable="true" data-cell="' + cell + '" title="Formation cell ' + cell + '">' +
+        '<span class="sq-cell-role">' + (leader ? 'Leader' : member.cohort) + (large ? ' 2x' : '') + '</span>' +
+        (portraitUrl ? '<img class="sq-cell-portrait" src="' + esc(portraitUrl) + '" alt="" loading="lazy" decoding="async">' : '') +
+        '<span class="sq-cell-name">' + esc(cn(member.classId)) + '</span>' +
+        (!leader ? '<button type="button" class="sq-remove" data-cell="' + cell + '" title="Remove">x</button>' : '') +
+        '</div>';
+    });
+    return html + '</div></div>';
+  }
+
+  function neutralEquipmentHtml(rom, profile, members) {
+    var html = '<div class="sq-item-overrides neutral-item-overrides"><div class="sq-section-label">Starting equipment changes</div>' +
+      '<div class="sq-field-help">Choose up to two equipment changes for each cohort. Every member in that cohort receives compatible gear, and a persuaded survivor keeps it.</div>';
+    ['A', 'B', 'C'].forEach(function(cohort) {
+      var classId = neutralGroupClass(members, cohort);
+      var active = classId > 1;
+      var inactiveText = inactiveItemGroupText(cohort);
+      var values = profile.equipment[cohort];
+      var resolutions = values.map(function(value) {
+        return itemResolutionForClass(rom, classId, value);
+      });
+      var collision = resolutions[0].slot != null && resolutions[0].slot === resolutions[1].slot;
+      html += '<fieldset class="sq-item-cohort"><legend>' + esc(itemGroupName(cohort)) + '</legend>';
+      values.forEach(function(value, index) {
+        var resolution = resolutions[index];
+        html += '<div class="sq-item-field"><span class="sq-item-label">Equipment choice ' + (index + 1) + '</span>' +
+          itemPickerButtonHtml(rom, value, cohort, index + 1, !active, inactiveText) + '</div>' +
+          '<div class="sq-item-resolution ' + (resolution.status === 'compatible' ? 'ok' :
+            (resolution.status === 'none' ? '' : 'warn')) + '">' + esc(resolution.text) + '</div>';
+      });
+      if (collision && active) {
+        html += '<div class="sq-item-resolution sq-item-group-note warn">Both choices replace the same ' +
+          ITEM_SLOT_NAMES[resolutions[0].slot - 1] + '. Choice 2 wins.</div>';
+      }
+      if (!active) html += '<div class="sq-item-resolution sq-item-group-note">' + esc(inactiveText) + '</div>';
+      html += '</fieldset>';
+    });
+    return html + '</div>';
+  }
+
+  function normalizeNeutralEquipmentForUi(equipment) {
+    var normalized = defaultNeutralEquipment();
+    equipment = equipment || {};
+    ['A', 'B', 'C'].forEach(function(cohort) {
+      if (!Array.isArray(equipment[cohort]) || equipment[cohort].length !== 2) return;
+      normalized[cohort] = equipment[cohort].map(function(value) {
+        value = Number(value);
+        return Number.isInteger(value) && value >= 0 && value <= 0x115 ? value : 0;
+      });
+    });
+    return normalized;
+  }
+
+  function addNeutralMember(members, cohort, classId) {
+    if (members.length >= 5) return { error: 'A custom encounter squad can contain at most five members.' };
+    var group = neutralGroup(members, cohort);
+    if (group.length >= 3) return { error: 'Group ' + cohort + ' can contain at most three members.' };
+    var memberClass = group.length ? group[0].classId : classId;
+    if (memberClass <= 1) return { error: 'Choose a supported Group ' + cohort + ' class first.' };
+    var level = group.length ? group[0].levelOffsetRaw : 0;
+    for (var cell = 0; cell <= 8; cell++) {
+      if (neutralMemberAtCell(members, cell)) continue;
+      var candidate = cloneNeutralMembers(members);
+      candidate.push({ cohort: cohort, classId: memberClass, levelOffsetRaw: level, cell: cell });
+      if (!neutralMembersIssue(candidate)) return { members: candidate };
+    }
+    return { error: 'No formation cell can safely hold another member.' };
+  }
+
+  // Custom neutral squads use game-native formation cells 0..8. Ordinary
+  // Scenario/EDAT squads retain their separate 35-byte, 1..9 editor model.
+  OB64.makeDefaultNeutralSquadMembers = defaultNeutralSquadMembers;
+  OB64.validateNeutralSquadMembers = function(members) {
+    return neutralMembersIssue(members);
+  };
+  OB64.renderNeutralSquadEditor = function(container, rom, profile, callbacks) {
+    if (!container || !profile) return;
+    injectStyle();
+    callbacks = callbacks || {};
+    var notice = '';
+    var source = cloneNeutralMembers(profile.members);
+    if (neutralMembersIssue(source)) source = defaultNeutralSquadMembers();
+    profile.members = source;
+    profile.equipment = normalizeNeutralEquipmentForUi(profile.equipment);
+
+    function commitNeutral(candidate, successNotice) {
+      var problem = neutralMembersIssue(candidate);
+      if (problem) {
+        notice = problem;
+        render();
+        return false;
+      }
+      profile.members = candidate;
+      source = candidate;
+      notice = successNotice || '';
+      if (callbacks.onChange) callbacks.onChange(profile);
+      render();
+      return true;
+    }
+
+    function levelControl(role, label, active) {
+      var group = neutralGroup(source, role);
+      var raw = group.length ? group[0].levelOffsetRaw : 0;
+      return '<label class="neutral-squad-level"><span>' + esc(label) + '</span>' +
+        '<input type="number" min="-128" max="127" step="1" data-neutral-level="' +
+        role + '" value="' + signedOffset(raw) + '"' +
+        (active ? '' : ' disabled') + '></label>';
+    }
+
+    function render() {
+      var issue = neutralMembersIssue(source);
+      var html = '<div class="neutral-squad-composer">' +
+        '<div class="sq-editor-grid">' + neutralGridHtml(source) +
+        '<div class="sq-pick">' +
+        '<div class="sq-field leader"><label>Leader class</label>' +
+        '<select data-neutral-grp="A">' + neutralClassOptionsHtml(neutralGroupClass(source, 'A')) + '</select>' +
+        levelControl('A', 'Leader level offset', true) + '</div>';
+      ['B', 'C'].forEach(function(role) {
+        var cls = neutralGroupClass(source, role);
+        var count = neutralGroup(source, role).length;
+        var addResult = count && count < 3 ? addNeutralMember(source, role, cls) : null;
+        var reason = count >= 3 ? 'This group already contains three members.' :
+          (source.length >= 5 ? 'This squad already contains five members.' :
+            (addResult && addResult.error ? addResult.error : ''));
+        html += '<div class="sq-field"><label>Member ' + role +
+          (cls ? ' - ' + esc(cn(cls)) + ' x' + count : ' - Empty') + '</label>' +
+          '<div class="sq-group-row"><select data-neutral-grp="' + role + '">' +
+          neutralClassOptionsHtml(cls) + '</select>' +
+          '<button type="button" class="sq-add-member" data-neutral-add="' + role +
+          '" title="' + esc(reason || ('Add one Member ' + role + ' unit')) + '"' +
+          (reason ? ' disabled' : '') + '>+</button></div>' +
+          levelControl(role, 'Group ' + role + ' level offset', count > 0) + '</div>';
+      });
+      html += '</div></div>' + neutralEquipmentHtml(rom, profile, source) +
+        '<div class="neutral-squad-status ' + (issue ? 'sq-warn' : 'sq-status') + '">' +
+        esc(issue || (source.length + ' members, ' + neutralFormationSlotCount(source) +
+          '/5 formation slots. Cells use the game-native 0–8 values. Drag members to change formation.')) + '</div>' +
+        (notice ? '<div class="sq-notice">' + esc(notice) + '</div>' : '') +
+        '<div class="sq-action-row"><button type="button" class="btn-secondary" data-neutral-reset>' +
+        'Reset to Knight + Griffin</button></div></div>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('select[data-neutral-grp]').forEach(function(select) {
+        select.onchange = function() {
+          var role = this.dataset.neutralGrp;
+          var classId = Number(this.value);
+          var candidate = cloneNeutralMembers(source);
+          if (role === 'A') {
+            if (classId <= 1) {
+              notice = 'A custom neutral squad requires a supported leader class.';
+              render();
+              return;
+            }
+            candidate[0].classId = classId;
+          } else if (!classId) {
+            candidate = candidate.filter(function(member) { return member.cohort !== role; });
+          } else if (!neutralGroup(candidate, role).length) {
+            var added = addNeutralMember(candidate, role, classId);
+            if (added.error) {
+              notice = added.error;
+              render();
+              return;
+            }
+            candidate = added.members;
+          } else {
+            candidate.forEach(function(member) {
+              if (member.cohort === role) member.classId = classId;
+            });
+          }
+          commitNeutral(candidate);
+        };
+      });
+      container.querySelectorAll('[data-neutral-add]').forEach(function(button) {
+        button.onclick = function() {
+          var role = this.dataset.neutralAdd;
+          var result = addNeutralMember(source, role, neutralGroupClass(source, role));
+          if (result.error) {
+            notice = result.error;
+            render();
+            return;
+          }
+          commitNeutral(result.members);
+        };
+      });
+      container.querySelectorAll('.sq-remove').forEach(function(button) {
+        button.onclick = function(event) {
+          event.stopPropagation();
+          var cell = Number(this.dataset.cell);
+          var candidate = cloneNeutralMembers(source).filter(function(member) {
+            return member.cell !== cell;
+          });
+          commitNeutral(candidate);
+        };
+      });
+      container.querySelectorAll('[data-neutral-level]').forEach(function(input) {
+        input.onchange = function() {
+          var value = Number(this.value);
+          if (!Number.isInteger(value) || value < -128 || value > 127) {
+            notice = 'Level offsets must be integers from -128 through 127.';
+            render();
+            return;
+          }
+          var role = this.dataset.neutralLevel;
+          var candidate = cloneNeutralMembers(source);
+          candidate.forEach(function(member) {
+            if (member.cohort === role) member.levelOffsetRaw = value < 0 ? value + 256 : value;
+          });
+          commitNeutral(candidate);
+        };
+      });
+      container.querySelectorAll('.sq-cell').forEach(function(cell) {
+        cell.ondragstart = function(event) {
+          event.dataTransfer.setData('text/plain', this.dataset.cell);
+          event.dataTransfer.effectAllowed = 'move';
+        };
+        cell.ondragover = function(event) {
+          event.preventDefault();
+          this.style.outline = '2px solid var(--ob-gold-bright)';
+        };
+        cell.ondragleave = function() { this.style.outline = ''; };
+        cell.ondrop = function(event) {
+          event.preventDefault();
+          this.style.outline = '';
+          var from = Number(event.dataTransfer.getData('text/plain'));
+          var to = Number(this.dataset.cell);
+          if (!Number.isInteger(from) || !Number.isInteger(to)) return;
+          var candidate = cloneNeutralMembers(source);
+          var fromMember = neutralMemberAtCell(candidate, from);
+          var toMember = neutralMemberAtCell(candidate, to);
+          if (!fromMember) return;
+          fromMember.cell = to;
+          if (toMember) toMember.cell = from;
+          commitNeutral(candidate);
+        };
+      });
+      container.querySelectorAll('.sq-item-picker').forEach(function(button) {
+        button.onclick = function() {
+          var role = this.dataset.role;
+          var candidateIndex = Number(this.dataset.candidate) - 1;
+          var current = Number(this.dataset.value);
+          if (!OB64.openSaveItemPickerModal) {
+            notice = 'The item picker is unavailable. Reload the editor and try again.';
+            render();
+            return;
+          }
+          OB64.openSaveItemPickerModal({
+            title: 'Choose starting equipment — ' + itemGroupName(role) +
+              ', choice ' + (candidateIndex + 1),
+            items: itemPickerItems(rom),
+            currentId: current <= 0x115 ? current : undefined,
+            withIcons: true,
+            onSelect: function(id) {
+              profile.equipment[role][candidateIndex] = id;
+              notice = itemGroupName(role) + ', equipment choice ' + (candidateIndex + 1) +
+                ' set to ' + (id ? (OB64.itemName(id) + ' ' + hx4(id)) : 'No change ' + hx4(0)) + '.';
+              if (callbacks.onChange) callbacks.onChange(profile);
+              render();
+            }
+          });
+        };
+      });
+      var reset = container.querySelector('[data-neutral-reset]');
+      if (reset) reset.onclick = function() {
+        profile.equipment = defaultNeutralEquipment();
+        commitNeutral(defaultNeutralSquadMembers(), 'Restored the Knight + Griffin starting composition and normal class equipment.');
+      };
+    }
+
+    render();
+  };
 
   // Added squads (Scenario tab) have no vanilla card; their override's match key is the
   // DONOR enemydat record's bytes from the generated table (resolver matches on content).

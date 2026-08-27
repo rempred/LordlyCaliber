@@ -329,6 +329,85 @@ window.OB64 = window.OB64 || {};
       }
       entries.push({ title: 'Terrain rule ' + hex(key, 2), lines: lines });
     });
+    function rateBranchLabel(branch) {
+      branch = branch || {};
+      if (branch.mode === 'disabled') return 'disabled';
+      if (branch.mode !== 'override') return 'inherits global';
+      var passCount = branch.pass_count != null ? branch.pass_count : branch.passCount;
+      return passCount + ' / ' + branch.divisor;
+    }
+    numericKeys(neutral.slice_rates).forEach(function(key) {
+      var after = neutral.slice_rates[key] || {};
+      var originalRates = rom.original && rom.original.neutralEncounters &&
+        rom.original.neutralEncounters.sliceRates || [];
+      var before = null;
+      for (var i = 0; i < originalRates.length; i++) {
+        if (Number(originalRates[i].s0) === Number(key)) before = originalRates[i];
+      }
+      before = before || {};
+      entries.push({
+        title: 'Neutral encounter slice ' + key + ' runtime roll',
+        lines: [
+          'State bit 17 set: ' + rateBranchLabel(before.normal) + ' -> ' +
+            rateBranchLabel(after.normal),
+          'State bit 17 clear: ' + rateBranchLabel(before.alternate) + ' -> ' +
+            rateBranchLabel(after.alternate)
+        ]
+      });
+    });
+    numericKeys(neutral.scenario_rates).forEach(function(key) {
+      var after = neutral.scenario_rates[key] || {};
+      var originalRates = rom.original && rom.original.neutralEncounters &&
+        rom.original.neutralEncounters.scenarioRates || [];
+      var before = null;
+      for (var i = 0; i < originalRates.length; i++) {
+        if (Number(originalRates[i].runtimeKey) === Number(key)) before = originalRates[i];
+      }
+      before = before || {};
+      var info = OB64.scenarioKeyInfo ? OB64.scenarioKeyInfo(Number(key)) : null;
+      entries.push({
+        title: 'Neutral scenario ' + key + (info && info.label ? ' · ' + info.label : '') +
+          ' runtime roll',
+        lines: [
+          'State bit 17 set: ' + rateBranchLabel(before.normal) + ' -> ' +
+            rateBranchLabel(after.normal).replace('inherits global', 'inherits shared slice'),
+          'State bit 17 clear: ' + rateBranchLabel(before.alternate) + ' -> ' +
+            rateBranchLabel(after.alternate).replace('inherits global', 'inherits shared slice')
+        ]
+      });
+    });
+    function customComposition(entry) {
+      if (!entry || typeof entry.record !== 'string' || entry.record.length !== 70) return 'unknown composition';
+      var bytes = [];
+      for (var i = 0; i < 35; i++) bytes.push(parseInt(entry.record.substr(i * 2, 2), 16) || 0);
+      var parts = [];
+      if (bytes[0]) parts.push(className(bytes[0]));
+      var bCount = [13, 14, 15].filter(function(offset) { return bytes[offset]; }).length;
+      var cCount = [22, 23, 24].filter(function(offset) { return bytes[offset]; }).length;
+      if (bCount) parts.push((bCount > 1 ? bCount + 'x ' : '') + className(bytes[7]));
+      if (cCount) parts.push((cCount > 1 ? cCount + 'x ' : '') + className(bytes[16]));
+      return parts.join(' + ') || 'empty composition';
+    }
+    numericKeys(neutral.custom_squads).forEach(function(key) {
+      var after = neutral.custom_squads[key];
+      var lines = [];
+      if (after == null) {
+        lines.push('Removed the custom squad and restored retail creature selection.');
+      } else {
+        lines.push('Encounter card: ' + (after.label || 'Bandits!'));
+        lines.push('Composition: ' + customComposition(after));
+        var persuasion = after.persuasion || {};
+        lines.push('Persuasion: ' + persuasion.chance + '%');
+        var retreat = after.retreat || {};
+        var retreatThreshold = Number(retreat.hp_threshold);
+        if (!Number.isInteger(retreatThreshold) || retreatThreshold < 0 ||
+            retreatThreshold > 100) retreatThreshold = 0;
+        lines.push(retreatThreshold === 0
+          ? 'Retreat: Never'
+          : 'Retreat: at or below ' + retreatThreshold + '% HP');
+      }
+      entries.push({ title: 'Custom neutral squad ' + key, lines: lines });
+    });
     if (patches.neutral_global_rate) {
       var originalRate = rom.original && rom.original.neutralGlobalRate || {};
       var afterRate = patches.neutral_global_rate;
@@ -368,6 +447,14 @@ window.OB64 = window.OB64 || {};
       for (var i = 0; i < Math.max(beforeSlots.length, afterSlots.length); i++) {
         if (beforeSlots[i] !== afterSlots[i]) {
           lines.push('Drop slot ' + (i + 1) + ': ' + dropName(beforeSlots[i]) + ' -> ' + dropName(afterSlots[i]));
+        }
+      }
+      var beforeWeights = before.weights || [1, 1, 1];
+      var afterWeights = after.weights || beforeWeights;
+      for (i = 0; i < 3; i++) {
+        if (Number(beforeWeights[i]) !== Number(afterWeights[i])) {
+          lines.push('Drop slot ' + (i + 1) + ' weight: ' +
+            changed(beforeWeights[i], afterWeights[i]));
         }
       }
       if (before.padByte !== after.padByte) {

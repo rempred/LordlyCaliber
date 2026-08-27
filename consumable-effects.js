@@ -5507,7 +5507,12 @@
     if (dirty && dirty.encounters) add('encounters', 'Neutral Encounters', 'encounters', [
       { kind: 'rom', start: OB64.NEUTRAL_TERRAIN_RATE_OFFSET || 0x141E80, size: 0x40, label: 'terrain encounter tables' },
       { kind: 'rom', start: OB64.NEUTRAL_ENCOUNTER_OFFSET || 0x141ED0, size: 0x330, label: 'neutral encounter records' },
-      { kind: 'rom', start: OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET || 0x13C1E8, size: 0x44, label: 'global encounter roll code' }
+      // The global control writes five words around, but not including, the
+      // adjacent runtime RNG hook. Keeping these ownership ranges exact lets
+      // a global fallback coexist with a direct per-scenario override.
+      { kind: 'rom', start: OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET || 0x13C1E8, size: 8, label: 'global encounter divisor' },
+      { kind: 'rom', start: OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET || 0x13C1FC, size: 8, label: 'global encounter thresholds' },
+      { kind: 'rom', start: OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET || 0x13C228, size: 4, label: 'global encounter fail branch' }
     ]);
     if (dirty && dirty.creatureDrops) add('creature-drops', 'Creature Drops', 'creatureDrops', [{
       kind: 'rom', start: OB64.CREATURE_DROP_OFFSET || 0x142258,

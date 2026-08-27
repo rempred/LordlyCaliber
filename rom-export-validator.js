@@ -622,6 +622,170 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  function normalizeSliceRateOverrides(entries) {
+    function branch(source) {
+      source = source || {};
+      var mode = source.mode === 'override' || source.mode === 'disabled'
+        ? source.mode : 'inherit';
+      return {
+        mode: mode,
+        passCount: mode === 'override' ? Number(source.passCount) : null,
+        divisor: mode === 'override' ? Number(source.divisor) : null,
+      };
+    }
+    return (entries || []).map(function(entry) {
+      return {
+        slice: Number(entry.slice != null ? entry.slice : entry.s0),
+        normal: branch(entry.normal),
+        alternate: branch(entry.alternate),
+      };
+    }).sort(function(a, b) { return a.slice - b.slice; });
+  }
+
+  function validateSliceRateOverrides(candidateRom, expectedEntries) {
+    var expected = normalizeSliceRateOverrides(expectedEntries);
+    var parsed = normalizeSliceRateOverrides(
+      OB64.runtimeOverrides.parseSliceRateOverrides(candidateRom.z64, candidateRom)
+    );
+    if (JSON.stringify(parsed) !== JSON.stringify(expected)) {
+      throw issue(
+        'SEMANTIC_READBACK_MISMATCH',
+        'Slice encounter rates did not read back correctly',
+        'The finished ROM does not contain the intended per-slice encounter rates.',
+        'Keep the error report, review the affected scenario slices, and export again.',
+        { expected: expected, actual: parsed }
+      );
+    }
+    return {
+      summary: expected.length + ' slice encounter-rate override' +
+        (expected.length === 1 ? '' : 's') + ' read back correctly.',
+      details: { overrideCount: expected.length },
+    };
+  }
+
+  function normalizeScenarioRateOverrides(entries) {
+    function branch(source) {
+      source = source || {};
+      var mode = source.mode === 'override' || source.mode === 'disabled'
+        ? source.mode : 'inherit';
+      return {
+        mode: mode,
+        passCount: mode === 'override' ? Number(source.passCount) : null,
+        divisor: mode === 'override' ? Number(source.divisor) : null,
+      };
+    }
+    return (entries || []).map(function(entry) {
+      return {
+        runtimeKey: Number(entry.runtimeKey != null ? entry.runtimeKey : entry.key),
+        normal: branch(entry.normal),
+        alternate: branch(entry.alternate),
+      };
+    }).sort(function(a, b) { return a.runtimeKey - b.runtimeKey; });
+  }
+
+  function validateScenarioRateOverrides(candidateRom, expectedEntries) {
+    var expected = normalizeScenarioRateOverrides(expectedEntries);
+    var parsed = normalizeScenarioRateOverrides(
+      OB64.runtimeOverrides.parseScenarioRateOverrides(candidateRom.z64, candidateRom)
+    );
+    if (JSON.stringify(parsed) !== JSON.stringify(expected)) {
+      throw issue(
+        'SEMANTIC_READBACK_MISMATCH',
+        'Scenario encounter rates did not read back correctly',
+        'The finished ROM does not contain the intended per-scenario encounter rates.',
+        'Keep the error report, review the affected scenarios, and export again.',
+        { expected: expected, actual: parsed }
+      );
+    }
+    return {
+      summary: expected.length + ' scenario encounter-rate override' +
+        (expected.length === 1 ? '' : 's') + ' read back correctly.',
+      details: { overrideCount: expected.length },
+    };
+  }
+
+  function normalizeCustomNeutralSquads(entries) {
+    return (entries || []).map(function(entry, index) {
+      var persuasion = entry.persuasion || {};
+      var normalized = OB64.runtimeOverrides.normalizeCustomProfile(entry, index);
+      return {
+        profileId: Number(entry.profileId),
+        runtimeKey: Number(entry.runtimeKey),
+        slice: Number(entry.slice),
+        terrainSlot: Number(entry.terrainSlot),
+        members: normalized.members.map(function(member) {
+          return {
+            classId: Number(member.classId),
+            levelOffsetRaw: Number(member.levelOffsetRaw),
+            cell: Number(member.cell),
+          };
+        }),
+        label: normalized.label,
+        persuasion: persuasion.mode === 'fixed'
+          ? { mode: 'fixed', chance: Number(persuasion.chance) }
+          : { mode: 'inherit', chance: null },
+        retreat: { hpThreshold: Number(normalized.retreat.hpThreshold) },
+      };
+    }).sort(function(a, b) {
+      return a.runtimeKey - b.runtimeKey || a.terrainSlot - b.terrainSlot;
+    });
+  }
+
+  function validateCustomNeutralSquads(candidateRom, expectedEntries) {
+    var expected = normalizeCustomNeutralSquads(expectedEntries);
+    var parsed = normalizeCustomNeutralSquads(
+      OB64.runtimeOverrides.parseCustomNeutralSquads(candidateRom.z64, candidateRom)
+    );
+    if (JSON.stringify(parsed) !== JSON.stringify(expected)) {
+      throw issue(
+        'SEMANTIC_READBACK_MISMATCH',
+        'Custom neutral squads did not read back correctly',
+        'The finished ROM does not contain the intended scenario-and-terrain squad profiles.',
+        'Keep the error report, review the affected neutral squads, and export again.',
+        { expected: expected, actual: parsed }
+      );
+    }
+    var messages = [];
+    expected.forEach(function(profile) {
+      if (messages.indexOf(profile.label) === -1) messages.push(profile.label);
+    });
+    return {
+      summary: expected.length + ' custom neutral squad' +
+        (expected.length === 1 ? '' : 's') + ' and the encounter-card text read back correctly.',
+      details: { profileCount: expected.length, messages: messages },
+    };
+  }
+
+  function normalizeWeightedDropOverrides(entries) {
+    return (entries || []).map(function(entry) {
+      return {
+        classId: Number(entry.classId),
+        weights: (entry.weights || []).map(Number),
+      };
+    }).sort(function(a, b) { return a.classId - b.classId; });
+  }
+
+  function validateWeightedDropOverrides(candidateRom, expectedEntries) {
+    var expected = normalizeWeightedDropOverrides(expectedEntries);
+    var parsed = normalizeWeightedDropOverrides(
+      OB64.runtimeOverrides.parseWeightedDropOverrides(candidateRom.z64, candidateRom)
+    );
+    if (JSON.stringify(parsed) !== JSON.stringify(expected)) {
+      throw issue(
+        'SEMANTIC_READBACK_MISMATCH',
+        'Weighted creature drops did not read back correctly',
+        'The finished ROM does not contain the intended creature-drop slot weights.',
+        'Keep the error report, review the affected creature classes, and export again.',
+        { expected: expected, actual: parsed }
+      );
+    }
+    return {
+      summary: expected.length + ' weighted creature-drop class' +
+        (expected.length === 1 ? '' : 'es') + ' read back correctly.',
+      details: { overrideCount: expected.length },
+    };
+  }
+
   function validateTools(candidateRom, sourceRom, toolsResult) {
     var expected = {};
     (toolsResult.applied || []).concat(toolsResult.upgraded || []).forEach(function(name) {
@@ -1232,7 +1396,9 @@ window.OB64 = window.OB64 || {};
         regions: [
           { start: OB64.NEUTRAL_TERRAIN_RATE_OFFSET, size: 0x40, label: 'terrain encounter tables' },
           { start: OB64.NEUTRAL_ENCOUNTER_OFFSET, size: 0x330, label: 'neutral encounter records' },
-          { start: OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET, size: 0x44, label: 'global encounter roll code' },
+          { start: OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET, size: 8, label: 'global encounter divisor' },
+          { start: OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET, size: 8, label: 'global encounter thresholds' },
+          { start: OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET, size: 4, label: 'global encounter fail branch' },
         ],
         prepareReloaded: function(loaded, source) {
           if (loaded.neutralEncounters && loaded.neutralEncounters.globalRate &&
@@ -1327,17 +1493,17 @@ window.OB64 = window.OB64 || {};
       });
     }
 
-    yield* runCheckStep(report, 'runtime-override-integrity', 'Shops and squads runtime patch', {
+    yield* runCheckStep(report, 'runtime-override-integrity', 'Shared runtime patch', {
       code: 'PATCH_INTEGRITY',
       title: 'Runtime override patch did not verify',
-      message: 'The finished ROM does not contain the complete planned shops and squads runtime patch.',
+      message: 'The finished ROM does not contain the complete planned shared runtime patch.',
       suggestion: 'Keep the error report and recreate the ROM after updating the editor.',
     }, function() {
       if (options.runtimeWritePlan) {
-        return validateExactWrites(candidateRom.z64, options.runtimeWritePlan.writes, 'shops and squads runtime');
+        return validateExactWrites(candidateRom.z64, options.runtimeWritePlan.writes, 'shared runtime');
       }
       if (options.runtimeMode === 'restore') return validateRuntimeRemoval(sourceRom, candidateRom);
-      return skipped('No shops or squads runtime patch changed during this export.');
+      return skipped('No shared runtime patch changed during this export.');
     });
 
     yield* runCheckStep(report, 'shop-override-readback', 'Runtime shop semantic readback', {
@@ -1350,6 +1516,42 @@ window.OB64 = window.OB64 || {};
         return skipped('Runtime shops did not change during this export.');
       }
       return validateShopOverrides(candidateRom, options.shopOverrides || []);
+    });
+
+    yield* runCheckStep(report, 'scenario-rate-override-readback', 'Scenario encounter-rate semantic readback', {
+      code: 'SEMANTIC_READBACK_MISMATCH',
+      title: 'Scenario encounter rates did not read back correctly',
+      message: 'The finished ROM does not contain the intended per-scenario encounter rates.',
+      suggestion: 'Keep the error report, review the affected scenarios, and export again.',
+    }, function() {
+      if (!dirty.neutralRuntime && !options.scenarioRateOverrides) {
+        return skipped('Scenario encounter rates did not change during this export.');
+      }
+      return validateScenarioRateOverrides(candidateRom, options.scenarioRateOverrides || []);
+    });
+
+    yield* runCheckStep(report, 'weighted-drop-override-readback', 'Weighted creature-drop semantic readback', {
+      code: 'SEMANTIC_READBACK_MISMATCH',
+      title: 'Weighted creature drops did not read back correctly',
+      message: 'The finished ROM does not contain the intended creature-drop slot weights.',
+      suggestion: 'Keep the error report, review the affected creature classes, and export again.',
+    }, function() {
+      if (!dirty.neutralRuntime && !options.weightedDropOverrides) {
+        return skipped('Weighted creature drops did not change during this export.');
+      }
+      return validateWeightedDropOverrides(candidateRom, options.weightedDropOverrides || []);
+    });
+
+    yield* runCheckStep(report, 'custom-neutral-squad-readback', 'Custom neutral-squad semantic readback', {
+      code: 'SEMANTIC_READBACK_MISMATCH',
+      title: 'Custom neutral squads did not read back correctly',
+      message: 'The finished ROM does not contain the intended custom neutral squads and encounter-card text.',
+      suggestion: 'Keep the error report, review the affected neutral squads, and export again.',
+    }, function() {
+      if (!dirty.neutralRuntime && !options.customNeutralSquads) {
+        return skipped('Custom neutral squads did not change during this export.');
+      }
+      return validateCustomNeutralSquads(candidateRom, options.customNeutralSquads || []);
     });
 
     yield* runCheckStep(report, 'tools-patch-integrity', 'Tools patch integrity', {
@@ -1402,7 +1604,7 @@ window.OB64 = window.OB64 || {};
   function validationStepCount(options) {
     var targets = options && options.scenarioResult &&
       options.scenarioResult.validationTargets || [];
-    return 19 + Math.max(targets.length, 1);
+    return 20 + Math.max(targets.length, 1);
   }
 
   function yieldForProgressPaint() {

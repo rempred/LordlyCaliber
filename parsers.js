@@ -111,6 +111,8 @@ OB64.ROM_LAYOUTS = {
     supportsTools: true,
     supportsSquadOverrides: true,
     supportsShopOverrides: true,
+    supportsNeutralRuntimeOverrides: true,
+    supportsNeutralCustomSquads: true,
     supportsCombatAnimationOverrides: true,
     combatAnimationOverridesReason: '',
     unsupportedTools: {},
@@ -120,7 +122,83 @@ OB64.ROM_LAYOUTS = {
     },
     shopPatch: {
       HOOK_ROM: 0x19BF18,
-      CLEANUP_ROM: 0x19BFC4
+      CLEANUP_ROM: 0x19BFC4,
+      LIST_RAM: 0x80219F20,
+      ORIGINAL_WORDS: [
+        0x00404021,
+        0x3C078022,
+        0x8CE79F20,
+        0x00031840,
+        0x00681821,
+        0x90650000
+      ]
+    },
+    neutralRuntimePatch: {
+      RATE_HOOK_ROM: 0x13C204,
+      DROP_HOOK_ROM: 0x102488,
+      STAGED_SCENARIO_RAM: 0x8018F481,
+      SCENARIO_META_NEUTRAL_BASE_RAM: 0x801E7E18,
+      SELECTION_HOOK_ROM: 0x13C414,
+      SELECTION_SUCCESS_LIVE: 0x801E7A0C,
+      SELECTION_EMPTY_LIVE: 0x801E7CDC,
+      MATERIALIZER_HOOK_ROM: 0x23B0FC,
+      RETAIL_CLASS_ONE_LIVE: 0x801D15A8,
+      RETAIL_GENERIC_LIVE: 0x801D1600,
+      RETAIL_EPILOGUE_LIVE: 0x801D1694,
+      BATTLE_CHARACTER_CONSTRUCTOR_LIVE: 0x801D0840,
+      MESSAGE_HOOK_ROM: 0x10F3D8,
+      MESSAGE_CONTINUATION_LIVE: 0x801BACA0,
+      // The generic MESWIN presentation owner resolves an entry offset to a
+      // decoded string pointer here. Custom neutral cards replace that pointer
+      // only for reserved entry 15 while their typed profile is active.
+      MESSAGE_TEXT_HOOK_ROM: 0x000E5AD4,
+      MESSAGE_INDEX_HIGH_RAM: 0x800E7AB8,
+      MESSAGE_INDEX_LOW_RAM: 0x800E7AB9,
+      PERSUASION_HOOK_ROM: 0x214A08,
+      PERSUASION_CONTINUATION_LIVE: 0x801D1740,
+      PERSUASION_RETAIL_HELPER_LIVE: 0x801D1480,
+      PERSUASION_EPILOGUE_LIVE: 0x801D18E8,
+      PERSUASION_RNG_LIVE: 0x8009C7CC,
+      PERSUASION_ACTOR_AT_INDEX_LIVE: 0x801C8FE8,
+      PERSUASION_FILTER_A_LIVE: 0x801C8E30,
+      PERSUASION_FILTER_B_LIVE: 0x801C8E9C,
+      PERSUASION_FILTER_C_LIVE: 0x801C8E64,
+      PERSUASION_FILTER_D_LIVE: 0x801C8E80,
+      PERSUASION_ELIGIBLE_LIVE: 0x801C8B68,
+      PERSUASION_RECRUIT_TARGET_HOOK_ROM: 0x2142D8,
+      PERSUASION_TARGET_HOOK_ROMS: [0x219ADC, 0x219D34, 0x219D90],
+      PERSUASION_TARGET_RETAIL_LIVE: 0x801C940C,
+      // OBM6 originally cleared its custom state in battle-result state 10.
+      // Keep that site only so patched source ROMs can be upgraded safely.
+      LEGACY_CLEANUP_HOOK_ROM: 0x21BC40,
+      LEGACY_CLEANUP_CONTINUATION_LIVE: 0x801D8978,
+      // ROM57-ROM60 also hooked this later retail cleanup site. Keep it so
+      // patched source ROMs can be upgraded back to the retail instruction.
+      CLEANUP_HOOK_ROM: 0x21C044,
+      CLEANUP_CONTINUATION_LIVE: 0x801D8D7C,
+      RETREAT_HOOK_ROM: 0x214C50,
+      RETREAT_CONTINUATION_LIVE: 0x801D1988,
+      RETREAT_EPILOGUE_LIVE: 0x801D1A48,
+      FIGHT_BUDGET_HOOK_ROM: 0x215FB4,
+      TALK_BUDGET_HOOK_ROM: 0x216168,
+      FIGHT_RESULT_BUDGET_HOOK_ROM: 0x216458,
+      // Battle command insertion advances through the rebuilt action stream
+      // here. Retail can return the same offset for 0xFF padding because that
+      // opcode has width zero; the scoped wrapper skips that padding without
+      // changing the shared next-record iterator used by other consumers.
+      MENU_ITERATOR_HOOK_ROM: 0x215BCC,
+      MENU_ITERATOR_RETAIL_LIVE: 0x801D96A0,
+      MENU_STREAM_CONTEXT_PTR_LIVE: 0x801CE8C0,
+      // OBM8 hooked this unrelated natural-battle state writer. Keep its site
+      // so patched source ROMs can be restored while upgrading.
+      LEGACY_ROUND_CONTINUATION_HOOK_ROM: 0x215C78,
+      // The native opcode-0x41 round boundary calls this retail mode accessor
+      // before resetting surviving actors and rebuilding the action stream.
+      // Custom neutral encounters must satisfy only this mode gate; every
+      // later native death, retreat, timer, and battle-end check stays intact.
+      ROUND_CONTINUATION_HOOK_ROM: 0x221280,
+      ROUND_CONTINUATION_RETAIL_MODE_LIVE: 0x801C8AFC,
+      REWARD_HOOK_ROM: 0x1024B4
     },
     offsets: {
       LZSS_GAP_START: 0x20248C2,
@@ -133,6 +211,7 @@ OB64.ROM_LAYOUTS = {
       NEUTRAL_GLOBAL_NORMAL_OFFSET: 0x13C1FC,
       NEUTRAL_GLOBAL_ALT_OFFSET: 0x13C200,
       NEUTRAL_GLOBAL_BRANCH_OFFSET: 0x13C228,
+      NEUTRAL_SCENARIO_META_NEUTRAL_BASE_OFFSET: 0x13C558,
       CREATURE_DROP_OFFSET: 0x142258,
       ITEM_STAT_OFFSET: 0x62310,
       MAP_EDGE_OFFSET: 0x858E4,
@@ -157,21 +236,40 @@ OB64.ROM_LAYOUTS = {
     supportsTools: true,
     supportsSquadOverrides: true,
     supportsShopOverrides: true,
+    supportsNeutralRuntimeOverrides: true,
+    supportsNeutralCustomSquads: false,
     supportsCombatAnimationOverrides: false,
     combatAnimationOverridesReason: 'Attack Animation selector overrides are available only for US Rev 0; the Rev 1 hook and allocation have not been verified.',
     unsupportedTools: {
-      'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.'
+      'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.',
+      'character-card-luck': 'Character Card Luck is mapped only for the US Rev 0 card overlay; map and cold-boot the Rev 1 overlay before enabling.',
+      'squad-menu-alignment': 'Squad Menu Alignment is mapped only for the US Rev 0 squad-menu overlay; map and cold-boot the Rev 1 overlay before enabling.'
     },
     unsupportedFeaturesReason: 'Header revision 1 supports normal data edits, Chaos Frame Counter, and shared Shops+Squads runtime overrides. High Attack Streamsplit remains disabled until its changed header revision 1 code path is rebuilt.',
     squadPatch: {
       HOOK_ROM: 0x1955A4
     },
     shopPatch: {
-      // Same side-loaded overlay routine as rev 0, shifted by the accepted
-      // header-revision +0x20 ROM delta. The hook branches by the relative
-      // distance so both instructions follow the overlay's live relocation.
-      HOOK_ROM: 0x19BF38,
-      CLEANUP_ROM: 0x19BFE4
+      // Rev 1 keeps the producer's instruction flow but compacts this overlay
+      // by 0x30 bytes. Its destination global moves by the normal +0x20 RAM
+      // layout delta. The cleanup remains 0xAC bytes after the hook.
+      HOOK_ROM: 0x19BEE8,
+      CLEANUP_ROM: 0x19BF94,
+      LIST_RAM: 0x80219F40,
+      ORIGINAL_WORDS: [
+        0x00404021,
+        0x3C078022,
+        0x8CE79F40,
+        0x00031840,
+        0x00681821,
+        0x90650000
+      ]
+    },
+    neutralRuntimePatch: {
+      RATE_HOOK_ROM: 0x13C224,
+      DROP_HOOK_ROM: 0x1024A8,
+      STAGED_SCENARIO_RAM: 0x8018F4A1,
+      SCENARIO_META_NEUTRAL_BASE_RAM: 0x801E7E38
     },
     offsets: {
       LZSS_GAP_START: 0x2024516,
@@ -184,6 +282,7 @@ OB64.ROM_LAYOUTS = {
       NEUTRAL_GLOBAL_NORMAL_OFFSET: 0x13C21C,
       NEUTRAL_GLOBAL_ALT_OFFSET: 0x13C220,
       NEUTRAL_GLOBAL_BRANCH_OFFSET: 0x13C248,
+      NEUTRAL_SCENARIO_META_NEUTRAL_BASE_OFFSET: 0x13C578,
       CREATURE_DROP_OFFSET: 0x142278,
       ITEM_STAT_OFFSET: 0x62330,
       MAP_EDGE_OFFSET: 0x85904,
@@ -433,9 +532,14 @@ OB64.NEUTRAL_TERRAIN_TABLE_LEN   = 0x20;
 // probability gate, before the per-unit terrain-rate roll.
 OB64.NEUTRAL_GLOBAL_DIV_HI_OFFSET = 0x13C1E8;       // lui $s1, divisor_hi
 OB64.NEUTRAL_GLOBAL_DIV_LO_OFFSET = 0x13C1EC;       // ori $s1, $s1, divisor_lo
-OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET = 0x13C1FC;       // addiu $s0, $zero, threshold
-OB64.NEUTRAL_GLOBAL_ALT_OFFSET    = 0x13C200;       // alternate branch threshold
+OB64.NEUTRAL_GLOBAL_NORMAL_OFFSET = 0x13C1FC;       // bit-17-set threshold
+OB64.NEUTRAL_GLOBAL_ALT_OFFSET    = 0x13C200;       // bit-17-clear threshold
 OB64.NEUTRAL_GLOBAL_BRANCH_OFFSET = 0x13C228;       // fail branch after sltu
+// Scenario resource metadata contains 12-byte rows keyed by the staged runtime
+// scenario byte. Row member +8 is the neutral-table base; subtracting three
+// yields the visible neutral slice number 1..40.
+OB64.NEUTRAL_SCENARIO_META_NEUTRAL_BASE_OFFSET = 0x13C558;
+OB64.NEUTRAL_SCENARIO_RUNTIME_KEY_COUNT = 64;
 OB64.NEUTRAL_GLOBAL_SLIDER_DIVISOR = 10000;         // coarse multiplier patch divisor
 OB64.NEUTRAL_GLOBAL_SMOOTH_DIVISOR = 1000000;       // smooth x1-x3 patch divisor
 OB64.NEUTRAL_GLOBAL_SMOOTH_MAX_PASS = 0x8000;       // addiu positive threshold + 1
@@ -555,8 +659,26 @@ OB64.parseNeutralGlobalRate = function(z64) {
     alternateBasisPoints: divisor.valid && alternate.valid ? passBasisPoints(alternate.value, divisor.value) : null,
     normalMicroBasisPoints: divisor.valid && normal.valid ? passMicroBasisPoints(normal.value, divisor.value) : null,
     alternateMicroBasisPoints: divisor.valid && alternate.valid ? passMicroBasisPoints(alternate.value, divisor.value) : null,
+    normalPassCount: normal.valid ? normal.value + 1 : null,
+    alternatePassCount: alternate.valid ? alternate.value + 1 : null,
+    linked: normal.valid && alternate.valid && normal.value === alternate.value,
+    normalModified: false,
+    alternateModified: false,
     modified: false
   };
+};
+
+OB64.neutralGlobalBranchMicroBasisPoints = function(globalRate, branch) {
+  if (!globalRate) return 0;
+  var prefix = branch === 'alternate' ? 'alternate' : 'normal';
+  var direct = Number(globalRate[prefix + 'MicroBasisPoints']);
+  if (isFinite(direct)) return Math.max(0, Math.min(1000000, Math.round(direct)));
+  var passCount = Number(globalRate[prefix + 'PassCount']);
+  var divisor = Number(globalRate.divisor);
+  if (isFinite(passCount) && passCount >= 0 && isFinite(divisor) && divisor > 0) {
+    return Math.max(0, Math.min(1000000, Math.round((passCount * 1000000) / divisor)));
+  }
+  return 0;
 };
 
 // Resolve the value shown when the Encounters tab is rendered. The source ROM
@@ -583,6 +705,31 @@ OB64.neutralGlobalRateDisplayMicroBasisPoints = function(globalRate) {
   if (isVanillaPattern) return vanillaMicroBp;
 
   return isFinite(currentMicroBp) ? clamp(currentMicroBp) : 0;
+};
+
+OB64.makeNeutralSliceRateBranch = function() {
+  return {
+    mode: 'inherit',
+    passCount: null,
+    divisor: null
+  };
+};
+
+OB64.makeNeutralSliceRateOverride = function() {
+  return {
+    normal: OB64.makeNeutralSliceRateBranch(),
+    alternate: OB64.makeNeutralSliceRateBranch()
+  };
+};
+
+OB64.makeNeutralScenarioRateRecord = function(runtimeKey, neutralBase) {
+  var slice = neutralBase >= 4 && neutralBase <= 43 ? neutralBase - 3 : null;
+  return {
+    runtimeKey: runtimeKey,
+    neutralBase: neutralBase,
+    slice: slice,
+    rateOverride: OB64.makeNeutralSliceRateOverride()
+  };
 };
 
 OB64.parseNeutralEncounters = function(z64) {
@@ -612,11 +759,23 @@ OB64.parseNeutralEncounters = function(z64) {
       row: i,           // array index used elsewhere
       offset: off,
       isEmpty: isEmpty,
-      slots: slots
+      slots: slots,
+      // Retained only to keep the parsed record shape stable. The product
+      // neither exposes nor exports shared-slice rate overrides.
+      rateOverride: OB64.makeNeutralSliceRateOverride()
     });
+  }
+  var scenarioRates = [];
+  var scenarioMetaBase = OB64.NEUTRAL_SCENARIO_META_NEUTRAL_BASE_OFFSET;
+  for (var runtimeKey = 1; runtimeKey <= OB64.NEUTRAL_SCENARIO_RUNTIME_KEY_COUNT;
+      runtimeKey++) {
+    var neutralBase = z64[scenarioMetaBase + runtimeKey * 12];
+    scenarioRates.push(OB64.makeNeutralScenarioRateRecord(runtimeKey, neutralBase));
   }
   return {
     records: records,
+    scenarioRates: scenarioRates,
+    customSquads: [],
     leadingPad: lead,
     tableStart: tableStart,
     globalRate: OB64.parseNeutralGlobalRate(z64),
@@ -625,16 +784,160 @@ OB64.parseNeutralEncounters = function(z64) {
 };
 
 // ============================================================
-// Creature drop table — per-class drop list, 36 × 8 B at ROM 0x142258.
+// Creature drop table — per-class drop list, 37 × 8 B at ROM 0x142258.
 // Record: [pad:u8, classId:u8, slot1:u16BE, slot2:u16BE, slot3:u16BE]
-// High bit of each slot (0x8000) is preserved as raw bit 15. Its runtime
-// meaning is not verified; low 15 bits are the item ID.
-// Record 35 is an all-zero sentinel. Outside CRC window.
+// Bit 15 selects equipment (set) or consumable (clear). The low 15 bits are
+// the namespace-local ID. Retail has 35 active rows, a zero sentinel, and one
+// adjacent zero row. Activating row 35 leaves row 36 as the required sentinel.
 // Indexed BY CLASS ID — editing affects every scenario using that class.
 // ============================================================
 OB64.CREATURE_DROP_OFFSET = 0x142258;
-OB64.CREATURE_DROP_COUNT  = 36;
+OB64.CREATURE_DROP_COUNT  = 37;
 OB64.CREATURE_DROP_STRIDE = 8;
+
+OB64.creatureDropLabel = function(slot) {
+  if (!slot || !(slot.itemId || 0)) return '\u2014';
+  return slot.isEquipment
+    ? OB64.itemName(slot.itemId)
+    : OB64.consumableName(slot.itemId);
+};
+
+OB64.creatureDropKindLabel = function(slot) {
+  if (!slot || !(slot.itemId || 0)) return 'No drop';
+  return slot.isEquipment ? 'Equipment' : 'Consumable';
+};
+
+OB64.creatureDropOutcomes = function(record) {
+  var grouped = {};
+  var order = [];
+  var slots = record && record.slots ? record.slots : [];
+  var totalWeight = 0;
+  for (var i = 0; i < 3; i++) {
+    var slot = slots[i] || { raw: 0, itemId: 0, isEquipment: false };
+    var weight = Number(slot.weight);
+    if (!Number.isInteger(weight) || weight < 0) weight = 1;
+    totalWeight += weight;
+    if (weight === 0) continue;
+    var raw = Number.isInteger(slot.raw)
+      ? slot.raw & 0xFFFF
+      : (((slot.itemId || 0) & 0x7FFF) | (slot.isEquipment ? 0x8000 : 0));
+    var key = String(raw);
+    if (!grouped[key]) {
+      grouped[key] = {
+        raw: raw,
+        itemId: raw & 0x7FFF,
+        isEquipment: (raw & 0x8000) !== 0,
+        numerator: 0,
+        denominator: 0,
+        slots: []
+      };
+      order.push(key);
+    }
+    grouped[key].numerator += weight;
+    grouped[key].slots.push(i);
+  }
+  return order.map(function(key) {
+    var outcome = grouped[key];
+    outcome.denominator = totalWeight;
+    outcome.label = outcome.raw === 0 ? 'No drop' : OB64.creatureDropLabel(outcome);
+    return outcome;
+  });
+};
+
+OB64.creatureDropTotalWeight = function(record) {
+  var slots = record && record.slots ? record.slots : [];
+  var total = 0;
+  for (var i = 0; i < 3; i++) {
+    var weight = Number(slots[i] && slots[i].weight);
+    total += Number.isInteger(weight) && weight >= 0 ? weight : 1;
+  }
+  return total;
+};
+
+OB64.neutralClassWarnings = function(classId, drops) {
+  classId = Number(classId) || 0;
+  if (!classId) return [];
+  var out = [];
+  if (classId >= 0x01 && classId <= 0x1D) {
+    out.push({ id: 'buggy', label: 'Buggy', detail: 'Low-ID wild combat and recruitment behavior remains unverified.' });
+  } else if (classId >= 0x1E && classId <= 0x26) {
+    out.push({ id: 'unverified', label: 'Unverified', detail: 'Wild combat and recruitment behavior remains unverified.' });
+  }
+  if (classId >= 0x51) {
+    out.push({ id: 'story', label: 'Story/NPC', detail: 'This story, NPC, or boss class is untested as a wild encounter.' });
+  }
+  if (!drops || !drops.byClass || !drops.byClass[classId]) {
+    out.push({ id: 'no-drops', label: 'No drops', detail: 'This class has no active creature-drop record.' });
+  }
+  return out;
+};
+
+OB64.rebuildCreatureDropIndex = function(drops) {
+  if (!drops || !drops.records) return drops;
+  drops.byClass = {};
+  drops.sentinelIndex = -1;
+  drops.activeCount = 0;
+  var reachable = true;
+  for (var i = 0; i < drops.records.length; i++) {
+    var rec = drops.records[i];
+    rec.isSentinel = (rec.padByte === 0 && rec.classId === 0 &&
+      rec.slots.every(function(slot) { return !(slot.raw || 0); }));
+    rec.isRuntimeActive = reachable && !rec.isSentinel;
+    if (reachable && rec.isSentinel) {
+      drops.sentinelIndex = i;
+      reachable = false;
+    } else if (rec.isRuntimeActive) {
+      drops.activeCount++;
+      if (!Object.prototype.hasOwnProperty.call(drops.byClass, rec.classId)) {
+        drops.byClass[rec.classId] = rec;
+      }
+    }
+  }
+  drops.remainingCapacity = drops.sentinelIndex >= 0 &&
+    drops.records.slice(drops.sentinelIndex + 1).some(function(rec) { return rec.isSentinel; }) ? 1 : 0;
+  return drops;
+};
+
+OB64.validateCreatureDropTable = function(drops) {
+  var errors = [];
+  if (!drops || !Array.isArray(drops.records) || drops.records.length !== OB64.CREATURE_DROP_COUNT) {
+    return ['Creature-drop table must contain exactly ' + OB64.CREATURE_DROP_COUNT + ' records.'];
+  }
+  OB64.rebuildCreatureDropIndex(drops);
+  if (drops.sentinelIndex < 0) errors.push('Creature-drop table has no zero sentinel.');
+  var seen = {};
+  for (var i = 0; i < drops.records.length; i++) {
+    var rec = drops.records[i];
+    if (i < drops.sentinelIndex) {
+      if (!rec.classId) errors.push('Active creature-drop record #' + i + ' has class ID zero.');
+      if (seen[rec.classId]) errors.push('Creature-drop class ID 0x' + rec.classId.toString(16) + ' is duplicated.');
+      seen[rec.classId] = true;
+    } else if (i > drops.sentinelIndex && !rec.isSentinel) {
+      errors.push('Creature-drop record #' + i + ' is unreachable after the first zero sentinel.');
+    }
+  }
+  return errors;
+};
+
+OB64.allocateCreatureDropRecord = function(drops, classId) {
+  classId = Number(classId);
+  if (!Number.isInteger(classId) || classId <= 0 || classId > 0xFF) {
+    throw new Error('Creature-drop class ID must be 1..255.');
+  }
+  OB64.rebuildCreatureDropIndex(drops);
+  if (drops.byClass[classId]) throw new Error('Creature-drop class ID already has a record.');
+  var index = drops.sentinelIndex;
+  var hasTrailingSentinel = index >= 0 && drops.records.slice(index + 1).some(function(rec) { return rec.isSentinel; });
+  if (!hasTrailingSentinel) throw new Error('Creature-drop table has no spare record before its final sentinel.');
+  var rec = drops.records[index];
+  rec.padByte = 0;
+  rec.classId = classId;
+  rec.slots = [0, 0, 0].map(function() {
+    return { raw: 0, itemId: 0, isEquipment: false, weight: 1 };
+  });
+  OB64.rebuildCreatureDropIndex(drops);
+  return rec;
+};
 
 OB64.parseCreatureDrops = function(z64) {
   var base = OB64.CREATURE_DROP_OFFSET;
@@ -654,7 +957,9 @@ OB64.parseCreatureDrops = function(z64) {
       return {
         raw: raw,
         itemId: raw & 0x7FFF,
-        isEquipment: (raw & 0x8000) !== 0
+        isEquipment: (raw & 0x8000) !== 0,
+        // Equal weights reproduce the retail rand % 3 selector exactly.
+        weight: 1
       };
     });
     var rec = {
@@ -668,7 +973,7 @@ OB64.parseCreatureDrops = function(z64) {
     records.push(rec);
     if (!isSentinel) byClass[classId] = rec;
   }
-  return { records: records, byClass: byClass };
+  return OB64.rebuildCreatureDropIndex({ records: records, byClass: byClass });
 };
 
 // ============================================================

@@ -44,12 +44,22 @@
 // v24 stores the exact private body program so added and reordered frames round-trip.
 // v25 carries validated Cutscene Studio SceneDocuments and view state for edited
 // physical director resources. Native source words remain byte-preserved.
+// v26 stores the two structural neutral global-rate paths independently and
+// records whether the editor intentionally links them.
+// v27 stores per-slice two-state runtime rates and per-slot creature-drop
+// weights. Older Projects retain inherit/equal-weight retail behavior.
+// v28 adds direct per-scenario two-state rates and custom neutral squads with
+// formation, level offsets, and fixed persuasion chances.
+// v29 adds per-custom-squad retreat HP thresholds.
+// v30 replaces custom neutral squads' opaque 1-9 formation records with the
+// game-native typed 0-8 model. It also carries cohort equipment, three optional
+// player-leader class persuasion bonuses, and a three-choice weighted reward.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 25;
+  var PATCH_VERSION = 30;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -130,6 +140,10 @@ window.OB64 = window.OB64 || {};
     rom.original.neutralGlobalRate = globalRate ? {
       basisPoints: clampBasisPoints(globalRate.basisPoints),
       microBasisPoints: clampMicroBasisPoints(globalRate.microBasisPoints),
+      normalPassCount: globalRate.normalPassCount,
+      alternatePassCount: globalRate.alternatePassCount,
+      divisor: globalRate.divisor,
+      linked: !!globalRate.linked,
       mode: globalRate.mode || 'unknown'
     } : null;
   }
@@ -190,6 +204,11 @@ window.OB64 = window.OB64 || {};
 
     var neutralOut = diffNeutralEncounters(rom.neutralEncounters, rom.original.neutralEncounters);
     var creatureDropsOut = diffCreatureDrops(rom.creatureDrops, rom.original.creatureDrops);
+    var weightedDropChanges = Object.keys(creatureDropsOut).filter(function(key) {
+      var entry = creatureDropsOut[key] || {};
+      return entry.weights_modified === true ||
+        (entry.weights || []).some(function(weight) { return Number(weight) !== 1; });
+    }).length;
     var consumablesOut = diffConsumables(rom.consumables, rom.original.consumables);
     var statGatesOut = diffStatGates(rom.statGates, rom.original.statGates);
     var descriptionsOut = OB64.descriptionCodec
@@ -202,17 +221,38 @@ window.OB64 = window.OB64 || {};
     var globalRateOut = null;
     var globalRate = rom.neutralEncounters && rom.neutralEncounters.globalRate;
     if (globalRate && globalRate.modified) {
-      var microBasisPoints = clampMicroBasisPoints(globalRate.microBasisPoints != null
-        ? globalRate.microBasisPoints
-        : (globalRate.basisPoints || 0) * 100);
-      var multiplier = clampGlobalMultiplier(globalRate.multiplier != null
-        ? globalRate.multiplier
-        : microBasisPoints / vanillaGlobalMicroBasisPoints());
+      var divisor = Number.isInteger(globalRate.divisor) && globalRate.divisor > 0
+        ? globalRate.divisor : OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR;
+      function branchPayload(prefix, vanillaPassCount) {
+        var passCount = Number(globalRate[prefix + 'PassCount']);
+        if (!Number.isInteger(passCount) || passCount < 1) {
+          var micro = OB64.neutralGlobalBranchMicroBasisPoints(globalRate, prefix);
+          passCount = Math.max(1, Math.min(0x8000, Math.round((micro * divisor) / 1000000)));
+        }
+        var microBasisPoints = clampMicroBasisPoints((passCount * 1000000) / divisor);
+        return {
+          pass_count: passCount,
+          micro_basis_points: microBasisPoints,
+          basis_points: microBasisPoints / 100,
+          percent: microBasisPoints / 10000,
+          multiplier: Math.round((passCount / vanillaPassCount) * 10000) / 10000
+        };
+      }
+      var normalBranch = branchPayload('normal', 51);
+      var alternateBranch = globalRate.linked
+        ? branchPayload('normal', 11)
+        : branchPayload('alternate', 11);
       globalRateOut = {
-        multiplier: multiplier,
-        basis_points: microBasisPoints / 100,
-        micro_basis_points: microBasisPoints,
-        percent: microBasisPoints / 10000
+        schema: 2,
+        divisor: divisor,
+        linked: !!globalRate.linked,
+        normal: normalBranch,
+        alternate: alternateBranch,
+        // Retain the v25 top-level shape as a readable normal-path mirror.
+        multiplier: normalBranch.multiplier,
+        basis_points: normalBranch.basis_points,
+        micro_basis_points: normalBranch.micro_basis_points,
+        percent: normalBranch.percent
       };
     }
 
@@ -257,7 +297,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-08-20',
+        editor_version: '2026-08-26',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -269,7 +309,11 @@ window.OB64 = window.OB64 || {};
         class_defs_modified:   Object.keys(classDefsOut).length,
         neutral_slices_modified: Object.keys(neutralOut.scenario_slices).length,
         terrain_rates_modified:  Object.keys(neutralOut.terrain_rates).length,
+        neutral_slice_rates_modified: Object.keys(neutralOut.slice_rates || {}).length,
+        neutral_scenario_rates_modified: Object.keys(neutralOut.scenario_rates).length,
+        custom_neutral_squads_modified: Object.keys(neutralOut.custom_squads).length,
         creature_drop_records_modified: Object.keys(creatureDropsOut).length,
+        weighted_drop_classes_modified: weightedDropChanges,
         consumables_modified:   Object.keys(consumablesOut).length,
         item_descriptions_modified: Object.keys(descriptionsOut.items).length,
         consumable_descriptions_modified: Object.keys(descriptionsOut.consumables).length,
@@ -504,6 +548,10 @@ window.OB64 = window.OB64 || {};
     var actionDescriptionsApplied = 0;
     var statGatesApplied = 0;
     var neutralGlobalRateApplied = 0;
+    var neutralSliceRatesApplied = 0;
+    var neutralScenarioRatesApplied = 0;
+    var customNeutralSquadsApplied = 0;
+    var weightedDropRatesApplied = 0;
     var toolsApplied = 0;
     var squadOverridesApplied = 0;
     var scenarioApplied = 0;
@@ -617,10 +665,18 @@ window.OB64 = window.OB64 || {};
     var neutralApplied = applyNeutralEncounterPatch(rom, p.neutral_encounters, warnings);
     neutralSlicesApplied = neutralApplied.slices;
     terrainRatesApplied = neutralApplied.terrainRates;
+    neutralSliceRatesApplied = neutralApplied.sliceRates;
+    neutralScenarioRatesApplied = neutralApplied.scenarioRates;
+    customNeutralSquadsApplied = neutralApplied.customSquads;
     if (neutralSlicesApplied > 0 || terrainRatesApplied > 0) dirtyFlags.encounters = true;
+    if (neutralSliceRatesApplied > 0 || neutralScenarioRatesApplied > 0 ||
+        customNeutralSquadsApplied > 0) dirtyFlags.neutralRuntime = true;
 
-    creatureDropsApplied = applyCreatureDropsPatch(rom, p.creatureDrops, warnings);
+    var creatureDropApplied = applyCreatureDropsPatch(rom, p.creatureDrops, warnings);
+    creatureDropsApplied = creatureDropApplied.records;
+    weightedDropRatesApplied = creatureDropApplied.weighted;
     if (creatureDropsApplied > 0) dirtyFlags.creatureDrops = true;
+    if (weightedDropRatesApplied > 0) dirtyFlags.neutralRuntime = true;
 
     consumablesApplied = applyConsumablesPatch(rom, p.consumables, warnings);
     if (consumablesApplied > 0) dirtyFlags.consumables = true;
@@ -659,23 +715,52 @@ window.OB64 = window.OB64 || {};
       if (!rom.neutralEncounters || !rom.neutralEncounters.globalRate) {
         warnings.push('Patch includes neutral_global_rate, but this ROM parse has no neutral encounter data - skipping.');
       } else {
-        var microBasisPoints = null;
-        if (typeof globalPatch.micro_basis_points === 'number') {
-          microBasisPoints = globalPatch.micro_basis_points;
-        } else if (typeof globalPatch.multiplier === 'number') {
-          microBasisPoints = clampGlobalMultiplier(globalPatch.multiplier) * vanillaGlobalMicroBasisPoints();
-        } else if (typeof globalPatch.basis_points === 'number') {
-          microBasisPoints = globalPatch.basis_points * 100;
-        } else if (typeof globalPatch.percent === 'number') {
-          microBasisPoints = globalPatch.percent * 10000;
+        var globalRate = rom.neutralEncounters.globalRate;
+        var divisor = Number.isInteger(globalPatch.divisor) && globalPatch.divisor > 0
+          ? globalPatch.divisor
+          : (Number.isInteger(globalRate.divisor) && globalRate.divisor > 0
+            ? globalRate.divisor : OB64.NEUTRAL_GLOBAL_VANILLA_DIVISOR);
+        function branchMicro(entry, vanillaPassCount) {
+          if (!entry || typeof entry !== 'object') return null;
+          if (Number.isInteger(entry.pass_count) && entry.pass_count >= 1) {
+            return (entry.pass_count * 1000000) / divisor;
+          }
+          if (typeof entry.micro_basis_points === 'number') return entry.micro_basis_points;
+          if (typeof entry.multiplier === 'number') {
+            return (Math.max(1, entry.multiplier * vanillaPassCount) * 1000000) / divisor;
+          }
+          if (typeof entry.basis_points === 'number') return entry.basis_points * 100;
+          if (typeof entry.percent === 'number') return entry.percent * 10000;
+          return null;
         }
-        if (microBasisPoints == null || !isFinite(microBasisPoints)) {
-          warnings.push('Patch neutral_global_rate is missing basis_points/percent - skipping.');
+        var normalMicro = branchMicro(globalPatch.normal, 51);
+        var alternateMicro = branchMicro(globalPatch.alternate, 11);
+        var isV26Shape = normalMicro != null || alternateMicro != null;
+        if (!isV26Shape) {
+          normalMicro = branchMicro(globalPatch, 51);
+          alternateMicro = normalMicro;
         } else {
-          var globalRate = rom.neutralEncounters.globalRate;
-          globalRate.microBasisPoints = clampMicroBasisPoints(microBasisPoints);
+          if (normalMicro == null) normalMicro = OB64.neutralGlobalBranchMicroBasisPoints(globalRate, 'normal');
+          if (alternateMicro == null) alternateMicro = OB64.neutralGlobalBranchMicroBasisPoints(globalRate, 'alternate');
+        }
+        if (normalMicro == null || alternateMicro == null || !isFinite(normalMicro) || !isFinite(alternateMicro)) {
+          warnings.push('Patch neutral_global_rate is missing valid branch rate values - skipping.');
+        } else {
+          globalRate.divisor = divisor;
+          globalRate.linked = isV26Shape ? !!globalPatch.linked : true;
+          globalRate.normalMicroBasisPoints = clampMicroBasisPoints(normalMicro);
+          globalRate.alternateMicroBasisPoints = globalRate.linked
+            ? globalRate.normalMicroBasisPoints : clampMicroBasisPoints(alternateMicro);
+          globalRate.normalPassCount = Math.max(1, Math.min(0x8000,
+            Math.round((globalRate.normalMicroBasisPoints * divisor) / 1000000)));
+          globalRate.alternatePassCount = globalRate.linked ? globalRate.normalPassCount
+            : Math.max(1, Math.min(0x8000,
+              Math.round((globalRate.alternateMicroBasisPoints * divisor) / 1000000)));
+          globalRate.microBasisPoints = globalRate.normalMicroBasisPoints;
           globalRate.basisPoints = globalRate.microBasisPoints / 100;
-          globalRate.multiplier = clampGlobalMultiplier(globalRate.microBasisPoints / vanillaGlobalMicroBasisPoints());
+          globalRate.multiplier = globalRate.normalPassCount / 51;
+          globalRate.normalModified = true;
+          globalRate.alternateModified = true;
           globalRate.modified = true;
           neutralGlobalRateApplied = 1;
           dirtyFlags.encounters = true;
@@ -776,6 +861,10 @@ window.OB64 = window.OB64 || {};
         actionDescriptions: actionDescriptionsApplied,
         statGates: statGatesApplied,
         neutralGlobalRate: neutralGlobalRateApplied,
+        neutralSliceRates: neutralSliceRatesApplied,
+        neutralScenarioRates: neutralScenarioRatesApplied,
+        customNeutralSquads: customNeutralSquadsApplied,
+        weightedDropRates: weightedDropRatesApplied,
         tools: toolsApplied,
         squadOverrides: squadOverridesApplied,
         scenario: scenarioApplied,
@@ -837,7 +926,11 @@ window.OB64 = window.OB64 || {};
       class_defs_modified: 0,
       neutral_slices_modified: 0,
       terrain_rates_modified: 0,
+      neutral_slice_rates_modified: 0,
+      neutral_scenario_rates_modified: 0,
+      custom_neutral_squads_modified: 0,
       creature_drop_records_modified: 0,
+      weighted_drop_classes_modified: 0,
       consumables_modified: 0,
       item_descriptions_modified: 0,
       consumable_descriptions_modified: 0,
@@ -864,7 +957,10 @@ window.OB64 = window.OB64 || {};
       item_prices: {},
       items: {},
       classDefs: {},
-      neutral_encounters: { scenario_slices: {}, terrain_rates: {} },
+      neutral_encounters: {
+        scenario_slices: {}, terrain_rates: {},
+        scenario_rates: {}, custom_squads: {}
+      },
       creatureDrops: {},
       consumables: {},
       descriptions: { items: {}, consumables: {}, classes: {}, actions: {} },
@@ -1090,8 +1186,22 @@ window.OB64 = window.OB64 || {};
     return Object.keys(out).length ? out : null;
   }
 
+  function snapshotNeutralRateBranch(branch) {
+    branch = branch || {};
+    var mode = branch.mode === 'override' || branch.mode === 'disabled'
+      ? branch.mode : 'inherit';
+    return {
+      mode: mode,
+      passCount: mode === 'override' ? Number(branch.passCount) : null,
+      divisor: mode === 'override' ? Number(branch.divisor) : null
+    };
+  }
+
   function snapshotNeutralEncounters(encounters) {
-    var out = { records: [], terrainRates: [] };
+    var out = {
+      records: [], terrainRates: [], sliceRates: [],
+      scenarioRates: [], customSquads: []
+    };
     if (!encounters) return out;
     var records = encounters.records || [];
     for (var i = 0; i < records.length; i++) {
@@ -1104,7 +1214,79 @@ window.OB64 = window.OB64 || {};
         ]);
       }
       out.records.push({ s0: rec.s0, row: rec.row, slots: slots });
+      var rateOverride = rec.rateOverride || {};
+      out.sliceRates.push({
+        s0: rec.s0,
+        normal: snapshotNeutralRateBranch(rateOverride.normal),
+        alternate: snapshotNeutralRateBranch(rateOverride.alternate)
+      });
     }
+    var scenarioRates = encounters.scenarioRates || [];
+    for (var scenarioIndex = 0; scenarioIndex < scenarioRates.length; scenarioIndex++) {
+      var scenarioRate = scenarioRates[scenarioIndex];
+      var scenarioOverride = scenarioRate.rateOverride || {};
+      out.scenarioRates.push({
+        runtimeKey: Number(scenarioRate.runtimeKey),
+        neutralBase: Number(scenarioRate.neutralBase),
+        slice: scenarioRate.slice == null ? null : Number(scenarioRate.slice),
+        normal: snapshotNeutralRateBranch(scenarioOverride.normal),
+        alternate: snapshotNeutralRateBranch(scenarioOverride.alternate)
+      });
+    }
+    var customSquads = encounters.customSquads || [];
+    for (var customIndex = 0; customIndex < customSquads.length; customIndex++) {
+      var custom = customSquads[customIndex] || {};
+      var persuasion = custom.persuasion || {};
+      var persuasionChance = Number(persuasion.chance);
+      if (!Number.isInteger(persuasionChance) ||
+          persuasionChance < 0 || persuasionChance > 100) persuasionChance = 10;
+      var retreat = custom.retreat || {};
+      var retreatHpThreshold = Number(retreat.hpThreshold);
+      if (!Number.isInteger(retreatHpThreshold) ||
+          retreatHpThreshold < 0 || retreatHpThreshold > 100) retreatHpThreshold = 0;
+      var members = (custom.members || []).map(function(member) {
+        return {
+          classId: Number(member.classId),
+          levelOffsetRaw: Number(member.levelOffsetRaw),
+          cell: Number(member.cell),
+          cohort: String(member.cohort || '').toUpperCase()
+        };
+      });
+      var equipment = custom.equipment || {};
+      var classBonuses = Array.isArray(persuasion.classBonuses)
+        ? persuasion.classBonuses.map(function(bonus) {
+          return { classId: Number(bonus.classId), bonus: Number(bonus.bonus) };
+        }) : [];
+      var rewardSource = custom.rewards && Array.isArray(custom.rewards.slots)
+        ? custom.rewards.slots : [];
+      out.customSquads.push({
+        profileId: Number(custom.profileId),
+        runtimeKey: Number(custom.runtimeKey),
+        slice: Number(custom.slice),
+        terrainSlot: Number(custom.terrainSlot),
+        members: members,
+        equipment: {
+          A: Array.isArray(equipment.A) ? equipment.A.slice(0, 2).map(Number) : [0, 0],
+          B: Array.isArray(equipment.B) ? equipment.B.slice(0, 2).map(Number) : [0, 0],
+          C: Array.isArray(equipment.C) ? equipment.C.slice(0, 2).map(Number) : [0, 0]
+        },
+        label: custom.label == null ? 'Bandits!' : String(custom.label),
+        persuasion: {
+          mode: 'fixed',
+          chance: persuasionChance,
+          classBonuses: classBonuses
+        },
+        retreat: { hpThreshold: retreatHpThreshold },
+        rewards: {
+          slots: rewardSource.map(function(slot) {
+            return { raw: Number(slot.raw), weight: Number(slot.weight) };
+          })
+        }
+      });
+    }
+    out.customSquads.sort(function(a, b) {
+      return a.runtimeKey - b.runtimeKey || a.terrainSlot - b.terrainSlot;
+    });
     var rates = encounters.terrainRates && encounters.terrainRates.entries
       ? encounters.terrainRates.entries
       : [];
@@ -1119,9 +1301,21 @@ window.OB64 = window.OB64 || {};
   }
 
   function diffNeutralEncounters(encounters, original) {
-    var out = { scenario_slices: {}, terrain_rates: {} };
+    var out = {
+      scenario_slices: {}, terrain_rates: {},
+      scenario_rates: {}, custom_squads: {}
+    };
     if (!encounters || !original) return out;
     var current = snapshotNeutralEncounters(encounters);
+
+    function branchPayload(branch) {
+      var payload = { mode: branch.mode };
+      if (branch.mode === 'override') {
+        payload.pass_count = branch.passCount;
+        payload.divisor = branch.divisor;
+      }
+      return payload;
+    }
 
     for (var i = 0; i < current.records.length; i++) {
       var curRec = current.records[i];
@@ -1153,6 +1347,86 @@ window.OB64 = window.OB64 || {};
         };
       }
     }
+
+    // slice_rates is retired. New Projects persist only direct scenario rows,
+    // and imports ignore that field instead of creating a hidden override.
+
+    var originalScenarioRates = {};
+    (original.scenarioRates || []).forEach(function(row) {
+      originalScenarioRates[String(row.runtimeKey)] = row;
+    });
+    for (var scenarioRateIndex = 0;
+        scenarioRateIndex < current.scenarioRates.length; scenarioRateIndex++) {
+      var currentScenarioRate = current.scenarioRates[scenarioRateIndex];
+      var originalScenarioRate = originalScenarioRates[String(currentScenarioRate.runtimeKey)];
+      if (!originalScenarioRate ||
+          JSON.stringify(currentScenarioRate.normal) !== JSON.stringify(originalScenarioRate.normal) ||
+          JSON.stringify(currentScenarioRate.alternate) !== JSON.stringify(originalScenarioRate.alternate)) {
+        out.scenario_rates[String(currentScenarioRate.runtimeKey)] = {
+          slice: currentScenarioRate.slice,
+          normal: branchPayload(currentScenarioRate.normal),
+          alternate: branchPayload(currentScenarioRate.alternate)
+        };
+      }
+    }
+
+    function customKey(profile) {
+      return String(profile.runtimeKey) + ':' + String(profile.terrainSlot);
+    }
+    function customPayload(profile) {
+      return {
+        profile_id: profile.profileId,
+        runtime_key: profile.runtimeKey,
+        slice: profile.slice,
+        terrain_slot: profile.terrainSlot,
+        members: profile.members.map(function(member) {
+          return {
+            class_id: member.classId,
+            level_offset_raw: member.levelOffsetRaw,
+            cell: member.cell,
+            cohort: member.cohort
+          };
+        }),
+        equipment: {
+          A: profile.equipment.A.slice(),
+          B: profile.equipment.B.slice(),
+          C: profile.equipment.C.slice()
+        },
+        label: profile.label,
+        persuasion: {
+          mode: 'fixed',
+          chance: profile.persuasion.chance,
+          class_bonuses: profile.persuasion.classBonuses.map(function(bonus) {
+            return {
+              class_id: bonus.classId,
+              bonus_percent: bonus.bonus
+            };
+          })
+        },
+        retreat: { hp_threshold: profile.retreat.hpThreshold },
+        rewards: {
+          slots: profile.rewards.slots.map(function(slot) {
+            return { raw: slot.raw, weight: slot.weight };
+          })
+        }
+      };
+    }
+    var currentCustom = {};
+    var originalCustom = {};
+    current.customSquads.forEach(function(profile) { currentCustom[customKey(profile)] = profile; });
+    (original.customSquads || []).forEach(function(profile) {
+      originalCustom[customKey(profile)] = profile;
+    });
+    Object.keys(currentCustom).forEach(function(key) {
+      var currentProfile = currentCustom[key];
+      var originalProfile = originalCustom[key];
+      if (!originalProfile || JSON.stringify(currentProfile) !== JSON.stringify(originalProfile)) {
+        out.custom_squads[key] = customPayload(currentProfile);
+      }
+    });
+    Object.keys(originalCustom).forEach(function(key) {
+      if (!currentCustom[key]) out.custom_squads[key] = null;
+    });
     return out;
   }
 
@@ -1173,6 +1447,11 @@ window.OB64 = window.OB64 || {};
           dropSlotRaw(rec.slots && rec.slots[0]),
           dropSlotRaw(rec.slots && rec.slots[1]),
           dropSlotRaw(rec.slots && rec.slots[2])
+        ],
+        weights: [
+          Number.isInteger(rec.slots && rec.slots[0] && rec.slots[0].weight) ? rec.slots[0].weight : 1,
+          Number.isInteger(rec.slots && rec.slots[1] && rec.slots[1].weight) ? rec.slots[1].weight : 1,
+          Number.isInteger(rec.slots && rec.slots[2] && rec.slots[2].weight) ? rec.slots[2].weight : 1
         ]
       };
     });
@@ -1185,15 +1464,19 @@ window.OB64 = window.OB64 || {};
     for (var i = 0; i < current.length; i++) {
       var cur = current[i];
       var orig = original[i];
+      var weightsModified = !orig || !arraysEqual(cur.weights, orig.weights || [1, 1, 1]);
       if (!orig ||
           cur.padByte !== orig.padByte ||
           cur.classId !== orig.classId ||
-          !arraysEqual(cur.slots, orig.slots)) {
+          !arraysEqual(cur.slots, orig.slots) ||
+          weightsModified) {
         out[String(i)] = {
           record_index: cur.recordIndex,
           padByte: cur.padByte,
           classId: cur.classId,
-          slots: cur.slots.slice()
+          slots: cur.slots.slice(),
+          weights: cur.weights.slice(),
+          weights_modified: weightsModified
         };
       }
     }
@@ -1450,7 +1733,10 @@ window.OB64 = window.OB64 || {};
   }
 
   function applyNeutralEncounterPatch(rom, patch, warnings) {
-    var applied = { slices: 0, terrainRates: 0 };
+    var applied = {
+      slices: 0, terrainRates: 0, sliceRates: 0,
+      scenarioRates: 0, customSquads: 0
+    };
     if (!patch) return applied;
     if (!rom.neutralEncounters) {
       warnings.push('Patch includes neutral encounters, but this ROM parse has no neutral encounter data - skipping.');
@@ -1524,16 +1810,189 @@ window.OB64 = window.OB64 || {};
       }
       if (touched) applied.terrainRates++;
     }
+
+    function parseSliceRateBranch(source, label) {
+      source = source || {};
+      var mode = source.mode || 'inherit';
+      if (mode === 'inherit' || mode === 'disabled') {
+        return { mode: mode, passCount: null, divisor: null };
+      }
+      if (mode !== 'override') {
+        warnings.push(label + ' has unknown mode "' + mode + '" - using inherit.');
+        return { mode: 'inherit', passCount: null, divisor: null };
+      }
+      var divisor = Number(source.divisor);
+      var passCount = Number(source.pass_count != null ? source.pass_count : source.passCount);
+      var maxPass = Number.isInteger(divisor) && divisor > 0
+        ? Math.min(0x10000, divisor) : 0;
+      if (!Number.isInteger(divisor) || divisor <= 0 || divisor > 0xFFFFFFFF ||
+          !Number.isInteger(passCount) || passCount < 1 || passCount > maxPass) {
+        warnings.push(label + ' has an invalid pass count or divisor - using inherit.');
+        return { mode: 'inherit', passCount: null, divisor: null };
+      }
+      return { mode: 'override', passCount: passCount, divisor: divisor };
+    }
+    var scenarioRows = rom.neutralEncounters.scenarioRates || [];
+    var scenarioByRuntimeKey = {};
+    for (var scenarioIndex = 0; scenarioIndex < scenarioRows.length; scenarioIndex++) {
+      scenarioByRuntimeKey[String(scenarioRows[scenarioIndex].runtimeKey)] = scenarioRows[scenarioIndex];
+    }
+
+    var sliceRates = patch.slice_rates || {};
+    for (var rateS0 in sliceRates) {
+      warnings.push('Shared neutral-slice rate ' + rateS0 +
+        ' is no longer supported and was ignored. Set direct scenario overrides instead.');
+    }
+
+    var scenarioRates = patch.scenario_rates || {};
+    for (var runtimeKeyText in scenarioRates) {
+      var scenarioRow = scenarioByRuntimeKey[String(runtimeKeyText)];
+      if (!scenarioRow) {
+        warnings.push('Patch references neutral scenario rate key ' + runtimeKeyText +
+          ' but no matching runtime scenario exists - skipping.');
+        continue;
+      }
+      var scenarioPatch = scenarioRates[runtimeKeyText] || {};
+      if (scenarioPatch.slice != null && Number(scenarioPatch.slice) !== scenarioRow.slice) {
+        warnings.push('Neutral scenario key ' + runtimeKeyText + ' maps to slice ' +
+          scenarioRow.slice + ', not Project slice ' + scenarioPatch.slice + '. The ROM mapping wins.');
+      }
+      var directNormal = parseSliceRateBranch(scenarioPatch.normal,
+        'Neutral scenario key ' + runtimeKeyText + ' state-bit-set rate');
+      var directAlternate = parseSliceRateBranch(scenarioPatch.alternate,
+        'Neutral scenario key ' + runtimeKeyText + ' state-bit-clear rate');
+      scenarioRow.rateOverride = {
+        normal: directNormal,
+        alternate: directAlternate
+      };
+      applied.scenarioRates++;
+    }
+
+    rom.neutralEncounters.customSquads = rom.neutralEncounters.customSquads || [];
+    var customPatch = patch.custom_squads || {};
+    function customKey(profile) {
+      return String(profile.runtimeKey) + ':' + String(profile.terrainSlot);
+    }
+    for (var customKeyText in customPatch) {
+      var currentIndex = -1;
+      for (var profileIndex = 0;
+          profileIndex < rom.neutralEncounters.customSquads.length; profileIndex++) {
+        if (customKey(rom.neutralEncounters.customSquads[profileIndex]) === customKeyText) {
+          currentIndex = profileIndex;
+          break;
+        }
+      }
+      var customEntry = customPatch[customKeyText];
+      if (customEntry == null) {
+        if (currentIndex >= 0) {
+          rom.neutralEncounters.customSquads.splice(currentIndex, 1);
+          applied.customSquads++;
+        }
+        continue;
+      }
+      var keyParts = String(customKeyText).split(':');
+      var customRuntimeKey = Number(customEntry.runtime_key != null
+        ? customEntry.runtime_key : keyParts[0]);
+      var terrainSlot = Number(customEntry.terrain_slot != null
+        ? customEntry.terrain_slot : keyParts[1]);
+      var mappedScenario = scenarioByRuntimeKey[String(customRuntimeKey)];
+      var profileId = Number(customEntry.profile_id);
+      if (!mappedScenario || !Number.isInteger(mappedScenario.slice) ||
+          !Number.isInteger(terrainSlot) || terrainSlot < 0 || terrainSlot > 9 ||
+          !Array.isArray(customEntry.members) ||
+          !Number.isInteger(profileId) || profileId < 1 || profileId > 255) {
+        warnings.push('Custom neutral squad ' + customKeyText +
+          ' must use the Project v30 typed member schema and has an invalid scenario, ' +
+          'terrain, profile ID, or member list - skipping.');
+        continue;
+      }
+      var duplicateId = rom.neutralEncounters.customSquads.some(function(existing, index) {
+        return index !== currentIndex && Number(existing.profileId) === profileId;
+      });
+      if (duplicateId) {
+        warnings.push('Custom neutral squad ' + customKeyText + ' reuses profile ID ' +
+          profileId + ' - skipping.');
+        continue;
+      }
+      var persuasion = customEntry.persuasion || {};
+      var persuasionChance = persuasion.chance == null ? 10 : Number(persuasion.chance);
+      var classBonuses = Array.isArray(persuasion.class_bonuses)
+        ? persuasion.class_bonuses.map(function(bonus) {
+          return {
+            classId: Number(bonus && bonus.class_id),
+            bonus: Number(bonus && bonus.bonus_percent)
+          };
+        }) : [];
+      var retreat = customEntry.retreat || {};
+      var retreatHpThreshold = retreat.hp_threshold == null
+        ? 0 : Number(retreat.hp_threshold);
+      var memberList = customEntry.members.map(function(member) {
+        return {
+          classId: Number(member && member.class_id),
+          levelOffsetRaw: Number(member && member.level_offset_raw),
+          cell: Number(member && member.cell),
+          cohort: String(member && member.cohort || '').toUpperCase()
+        };
+      });
+      var equipmentSource = customEntry.equipment || {};
+      var equipment = {
+        A: Array.isArray(equipmentSource.A) ? equipmentSource.A.slice() : [0, 0],
+        B: Array.isArray(equipmentSource.B) ? equipmentSource.B.slice() : [0, 0],
+        C: Array.isArray(equipmentSource.C) ? equipmentSource.C.slice() : [0, 0]
+      };
+      var rewards = customEntry.rewards || {};
+      var rewardSlots = Array.isArray(rewards.slots)
+        ? rewards.slots.map(function(slot) {
+          return { raw: Number(slot && slot.raw), weight: Number(slot && slot.weight) };
+        }) : undefined;
+      var candidate = {
+        profileId: profileId,
+        runtimeKey: customRuntimeKey,
+        slice: mappedScenario.slice,
+        terrainSlot: terrainSlot,
+        members: memberList,
+        equipment: equipment,
+        label: customEntry.label == null ? 'Bandits!' : String(customEntry.label),
+        persuasion: {
+          mode: 'fixed',
+          chance: persuasionChance,
+          classBonuses: classBonuses
+        },
+        retreat: { hpThreshold: retreatHpThreshold },
+        rewards: rewardSlots ? { slots: rewardSlots } : undefined
+      };
+      try {
+        if (OB64.runtimeOverrides && OB64.runtimeOverrides.normalizeCustomProfile) {
+          var normalized = OB64.runtimeOverrides.normalizeCustomProfile(candidate, profileIndex);
+          candidate.members = normalized.members;
+          candidate.equipment = normalized.equipment;
+          candidate.label = normalized.label;
+          candidate.persuasion = normalized.persuasion;
+          candidate.retreat = normalized.retreat;
+          candidate.rewards = normalized.rewards;
+        }
+      } catch (customError) {
+        warnings.push('Custom neutral squad ' + customKeyText + ' is invalid: ' +
+          customError.message + ' - skipping.');
+        continue;
+      }
+      if (currentIndex >= 0) rom.neutralEncounters.customSquads[currentIndex] = candidate;
+      else rom.neutralEncounters.customSquads.push(candidate);
+      applied.customSquads++;
+    }
+    rom.neutralEncounters.customSquads.sort(function(a, b) {
+      return a.runtimeKey - b.runtimeKey || a.terrainSlot - b.terrainSlot;
+    });
     return applied;
   }
 
   function applyCreatureDropsPatch(rom, patch, warnings) {
-    if (!patch) return 0;
+    var result = { records: 0, weighted: 0 };
+    if (!patch) return result;
     if (!rom.creatureDrops || !rom.creatureDrops.records) {
       warnings.push('Patch includes creature drops, but this ROM parse has no creature drop data - skipping.');
-      return 0;
+      return result;
     }
-    var applied = 0;
     var records = rom.creatureDrops.records;
     for (var rk in patch) {
       var entry = patch[rk];
@@ -1544,43 +2003,69 @@ window.OB64 = window.OB64 || {};
         continue;
       }
       var rec = records[idx];
-      var touched = false;
+      var staticTouched = false;
       if (Object.prototype.hasOwnProperty.call(entry, 'padByte') && isPatchByte(entry.padByte)) {
-        rec.padByte = entry.padByte & 0xFF;
-        touched = true;
+        var nextPadByte = entry.padByte & 0xFF;
+        if (rec.padByte !== nextPadByte) {
+          rec.padByte = nextPadByte;
+          staticTouched = true;
+        }
       }
       if (Object.prototype.hasOwnProperty.call(entry, 'classId') && isPatchByte(entry.classId)) {
-        rec.classId = entry.classId & 0xFF;
-        touched = true;
+        var nextClassId = entry.classId & 0xFF;
+        if (rec.classId !== nextClassId) {
+          rec.classId = nextClassId;
+          staticTouched = true;
+        }
       }
       if (Array.isArray(entry.slots)) {
         for (var s = 0; s < 3 && s < entry.slots.length; s++) {
           var raw = entry.slots[s];
           if (!isPatchU16(raw)) continue;
           if (!rec.slots[s]) rec.slots[s] = {};
-          rec.slots[s].raw = raw & 0xFFFF;
-          rec.slots[s].itemId = raw & 0x7FFF;
-          rec.slots[s].isEquipment = (raw & 0x8000) !== 0;
-          touched = true;
+          var nextRaw = raw & 0xFFFF;
+          var currentRaw = dropSlotRaw(rec.slots[s]);
+          rec.slots[s].raw = nextRaw;
+          rec.slots[s].itemId = nextRaw & 0x7FFF;
+          rec.slots[s].isEquipment = (nextRaw & 0x8000) !== 0;
+          if (currentRaw !== nextRaw) staticTouched = true;
         }
       }
-      if (touched) {
+      if (Array.isArray(entry.weights)) {
+        var weightsValid = entry.weights.length === 3;
+        var totalWeight = 0;
+        for (var wi = 0; wi < 3 && weightsValid; wi++) {
+          var weight = Number(entry.weights[wi]);
+          if (!Number.isInteger(weight) || weight < 0 || weight > 0xFFFF) {
+            weightsValid = false;
+          } else {
+            totalWeight += weight;
+          }
+        }
+        if (!weightsValid || !totalWeight) {
+          warnings.push('Creature-drop record #' + idx +
+            ' has invalid or zero-total weights - retaining its current weights.');
+        } else {
+          for (wi = 0; wi < 3; wi++) {
+            if (!rec.slots[wi]) rec.slots[wi] = {};
+            rec.slots[wi].weight = Number(entry.weights[wi]);
+          }
+          rec.weightedRuntimeOverride = entry.weights.some(function(value) { return Number(value) !== 1; });
+          if (entry.weights_modified === true || rec.weightedRuntimeOverride) result.weighted++;
+        }
+      }
+      if (staticTouched) {
         rec.isSentinel = (rec.padByte === 0 && rec.classId === 0 &&
           rec.slots.every(function(slot) { return !dropSlotRaw(slot); }));
-        applied++;
+        result.records++;
       }
     }
     rebuildCreatureDropByClass(rom.creatureDrops);
-    return applied;
+    return result;
   }
 
   function rebuildCreatureDropByClass(drops) {
-    if (!drops || !drops.records) return;
-    drops.byClass = {};
-    for (var i = 0; i < drops.records.length; i++) {
-      var rec = drops.records[i];
-      if (!rec.isSentinel) drops.byClass[rec.classId] = rec;
-    }
+    OB64.rebuildCreatureDropIndex(drops);
   }
 
   function applyConsumablesPatch(rom, patch, warnings) {
