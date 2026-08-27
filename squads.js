@@ -315,7 +315,15 @@
 
   // ---- data ----
   function scenarioById(id) { var d = OB64.SQUAD_DATA.scenarios; for (var i = 0; i < d.length; i++) if (d[i].id === id) return d[i]; return null; }
-  function vanillaRec(scn, eid) { for (var i = 0; i < scn.squads.length; i++) if (scn.squads[i].e === eid) return hexToBytes(scn.squads[i].rec); return null; }
+  function canonicalEdatRec(eid) {
+    var data = OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.enemydat;
+    return data && data.records && data.records[eid] ? hexToBytes(data.records[eid]) : null;
+  }
+  function vanillaRec(scn, eid) {
+    var squads = scn && scn.squads || [];
+    for (var i = 0; i < squads.length; i++) if (squads[i].e === eid) return hexToBytes(squads[i].rec);
+    return canonicalEdatRec(eid);
+  }
   function compLabel(rec) {
     var parts = [cn(rec[0])], nb = groupCount(rec, 'B'), nc = groupCount(rec, 'C');
     if (nb) parts.push((nb > 1 ? nb + 'x ' : '') + cn(rec[7]));
@@ -1298,8 +1306,7 @@
   // Added squads (Scenario tab) have no vanilla card; their override's match key is the
   // DONOR enemydat record's bytes from the generated table (resolver matches on content).
   function donorOriginalRec(eid) {
-    var d = OB64.SCENARIO_ESET_DATA && OB64.SCENARIO_ESET_DATA.enemydat;
-    return d && d.records && d.records[eid] ? hexToBytes(d.records[eid]) : null;
+    return canonicalEdatRec(eid);
   }
 
   function collectSquadOverrides(rom) {
@@ -1330,4 +1337,8 @@
   OB64.renderSquads = renderSquads;
   OB64.collectSquadOverrides = collectSquadOverrides;
   OB64.squadCountUnmapped = countUnmapped;
+  OB64._squadTest = {
+    canonicalEdatRec: canonicalEdatRec,
+    vanillaRec: vanillaRec
+  };
 })(typeof OB64 !== 'undefined' ? OB64 : (window.OB64 = window.OB64 || {}));

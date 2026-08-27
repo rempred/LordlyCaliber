@@ -2151,19 +2151,15 @@ window.OB64 = window.OB64 || {};
 
   // Leader icon from the LIVE record: squad override first (added squads always have one, and
   // vanilla squads reflect comp edits immediately), then static calibration classes, then the
-  // wiki vanilla record.
+  // canonical ENEMYDAT record.
   function liveLeaderIcon(rom, key, point) {
     if (!point) return '';
     var over = rom.squadOverrides && rom.squadOverrides[key + ':' + point.edat];
     if (over && over[0] && OB64.classPortraitUrl) return OB64.classPortraitUrl(over[0]);
     var icon = classIconForPoint(point);
     if (icon) return icon;
-    var scn = squadScenario(key);
-    var sq = scn && (scn.squads || []).filter(function(s) { return s.e === point.edat; })[0];
-    if (sq && sq.rec && OB64.classPortraitUrl) {
-      var cls = parseInt(sq.rec.substr(0, 2), 16);
-      if (cls) return OB64.classPortraitUrl(cls);
-    }
+    var record = effectiveRecordFor(rom, key, point);
+    if (record && record[0] && OB64.classPortraitUrl) return OB64.classPortraitUrl(record[0]);
     return '';
   }
 
@@ -2202,15 +2198,15 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  // Effective 35-byte comp record for a row: live squad override first, else the vanilla
-  // record from the scenario squad data. Null when neither is known.
+  // Effective 35-byte comp record for a row: live squad override first, then the scenario
+  // squad atlas, then canonical ENEMYDAT. Null only when the EDAT itself is unknown.
   function effectiveRecordFor(rom, key, point) {
     var over = rom.squadOverrides && rom.squadOverrides[key + ':' + point.edat];
     if (over && over.length) return over;
     var scn = squadScenario(key);
     var sq = scn && (scn.squads || []).filter(function(s) { return s.e === point.edat; })[0];
     if (sq && sq.rec) return hexRecordBytes(sq.rec);
-    return null;
+    return stockRecordBytes(point.edat);
   }
 
   // Squad roster under the map: every Section 1 row with leader, comp size, behavior, and
@@ -8471,6 +8467,9 @@ window.OB64 = window.OB64 || {};
       levelBaseEditorHtml: levelBaseEditorHtml,
       squadLevelEditorHtml: squadLevelEditorHtml,
       supplyPresetEditorHtml: supplyPresetEditorHtml,
+      stockRecordBytes: stockRecordBytes,
+      effectiveRecordFor: effectiveRecordFor,
+      liveLeaderIcon: liveLeaderIcon,
       relocationTailEnd: relocationTailEnd,
       planRelocationToTail: planRelocationToTail,
     },
