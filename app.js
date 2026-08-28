@@ -2402,6 +2402,39 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  // Click-to-edit controls must also be reachable without a mouse. Existing
+  // click handlers remain the single edit path; Enter and Space activate them.
+  function makeClickEditorsKeyboardAccessible(container, areaLabel) {
+    var editors = container.querySelectorAll('.editable');
+    for (var i = 0; i < editors.length; i++) {
+      var editor = editors[i];
+      if (/^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(editor.tagName)) continue;
+      editor.tabIndex = 0;
+      editor.setAttribute('role', 'button');
+
+      if (!editor.getAttribute('aria-label')) {
+        var detail = editor.getAttribute('title') || '';
+        if (!detail && editor.tagName === 'TD') {
+          var table = editor.closest('table');
+          var header = table && table.querySelectorAll('thead th')[editor.cellIndex];
+          var rowId = editor.parentElement && editor.parentElement.cells[0];
+          detail = (rowId ? rowId.textContent.trim() + ' ' : '') +
+            (header ? header.textContent.trim() : 'value');
+        }
+        if (!detail) detail = editor.textContent.trim() || 'value';
+        editor.setAttribute('aria-label', areaLabel + ' edit ' + detail);
+      }
+
+      editor.addEventListener('keydown', function(event) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.currentTarget.click();
+        }
+      });
+    }
+  }
+
   function makeColumnsResizable(table, storageKey, options) {
     options = options || {};
     var headers = Array.prototype.slice.call(table.querySelectorAll('thead th'));
@@ -3760,7 +3793,7 @@ window.OB64 = window.OB64 || {};
 
     var rawNote = document.createElement('div');
     rawNote.className = 'item-raw-note';
-    rawNote.innerHTML = '<strong>Raw byte access:</strong> all 278 logical records are shown (ID 0 sentinel plus 277 equipment IDs, 0x01-0x115). Shaded ⚠ columns expose every remaining logical record byte and use intentionally conservative labels. Logical B28-B31 form the current item\'s runtime name pointer and are physically stored at statOff-4..statOff-1; changing pointer bytes can break names or crash the game.';
+    rawNote.innerHTML = '<strong>Raw byte access:</strong> all 278 logical records are shown (ID 0 sentinel plus 277 equipment IDs, 0x01-0x115). Shaded ⚠ columns expose every remaining logical record byte and use intentionally conservative labels. Logical B28-B31 form the current item\'s runtime name pointer and are physically stored at statOff-4..statOff-1; changing pointer bytes can break names or crash the game. Click an editable value, or focus it and press Enter or Space.';
     panel.appendChild(rawNote);
 
     var table = document.createElement('table');
@@ -3934,7 +3967,7 @@ window.OB64 = window.OB64 || {};
           tdStat.className = (val < 0) ? 'num stat-neg editable' : 'num ' + def.css + ' editable';
         } else {
           tdStat.textContent = '\u2014';
-          tdStat.className = 'num dim';
+          tdStat.className = 'num dim editable';
         }
         tdStat.dataset.itemIdx = i;
         tdStat.dataset.field = def.field;
@@ -3953,7 +3986,7 @@ window.OB64 = window.OB64 || {};
             tdR.className = (rv < 0) ? 'num stat-neg editable' : 'num stat-def editable';
           } else {
             tdR.textContent = '\u2014';
-            tdR.className = 'num dim';
+            tdR.className = 'num dim editable';
           }
           tdR.dataset.itemIdx = i;
           tdR.dataset.field = rdef.field;
@@ -4004,6 +4037,7 @@ window.OB64 = window.OB64 || {};
     tableWrap.className = 'items-table-wrap';
     tableWrap.appendChild(table);
     panel.appendChild(tableWrap);
+    makeClickEditorsKeyboardAccessible(table, 'Item');
     makeColumnsResizable(table, 'ob64_items_column_widths', {
       minimumWidths: { 1: 128 },
       initialMinimumWidths: { 1: 224 }
@@ -4291,7 +4325,7 @@ window.OB64 = window.OB64 || {};
     rawDataInput.checked = rawClassDataUnlocked;
     rawDataGate.appendChild(rawDataInput);
     var rawDataCopy = document.createElement('span');
-    rawDataCopy.innerHTML = '<strong>View raw class records</strong> Show and edit terminator/sentinel class bytes in Card View.';
+    rawDataCopy.innerHTML = '<strong>Edit raw class records</strong> Show and edit terminator/sentinel class bytes in Table and Card views. These records are not proven combat-safe.';
     rawDataGate.appendChild(rawDataCopy);
     panel.appendChild(viewToggle);
     panel.appendChild(rawDataGate);
@@ -4309,7 +4343,6 @@ window.OB64 = window.OB64 || {};
       btnCards.classList.toggle('active', classViewMode === 'cards');
       tableContainer.style.display = classViewMode === 'table' ? '' : 'none';
       cardsContainer.style.display = classViewMode === 'cards' ? '' : 'none';
-      rawDataGate.style.display = classViewMode === 'cards' ? 'flex' : 'none';
     }
 
     btnTable.addEventListener('click', function() {
@@ -4320,7 +4353,6 @@ window.OB64 = window.OB64 || {};
     });
     rawDataInput.addEventListener('change', function() {
       localStorage.setItem('ob64_classes_raw_data', rawDataInput.checked ? '1' : '0');
-      localStorage.setItem('ob64_classes_view', 'cards');
       renderClasses(panel);
     });
 
@@ -4560,7 +4592,8 @@ window.OB64 = window.OB64 || {};
     // Cell builders — each appends exactly ONE <td>. `def` is passed in so the
     // click-handler closures capture the correct class-def record.
     function addNumericCell(tr, def, field, max, extraCls) {
-      var c = td(tr, def ? def[field] : 0);
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', extraCls);
+      var c = td(tr, def[field]);
       c.className = 'editable' + (extraCls ? ' ' + extraCls : '');
       if (def) {
         c.addEventListener('click', function() {
@@ -4580,7 +4613,8 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addStatBaseCell(tr, def, statIdx) {
-      var v = def && def.stats.length > statIdx ? def.stats[statIdx].base : 0;
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', CLASS_STAT_CSS[statIdx]);
+      var v = def.stats.length > statIdx ? def.stats[statIdx].base : 0;
       var c = td(tr, v);
       c.className = 'editable ' + CLASS_STAT_CSS[statIdx];
       if (def) {
@@ -4595,7 +4629,8 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addStatGrowthCell(tr, def, statIdx, growthField) {
-      var c = td(tr, def ? def[growthField] : 0);
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'col-growth ' + CLASS_STAT_CSS[statIdx]);
+      var c = td(tr, def[growthField]);
       c.className = 'editable col-growth ' + CLASS_STAT_CSS[statIdx];
       c.title = classGrowthHelp(statIdx);
       if (def) {
@@ -4611,7 +4646,8 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addResCell(tr, def, resIdx) {
-      var rv = def && def.resistances.length > resIdx ? def.resistances[resIdx] : 50;
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var rv = def.resistances.length > resIdx ? def.resistances[resIdx] : 50;
       var c = td(tr, rv);
       c.className = 'editable';
       if (rv < 50) c.classList.add('resist-strong');
@@ -4631,7 +4667,8 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addDropdownCell(tr, def, field, optTable, nameFn) {
-      var c = td(tr, def ? formatByteChoice(def[field], nameFn(def[field])) : '\u2014');
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var c = td(tr, formatByteChoice(def[field], nameFn(def[field])));
       c.className = 'editable';
       if (def) {
         c.addEventListener('click', function() {
@@ -4645,8 +4682,9 @@ window.OB64 = window.OB64 || {};
       return c;
     }
     function addEquipCell(tr, def, displayCol) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'equip-config');
       var slotIdx = COL_TO_SLOT[displayCol];
-      var itemId = def && def.defaultEquip.length > slotIdx ? def.defaultEquip[slotIdx] : 0;
+      var itemId = def.defaultEquip.length > slotIdx ? def.defaultEquip[slotIdx] : 0;
       var c = td(tr, formatU16Choice(itemId, itemId > 0 ? OB64.itemName(itemId) : 'None'));
       c.className = 'editable equip-config';
       c.title = EQUIP_LABELS[displayCol] + ': 0x' + itemId.toString(16).padStart(4, '0');
@@ -4672,11 +4710,12 @@ window.OB64 = window.OB64 || {};
     // resolver-template roles from data.js. Falls back to a raw byte cell if the
     // generated name module is not loaded.
     function addActionCell(tr, cid, def, field, label, extraTitle) {
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.', 'equip-config');
       if (!OB64.actionName || !OB64.actionOptions || !OB64.actionEditorName || !OB64.actionEditorOptions) {
         return addRawByteCell(tr, def, field, label + ' — raw attack ID (rom-names-data.js not loaded)');
       }
-      var id = def ? (def[field] || 0) : 0;
-      var c = td(tr, def ? formatByteChoice(id, id > 0 ? OB64.actionEditorName(id) : 'None') : '');
+      var id = def[field] || 0;
+      var c = td(tr, formatByteChoice(id, id > 0 ? OB64.actionEditorName(id) : 'None'));
       c.className = 'editable equip-config';
       c.title = label + ' — ID ' + id + ' (combat action table 0x60988, ID = record + 1).' + (extraTitle ? ' ' + extraTitle : '');
       if (def) {
@@ -4733,7 +4772,8 @@ window.OB64 = window.OB64 || {};
     }
 
     function addClassFieldCell(tr, def, field, title) {
-      var c = td(tr, def ? formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None') : '\u2014');
+      if (!def) return addReadOnlyCell(tr, '\u2014', 'Enable raw class records to edit this record.');
+      var c = td(tr, formatByteChoice(def[field], def[field] > 0 ? OB64.className(def[field]) : 'None'));
       c.className = 'editable';
       if (title) c.title = title;
       if (def) {
@@ -4954,10 +4994,20 @@ window.OB64 = window.OB64 || {};
       for (var ci = 0; ci < classRowOrder.length; ci++) {
         var cid = classRowOrder[ci];
         var defs = defMap[cid];
+        var rawDef = rom.classDefs && rom.classDefs[cid + 1] ? rom.classDefs[cid + 1] : null;
         var def = defs && defs.length > 0 ? defs[0] : null;
+        var showingRawClassRecord = false;
+        if (rawClassDataUnlocked && rawDef && (rawDef.isTerm || rawDef.isSentinel)) {
+          def = rawDef;
+          showingRawClassRecord = true;
+        }
         var tr = document.createElement('tr');
         tr.id = 'class-' + cid;
         tr.dataset.classId = cid;
+        if (showingRawClassRecord) {
+          tr.classList.add('class-raw-record');
+          tr.title = 'Raw terminator/sentinel record. Every record byte is editable, but gameplay safety is not established.';
+        }
         var tdId = td(tr, '0x' + cid.toString(16).padStart(2, '0'));
         tdId.className = 'col-sticky';
         var tdName = td(tr, '');
@@ -4975,6 +5025,7 @@ window.OB64 = window.OB64 || {};
       }
       table.appendChild(tbody);
       tableHost.appendChild(table);
+      makeClickEditorsKeyboardAccessible(table, 'Class');
       makeColumnsResizable(
         table,
         'ob64_classes_column_widths_v2_' + activeSubview,
@@ -5115,9 +5166,9 @@ window.OB64 = window.OB64 || {};
         var rawDef = rom.classDefs && rom.classDefs[cid + 1] ? rom.classDefs[cid + 1] : null;
         var def = defs && defs.length > 0 ? defs[0] : null;
         var showingRawClassRecord = false;
-        if (rawClassDataUnlocked && rawDef) {
+        if (rawClassDataUnlocked && rawDef && (rawDef.isTerm || rawDef.isSentinel)) {
           def = rawDef;
-          showingRawClassRecord = !!(rawDef.isTerm || rawDef.isSentinel);
+          showingRawClassRecord = true;
         }
 
         var card = document.createElement('div');
@@ -5591,6 +5642,7 @@ window.OB64 = window.OB64 || {};
       })(allClassIds[ci]);
     }
 
+    makeClickEditorsKeyboardAccessible(cardsContainer, 'Class');
     panel.appendChild(cardsContainer);
     setClassView(classViewMode);
   }

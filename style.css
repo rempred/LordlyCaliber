@@ -749,6 +749,13 @@ td.editable:hover {
   box-shadow: inset 0 -2px 0 var(--ob-gold);
 }
 
+td.editable:focus-visible,
+.class-card .editable:focus-visible {
+  outline: 2px solid var(--ob-wax-red);
+  outline-offset: -2px;
+  background: rgba(243,204,120,0.42);
+}
+
 td.modified {
   color: var(--ob-wax-red);
   font-weight: 700;
@@ -1204,6 +1211,15 @@ body.is-resizing-column * {
 }
 
 .items-table tr.item-internal-record td:first-child::after {
+  content: ' ⚠';
+  color: var(--ob-wax-red);
+}
+
+.classes-table tr.class-raw-record td {
+  background-image: linear-gradient(rgba(152, 32, 24, 0.045), rgba(152, 32, 24, 0.045));
+}
+
+.classes-table tr.class-raw-record td:first-child::after {
   content: ' ⚠';
   color: var(--ob-wax-red);
 }
