@@ -326,16 +326,40 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert.notStrictEqual(idleAttackCopy.syntheticAnimation.poseProgram.records[
     idleAttackCopy.syntheticAnimation.poseProgram.records.length - 1].opcode, 0x04,
   'an attack copy must not retain the idle-loop jump');
+  const movementAttackDonor = OB64.animationUI.classMotionAnimationRows(
+    idleDonorRom.art.animations, 0x02, 'advance').find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '1/0');
+  const movementAttackTarget = route(
+    idleDonorRom, 0x02, 0x04, '1/0', 0);
+  const movementAttackPair =
+    OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+      0x02, idleDonorRom.classDefs[0x03], 0x04);
+  assert(movementAttackDonor && movementAttackTarget && movementAttackPair);
+  const movementAttackCopy = OB64.animationSequences.separateAndAssign(
+    idleDonorRom, movementAttackDonor, movementAttackPair,
+    movementAttackTarget);
+  assert.strictEqual(movementAttackCopy.laneKey, 'normal');
+  assert.strictEqual(
+    !!movementAttackCopy.syntheticAnimation.spec.classMotionKind, false,
+  'a movement donor must become an editable attack sequence after copying');
+  assert.deepStrictEqual(
+    movementAttackCopy.syntheticAnimation.poseProgram.frames,
+    movementAttackDonor.frames.map(frame => [frame.token, frame.ticks]),
+  'a movement donor must copy its complete frame program into the attack target');
   const idleAttackPayload = OB64.animationSequences.collectProject(idleDonorRom);
   const idleAttackRestored = await freshRom(z64);
   const idleAttackPrepared = OB64.animationSequences.prepareProject(
     idleAttackRestored, idleAttackPayload);
   assert.strictEqual(OB64.animationSequences.applyProject(
-    idleAttackRestored, idleAttackPrepared), 1);
+    idleAttackRestored, idleAttackPrepared), 2);
   assert.deepStrictEqual(Array.from(idleAttackRestored.animationSequences
     .separations[idleAttackCopy.id].syntheticAnimation.poseProgram.program),
   Array.from(idleAttackCopy.syntheticAnimation.poseProgram.program),
   'an idle-donor attack copy must preserve its body program after Project reload');
+  assert.deepStrictEqual(Array.from(idleAttackRestored.animationSequences
+    .separations[movementAttackCopy.id].syntheticAnimation.poseProgram.program),
+  Array.from(movementAttackCopy.syntheticAnimation.poseProgram.program),
+  'a movement-donor attack copy must preserve its body program after Project reload');
 
   const legacyStructurePayload = OB64.animationSequences.collectProject(idleRom);
   legacyStructurePayload.schemaVersion = 3;

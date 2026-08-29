@@ -131,8 +131,12 @@ function changedPixels(source, childOrdinal) {
   assert.strictEqual(fighterIdleChoices.length, 1);
   assert(fighterIdleChoices[0].label.includes('Idle / Rest') &&
     fighterIdleChoices[0].label.includes('Idle Loop'));
-  assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
-    false, false), { includeIdle: true });
+  const fighterCopyCatalogOptions =
+    OB64.animationUI.animationCopyCatalogOptions(false, false);
+  assert.deepStrictEqual(fighterCopyCatalogOptions, {
+    includeIdle: true,
+    includeClassMotion: true
+  });
   assert.strictEqual(OB64.animationUI.animationCopyCatalogOptions(
     false, true), null,
   'Replace From must retain its current source catalog');
@@ -741,6 +745,35 @@ function changedPixels(source, childOrdinal) {
   assert.strictEqual(new Set(Object.values(state.artByKey).map(source =>
     source.physicalSourceId)).size, 4781,
   'all accepted and directly discovered class-art sources must load once');
+
+  const fighterCompleteCopyRows = [0, 1].flatMap(side =>
+    OB64.animationUI.animationSequenceCatalogRows(
+      state, null, 0x02, side, fighterCopyCatalogOptions));
+  const fighterCopyMotionRows = fighterCompleteCopyRows.filter(
+    OB64.animationUI.isClassMotionAnimation);
+  assert.strictEqual(fighterCopyMotionRows.length, 8,
+    'Copy From and Separate must list both movement selectors for every Fighter art route');
+  assert.deepStrictEqual([...new Set(fighterCopyMotionRows.map(animation =>
+    animation.spec.classMotionKind))], ['advance', 'return']);
+  const fighterCompleteCopyChoices =
+    OB64.animationUI.animationClassVariantChoices(fighterCompleteCopyRows);
+  assert(fighterCompleteCopyChoices.some(choice =>
+    choice.label.includes('Idle / Rest')));
+  assert(fighterCompleteCopyChoices.some(choice =>
+    choice.label.includes('Walk / Run · Advance')));
+  assert(fighterCompleteCopyChoices.some(choice =>
+    choice.label.includes('Walk / Run · Return')));
+  const baldwinCopyChoices = OB64.animationUI.animationClassVariantChoices(
+    [0, 1].flatMap(side => OB64.animationUI.animationSequenceCatalogRows(
+      state, null, 0x67, side, fighterCopyCatalogOptions)));
+  assert(baldwinCopyChoices.some(choice => choice.label.includes('Idle / Rest')),
+    'Baldwin Copy From must list Idle / Rest');
+  assert(baldwinCopyChoices.some(choice =>
+    choice.label.includes('Walk / Run · Advance')),
+  'Baldwin Copy From must list movement advance');
+  assert(baldwinCopyChoices.some(choice =>
+    choice.label.includes('Walk / Run · Return')),
+  'Baldwin Copy From must list movement return');
 
   const giantMovementRows = OB64.animationUI.classMotionAnimationRows(
     state, 0x4D);

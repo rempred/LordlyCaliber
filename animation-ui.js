@@ -957,7 +957,10 @@ window.OB64 = window.OB64 || {};
 
   function animationCopyCatalogOptions(idleTarget, replacing) {
     if (idleTarget) return { idleOnly: true };
-    return replacing ? null : { includeIdle: true };
+    return replacing ? null : {
+      includeIdle: true,
+      includeClassMotion: true
+    };
   }
 
   function animationSequenceCatalogRows(animationState, sequenceState, classId,
@@ -995,6 +998,12 @@ window.OB64 = window.OB64 || {};
         return selectorFlagParts(animation)[1] === side &&
           (!requiredFlags || selectorFlags(animation) === requiredFlags);
       }) : [];
+    var includedClassMotion = options && options.includeClassMotion
+      ? classMotionAnimationRows(animationState, classId)
+        .filter(function(animation) {
+          return selectorFlagParts(animation)[1] === side &&
+            (!requiredFlags || selectorFlags(animation) === requiredFlags);
+        }) : [];
     var vanilla = animationState.specs.filter(function(animation) {
       return animation.spec.classId === classId &&
         selectorFlagParts(animation)[1] === side &&
@@ -1075,7 +1084,7 @@ window.OB64 = window.OB64 || {};
           (left.laneKey === right.laneKey ? 0 :
             (left.laneKey === 'normal' ? -1 : 1));
       }).map(function(separation) { return separation.syntheticAnimation; });
-    return includedIdle.concat(vanilla, native, modified);
+    return includedIdle.concat(includedClassMotion, vanilla, native, modified);
   }
 
   function animationClassVariantChoices(rows) {
@@ -3103,6 +3112,8 @@ window.OB64 = window.OB64 || {};
     if (!targetAnimation || !OB64.animationSequences) return;
     var idleTarget = isIdleAnimation(targetAnimation);
     var replacing = !!separation;
+    var copyCatalogOptions = animationCopyCatalogOptions(
+      idleTarget, replacing);
     var pair = routePairForAnimation(rom, targetAnimation);
     if (!separation && ((!idleTarget && !pair) || !rom.animationSequences ||
         !rom.animationSequences.supported)) {
@@ -3200,7 +3211,12 @@ window.OB64 = window.OB64 || {};
     footer.appendChild(copyButton);
     modal.appendChild(footer);
 
-    var classRows = animationClassChoices(sourceAnimations).filter(function(row) {
+    var donorClassAnimations = sourceAnimations.slice();
+    if (copyCatalogOptions) {
+      donorClassAnimations = donorClassAnimations.concat(
+        state.animations.artRouteTemplates || []);
+    }
+    var classRows = animationClassChoices(donorClassAnimations).filter(function(row) {
       return !row.missingAnimation;
     });
     classRows.forEach(function(row) {
@@ -3225,13 +3241,12 @@ window.OB64 = window.OB64 || {};
 
     function rowsForClass() {
       var classId = Number(classSelect.value);
-      var catalogOptions = animationCopyCatalogOptions(idleTarget, replacing);
       return animationSequenceCatalogRows(
         state.animations, rom.animationSequences, classId, 0,
-        catalogOptions).concat(
+        copyCatalogOptions).concat(
         animationSequenceCatalogRows(
           state.animations, rom.animationSequences, classId, 1,
-          catalogOptions));
+          copyCatalogOptions));
     }
     function populateSequences(wantedAnimation) {
       currentChoices = animationClassVariantChoices(rowsForClass());
