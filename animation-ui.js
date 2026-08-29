@@ -7,6 +7,20 @@ window.OB64 = window.OB64 || {};
 
   var M = OB64.animationArt;
   var IDLE_ACTION_ID = -1;
+  var CLASS_MOTION_SPECS = [
+    {
+      actionId: -2,
+      actionName: 'Walk / Run · Advance',
+      kind: 'advance',
+      selector: 0x05
+    },
+    {
+      actionId: -3,
+      actionName: 'Walk / Run · Return',
+      kind: 'return',
+      selector: 0x0B
+    }
+  ];
   var animationPreviewSurfaceCache = null;
   var activePreviewBackground = 'checkerboard';
 
@@ -371,6 +385,9 @@ window.OB64 = window.OB64 || {};
     if (animation && animation.spec && animation.spec.idleSequence) {
       return 'idle';
     }
+    if (animation && animation.spec && animation.spec.classMotionKind) {
+      return animation.spec.classMotionKind;
+    }
     return animation && animation.spec && animation.spec.rawMode === 2
       ? 'blocked' : 'normal';
   }
@@ -378,11 +395,24 @@ window.OB64 = window.OB64 || {};
   function animationLaneLabel(animation) {
     var laneKey = animationLaneKey(animation);
     if (laneKey === 'idle') return 'Idle Loop';
+    if (laneKey === 'advance') return 'Walk / Run · Advance';
+    if (laneKey === 'return') return 'Walk / Run · Return';
     return laneKey === 'blocked' ? 'Attack Blocked' : 'Normal Attack';
   }
 
   function isIdleAnimation(animation) {
     return !!(animation && animation.spec && animation.spec.idleSequence);
+  }
+
+  function isClassMotionAnimation(animation) {
+    return !!(animation && animation.spec && animation.spec.classMotionKind);
+  }
+
+  function classMotionSpec(value) {
+    var kind = value && value.spec ? value.spec.classMotionKind : value;
+    return CLASS_MOTION_SPECS.find(function(spec) {
+      return spec.kind === kind || spec.actionId === Number(kind);
+    }) || null;
   }
 
   function idleLoopFrames(animation) {
@@ -548,7 +578,9 @@ window.OB64 = window.OB64 || {};
       return sameAnimationSequence(first, row);
     });
     var laneLabel = laneKey === 'idle' ? 'Idle Loop' :
-      (laneKey === 'blocked' ? 'Attack Blocked' : 'Normal Attack');
+      (laneKey === 'advance' ? 'Walk / Run · Advance' :
+        (laneKey === 'return' ? 'Walk / Run · Return' :
+          (laneKey === 'blocked' ? 'Attack Blocked' : 'Normal Attack')));
     if (splitNormal) laneLabel += ' · mode ' + rawModes.join('/');
     var issue = rows.some(function(row) {
       return row.mappingStatus && row.mappingStatus.severity === 'failure';
@@ -740,6 +772,12 @@ window.OB64 = window.OB64 || {};
         output.push(variantChoice(idleRows, 'idle', [], false));
         return;
       }
+      var motionRows = rows.filter(isClassMotionAnimation);
+      if (motionRows.length) {
+        output.push(variantChoice(
+          motionRows, motionRows[0].spec.classMotionKind, [], false));
+        return;
+      }
       var normalRows = rows.filter(function(row) {
         return row.spec.rawMode !== 2;
       });
@@ -842,6 +880,81 @@ window.OB64 = window.OB64 || {};
     return rows;
   }
 
+  function classMotionAnimationRows(animationState, classId, requestedKind) {
+    classId = Number(classId);
+    if (!animationState ||
+        typeof animationState.resolveSelectorCandidate !== 'function') return [];
+    if (!animationState.classMotionAnimationsByClass) {
+      animationState.classMotionAnimationsByClass = {};
+      animationState.classMotionAnimationsByKey = {};
+      animationState.classMotionSequenceFailures = {};
+    }
+    if (!animationState.classMotionAnimationsByClass[classId]) {
+      var routeTable = animationState.artRouteTemplatesByClass &&
+        animationState.artRouteTemplatesByClass[classId];
+      var templates = routeTable
+        ? ['0/0', '0/1', '1/0', '1/1'].map(function(flags) {
+          return routeTable[flags];
+        }).filter(Boolean)
+        : animationState.specs.filter(function(animation) {
+          return animation.spec.classId === classId;
+        }).filter(function(animation, index, rows) {
+          return rows.findIndex(function(row) {
+            return selectorFlags(row) === selectorFlags(animation);
+          }) === index;
+        });
+      var failures = [], rows = [];
+      CLASS_MOTION_SPECS.forEach(function(motion, motionIndex) {
+        templates.forEach(function(template, routeIndex) {
+          try {
+            var candidate = animationState.resolveSelectorCandidate(
+              template, motion.selector, 0);
+            var key = 'class-motion:' + motion.kind + ':' + candidate.key;
+            var animation = Object.assign({}, candidate, {
+              key: key,
+              corpusId: key,
+              compatibilityKey: null,
+              spec: Object.assign({}, candidate.spec, {
+                key: key,
+                id: key,
+                compatibilityKey: null,
+                actionId: motion.actionId,
+                actionName: motion.actionName,
+                rawMode: 0,
+                modeLabel: motion.actionName,
+                selector: motion.selector,
+                classMotionKind: motion.kind,
+                sequenceCatalogGroupKey: 'class-motion-' + motion.kind,
+                displayOrder: motionIndex * 4 + routeIndex
+              }),
+              classMotionKind: motion.kind,
+              selectedAction: null
+            });
+            rows.push(animation);
+            animationState.classMotionAnimationsByKey[key] = animation;
+          } catch (error) {
+            failures.push({
+              classId: classId,
+              flags: selectorFlags(template),
+              rawMode: 0,
+              selector: motion.selector,
+              actionId: motion.actionId,
+              kind: motion.kind,
+              message: error && error.message ? error.message : String(error)
+            });
+          }
+        });
+      });
+      animationState.classMotionAnimationsByClass[classId] = rows;
+      animationState.classMotionSequenceFailures[classId] = failures;
+    }
+    var classRows = animationState.classMotionAnimationsByClass[classId];
+    if (!requestedKind) return classRows;
+    return classRows.filter(function(animation) {
+      return animation.spec.classMotionKind === requestedKind;
+    });
+  }
+
   function animationCopyCatalogOptions(idleTarget, replacing) {
     if (idleTarget) return { idleOnly: true };
     return replacing ? null : { includeIdle: true };
@@ -853,6 +966,14 @@ window.OB64 = window.OB64 || {};
     side = Number(side);
     var requiredFlags = options && /^\d\/\d$/.test(String(options.flags || ''))
       ? String(options.flags) : null;
+    if (options && options.classMotionKind) {
+      return classMotionAnimationRows(
+        animationState, classId, options.classMotionKind)
+        .filter(function(animation) {
+          return selectorFlagParts(animation)[1] === side &&
+            (!requiredFlags || selectorFlags(animation) === requiredFlags);
+        });
+    }
     if (options && options.idleOnly) {
       var idleRows = idleAnimationRows(animationState, classId).filter(function(animation) {
         return selectorFlagParts(animation)[1] === side &&
@@ -982,30 +1103,38 @@ window.OB64 = window.OB64 || {};
         var representative = choice.representative;
         var nativeSelector = !!representative.spec.nativeSelectorCandidate;
         var idleSequence = isIdleAnimation(representative);
-        var actionId = nativeSelector || idleSequence ? null :
+        var motionSequence = isClassMotionAnimation(representative);
+        var actionId = nativeSelector || idleSequence || motionSequence ? null :
           Number(representative.spec.actionId);
-        var actionName = idleSequence ? 'Idle / Rest' : (nativeSelector
-          ? 'Native body program ' + M.hex(representative.spec.selector, 2) +
-            (choice.nativeProgramCount > 1
-              ? ' · Program variant ' + choice.nativeProgramOrdinal : '')
-          : (OB64.ACTION_TEMPLATE_LABELS && OB64.ACTION_TEMPLATE_LABELS[actionId]
-            ? OB64.ACTION_TEMPLATE_LABELS[actionId]
-            : representative.spec.actionName));
+        var actionName = idleSequence ? 'Idle / Rest' : (motionSequence
+          ? representative.spec.actionName
+          : (nativeSelector
+            ? 'Native body program ' + M.hex(representative.spec.selector, 2) +
+              (choice.nativeProgramCount > 1
+                ? ' · Program variant ' + choice.nativeProgramOrdinal : '')
+            : (OB64.ACTION_TEMPLATE_LABELS && OB64.ACTION_TEMPLATE_LABELS[actionId]
+              ? OB64.ACTION_TEMPLATE_LABELS[actionId]
+              : representative.spec.actionName)));
         choice.sequenceKind = choice.representative.spec.separatedCopy
           ? 'modified' : 'vanilla';
         choice.catalogGroupKey = group.catalogGroupKey;
         choice.sourceActionId = actionId;
         choice.sourceActionName = actionName;
-        choice.sourceActionLabel = nativeSelector || idleSequence
+        choice.sourceActionLabel = nativeSelector || idleSequence || motionSequence
           ? actionName : M.hex(actionId, 2) + ' · ' + actionName;
-        choice.label = choice.sourceActionLabel + ' · ' + choice.label;
+        if (!motionSequence) {
+          choice.label = choice.sourceActionLabel + ' · ' + choice.label;
+        }
         choice.optionTitle = (choice.sequenceKind === 'modified'
           ? 'Edited project sequence' : 'Original ROM sequence') +
           (idleSequence
             ? ' · Selector 0x00 combat idle/rest loop'
-            : (nativeSelector
-            ? ' · Structurally valid native selector not used by a mapped action'
-            : ' · Source action ' + choice.sourceActionLabel)) +
+            : (motionSequence
+              ? ' · Fixed class movement selector ' +
+                M.hex(representative.spec.selector, 2)
+              : (nativeSelector
+                ? ' · Structurally valid native selector not used by a mapped action'
+                : ' · Source action ' + choice.sourceActionLabel))) +
           ' · ' + choice.optionTitle;
         choices.push(choice);
       });
@@ -1069,6 +1198,10 @@ window.OB64 = window.OB64 || {};
       return currentChoice ? 'Idle Loop · ' + currentChoice.label :
         'Choose an idle loop';
     }
+    if (isClassMotionAnimation(targetAnimation)) {
+      return currentChoice ? currentChoice.label :
+        'Choose ' + animationLaneLabel(targetAnimation).toLowerCase();
+    }
     if (needsUserAssignment) {
       return targetLane + ' target · Choose a body animation · current game ' +
         'fallback ' + M.hex(targetAnimation.spec.selector, 2);
@@ -1115,8 +1248,25 @@ window.OB64 = window.OB64 || {};
     var actions = [idleAction];
     var actionSeen = {};
     actionSeen[String(IDLE_ACTION_ID)] = true;
+    CLASS_MOTION_SPECS.forEach(function(motion) {
+      var existing = classRows.find(function(animation) {
+        return animation.spec.actionId === motion.actionId;
+      });
+      actions.push(existing || {
+        spec: {
+          classId: fallback.spec.classId,
+          className: fallback.spec.className,
+          actionId: motion.actionId,
+          actionName: motion.actionName,
+          rawMode: 0,
+          selector: motion.selector,
+          classMotionKind: motion.kind
+        }
+      });
+      actionSeen[String(motion.actionId)] = true;
+    });
     classRows.filter(function(animation) {
-      return !isIdleAnimation(animation);
+      return !isIdleAnimation(animation) && !isClassMotionAnimation(animation);
     }).forEach(function(animation) {
       var actionKey = String(animation.spec.actionId);
       if (actionSeen[actionKey]) return;
@@ -1971,6 +2121,9 @@ window.OB64 = window.OB64 || {};
     if (!animation && state.animations.idleAnimationsByKey) {
       animation = state.animations.idleAnimationsByKey[ui.animationKey];
     }
+    if (!animation && state.animations.classMotionAnimationsByKey) {
+      animation = state.animations.classMotionAnimationsByKey[ui.animationKey];
+    }
     if (!animation && state.animations.selectorCandidates) {
       animation = Object.keys(state.animations.selectorCandidates)
         .map(function(key) { return state.animations.selectorCandidates[key]; })
@@ -2214,6 +2367,21 @@ window.OB64 = window.OB64 || {};
           ordered.push(animation);
         }
       });
+    }
+    var selectedMotion = isClassMotionAnimation(selected)
+      ? classMotionSpec(selected) : null;
+    var targetMotion = classMotionSpec(ui.animationTargetLaneKey) || selectedMotion;
+    var motionClassId = targetMotion &&
+      Number.isInteger(ui.animationTargetClassId)
+      ? ui.animationTargetClassId
+      : (targetMotion && selected ? selected.spec.classId : null);
+    if (Number.isInteger(motionClassId)) {
+      classMotionAnimationRows(state.animations, motionClassId)
+        .forEach(function(animation) {
+          if (!ordered.some(function(row) { return row.key === animation.key; })) {
+            ordered.push(animation);
+          }
+        });
     }
     function activate(animation, updateTarget) {
       if (!animation) return;
@@ -2507,10 +2675,12 @@ window.OB64 = window.OB64 || {};
         'animation-corpus-field animation-variant-field animation-sequence-field');
       field.appendChild(element('span', '', 'Body Sprite Sequence'));
       var idleTarget = isIdleAnimation(targetAnimation);
-      var separation = OB64.animationSequences
+      var motionTarget = isClassMotionAnimation(targetAnimation);
+      var fixedTarget = idleTarget || motionTarget;
+      var separation = !motionTarget && OB64.animationSequences
         ? OB64.animationSequences.routeSeparationFor(
           targetAnimation, rom.animationSequences) : null;
-      var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
+      var pair = fixedTarget ? null : routePairForAnimation(rom, targetAnimation);
       var needsUserAssignment = !!(targetAnimation.effectiveMapping &&
         targetAnimation.effectiveMapping.assignmentRequired);
       var targetLaneLabel = animationLaneLabel(targetAnimation);
@@ -2548,7 +2718,7 @@ window.OB64 = window.OB64 || {};
           choice.key === currentChoice.key;
         var fallbackBody = needsUserAssignment && sameCurrentBody;
         var sameBodyOnly = sameCurrentBody && !assigned && !fallbackBody;
-        var sharedIssue = !idleTarget && OB64.animationSequences &&
+        var sharedIssue = !fixedTarget && OB64.animationSequences &&
           OB64.animationSequences.sharedAssignmentIssue
           ? OB64.animationSequences.sharedAssignmentIssue(
             representative, targetAnimation) : '';
@@ -2563,7 +2733,9 @@ window.OB64 = window.OB64 || {};
           });
         preview.title = (idleTarget
           ? 'Show this idle loop. '
-          : 'Preview this sequence without changing the assignment target. ') +
+          : (motionTarget
+            ? 'Show this fixed class movement sequence. '
+            : 'Preview this sequence without changing the assignment target. ')) +
           choice.optionTitle;
         row.appendChild(preview);
         var rowStatus = element('div', 'animation-variant-dropdown-status');
@@ -2574,11 +2746,11 @@ window.OB64 = window.OB64 || {};
           rowStatus.appendChild(linkedSequenceBadge(choice, targetAnimation));
         }
         if (assigned) rowStatus.appendChild(badge(
-          idleTarget ? 'Current' : 'Assigned', 'mapped'));
+          fixedTarget ? 'Current' : 'Assigned', 'mapped'));
         else if (fallbackBody) rowStatus.appendChild(badge('Game fallback', 'warning'));
         else if (previewed) rowStatus.appendChild(badge('Preview', 'shared'));
         row.appendChild(rowStatus);
-        if (idleTarget) {
+        if (fixedTarget) {
           panel.appendChild(row);
           return;
         }
@@ -2639,7 +2811,9 @@ window.OB64 = window.OB64 || {};
         var issue = element('div', 'animation-variant-dropdown-row missing ' +
           (sideLabel === 'Enemy Side'
             ? 'animation-variant-enemy' : 'animation-variant-player'),
-        '[Issue] Native body program ' + M.hex(failure.selector, 2) + ' · ' +
+        '[Issue] ' + (failure.kind && classMotionSpec(failure.kind)
+          ? classMotionSpec(failure.kind).actionName
+          : 'Native body program ' + M.hex(failure.selector, 2)) + ' · ' +
           'flags ' + failure.flags + ' · mode ' +
           failure.rawMode + ' · ' + failure.message);
         issue.setAttribute('data-mapping-failure', 'true');
@@ -2671,6 +2845,8 @@ window.OB64 = window.OB64 || {};
       state.animations, rom.animationSequences, targetAnimation.spec.classId,
       selectorFlagParts(targetAnimation)[1], {
         idleOnly: isIdleAnimation(targetAnimation),
+        classMotionKind: isClassMotionAnimation(targetAnimation)
+          ? targetAnimation.spec.classMotionKind : null,
         flags: selectorFlags(targetAnimation)
       });
     var variantChoices = animationClassVariantChoices(sequenceRows);
@@ -2697,6 +2873,26 @@ window.OB64 = window.OB64 || {};
           activate(nextIdle, true);
           return;
         }
+        if (isClassMotionAnimation(targetAnimation)) {
+          var nextMotionRows = classMotionAnimationRows(
+            state.animations, Number(value),
+            targetAnimation.spec.classMotionKind);
+          var matchingMotionRows = nextMotionRows.filter(function(row) {
+            return selectorFlags(row) === selectorFlags(targetAnimation);
+          });
+          var nextMotion = preferredAnimation(
+            matchingMotionRows.length ? matchingMotionRows : nextMotionRows, {
+              rawMode: 0,
+              side: selectorFlagParts(targetAnimation)[1]
+            });
+          if (!nextMotion) {
+            notify(options, animationLaneLabel(targetAnimation) +
+              ' is unavailable for the selected class.');
+            return;
+          }
+          activate(nextMotion, true);
+          return;
+        }
         var nextClassRows = ordered.filter(function(row) {
           return row.spec.classId === Number(value);
         });
@@ -2718,6 +2914,7 @@ window.OB64 = window.OB64 || {};
       function(row) { return String(row.spec.actionId); },
       function(row) {
         if (isIdleAnimation(row)) return 'Idle / Rest';
+        if (isClassMotionAnimation(row)) return row.spec.actionName;
         return M.hex(row.spec.actionId, 2) + ' · ' + row.spec.actionName;
       }, function(value) {
         if (Number(value) === IDLE_ACTION_ID) {
@@ -2739,8 +2936,28 @@ window.OB64 = window.OB64 || {};
           activate(idle, true);
           return;
         }
+        var motion = classMotionSpec(Number(value));
+        if (motion) {
+          var motionRows = classMotionAnimationRows(
+            state.animations, targetAnimation.spec.classId, motion.kind);
+          var sameMotionRoute = motionRows.filter(function(row) {
+            return selectorFlags(row) === selectorFlags(targetAnimation);
+          });
+          var nextMotion = preferredAnimation(
+            sameMotionRoute.length ? sameMotionRoute : motionRows, {
+              rawMode: 0,
+              side: selectorFlagParts(targetAnimation)[1]
+            });
+          if (!nextMotion) {
+            notify(options, motion.actionName +
+              ' is unavailable for the selected class.');
+            return;
+          }
+          activate(nextMotion, true);
+          return;
+        }
         var nextActionRows = classRows.filter(function(row) {
-          return !isIdleAnimation(row) &&
+          return !isIdleAnimation(row) && !isClassMotionAnimation(row) &&
             row.spec.actionId === Number(value);
         });
         var sameRouteRows = nextActionRows.filter(function(row) {
@@ -2784,7 +3001,8 @@ window.OB64 = window.OB64 || {};
       { key: 'normal', label: 'Normal (modes 0/1)', rawMode: 0 },
       { key: 'blocked', label: 'Attack Blocked (mode 2)', rawMode: 2 }
     ];
-    if (!isIdleAnimation(targetAnimation)) {
+    if (!isIdleAnimation(targetAnimation) &&
+        !isClassMotionAnimation(targetAnimation)) {
       controls.appendChild(selector('Mode', modes,
         animationLaneKey(targetAnimation),
         function(row) { return row.key; },
@@ -2805,7 +3023,14 @@ window.OB64 = window.OB64 || {};
           return String(failure.flags).split('/')[1] ===
             String(selectorFlagParts(targetAnimation)[1]);
         })
-      : state.animations.sequenceCatalogFailures;
+      : (isClassMotionAnimation(targetAnimation)
+        ? (state.animations.classMotionSequenceFailures[
+          targetAnimation.spec.classId] || []).filter(function(failure) {
+          return failure.kind === targetAnimation.spec.classMotionKind &&
+            String(failure.flags).split('/')[1] ===
+              String(selectorFlagParts(targetAnimation)[1]);
+        })
+        : state.animations.sequenceCatalogFailures);
     controls.appendChild(sequenceDropdown(
       variantChoices, currentSequenceChoice, targetAnimation,
       sequenceFailures));
@@ -3653,13 +3878,87 @@ window.OB64 = window.OB64 || {};
     (sourceField || classField).select.focus();
   }
 
+  function importLibrarySequence(state, rom, separation, targetAnimation,
+      previewAnimation, asset, ui, options, rerender) {
+    if (!asset || asset.kind !== 'sequence' || !asset.frames.length) {
+      notify(options, 'Sprite Library sequence import blocked: choose a frame sequence asset.');
+      return;
+    }
+    if (asset.frames.length > 256) {
+      notify(options,
+        'Sprite Library sequence import blocked: combat sequences support at most 256 frames.');
+      return;
+    }
+    var idleTarget = isIdleAnimation(targetAnimation);
+    var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
+    if (!separation && !idleTarget && !pair) {
+      notify(options,
+        'Sprite Library sequence import blocked: this target has no writable sequence route.');
+      return;
+    }
+    var baseAnimation = separation && separation.syntheticAnimation
+      ? separation.syntheticAnimation : (previewAnimation || targetAnimation);
+    try {
+      var preparedFrames = asset.frames.map(function(frame) {
+        return {
+          ticks: frame.ticks,
+          prepared: OB64.art.prepareAnimationFrameImport(
+            OB64.spriteLibrary.compositeFrame(asset,
+              asset.frames.indexOf(frame)),
+            asset.width, asset.height,
+            baseAnimation.canvas.width, baseAnimation.canvas.height,
+            { resizeMode: 'nearest', panX: 0.5, panY: 0.5, dither: false })
+        };
+      });
+      var created = !separation;
+      if (!separation) {
+        separation = OB64.animationSequences.separateAndAssign(
+          rom, baseAnimation, pair, targetAnimation);
+      }
+      var animation = separation.syntheticAnimation;
+      while (animation.frames.length > preparedFrames.length) {
+        OB64.animationSequences.removeFrame(
+          rom, separation, animation.frames.length - 1);
+        animation = separation.syntheticAnimation;
+      }
+      while (animation.frames.length < preparedFrames.length) {
+        OB64.animationSequences.addBlankFrame(
+          rom, separation, animation.frames.length - 1, 0);
+        animation = separation.syntheticAnimation;
+      }
+      preparedFrames.forEach(function(row, frameIndex) {
+        OB64.animationSequences.importFrame(
+          rom, separation, frameIndex, row.prepared, { keepEquipment: false });
+        OB64.animationSequences.setFrameTicks(
+          rom, separation, frameIndex, row.ticks);
+      });
+      animation = separation.syntheticAnimation;
+      ui.animationKey = animation.key;
+      ui.animationFrame = 0;
+      ui.animationLayer = 0;
+      rememberAnimationTarget(ui, targetAnimation);
+      rememberAnimationSelection(ui, animation);
+      selectLayer(state, animation, animation.frames[0],
+        animation.frames[0].layers[0], ui);
+      if (created && !idleTarget) animationRouteChanged(options);
+      else changed(options);
+      notify(options, 'Imported Sprite Library sequence ' + asset.name +
+        ' as ' + preparedFrames.length + ' private combat frame' +
+        (preparedFrames.length === 1 ? '' : 's') + '.');
+      rerender();
+    } catch (error) {
+      notify(options, 'Sprite Library sequence import blocked: ' + error.message);
+    }
+  }
+
   function sequenceStrip(state, animation, targetAnimation, ui, options,
       rerender, rom) {
     var section = element('section', 'animation-sequence-section');
     var heading = element('div', 'animation-section-heading');
     heading.appendChild(element('h3', '', 'Frame sequence'));
     var idleTarget = isIdleAnimation(targetAnimation);
-    var separation = OB64.animationSequences
+    var motionTarget = isClassMotionAnimation(targetAnimation);
+    var separation = !motionTarget && OB64.animationSequences
       ? OB64.animationSequences.routeSeparationFor(
         targetAnimation, rom.animationSequences)
       : null;
@@ -3670,22 +3969,48 @@ window.OB64 = window.OB64 || {};
       : null;
     var headingActions = element('div', 'animation-sequence-heading-actions');
     if (separation) headingActions.appendChild(badge('Separated', 'edited'));
-    var copyFrom = button(separation
-      ? 'Replace From…' : 'Copy From and Separate…',
-      'btn-secondary animation-copy-from', function() {
-        openCopyFromModal(state, rom, separation, targetAnimation,
-          animation, ui, options, rerender);
-      });
-    var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
-    copyFrom.disabled = !targetAnimation ||
-      (!idleTarget && !separation && !pair) ||
-      !rom.animationSequences || !rom.animationSequences.supported;
-    copyFrom.title = separation
-      ? 'Replace this complete private sequence from another compatible sequence.'
-      : (idleTarget
-        ? 'Create a private copy of this idle loop for the selected class and art route.'
-        : 'Create a complete private copy from another class, action, and variant, then assign it to this target.');
-    headingActions.appendChild(copyFrom);
+    if (!motionTarget) {
+      var copyFrom = button(separation
+        ? 'Replace From…' : 'Copy From and Separate…',
+        'btn-secondary animation-copy-from', function() {
+          openCopyFromModal(state, rom, separation, targetAnimation,
+            animation, ui, options, rerender);
+        });
+      var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
+      copyFrom.disabled = !targetAnimation ||
+        (!idleTarget && !separation && !pair) ||
+        !rom.animationSequences || !rom.animationSequences.supported;
+      copyFrom.title = separation
+        ? 'Replace this complete private sequence from another compatible sequence.'
+        : (idleTarget
+          ? 'Create a private copy of this idle loop for the selected class and art route.'
+          : 'Create a complete private copy from another class, action, and variant, then assign it to this target.');
+      headingActions.appendChild(copyFrom);
+      if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
+        var librarySequence = button(separation
+          ? 'Replace from Library…' : 'Import Library Sequence…',
+        'btn-secondary animation-copy-from', function() {
+          OB64.spriteEditorUI.openLibraryPicker(rom, {
+            title: separation
+              ? 'Replace Private Sequence from Sprite Library'
+              : 'Create Private Sequence from Sprite Library',
+            actionLabel: separation ? 'Replace Sequence' : 'Import Sequence',
+            kinds: ['sequence'],
+            onStatus: function(message) { notify(options, message); }
+          }, function(source) {
+            importLibrarySequence(state, rom, separation, targetAnimation,
+              animation, source.asset, ui, options, rerender);
+          });
+        });
+        librarySequence.disabled = !targetAnimation ||
+          (!idleTarget && !separation && !pair) ||
+          !rom.animationSequences || !rom.animationSequences.supported;
+        librarySequence.title = separation
+          ? 'Replace this complete private sequence with a Sprite Library sequence.'
+          : 'Convert a Sprite Library sequence into a private combat sequence and assign it to this target.';
+        headingActions.appendChild(librarySequence);
+      }
+    }
     heading.appendChild(headingActions);
     section.appendChild(heading);
     var strip = element('div', 'animation-sequence-strip');
@@ -4823,6 +5148,45 @@ window.OB64 = window.OB64 || {};
     return canvas;
   }
 
+  function importLibrarySpritePixels(animationState, targetSource,
+      childOrdinal, sourceAsset) {
+    var width = targetSource.sprite.width;
+    var height = targetSource.sprite.height;
+    var rgba = OB64.spriteLibrary.nearestResize(sourceAsset.rgba,
+      sourceAsset.width, sourceAsset.height, width, height);
+    var palette = M.childPalette(targetSource, childOrdinal);
+    var paletteRgb = Array.prototype.map.call(palette, wordRgb);
+    var nearest = {};
+    var indices = new Uint8Array(width * height);
+    var intensity = new Uint8Array(width * height);
+    for (var pixel = 0; pixel < width * height; pixel++) {
+      var offset = pixel * 4;
+      intensity[pixel] = Math.max(0, Math.min(15,
+        Math.round(rgba[offset + 3] * 15 / 255)));
+      var key = rgba[offset] + ',' + rgba[offset + 1] + ',' + rgba[offset + 2];
+      var paletteIndex = nearest[key];
+      if (!Number.isInteger(paletteIndex)) {
+        var bestDistance = Infinity;
+        paletteIndex = 0;
+        for (var candidate = 0; candidate < paletteRgb.length; candidate++) {
+          var red = paletteRgb[candidate][0] - rgba[offset];
+          var green = paletteRgb[candidate][1] - rgba[offset + 1];
+          var blue = paletteRgb[candidate][2] - rgba[offset + 2];
+          var distance = red * red + green * green + blue * blue;
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            paletteIndex = candidate;
+            if (!distance) break;
+          }
+        }
+        nearest[key] = paletteIndex;
+      }
+      indices[pixel] = paletteIndex;
+    }
+    return M.setEdit(animationState, targetSource.key, childOrdinal,
+      indices, intensity);
+  }
+
   function downloadFrame(animation, frame, state, weaponChildOrdinal) {
     var canvas = framePngCanvas(animation, frame, state, weaponChildOrdinal);
     return new Promise(function(resolve, reject) {
@@ -5400,6 +5764,47 @@ window.OB64 = window.OB64 || {};
       ? 'Import any PNG or JPEG, crop it to this sequence canvas, and convert it to CI8 plus I4 combat art.'
       : 'Create a separated private sequence before importing a frame.';
     headingActions.appendChild(importFrame);
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
+      var importLibraryFrame = button('Import Library Frame…', 'btn-secondary', function() {
+        OB64.spriteEditorUI.openLibraryPicker(rom, {
+          title: 'Choose Sprite Library Frame',
+          actionLabel: 'Convert to Animation Frame',
+          onStatus: function(message) { notify(options, message); }
+        }, function(sourceAsset) {
+          openFrameImportModal(sourceAsset, state, rom, separation,
+            animation, frame, ui, options, rerender);
+        });
+      });
+      importLibraryFrame.disabled = !separation;
+      importLibraryFrame.title = separation
+        ? 'Choose any Sprite Library frame and convert it to this private sequence canvas.'
+        : 'Create a separated private sequence before importing a Sprite Library frame.';
+      headingActions.appendChild(importLibraryFrame);
+      var importLibrarySprite = button('Import Library Sprite…', 'btn-secondary', function() {
+        OB64.spriteEditorUI.openLibraryPicker(rom, {
+          title: 'Choose Sprite Library Art',
+          actionLabel: 'Convert to Selected Layer',
+          onStatus: function(message) { notify(options, message); }
+        }, function(sourceAsset) {
+          try {
+            if (importLibrarySpritePixels(state.animations, source,
+                childOrdinal, sourceAsset)) {
+              changed(options);
+              notify(options, sourceAsset.name +
+                ' converted to the selected layer palette and dimensions.');
+            }
+            rerender();
+          } catch (error) {
+            notify(options, 'Sprite Library layer import blocked: ' + error.message);
+          }
+        });
+      });
+      importLibrarySprite.disabled = !source.editable;
+      importLibrarySprite.title = source.editable
+        ? 'Convert a Sprite Library frame to this sprite source, palette, and intensity channel.'
+        : 'The selected sprite source is read-only.';
+      headingActions.appendChild(importLibrarySprite);
+    }
     var copyFrame = button('Copy Frame From…', 'btn-secondary', function() {
       openSpriteCopyModal(state, rom, separation, animation, frame, layer,
         'copy-frame', ui, options, rerender);
@@ -5559,6 +5964,11 @@ window.OB64 = window.OB64 || {};
       addAnimationsToSourceIndex(state.animations.activeSourceAnimations,
         idleAnimationRows(state.animations, animation.spec.classId));
     }
+    if (isClassMotionAnimation(animation)) {
+      addAnimationsToSourceIndex(state.animations.activeSourceAnimations,
+        classMotionAnimationRows(state.animations, animation.spec.classId,
+          animation.spec.classMotionKind));
+    }
     var frame = selectedFrame(animation, ui);
     var layer = selectedLayer(frame, ui);
     if (!Number.isInteger(ui.animationPaletteIndex) || ui.animationPaletteIndex < 0 ||
@@ -5613,6 +6023,7 @@ window.OB64 = window.OB64 || {};
     childPixels: childPixels,
     weaponSourceForFrame: weaponSourceForFrame,
     framePixels: framePixels,
+    singleLayerPixels: singleLayerPixels,
     paintPixels: paintPixels,
     layerDisplayLabel: layerDisplayLabel,
     drawFrame: drawFrame,
@@ -5626,7 +6037,10 @@ window.OB64 = window.OB64 || {};
     animationLaneKey: animationLaneKey,
     animationLaneLabel: animationLaneLabel,
     isIdleAnimation: isIdleAnimation,
+    isClassMotionAnimation: isClassMotionAnimation,
+    classMotionSpec: classMotionSpec,
     idleAnimationRows: idleAnimationRows,
+    classMotionAnimationRows: classMotionAnimationRows,
     animationCopyCatalogOptions: animationCopyCatalogOptions,
     animationPreviewTimeline: animationPreviewTimeline,
     animationPreviewFrameAtMs: animationPreviewFrameAtMs,

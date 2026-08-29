@@ -1,4 +1,4 @@
-// OB64 Mod Editor - native class-card avatar and item-icon model/export codec
+// OB64 Mod Editor - native avatar, item-icon, Army-sprite, and export codec
 //
 // The editor keeps exact RGBA5551 words as its authoring model. Avatars are
 // route-scoped detached resources and may use any opaque RGB555 color. Item
@@ -777,6 +777,76 @@ window.OB64 = window.OB64 || {};
       resizeMode: mode,
       backgroundWord: backgroundWord,
       transparentSourcePixels: transparentSourcePixels
+    };
+  }
+
+  function prepareSpriteImageImport(rgba, width, height,
+      targetWidth, targetHeight, options) {
+    options = options || {};
+    if (!ArrayBuffer.isView(rgba) || rgba.length !== width * height * 4) {
+      throw new ArtError(
+        'Sprite image source did not decode to the declared RGBA dimensions');
+    }
+    if (!Number.isInteger(targetWidth) || !Number.isInteger(targetHeight) ||
+        targetWidth < 1 || targetWidth > 0xFFFF ||
+        targetHeight < 1 || targetHeight > 0xFFFF) {
+      throw new ArtError('Sprite image target dimensions are invalid');
+    }
+    var maximumColors = Number.isInteger(options.maximumColors)
+      ? options.maximumColors : 256;
+    if (maximumColors < 1 || maximumColors > 256) {
+      throw new ArtError('Sprite image color limit must be from 1 through 256');
+    }
+    var crop = imageCropRect(width, height, targetWidth, targetHeight,
+      options.panX, options.panY);
+    var mode = options.resizeMode || 'nearest';
+    var resized = resizeImageSource(
+      rgba, width, height, crop, targetWidth, targetHeight, mode);
+    var pixelCount = targetWidth * targetHeight;
+    var nativeWords = new Uint16Array(pixelCount);
+    var visible = new Uint8Array(pixelCount);
+    var sourceNativeColors = new Set();
+    for (var pixel = 0; pixel < pixelCount; pixel++) {
+      var offset = pixel * 4;
+      nativeWords[pixel] = rgba5551Word(
+        importChannel5(resized[offset]),
+        importChannel5(resized[offset + 1]),
+        importChannel5(resized[offset + 2]), true);
+      if (resized[offset + 3]) {
+        visible[pixel] = 1;
+        sourceNativeColors.add(nativeWords[pixel]);
+      }
+    }
+    var quantized = wuQuantizeWords(
+      nativeWords, maximumColors, !!options.dither, targetWidth, visible);
+    var output = new Uint8ClampedArray(pixelCount * 4);
+    var outputNonOpaquePixels = 0;
+    for (var outputPixel = 0; outputPixel < pixelCount; outputPixel++) {
+      var outputOffset = outputPixel * 4;
+      var color = rgba5551(quantized.words[outputPixel]);
+      output[outputOffset] = color[0];
+      output[outputOffset + 1] = color[1];
+      output[outputOffset + 2] = color[2];
+      output[outputOffset + 3] = resized[outputOffset + 3];
+      if (output[outputOffset + 3] !== 255) outputNonOpaquePixels++;
+    }
+    var sourceNonOpaquePixels = 0;
+    for (var sourcePixel = 0; sourcePixel < width * height; sourcePixel++) {
+      if (rgba[sourcePixel * 4 + 3] !== 255) sourceNonOpaquePixels++;
+    }
+    return {
+      rgba: output,
+      crop: crop,
+      resizeMode: mode,
+      maximumColors: maximumColors,
+      sourceNativeColorCount: sourceNativeColors.size,
+      colorCount: quantized.paletteWords.length,
+      quantized: quantized.quantized,
+      dithered: quantized.dithered,
+      sourceNonOpaquePixels: sourceNonOpaquePixels,
+      outputNonOpaquePixels: outputNonOpaquePixels,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight
     };
   }
 
@@ -1621,6 +1691,7 @@ window.OB64 = window.OB64 || {};
 
   function editCount(state) {
     return Object.keys(state.avatar.edits).length + Object.keys(state.icons.edits).length +
+      (OB64.armySprites ? OB64.armySprites.editCount(state.armySprites) : 0) +
       (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0) +
       (OB64.animationSequences
         ? OB64.animationSequences.count(state.sequenceCopies) : 0);
@@ -1665,6 +1736,13 @@ window.OB64 = window.OB64 || {};
     state.supported = true;
     state.avatarRetailColorSet = new Set(state.avatar.colorLibrary);
     state.iconRetailColorSet = new Set(state.icons.colorLibrary);
+    state.armySprites = OB64.armySprites
+      ? OB64.armySprites.initialize(rom.z64)
+      : {
+          supported: false,
+          unavailableReason: 'Army sprite component is not loaded.',
+          atlases: [], byKey: {}, models: [], byModelKey: {}, edits: {}, history: {}
+        };
     state.animations = OB64.animationArt
       ? OB64.animationArt.initialize(rom.z64)
       : {
@@ -1679,7 +1757,10 @@ window.OB64 = window.OB64 || {};
   function collectProjectPayload(rom) {
     var state = rom && rom.art;
     if (!state || !state.supported) {
-      return { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null };
+      return {
+        schemaVersion: 5, avatars: {}, icons: {}, armySprites: {},
+        animations: {}, separations: null
+      };
     }
     var avatars = {}, icons = {};
     Object.keys(state.avatar.edits).sort().forEach(function(key) {
@@ -1700,11 +1781,14 @@ window.OB64 = window.OB64 || {};
     var animations = OB64.animationArt
       ? OB64.animationArt.collectProject(state.animations)
       : {};
+    var armySprites = OB64.armySprites
+      ? OB64.armySprites.collectProject(state.armySprites)
+      : {};
     var separations = OB64.animationSequences
       ? OB64.animationSequences.collectProject(rom) : null;
     return {
-      schemaVersion: 3, avatars: avatars, icons: icons,
-      animations: animations, separations: separations
+      schemaVersion: 5, avatars: avatars, icons: icons,
+      armySprites: armySprites, animations: animations, separations: separations
     };
   }
 
@@ -1712,16 +1796,19 @@ window.OB64 = window.OB64 || {};
     var state = rom && rom.art;
     if (payload === undefined || payload === null) {
       return {
-        avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+        avatars: {}, icons: {}, armySprites: { edits: {}, count: 0 },
+        animations: { edits: {}, count: 0 },
         separations: null, count: 0
       };
     }
     if (!state || !state.supported) {
       if (payload && typeof payload === 'object' &&
           !Object.keys(payload.avatars || {}).length && !Object.keys(payload.icons || {}).length &&
+          !Object.keys(payload.armySprites || {}).length &&
           !Object.keys(payload.animations || {}).length && !payload.separations) {
         return {
-          avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+          avatars: {}, icons: {}, armySprites: { edits: {}, count: 0 },
+          animations: { edits: {}, count: 0 },
           separations: null, count: 0
         };
       }
@@ -1729,8 +1816,9 @@ window.OB64 = window.OB64 || {};
     }
     if (typeof payload !== 'object' || Array.isArray(payload) ||
         (payload.schemaVersion !== 1 && payload.schemaVersion !== 2 &&
-          payload.schemaVersion !== 3)) {
-      throw new ArtError('patches.art must use schemaVersion 1, 2, or 3');
+          payload.schemaVersion !== 3 && payload.schemaVersion !== 4 &&
+          payload.schemaVersion !== 5)) {
+      throw new ArtError('patches.art must use schemaVersion 1, 2, 3, 4, or 5');
     }
     if (payload.schemaVersion === 1 && Object.keys(payload.animations || {}).length) {
       throw new ArtError('combat-sprite records require patches.art schemaVersion 2');
@@ -1738,8 +1826,12 @@ window.OB64 = window.OB64 || {};
     if (payload.schemaVersion < 3 && payload.separations) {
       throw new ArtError('separated animation records require patches.art schemaVersion 3');
     }
+    if (payload.schemaVersion < 4 && Object.keys(payload.armySprites || {}).length) {
+      throw new ArtError('Army sprite records require patches.art schemaVersion 4');
+    }
     var prepared = {
-      avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+      avatars: {}, icons: {}, armySprites: { edits: {}, count: 0 },
+      animations: { edits: {}, count: 0 },
       separations: null, count: 0
     };
     Object.keys(payload.avatars || {}).forEach(function(key) {
@@ -1774,6 +1866,14 @@ window.OB64 = window.OB64 || {};
       if (colors.size > 255) throw new ArtError(pack.spec.label +
         ' Project records require ' + colors.size + ' opaque colors; maximum is 255');
     });
+    if (Object.keys(payload.armySprites || {}).length && !OB64.armySprites) {
+      throw new ArtError('This editor build cannot load Army sprite Project records');
+    }
+    if (OB64.armySprites) {
+      prepared.armySprites = OB64.armySprites.prepareProject(
+        state.armySprites, payload.armySprites || {}, payload.schemaVersion);
+      prepared.count += prepared.armySprites.count;
+    }
     if (Object.keys(payload.animations || {}).length && !OB64.animationArt) {
       throw new ArtError('This editor build cannot load combat-sprite Project records');
     }
@@ -1798,6 +1898,10 @@ window.OB64 = window.OB64 || {};
     Object.keys(prepared.icons).forEach(function(key) {
       if (setEditWords(state, 'icon', key, prepared.icons[key])) applied++;
     });
+    if (OB64.armySprites && prepared.armySprites) {
+      applied += OB64.armySprites.applyPrepared(
+        state.armySprites, prepared.armySprites);
+    }
     if (OB64.animationArt && prepared.animations) {
       applied += OB64.animationArt.applyPrepared(state.animations, prepared.animations);
     }
@@ -1932,7 +2036,7 @@ window.OB64 = window.OB64 || {};
       };
       if (row.end > C.ARENA_END) exportFailure('native art relocation arena',
         'capacity', hex(row.end), '<= ' + hex(C.ARENA_END),
-        'reduce detached avatars, relocated icon packs, or combat-sprite edits');
+        'reduce detached avatars, relocated icon packs, combat-sprite edits, or expanded Army atlases');
       allocations.push(row); cursor = row.end;
     });
     return allocations;
@@ -1992,15 +2096,18 @@ window.OB64 = window.OB64 || {};
     var animations = OB64.animationArt
       ? OB64.animationArt.buildResources(state.animations)
       : [];
+    var armySpriteAtlases = OB64.armySprites
+      ? OB64.armySprites.buildResources(state.armySprites)
+      : [];
     var animationSequences = OB64.animationSequences
       ? OB64.animationSequences.buildPlan(rom, cleanBase)
       : null;
     return finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
-      animations, animationSequences);
+      animations, animationSequences, armySpriteAtlases);
   }
 
   function finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
-      animations, animationSequences) {
+      animations, animationSequences, armySpriteAtlases) {
     var state = rom.art;
     var relocatedResources = avatars.map(function(row) {
       return { name: row.name, stored: row.built.stored };
@@ -2008,6 +2115,11 @@ window.OB64 = window.OB64 || {};
       .map(function(row) { return { name: row.name, stored: row.built.stored }; }))
       .concat(animations.filter(function(row) { return row.placement === 'relocated'; })
       .map(function(row) {
+        return { name: row.name, stored: row.built.stored };
+      }))
+      .concat((armySpriteAtlases || []).filter(function(row) {
+        return row.placement === 'relocated';
+      }).map(function(row) {
         return { name: row.name, stored: row.built.stored };
       }))
       .concat(animationSequences ? animationSequences.relocatedResources : []);
@@ -2044,12 +2156,18 @@ window.OB64 = window.OB64 || {};
       if (row.placement === 'relocated') row.allocation = allocationByName[row.name];
       row.edit = state.animations.edits[row.key];
     });
+    (armySpriteAtlases || []).forEach(function(row) {
+      if (row.placement === 'relocated') {
+        row.allocation = allocationByName[row.name];
+      }
+    });
     if (animationSequences) {
       OB64.animationSequences.finalizeAllocations(
         animationSequences, allocationByName);
     }
     return {
       avatars: avatars, iconPacks: iconPacks, animations: animations,
+      armySpriteAtlases: armySpriteAtlases || [],
       animationSequences: animationSequences,
       allocations: allocations,
       descriptorSlots: descriptorSlots, descriptorAllocation: descriptorAllocation,
@@ -2072,9 +2190,11 @@ window.OB64 = window.OB64 || {};
       }));
     var hasSequences = !!(OB64.animationSequences && rom.animationSequences &&
       Object.keys(rom.animationSequences.separations || {}).length);
+    var hasArmySprites = !!(OB64.armySprites && state.armySprites &&
+      OB64.armySprites.editCount(state.armySprites));
     var stageCount = (avatarKeys.length ? 1 : 0) +
       (changedPackSlugs.length ? 1 : 0) + (hasAnimationArt ? 1 : 0) +
-      (hasSequences ? 1 : 0);
+      (hasSequences ? 1 : 0) + (hasArmySprites ? 1 : 0);
     var stageIndex = 0;
     function stageProgress(detail, fraction) {
       if (!onProgress) return;
@@ -2135,6 +2255,13 @@ window.OB64 = window.OB64 || {};
     }
     if (hasAnimationArt) stageIndex++;
 
+    var armySpriteAtlases = [];
+    if (hasArmySprites) {
+      armySpriteAtlases = await OB64.armySprites.buildResourcesAsync(
+        state.armySprites, stageProgress);
+      stageIndex++;
+    }
+
     var animationSequences = null;
     if (OB64.animationSequences && hasSequences) {
       animationSequences = await OB64.animationSequences.buildPlanAsync(
@@ -2143,7 +2270,7 @@ window.OB64 = window.OB64 || {};
     if (hasSequences) stageIndex++;
     if (onProgress) onProgress('finalizing native art plan', 1);
     return finalizeExportPlan(rom, cleanBase, avatars, iconPacks,
-      animations, animationSequences);
+      animations, animationSequences, armySpriteAtlases);
   }
 
   function applyPlanToBytes(rom, plan, bytes) {
@@ -2181,6 +2308,10 @@ window.OB64 = window.OB64 || {};
     if (OB64.animationSequences && plan.animationSequences) {
       OB64.animationSequences.applyPlan(
         plan.animationSequences, bytes, ranges, log);
+    }
+    if (OB64.armySprites && plan.armySpriteAtlases.length) {
+      OB64.armySprites.applyResources(
+        plan.armySpriteAtlases, bytes, ranges, log);
     }
 
     plan.iconPacks.forEach(function(row) {
@@ -2230,6 +2361,10 @@ window.OB64 = window.OB64 || {};
       currentRanges = currentRanges.concat(
         OB64.animationSequences.currentRanges(plan.animationSequences));
     }
+    if (OB64.armySprites && plan.armySpriteAtlases.length) {
+      currentRanges = currentRanges.concat(
+        OB64.armySprites.currentRanges(plan.armySpriteAtlases));
+    }
     plan.iconPacks.forEach(function(row) {
       if (row.placement === 'in-place') {
         currentRanges.push([row.pack.spec.sizeWord,
@@ -2270,6 +2405,9 @@ window.OB64 = window.OB64 || {};
     }
     if (OB64.animationSequences && plan.animationSequences) {
       OB64.animationSequences.verifyPlan(plan.animationSequences, bytes);
+    }
+    if (OB64.armySprites && plan.armySpriteAtlases.length) {
+      OB64.armySprites.verifyResources(plan.armySpriteAtlases, bytes);
     }
     plan.iconPacks.forEach(function(row) {
       var key = row.placement === 'relocated' ? row.allocation.key : row.pack.spec.resourceKey;
@@ -2337,6 +2475,8 @@ window.OB64 = window.OB64 || {};
       ? plan.animationSequences.groups.reduce(function(total, group) {
         return total + group.separations.length;
       }, 0) : 0;
+    var editedArmySpriteCount = plan.armySpriteAtlases.reduce(
+      function(total, row) { return total + row.models.length; }, 0);
     var arenaEnd = plan.allocations.length ? plan.allocations[plan.allocations.length - 1].end : C.ARENA_START;
     return {
       crc: plan.crc,
@@ -2344,6 +2484,7 @@ window.OB64 = window.OB64 || {};
       detachedAvatarCount: plan.avatars.length,
       editedCombatSpriteCount: plan.animations.length,
       separatedAnimationSequenceCount: separatedSequenceCount,
+      editedArmySpriteCount: editedArmySpriteCount,
       inPlaceCombatSpriteCount: inPlaceCombatSpriteCount,
       relocatedCombatSpriteCount: relocatedCombatSpriteCount,
       editedIconCounts: iconCounts,
@@ -2358,6 +2499,8 @@ window.OB64 = window.OB64 || {};
           (plan.animations.length === 1 ? '' : 's') +
         ' (' + inPlaceCombatSpriteCount + ' in place, ' +
           relocatedCombatSpriteCount + ' relocated)' +
+        ', ' + editedArmySpriteCount + ' Army formation sprite' +
+          (editedArmySpriteCount === 1 ? '' : 's') +
         ', ' + separatedSequenceCount + ' separated animation sequence' +
           (separatedSequenceCount === 1 ? '' : 's') +
         ', ' + relocatedCount + ' relocated resource' + (relocatedCount === 1 ? '' : 's') +
@@ -2414,6 +2557,7 @@ window.OB64 = window.OB64 || {};
     if (!state || !state.supported || (!editCount(state) && !blockedCount(state))) return false;
     state.bulkUndo = collectStateEdits(state, rom);
     state.avatar.edits = {}; state.icons.edits = {};
+    if (OB64.armySprites) OB64.armySprites.resetAll(state.armySprites);
     if (OB64.animationSequences && rom) OB64.animationSequences.resetAll(rom);
     if (OB64.animationArt) OB64.animationArt.resetAll(state.animations);
     state.blocked = { avatars: {}, icons: {}, animations: {} };
@@ -2421,13 +2565,18 @@ window.OB64 = window.OB64 || {};
   }
 
   function collectStateEdits(state, rom) {
-    var snapshot = { avatars: {}, icons: {}, animations: {}, separations: null };
+    var snapshot = {
+      avatars: {}, icons: {}, armySprites: {}, animations: {}, separations: null
+    };
     Object.keys(state.avatar.edits).forEach(function(key) {
       snapshot.avatars[key] = state.avatar.edits[key].words.slice();
     });
     Object.keys(state.icons.edits).forEach(function(key) {
       snapshot.icons[key] = state.icons.edits[key].words.slice();
     });
+    if (OB64.armySprites) {
+      snapshot.armySprites = OB64.armySprites.snapshotEdits(state.armySprites);
+    }
     if (OB64.animationArt) {
       snapshot.animations = OB64.animationArt.snapshotEdits(state.animations);
     }
@@ -2446,6 +2595,10 @@ window.OB64 = window.OB64 || {};
     Object.keys(snapshot.icons).forEach(function(key) {
       state.icons.edits[key] = { words: snapshot.icons[key].slice() };
     });
+    if (OB64.armySprites) {
+      OB64.armySprites.restoreEdits(
+        state.armySprites, snapshot.armySprites || {});
+    }
     if (OB64.animationArt) {
       OB64.animationArt.restoreEdits(state.animations, snapshot.animations || {});
     }
@@ -2472,6 +2625,7 @@ window.OB64 = window.OB64 || {};
     wuQuantizeWords: wuQuantizeWords,
     wuQuantizeAvatarWords: wuQuantizeAvatarWords,
     prepareAvatarImport: prepareAvatarImport,
+    prepareSpriteImageImport: prepareSpriteImageImport,
     prepareAnimationFrameImport: prepareAnimationFrameImport,
     colorCss: colorCss,
     hex: hex,
@@ -2510,6 +2664,7 @@ window.OB64 = window.OB64 || {};
     writeU16: writeU16,
     writeU32: writeU32,
     resolveSplitKey: resolveSplitKey,
+    patchSplitKey: patchSplitKey,
     mergeRanges: mergeRanges
   };
 })();

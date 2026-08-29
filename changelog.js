@@ -888,7 +888,7 @@ window.OB64 = window.OB64 || {};
       descriptions: true,
       statGates: true, neutral_global_rate: true, tools: true,
       squadOverrides: true, scenario: true, cutscenes: true, consumableEffects: true,
-      combatAnimationOverrides: true, art: true
+      combatAnimationOverrides: true, art: true, spriteLibrary: true
     };
     Object.keys(patches).sort().forEach(function(key) {
       if (handled[key] || isEmptyValue(patches[key])) return;
@@ -930,6 +930,32 @@ window.OB64 = window.OB64 || {};
       });
     });
     addSection(sections, 'Item Icons', iconEntries);
+
+    var armyEntries = [];
+    numericKeys(payload.armySprites).forEach(function(key) {
+      var entry = payload.armySprites[key] || {};
+      var model = rom.art && rom.art.armySprites &&
+        rom.art.armySprites.byModelKey[key];
+      var atlas = model && rom.art.armySprites.byKey[model.atlasKey];
+      armyEntries.push({
+        title: atlas
+          ? atlas.label + ' · Model ' + hex(model.modelId, 2)
+          : (entry.atlas || 'Army sprite') + ' · Model ' +
+            hex(Number(entry.modelId || 0), 2),
+        lines: entry.retailPlane === false
+          ? [
+              'Added one custom ' + entry.width + 'x' + entry.height +
+                ' player-side CI8 formation plane.',
+              'Export expands and relocates the complete player atlas.'
+            ]
+          : [
+              'Edited one existing ' + entry.width + 'x' + entry.height +
+                ' CI8 formation plane.',
+              'Export preserves both fixed palettes and rebuilds the complete atlas in place.'
+            ]
+      });
+    });
+    addSection(sections, 'Army Sprites', armyEntries);
 
     var animationEntries = [];
     var animationGroups = {};
@@ -1024,6 +1050,27 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Combat Sprite Art', animationEntries);
   }
 
+  function buildSpriteLibrarySection(patches, sections) {
+    var payload = patches.spriteLibrary;
+    if (!payload || !Array.isArray(payload.assets)) return;
+    var entries = payload.assets.map(function(asset) {
+      var frames = Array.isArray(asset.frames) ? asset.frames : [];
+      var layerCount = frames.reduce(function(total, frame) {
+        return total + (Array.isArray(frame.layers) ? frame.layers.length : 0);
+      }, 0);
+      return {
+        title: asset.name || asset.id || 'Sprite asset',
+        lines: [
+          'Stored as a reusable ' + (asset.kind || 'sprite') + ' Project asset.',
+          'Canvas: ' + asset.width + '×' + asset.height + ' pixels.',
+          'Frames: ' + frames.length + '; layers: ' + layerCount + '.',
+          'ROM bytes change only after Art and Animation imports this asset.'
+        ]
+      };
+    });
+    addSection(sections, 'Sprite Library', entries);
+  }
+
   function buildCombatAnimationOverrideSection(rom, patches, sections) {
     var payload = patches.combatAnimationOverrides;
     if (!payload || !Array.isArray(payload.entries) || !OB64.combatAnimationOverrides) return;
@@ -1081,6 +1128,7 @@ window.OB64 = window.OB64 || {};
     buildCutsceneSection(patches, sections);
     buildCombatAnimationOverrideSection(rom, patches, sections);
     buildArtSection(rom, patches, sections);
+    buildSpriteLibrarySection(patches, sections);
     addUnknownSections(patches, sections);
 
     options = options || {};

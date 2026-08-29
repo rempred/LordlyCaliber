@@ -158,10 +158,14 @@ assert(animationSource.includes("element('span', 'animation-weapon-item-name'"))
 assert(animationSource.includes("element('small', 'animation-weapon-fallback'"));
 assert(animationSource.includes('searchableClassSelector(classes'));
 assert(animationSource.includes("selector('Action', actions"));
+assert(animationSource.includes("actionName: 'Walk / Run · Advance'"));
+assert(animationSource.includes("actionName: 'Walk / Run · Return'"));
 assert(animationSource.includes("selector('Art Variant', artRoutes"));
 assert(animationSource.includes("selector('Mode', modes"));
 assert(animationSource.includes('sequenceDropdown('));
 assert(animationSource.includes('function animationSequenceCatalogRows('));
+assert(animationSource.includes('function classMotionAnimationRows('));
+assert(animationSource.includes('classMotionKind: isClassMotionAnimation('));
 assert(animationSource.includes('function animationCopyCatalogOptions('));
 assert(animationSource.includes('return replacing ? null : { includeIdle: true };'));
 assert(!animationSource.includes('function completeClassVariantRows('));
@@ -184,8 +188,9 @@ assert(animationSource.includes('openCopyFromModal('));
 assert(animationSource.includes("var sequenceSelect = selectField('Sequence')"));
 assert(animationSource.includes('animationClassVariantChoices(rowsForClass())'));
 assert(animationSource.includes('animationSequenceCatalogRows(\n        state.animations'));
-assert(animationSource.includes(
-  'copyFrom.disabled = !targetAnimation ||\n      (!idleTarget && !separation && !pair) ||'));
+assert(animationSource.includes('if (!motionTarget) {'));
+assert(animationSource.includes('copyFrom.disabled = !targetAnimation ||'));
+assert(animationSource.includes('(!idleTarget && !separation && !pair) ||'));
 assert(animationSource.includes(
   "? 'Create a private copy of this idle loop for the selected class and art route.'"));
 assert(animationSource.includes('OB64.animationSequences.copyFrom('));

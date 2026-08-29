@@ -770,20 +770,20 @@ window.OB64 = window.OB64 || {};
     var copy = element('div');
     copy.appendChild(element('h2', '', 'Art and Animation'));
     copy.appendChild(element('p', '',
-      'Edit class-card avatars, item icons, and the complete verified combat-sprite sequence corpus.'));
+      'Edit class-card avatars, item icons, Army sprites, and the complete verified combat-sprite sequence corpus.'));
     header.appendChild(copy);
     var actions = element('div', 'art-heading-actions');
     var reset = button('Reset All Art', 'btn-secondary', function() {
       function execute() {
         if (!A.resetAll(state, rom)) return;
-        changed(options); notify(options, 'All avatar, icon, and combat-sprite edits reset to the vanilla ROM. Use Undo Reset All to restore them this session.');
+        changed(options); notify(options, 'All avatar, item icon, Army sprite, and combat sprite edits reset to the vanilla ROM. Use Undo Reset All to restore them this session.');
         rerender();
       }
       if (OB64.showConfirmModal) {
         OB64.showConfirmModal('Reset all art?',
-          'This removes every avatar, item-icon, and combat-sprite Project record. The reset remains undoable during this editor session.',
+          'This removes every avatar, item icon, Army sprite, and combat sprite Project record. The reset remains undoable during this editor session.',
           execute, 'Reset All Art');
-      } else if (window.confirm('Reset every avatar, item-icon, and combat-sprite edit?')) execute();
+      } else if (window.confirm('Reset every avatar, item icon, Army sprite, and combat sprite edit?')) execute();
     });
     reset.disabled = A.editCount(state) === 0 && A.blockedCount(state) === 0;
     actions.appendChild(reset);
@@ -797,7 +797,7 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(header);
 
     var tabs = element('div', 'art-subtabs');
-    [['avatars', 'Avatars'], ['icons', 'Item Icons'],
+    [['avatars', 'Avatars'], ['icons', 'Item Icons'], ['army', 'Army Sprites'],
       ['animations', 'Combat Animation']].forEach(function(row) {
       var tab = button(row[1], ui.subtab === row[0] ? 'active' : '', function() {
         ui.subtab = row[0]; state.selectedTab = row[0]; ui.selection = null; rerender();
@@ -806,7 +806,11 @@ window.OB64 = window.OB64 || {};
         ? Object.keys(state.avatar.edits).length
         : (row[0] === 'icons'
           ? Object.keys(state.icons.edits).length
-          : (OB64.animationArt ? OB64.animationArt.editCount(state.animations) : 0));
+          : (row[0] === 'army'
+            ? (OB64.armySprites
+              ? OB64.armySprites.editCount(state.armySprites) : 0)
+            : (OB64.animationArt
+              ? OB64.animationArt.editCount(state.animations) : 0)));
       if (count) tab.appendChild(makeBadge(String(count), 'count'));
       tabs.appendChild(tab);
     });
@@ -1115,7 +1119,7 @@ window.OB64 = window.OB64 || {};
     return wrap;
   }
 
-  function avatarEditor(state, ui, options, rerender) {
+  function avatarEditor(state, rom, ui, options, rerender) {
     var appearance = state.avatar.byKey[ui.avatarKey] || state.avatar.appearances[0];
     ui.avatarKey = appearance.key;
     var current = A.currentWords(state, 'avatar', appearance.key), edited = !!state.avatar.edits[appearance.key];
@@ -1180,6 +1184,17 @@ window.OB64 = window.OB64 || {};
     actions.appendChild(button('Import & Convert Image', 'btn-secondary', function() {
       importInput.click();
     }));
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
+      actions.appendChild(button('Import from Sprite Library…', 'btn-secondary', function() {
+        OB64.spriteEditorUI.openLibraryPicker(rom, {
+          title: 'Choose Avatar Source',
+          actionLabel: 'Convert to Avatar',
+          onStatus: function(message) { notify(options, message); }
+        }, function(source) {
+          showAvatarImportDialog(source, appearance, state, options, rerender);
+        });
+      }));
+    }
     actions.appendChild(button('Export Avatar PNG', 'btn-secondary', function() {
       nativePngDownload(current, 40, 48,
         'class-' + appearance.classId.toString(16).padStart(2, '0') + '-' + appearance.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png');
@@ -1196,7 +1211,7 @@ window.OB64 = window.OB64 || {};
     return colors.size;
   }
 
-  function iconEditor(state, ui, options, rerender) {
+  function iconEditor(state, rom, ui, options, rerender) {
     var icon = state.icons.byKey[ui.iconKey];
     if (!icon || icon.pack !== ui.iconPack) icon = state.icons.packs[ui.iconPack].icons[0];
     ui.iconKey = icon.key;
@@ -1249,6 +1264,40 @@ window.OB64 = window.OB64 || {};
       A.refreshIconPackBlocked(state, icon.pack);
       changed(options); notify(options, icon.name + ' restored to the vanilla ROM; its complete pack will be recalculated.'); rerender();
     }); reset.disabled = !edited && !blockedReason; actions.appendChild(reset);
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
+      actions.appendChild(button('Import from Sprite Library…', 'btn-secondary', function() {
+        OB64.spriteEditorUI.openLibraryPicker(rom, {
+          title: 'Choose Item Icon Source',
+          actionLabel: 'Convert to Item Icon',
+          onStatus: function(message) { notify(options, message); }
+        }, function(source) {
+          try {
+            var rgba = OB64.spriteLibrary.nearestResize(source.rgba,
+              source.width, source.height, 16, 16);
+            var words = new Uint16Array(256);
+            for (var pixel = 0; pixel < 256; pixel++) {
+              var offset = pixel * 4;
+              if (rgba[offset + 3] < 128) {
+                words[pixel] = pack.transparentWord;
+              } else {
+                var word = A.rgba5551Word(
+                  Math.round(rgba[offset] * 31 / 255),
+                  Math.round(rgba[offset + 1] * 31 / 255),
+                  Math.round(rgba[offset + 2] * 31 / 255), true);
+                words[pixel] = nearestPaletteWord(pack, word);
+              }
+            }
+            if (A.setEditWords(state, 'icon', icon.key, words)) {
+              changed(options);
+              notify(options, source.name + ' converted to the current item-icon palette.');
+            }
+            rerender();
+          } catch (error) {
+            notify(options, 'Sprite Library icon import blocked: ' + error.message);
+          }
+        });
+      }));
+    }
     actions.appendChild(button('Export Icon PNG', 'btn-secondary', function() {
       nativePngDownload(current, 16, 16,
         icon.pack + '-' + String(icon.itemId).padStart(3, '0') + '-' + icon.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png');
@@ -1286,10 +1335,22 @@ window.OB64 = window.OB64 || {};
     var shell = element('div', 'art-shell');
     if (ui.subtab === 'avatars') {
       shell.appendChild(avatarBrowser(state, ui, rerender));
-      shell.appendChild(avatarEditor(state, ui, options, rerender));
+      shell.appendChild(avatarEditor(state, rom, ui, options, rerender));
     } else if (ui.subtab === 'icons') {
       shell.appendChild(iconBrowser(state, ui, rerender));
-      shell.appendChild(iconEditor(state, ui, options, rerender));
+      shell.appendChild(iconEditor(state, rom, ui, options, rerender));
+    } else if (ui.subtab === 'army') {
+      if (OB64.armySpriteUI) {
+        var armyParts = OB64.armySpriteUI.render(
+          state, ui, options, rerender, rom);
+        if (armyParts.browser) shell.appendChild(armyParts.browser);
+        shell.appendChild(armyParts.editor);
+        if (!armyParts.browser) shell.classList.add('art-single-panel-shell');
+      } else {
+        shell.classList.add('art-single-panel-shell');
+        shell.appendChild(element('div', 'art-unavailable',
+          'Army sprite component is not loaded.'));
+      }
     } else if (OB64.animationUI) {
       shell.classList.add('art-animation-shell');
       shell.appendChild(OB64.animationUI.render(state, ui, options, rerender, rom));

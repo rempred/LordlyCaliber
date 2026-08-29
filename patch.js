@@ -54,12 +54,18 @@
 // v30 replaces custom neutral squads' opaque 1-9 formation records with the
 // game-native typed 0-8 model. It also carries cohort equipment, three optional
 // player-leader class persuasion bonuses, and a three-choice weighted reward.
+// v31 carries reusable Sprite Editor assets. These Project records do not alter
+// ROM bytes until Art and Animation imports them into a supported native target.
+// v32 carries edits to existing Army sprite CI8 planes in the six verified
+// native resources.
+// v33 carries custom player-side Army sprite planes for routed model IDs that
+// are missing from the retail player atlases.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 30;
+  var PATCH_VERSION = 33;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -286,18 +292,26 @@ window.OB64 = window.OB64 || {};
       : 0;
     var artOut = OB64.art
       ? OB64.art.collectProjectPayload(rom)
-      : { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null };
+      : {
+          schemaVersion: 5, avatars: {}, icons: {}, armySprites: {},
+          animations: {}, separations: null
+        };
     var avatarArtChanges = Object.keys(artOut.avatars || {}).length;
     var iconArtChanges = Object.keys(artOut.icons || {}).length;
     var combatSpriteArtChanges = Object.keys(artOut.animations || {}).length;
+    var armySpriteArtChanges = Object.keys(artOut.armySprites || {}).length;
     var separatedAnimationChanges = artOut.separations && artOut.separations.entries
       ? Object.keys(artOut.separations.entries).length : 0;
+    var spriteLibraryOut = OB64.spriteLibrary
+      ? OB64.spriteLibrary.collectProjectPayload(rom)
+      : { schemaVersion: 1, assets: [] };
+    var spriteLibraryChanges = spriteLibraryOut.assets.length;
 
     return {
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-        editor_version: '2026-08-26',
+        editor_version: '2026-08-29',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -330,7 +344,9 @@ window.OB64 = window.OB64 || {};
         avatar_art_modified: avatarArtChanges,
         item_icon_art_modified: iconArtChanges,
         combat_sprite_art_modified: combatSpriteArtChanges,
+        army_sprite_art_modified: armySpriteArtChanges,
         separated_animation_sequences_modified: separatedAnimationChanges,
+        sprite_library_assets: spriteLibraryChanges,
       },
       patches: {
         shops:        shopsOut,
@@ -349,7 +365,8 @@ window.OB64 = window.OB64 || {};
         cutscenes:    cutscenesOut,
         consumableEffects: consumableEffectsOut,
         combatAnimationOverrides: combatAnimationOverridesOut,
-        art: artOut
+        art: artOut,
+        spriteLibrary: spriteLibraryOut
       },
     };
   }
@@ -457,18 +474,27 @@ window.OB64 = window.OB64 || {};
       }
     }
     var preparedArt = {
-      avatars: {}, icons: {}, animations: { edits: {}, count: 0 },
+      avatars: {}, icons: {}, armySprites: { edits: {}, count: 0 },
+      animations: { edits: {}, count: 0 },
       separations: null, count: 0
     };
     var artPayload = Object.prototype.hasOwnProperty.call(p, 'art') ? p.art : undefined;
     var hasArtRecords = artPayload && typeof artPayload === 'object' &&
       (Object.keys(artPayload.avatars || {}).length ||
        Object.keys(artPayload.icons || {}).length ||
+       Object.keys(artPayload.armySprites || {}).length ||
        Object.keys(artPayload.animations || {}).length ||
        (artPayload.separations && artPayload.separations.entries &&
         Object.keys(artPayload.separations.entries).length));
     var hasCombatSpriteRecords = artPayload && typeof artPayload === 'object' &&
       Object.keys(artPayload.animations || {}).length;
+    var hasArmySpriteRecords = artPayload && typeof artPayload === 'object' &&
+      Object.keys(artPayload.armySprites || {}).length;
+    var hasCustomArmySpriteRecords = hasArmySpriteRecords &&
+      Object.keys(artPayload.armySprites || {}).some(function(key) {
+        return artPayload.armySprites[key] &&
+          artPayload.armySprites[key].retailPlane === false;
+      });
     var hasSeparatedAnimationRecords = artPayload && typeof artPayload === 'object' &&
       artPayload.separations && artPayload.separations.entries &&
       Object.keys(artPayload.separations.entries).length;
@@ -480,6 +506,16 @@ window.OB64 = window.OB64 || {};
     if (hasCombatSpriteRecords && patch.version < 19) {
       throw new PatchFormatError(
         'Combat sprite Project data requires Project schema version 19 or newer.'
+      );
+    }
+    if (hasArmySpriteRecords && patch.version < 32) {
+      throw new PatchFormatError(
+        'Army sprite Project data requires Project schema version 32 or newer.'
+      );
+    }
+    if (hasCustomArmySpriteRecords && patch.version < 33) {
+      throw new PatchFormatError(
+        'Custom missing Army sprite data requires Project schema version 33 or newer.'
       );
     }
     if (hasSeparatedAnimationRecords && patch.version < 21) {
@@ -515,10 +551,32 @@ window.OB64 = window.OB64 || {};
       }
     } else if (p.art && (Object.keys(p.art.avatars || {}).length ||
         Object.keys(p.art.icons || {}).length ||
+        Object.keys(p.art.armySprites || {}).length ||
         Object.keys(p.art.animations || {}).length ||
         (p.art.separations && p.art.separations.entries &&
           Object.keys(p.art.separations.entries).length))) {
       throw new PatchFormatError('This editor build cannot load Art and Animation Project records.');
+    }
+    var spriteLibraryPayload = Object.prototype.hasOwnProperty.call(p, 'spriteLibrary')
+      ? p.spriteLibrary : undefined;
+    var hasSpriteLibraryRecords = spriteLibraryPayload &&
+      Array.isArray(spriteLibraryPayload.assets) && spriteLibraryPayload.assets.length;
+    if (hasSpriteLibraryRecords && patch.version < 31) {
+      throw new PatchFormatError(
+        'Sprite Editor Project data requires Project schema version 31 or newer.');
+    }
+    var preparedSpriteLibrary = { assets: [], count: 0 };
+    if (OB64.spriteLibrary) {
+      try {
+        preparedSpriteLibrary = OB64.spriteLibrary.prepareProjectPayload(
+          spriteLibraryPayload);
+      } catch (spriteLibraryError) {
+        throw new PatchFormatError('Sprite Editor Project data is invalid: ' +
+          spriteLibraryError.message);
+      }
+    } else if (hasSpriteLibraryRecords) {
+      throw new PatchFormatError(
+        'This editor build cannot load Sprite Editor Project records.');
     }
 
     var warnings = [];
@@ -559,6 +617,7 @@ window.OB64 = window.OB64 || {};
     var consumableEffectsApplied = 0;
     var combatAnimationOverridesApplied = 0;
     var artApplied = 0;
+    var spriteLibraryApplied = 0;
 
     // Shops.
     var shopsPatch = p.shops || {};
@@ -844,6 +903,10 @@ window.OB64 = window.OB64 || {};
       artApplied = OB64.art.applyPreparedProjectPayload(rom, preparedArt);
       dirtyFlags.art = OB64.art.hasPendingExport(rom.art);
     }
+    if (preparedSpriteLibrary.count) {
+      spriteLibraryApplied = OB64.spriteLibrary.applyPreparedProjectPayload(
+        rom, preparedSpriteLibrary);
+    }
 
     return {
       applied: {
@@ -871,7 +934,8 @@ window.OB64 = window.OB64 || {};
         cutscenes: cutscenesApplied,
         consumableEffects: consumableEffectsApplied,
         combatAnimationOverrides: combatAnimationOverridesApplied,
-        art: artApplied
+        art: artApplied,
+        spriteLibrary: spriteLibraryApplied
       },
       warnings: warnings,
     };
@@ -947,7 +1011,9 @@ window.OB64 = window.OB64 || {};
       avatar_art_modified: 0,
       item_icon_art_modified: 0,
       combat_sprite_art_modified: 0,
+      army_sprite_art_modified: 0,
       separated_animation_sequences_modified: 0,
+      sprite_library_assets: 0,
     };
   }
 
@@ -972,7 +1038,11 @@ window.OB64 = window.OB64 || {};
       cutscenes: null,
       consumableEffects: {},
       combatAnimationOverrides: null,
-      art: { schemaVersion: 3, avatars: {}, icons: {}, animations: {}, separations: null }
+      art: {
+        schemaVersion: 5, avatars: {}, icons: {}, armySprites: {},
+        animations: {}, separations: null
+      },
+      spriteLibrary: { schemaVersion: 1, assets: [] }
     };
   }
 

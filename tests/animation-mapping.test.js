@@ -150,7 +150,9 @@ function changedPixels(source, childOrdinal) {
   const fighterActions = OB64.animationUI.animationActionChoices(
     state.specs.filter(animation => animation.spec.classId === 0x02),
     fighterIdleBase);
-  assert.strictEqual(fighterActions[0].spec.actionId, -1);
+  assert.deepStrictEqual(fighterActions.slice(0, 3).map(animation =>
+    animation.spec.actionId), [-1, -2, -3],
+  'Idle, movement advance, and movement return must lead the Action menu');
   assert.strictEqual(fighterActions[0].spec.actionName, 'Idle / Rest');
   assert(!state.specs.some(OB64.animationUI.isIdleAnimation),
     'on-demand idle loops must not expand the normal startup corpus');
@@ -739,6 +741,65 @@ function changedPixels(source, childOrdinal) {
   assert.strictEqual(new Set(Object.values(state.artByKey).map(source =>
     source.physicalSourceId)).size, 4781,
   'all accepted and directly discovered class-art sources must load once');
+
+  const giantMovementRows = OB64.animationUI.classMotionAnimationRows(
+    state, 0x4D);
+  assert.strictEqual(giantMovementRows.length, 6,
+    'Giant must expose both fixed movement selectors on each drawable art route');
+  assert.strictEqual(OB64.animationUI.classMotionAnimationRows(state, 0x4D),
+    giantMovementRows,
+  'fixed movement selectors must be resolved once and cached by class');
+  assert.deepStrictEqual(giantMovementRows.map(animation =>
+    animation.spec.actionId), [-2, -2, -2, -3, -3, -3]);
+  assert.deepStrictEqual(giantMovementRows.map(animation =>
+    animation.spec.selector), [0x05, 0x05, 0x05, 0x0B, 0x0B, 0x0B]);
+  assert.deepStrictEqual(giantMovementRows.map(animation =>
+    OB64.animationUI.selectorFlags(animation)),
+  ['0/0', '1/0', '1/1', '0/0', '1/0', '1/1']);
+  assert(giantMovementRows.slice(0, 3).every(animation =>
+    OB64.animationUI.isClassMotionAnimation(animation) &&
+    OB64.animationUI.animationLaneKey(animation) === 'advance' &&
+    OB64.animationUI.animationLaneLabel(animation) ===
+      'Walk / Run · Advance'));
+  assert(giantMovementRows.slice(3).every(animation =>
+    OB64.animationUI.isClassMotionAnimation(animation) &&
+    OB64.animationUI.animationLaneKey(animation) === 'return' &&
+    OB64.animationUI.animationLaneLabel(animation) ===
+      'Walk / Run · Return'));
+  assert.deepStrictEqual(state.classMotionSequenceFailures[0x4D].map(failure =>
+    [failure.kind, failure.selector, failure.flags]), [
+      ['advance', 0x05, '0/1'],
+      ['return', 0x0B, '0/1'],
+    ], 'Giant must retain its unreadable player-side alternate route as an issue');
+  const giantAdvanceBase = giantMovementRows.find(animation =>
+    animation.spec.classMotionKind === 'advance' &&
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  const giantReturnBase = giantMovementRows.find(animation =>
+    animation.spec.classMotionKind === 'return' &&
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  assert.deepStrictEqual(giantAdvanceBase.frames.map(frame =>
+    [frame.token, frame.ticks]), giantReturnBase.frames.map(frame =>
+    [frame.token, frame.ticks]),
+  'Giant advance and return selectors must expose their shared eight-frame program');
+  const giantAdvanceCatalog = OB64.animationUI.animationSequenceCatalogRows(
+    state, null, 0x4D, 0, {
+      classMotionKind: 'advance', flags: '0/0'
+    });
+  assert.deepStrictEqual(giantAdvanceCatalog, [giantAdvanceBase],
+    'movement selection must show only its fixed selector and art route');
+  const giantAdvanceChoices = OB64.animationUI.animationClassVariantChoices(
+    giantAdvanceCatalog);
+  assert.strictEqual(giantAdvanceChoices.length, 1);
+  assert(giantAdvanceChoices[0].label.includes('Walk / Run · Advance'));
+  assert(giantAdvanceChoices[0].optionTitle.includes(
+    'Fixed class movement selector 0x05'));
+  const giantActions = OB64.animationUI.animationActionChoices(
+    [], giantAdvanceBase);
+  assert.deepStrictEqual(giantActions.map(animation =>
+    animation.spec.actionId), [-1, -2, -3],
+  'a class without combat attacks must still expose idle and movement art');
+  assert(!state.specs.some(OB64.animationUI.isClassMotionAnimation),
+    'on-demand movement routes must not expand the startup combat corpus');
 
   console.log('PASS combat mapping, live Class Combat routes, and selector previews');
 })().catch(error => {

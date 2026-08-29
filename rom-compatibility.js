@@ -13,6 +13,7 @@ window.OB64 = window.OB64 || {};
     classes: ['classes', 'class-support', 'items', 'actions', 'stat-gates'],
     items: ['items'],
     art: ['native-art'],
+    sprites: ['native-art', 'sprite-library'],
     cutscenes: ['cutscene-studio'],
     encounters: ['encounters', 'creature-drops'],
     tools: ['tools-patches'],
@@ -279,23 +280,43 @@ window.OB64 = window.OB64 || {};
   function assessArt(rom, report) {
     var state = rom.art;
     if (state && state.supported) {
+      var armyReady = !!(state.armySprites && state.armySprites.supported);
+      var combatReady = !!(state.animations && state.animations.supported);
+      var unavailable = [];
+      if (!combatReady) unavailable.push(state.animations &&
+        state.animations.unavailableReason ||
+        'Combat sprite initialization did not complete.');
+      if (!armyReady) unavailable.push(state.armySprites &&
+        state.armySprites.unavailableReason ||
+        'Army sprite initialization did not complete.');
       setComponent(report, {
-        id: 'native-art', label: 'Avatars and item icons', status: 'readable',
-        reason: state.exactRetail
-          ? 'Native avatar and icon resources match the verified retail structures.'
-          : 'Native avatar and icon resources pass their structural, pointer, palette, and decoded-size checks on this modified ROM.',
+        id: 'native-art',
+        label: 'Avatars, item icons, combat sprites, and Army sprites',
+        status: combatReady && armyReady ? 'readable' : 'warning',
+        reason: unavailable.length
+          ? unavailable.join(' ')
+          : (state.exactRetail
+            ? 'Native avatar, icon, combat sprite, and Army sprite resources match the verified retail structures.'
+            : 'Native avatar, icon, combat sprite, and Army sprite resources pass their structural checks on this modified ROM.'),
         details: {
           exactRetail: !!state.exactRetail,
           avatarAppearances: state.avatar && state.avatar.appearances.length,
-          icons: state.icons && state.icons.icons.length
+          icons: state.icons && state.icons.icons.length,
+          combatSpriteSequences: state.animations && state.animations.specs.length,
+          armySpriteAtlases: state.armySprites && state.armySprites.atlases.length,
+          armySpritePlanes: state.armySprites && state.armySprites.sourceModels.length,
+          armySpriteRoutedPlanes: state.armySprites && state.armySprites.models.length,
+          armySpriteClassRoutes: state.armySprites && state.armySprites.classRoutes.length
         },
-        affectsTabs: ['art']
+        affectsTabs: ['art', 'sprites']
       });
     } else {
       setComponent(report, {
-        id: 'native-art', label: 'Avatars and item icons', status: 'blocked',
+        id: 'native-art',
+        label: 'Avatars, item icons, combat sprites, and Army sprites',
+        status: 'blocked',
         reason: state && state.unavailableReason || 'Native art initialization did not complete.',
-        affectsTabs: ['art']
+        affectsTabs: ['art', 'sprites']
       });
     }
   }
@@ -450,7 +471,9 @@ window.OB64 = window.OB64 || {};
       failureStatus: 'conflict', requiredForExport: true
     }, function() { assessChecksum(rom, report); });
     runAssessment(report, {
-      id: 'native-art', label: 'Avatars and item icons', affectsTabs: ['art']
+      id: 'native-art',
+      label: 'Avatars, item icons, combat sprites, and Army sprites',
+      affectsTabs: ['art', 'sprites']
     }, function() { assessArt(rom, report); });
     runAssessment(report, {
       id: 'consumable-effects', label: 'Consumable effect code and text',

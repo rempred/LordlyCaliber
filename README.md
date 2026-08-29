@@ -32,7 +32,8 @@ the byte order of the loaded ROM.
 | Items | Stats, prices, resistances, level-up bonuses, and descriptions |
 | Encounters | Retail creature pools, global and per-scenario rates, custom neutral squads, persuasion, retreat behavior, rewards, equipment, and encounter-card text |
 | Scenario | Enemy squads, formations, levels, equipment, placements, routes, triggers, treasure, towns, and added squads |
-| Art and Animation | Class-card avatars, item icons, combat sprites, frame layers, and separated combat sequences |
+| Art and Animation | Class-card avatars, item icons, Army sprites, combat sprites, frame layers, and separated combat sequences |
+| Sprite Editor | Reusable sprites, frames, sequences, layers, pixel tools, native art imports, PNG, JPEG, asset files, and transparent exports |
 | Cutscene Studio | Native scene inspection and evidence-backed previews |
 | Tools | Chaos Frame, Character Card Luck, Squad Menu Alignment, and High Attack Streamsplit patches |
 | Save Game Editor | Characters, classes, stats, equipment, inventory, Goth, and Chaos Frame |
@@ -128,6 +129,28 @@ core and core version when reusing savestates.
 A LordlyCaliber Project is a JSON description of edits. It does not contain the
 source ROM. Load the same supported ROM before applying a Project.
 
+The Sprite Library is part of the Project. A Sprite Library asset does not
+change the ROM. Import a compatible asset into Art and Animation before ROM export.
+
+New blank assets use known target dimensions. Combat frame targets use the
+canvas dimensions from the loaded ROM.
+
+A Sprite Editor layer can import a PNG or JPEG image. The preparation dialog
+crops, resizes, quantizes, and optionally dithers the image before replacing the layer.
+
+Class avatar templates allow at most 80 opaque colors. Item icon templates allow
+at most 255 opaque colors.
+
+The Art and Animation import maps item colors to the selected icon pack's shared palette.
+
+The Army Sprites tab shows every class route and all six player and enemy formation atlases.
+Existing planes keep both fixed palettes.
+Existing plane edits rebuild inside the verified compressed envelope.
+Missing player planes can use a blank sprite, an imported image, or a converted enemy sprite.
+These custom planes expand and relocate the player atlas.
+Export verifies resource owners and compressed data.
+Users must verify an expanded atlas in the game.
+
 Exports use an isolated copy of the loaded ROM. Before download, the editor:
 
 - validates guarded source bytes and feature ownership;
@@ -167,7 +190,8 @@ Key source areas:
 - `patch.js` and `changelog.js` — Project persistence and change reports
 - `scenario.js` and `scenario-eset-codec.js` — mission editing
 - `runtimeblob.js`, `squadblob.js`, and `tools.js` — runtime patches
-- `art.js`, `art-ui.js`, `animation-art.js`, and `animation-ui.js` — art and animation
+- `art.js`, `art-ui.js`, `army-sprites.js`, `army-sprite-ui.js`, `animation-art.js`, and `animation-ui.js` — art and animation
+- `sprite-library.js` and `sprite-editor-ui.js` — reusable sprite assets and pixel editing
 - `cutscene-codec.js`, `cutscene-runtime.js`, and `cutscene-renderer.js` — Cutscene Studio
 - `tests/` — focused static and serialization regressions
 

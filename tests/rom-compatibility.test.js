@@ -32,6 +32,7 @@ for (const filename of [
   'parsers.js',
   'repack.js',
   'art.js',
+  'army-sprites.js',
   'animation-corpus-data.js',
   'animation-art.js',
   'description-codec.js',
@@ -74,7 +75,8 @@ function component(report, id) {
 async function initializeReadableFeatures(rom, sourceIdentity, filename) {
   const run = (spec, action) => OB64.romCompatibility.runInitializer(rom, spec, action);
   await run({
-    id: 'native-art', label: 'Avatars, item icons, and combat sprites',
+    id: 'native-art',
+    label: 'Avatars, item icons, combat sprites, and Army sprites',
     affectsTabs: ['art']
   },
     () => OB64.art.initialize(rom));

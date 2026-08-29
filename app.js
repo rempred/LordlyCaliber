@@ -289,9 +289,14 @@ window.OB64 = window.OB64 || {};
         // not discard the readable parts of the ROM or hide its own diagnostic.
         if (nextRom.compatibility.canEdit) {
           await OB64.romCompatibility.runInitializer(nextRom, {
-            id: 'native-art', label: 'Avatars, item icons, and combat sprites',
-            affectsTabs: ['art']
+            id: 'native-art',
+            label: 'Avatars, item icons, combat sprites, and Army sprites',
+            affectsTabs: ['art', 'sprites']
           }, function() { return OB64.art.initialize(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'sprite-library', label: 'Sprite Editor Project library',
+            affectsTabs: ['sprites']
+          }, function() { return OB64.spriteLibrary.initialize(nextRom); });
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'consumable-effects', label: 'Consumable effect code and text',
             affectsTabs: ['consumables'], requiredForExport: true
@@ -320,13 +325,13 @@ window.OB64 = window.OB64 || {};
             await OB64.romCompatibility.runInitializer(nextRom, {
               id: 'combat-animation-sequences',
               label: 'Combat animation separated sequence lane',
-              affectsTabs: ['art']
+              affectsTabs: ['art', 'sprites']
             }, function() { return OB64.animationSequences.initialize(nextRom); });
           }
           if (OB64.cutsceneUI) {
             await OB64.romCompatibility.runInitializer(nextRom, {
               id: 'cutscene-studio', label: 'Cutscene Studio scene and presentation catalog',
-              affectsTabs: ['cutscenes']
+              affectsTabs: ['cutscenes', 'sprites']
             }, function() { return OB64.cutsceneUI.initialize(nextRom); });
           }
           await OB64.romCompatibility.runInitializer(nextRom, {
@@ -1171,6 +1176,7 @@ window.OB64 = window.OB64 || {};
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
       if (activeTab === 'art') renderTab('art');
+      if (activeTab === 'sprites') renderTab('sprites');
       if (activeTab === 'cutscenes') renderTab('cutscenes');
       statusBar.textContent = exportMsg;
     } catch(err) {
@@ -1278,15 +1284,19 @@ window.OB64 = window.OB64 || {};
       var avatarArtN = patch.summary.avatar_art_modified || 0;
       var iconArtN = patch.summary.item_icon_art_modified || 0;
       var combatSpriteArtN = patch.summary.combat_sprite_art_modified || 0;
+      var armySpriteArtN = patch.summary.army_sprite_art_modified || 0;
       var separatedAnimationN =
         patch.summary.separated_animation_sequences_modified || 0;
+      var spriteLibraryN = patch.summary.sprite_library_assets || 0;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + scenarioRatesN + customNeutralSquadsN +
           creatureDropsN + weightedDropRatesN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
           globalRateN + toolsN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
-          avatarArtN + iconArtN + combatSpriteArtN === 0) {
+          avatarArtN + iconArtN + combatSpriteArtN + armySpriteArtN +
+          separatedAnimationN +
+          spriteLibraryN === 0) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
@@ -1321,8 +1331,12 @@ window.OB64 = window.OB64 || {};
       if (iconArtN) parts.push(iconArtN + ' edited item icon' + (iconArtN === 1 ? '' : 's'));
       if (combatSpriteArtN) parts.push(combatSpriteArtN + ' edited combat-sprite source' +
         (combatSpriteArtN === 1 ? '' : 's'));
+      if (armySpriteArtN) parts.push(armySpriteArtN + ' edited Army sprite' +
+        (armySpriteArtN === 1 ? '' : 's'));
       if (separatedAnimationN) parts.push(separatedAnimationN +
         ' separated animation sequence' + (separatedAnimationN === 1 ? '' : 's'));
+      if (spriteLibraryN) parts.push(spriteLibraryN +
+        ' Sprite Editor asset' + (spriteLibraryN === 1 ? '' : 's'));
       parts = parts.concat(consumableEffectSummaryParts(
         patch.patches && patch.patches.consumableEffects
       ));
@@ -1402,6 +1416,9 @@ window.OB64 = window.OB64 || {};
         if (result.applied.cutscenes) loadedParts.push(result.applied.cutscenes + ' edited cutscene' + (result.applied.cutscenes === 1 ? '' : 's'));
         if (result.applied.combatAnimationOverrides) loadedParts.push(result.applied.combatAnimationOverrides + ' attack animation override change' + (result.applied.combatAnimationOverrides === 1 ? '' : 's'));
         if (result.applied.art) loadedParts.push(result.applied.art + ' art asset' + (result.applied.art === 1 ? '' : 's'));
+        if (result.applied.spriteLibrary) loadedParts.push(
+          result.applied.spriteLibrary + ' Sprite Editor asset' +
+          (result.applied.spriteLibrary === 1 ? '' : 's'));
         if (result.applied.consumableEffects) {
           loadedParts = loadedParts.concat(consumableEffectSummaryParts(
             patch.patches && patch.patches.consumableEffects
@@ -1754,6 +1771,16 @@ window.OB64 = window.OB64 || {};
             markChanged('combatAnimationOverrides');
             endChangeBatch();
           },
+          onStatus: function(message) { statusBar.textContent = message; }
+        });
+        break;
+      case 'sprites':
+        OB64.spriteEditorUI.render(panel, rom, {
+          onChange: function() {
+            statusBar.textContent =
+              'Sprite Library changed. Save Project to keep these reusable assets.';
+          },
+          onOpenArt: function() { activateTab('art'); },
           onStatus: function(message) { statusBar.textContent = message; }
         });
         break;

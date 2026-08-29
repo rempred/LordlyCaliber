@@ -39,6 +39,24 @@ const rom = {
       idleAnimationsByKey: { 'fighter-idle': idleAnimation },
       selectorCandidates: {},
     },
+    armySprites: {
+      byModelKey: {
+        'player-back-ordinary:03': {
+          atlasKey: 'player-back-ordinary', modelId: 3,
+        },
+        'player-back-special:20': {
+          atlasKey: 'player-back-special', modelId: 0x20,
+        },
+      },
+      byKey: {
+        'player-back-ordinary': {
+          label: 'Player / Back · Ordinary',
+        },
+        'player-back-special': {
+          label: 'Player / Back · Special',
+        },
+      },
+    },
   },
 };
 const patch = {
@@ -50,9 +68,19 @@ const patch = {
   },
   patches: {
     art: {
-      schemaVersion: 3,
+      schemaVersion: 4,
       avatars: {},
       icons: {},
+      armySprites: {
+        'player-back-ordinary:03': {
+          atlas: 'player-back-ordinary', modelId: 3,
+          width: 16, height: 24, retailPlane: true,
+        },
+        'player-back-special:20': {
+          atlas: 'player-back-special', modelId: 0x20,
+          width: 16, height: 24, retailPlane: false,
+        },
+      },
       animations: {
         first: {
           animation: 'dio-slash', artId: 0x85, width: 26, height: 15,
@@ -124,6 +152,23 @@ const idle = section.entries.find(row =>
 assert(idle, 'private idle sequence must use its idle route title');
 assert(idle.lines.includes(
   "Export relocates the private idle loop and points this art route's selector 0x00 to it."));
+
+const army = report.sections.find(row => row.title === 'Army Sprites');
+assert(army, 'Army sprite section must exist');
+assert.strictEqual(army.count, 2);
+assert.strictEqual(army.entries[0].title,
+  'Player / Back · Ordinary · Model 0x03');
+assert(army.entries[0].lines.includes(
+  'Edited one existing 16x24 CI8 formation plane.'));
+assert(army.entries[0].lines.includes(
+  'Export preserves both fixed palettes and rebuilds the complete atlas in place.'));
+const customArmy = army.entries.find(row =>
+  row.title === 'Player / Back · Special · Model 0x20');
+assert(customArmy, 'custom missing Army sprite entry must exist');
+assert(customArmy.lines.includes(
+  'Added one custom 16x24 player-side CI8 formation plane.'));
+assert(customArmy.lines.includes(
+  'Export expands and relocates the complete player atlas.'));
 
 const neutral = report.sections.find(row => row.title === 'Neutral Encounters');
 assert(neutral, 'neutral encounter section must exist');
