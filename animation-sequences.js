@@ -731,6 +731,28 @@ window.OB64 = window.OB64 || {};
     return decodePrivatePoseProgram(pose, program, idle, frames);
   }
 
+  function syntheticLayerBounds(source, layer) {
+    if (source &&
+        source.childSelectionPolicy === 'cutscene-actor-appearance') {
+      var scaleX = Number(layer.scaleXRaw) / 1024;
+      var scaleY = Number(layer.scaleYRaw) / 1024;
+      if (Number.isFinite(scaleX) && scaleX >= 0 &&
+          Number.isFinite(scaleY) && scaleY >= 0) {
+        var left = Math.round(layer.drawOffsetX * scaleX);
+        var top = Math.round(layer.drawOffsetY * scaleY);
+        var width = Math.max(1, Math.round(layer.width * scaleX));
+        var height = Math.max(1, Math.round(layer.height * scaleY));
+        return { left: left, top: top, right: left + width, bottom: top + height };
+      }
+    }
+    return {
+      left: layer.drawOffsetX,
+      top: layer.drawOffsetY,
+      right: layer.drawOffsetX + layer.width,
+      bottom: layer.drawOffsetY + layer.height
+    };
+  }
+
   function rebuildSyntheticIndexes(animation) {
     var hasBounds = false, originX = 0, originY = 0, endX = 0, endY = 0;
     var used = {}, artById = {};
@@ -753,8 +775,9 @@ window.OB64 = window.OB64 || {};
         if (source.usageFrames.indexOf(frame.sequenceIndex) < 0) {
           source.usageFrames.push(frame.sequenceIndex);
         }
-        var left = layer.drawOffsetX, top = layer.drawOffsetY;
-        var right = left + layer.width, bottom = top + layer.height;
+        var bounds = syntheticLayerBounds(source, layer);
+        var left = bounds.left, top = bounds.top;
+        var right = bounds.right, bottom = bounds.bottom;
         if (!hasBounds) {
           originX = left; originY = top; endX = right; endY = bottom;
           hasBounds = true;
@@ -2104,6 +2127,7 @@ window.OB64 = window.OB64 || {};
     var donorFrame = privateFrame(donorAnimation, donorFrameIndex);
     var donorLayer = privateLayer(donorFrame, donorLayerOrdinal);
     var source = appendClonedSource(rom, separation, donorAnimation, donorLayer);
+    source.childSelectionPolicy = null;
     var replacement = clonedLayer(donorLayer, source, targetLayerOrdinal);
     replacement.drawOffsetX = targetLayer.drawOffsetX;
     replacement.drawOffsetY = targetLayer.drawOffsetY;
@@ -2258,6 +2282,25 @@ window.OB64 = window.OB64 || {};
     });
     finishStructuralEdit(rom, separation);
     return frame.sequenceIndex;
+  }
+
+  function setFrameTicks(rom, separation, frameIndex, ticks) {
+    var animation = requirePrivateSequence(rom, separation);
+    var frame = privateFrame(animation, frameIndex);
+    ticks = integerInRange(ticks, 0, 255, 'frame ticks');
+    if (frame.ticks === ticks) return false;
+    var candidateFrames = animation.frames.map(function(row, index) {
+      return index === frameIndex ? Object.assign({}, row, { ticks: ticks }) : row;
+    });
+    var poseProgram = poseProgramWithFrames(
+      animation.poseProgram, candidateFrames, separation.laneKey === 'idle');
+    frame.ticks = ticks;
+    animation.poseProgram = poseProgram;
+    animation.spec.frames = animation.frames.map(function(row) {
+      return [row.token, row.ticks];
+    });
+    finishStructuralEdit(rom, separation);
+    return true;
   }
 
   function moveLayer(rom, separation, frameIndex, fromOrdinal, toOrdinal) {
@@ -2903,8 +2946,9 @@ window.OB64 = window.OB64 || {};
     try { sprite = M.parseSpriteObject(decoded, row.resourceKey); }
     catch (error) { fail(label + ' source ' + ordinal + ': ' + error.message); }
     var formatKind = sprite.firstFormat === 1 && sprite.secondFormat === 0
-      ? 'indexed-ci8' : (sprite.firstFormat === 2
-        ? 'direct-rgba5551' : 'unsupported');
+      ? 'indexed-ci8' : (sprite.firstFormat === 1 && sprite.secondFormat === 1
+        ? 'indexed-ci8-alpha8' : (sprite.firstFormat === 2
+          ? 'direct-rgba5551' : 'unsupported'));
     if (formatKind === 'unsupported' ||
         row.width !== sprite.width || row.height !== sprite.height ||
         row.childCount !== sprite.childCount || row.formatKind !== formatKind ||
@@ -2981,7 +3025,8 @@ window.OB64 = window.OB64 || {};
         0, source.childCount - 1, label + ' selected child')
     };
     var dimensionsMatch = layer.height === source.height &&
-      (source.formatKind === 'indexed-ci8'
+      ((source.formatKind === 'indexed-ci8' ||
+        source.formatKind === 'indexed-ci8-alpha8')
         ? layer.width === source.width
         : layer.width <= source.width && source.width - layer.width <= 3);
     if (!dimensionsMatch) fail(label + ' dimensions differ from its copied sprite');
@@ -3400,6 +3445,7 @@ window.OB64 = window.OB64 || {};
     removeLayer: removeLayer,
     removeFrame: removeFrame,
     moveFrame: moveFrame,
+    setFrameTicks: setFrameTicks,
     moveLayer: moveLayer,
     setLayerPosition: setLayerPosition,
     rotateIndexedPixels: rotateIndexedPixels,

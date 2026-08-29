@@ -61,6 +61,27 @@ function hashBytes(input) {
   let nativeStagePropCount = 0;
   const runtimeBackgroundAssetIds = new Set();
   const spriteState = OB64.cutsceneSprites.create(z64, catalog);
+  const copyProgram = catalog.poseProgramsForBank(3)
+    .find(program => program.programId && program.frames.length);
+  const copySequence = OB64.cutsceneSprites.actorSequence(
+    spriteState, copyProgram, 0);
+  assert.strictEqual(copySequence.sourceKind, 'cutscene-actor');
+  assert.strictEqual(copySequence.cutsceneProgram.programId, copyProgram.programId);
+  assert.strictEqual(copySequence.frames.length, copyProgram.frames.length);
+  assert(copySequence.frames.every(frame => frame.layers.length));
+  copySequence.frames.forEach((frame, frameIndex) => {
+    assert.strictEqual(frame.ticks, copyProgram.frames[frameIndex].durationFrames,
+      'Cutscene copy frames must retain their native tick duration.');
+    frame.layers.forEach(layer => {
+      const source = copySequence.artByKey[layer.sourceKey];
+      assert(source, 'Cutscene copy layer must retain its decoded source.');
+      assert.strictEqual(source.childSelectionPolicy,
+        'cutscene-actor-appearance');
+      assert.strictEqual(source.sprite.childCount, 1);
+      assert.strictEqual(source.sprite.width, layer.width);
+      assert.strictEqual(source.sprite.height, layer.height);
+    });
+  });
   const spriteHashCache = new WeakMap();
   const spriteErrors = new Set();
   const imageCache = new Map();

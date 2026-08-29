@@ -668,6 +668,34 @@ window.OB64 = window.OB64 || {};
     return { words: words, alpha: alpha };
   }
 
+  function decodeIndexedAlphaChild(source, childOrdinal) {
+    var sprite = source.sprite;
+    if (sprite.firstFormat !== 1 || sprite.secondFormat !== 1) {
+      fail('resource ' + hex(sprite.resourceKey) +
+        ' is not a CI8 + I8 sprite source');
+    }
+    var lanes = materializeChildLanes(sprite, childOrdinal);
+    if (!lanes.first) {
+      fail('resource ' + hex(sprite.resourceKey) +
+        ' selected child has no CI8 color lane');
+    }
+    var palette = childPalette(source, childOrdinal);
+    var words = new Uint16Array(sprite.width * sprite.height);
+    var alpha = new Uint8Array(sprite.width * sprite.height);
+    var pixel = 0;
+    for (var y = 0; y < sprite.height; y++) {
+      var firstRow = y * sprite.firstStride;
+      var secondRow = y * sprite.secondStride;
+      for (var x = 0; x < sprite.width; x++, pixel++) {
+        var word = palette[lanes.first[firstRow + x]];
+        words[pixel] = word;
+        alpha[pixel] = lanes.second ? lanes.second[secondRow + x] :
+          (word & 1 ? 255 : 0);
+      }
+    }
+    return { words: words, alpha: alpha };
+  }
+
   function childOrdinalOrFallback(source, childOrdinal) {
     return Number.isInteger(childOrdinal) && childOrdinal >= 0 &&
       childOrdinal < source.sprite.childCount ? childOrdinal : 0;
@@ -697,7 +725,9 @@ window.OB64 = window.OB64 || {};
       return source.originalChildren[childOrdinal];
     }
     if (!source.displayChildren[childOrdinal]) {
-      source.displayChildren[childOrdinal] = decodeDirectChild(source.sprite, childOrdinal);
+      source.displayChildren[childOrdinal] = source.formatKind === 'indexed-ci8-alpha8'
+        ? decodeIndexedAlphaChild(source, childOrdinal)
+        : decodeDirectChild(source.sprite, childOrdinal);
     }
     return source.displayChildren[childOrdinal];
   }

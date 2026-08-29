@@ -25,6 +25,7 @@ window.OB64 = window.OB64 || {};
   function ensureUi(state) {
     if (state.ui) {
       if (!state.ui.browserScroll) state.ui.browserScroll = {};
+      state.ui.transparentPreviewBackground = previewBackgroundMode(state.ui);
       if (!state.ui.animationKey && state.animations && state.animations.specs.length) {
         state.ui.animationKey = state.animations.byKey['fighter-slash']
           ? state.animations.byKey['fighter-slash'].key
@@ -61,6 +62,7 @@ window.OB64 = window.OB64 || {};
       animationPaletteIndex: 0, animationIntensity: 15,
       animationWeaponChild: 0,
       animationWeaponChildren: {},
+      transparentPreviewBackground: 'checkerboard',
       browserScroll: {}
     };
     if (state.animations && state.animations.byKey['fighter-slash']) {
@@ -125,20 +127,67 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function drawWords(canvas, words, width, height, scale, selection) {
+  function previewBackgroundMode(ui) {
+    return ui && ui.transparentPreviewBackground === 'white'
+      ? 'white' : 'checkerboard';
+  }
+
+  function togglePreviewBackground(ui) {
+    ui.transparentPreviewBackground = previewBackgroundMode(ui) === 'white'
+      ? 'checkerboard' : 'white';
+    return ui.transparentPreviewBackground;
+  }
+
+  function previewBackgroundButton(ui, rerender) {
+    var whitePreview = previewBackgroundMode(ui) === 'white';
+    var previewToggle = button('Transparent Preview: ' +
+      (whitePreview ? 'White' : 'Checkerboard'), 'btn-secondary', function() {
+      togglePreviewBackground(ui);
+      rerender();
+    });
+    previewToggle.setAttribute('aria-pressed', whitePreview ? 'true' : 'false');
+    previewToggle.setAttribute('title',
+      'Changes transparent pixels in editor previews only. Exports and Project data do not change.');
+    return previewToggle;
+  }
+
+  function canvasBackgroundMode(mode) {
+    if (mode === 'white' || mode === 'transparent') return mode;
+    return 'checkerboard';
+  }
+
+  function rgbaPixelsForWords(words) {
+    var pixels = new Uint8ClampedArray(words.length * 4);
+    for (var index = 0; index < words.length; index++) {
+      pixels.set(A.rgba5551(words[index]), index * 4);
+    }
+    return pixels;
+  }
+
+  function drawWords(canvas, words, width, height, scale, selection, backgroundMode) {
     canvas.width = width * scale;
     canvas.height = height * scale;
     var context = canvas.getContext('2d');
     context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    backgroundMode = canvasBackgroundMode(backgroundMode);
+    if (backgroundMode === 'transparent' && scale === 1 && !selection) {
+      var imageData = context.createImageData(width, height);
+      imageData.data.set(rgbaPixelsForWords(words));
+      context.putImageData(imageData, 0, 0);
+      return;
+    }
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
         var word = words[y * width + x];
         if (word & 1) {
           context.fillStyle = A.colorCss(word);
           context.fillRect(x * scale, y * scale, scale, scale);
-        } else {
-          var checker = Math.max(2, Math.floor(scale / 2));
+        } else if (backgroundMode === 'white') {
+          context.fillStyle = '#ffffff';
+          context.fillRect(x * scale, y * scale, scale, scale);
+        } else if (backgroundMode === 'checkerboard') {
+          var checker = Math.max(1, Math.floor(scale / 2));
           context.fillStyle = '#e9e4d0';
           context.fillRect(x * scale, y * scale, scale, scale);
           context.fillStyle = '#9f9a89';
@@ -162,14 +211,19 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function wordCanvas(words, width, height, scale, className, selection) {
+  function wordCanvas(words, width, height, scale, className, selection,
+      backgroundMode) {
     var canvas = element('canvas', className || 'art-pixel-canvas');
-    drawWords(canvas, words, width, height, scale, selection);
+    drawWords(canvas, words, width, height, scale, selection, backgroundMode);
     return canvas;
   }
 
+  function nativePngCanvas(words, width, height) {
+    return wordCanvas(words, width, height, 1, '', null, 'transparent');
+  }
+
   function nativePngDownload(words, width, height, filename) {
-    var canvas = wordCanvas(words, width, height, 1);
+    var canvas = nativePngCanvas(words, width, height);
     canvas.toBlob(function(blob) {
       if (!blob) return;
       var url = URL.createObjectURL(blob);
@@ -702,6 +756,9 @@ window.OB64 = window.OB64 || {};
         ui.selectedIconColor = state.icons.packs[icon.pack].transparentWord;
         ui.tool = 'pencil'; rerender();
       });
+      if (previewBackgroundMode(ui) === 'white') {
+        transparent.classList.add('white-preview');
+      }
       transparent.setAttribute('title', 'Paint the pack\'s one exact transparent palette entry.');
       wrap.appendChild(transparent);
     }
@@ -846,7 +903,8 @@ window.OB64 = window.OB64 || {};
     rows.forEach(function(icon) {
       var card = element('button', 'art-browser-card' + (ui.iconKey === icon.key ? ' selected' : ''));
       card.type = 'button';
-      card.appendChild(wordCanvas(A.currentWords(state, 'icon', icon.key), 16, 16, 4, 'art-list-icon'));
+      card.appendChild(wordCanvas(A.currentWords(state, 'icon', icon.key),
+        16, 16, 4, 'art-list-icon', null, previewBackgroundMode(ui)));
       var copy = element('span', 'art-browser-copy');
       copy.appendChild(element('strong', '', icon.name));
       copy.appendChild(element('small', '', icon.packLabel + ' · ID ' + icon.itemId + ' / ' + A.hex(icon.itemId, 3)));
@@ -936,11 +994,14 @@ window.OB64 = window.OB64 || {};
       }
     });
     paste.disabled = !ui.selection || !ui.clipboard; toolbar.appendChild(paste);
+    if (kind === 'icon') toolbar.appendChild(previewBackgroundButton(ui, rerender));
     return toolbar;
   }
 
   function installCanvasEditing(canvas, state, kind, key, width, height, scale, ui, options, rerender) {
     var drawing = false, working = null, selectionStart = null, changedPixels = false;
+    var backgroundMode = kind === 'icon'
+      ? previewBackgroundMode(ui) : 'checkerboard';
     canvas.tabIndex = 0;
     function selectedWord() {
       return kind === 'avatar' ? ui.selectedAvatarColor : ui.selectedIconColor;
@@ -992,12 +1053,12 @@ window.OB64 = window.OB64 || {};
         drawing = true; selectionStart = point;
         ui.selection = { x: point.x, y: point.y, width: 1, height: 1 };
         canvas.setPointerCapture(event.pointerId);
-        drawWords(canvas, current, width, height, scale, ui.selection);
+        drawWords(canvas, current, width, height, scale, ui.selection, backgroundMode);
         return;
       }
       drawing = true; working = current.slice(); changedPixels = false;
       canvas.setPointerCapture(event.pointerId); applyPoint(point);
-      drawWords(canvas, working, width, height, scale, ui.selection);
+      drawWords(canvas, working, width, height, scale, ui.selection, backgroundMode);
     });
     canvas.addEventListener('pointermove', function(event) {
       if (!drawing) return;
@@ -1009,9 +1070,11 @@ window.OB64 = window.OB64 || {};
           width: Math.max(selectionStart.x, point.x) - left + 1,
           height: Math.max(selectionStart.y, point.y) - top + 1
         };
-        drawWords(canvas, A.currentWords(state, kind, key), width, height, scale, ui.selection);
+        drawWords(canvas, A.currentWords(state, kind, key), width, height,
+          scale, ui.selection, backgroundMode);
       } else {
-        applyPoint(point); drawWords(canvas, working, width, height, scale, ui.selection);
+        applyPoint(point);
+        drawWords(canvas, working, width, height, scale, ui.selection, backgroundMode);
       }
     });
     function finish(event) {
@@ -1040,12 +1103,13 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function previewPair(original, current, width, height) {
+  function previewPair(original, current, width, height, backgroundMode) {
     var wrap = element('div', 'art-preview-pair');
     [['Original', original], ['Current', current]].forEach(function(row) {
       var card = element('figure', 'art-preview-card');
       card.appendChild(element('figcaption', '', row[0]));
-      card.appendChild(wordCanvas(row[1], width, height, 4, 'art-preview-canvas'));
+      card.appendChild(wordCanvas(row[1], width, height, 4,
+        'art-preview-canvas', null, backgroundMode));
       wrap.appendChild(card);
     });
     return wrap;
@@ -1154,10 +1218,13 @@ window.OB64 = window.OB64 || {};
     editor.appendChild(heading);
     editor.appendChild(element('div', 'art-pack-note',
       'This icon remains in its shared complete pack. Export rebuilds every plane and the pack-wide 256-entry palette together.'));
-    editor.appendChild(previewPair(icon.originalWords, current, 16, 16));
+    var backgroundMode = previewBackgroundMode(ui);
+    editor.appendChild(previewPair(icon.originalWords, current, 16, 16,
+      backgroundMode));
     editor.appendChild(toolButtons(ui, 'icon', state, icon.key, rerender, options));
     var workspace = element('div', 'art-workspace');
-    var canvas = wordCanvas(current, 16, 16, 24, 'art-edit-canvas art-icon-edit-canvas', ui.selection);
+    var canvas = wordCanvas(current, 16, 16, 24,
+      'art-edit-canvas art-icon-edit-canvas', ui.selection, backgroundMode);
     installCanvasEditing(canvas, state, 'icon', icon.key, 16, 16, 24, ui, options, rerender);
     workspace.appendChild(canvas);
     var palette = element('aside', 'art-palette-panel');
@@ -1168,7 +1235,7 @@ window.OB64 = window.OB64 || {};
     palette.appendChild(counter);
     palette.appendChild(selectedColorBlock(state, 'icon', ui, rerender));
     palette.appendChild(element('p', 'art-palette-help',
-      'Every visible wheel color is an exact entry from this pack\'s 256-entry palette. The wheel snaps to those entries; transparency is the checkerboard choice.'));
+      'Every visible wheel color is an exact entry from this pack\'s 256-entry palette. Transparency uses the selected preview background.'));
     palette.appendChild(colorWheel(state, 'icon', pack, ui, function(word, commit) {
       ui.selectedIconColor = word; ui.tool = 'pencil';
       if (commit) rerender();
@@ -1246,6 +1313,10 @@ window.OB64 = window.OB64 || {};
   OB64.artUI = {
     render: render,
     drawWords: drawWords,
+    rgbaPixelsForWords: rgbaPixelsForWords,
+    nativePngCanvas: nativePngCanvas,
+    previewBackgroundMode: previewBackgroundMode,
+    togglePreviewBackground: togglePreviewBackground,
     hsvForWord: hsvForWord,
     wordForHsv: wordForHsv,
     nearestPaletteWord: nearestPaletteWord,

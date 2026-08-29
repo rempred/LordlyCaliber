@@ -6018,6 +6018,11 @@ td.attack-list {
   background-position: 0 0, 0 5px, 5px -5px, -5px 0;
 }
 
+.art-transparent-button.white-preview {
+  background-color: #fff;
+  background-image: none;
+}
+
 .art-asset-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 14px; }
 .art-image-input { display: none; }
 
@@ -6625,6 +6630,11 @@ td.attack-list {
   max-height: calc(100vh - 32px);
 }
 
+.animation-sprite-copy-modal {
+  width: min(1240px, calc(100vw - 32px));
+  max-width: 1240px;
+}
+
 .animation-copy-body {
   overflow: auto;
   white-space: normal;
@@ -6642,6 +6652,16 @@ td.attack-list {
   grid-template-columns: minmax(150px, 0.8fr) minmax(280px, 1.7fr)
     minmax(130px, 0.7fr);
 }
+
+.animation-sprite-copy-controls.layer-copy {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.animation-sprite-copy-controls.cutscene {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.animation-sprite-copy-controls [hidden] { display: none; }
 
 .animation-sprite-copy-preview canvas {
   display: block;
@@ -6661,6 +6681,11 @@ td.attack-list {
 
 .animation-sprite-copy-preview-grid.frame-only {
   grid-template-columns: minmax(260px, 1fr);
+}
+
+.animation-sprite-copy-preview-grid.with-sequence-preview {
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 190px)
+    minmax(180px, 1fr) minmax(180px, 1fr);
 }
 
 .animation-sprite-copy-pane {
@@ -6744,7 +6769,24 @@ td.attack-list {
 
 .animation-copy-frame canvas { display: block; margin: 0 auto 4px; }
 .animation-copy-frame figcaption { font: var(--ob-text-xs) var(--ob-mono); }
-.animation-copy-footer { gap: 8px; }
+.animation-copy-footer {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.animation-copy-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.animation-copy-source-note {
+  margin: 6px 0 0;
+  color: var(--ob-wood-darkest);
+  font: var(--ob-text-xs) var(--ob-mono);
+}
 
 .animation-corpus-grid {
   display: grid;
@@ -6899,9 +6941,16 @@ td.attack-list {
   overflow-x: auto;
 }
 
-.animation-frame-card {
+.animation-frame-entry {
   display: grid;
   flex: 0 0 auto;
+  align-content: start;
+  gap: 5px;
+}
+
+.animation-frame-card {
+  display: grid;
+  width: 100%;
   justify-items: center;
   gap: 4px;
   padding: 7px;
@@ -6939,6 +6988,32 @@ td.attack-list {
 
 .animation-frame-card > span { font: var(--ob-text-xs) var(--ob-mono); }
 .animation-frame-ticks { color: var(--ob-wax-red); }
+
+.animation-frame-tick-editor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: var(--ob-text-xs) var(--ob-mono);
+}
+
+.animation-frame-tick-input {
+  width: 4.5rem;
+  min-width: 0;
+  padding: 3px 4px;
+  color: var(--ob-ink);
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-parchment-edge);
+  border-radius: 3px;
+  font: inherit;
+  text-align: center;
+}
+
+.animation-frame-tick-input:disabled {
+  color: var(--ob-ink-soft);
+  background: rgba(246, 228, 181, 0.5);
+  cursor: not-allowed;
+}
 
 .animation-frame-thumbnail {
   display: block;
@@ -7563,8 +7638,13 @@ td.attack-list {
   }
   .animation-variant-dropdown-status { min-width: 0; text-align: left; }
   .animation-variant-dropdown-actions { flex-wrap: wrap; }
-  .animation-copy-controls { grid-template-columns: 1fr; }
-  .animation-sprite-copy-preview-grid { grid-template-columns: 1fr; }
+  .animation-copy-controls,
+  .animation-sprite-copy-controls.layer-copy,
+  .animation-sprite-copy-controls.cutscene { grid-template-columns: 1fr; }
+  .animation-sprite-copy-preview-grid,
+  .animation-sprite-copy-preview-grid.with-sequence-preview {
+    grid-template-columns: 1fr;
+  }
   .animation-copy-layer-list { max-height: 220px; }
   .animation-layer-rotate-layout { grid-template-columns: 1fr; }
   .animation-layer-transform-preview-host { min-height: 160px; }

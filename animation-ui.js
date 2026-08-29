@@ -8,6 +8,7 @@ window.OB64 = window.OB64 || {};
   var M = OB64.animationArt;
   var IDLE_ACTION_ID = -1;
   var animationPreviewSurfaceCache = null;
+  var activePreviewBackground = 'checkerboard';
 
   function element(tag, className, text) {
     var node = document.createElement(tag);
@@ -141,6 +142,29 @@ window.OB64 = window.OB64 || {};
       : M.currentEdit(animationState, sourceKey, childOrdinal);
   }
 
+  function layerPreviewMetrics(animation, layer) {
+    var explicit = animation && animation.previewLayerMetrics && layer &&
+      layer.copyPreviewKey
+      ? animation.previewLayerMetrics[layer.copyPreviewKey] || null : null;
+    if (explicit) return explicit;
+    var source = animation && layer && animation.artByKey
+      ? animation.artByKey[layer.sourceKey] : null;
+    if (!source ||
+        source.childSelectionPolicy !== 'cutscene-actor-appearance') return null;
+    var scaleX = Number(layer.scaleXRaw) / 1024;
+    var scaleY = Number(layer.scaleYRaw) / 1024;
+    if (!Number.isFinite(scaleX) || scaleX < 0 ||
+        !Number.isFinite(scaleY) || scaleY < 0) return null;
+    return {
+      left: Math.round(layer.drawOffsetX * scaleX),
+      top: Math.round(layer.drawOffsetY * scaleY),
+      width: Math.max(1, Math.round(layer.width * scaleX)),
+      height: Math.max(1, Math.round(layer.height * scaleY)),
+      flipX: (layer.flags & 0x01) !== 0,
+      flipY: (layer.flags & 0x02) !== 0
+    };
+  }
+
   function drawLayerInto(output, animation, layer, animationState, style, overrides,
       weaponChildOrdinal) {
     var source = animation.artByKey[layer.sourceKey];
@@ -150,14 +174,23 @@ window.OB64 = window.OB64 || {};
       : M.displayChild(animationState, layer.sourceKey, childOrdinal);
     var palette = source.editable ? M.childPalette(source, childOrdinal) : null;
     var canvas = animation.canvas;
-    var left = layer.drawOffsetX - canvas.originX;
-    var top = layer.drawOffsetY - canvas.originY;
-    for (var y = 0; y < layer.height; y++) {
-      for (var x = 0; x < layer.width; x++) {
+    var metrics = layerPreviewMetrics(animation, layer);
+    var left = (metrics ? metrics.left : layer.drawOffsetX) - canvas.originX;
+    var top = (metrics ? metrics.top : layer.drawOffsetY) - canvas.originY;
+    var drawWidth = metrics ? metrics.width : layer.width;
+    var drawHeight = metrics ? metrics.height : layer.height;
+    for (var y = 0; y < drawHeight; y++) {
+      for (var x = 0; x < drawWidth; x++) {
         var outputX = left + x, outputY = top + y;
         if (outputX < 0 || outputY < 0 || outputX >= canvas.width ||
             outputY >= canvas.height) continue;
-        var pixel = y * source.sprite.width + x;
+        var sourceX = metrics ? Math.min(layer.width - 1,
+          Math.floor(x * layer.width / drawWidth)) : x;
+        var sourceY = metrics ? Math.min(layer.height - 1,
+          Math.floor(y * layer.height / drawHeight)) : y;
+        if (metrics && metrics.flipX) sourceX = layer.width - 1 - sourceX;
+        if (metrics && metrics.flipY) sourceY = layer.height - 1 - sourceY;
+        var pixel = sourceY * source.sprite.width + sourceX;
         var alpha, rgb;
         if (source.editable) {
           var intensity = pixels.intensity[pixel];
@@ -226,11 +259,29 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function paintPixels(canvas, width, height, pixels, scale) {
+  function normalizePreviewBackground(mode) {
+    if (mode === 'white' || mode === 'transparent') return mode;
+    return 'checkerboard';
+  }
+
+  function paintPixels(canvas, width, height, pixels, scale, backgroundMode) {
     canvas.width = width * scale; canvas.height = height * scale;
     var context = canvas.getContext('2d');
     context.imageSmoothingEnabled = false;
-    checker(context, width, height, scale);
+    backgroundMode = normalizePreviewBackground(backgroundMode === undefined
+      ? activePreviewBackground : backgroundMode);
+    if (backgroundMode === 'transparent' && scale === 1) {
+      var imageData = context.createImageData(width, height);
+      imageData.data.set(pixels);
+      context.putImageData(imageData, 0, 0);
+      return;
+    }
+    if (backgroundMode === 'white') {
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width * scale, height * scale);
+    } else if (backgroundMode === 'checkerboard') {
+      checker(context, width, height, scale);
+    }
     for (var y = 0; y < height; y++) for (var x = 0; x < width; x++) {
       var offset = (y * width + x) * 4, alpha = pixels[offset + 3];
       if (!alpha) continue;
@@ -241,16 +292,20 @@ window.OB64 = window.OB64 || {};
   }
 
   function drawFrame(canvas, animation, frame, animationState, scale,
-      selectedLayer, overrides, editorGrid, weaponChildOrdinal) {
+      selectedLayer, overrides, editorGrid, weaponChildOrdinal, backgroundMode) {
     var selectedKey = selectedLayer ? selectedLayer.sourceKey : null;
     paintPixels(canvas, animation.canvas.width, animation.canvas.height,
       framePixels(animation, frame, animationState, selectedKey, overrides,
-        weaponChildOrdinal), scale);
+        weaponChildOrdinal), scale, backgroundMode);
     if (!selectedLayer) return;
     var context = canvas.getContext('2d');
-    var left = (selectedLayer.drawOffsetX - animation.canvas.originX) * scale;
-    var top = (selectedLayer.drawOffsetY - animation.canvas.originY) * scale;
-    var width = selectedLayer.width * scale, height = selectedLayer.height * scale;
+    var metrics = layerPreviewMetrics(animation, selectedLayer);
+    var left = ((metrics ? metrics.left : selectedLayer.drawOffsetX) -
+      animation.canvas.originX) * scale;
+    var top = ((metrics ? metrics.top : selectedLayer.drawOffsetY) -
+      animation.canvas.originY) * scale;
+    var width = (metrics ? metrics.width : selectedLayer.width) * scale;
+    var height = (metrics ? metrics.height : selectedLayer.height) * scale;
     if (editorGrid && scale >= 6) {
       context.save(); context.strokeStyle = 'rgba(255,255,255,0.16)'; context.lineWidth = 1;
       for (var x = 1; x < selectedLayer.width; x++) {
@@ -430,7 +485,9 @@ window.OB64 = window.OB64 || {};
     ? new WeakMap() : null;
 
   function animationSequenceIdentity(animation) {
-    if (animationSequenceIdentityCache && animationSequenceIdentityCache.has(animation)) {
+    var cacheable = !(animation && animation.spec && animation.spec.separatedCopy);
+    if (cacheable && animationSequenceIdentityCache &&
+        animationSequenceIdentityCache.has(animation)) {
       return animationSequenceIdentityCache.get(animation);
     }
     var identity = JSON.stringify([
@@ -452,7 +509,7 @@ window.OB64 = window.OB64 || {};
         })];
       })
     ]);
-    if (animationSequenceIdentityCache) {
+    if (cacheable && animationSequenceIdentityCache) {
       animationSequenceIdentityCache.set(animation, identity);
     }
     return identity;
@@ -2796,6 +2853,7 @@ window.OB64 = window.OB64 || {};
         select.appendChild(option);
       });
     }
+
     function rowsForClass() {
       var classId = Number(classSelect.value);
       var catalogOptions = idleTarget ? { idleOnly: true } : null;
@@ -2898,6 +2956,58 @@ window.OB64 = window.OB64 || {};
     classSelect.focus();
   }
 
+  function cutsceneActorCopyContext(rom) {
+    if (rom.cutsceneStudio && rom.cutsceneStudio.catalog &&
+        rom.cutsceneStudio.spriteState) {
+      return {
+        catalog: rom.cutsceneStudio.catalog,
+        sprites: rom.cutsceneStudio.spriteState
+      };
+    }
+    if (rom.cutsceneActorCopyContext) return rom.cutsceneActorCopyContext;
+    if (!OB64.cutsceneCatalog || !OB64.cutsceneData || !OB64.cutsceneSprites ||
+        typeof OB64.cutsceneCatalog.createCatalog !== 'function' ||
+        typeof OB64.cutsceneSprites.create !== 'function' ||
+        typeof OB64.cutsceneSprites.actorSequence !== 'function') {
+      throw new Error('Cutscene actor art is unavailable.');
+    }
+    var catalog = OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData);
+    rom.cutsceneActorCopyContext = {
+      catalog: catalog,
+      sprites: OB64.cutsceneSprites.create(rom.z64, catalog)
+    };
+    return rom.cutsceneActorCopyContext;
+  }
+
+  function registerCopyDonor(animationState, donor) {
+    Object.keys(donor && donor.artByKey || {}).forEach(function(key) {
+      animationState.artByKey[key] = donor.artByKey[key];
+    });
+    return donor;
+  }
+
+  function copyDonorLabel(donor) {
+    if (donor && donor.sourceKind === 'cutscene-actor') {
+      var program = donor.cutsceneProgram;
+      return donor.actorArtSource.label + ' · Key ' + program.animationKey +
+        ' · facing ' + program.facing + ' · state ' + program.stateIndex +
+        ' · Appearance ' + donor.selectedAppearance;
+    }
+    return donor ? donor.spec.className + ' · ' +
+      animationArtVariantLabel(donor) : '';
+  }
+
+  function uniqueNumbers(rows, field) {
+    var seen = {};
+    return (rows || []).reduce(function(output, row) {
+      var value = Number(row[field]);
+      if (!Number.isInteger(value) || seen[value]) return output;
+      seen[value] = true;
+      output.push(value);
+      return output;
+    }, []).sort(function(left, right) { return left - right; });
+  }
+
   function openSpriteCopyModal(state, rom, separation, targetAnimation,
       targetFrame, targetLayer, operation, ui, options, rerender) {
     if (!separation || !targetAnimation || !targetFrame ||
@@ -2924,9 +3034,10 @@ window.OB64 = window.OB64 || {};
     header.appendChild(closeButton);
     modal.appendChild(header);
     var body = element('div', 'error-modal-body animation-copy-body');
-    body.appendChild(element('p', 'animation-copy-intro', copiesFrame
+    var intro = element('p', 'animation-copy-intro', copiesFrame
       ? 'Choose any source frame. Its complete layer stack and positions will replace this frame.'
-      : 'Choose any sprite layer. Its art will replace this layer while keeping this layer position.'));
+      : 'Choose any sprite layer. Its art will replace this layer while keeping this layer position.');
+    body.appendChild(intro);
     var controls = element('div', 'animation-copy-controls animation-sprite-copy-controls');
     function selectField(labelText) {
       var label = element('label', 'animation-corpus-field');
@@ -2935,14 +3046,52 @@ window.OB64 = window.OB64 || {};
       label.appendChild(select); controls.appendChild(label);
       return { label: label, select: select };
     }
+    var sourceField = copiesFrame ? null : selectField('Source');
     var classField = selectField('Class');
     var sequenceField = selectField('Sequence');
+    var actorArtField = copiesFrame ? null : selectField('Actor Art Source');
+    var actorAnimationField = copiesFrame ? null : selectField('Animation');
+    var actorFacingField = copiesFrame ? null : selectField('Facing');
+    var actorPoseField = copiesFrame ? null : selectField('Physical Pose');
+    var actorAppearanceField = copiesFrame ? null : selectField('Appearance');
     var frameField = selectField('Frame');
+    if (sourceField) {
+      controls.classList.add('layer-copy');
+      var combatOption = element('option', '', 'Combat classes');
+      combatOption.value = 'combat';
+      sourceField.select.appendChild(combatOption);
+      var cutsceneOption = element('option', '', 'Cutscene actors');
+      cutsceneOption.value = 'cutscene';
+      sourceField.select.appendChild(cutsceneOption);
+      sourceField.select.value = 'combat';
+    }
     body.appendChild(controls);
     var preview = element('div', 'animation-copy-preview animation-sprite-copy-preview');
     body.appendChild(preview); modal.appendChild(body);
     var footer = element('div', 'error-modal-footer animation-copy-footer');
+    var exportFrameButton = null;
+    var exportWebmButton = null;
+    var webmExporting = false;
+    if (!copiesFrame) {
+      var exportActions = element('div', 'animation-copy-export-actions');
+      exportFrameButton = button('Export Frame PNG', 'btn-secondary',
+        exportCurrentDonorFrame);
+      exportWebmButton = button('Export Sequence WebM', 'btn-secondary',
+        exportCurrentDonorWebm);
+      exportActions.appendChild(exportFrameButton);
+      exportActions.appendChild(exportWebmButton);
+      footer.appendChild(exportActions);
+    }
     footer.appendChild(button('Cancel', 'error-modal-ok', close));
+    var copyCompleteFrameButton = null;
+    if (!copiesFrame) {
+      copyCompleteFrameButton = button('Copy Complete Frame',
+        'error-modal-ok', applyCompleteFrameCopy);
+      copyCompleteFrameButton.title =
+        'Copy every selected cutscene layer. The target frame timing stays unchanged.';
+      copyCompleteFrameButton.hidden = true;
+      footer.appendChild(copyCompleteFrameButton);
+    }
     var applyButton = button(copiesFrame ? 'Copy Frame' : 'Copy Sprite',
       'error-modal-ok', applyCopy);
     footer.appendChild(applyButton); modal.appendChild(footer);
@@ -2959,6 +3108,35 @@ window.OB64 = window.OB64 || {};
     if (classField.select.selectedIndex < 0) classField.select.selectedIndex = 0;
     var sequenceChoices = [];
     var selectedLayerOrdinal = targetLayer ? targetLayer.ordinal : 0;
+    var cutsceneContext = null;
+    var cutsceneDonor = null;
+    var cutsceneDonorError = '';
+
+    function usesCutsceneActors() {
+      return !!sourceField && sourceField.select.value === 'cutscene';
+    }
+
+    function showField(field, visible) {
+      if (field) field.label.hidden = !visible;
+    }
+
+    function updateSourceFields() {
+      var cutscene = usesCutsceneActors();
+      showField(classField, !cutscene);
+      showField(sequenceField, !cutscene);
+      showField(actorArtField, cutscene);
+      showField(actorAnimationField, cutscene);
+      showField(actorFacingField, cutscene);
+      showField(actorPoseField, cutscene);
+      showField(actorAppearanceField, cutscene);
+      controls.classList.toggle('cutscene', cutscene);
+      if (!copiesFrame) {
+        intro.textContent = cutscene
+          ? 'Choose a sprite layer, or copy the complete frame. A sprite copy keeps the target layer position.'
+          : 'Choose any sprite layer. Its art will replace this layer while keeping this layer position.';
+      }
+      if (copyCompleteFrameButton) copyCompleteFrameButton.hidden = !cutscene;
+    }
 
     function selectedChoice() {
       return sequenceChoices.find(function(choice) {
@@ -2966,6 +3144,7 @@ window.OB64 = window.OB64 || {};
       }) || null;
     }
     function selectedDonor() {
+      if (usesCutsceneActors()) return cutsceneDonor;
       var choice = selectedChoice();
       return choice && choice.representative;
     }
@@ -2987,6 +3166,101 @@ window.OB64 = window.OB64 || {};
         if (row.optionTitle) option.title = row.optionTitle;
         select.appendChild(option);
       });
+    }
+    function ensureCutsceneContext() {
+      if (!cutsceneContext) cutsceneContext = cutsceneActorCopyContext(rom);
+      return cutsceneContext;
+    }
+    function renderableActorPrograms() {
+      if (!cutsceneContext || !actorArtField.select.value) return [];
+      return cutsceneContext.catalog.poseProgramsForBank(
+        Number(actorArtField.select.value), { physical: true }).filter(function(program) {
+          return program.programId && program.frames && program.frames.length;
+        });
+    }
+    function selectedActorProgram() {
+      return cutsceneContext && actorPoseField.select.value
+        ? cutsceneContext.catalog.getPoseProgramById(actorPoseField.select.value)
+        : null;
+    }
+    function refreshCutsceneDonor(wantedFrame) {
+      cutsceneDonor = null;
+      cutsceneDonorError = '';
+      try {
+        var program = selectedActorProgram();
+        if (!program) throw new Error('The selected Actor Art Source has no renderable pose.');
+        cutsceneDonor = registerCopyDonor(state.animations,
+          OB64.cutsceneSprites.actorSequence(cutsceneContext.sprites, program,
+            Number(actorAppearanceField.select.value)));
+      } catch (error) {
+        cutsceneDonorError = error && error.message ? error.message : String(error);
+      }
+      populateFrames(Number.isInteger(wantedFrame) ? wantedFrame : 0);
+    }
+    function populateActorPoses() {
+      var animationKey = Number(actorAnimationField.select.value);
+      var facing = Number(actorFacingField.select.value);
+      var programs = renderableActorPrograms().filter(function(program) {
+        return program.animationKey === animationKey && program.facing === facing;
+      });
+      replaceOptions(actorPoseField.select, programs,
+        function(program) { return program.programId; },
+        function(program) {
+          return 'State ' + program.stateIndex + ' · ' + program.frames.length +
+            ' frames · ' + program.durationFrames + ' ticks';
+        });
+      if (actorPoseField.select.selectedIndex < 0) actorPoseField.select.selectedIndex = 0;
+      refreshCutsceneDonor(0);
+    }
+    function populateActorFacings() {
+      var animationKey = Number(actorAnimationField.select.value);
+      var programs = renderableActorPrograms().filter(function(program) {
+        return program.animationKey === animationKey;
+      });
+      var facings = uniqueNumbers(programs, 'facing');
+      replaceOptions(actorFacingField.select, facings,
+        function(facing) { return String(facing); },
+        function(facing) { return 'Facing ' + facing; });
+      if (actorFacingField.select.selectedIndex < 0) actorFacingField.select.selectedIndex = 0;
+      populateActorPoses();
+    }
+    function populateActorAnimations() {
+      var programs = renderableActorPrograms();
+      var animations = uniqueNumbers(programs, 'animationKey');
+      replaceOptions(actorAnimationField.select, animations,
+        function(animationKey) { return String(animationKey); },
+        function(animationKey) { return 'Key ' + animationKey; });
+      if (actorAnimationField.select.selectedIndex < 0) {
+        actorAnimationField.select.selectedIndex = 0;
+      }
+      populateActorFacings();
+    }
+    function populateActorArtSources() {
+      try {
+        var context = ensureCutsceneContext();
+        if (!actorArtField.select.children.length) {
+          context.catalog.actorArtSources.forEach(function(source) {
+            var option = element('option', '', source.label + ' · ' +
+              source.renderablePoseCount + ' sequences');
+            option.value = String(source.bank);
+            actorArtField.select.appendChild(option);
+          });
+          for (var appearance = 0; appearance < 8; appearance++) {
+            var appearanceOption = element('option', '', 'Appearance ' + appearance);
+            appearanceOption.value = String(appearance);
+            actorAppearanceField.select.appendChild(appearanceOption);
+          }
+        }
+        if (actorArtField.select.selectedIndex < 0) actorArtField.select.selectedIndex = 0;
+        if (actorAppearanceField.select.selectedIndex < 0) {
+          actorAppearanceField.select.selectedIndex = 0;
+        }
+        populateActorAnimations();
+      } catch (error) {
+        cutsceneDonor = null;
+        cutsceneDonorError = error && error.message ? error.message : String(error);
+        populateFrames(0);
+      }
     }
     function rowsForClass() {
       var classId = Number(classField.select.value);
@@ -3037,23 +3311,53 @@ window.OB64 = window.OB64 || {};
       updatePreview();
     }
     function updatePreview() {
+      var oldBodyScroll = body.scrollTop;
       var oldLayerList = preview.querySelector('.animation-copy-layer-list');
       var oldLayerScroll = oldLayerList ? oldLayerList.scrollTop : 0;
       preview.innerHTML = '';
       var donor = selectedDonor(), frame = selectedDonorFrame();
       applyButton.disabled = !donor || !frame || (!copiesFrame && !selectedDonorLayer());
-      if (!donor || !frame) return;
-      var heading = element('strong', 'animation-copy-source-label ' +
-        animationSideClass(donor), donor.spec.className + ' · ' +
-        animationArtVariantLabel(donor) + ' · Frame ' +
-        (frame.sequenceIndex + 1));
+      if (copyCompleteFrameButton) {
+        copyCompleteFrameButton.disabled = !usesCutsceneActors() || !donor || !frame;
+      }
+      if (exportFrameButton) exportFrameButton.disabled = !donor || !frame;
+      if (exportWebmButton) {
+        exportWebmButton.disabled = webmExporting || !donor || !animationWebmSupported();
+        exportWebmButton.title = animationWebmSupported()
+          ? 'Download the complete selected source sequence with transparent pixels.'
+          : 'This browser cannot record canvas video as WebM.';
+      }
+      if (!donor || !frame) {
+        if (cutsceneDonorError) {
+          preview.appendChild(element('p', 'art-unavailable',
+            'Cutscene actor source unavailable: ' + cutsceneDonorError));
+        }
+        setTimeout(function() {
+          if (body.isConnected) body.scrollTop = oldBodyScroll;
+        }, 0);
+        return;
+      }
+      var heading = element('strong', 'animation-copy-source-label' +
+        (donor.sourceKind === 'cutscene-actor' ? '' : ' ' + animationSideClass(donor)),
+      copyDonorLabel(donor) + ' · Frame ' + (frame.sequenceIndex + 1));
       preview.appendChild(heading);
+      if (donor.sourceKind === 'cutscene-actor' && donor.appearanceFallbackCount) {
+        preview.appendChild(element('p', 'animation-copy-source-note',
+          donor.appearanceFallbackCount +
+          ' sprite source' + (donor.appearanceFallbackCount === 1 ? '' : 's') +
+          (donor.appearanceFallbackCount === 1 ? ' uses ' : ' use ') +
+          'Appearance 0 because the selected Appearance is unavailable.'));
+      }
+      var showAnimationPreview = !copiesFrame &&
+        donor.sourceKind === 'cutscene-actor';
       var previewGrid = element('div', 'animation-sprite-copy-preview-grid' +
-        (copiesFrame ? ' frame-only' : ''));
+        (copiesFrame ? ' frame-only' : '') +
+        (showAnimationPreview ? ' with-sequence-preview' : ''));
       var fullPane = element('figure', 'animation-sprite-copy-pane');
       fullPane.appendChild(element('figcaption', '', 'Complete frame'));
       var fullCanvas = element('canvas');
-      var weaponChild = weaponChildForAnimation(ui, donor);
+      var weaponChild = donor.sourceKind === 'cutscene-actor'
+        ? 0 : weaponChildForAnimation(ui, donor);
       drawFrame(fullCanvas, donor, frame, state.animations, 4,
         null, null, false, weaponChild);
       fullPane.appendChild(fullCanvas); previewGrid.appendChild(fullPane);
@@ -3080,17 +3384,63 @@ window.OB64 = window.OB64 || {};
           singleLayerPixels(donor, selectedDonorLayer(), state.animations,
             weaponChild), 4);
         selectedPane.appendChild(selectedCanvas); previewGrid.appendChild(selectedPane);
+        if (showAnimationPreview) {
+          previewGrid.appendChild(animationSequencePreview(state, donor, ui, {
+            className: 'animation-sprite-copy-pane animation-copy-sequence-pane',
+            caption: 'Animation preview · 30 ticks/sec',
+            ariaLabel: 'Looping cutscene actor animation preview',
+            weaponChildOrdinal: 0
+          }));
+        }
         setTimeout(function() {
           if (layerList.isConnected) layerList.scrollTop = oldLayerScroll;
         }, 0);
       }
       preview.appendChild(previewGrid);
+      setTimeout(function() {
+        if (body.isConnected) body.scrollTop = oldBodyScroll;
+      }, 0);
     }
-    function applyCopy() {
+
+    function exportCurrentDonorFrame() {
+      var donor = selectedDonor(), frame = selectedDonorFrame();
+      if (!donor || !frame || !exportFrameButton) return;
+      exportFrameButton.disabled = true;
+      downloadFrame(donor, frame, state, donor.sourceKind === 'cutscene-actor'
+        ? 0 : weaponChildForAnimation(ui, donor)).then(function(filename) {
+        notify(options, 'Frame exported as ' + filename + '.');
+      }).catch(function(error) {
+        notify(options, error && error.message ? error.message : String(error));
+      }).then(function() {
+        exportFrameButton.disabled = !selectedDonorFrame();
+      });
+    }
+
+    function exportCurrentDonorWebm() {
+      var donor = selectedDonor();
+      if (!donor || !exportWebmButton || exportWebmButton.disabled) return;
+      webmExporting = true;
+      exportWebmButton.disabled = true;
+      exportWebmButton.textContent = 'Exporting Sequence…';
+      notify(options, 'Recording the complete transparent source sequence at 30 ticks per second.');
+      downloadAnimationWebm(donor, state, donor.sourceKind === 'cutscene-actor'
+        ? 0 : weaponChildForAnimation(ui, donor)).then(function(filename) {
+        notify(options, 'Sequence exported as ' + filename + '.');
+      }).catch(function(error) {
+        notify(options, error && error.message ? error.message : String(error));
+      }).then(function() {
+        webmExporting = false;
+        exportWebmButton.textContent = 'Export Sequence WebM';
+        exportWebmButton.disabled = !selectedDonor() || !animationWebmSupported();
+      });
+    }
+
+    function applySelectedCopy(copyCompleteFrame) {
       var donor = selectedDonor(), donorFrame = selectedDonorFrame();
       if (!donor || !donorFrame) return;
+      var copiesCompleteFrame = copiesFrame || copyCompleteFrame;
       try {
-        if (copiesFrame) {
+        if (copiesCompleteFrame) {
           OB64.animationSequences.copyFrameFrom(rom, separation,
             targetFrame.sequenceIndex, donor, donorFrame.sequenceIndex);
           ui.animationLayer = 0;
@@ -3106,18 +3456,43 @@ window.OB64 = window.OB64 || {};
         selectLayer(state, updatedAnimation, updatedFrame,
           updatedFrame.layers[ui.animationLayer], ui);
         changed(options);
-        notify(options, (copiesFrame ? 'Copied frame from ' :
+        notify(options, (copiesCompleteFrame ? 'Copied complete frame from ' :
           'Copied sprite from ') +
-          donor.spec.className + ' frame ' + (donorFrame.sequenceIndex + 1) + '.');
+          copyDonorLabel(donor) + ' frame ' + (donorFrame.sequenceIndex + 1) + '.');
         close(); rerender();
       } catch (error) {
-        notify(options, 'Sprite copy blocked: ' + error.message);
+        notify(options, (copiesCompleteFrame
+          ? 'Complete frame copy blocked: ' : 'Sprite copy blocked: ') +
+          error.message);
       }
+    }
+    function applyCopy() {
+      applySelectedCopy(false);
+    }
+    function applyCompleteFrameCopy() {
+      if (!usesCutsceneActors()) return;
+      applySelectedCopy(true);
     }
     classField.select.addEventListener('change', function() {
       populateSequences(null);
     });
     sequenceField.select.addEventListener('change', function() { populateFrames(0); });
+    if (sourceField) sourceField.select.addEventListener('change', function() {
+      updateSourceFields();
+      if (usesCutsceneActors()) populateActorArtSources();
+      else populateSequences(targetAnimation);
+    });
+    if (actorArtField) actorArtField.select.addEventListener('change',
+      populateActorAnimations);
+    if (actorAnimationField) actorAnimationField.select.addEventListener('change',
+      populateActorFacings);
+    if (actorFacingField) actorFacingField.select.addEventListener('change',
+      populateActorPoses);
+    if (actorPoseField) actorPoseField.select.addEventListener('change', function() {
+      refreshCutsceneDonor(0);
+    });
+    if (actorAppearanceField) actorAppearanceField.select.addEventListener('change',
+      function() { refreshCutsceneDonor(Number(frameField.select.value) || 0); });
     frameField.select.addEventListener('change', function() { populateLayers(0); });
     overlay.addEventListener('click', function(event) {
       if (event.target === overlay) close();
@@ -3129,8 +3504,9 @@ window.OB64 = window.OB64 || {};
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
     document.body.appendChild(overlay);
+    updateSourceFields();
     populateSequences(targetAnimation);
-    classField.select.focus();
+    (sourceField || classField).select.focus();
   }
 
   function sequenceStrip(state, animation, targetAnimation, ui, options,
@@ -3174,6 +3550,7 @@ window.OB64 = window.OB64 || {};
     animation.frames.forEach(function(frame) {
       var frameIndex = frame.sequenceIndex;
       var isSelected = frame.sequenceIndex === ui.animationFrame;
+      var entry = element('div', 'animation-frame-entry');
       var card = element('button', 'animation-frame-card' +
         (isSelected ? ' selected' : ''));
       card.type = 'button';
@@ -3186,7 +3563,8 @@ window.OB64 = window.OB64 || {};
         dragHandle.title = 'Drag to change frame order';
         cardHeading.appendChild(dragHandle);
       }
-      cardHeading.appendChild(element('strong', 'animation-frame-ticks', frame.ticks + ' ticks'));
+      cardHeading.appendChild(element('strong', 'animation-frame-number',
+        'Frame ' + (frame.sequenceIndex + 1)));
       if (isSelected) cardHeading.appendChild(badge('Selected', 'selected'));
       if (animation.mappingStatus &&
           animation.mappingStatus.emptyFrameIndices.indexOf(frame.sequenceIndex) >= 0) {
@@ -3197,7 +3575,6 @@ window.OB64 = window.OB64 || {};
       drawFrame(canvas, animation, frame, state.animations, 4, null, null, false,
         weaponChildForAnimation(ui, animation));
       card.appendChild(canvas);
-      card.appendChild(element('span', '', 'Frame ' + (frame.sequenceIndex + 1)));
       card.addEventListener('click', function() {
         if (dragged) { dragged = false; return; }
         ui.animationFrame = frame.sequenceIndex; ui.animationLayer = frame.layers[0].ordinal;
@@ -3250,13 +3627,58 @@ window.OB64 = window.OB64 || {};
         });
         card.addEventListener('dragend', function() {
           draggedFrameIndex = null;
-          Array.prototype.forEach.call(strip.children, function(node) {
-            node.classList.remove('dragging', 'drag-target');
-          });
+          Array.prototype.forEach.call(
+            strip.querySelectorAll('.animation-frame-card'), function(node) {
+              node.classList.remove('dragging', 'drag-target');
+            });
           setTimeout(function() { dragged = false; }, 0);
         });
       }
-      strip.appendChild(card);
+      entry.appendChild(card);
+      var tickEditor = element('label', 'animation-frame-tick-editor');
+      tickEditor.appendChild(element('span', 'animation-frame-ticks', 'Ticks'));
+      var tickInput = element('input', 'animation-frame-tick-input');
+      tickInput.type = 'number';
+      tickInput.min = '0';
+      tickInput.max = '255';
+      tickInput.step = '1';
+      tickInput.value = String(frame.ticks);
+      tickInput.disabled = !editableSeparation;
+      tickInput.setAttribute('aria-label',
+        'Frame ' + (frame.sequenceIndex + 1) + ' ticks');
+      tickInput.title = editableSeparation
+        ? 'Set this frame duration from 0 through 255 ticks.'
+        : 'Create a separated private sequence before changing frame ticks.';
+      tickInput.addEventListener('change', function() {
+        var wanted = tickInput.value === '' ? NaN : Number(tickInput.value);
+        try {
+          if (OB64.animationSequences.setFrameTicks(
+              rom, editableSeparation, frameIndex, wanted)) {
+            changed(options);
+            notify(options, 'Set frame ' + (frameIndex + 1) + ' duration to ' +
+              wanted + (wanted === 1 ? ' tick.' : ' ticks.'));
+            rerender();
+          } else {
+            tickInput.value = String(frame.ticks);
+          }
+        } catch (error) {
+          tickInput.value = String(frame.ticks);
+          notify(options, 'Frame tick change blocked: ' + error.message);
+        }
+      });
+      tickInput.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          tickInput.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          tickInput.value = String(frame.ticks);
+          tickInput.blur();
+        }
+      });
+      tickEditor.appendChild(tickInput);
+      entry.appendChild(tickEditor);
+      strip.appendChild(entry);
     });
     section.appendChild(strip);
     return section;
@@ -4097,6 +4519,19 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  function appendPreviewBackgroundButton(bar, ui, rerender) {
+    var whitePreview = ui.transparentPreviewBackground === 'white';
+    var previewToggle = button('Transparent Preview: ' +
+      (whitePreview ? 'White' : 'Checkerboard'), 'btn-secondary', function() {
+      ui.transparentPreviewBackground = whitePreview ? 'checkerboard' : 'white';
+      rerender();
+    });
+    previewToggle.setAttribute('aria-pressed', whitePreview ? 'true' : 'false');
+    previewToggle.setAttribute('title',
+      'Changes transparent pixels in editor previews only. Exports and Project data do not change.');
+    bar.appendChild(previewToggle);
+  }
+
   function toolbar(state, rom, animation, frame, layer, separation,
       ui, options, rerender) {
     var bar = element('div', 'art-toolbox animation-toolbox');
@@ -4134,7 +4569,10 @@ window.OB64 = window.OB64 || {};
           ui.animationTool = 'move'; rerender();
         }));
     }
-    if (!source.editable) return bar;
+    if (!source.editable) {
+      appendPreviewBackgroundButton(bar, ui, rerender);
+      return bar;
+    }
     var transformAvailable = !!separation &&
       source.formatKind === 'indexed-ci8';
     var transformTitle = !separation
@@ -4172,6 +4610,7 @@ window.OB64 = window.OB64 || {};
       }
     });
     redo.disabled = !history.redo.length; bar.appendChild(redo);
+    appendPreviewBackgroundButton(bar, ui, rerender);
     return bar;
   }
 
@@ -4233,18 +4672,31 @@ window.OB64 = window.OB64 || {};
     return panel;
   }
 
-  function downloadFrame(animation, frame, state, weaponChildOrdinal) {
+  function framePngCanvas(animation, frame, state, weaponChildOrdinal) {
     var canvas = element('canvas');
     drawFrame(canvas, animation, frame, state.animations, 1, null, null, false,
-      weaponChildOrdinal);
-    canvas.toBlob(function(blob) {
-      if (!blob) return;
-      var url = URL.createObjectURL(blob), anchor = document.createElement('a');
-      anchor.href = url; anchor.download = animation.key + '-frame-' +
-        String(frame.sequenceIndex + 1).padStart(2, '0') + '.png';
-      document.body.appendChild(anchor); anchor.click(); anchor.remove();
-      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
-    }, 'image/png');
+      weaponChildOrdinal, 'transparent');
+    return canvas;
+  }
+
+  function downloadFrame(animation, frame, state, weaponChildOrdinal) {
+    var canvas = framePngCanvas(animation, frame, state, weaponChildOrdinal);
+    return new Promise(function(resolve, reject) {
+      canvas.toBlob(function(blob) {
+        if (!blob) {
+          reject(new Error('The browser could not encode the animation frame as PNG.'));
+          return;
+        }
+        var url = URL.createObjectURL(blob), anchor = document.createElement('a');
+        var filename = animationDownloadStem(animation) + '-frame-' +
+          String(frame.sequenceIndex + 1).padStart(2, '0') + '.png';
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor); anchor.click(); anchor.remove();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+        resolve(filename);
+      }, 'image/png');
+    });
   }
 
   function animationExportFrames(timeline) {
@@ -4295,6 +4747,11 @@ window.OB64 = window.OB64 || {};
     return stem || 'combat-animation';
   }
 
+  function animationWebmSurfaces(state, animation, timeline, weaponChildOrdinal) {
+    return animationPreviewSurfaces(state, animation, timeline,
+      weaponChildOrdinal, 'transparent');
+  }
+
   async function downloadAnimationWebm(animation, state, weaponChildOrdinal) {
     if (!animationWebmSupported()) {
       throw new Error('This browser cannot record the animation preview as WebM.');
@@ -4302,7 +4759,7 @@ window.OB64 = window.OB64 || {};
     var timeline = animationPreviewTimeline(animation);
     var frames = animationExportFrames(timeline);
     if (!frames.length) throw new Error('This sequence has no timed frames to export.');
-    var surfaces = animationPreviewSurfaces(state, animation, timeline,
+    var surfaces = animationWebmSurfaces(state, animation, timeline,
       weaponChildOrdinal);
     var firstSurface = surfaces[frames[0].frameIndex];
     if (!firstSurface) throw new Error('The first animation frame could not be rendered.');
@@ -4310,7 +4767,7 @@ window.OB64 = window.OB64 || {};
     var canvas = document.createElement('canvas');
     canvas.width = firstSurface.width;
     canvas.height = firstSurface.height;
-    var context = canvas.getContext('2d');
+    var context = canvas.getContext('2d', { alpha: true });
     context.imageSmoothingEnabled = false;
     context.drawImage(firstSurface, 0, 0);
 
@@ -4419,34 +4876,41 @@ window.OB64 = window.OB64 || {};
     animation.frames.forEach(function(frame) {
       parts.push('f', frame.sequenceIndex, frame.token, frame.ticks);
       frame.layers.forEach(function(layer) {
+        var metrics = layerPreviewMetrics(animation, layer);
         parts.push(layer.sourceKey, layer.selectedChildOrdinal,
           layer.drawOffsetX, layer.drawOffsetY, layer.width, layer.height);
+        if (metrics) parts.push(metrics.left, metrics.top, metrics.width,
+          metrics.height, metrics.flipX ? 1 : 0, metrics.flipY ? 1 : 0);
       });
     });
     return parts.join(':');
   }
 
   function animationPreviewSurfaces(state, animation, timeline,
-      weaponChildOrdinal) {
+      weaponChildOrdinal, backgroundMode) {
     var animationState = state.animations;
     var editRevision = Number(animationState.editRevision) || 0;
     var signature = animationPreviewStructureSignature(animation);
+    backgroundMode = normalizePreviewBackground(backgroundMode === undefined
+      ? activePreviewBackground : backgroundMode);
     var cached = animationPreviewSurfaceCache;
     if (cached && cached.animationState === animationState &&
         cached.signature === signature &&
         cached.weaponChildOrdinal === weaponChildOrdinal &&
+        cached.backgroundMode === backgroundMode &&
         cached.editRevision === editRevision) return cached.surfaces;
     var surfaces = [];
     timeline.entries.forEach(function(entry) {
       var surface = document.createElement('canvas');
       drawFrame(surface, animation, entry.frame, animationState, 4, null, null,
-        false, weaponChildOrdinal);
+        false, weaponChildOrdinal, backgroundMode);
       surfaces[entry.frameIndex] = surface;
     });
     animationPreviewSurfaceCache = {
       animationState: animationState,
       signature: signature,
       weaponChildOrdinal: weaponChildOrdinal,
+      backgroundMode: backgroundMode,
       editRevision: editRevision,
       surfaces: surfaces
     };
@@ -4463,18 +4927,23 @@ window.OB64 = window.OB64 || {};
     return preview;
   }
 
-  function animationSequencePreview(state, animation, ui) {
-    var preview = element('figure', 'animation-sequence-preview');
-    preview.appendChild(element('figcaption', '', 'Animation · 30 ticks/sec'));
+  function animationSequencePreview(state, animation, ui, previewOptions) {
+    previewOptions = previewOptions || {};
+    var preview = element('figure', 'animation-sequence-preview' +
+      (previewOptions.className ? ' ' + previewOptions.className : ''));
+    preview.appendChild(element('figcaption', '', previewOptions.caption ||
+      'Animation · 30 ticks/sec'));
     var canvas = element('canvas');
-    canvas.setAttribute('aria-label', 'Looping full animation preview');
+    canvas.setAttribute('aria-label', previewOptions.ariaLabel ||
+      'Looping full animation preview');
     preview.appendChild(canvas);
     var status = element('span', 'animation-sequence-preview-status');
     preview.appendChild(status);
     var timeline = animationPreviewTimeline(animation);
-    var weaponChildOrdinal = weaponChildForAnimation(ui, animation);
+    var weaponChildOrdinal = Number.isInteger(previewOptions.weaponChildOrdinal)
+      ? previewOptions.weaponChildOrdinal : weaponChildForAnimation(ui, animation);
     var surfaces = animationPreviewSurfaces(state, animation, timeline,
-      weaponChildOrdinal);
+      weaponChildOrdinal, activePreviewBackground);
     var context = canvas.getContext('2d');
     context.imageSmoothingEnabled = false;
     var displayedFrameIndex = -1;
@@ -4888,12 +5357,15 @@ window.OB64 = window.OB64 || {};
       actions.appendChild(reset);
     }
     actions.appendChild(button('Export Current Frame PNG', 'btn-secondary', function() {
-      downloadFrame(animation, frame, state, weaponChildForAnimation(ui, animation));
+      downloadFrame(animation, frame, state,
+        weaponChildForAnimation(ui, animation)).catch(function(error) {
+        notify(options, error && error.message ? error.message : String(error));
+      });
     }));
     var exportAnimation = button('Export Animation WebM', 'btn-secondary', function() {
       exportAnimation.disabled = true;
       exportAnimation.textContent = 'Exporting Animation…';
-      notify(options, 'Recording one animation loop at 30 ticks per second.');
+      notify(options, 'Recording one transparent animation loop at 30 ticks per second.');
       downloadAnimationWebm(animation, state,
         weaponChildForAnimation(ui, animation)).then(function(filename) {
         notify(options, 'Animation exported as ' + filename + '.');
@@ -4908,7 +5380,8 @@ window.OB64 = window.OB64 || {};
     if (exportAnimation.disabled) {
       exportAnimation.title = 'This browser cannot record canvas video as WebM.';
     } else {
-      exportAnimation.title = 'Download one 4x loop at 30 video frames per second.';
+      exportAnimation.title =
+        'Download one transparent 4x loop at 30 video frames per second.';
     }
     actions.appendChild(exportAnimation);
     section.appendChild(actions);
@@ -4916,6 +5389,8 @@ window.OB64 = window.OB64 || {};
   }
 
   function render(state, ui, options, rerender, rom) {
+    activePreviewBackground = ui && ui.transparentPreviewBackground === 'white'
+      ? 'white' : 'checkerboard';
     var root = element('main', 'animation-editor-root');
     if (!state.animations || !state.animations.supported) {
       root.appendChild(element('h3', '', 'Combat Animation'));
@@ -4994,8 +5469,10 @@ window.OB64 = window.OB64 || {};
     childPixels: childPixels,
     weaponSourceForFrame: weaponSourceForFrame,
     framePixels: framePixels,
+    paintPixels: paintPixels,
     layerDisplayLabel: layerDisplayLabel,
     drawFrame: drawFrame,
+    framePngCanvas: framePngCanvas,
     selectorFlags: selectorFlags,
     selectorFlagParts: selectorFlagParts,
     animationSideLabel: animationSideLabel,
@@ -5008,7 +5485,9 @@ window.OB64 = window.OB64 || {};
     idleAnimationRows: idleAnimationRows,
     animationPreviewTimeline: animationPreviewTimeline,
     animationPreviewFrameAtMs: animationPreviewFrameAtMs,
+    animationPreviewSurfaces: animationPreviewSurfaces,
     animationExportFrames: animationExportFrames,
+    animationWebmSurfaces: animationWebmSurfaces,
     animationWebmMimeType: animationWebmMimeType,
     animationPoseOffsetSummary: animationPoseOffsetSummary,
     animationArtName: animationArtName,

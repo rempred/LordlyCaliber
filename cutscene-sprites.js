@@ -46,6 +46,8 @@ window.OB64 = window.OB64 || {};
       banks: {},
       programs: {},
       frames: {},
+      copySources: {},
+      copySequences: {},
       bodyAnimations: null,
       bodyRoutes: {},
       bodyPrograms: {},
@@ -258,7 +260,9 @@ window.OB64 = window.OB64 || {};
       palette = bank.palettes[lookupBank];
     }
     cached = {
+      artId: artId,
       resourceKey: resourceKey,
+      resource: resource,
       sprite: sprite,
       requestedChildOrdinal: requestedChildOrdinal,
       childOrdinal: childOrdinal,
@@ -354,6 +358,287 @@ window.OB64 = window.OB64 || {};
       }
     }
     return output;
+  }
+
+  function writeU16(bytes, offset, value) {
+    bytes[offset] = (value >>> 8) & 0xFF;
+    bytes[offset + 1] = value & 0xFF;
+  }
+
+  function rowBytes(format, width) {
+    if (format === 0) return Math.ceil(width / 16) * 8;
+    if (format === 1) return Math.ceil(width / 8) * 8;
+    if (format === 2) return Math.ceil(width / 4) * 8;
+    if (format === 3) return Math.ceil(width / 4) * 16;
+    fail('Cutscene actor sprite uses unknown lane format ' + format + '.');
+  }
+
+  function cropLane(bytes, format, sourceStride, width, height) {
+    if (!bytes) return null;
+    var targetStride = rowBytes(format, width);
+    var output = new Uint8Array(targetStride * height);
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        var sourceOffset;
+        var targetOffset;
+        if (format === 0) {
+          sourceOffset = y * sourceStride + (x >>> 1);
+          targetOffset = y * targetStride + (x >>> 1);
+          var value = x & 1 ? bytes[sourceOffset] & 0x0F : bytes[sourceOffset] >>> 4;
+          if (x & 1) output[targetOffset] = (output[targetOffset] & 0xF0) | value;
+          else output[targetOffset] = (output[targetOffset] & 0x0F) | (value << 4);
+          continue;
+        }
+        var pixelBytes = format === 1 ? 1 : (format === 2 ? 2 : 4);
+        sourceOffset = y * sourceStride + x * pixelBytes;
+        targetOffset = y * targetStride + x * pixelBytes;
+        output.set(bytes.subarray(sourceOffset, sourceOffset + pixelBytes), targetOffset);
+      }
+    }
+    return output;
+  }
+
+  function oneChildWindow(source, width, height) {
+    displayWindowPixels(source, width, height);
+    var sprite = source.sprite;
+    var first = cropLane(source.lanes.first, sprite.firstFormat,
+      sprite.firstStride, width, height);
+    var second = cropLane(source.lanes.second, sprite.secondFormat,
+      sprite.secondStride, width, height);
+    var lookup = source.lanes.lookup ? source.lanes.lookup.slice() : null;
+    var childFlags = (first ? 1 : 0) | (second ? 2 : 0) | (lookup ? 4 : 0);
+    var length = 16 + (first ? first.length : 0) +
+      (second ? second.length : 0) + (lookup ? lookup.length : 0);
+    var output = new Uint8Array(length);
+    writeU16(output, 0, 0x5554);
+    output[2] = 1;
+    output[3] = sprite.flags;
+    writeU16(output, 4, width);
+    writeU16(output, 6, height);
+    writeU16(output, 8, 0x5554);
+    output[10] = 0;
+    output[11] = childFlags;
+    var child = sprite.children[source.childOrdinal];
+    writeU16(output, 12, child.widthField === sprite.width
+      ? width : child.widthField);
+    writeU16(output, 14, child.heightField === sprite.height
+      ? height : child.heightField);
+    var cursor = 16;
+    if (first) { output.set(first, cursor); cursor += first.length; }
+    if (second) { output.set(second, cursor); cursor += second.length; }
+    if (lookup) output.set(lookup, cursor);
+    return output;
+  }
+
+  function copyFormatKind(sprite) {
+    if (sprite.firstFormat === 1 && sprite.secondFormat === 0) return 'indexed-ci8';
+    if (sprite.firstFormat === 1 && sprite.secondFormat === 1) {
+      return 'indexed-ci8-alpha8';
+    }
+    if (sprite.firstFormat === 2) return 'direct-rgba5551';
+    return 'unsupported';
+  }
+
+  function copySourceForLayer(state, prepared, layer, appearance) {
+    var identity = [prepared.program.bank, layer.artId, layer.width,
+      layer.height, appearance].join(':');
+    var cached = state.copySources[identity];
+    if (cached) return cached;
+    var loaded = loadSprite(state, prepared, layer.artId, appearance);
+    var decoded = oneChildWindow(loaded, layer.width, layer.height);
+    var sprite = OB64.animationArt.parseSpriteObject(decoded, loaded.resourceKey);
+    var formatKind = copyFormatKind(sprite);
+    if (formatKind === 'unsupported') {
+      fail('Actor Art Source ' + prepared.program.bank + ' art ' + layer.artId +
+        ' uses an unsupported sprite format.');
+    }
+    var editable = formatKind === 'indexed-ci8';
+    var key = 'cutscene-copy-bank-' + prepared.program.bank + '-art-' +
+      layer.artId + '-' + layer.width + 'x' + layer.height + '-appearance-' + appearance;
+    cached = {
+      key: key,
+      bindingId: key,
+      physicalSourceId: key,
+      binding: null,
+      physicalSource: null,
+      sourceRole: 'body',
+      selectorPolicy: 0,
+      childSelectionPolicy: 'cutscene-actor-appearance',
+      palettePolicy: 'descriptor-lookup-bank-or-child-embedded-lookup',
+      elementSelection: null,
+      formatKind: formatKind,
+      editable: editable,
+      lockedReason: editable ? '' : (formatKind === 'indexed-ci8-alpha8'
+        ? 'CI8 + I8 actor art is copyable but is not pixel-editable.'
+        : 'Direct RGBA5551 actor art is copyable but is not pixel-editable.'),
+      animationKey: null,
+      animationLabel: '',
+      animationKeys: [],
+      animationLabels: [],
+      legacyKeys: [],
+      legacyAnimationKeys: [],
+      artId: layer.artId,
+      descriptorKey: prepared.bank.source.descriptorKey,
+      descriptorMemberIndex: layer.artId + 4,
+      descriptorEntryOffset: prepared.bank.descriptor.entry + 4 +
+        (layer.artId + 4) * 4,
+      resourceKey: loaded.resourceKey,
+      resource: Object.assign({}, loaded.resource, { decoded: decoded }),
+      sprite: sprite,
+      childOrdinal: 0,
+      weaponSelectable: false,
+      selectableChildOrdinals: [],
+      editableChildOrdinals: editable ? [0] : [],
+      originalChildren: {},
+      displayChildren: {},
+      embeddedPalettes: {},
+      visibleChildren: {},
+      lookupBank: prepared.bank.config.bankMap[layer.artId],
+      palette: loaded.palette.slice(),
+      usageFrames: [],
+      usageFramesByAnimation: {},
+      requestedAppearance: appearance,
+      selectedAppearance: loaded.childOrdinal,
+      appearanceFallback: loaded.childFallback
+    };
+    state.copySources[identity] = cached;
+    return cached;
+  }
+
+  function actorSequence(state, program, appearance) {
+    if (!program || !program.programId || !Array.isArray(program.frames) ||
+        !program.frames.length) {
+      fail('The selected cutscene actor pose has no renderable sequence.');
+    }
+    appearance = Number(appearance);
+    if (!Number.isInteger(appearance) || appearance < 0 || appearance > 7) {
+      fail('Cutscene actor Appearance must be from 0 through 7.');
+    }
+    var identity = program.programId + ':appearance-' + appearance;
+    if (state.copySequences[identity]) return state.copySequences[identity];
+    var prepared = prepareProgram(state, program);
+    var artByKey = {};
+    var originX = 0;
+    var originY = 0;
+    var endX = 0;
+    var endY = 0;
+    var bounded = false;
+    var fallbackCount = 0;
+    var fallbackSources = {};
+    var previewLayerMetrics = {};
+    var frames = prepared.frames.map(function(frame, frameIndex) {
+      var layers = frame.layers.map(function(layer) {
+        var source = copySourceForLayer(state, prepared, layer, appearance);
+        artByKey[source.key] = source;
+        if (source.usageFrames.indexOf(frameIndex) < 0) {
+          source.usageFrames.push(frameIndex);
+        }
+        if (source.appearanceFallback && !fallbackSources[source.key]) {
+          fallbackSources[source.key] = true;
+          fallbackCount++;
+        }
+        var scaleX = Number(layer.scaleXRaw) / 1024;
+        var scaleY = Number(layer.scaleYRaw) / 1024;
+        if (!Number.isFinite(scaleX) || scaleX < 0 ||
+            !Number.isFinite(scaleY) || scaleY < 0) {
+          fail('Cutscene actor layer scale is invalid.');
+        }
+        var width = Math.max(1, Math.round(layer.width * scaleX));
+        var height = Math.max(1, Math.round(layer.height * scaleY));
+        var left = Math.round(layer.drawOffsetX * scaleX);
+        var top = Math.round(layer.drawOffsetY * scaleY);
+        var key = frameIndex + ':' + layer.ordinal;
+        previewLayerMetrics[key] = {
+          left: left,
+          top: top,
+          width: width,
+          height: height,
+          flipX: (layer.flags & 0x01) !== 0,
+          flipY: (layer.flags & 0x02) !== 0
+        };
+        if (!bounded) {
+          originX = left;
+          originY = top;
+          endX = left + width;
+          endY = top + height;
+          bounded = true;
+        } else {
+          originX = Math.min(originX, left);
+          originY = Math.min(originY, top);
+          endX = Math.max(endX, left + width);
+          endY = Math.max(endY, top + height);
+        }
+        return Object.assign({}, layer, {
+          sourceKey: source.key,
+          bindingId: source.bindingId,
+          physicalSourceId: source.physicalSourceId,
+          sourceRole: source.sourceRole,
+          resourceKey: source.resourceKey,
+          lookupBank: source.lookupBank,
+          childCount: 1,
+          requestedChildOrdinal: 0,
+          selectedChildOrdinal: 0,
+          copyPreviewKey: key
+        });
+      });
+      return {
+        sequenceIndex: frameIndex,
+        sourceFrameIndex: frameIndex,
+        token: frame.frameToken,
+        ticks: frame.durationFrames,
+        metadataTarget: null,
+        layers: layers
+      };
+    });
+    if (!bounded) fail('The selected cutscene actor pose has no drawable layers.');
+    var source = prepared.bank.source;
+    var animationKey = 'cutscene-actor-bank-' + program.bank + '-state-' +
+      program.stateIndex + '-appearance-' + appearance;
+    var animation = {
+      key: animationKey,
+      corpusId: animationKey,
+      sourceKind: 'cutscene-actor',
+      actorArtSource: source,
+      cutsceneProgram: program,
+      selectedAppearance: appearance,
+      appearanceFallbackCount: fallbackCount,
+      previewLayerMetrics: previewLayerMetrics,
+      spec: {
+        key: animationKey,
+        id: animationKey,
+        classId: -1,
+        className: source.label,
+        actionId: program.animationKey,
+        actionName: 'Key ' + program.animationKey + ' · facing ' + program.facing,
+        variantLabel: 'Appearance ' + appearance,
+        selector: program.stateIndex,
+        selectedBodyChild: 0,
+        selectedChildOrdinal: 0,
+        idleSequence: false
+      },
+      frames: frames,
+      artByKey: artByKey,
+      canvas: {
+        originX: originX,
+        originY: originY,
+        endX: endX,
+        endY: endY,
+        width: endX - originX,
+        height: endY - originY
+      }
+    };
+    Object.keys(artByKey).forEach(function(key) {
+      var art = artByKey[key];
+      if (art.animationKeys.indexOf(animationKey) < 0) {
+        art.animationKeys.push(animationKey);
+        art.animationLabels.push(source.label + ' ' + animation.spec.actionName);
+      }
+      art.usageFramesByAnimation[animationKey] = art.usageFrames.slice();
+      art.animationKey = animationKey;
+      art.animationLabel = source.label + ' ' + animation.spec.actionName;
+    });
+    state.copySequences[identity] = animation;
+    return animation;
   }
 
   function frameIndexAt(programState, previewFrame, loop) {
@@ -707,6 +992,7 @@ window.OB64 = window.OB64 || {};
   OB64.cutsceneSprites = {
     Error: SpriteError,
     create: create,
+    actorSequence: actorSequence,
     frameForActor: frameForActor,
     framesForPreview: framesForPreview,
     framesForStageProps: framesForStageProps

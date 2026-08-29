@@ -957,6 +957,20 @@ function route(rom, classId, actionId, flags, rawMode) {
     rom, separation, targetFrame.sequenceIndex, 0, -123, 45), true);
   assert.strictEqual(targetFrame.layers[0].drawOffsetX, -123);
   assert.strictEqual(targetFrame.layers[0].drawOffsetY, 45);
+  const updatedFrameTicks = targetFrame.ticks === 255
+    ? targetFrame.ticks - 1 : targetFrame.ticks + 1;
+  assert.strictEqual(OB64.animationSequences.setFrameTicks(
+    rom, separation, targetFrame.sequenceIndex, updatedFrameTicks), true);
+  assert.strictEqual(targetFrame.ticks, updatedFrameTicks);
+  assert.strictEqual(privateAnimation.poseProgram.frames[
+    targetFrame.sequenceIndex][1], updatedFrameTicks,
+  'frame tick editing must rewrite the matching body-program command');
+  assert.deepStrictEqual(privateAnimation.spec.frames,
+    privateAnimation.frames.map(frame => [frame.token, frame.ticks]));
+  assert.strictEqual(OB64.animationSequences.setFrameTicks(
+    rom, separation, targetFrame.sequenceIndex, updatedFrameTicks), false);
+  assert.throws(() => OB64.animationSequences.setFrameTicks(
+    rom, separation, targetFrame.sequenceIndex, 256), /frame ticks/);
   OB64.animationSequences.copyLayerFrom(
     rom, separation, targetFrame.sequenceIndex, 0, fighter,
     fighter.frames[1].sequenceIndex, fighter.frames[1].layers[0].ordinal);
@@ -976,6 +990,69 @@ function route(rom, classId, actionId, flags, rawMode) {
     'frame Copy From must retain the target body-program token');
   assert.strictEqual(copiedFrameTarget.ticks, copiedFrameTicks,
     'frame Copy From must retain the target body-program timing');
+
+  const cutsceneBodyLayer = fighter.frames[0].layers.find(layer =>
+    fighter.artByKey[layer.sourceKey].sourceRole === 'body');
+  assert(cutsceneBodyLayer,
+    'cutscene complete-frame copying requires one body sprite fixture');
+  const cutsceneBodySource = fighter.artByKey[cutsceneBodyLayer.sourceKey];
+  const cutsceneSourceKey = 'test-cutscene-native-source';
+  const cutsceneSource = Object.assign({}, cutsceneBodySource, {
+    key: cutsceneSourceKey,
+    bindingId: cutsceneSourceKey,
+    physicalSourceId: cutsceneSourceKey,
+    childSelectionPolicy: 'cutscene-actor-appearance',
+  });
+  const cutsceneLayer = Object.assign({}, cutsceneBodyLayer, {
+    ordinal: 0,
+    sourceKey: cutsceneSourceKey,
+    bindingId: cutsceneSourceKey,
+    physicalSourceId: cutsceneSourceKey,
+    drawOffsetX: 300,
+    drawOffsetY: -300,
+    flags: 3,
+    scaleXRaw: 512,
+    scaleYRaw: 2048,
+  });
+  const cutsceneDonor = {
+    key: 'test-cutscene-native-sequence',
+    artByKey: { [cutsceneSourceKey]: cutsceneSource },
+    frames: [{ sequenceIndex: 0, ticks: 8, layers: [cutsceneLayer] }],
+  };
+  OB64.animationSequences.copyFrameFrom(
+    rom, separation, copiedFrameTarget.sequenceIndex, cutsceneDonor, 0);
+  const copiedCutsceneLayer = copiedFrameTarget.layers[0];
+  const copiedCutsceneSource = privateAnimation.artByKey[
+    copiedCutsceneLayer.sourceKey];
+  const copiedCutsceneStableFrame = copiedFrameTarget.sourceFrameIndex;
+  const copiedCutsceneSourceOrdinal =
+    copiedCutsceneSource.separationSourceOrdinal;
+  assert.strictEqual(copiedFrameTarget.layers.length, 1,
+    'complete cutscene-frame copying must retain the complete donor layer stack');
+  assert.strictEqual(copiedCutsceneSource.childSelectionPolicy,
+    'cutscene-actor-appearance',
+    'complete cutscene-frame copying must retain native transform provenance');
+  assert.strictEqual(copiedCutsceneLayer.drawOffsetX, 300);
+  assert.strictEqual(copiedCutsceneLayer.drawOffsetY, -300);
+  assert.strictEqual(copiedCutsceneLayer.flags, 3);
+  assert.strictEqual(copiedCutsceneLayer.scaleXRaw, 512);
+  assert.strictEqual(copiedCutsceneLayer.scaleYRaw, 2048);
+  assert.strictEqual(privateAnimation.canvas.originY, -600,
+    'a copied cutscene frame must scale its native Y position for preview bounds');
+  assert(privateAnimation.canvas.endX >= 150 && privateAnimation.canvas.endX < 300,
+    'a copied cutscene frame must scale its native X position for preview bounds');
+  const cutsceneProject = OB64.animationSequences.collectProject(rom)
+    .entries[separation.id];
+  assert(Object.values(cutsceneProject.sources).some(source =>
+    source.childSelectionPolicy === 'cutscene-actor-appearance'),
+  'Project data must preserve native cutscene transform provenance');
+
+  OB64.animationSequences.copyLayerFrom(
+    rom, separation, targetFrame.sequenceIndex, 0, cutsceneDonor, 0, 0);
+  const copiedCutsceneSpriteSource = privateAnimation.artByKey[
+    targetFrame.layers[0].sourceKey];
+  assert.strictEqual(copiedCutsceneSpriteSource.childSelectionPolicy, null,
+    'sprite-only copying must keep the target combat-layer transform');
 
   const importedFrame = privateAnimation.frames[2];
   const equipmentLayersBeforeImport = importedFrame.layers.filter(layer =>
@@ -1143,9 +1220,18 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert.strictEqual(restoredSeparation.syntheticAnimation.frames[0]
     .layers[0].drawOffsetY, 45,
   'Project reload must preserve private layer positions');
-  assert.strictEqual(restoredSeparation.syntheticAnimation.frames[1].layers.length,
-    fighter.frames[0].layers.length,
-  'Project reload must preserve a copied frame layer stack');
+  const restoredCutsceneFrame = restoredSeparation.syntheticAnimation.frames
+    .find(frame => frame.sourceFrameIndex === copiedCutsceneStableFrame);
+  const restoredCutsceneSource = Object.values(
+    restoredSeparation.syntheticAnimation.artByKey).find(source =>
+      source.separationSourceOrdinal === copiedCutsceneSourceOrdinal);
+  assert(restoredCutsceneFrame && restoredCutsceneSource,
+    'Project reload must preserve a copied cutscene frame and source');
+  assert.strictEqual(restoredCutsceneFrame.layers.length, 1,
+    'Project reload must preserve the complete cutscene layer stack');
+  assert.strictEqual(restoredCutsceneSource.childSelectionPolicy,
+    'cutscene-actor-appearance',
+    'Project reload must preserve native cutscene transform provenance');
   const restoredImportedFrame = restoredSeparation.syntheticAnimation.frames
     .find(frame => frame.sourceFrameIndex === importedStableFrame);
   const restoredImportedSource = Object.values(
