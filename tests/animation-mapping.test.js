@@ -131,6 +131,22 @@ function changedPixels(source, childOrdinal) {
   assert.strictEqual(fighterIdleChoices.length, 1);
   assert(fighterIdleChoices[0].label.includes('Idle / Rest') &&
     fighterIdleChoices[0].label.includes('Idle Loop'));
+  assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
+    false, false), { includeIdle: true });
+  assert.strictEqual(OB64.animationUI.animationCopyCatalogOptions(
+    false, true), null,
+  'Replace From must retain its current source catalog');
+  assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
+    true, false), { idleOnly: true });
+  const fighterCopySourceRows = [0, 1].flatMap(side =>
+    OB64.animationUI.animationSequenceCatalogRows(
+      state, null, 0x02, side, { includeIdle: true }));
+  const fighterCopyIdleRows = fighterCopySourceRows.filter(animation =>
+    animation.spec.idleSequence);
+  assert.strictEqual(fighterCopyIdleRows.length, 4,
+    'Copy From and Separate must list selector 0 for every Fighter art route');
+  assert.deepStrictEqual(fighterCopyIdleRows.map(animation =>
+    OB64.animationUI.selectorFlags(animation)), ['0/0', '1/0', '0/1', '1/1']);
   const fighterActions = OB64.animationUI.animationActionChoices(
     state.specs.filter(animation => animation.spec.classId === 0x02),
     fighterIdleBase);
@@ -392,6 +408,14 @@ function changedPixels(source, childOrdinal) {
         assert.strictEqual(choice.linkedToKey, first.key);
         assert(choice.linkedTitle.includes('exact same body program'));
         assert(!choice.label.includes('Linked'));
+        assert.strictEqual(OB64.animationUI.animationSequenceStorageIdentity(
+          choice.representative),
+        OB64.animationUI.animationSequenceStorageIdentity(first.representative),
+        'linked rows must share one body-program storage owner');
+        assert.deepStrictEqual(
+          [...choice.representative.poseProgram.program],
+          [...first.representative.poseProgram.program],
+        'linked rows must share every body-program byte');
       } else {
         assert.strictEqual(choice.linkedToKey, undefined);
         firstByIdentity.set(identity, choice);
@@ -566,10 +590,15 @@ function changedPixels(source, childOrdinal) {
   'the Body Sprite Sequence menu must follow the exact selected art variant');
   const fighterPlayerChoices = OB64.animationUI.animationClassVariantChoices(
     fighterPlayerSequences);
-  assert.strictEqual(fighterPlayerChoices.length, 8);
-  assert(fighterPlayerChoices.some(choice =>
+  assert.strictEqual(fighterPlayerChoices.length, 4);
+  assert(!fighterPlayerChoices.some(choice =>
     choice.representative.spec.nativeSelectorCandidate),
-  'the stable Fighter catalog must include structurally valid native programs');
+  'mapped Fighter rows must replace redundant native-program labels');
+  OB64.combatAnimationOverrides.selectorOptions(0x02).forEach(option => {
+    assert(fighterPlayerChoices.some(choice =>
+      choice.representative.spec.selector === option.id),
+    'every valid Fighter body program must remain selectable');
+  });
   assert(fighterPlayerChoices.every(choice =>
     choice.sequenceKind === 'vanilla' && !choice.label.startsWith('Vanilla') &&
     !/Player Side|Enemy Side|Fighter Art|Variant/.test(choice.label)));

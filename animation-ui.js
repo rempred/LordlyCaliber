@@ -420,11 +420,10 @@ window.OB64 = window.OB64 || {};
       animation.poseProgram.records;
     if (!Array.isArray(records)) {
       return {
-        label: 'Art Shift Unknown',
+        label: 'Pose Offsets Unknown',
         title: 'The body program could not be read, so its local pose offsets ' +
-          'are unknown. These offsets move the sprite art inside its drawing ' +
-          'space. They do not determine whether the character approaches the ' +
-          'target.'
+          'are unknown. These fields do not prove a visible art shift or ' +
+          'battlefield movement.'
       };
     }
     var offset = [0, 0, 0], peak = [0, 0, 0], recordCount = 0;
@@ -442,13 +441,13 @@ window.OB64 = window.OB64 || {};
         peak[field] = Math.max(peak[field], Math.abs(offset[field]));
       }
     });
-    var shifted = peak.some(function(value) { return value !== 0; });
-    if (!shifted) {
+    var changed = peak.some(function(value) { return value !== 0; });
+    if (!changed) {
       return {
-        label: 'No Art Shift',
-        title: 'This body program has no nonzero opcode 0x0C local pose ' +
-          'offsets. That means its sprite art does not shift inside the drawing ' +
-          'space. It does not prove that the character stands still.',
+        label: 'No Pose Offset',
+        title: 'This body program has no nonzero opcode 0x0C changes to its ' +
+          'three local pose-source fields. This does not prove that the sprite ' +
+          'art or battlefield actor stands still.',
         recordCount: recordCount,
         peak: peak,
         end: offset,
@@ -457,17 +456,15 @@ window.OB64 = window.OB64 || {};
     }
     var returns = offset.every(function(value) { return value === 0; });
     return {
-      label: returns ? 'Art Shifts and Returns' : 'Art Shift Remains',
+      label: returns ? 'Pose Offsets Return' : 'Pose Offset Remains',
       title: 'This body program contains ' + recordCount + ' opcode 0x0C ' +
         'local pose-offset record' + (recordCount === 1 ? '' : 's') + '. ' +
-        'Peak absolute offsets for source fields +0x10, +0x0E, and +0x0C ' +
+        'Peak absolute changes for local pose-source fields +0x10, +0x0E, and +0x0C ' +
         'are ' + peak[0] + ', ' + peak[1] + ', and ' + peak[2] + '. ' +
-        (returns ? 'All three local offsets return to zero. ' :
-          'The final local offsets are ' + offset[0] + ', ' + offset[1] +
+        (returns ? 'All three local pose-source fields return to zero. ' :
+          'The final local pose-source changes are ' + offset[0] + ', ' + offset[1] +
           ', and ' + offset[2] + '. ') +
-        'These offsets move the sprite art inside its drawing space. They are ' +
-        'not battlefield actor coordinates and do not determine whether the ' +
-        'character approaches the target.',
+        'These fields do not prove a visible art shift or battlefield movement.',
       recordCount: recordCount,
       peak: peak,
       end: offset,
@@ -484,6 +481,27 @@ window.OB64 = window.OB64 || {};
   var animationSequenceIdentityCache = typeof WeakMap === 'function'
     ? new WeakMap() : null;
 
+  function animationSequenceStorageIdentity(animation) {
+    var spec = animation && animation.spec || {};
+    if (animation && (animation.separationId || spec.separatedCopy)) {
+      return 'project:' + String(animation.separationId || animation.key || spec.key);
+    }
+    var poseProgram = animation && animation.poseProgram || {};
+    if (Number.isInteger(spec.poseKey) &&
+        Number.isInteger(poseProgram.start) &&
+        Number.isInteger(poseProgram.end)) {
+      return ['rom', spec.poseKey, poseProgram.start, poseProgram.end].join(':');
+    }
+    return 'animation:' + String(animation && animation.key || spec.key || 'unknown');
+  }
+
+  function animationPoseProgramBytes(animation) {
+    var program = animation && animation.poseProgram &&
+      animation.poseProgram.program;
+    return program && Number.isInteger(program.length)
+      ? Array.prototype.slice.call(program) : null;
+  }
+
   function animationSequenceIdentity(animation) {
     var cacheable = !(animation && animation.spec && animation.spec.separatedCopy);
     if (cacheable && animationSequenceIdentityCache &&
@@ -491,6 +509,8 @@ window.OB64 = window.OB64 || {};
       return animationSequenceIdentityCache.get(animation);
     }
     var identity = JSON.stringify([
+      animationSequenceStorageIdentity(animation),
+      animationPoseProgramBytes(animation),
       animation.spec.descriptorKey,
       animation.spec.metadataKey,
       animation.spec.poseKey,
@@ -559,10 +579,77 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  function nativeProgramVariantChoices(variants) {
+    var flagOrder = [], byFlags = {};
+    (variants || []).forEach(function(animation) {
+      var flags = selectorFlags(animation) || '?';
+      if (!byFlags[flags]) {
+        byFlags[flags] = [];
+        flagOrder.push(flags);
+      }
+      byFlags[flags].push(animation);
+    });
+    var output = [];
+    flagOrder.forEach(function(flags) {
+      var groups = [], byIdentity = new Map();
+      byFlags[flags].slice().sort(function(left, right) {
+        return left.spec.rawMode - right.spec.rawMode;
+      }).forEach(function(animation) {
+        var identity = animationSequenceIdentity(animation);
+        var group = byIdentity.get(identity);
+        if (!group) {
+          group = [];
+          byIdentity.set(identity, group);
+          groups.push(group);
+        }
+        group.push(animation);
+      });
+      groups.forEach(function(rows, groupIndex) {
+        var first = rows[0];
+        var rawModes = rows.map(function(row) {
+          return Number(row.spec.rawMode);
+        }).filter(function(rawMode, index, values) {
+          return values.indexOf(rawMode) === index;
+        }).sort(function(left, right) { return left - right; });
+        var issue = rows.some(function(row) {
+          return row.mappingStatus && row.mappingStatus.severity === 'failure';
+        });
+        var poseOffsets = animationPoseOffsetSummary(first);
+        output.push({
+          key: first.key + ':ui-source-' + rawModes.join('-'),
+          representative: first,
+          rows: rows,
+          rawModes: rawModes,
+          flags: selectorFlags(first),
+          sideLabel: animationSideLabel(first),
+          optionClass: animationSideClass(first),
+          artName: animationArtName(first),
+          artVariantLabel: animationArtVariantLabel(first),
+          laneKey: 'source',
+          laneLabel: '',
+          poseOffsets: poseOffsets,
+          pointsToNormalRoute: false,
+          nativeProgramChoice: true,
+          nativeProgramOrdinal: groupIndex + 1,
+          nativeProgramCount: groups.length,
+          label: (issue ? '[Issue] ' : '') +
+            animationArtVariantLabel(first) + ' · ' + poseOffsets.label,
+          optionTitle: animationArtVariantLabel(first) +
+            ' · Native body program source · Resolved raw modes ' +
+            rawModes.join(', ') + ' · ROM flags ' +
+            (selectorFlags(first) || '?') + ' · ' + poseOffsets.title
+        });
+      });
+    });
+    return output;
+  }
+
   function variantChoiceReference(choice) {
-    return (choice.sourceActionLabel ? choice.sourceActionLabel + ' · ' : '') +
-      choice.sideLabel + ' · ' + choice.artName + ' Art · ' +
-      choice.artVariantLabel + ' · ' + choice.laneLabel;
+    var parts = [];
+    if (choice.sourceActionLabel) parts.push(choice.sourceActionLabel);
+    parts.push(choice.sideLabel, choice.artName + ' Art', choice.artVariantLabel);
+    if (choice.laneLabel) parts.push(choice.laneLabel);
+    return parts.join(' · ');
   }
 
   function variantLinkReference(choice, target) {
@@ -574,7 +661,9 @@ window.OB64 = window.OB64 || {};
     if (choice.artVariantLabel !== target.artVariantLabel) {
       parts.push(target.artVariantLabel);
     }
-    if (choice.laneLabel !== target.laneLabel) parts.push(target.laneLabel);
+    if (choice.laneLabel !== target.laneLabel && target.laneLabel) {
+      parts.push(target.laneLabel);
+    }
     return parts.length ? parts.join(' / ') : variantChoiceReference(target);
   }
 
@@ -591,10 +680,10 @@ window.OB64 = window.OB64 || {};
       choice.linkedToLabel = variantChoiceReference(target);
       choice.linkedReference = variantLinkReference(choice, target);
       choice.linkedTitle = 'Linked means this entry points to the exact same ' +
-        'body program as ' + choice.linkedToLabel + '. Both entries use selector ' +
-        M.hex(choice.representative.spec.selector, 2) + ' and share every frame, ' +
-        'tick count, layer binding, and metadata record. Editing either entry ' +
-        'changes the same sequence; no copy exists.';
+        'body program as ' + choice.linkedToLabel + '. Both entries share one ' +
+        'stored body program, every program byte, frame, tick count, layer ' +
+        'binding, and metadata record. Editing either entry changes the same ' +
+        'sequence; no copy exists.';
       choice.optionTitle += ' · ' + choice.linkedTitle;
     });
     return choices;
@@ -616,9 +705,10 @@ window.OB64 = window.OB64 || {};
     linked.title = choice && choice.linkedTitle
       ? choice.linkedTitle
       : 'Linked means this entry and the selected target point to the exact ' +
-        'same body program. Both use selector ' + selector + ' and share every ' +
-        'frame, tick count, layer binding, and metadata record. Editing either ' +
-        'entry changes the same sequence; no copy exists.';
+        'same body program. Both use selector ' + selector + ' and share one ' +
+        'stored body program, every program byte, frame, tick count, layer ' +
+        'binding, and metadata record. Editing either entry changes the same ' +
+        'sequence; no copy exists.';
     if (targetAnimation && targetAnimation.spec) {
       linked.title += ' The selected target is ' + targetAnimation.spec.className +
         ' · ' + targetAnimation.spec.actionName + ' · ' +
@@ -752,6 +842,11 @@ window.OB64 = window.OB64 || {};
     return rows;
   }
 
+  function animationCopyCatalogOptions(idleTarget, replacing) {
+    if (idleTarget) return { idleOnly: true };
+    return replacing ? null : { includeIdle: true };
+  }
+
   function animationSequenceCatalogRows(animationState, sequenceState, classId,
       side, options) {
     classId = Number(classId);
@@ -774,6 +869,11 @@ window.OB64 = window.OB64 || {};
         }).map(function(separation) { return separation.syntheticAnimation; });
       return idleRows.concat(privateIdle);
     }
+    var includedIdle = options && options.includeIdle
+      ? idleAnimationRows(animationState, classId).filter(function(animation) {
+        return selectorFlagParts(animation)[1] === side &&
+          (!requiredFlags || selectorFlags(animation) === requiredFlags);
+      }) : [];
     var vanilla = animationState.specs.filter(function(animation) {
       return animation.spec.classId === classId &&
         selectorFlagParts(animation)[1] === side &&
@@ -854,7 +954,7 @@ window.OB64 = window.OB64 || {};
           (left.laneKey === right.laneKey ? 0 :
             (left.laneKey === 'normal' ? -1 : 1));
       }).map(function(separation) { return separation.syntheticAnimation; });
-    return vanilla.concat(native, modified);
+    return includedIdle.concat(vanilla, native, modified);
   }
 
   function animationClassVariantChoices(rows) {
@@ -872,14 +972,22 @@ window.OB64 = window.OB64 || {};
     });
     var choices = [];
     groups.forEach(function(group) {
-      animationVariantChoices(group, { tagLinks: false }).forEach(function(choice) {
+      var nativeGroup = group.every(function(animation) {
+        return !!animation.spec.nativeSelectorCandidate;
+      });
+      var groupChoices = nativeGroup
+        ? nativeProgramVariantChoices(group)
+        : animationVariantChoices(group, { tagLinks: false });
+      groupChoices.forEach(function(choice) {
         var representative = choice.representative;
         var nativeSelector = !!representative.spec.nativeSelectorCandidate;
         var idleSequence = isIdleAnimation(representative);
         var actionId = nativeSelector || idleSequence ? null :
           Number(representative.spec.actionId);
         var actionName = idleSequence ? 'Idle / Rest' : (nativeSelector
-          ? 'Native body program ' + M.hex(representative.spec.selector, 2)
+          ? 'Native body program ' + M.hex(representative.spec.selector, 2) +
+            (choice.nativeProgramCount > 1
+              ? ' · Program variant ' + choice.nativeProgramOrdinal : '')
           : (OB64.ACTION_TEMPLATE_LABELS && OB64.ACTION_TEMPLATE_LABELS[actionId]
             ? OB64.ACTION_TEMPLATE_LABELS[actionId]
             : representative.spec.actionName));
@@ -901,6 +1009,16 @@ window.OB64 = window.OB64 || {};
           ' · ' + choice.optionTitle;
         choices.push(choice);
       });
+    });
+    var mappedIdentities = new Set();
+    choices.forEach(function(choice) {
+      if (!choice.nativeProgramChoice) {
+        mappedIdentities.add(animationSequenceIdentity(choice.representative));
+      }
+    });
+    choices = choices.filter(function(choice) {
+      return !choice.nativeProgramChoice ||
+        !mappedIdentities.has(animationSequenceIdentity(choice.representative));
     });
     return tagLinkedVariantChoices(choices);
   }
@@ -924,8 +1042,10 @@ window.OB64 = window.OB64 || {};
     (choices || []).forEach(function(choice) {
       if (!sameAnimationSequence(choice.representative, targetAnimation)) return;
       var score = 0;
-      if (Number(choice.sourceActionId) === targetActionId) score += 100;
-      if (targetFamily && animationActionFamily(choice.sourceActionId) === targetFamily) {
+      if (Number.isInteger(choice.sourceActionId) &&
+          Number(choice.sourceActionId) === targetActionId) score += 100;
+      if (Number.isInteger(choice.sourceActionId) && targetFamily &&
+          animationActionFamily(choice.sourceActionId) === targetFamily) {
         score += 40;
       }
       if (choice.laneKey === targetLane) score += 20;
@@ -936,6 +1056,26 @@ window.OB64 = window.OB64 || {};
       }
     });
     return best;
+  }
+
+  function sequenceAssignmentSummary(currentChoice, targetAnimation,
+      needsUserAssignment, previewChoice) {
+    var targetLane = animationLaneLabel(targetAnimation);
+    if (previewChoice && (!currentChoice || previewChoice.key !== currentChoice.key)) {
+      return 'Previewing · ' + previewChoice.label + ' · ' + targetLane +
+        (needsUserAssignment ? ' remains unassigned' : ' assignment unchanged');
+    }
+    if (isIdleAnimation(targetAnimation)) {
+      return currentChoice ? 'Idle Loop · ' + currentChoice.label :
+        'Choose an idle loop';
+    }
+    if (needsUserAssignment) {
+      return targetLane + ' target · Choose a body animation · current game ' +
+        'fallback ' + M.hex(targetAnimation.spec.selector, 2);
+    }
+    return currentChoice
+      ? 'Assigned to ' + targetLane + ' · ' + currentChoice.label
+      : targetLane + ' target · Choose a body animation';
   }
 
   function animationArtRouteChoices(rows) {
@@ -2373,20 +2513,24 @@ window.OB64 = window.OB64 || {};
       var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
       var needsUserAssignment = !!(targetAnimation.effectiveMapping &&
         targetAnimation.effectiveMapping.assignmentRequired);
+      var targetLaneLabel = animationLaneLabel(targetAnimation);
+      var previewChoice = selected && selected.key !== targetAnimation.key
+        ? rows.find(function(choice) {
+          return choice.rows.some(function(row) { return row.key === selected.key; });
+        }) : null;
+      var displayedChoice = previewChoice || currentChoice;
       var dropdown = element('details', 'animation-variant-dropdown');
-      var summaryText = needsUserAssignment
-        ? 'Choose a body animation · current game fallback ' +
-          M.hex(targetAnimation.spec.selector, 2)
-        : (currentChoice ? currentChoice.label : 'Choose a body animation');
+      var summaryText = sequenceAssignmentSummary(
+        currentChoice, targetAnimation, needsUserAssignment, previewChoice);
       var summary = element('summary', 'animation-variant-dropdown-toggle ' +
         animationSideClass(targetAnimation));
       summary.appendChild(element('span', 'animation-sequence-summary-label',
         summaryText));
-      if (currentChoice && currentChoice.sequenceKind === 'modified') {
+      if (displayedChoice && displayedChoice.sequenceKind === 'modified') {
         summary.appendChild(editedSequenceBadge());
       }
-      if (currentChoice && currentChoice.linkedToKey) {
-        summary.appendChild(linkedSequenceBadge(currentChoice, targetAnimation));
+      if (displayedChoice && displayedChoice.linkedToKey) {
+        summary.appendChild(linkedSequenceBadge(displayedChoice, targetAnimation));
       }
       dropdown.appendChild(summary);
       var panel = element('div', 'animation-variant-dropdown-panel');
@@ -2450,9 +2594,8 @@ window.OB64 = window.OB64 || {};
             if (options && options.onAnimationMappingChange) {
               options.onAnimationMappingChange();
             }
-            notify(options, choice.sourceActionLabel + ' ' + choice.sideLabel +
-              ' ' + choice.artVariantLabel + ' ' + choice.laneLabel +
-              ' is assigned to ' + targetAnimation.spec.className + ' ' +
+            notify(options, choice.label + ' is assigned to ' +
+              targetAnimation.spec.className + ' ' +
               targetAnimation.spec.actionName + ' · ' +
               animationSideLabel(targetAnimation) + ' · ' +
               animationArtVariantLabel(targetAnimation) + ' · ' +
@@ -2462,6 +2605,7 @@ window.OB64 = window.OB64 || {};
             notify(options, 'Animation assignment blocked: ' + error.message);
           }
         });
+        assign.textContent = 'Assign to ' + targetLaneLabel;
         assign.disabled = !pair || !!separation || !!assigned || !!sameBodyOnly ||
           !!sharedIssue ||
           !rom.animationSequences || !rom.animationSequences.supported;
@@ -2469,17 +2613,17 @@ window.OB64 = window.OB64 || {};
           assign.textContent = 'Replace below';
           assign.title = 'This target has a separated sequence. Use Replace From below.';
         } else if (assigned) {
-          assign.textContent = 'Current';
+          assign.textContent = 'Current: ' + targetLaneLabel;
           assign.title = 'This body sequence is already assigned to the selected target.';
         } else if (fallbackBody) {
           assign.title = 'Explicitly assign the currently displayed fallback body ' +
             'animation to this action and mode.';
         } else if (sameBodyOnly) {
-          assign.textContent = 'No change';
+          assign.textContent = 'No change: ' + targetLaneLabel;
           assign.title = 'This linked label already uses the body program assigned ' +
             'to the selected target. Assigning it again would not change the ROM.';
         } else if (sharedIssue) {
-          assign.textContent = 'Copy required';
+          assign.textContent = 'Copy for ' + targetLaneLabel;
           assign.title = sharedIssue +
             '. Preview it, then use Copy From and Separate below.';
         } else {
@@ -2856,7 +3000,7 @@ window.OB64 = window.OB64 || {};
 
     function rowsForClass() {
       var classId = Number(classSelect.value);
-      var catalogOptions = idleTarget ? { idleOnly: true } : null;
+      var catalogOptions = animationCopyCatalogOptions(idleTarget, replacing);
       return animationSequenceCatalogRows(
         state.animations, rom.animationSequences, classId, 0,
         catalogOptions).concat(
@@ -5483,6 +5627,7 @@ window.OB64 = window.OB64 || {};
     animationLaneLabel: animationLaneLabel,
     isIdleAnimation: isIdleAnimation,
     idleAnimationRows: idleAnimationRows,
+    animationCopyCatalogOptions: animationCopyCatalogOptions,
     animationPreviewTimeline: animationPreviewTimeline,
     animationPreviewFrameAtMs: animationPreviewFrameAtMs,
     animationPreviewSurfaces: animationPreviewSurfaces,
@@ -5491,6 +5636,7 @@ window.OB64 = window.OB64 || {};
     animationWebmMimeType: animationWebmMimeType,
     animationPoseOffsetSummary: animationPoseOffsetSummary,
     animationArtName: animationArtName,
+    animationSequenceStorageIdentity: animationSequenceStorageIdentity,
     animationSequenceIdentity: animationSequenceIdentity,
     sameAnimationSequence: sameAnimationSequence,
     tagLinkedVariantChoices: tagLinkedVariantChoices,
@@ -5500,6 +5646,7 @@ window.OB64 = window.OB64 || {};
     editScopeSourceIndex: editScopeSourceIndex,
     animationActionFamily: animationActionFamily,
     currentSequenceChoiceForTarget: currentSequenceChoiceForTarget,
+    sequenceAssignmentSummary: sequenceAssignmentSummary,
     animationArtRouteChoices: animationArtRouteChoices,
     animationActionChoices: animationActionChoices,
     classSearchMatches: classSearchMatches,

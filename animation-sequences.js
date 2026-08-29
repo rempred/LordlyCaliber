@@ -445,12 +445,34 @@ window.OB64 = window.OB64 || {};
       ? frame.sourceFrameIndex : Number(frame && frame.sequenceIndex);
   }
 
-  function poseProgramForFrames(donorAnimation, frames) {
+  function poseRecordsForLane(pose, sourceIdle, targetIdle) {
+    var records = pose && pose.records;
+    if (!Array.isArray(records)) fail('private animation donor lacks its body program');
+    if (targetIdle && !sourceIdle) {
+      fail('private idle targets require an idle-loop donor');
+    }
+    if (!sourceIdle || targetIdle) return records;
+    var loop = records[records.length - 1];
+    if (!loop || loop.opcode !== 0x04 || !loop.operands ||
+        !Number.isInteger(loop.operands[0]) || !records[loop.operands[0]] ||
+        records[loop.operands[0]].opcode !== 0x01) {
+      fail('private idle donor lacks its final loop jump');
+    }
+    return records.filter(function(record, index) {
+      return index < records.length - 1 && record.ordinal >= loop.operands[0];
+    });
+  }
+
+  function poseProgramForFrames(donorAnimation, frames, targetIdle) {
     var pose = donorAnimation && donorAnimation.poseProgram;
     if (!pose || !Array.isArray(pose.records) ||
         !Array.isArray(donorAnimation.frames)) {
       fail('private animation donor lacks its body program');
     }
+    var sourceIdle = !!(donorAnimation.spec && donorAnimation.spec.idleSequence);
+    if (targetIdle === undefined) targetIdle = sourceIdle;
+    targetIdle = !!targetIdle;
+    var sourceRecords = poseRecordsForLane(pose, sourceIdle, targetIdle);
     var donorOrdinalByFrame = {}, wanted = {}, previous = -1;
     donorAnimation.frames.forEach(function(frame, ordinal) {
       var stable = stableFrameIndex(frame);
@@ -471,19 +493,18 @@ window.OB64 = window.OB64 || {};
     });
     if (!frames.length) fail('private animation sequence must retain at least one frame');
 
-    var idle = !!(donorAnimation.spec && donorAnimation.spec.idleSequence);
-    var loopRecord = idle ? pose.records[pose.records.length - 1] : null;
-    if (idle && (!loopRecord || loopRecord.opcode !== 0x04 ||
+    var loopRecord = targetIdle ? sourceRecords[sourceRecords.length - 1] : null;
+    if (targetIdle && (!loopRecord || loopRecord.opcode !== 0x04 ||
         !loopRecord.operands || !Number.isInteger(loopRecord.operands[0]))) {
       fail('private idle donor lacks its final loop jump');
     }
-    var loopStart = idle ? loopRecord.operands[0] : null;
+    var loopStart = targetIdle ? loopRecord.operands[0] : null;
     var recordBytes = [], frameOrdinal = 0, firstKeptLoopRecord = null;
-    pose.records.forEach(function(record) {
+    sourceRecords.forEach(function(record) {
       var keep = true;
       var exposedFrame = false;
       if (record.opcode === 0x01) {
-        exposedFrame = !idle || record.ordinal >= loopStart;
+        exposedFrame = !targetIdle || record.ordinal >= loopStart;
         if (exposedFrame) {
           var donorFrame = donorAnimation.frames[frameOrdinal++];
           if (!donorFrame) {
@@ -496,7 +517,7 @@ window.OB64 = window.OB64 || {};
       var bytes = new Uint8Array(record.width);
       bytes[0] = record.opcode;
       bytes.set(record.operands, 1);
-      if (idle && exposedFrame && firstKeptLoopRecord === null) {
+      if (targetIdle && exposedFrame && firstKeptLoopRecord === null) {
         firstKeptLoopRecord = recordBytes.length;
       }
       recordBytes.push({ bytes: bytes, exposedFrame: exposedFrame });
@@ -504,10 +525,10 @@ window.OB64 = window.OB64 || {};
     if (frameOrdinal !== donorAnimation.frames.length || recordBytes.length > 0xFF) {
       fail('private animation body program no longer matches its frames');
     }
-    if (idle && firstKeptLoopRecord === null) {
+    if (targetIdle && firstKeptLoopRecord === null) {
       fail('private idle animation must retain at least one loop frame');
     }
-    if (idle) {
+    if (targetIdle) {
       var finalRecord = recordBytes[recordBytes.length - 1];
       if (!finalRecord || finalRecord.bytes[0] !== 0x04 ||
           finalRecord.bytes.length < 2) {
@@ -561,11 +582,13 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function validatePrivatePoseControls(template, pose, idle) {
+  function validatePrivatePoseControls(template, pose, idle, templateIdle) {
     if (!template || !Array.isArray(template.records)) {
       fail('private animation donor lacks readable control records');
     }
-    var expected = template.records.filter(function(record) {
+    if (templateIdle === undefined) templateIdle = idle;
+    var expected = poseRecordsForLane(template, !!templateIdle, !!idle)
+      .filter(function(record) {
       return record.opcode !== 0x01;
     });
     var actual = pose.records.filter(function(record) {
@@ -610,7 +633,7 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function decodePrivatePoseProgram(template, program, idle, frames) {
+  function decodePrivatePoseProgram(template, program, idle, frames, templateIdle) {
     if (!(program instanceof Uint8Array) || program.length < 2) {
       fail('private animation body program is invalid');
     }
@@ -648,7 +671,7 @@ window.OB64 = window.OB64 || {};
       }
       return [frame.token, frame.ticks];
     });
-    validatePrivatePoseControls(template, parsed, idle);
+    validatePrivatePoseControls(template, parsed, idle, templateIdle);
     return parsed;
   }
 
@@ -881,8 +904,10 @@ window.OB64 = window.OB64 || {};
     });
     animation.poseProgram = storedPose
       ? decodePrivatePoseProgram(donor.poseProgram, storedPose,
-        separation.laneKey === 'idle', animation.frames)
-      : poseProgramForFrames(donor, animation.frames);
+        separation.laneKey === 'idle', animation.frames,
+        !!(donor.spec && donor.spec.idleSequence))
+      : poseProgramForFrames(donor, animation.frames,
+        separation.laneKey === 'idle');
     animation.spec.frames = animation.frames.map(function(frame) {
       return [frame.token, frame.ticks];
     });
@@ -1034,7 +1059,8 @@ window.OB64 = window.OB64 || {};
       members: target.members,
       metadata: target.metadata,
       pose: target.pose,
-      poseProgram: poseProgramForFrames(donor, frames),
+      poseProgram: poseProgramForFrames(donor, frames,
+        separation.laneKey === 'idle'),
       config: target.config,
       lookupBanks: target.lookupBanks,
       frames: frames,
@@ -3106,7 +3132,8 @@ window.OB64 = window.OB64 || {};
     }
     if (poseProgram) {
       decodePrivatePoseProgram(donor.poseProgram, poseProgram,
-        entry.laneKey === 'idle', frames);
+        entry.laneKey === 'idle', frames,
+        !!(donor.spec && donor.spec.idleSequence));
     }
     return { sources: sources, frames: frames, poseProgram: poseProgram };
   }

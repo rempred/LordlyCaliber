@@ -308,6 +308,35 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert(idleCatalog.includes(idleSeparation.syntheticAnimation),
     'the private idle loop must remain selectable beside the original ROM loop');
 
+  const idleDonorRom = await freshRom(z64);
+  const idleAttackDonor = OB64.animationUI.idleAnimationRows(
+    idleDonorRom.art.animations, 0x02).find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '0/0');
+  const idleAttackTarget = route(idleDonorRom, 0x02, 0x04, '0/0', 0);
+  const idleAttackPair = OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+    0x02, idleDonorRom.classDefs[0x03], 0x04);
+  assert(idleAttackDonor && idleAttackTarget && idleAttackPair);
+  const idleAttackCopy = OB64.animationSequences.separateAndAssign(
+    idleDonorRom, idleAttackDonor, idleAttackPair, idleAttackTarget);
+  assert.strictEqual(idleAttackCopy.laneKey, 'normal');
+  assert.strictEqual(idleAttackCopy.syntheticAnimation.spec.idleSequence, false);
+  assert.deepStrictEqual(idleAttackCopy.syntheticAnimation.poseProgram.frames,
+    idleAttackDonor.frames.map(frame => [frame.token, frame.ticks]),
+  'an idle donor must become a complete one-shot sequence for an attack target');
+  assert.notStrictEqual(idleAttackCopy.syntheticAnimation.poseProgram.records[
+    idleAttackCopy.syntheticAnimation.poseProgram.records.length - 1].opcode, 0x04,
+  'an attack copy must not retain the idle-loop jump');
+  const idleAttackPayload = OB64.animationSequences.collectProject(idleDonorRom);
+  const idleAttackRestored = await freshRom(z64);
+  const idleAttackPrepared = OB64.animationSequences.prepareProject(
+    idleAttackRestored, idleAttackPayload);
+  assert.strictEqual(OB64.animationSequences.applyProject(
+    idleAttackRestored, idleAttackPrepared), 1);
+  assert.deepStrictEqual(Array.from(idleAttackRestored.animationSequences
+    .separations[idleAttackCopy.id].syntheticAnimation.poseProgram.program),
+  Array.from(idleAttackCopy.syntheticAnimation.poseProgram.program),
+  'an idle-donor attack copy must preserve its body program after Project reload');
+
   const legacyStructurePayload = OB64.animationSequences.collectProject(idleRom);
   legacyStructurePayload.schemaVersion = 3;
   Object.values(legacyStructurePayload.entries).forEach(entry => {
@@ -478,34 +507,75 @@ function route(rom, classId, actionId, flags, rawMode) {
     OB64.animationUI.animationSequenceCatalogRows(
       warriorActionRom.art.animations, warriorActionRom.animationSequences,
       0x55, 0));
-  const warriorNativeNormal = warriorChoices.filter(choice =>
-    choice.representative.spec.nativeSelectorCandidate &&
-    choice.flags === '0/0' && choice.laneKey === 'normal');
+  const warriorBaseChoices = warriorChoices.filter(choice =>
+    choice.flags === '0/0');
+  const soldierChoices = OB64.animationUI.animationClassVariantChoices(
+    OB64.animationUI.animationSequenceCatalogRows(
+      warriorActionRom.art.animations, warriorActionRom.animationSequences,
+      0x01, 0, { flags: '0/0' }));
+  const soldierNativePrograms = soldierChoices.filter(choice =>
+    choice.representative.spec.nativeSelectorCandidate);
+  assert(soldierNativePrograms.length > 0);
+  soldierNativePrograms.forEach(choice => {
+    assert.strictEqual(choice.laneKey, 'source');
+    assert.strictEqual(choice.laneLabel, '');
+    assert(!/Normal Attack|Attack Blocked/.test(choice.label));
+    assert(!soldierChoices.some(other =>
+      !other.representative.spec.nativeSelectorCandidate &&
+      OB64.animationUI.sameAnimationSequence(
+        other.representative, choice.representative)),
+    'a mapped source must replace its redundant native-program label');
+  });
   for (const selector of [0x28, 0x29, 0x2E]) {
-    assert(warriorNativeNormal.some(choice =>
+    assert(warriorBaseChoices.some(choice =>
       choice.representative.spec.selector === selector),
     'every distinct structurally valid Warrior native body program must remain selectable');
   }
+  const soldierNative2A = soldierNativePrograms.find(choice =>
+    choice.representative.spec.selector === 0x2A);
+  assert(soldierNative2A);
+  const soldierNative2ANormal = soldierNative2A.rows.find(row =>
+    row.spec.rawMode === 0);
+  const soldierNative2ABlocked = soldierNative2A.rows.find(row =>
+    row.spec.rawMode === 2);
+  assert(soldierNative2ANormal && soldierNative2ABlocked);
+  assert.strictEqual(OB64.animationUI.currentSequenceChoiceForTarget(
+    soldierChoices, soldierNative2ANormal), soldierNative2A);
+  assert.strictEqual(OB64.animationUI.currentSequenceChoiceForTarget(
+    soldierChoices, soldierNative2ABlocked), soldierNative2A,
+  'one lane-neutral native label must serve normal and blocked targets');
+  assert.strictEqual(OB64.animationUI.sequenceAssignmentSummary(
+    soldierNative2A, soldierNative2ANormal, false),
+  'Assigned to Normal Attack · ' + soldierNative2A.label);
+  assert.strictEqual(OB64.animationUI.sequenceAssignmentSummary(
+    soldierNative2A, soldierNative2ABlocked, false),
+  'Assigned to Attack Blocked · ' + soldierNative2A.label,
+  'the target lane must remain separate from the native source label');
+  const soldierPreviewChoice = soldierChoices.find(choice =>
+    choice.key !== soldierNative2A.key);
+  assert(soldierPreviewChoice);
+  assert.strictEqual(OB64.animationUI.sequenceAssignmentSummary(
+    soldierNative2A, soldierNative2ANormal, false, soldierPreviewChoice),
+  'Previewing · ' + soldierPreviewChoice.label +
+    ' · Normal Attack assignment unchanged',
+  'previewing a choice must change the summary without changing its target');
   const warriorPose28 = OB64.animationUI.animationPoseOffsetSummary(
-    warriorNativeNormal.find(choice =>
+    warriorBaseChoices.find(choice =>
       choice.representative.spec.selector === 0x28).representative);
   const warriorPose2A = OB64.animationUI.animationPoseOffsetSummary(
     warriorChoices.find(choice => choice.flags === '0/0' &&
-      choice.laneKey === 'normal' &&
       choice.representative.spec.selector === 0x2A).representative);
   const warriorPose2E = OB64.animationUI.animationPoseOffsetSummary(
-    warriorNativeNormal.find(choice =>
+    warriorBaseChoices.find(choice =>
       choice.representative.spec.selector === 0x2E).representative);
-  assert.strictEqual(warriorPose28.label, 'Art Shifts and Returns');
+  assert.strictEqual(warriorPose28.label, 'Pose Offsets Return');
   assert.deepStrictEqual(warriorPose28.peak, [0, 0, 7]);
-  assert.strictEqual(warriorPose2A.label, 'Art Shifts and Returns');
+  assert.strictEqual(warriorPose2A.label, 'Pose Offsets Return');
   assert.deepStrictEqual(warriorPose2A.peak, [0, 0, 3]);
-  assert.strictEqual(warriorPose2E.label, 'No Art Shift');
+  assert.strictEqual(warriorPose2E.label, 'No Pose Offset');
   assert.deepStrictEqual(warriorPose2E.peak, [0, 0, 0]);
   assert(warriorPose28.title.includes(
-    'not battlefield actor coordinates'));
-  assert(warriorPose28.title.includes(
-    'do not determine whether the character approaches'));
+    'do not prove a visible art shift or battlefield movement'));
   const signedPoseOffsets = OB64.animationUI.animationPoseOffsetSummary({
     poseProgram: { records: [
       { opcode: 0x0C, operands: [0x01, 0x02, 0x03] },
@@ -514,7 +584,7 @@ function route(rom, classId, actionId, flags, rawMode) {
   });
   assert.deepStrictEqual(signedPoseOffsets.peak, [1, 2, 3]);
   assert.deepStrictEqual(signedPoseOffsets.end, [0, 0, 0]);
-  assert.strictEqual(signedPoseOffsets.label, 'Art Shifts and Returns');
+  assert.strictEqual(signedPoseOffsets.label, 'Pose Offsets Return');
   warriorChoices.forEach(choice => {
     assert(!/Vanilla|Player Side|Enemy Side|Warrior \(Dio\) Art|Art Variant/.test(
       choice.label));
@@ -552,17 +622,17 @@ function route(rom, classId, actionId, flags, rawMode) {
     warriorCurrentChoice.sourceActionId),
   OB64.animationUI.animationActionFamily(warriorMagicTarget.spec.actionId),
   'the presented current source must use the target action command family');
-  const warriorNative28 = warriorNativeNormal.find(choice =>
+  const warriorSelector28 = warriorBaseChoices.find(choice =>
     choice.representative.spec.selector === 0x28);
   OB64.animationSequences.assignShared(warriorActionRom,
-    warriorNative28.representative, warriorExact, warriorMagicTarget);
+    warriorSelector28.representative, warriorExact, warriorMagicTarget);
   warriorMagicTarget = route(
     warriorActionRom, 0x55, 0x2E, '0/0', 0);
   const warriorNativeCurrent = OB64.animationUI.currentSequenceChoiceForTarget(
     warriorChoices, warriorMagicTarget);
   assert(warriorNativeCurrent &&
     warriorNativeCurrent.representative.spec.selector === 0x28,
-  'a distinct native program must remain assignable after another program was selected');
+  'a distinct source program must remain assignable after another program was selected');
   assert.strictEqual(OB64.combatAnimationOverrides.exactEntry(
     warriorActionRom.combatAnimationOverrides, 0x55, 0x2E, 0).normalSelector,
   0x28);
@@ -602,6 +672,26 @@ function route(rom, classId, actionId, flags, rawMode) {
     'an action assigned to a modified selector must resolve that project sequence');
   assert.strictEqual(reusedModified.spec.actionId, 0x04,
     'a reused modified sequence must retain the consumer action identity');
+  assert.strictEqual(OB64.animationUI.animationSequenceStorageIdentity(
+    reusedModified), OB64.animationUI.animationSequenceStorageIdentity(
+      crossSeparation.syntheticAnimation),
+  'every consumer of one private sequence must retain its storage identity');
+  const alteredPrivateProgram = Object.assign({},
+    crossSeparation.syntheticAnimation, {
+      poseProgram: Object.assign({},
+        crossSeparation.syntheticAnimation.poseProgram, {
+          program: crossSeparation.syntheticAnimation.poseProgram.program.slice()
+        })
+    });
+  alteredPrivateProgram.poseProgram.program[0] =
+    (alteredPrivateProgram.poseProgram.program[0] + 1) & 0xFF;
+  assert.strictEqual(OB64.animationUI.animationSequenceStorageIdentity(
+    alteredPrivateProgram), OB64.animationUI.animationSequenceStorageIdentity(
+      crossSeparation.syntheticAnimation));
+  assert.notStrictEqual(OB64.animationUI.animationSequenceIdentity(
+    alteredPrivateProgram), OB64.animationUI.animationSequenceIdentity(
+      crossSeparation.syntheticAnimation),
+  'program-byte changes must change sequence identity within one storage owner');
   assert.strictEqual(OB64.animationSequences.separationConsumers(
     crossActionRom, crossSeparation).length, 1);
   assert.throws(() => OB64.animationSequences.removeSeparation(
@@ -645,6 +735,19 @@ function route(rom, classId, actionId, flags, rawMode) {
   const copiedModified = OB64.animationSequences.separateAndAssign(
     crossActionRom, crossSeparation.syntheticAnimation,
     crossSlashPair, enemyCopyTarget);
+  assert.deepStrictEqual(
+    [...copiedModified.syntheticAnimation.poseProgram.program],
+    [...crossSeparation.syntheticAnimation.poseProgram.program],
+  'an independent private copy can begin with equal body-program bytes');
+  assert.notStrictEqual(OB64.animationUI.animationSequenceStorageIdentity(
+    copiedModified.syntheticAnimation),
+  OB64.animationUI.animationSequenceStorageIdentity(
+    crossSeparation.syntheticAnimation),
+  'independent private copies must retain different storage identities');
+  assert.notStrictEqual(OB64.animationUI.animationSequenceIdentity(
+    copiedModified.syntheticAnimation), OB64.animationUI.animationSequenceIdentity(
+      crossSeparation.syntheticAnimation),
+  'equal body-program bytes must not link independent private copies');
   const copiedModifiedSource = Object.values(copiedModified.syntheticAnimation.artByKey)
     .find(source => source.separationSourceOrdinal ===
       refreshedModifiedDonorSource.separationSourceOrdinal);

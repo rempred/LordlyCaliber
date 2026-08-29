@@ -41,6 +41,23 @@ the byte order of the loaded ROM.
 The editor validates each changed area before export. A feature becomes
 read-only when the loaded ROM does not match that feature's known structure.
 
+## Animation sequence labels
+
+The Body Sprite Sequence menu labels each available sequence by its source.
+Mapped sequence labels include the source action and source lane.
+A native body program has one lane-neutral label.
+The selected target shows `Normal Attack` or `Attack Blocked` separately.
+The pose-offset suffix reports changes to local pose-source fields.
+It does not claim that the visible art moves.
+
+`Assigned` identifies the sequence used by the selected target.
+Selecting another row changes the preview label.
+The assignment changes only when the user selects `Assign`.
+`Copy From and Separate` includes the class idle loops as source sequences.
+`Preview` identifies a sequence shown without an assignment change.
+`Linked` means that two labels share one mutable body program.
+Independent private sequences are not linked, even when their program bytes match.
+
 ## ROM compatibility
 
 The strongest supported baseline is the North American header revision 0 ROM:
