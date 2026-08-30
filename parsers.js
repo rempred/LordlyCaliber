@@ -1908,15 +1908,24 @@ OB64.CLASS_DEF_OFFSET = 0x5DAD8;
 OB64.CLASS_DEF_RECORD_SIZE = 72;
 OB64.CLASS_DEF_TOTAL = 166;
 
+OB64.refreshClassDefClassification = function(record) {
+  if (!record || !record.stats || !record.stats[0]) return record;
+  var firstBase = Number(record.stats[0].base);
+  if (!Number.isInteger(firstBase) || firstBase < 0 || firstBase > 0xFFFF) {
+    return record;
+  }
+  var firstByte = (firstBase >>> 8) & 0xFF;
+  record.isTerm = firstBase === 0xFFFF;
+  record.isSentinel = firstByte === 0x80;
+  return record;
+};
+
 OB64.parseClassDefs = function(z64) {
   var base = OB64.CLASS_DEF_OFFSET;
   var RS = OB64.CLASS_DEF_RECORD_SIZE;
   var records = [];
   for (var i = 0; i < OB64.CLASS_DEF_TOTAL; i++) {
     var off = base + i * RS;
-    var b0 = z64[off];
-    var isTerm = (b0 === 0xFF && z64[off + 1] === 0xFF);
-    var isSentinel = (b0 === 0x80);
 
     // B0-23: 6 stats (u16BE base + u8 per-level base gain + u8 raw), then LCK
     // base at B23. Stat order: STR, VIT, INT, MEN, AGI, DEX. For ordinary
@@ -2077,11 +2086,11 @@ OB64.parseClassDefs = function(z64) {
     var unitCount = hpGrowth;
     var b71Raw = headerTailRaw;
 
-    records.push({
+    var record = {
       index: i,
       offset: off,
-      isTerm: isTerm,
-      isSentinel: isSentinel,
+      isTerm: false,
+      isSentinel: false,
       stats: stats,
       // Named per-level base gains — mirror of stats[i].g1. Edit dispatch must
       // keep both in sync (see renderClasses edit callbacks).
@@ -2146,7 +2155,9 @@ OB64.parseClassDefs = function(z64) {
       powerRating: powerRating,     // legacy alias for baseHp low byte
       unitCount: unitCount,         // legacy alias for hpGrowth
       b71Raw: b71Raw                // legacy alias for headerTailRaw
-    });
+    };
+    OB64.refreshClassDefClassification(record);
+    records.push(record);
   }
   return records;
 };

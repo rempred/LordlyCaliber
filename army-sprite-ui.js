@@ -144,6 +144,70 @@ window.OB64 = window.OB64 || {};
       ' · Model ' + M.hex(route.modelId, 2);
   }
 
+  function routeSizeControl(rom, army, route, ui, options, rerender) {
+    var wrap = element('div', 'army-route-size-control');
+    var label = element('label', 'art-import-control');
+    label.appendChild(element('span', '', 'Formation sprite dimensions'));
+    var select = element('select');
+    var smallLane = (route.selector & 0x80) ? 'special' : 'ordinary';
+    var choices = [
+      { value: 1, lane: smallLane,
+        label: 'Small / ' + smallLane[0].toUpperCase() +
+          smallLane.slice(1) + ' · 16×24' },
+      { value: 2, lane: 'large', label: 'Large · 32×28' }
+    ];
+    choices.forEach(function(choice) {
+      var modelKey = M.modelKey(
+        'player-back-' + choice.lane, route.modelId);
+      var available = !!army.byModelKey[modelKey];
+      var option = element('option', '', choice.label + (available
+        ? '' : ' · model ID unavailable'));
+      option.value = String(choice.value);
+      option.disabled = !available;
+      select.appendChild(option);
+    });
+    select.value = route.modelSize === 2 ? '2' : '1';
+    select.setAttribute('data-art-focus-key',
+      'army-route-size-' + route.classId);
+    select.addEventListener('change', function() {
+      var nextSize = Number(select.value);
+      var classDef = rom && rom.classDefs &&
+        rom.classDefs[route.classId + 1];
+      if (!classDef) {
+        notify(options, 'Formation sprite size change blocked: the class record is unavailable.');
+        select.value = route.modelSize === 2 ? '2' : '1';
+        return;
+      }
+      try {
+        if (!M.setClassModelSize(army, route.classId, nextSize)) return;
+        classDef.unitSize = nextSize;
+        ui.armyAtlasKey = ui.armySide === 'player'
+          ? route.playerAtlasKey : route.enemyAtlasKey;
+        ui.armyModelId = route.modelId;
+        ui.armySelection = null;
+        if (options && options.onClassDefinitionChange) {
+          options.onClassDefinitionChange();
+        } else {
+          changed(options);
+        }
+        var atlas = army.byKey[ui.armyAtlasKey];
+        notify(options, route.className + ' now uses ' +
+          atlas.width + '×' + atlas.height + ' ' + route.lane +
+          ' formation sprites. Its class footprint also changed.');
+        rerender();
+      } catch (error) {
+        select.value = route.modelSize === 2 ? '2' : '1';
+        notify(options, 'Formation sprite size change blocked: ' + error.message);
+      }
+    });
+    label.appendChild(select);
+    wrap.appendChild(label);
+    wrap.appendChild(element('small', '',
+      'The size field also changes the class footprint. ' +
+      'Army sprites use fixed 16×24 or 32×28 planes.'));
+    return wrap;
+  }
+
   function classBrowser(army, ui, rerender, sidebar) {
     var sideTabs = element('div', 'art-pack-tabs army-side-tabs');
     [['player', 'Player / Back'], ['enemy', 'Enemy / Front']]
@@ -643,7 +707,7 @@ window.OB64 = window.OB64 || {};
 
   function openImportDialog(source, army, atlas, model, ui, options, rerender) {
     var settings = {
-      resizeMode: 'nearest', panX: 0.5, panY: 0.5,
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1,
       dither: false, paletteIndex: ui.armyPaletteIndex
     };
     var result = null;
@@ -705,28 +769,56 @@ window.OB64 = window.OB64 || {};
       settings.paletteIndex = Number(value);
     });
 
-    var initialCrop = A.imageCropRect(source.width, source.height,
-      atlas.width, atlas.height, settings.panX, settings.panY);
-    function cropSlider(labelText, key, enabled) {
+    var zoomLabel = element('label', 'art-import-control');
+    var zoomText = element('span', '', 'Zoom · 1.00×');
+    zoomLabel.appendChild(zoomText);
+    var zoomInput = element('input');
+    zoomInput.type = 'range';
+    zoomInput.min = '-200'; zoomInput.max = '300';
+    zoomInput.step = '5'; zoomInput.value = '0';
+    zoomInput.setAttribute('aria-label', 'Image zoom');
+    zoomInput.setAttribute('aria-valuetext', '1.00 times');
+    zoomInput.addEventListener('input', function() {
+      settings.zoom = Math.pow(2, Number(zoomInput.value) / 100);
+      zoomText.textContent = 'Zoom · ' + settings.zoom.toFixed(2) + '×';
+      zoomInput.setAttribute(
+        'aria-valuetext', settings.zoom.toFixed(2) + ' times');
+      updateCropControls();
+      schedulePreview();
+    });
+    zoomLabel.appendChild(zoomInput);
+    controls.appendChild(zoomLabel);
+
+    function cropSlider(labelText, key) {
       var label = element('label', 'art-import-control');
       label.appendChild(element('span', '', labelText));
       var input = element('input');
       input.type = 'range';
       input.min = '0'; input.max = '100'; input.step = '1'; input.value = '50';
-      input.disabled = !enabled;
       input.setAttribute('aria-label', labelText);
       input.addEventListener('input', function() {
         settings[key] = Number(input.value) / 100;
         schedulePreview();
       });
       label.appendChild(input);
-      if (!enabled) label.classList.add('disabled');
       controls.appendChild(label);
+      return { label: label, input: input };
     }
-    cropSlider('Horizontal crop position', 'panX',
-      initialCrop.horizontalPanAvailable);
-    cropSlider('Vertical crop position', 'panY',
-      initialCrop.verticalPanAvailable);
+    function setCropControlEnabled(control, enabled) {
+      control.input.disabled = !enabled;
+      control.label.classList.toggle('disabled', !enabled);
+    }
+    function updateCropControls() {
+      var crop = A.imageCropRect(source.width, source.height,
+        atlas.width, atlas.height, settings.panX, settings.panY,
+        settings.zoom);
+      setCropControlEnabled(
+        horizontalCrop, crop.horizontalPanAvailable);
+      setCropControlEnabled(verticalCrop, crop.verticalPanAvailable);
+    }
+    var horizontalCrop = cropSlider('Horizontal crop position', 'panX');
+    var verticalCrop = cropSlider('Vertical crop position', 'panY');
+    updateCropControls();
     var ditherWrap = element('div', 'art-import-dither');
     var ditherLabel = element('label', 'art-import-checkbox');
     var dither = element('input');
@@ -778,7 +870,8 @@ window.OB64 = window.OB64 || {};
         var crop = result.crop;
         stats.textContent = 'Crop ' + crop.width.toFixed(1) + '×' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
-          crop.y.toFixed(1) + ' · Palette ' + result.paletteIndex + ' · ' +
+          crop.y.toFixed(1) + ' · ' + crop.zoom.toFixed(2) +
+          '× zoom · Palette ' + result.paletteIndex + ' · ' +
           result.sourceNativeColorCount + ' source RGB555 colors · ' +
           result.transparentPixels + ' transparent pixels' +
           (result.dithered ? ' · ordered dither applied' : '');
@@ -947,6 +1040,7 @@ window.OB64 = window.OB64 || {};
     copy.appendChild(element('p', '', classSummary(model)));
     copy.appendChild(element('p', '', 'Resource ' + M.hex(atlas.resourceKey) +
       ' · routed plane ' + M.hex(model.decodedOffset, 4) +
+      ' · ' + atlas.width + '×' + atlas.height + ' plane' +
       ' · ' + atlas.orientation));
     heading.appendChild(copy);
     if (!present) {
@@ -959,6 +1053,10 @@ window.OB64 = window.OB64 || {};
       heading.appendChild(element('span', 'art-badge art-badge-edited', 'Edited'));
     }
     main.appendChild(heading);
+    if (route && route.classId > 0) {
+      main.appendChild(routeSizeControl(
+        rom, army, route, ui, options, rerender));
+    }
     main.appendChild(element('div', 'art-pack-note', !present
       ? 'The class route exists, but the retail player atlas has no plane for this model ID.'
       : 'One CI8 plane is shared by both fixed palettes. Pixel edits change both palette previews.'));
@@ -1017,6 +1115,17 @@ window.OB64 = window.OB64 || {};
         editor: element('div', 'art-unavailable army-sprite-unavailable',
           army && army.unavailableReason ||
           'Army sprite resources are unavailable for this ROM.')
+      };
+    }
+    try {
+      if (M.syncClassModelSizes(army, rom && rom.classDefs)) {
+        ui.armySelection = null;
+      }
+    } catch (error) {
+      return {
+        browser: null,
+        editor: element('div', 'art-unavailable army-sprite-unavailable',
+          'Army sprite routing is unavailable: ' + error.message)
       };
     }
     ensureUi(army, ui);

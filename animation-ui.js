@@ -408,6 +408,21 @@ window.OB64 = window.OB64 || {};
     return !!(animation && animation.spec && animation.spec.classMotionKind);
   }
 
+  function isFixedAnimation(animation) {
+    return isIdleAnimation(animation) || isClassMotionAnimation(animation);
+  }
+
+  function assignedFixedRouteAnimation(rom, animation) {
+    if (!animation || !isFixedAnimation(animation) ||
+        !OB64.animationSequences || !rom || !rom.animationSequences) {
+      return animation;
+    }
+    var bodyFlags = OB64.animationSequences.bodyFlagsFor(animation);
+    return OB64.animationSequences.routeAnimation(
+      rom, animation.spec.classId, animation.spec.actionId, bodyFlags,
+      animationLaneKey(animation)) || animation;
+  }
+
   function classMotionSpec(value) {
     var kind = value && value.spec ? value.spec.classMotionKind : value;
     return CLASS_MOTION_SPECS.find(function(spec) {
@@ -763,35 +778,43 @@ window.OB64 = window.OB64 || {};
       byFlags[flags].push(animation);
     });
     var output = [];
+    function groupsByIdentity(rows) {
+      var groups = [], byIdentity = new Map();
+      rows.forEach(function(row) {
+        var identity = animationSequenceIdentity(row);
+        var group = byIdentity.get(identity);
+        if (!group) {
+          group = [];
+          byIdentity.set(identity, group);
+          groups.push(group);
+        }
+        group.push(row);
+      });
+      return groups;
+    }
     flagOrder.forEach(function(flags) {
       var rows = byFlags[flags].slice().sort(function(left, right) {
         return left.spec.rawMode - right.spec.rawMode;
       });
       var idleRows = rows.filter(isIdleAnimation);
       if (idleRows.length) {
-        output.push(variantChoice(idleRows, 'idle', [], false));
+        groupsByIdentity(idleRows).forEach(function(group) {
+          output.push(variantChoice(group, 'idle', [], false));
+        });
         return;
       }
       var motionRows = rows.filter(isClassMotionAnimation);
       if (motionRows.length) {
-        output.push(variantChoice(
-          motionRows, motionRows[0].spec.classMotionKind, [], false));
+        groupsByIdentity(motionRows).forEach(function(group) {
+          output.push(variantChoice(
+            group, group[0].spec.classMotionKind, [], false));
+        });
         return;
       }
       var normalRows = rows.filter(function(row) {
         return row.spec.rawMode !== 2;
       });
-      var normalGroups = [], normalByIdentity = new Map();
-      normalRows.forEach(function(row) {
-        var identity = animationSequenceIdentity(row);
-        var matching = normalByIdentity.get(identity);
-        if (matching) matching.push(row);
-        else {
-          matching = [row];
-          normalByIdentity.set(identity, matching);
-          normalGroups.push(matching);
-        }
-      });
+      var normalGroups = groupsByIdentity(normalRows);
       normalGroups.forEach(function(group) {
         output.push(variantChoice(group, 'normal', normalRows,
           normalGroups.length > 1));
@@ -955,8 +978,12 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function animationCopyCatalogOptions(idleTarget, replacing) {
+  function animationCopyCatalogOptions(idleTarget, replacing, motionTarget) {
     if (idleTarget) return { idleOnly: true };
+    if (motionTarget) return {
+      includeIdle: true,
+      includeClassMotion: true
+    };
     return replacing ? null : {
       includeIdle: true,
       includeClassMotion: true
@@ -970,12 +997,23 @@ window.OB64 = window.OB64 || {};
     var requiredFlags = options && /^\d\/\d$/.test(String(options.flags || ''))
       ? String(options.flags) : null;
     if (options && options.classMotionKind) {
-      return classMotionAnimationRows(
+      var movementRows = classMotionAnimationRows(
         animationState, classId, options.classMotionKind)
         .filter(function(animation) {
           return selectorFlagParts(animation)[1] === side &&
             (!requiredFlags || selectorFlags(animation) === requiredFlags);
         });
+      var privateMovement = Object.keys(
+        sequenceState && sequenceState.separations || {})
+        .map(function(id) { return sequenceState.separations[id]; })
+        .filter(function(separation) {
+          var animation = separation.syntheticAnimation;
+          return separation.laneKey === options.classMotionKind && animation &&
+            animation.spec.classId === classId &&
+            selectorFlagParts(animation)[1] === side &&
+            (!requiredFlags || selectorFlags(animation) === requiredFlags);
+        }).map(function(separation) { return separation.syntheticAnimation; });
+      return movementRows.concat(privateMovement);
     }
     if (options && options.idleOnly) {
       var idleRows = idleAnimationRows(animationState, classId).filter(function(animation) {
@@ -1546,7 +1584,10 @@ window.OB64 = window.OB64 || {};
       actionName: action ? action.name : 'Action ' + M.hex(mapping.actionId, 2),
       rawMode: rawMode,
       modeLabel: 'Raw mode ' + rawMode,
-      displayOrder: displayOrder
+      displayOrder: displayOrder,
+      idleSequence: false,
+      classMotionKind: null,
+      sequenceCatalogGroupKey: null
     });
     return Object.assign({}, animation, {
       key: key,
@@ -1675,6 +1716,9 @@ window.OB64 = window.OB64 || {};
     }).forEach(function(key) {
       var definition = rom.classDefs[key];
       if (!definition) return;
+      if (OB64.refreshClassDefClassification) {
+        OB64.refreshClassDefClassification(definition);
+      }
       parts.push('c', key, definition.b43Raw, definition.b45Raw,
         definition.b47Raw, definition.isTerm ? 1 : 0,
         definition.isSentinel ? 1 : 0);
@@ -2078,6 +2122,37 @@ window.OB64 = window.OB64 || {};
     ui.animationTargetActionId = animation.spec.actionId;
     ui.animationTargetFlags = selectorFlags(animation);
     ui.animationTargetLaneKey = animationLaneKey(animation);
+    if (!ui.animationTargetFlagsByRoute) ui.animationTargetFlagsByRoute = {};
+    ui.animationTargetFlagsByRoute[[animation.spec.classId,
+      animation.spec.actionId, animationLaneKey(animation)].join(':')] =
+        selectorFlags(animation);
+  }
+
+  function rememberedAnimationTargetFlags(ui, classId, actionId, laneKey,
+      fallbackFlags) {
+    var key = [Number(classId), Number(actionId), laneKey].join(':');
+    return ui && ui.animationTargetFlagsByRoute &&
+      ui.animationTargetFlagsByRoute[key] || fallbackFlags || null;
+  }
+
+  function preferredAnimationTarget(rows, ui, classId, actionId, laneKey,
+      fallbackFlags) {
+    var wantedFlags = rememberedAnimationTargetFlags(
+      ui, classId, actionId, laneKey, fallbackFlags);
+    var matching = (rows || []).filter(function(row) {
+      return selectorFlags(row) === wantedFlags;
+    });
+    if (matching.length) return preferredAnimation(matching, {
+      rawMode: laneKey === 'blocked' ? 2 : 0
+    });
+    var side = String(wantedFlags || '').split('/')[1];
+    var sameSide = (rows || []).filter(function(row) {
+      return String(selectorFlagParts(row)[1]) === side;
+    });
+    return preferredAnimation(sameSide.length ? sameSide : rows, {
+      rawMode: laneKey === 'blocked' ? 2 : 0,
+      side: side === '0' || side === '1' ? Number(side) : undefined
+    });
   }
 
   function assignmentTargetAnimation(ui, catalog, fallback) {
@@ -2087,7 +2162,14 @@ window.OB64 = window.OB64 || {};
       ? ui.animationTargetActionId : fallback.spec.actionId;
     var flags = ui.animationTargetFlags || selectorFlags(fallback);
     var laneKey = ui.animationTargetLaneKey || animationLaneKey(fallback);
-    var rows = catalog.specs.filter(function(row) {
+    var candidates = catalog.specs.slice();
+    Object.keys(catalog.byKey || {}).forEach(function(key) {
+      var animation = catalog.byKey[key];
+      if (animation && !candidates.some(function(row) {
+        return row.key === animation.key;
+      })) candidates.push(animation);
+    });
+    var rows = candidates.filter(function(row) {
       return row.spec.classId === classId && row.spec.actionId === actionId &&
         selectorFlags(row) === flags && animationLaneKey(row) === laneKey;
     });
@@ -2096,9 +2178,11 @@ window.OB64 = window.OB64 || {};
     }) || fallback;
   }
 
-  function selectedAnimation(state, ui, catalog) {
+  function selectedAnimation(state, ui, catalog, rom) {
     var previousKey = ui.animationKey;
     var request = ui.animationRouteRequest;
+    var restoreAssignedRoute = !!ui.animationRestoreAssignedRoute;
+    delete ui.animationRestoreAssignedRoute;
     var animation = null;
     if (request) {
       var requestRows = catalog.specs.filter(function(row) {
@@ -2164,6 +2248,9 @@ window.OB64 = window.OB64 || {};
         rawMode: laneKey === 'blocked' ? 2 :
           (Number.isInteger(ui.animationRawMode) ? ui.animationRawMode : 0)
       }) || catalog.specs[0];
+    }
+    if ((request || restoreAssignedRoute) && isFixedAnimation(animation)) {
+      animation = assignedFixedRouteAnimation(rom, animation);
     }
     ui.animationKey = animation.key;
     rememberAnimationSelection(ui, animation);
@@ -2391,6 +2478,16 @@ window.OB64 = window.OB64 || {};
             ordered.push(animation);
           }
         });
+      Object.keys(rom.animationSequences &&
+          rom.animationSequences.separations || {}).forEach(function(id) {
+        var separation = rom.animationSequences.separations[id];
+        var animation = separation && separation.syntheticAnimation;
+        if (separation && separation.laneKey === targetMotion.kind && animation &&
+            animation.spec.classId === motionClassId &&
+            !ordered.some(function(row) { return row.key === animation.key; })) {
+          ordered.push(animation);
+        }
+      });
     }
     function activate(animation, updateTarget) {
       if (!animation) return;
@@ -2408,13 +2505,8 @@ window.OB64 = window.OB64 || {};
         animation.frames[0].layers[0], ui);
       rerender();
     }
-    function activeIdleRoute(animation) {
-      if (!animation || !isIdleAnimation(animation) ||
-          !OB64.animationSequences) return animation;
-      var bodyFlags = OB64.animationSequences.bodyFlagsFor(animation);
-      return OB64.animationSequences.routeAnimation(
-        rom, animation.spec.classId, IDLE_ACTION_ID, bodyFlags, 'idle') ||
-        animation;
+    function activeFixedRoute(animation) {
+      return assignedFixedRouteAnimation(rom, animation);
     }
     function selector(labelText, rows, value, valueFor, textFor, onSelect,
         extraOptions) {
@@ -2686,14 +2778,17 @@ window.OB64 = window.OB64 || {};
       var idleTarget = isIdleAnimation(targetAnimation);
       var motionTarget = isClassMotionAnimation(targetAnimation);
       var fixedTarget = idleTarget || motionTarget;
-      var separation = !motionTarget && OB64.animationSequences
+      var separation = OB64.animationSequences
         ? OB64.animationSequences.routeSeparationFor(
           targetAnimation, rom.animationSequences) : null;
+      var assignedTarget = fixedTarget && separation &&
+        separation.syntheticAnimation
+        ? separation.syntheticAnimation : targetAnimation;
       var pair = fixedTarget ? null : routePairForAnimation(rom, targetAnimation);
       var needsUserAssignment = !!(targetAnimation.effectiveMapping &&
         targetAnimation.effectiveMapping.assignmentRequired);
       var targetLaneLabel = animationLaneLabel(targetAnimation);
-      var previewChoice = selected && selected.key !== targetAnimation.key
+      var previewChoice = selected && selected.key !== assignedTarget.key
         ? rows.find(function(choice) {
           return choice.rows.some(function(row) { return row.key === selected.key; });
         }) : null;
@@ -2759,20 +2854,25 @@ window.OB64 = window.OB64 || {};
         else if (fallbackBody) rowStatus.appendChild(badge('Game fallback', 'warning'));
         else if (previewed) rowStatus.appendChild(badge('Preview', 'shared'));
         row.appendChild(rowStatus);
-        if (fixedTarget) {
-          panel.appendChild(row);
-          return;
-        }
         var actions = element('div', 'animation-variant-dropdown-actions');
         var assign = button('Assign', 'animation-variant-assign', function(event) {
           event.preventDefault(); event.stopPropagation();
           try {
-            OB64.animationSequences.assignShared(rom, representative, pair,
-              targetAnimation);
-            ui.animationKey = targetAnimation.key;
+            var assignedAnimation = targetAnimation;
+            if (fixedTarget) {
+              var fixedSeparation = OB64.animationSequences.separateAndAssign(
+                rom, representative, null, targetAnimation);
+              assignedAnimation = fixedSeparation.syntheticAnimation;
+            } else {
+              OB64.animationSequences.assignShared(rom, representative, pair,
+                targetAnimation);
+            }
+            ui.animationKey = assignedAnimation.key;
             rememberAnimationTarget(ui, targetAnimation);
-            rememberAnimationSelection(ui, targetAnimation);
-            if (options && options.onAnimationMappingChange) {
+            rememberAnimationSelection(ui, assignedAnimation);
+            if (fixedTarget) {
+              changed(options);
+            } else if (options && options.onAnimationMappingChange) {
               options.onAnimationMappingChange();
             }
             notify(options, choice.label + ' is assigned to ' +
@@ -2787,10 +2887,19 @@ window.OB64 = window.OB64 || {};
           }
         });
         assign.textContent = 'Assign to ' + targetLaneLabel;
-        assign.disabled = !pair || !!separation || !!assigned || !!sameBodyOnly ||
-          !!sharedIssue ||
+        assign.disabled = (!fixedTarget && (!pair || !!separation ||
+          !!sameBodyOnly || !!sharedIssue)) || !!assigned ||
           !rom.animationSequences || !rom.animationSequences.supported;
-        if (separation) {
+        if (fixedTarget && assigned) {
+          assign.textContent = 'Current: ' + targetLaneLabel;
+          assign.title = 'This sequence is already assigned to the selected ' +
+            'class, action, and art variant.';
+        } else if (fixedTarget) {
+          assign.title = separation
+            ? 'Replace the selected fixed route with a private copy of this sequence.'
+            : 'Assign a private copy of this sequence to the selected class, action, ' +
+              'and art variant.';
+        } else if (separation) {
           assign.textContent = 'Replace below';
           assign.title = 'This target has a separated sequence. Use Replace From below.';
         } else if (assigned) {
@@ -2859,22 +2968,19 @@ window.OB64 = window.OB64 || {};
         flags: selectorFlags(targetAnimation)
       });
     var variantChoices = animationClassVariantChoices(sequenceRows);
+    var currentSequenceTarget = isFixedAnimation(targetAnimation)
+      ? activeFixedRoute(targetAnimation) : targetAnimation;
     var currentSequenceChoice = currentSequenceChoiceForTarget(
-      variantChoices, targetAnimation);
+      variantChoices, currentSequenceTarget);
     var controls = element('div', 'animation-corpus-controls');
     controls.appendChild(searchableClassSelector(classes,
       String(targetAnimation.spec.classId), function(value) {
         if (isIdleAnimation(targetAnimation)) {
           var nextIdleRows = idleAnimationRows(state.animations, Number(value));
-          var matchingIdleRows = nextIdleRows.filter(function(row) {
-            return selectorFlags(row) === selectorFlags(targetAnimation);
-          });
-          var nextIdle = preferredAnimation(
-            matchingIdleRows.length ? matchingIdleRows : nextIdleRows, {
-              rawMode: 0,
-              side: selectorFlagParts(targetAnimation)[1]
-            });
-          nextIdle = activeIdleRoute(nextIdle);
+          var nextIdle = preferredAnimationTarget(
+            nextIdleRows, ui, Number(value), IDLE_ACTION_ID, 'idle',
+            selectorFlags(targetAnimation));
+          nextIdle = activeFixedRoute(nextIdle);
           if (!nextIdle) {
             notify(options, 'Idle / Rest is unavailable for the selected class.');
             return;
@@ -2886,20 +2992,16 @@ window.OB64 = window.OB64 || {};
           var nextMotionRows = classMotionAnimationRows(
             state.animations, Number(value),
             targetAnimation.spec.classMotionKind);
-          var matchingMotionRows = nextMotionRows.filter(function(row) {
-            return selectorFlags(row) === selectorFlags(targetAnimation);
-          });
-          var nextMotion = preferredAnimation(
-            matchingMotionRows.length ? matchingMotionRows : nextMotionRows, {
-              rawMode: 0,
-              side: selectorFlagParts(targetAnimation)[1]
-            });
+          var nextMotion = preferredAnimationTarget(
+            nextMotionRows, ui, Number(value), targetAnimation.spec.actionId,
+            targetAnimation.spec.classMotionKind,
+            selectorFlags(targetAnimation));
           if (!nextMotion) {
             notify(options, animationLaneLabel(targetAnimation) +
               ' is unavailable for the selected class.');
             return;
           }
-          activate(nextMotion, true);
+          activate(activeFixedRoute(nextMotion), true);
           return;
         }
         var nextClassRows = ordered.filter(function(row) {
@@ -2929,15 +3031,10 @@ window.OB64 = window.OB64 || {};
         if (Number(value) === IDLE_ACTION_ID) {
           var idleRows = idleAnimationRows(
             state.animations, targetAnimation.spec.classId);
-          var sameIdleRoute = idleRows.filter(function(row) {
-            return selectorFlags(row) === selectorFlags(targetAnimation);
-          });
-          var idle = preferredAnimation(
-            sameIdleRoute.length ? sameIdleRoute : idleRows, {
-              rawMode: 0,
-              side: selectorFlagParts(targetAnimation)[1]
-            });
-          idle = activeIdleRoute(idle);
+          var idle = preferredAnimationTarget(
+            idleRows, ui, targetAnimation.spec.classId,
+            IDLE_ACTION_ID, 'idle', selectorFlags(targetAnimation));
+          idle = activeFixedRoute(idle);
           if (!idle) {
             notify(options, 'Idle / Rest is unavailable for the selected class.');
             return;
@@ -2949,34 +3046,24 @@ window.OB64 = window.OB64 || {};
         if (motion) {
           var motionRows = classMotionAnimationRows(
             state.animations, targetAnimation.spec.classId, motion.kind);
-          var sameMotionRoute = motionRows.filter(function(row) {
-            return selectorFlags(row) === selectorFlags(targetAnimation);
-          });
-          var nextMotion = preferredAnimation(
-            sameMotionRoute.length ? sameMotionRoute : motionRows, {
-              rawMode: 0,
-              side: selectorFlagParts(targetAnimation)[1]
-            });
+          var nextMotion = preferredAnimationTarget(
+            motionRows, ui, targetAnimation.spec.classId,
+            motion.actionId, motion.kind, selectorFlags(targetAnimation));
           if (!nextMotion) {
             notify(options, motion.actionName +
               ' is unavailable for the selected class.');
             return;
           }
-          activate(nextMotion, true);
+          activate(activeFixedRoute(nextMotion), true);
           return;
         }
         var nextActionRows = classRows.filter(function(row) {
           return !isIdleAnimation(row) && !isClassMotionAnimation(row) &&
             row.spec.actionId === Number(value);
         });
-        var sameRouteRows = nextActionRows.filter(function(row) {
-          return selectorFlags(row) === selectorFlags(targetAnimation) &&
-            animationLaneKey(row) === animationLaneKey(targetAnimation);
-        });
-        activate(preferredAnimation(sameRouteRows.length
-          ? sameRouteRows : nextActionRows, {
-          rawMode: animationLaneKey(targetAnimation) === 'blocked' ? 2 : 0
-        }), true);
+        activate(preferredAnimationTarget(nextActionRows, ui,
+          targetAnimation.spec.classId, Number(value),
+          animationLaneKey(targetAnimation), selectorFlags(targetAnimation)), true);
       }));
     var missingVariants =
       ((state.animations.mappingAudit.byClass[targetAnimation.spec.classId] || {})
@@ -3004,7 +3091,7 @@ window.OB64 = window.OB64 || {};
         var nextRoute = preferredAnimation(nextRouteRows, {
           rawMode: animationLaneKey(targetAnimation) === 'blocked' ? 2 : 0
         });
-        activate(activeIdleRoute(nextRoute), true);
+        activate(activeFixedRoute(nextRoute), true);
       }, missingVariants));
     var modes = [
       { key: 'normal', label: 'Normal (modes 0/1)', rawMode: 0 },
@@ -3111,11 +3198,13 @@ window.OB64 = window.OB64 || {};
       previewAnimation, ui, options, rerender) {
     if (!targetAnimation || !OB64.animationSequences) return;
     var idleTarget = isIdleAnimation(targetAnimation);
+    var motionTarget = isClassMotionAnimation(targetAnimation);
+    var fixedTarget = idleTarget || motionTarget;
     var replacing = !!separation;
     var copyCatalogOptions = animationCopyCatalogOptions(
-      idleTarget, replacing);
-    var pair = routePairForAnimation(rom, targetAnimation);
-    if (!separation && ((!idleTarget && !pair) || !rom.animationSequences ||
+      idleTarget, replacing, motionTarget);
+    var pair = fixedTarget ? null : routePairForAnimation(rom, targetAnimation);
+    if (!separation && ((!fixedTarget && !pair) || !rom.animationSequences ||
         !rom.animationSequences.supported)) {
       notify(options, 'Copy From is unavailable because this target has no writable sequence route.');
       return;
@@ -3185,7 +3274,7 @@ window.OB64 = window.OB64 || {};
         } else {
           separation = OB64.animationSequences.separateAndAssign(
             rom, donor, pair, targetAnimation);
-          if (idleTarget) changed(options);
+          if (fixedTarget) changed(options);
           else animationRouteChanged(options);
         }
         ui.animationKey = separation && separation.syntheticAnimation
@@ -3195,9 +3284,11 @@ window.OB64 = window.OB64 || {};
           ? separation.syntheticAnimation : targetAnimation);
         notify(options, (replacing
           ? (idleTarget ? 'Private idle loop replaced from ' :
-            'Private sequence replaced from ')
+            (motionTarget ? 'Private movement sequence replaced from ' :
+              'Private sequence replaced from '))
           : (idleTarget ? 'Private idle loop copied from ' :
-            'Private sequence copied and assigned from ')) +
+            (motionTarget ? 'Private movement sequence detached from ' :
+              'Private sequence copied and assigned from '))) +
           donor.spec.className + ' ' + donor.spec.actionName + ' · ' +
            animationSideLabel(donor) + ' · ' + animationArtVariantLabel(donor) +
            ' · ' + animationLaneLabel(donor) + '.');
@@ -3905,8 +3996,10 @@ window.OB64 = window.OB64 || {};
       return;
     }
     var idleTarget = isIdleAnimation(targetAnimation);
-    var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
-    if (!separation && !idleTarget && !pair) {
+    var motionTarget = isClassMotionAnimation(targetAnimation);
+    var fixedTarget = idleTarget || motionTarget;
+    var pair = fixedTarget ? null : routePairForAnimation(rom, targetAnimation);
+    if (!separation && !fixedTarget && !pair) {
       notify(options,
         'Sprite Library sequence import blocked: this target has no writable sequence route.');
       return;
@@ -3955,10 +4048,11 @@ window.OB64 = window.OB64 || {};
       rememberAnimationSelection(ui, animation);
       selectLayer(state, animation, animation.frames[0],
         animation.frames[0].layers[0], ui);
-      if (created && !idleTarget) animationRouteChanged(options);
+      if (created && !fixedTarget) animationRouteChanged(options);
       else changed(options);
       notify(options, 'Imported Sprite Library sequence ' + asset.name +
-        ' as ' + preparedFrames.length + ' private combat frame' +
+        ' as ' + preparedFrames.length + ' private ' +
+        (motionTarget ? 'movement' : (idleTarget ? 'idle' : 'combat')) + ' frame' +
         (preparedFrames.length === 1 ? '' : 's') + '.');
       rerender();
     } catch (error) {
@@ -3973,7 +4067,8 @@ window.OB64 = window.OB64 || {};
     heading.appendChild(element('h3', '', 'Frame sequence'));
     var idleTarget = isIdleAnimation(targetAnimation);
     var motionTarget = isClassMotionAnimation(targetAnimation);
-    var separation = !motionTarget && OB64.animationSequences
+    var fixedTarget = idleTarget || motionTarget;
+    var separation = OB64.animationSequences
       ? OB64.animationSequences.routeSeparationFor(
         targetAnimation, rom.animationSequences)
       : null;
@@ -3984,47 +4079,49 @@ window.OB64 = window.OB64 || {};
       : null;
     var headingActions = element('div', 'animation-sequence-heading-actions');
     if (separation) headingActions.appendChild(badge('Separated', 'edited'));
-    if (!motionTarget) {
-      var copyFrom = button(separation
-        ? 'Replace From…' : 'Copy From and Separate…',
-        'btn-secondary animation-copy-from', function() {
-          openCopyFromModal(state, rom, separation, targetAnimation,
-            animation, ui, options, rerender);
+    var copyFrom = button(separation
+      ? 'Replace From…' : 'Copy From and Separate…',
+      'btn-secondary animation-copy-from', function() {
+        openCopyFromModal(state, rom, separation, targetAnimation,
+          animation, ui, options, rerender);
+      });
+    var pair = fixedTarget ? null : routePairForAnimation(rom, targetAnimation);
+    copyFrom.disabled = !targetAnimation ||
+      (!fixedTarget && !separation && !pair) ||
+      !rom.animationSequences || !rom.animationSequences.supported;
+    copyFrom.title = separation
+      ? 'Replace this complete private sequence from another compatible sequence.'
+      : (idleTarget
+        ? 'Create a private copy of this idle loop for the selected class and art route.'
+        : (motionTarget
+          ? 'Detach this fixed movement route into a private editable sequence.'
+          : 'Create a complete private copy from another class, action, and variant, then assign it to this target.'));
+    headingActions.appendChild(copyFrom);
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
+      var librarySequence = button(separation
+        ? 'Replace from Library…' : 'Import Library Sequence…',
+      'btn-secondary animation-copy-from', function() {
+        OB64.spriteEditorUI.openLibraryPicker(rom, {
+          title: separation
+            ? 'Replace Private Sequence from Sprite Library'
+            : 'Create Private Sequence from Sprite Library',
+          actionLabel: separation ? 'Replace Sequence' : 'Import Sequence',
+          kinds: ['sequence'],
+          onStatus: function(message) { notify(options, message); }
+        }, function(source) {
+          importLibrarySequence(state, rom, separation, targetAnimation,
+            animation, source.asset, ui, options, rerender);
         });
-      var pair = idleTarget ? null : routePairForAnimation(rom, targetAnimation);
-      copyFrom.disabled = !targetAnimation ||
-        (!idleTarget && !separation && !pair) ||
+      });
+      librarySequence.disabled = !targetAnimation ||
+        (!fixedTarget && !separation && !pair) ||
         !rom.animationSequences || !rom.animationSequences.supported;
-      copyFrom.title = separation
-        ? 'Replace this complete private sequence from another compatible sequence.'
-        : (idleTarget
-          ? 'Create a private copy of this idle loop for the selected class and art route.'
-          : 'Create a complete private copy from another class, action, and variant, then assign it to this target.');
-      headingActions.appendChild(copyFrom);
-      if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
-        var librarySequence = button(separation
-          ? 'Replace from Library…' : 'Import Library Sequence…',
-        'btn-secondary animation-copy-from', function() {
-          OB64.spriteEditorUI.openLibraryPicker(rom, {
-            title: separation
-              ? 'Replace Private Sequence from Sprite Library'
-              : 'Create Private Sequence from Sprite Library',
-            actionLabel: separation ? 'Replace Sequence' : 'Import Sequence',
-            kinds: ['sequence'],
-            onStatus: function(message) { notify(options, message); }
-          }, function(source) {
-            importLibrarySequence(state, rom, separation, targetAnimation,
-              animation, source.asset, ui, options, rerender);
-          });
-        });
-        librarySequence.disabled = !targetAnimation ||
-          (!idleTarget && !separation && !pair) ||
-          !rom.animationSequences || !rom.animationSequences.supported;
-        librarySequence.title = separation
-          ? 'Replace this complete private sequence with a Sprite Library sequence.'
-          : 'Convert a Sprite Library sequence into a private combat sequence and assign it to this target.';
-        headingActions.appendChild(librarySequence);
-      }
+      librarySequence.title = separation
+        ? 'Replace this complete private sequence with a Sprite Library sequence.'
+        : (motionTarget
+          ? 'Import a Sprite Library sequence into a detached movement route.'
+          : 'Convert a Sprite Library sequence into a private sequence for this target.');
+      headingActions.appendChild(librarySequence);
     }
     heading.appendChild(headingActions);
     section.appendChild(heading);
@@ -5512,7 +5609,7 @@ window.OB64 = window.OB64 || {};
       return layerSource && layerSource.sourceRole === 'equipment';
     }).length;
     var settings = {
-      resizeMode: 'nearest', panX: 0.5, panY: 0.5,
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1,
       dither: false, keepEquipment: true
     };
     var currentResult = null, scheduledFrame = null;
@@ -5560,26 +5657,55 @@ window.OB64 = window.OB64 || {};
     });
     resizeLabel.appendChild(resizeSelect); controls.appendChild(resizeLabel);
 
-    var initialCrop = OB64.art.imageCropRect(source.width, source.height,
-      targetWidth, targetHeight, settings.panX, settings.panY);
-    function cropSlider(labelText, key, enabled) {
+    var zoomLabel = element('label', 'art-import-control');
+    var zoomText = element('span', '', 'Zoom · 1.00×');
+    zoomLabel.appendChild(zoomText);
+    var zoomInput = element('input');
+    zoomInput.type = 'range';
+    zoomInput.min = '-200'; zoomInput.max = '300';
+    zoomInput.step = '5'; zoomInput.value = '0';
+    zoomInput.setAttribute('aria-label', 'Image zoom');
+    zoomInput.setAttribute('aria-valuetext', '1.00 times');
+    zoomInput.addEventListener('input', function() {
+      settings.zoom = Math.pow(2, Number(zoomInput.value) / 100);
+      zoomText.textContent = 'Zoom · ' + settings.zoom.toFixed(2) + '×';
+      zoomInput.setAttribute(
+        'aria-valuetext', settings.zoom.toFixed(2) + ' times');
+      updateCropControls();
+      schedulePreview();
+    });
+    zoomLabel.appendChild(zoomInput);
+    controls.appendChild(zoomLabel);
+
+    function cropSlider(labelText, key) {
       var label = element('label', 'art-import-control');
       label.appendChild(element('span', '', labelText));
       var input = element('input');
       input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1';
-      input.value = '50'; input.disabled = !enabled;
+      input.value = '50';
       input.setAttribute('aria-label', labelText);
       input.addEventListener('input', function() {
         settings[key] = Number(input.value) / 100; schedulePreview();
       });
       label.appendChild(input);
-      if (!enabled) label.classList.add('disabled');
       controls.appendChild(label);
+      return { label: label, input: input };
     }
-    cropSlider('Horizontal crop position', 'panX',
-      initialCrop.horizontalPanAvailable);
-    cropSlider('Vertical crop position', 'panY',
-      initialCrop.verticalPanAvailable);
+    function setCropControlEnabled(control, enabled) {
+      control.input.disabled = !enabled;
+      control.label.classList.toggle('disabled', !enabled);
+    }
+    function updateCropControls() {
+      var crop = OB64.art.imageCropRect(source.width, source.height,
+        targetWidth, targetHeight, settings.panX, settings.panY,
+        settings.zoom);
+      setCropControlEnabled(
+        horizontalCrop, crop.horizontalPanAvailable);
+      setCropControlEnabled(verticalCrop, crop.verticalPanAvailable);
+    }
+    var horizontalCrop = cropSlider('Horizontal crop position', 'panX');
+    var verticalCrop = cropSlider('Vertical crop position', 'panY');
+    updateCropControls();
 
     var ditherWrap = element('div', 'art-import-dither');
     var ditherLabel = element('label', 'art-import-checkbox');
@@ -5637,6 +5763,7 @@ window.OB64 = window.OB64 || {};
           '; target=' + targetWidth + 'x' + targetHeight +
           '; crop=' + crop.width.toFixed(2) + 'x' + crop.height.toFixed(2) +
           '@(' + crop.x.toFixed(2) + ',' + crop.y.toFixed(2) + ')' +
+          '; zoom=' + crop.zoom.toFixed(2) + 'x' +
           '; resize=' + currentResult.resizeMode +
           '; visible RGB555 colors=' + currentResult.sourceNativeColorCount +
           '->' + currentResult.colorCount + '/256' +
@@ -5698,7 +5825,8 @@ window.OB64 = window.OB64 || {};
         var crop = currentResult.crop;
         stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
-          crop.y.toFixed(1) + ' \u00B7 ' +
+          crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
+          '\u00D7 zoom \u00B7 ' +
           currentResult.sourceNativeColorCount + ' native colors \u2192 ' +
           currentResult.colorCount + ' / 256' +
           (currentResult.quantized ? ' \u00B7 Wu quantized' :
@@ -5971,7 +6099,7 @@ window.OB64 = window.OB64 || {};
     var catalog = effectiveAnimationCatalog(state, rom);
     state.animations.activeSourceAnimations = editScopeSourceIndex(
       state.animations, catalog, rom && rom.animationSequences);
-    var animation = selectedAnimation(state, ui, catalog);
+    var animation = selectedAnimation(state, ui, catalog, rom);
     if (ui.animationTool === 'move' && !animation.spec.separatedCopy) {
       ui.animationTool = 'pencil';
     }
@@ -6089,6 +6217,8 @@ window.OB64 = window.OB64 || {};
     requestAnimationRoute: requestAnimationRoute,
     rememberAnimationSelection: rememberAnimationSelection,
     rememberAnimationTarget: rememberAnimationTarget,
+    rememberedAnimationTargetFlags: rememberedAnimationTargetFlags,
+    preferredAnimationTarget: preferredAnimationTarget,
     assignmentTargetAnimation: assignmentTargetAnimation,
     selectedAnimation: selectedAnimation,
     spriteEditScope: spriteEditScope,

@@ -552,7 +552,7 @@ window.OB64 = window.OB64 || {};
 
   function showAvatarImportDialog(source, appearance, state, options, rerender) {
     var settings = {
-      resizeMode: 'nearest', panX: 0.5, panY: 0.5,
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1,
       dither: false, backgroundWord: appearance.originalWords[0]
     };
     var currentResult = null, scheduledFrame = null;
@@ -600,24 +600,55 @@ window.OB64 = window.OB64 || {};
     });
     resizeLabel.appendChild(resizeSelect); controls.appendChild(resizeLabel);
 
-    var initialCrop = A.avatarCropRect(
-      source.width, source.height, settings.panX, settings.panY);
-    function cropSlider(labelText, key, enabled) {
+    var zoomLabel = element('label', 'art-import-control');
+    var zoomText = element('span', '', 'Zoom · 1.00×');
+    zoomLabel.appendChild(zoomText);
+    var zoomInput = element('input');
+    zoomInput.type = 'range';
+    zoomInput.min = '-200'; zoomInput.max = '300';
+    zoomInput.step = '5'; zoomInput.value = '0';
+    zoomInput.setAttribute('aria-label', 'Image zoom');
+    zoomInput.setAttribute('aria-valuetext', '1.00 times');
+    zoomInput.addEventListener('input', function() {
+      settings.zoom = Math.pow(2, Number(zoomInput.value) / 100);
+      zoomText.textContent = 'Zoom · ' + settings.zoom.toFixed(2) + '×';
+      zoomInput.setAttribute(
+        'aria-valuetext', settings.zoom.toFixed(2) + ' times');
+      updateCropControls();
+      schedulePreview();
+    });
+    zoomLabel.appendChild(zoomInput);
+    controls.appendChild(zoomLabel);
+
+    function cropSlider(labelText, key) {
       var label = element('label', 'art-import-control');
       label.appendChild(element('span', '', labelText));
       var input = element('input');
       input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1';
-      input.value = '50'; input.disabled = !enabled;
+      input.value = '50';
       input.setAttribute('aria-label', labelText);
       input.addEventListener('input', function() {
         settings[key] = Number(input.value) / 100; schedulePreview();
       });
       label.appendChild(input);
-      if (!enabled) label.classList.add('disabled');
       controls.appendChild(label);
+      return { label: label, input: input };
     }
-    cropSlider('Horizontal crop position', 'panX', initialCrop.horizontalPanAvailable);
-    cropSlider('Vertical crop position', 'panY', initialCrop.verticalPanAvailable);
+    function setCropControlEnabled(control, enabled) {
+      control.input.disabled = !enabled;
+      control.label.classList.toggle('disabled', !enabled);
+    }
+    function updateCropControls() {
+      var crop = A.avatarCropRect(
+        source.width, source.height, settings.panX, settings.panY,
+        settings.zoom);
+      setCropControlEnabled(
+        horizontalCrop, crop.horizontalPanAvailable);
+      setCropControlEnabled(verticalCrop, crop.verticalPanAvailable);
+    }
+    var horizontalCrop = cropSlider('Horizontal crop position', 'panX');
+    var verticalCrop = cropSlider('Vertical crop position', 'panY');
+    updateCropControls();
 
     var ditherLabel = element('label', 'art-import-checkbox');
     var dither = element('input'); dither.type = 'checkbox';
@@ -657,6 +688,7 @@ window.OB64 = window.OB64 || {};
         '; source=' + source.width + 'x' + source.height +
         '; crop=' + crop.width.toFixed(2) + 'x' + crop.height.toFixed(2) +
         '@(' + crop.x.toFixed(2) + ',' + crop.y.toFixed(2) + ')' +
+        '; zoom=' + crop.zoom.toFixed(2) + 'x' +
         '; resize=' + currentResult.resizeMode +
         '; RGB555 colors=' + currentResult.sourceNativeColorCount + '->' +
         currentResult.colorCount + '/80' +
@@ -684,7 +716,8 @@ window.OB64 = window.OB64 || {};
         var crop = currentResult.crop;
         stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
-          crop.y.toFixed(1) + ' \u00B7 ' + currentResult.sourceNativeColorCount +
+          crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
+          '\u00D7 zoom \u00B7 ' + currentResult.sourceNativeColorCount +
           ' native colors \u2192 ' + currentResult.colorCount + ' / 80' +
           (currentResult.quantized ? ' \u00B7 Wu quantized' : ' \u00B7 quantization not required') +
           (currentResult.dithered ? ' \u00B7 ordered dither applied' : '') +
@@ -800,7 +833,11 @@ window.OB64 = window.OB64 || {};
     [['avatars', 'Avatars'], ['icons', 'Item Icons'], ['army', 'Army Sprites'],
       ['animations', 'Combat Animation']].forEach(function(row) {
       var tab = button(row[1], ui.subtab === row[0] ? 'active' : '', function() {
-        ui.subtab = row[0]; state.selectedTab = row[0]; ui.selection = null; rerender();
+        ui.subtab = row[0];
+        state.selectedTab = row[0];
+        ui.selection = null;
+        if (row[0] === 'animations') ui.animationRestoreAssignedRoute = true;
+        rerender();
       });
       var count = row[0] === 'avatars'
         ? Object.keys(state.avatar.edits).length
@@ -1321,6 +1358,9 @@ window.OB64 = window.OB64 || {};
     }
     var state = rom && rom.art;
     var ui = state && state.supported ? ensureUi(state) : null;
+    if (ui && ui.subtab === 'animations' && !preserveViewport) {
+      ui.animationRestoreAssignedRoute = true;
+    }
     captureBrowserScroll(ui, panel, preserveViewport);
     panel.innerHTML = '';
     if (!state) return;

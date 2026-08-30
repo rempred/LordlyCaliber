@@ -180,8 +180,15 @@ assert(animationSource.includes("badge('Game fallback', 'warning')"));
 assert(animationSource.includes('function sequenceAssignmentSummary('));
 assert(animationSource.includes("? 'Assigned to ' + targetLane"));
 assert(animationSource.includes("return 'Previewing · ' + previewChoice.label"));
-assert(animationSource.includes('selected.key !== targetAnimation.key'));
+assert(animationSource.includes('selected.key !== assignedTarget.key'));
 assert(animationSource.includes("assign.textContent = 'Assign to ' + targetLaneLabel"));
+assert(animationSource.includes('if (fixedTarget) {\n' +
+  '              var fixedSeparation = OB64.animationSequences.separateAndAssign('));
+assert(animationSource.includes('ui.animationKey = assignedAnimation.key;'));
+assert(animationSource.includes("'Assign a private copy of this sequence to the selected class, action, '"));
+assert(!animationSource.includes('if (fixedTarget) {\n' +
+  '          panel.appendChild(row);\n' +
+  '          return;'));
 assert(animationSource.includes('The editor has not selected one for you.'));
 assert(animationSource.includes("button('Assign', 'animation-variant-assign'"));
 assert(!animationSource.includes("button('Separate and Assign',"));
@@ -190,9 +197,12 @@ assert(animationSource.includes('openCopyFromModal('));
 assert(animationSource.includes("var sequenceSelect = selectField('Sequence')"));
 assert(animationSource.includes('animationClassVariantChoices(rowsForClass())'));
 assert(animationSource.includes('animationSequenceCatalogRows(\n        state.animations'));
-assert(animationSource.includes('if (!motionTarget) {'));
+assert(!animationSource.includes('if (!motionTarget) {'));
+assert(animationSource.includes("var fixedTarget = idleTarget || motionTarget;"));
+assert(animationSource.includes(
+  "? 'Detach this fixed movement route into a private editable sequence.'"));
 assert(animationSource.includes('copyFrom.disabled = !targetAnimation ||'));
-assert(animationSource.includes('(!idleTarget && !separation && !pair) ||'));
+assert(animationSource.includes('(!fixedTarget && !separation && !pair) ||'));
 assert(animationSource.includes(
   "? 'Create a private copy of this idle loop for the selected class and art route.'"));
 assert(animationSource.includes('OB64.animationSequences.copyFrom('));
@@ -295,6 +305,10 @@ assert(source.includes('captureBrowserScroll(ui, panel, preserveViewport);'));
 assert(source.includes('restoreBrowserScroll(ui, panel, preserveViewport);'));
 assert(source.includes('render(panel, rom, options, true);'));
 assert(source.includes('OB64.animationUI.render(state, ui, options, rerender, rom)'));
+assert(source.includes('ui.animationRestoreAssignedRoute = true;'));
+assert(animationSource.includes('var restoreAssignedRoute ='));
+assert(animationSource.includes('assignedFixedRouteAnimation(rom, animation)'));
+assert(animationSource.includes('var assignedTarget = fixedTarget && separation &&'));
 assert(appSource.includes("button.textContent = 'Animations'"));
 assert(appSource.includes('openCombatAnimationClass(classId)'));
 assert(appSource.includes("statusBar.textContent = 'Opened this class in Art and Animation.'"));

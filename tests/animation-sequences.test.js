@@ -307,6 +307,32 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert(idleCatalog.includes(fighterIdle));
   assert(idleCatalog.includes(idleSeparation.syntheticAnimation),
     'the private idle loop must remain selectable beside the original ROM loop');
+  const idleCatalogChoices = OB64.animationUI.animationClassVariantChoices(
+    idleCatalog);
+  assert.strictEqual(idleCatalogChoices.length, 2);
+  const privateIdleChoice = idleCatalogChoices.find(choice =>
+    choice.sequenceKind === 'modified' &&
+    choice.representative === idleSeparation.syntheticAnimation);
+  assert(privateIdleChoice,
+  'the private idle loop must remain a separate selectable entry');
+  assert.strictEqual(OB64.animationUI.currentSequenceChoiceForTarget(
+    idleCatalogChoices, idleSeparation.syntheticAnimation), privateIdleChoice,
+  'the idle dropdown must identify the assigned private route as current');
+  const idleTabRestoreUi = {
+    animationKey: fighterIdle.key,
+    animationTargetClassId: fighterIdle.spec.classId,
+    animationTargetActionId: fighterIdle.spec.actionId,
+    animationTargetFlags: '0/0',
+    animationTargetLaneKey: 'idle',
+    animationRestoreAssignedRoute: true,
+  };
+  assert.strictEqual(OB64.animationUI.selectedAnimation(
+    idleRom.art, idleTabRestoreUi,
+    OB64.animationUI.effectiveAnimationCatalog(idleRom.art, idleRom), idleRom),
+  idleSeparation.syntheticAnimation,
+  'returning to the animation tab must restore the assigned private idle route');
+  assert.strictEqual(idleTabRestoreUi.animationRestoreAssignedRoute, undefined,
+    'fixed-route restoration must be a one-render request');
 
   const idleDonorRom = await freshRom(z64);
   const idleAttackDonor = OB64.animationUI.idleAnimationRows(
@@ -412,6 +438,219 @@ function route(rom, classId, actionId, flags, rawMode) {
   OB64.animationSequences.removeSeparation(restoredIdleRom, restoredIdle);
   assert.strictEqual(Object.keys(
     restoredIdleRom.animationSequences.separations).length, 0);
+
+  const fixedMovementRom = await freshRom(z64);
+  const fighterMovementRows = OB64.animationUI.classMotionAnimationRows(
+    fixedMovementRom.art.animations, 0x02);
+  const fighterAdvance = fighterMovementRows.find(animation =>
+    animation.spec.classMotionKind === 'advance' &&
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  const fighterReturn = fighterMovementRows.find(animation =>
+    animation.spec.classMotionKind === 'return' &&
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  assert(fighterAdvance && fighterReturn,
+    'Fighter must expose both fixed player-side movement routes');
+  const movementDesiredBefore = JSON.stringify(
+    fixedMovementRom.combatAnimationOverrides.desired);
+  const originalMovementPose = OB64.art.readCompressedResource(
+    z64, fighterAdvance.spec.poseKey).decoded;
+  const originalMovementStateCount = OB64.art.readU32(
+    originalMovementPose, 0) / 4;
+  const originalAdvanceProgram = OB64.animationArt.parsePoseProgram(
+    originalMovementPose, 0x05, 'original Fighter advance');
+  const originalReturnProgram = OB64.animationArt.parsePoseProgram(
+    originalMovementPose, 0x0B, 'original Fighter return');
+  const originalNeighborProgram = OB64.animationArt.parsePoseProgram(
+    originalMovementPose, 0x04, 'original Fighter selector 4');
+  const advanceSeparation = OB64.animationSequences.separateAndAssign(
+    fixedMovementRom, fighterAdvance, null, fighterAdvance);
+  const returnSeparation = OB64.animationSequences.separateAndAssign(
+    fixedMovementRom, fighterReturn, null, fighterReturn);
+  assert.strictEqual(advanceSeparation.id, '2:-2:0:advance');
+  assert.strictEqual(returnSeparation.id, '2:-3:0:return');
+  assert.strictEqual(advanceSeparation.selector, 0x05);
+  assert.strictEqual(returnSeparation.selector, 0x0B);
+  assert.strictEqual(
+    advanceSeparation.syntheticAnimation.spec.classMotionKind, 'advance');
+  assert.strictEqual(
+    returnSeparation.syntheticAnimation.spec.classMotionKind, 'return');
+  assert.strictEqual(JSON.stringify(
+    fixedMovementRom.combatAnimationOverrides.desired), movementDesiredBefore,
+  'movement detachment must not add or change a Class Combat assignment');
+  assert.deepStrictEqual(fixedMovementRom.animationSequences.routeBaselines, {},
+    'movement detachment must not create a combat selector baseline');
+  assert.deepStrictEqual(OB64.animationSequences.separationConsumers(
+    fixedMovementRom, advanceSeparation), [],
+  'a fixed movement route must not treat attack users of selector 0x05 as owners');
+  assert.strictEqual(OB64.animationSequences.routeSeparationFor(
+    fighterAdvance, fixedMovementRom.animationSequences), advanceSeparation);
+  assert.strictEqual(OB64.animationSequences.routeAnimation(
+    fixedMovementRom, 0x02, -3, 0, 'return'),
+  returnSeparation.syntheticAnimation);
+  const movementCatalog = OB64.animationUI.animationSequenceCatalogRows(
+    fixedMovementRom.art.animations, fixedMovementRom.animationSequences,
+    0x02, 0, { classMotionKind: 'advance', flags: '0/0' });
+  assert(movementCatalog.includes(fighterAdvance));
+  assert(movementCatalog.includes(advanceSeparation.syntheticAnimation),
+    'movement selection must retain the ROM route beside its private copy');
+  const movementChoices = OB64.animationUI.animationClassVariantChoices(
+    movementCatalog);
+  assert.strictEqual(movementChoices.length, 2,
+    'movement selection must list the ROM route and private copy separately');
+  const privateMovementChoice = movementChoices.find(choice =>
+    choice.sequenceKind === 'modified');
+  assert(privateMovementChoice &&
+    privateMovementChoice.representative ===
+      advanceSeparation.syntheticAnimation,
+  'the private movement route must remain directly selectable');
+  assert.strictEqual(OB64.animationUI.currentSequenceChoiceForTarget(
+    movementChoices, advanceSeparation.syntheticAnimation),
+  privateMovementChoice,
+  'the movement dropdown must identify the private route as current');
+  const movementPreviewUi = {
+    animationKey: fighterAdvance.key,
+    animationTargetClassId: fighterAdvance.spec.classId,
+    animationTargetActionId: fighterAdvance.spec.actionId,
+    animationTargetFlags: '0/0',
+    animationTargetLaneKey: 'advance',
+  };
+  assert.strictEqual(OB64.animationUI.selectedAnimation(
+    fixedMovementRom.art, movementPreviewUi,
+    OB64.animationUI.effectiveAnimationCatalog(
+      fixedMovementRom.art, fixedMovementRom), fixedMovementRom),
+  fighterAdvance,
+  'the ROM movement route must remain previewable during the current tab visit');
+  movementPreviewUi.animationRestoreAssignedRoute = true;
+  assert.strictEqual(OB64.animationUI.selectedAnimation(
+    fixedMovementRom.art, movementPreviewUi,
+    OB64.animationUI.effectiveAnimationCatalog(
+      fixedMovementRom.art, fixedMovementRom), fixedMovementRom),
+  advanceSeparation.syntheticAnimation,
+  'returning to the animation tab must restore the assigned private movement route');
+
+  const advanceAnimation = advanceSeparation.syntheticAnimation;
+  const importWidth = advanceAnimation.canvas.width;
+  const importHeight = advanceAnimation.canvas.height;
+  const movementRgba = new Uint8ClampedArray(
+    importWidth * importHeight * 4);
+  movementRgba[0] = 248;
+  movementRgba[1] = 80;
+  movementRgba[2] = 40;
+  movementRgba[3] = 255;
+  const preparedMovementFrame = OB64.art.prepareAnimationFrameImport(
+    movementRgba, importWidth, importHeight, importWidth, importHeight,
+    { resizeMode: 'nearest', dither: false });
+  OB64.animationSequences.importFrame(
+    fixedMovementRom, advanceSeparation, 0, preparedMovementFrame,
+    { keepEquipment: false });
+  const advanceTicks = advanceAnimation.frames[0].ticks === 255
+    ? 254 : advanceAnimation.frames[0].ticks + 1;
+  OB64.animationSequences.setFrameTicks(
+    fixedMovementRom, advanceSeparation, 0, advanceTicks);
+  const returnAnimation = returnSeparation.syntheticAnimation;
+  const returnTicks = returnAnimation.frames[0].ticks === 255
+    ? 254 : returnAnimation.frames[0].ticks + 1;
+  OB64.animationSequences.setFrameTicks(
+    fixedMovementRom, returnSeparation, 0, returnTicks);
+  assert.strictEqual(advanceAnimation.frames[0].ticks, advanceTicks);
+  assert.strictEqual(returnAnimation.frames[0].ticks, returnTicks);
+
+  const movementPlan = OB64.animationSequences.buildPlan(
+    fixedMovementRom, z64);
+  assert(movementPlan && movementPlan.groups.length === 1);
+  const movementPoseRow = movementPlan.groups[0].controls.find(row =>
+    /-pose$/.test(row.name));
+  assert(movementPoseRow, 'movement export must build a private pose resource');
+  const builtMovementPose = movementPoseRow.decoded;
+  assert.strictEqual(OB64.art.readU32(builtMovementPose, 0) / 4,
+    originalMovementStateCount,
+  'fixed movement detachment must not append pose selectors');
+  const builtAdvanceProgram = OB64.animationArt.parsePoseProgram(
+    builtMovementPose, 0x05, 'private Fighter advance');
+  const builtReturnProgram = OB64.animationArt.parsePoseProgram(
+    builtMovementPose, 0x0B, 'private Fighter return');
+  const builtNeighborProgram = OB64.animationArt.parsePoseProgram(
+    builtMovementPose, 0x04, 'private Fighter selector 4');
+  assert.strictEqual(builtAdvanceProgram.frames[0][1], advanceTicks);
+  assert.strictEqual(builtReturnProgram.frames[0][1], returnTicks);
+  assert.notDeepStrictEqual([...builtAdvanceProgram.program],
+    [...originalAdvanceProgram.program],
+  'movement export must replace the detached selector 0x05 program');
+  assert.notDeepStrictEqual([...builtReturnProgram.program],
+    [...originalReturnProgram.program],
+  'movement export must replace the detached selector 0x0B program');
+  assert.deepStrictEqual([...builtNeighborProgram.program],
+    [...originalNeighborProgram.program],
+  'movement export must preserve an adjacent fixed pose program');
+
+  const movementPayload = OB64.animationSequences.collectProject(
+    fixedMovementRom);
+  assert.deepStrictEqual(movementPayload.routeBaselines, {});
+  assert.strictEqual(movementPayload.entries[advanceSeparation.id].laneKey,
+    'advance');
+  assert.strictEqual(movementPayload.entries[returnSeparation.id].laneKey,
+    'return');
+  const restoredMovementRom = await freshRom(z64);
+  const preparedMovementProject = OB64.animationSequences.prepareProject(
+    restoredMovementRom, movementPayload);
+  assert.strictEqual(OB64.animationSequences.applyProject(
+    restoredMovementRom, preparedMovementProject), 2);
+  const restoredAdvance = restoredMovementRom.animationSequences.separations[
+    advanceSeparation.id];
+  const restoredReturn = restoredMovementRom.animationSequences.separations[
+    returnSeparation.id];
+  assert(restoredAdvance && restoredReturn);
+  assert.strictEqual(restoredAdvance.selector, 0x05);
+  assert.strictEqual(restoredReturn.selector, 0x0B);
+  assert.strictEqual(restoredAdvance.syntheticAnimation.frames[0].ticks,
+    advanceTicks);
+  assert.strictEqual(restoredReturn.syntheticAnimation.frames[0].ticks,
+    returnTicks);
+  assert.strictEqual(JSON.stringify(
+    restoredMovementRom.combatAnimationOverrides.desired), movementDesiredBefore,
+  'Project reload of movement routes must not create attack assignments');
+  OB64.animationSequences.removeSeparation(
+    restoredMovementRom, restoredAdvance);
+  OB64.animationSequences.removeSeparation(
+    restoredMovementRom, restoredReturn);
+  assert.strictEqual(Object.keys(
+    restoredMovementRom.animationSequences.separations).length, 0);
+  assert.strictEqual(JSON.stringify(
+    restoredMovementRom.combatAnimationOverrides.desired), movementDesiredBefore);
+
+  const movementConsumerRom = await freshRom(z64);
+  const movementConsumerAdvance = OB64.animationUI.classMotionAnimationRows(
+    movementConsumerRom.art.animations, 0x02, 'advance').find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '0/0');
+  const movementConsumerSeparation =
+    OB64.animationSequences.separateAndAssign(
+      movementConsumerRom, movementConsumerAdvance, null,
+      movementConsumerAdvance);
+  const movementConsumerPair =
+    OB64.combatAnimationOverrides.vanillaPairForLiveAction(
+      0x02, movementConsumerRom.classDefs[0x03], 0x04);
+  OB64.combatAnimationOverrides.setEntry(
+    movementConsumerRom.combatAnimationOverrides, {
+      classId: 0x02,
+      actionId: 0x04,
+      bodyFlags: 0,
+      normalSelector: 0x05,
+      blockedSelector: movementConsumerPair.blockedSelector
+    });
+  const movementConsumerRoute = route(
+    movementConsumerRom, 0x02, 0x04, '0/0', 0);
+  assert(movementConsumerRoute && movementConsumerRoute.separationId ===
+    movementConsumerSeparation.id);
+  assert.strictEqual(
+    OB64.animationUI.isClassMotionAnimation(movementConsumerRoute), false,
+  'an attack that uses selector 0x05 must remain labeled as an attack');
+  assert.strictEqual(movementConsumerRoute.spec.actionId, 0x04);
+  OB64.animationSequences.removeSeparation(
+    movementConsumerRom, movementConsumerSeparation);
+  assert.strictEqual(OB64.combatAnimationOverrides.exactEntry(
+    movementConsumerRom.combatAnimationOverrides, 0x02, 0x04, 0)
+    .normalSelector, 0x05,
+  'removing movement detachment must preserve an attack selector consumer');
 
   const loopRom = await freshRom(z64);
   const loopingAttack = loopRom.art.animations.specs.find(animation =>

@@ -277,7 +277,8 @@ window.OB64 = window.OB64 || {};
     return exact >= 0 ? exact : clamp(Math.round(value * 31 / 255), 0, 31);
   }
 
-  function imageCropRect(width, height, targetWidth, targetHeight, panX, panY) {
+  function imageCropRect(width, height, targetWidth, targetHeight, panX, panY,
+      zoom) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
       throw new ArtError('Image source dimensions must be positive integers');
     }
@@ -287,29 +288,33 @@ window.OB64 = window.OB64 || {};
     }
     panX = clamp(Number.isFinite(panX) ? panX : 0.5, 0, 1);
     panY = clamp(Number.isFinite(panY) ? panY : 0.5, 0, 1);
+    zoom = clamp(Number.isFinite(zoom) ? zoom : 1, 0.25, 8);
     var targetAspect = targetWidth / targetHeight;
     var sourceAspect = width / height;
+    var baseWidth, baseHeight;
     if (sourceAspect > targetAspect) {
-      var cropWidth = height * targetAspect;
-      return {
-        x: (width - cropWidth) * panX, y: 0,
-        width: cropWidth, height: height,
-        horizontalPanAvailable: width - cropWidth > 0.0001,
-        verticalPanAvailable: false
-      };
+      baseWidth = height * targetAspect;
+      baseHeight = height;
+    } else {
+      baseWidth = width;
+      baseHeight = width / targetAspect;
     }
-    var cropHeight = width / targetAspect;
+    var cropWidth = baseWidth / zoom;
+    var cropHeight = baseHeight / zoom;
     return {
-      x: 0, y: (height - cropHeight) * panY,
-      width: width, height: cropHeight,
-      horizontalPanAvailable: false,
-      verticalPanAvailable: height - cropHeight > 0.0001
+      x: (width - cropWidth) * panX,
+      y: (height - cropHeight) * panY,
+      width: cropWidth,
+      height: cropHeight,
+      zoom: zoom,
+      horizontalPanAvailable: Math.abs(width - cropWidth) > 0.0001,
+      verticalPanAvailable: Math.abs(height - cropHeight) > 0.0001
     };
   }
 
-  function avatarCropRect(width, height, panX, panY) {
+  function avatarCropRect(width, height, panX, panY, zoom) {
     return imageCropRect(width, height, C.AVATAR_WIDTH, C.AVATAR_HEIGHT,
-      panX, panY);
+      panX, panY, zoom);
   }
 
   function opaqueSourceChannels(rgba, pixel, background) {
@@ -325,15 +330,36 @@ window.OB64 = window.OB64 || {};
     ];
   }
 
+  function cropAxisUsesPadding(start, size, sourceSize) {
+    return start < -0.0001 || start + size > sourceSize + 0.0001;
+  }
+
+  function cropSampleCoordinate(coordinate, sourceSize, usesPadding) {
+    if (usesPadding && (coordinate < 0 || coordinate >= sourceSize)) return null;
+    return clamp(coordinate, 0, sourceSize - 1);
+  }
+
+  function opaqueCropChannels(rgba, width, height, x, y, background,
+      padX, padY) {
+    x = cropSampleCoordinate(x, width, padX);
+    y = cropSampleCoordinate(y, height, padY);
+    return x === null || y === null
+      ? background
+      : opaqueSourceChannels(rgba, y * width + x, background);
+  }
+
   function nearestAvatarResize(rgba, width, height, crop, background) {
     var output = new Uint8ClampedArray(C.AVATAR_PIXELS * 4);
+    var padX = cropAxisUsesPadding(crop.x, crop.width, width);
+    var padY = cropAxisUsesPadding(crop.y, crop.height, height);
     for (var y = 0; y < C.AVATAR_HEIGHT; y++) {
-      var sourceY = clamp(Math.floor(crop.y + (y + 0.5) * crop.height /
-        C.AVATAR_HEIGHT), 0, height - 1);
+      var sourceY = Math.floor(crop.y + (y + 0.5) * crop.height /
+        C.AVATAR_HEIGHT);
       for (var x = 0; x < C.AVATAR_WIDTH; x++) {
-        var sourceX = clamp(Math.floor(crop.x + (x + 0.5) * crop.width /
-          C.AVATAR_WIDTH), 0, width - 1);
-        var channels = opaqueSourceChannels(rgba, sourceY * width + sourceX, background);
+        var sourceX = Math.floor(crop.x + (x + 0.5) * crop.width /
+          C.AVATAR_WIDTH);
+        var channels = opaqueCropChannels(
+          rgba, width, height, sourceX, sourceY, background, padX, padY);
         var offset = (y * C.AVATAR_WIDTH + x) * 4;
         output[offset] = Math.round(channels[0]);
         output[offset + 1] = Math.round(channels[1]);
@@ -346,22 +372,24 @@ window.OB64 = window.OB64 || {};
 
   function bilinearAvatarResize(rgba, width, height, crop, background) {
     var output = new Uint8ClampedArray(C.AVATAR_PIXELS * 4);
+    var padX = cropAxisUsesPadding(crop.x, crop.width, width);
+    var padY = cropAxisUsesPadding(crop.y, crop.height, height);
     for (var y = 0; y < C.AVATAR_HEIGHT; y++) {
       var sourceY = crop.y + (y + 0.5) * crop.height / C.AVATAR_HEIGHT - 0.5;
       var rawY0 = Math.floor(sourceY);
-      var y0 = clamp(rawY0, 0, height - 1);
-      var y1 = clamp(rawY0 + 1, 0, height - 1);
       var fy = clamp(sourceY - rawY0, 0, 1);
       for (var x = 0; x < C.AVATAR_WIDTH; x++) {
         var sourceX = crop.x + (x + 0.5) * crop.width / C.AVATAR_WIDTH - 0.5;
         var rawX0 = Math.floor(sourceX);
-        var x0 = clamp(rawX0, 0, width - 1);
-        var x1 = clamp(rawX0 + 1, 0, width - 1);
         var fx = clamp(sourceX - rawX0, 0, 1);
-        var topLeft = opaqueSourceChannels(rgba, y0 * width + x0, background);
-        var topRight = opaqueSourceChannels(rgba, y0 * width + x1, background);
-        var bottomLeft = opaqueSourceChannels(rgba, y1 * width + x0, background);
-        var bottomRight = opaqueSourceChannels(rgba, y1 * width + x1, background);
+        var topLeft = opaqueCropChannels(rgba, width, height,
+          rawX0, rawY0, background, padX, padY);
+        var topRight = opaqueCropChannels(rgba, width, height,
+          rawX0 + 1, rawY0, background, padX, padY);
+        var bottomLeft = opaqueCropChannels(rgba, width, height,
+          rawX0, rawY0 + 1, background, padX, padY);
+        var bottomRight = opaqueCropChannels(rgba, width, height,
+          rawX0 + 1, rawY0 + 1, background, padX, padY);
         var offset = (y * C.AVATAR_WIDTH + x) * 4;
         for (var channel = 0; channel < 3; channel++) {
           var top = topLeft[channel] * (1 - fx) + topRight[channel] * fx;
@@ -386,7 +414,8 @@ window.OB64 = window.OB64 || {};
         var sourceRight = crop.x + (x + 1) * crop.width / C.AVATAR_WIDTH;
         var firstX = clamp(Math.floor(sourceLeft), 0, width - 1);
         var lastX = clamp(Math.ceil(sourceRight) - 1, 0, width - 1);
-        var sums = [0, 0, 0], total = 0;
+        var sums = [0, 0, 0], covered = 0;
+        var total = (sourceBottom - sourceTop) * (sourceRight - sourceLeft);
         for (var sourceY = firstY; sourceY <= lastY; sourceY++) {
           var yWeight = Math.max(0, Math.min(sourceBottom, sourceY + 1) -
             Math.max(sourceTop, sourceY));
@@ -400,9 +429,13 @@ window.OB64 = window.OB64 || {};
             sums[0] += channels[0] * weight;
             sums[1] += channels[1] * weight;
             sums[2] += channels[2] * weight;
-            total += weight;
+            covered += weight;
           }
         }
+        var backgroundWeight = Math.max(0, total - covered);
+        sums[0] += background[0] * backgroundWeight;
+        sums[1] += background[1] * backgroundWeight;
+        sums[2] += background[2] * backgroundWeight;
         var offset = (y * C.AVATAR_WIDTH + x) * 4;
         output[offset] = Math.round(sums[0] / total);
         output[offset + 1] = Math.round(sums[1] / total);
@@ -617,20 +650,31 @@ window.OB64 = window.OB64 || {};
     return [rgba[offset], rgba[offset + 1], rgba[offset + 2], rgba[offset + 3]];
   }
 
+  function cropRgbaChannels(rgba, width, height, x, y, padX, padY) {
+    x = cropSampleCoordinate(x, width, padX);
+    y = cropSampleCoordinate(y, height, padY);
+    return x === null || y === null
+      ? [0, 0, 0, 0]
+      : sourceRgbaChannels(rgba, y * width + x);
+  }
+
   function nearestImageResize(rgba, width, height, crop, targetWidth, targetHeight) {
     var output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    var padX = cropAxisUsesPadding(crop.x, crop.width, width);
+    var padY = cropAxisUsesPadding(crop.y, crop.height, height);
     for (var y = 0; y < targetHeight; y++) {
-      var sourceY = clamp(Math.floor(crop.y + (y + 0.5) * crop.height /
-        targetHeight), 0, height - 1);
+      var sourceY = Math.floor(crop.y + (y + 0.5) * crop.height /
+        targetHeight);
       for (var x = 0; x < targetWidth; x++) {
-        var sourceX = clamp(Math.floor(crop.x + (x + 0.5) * crop.width /
-          targetWidth), 0, width - 1);
-        var sourceOffset = (sourceY * width + sourceX) * 4;
+        var sourceX = Math.floor(crop.x + (x + 0.5) * crop.width /
+          targetWidth);
+        var channels = cropRgbaChannels(
+          rgba, width, height, sourceX, sourceY, padX, padY);
         var outputOffset = (y * targetWidth + x) * 4;
-        output[outputOffset] = rgba[sourceOffset];
-        output[outputOffset + 1] = rgba[sourceOffset + 1];
-        output[outputOffset + 2] = rgba[sourceOffset + 2];
-        output[outputOffset + 3] = rgba[sourceOffset + 3];
+        output[outputOffset] = channels[0];
+        output[outputOffset + 1] = channels[1];
+        output[outputOffset + 2] = channels[2];
+        output[outputOffset + 3] = channels[3];
       }
     }
     return output;
@@ -657,23 +701,25 @@ window.OB64 = window.OB64 || {};
   function bilinearImageResize(rgba, width, height, crop,
       targetWidth, targetHeight) {
     var output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+    var padX = cropAxisUsesPadding(crop.x, crop.width, width);
+    var padY = cropAxisUsesPadding(crop.y, crop.height, height);
     for (var y = 0; y < targetHeight; y++) {
       var sourceY = crop.y + (y + 0.5) * crop.height / targetHeight - 0.5;
       var rawY0 = Math.floor(sourceY);
-      var y0 = clamp(rawY0, 0, height - 1);
-      var y1 = clamp(rawY0 + 1, 0, height - 1);
       var fy = clamp(sourceY - rawY0, 0, 1);
       for (var x = 0; x < targetWidth; x++) {
         var sourceX = crop.x + (x + 0.5) * crop.width / targetWidth - 0.5;
         var rawX0 = Math.floor(sourceX);
-        var x0 = clamp(rawX0, 0, width - 1);
-        var x1 = clamp(rawX0 + 1, 0, width - 1);
         var fx = clamp(sourceX - rawX0, 0, 1);
         var samples = [
-          [sourceRgbaChannels(rgba, y0 * width + x0), (1 - fx) * (1 - fy)],
-          [sourceRgbaChannels(rgba, y0 * width + x1), fx * (1 - fy)],
-          [sourceRgbaChannels(rgba, y1 * width + x0), (1 - fx) * fy],
-          [sourceRgbaChannels(rgba, y1 * width + x1), fx * fy]
+          [cropRgbaChannels(rgba, width, height,
+            rawX0, rawY0, padX, padY), (1 - fx) * (1 - fy)],
+          [cropRgbaChannels(rgba, width, height,
+            rawX0 + 1, rawY0, padX, padY), fx * (1 - fy)],
+          [cropRgbaChannels(rgba, width, height,
+            rawX0, rawY0 + 1, padX, padY), (1 - fx) * fy],
+          [cropRgbaChannels(rgba, width, height,
+            rawX0 + 1, rawY0 + 1, padX, padY), fx * fy]
         ];
         var sums = [0, 0, 0, 0];
         samples.forEach(function(sample) {
@@ -702,7 +748,8 @@ window.OB64 = window.OB64 || {};
         var sourceRight = crop.x + (x + 1) * crop.width / targetWidth;
         var firstX = clamp(Math.floor(sourceLeft), 0, width - 1);
         var lastX = clamp(Math.ceil(sourceRight) - 1, 0, width - 1);
-        var sums = [0, 0, 0, 0], total = 0;
+        var sums = [0, 0, 0, 0];
+        var total = (sourceBottom - sourceTop) * (sourceRight - sourceLeft);
         for (var sourceY = firstY; sourceY <= lastY; sourceY++) {
           var yWeight = Math.max(0, Math.min(sourceBottom, sourceY + 1) -
             Math.max(sourceTop, sourceY));
@@ -717,7 +764,6 @@ window.OB64 = window.OB64 || {};
             sums[1] += premultipliedSample(channels, 1) * weight;
             sums[2] += premultipliedSample(channels, 2) * weight;
             sums[3] += channels[3] * weight;
-            total += weight;
           }
         }
         writePremultipliedPixel(
@@ -748,7 +794,8 @@ window.OB64 = window.OB64 || {};
       ? rgba5551Word(0, 0, 0, true) : options.backgroundWord;
     if (!(backgroundWord & 1)) throw new ArtError('Avatar import background must be opaque');
     var background = rgba5551(backgroundWord).slice(0, 3);
-    var crop = avatarCropRect(width, height, options.panX, options.panY);
+    var crop = avatarCropRect(
+      width, height, options.panX, options.panY, options.zoom);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeAvatarSource(rgba, width, height, crop, mode, background);
     var nativeWords = new Uint16Array(C.AVATAR_PIXELS);
@@ -798,7 +845,7 @@ window.OB64 = window.OB64 || {};
       throw new ArtError('Sprite image color limit must be from 1 through 256');
     }
     var crop = imageCropRect(width, height, targetWidth, targetHeight,
-      options.panX, options.panY);
+      options.panX, options.panY, options.zoom);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeImageSource(
       rgba, width, height, crop, targetWidth, targetHeight, mode);
@@ -863,7 +910,7 @@ window.OB64 = window.OB64 || {};
       throw new ArtError('Animation frame target dimensions are invalid');
     }
     var crop = imageCropRect(width, height, targetWidth, targetHeight,
-      options.panX, options.panY);
+      options.panX, options.panY, options.zoom);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeImageSource(
       rgba, width, height, crop, targetWidth, targetHeight, mode);

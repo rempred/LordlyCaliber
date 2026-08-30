@@ -72,6 +72,38 @@ function normalizeV64(bytes) {
       251, 252, 253, 254, 255]
   );
 
+  const resizableRoute = army.classRoutes.find(route =>
+    route.classId > 0 && route.modelSize === 1 &&
+    route.lane === 'ordinary' && route.modelId < 26 &&
+    route.playerModel.classIds.length === 1 &&
+    route.enemyModel.classIds.length === 1);
+  assert(resizableRoute);
+  const originalPlayerModel = resizableRoute.playerModel;
+  const originalEnemyModel = resizableRoute.enemyModel;
+  const classDefs = [];
+  classDefs[resizableRoute.classId + 1] = { unitSize: 2 };
+  assert.strictEqual(
+    OB64.armySprites.syncClassModelSizes(army, classDefs), 1);
+  assert.strictEqual(resizableRoute.lane, 'large');
+  assert.strictEqual(resizableRoute.modelSize, 2);
+  assert.strictEqual(
+    army.byKey[resizableRoute.playerAtlasKey].width, 32);
+  assert.strictEqual(
+    army.byKey[resizableRoute.playerAtlasKey].height, 28);
+  assert(!originalPlayerModel.classIds.includes(resizableRoute.classId));
+  assert(!originalEnemyModel.classIds.includes(resizableRoute.classId));
+  assert(resizableRoute.playerModel.classIds.includes(resizableRoute.classId));
+  assert(resizableRoute.enemyModel.classIds.includes(resizableRoute.classId));
+  classDefs[resizableRoute.classId + 1].unitSize = 1;
+  assert.strictEqual(
+    OB64.armySprites.syncClassModelSizes(army, classDefs), 1);
+  assert.strictEqual(resizableRoute.lane, 'ordinary');
+  assert.strictEqual(resizableRoute.playerModel, originalPlayerModel);
+  assert.strictEqual(resizableRoute.enemyModel, originalEnemyModel);
+  assert.throws(() => OB64.armySprites.setClassModelSize(
+    army, gatekeeperRoute.classId, 2), /outside the large Army sprite range/);
+  assert.strictEqual(gatekeeperRoute.lane, 'special');
+
   const atlas = army.byKey['player-back-ordinary'];
   const fighterModel = atlas.models[3];
   const fighterRgba = new Uint8Array(fighterModel.originalIndices.length * 4);

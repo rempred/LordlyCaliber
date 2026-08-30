@@ -934,7 +934,8 @@ window.OB64 = window.OB64 || {};
     var targetHeight = asset.height;
     var maximumColors = spriteImageColorLimit(asset);
     var settings = {
-      resizeMode: 'nearest', panX: 0.5, panY: 0.5, dither: false
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5,
+      zoom: 1, dither: false
     };
     var currentResult = null;
     var scheduledFrame = null;
@@ -989,29 +990,56 @@ window.OB64 = window.OB64 || {};
     resizeLabel.appendChild(resizeSelect);
     controls.appendChild(resizeLabel);
 
-    var initialCrop = OB64.art.imageCropRect(
-      source.width, source.height, targetWidth, targetHeight,
-      settings.panX, settings.panY);
-    function cropSlider(labelText, key, enabled) {
+    var zoomLabel = element('label', 'art-import-control');
+    var zoomText = element('span', '', 'Zoom · 1.00×');
+    zoomLabel.appendChild(zoomText);
+    var zoomInput = element('input');
+    zoomInput.type = 'range';
+    zoomInput.min = '-200'; zoomInput.max = '300';
+    zoomInput.step = '5'; zoomInput.value = '0';
+    zoomInput.setAttribute('aria-label', 'Image zoom');
+    zoomInput.setAttribute('aria-valuetext', '1.00 times');
+    zoomInput.addEventListener('input', function() {
+      settings.zoom = Math.pow(2, Number(zoomInput.value) / 100);
+      zoomText.textContent = 'Zoom · ' + settings.zoom.toFixed(2) + '×';
+      zoomInput.setAttribute(
+        'aria-valuetext', settings.zoom.toFixed(2) + ' times');
+      updateCropControls();
+      schedulePreview();
+    });
+    zoomLabel.appendChild(zoomInput);
+    controls.appendChild(zoomLabel);
+
+    function cropSlider(labelText, key) {
       var label = element('label', 'art-import-control');
       label.appendChild(element('span', '', labelText));
       var input = element('input');
       input.type = 'range';
       input.min = '0'; input.max = '100'; input.step = '1'; input.value = '50';
-      input.disabled = !enabled;
       input.setAttribute('aria-label', labelText);
       input.addEventListener('input', function() {
         settings[key] = Number(input.value) / 100;
         schedulePreview();
       });
       label.appendChild(input);
-      if (!enabled) label.classList.add('disabled');
       controls.appendChild(label);
+      return { label: label, input: input };
     }
-    cropSlider('Horizontal crop position', 'panX',
-      initialCrop.horizontalPanAvailable);
-    cropSlider('Vertical crop position', 'panY',
-      initialCrop.verticalPanAvailable);
+    function setCropControlEnabled(control, enabled) {
+      control.input.disabled = !enabled;
+      control.label.classList.toggle('disabled', !enabled);
+    }
+    function updateCropControls() {
+      var crop = OB64.art.imageCropRect(
+        source.width, source.height, targetWidth, targetHeight,
+        settings.panX, settings.panY, settings.zoom);
+      setCropControlEnabled(
+        horizontalCrop, crop.horizontalPanAvailable);
+      setCropControlEnabled(verticalCrop, crop.verticalPanAvailable);
+    }
+    var horizontalCrop = cropSlider('Horizontal crop position', 'panX');
+    var verticalCrop = cropSlider('Vertical crop position', 'panY');
+    updateCropControls();
 
     var ditherWrap = element('div', 'art-import-dither');
     var ditherLabel = element('label', 'art-import-checkbox');
@@ -1053,6 +1081,7 @@ window.OB64 = window.OB64 || {};
           '; target=' + targetWidth + 'x' + targetHeight +
           '; crop=' + crop.width.toFixed(2) + 'x' + crop.height.toFixed(2) +
           '@(' + crop.x.toFixed(2) + ',' + crop.y.toFixed(2) + ')' +
+          '; zoom=' + crop.zoom.toFixed(2) + 'x' +
           '; resize=' + currentResult.resizeMode +
           '; RGB555 colors=' + currentResult.sourceNativeColorCount + '->' +
           currentResult.colorCount + '/' + maximumColors +
@@ -1081,6 +1110,7 @@ window.OB64 = window.OB64 || {};
             resizeMode: settings.resizeMode,
             panX: settings.panX,
             panY: settings.panY,
+            zoom: settings.zoom,
             dither: settings.dither,
             maximumColors: maximumColors
           });
@@ -1094,7 +1124,8 @@ window.OB64 = window.OB64 || {};
         var crop = currentResult.crop;
         stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
-          crop.y.toFixed(1) + ' \u00B7 ' +
+          crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
+          '\u00D7 zoom \u00B7 ' +
           currentResult.sourceNativeColorCount + ' native colors \u2192 ' +
           currentResult.colorCount + ' / ' + maximumColors +
           (currentResult.quantized ? ' \u00B7 Wu quantized' :

@@ -121,6 +121,82 @@ assert.strictEqual(resizedImport.crop.width, 2);
 assert.strictEqual(resizedImport.crop.height, 2);
 assert.strictEqual(resizedImport.crop.x, 2);
 
+const baseCrop = OB64.art.imageCropRect(4, 2, 2, 2, 0.5, 0.5);
+assert.deepStrictEqual([
+  baseCrop.x, baseCrop.y, baseCrop.width, baseCrop.height, baseCrop.zoom,
+  baseCrop.horizontalPanAvailable, baseCrop.verticalPanAvailable,
+], [1, 0, 2, 2, 1, true, false]);
+const zoomedInCrop = OB64.art.imageCropRect(4, 2, 2, 2, 0.5, 0.5, 2);
+assert.deepStrictEqual([
+  zoomedInCrop.x, zoomedInCrop.y,
+  zoomedInCrop.width, zoomedInCrop.height,
+  zoomedInCrop.horizontalPanAvailable, zoomedInCrop.verticalPanAvailable,
+], [1.5, 0.5, 1, 1, true, true]);
+const zoomedOutCrop = OB64.art.imageCropRect(4, 2, 2, 2, 0.5, 0.5, 0.5);
+assert.deepStrictEqual([
+  zoomedOutCrop.x, zoomedOutCrop.y,
+  zoomedOutCrop.width, zoomedOutCrop.height,
+  zoomedOutCrop.horizontalPanAvailable, zoomedOutCrop.verticalPanAvailable,
+], [0, -1, 4, 4, false, true]);
+
+const opaqueRedSource = new Uint8ClampedArray(2 * 2 * 4);
+for (let pixel = 0; pixel < 4; pixel++) {
+  opaqueRedSource.set([255, 0, 0, 255], pixel * 4);
+}
+const paddedImport = OB64.art.prepareSpriteImageImport(
+  opaqueRedSource, 2, 2, 4, 4, {
+    resizeMode: 'smooth', zoom: 0.5, maximumColors: 256,
+  }
+);
+const paddedAlpha = [];
+for (let pixel = 0; pixel < 16; pixel++) {
+  paddedAlpha.push(paddedImport.rgba[pixel * 4 + 3]);
+}
+assert.deepStrictEqual(paddedAlpha, [
+  0, 0, 0, 0,
+  0, 255, 255, 0,
+  0, 255, 255, 0,
+  0, 0, 0, 0,
+]);
+assert.strictEqual(paddedImport.outputNonOpaquePixels, 12);
+const paddedAnimation = OB64.art.prepareAnimationFrameImport(
+  opaqueRedSource, 2, 2, 4, 4, {
+    resizeMode: 'smooth', zoom: 0.5,
+  }
+);
+assert.strictEqual(paddedAnimation.transparentPixels, 12);
+assert.deepStrictEqual(Array.from(paddedAnimation.intensity), [
+  0, 0, 0, 0,
+  0, 15, 15, 0,
+  0, 15, 15, 0,
+  0, 0, 0, 0,
+]);
+
+const defaultUpscale = OB64.art.prepareSpriteImageImport(
+  opaqueRedSource, 2, 2, 8, 8, {
+    resizeMode: 'smooth', maximumColors: 256,
+  }
+);
+assert.strictEqual(defaultUpscale.rgba[3], 255);
+assert.strictEqual(defaultUpscale.rgba[(8 * 8 - 1) * 4 + 3], 255);
+const paddedUpscale = OB64.art.prepareSpriteImageImport(
+  opaqueRedSource, 2, 2, 8, 8, {
+    resizeMode: 'smooth', zoom: 0.5, maximumColors: 256,
+  }
+);
+assert.strictEqual(paddedUpscale.rgba[3], 0);
+assert.strictEqual(paddedUpscale.rgba[(3 * 8 + 3) * 4 + 3], 255);
+
+const avatarBackground = OB64.art.rgba5551Word(0, 0, 31, true);
+const paddedAvatar = OB64.art.prepareAvatarImport(
+  opaqueRedSource, 2, 2, {
+    resizeMode: 'nearest', zoom: 0.5, backgroundWord: avatarBackground,
+  }
+);
+assert.strictEqual(paddedAvatar.words[0], avatarBackground);
+assert.strictEqual(paddedAvatar.words[24 * 40 + 20],
+  OB64.art.rgba5551Word(31, 0, 0, true));
+
 const iconColorSource = new Uint8ClampedArray(16 * 16 * 4);
 for (let color = 0; color < 256; color++) {
   iconColorSource.set(OB64.art.rgba5551(OB64.art.rgba5551Word(
@@ -252,6 +328,8 @@ assert(uiSource.includes("Save Sequence as Asset"));
 assert(uiSource.includes("Import Image into Layer\\u2026"));
 assert(uiSource.includes("'Prepare Layer Image'"));
 assert(uiSource.includes('OB64.art.prepareSpriteImageImport('));
+assert(uiSource.includes("'Image zoom'"));
+assert(uiSource.includes('zoom: settings.zoom'));
 assert(uiSource.includes("'Horizontal crop position'"));
 assert(uiSource.includes('Ordered dithering'));
 assert(uiSource.includes('Item icons allow 255 opaque colors.'));
@@ -262,6 +340,11 @@ assert(uiSource.includes("getContext('2d', { alpha: true })"));
 assert(uiSource.includes("data-sprite-scroll-key', 'sprite:frames:' + asset.id"));
 assert(uiSource.includes("captureScroll(panel, ui, preserveViewport);\n    panel.innerHTML = '';"));
 assert(artModelSource.includes('prepareSpriteImageImport: prepareSpriteImageImport'));
+assert(artModelSource.includes('options.panY, options.zoom'));
+assert(artSource.includes("'Image zoom'"));
+assert(animationSource.includes("'Image zoom'"));
+assert(armyUiSource.includes("'Image zoom'"));
+assert(armyModelSource.includes('zoom: options.zoom'));
 
 assert(artSource.includes("Import from Sprite Library…"));
 assert(artSource.includes("actionLabel: 'Convert to Avatar'"));
@@ -284,6 +367,11 @@ assert(armyModelSource.includes('retailModelCount: 56, targetModelCount: 56'));
 assert(armyModelSource.includes('retailModelCount: 25, targetModelCount: 26'));
 assert(armyUiSource.includes("element('span', '', 'Atlas')"));
 assert(armyUiSource.includes("['classes', 'Classes']"));
+assert(armyUiSource.includes("'Formation sprite dimensions'"));
+assert(armyUiSource.includes('M.setClassModelSize('));
+assert(armyUiSource.includes('M.syncClassModelSizes('));
+assert(armyModelSource.includes('setClassModelSize: setClassModelSize'));
+assert(appSource.includes('onClassDefinitionChange: function()'));
 assert(armyUiSource.includes("['player', 'Player / Back']"));
 assert(armyUiSource.includes('Create Blank Player Sprite'));
 assert(armyUiSource.includes('Copy Enemy Sprite'));

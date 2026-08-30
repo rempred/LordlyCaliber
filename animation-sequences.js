@@ -1,9 +1,9 @@
-// OB64 combat-animation route assignment and isolated sequence copies.
+// OB64 class-animation route assignment and isolated sequence copies.
 //
 // A shared assignment adds one exact class/action/body-route OBSO record.
-// A separated assignment also clones the selected sequence into the bounded
-// native-art arena, adds it to a copy-on-write descriptor, and repoints only
-// the selected class/body route to that descriptor.
+// A separated assignment clones the selected sequence into the native-art
+// arena. Combat routes append a selector. Fixed routes replace selectors
+// 0x00, 0x05, or 0x0B in the private descriptor.
 
 window.OB64 = window.OB64 || {};
 
@@ -19,6 +19,26 @@ window.OB64 = window.OB64 || {};
   var CLASS_HANDLE_COUNT = 688;
   var MAX_TRANSFORM_DIMENSION = 512;
   var MAX_TRANSFORM_PIXELS = MAX_TRANSFORM_DIMENSION * MAX_TRANSFORM_DIMENSION;
+  var FIXED_SEQUENCE_LANES = {
+    idle: {
+      actionId: -1,
+      selector: 0,
+      actionName: 'Idle / Rest',
+      modeLabel: 'Idle loop'
+    },
+    advance: {
+      actionId: -2,
+      selector: 0x05,
+      actionName: 'Walk / Run · Advance',
+      modeLabel: 'Walk / Run · Advance'
+    },
+    return: {
+      actionId: -3,
+      selector: 0x0B,
+      actionName: 'Walk / Run · Return',
+      modeLabel: 'Walk / Run · Return'
+    }
+  };
 
   function SequenceCopyError(message) {
     this.name = 'SequenceCopyError';
@@ -76,8 +96,44 @@ window.OB64 = window.OB64 || {};
     return Math.floor(bodyFlags / 2) + '/' + (bodyFlags & 1);
   }
 
+  function fixedLaneSpec(value) {
+    var spec = value && value.spec ? value.spec : value;
+    if (typeof spec === 'string') return FIXED_SEQUENCE_LANES[spec] || null;
+    if (!spec) return null;
+    if (spec.idleSequence) return FIXED_SEQUENCE_LANES.idle;
+    if (spec.classMotionKind && FIXED_SEQUENCE_LANES[spec.classMotionKind]) {
+      return FIXED_SEQUENCE_LANES[spec.classMotionKind];
+    }
+    return Object.keys(FIXED_SEQUENCE_LANES).map(function(key) {
+      return Object.assign({ laneKey: key }, FIXED_SEQUENCE_LANES[key]);
+    }).find(function(row) {
+      return Number(spec.actionId) === row.actionId &&
+        Number(spec.selector) === row.selector;
+    }) || null;
+  }
+
+  function fixedLaneKey(value) {
+    var fixed = fixedLaneSpec(value);
+    if (!fixed) return null;
+    return Object.keys(FIXED_SEQUENCE_LANES).find(function(key) {
+      return FIXED_SEQUENCE_LANES[key] === fixed ||
+        (FIXED_SEQUENCE_LANES[key].actionId === fixed.actionId &&
+          FIXED_SEQUENCE_LANES[key].selector === fixed.selector);
+    }) || null;
+  }
+
+  function isFixedLane(laneKey) {
+    return !!FIXED_SEQUENCE_LANES[laneKey];
+  }
+
+  function fixedSelectorForLane(laneKey) {
+    return isFixedLane(laneKey)
+      ? FIXED_SEQUENCE_LANES[laneKey].selector : null;
+  }
+
   function laneFor(animation) {
-    if (animation && animation.spec && animation.spec.idleSequence) return 'idle';
+    var fixed = fixedLaneKey(animation);
+    if (fixed) return fixed;
     return animation.spec.rawMode === 2 ? 'blocked' : 'normal';
   }
 
@@ -108,7 +164,8 @@ window.OB64 = window.OB64 || {};
       selector: Number(animation.spec.selector),
       descriptorKey: Number(animation.spec.descriptorKey),
       selectedBodyChild: Number(animation.spec.selectedBodyChild),
-      idleSequence: !!animation.spec.idleSequence
+      idleSequence: !!animation.spec.idleSequence,
+      classMotionKind: animation.spec.classMotionKind || null
     };
   }
 
@@ -138,11 +195,16 @@ window.OB64 = window.OB64 || {};
   }
 
   function routeReferenceView(animation, reference) {
+    var fixedLane = fixedLaneKey(reference);
+    var fixed = fixedLane && FIXED_SEQUENCE_LANES[fixedLane];
     if (Number(animation.spec.classId) === Number(reference.classId) &&
         Number(animation.spec.actionId) === Number(reference.actionId) &&
         Number(animation.spec.rawMode) === Number(reference.rawMode) &&
         Number(animation.spec.selector) === Number(reference.selector) &&
-        !!animation.spec.idleSequence === !!reference.idleSequence) {
+        !!animation.spec.idleSequence === !!reference.idleSequence &&
+        (animation.spec.classMotionKind || null) ===
+          (reference.classMotionKind || (fixedLane === 'advance' ||
+            fixedLane === 'return' ? fixedLane : null))) {
       return animation;
     }
     var actionInfo = OB64.combatAnimationOverrides &&
@@ -153,17 +215,22 @@ window.OB64 = window.OB64 || {};
       ? OB64.ACTION_TEMPLATE_LABELS[Number(reference.actionId)]
       : (actionInfo ? actionInfo.name : 'Action ' +
         Number(reference.actionId).toString(16).padStart(2, '0'));
-    var idle = !!reference.idleSequence;
+    var idle = fixedLane === 'idle';
+    var motion = fixedLane === 'advance' || fixedLane === 'return';
     return Object.assign({}, animation, {
       frames: idle ? idleLoopFrames(animation) : animation.frames,
       spec: Object.assign({}, animation.spec, {
         classId: Number(reference.classId),
         actionId: Number(reference.actionId),
-        actionName: idle ? 'Idle / Rest' : actionName,
+        actionName: fixed ? fixed.actionName : actionName,
         rawMode: Number(reference.rawMode),
-        modeLabel: idle ? 'Idle loop' : 'Raw mode ' + Number(reference.rawMode),
+        modeLabel: fixed ? fixed.modeLabel :
+          'Raw mode ' + Number(reference.rawMode),
         selector: Number(reference.selector),
-        idleSequence: idle
+        idleSequence: idle,
+        classMotionKind: motion ? fixedLane : null,
+        sequenceCatalogGroupKey: motion
+          ? 'class-motion-' + fixedLane : null
       })
     });
   }
@@ -173,6 +240,8 @@ window.OB64 = window.OB64 || {};
     var direct = animationState.byKey[reference.key] ||
       (animationState.idleAnimationsByKey &&
         animationState.idleAnimationsByKey[reference.key]) ||
+      (animationState.classMotionAnimationsByKey &&
+        animationState.classMotionAnimationsByKey[reference.key]) ||
       animationState.selectorCandidates[reference.key];
     if (direct && Number(direct.spec.classId) === Number(reference.classId) &&
         bodyFlagsFor(direct) === Number(reference.bodyFlags) &&
@@ -1014,6 +1083,10 @@ window.OB64 = window.OB64 || {};
       };
     });
     var syntheticKey = 'separated:' + separation.id;
+    var fixedLane = isFixedLane(separation.laneKey)
+      ? FIXED_SEQUENCE_LANES[separation.laneKey] : null;
+    var movementLane = separation.laneKey === 'advance' ||
+      separation.laneKey === 'return';
     Object.keys(artByKey).forEach(function(sourceKey) {
       var source = artByKey[sourceKey];
       source.animationKeys = [syntheticKey];
@@ -1033,7 +1106,7 @@ window.OB64 = window.OB64 || {};
       actionId: separation.actionId,
       actionName: target.spec.actionName,
       rawMode: separation.laneKey === 'blocked' ? 2 : 0,
-      modeLabel: separation.laneKey === 'idle' ? 'Idle loop' :
+      modeLabel: fixedLane ? fixedLane.modeLabel :
         (separation.laneKey === 'blocked' ? 'Raw mode 2' : 'Raw mode 0'),
       variantLabel: target.spec.variantLabel,
       selector: separation.selector,
@@ -1049,6 +1122,9 @@ window.OB64 = window.OB64 || {};
       frames: frames.map(function(frame) { return [frame.token, frame.ticks]; }),
       frozenParity: null,
       idleSequence: separation.laneKey === 'idle',
+      classMotionKind: movementLane ? separation.laneKey : null,
+      sequenceCatalogGroupKey: movementLane
+        ? 'class-motion-' + separation.laneKey : null,
       separatedCopy: true
     });
     var synthetic = {
@@ -1177,7 +1253,9 @@ window.OB64 = window.OB64 || {};
     var base = target.poseProgram.stateCount;
     var appendedOrdinal = 0;
     rows.forEach(function(row) {
-      row.selector = row.laneKey === 'idle' ? 0 : base + appendedOrdinal++;
+      var fixedSelector = fixedSelectorForLane(row.laneKey);
+      row.selector = fixedSelector === null
+        ? base + appendedOrdinal++ : fixedSelector;
       if (row.selector > 255) fail('separated selector exceeds the game u8 range');
     });
     var selectorMoves = {};
@@ -1296,7 +1374,7 @@ window.OB64 = window.OB64 || {};
     var actionId = target.actionId;
     var bodyFlags = target.bodyFlags;
     var laneKey = target.laneKey;
-    var idle = laneKey === 'idle';
+    var fixed = isFixedLane(laneKey);
     var id = routeId(classId, actionId, bodyFlags, laneKey);
     var donorSnapshot = snapshotModifiedPixels(rom.art.animations, animation);
     var donorSeparation = animation && animation.spec &&
@@ -1304,7 +1382,7 @@ window.OB64 = window.OB64 || {};
       ? separationFor(animation, state) : null;
     var donorStructure = donorSeparation
       ? captureStructure(rom.art.animations, donorSeparation) : null;
-    if (!idle) {
+    if (!fixed) {
       capacityCheck(rom, classId, actionId, bodyFlags);
       captureBaseline(rom, classId, actionId, bodyFlags, pair);
     }
@@ -1329,7 +1407,7 @@ window.OB64 = window.OB64 || {};
     state.separations[id].structure = captureStructure(
       rom.art.animations, state.separations[id]);
     separationsForGroup(state, classId, bodyFlags).filter(function(row) {
-      return row.laneKey !== 'idle';
+      return !isFixedLane(row.laneKey);
     }).forEach(function(row) {
       syncRow(rom, row.classId, row.actionId, row.bodyFlags);
     });
@@ -1339,6 +1417,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function separationConsumers(rom, separation) {
+    if (isFixedLane(separation && separation.laneKey)) return [];
     var rows = rom && rom.combatAnimationOverrides &&
       rom.combatAnimationOverrides.desired || [];
     var consumers = [];
@@ -1381,8 +1460,8 @@ window.OB64 = window.OB64 || {};
   function assignShared(rom, animation, pair, targetAnimation) {
     var state = rom.animationSequences;
     var target = assignmentTarget(animation, targetAnimation);
-    if (target.laneKey === 'idle') {
-      fail('Idle loops require a separated descriptor copy');
+    if (isFixedLane(target.laneKey)) {
+      fail('Fixed idle and movement routes require a separated descriptor copy');
     }
     validateSharedAssignment(rom, animation, target);
     var classId = target.classId;
@@ -2520,46 +2599,55 @@ window.OB64 = window.OB64 || {};
       fail('target pose directory is invalid');
     }
     var oldCount = oldDirectoryBytes / 4;
-    var idleRows = rows.filter(function(row) {
-      return row.separation.laneKey === 'idle';
+    var fixedRows = {}, appendedRows = [];
+    rows.forEach(function(row) {
+      var selector = fixedSelectorForLane(row.separation.laneKey);
+      if (selector === null) {
+        appendedRows.push(row);
+        return;
+      }
+      if (selector >= oldCount) {
+        fail('target pose does not contain fixed selector ' +
+          A.hex(selector, 2));
+      }
+      if (fixedRows[selector]) {
+        fail('one art route cannot contain two private copies of fixed selector ' +
+          A.hex(selector, 2));
+      }
+      if (row.separation.selector !== selector) {
+        fail('fixed sequence selector changed during export planning');
+      }
+      fixedRows[selector] = row;
     });
-    if (idleRows.length > 1) fail('one art route cannot contain two private idle loops');
-    var appendedRows = rows.filter(function(row) {
-      return row.separation.laneKey !== 'idle';
-    });
-    var idleProgram = idleRows.length ? remappedProgram(idleRows[0]) : null;
-    var oldProgram0End = oldCount > 1 ? A.readU32(base, 4) : base.length;
-    if (oldProgram0End < oldDirectoryBytes || oldProgram0End > base.length) {
-      fail('target pose selector 0 has invalid bounds');
+    var programs = [];
+    for (var selector = 0; selector < oldCount; selector++) {
+      var start = A.readU32(base, selector * 4);
+      var end = selector + 1 < oldCount
+        ? A.readU32(base, (selector + 1) * 4) : base.length;
+      if (start < oldDirectoryBytes || start >= end || end > base.length) {
+        fail('target pose selector ' + A.hex(selector, 2) +
+          ' has invalid bounds');
+      }
+      programs.push(fixedRows[selector]
+        ? remappedProgram(fixedRows[selector]) : base.slice(start, end));
     }
-    var oldProgram0Length = oldProgram0End - oldDirectoryBytes;
-    var replacementLength = idleProgram ? idleProgram.length : oldProgram0Length;
-    var appendedPrograms = appendedRows.map(remappedProgram);
-    var directoryShift = appendedRows.length * 4;
-    var selector0Delta = replacementLength - oldProgram0Length;
-    var appendedBytes = appendedPrograms.reduce(function(total, program) {
-      return total + program.length;
-    }, 0);
-    var output = new Uint8Array(base.length + directoryShift +
-      selector0Delta + appendedBytes);
-    A.writeU32(output, 0, oldDirectoryBytes + directoryShift);
-    for (var selector = 1; selector < oldCount; selector++) {
-      A.writeU32(output, selector * 4,
-        A.readU32(base, selector * 4) + directoryShift + selector0Delta);
-    }
-    var cursor = oldDirectoryBytes + directoryShift;
-    if (idleProgram) output.set(idleProgram, cursor);
-    else output.set(base.slice(oldDirectoryBytes, oldProgram0End), cursor);
-    cursor += replacementLength;
-    output.set(base.slice(oldProgram0End), cursor);
-    cursor += base.length - oldProgram0End;
-    appendedPrograms.forEach(function(program, index) {
+    appendedRows.forEach(function(row, index) {
       var wanted = oldCount + index;
-      if (appendedRows[index].separation.selector !== wanted) {
+      if (row.separation.selector !== wanted) {
         fail('separated selector ordering changed during export planning');
       }
-      A.writeU32(output, oldDirectoryBytes + index * 4, cursor);
-      output.set(program, cursor); cursor += program.length;
+      programs.push(remappedProgram(row));
+    });
+    var directoryBytes = programs.length * 4;
+    var programBytes = programs.reduce(function(total, program) {
+      return total + program.length;
+    }, 0);
+    var output = new Uint8Array(directoryBytes + programBytes);
+    var cursor = directoryBytes;
+    programs.forEach(function(program, index) {
+      A.writeU32(output, index * 4, cursor);
+      output.set(program, cursor);
+      cursor += program.length;
     });
     if (cursor !== output.length) fail('separated pose resource size changed during assembly');
     return output;
@@ -3213,16 +3301,17 @@ window.OB64 = window.OB64 || {};
           'donorRef', 'sources', 'frames']
         : ['classId', 'actionId', 'bodyFlags', 'laneKey', 'targetRef',
           'donorRef', 'sources']);
-      var idleEntry = entry && entry.laneKey === 'idle';
+      var fixedEntry = entry && isFixedLane(entry.laneKey);
+      var fixedSpec = fixedEntry ? FIXED_SEQUENCE_LANES[entry.laneKey] : null;
       if (!entry || !Number.isInteger(entry.classId) || entry.classId < 0 ||
           entry.classId > 255 || !Number.isInteger(entry.actionId) ||
-          (idleEntry ? entry.actionId !== -1 :
+          (fixedEntry ? entry.actionId !== fixedSpec.actionId :
             (entry.actionId < 0 || entry.actionId > 255)) ||
           !Number.isInteger(entry.bodyFlags) || entry.bodyFlags < 0 ||
           entry.bodyFlags > 3 || id !== routeId(entry.classId, entry.actionId,
           entry.bodyFlags, entry.laneKey) ||
           (entry.laneKey !== 'normal' && entry.laneKey !== 'blocked' &&
-            entry.laneKey !== 'idle') ||
+            !isFixedLane(entry.laneKey)) ||
           Object.keys(entry).some(function(key) {
             return entryKeys.indexOf(key) < 0;
           })) {
@@ -3248,7 +3337,7 @@ window.OB64 = window.OB64 || {};
           donorRef: JSON.parse(JSON.stringify(entry.donorRef)),
           sources: {}, structure: structure
         });
-        if (!idleEntry) {
+        if (!fixedEntry) {
           requiredBaselines[rowId(
             entry.classId, entry.actionId, entry.bodyFlags)] = true;
         }
@@ -3319,7 +3408,7 @@ window.OB64 = window.OB64 || {};
         donorRef: JSON.parse(JSON.stringify(entry.donorRef)),
         sources: preparedSources
       });
-      if (!idleEntry) {
+      if (!fixedEntry) {
         requiredBaselines[rowId(
           entry.classId, entry.actionId, entry.bodyFlags)] = true;
       }

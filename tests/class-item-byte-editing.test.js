@@ -71,13 +71,59 @@ check('Item and Class click editors support keyboard activation',
   appSource.includes("event.key === 'Enter' || event.key === ' '") &&
   appSource.includes("editor.setAttribute('role', 'button')") &&
   cssSource.includes('.class-card .editable:focus-visible'));
+check('both Class stat-base editors refresh the record classification',
+  (appSource.match(/OB64\.refreshClassDefClassification\(def\);/g) || [])
+    .length === 2);
 
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');
-for (const filename of ['parsers.js', 'repack.js']) {
+for (const filename of ['parsers.js', 'repack.js', 'patch.js']) {
   const fullPath = path.join(EDITOR, filename);
   vm.runInThisContext(fs.readFileSync(fullPath, 'utf8'), { filename: fullPath });
 }
+
+OB64.descriptionCodec = {
+  prepareProjectChanges() { return null; },
+};
+
+const giantProjectRecord = {
+  isTerm: true,
+  isSentinel: false,
+  stats: [{ base: 0xFFFF, g1: 0xFF, g2: 0 }],
+  resistances: [],
+  defaultEquip: [],
+};
+const giantProjectClassDefs = new Array(0x4E + 1);
+giantProjectClassDefs[0x4E] = giantProjectRecord;
+const giantProjectDirty = {};
+const giantProjectResult = OB64.patch.applyPatch({
+  archives: [], shops: [], itemStats: [], classDefs: giantProjectClassDefs,
+}, {
+  format: 'ob64-patch',
+  version: 33,
+  patches: {
+    classDefs: {
+      77: {
+        record_index: 0x4E,
+        bytes: {
+          0: 0x00, 1: 0x5A,
+          43: 0x0B, 44: 2, 45: 0x0B, 46: 2, 47: 0x29, 48: 2,
+        },
+      },
+    },
+  },
+}, giantProjectDirty);
+check('Project class bytes refresh a converted terminator record',
+  giantProjectResult.applied.classDefs === 1 && giantProjectDirty.classDefs &&
+  giantProjectRecord.stats[0].base === 0x005A &&
+  giantProjectRecord.isTerm === false && giantProjectRecord.isSentinel === false &&
+  giantProjectRecord.b43Raw === 0x0B && giantProjectRecord.b45Raw === 0x0B &&
+  giantProjectRecord.b47Raw === 0x29);
+
+const sentinelRecord = { stats: [{ base: 0x8000 }] };
+OB64.refreshClassDefClassification(sentinelRecord);
+check('class-record classification retains the existing 0x80 sentinel rule',
+  sentinelRecord.isTerm === false && sentinelRecord.isSentinel === true);
 
 // Item records are stat-framed. Logical B28-B31 precede physical B0-B27.
 const expectedItem = Uint8Array.from({ length: 32 }, (_, i) => (i * 7 + 3) & 0xFF);

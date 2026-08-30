@@ -153,6 +153,11 @@ window.OB64 = window.OB64 || {};
     return atlasKey + ':' + Number(modelId).toString(16).padStart(2, '0');
   }
 
+  function routeLane(selector, modelSize) {
+    return modelSize === 2
+      ? 'large' : ((selector & 0x80) ? 'special' : 'ordinary');
+  }
+
   function classRoutes(z64) {
     var rows = [];
     for (var classId = 0; classId < CLASS_COUNT; classId++) {
@@ -160,8 +165,7 @@ window.OB64 = window.OB64 || {};
         CLASS_SELECTOR_OFFSET];
       var modelSize = z64[CLASS_DEFINITION + classId * CLASS_DEFINITION_SIZE +
         CLASS_MODEL_SIZE_OFFSET];
-      var lane = modelSize === 2
-        ? 'large' : ((selector & 0x80) ? 'special' : 'ordinary');
+      var lane = routeLane(selector, modelSize);
       rows.push({
         classId: classId,
         className: cleanName(OB64.className ? OB64.className(classId) : '',
@@ -358,6 +362,77 @@ window.OB64 = window.OB64 || {};
     return atlas.models[modelId];
   }
 
+  function removeRouteConsumer(model, classId) {
+    var index = model.classIds.indexOf(classId);
+    if (index < 0) return;
+    model.classIds.splice(index, 1);
+    model.classNames.splice(index, 1);
+  }
+
+  function addRouteConsumer(model, route) {
+    if (model.classIds.indexOf(route.classId) >= 0) return;
+    var index = 0;
+    while (index < model.classIds.length &&
+        model.classIds[index] < route.classId) index++;
+    model.classIds.splice(index, 0, route.classId);
+    model.classNames.splice(index, 0, route.className);
+  }
+
+  function routeModelsForLane(state, route, lane) {
+    var playerAtlasKey = 'player-back-' + lane;
+    var enemyAtlasKey = 'enemy-front-' + lane;
+    var playerModel = state.byModelKey[modelKey(playerAtlasKey, route.modelId)];
+    var enemyModel = state.byModelKey[modelKey(enemyAtlasKey, route.modelId)];
+    if (!playerModel || !enemyModel) {
+      fail(route.className + ' model ' + hex(route.modelId, 2) +
+        ' is outside the ' + lane + ' Army sprite range');
+    }
+    return {
+      playerAtlasKey: playerAtlasKey,
+      enemyAtlasKey: enemyAtlasKey,
+      playerModel: playerModel,
+      enemyModel: enemyModel
+    };
+  }
+
+  function setClassModelSize(state, classId, modelSize) {
+    classId = Number(classId);
+    modelSize = Number(modelSize);
+    var route = state && state.byClassId && state.byClassId[classId];
+    if (!route) fail('unknown Army sprite class route ' + hex(classId, 2));
+    if (!Number.isInteger(modelSize) || modelSize < 0 || modelSize > 0xFF) {
+      fail(route.className + ' class size is outside the byte range');
+    }
+    var lane = routeLane(route.selector, modelSize);
+    var resolved = routeModelsForLane(state, route, lane);
+    var changed = route.modelSize !== modelSize || route.lane !== lane;
+    if (!changed) return false;
+    if (route.playerModel) removeRouteConsumer(route.playerModel, route.classId);
+    if (route.enemyModel) removeRouteConsumer(route.enemyModel, route.classId);
+    route.modelSize = modelSize;
+    route.lane = lane;
+    route.playerAtlasKey = resolved.playerAtlasKey;
+    route.enemyAtlasKey = resolved.enemyAtlasKey;
+    route.playerModel = resolved.playerModel;
+    route.enemyModel = resolved.enemyModel;
+    route.playerMissingInRetail = !route.playerModel.retailPresent;
+    route.enemyMissingInRetail = !route.enemyModel.retailPresent;
+    addRouteConsumer(route.playerModel, route);
+    addRouteConsumer(route.enemyModel, route);
+    return true;
+  }
+
+  function syncClassModelSizes(state, classDefs) {
+    if (!state || !state.supported || !Array.isArray(classDefs)) return 0;
+    var changed = 0;
+    state.classRoutes.forEach(function(route) {
+      var classDef = classDefs[route.classId + 1];
+      if (!classDef || !Number.isInteger(classDef.unitSize)) return;
+      if (setClassModelSize(state, route.classId, classDef.unitSize)) changed++;
+    });
+    return changed;
+  }
+
   function currentIndices(state, atlasKey, modelId) {
     var model = modelFor(state, atlasKey, modelId);
     return state.edits[model.key] || model.originalIndices || model.blankIndices;
@@ -497,6 +572,7 @@ window.OB64 = window.OB64 || {};
         resizeMode: options.resizeMode || 'nearest',
         panX: options.panX,
         panY: options.panY,
+        zoom: options.zoom,
         maximumColors: 256,
         dither: false
       });
@@ -813,6 +889,8 @@ window.OB64 = window.OB64 || {};
     modelKey: modelKey,
     atlasFor: atlasFor,
     modelFor: modelFor,
+    setClassModelSize: setClassModelSize,
+    syncClassModelSizes: syncClassModelSizes,
     currentIndices: currentIndices,
     hasCurrentPlane: hasCurrentPlane,
     setEdit: setEdit,

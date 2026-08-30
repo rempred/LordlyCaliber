@@ -142,6 +142,11 @@ function changedPixels(source, childOrdinal) {
   'Replace From must retain its current source catalog');
   assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
     true, false), { idleOnly: true });
+  assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
+    false, true, true), {
+    includeIdle: true,
+    includeClassMotion: true
+  }, 'movement replacement must retain idle, movement, and combat donors');
   const fighterCopySourceRows = [0, 1].flatMap(side =>
     OB64.animationUI.animationSequenceCatalogRows(
       state, null, 0x02, side, { includeIdle: true }));
@@ -804,6 +809,33 @@ function changedPixels(source, childOrdinal) {
       ['advance', 0x05, '0/1'],
       ['return', 0x0B, '0/1'],
     ], 'Giant must retain its unreadable player-side alternate route as an issue');
+  const giantIdleRows = OB64.animationUI.idleAnimationRows(state, 0x4D);
+  const giantEnemyBaseIdle = giantIdleRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '0/1');
+  const giantEnemyAlternateIdle = giantIdleRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '1/1');
+  assert(giantEnemyBaseIdle && giantEnemyAlternateIdle);
+  assert.strictEqual(OB64.animationUI.animationArtName(
+    giantEnemyBaseIdle), 'Giant');
+  assert.strictEqual(OB64.animationUI.animationArtName(
+    giantEnemyAlternateIdle), 'Soldier');
+  const giantRouteUi = {};
+  OB64.animationUI.rememberAnimationTarget(
+    giantRouteUi, giantEnemyBaseIdle);
+  const giantAdvanceFallback = OB64.animationUI.preferredAnimationTarget(
+    giantMovementRows.filter(animation =>
+      animation.spec.classMotionKind === 'advance'),
+    giantRouteUi, 0x4D, -2, 'advance', '0/1');
+  assert.strictEqual(OB64.animationUI.selectorFlags(
+    giantAdvanceFallback), '1/1',
+  'Giant movement must use the available enemy-side fallback route');
+  OB64.animationUI.rememberAnimationTarget(
+    giantRouteUi, giantAdvanceFallback);
+  assert.strictEqual(OB64.animationUI.preferredAnimationTarget(
+    giantIdleRows, giantRouteUi, 0x4D, -1, 'idle',
+    OB64.animationUI.selectorFlags(giantAdvanceFallback)),
+  giantEnemyBaseIdle,
+  'returning to Idle must restore the earlier Giant enemy-side Base Art route');
   const giantAdvanceBase = giantMovementRows.find(animation =>
     animation.spec.classMotionKind === 'advance' &&
     OB64.animationUI.selectorFlags(animation) === '0/0');
@@ -831,6 +863,24 @@ function changedPixels(source, childOrdinal) {
   assert.deepStrictEqual(giantActions.map(animation =>
     animation.spec.actionId), [-1, -2, -3],
   'a class without combat attacks must still expose idle and movement art');
+
+  const giantDefinition = rom.classDefs[0x4D + 1];
+  assert.strictEqual(giantDefinition.isTerm, true,
+    'the retail Giant slot must begin as a terminator-classified record');
+  giantDefinition.stats[0].base = 0x005A;
+  giantDefinition.b43Raw = giantDefinition.b45Raw = 0x0B;
+  giantDefinition.b47Raw = 0x29;
+  OB64.refreshClassDefClassification(giantDefinition);
+  effectiveCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  const customGiantRows = effectiveCatalog.specs.filter(animation =>
+    animation.spec.classId === 0x4D);
+  assert.deepStrictEqual([...new Set(customGiantRows.map(animation =>
+    animation.spec.actionId))], [0x0B, 0x29],
+  'a converted Giant class record must expose Smash and Earthquake routes');
+  assert.deepStrictEqual(OB64.animationUI.animationActionChoices(
+    customGiantRows, customGiantRows[0]).map(animation => animation.spec.actionId),
+  [-1, -2, -3, 0x0B, 0x29],
+  'the Giant Action dropdown must include fixed movement and live attacks');
   assert(!state.specs.some(OB64.animationUI.isClassMotionAnimation),
     'on-demand movement routes must not expand the startup combat corpus');
 

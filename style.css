@@ -5969,6 +5969,20 @@ td.attack-list {
   padding: 9px 10px 0;
 }
 
+.army-route-size-control {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: end;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  color: var(--ob-ink-soft);
+  background: rgba(75, 46, 17, 0.08);
+  border: 1px solid var(--ob-parchment-edge);
+  border-radius: 4px;
+}
+
+.army-route-size-control small { line-height: 1.4; }
+
 .army-class-card.missing .army-list-sprite,
 .art-browser-card.missing .army-list-sprite {
   opacity: 0.58;

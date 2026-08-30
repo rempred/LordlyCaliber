@@ -1771,6 +1771,9 @@ window.OB64 = window.OB64 || {};
             markChanged('combatAnimationOverrides');
             endChangeBatch();
           },
+          onClassDefinitionChange: function() {
+            markChanged('classDefs');
+          },
           onStatus: function(message) { statusBar.textContent = message; }
         });
         break;
@@ -4160,6 +4163,9 @@ window.OB64 = window.OB64 || {};
       var ri = cid + 1;
       if (ri < classDefs.length) {
         var r = classDefs[ri];
+        if (OB64.refreshClassDefClassification) {
+          OB64.refreshClassDefClassification(r);
+        }
         if (!r.isTerm && !r.isSentinel) {
           map[cid] = [r];
         }
@@ -4648,6 +4654,7 @@ window.OB64 = window.OB64 || {};
         c.addEventListener('click', function() {
           makeNumericInput(c, def.stats[statIdx].base, 0, 65535, function(nv) {
             def.stats[statIdx].base = nv;
+            OB64.refreshClassDefClassification(def);
             c.textContent = nv;
             markChanged();
           });
@@ -5290,6 +5297,7 @@ window.OB64 = window.OB64 || {};
                   ev.stopPropagation();
                   makeNumericInput(sVal, def.stats[statIdx].base, 0, 65535, function(nv) {
                     def.stats[statIdx].base = nv;
+                    OB64.refreshClassDefClassification(def);
                     sVal.textContent = nv;
                     markChanged();
                   });

@@ -144,6 +144,9 @@ at most 255 opaque colors.
 The Art and Animation import maps item colors to the selected icon pack's shared palette.
 
 The Army Sprites tab shows every class route and all six player and enemy formation atlases.
+The class view can select a 16×24 small plane or a 32×28 large plane.
+This selection also changes the class footprint.
+Each Army sprite must use its selected atlas dimensions.
 Existing planes keep both fixed palettes.
 Existing plane edits rebuild inside the verified compressed envelope.
 Missing player planes can use a blank sprite, an imported image, or a converted enemy sprite.

@@ -716,7 +716,10 @@ window.OB64 = window.OB64 || {};
         applyClassDefByte(classDef, byteOff, byteVal & 0xFF);
         appliedThisClass = true;
       }
-      if (appliedThisClass) classDefsApplied++;
+      if (appliedThisClass) {
+        OB64.refreshClassDefClassification(classDef);
+        classDefsApplied++;
+      }
     }
     if (classDefsApplied > 0) dirtyFlags.classDefs = true;
 
