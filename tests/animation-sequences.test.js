@@ -334,6 +334,107 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert.strictEqual(idleTabRestoreUi.animationRestoreAssignedRoute, undefined,
     'fixed-route restoration must be a one-render request');
 
+  const giantRouteRom = await freshRom(z64);
+  const giantIdleRows = OB64.animationUI.idleAnimationRows(
+    giantRouteRom.art.animations, 0x4D);
+  const giantEnemyBase = giantIdleRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '0/1');
+  const giantEnemyAlternate = giantIdleRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '1/1');
+  const giantPlayerBase = giantIdleRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  assert(giantEnemyBase && giantEnemyAlternate && giantPlayerBase,
+    'Giant must expose both enemy body-flag routes and one player route');
+  const giantIdleSeparation = OB64.animationSequences.separateAndAssign(
+    giantRouteRom, giantEnemyBase, null, giantEnemyBase);
+  const giantIdleFrame = giantIdleSeparation.syntheticAnimation.frames.length - 1;
+  const originalGiantTick = giantIdleSeparation.syntheticAnimation
+    .frames[giantIdleFrame].ticks;
+  const giantIdleTick = originalGiantTick === 0xFE
+    ? 0xFD : originalGiantTick + 1;
+  OB64.animationSequences.setFrameTicks(
+    giantRouteRom, giantIdleSeparation, giantIdleFrame, giantIdleTick);
+  const giantEditedSource = Object.values(
+    giantIdleSeparation.syntheticAnimation.artByKey).find(source =>
+    source.editable);
+  const giantEditedChild = giantEditedSource.editableChildOrdinals[0];
+  const giantPixels = OB64.animationArt.currentEdit(
+    giantRouteRom.art.animations, giantEditedSource.key, giantEditedChild);
+  const giantEditedIndices = giantPixels.indices.slice();
+  giantEditedIndices[0] = (giantEditedIndices[0] + 1) & 0xFF;
+  OB64.animationArt.setEdit(giantRouteRom.art.animations,
+    giantEditedSource.key, giantEditedChild,
+    giantEditedIndices, giantPixels.intensity);
+  const giantMotionRows = OB64.animationUI.classMotionAnimationRows(
+    giantRouteRom.art.animations, 0x4D);
+  const giantAdvance = giantMotionRows.find(animation =>
+    animation.spec.classMotionKind === 'advance' &&
+    OB64.animationUI.selectorFlags(animation) === '1/1');
+  const giantReturn = giantMotionRows.find(animation =>
+    animation.spec.classMotionKind === 'return' &&
+    OB64.animationUI.selectorFlags(animation) === '1/1');
+  assert(giantAdvance && giantReturn,
+    'Giant flags 1/1 must expose both fixed movement routes');
+  const giantAdvanceSeparation = OB64.animationSequences.separateAndAssign(
+    giantRouteRom, giantAdvance, null, giantAdvance);
+  const giantReturnSeparation = OB64.animationSequences.separateAndAssign(
+    giantRouteRom, giantReturn, null, giantReturn);
+  const giantEnemyTargets = OB64.animationUI.fixedSideRouteTargets(
+    giantRouteRom.art.animations, giantEnemyBase);
+  assert.deepStrictEqual(giantEnemyTargets.map(animation =>
+    OB64.animationUI.selectorFlags(animation)), ['0/1', '1/1'],
+  'same-side fixed assignment must include both Giant enemy routes');
+  const giantRoutesBeforeInvalid = Object.keys(
+    giantRouteRom.animationSequences.separations).sort();
+  assert.throws(() => OB64.animationSequences.assignFixedToTargets(
+    giantRouteRom, giantIdleSeparation.syntheticAnimation,
+    [giantEnemyBase, giantPlayerBase]), /one player or enemy side/);
+  assert.deepStrictEqual(Object.keys(
+    giantRouteRom.animationSequences.separations).sort(),
+  giantRoutesBeforeInvalid,
+  'mixed-side validation must not change any private route');
+  const giantDesiredBefore = JSON.stringify(
+    giantRouteRom.combatAnimationOverrides.desired);
+  const assignedGiantIdles = OB64.animationSequences.assignFixedToTargets(
+    giantRouteRom, giantIdleSeparation.syntheticAnimation, giantEnemyTargets);
+  assert.deepStrictEqual(assignedGiantIdles.map(row => row.bodyFlags), [1, 3]);
+  const alternateGiantIdle = giantRouteRom.animationSequences.separations[
+    '77:-1:3:idle'];
+  assert(alternateGiantIdle,
+    'same-side assignment must create the runtime Giant flags 1/1 idle route');
+  const alternateGiantSource = Object.values(
+    alternateGiantIdle.syntheticAnimation.artByKey).find(source =>
+    source.separationSourceOrdinal ===
+      giantEditedSource.separationSourceOrdinal);
+  assert(alternateGiantSource,
+    'same-side assignment must preserve each private source ordinal');
+  assert.strictEqual(OB64.animationArt.currentEdit(
+    giantRouteRom.art.animations, alternateGiantSource.key,
+    giantEditedChild).indices[0], giantEditedIndices[0],
+  'the runtime Giant route must receive the selected private sprite pixels');
+  assert(giantRouteRom.animationSequences.separations[
+    giantAdvanceSeparation.id]);
+  assert(giantRouteRom.animationSequences.separations[
+    giantReturnSeparation.id],
+  'same-side idle assignment must preserve fixed movement routes');
+  assert.strictEqual(JSON.stringify(
+    giantRouteRom.combatAnimationOverrides.desired), giantDesiredBefore,
+  'same-side fixed assignment must not create an attack assignment');
+  const giantPlan = OB64.animationSequences.buildPlan(giantRouteRom, z64);
+  const alternateGiantGroup = giantPlan.groups.find(group =>
+    group.id === '77:3');
+  assert(alternateGiantGroup,
+    'Giant flags 1/1 must build a private descriptor group');
+  assert.deepStrictEqual(alternateGiantGroup.separations.map(row => row.laneKey)
+    .sort(), ['advance', 'idle', 'return']);
+  const alternateGiantPose = alternateGiantGroup.controls.find(row =>
+    /-pose$/.test(row.name));
+  const builtGiantIdle = OB64.animationArt.parsePoseProgram(
+    alternateGiantPose.decoded, 0, 'private Giant flags 1/1 idle');
+  assert.strictEqual(builtGiantIdle.frames[
+    builtGiantIdle.frames.length - 1][1], giantIdleTick,
+  'the runtime Giant route must receive the selected private idle timing');
+
   const idleDonorRom = await freshRom(z64);
   const idleAttackDonor = OB64.animationUI.idleAnimationRows(
     idleDonorRom.art.animations, 0x02).find(animation =>

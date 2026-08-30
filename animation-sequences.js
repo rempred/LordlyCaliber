@@ -1416,6 +1416,52 @@ window.OB64 = window.OB64 || {};
     return state.separations[id];
   }
 
+  function assignFixedToTargets(rom, donorAnimation, targetAnimations) {
+    var state = rom && rom.animationSequences;
+    if (!state || !state.supported) fail(state && state.unavailableReason ||
+      'Separated animation sequences are unavailable');
+    var donorSeparation = separationFor(donorAnimation, state);
+    if (!donorSeparation || !isFixedLane(donorSeparation.laneKey)) {
+      fail('same-side assignment requires a private idle or movement sequence');
+    }
+    if (!Array.isArray(targetAnimations) || !targetAnimations.length) {
+      fail('same-side assignment requires at least one art route');
+    }
+    var classId = donorSeparation.classId;
+    var laneKey = donorSeparation.laneKey;
+    var side = donorSeparation.bodyFlags & 1;
+    var targets = [], seenFlags = {};
+    targetAnimations.forEach(function(targetAnimation) {
+      var target = assignmentTarget(donorAnimation, targetAnimation);
+      if (target.classId !== classId) {
+        fail('same-side assignment requires one class');
+      }
+      if (target.laneKey !== laneKey) {
+        fail('same-side assignment requires one fixed animation lane');
+      }
+      if ((target.bodyFlags & 1) !== side) {
+        fail('same-side assignment requires one player or enemy side');
+      }
+      if (seenFlags[target.bodyFlags]) return;
+      seenFlags[target.bodyFlags] = true;
+      targets.push(target);
+    });
+    var rollback = prepareProject(rom, collectProject(rom));
+    try {
+      return targets.map(function(target) {
+        var existing = state.separations[routeId(
+          target.classId, target.actionId, target.bodyFlags, target.laneKey)];
+        if (existing && existing.syntheticAnimation === donorAnimation) {
+          return existing;
+        }
+        return separateAndAssign(rom, donorAnimation, null, target.animation);
+      });
+    } catch (error) {
+      applyProject(rom, rollback);
+      throw error;
+    }
+  }
+
   function separationConsumers(rom, separation) {
     if (isFixedLane(separation && separation.laneKey)) return [];
     var rows = rom && rom.combatAnimationOverrides &&
@@ -3549,6 +3595,7 @@ window.OB64 = window.OB64 || {};
     sharedAssignmentIssue: sharedAssignmentIssue,
     assignShared: assignShared,
     separateAndAssign: separateAndAssign,
+    assignFixedToTargets: assignFixedToTargets,
     separationConsumers: separationConsumers,
     removeSeparation: removeSeparation,
     copyFrom: copyFrom,

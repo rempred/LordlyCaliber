@@ -978,6 +978,24 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  function fixedSideRouteTargets(animationState, targetAnimation) {
+    if (!targetAnimation || !isFixedAnimation(targetAnimation)) return [];
+    var rows = isIdleAnimation(targetAnimation)
+      ? idleAnimationRows(animationState, targetAnimation.spec.classId)
+      : classMotionAnimationRows(animationState, targetAnimation.spec.classId,
+        targetAnimation.spec.classMotionKind);
+    var side = selectorFlagParts(targetAnimation)[1];
+    var byFlags = {};
+    rows.forEach(function(animation) {
+      var flags = selectorFlags(animation);
+      if (selectorFlagParts(animation)[1] !== side || byFlags[flags]) return;
+      byFlags[flags] = animation;
+    });
+    return Object.keys(byFlags).sort().map(function(flags) {
+      return byFlags[flags];
+    });
+  }
+
   function animationCopyCatalogOptions(idleTarget, replacing, motionTarget) {
     if (idleTarget) return { idleOnly: true };
     if (motionTarget) return {
@@ -1237,17 +1255,19 @@ window.OB64 = window.OB64 || {};
   function sequenceAssignmentSummary(currentChoice, targetAnimation,
       needsUserAssignment, previewChoice) {
     var targetLane = animationLaneLabel(targetAnimation);
+    var fixedFlags = isFixedAnimation(targetAnimation)
+      ? ' · flags ' + selectorFlags(targetAnimation) : '';
     if (previewChoice && (!currentChoice || previewChoice.key !== currentChoice.key)) {
-      return 'Previewing · ' + previewChoice.label + ' · ' + targetLane +
+      return 'Previewing · ' + previewChoice.label + ' · ' + targetLane + fixedFlags +
         (needsUserAssignment ? ' remains unassigned' : ' assignment unchanged');
     }
     if (isIdleAnimation(targetAnimation)) {
-      return currentChoice ? 'Idle Loop · ' + currentChoice.label :
-        'Choose an idle loop';
+      return currentChoice ? 'Idle Loop · ' + currentChoice.label + fixedFlags :
+        'Choose an idle loop' + fixedFlags;
     }
     if (isClassMotionAnimation(targetAnimation)) {
-      return currentChoice ? currentChoice.label :
-        'Choose ' + animationLaneLabel(targetAnimation).toLowerCase();
+      return currentChoice ? currentChoice.label + fixedFlags :
+        'Choose ' + animationLaneLabel(targetAnimation).toLowerCase() + fixedFlags;
     }
     if (needsUserAssignment) {
       return targetLane + ' target · Choose a body animation · current game ' +
@@ -2850,7 +2870,8 @@ window.OB64 = window.OB64 || {};
           rowStatus.appendChild(linkedSequenceBadge(choice, targetAnimation));
         }
         if (assigned) rowStatus.appendChild(badge(
-          fixedTarget ? 'Current' : 'Assigned', 'mapped'));
+          fixedTarget ? 'Current · flags ' + selectorFlags(targetAnimation) :
+            'Assigned', 'mapped'));
         else if (fallbackBody) rowStatus.appendChild(badge('Game fallback', 'warning'));
         else if (previewed) rowStatus.appendChild(badge('Preview', 'shared'));
         row.appendChild(rowStatus);
@@ -2891,9 +2912,9 @@ window.OB64 = window.OB64 || {};
           !!sameBodyOnly || !!sharedIssue)) || !!assigned ||
           !rom.animationSequences || !rom.animationSequences.supported;
         if (fixedTarget && assigned) {
-          assign.textContent = 'Current: ' + targetLaneLabel;
-          assign.title = 'This sequence is already assigned to the selected ' +
-            'class, action, and art variant.';
+          assign.textContent = 'Current here: ' + targetLaneLabel;
+          assign.title = 'This sequence is current for the selected ROM ' +
+            'body-flag route.';
         } else if (fixedTarget) {
           assign.title = separation
             ? 'Replace the selected fixed route with a private copy of this sequence.'
@@ -2939,6 +2960,54 @@ window.OB64 = window.OB64 || {};
       });
       dropdown.appendChild(panel);
       field.appendChild(dropdown);
+      var sideTargets = fixedTarget && separation
+        ? fixedSideRouteTargets(state.animations, targetAnimation) : [];
+      if (sideTargets.length > 1) {
+        var assignedTargets = sideTargets.filter(function(animation) {
+          return !!OB64.animationSequences.routeSeparationFor(
+            animation, rom.animationSequences);
+        });
+        var coverage = element('div', 'animation-fixed-route-coverage ' +
+          animationSideClass(targetAnimation));
+        var coverageText = element('div', 'animation-fixed-route-coverage-text');
+        coverageText.appendChild(element('span', '', targetLaneLabel +
+          ' has a separate ROM route for each ' +
+          animationSideLabel(targetAnimation) + ' art variant.'));
+        coverageText.appendChild(element('span', '', 'Private sequence coverage: ' +
+          assignedTargets.length + ' of ' + sideTargets.length + ' routes.'));
+        coverageText.appendChild(element('span', '',
+          'The game can use either route during play.'));
+        coverageText.appendChild(element('span', '', 'Selected route: flags ' +
+          selectorFlags(targetAnimation) + '.'));
+        coverage.appendChild(coverageText);
+        if (assignedTargets.length < sideTargets.length) {
+          var assignSide = button('Assign this ' + targetLaneLabel + ' to both ' +
+            animationSideLabel(targetAnimation) + ' variants',
+          'animation-variant-assign animation-fixed-route-assign', function() {
+            try {
+              var assignedRows = OB64.animationSequences.assignFixedToTargets(
+                rom, separation.syntheticAnimation, sideTargets);
+              var currentRoute = assignedRows.find(function(row) {
+                return row.bodyFlags ===
+                  OB64.animationSequences.bodyFlagsFor(targetAnimation);
+              }) || separation;
+              ui.animationKey = currentRoute.syntheticAnimation.key;
+              rememberAnimationTarget(ui, targetAnimation);
+              rememberAnimationSelection(ui, currentRoute.syntheticAnimation);
+              changed(options);
+              notify(options, targetLaneLabel + ' is assigned to both ' +
+                animationSideLabel(targetAnimation) + ' art variants.');
+              rerender();
+            } catch (error) {
+              notify(options, 'Animation assignment blocked: ' + error.message);
+            }
+          });
+          assignSide.title = 'Copy the current private sequence into every ' +
+            animationSideLabel(targetAnimation) + ' body-flag route.';
+          coverage.appendChild(assignSide);
+        }
+        field.appendChild(coverage);
+      }
       field.addEventListener('focusout', function() {
         window.setTimeout(function() {
           if (dropdown.open && !field.contains(document.activeElement)) {
@@ -6184,6 +6253,7 @@ window.OB64 = window.OB64 || {};
     classMotionSpec: classMotionSpec,
     idleAnimationRows: idleAnimationRows,
     classMotionAnimationRows: classMotionAnimationRows,
+    fixedSideRouteTargets: fixedSideRouteTargets,
     animationCopyCatalogOptions: animationCopyCatalogOptions,
     animationPreviewTimeline: animationPreviewTimeline,
     animationPreviewFrameAtMs: animationPreviewFrameAtMs,

@@ -180,8 +180,14 @@ assert(animationSource.includes("badge('Game fallback', 'warning')"));
 assert(animationSource.includes('function sequenceAssignmentSummary('));
 assert(animationSource.includes("? 'Assigned to ' + targetLane"));
 assert(animationSource.includes("return 'Previewing · ' + previewChoice.label"));
+assert(animationSource.includes("? ' · flags ' + selectorFlags(targetAnimation)"));
 assert(animationSource.includes('selected.key !== assignedTarget.key'));
 assert(animationSource.includes("assign.textContent = 'Assign to ' + targetLaneLabel"));
+assert(animationSource.includes("fixedTarget ? 'Current · flags ' +"));
+assert(animationSource.includes("assign.textContent = 'Current here: ' +"));
+assert(animationSource.includes('fixedSideRouteTargets(state.animations, targetAnimation)'));
+assert(animationSource.includes('OB64.animationSequences.assignFixedToTargets('));
+assert(animationSource.includes("'Private sequence coverage: ' +"));
 assert(animationSource.includes('if (fixedTarget) {\n' +
   '              var fixedSeparation = OB64.animationSequences.separateAndAssign('));
 assert(animationSource.includes('ui.animationKey = assignedAnimation.key;'));
