@@ -160,14 +160,16 @@ assert(animationSource.includes('searchableClassSelector(classes'));
 assert(animationSource.includes("selector('Action', actions"));
 assert(animationSource.includes("actionName: 'Walk / Run · Advance'"));
 assert(animationSource.includes("actionName: 'Walk / Run · Return'"));
+assert(animationSource.includes("actionName: 'Get Hit'"));
 assert(animationSource.includes("selector('Art Variant', artRoutes"));
 assert(animationSource.includes("selector('Mode', modes"));
 assert(animationSource.includes('sequenceDropdown('));
 assert(animationSource.includes('function animationSequenceCatalogRows('));
 assert(animationSource.includes('function classMotionAnimationRows('));
-assert(animationSource.includes('classMotionKind: isClassMotionAnimation('));
+assert(animationSource.includes('function fixedClassActionAnimationRows('));
+assert(animationSource.includes('fixedSequenceKind: isFixedClassActionAnimation('));
 assert(animationSource.includes('function animationCopyCatalogOptions('));
-assert(animationSource.includes('includeClassMotion: true'));
+assert(animationSource.includes('includeFixedActions: true'));
 assert(animationSource.includes('state.animations.artRouteTemplates || []'));
 assert(animationSource.includes('return replacing ? null : {'));
 assert(!animationSource.includes('function completeClassVariantRows('));
@@ -204,7 +206,8 @@ assert(animationSource.includes("var sequenceSelect = selectField('Sequence')"))
 assert(animationSource.includes('animationClassVariantChoices(rowsForClass())'));
 assert(animationSource.includes('animationSequenceCatalogRows(\n        state.animations'));
 assert(!animationSource.includes('if (!motionTarget) {'));
-assert(animationSource.includes("var fixedTarget = idleTarget || motionTarget;"));
+assert(animationSource.includes(
+  "var fixedTarget = idleTarget || fixedActionTarget;"));
 assert(animationSource.includes(
   "? 'Detach this fixed movement route into a private editable sequence.'"));
 assert(animationSource.includes('copyFrom.disabled = !targetAnimation ||'));

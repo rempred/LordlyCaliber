@@ -135,7 +135,7 @@ function changedPixels(source, childOrdinal) {
     OB64.animationUI.animationCopyCatalogOptions(false, false);
   assert.deepStrictEqual(fighterCopyCatalogOptions, {
     includeIdle: true,
-    includeClassMotion: true
+    includeFixedActions: true
   });
   assert.strictEqual(OB64.animationUI.animationCopyCatalogOptions(
     false, true), null,
@@ -145,8 +145,8 @@ function changedPixels(source, childOrdinal) {
   assert.deepStrictEqual(OB64.animationUI.animationCopyCatalogOptions(
     false, true, true), {
     includeIdle: true,
-    includeClassMotion: true
-  }, 'movement replacement must retain idle, movement, and combat donors');
+    includeFixedActions: true
+  }, 'fixed action replacement must retain idle, fixed action, and combat donors');
   const fighterCopySourceRows = [0, 1].flatMap(side =>
     OB64.animationUI.animationSequenceCatalogRows(
       state, null, 0x02, side, { includeIdle: true }));
@@ -159,9 +159,9 @@ function changedPixels(source, childOrdinal) {
   const fighterActions = OB64.animationUI.animationActionChoices(
     state.specs.filter(animation => animation.spec.classId === 0x02),
     fighterIdleBase);
-  assert.deepStrictEqual(fighterActions.slice(0, 3).map(animation =>
-    animation.spec.actionId), [-1, -2, -3],
-  'Idle, movement advance, and movement return must lead the Action menu');
+  assert.deepStrictEqual(fighterActions.slice(0, 4).map(animation =>
+    animation.spec.actionId), [-1, -2, -3, -4],
+  'Idle, movement, and Get Hit must lead the Action menu');
   assert.strictEqual(fighterActions[0].spec.actionName, 'Idle / Rest');
   assert(!state.specs.some(OB64.animationUI.isIdleAnimation),
     'on-demand idle loops must not expand the normal startup corpus');
@@ -768,6 +768,12 @@ function changedPixels(source, childOrdinal) {
     choice.label.includes('Walk / Run · Advance')));
   assert(fighterCompleteCopyChoices.some(choice =>
     choice.label.includes('Walk / Run · Return')));
+  assert(fighterCompleteCopyChoices.some(choice =>
+    choice.label.includes('Get Hit')),
+  'Copy From must list Get Hit: ' + JSON.stringify({
+    labels: fighterCompleteCopyChoices.map(choice => choice.label),
+    failures: state.fixedActionSequenceFailures[0x02]
+  }));
   const baldwinCopyChoices = OB64.animationUI.animationClassVariantChoices(
     [0, 1].flatMap(side => OB64.animationUI.animationSequenceCatalogRows(
       state, null, 0x67, side, fighterCopyCatalogOptions)));
@@ -861,8 +867,24 @@ function changedPixels(source, childOrdinal) {
   const giantActions = OB64.animationUI.animationActionChoices(
     [], giantAdvanceBase);
   assert.deepStrictEqual(giantActions.map(animation =>
-    animation.spec.actionId), [-1, -2, -3],
-  'a class without combat attacks must still expose idle and movement art');
+    animation.spec.actionId), [-1, -2, -3, -4],
+  'a class without combat attacks must still expose idle, movement, and Get Hit art');
+  const giantHitRows = OB64.animationUI.fixedClassActionAnimationRows(
+    state, 0x4D, 'hit');
+  assert.strictEqual(giantHitRows.length, 3,
+    'Giant must expose selector 0x11 on every drawable art route');
+  assert(giantHitRows.every(animation =>
+    animation.spec.actionId === -4 && animation.spec.selector === 0x11 &&
+    animation.spec.fixedSequenceKind === 'hit' &&
+    OB64.animationUI.animationLaneLabel(animation) === 'Get Hit'));
+  const giantHitTarget = giantHitRows.find(animation =>
+    OB64.animationUI.selectorFlags(animation) === '0/0');
+  const giantHitUi = {};
+  OB64.animationUI.rememberAnimationTarget(giantHitUi, giantHitTarget);
+  assert.strictEqual(OB64.animationUI.assignmentTargetAnimation(
+    giantHitUi, OB64.animationUI.effectiveAnimationCatalog(rom.art, rom),
+    giantAdvanceBase, state), giantHitTarget,
+  'previewing another sequence must preserve the Get Hit assignment target');
 
   const giantDefinition = rom.classDefs[0x4D + 1];
   assert.strictEqual(giantDefinition.isTerm, true,
@@ -879,8 +901,8 @@ function changedPixels(source, childOrdinal) {
   'a converted Giant class record must expose Smash and Earthquake routes');
   assert.deepStrictEqual(OB64.animationUI.animationActionChoices(
     customGiantRows, customGiantRows[0]).map(animation => animation.spec.actionId),
-  [-1, -2, -3, 0x0B, 0x29],
-  'the Giant Action dropdown must include fixed movement and live attacks');
+  [-1, -2, -3, -4, 0x0B, 0x29],
+  'the Giant Action dropdown must include fixed actions and live attacks');
   assert(!state.specs.some(OB64.animationUI.isClassMotionAnimation),
     'on-demand movement routes must not expand the startup combat corpus');
 

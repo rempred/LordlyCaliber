@@ -3,7 +3,7 @@
 // A shared assignment adds one exact class/action/body-route OBSO record.
 // A separated assignment clones the selected sequence into the native-art
 // arena. Combat routes append a selector. Fixed routes replace selectors
-// 0x00, 0x05, or 0x0B in the private descriptor.
+// 0x00, 0x05, 0x0B, or 0x11 in the private descriptor.
 
 window.OB64 = window.OB64 || {};
 
@@ -17,6 +17,16 @@ window.OB64 = window.OB64 || {};
   var CLASS_HANDLE_RESOURCE_KEY = 0x00315736;
   var CLASS_HANDLE_TABLE_OFFSET = 0x24;
   var CLASS_HANDLE_COUNT = 688;
+  var IDLE_LOOP_REDIRECT_SELECTORS = {
+    0x01: true,
+    0x02: true,
+    0x03: true,
+    0x04: true,
+    0x08: true
+  };
+  var IDLE_FRAME_REDIRECT_SELECTORS = {
+    0x12: true
+  };
   var MAX_TRANSFORM_DIMENSION = 512;
   var MAX_TRANSFORM_PIXELS = MAX_TRANSFORM_DIMENSION * MAX_TRANSFORM_DIMENSION;
   var FIXED_SEQUENCE_LANES = {
@@ -37,6 +47,12 @@ window.OB64 = window.OB64 || {};
       selector: 0x0B,
       actionName: 'Walk / Run · Return',
       modeLabel: 'Walk / Run · Return'
+    },
+    hit: {
+      actionId: -4,
+      selector: 0x11,
+      actionName: 'Get Hit',
+      modeLabel: 'Get Hit'
     }
   };
 
@@ -101,6 +117,9 @@ window.OB64 = window.OB64 || {};
     if (typeof spec === 'string') return FIXED_SEQUENCE_LANES[spec] || null;
     if (!spec) return null;
     if (spec.idleSequence) return FIXED_SEQUENCE_LANES.idle;
+    if (spec.fixedSequenceKind && FIXED_SEQUENCE_LANES[spec.fixedSequenceKind]) {
+      return FIXED_SEQUENCE_LANES[spec.fixedSequenceKind];
+    }
     if (spec.classMotionKind && FIXED_SEQUENCE_LANES[spec.classMotionKind]) {
       return FIXED_SEQUENCE_LANES[spec.classMotionKind];
     }
@@ -165,7 +184,8 @@ window.OB64 = window.OB64 || {};
       descriptorKey: Number(animation.spec.descriptorKey),
       selectedBodyChild: Number(animation.spec.selectedBodyChild),
       idleSequence: !!animation.spec.idleSequence,
-      classMotionKind: animation.spec.classMotionKind || null
+      classMotionKind: animation.spec.classMotionKind || null,
+      fixedSequenceKind: animation.spec.fixedSequenceKind || null
     };
   }
 
@@ -202,6 +222,8 @@ window.OB64 = window.OB64 || {};
         Number(animation.spec.rawMode) === Number(reference.rawMode) &&
         Number(animation.spec.selector) === Number(reference.selector) &&
         !!animation.spec.idleSequence === !!reference.idleSequence &&
+        (animation.spec.fixedSequenceKind || null) ===
+          (reference.fixedSequenceKind || fixedLane || null) &&
         (animation.spec.classMotionKind || null) ===
           (reference.classMotionKind || (fixedLane === 'advance' ||
             fixedLane === 'return' ? fixedLane : null))) {
@@ -228,9 +250,10 @@ window.OB64 = window.OB64 || {};
           'Raw mode ' + Number(reference.rawMode),
         selector: Number(reference.selector),
         idleSequence: idle,
+        fixedSequenceKind: fixedLane,
         classMotionKind: motion ? fixedLane : null,
-        sequenceCatalogGroupKey: motion
-          ? 'class-motion-' + fixedLane : null
+        sequenceCatalogGroupKey: fixedLane && !idle
+          ? 'class-fixed-' + fixedLane : null
       })
     });
   }
@@ -240,6 +263,8 @@ window.OB64 = window.OB64 || {};
     var direct = animationState.byKey[reference.key] ||
       (animationState.idleAnimationsByKey &&
         animationState.idleAnimationsByKey[reference.key]) ||
+      (animationState.fixedActionAnimationsByKey &&
+        animationState.fixedActionAnimationsByKey[reference.key]) ||
       (animationState.classMotionAnimationsByKey &&
         animationState.classMotionAnimationsByKey[reference.key]) ||
       animationState.selectorCandidates[reference.key];
@@ -520,7 +545,7 @@ window.OB64 = window.OB64 || {};
     if (targetIdle && !sourceIdle) {
       fail('private idle targets require an idle-loop donor');
     }
-    if (!sourceIdle || targetIdle) return records;
+    if (!sourceIdle) return records;
     var loop = records[records.length - 1];
     if (!loop || loop.opcode !== 0x04 || !loop.operands ||
         !Number.isInteger(loop.operands[0]) || !records[loop.operands[0]] ||
@@ -528,8 +553,42 @@ window.OB64 = window.OB64 || {};
       fail('private idle donor lacks its final loop jump');
     }
     return records.filter(function(record, index) {
-      return index < records.length - 1 && record.ordinal >= loop.operands[0];
+      return (targetIdle || index < records.length - 1) &&
+        record.ordinal >= loop.operands[0];
     });
+  }
+
+  function canonicalIdleProgram(program) {
+    var wrapped = new Uint8Array(4 + program.length);
+    A.writeU32(wrapped, 0, 4);
+    wrapped.set(program, 4);
+    var parsed;
+    try {
+      parsed = M.parsePoseProgram(wrapped, 0,
+        'private idle animation body program');
+    } catch (error) {
+      fail(error && error.message ? error.message : String(error));
+    }
+    var records = parsed.records;
+    var loop = records[records.length - 1];
+    if (!loop || loop.opcode !== 0x04 || !loop.operands ||
+        !Number.isInteger(loop.operands[0]) || !records[loop.operands[0]] ||
+        records[loop.operands[0]].opcode !== 0x01) {
+      fail('private idle animation lacks its final loop jump');
+    }
+    var loopStart = loop.operands[0];
+    if (!loopStart) return program.slice();
+    if (records.slice(0, loopStart).some(function(record) {
+      return record.opcode !== 0x01;
+    })) {
+      fail('private idle animation has unsupported startup controls');
+    }
+    var sourceOffset = records[loopStart].offset - 4;
+    var output = new Uint8Array(1 + program.length - sourceOffset);
+    output[0] = records.length - loopStart;
+    output.set(program.slice(sourceOffset), 1);
+    output[output.length - 1] = 0;
+    return output;
   }
 
   function poseProgramForFrames(donorAnimation, frames, targetIdle) {
@@ -687,16 +746,12 @@ window.OB64 = window.OB64 || {};
       });
     });
     if (!idle) return;
-    var donorVisible = visiblePoseFrameRecords(template, true);
     var actualVisible = visiblePoseFrameRecords(pose, true);
-    var donorHiddenFrames = template.records.filter(function(record) {
-      return record.opcode === 0x01;
-    }).length - donorVisible.length;
     var actualHiddenFrames = pose.records.filter(function(record) {
       return record.opcode === 0x01;
     }).length - actualVisible.length;
     var loop = pose.records[pose.records.length - 1];
-    if (donorHiddenFrames !== actualHiddenFrames || !actualVisible.length ||
+    if (actualHiddenFrames || !actualVisible.length ||
         loop.operands[0] !== actualVisible[0].ordinal) {
       fail('private idle animation changed its loop boundary');
     }
@@ -705,6 +760,13 @@ window.OB64 = window.OB64 || {};
   function decodePrivatePoseProgram(template, program, idle, frames, templateIdle) {
     if (!(program instanceof Uint8Array) || program.length < 2) {
       fail('private animation body program is invalid');
+    }
+    if (idle) {
+      var canonical = canonicalIdleProgram(program);
+      if (!equalBytes(canonical, program)) {
+        return decodePrivatePoseProgram(
+          template, canonical, idle, frames, templateIdle);
+      }
     }
     var wrapped = new Uint8Array(4 + program.length);
     A.writeU32(wrapped, 0, 4);
@@ -1122,9 +1184,10 @@ window.OB64 = window.OB64 || {};
       frames: frames.map(function(frame) { return [frame.token, frame.ticks]; }),
       frozenParity: null,
       idleSequence: separation.laneKey === 'idle',
+      fixedSequenceKind: fixedLane ? separation.laneKey : null,
       classMotionKind: movementLane ? separation.laneKey : null,
-      sequenceCatalogGroupKey: movementLane
-        ? 'class-motion-' + separation.laneKey : null,
+      sequenceCatalogGroupKey: fixedLane && separation.laneKey !== 'idle'
+        ? 'class-fixed-' + separation.laneKey : null,
       separatedCopy: true
     });
     var synthetic = {
@@ -1422,7 +1485,7 @@ window.OB64 = window.OB64 || {};
       'Separated animation sequences are unavailable');
     var donorSeparation = separationFor(donorAnimation, state);
     if (!donorSeparation || !isFixedLane(donorSeparation.laneKey)) {
-      fail('same-side assignment requires a private idle or movement sequence');
+      fail('same-side assignment requires a private fixed sequence');
     }
     if (!Array.isArray(targetAnimations) || !targetAnimations.length) {
       fail('same-side assignment requires at least one art route');
@@ -1507,7 +1570,7 @@ window.OB64 = window.OB64 || {};
     var state = rom.animationSequences;
     var target = assignmentTarget(animation, targetAnimation);
     if (isFixedLane(target.laneKey)) {
-      fail('Fixed idle and movement routes require a separated descriptor copy');
+      fail('Fixed class routes require a separated descriptor copy');
     }
     validateSharedAssignment(rom, animation, target);
     var classId = target.classId;
@@ -2638,6 +2701,38 @@ window.OB64 = window.OB64 || {};
     return program;
   }
 
+  function parseStandaloneProgram(program, label) {
+    var wrapped = new Uint8Array(4 + program.length);
+    A.writeU32(wrapped, 0, 4);
+    wrapped.set(program, 4);
+    return M.parsePoseProgram(wrapped, 0, label);
+  }
+
+  function privateIdleFirstToken(idleProgram) {
+    var idle = parseStandaloneProgram(
+      idleProgram, 'private idle body program for hit recovery');
+    var firstFrame = idle.records.find(function(record) {
+      return record.opcode === 0x01;
+    });
+    if (!firstFrame || !firstFrame.operands ||
+        !Number.isInteger(firstFrame.operands[0])) {
+      fail('private idle body program has no frame for recovery');
+    }
+    return firstFrame.operands[0];
+  }
+
+  function usePrivateIdleFrame(program, idleProgram) {
+    var parsed = parseStandaloneProgram(
+      program, 'private finite idle-recovery body program');
+    var token = privateIdleFirstToken(idleProgram);
+    var output = program.slice();
+    parsed.records.forEach(function(record) {
+      if (record.opcode !== 0x01) return;
+      output[record.offset - 4 + 1] = token;
+    });
+    return output;
+  }
+
   function buildPose(target, rows) {
     var base = A.readCompressedResource(target.sourceBytes, target.animation.spec.poseKey).decoded;
     var oldDirectoryBytes = A.readU32(base, 0);
@@ -2665,6 +2760,8 @@ window.OB64 = window.OB64 || {};
       }
       fixedRows[selector] = row;
     });
+    var privateIdleProgram = fixedRows[FIXED_SEQUENCE_LANES.idle.selector]
+      ? remappedProgram(fixedRows[FIXED_SEQUENCE_LANES.idle.selector]) : null;
     var programs = [];
     for (var selector = 0; selector < oldCount; selector++) {
       var start = A.readU32(base, selector * 4);
@@ -2674,8 +2771,15 @@ window.OB64 = window.OB64 || {};
         fail('target pose selector ' + A.hex(selector, 2) +
           ' has invalid bounds');
       }
-      programs.push(fixedRows[selector]
-        ? remappedProgram(fixedRows[selector]) : base.slice(start, end));
+      var program = fixedRows[selector]
+        ? remappedProgram(fixedRows[selector]) : base.slice(start, end);
+      if (IDLE_LOOP_REDIRECT_SELECTORS[selector] && privateIdleProgram) {
+        program = privateIdleProgram.slice();
+      } else if (IDLE_FRAME_REDIRECT_SELECTORS[selector] &&
+          privateIdleProgram) {
+        program = usePrivateIdleFrame(program, privateIdleProgram);
+      }
+      programs.push(program);
     }
     appendedRows.forEach(function(row, index) {
       var wanted = oldCount + index;

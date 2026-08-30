@@ -54,7 +54,7 @@ It does not claim that the visible art moves.
 `Assigned` identifies the sequence used by the selected target.
 Selecting another row changes the preview label.
 The assignment changes only when the user selects `Assign`.
-`Copy From and Separate` includes class idle, advance, and return movement loops as source sequences.
+`Copy From and Separate` includes class idle, advance, return, and Get Hit sequences.
 `Preview` identifies a sequence shown without an assignment change.
 `Linked` means that two labels share one mutable body program.
 Independent private sequences are not linked, even when their program bytes match.

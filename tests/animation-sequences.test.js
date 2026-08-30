@@ -296,8 +296,13 @@ function route(rom, classId, actionId, flags, rawMode) {
   const privateIdleLoop = privateIdleRecords[privateIdleRecords.length - 1];
   assert.strictEqual(privateIdleLoop.opcode, 0x04,
     'a private idle body program must keep its final loop command');
+  assert.strictEqual(privateIdleLoop.operands[0], 0,
+    'a private idle body program must start at its first editable loop frame');
   assert.strictEqual(privateIdleRecords[privateIdleLoop.operands[0]].opcode, 0x01,
     'the rebuilt idle loop must jump to a visible frame command');
+  assert.strictEqual(privateIdleRecords.filter(record =>
+    record.opcode === 0x01).length, idleFrameCount,
+  'a private idle body program must not retain hidden native startup frames');
   assert.strictEqual(privateIdleRecords.slice(privateIdleLoop.operands[0])
     .filter(record => record.opcode === 0x01).length, idleFrameCount,
   'the rebuilt idle jump must cover every visible loop frame');
@@ -431,9 +436,86 @@ function route(rom, classId, actionId, flags, rawMode) {
     /-pose$/.test(row.name));
   const builtGiantIdle = OB64.animationArt.parsePoseProgram(
     alternateGiantPose.decoded, 0, 'private Giant flags 1/1 idle');
+  assert.strictEqual(builtGiantIdle.records.filter(record =>
+    record.opcode === 0x01).length,
+  alternateGiantIdle.syntheticAnimation.frames.length,
+  'the exported Giant idle must contain only its editable custom frame commands');
+  assert.strictEqual(builtGiantIdle.records[
+    builtGiantIdle.records.length - 1].operands[0], 0,
+  'the exported Giant idle must enter its custom loop immediately');
   assert.strictEqual(builtGiantIdle.frames[
     builtGiantIdle.frames.length - 1][1], giantIdleTick,
   'the runtime Giant route must receive the selected private idle timing');
+  [0x01, 0x02, 0x03, 0x04].forEach(selector => {
+    const builtGiantFallback = OB64.animationArt.parsePoseProgram(
+      alternateGiantPose.decoded, selector,
+      `private Giant flags 1/1 fallback ${selector}`);
+    assert.deepStrictEqual(builtGiantFallback.frames, builtGiantIdle.frames,
+    `the exported Giant fallback ${selector} must enter private idle immediately`);
+    assert.deepStrictEqual(builtGiantFallback.records.map(record => ({
+      opcode: record.opcode,
+      operands: record.operands,
+    })), builtGiantIdle.records.map(record => ({
+      opcode: record.opcode,
+      operands: record.operands,
+    })), `the exported Giant fallback ${selector} must use the private idle program`);
+  });
+  const builtGiantSelector8 = OB64.animationArt.parsePoseProgram(
+    alternateGiantPose.decoded, 0x08, 'private Giant flags 1/1 selector 8');
+  assert.deepStrictEqual(builtGiantSelector8.frames, builtGiantIdle.frames,
+    'the persuaded stop route must enter private idle immediately');
+  assert.deepStrictEqual(builtGiantSelector8.records.map(record => ({
+    opcode: record.opcode,
+    operands: record.operands,
+  })), builtGiantIdle.records.map(record => ({
+    opcode: record.opcode,
+    operands: record.operands,
+  })), 'the persuaded stop route must use the private idle program');
+  const originalGiantHitRecovery = OB64.animationArt.parsePoseProgram(
+    giantEnemyAlternate.pose, 0x12,
+    'original Giant flags 1/1 Get Hit recovery');
+  const builtGiantHitRecovery = OB64.animationArt.parsePoseProgram(
+    alternateGiantPose.decoded, 0x12,
+    'private Giant flags 1/1 Get Hit recovery');
+  assert.deepStrictEqual(builtGiantHitRecovery.frames.map(frame => frame[0]),
+    originalGiantHitRecovery.frames.map(() => builtGiantIdle.frames[0][0]),
+  'Get Hit recovery must use the first private idle frame');
+  assert.deepStrictEqual(builtGiantHitRecovery.frames.map(frame => frame[1]),
+    originalGiantHitRecovery.frames.map(frame => frame[1]),
+  'Get Hit recovery must preserve its native timing');
+  assert.deepStrictEqual(builtGiantHitRecovery.records.map(record =>
+    record.opcode), originalGiantHitRecovery.records.map(record =>
+    record.opcode),
+  'Get Hit recovery must remain finite');
+
+  const legacyGiantPayload = OB64.animationSequences.collectProject(
+    giantRouteRom);
+  const legacyGiantProgram = giantEnemyBase.poseProgram.program.slice();
+  const legacyGiantLoop = giantEnemyBase.poseProgram.records[
+    giantEnemyBase.poseProgram.records.length - 1];
+  const legacyGiantFrames = giantEnemyBase.poseProgram.records
+    .slice(legacyGiantLoop.operands[0])
+    .filter(record => record.opcode === 0x01);
+  legacyGiantFrames.forEach((record, frameIndex) => {
+    const relative = record.offset - giantEnemyBase.poseProgram.start;
+    const frame = alternateGiantIdle.syntheticAnimation.frames[frameIndex];
+    legacyGiantProgram[relative + 1] = frame.token;
+    legacyGiantProgram[relative + 2] = frame.ticks;
+  });
+  legacyGiantPayload.entries[alternateGiantIdle.id].poseProgramBase64 =
+    Buffer.from(legacyGiantProgram).toString('base64');
+  const legacyGiantRom = await freshRom(z64);
+  const preparedLegacyGiant = OB64.animationSequences.prepareProject(
+    legacyGiantRom, legacyGiantPayload);
+  OB64.animationSequences.applyProject(legacyGiantRom, preparedLegacyGiant);
+  const restoredLegacyGiant = legacyGiantRom.animationSequences.separations[
+    alternateGiantIdle.id].syntheticAnimation;
+  assert.strictEqual(restoredLegacyGiant.poseProgram.records.filter(record =>
+    record.opcode === 0x01).length, restoredLegacyGiant.frames.length,
+  'Project reload must remove hidden native startup frames from old idle data');
+  assert.strictEqual(restoredLegacyGiant.poseProgram.records[
+    restoredLegacyGiant.poseProgram.records.length - 1].operands[0], 0,
+  'Project reload must make an old private idle sequence enter its custom loop');
 
   const idleDonorRom = await freshRom(z64);
   const idleAttackDonor = OB64.animationUI.idleAnimationRows(
@@ -549,8 +631,11 @@ function route(rom, classId, actionId, flags, rawMode) {
   const fighterReturn = fighterMovementRows.find(animation =>
     animation.spec.classMotionKind === 'return' &&
     OB64.animationUI.selectorFlags(animation) === '0/0');
-  assert(fighterAdvance && fighterReturn,
-    'Fighter must expose both fixed player-side movement routes');
+  const fighterHit = OB64.animationUI.fixedClassActionAnimationRows(
+    fixedMovementRom.art.animations, 0x02, 'hit').find(animation =>
+      OB64.animationUI.selectorFlags(animation) === '0/0');
+  assert(fighterAdvance && fighterReturn && fighterHit,
+    'Fighter must expose movement and Get Hit routes');
   const movementDesiredBefore = JSON.stringify(
     fixedMovementRom.combatAnimationOverrides.desired);
   const originalMovementPose = OB64.art.readCompressedResource(
@@ -561,20 +646,30 @@ function route(rom, classId, actionId, flags, rawMode) {
     originalMovementPose, 0x05, 'original Fighter advance');
   const originalReturnProgram = OB64.animationArt.parsePoseProgram(
     originalMovementPose, 0x0B, 'original Fighter return');
+  const originalHitProgram = OB64.animationArt.parsePoseProgram(
+    originalMovementPose, 0x11, 'original Fighter Get Hit');
   const originalNeighborProgram = OB64.animationArt.parsePoseProgram(
     originalMovementPose, 0x04, 'original Fighter selector 4');
   const advanceSeparation = OB64.animationSequences.separateAndAssign(
     fixedMovementRom, fighterAdvance, null, fighterAdvance);
   const returnSeparation = OB64.animationSequences.separateAndAssign(
     fixedMovementRom, fighterReturn, null, fighterReturn);
+  const hitSeparation = OB64.animationSequences.separateAndAssign(
+    fixedMovementRom, fighterHit, null, fighterHit);
   assert.strictEqual(advanceSeparation.id, '2:-2:0:advance');
   assert.strictEqual(returnSeparation.id, '2:-3:0:return');
+  assert.strictEqual(hitSeparation.id, '2:-4:0:hit');
   assert.strictEqual(advanceSeparation.selector, 0x05);
   assert.strictEqual(returnSeparation.selector, 0x0B);
+  assert.strictEqual(hitSeparation.selector, 0x11);
   assert.strictEqual(
     advanceSeparation.syntheticAnimation.spec.classMotionKind, 'advance');
   assert.strictEqual(
     returnSeparation.syntheticAnimation.spec.classMotionKind, 'return');
+  assert.strictEqual(
+    hitSeparation.syntheticAnimation.spec.fixedSequenceKind, 'hit');
+  assert.strictEqual(
+    hitSeparation.syntheticAnimation.spec.classMotionKind, null);
   assert.strictEqual(JSON.stringify(
     fixedMovementRom.combatAnimationOverrides.desired), movementDesiredBefore,
   'movement detachment must not add or change a Class Combat assignment');
@@ -653,8 +748,14 @@ function route(rom, classId, actionId, flags, rawMode) {
     ? 254 : returnAnimation.frames[0].ticks + 1;
   OB64.animationSequences.setFrameTicks(
     fixedMovementRom, returnSeparation, 0, returnTicks);
+  const hitAnimation = hitSeparation.syntheticAnimation;
+  const hitTicks = hitAnimation.frames[0].ticks === 255
+    ? 254 : hitAnimation.frames[0].ticks + 1;
+  OB64.animationSequences.setFrameTicks(
+    fixedMovementRom, hitSeparation, 0, hitTicks);
   assert.strictEqual(advanceAnimation.frames[0].ticks, advanceTicks);
   assert.strictEqual(returnAnimation.frames[0].ticks, returnTicks);
+  assert.strictEqual(hitAnimation.frames[0].ticks, hitTicks);
 
   const movementPlan = OB64.animationSequences.buildPlan(
     fixedMovementRom, z64);
@@ -670,16 +771,22 @@ function route(rom, classId, actionId, flags, rawMode) {
     builtMovementPose, 0x05, 'private Fighter advance');
   const builtReturnProgram = OB64.animationArt.parsePoseProgram(
     builtMovementPose, 0x0B, 'private Fighter return');
+  const builtHitProgram = OB64.animationArt.parsePoseProgram(
+    builtMovementPose, 0x11, 'private Fighter Get Hit');
   const builtNeighborProgram = OB64.animationArt.parsePoseProgram(
     builtMovementPose, 0x04, 'private Fighter selector 4');
   assert.strictEqual(builtAdvanceProgram.frames[0][1], advanceTicks);
   assert.strictEqual(builtReturnProgram.frames[0][1], returnTicks);
+  assert.strictEqual(builtHitProgram.frames[0][1], hitTicks);
   assert.notDeepStrictEqual([...builtAdvanceProgram.program],
     [...originalAdvanceProgram.program],
   'movement export must replace the detached selector 0x05 program');
   assert.notDeepStrictEqual([...builtReturnProgram.program],
     [...originalReturnProgram.program],
   'movement export must replace the detached selector 0x0B program');
+  assert.notDeepStrictEqual([...builtHitProgram.program],
+    [...originalHitProgram.program],
+  'Get Hit export must replace the detached selector 0x11 program');
   assert.deepStrictEqual([...builtNeighborProgram.program],
     [...originalNeighborProgram.program],
   'movement export must preserve an adjacent fixed pose program');
@@ -691,22 +798,29 @@ function route(rom, classId, actionId, flags, rawMode) {
     'advance');
   assert.strictEqual(movementPayload.entries[returnSeparation.id].laneKey,
     'return');
+  assert.strictEqual(movementPayload.entries[hitSeparation.id].laneKey,
+    'hit');
   const restoredMovementRom = await freshRom(z64);
   const preparedMovementProject = OB64.animationSequences.prepareProject(
     restoredMovementRom, movementPayload);
   assert.strictEqual(OB64.animationSequences.applyProject(
-    restoredMovementRom, preparedMovementProject), 2);
+    restoredMovementRom, preparedMovementProject), 3);
   const restoredAdvance = restoredMovementRom.animationSequences.separations[
     advanceSeparation.id];
   const restoredReturn = restoredMovementRom.animationSequences.separations[
     returnSeparation.id];
-  assert(restoredAdvance && restoredReturn);
+  const restoredHit = restoredMovementRom.animationSequences.separations[
+    hitSeparation.id];
+  assert(restoredAdvance && restoredReturn && restoredHit);
   assert.strictEqual(restoredAdvance.selector, 0x05);
   assert.strictEqual(restoredReturn.selector, 0x0B);
+  assert.strictEqual(restoredHit.selector, 0x11);
   assert.strictEqual(restoredAdvance.syntheticAnimation.frames[0].ticks,
     advanceTicks);
   assert.strictEqual(restoredReturn.syntheticAnimation.frames[0].ticks,
     returnTicks);
+  assert.strictEqual(restoredHit.syntheticAnimation.frames[0].ticks,
+    hitTicks);
   assert.strictEqual(JSON.stringify(
     restoredMovementRom.combatAnimationOverrides.desired), movementDesiredBefore,
   'Project reload of movement routes must not create attack assignments');
@@ -714,6 +828,8 @@ function route(rom, classId, actionId, flags, rawMode) {
     restoredMovementRom, restoredAdvance);
   OB64.animationSequences.removeSeparation(
     restoredMovementRom, restoredReturn);
+  OB64.animationSequences.removeSeparation(
+    restoredMovementRom, restoredHit);
   assert.strictEqual(Object.keys(
     restoredMovementRom.animationSequences.separations).length, 0);
   assert.strictEqual(JSON.stringify(
