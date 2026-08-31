@@ -357,7 +357,7 @@ assert(animationSource.includes('importLibrarySequence('));
 assert(animationSource.includes('importLibrarySpritePixels('));
 assert(animationSource.includes('singleLayerPixels: singleLayerPixels'));
 
-assert(patchSource.includes('var PATCH_VERSION = 33;'));
+assert(patchSource.includes('var PATCH_VERSION = 34;'));
 assert(patchSource.includes('spriteLibrary: spriteLibraryOut'));
 assert(patchSource.includes('sprite_library_assets: spriteLibraryChanges'));
 assert(patchSource.includes('preparedSpriteLibrary'));

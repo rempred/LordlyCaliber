@@ -5210,6 +5210,69 @@ td.attack-list {
   font-style: italic;
 }
 
+.tool-scale-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px;
+  background: rgba(92, 58, 26, 0.08);
+  border: 1px solid var(--ob-wood-lo);
+  border-radius: 4px;
+}
+
+.tool-scale-control label {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--ob-serif);
+  font-weight: 700;
+  color: var(--ob-ink);
+}
+
+.tool-scale-control output {
+  min-width: 4.5ch;
+  text-align: right;
+  color: var(--ob-wax-red);
+  font-family: var(--ob-mono);
+}
+
+.tool-scale-control input[type="range"] {
+  width: 100%;
+  min-width: 150px;
+  accent-color: var(--ob-seal-green);
+  cursor: pointer;
+}
+
+.tool-scale-control input[type="range"]:disabled {
+  cursor: not-allowed;
+}
+
+.tool-scale-reset {
+  padding: 5px 9px;
+  white-space: nowrap;
+  font-family: var(--ob-serif);
+  font-weight: 700;
+  color: var(--ob-ink);
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-wood-mid);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tool-scale-reset:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.tool-scale-weights {
+  font-family: var(--ob-mono);
+  font-size: var(--ob-text-xs);
+  color: var(--ob-ink-dim);
+  line-height: 1.45;
+}
+
 /* Toggle switch */
 .tool-switch {
   position: relative;

@@ -601,14 +601,33 @@ window.OB64 = window.OB64 || {};
   function buildToolSection(patches, sections) {
     var entries = [];
     var features = OB64.tools && OB64.tools.features ? OB64.tools.features() : (OB64.TOOLS_FEATURES || []);
-    function featureName(id) {
-      for (var i = 0; i < features.length; i++) if (features[i].id === id) return features[i].name;
-      return id;
+    function featureById(id) {
+      for (var i = 0; i < features.length; i++) if (features[i].id === id) return features[i];
+      return null;
+    }
+    function formatPercent(value) {
+      var rounded = Math.round(Number(value) * 1000) / 1000;
+      return String(rounded) + '%';
     }
     Object.keys(patches.tools || {}).sort().forEach(function(id) {
+      var feature = featureById(id);
+      var setting = patches.tools[id];
+      var lines;
+      if (feature && OB64.tools && OB64.tools.isParameterized(feature) &&
+          setting && typeof setting === 'object' && setting.schema === 1) {
+        var weights = OB64.tools.effectiveWeights(feature, Number(setting.percent));
+        lines = [
+          'XP size-weight scale: ' + formatPercent(setting.percent) + '.',
+          'Effective weights: ' + weights.map(function(weight) {
+            return weight.label + ' ' + formatPercent(weight.percent);
+          }).join(', ') + '.',
+        ];
+      } else {
+        lines = [setting ? 'Enabled.' : 'Disabled.'];
+      }
       entries.push({
-        title: featureName(id),
-        lines: [patches.tools[id] ? 'Enabled.' : 'Disabled.']
+        title: feature ? feature.name : id,
+        lines: lines
       });
     });
     addSection(sections, 'Optional Tools and Quality-of-Life Features', entries);

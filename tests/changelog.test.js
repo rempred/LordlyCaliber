@@ -25,6 +25,23 @@ vm.runInThisContext(fs.readFileSync(path.join(EDITOR, 'changelog.js'), 'utf8'), 
   filename: 'changelog.js',
 });
 
+const experienceFeature = {
+  id: 'experience-size-scale',
+  name: 'Experience Size Weight Scale',
+  kind: 'percent-scale',
+};
+OB64.tools = {
+  features() { return [experienceFeature]; },
+  isParameterized(feature) { return feature === experienceFeature; },
+  effectiveWeights(_feature, percent) {
+    return [
+      { label: 'Size 0', percent: percent * 0.8 },
+      { label: 'Size 1 / default', percent: percent },
+      { label: 'Size 2', percent: percent * 1.5 },
+    ];
+  },
+};
+
 const animation = {
   spec: { className: 'Gladiator (Dio)', actionName: 'Slash' },
 };
@@ -65,6 +82,7 @@ const patch = {
     combat_sprite_art_modified: 4,
     separated_animation_sequences_modified: 1,
     custom_neutral_squads_modified: 1,
+    tools_modified: 1,
   },
   patches: {
     art: {
@@ -124,6 +142,9 @@ const patch = {
         },
       },
     },
+    tools: {
+      'experience-size-scale': { schema: 1, percent: 125 },
+    },
   },
 };
 
@@ -176,5 +197,15 @@ const customSquad = neutral.entries.find(row => row.title === 'Custom neutral sq
 assert(customSquad, 'custom neutral squad entry must exist');
 assert(customSquad.lines.includes('Persuasion: 10%'));
 assert(customSquad.lines.includes('Retreat: at or below 25% HP'));
+
+const tools = report.sections.find(row =>
+  row.title === 'Optional Tools and Quality-of-Life Features');
+assert(tools, 'Tools changelog section must exist');
+const experienceScale = tools.entries.find(row =>
+  row.title === 'Experience Size Weight Scale');
+assert(experienceScale, 'Experience percentage must use the generated feature name');
+assert(experienceScale.lines.includes('XP size-weight scale: 125%.'));
+assert(experienceScale.lines.includes(
+  'Effective weights: Size 0 100%, Size 1 / default 125%, Size 2 187.5%.'));
 
 console.log('PASS changelog groups combat sprites and reports custom neutral behavior');

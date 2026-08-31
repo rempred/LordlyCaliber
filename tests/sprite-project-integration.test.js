@@ -63,7 +63,7 @@ function dirtyFlags() {
   OB64.spriteLibrary.addAsset(source.spriteLibrary, asset);
 
   const project = OB64.patch.collectPatch(source);
-  assert.strictEqual(project.version, 33);
+  assert.strictEqual(project.version, 34);
   assert.strictEqual(project.summary.sprite_library_assets, 1);
   assert.strictEqual(project.patches.spriteLibrary.schemaVersion, 1);
   assert.strictEqual(project.patches.spriteLibrary.assets.length, 1);
@@ -94,7 +94,7 @@ function dirtyFlags() {
   assert.strictEqual(OB64.armySprites.setEdit(
     armySource.art.armySprites, atlas.key, model.modelId, replacement), true);
   const armyProject = OB64.patch.collectPatch(armySource);
-  assert.strictEqual(armyProject.version, 33);
+  assert.strictEqual(armyProject.version, 34);
   assert.strictEqual(armyProject.summary.army_sprite_art_modified, 1);
   assert.strictEqual(armyProject.patches.art.schemaVersion, 5);
   assert.deepStrictEqual(Object.keys(armyProject.patches.art.armySprites),
@@ -124,7 +124,7 @@ function dirtyFlags() {
   assert.strictEqual(OB64.armySprites.createBlankPlane(
     customSource.art.armySprites, specialAtlas.key, 0x20), true);
   const customProject = OB64.patch.collectPatch(customSource);
-  assert.strictEqual(customProject.version, 33);
+  assert.strictEqual(customProject.version, 34);
   assert.strictEqual(customProject.patches.art.armySprites
     ['player-back-special:20'].retailPlane, false);
 
@@ -143,7 +143,7 @@ function dirtyFlags() {
   assert.strictEqual(OB64.armySprites.hasCurrentPlane(
     customTarget.art.armySprites, specialAtlas.key, 0x20), true);
 
-  console.log('PASS Sprite Library and Army sprite Project v33 collection and application');
+  console.log('PASS Sprite Library and Army sprite Project v34 collection and application');
 })().catch(error => {
   console.error(error.stack || error);
   process.exitCode = 1;

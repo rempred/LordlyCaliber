@@ -242,6 +242,7 @@ OB64.ROM_LAYOUTS = {
     combatAnimationOverridesReason: 'Attack Animation selector overrides are available only for US Rev 0; the Rev 1 hook and allocation have not been verified.',
     unsupportedTools: {
       'high-attack-streamsplit': 'Header revision 1 changed the high-attack battle-stream owner/global references; regenerate and Project64-verify a header revision 1 payload before enabling.',
+      'experience-size-scale': 'The battle XP calculator and its overlay mapping are verified only for US Rev 0; map and test the Rev 1 calculator before enabling.',
       'character-card-luck': 'Character Card Luck is mapped only for the US Rev 0 card overlay; map and cold-boot the Rev 1 overlay before enabling.',
       'squad-menu-alignment': 'Squad Menu Alignment is mapped only for the US Rev 0 squad-menu overlay; map and cold-boot the Rev 1 overlay before enabling.'
     },

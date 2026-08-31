@@ -60,12 +60,14 @@
 // native resources.
 // v33 carries custom player-side Army sprite planes for routed model IDs that
 // are missing from the retail player atlases.
+// v34 lets a Tools entry store a schema-1 percentage value. Boolean entries
+// from v5 through v33 remain readable without conversion.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 33;
+  var PATCH_VERSION = 34;
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -266,8 +268,17 @@ window.OB64 = window.OB64 || {};
     if (rom.tools && OB64.tools) {
       var toolFeatures = OB64.tools.features();
       for (var tf = 0; tf < toolFeatures.length; tf++) {
-        var toolId = toolFeatures[tf].id;
+        var toolFeature = toolFeatures[tf];
+        var toolId = toolFeature.id;
         if (rom.tools.initial[toolId] === 'foreign') continue;
+        if (OB64.tools.isParameterized(toolFeature)) {
+          var initialValue = rom.tools.initialValues[toolId];
+          var desiredValue = OB64.tools.desiredPercent(rom, toolFeature);
+          if (initialValue !== desiredValue) {
+            toolsOut[toolId] = { schema: 1, percent: desiredValue };
+          }
+          continue;
+        }
         var wasApplied = rom.tools.initial[toolId] === 'applied';
         var nowWanted = !!rom.tools.desired[toolId];
         if (nowWanted !== wasApplied) toolsOut[toolId] = nowWanted;
@@ -311,7 +322,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-        editor_version: '2026-08-29',
+      editor_version: '2026-08-30',
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
@@ -579,6 +590,34 @@ window.OB64 = window.OB64 || {};
         'This editor build cannot load Sprite Editor Project records.');
     }
 
+    var toolsPatch = p.tools || {};
+    var validatedToolPercentages = {};
+    if (OB64.tools && rom.tools) {
+      for (var toolKey in toolsPatch) {
+        var candidateTool = OB64.tools.getFeature(toolKey);
+        if (!candidateTool || !OB64.tools.isParameterized(candidateTool)) continue;
+        if (patch.version < 34) {
+          throw new PatchFormatError('Tool "' + candidateTool.name +
+            '" percentage data requires Project schema version 34 or newer.');
+        }
+        var candidateSetting = toolsPatch[toolKey];
+        if (!candidateSetting || typeof candidateSetting !== 'object' ||
+            candidateSetting.schema !== 1 ||
+            !Object.prototype.hasOwnProperty.call(candidateSetting, 'percent') ||
+            typeof candidateSetting.percent !== 'number') {
+          throw new PatchFormatError('Tool "' + candidateTool.name +
+            '" needs a schema-1 percentage setting.');
+        }
+        try {
+          validatedToolPercentages[toolKey] = OB64.tools.validateParameterValue(
+            candidateTool, candidateSetting.percent);
+        } catch (toolValueError) {
+          throw new PatchFormatError('Tool "' + candidateTool.name +
+            '" has an invalid percentage: ' + toolValueError.message);
+        }
+      }
+    }
+
     var warnings = [];
     if (patch.rom_hint && patch.rom_hint.archives_count &&
         patch.rom_hint.archives_count !== rom.archives.length) {
@@ -830,9 +869,8 @@ window.OB64 = window.OB64 || {};
       }
     }
 
-    // Tools-tab feature toggles (v5). Stage the desired state; the export
-    // pipeline performs the actual byte writes (or restores).
-    var toolsPatch = p.tools || {};
+    // Tools-tab settings (v5 booleans; v34 percentage values). Stage the
+    // desired state; the export pipeline performs the actual byte writes.
     for (var tk in toolsPatch) {
       if (!OB64.tools || !rom.tools) break;
       var toolFeature = OB64.tools.getFeature(tk);
@@ -846,6 +884,14 @@ window.OB64 = window.OB64 || {};
       }
       if (rom.tools.initial[tk] === 'unsupported' || rom.tools.disabledReason) {
         warnings.push('Tool "' + toolFeature.name + '" is not available for this ROM revision. Skipping.');
+        continue;
+      }
+      if (OB64.tools.isParameterized(toolFeature)) {
+        var wantedPercent = validatedToolPercentages[tk];
+        if (OB64.tools.desiredPercent(rom, toolFeature) !== wantedPercent) {
+          OB64.tools.setDesiredPercent(rom, tk, wantedPercent);
+          toolsApplied++;
+        }
         continue;
       }
       var wantTool = !!toolsPatch[tk];
@@ -1058,7 +1104,7 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: project.created_at || new Date().toISOString(),
-      editor_version: '2026-07-24',
+      editor_version: '2026-08-30',
       source: 'legacy scenario project',
       summary: summary,
       patches: patches,

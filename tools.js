@@ -1,6 +1,6 @@
 // OB64 Mod Editor - Tools engine
 //
-// Byte-level ROM feature toggles for the Tools tab. Feature definitions live
+// Byte-level ROM feature settings for the Tools tab. Feature definitions live
 // in tools-data.js (generated from the verified research builds); this file
 // is the hand-written engine that detects, applies, and removes them.
 //
@@ -35,6 +35,80 @@ window.OB64 = window.OB64 || {};
         : new Uint8Array(write.originalZeros);
     }
     return write._original;
+  }
+
+  function isParameterized(feature) {
+    return !!(feature && feature.kind === 'percent-scale' && feature.parameter);
+  }
+
+  function parameterDefault(feature) {
+    return Number(feature.parameter.default);
+  }
+
+  function validateParameterValue(feature, value) {
+    if (!isParameterized(feature)) {
+      throw new Error((feature && feature.name || 'Tool') + ' is not a percentage setting.');
+    }
+    var spec = feature.parameter;
+    var numeric = Number(value);
+    var step = Number(spec.step);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric) ||
+        numeric < Number(spec.min) || numeric > Number(spec.max) ||
+        !Number.isFinite(step) || step <= 0 ||
+        Math.abs((numeric - Number(spec.min)) / step -
+          Math.round((numeric - Number(spec.min)) / step)) > 1e-9) {
+      throw new Error(feature.name + ' must be an integer percentage from ' +
+        spec.min + '% through ' + spec.max + '% in ' + spec.step + '% steps.');
+    }
+    return numeric;
+  }
+
+  function float32Bits(value) {
+    var buffer = new ArrayBuffer(4);
+    var view = new DataView(buffer);
+    view.setFloat32(0, value, false);
+    return view.getUint32(0, false) >>> 0;
+  }
+
+  function float32FromBits(value) {
+    var buffer = new ArrayBuffer(4);
+    var view = new DataView(buffer);
+    view.setUint32(0, value >>> 0, false);
+    return view.getFloat32(0, false);
+  }
+
+  function parameterBits(feature, percent) {
+    var divisor = Number(feature.parameter.encoding.divisor || 100);
+    return float32Bits(percent / divisor);
+  }
+
+  function dynamicByteOffsets(feature, writeIndex) {
+    if (!isParameterized(feature)) return [];
+    var encoding = feature.parameter.encoding || {};
+    return Number(encoding.writeIndex) === writeIndex
+      ? (encoding.byteOffsets || []).map(Number)
+      : [];
+  }
+
+  function validateParameterDefinition(feature) {
+    if (!isParameterized(feature)) return;
+    var spec = feature.parameter;
+    var encoding = spec.encoding || {};
+    validateParameterValue(feature, parameterDefault(feature));
+    if (spec.schema !== 1 || spec.type !== 'percent' ||
+        encoding.type !== 'mips-f32-lui-ori' ||
+        !Number.isInteger(Number(encoding.writeIndex)) ||
+        !Array.isArray(encoding.byteOffsets) || encoding.byteOffsets.length !== 4 ||
+        !Number.isFinite(Number(encoding.divisor)) || Number(encoding.divisor) <= 0) {
+      throw new Error('Invalid percentage encoding metadata for ' + feature.name + '.');
+    }
+    var write = feature.writes[Number(encoding.writeIndex)];
+    var offsets = encoding.byteOffsets.map(Number);
+    if (!write || offsets.some(function(offset) {
+      return !Number.isInteger(offset) || offset < 0 || offset >= patchedLength(write);
+    })) {
+      throw new Error('Percentage encoding bytes fall outside ' + feature.name + '.');
+    }
   }
 
   function hex(n, width) {
@@ -188,6 +262,7 @@ window.OB64 = window.OB64 || {};
   function validateFeatureRegistry(z64) {
     var list = features();
     for (var i = 0; i < list.length; i++) {
+      validateParameterDefinition(list[i]);
       var writes = list[i].writes || [];
       for (var w = 0; w < writes.length; w++) {
         assertRomOffset(z64, writes[w].offset, patchedLength(writes[w]), list[i].name + ' / ' + (writes[w].label || w));
@@ -239,7 +314,11 @@ window.OB64 = window.OB64 || {};
     for (var i = 0; i < list.length; i++) {
       if (rom.tools.initial[list[i].id] === 'foreign') continue;
       if (!featureSupported(rom, list[i])) continue;
-      if (rom.tools.desired[list[i].id]) owners.push(list[i]);
+      if (isParameterized(list[i])) {
+        if (desiredPercent(rom, list[i]) !== parameterDefault(list[i])) owners.push(list[i]);
+      } else if (rom.tools.desired[list[i].id]) {
+        owners.push(list[i]);
+      }
     }
     if (extraOwners && extraOwners.length) owners = owners.concat(extraOwners);
     return findRegionConflicts(owners, { includeExclusive: true });
@@ -261,6 +340,94 @@ window.OB64 = window.OB64 || {};
     return true;
   }
 
+  function parameterPatchedValue(z64, feature) {
+    if (!isParameterized(feature)) return null;
+    var encoding = feature.parameter.encoding;
+    var encodedWriteIndex = Number(encoding.writeIndex);
+    var encodedOffsets = dynamicByteOffsets(feature, encodedWriteIndex);
+    for (var wi = 0; wi < feature.writes.length; wi++) {
+      var write = feature.writes[wi];
+      var expected = patchedBytes(write);
+      assertRomOffset(z64, write.offset, expected.length, feature.name + ' detection');
+      var ignored = dynamicByteOffsets(feature, wi);
+      for (var bi = 0; bi < expected.length; bi++) {
+        if (ignored.indexOf(bi) !== -1) continue;
+        if (z64[write.offset + bi] !== expected[bi]) return null;
+      }
+    }
+
+    var encodedWrite = feature.writes[encodedWriteIndex];
+    var encoded = 0;
+    for (var oi = 0; oi < encodedOffsets.length; oi++) {
+      encoded = ((encoded << 8) | z64[encodedWrite.offset + encodedOffsets[oi]]) >>> 0;
+    }
+    var divisor = Number(encoding.divisor || 100);
+    var percent = Math.round(float32FromBits(encoded) * divisor);
+    try {
+      validateParameterValue(feature, percent);
+    } catch (_error) {
+      return null;
+    }
+    return parameterBits(feature, percent) === encoded ? percent : null;
+  }
+
+  function parameterValue(z64, feature) {
+    if (!isParameterized(feature)) return null;
+    if (writesMatch(z64, feature.writes, 'original')) return parameterDefault(feature);
+    return parameterPatchedValue(z64, feature);
+  }
+
+  function desiredPercent(rom, feature) {
+    if (!rom || !rom.tools || !isParameterized(feature)) return null;
+    var values = rom.tools.desiredValues || {};
+    return values[feature.id] == null
+      ? parameterDefault(feature)
+      : Number(values[feature.id]);
+  }
+
+  function setDesiredPercent(rom, featureId, value) {
+    var feature = getFeature(featureId);
+    var percent = validateParameterValue(feature, value);
+    if (!rom || !rom.tools) throw new Error('Load a ROM before changing a Tool setting.');
+    rom.tools.desiredValues = rom.tools.desiredValues || {};
+    rom.tools.desiredValues[featureId] = percent;
+    rom.tools.desired[featureId] = percent !== parameterDefault(feature);
+    return percent;
+  }
+
+  function parameterizedWrites(feature, percent) {
+    percent = validateParameterValue(feature, percent);
+    var encoded = parameterBits(feature, percent);
+    var encoding = feature.parameter.encoding;
+    var writeIndex = Number(encoding.writeIndex);
+    var offsets = dynamicByteOffsets(feature, writeIndex);
+    var encodedBytes = [
+      (encoded >>> 24) & 0xFF,
+      (encoded >>> 16) & 0xFF,
+      (encoded >>> 8) & 0xFF,
+      encoded & 0xFF,
+    ];
+    return feature.writes.map(function(write, index) {
+      var bytes = patchedBytes(write).slice();
+      if (index === writeIndex) {
+        for (var i = 0; i < offsets.length; i++) bytes[offsets[i]] = encodedBytes[i];
+      }
+      return { offset: write.offset, bytes: bytes };
+    });
+  }
+
+  function effectiveWeights(feature, percent) {
+    if (!isParameterized(feature)) return [];
+    percent = validateParameterValue(feature, percent);
+    return (feature.parameter.effectiveWeights || []).map(function(weight) {
+      return {
+        size: weight.size,
+        label: weight.label,
+        percent: Number(weight.retailPercent) * percent / 100,
+      };
+    });
+  }
+
   // Older shipped build whose bytes fully match the ROM, if any.
   function matchedSuperseded(z64, feature) {
     var list = feature.superseded || [];
@@ -275,6 +442,11 @@ window.OB64 = window.OB64 || {};
   // 'outdated' - the regions hold a known older build of this feature
   // 'foreign'  - anything else (partial apply, other mod, unknown build)
   function featureState(z64, feature) {
+    if (isParameterized(feature)) {
+      if (writesMatch(z64, feature.writes, 'original')) return 'clean';
+      if (parameterPatchedValue(z64, feature) !== null) return 'applied';
+      return 'foreign';
+    }
     if (writesMatch(z64, feature.writes, 'patched')) return 'applied';
     if (writesMatch(z64, feature.writes, 'original')) return 'clean';
     if (matchedSuperseded(z64, feature)) return 'outdated';
@@ -295,18 +467,31 @@ window.OB64 = window.OB64 || {};
   }
 
   // Call once after OB64.loadROM(). Stores per-feature state on the rom:
-  //   rom.tools.initial[id]  - state detected in the loaded ROM
-  //   rom.tools.desired[id]  - the toggle; starts on for applied AND
+  //   rom.tools.initial[id]       - state detected in the loaded ROM
+  //   rom.tools.desired[id]       - the fixed-feature toggle
+  //   rom.tools.initialValues[id] - detected parameter value
+  //   rom.tools.desiredValues[id] - staged parameter value
+  // Fixed toggles start on for applied AND
   //                            outdated (an outdated feature upgrades on the
   //                            next export unless the user switches it off)
   function initState(rom) {
-    rom.tools = { initial: {}, desired: {}, unsupportedReasons: {} };
+    rom.tools = {
+      initial: {},
+      desired: {},
+      initialValues: {},
+      desiredValues: {},
+      unsupportedReasons: {},
+    };
     if (rom.layout && rom.layout.supportsTools === false) {
       rom.tools.disabledReason = rom.layout.unsupportedFeaturesReason || 'Tools are not available for this ROM revision.';
       var disabledList = features();
       for (var di = 0; di < disabledList.length; di++) {
         rom.tools.initial[disabledList[di].id] = 'unsupported';
         rom.tools.desired[disabledList[di].id] = false;
+        if (isParameterized(disabledList[di])) {
+          rom.tools.initialValues[disabledList[di].id] = parameterDefault(disabledList[di]);
+          rom.tools.desiredValues[disabledList[di].id] = parameterDefault(disabledList[di]);
+        }
         rom.tools.unsupportedReasons[disabledList[di].id] = rom.tools.disabledReason;
       }
       return;
@@ -319,12 +504,23 @@ window.OB64 = window.OB64 || {};
       if (unsupportedReason) {
         rom.tools.initial[f.id] = 'unsupported';
         rom.tools.desired[f.id] = false;
+        if (isParameterized(f)) {
+          rom.tools.initialValues[f.id] = parameterDefault(f);
+          rom.tools.desiredValues[f.id] = parameterDefault(f);
+        }
         rom.tools.unsupportedReasons[f.id] = unsupportedReason;
         continue;
       }
       var st = featureState(rom.z64, f);
       rom.tools.initial[f.id] = st;
-      rom.tools.desired[f.id] = (st === 'applied' || st === 'outdated');
+      if (isParameterized(f)) {
+        var value = st === 'foreign' ? null : parameterValue(rom.z64, f);
+        rom.tools.initialValues[f.id] = value;
+        rom.tools.desiredValues[f.id] = value === null ? parameterDefault(f) : value;
+        rom.tools.desired[f.id] = value !== null && value !== parameterDefault(f);
+      } else {
+        rom.tools.desired[f.id] = (st === 'applied' || st === 'outdated');
+      }
     }
   }
 
@@ -341,6 +537,13 @@ window.OB64 = window.OB64 || {};
       if (!featureSupported(rom, f)) continue;
       var cur = featureState(rom.z64, f);
       if (cur === 'foreign') continue;
+      if (isParameterized(f)) {
+        var currentPercent = parameterValue(rom.z64, f);
+        var wantedPercent = desiredPercent(rom, f);
+        if (cur === 'applied' && wantedPercent === parameterDefault(f)) n++;
+        else if (currentPercent !== wantedPercent) n++;
+        continue;
+      }
       var want = !!rom.tools.desired[f.id];
       if (cur === 'outdated' || want !== (cur === 'applied')) n++;
     }
@@ -354,12 +557,22 @@ window.OB64 = window.OB64 || {};
   }
 
   // Write every pending toggle into rom.z64. Returns
-  // { applied: [names], upgraded: [names], removed: [names], skipped: [names],
+  // { applied: [names], upgraded: [names], updated: [names], removed: [names],
+  //   skipped: [names], values: {id: percent}, expectedStates: {id: state},
   //   crc: bool }. crc is true when any write touched the CIC-6102 CRC
   // window, in which case the caller must run OB64.recalcN64CRC before
   // exporting.
   function applyDesired(rom) {
-    var res = { applied: [], upgraded: [], removed: [], skipped: [], crc: false };
+    var res = {
+      applied: [],
+      upgraded: [],
+      updated: [],
+      removed: [],
+      skipped: [],
+      values: {},
+      expectedStates: {},
+      crc: false,
+    };
     if (!rom.tools) return res;
     if (rom.tools.disabledReason) return res;
     assertDesiredCompatible(rom);
@@ -367,10 +580,40 @@ window.OB64 = window.OB64 || {};
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
       if (!featureSupported(rom, f)) {
-        if (rom.tools.desired[f.id]) res.skipped.push(f.name);
+        var unsupportedSelected = isParameterized(f)
+          ? desiredPercent(rom, f) !== parameterDefault(f)
+          : !!rom.tools.desired[f.id];
+        if (unsupportedSelected) res.skipped.push(f.name);
         continue;
       }
       var cur = featureState(rom.z64, f);
+      if (isParameterized(f)) {
+        var currentPercent = cur === 'foreign' ? null : parameterValue(rom.z64, f);
+        var wantedPercent = desiredPercent(rom, f);
+        if (cur === 'foreign') {
+          if (wantedPercent !== rom.tools.initialValues[f.id]) res.skipped.push(f.name);
+          continue;
+        }
+        if (wantedPercent === parameterDefault(f)) {
+          if (cur === 'applied') {
+            restoreWrites(rom.z64, f.writes);
+            res.removed.push(f.name);
+            res.expectedStates[f.id] = 'clean';
+            if (f.crcWindow) res.crc = true;
+          }
+          continue;
+        }
+        if (cur === 'applied' && currentPercent === wantedPercent) continue;
+        var dynamicWrites = parameterizedWrites(f, wantedPercent);
+        for (var pi = 0; pi < dynamicWrites.length; pi++) {
+          writeRegion(rom.z64, dynamicWrites[pi].offset, dynamicWrites[pi].bytes);
+        }
+        (cur === 'clean' ? res.applied : res.updated).push(f.name);
+        res.values[f.id] = wantedPercent;
+        res.expectedStates[f.id] = 'applied';
+        if (f.crcWindow) res.crc = true;
+        continue;
+      }
       var want = !!rom.tools.desired[f.id];
       if (cur === 'foreign') {
         if (want !== (rom.tools.initial[f.id] === 'applied')) res.skipped.push(f.name);
@@ -383,11 +626,13 @@ window.OB64 = window.OB64 || {};
           writeRegion(rom.z64, f.writes[wi].offset, patchedBytes(f.writes[wi]));
         }
         (old ? res.upgraded : res.applied).push(f.name);
+        res.expectedStates[f.id] = 'applied';
         if (f.crcWindow) res.crc = true;
       } else if (!want && (cur === 'applied' || cur === 'outdated')) {
         if (old) restoreWrites(rom.z64, old.writes);
         else restoreWrites(rom.z64, f.writes);
         res.removed.push(f.name);
+        res.expectedStates[f.id] = 'clean';
         if (f.crcWindow) res.crc = true;
       }
     }
@@ -408,6 +653,12 @@ window.OB64 = window.OB64 || {};
     validateFeatureRegistry: validateFeatureRegistry,
     featureUnsupportedReason: featureUnsupportedReason,
     featureSupported: featureSupported,
+    isParameterized: isParameterized,
+    parameterValue: parameterValue,
+    desiredPercent: desiredPercent,
+    setDesiredPercent: setDesiredPercent,
+    validateParameterValue: validateParameterValue,
+    effectiveWeights: effectiveWeights,
     runtimeRegistry: runtimeRegistry,
   };
 

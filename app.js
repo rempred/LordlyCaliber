@@ -817,9 +817,23 @@ window.OB64 = window.OB64 || {};
             '(another patch may occupy them):\n\n  ' +
             toolsResult.skipped.join('\n  '));
         }
-        var toolParts = toolsResult.applied.slice();
+        var toolValueByName = {};
+        var toolFeaturesForResult = OB64.tools.features();
+        for (var tv = 0; tv < toolFeaturesForResult.length; tv++) {
+          var toolResultFeature = toolFeaturesForResult[tv];
+          if (toolsResult.values[toolResultFeature.id] != null) {
+            toolValueByName[toolResultFeature.name] = toolsResult.values[toolResultFeature.id];
+          }
+        }
+        var toolParts = toolsResult.applied.map(function(name) {
+          return toolValueByName[name] == null ? name : name + ' set to ' + toolValueByName[name] + '%';
+        });
         for (var tu = 0; tu < toolsResult.upgraded.length; tu++) {
           toolParts.push(toolsResult.upgraded[tu] + ' updated');
+        }
+        for (var tc = 0; tc < toolsResult.updated.length; tc++) {
+          var updatedTool = toolsResult.updated[tc];
+          toolParts.push(updatedTool + ' set to ' + toolValueByName[updatedTool] + '%');
         }
         for (var tr = 0; tr < toolsResult.removed.length; tr++) {
           toolParts.push(toolsResult.removed[tr] + ' removed');
@@ -1915,8 +1929,96 @@ window.OB64 = window.OB64 || {};
   // Tools tab — byte-level ROM fixes and QOL features
   // ============================================================
   // Each feature is a verified set of ROM writes defined in tools-data.js
-  // (generated from the research workspace). Toggling stages the change;
-  // Export ROM writes it (or restores the retail bytes when switched off).
+  // (generated from the research workspace). A control stages the change;
+  // Export ROM writes it or restores the retail bytes.
+  function formatToolPercent(value) {
+    return String(Math.round(Number(value) * 1000) / 1000) + '%';
+  }
+
+  function toolScaleStatus(feature, currentState, currentPercent, desiredPercent, unsupported, foreign) {
+    var retail = Number(feature.parameter.default);
+    if (unsupported) {
+      return { className: 'foreign', text: (rom.tools.unsupportedReasons && rom.tools.unsupportedReasons[feature.id])
+        ? rom.tools.unsupportedReasons[feature.id]
+        : 'Unavailable for this ROM revision' };
+    }
+    if (foreign) {
+      return { className: 'foreign', text: 'Unavailable — these ROM bytes match neither retail nor this build (another patch?)' };
+    }
+    if (currentState === 'clean' && desiredPercent === retail) {
+      return { className: 'off', text: 'Retail setting: ' + formatToolPercent(retail) };
+    }
+    if (currentState === 'applied' && desiredPercent === retail) {
+      return { className: 'pending', text: 'Will restore retail ' + formatToolPercent(retail) + ' on export' };
+    }
+    if (currentState === 'applied' && currentPercent === desiredPercent) {
+      return { className: 'applied', text: 'Applied in this ROM: ' + formatToolPercent(currentPercent) };
+    }
+    if (currentState === 'applied') {
+      return {
+        className: 'pending',
+        text: 'Will change ' + formatToolPercent(currentPercent) + ' to ' + formatToolPercent(desiredPercent) + ' on export'
+      };
+    }
+    return { className: 'pending', text: 'Will set ' + formatToolPercent(desiredPercent) + ' on export' };
+  }
+
+  function toolScaleWeightsText(feature, percent) {
+    return 'Effective XP weights: ' + OB64.tools.effectiveWeights(feature, percent).map(function(weight) {
+      return weight.label + ' ' + formatToolPercent(weight.percent);
+    }).join(' · ');
+  }
+
+  function syncToolScaleCard(card, feature, percent) {
+    var output = card.querySelector('[data-tool-scale-output]');
+    var weights = card.querySelector('[data-tool-scale-weights]');
+    var reset = card.querySelector('[data-tool-scale-reset]');
+    var status = card.querySelector('[data-tool-scale-status]');
+    var currentState = OB64.tools.featureState(rom.z64, feature);
+    var currentPercent = OB64.tools.parameterValue(rom.z64, feature);
+    var unsupported = rom.tools.initial[feature.id] === 'unsupported';
+    var foreign = rom.tools.initial[feature.id] === 'foreign';
+    var statusInfo = toolScaleStatus(
+      feature, currentState, currentPercent, percent, unsupported, foreign);
+    if (output) output.textContent = formatToolPercent(percent);
+    if (weights) weights.textContent = toolScaleWeightsText(feature, percent);
+    if (reset) reset.disabled = unsupported || foreign || percent === Number(feature.parameter.default);
+    if (status) {
+      status.className = 'tool-status ' + statusInfo.className;
+      status.textContent = statusInfo.text;
+    }
+  }
+
+  function wireToolScaleControls(panel) {
+    var scales = panel.querySelectorAll('input[data-tool-scale-id]');
+    for (var s = 0; s < scales.length; s++) {
+      scales[s].addEventListener('input', function(e) {
+        var id = e.target.dataset.toolScaleId;
+        var feature = OB64.tools.getFeature(id);
+        var value = OB64.tools.setDesiredPercent(rom, id, Number(e.target.value));
+        syncToolScaleCard(e.target.closest('.tool-card'), feature, value);
+      });
+      scales[s].addEventListener('change', function(e) {
+        var id = e.target.dataset.toolScaleId;
+        var feature = OB64.tools.getFeature(id);
+        var value = OB64.tools.setDesiredPercent(rom, id, Number(e.target.value));
+        syncToolScaleCard(e.target.closest('.tool-card'), feature, value);
+        markChanged();
+      });
+    }
+
+    var scaleResets = panel.querySelectorAll('button[data-tool-scale-reset]');
+    for (var sr = 0; sr < scaleResets.length; sr++) {
+      scaleResets[sr].addEventListener('click', function(e) {
+        var id = e.target.dataset.toolScaleReset;
+        var feature = OB64.tools.getFeature(id);
+        OB64.tools.setDesiredPercent(rom, id, Number(feature.parameter.default));
+        markChanged();
+        renderTools(panel);
+      });
+    }
+  }
+
   function renderTools(panel) {
     if (!rom) return;
     var features = OB64.tools.features();
@@ -1924,9 +2026,9 @@ window.OB64 = window.OB64 || {};
 
     var html = '<div class="tools-intro">' +
       '<h2>Tools</h2>' +
-      '<p>Small ROM fixes and quality-of-life features. Switch a feature on ' +
-      'and it is written into the ROM on the next <b>Export ROM</b>; switch ' +
-      'it off to restore the original bytes. Features already present in the ' +
+      '<p>ROM fixes, quality-of-life features, and verified game settings. A change ' +
+      'is written into the ROM on the next <b>Export ROM</b>. Retail values can ' +
+      'be restored from the same control. Features already present in the ' +
       'loaded ROM are detected automatically.</p>' +
       (toolsDisabled ? '<p><b>Unavailable for this ROM:</b> ' + toolsDisabled + '</p>' : '') +
       '</div>';
@@ -1937,7 +2039,39 @@ window.OB64 = window.OB64 || {};
       var cur = OB64.tools.featureState(rom.z64, f);
       var unsupported = rom.tools.initial[f.id] === 'unsupported';
       var foreign = rom.tools.initial[f.id] === 'foreign';
+      var parameterized = OB64.tools.isParameterized(f);
       var desired = !!rom.tools.desired[f.id];
+
+      if (parameterized) {
+        var desiredScale = OB64.tools.desiredPercent(rom, f);
+        var currentScale = OB64.tools.parameterValue(rom.z64, f);
+        var scaleStatus = toolScaleStatus(
+          f, cur, currentScale, desiredScale, unsupported, foreign);
+        html += '<div class="tool-card tool-scale-card' + ((foreign || unsupported) ? ' tool-foreign' : '') + '">' +
+          '<div class="tool-card-head">' +
+            '<span class="tool-name">' + f.name + '</span>' +
+          '</div>' +
+          '<div class="tool-status ' + scaleStatus.className + '" data-tool-scale-status="' + f.id + '">' + scaleStatus.text + '</div>' +
+          '<div class="tool-desc">' + f.description + '</div>' +
+          '<div class="tool-scale-control">' +
+            '<label for="tool-scale-' + f.id + '">' + f.parameter.label +
+              ' <output data-tool-scale-output="' + f.id + '">' + formatToolPercent(desiredScale) + '</output></label>' +
+            '<input id="tool-scale-' + f.id + '" type="range" data-tool-scale-id="' + f.id + '"' +
+              ' min="' + f.parameter.min + '" max="' + f.parameter.max + '" step="' + f.parameter.step + '"' +
+              ' value="' + desiredScale + '"' + ((foreign || unsupported) ? ' disabled' : '') +
+              ' aria-label="' + f.parameter.label + '">' +
+            '<button type="button" class="tool-scale-reset" data-tool-scale-reset="' + f.id + '"' +
+              ((foreign || unsupported || desiredScale === Number(f.parameter.default)) ? ' disabled' : '') +
+              '>Retail ' + formatToolPercent(f.parameter.default) + '</button>' +
+          '</div>' +
+          '<div class="tool-scale-weights" data-tool-scale-weights="' + f.id + '">' +
+            toolScaleWeightsText(f, desiredScale) + '</div>' +
+          (f.notes && f.notes.length
+            ? '<ul class="tool-notes">' + f.notes.map(function(n) { return '<li>' + n + '</li>'; }).join('') + '</ul>'
+            : '') +
+        '</div>';
+        continue;
+      }
 
       var statusClass, statusText;
       if (unsupported) {
@@ -1996,6 +2130,7 @@ window.OB64 = window.OB64 || {};
         renderTools(panel);     // refresh status chips
       });
     }
+    wireToolScaleControls(panel);
   }
 
   function beginChangeBatch() {

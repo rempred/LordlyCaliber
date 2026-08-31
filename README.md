@@ -35,7 +35,7 @@ the byte order of the loaded ROM.
 | Art and Animation | Class-card avatars, item icons, Army sprites, combat sprites, frame layers, and separated combat sequences |
 | Sprite Editor | Reusable sprites, frames, sequences, layers, pixel tools, native art imports, PNG, JPEG, asset files, and transparent exports |
 | Cutscene Studio | Native scene inspection and evidence-backed previews |
-| Tools | Chaos Frame, Character Card Luck, Squad Menu Alignment, and High Attack Streamsplit patches |
+| Tools | Experience Size Weight Scale, Chaos Frame, Character Card Luck, Squad Menu Alignment, and High Attack Streamsplit patches |
 | Save Game Editor | Characters, classes, stats, equipment, inventory, Goth, and Chaos Frame |
 | Changelog | A readable report generated from the current Project changes |
 
@@ -77,6 +77,7 @@ North American header revision 1 is also recognized:
 | Chaos Frame Counter | Yes | Yes |
 | Squad runtime overrides | Yes | Yes |
 | Per-scenario neutral rates and weighted creature drops | Yes | Yes |
+| Experience Size Weight Scale | Yes | No |
 | Custom neutral squads | Yes | No |
 | Character Card Luck and Squad Menu Alignment | Yes | No |
 | High Attack Streamsplit | Yes | No |
@@ -95,10 +96,13 @@ region.
 
 ### Expansion Pak
 
-Use 8 MiB RDRAM / Expansion Pak when an export includes a runtime override.
-This includes custom squads, shop overrides, custom neutral encounters,
-per-scenario neutral rates, weighted drops, Chaos Frame Counter, Character
-Card Luck, Squad Menu Alignment, or High Attack Streamsplit.
+Use 8 MiB RDRAM / Expansion Pak when an export includes an upper-RAM runtime
+override. This includes custom squads, shop overrides, custom neutral
+encounters, per-scenario neutral rates, weighted drops, Chaos Frame Counter,
+Character Card Luck, Squad Menu Alignment, or High Attack Streamsplit.
+
+Experience Size Weight Scale is a code-only patch. It does not require the
+Expansion Pak.
 
 A strict 4 MiB configuration can hang or fault when one of these modules loads.
 

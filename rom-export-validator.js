@@ -787,15 +787,16 @@ window.OB64 = window.OB64 || {};
   }
 
   function validateTools(candidateRom, sourceRom, toolsResult) {
-    var expected = {};
-    (toolsResult.applied || []).concat(toolsResult.upgraded || []).forEach(function(name) {
-      expected[name] = 'applied';
+    var expected = Object.assign({}, toolsResult.expectedStates || {});
+    var expectedByName = {};
+    (toolsResult.applied || []).concat(toolsResult.upgraded || [], toolsResult.updated || []).forEach(function(name) {
+      expectedByName[name] = 'applied';
     });
-    (toolsResult.removed || []).forEach(function(name) { expected[name] = 'clean'; });
+    (toolsResult.removed || []).forEach(function(name) { expectedByName[name] = 'clean'; });
     var features = OB64.tools.features();
     var checked = 0;
     for (var i = 0; i < features.length; i++) {
-      var wanted = expected[features[i].name];
+      var wanted = expected[features[i].id] || expectedByName[features[i].name];
       if (!wanted) continue;
       var actual = OB64.tools.featureState(candidateRom.z64, features[i]);
       if (actual !== wanted) {
@@ -806,6 +807,23 @@ window.OB64 = window.OB64 || {};
           'Keep the error report and export again after updating the editor.',
           { featureId: features[i].id, expectedState: wanted, actualState: actual }
         );
+      }
+      var expectedPercent = toolsResult.values && toolsResult.values[features[i].id];
+      if (expectedPercent != null) {
+        var actualPercent = OB64.tools.parameterValue(candidateRom.z64, features[i]);
+        if (actualPercent !== expectedPercent) {
+          throw issue(
+            'PATCH_INTEGRITY',
+            'Tool percentage did not verify',
+            'The finished ROM does not contain the selected ' + features[i].name + ' value.',
+            'Keep the error report and export again after updating the editor.',
+            {
+              featureId: features[i].id,
+              expectedPercent: expectedPercent,
+              actualPercent: actualPercent,
+            }
+          );
+        }
       }
       checked++;
     }
@@ -1709,6 +1727,7 @@ window.OB64 = window.OB64 || {};
       validateCommonHeaderCrc: validateCommonHeaderCrc,
       validateArchiveTarget: validateArchiveTarget,
       validateArchiveCatalog: validateArchiveCatalog,
+      validateTools: validateTools,
       equalBytes: equalBytes,
     },
   };
