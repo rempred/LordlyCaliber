@@ -5419,8 +5419,19 @@ window.OB64 = window.OB64 || {};
     return canvas;
   }
 
-  function importLibrarySpritePixels(animationState, targetSource,
-      childOrdinal, sourceAsset) {
+  function importLibrarySpriteLayer(rom, separation, animation, frame,
+      targetLayer, childOrdinal, sourceAsset) {
+    var targetSource = animation && animation.artByKey &&
+      animation.artByKey[targetLayer && targetLayer.sourceKey];
+    if (!targetSource || !targetSource.editable) {
+      throw new Error('the selected sprite source is read-only');
+    }
+    if (!sourceAsset || !Number.isInteger(sourceAsset.width) ||
+        !Number.isInteger(sourceAsset.height) || sourceAsset.width < 1 ||
+        sourceAsset.height < 1 || !ArrayBuffer.isView(sourceAsset.rgba) ||
+        sourceAsset.rgba.length !== sourceAsset.width * sourceAsset.height * 4) {
+      throw new Error('the selected Sprite Library art is invalid');
+    }
     var width = targetSource.sprite.width;
     var height = targetSource.sprite.height;
     var rgba = OB64.spriteLibrary.nearestResize(sourceAsset.rgba,
@@ -5454,8 +5465,14 @@ window.OB64 = window.OB64 || {};
       }
       indices[pixel] = paletteIndex;
     }
-    return M.setEdit(animationState, targetSource.key, childOrdinal,
-      indices, intensity);
+    return OB64.animationSequences.addImportedLayer(
+      rom, separation, frame.sequenceIndex, targetLayer.ordinal, {
+        targetWidth: width,
+        targetHeight: height,
+        paletteWords: new Uint16Array(palette),
+        indices: indices,
+        intensity: intensity
+      });
   }
 
   function downloadFrame(animation, frame, state, weaponChildOrdinal) {
@@ -6085,26 +6102,32 @@ window.OB64 = window.OB64 || {};
       var importLibrarySprite = button('Import Library Sprite…', 'btn-secondary', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: 'Choose Sprite Library Art',
-          actionLabel: 'Convert to Selected Layer',
+          actionLabel: 'Add Sprite Layer',
           onStatus: function(message) { notify(options, message); }
         }, function(sourceAsset) {
           try {
-            if (importLibrarySpritePixels(state.animations, source,
-                childOrdinal, sourceAsset)) {
-              changed(options);
-              notify(options, sourceAsset.name +
-                ' converted to the selected layer palette and dimensions.');
-            }
+            var ordinal = importLibrarySpriteLayer(rom, separation,
+              animation, frame, layer, childOrdinal, sourceAsset);
+            var updatedAnimation = separation.syntheticAnimation;
+            var updatedFrame = updatedAnimation.frames[frame.sequenceIndex];
+            ui.animationLayer = ordinal;
+            selectLayer(state, updatedAnimation, updatedFrame,
+              updatedFrame.layers[ordinal], ui);
+            changed(options);
+            notify(options, sourceAsset.name +
+              ' added as a new sprite layer. Existing frame layers were preserved.');
             rerender();
           } catch (error) {
             notify(options, 'Sprite Library layer import blocked: ' + error.message);
           }
         });
       });
-      importLibrarySprite.disabled = !source.editable;
-      importLibrarySprite.title = source.editable
-        ? 'Convert a Sprite Library frame to this sprite source, palette, and intensity channel.'
-        : 'The selected sprite source is read-only.';
+      importLibrarySprite.disabled = !separation || !source.editable;
+      importLibrarySprite.title = !separation
+        ? 'Create a separated private sequence before adding Sprite Library layers.'
+        : (source.editable
+          ? 'Add a Sprite Library frame as a new layer using the selected layer palette, dimensions, position, and transforms.'
+          : 'The selected sprite source is read-only.');
       headingActions.appendChild(importLibrarySprite);
     }
     var copyFrame = button('Copy Frame From…', 'btn-secondary', function() {
@@ -6331,6 +6354,7 @@ window.OB64 = window.OB64 || {};
     layerDisplayLabel: layerDisplayLabel,
     drawFrame: drawFrame,
     framePngCanvas: framePngCanvas,
+    importLibrarySpriteLayer: importLibrarySpriteLayer,
     selectorFlags: selectorFlags,
     selectorFlagParts: selectorFlagParts,
     animationSideLabel: animationSideLabel,

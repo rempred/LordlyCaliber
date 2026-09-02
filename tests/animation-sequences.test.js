@@ -21,7 +21,8 @@ global.atob = value => Buffer.from(value, 'base64').toString('binary');
 
 vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');
 for (const filename of [
-  'data.js', 'parsers.js', 'art.js', 'animation-corpus-data.js',
+  'data.js', 'parsers.js', 'art.js', 'sprite-library.js',
+  'animation-corpus-data.js',
   'animation-art.js', 'combat-animation-overrides-data.js',
   'combat-animation-overrides.js', 'animation-sequences.js', 'animation-ui.js'
 ]) {
@@ -1505,6 +1506,75 @@ function route(rom, classId, actionId, flags, rawMode) {
     blankTemplateLayer.sourceKey];
   const blankTemplatePalette = OB64.animationArt.childPalette(
     blankTemplateSource, blankTemplateLayer.selectedChildOrdinal).slice();
+  const libraryLayersBefore = targetFrame.layers.slice();
+  const libraryPixelsBefore = libraryLayersBefore.map(layer => {
+    const source = privateAnimation.artByKey[layer.sourceKey];
+    const child = OB64.animationArt.childOrdinalOrFallback(
+      source, layer.selectedChildOrdinal);
+    const pixels = OB64.animationArt.currentEdit(
+      rom.art.animations, source.key, child);
+    return {
+      indices: pixels.indices.slice(),
+      intensity: pixels.intensity.slice(),
+    };
+  });
+  const libraryLayerOrdinal = OB64.animationUI.importLibrarySpriteLayer(
+    rom, separation, privateAnimation, targetFrame, blankTemplateLayer,
+    blankTemplateLayer.selectedChildOrdinal, {
+      name: 'Regression Library Sprite',
+      width: 2,
+      height: 1,
+      rgba: new Uint8ClampedArray([
+        255, 255, 255, 255,
+        0, 0, 0, 0,
+      ]),
+    });
+  assert.strictEqual(targetFrame.layers.length, libraryLayersBefore.length + 1,
+    'a Sprite Library import must append exactly one frame layer');
+  libraryLayersBefore.forEach((layer, index) => {
+    assert.strictEqual(targetFrame.layers[index], layer,
+      'a Sprite Library import must retain existing layer ' + index);
+    const source = privateAnimation.artByKey[layer.sourceKey];
+    const child = OB64.animationArt.childOrdinalOrFallback(
+      source, layer.selectedChildOrdinal);
+    const pixels = OB64.animationArt.currentEdit(
+      rom.art.animations, source.key, child);
+    assert.deepStrictEqual(pixels.indices, libraryPixelsBefore[index].indices,
+      'a Sprite Library import must retain existing layer indexes');
+    assert.deepStrictEqual(pixels.intensity, libraryPixelsBefore[index].intensity,
+      'a Sprite Library import must retain existing layer intensity');
+  });
+  assert.strictEqual(libraryLayerOrdinal, targetFrame.layers.length - 1,
+    'the imported Sprite Library layer must be appended and selected');
+  const libraryLayer = targetFrame.layers[libraryLayerOrdinal];
+  const libraryLayerSource = privateAnimation.artByKey[libraryLayer.sourceKey];
+  assert.notStrictEqual(libraryLayerSource.key, blankTemplateSource.key,
+    'the imported layer must own an independent sprite source');
+  assert.strictEqual(libraryLayerSource.sourceRole, 'body');
+  assert.strictEqual(libraryLayerSource.sprite.width,
+    blankTemplateSource.sprite.width);
+  assert.strictEqual(libraryLayerSource.sprite.height,
+    blankTemplateSource.sprite.height);
+  assert.deepStrictEqual(libraryLayerSource.palette, blankTemplatePalette,
+    'the imported layer must use the selected layer palette');
+  assert.strictEqual(libraryLayer.drawOffsetX, blankTemplateLayer.drawOffsetX);
+  assert.strictEqual(libraryLayer.drawOffsetY, blankTemplateLayer.drawOffsetY);
+  assert.strictEqual(libraryLayer.flags, blankTemplateLayer.flags);
+  assert.strictEqual(libraryLayer.scaleXRaw, blankTemplateLayer.scaleXRaw);
+  assert.strictEqual(libraryLayer.scaleYRaw, blankTemplateLayer.scaleYRaw);
+  const libraryLayerPixels = OB64.animationArt.currentEdit(
+    rom.art.animations, libraryLayerSource.key, 0);
+  assert.strictEqual(libraryLayerPixels.intensity[0], 15,
+    'opaque imported pixels must retain full I4 intensity');
+  assert.strictEqual(
+    libraryLayerPixels.intensity[libraryLayerPixels.intensity.length - 1], 0,
+    'transparent imported pixels must remain transparent');
+  const libraryLayerSourceOrdinal = libraryLayerSource.separationSourceOrdinal;
+  const libraryLayerFrameIdentity = targetFrame.sourceFrameIndex;
+  const libraryLayerExpected = {
+    indices: libraryLayerPixels.indices.slice(),
+    intensity: libraryLayerPixels.intensity.slice(),
+  };
   const blankLayerOrdinal = OB64.animationSequences.addBlankLayer(
     rom, separation, targetFrame.sequenceIndex, blankTemplateLayer.ordinal);
   const blankLayer = targetFrame.layers[blankLayerOrdinal];
@@ -1836,7 +1906,22 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert(OB64.animationArt.currentEdit(
     restored.art.animations, restoredBlankLayerSource.key, 0)
     .intensity.every(value => !value),
-  'Project reload must preserve blank layer transparency');
+    'Project reload must preserve blank layer transparency');
+  const restoredLibraryLayerSource = Object.values(
+    restoredSeparation.syntheticAnimation.artByKey).find(source =>
+      source.separationSourceOrdinal === libraryLayerSourceOrdinal);
+  const restoredLibraryLayerFrame = restoredSeparation.syntheticAnimation.frames
+    .find(frame => frame.sourceFrameIndex === libraryLayerFrameIdentity);
+  assert(restoredLibraryLayerSource && restoredLibraryLayerFrame,
+    'Project reload must preserve the imported Sprite Library layer');
+  assert(restoredLibraryLayerFrame.layers.some(layer =>
+    layer.sourceKey === restoredLibraryLayerSource.key));
+  const restoredLibraryLayerPixels = OB64.animationArt.currentEdit(
+    restored.art.animations, restoredLibraryLayerSource.key, 0);
+  assert.deepStrictEqual(restoredLibraryLayerPixels.indices,
+    libraryLayerExpected.indices);
+  assert.deepStrictEqual(restoredLibraryLayerPixels.intensity,
+    libraryLayerExpected.intensity);
   const restoredBlankFrame = restoredSeparation.syntheticAnimation.frames
     .find(frame => frame.sourceFrameIndex === blankFrameStableIdentity);
   assert(restoredBlankFrame,

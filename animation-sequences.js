@@ -2295,6 +2295,43 @@ window.OB64 = window.OB64 || {};
     return frame.layers.length - 1;
   }
 
+  function addImportedLayer(rom, separation, targetFrameIndex,
+      templateLayerOrdinal, prepared) {
+    var animation = requirePrivateSequence(rom, separation);
+    var frame = privateFrame(animation, targetFrameIndex);
+    if (frame.layers.length >= 0xFFFF) {
+      fail('this frame already contains the maximum 65535 layers');
+    }
+    templateLayerOrdinal = integerInRange(templateLayerOrdinal, 0,
+      frame.layers.length - 1, 'template layer index');
+    var templateLayer = frame.layers[templateLayerOrdinal];
+    var source = appendImportedFrameSource(
+      rom, separation, prepared, templateLayer);
+    frame.layers.push({
+      ordinal: frame.layers.length,
+      artId: source.artId,
+      drawOffsetX: templateLayer.drawOffsetX,
+      drawOffsetY: templateLayer.drawOffsetY,
+      width: source.sprite.width,
+      height: source.sprite.height,
+      flags: Number(templateLayer.flags) || 0,
+      scaleXRaw: Number(templateLayer.scaleXRaw) || 0,
+      scaleYRaw: Number(templateLayer.scaleYRaw) || 0,
+      metadataOffset: null,
+      sourceKey: source.key,
+      bindingId: source.bindingId,
+      physicalSourceId: source.physicalSourceId,
+      sourceRole: source.sourceRole,
+      resourceKey: source.resourceKey,
+      lookupBank: 0,
+      childCount: 1,
+      requestedChildOrdinal: 0,
+      selectedChildOrdinal: 0
+    });
+    finishStructuralEdit(rom, separation);
+    return frame.layers.length - 1;
+  }
+
   function addBlankFrame(rom, separation, afterFrameIndex,
       templateLayerOrdinal) {
     var animation = requirePrivateSequence(rom, separation);
@@ -3705,6 +3742,7 @@ window.OB64 = window.OB64 || {};
     copyFrom: copyFrom,
     addLayerFrom: addLayerFrom,
     addBlankLayer: addBlankLayer,
+    addImportedLayer: addImportedLayer,
     addBlankFrame: addBlankFrame,
     copyLayerFrom: copyLayerFrom,
     copyFrameFrom: copyFrameFrom,

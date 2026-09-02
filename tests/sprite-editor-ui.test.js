@@ -351,10 +351,12 @@ assert(artSource.includes("actionLabel: 'Convert to Avatar'"));
 assert(artSource.includes("actionLabel: 'Convert to Item Icon'"));
 assert(animationSource.includes("Import Library Frame…"));
 assert(animationSource.includes("Import Library Sprite…"));
+assert(animationSource.includes("actionLabel: 'Add Sprite Layer'"));
 assert(animationSource.includes("Import Library Sequence…"));
 assert(animationSource.includes("Replace from Library…"));
 assert(animationSource.includes('importLibrarySequence('));
-assert(animationSource.includes('importLibrarySpritePixels('));
+assert(animationSource.includes('importLibrarySpriteLayer('));
+assert(animationSource.includes('OB64.animationSequences.addImportedLayer('));
 assert(animationSource.includes('singleLayerPixels: singleLayerPixels'));
 
 assert(patchSource.includes('var PATCH_VERSION = 34;'));
