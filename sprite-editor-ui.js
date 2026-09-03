@@ -2076,7 +2076,7 @@ window.OB64 = window.OB64 || {};
     var frameStripNode = element('div', 'sprite-picker-frames');
     body.appendChild(frameStripNode);
     var layerWrap = element('label', 'sprite-picker-layer');
-    layerWrap.appendChild(element('span', '', 'Layer'));
+    layerWrap.appendChild(element('span', '', 'Source layer'));
     var layerSelect = element('select'); layerWrap.appendChild(layerSelect);
     layerWrap.hidden = !options.layerOnly; body.appendChild(layerWrap);
     var preview = element('div', 'sprite-picker-preview'); body.appendChild(preview);

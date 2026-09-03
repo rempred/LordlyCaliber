@@ -5419,60 +5419,29 @@ window.OB64 = window.OB64 || {};
     return canvas;
   }
 
-  function importLibrarySpriteLayer(rom, separation, animation, frame,
-      targetLayer, childOrdinal, sourceAsset) {
-    var targetSource = animation && animation.artByKey &&
-      animation.artByKey[targetLayer && targetLayer.sourceKey];
-    if (!targetSource || !targetSource.editable) {
-      throw new Error('the selected sprite source is read-only');
-    }
+  function prepareLibrarySpriteLayer(sourceAsset, targetWidth, targetHeight,
+      settings) {
     if (!sourceAsset || !Number.isInteger(sourceAsset.width) ||
         !Number.isInteger(sourceAsset.height) || sourceAsset.width < 1 ||
         sourceAsset.height < 1 || !ArrayBuffer.isView(sourceAsset.rgba) ||
         sourceAsset.rgba.length !== sourceAsset.width * sourceAsset.height * 4) {
       throw new Error('the selected Sprite Library art is invalid');
     }
-    var width = targetSource.sprite.width;
-    var height = targetSource.sprite.height;
-    var rgba = OB64.spriteLibrary.nearestResize(sourceAsset.rgba,
-      sourceAsset.width, sourceAsset.height, width, height);
-    var palette = M.childPalette(targetSource, childOrdinal);
-    var paletteRgb = Array.prototype.map.call(palette, wordRgb);
-    var nearest = {};
-    var indices = new Uint8Array(width * height);
-    var intensity = new Uint8Array(width * height);
-    for (var pixel = 0; pixel < width * height; pixel++) {
-      var offset = pixel * 4;
-      intensity[pixel] = Math.max(0, Math.min(15,
-        Math.round(rgba[offset + 3] * 15 / 255)));
-      var key = rgba[offset] + ',' + rgba[offset + 1] + ',' + rgba[offset + 2];
-      var paletteIndex = nearest[key];
-      if (!Number.isInteger(paletteIndex)) {
-        var bestDistance = Infinity;
-        paletteIndex = 0;
-        for (var candidate = 0; candidate < paletteRgb.length; candidate++) {
-          var red = paletteRgb[candidate][0] - rgba[offset];
-          var green = paletteRgb[candidate][1] - rgba[offset + 1];
-          var blue = paletteRgb[candidate][2] - rgba[offset + 2];
-          var distance = red * red + green * green + blue * blue;
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            paletteIndex = candidate;
-            if (!distance) break;
-          }
-        }
-        nearest[key] = paletteIndex;
-      }
-      indices[pixel] = paletteIndex;
+    targetWidth = targetWidth === undefined ? sourceAsset.width : targetWidth;
+    targetHeight = targetHeight === undefined ? sourceAsset.height : targetHeight;
+    return OB64.art.prepareAnimationFrameImport(
+      sourceAsset.rgba, sourceAsset.width, sourceAsset.height,
+      targetWidth, targetHeight, settings || { resizeMode: 'nearest' });
+  }
+
+  function importLibrarySpriteLayer(rom, separation, animation, frame,
+      targetLayer, prepared) {
+    if (!animation || !frame || !targetLayer ||
+        frame.layers[targetLayer.ordinal] !== targetLayer) {
+      throw new Error('the selected animation layer is unavailable');
     }
     return OB64.animationSequences.addImportedLayer(
-      rom, separation, frame.sequenceIndex, targetLayer.ordinal, {
-        targetWidth: width,
-        targetHeight: height,
-        paletteWords: new Uint16Array(palette),
-        indices: indices,
-        intensity: intensity
-      });
+      rom, separation, frame.sequenceIndex, targetLayer.ordinal, prepared);
   }
 
   function downloadFrame(animation, frame, state, weaponChildOrdinal) {
@@ -5773,6 +5742,274 @@ window.OB64 = window.OB64 || {};
       window.requestAnimationFrame(advance);
     }
     return preview;
+  }
+
+  function openLibraryLayerImportModal(source, state, rom, separation,
+      animation, frame, targetLayer, ui, options, rerender) {
+    if (!separation || !animation || !frame || !targetLayer) return;
+    var maximumDimension = OB64.spriteLibrary &&
+      Number.isInteger(OB64.spriteLibrary.MAX_DIMENSION)
+      ? OB64.spriteLibrary.MAX_DIMENSION : 4096;
+    var targetWidth = source.width;
+    var targetHeight = source.height;
+    var settings = {
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1, dither: false
+    };
+    var currentResult = null, scheduledFrame = null;
+    var overlay = element('div', 'error-modal-overlay art-import-overlay');
+    var modal = element('div',
+      'error-modal art-import-modal animation-library-layer-import-modal');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'animation-library-layer-import-title');
+    overlay.appendChild(modal);
+
+    var header = element('div', 'error-modal-header');
+    var title = element('h2', '', 'Prepare Sprite Library Layer');
+    title.id = 'animation-library-layer-import-title';
+    header.appendChild(title);
+    var closeButton = button('\u00D7', 'error-modal-close', close);
+    closeButton.setAttribute('aria-label', 'Cancel Sprite Library layer import');
+    header.appendChild(closeButton); modal.appendChild(header);
+
+    var body = element('div', 'error-modal-body art-import-body');
+    body.appendChild(element('p', 'art-import-intro', source.name + ' \u00B7 ' +
+      source.width + '\u00D7' + source.height +
+      ' library pixels. The default keeps these dimensions and builds an independent native palette.'));
+    var layout = element('div', 'art-import-layout');
+    var previewPanel = element('section', 'art-import-preview-panel');
+    previewPanel.appendChild(element('h3', '', 'New Layer Preview'));
+    var previewHost = element('div', 'art-import-preview-host');
+    previewPanel.appendChild(previewHost);
+    var stats = element('p', 'art-import-stats', 'Preparing preview\u2026');
+    stats.setAttribute('aria-live', 'polite');
+    previewPanel.appendChild(stats); layout.appendChild(previewPanel);
+
+    var controls = element('section', 'art-import-controls');
+    var fields = element('div', 'animation-layer-resize-fields');
+    function dimensionField(labelText, value) {
+      var label = element('label', 'animation-layer-resize-field');
+      label.appendChild(element('span', '', labelText));
+      var input = element('input');
+      input.type = 'number'; input.min = '1';
+      input.max = String(maximumDimension); input.step = '1';
+      input.value = String(value); input.setAttribute('inputmode', 'numeric');
+      label.appendChild(input); fields.appendChild(label);
+      return input;
+    }
+    var widthInput = dimensionField('Output width', targetWidth);
+    var heightInput = dimensionField('Output height', targetHeight);
+    controls.appendChild(fields);
+    var proportionLabel = element('label', 'animation-layer-resize-proportions');
+    var proportions = element('input'); proportions.type = 'checkbox';
+    proportions.checked = true;
+    proportionLabel.appendChild(proportions);
+    proportionLabel.appendChild(document.createTextNode(' Keep proportions'));
+    controls.appendChild(proportionLabel);
+    controls.appendChild(element('small', 'animation-frame-import-layer-help',
+      'Output dimensions start at the exact library size. Change them only to resize the new layer.'));
+
+    var resizeLabel = element('label', 'art-import-control');
+    resizeLabel.appendChild(element('span', '', 'Resize method'));
+    var resizeSelect = element('select');
+    [['nearest', 'Pixel Art \u2014 nearest-neighbor'],
+      ['smooth', 'Smooth \u2014 area/bilinear']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0];
+      resizeSelect.appendChild(option);
+    });
+    resizeSelect.value = settings.resizeMode;
+    resizeSelect.addEventListener('change', function() {
+      settings.resizeMode = resizeSelect.value; schedulePreview();
+    });
+    resizeLabel.appendChild(resizeSelect); controls.appendChild(resizeLabel);
+
+    var zoomLabel = element('label', 'art-import-control');
+    var zoomText = element('span', '', 'Zoom \u00B7 1.00\u00D7');
+    zoomLabel.appendChild(zoomText);
+    var zoomInput = element('input');
+    zoomInput.type = 'range'; zoomInput.min = '-200'; zoomInput.max = '300';
+    zoomInput.step = '5'; zoomInput.value = '0';
+    zoomInput.setAttribute('aria-label', 'Image zoom');
+    zoomInput.setAttribute('aria-valuetext', '1.00 times');
+    zoomInput.addEventListener('input', function() {
+      settings.zoom = Math.pow(2, Number(zoomInput.value) / 100);
+      zoomText.textContent = 'Zoom \u00B7 ' + settings.zoom.toFixed(2) + '\u00D7';
+      zoomInput.setAttribute(
+        'aria-valuetext', settings.zoom.toFixed(2) + ' times');
+      updateCropControls(); schedulePreview();
+    });
+    zoomLabel.appendChild(zoomInput); controls.appendChild(zoomLabel);
+
+    function cropSlider(labelText, key) {
+      var label = element('label', 'art-import-control');
+      label.appendChild(element('span', '', labelText));
+      var input = element('input');
+      input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1';
+      input.value = '50'; input.setAttribute('aria-label', labelText);
+      input.addEventListener('input', function() {
+        settings[key] = Number(input.value) / 100; schedulePreview();
+      });
+      label.appendChild(input); controls.appendChild(label);
+      return { label: label, input: input };
+    }
+    function setCropControlEnabled(control, enabled) {
+      control.input.disabled = !enabled;
+      control.label.classList.toggle('disabled', !enabled);
+    }
+    function readDimension(input) {
+      var value = Number(input.value);
+      return Number.isInteger(value) && value >= 1 && value <= maximumDimension
+        ? value : null;
+    }
+    function updateCropControls() {
+      var width = readDimension(widthInput);
+      var height = readDimension(heightInput);
+      if (width === null || height === null) {
+        setCropControlEnabled(horizontalCrop, false);
+        setCropControlEnabled(verticalCrop, false);
+        return;
+      }
+      var crop = OB64.art.imageCropRect(source.width, source.height,
+        width, height, settings.panX, settings.panY, settings.zoom);
+      setCropControlEnabled(
+        horizontalCrop, crop.horizontalPanAvailable);
+      setCropControlEnabled(verticalCrop, crop.verticalPanAvailable);
+    }
+    var horizontalCrop = cropSlider('Horizontal crop position', 'panX');
+    var verticalCrop = cropSlider('Vertical crop position', 'panY');
+    function pairedDimension(value, numerator, denominator) {
+      return Math.max(1, Math.min(maximumDimension,
+        Math.round(value * numerator / denominator)));
+    }
+    var syncingDimensions = false;
+    widthInput.addEventListener('input', function() {
+      if (!syncingDimensions && proportions.checked) {
+        var width = readDimension(widthInput);
+        if (width !== null) {
+          syncingDimensions = true;
+          heightInput.value = String(pairedDimension(
+            width, source.height, source.width));
+          syncingDimensions = false;
+        }
+      }
+      updateCropControls(); schedulePreview();
+    });
+    heightInput.addEventListener('input', function() {
+      if (!syncingDimensions && proportions.checked) {
+        var height = readDimension(heightInput);
+        if (height !== null) {
+          syncingDimensions = true;
+          widthInput.value = String(pairedDimension(
+            height, source.width, source.height));
+          syncingDimensions = false;
+        }
+      }
+      updateCropControls(); schedulePreview();
+    });
+
+    var ditherWrap = element('div', 'art-import-dither');
+    var ditherLabel = element('label', 'art-import-checkbox');
+    var dither = element('input'); dither.type = 'checkbox';
+    dither.addEventListener('change', function() {
+      settings.dither = dither.checked; schedulePreview();
+    });
+    ditherLabel.appendChild(dither);
+    ditherLabel.appendChild(document.createTextNode(' Ordered dithering'));
+    ditherWrap.appendChild(ditherLabel);
+    ditherWrap.appendChild(element('small', '',
+      'Off by default. It can smooth gradients when the layer exceeds 256 RGB555 colors.'));
+    controls.appendChild(ditherWrap);
+    controls.appendChild(element('p', 'art-import-background',
+      'Library transparency becomes the native sprite intensity channel.'));
+    layout.appendChild(controls); body.appendChild(layout); modal.appendChild(body);
+
+    var footer = element('div', 'error-modal-footer art-import-footer');
+    footer.appendChild(button('Cancel', 'error-modal-ok', close));
+    var applyButton = button('Add Sprite Layer', 'error-modal-ok', function() {
+      if (!currentResult) return;
+      try {
+        var ordinal = importLibrarySpriteLayer(rom, separation,
+          animation, frame, targetLayer, currentResult);
+        var updatedAnimation = separation.syntheticAnimation;
+        var updatedFrame = updatedAnimation.frames[frame.sequenceIndex];
+        ui.animationLayer = ordinal;
+        selectLayer(state, updatedAnimation, updatedFrame,
+          updatedFrame.layers[ordinal], ui);
+        changed(options);
+        var crop = currentResult.crop;
+        notify(options, 'Sprite Library layer added: asset=' + source.name +
+          '; source=' + source.width + 'x' + source.height +
+          '; target=' + currentResult.targetWidth + 'x' + currentResult.targetHeight +
+          '; crop=' + crop.width.toFixed(2) + 'x' + crop.height.toFixed(2) +
+          '@(' + crop.x.toFixed(2) + ',' + crop.y.toFixed(2) + ')' +
+          '; zoom=' + crop.zoom.toFixed(2) + 'x' +
+          '; resize=' + currentResult.resizeMode +
+          '; visible RGB555 colors=' + currentResult.sourceNativeColorCount +
+          '->' + currentResult.colorCount + '/256' +
+          '; Wu quantized=' + currentResult.quantized +
+          '; ordered dither=' + currentResult.dithered +
+          '; existing frame layers preserved=true.');
+        close(); rerender();
+      } catch (error) {
+        notify(options, 'Sprite Library layer import blocked: ' + error.message);
+      }
+    });
+    applyButton.disabled = true; footer.appendChild(applyButton); modal.appendChild(footer);
+
+    overlay.addEventListener('click', function(event) {
+      if (event.target === overlay) close();
+    });
+    function preview() {
+      scheduledFrame = null;
+      try {
+        targetWidth = readDimension(widthInput);
+        targetHeight = readDimension(heightInput);
+        if (targetWidth === null || targetHeight === null) {
+          throw new Error('output width and height must be whole numbers from 1 through ' +
+            maximumDimension);
+        }
+        currentResult = prepareLibrarySpriteLayer(
+          source, targetWidth, targetHeight, settings);
+        previewHost.innerHTML = '';
+        var scale = Math.max(1, Math.min(6,
+          Math.floor(360 / Math.max(targetWidth, targetHeight))));
+        var previewCanvas = element('canvas', 'art-import-preview-canvas');
+        paintPixels(previewCanvas, targetWidth, targetHeight,
+          currentResult.rgba, scale);
+        previewHost.appendChild(previewCanvas);
+        var crop = currentResult.crop;
+        stats.textContent = 'Output ' + targetWidth + '\u00D7' + targetHeight +
+          ' \u00B7 crop ' + crop.width.toFixed(1) + '\u00D7' +
+          crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
+          crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
+          '\u00D7 zoom \u00B7 ' + currentResult.sourceNativeColorCount +
+          ' native colors \u2192 ' + currentResult.colorCount + ' / 256' +
+          (currentResult.quantized ? ' \u00B7 Wu quantized' :
+            ' \u00B7 quantization not required') +
+          (currentResult.dithered ? ' \u00B7 ordered dither applied' : '') +
+          ' \u00B7 ' + currentResult.transparentPixels + ' transparent pixels';
+        stats.classList.remove('blocked'); applyButton.disabled = false;
+      } catch (error) {
+        currentResult = null; previewHost.innerHTML = '';
+        stats.textContent = 'Conversion blocked: ' + error.message;
+        stats.classList.add('blocked'); applyButton.disabled = true;
+      }
+    }
+    function schedulePreview() {
+      stats.textContent = 'Preparing preview\u2026'; applyButton.disabled = true;
+      if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
+      scheduledFrame = window.requestAnimationFrame(preview);
+    }
+    function close() {
+      if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
+      scheduledFrame = null;
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escapeHandler);
+    }
+    var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
+    document.addEventListener('keydown', escapeHandler);
+    document.body.appendChild(overlay);
+    updateCropControls(); widthInput.focus(); widthInput.select(); schedulePreview();
   }
 
   function openFrameImportModal(source, state, rom, separation,
@@ -6102,32 +6339,18 @@ window.OB64 = window.OB64 || {};
       var importLibrarySprite = button('Import Library Sprite…', 'btn-secondary', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: 'Choose Sprite Library Art',
-          actionLabel: 'Add Sprite Layer',
+          actionLabel: 'Prepare Sprite Layer',
+          layerOnly: true,
           onStatus: function(message) { notify(options, message); }
         }, function(sourceAsset) {
-          try {
-            var ordinal = importLibrarySpriteLayer(rom, separation,
-              animation, frame, layer, childOrdinal, sourceAsset);
-            var updatedAnimation = separation.syntheticAnimation;
-            var updatedFrame = updatedAnimation.frames[frame.sequenceIndex];
-            ui.animationLayer = ordinal;
-            selectLayer(state, updatedAnimation, updatedFrame,
-              updatedFrame.layers[ordinal], ui);
-            changed(options);
-            notify(options, sourceAsset.name +
-              ' added as a new sprite layer. Existing frame layers were preserved.');
-            rerender();
-          } catch (error) {
-            notify(options, 'Sprite Library layer import blocked: ' + error.message);
-          }
+          openLibraryLayerImportModal(sourceAsset, state, rom, separation,
+            animation, frame, layer, ui, options, rerender);
         });
       });
-      importLibrarySprite.disabled = !separation || !source.editable;
-      importLibrarySprite.title = !separation
-        ? 'Create a separated private sequence before adding Sprite Library layers.'
-        : (source.editable
-          ? 'Add a Sprite Library frame as a new layer using the selected layer palette, dimensions, position, and transforms.'
-          : 'The selected sprite source is read-only.');
+      importLibrarySprite.disabled = !separation;
+      importLibrarySprite.title = separation
+        ? 'Prepare a Sprite Library layer with its own dimensions and colors, then add it without replacing existing layers.'
+        : 'Create a separated private sequence before adding Sprite Library layers.';
       headingActions.appendChild(importLibrarySprite);
     }
     var copyFrame = button('Copy Frame From…', 'btn-secondary', function() {
@@ -6354,6 +6577,7 @@ window.OB64 = window.OB64 || {};
     layerDisplayLabel: layerDisplayLabel,
     drawFrame: drawFrame,
     framePngCanvas: framePngCanvas,
+    prepareLibrarySpriteLayer: prepareLibrarySpriteLayer,
     importLibrarySpriteLayer: importLibrarySpriteLayer,
     selectorFlags: selectorFlags,
     selectorFlagParts: selectorFlagParts,

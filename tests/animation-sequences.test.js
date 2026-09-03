@@ -1518,17 +1518,57 @@ function route(rom, classId, actionId, flags, rawMode) {
       intensity: pixels.intensity.slice(),
     };
   });
+  const librarySource = {
+    name: 'Regression Library Sprite',
+    width: 2,
+    height: 2,
+    rgba: new Uint8ClampedArray([
+      239, 173, 189, 255,
+      16, 33, 49, 170,
+      0, 0, 0, 0,
+      239, 173, 189, 255,
+    ]),
+  };
+  const preparedLibraryLayer = OB64.animationUI.prepareLibrarySpriteLayer(
+    librarySource
+  );
+  assert.strictEqual(preparedLibraryLayer.targetWidth, librarySource.width,
+    'a Sprite Library layer must keep its source width by default');
+  assert.strictEqual(preparedLibraryLayer.targetHeight, librarySource.height,
+    'a Sprite Library layer must keep its source height by default');
+  assert.strictEqual(preparedLibraryLayer.crop.width, librarySource.width);
+  assert.strictEqual(preparedLibraryLayer.crop.height, librarySource.height);
+  assert.strictEqual(preparedLibraryLayer.sourceNativeColorCount, 2);
+  assert.strictEqual(preparedLibraryLayer.colorCount, 2);
+  assert.deepStrictEqual(Array.from(preparedLibraryLayer.rgba.slice(0, 8)), [
+    239, 173, 189, 255,
+    16, 33, 49, 170,
+  ], 'source-native RGB555 colors and I4 alpha must survive preparation');
+  const resizedLibraryLayer = OB64.animationUI.prepareLibrarySpriteLayer(
+    librarySource, 4, 4, {
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1, dither: false,
+    }
+  );
+  assert.strictEqual(resizedLibraryLayer.targetWidth, 4,
+    'a user-selected import width must be honored');
+  assert.strictEqual(resizedLibraryLayer.targetHeight, 4,
+    'a user-selected import height must be honored');
+  assert.deepStrictEqual(Array.from(resizedLibraryLayer.rgba.slice(0, 8)), [
+    239, 173, 189, 255,
+    239, 173, 189, 255,
+  ], 'explicit nearest-neighbor resizing must preserve source colors');
+  const zoomedLibraryLayer = OB64.animationUI.prepareLibrarySpriteLayer(
+    librarySource, 2, 2, {
+      resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 2, dither: false,
+    }
+  );
+  assert.strictEqual(zoomedLibraryLayer.crop.zoom, 2,
+    'a user-selected import zoom must be honored');
+  assert.strictEqual(zoomedLibraryLayer.crop.width, 1);
+  assert.strictEqual(zoomedLibraryLayer.crop.height, 1);
   const libraryLayerOrdinal = OB64.animationUI.importLibrarySpriteLayer(
     rom, separation, privateAnimation, targetFrame, blankTemplateLayer,
-    blankTemplateLayer.selectedChildOrdinal, {
-      name: 'Regression Library Sprite',
-      width: 2,
-      height: 1,
-      rgba: new Uint8ClampedArray([
-        255, 255, 255, 255,
-        0, 0, 0, 0,
-      ]),
-    });
+    preparedLibraryLayer);
   assert.strictEqual(targetFrame.layers.length, libraryLayersBefore.length + 1,
     'a Sprite Library import must append exactly one frame layer');
   libraryLayersBefore.forEach((layer, index) => {
@@ -1552,11 +1592,12 @@ function route(rom, classId, actionId, flags, rawMode) {
     'the imported layer must own an independent sprite source');
   assert.strictEqual(libraryLayerSource.sourceRole, 'body');
   assert.strictEqual(libraryLayerSource.sprite.width,
-    blankTemplateSource.sprite.width);
+    librarySource.width);
   assert.strictEqual(libraryLayerSource.sprite.height,
-    blankTemplateSource.sprite.height);
-  assert.deepStrictEqual(libraryLayerSource.palette, blankTemplatePalette,
-    'the imported layer must use the selected layer palette');
+    librarySource.height);
+  assert.deepStrictEqual(libraryLayerSource.palette,
+    preparedLibraryLayer.paletteWords,
+    'the imported layer must use its source-derived palette');
   assert.strictEqual(libraryLayer.drawOffsetX, blankTemplateLayer.drawOffsetX);
   assert.strictEqual(libraryLayer.drawOffsetY, blankTemplateLayer.drawOffsetY);
   assert.strictEqual(libraryLayer.flags, blankTemplateLayer.flags);
@@ -1564,14 +1605,23 @@ function route(rom, classId, actionId, flags, rawMode) {
   assert.strictEqual(libraryLayer.scaleYRaw, blankTemplateLayer.scaleYRaw);
   const libraryLayerPixels = OB64.animationArt.currentEdit(
     rom.art.animations, libraryLayerSource.key, 0);
+  assert.deepStrictEqual(libraryLayerPixels.indices,
+    preparedLibraryLayer.indices,
+    'the imported layer must retain the prepared source colors');
+  assert.deepStrictEqual(libraryLayerPixels.intensity,
+    preparedLibraryLayer.intensity,
+    'the imported layer must retain the prepared source alpha');
   assert.strictEqual(libraryLayerPixels.intensity[0], 15,
     'opaque imported pixels must retain full I4 intensity');
   assert.strictEqual(
-    libraryLayerPixels.intensity[libraryLayerPixels.intensity.length - 1], 0,
+    libraryLayerPixels.intensity[2], 0,
     'transparent imported pixels must remain transparent');
   const libraryLayerSourceOrdinal = libraryLayerSource.separationSourceOrdinal;
   const libraryLayerFrameIdentity = targetFrame.sourceFrameIndex;
   const libraryLayerExpected = {
+    width: libraryLayerSource.sprite.width,
+    height: libraryLayerSource.sprite.height,
+    palette: libraryLayerSource.palette.slice(),
     indices: libraryLayerPixels.indices.slice(),
     intensity: libraryLayerPixels.intensity.slice(),
   };
@@ -1916,6 +1966,15 @@ function route(rom, classId, actionId, flags, rawMode) {
     'Project reload must preserve the imported Sprite Library layer');
   assert(restoredLibraryLayerFrame.layers.some(layer =>
     layer.sourceKey === restoredLibraryLayerSource.key));
+  assert.strictEqual(restoredLibraryLayerSource.sprite.width,
+    libraryLayerExpected.width,
+    'Project reload must preserve the Sprite Library layer width');
+  assert.strictEqual(restoredLibraryLayerSource.sprite.height,
+    libraryLayerExpected.height,
+    'Project reload must preserve the Sprite Library layer height');
+  assert.deepStrictEqual(restoredLibraryLayerSource.palette,
+    libraryLayerExpected.palette,
+    'Project reload must preserve the Sprite Library layer palette');
   const restoredLibraryLayerPixels = OB64.animationArt.currentEdit(
     restored.art.animations, restoredLibraryLayerSource.key, 0);
   assert.deepStrictEqual(restoredLibraryLayerPixels.indices,

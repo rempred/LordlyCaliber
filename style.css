@@ -8873,6 +8873,7 @@ td.attack-list {
 .sprite-source-controls { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 10px; }
 .sprite-source-controls label,
 .sprite-picker-layer { display: grid; gap: 5px; font-weight: 700; }
+.sprite-picker-layer[hidden] { display: none; }
 .sprite-source-controls select,
 .sprite-picker-body > select,
 .sprite-picker-layer select { width: 100%; padding: 7px; border: 1px solid var(--ob-wood-mid); border-radius: 4px; background: #fff9df; }

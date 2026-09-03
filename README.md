@@ -142,6 +142,10 @@ canvas dimensions from the loaded ROM.
 A Sprite Editor layer can import a PNG or JPEG image. The preparation dialog
 crops, resizes, quantizes, and optionally dithers the image before replacing the layer.
 
+A combat frame can add one Sprite Library layer without replacing existing layers.
+The preparation dialog keeps its library dimensions and colors by default.
+Users can change its output size, zoom, crop position, resize method, and dithering.
+
 Class avatar templates allow at most 80 opaque colors. Item icon templates allow
 at most 255 opaque colors.
 
