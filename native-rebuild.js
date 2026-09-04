@@ -7,9 +7,11 @@ window.OB64 = window.OB64 || {};
   var DATA_SCHEMA = 'ob64-native-rebuild-data';
   var DATA_VERSION = 1;
   var EXPECTED_PAYLOAD_SHA256 =
-    '441C66EBA0461F447943764A8A2C51FC6459FB650C505C629321CE4756A3CD16';
+    '63FF8C1FD211EB8D362FCF3B8ADABE470FC774EC0A302ADB71E50FCFF359BA82';
+  var EXPECTED_GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
+  var EXPECTED_GENERATOR_CANONICAL_BYTES = 27783;
   var EXPECTED_GENERATOR_SHA256 =
-    '546A75AEDBA8C75E163169C39C35114B1DE4D41F0442D45EE7DE668891F4FD45';
+    '6482CDB2F8CF7242FFD72FE98FF5F0286C04CF71D5182B25E2B80D77BBA85729';
   var ACCEPTED_COMMIT = '05623e67b295f4f968e4a5cb416b9c002fb09bdd';
   var ACCEPTED_TREE = '90b193077b61eee0f6656a8d3f6848b2f17bdfaa';
   var RETAIL_SHA256 = '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A';
@@ -149,8 +151,10 @@ window.OB64 = window.OB64 || {};
       fail('the Shop contract or ownership manifest identity drifted');
     }
     if (!data.generator || data.generator.path !== 'tools/generate-native-rebuild-data.js' ||
-        data.generator.sha256 !== EXPECTED_GENERATOR_SHA256 ||
-        !Number.isInteger(data.generator.bytes) || data.generator.bytes < 1) {
+        data.generator.sourceIdentity !== EXPECTED_GENERATOR_SOURCE_IDENTITY ||
+        !Number.isInteger(data.generator.canonicalBytes) ||
+        data.generator.canonicalBytes !== EXPECTED_GENERATOR_CANONICAL_BYTES ||
+        data.generator.sha256 !== EXPECTED_GENERATOR_SHA256) {
       fail('the native-owner generator provenance drifted');
     }
     var approvalHashes = (data.approvals || []).map(function(approval) {

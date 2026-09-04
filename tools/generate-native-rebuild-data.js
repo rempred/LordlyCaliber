@@ -19,6 +19,7 @@ const PHASE4_APPROVAL_SHA256 =
   'B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF';
 const PHASE3_APPROVED_COMMIT = '000fb0dc2ef5cb3d658e0e0ffbf6b49d84c600fb';
 const PHASE3_APPROVED_TREE = '917b52c27df857c6793f6320dc68e61244eb25a1';
+const GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
 
 const INPUTS = Object.freeze({
   'config/lordly-native-composition.json':
@@ -187,6 +188,28 @@ function verifyApproval(target, expectedSha256, phase, expectedCommit, expectedT
 
 function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase();
+}
+
+function canonicalizeGeneratorSource(bytes) {
+  const sourceBytes = Buffer.from(bytes);
+  const source = sourceBytes.toString('utf8');
+  if (!Buffer.from(source, 'utf8').equals(sourceBytes)) {
+    fail('generator source is not valid UTF-8');
+  }
+  const canonical = source.replace(/\r\n/g, '\n');
+  if (canonical.includes('\r')) {
+    fail('generator source uses an unsupported line ending');
+  }
+  return Buffer.from(canonical, 'utf8');
+}
+
+function identifyGeneratorSource(bytes) {
+  const canonicalBytes = canonicalizeGeneratorSource(bytes);
+  return {
+    sourceIdentity: GENERATOR_SOURCE_IDENTITY,
+    canonicalBytes: canonicalBytes.length,
+    sha256: sha256(canonicalBytes),
+  };
 }
 
 function read(root, relative) {
@@ -537,12 +560,9 @@ function main() {
     verifyApproval(args.phase4Approval, PHASE4_APPROVAL_SHA256, 'Phase 4',
       EXPECTED_COMMIT, EXPECTED_TREE),
   ];
-  const generatorBytes = fs.readFileSync(__filename);
-  const generatorIdentity = {
+  const generatorIdentity = Object.assign({
     path: 'tools/generate-native-rebuild-data.js',
-    bytes: generatorBytes.length,
-    sha256: sha256(generatorBytes),
-  };
+  }, identifyGeneratorSource(fs.readFileSync(__filename)));
   const payload = buildPayload(args.decomp, identity, inputs, approvals, generatorIdentity);
   const payloadSha256 = sha256(Buffer.from(JSON.stringify(payload), 'utf8'));
   const bundle = { schema: 'ob64-native-rebuild-data', schemaVersion: 1, payloadSha256, payload };
@@ -567,6 +587,8 @@ function main() {
     acceptedCommit: identity.commit,
     acceptedTree: identity.tree,
     inputCount: inputs.length,
+    generatorSourceIdentity: generatorIdentity.sourceIdentity,
+    generatorCanonicalBytes: generatorIdentity.canonicalBytes,
     generatorSha256: generatorIdentity.sha256,
     approvals: approvals.map((approval) => ({
       phase: approval.phase,
@@ -575,4 +597,10 @@ function main() {
   }, null, 2) + '\n');
 }
 
-main();
+module.exports = Object.freeze({
+  GENERATOR_SOURCE_IDENTITY,
+  canonicalizeGeneratorSource,
+  identifyGeneratorSource,
+});
+
+if (require.main === module) main();
