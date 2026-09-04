@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Generates the browser-safe Phase 1 through Phase 4 native-owner bundle.
+// Generates the browser-safe Phase 1 through Phase 5A native-owner bundle.
 // The generated file contains no complete ROM. It contains only authenticated
 // owner payloads, their retail preimages, and composition metadata.
 
@@ -10,13 +10,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const EXPECTED_COMMIT = '05623e67b295f4f968e4a5cb416b9c002fb09bdd';
-const EXPECTED_TREE = '90b193077b61eee0f6656a8d3f6848b2f17bdfaa';
+const EXPECTED_COMMIT = 'e50fe500839288c94c538969acc7a5b966075626';
+const EXPECTED_TREE = 'ef58ea271b2298be71b09be9318a359805c266c0';
 const RETAIL_SHA256 = '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A';
 const PHASE3_APPROVAL_SHA256 =
   'B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA';
 const PHASE4_APPROVAL_SHA256 =
   'B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF';
+const PHASE5A_REVIEW_SHA256 =
+  '578C512E89429746888772AB8150BA56FFB888E4883B79344F023B8236031743';
 const PHASE3_APPROVED_COMMIT = '000fb0dc2ef5cb3d658e0e0ffbf6b49d84c600fb';
 const PHASE3_APPROVED_TREE = '917b52c27df857c6793f6320dc68e61244eb25a1';
 const GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
@@ -96,6 +98,36 @@ const INPUTS = Object.freeze({
     'FA2A98393B549143B4D2A0D507E2366479927DB4B6361ECA054DB86642C5868F',
   'build/lordly-native-rebuild/phase4-native-shops-tooling-correction-r2/verification-report.json':
     '9B5E93C1FB60C0CF51B62890628674874A21E2BC6097491AEBC2D8D89D1AF6ED',
+  'config/lordly-native-phase5a-consumables.json':
+    '29D6F33DF6F80CF545D32BFCAC55A5C7378318037F737FD8156DAC116BD2C0CD',
+  'config/lordly-native-phase5a-consumables.schema.json':
+    '038E87312B2549FE5C3936A65C9A21C24ACB0DF0D08C87DE3918020FF3FCE4B2',
+  'docs/LORDLY_NATIVE_PHASE5A_CONSUMABLES.md':
+    '4D7FDBF81468D8E438AD8EB4D1FD28304DBDECE19100DD536F253FB3D201F075',
+  'tools/lib/lordly_native_phase5a_consumables.js':
+    '3302366467B92DBF71A16440D119CC58CEB0370E7E9FF09D5CD5C47392EBB41B',
+  'tools/lib/lordly_native_phase5a_frozen_editor.js':
+    'BEC12FF86A504A217AE099BE1160F494F580786D7304B353986ADC372F698CD6',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/artifact-manifest.json':
+    '24A8FAC0805557A7A67221C6765559CEC69FC4FEE9AE2688FC7F649AD32EAB12',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/build-report.json':
+    'F8BDA0339970C3BDDE8A4C89496BA26804EF807DE770FA01D8A1B25FA85742BA',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/owner-ledger.json':
+    'D7EF1E7AA63479B23772E4CB50185DEE4F605A001021D8CFDB48B3C46F6E4A7D',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/relocation-ledger.json':
+    '3209437ED671D853AC3A1A4D3656019EB750E95D9A7CD813A4D1BCE6702B9EB1',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/source-model-ledger.json':
+    '48DAF0FB3F905184ABAE062D1CC1FF1AFE0C0B623D6AEEDD61C2108855686747',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/static-matrix.json':
+    'A2950938BCFD30D545006D4B922FE120B5881A32EB7FC414E6C3A3946B4085CC',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/verification-report.json':
+    'EF58568B5D636819DB81EA74D9598B851A5CC69781D1AEF1095264FC38D5CE32',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/products/exact-retail/exact-retail.us_rev0.z64':
+    '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/products/native-consumables/native-consumables.us_rev0.z64':
+    '6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27',
+  'build/lordly-native-rebuild/phase5a-consumables-r1/products/canonical-native-consumables/canonical-native-consumables.us_rev0.z64':
+    '496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37',
 });
 
 const PHASE3_PAYLOAD =
@@ -110,6 +142,18 @@ const PHASE4_MATRIX =
   'build/lordly-native-rebuild/phase4-native-shops-tooling-correction-r2/composition-matrix.json';
 const RETAIL_ROM =
   'build/lordly-native-rebuild/phase4-native-shops-tooling-correction-r2/products/exact-retail/exact-retail.us_rev0.z64';
+const PHASE5A_ROOT = 'build/lordly-native-rebuild/phase5a-consumables-r1';
+const PHASE5A_REPORT = PHASE5A_ROOT + '/build-report.json';
+const PHASE5A_OWNER_LEDGER = PHASE5A_ROOT + '/owner-ledger.json';
+const PHASE5A_RELOCATION_LEDGER = PHASE5A_ROOT + '/relocation-ledger.json';
+const PHASE5A_SOURCE_MODEL_LEDGER = PHASE5A_ROOT + '/source-model-ledger.json';
+const PHASE5A_STATIC_MATRIX = PHASE5A_ROOT + '/static-matrix.json';
+const PHASE5A_EXACT_RETAIL =
+  PHASE5A_ROOT + '/products/exact-retail/exact-retail.us_rev0.z64';
+const PHASE5A_NATIVE =
+  PHASE5A_ROOT + '/products/native-consumables/native-consumables.us_rev0.z64';
+const PHASE5A_CANONICAL = PHASE5A_ROOT +
+  '/products/canonical-native-consumables/canonical-native-consumables.us_rev0.z64';
 
 const PRODUCTION_OWNER_IDS = Object.freeze({
   items: 'direct.item-records',
@@ -147,13 +191,15 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index];
     if (name === '--decomp' || name === '--out' ||
-        name === '--phase3-approval' || name === '--phase4-approval') {
+        name === '--phase3-approval' || name === '--phase4-approval' ||
+        name === '--phase5a-review') {
       if (!argv[index + 1]) fail(name + ' needs a path');
       const key = {
         '--decomp': 'decomp',
         '--out': 'out',
         '--phase3-approval': 'phase3Approval',
         '--phase4-approval': 'phase4Approval',
+        '--phase5a-review': 'phase5aReview',
       }[name];
       args[key] = path.resolve(argv[++index]);
     } else {
@@ -163,6 +209,7 @@ function parseArgs(argv) {
   if (!args.decomp) fail('--decomp is required');
   if (!args.phase3Approval) fail('--phase3-approval is required');
   if (!args.phase4Approval) fail('--phase4-approval is required');
+  if (!args.phase5aReview) fail('--phase5a-review is required');
   if (!args.out) args.out = path.resolve(__dirname, '..', 'native-rebuild-data.js');
   return args;
 }
@@ -183,6 +230,32 @@ function verifyApproval(target, expectedSha256, phase, expectedCommit, expectedT
     sha256: actual,
     approvedCommit: record.approvedCommit,
     approvedTree: record.approvedTree,
+  };
+}
+
+function verifyPhase5aReview(target) {
+  if (!fs.existsSync(target)) fail('missing Phase 5A Critical-review record');
+  const bytes = fs.readFileSync(target);
+  const actual = sha256(bytes);
+  if (actual !== PHASE5A_REVIEW_SHA256) fail('Phase 5A Critical-review identity drift');
+  const text = bytes.toString('utf8').replace(/\r\n/g, '\n');
+  const required = [
+    'Completed. Verdict: `Accepted`.',
+    '| Subject commit | `' + EXPECTED_COMMIT + '` |',
+    '| Subject tree | `' + EXPECTED_TREE + '` |',
+    'Phase 5B must derive owner-state provenance through fail-closed load detection.',
+  ];
+  if (!required.every((marker) => text.includes(marker))) {
+    fail('Phase 5A Critical-review acceptance markers drifted');
+  }
+  return {
+    phase: 'Phase 5A',
+    filename: path.basename(target),
+    bytes: bytes.length,
+    sha256: actual,
+    approvedCommit: EXPECTED_COMMIT,
+    approvedTree: EXPECTED_TREE,
+    verdict: 'Accepted',
   };
 }
 
@@ -306,6 +379,12 @@ function selectedOwner(componentOwner) {
   return map[componentOwner] || componentOwner;
 }
 
+function ownerImageIdentity(product, start, bytes) {
+  const image = Buffer.from(product.subarray(start, start + bytes));
+  if (image.length !== bytes) fail('accepted consumable owner lies outside its product');
+  return { bytes, sha256: sha256(image) };
+}
+
 function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
   const retail = read(root, RETAIL_ROM);
   if (retail.length !== 0x02800000 || sha256(retail) !== RETAIL_SHA256) {
@@ -336,6 +415,12 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
   const phase4Config = readJson(root, 'config/lordly-native-phase4-shops.json');
   const contract = readJson(root, 'docs/contracts/lordly-native-shop-membership-v1.json');
   const composition = readJson(root, 'config/lordly-native-composition.json');
+  const phase5aConfig = readJson(root, 'config/lordly-native-phase5a-consumables.json');
+  const phase5aReport = readJson(root, PHASE5A_REPORT);
+  const phase5aOwnerLedger = readJson(root, PHASE5A_OWNER_LEDGER);
+  const phase5aRelocationLedger = readJson(root, PHASE5A_RELOCATION_LEDGER);
+  const phase5aSourceModelLedger = readJson(root, PHASE5A_SOURCE_MODEL_LEDGER);
+  const phase5aStaticMatrix = readJson(root, PHASE5A_STATIC_MATRIX);
   const phase4Extension = phase4Config.compositionExtension;
   if (!phase4Extension ||
       phase4Extension.baseManifestSha256 !==
@@ -414,6 +499,75 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
     phase4Report.products.nativeShops.sha256);
   verifyComponentRegions('Phase 4', phase4Components, phase4NativeProduct);
 
+  const effectOwner = phase5aOwnerLedger.rom.find((owner) =>
+    owner.id === 'effects.consumable-code');
+  const descriptionOwner = phase5aOwnerLedger.rom.find((owner) =>
+    owner.id === 'text.consumable-descriptions');
+  const metadataOwner = phase5aOwnerLedger.rom.find((owner) =>
+    owner.id === 'direct.consumable-metadata');
+  const effectRamOwner = phase5aOwnerLedger.ram.find((owner) =>
+    owner.id === 'effects.consumable-code');
+  if (!effectOwner || effectOwner.start !== 0x41098 || effectOwner.bytes !== 1380 ||
+      effectOwner.endExclusive !== 0x415FC || !effectRamOwner ||
+      effectRamOwner.start !== 0x8016B198 || effectRamOwner.endExclusive !== 0x8016B6FC ||
+      descriptionOwner.start !== 0x237744A || descriptionOwner.bytes !== 2064 ||
+      descriptionOwner.endExclusive !== 0x2377C5A || !metadataOwner ||
+      metadataOwner.start !== 0x645D0 || metadataOwner.endExclusive !== 0x648CC ||
+      phase5aOwnerLedger.newRamBytes !== 0 || phase5aOwnerLedger.tailCodeBytes !== 0) {
+    fail('accepted Phase 5A owner geometry drift');
+  }
+  if (phase5aRelocationLedger.effectSection.moved ||
+      phase5aRelocationLedger.effectSection.relocations.length ||
+      phase5aRelocationLedger.descriptionSlot.moved ||
+      phase5aRelocationLedger.descriptionSlot.relocations.length ||
+      phase5aRelocationLedger.tailCodeBytes !== 0 ||
+      phase5aRelocationLedger.newRamBytes !== 0) {
+    fail('accepted Phase 5A placement or relocation policy drift');
+  }
+  if (phase5aSourceModelLedger.owner !== effectOwner.id ||
+      phase5aSourceModelLedger.completeSection.bytes !== effectOwner.bytes ||
+      phase5aSourceModelLedger.modelOrder.length !== 10 ||
+      phase5aSourceModelLedger.models.length !== 10 ||
+      phase5aSourceModelLedger.sourceWords.length !== 16 ||
+      phase5aSourceModelLedger.productionWritePolicy !==
+        'The assembler emits the complete section. Sixteen fixed-offset writes exist only in the frozen legacy oracle.') {
+    fail('accepted Phase 5A source-model ledger drift');
+  }
+  if (phase5aStaticMatrix.status !== 'pass' || phase5aStaticMatrix.casesPassed !== 50 ||
+      phase5aStaticMatrix.effectSourceCases !== 31 ||
+      phase5aStaticMatrix.acceptedLegacyOracleComparisons !== 32 ||
+      phase5aReport.status !== 'static-build-pass') {
+    fail('accepted Phase 5A static evidence drift');
+  }
+  if (phase5aConfig.owners.effectCode.id !== effectOwner.id ||
+      phase5aConfig.owners.descriptions.id !== descriptionOwner.id ||
+      phase5aConfig.owners.descriptions.streamCapacity !== 2055 ||
+      phase5aConfig.lockedEffectRecords.length !== 16 ||
+      phase5aConfig.hiddenRecords.length !== 13) {
+    fail('accepted Phase 5A configuration contract drift');
+  }
+
+  const phase5aRetail = verifyProductFile(root, PHASE5A_EXACT_RETAIL, RETAIL_SHA256);
+  if (!phase5aRetail.equals(retail)) fail('Phase 5A exact-retail product differs from accepted retail');
+  const phase5aNative = verifyProductFile(root, PHASE5A_NATIVE,
+    '6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27');
+  const phase5aCanonical = verifyProductFile(root, PHASE5A_CANONICAL,
+    '496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37');
+  const retailEffect = Buffer.from(retail.subarray(effectOwner.start, effectOwner.endExclusive));
+  const retailDescription = Buffer.from(retail.subarray(
+    descriptionOwner.start, descriptionOwner.endExclusive));
+  const nativeOwnerImages = [phase5aNative, phase5aCanonical].map((product, index) => ({
+    product: index === 0 ? 'native-consumables' : 'canonical-native-consumables',
+    romSha256: sha256(product),
+    effectSha256: ownerImageIdentity(product, effectOwner.start, effectOwner.bytes).sha256,
+    descriptionSha256: ownerImageIdentity(
+      product, descriptionOwner.start, descriptionOwner.bytes).sha256,
+  }));
+  if (nativeOwnerImages[0].effectSha256 !== nativeOwnerImages[1].effectSha256 ||
+      nativeOwnerImages[0].descriptionSha256 !== nativeOwnerImages[1].descriptionSha256) {
+    fail('accepted Phase 5A native products disagree on consumable owner after-images');
+  }
+
   return {
     generator: generatorIdentity,
     acceptedSource: {
@@ -460,7 +614,10 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
         'tool.character-card-luck',
         'tool.squad-menu-alignment',
         'runtime.shop-overrides',
+        'effects.consumable-code',
+        'text.consumable-descriptions',
       ],
+      retiredOwners: ['effects.healing-descriptions'],
       remainingRuntimeContributors: phase4Config.remainingContributors.slice(),
       phase4Extension,
       phase4Matrix: {
@@ -481,6 +638,15 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
           legacyShopFindings: state.legacyShopFindings,
           attributionComplete: state.attributionComplete,
         })),
+      },
+      phase5aExtension: {
+        baseManifestSha256: INPUTS['config/lordly-native-composition.json'],
+        acceptedCommit: identity.commit,
+        acceptedTree: identity.tree,
+        effectOwner: effectOwner.id,
+        descriptionOwner: descriptionOwner.id,
+        retiredDescriptionOwner: 'effects.healing-descriptions',
+        mixedState: 'reject',
       },
     },
     approvals,
@@ -547,6 +713,62 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity) {
       compatibility: contract.compatibility,
       products: phase4Products,
     },
+    consumables: {
+      generator: 'tools/lib/lordly_native_phase5a_consumables.js::build',
+      effect: {
+        owner: effectOwner.id,
+        section: effectOwner.section,
+        romStart: effectOwner.start,
+        ramStart: effectRamOwner.start,
+        bytes: effectOwner.bytes,
+        retailSha256: sha256(retailEffect),
+        retailHex: retailEffect.toString('hex').toUpperCase(),
+        modelOrder: phase5aSourceModelLedger.modelOrder.slice(),
+        models: phase5aSourceModelLedger.models.map((model) => Object.assign({}, model)),
+        sourceWords: phase5aSourceModelLedger.sourceWords.map((word) => ({
+          modelKey: word.modelKey,
+          role: word.role,
+          buildInput: word.buildInput,
+          romStart: word.z64RomOffset,
+          ramStart: word.ramVirtualAddress,
+          expression: word.expression,
+        })),
+        productionWritePolicy: phase5aSourceModelLedger.productionWritePolicy,
+      },
+      descriptions: {
+        owner: descriptionOwner.id,
+        retiredOwner: 'effects.healing-descriptions',
+        romStart: descriptionOwner.start,
+        bytes: descriptionOwner.bytes,
+        streamCapacity: phase5aConfig.owners.descriptions.streamCapacity,
+        recordCount: 50,
+        retailSha256: sha256(retailDescription),
+        retailHex: retailDescription.toString('hex').toUpperCase(),
+        logicalOrder: ['manual-state', 'healing-synchronization'],
+      },
+      metadata: {
+        owner: metadataOwner.id,
+        romStart: metadataOwner.start,
+        bytes: metadataOwner.bytes,
+        mode: 'passthrough',
+      },
+      acceptedSource: {
+        commit: identity.commit,
+        tree: identity.tree,
+        artifactManifestSha256: INPUTS[PHASE5A_ROOT + '/artifact-manifest.json'],
+        buildReportSha256: INPUTS[PHASE5A_REPORT],
+        ownerLedgerSha256: INPUTS[PHASE5A_OWNER_LEDGER],
+        relocationLedgerSha256: INPUTS[PHASE5A_RELOCATION_LEDGER],
+        sourceModelLedgerSha256: INPUTS[PHASE5A_SOURCE_MODEL_LEDGER],
+        staticMatrixSha256: INPUTS[PHASE5A_STATIC_MATRIX],
+        products: {
+          exactRetail: RETAIL_SHA256,
+          nativeConsumables: nativeOwnerImages[0].romSha256,
+          canonicalNativeConsumables: nativeOwnerImages[1].romSha256,
+        },
+        nativeOwnerImages,
+      },
+    },
   };
 }
 
@@ -558,7 +780,9 @@ function main() {
     verifyApproval(args.phase3Approval, PHASE3_APPROVAL_SHA256, 'Phase 3',
       PHASE3_APPROVED_COMMIT, PHASE3_APPROVED_TREE),
     verifyApproval(args.phase4Approval, PHASE4_APPROVAL_SHA256, 'Phase 4',
-      EXPECTED_COMMIT, EXPECTED_TREE),
+      '05623e67b295f4f968e4a5cb416b9c002fb09bdd',
+      '90b193077b61eee0f6656a8d3f6848b2f17bdfaa'),
+    verifyPhase5aReview(args.phase5aReview),
   ];
   const generatorIdentity = Object.assign({
     path: 'tools/generate-native-rebuild-data.js',

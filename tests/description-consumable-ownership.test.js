@@ -5,8 +5,14 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
-const MASTER = path.join(ROOT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
+const MASTER_NAME = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
+const MASTER = [
+  process.env.OB64_MASTER_ROM,
+  path.resolve(EDITOR, '..', MASTER_NAME),
+  path.resolve(EDITOR, '..', '..', 'OgreBattlel64', MASTER_NAME),
+].filter(Boolean).find(candidate => fs.existsSync(candidate));
+
+if (!MASTER) throw new Error('Set OB64_MASTER_ROM to the read-only US Rev 0 master ROM.');
 
 global.window = global;
 global.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };

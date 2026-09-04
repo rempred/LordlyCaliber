@@ -46,6 +46,11 @@ const phase4Approval = firstExisting('Phase 4 approval record', 'OB64_PHASE4_APP
   process.env.OB64_PHASE4_APPROVAL,
 ].concat(parentCandidates.map(root => root && path.join(root, 'docs', 'Plans', 'task-logs',
   'lordly-native-rebuild-phase4-accepted-source-approval-20260903.json'))));
+const phase5aReview = firstExisting('Phase 5A Critical-review record', 'OB64_PHASE5A_REVIEW', [
+  process.env.OB64_PHASE5A_REVIEW,
+].concat(parentCandidates.map(root => root && path.join(root, 'wiki',
+  'after-action-reports',
+  '20260904-lordly-native-rebuild-phase5a-native-consumables-critical-review-r1.md'))));
 
 const outputParent = path.resolve(process.env.OB64_NATIVE_GENERATOR_TEST_OUTPUT || os.tmpdir());
 fs.mkdirSync(outputParent, { recursive: true });
@@ -81,6 +86,7 @@ function runGenerator(script, output) {
     '--decomp', decomp,
     '--phase3-approval', phase3Approval,
     '--phase4-approval', phase4Approval,
+    '--phase5a-review', phase5aReview,
     '--out', output,
   ], { encoding: 'utf8' });
   if (result.status !== 0) {
@@ -120,6 +126,13 @@ require(path.join(EDITOR, 'native-rebuild.js'));
 const verifiedData = global.OB64.nativeRebuild.verifyData();
 assert.strictEqual(verifiedData.generator.sha256, lfResult.generatorSha256,
   'the Editor runtime must accept the regenerated bundle and its generator identity');
+assert.strictEqual(verifiedData.acceptedSource.commit,
+  'e50fe500839288c94c538969acc7a5b966075626',
+  'the bundle must authenticate the accepted Phase 5A commit');
+assert.strictEqual(verifiedData.consumables.effect.bytes, 1380,
+  'the bundle must own the complete Phase 5A effect section');
+assert.strictEqual(verifiedData.consumables.descriptions.streamCapacity, 2055,
+  'the bundle must retain the accepted consumable description capacity');
 
 console.log(JSON.stringify({
   result: 'pass',

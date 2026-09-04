@@ -881,6 +881,7 @@ window.OB64 = window.OB64 || {};
     parseBlock: parseBlock,
     serializeBlock: serializeBlock,
     serializeRecords: serializeRecords,
+    replaceText: replaceText,
     withText: withText,
     measureText: measureText,
     snapshotAll: snapshotAll,

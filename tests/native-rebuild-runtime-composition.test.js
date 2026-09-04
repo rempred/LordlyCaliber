@@ -68,6 +68,19 @@ function sha256(bytes) {
 function freshRom() {
   const rom = OB64.loadROM(masterBytes.slice().buffer);
   OB64.nativeRebuild.initializeSource(rom);
+  OB64.consumableEffects.initializeSession(rom,
+    OB64.consumableEffects.evaluateSourceIdentity({
+      filename: MASTER_NAME,
+      size: rom.z64.length,
+      sha256: sha256(rom.z64),
+      byteOrder: rom.byteOrder,
+      imageName: 'OgreBattle64',
+      gameId: 'NOBE',
+      country: rom.z64[0x3E],
+      version: rom.z64[0x3F],
+      crc1: OB64.readU32BE(rom.z64, 0x10),
+      crc2: OB64.readU32BE(rom.z64, 0x14),
+    }), { filename: MASTER_NAME });
   OB64.patch.snapshotOriginal(rom);
   OB64.tools.initState(rom);
   OB64.nativeRebuild.initializeToolState(rom);

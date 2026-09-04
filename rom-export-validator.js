@@ -1512,6 +1512,9 @@ window.OB64 = window.OB64 || {};
         suggestion: 'Keep the error report, reload the project, and export again.',
       }, function() {
         if (!dirty[spec.dirty]) return skipped('This feature did not change during the export.');
+        if (buildMode === 'rebuild' && spec.dirty === 'consumableDescriptions') {
+          return skipped('Rebuild ROM consumable descriptions use the authenticated unified native owner.');
+        }
         if (!reloadedRom) {
           return skipped('The ROM could not be reopened, so semantic readback was not attempted.');
         }

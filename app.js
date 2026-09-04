@@ -755,10 +755,19 @@ window.OB64 = window.OB64 || {};
       }
 
       var standardOwnerDirty = Object.assign({}, dirty);
-      if (buildMode === 'rebuild') standardOwnerDirty.tools = false;
+      if (buildMode === 'rebuild') {
+        standardOwnerDirty.tools = false;
+        standardOwnerDirty.consumableDescriptions = false;
+        standardOwnerDirty.consumableEffects = false;
+      }
       effectOwners = OB64.consumableEffects.standardPatchOwners(
         candidateRom, standardOwnerDirty).concat(sharedRegionOwners);
       if (nativePlan) {
+        effectOwners = effectOwners.filter(function(owner) {
+          return owner.id !== 'consumable-effects' &&
+            owner.id !== 'consumable-healing-descriptions' &&
+            owner.id !== 'consumable-descriptions-adopted';
+        });
         effectOwners = effectOwners.concat(
           nativePlan.owners,
           nativePlan.restorationOwners,
@@ -778,11 +787,13 @@ window.OB64 = window.OB64 || {};
         statusBar.textContent = buildInfo.label + ' blocked (feature collision)';
         return;
       }
-      effectTransaction = OB64.consumableEffects.prepareTransaction(
-        rom.consumableEffects,
-        sourceWorkingZ64,
-        effectOwners
-      );
+      if (!nativePlan) {
+        effectTransaction = OB64.consumableEffects.prepareTransaction(
+          rom.consumableEffects,
+          sourceWorkingZ64,
+          effectOwners
+        );
+      }
       if (nativePlan) {
         var compositionOwners = effectOwners.slice();
         if (effectTransaction) {
@@ -848,7 +859,7 @@ window.OB64 = window.OB64 || {};
         OB64.serializeItemDescriptions(rom.itemDescriptions, candidateRom.z64);
         touched.push('item descriptions');
       }
-      if (dirty.consumableDescriptions) {
+      if (dirty.consumableDescriptions && !nativePlan) {
         OB64.serializeConsumableDescriptions(
           rom.consumableDescriptions,
           candidateRom.z64
@@ -1101,6 +1112,7 @@ window.OB64 = window.OB64 || {};
         if (nativePlan.selected['character-card-luck']) nativeParts.push('Character Card Luck');
         if (nativePlan.selected['squad-menu-alignment']) nativeParts.push('Squad Menu Alignment');
         if (nativeResult.shopSelected) nativeParts.push('Shop memberships');
+        nativeParts.push('Consumable effects and descriptions');
         if (nativeParts.length) touched.push('native owners: ' + nativeParts.join(', '));
       }
 

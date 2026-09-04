@@ -5,17 +5,17 @@
   var data = {
     "schema": "ob64-native-rebuild-data",
     "schemaVersion": 1,
-    "payloadSha256": "63FF8C1FD211EB8D362FCF3B8ADABE470FC774EC0A302ADB71E50FCFF359BA82",
+    "payloadSha256": "CEC4C606CD03F7D7968632BB868F0CC3CD43C9EC7A4E0D31FC230A213A9E6CEC",
     "payload": {
       "generator": {
         "path": "tools/generate-native-rebuild-data.js",
         "sourceIdentity": "sha256-canonical-utf8-lf-v1",
-        "canonicalBytes": 27783,
-        "sha256": "6482CDB2F8CF7242FFD72FE98FF5F0286C04CF71D5182B25E2B80D77BBA85729"
+        "canonicalBytes": 39680,
+        "sha256": "7C2DAE6B60990D18518BD78A4A10FD9B61EF0BB6B21155A78CC520B9D4565416"
       },
       "acceptedSource": {
-        "commit": "05623e67b295f4f968e4a5cb416b9c002fb09bdd",
-        "tree": "90b193077b61eee0f6656a8d3f6848b2f17bdfaa",
+        "commit": "e50fe500839288c94c538969acc7a5b966075626",
+        "tree": "ef58ea271b2298be71b09be9318a359805c266c0",
         "runtimeRdramBytes": 8388608,
         "retailBytes": 41943040,
         "retailSha256": "571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A",
@@ -204,6 +204,81 @@
             "path": "build/lordly-native-rebuild/phase4-native-shops-tooling-correction-r2/verification-report.json",
             "bytes": 7846,
             "sha256": "9B5E93C1FB60C0CF51B62890628674874A21E2BC6097491AEBC2D8D89D1AF6ED"
+          },
+          {
+            "path": "config/lordly-native-phase5a-consumables.json",
+            "bytes": 3301,
+            "sha256": "29D6F33DF6F80CF545D32BFCAC55A5C7378318037F737FD8156DAC116BD2C0CD"
+          },
+          {
+            "path": "config/lordly-native-phase5a-consumables.schema.json",
+            "bytes": 1153,
+            "sha256": "038E87312B2549FE5C3936A65C9A21C24ACB0DF0D08C87DE3918020FF3FCE4B2"
+          },
+          {
+            "path": "docs/LORDLY_NATIVE_PHASE5A_CONSUMABLES.md",
+            "bytes": 4090,
+            "sha256": "4D7FDBF81468D8E438AD8EB4D1FD28304DBDECE19100DD536F253FB3D201F075"
+          },
+          {
+            "path": "tools/lib/lordly_native_phase5a_consumables.js",
+            "bytes": 55836,
+            "sha256": "3302366467B92DBF71A16440D119CC58CEB0370E7E9FF09D5CD5C47392EBB41B"
+          },
+          {
+            "path": "tools/lib/lordly_native_phase5a_frozen_editor.js",
+            "bytes": 4547,
+            "sha256": "BEC12FF86A504A217AE099BE1160F494F580786D7304B353986ADC372F698CD6"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/artifact-manifest.json",
+            "bytes": 75525,
+            "sha256": "24A8FAC0805557A7A67221C6765559CEC69FC4FEE9AE2688FC7F649AD32EAB12"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/build-report.json",
+            "bytes": 86844,
+            "sha256": "F8BDA0339970C3BDDE8A4C89496BA26804EF807DE770FA01D8A1B25FA85742BA"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/owner-ledger.json",
+            "bytes": 2061,
+            "sha256": "D7EF1E7AA63479B23772E4CB50185DEE4F605A001021D8CFDB48B3C46F6E4A7D"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/relocation-ledger.json",
+            "bytes": 622,
+            "sha256": "3209437ED671D853AC3A1A4D3656019EB750E95D9A7CD813A4D1BCE6702B9EB1"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/source-model-ledger.json",
+            "bytes": 8441,
+            "sha256": "48DAF0FB3F905184ABAE062D1CC1FF1AFE0C0B623D6AEEDD61C2108855686747"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/static-matrix.json",
+            "bytes": 45871,
+            "sha256": "A2950938BCFD30D545006D4B922FE120B5881A32EB7FC414E6C3A3946B4085CC"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/verification-report.json",
+            "bytes": 1604,
+            "sha256": "EF58568B5D636819DB81EA74D9598B851A5CC69781D1AEF1095264FC38D5CE32"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/products/exact-retail/exact-retail.us_rev0.z64",
+            "bytes": 41943040,
+            "sha256": "571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/products/native-consumables/native-consumables.us_rev0.z64",
+            "bytes": 41943040,
+            "sha256": "6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27"
+          },
+          {
+            "path": "build/lordly-native-rebuild/phase5a-consumables-r1/products/canonical-native-consumables/canonical-native-consumables.us_rev0.z64",
+            "bytes": 41943040,
+            "sha256": "496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37"
           }
         ]
       },
@@ -1523,7 +1598,12 @@
           "tool.chaos-frame-counter",
           "tool.character-card-luck",
           "tool.squad-menu-alignment",
-          "runtime.shop-overrides"
+          "runtime.shop-overrides",
+          "effects.consumable-code",
+          "text.consumable-descriptions"
+        ],
+        "retiredOwners": [
+          "effects.healing-descriptions"
         ],
         "remainingRuntimeContributors": [
           "runtime.squad-overrides",
@@ -2558,6 +2638,15 @@
               "attributionComplete": true
             }
           ]
+        },
+        "phase5aExtension": {
+          "baseManifestSha256": "DBCA8D456D8D786DE9A69130CBABF9CCF6FB27B8E746DEC0E0616511B4D420A3",
+          "acceptedCommit": "e50fe500839288c94c538969acc7a5b966075626",
+          "acceptedTree": "ef58ea271b2298be71b09be9318a359805c266c0",
+          "effectOwner": "effects.consumable-code",
+          "descriptionOwner": "text.consumable-descriptions",
+          "retiredDescriptionOwner": "effects.healing-descriptions",
+          "mixedState": "reject"
         }
       },
       "approvals": [
@@ -2576,6 +2665,15 @@
           "sha256": "B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF",
           "approvedCommit": "05623e67b295f4f968e4a5cb416b9c002fb09bdd",
           "approvedTree": "90b193077b61eee0f6656a8d3f6848b2f17bdfaa"
+        },
+        {
+          "phase": "Phase 5A",
+          "filename": "20260904-lordly-native-rebuild-phase5a-native-consumables-critical-review-r1.md",
+          "bytes": 8147,
+          "sha256": "578C512E89429746888772AB8150BA56FFB888E4883B79344F023B8236031743",
+          "approvedCommit": "e50fe500839288c94c538969acc7a5b966075626",
+          "approvedTree": "ef58ea271b2298be71b09be9318a359805c266c0",
+          "verdict": "Accepted"
         }
       ],
       "experience": {
@@ -3454,6 +3552,327 @@
             "projectionSha256": "7D7389CDF4A19A9A9D8B9748239C24862F273E0734760557DBEDF75D8FCC569B"
           }
         ]
+      },
+      "consumables": {
+        "generator": "tools/lib/lordly_native_phase5a_consumables.js::build",
+        "effect": {
+          "owner": "effects.consumable-code",
+          "section": ".ob64.r0815",
+          "romStart": 266392,
+          "ramStart": 2148970904,
+          "bytes": 1380,
+          "retailSha256": "1A04986B509EA8DB35549F889D240AD75278F035CB30938EA4C199FA156FDD18",
+          "retailHex": "27BDFFE0AFBF00180080482130E300FF000310C000431023000210C03C03801924633BC00043202130C2FFFF2443FFFF2C6200131040014700004021000310803C018019002208218C22FE60004000080000000030C3FFFF2402000110620002240A0064240A012C0805AC843148FFFF240A009624080096312200FF1040013530E600FF2CC200641440003A000000003C02801994420F823C04AAAA3484AAAB004400193C02801924420F82944300000000481000000000000000000064001900061840004310218443FF3A00002021000930420060282100006010000C104200000000186000063049FFFF00A6102300402821000214001C40FFFC248400010004140000021403284200045040000124040003308300FF2C6200031440000430E200FF3C0580190805ACB594A50F820000000001230018000028123C03801924630EBC00021040004320219486000030A2FFFF014618210043102A5040000300CA10210805ADBBA48500000805ADBBA48200009486001830C2FFFF104000F50000000094830016004510210062102A144000020060102100C510210805ADBBA482001830C3FFFF2402000410620002240A0014240A0032312200FF104000E53148FFFF30E200FF2C420064104000E10000000090830032006510230441000200651023000010210805ADBBA0820032312200FF104000D730E300FF2C62006414400009000000003C0280190043102190421010304200FB3C018019002308210805ADBBA0221010908200330805AD00304200FB94860016312200FF104000C530C8FFFF94830018006510210102102A5440000200C018210065182190820033A4830018304200FB0805ADBBA0820033312200FF14400005000000000C0271F3000000000805ADBB240800010C05BAE9000000000805ADBB0000402194830016312200FF14400013248400160C0271F300000000240300060043001A14600002000000000007000D2401FFFF146100043C01800014410002000000000006000D0000181000000000000000000805ADBB24680005000514000002140300621821240203E70043102A10400003000310270805AD2E240303E7000217C300621824312200FF5440008AA48300000805ADBB000040219483001C0805AD4C2484001C0002140300621821240203E70043102A5440FFF3240303E70805AD2C000310279483001E0805AD4C2484001E948300200805AD4C24840020948300220805AD4C24840022948300240805AD4C248400249483002624840026312200FF1440FFE8000514000C0271F300000000240300030043001A14600002000000000007000D2401FFFF146100043C01800014410002000000000006000D0000181000000000000000000805ADBB246800029083001B312200FF144000132484001B0C0271F300000000240300030043001A14600002000000000007000D2401FFFF146100043C01800014410002000000000006000D0000181000000000000000000805ADBB24680001000514000002140300621821240200640043102A5440003A240300640805ADB5000310279083001B312200FF1440FFF42484001B0C0271F300000000240300030043001A14600002000000000007000D2401FFFF146100043C01800014410002000000000006000D0000181000000000000000000805ADBB2468FFFD90830028312200FF14400013248400280C0271F300000000240300030043001A14600002000000000007000D2401FFFF146100043C01800014410002000000000006000D0000181000000000000000000805ADBB2468FFFF000514000002140300621821240200640043102A10400003000310270805ADB724030064000217C300621824312200FF54400001A0830000000040218FBF00180100102103E0000827BD0020",
+          "modelOrder": [
+            "healLeaf",
+            "healSeed",
+            "healPack",
+            "powerFruit",
+            "angelFruit",
+            "cupOfLife",
+            "sharedStatBoosters11To16",
+            "scrollOfDiscipline",
+            "urnOfChaos",
+            "gobletOfDestiny"
+          ],
+          "models": [
+            {
+              "key": "healLeaf",
+              "kind": "magnitude",
+              "itemIds": [
+                1
+              ],
+              "domainMin": 0,
+              "domainMax": 999,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "healSeed",
+              "kind": "magnitude",
+              "itemIds": [
+                2
+              ],
+              "domainMin": 0,
+              "domainMax": 999,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "healPack",
+              "kind": "magnitude",
+              "itemIds": [
+                3
+              ],
+              "domainMin": 0,
+              "domainMax": 999,
+              "paired": true,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "powerFruit",
+              "kind": "magnitude",
+              "itemIds": [
+                4
+              ],
+              "domainMin": 0,
+              "domainMax": 65535,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "angelFruit",
+              "kind": "magnitude",
+              "itemIds": [
+                5
+              ],
+              "domainMin": 0,
+              "domainMax": 65535,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "cupOfLife",
+              "kind": "range",
+              "itemIds": [
+                10
+              ],
+              "domainMin": 0,
+              "domainMax": 999,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "sharedStatBoosters11To16",
+              "kind": "range",
+              "itemIds": [
+                11,
+                12,
+                13,
+                14,
+                15,
+                16
+              ],
+              "domainMin": 0,
+              "domainMax": 999,
+              "paired": false,
+              "sharedRecords11To16": true
+            },
+            {
+              "key": "scrollOfDiscipline",
+              "kind": "range",
+              "itemIds": [
+                17
+              ],
+              "domainMin": 1,
+              "domainMax": 100,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "urnOfChaos",
+              "kind": "range",
+              "itemIds": [
+                18
+              ],
+              "domainMin": -100,
+              "domainMax": -1,
+              "paired": false,
+              "sharedRecords11To16": false
+            },
+            {
+              "key": "gobletOfDestiny",
+              "kind": "range",
+              "itemIds": [
+                19
+              ],
+              "domainMin": -100,
+              "domainMax": 100,
+              "paired": false,
+              "sharedRecords11To16": false
+            }
+          ],
+          "sourceWords": [
+            {
+              "modelKey": "healLeaf",
+              "role": "magnitude",
+              "buildInput": "OB64_HEAL_LEAF",
+              "romStart": 266488,
+              "ramStart": 2148971000,
+              "expression": "0x240A0000 | (OB64_HEAL_LEAF & 0xFFFF)"
+            },
+            {
+              "modelKey": "healSeed",
+              "role": "magnitude",
+              "buildInput": "OB64_HEAL_SEED",
+              "romStart": 266492,
+              "ramStart": 2148971004,
+              "expression": "0x240A0000 | (OB64_HEAL_SEED & 0xFFFF)"
+            },
+            {
+              "modelKey": "healPack",
+              "role": "special-pool magnitude",
+              "buildInput": "OB64_HEAL_PACK",
+              "romStart": 266504,
+              "ramStart": 2148971016,
+              "expression": "0x240A0000 | (OB64_HEAL_PACK & 0xFFFF)"
+            },
+            {
+              "modelKey": "healPack",
+              "role": "ordinary/cache magnitude",
+              "buildInput": "OB64_HEAL_PACK",
+              "romStart": 266508,
+              "ramStart": 2148971020,
+              "expression": "0x24080000 | (OB64_HEAL_PACK & 0xFFFF)"
+            },
+            {
+              "modelKey": "powerFruit",
+              "role": "magnitude",
+              "buildInput": "OB64_POWER_FRUIT",
+              "romStart": 266824,
+              "ramStart": 2148971336,
+              "expression": "0x240A0000 | (OB64_POWER_FRUIT & 0xFFFF)"
+            },
+            {
+              "modelKey": "angelFruit",
+              "role": "magnitude",
+              "buildInput": "OB64_ANGEL_FRUIT",
+              "romStart": 266828,
+              "ramStart": 2148971340,
+              "expression": "0x240A0000 | (OB64_ANGEL_FRUIT & 0xFFFF)"
+            },
+            {
+              "modelKey": "cupOfLife",
+              "role": "inclusive width",
+              "buildInput": "OB64_CUP_OF_LIFE_MIN/MAX",
+              "romStart": 267084,
+              "ramStart": 2148971596,
+              "expression": "0x24030000 | ((OB64_CUP_OF_LIFE_MAX - OB64_CUP_OF_LIFE_MIN + 1) & 0xFFFF)"
+            },
+            {
+              "modelKey": "cupOfLife",
+              "role": "minimum",
+              "buildInput": "OB64_CUP_OF_LIFE_MIN",
+              "romStart": 267144,
+              "ramStart": 2148971656,
+              "expression": "0x24680000 | (OB64_CUP_OF_LIFE_MIN & 0xFFFF)"
+            },
+            {
+              "modelKey": "sharedStatBoosters11To16",
+              "role": "inclusive width for records 11 through 16",
+              "buildInput": "OB64_SHARED_11_TO_16_MIN/MAX",
+              "romStart": 267332,
+              "ramStart": 2148971844,
+              "expression": "0x24030000 | ((OB64_SHARED_11_TO_16_MAX - OB64_SHARED_11_TO_16_MIN + 1) & 0xFFFF)"
+            },
+            {
+              "modelKey": "sharedStatBoosters11To16",
+              "role": "minimum for records 11 through 16",
+              "buildInput": "OB64_SHARED_11_TO_16_MIN",
+              "romStart": 267392,
+              "ramStart": 2148971904,
+              "expression": "0x24680000 | (OB64_SHARED_11_TO_16_MIN & 0xFFFF)"
+            },
+            {
+              "modelKey": "scrollOfDiscipline",
+              "role": "inclusive width",
+              "buildInput": "OB64_SCROLL_MIN/MAX",
+              "romStart": 267420,
+              "ramStart": 2148971932,
+              "expression": "0x24030000 | ((OB64_SCROLL_MAX - OB64_SCROLL_MIN + 1) & 0xFFFF)"
+            },
+            {
+              "modelKey": "scrollOfDiscipline",
+              "role": "minimum",
+              "buildInput": "OB64_SCROLL_MIN",
+              "romStart": 267480,
+              "ramStart": 2148971992,
+              "expression": "0x24680000 | (OB64_SCROLL_MIN & 0xFFFF)"
+            },
+            {
+              "modelKey": "urnOfChaos",
+              "role": "inclusive width",
+              "buildInput": "OB64_URN_MIN/MAX",
+              "romStart": 267544,
+              "ramStart": 2148972056,
+              "expression": "0x24030000 | ((OB64_URN_MAX - OB64_URN_MIN + 1) & 0xFFFF)"
+            },
+            {
+              "modelKey": "urnOfChaos",
+              "role": "minimum",
+              "buildInput": "OB64_URN_MIN",
+              "romStart": 267604,
+              "ramStart": 2148972116,
+              "expression": "0x24680000 | (OB64_URN_MIN & 0xFFFF)"
+            },
+            {
+              "modelKey": "gobletOfDestiny",
+              "role": "inclusive width",
+              "buildInput": "OB64_GOBLET_MIN/MAX",
+              "romStart": 267632,
+              "ramStart": 2148972144,
+              "expression": "0x24030000 | ((OB64_GOBLET_MAX - OB64_GOBLET_MIN + 1) & 0xFFFF)"
+            },
+            {
+              "modelKey": "gobletOfDestiny",
+              "role": "minimum",
+              "buildInput": "OB64_GOBLET_MIN",
+              "romStart": 267692,
+              "ramStart": 2148972204,
+              "expression": "0x24680000 | (OB64_GOBLET_MIN & 0xFFFF)"
+            }
+          ],
+          "productionWritePolicy": "The assembler emits the complete section. Sixteen fixed-offset writes exist only in the frozen legacy oracle."
+        },
+        "descriptions": {
+          "owner": "text.consumable-descriptions",
+          "retiredOwner": "effects.healing-descriptions",
+          "romStart": 37188682,
+          "bytes": 2064,
+          "streamCapacity": 2055,
+          "recordCount": 50,
+          "retailSha256": "5E8D4FF9A3C2952746C1B2A25B4E0BC08E11E3812F86E5A97F035853A0A1E3E0",
+          "retailHex": "0000080B00000CA27852657475726E696E67206974656D20746F2073746F636B2E0D0A4C656166206F6620612063757261746976652068657262207468617420726580268004468197313030485088378027476861726163746572803D43536565641F403D403312403D4043C8334073D07242203135A8324A6C6C81976D656D62657273986A43756E697480B94F496E646967656E6F7573206672756974D8B24D20736F6D6581977374616D696E61A0484020A84741696EB847450E576F6E6472B8464062800B416768804E406F81044D697320776F726C642062791030618035466E67656C2E2052B065D05F430F81970EF862431030200F80EC4D6F6E636F6374696F6E206D61646580B3426F6D2080114A6B6174726963652074616980E89176814B80C04170658018426669638156416F6E81A946416E6369656E74811042746172B19F45757272656374893C45652064656164891891E289BF4377617270981A42666162806589AA42737061806D42616E64806C4672616E73706F72803E995544206261636B8A1D40688049437175617281E5407389224F5374617475657474652C206D6F64656C81F5416166820281F84266616D898281F6436F2C10309A3642616973818188924C6F776E6572277320657870657280BE4163658923426C65768145A1174175709A6C45696E637265618838404881CC43506F696E80D6825B9046406E81CB4877686F206472696E6B89F0813C920543456D626CA8EE45636F6D70656C990B4377656172907947737069726974819780F1A89889D547737472656E6774688302404282CE8A5CB8BB4820766974616C69747989274420656E686180B88080A85383174069825980CD8B4A437068797381A6476C2064616D6167658AD8407280F7B093406D82B081C58293437769746891A942736F7582D5C09289BE80F042656C6C8AD3820EA0F84175739367444D6972726FB1F441666CB1F241696E815F432073656C838389D2C17A406D822C98C4D84B430E4D6167820A8400406E82758BE6A0E09A44A8CD82EE4074829942627574922DC9D4803FC0578AF490A69AE7490E477265656E20637279837B406C9C4742686569835141656E8267411030B43F82164063831482D38C3A8317B9A28B484264657884648184A3404A4C617766756C207363726F83C9EA6881AE41676E88F2418197848F40698311824C406498F0405082ED45656D6F6E69758B71811541696E84B6840393DF851843206C6F77845E8ABEC049AA7C82B9407383B58A7E436C6F6F6B909C829C406F8A809BDB41476F8284A480839E9A4C8B8F437374696EA97F809881701142C4450E466C61672084E3426C617A82EA4064BA28406281848289426F6E27809D8820ABDA43626F6C739068858D80DA4079925B90D29990BC7891EE829D47686F7572676C6173A568407380F3943642819770801482B8936C41696D8AC043506169728DD7454C2D7368617085E380C840638377961540709B9A41746F8CAE4065813B9CA28120406585B88E60844F85C24468696464658CB941506F81FB407484F698889E82904985D34075850C847F476E8197656E656D798E9B406A83FB41207980AE8046416D7992B2416564AA4BABB88A4D907E91E645736869701030B61E93B74168618121A02540678391837B9A1A9C828A1D93DF44736F6C64698CE8A5A841726FB12383B0416368A4CA866B88318EED8657983388F3426E207085CA80E28D7B41426183568BB540648F64406D82698A6D41206385F18C2D9BA34265647585F04066872F4167758A11832E436D61726381BE40678F1583278559978086DF4065875786CE83F5878D8822830192E68CD042616363858CA82145636F766572799E59A05D925C80668536945348536C6569706E69722C963093964C2D6C65676765641030686F727385E0A4124061855785D6811B888C870B41726185B4422061748EE4406785A98242407087FEABF6434D616E7585034077856C83E9872F87EC85628E004264206D8C304161728743416F6686D24065907F95B1416E668FD7406D8FF2DE234067B3A585D68306A74696DC406B8856957A4072864987138BEF966A975642819762810B87F7406787E39714492E2E204275742C20646F814A87E38668436C6C793F87FC41486F83FEA9AF8DAC8E278F4C4374726F6F873C43696E10308B84446C652E204184778DA443727275709DD98746417320906C950641617687C4893881269BBE41656785A189B4817BD0C7410E4986F18777416464864C822E432C202754823040798FC4865E44741030646110088687634053876F436E612E278F3980C94057863E83CB436C646E2784A24070856B9B06879DB583444D6574656F86F6A5E04066865791C38E7A4275726686EF92B98FAF1508E14263616D9683406F87AC86DD8FAB402E8FAC4344726167859C40418466407288B21608BDB4FF404612085DB81996E342696C6BB4FA4553706861676E857F83288F73410E438CB74220676981BE8A2B9CEB44726B6565708D9841456C8DA3825A40548DA185A4427075721008A84265646C8A574073876DAF229BCC8B9C825F43204469768AE998B381F6A29C4254686F87D58D7B437365656B919A8583919594C2406981218186402C869D81CAA92A407482F1861C406E819199CD416F728E518C3E422D204B80AA9C0E404480B741204B82E9446C656467659D74435061636B8D5295E342616E2084628C40824682608E7A404385C9416F6E844984264747656C64612E204986B48E9E92D08697406E92E68EC0404C91DC9E30902CA9CC88569850411030A0518847FA598EBD426D204993CF9F5C88D392704068827042742E279E2C4054831982218C370069000A00",
+          "logicalOrder": [
+            "manual-state",
+            "healing-synchronization"
+          ]
+        },
+        "metadata": {
+          "owner": "direct.consumable-metadata",
+          "romStart": 411088,
+          "bytes": 764,
+          "mode": "passthrough"
+        },
+        "acceptedSource": {
+          "commit": "e50fe500839288c94c538969acc7a5b966075626",
+          "tree": "ef58ea271b2298be71b09be9318a359805c266c0",
+          "artifactManifestSha256": "24A8FAC0805557A7A67221C6765559CEC69FC4FEE9AE2688FC7F649AD32EAB12",
+          "buildReportSha256": "F8BDA0339970C3BDDE8A4C89496BA26804EF807DE770FA01D8A1B25FA85742BA",
+          "ownerLedgerSha256": "D7EF1E7AA63479B23772E4CB50185DEE4F605A001021D8CFDB48B3C46F6E4A7D",
+          "relocationLedgerSha256": "3209437ED671D853AC3A1A4D3656019EB750E95D9A7CD813A4D1BCE6702B9EB1",
+          "sourceModelLedgerSha256": "48DAF0FB3F905184ABAE062D1CC1FF1AFE0C0B623D6AEEDD61C2108855686747",
+          "staticMatrixSha256": "A2950938BCFD30D545006D4B922FE120B5881A32EB7FC414E6C3A3946B4085CC",
+          "products": {
+            "exactRetail": "571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A",
+            "nativeConsumables": "6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27",
+            "canonicalNativeConsumables": "496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37"
+          },
+          "nativeOwnerImages": [
+            {
+              "product": "native-consumables",
+              "romSha256": "6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27",
+              "effectSha256": "1F95AF1B0FDB18010EC5C0B640916ABB4F56F17C26A043C561A6086AC0B95C70",
+              "descriptionSha256": "C3BB82694D2C046E681CFEB1A9CB852CBF5C33DE3379DED28FBE3C9859F5AAF8"
+            },
+            {
+              "product": "canonical-native-consumables",
+              "romSha256": "496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37",
+              "effectSha256": "1F95AF1B0FDB18010EC5C0B640916ABB4F56F17C26A043C561A6086AC0B95C70",
+              "descriptionSha256": "C3BB82694D2C046E681CFEB1A9CB852CBF5C33DE3379DED28FBE3C9859F5AAF8"
+            }
+          ]
+        }
       }
     }
   };

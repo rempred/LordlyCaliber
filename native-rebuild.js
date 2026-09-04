@@ -1,4 +1,4 @@
-// Lordly Caliber Editor — authenticated Phase 1 through Phase 4 ROM rebuild.
+// Lordly Caliber Editor — authenticated Phase 1 through Phase 5A ROM rebuild.
 window.OB64 = window.OB64 || {};
 
 (function(OB64, root) {
@@ -7,13 +7,13 @@ window.OB64 = window.OB64 || {};
   var DATA_SCHEMA = 'ob64-native-rebuild-data';
   var DATA_VERSION = 1;
   var EXPECTED_PAYLOAD_SHA256 =
-    '63FF8C1FD211EB8D362FCF3B8ADABE470FC774EC0A302ADB71E50FCFF359BA82';
+    'CEC4C606CD03F7D7968632BB868F0CC3CD43C9EC7A4E0D31FC230A213A9E6CEC';
   var EXPECTED_GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
-  var EXPECTED_GENERATOR_CANONICAL_BYTES = 27783;
+  var EXPECTED_GENERATOR_CANONICAL_BYTES = 39680;
   var EXPECTED_GENERATOR_SHA256 =
-    '6482CDB2F8CF7242FFD72FE98FF5F0286C04CF71D5182B25E2B80D77BBA85729';
-  var ACCEPTED_COMMIT = '05623e67b295f4f968e4a5cb416b9c002fb09bdd';
-  var ACCEPTED_TREE = '90b193077b61eee0f6656a8d3f6848b2f17bdfaa';
+    '7C2DAE6B60990D18518BD78A4A10FD9B61EF0BB6B21155A78CC520B9D4565416';
+  var ACCEPTED_COMMIT = 'e50fe500839288c94c538969acc7a5b966075626';
+  var ACCEPTED_TREE = 'ef58ea271b2298be71b09be9318a359805c266c0';
   var RETAIL_SHA256 = '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A';
   var PATCH_MODE = 'patch';
   var REBUILD_MODE = 'rebuild';
@@ -28,7 +28,7 @@ window.OB64 = window.OB64 || {};
     rebuild: Object.freeze({
       id: REBUILD_MODE,
       label: 'Rebuild ROM',
-      help: 'Uses authenticated native source owners through Phase 4. US Rev 0 only; requires 8 MiB RDRAM.',
+      help: 'Uses authenticated native source owners through Phase 5A. US Rev 0 only; requires 8 MiB RDRAM.',
       shopEquipmentCapacity: 50,
       shopExpendableCapacity: 30,
     }),
@@ -48,6 +48,8 @@ window.OB64 = window.OB64 || {};
   var byteCache = Object.create(null);
   var authorizedCompositions = new WeakSet();
   var issuedPlanSignatures = new WeakMap();
+  var issuedConsumableProvenance = new WeakMap();
+  var trustedConsumableOwnerImages = Object.create(null);
 
   function fail(message) {
     throw new Error('Rebuild ROM rejected the export: ' + message);
@@ -163,10 +165,11 @@ window.OB64 = window.OB64 || {};
     if (approvalHashes.join('|') !== [
       'Phase 3:B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA',
       'Phase 4:B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF',
+      'Phase 5A:578C512E89429746888772AB8150BA56FFB888E4883B79344F023B8236031743',
     ].join('|')) {
       fail('the accepted source-approval identities drifted');
     }
-    if (!data.acceptedSource.inputs || data.acceptedSource.inputs.length !== 37 ||
+    if (!data.acceptedSource.inputs || data.acceptedSource.inputs.length !== 52 ||
         !data.acceptedSource.inputs.some(function(input) {
           return input.path.indexOf('composition-matrix.json') !== -1 &&
             input.sha256 ===
@@ -177,7 +180,7 @@ window.OB64 = window.OB64 || {};
               '1ABFBB9BDB47DE2BC6D9C1837277DE020B1D8F626838925F2DE180A2B25C7F7C';
         }) || data.acceptedSource.inputs.filter(function(input) {
           return input.path.indexOf('relocation-ledger.json') !== -1;
-        }).length !== 2) {
+        }).length !== 3) {
       fail('the immutable source-input identity ledger is incomplete');
     }
     var expectedMigratedOwners = [
@@ -186,6 +189,8 @@ window.OB64 = window.OB64 || {};
       'tool.character-card-luck',
       'tool.squad-menu-alignment',
       'runtime.shop-overrides',
+      'effects.consumable-code',
+      'text.consumable-descriptions',
     ];
     if (!data.composition ||
         data.composition.migratedOwners.join('|') !== expectedMigratedOwners.join('|') ||
@@ -212,6 +217,19 @@ window.OB64 = window.OB64 || {};
         phase4Transition.mixedState !== 'reject') {
       fail('the accepted Phase 4 composition extension drifted');
     }
+    var phase5aExtension = data.composition.phase5aExtension;
+    if (!phase5aExtension ||
+        phase5aExtension.baseManifestSha256 !== data.composition.manifestSha256 ||
+        phase5aExtension.acceptedCommit !== ACCEPTED_COMMIT ||
+        phase5aExtension.acceptedTree !== ACCEPTED_TREE ||
+        phase5aExtension.effectOwner !== 'effects.consumable-code' ||
+        phase5aExtension.descriptionOwner !== 'text.consumable-descriptions' ||
+        phase5aExtension.retiredDescriptionOwner !== 'effects.healing-descriptions' ||
+        phase5aExtension.mixedState !== 'reject' ||
+        !Array.isArray(data.composition.retiredOwners) ||
+        data.composition.retiredOwners.join('|') !== 'effects.healing-descriptions') {
+      fail('the accepted Phase 5A composition extension drifted');
+    }
     var phase3Masks = data.phase3.matrix.map(function(entry) { return entry.mask; });
     if (data.phase3.components.length !== 10 ||
         phase3Masks.join(',') !== '0,1,2,3,4,5,6,7' ||
@@ -237,6 +255,68 @@ window.OB64 = window.OB64 || {};
         data.experience.coverageSha256[200] !== data.experience.proof200Sha256) {
       fail('the Experience Scale owner length drifted');
     }
+    var consumables = data.consumables;
+    if (!consumables || consumables.generator !==
+        'tools/lib/lordly_native_phase5a_consumables.js::build' ||
+        consumables.effect.owner !== 'effects.consumable-code' ||
+        consumables.effect.section !== '.ob64.r0815' ||
+        consumables.effect.romStart !== 0x41098 ||
+        consumables.effect.ramStart !== 0x8016B198 ||
+        consumables.effect.bytes !== 1380 ||
+        consumables.effect.modelOrder.length !== 10 ||
+        consumables.effect.models.length !== 10 ||
+        consumables.effect.sourceWords.length !== 16 ||
+        consumables.descriptions.owner !== 'text.consumable-descriptions' ||
+        consumables.descriptions.retiredOwner !== 'effects.healing-descriptions' ||
+        consumables.descriptions.romStart !== 0x237744A ||
+        consumables.descriptions.bytes !== 2064 ||
+        consumables.descriptions.streamCapacity !== 2055 ||
+        consumables.descriptions.recordCount !== 50 ||
+        consumables.metadata.owner !== 'direct.consumable-metadata' ||
+        consumables.metadata.romStart !== 0x645D0 ||
+        consumables.metadata.bytes !== 764 ||
+        consumables.acceptedSource.commit !== ACCEPTED_COMMIT ||
+        consumables.acceptedSource.tree !== ACCEPTED_TREE ||
+        consumables.acceptedSource.products.exactRetail !== RETAIL_SHA256 ||
+        consumables.acceptedSource.products.nativeConsumables !==
+          '6F7781ADB562EFD9131C03BC127CC3AF26AD32D575CA6BF5AC2EA60FB6843A27' ||
+        consumables.acceptedSource.products.canonicalNativeConsumables !==
+          '496EA6070FEB0EC5D689A821957BCD3101D9C03C0037357E72772B906731FB37') {
+      fail('the accepted Phase 5A consumable owner contract drifted');
+    }
+    var effectRetail = hexBytes(consumables.effect.retailHex);
+    var descriptionRetail = hexBytes(consumables.descriptions.retailHex);
+    if (effectRetail.length !== consumables.effect.bytes ||
+        sha256(effectRetail) !== consumables.effect.retailSha256 ||
+        descriptionRetail.length !== consumables.descriptions.bytes ||
+        sha256(descriptionRetail) !== consumables.descriptions.retailSha256 ||
+        consumables.effect.productionWritePolicy !==
+          'The assembler emits the complete section. Sixteen fixed-offset writes exist only in the frozen legacy oracle.') {
+      fail('the accepted Phase 5A retail owner images drifted');
+    }
+    var modelOrder = OB64.consumableEffects && OB64.consumableEffects.MODEL_ORDER || [];
+    if (modelOrder.join('|') !== consumables.effect.modelOrder.join('|')) {
+      fail('the Editor consumable model order differs from the accepted source model');
+    }
+    consumables.effect.sourceWords.forEach(function(word) {
+      var def = OB64.consumableEffects.MODEL_DEFS[word.modelKey];
+      var valid = def && word.romStart >= consumables.effect.romStart &&
+        word.romStart + 4 <= consumables.effect.romStart + consumables.effect.bytes;
+      if (valid && def.kind === 'magnitude') {
+        valid = def.magnitudeOffsets.indexOf(word.romStart) !== -1;
+      } else if (valid && def.kind === 'range') {
+        valid = word.romStart === def.widthOffset || word.romStart === def.minimumOffset;
+      }
+      if (!valid) fail('the accepted Phase 5A source-word model drifted');
+    });
+    (consumables.acceptedSource.nativeOwnerImages || []).forEach(function(image) {
+      var key = image.effectSha256 + '|' + image.descriptionSha256;
+      trustedConsumableOwnerImages[key] = Object.freeze({
+        source: 'accepted-phase5a-product',
+        product: image.product,
+        romSha256: image.romSha256,
+      });
+    });
     verifiedData = deepFreeze(data);
     return data;
   }
@@ -280,6 +360,304 @@ window.OB64 = window.OB64 || {};
     bytes[offset + 1] = (value >>> 16) & 0xFF;
     bytes[offset + 2] = (value >>> 8) & 0xFF;
     bytes[offset + 3] = value & 0xFF;
+  }
+
+  function signed16(value) {
+    return (value & 0x8000) ? value - 0x10000 : value;
+  }
+
+  function sameModels(left, right) {
+    return JSON.stringify(OB64.consumableEffects.validateAllModels(left)) ===
+      JSON.stringify(OB64.consumableEffects.validateAllModels(right));
+  }
+
+  function consumableOwnerImageKey(bytes) {
+    var data = verifyData().consumables;
+    var effect = bytes.slice(data.effect.romStart,
+      data.effect.romStart + data.effect.bytes);
+    var descriptions = bytes.slice(data.descriptions.romStart,
+      data.descriptions.romStart + data.descriptions.bytes);
+    return sha256(effect) + '|' + sha256(descriptions);
+  }
+
+  function consumableProvenance(bytes) {
+    var key = consumableOwnerImageKey(bytes);
+    var issued = issuedConsumableProvenance.get(bytes);
+    if (issued && issued.ownerImageKey !== key) {
+      return { trusted: false, mismatch: true, expectedOwnerImageKey: issued.ownerImageKey };
+    }
+    if (issued) return { trusted: true, source: issued.source, ownerImageKey: key };
+    var accepted = trustedConsumableOwnerImages[key];
+    if (accepted) {
+      return {
+        trusted: true,
+        source: accepted.source,
+        product: accepted.product,
+        romSha256: accepted.romSha256,
+        ownerImageKey: key,
+      };
+    }
+    return { trusted: false, mismatch: false, ownerImageKey: key };
+  }
+
+  function registerConsumableProvenance(bytes, plan) {
+    var key = consumableOwnerImageKey(bytes);
+    var record = Object.freeze({
+      source: 'issued-phase5b-plan',
+      ownerImageKey: key,
+      planSignature: issuedPlanSignatures.get(plan),
+    });
+    issuedConsumableProvenance.set(bytes, record);
+    trustedConsumableOwnerImages[key] = record;
+    return record;
+  }
+
+  function buildConsumableEffectSection(models) {
+    var spec = verifyData().consumables.effect;
+    var effects = OB64.consumableEffects;
+    var checked = effects.validateAllModels(models);
+    var section = hexBytes(spec.retailHex);
+    effects.MODEL_ORDER.forEach(function(modelKey) {
+      var def = effects.MODEL_DEFS[modelKey];
+      if (def.kind === 'magnitude') {
+        effects.encodeMagnitude(modelKey, checked[modelKey]).words.forEach(function(word) {
+          writeU32(section, word.offset - spec.romStart, word.word);
+        });
+      } else {
+        var encoded = effects.encodeRange(modelKey, checked[modelKey]);
+        writeU32(section, def.widthOffset - spec.romStart, encoded.widthWord);
+        writeU32(section, def.minimumOffset - spec.romStart, encoded.minimumWord);
+      }
+    });
+    return { bytes: section, models: checked, sha256: sha256(section) };
+  }
+
+  function decodeConsumableEffectSection(bytes) {
+    var spec = verifyData().consumables.effect;
+    var effects = OB64.consumableEffects;
+    var retail = hexBytes(spec.retailHex);
+    var sourceWordOffsets = Object.create(null);
+    spec.sourceWords.forEach(function(word) {
+      sourceWordOffsets[word.romStart - spec.romStart] = true;
+    });
+    for (var index = 0; index < spec.bytes; index++) {
+      if (sourceWordOffsets[index - (index % 4)]) continue;
+      if (bytes[spec.romStart + index] !== retail[index]) {
+        throw new Error('immutable effect-function byte differs at section offset ' + index);
+      }
+    }
+    var models = {};
+    effects.MODEL_ORDER.forEach(function(modelKey) {
+      var def = effects.MODEL_DEFS[modelKey];
+      if (def.kind === 'magnitude') {
+        var values = def.magnitudeOffsets.map(function(offset, formIndex) {
+          var word = readU32(bytes, offset);
+          if ((word & 0xFFFF0000) !== def.magnitudeForms[formIndex]) {
+            throw new Error(modelKey + ' opcode form is malformed');
+          }
+          return word & 0xFFFF;
+        });
+        if (!values.every(function(value) { return value === values[0]; })) {
+          throw new Error(modelKey + ' paired words disagree');
+        }
+        models[modelKey] = { magnitude: effects.validateMagnitude(modelKey, values[0]).magnitude };
+      } else {
+        var widthWord = readU32(bytes, def.widthOffset);
+        var minimumWord = readU32(bytes, def.minimumOffset);
+        if ((widthWord & 0xFFFF0000) !== 0x24030000 ||
+            (minimumWord & 0xFFFF0000) !== 0x24680000) {
+          throw new Error(modelKey + ' opcode form is malformed');
+        }
+        var width = widthWord & 0xFFFF;
+        var minimum = signed16(minimumWord & 0xFFFF);
+        var checked = effects.validateRange(modelKey, minimum, minimum + width - 1);
+        models[modelKey] = { minimum: checked.minimum, maximum: checked.maximum };
+      }
+    });
+    var rebuilt = buildConsumableEffectSection(models).bytes;
+    var actual = bytes.slice(spec.romStart, spec.romStart + spec.bytes);
+    if (!equalBytes(actual, rebuilt)) {
+      throw new Error('complete effect-function image does not match its decoded source model');
+    }
+    return {
+      models: models,
+      retail: equalBytes(actual, retail),
+      sha256: sha256(actual),
+    };
+  }
+
+  function healingValueFromText(text, id) {
+    var matches = String(text).match(/\d{3}(?=HP)/g) || [];
+    if (matches.length !== 1) {
+      throw new Error('healing description ' + id +
+        ' must contain exactly one three-digit HP value');
+    }
+    return Number(matches[0]);
+  }
+
+  function classifyConsumableOwner(bytes) {
+    var spec = verifyData().consumables;
+    var provenance = consumableProvenance(bytes);
+    var effect;
+    var block;
+    try {
+      effect = decodeConsumableEffectSection(bytes);
+      block = OB64.descriptionCodec.parseBlock('consumables', bytes);
+      if (!block || block.records.length !== spec.descriptions.recordCount ||
+          block.meta.compressedSize > spec.descriptions.streamCapacity) {
+        throw new Error('complete description-slot geometry is malformed');
+      }
+      block.records.forEach(function(record, index) {
+        if (!record || record.id !== index) {
+          throw new Error('description record order is malformed at ' + index);
+        }
+      });
+    } catch (error) {
+      return {
+        state: 'foreign',
+        ownerState: provenance.mismatch ? 'partial-native' : 'partial-legacy',
+        reason: error.message,
+        provenance: provenance,
+        models: null,
+      };
+    }
+    var healing;
+    try {
+      healing = [1, 2, 3].map(function(id) {
+        return healingValueFromText(block.records[id].editableText, id);
+      });
+    } catch (error) {
+      return {
+        state: 'foreign',
+        ownerState: provenance.mismatch ? 'partial-native' : 'partial-legacy',
+        reason: error.message,
+        provenance: provenance,
+        models: effect.models,
+      };
+    }
+    var expectedHealing = [
+      effect.models.healLeaf.magnitude,
+      effect.models.healSeed.magnitude,
+      effect.models.healPack.magnitude,
+    ];
+    if (healing.join('|') !== expectedHealing.join('|')) {
+      return {
+        state: 'mixed',
+        ownerState: 'mixed',
+        reason: 'effect values and healing descriptions do not reconcile',
+        provenance: provenance,
+        models: effect.models,
+      };
+    }
+    var descriptionBytes = bytes.slice(spec.descriptions.romStart,
+      spec.descriptions.romStart + spec.descriptions.bytes);
+    var retail = effect.retail && equalBytes(descriptionBytes,
+      hexBytes(spec.descriptions.retailHex));
+    if (retail) {
+      return {
+        state: 'retail', ownerState: 'retail', models: effect.models,
+        descriptions: block, provenance: provenance,
+      };
+    }
+    return {
+      state: provenance.trusted ? 'native' : 'legacy',
+      ownerState: provenance.trusted ? 'native-complete' : 'legacy-complete',
+      models: effect.models,
+      descriptions: block,
+      provenance: provenance,
+    };
+  }
+
+  function normalizedHealingText(text, id) {
+    healingValueFromText(text, id);
+    return String(text).replace(/\d{3}(?=HP)/, '###');
+  }
+
+  function buildConsumableDescriptionSlot(rom, retailBase, models) {
+    var spec = verifyData().consumables.descriptions;
+    var effects = OB64.consumableEffects;
+    var codec = OB64.descriptionCodec;
+    if (!rom.consumableDescriptions || !Array.isArray(rom.consumableDescriptions.records) ||
+        rom.consumableDescriptions.records.length !== spec.recordCount) {
+      fail('the complete in-memory consumable description model is unavailable');
+    }
+    var current = rom.consumableDescriptions;
+    var retail = codec.parseBlock('consumables', retailBase);
+    var manualIds = [];
+    current.records.forEach(function(record, id) {
+      if (!record || record.id !== id || !retail.records[id]) {
+        fail('the complete in-memory consumable description model is malformed');
+      }
+      var currentText = record.editableText;
+      var retailText = retail.records[id].editableText;
+      if (id >= 1 && id <= 3) {
+        currentText = normalizedHealingText(currentText, id);
+        retailText = normalizedHealingText(retailText, id);
+      }
+      if (currentText !== retailText) manualIds.push(id);
+    });
+    var values = [models.healLeaf.magnitude, models.healSeed.magnitude,
+      models.healPack.magnitude];
+    var retailValues = [1, 2, 3].map(function(id) {
+      return healingValueFromText(retail.records[id].editableText, id);
+    });
+    var retailSlot = hexBytes(spec.retailHex);
+    if (!manualIds.length && values.join('|') === retailValues.join('|')) {
+      return {
+        bytes: retailSlot,
+        encodingPasses: 0,
+        compressedBytes: retail.meta.compressedSize,
+        capacity: spec.streamCapacity,
+        manualIds: [],
+        healingValues: values,
+        logicalOrder: spec.logicalOrder.slice(),
+        mode: 'passthrough',
+      };
+    }
+    if (!manualIds.length) {
+      var manifest = effects.REVISION_MANIFESTS.rev0 ||
+        effects.REVISION_MANIFESTS['us-rev0'];
+      var inspected = effects.inspectHealingDescription(retailBase, manifest);
+      if (!inspected.ok) fail(inspected.reason);
+      var legacyCompatible = effects.buildHealingDescriptionSlot(
+        inspected.decoded, values, retailSlot);
+      if (legacyCompatible.slot.length !== spec.bytes ||
+          legacyCompatible.bytesConsumed > spec.streamCapacity) {
+        fail('the unified healing description stream exceeds its accepted slot');
+      }
+      return {
+        bytes: legacyCompatible.slot.slice(),
+        encodingPasses: 1,
+        compressedBytes: legacyCompatible.bytesConsumed,
+        capacity: spec.streamCapacity,
+        manualIds: [],
+        healingValues: values,
+        logicalOrder: spec.logicalOrder.slice(),
+        mode: 'legacy-compatible-unified-healing',
+      };
+    }
+    var staged = current;
+    [1, 2, 3].forEach(function(id, index) {
+      var text = staged.records[id].editableText;
+      healingValueFromText(text, id);
+      staged = codec.replaceText(staged, id,
+        String(text).replace(/\d{3}(?=HP)/, String(values[index]).padStart(3, '0')));
+    });
+    var scratch = retailBase.slice();
+    var measurement = codec.serializeBlock(staged, scratch);
+    if (measurement.compressedSize > spec.streamCapacity) {
+      fail('the unified consumable description stream exceeds its accepted slot');
+    }
+    return {
+      bytes: scratch.slice(spec.romStart, spec.romStart + spec.bytes),
+      encodingPasses: 1,
+      compressedBytes: measurement.compressedSize,
+      capacity: spec.streamCapacity,
+      manualIds: manualIds,
+      healingValues: values,
+      logicalOrder: spec.logicalOrder.slice(),
+      mode: 'unified-manual-and-healing',
+    };
   }
 
   function float32Bits(value) {
@@ -658,6 +1036,7 @@ window.OB64 = window.OB64 || {};
         'character-card-luck': { state: 'unavailable' },
         'squad-menu-alignment': { state: 'unavailable' },
         shops: { state: 'unavailable', records: null },
+        consumables: { state: 'unavailable', ownerState: 'unavailable', models: null },
       };
       return {
         state: 'not-applicable',
@@ -675,6 +1054,7 @@ window.OB64 = window.OB64 || {};
       'character-card-luck': detectPhase3Owner(bytes, 'character-card-luck'),
       'squad-menu-alignment': detectPhase3Owner(bytes, 'squad-menu-alignment'),
       shops: detectShops(bytes, rom),
+      consumables: classifyConsumableOwner(bytes),
     };
     var states = Object.keys(owners).map(function(key) { return owners[key].state; });
     var exclusiveNativeOwners = Object.keys(owners).filter(function(key) {
@@ -866,6 +1246,21 @@ window.OB64 = window.OB64 || {};
     if (ownerId === data.shops.owner) {
       return ownerRecord(ownerId, ownerId, data.shops.components).regions;
     }
+    if (ownerId === data.consumables.effect.owner) {
+      return ownerRecord(ownerId, ownerId, [{
+        romStart: data.consumables.effect.romStart,
+        ramStart: data.consumables.effect.ramStart,
+        bytes: data.consumables.effect.bytes,
+        name: 'accepted source-owned consumable effect function',
+      }]).regions;
+    }
+    if (ownerId === data.consumables.descriptions.owner) {
+      return ownerRecord(ownerId, ownerId, [{
+        romStart: data.consumables.descriptions.romStart,
+        bytes: data.consumables.descriptions.bytes,
+        name: 'unified consumable description slot',
+      }]).regions;
+    }
     var phase3 = data.phase3.components.filter(function(component) {
       return component.owner === ownerId;
     });
@@ -901,6 +1296,10 @@ window.OB64 = window.OB64 || {};
           (definitions[owner.id] ? owner.id : null));
       if (!stableId) {
         fail('the Phase 2 ownership manifest does not authorize producer "' + owner.id + '"');
+      }
+      if (!isNativeLayout && composition.retiredOwners.indexOf(stableId) !== -1) {
+        fail('legacy producer "' + owner.id + '" uses retired physical owner "' +
+          stableId + '" in Rebuild ROM');
       }
       if (!isNativeLayout && composition.migratedOwners.indexOf(stableId) !== -1) {
         fail('legacy producer "' + owner.id + '" cannot own migrated contributor "' +
@@ -991,6 +1390,7 @@ window.OB64 = window.OB64 || {};
       shopSelected: plan.shopSelected,
       shopContractSha256: plan.shopRecords
         ? sha256(encodeShopContract(plan.shopRecords)) : null,
+      consumables: plan.consumables,
       writes: plan.writes.map(function(write) {
         return {
           owner: write.owner,
@@ -1038,13 +1438,14 @@ window.OB64 = window.OB64 || {};
     var blocked = [];
     Object.keys(classification.owners).forEach(function(key) {
       var state = classification.owners[key].state;
+      if (key === 'consumables' && state === 'legacy') return;
       if (state === 'legacy' || state === 'foreign' || state === 'mixed') {
         blocked.push(key + '=' + state);
       }
     });
     if (blocked.length) {
-      fail('the loaded source contains legacy, mixed, or unknown migrated ownership (' +
-        blocked.join(', ') + '). Load exact US Rev 0 or an authenticated rebuilt product');
+      fail('the loaded source contains partial, mixed, or unknown migrated ownership (' +
+        blocked.join(', ') + '). Load exact US Rev 0 or a complete recognized product');
     }
   }
 
@@ -1065,6 +1466,10 @@ window.OB64 = window.OB64 || {};
     base.set(hexBytes(data.experience.retailHex), data.experience.romStart);
     data.phase3.components.forEach(function(component) { restoreComponent(base, component); });
     data.shops.components.forEach(function(component) { restoreComponent(base, component); });
+    base.set(hexBytes(data.consumables.effect.retailHex),
+      data.consumables.effect.romStart);
+    base.set(hexBytes(data.consumables.descriptions.retailHex),
+      data.consumables.descriptions.romStart);
 
     var experienceFeature = OB64.tools.getFeature('experience-size-scale');
     var experiencePercent = OB64.tools.desiredPercent(rom, experienceFeature);
@@ -1152,6 +1557,40 @@ window.OB64 = window.OB64 || {};
         'nativeRebuildRestoration'));
     }
 
+    if (!rom.consumableEffects || !rom.consumableEffects.models) {
+      fail('the shared in-memory consumable effect model is unavailable');
+    }
+    var effectSection = buildConsumableEffectSection(rom.consumableEffects.models);
+    var descriptionSlot = buildConsumableDescriptionSlot(
+      rom, base, effectSection.models);
+    writes.push({
+      owner: data.consumables.effect.owner,
+      name: 'complete accepted source-owned consumable effect function',
+      offset: data.consumables.effect.romStart,
+      bytes: effectSection.bytes,
+      retailBytes: hexBytes(data.consumables.effect.retailHex),
+    });
+    writes.push({
+      owner: data.consumables.descriptions.owner,
+      name: 'unified manual and healing consumable description slot',
+      offset: data.consumables.descriptions.romStart,
+      bytes: descriptionSlot.bytes,
+      retailBytes: hexBytes(data.consumables.descriptions.retailHex),
+    });
+    owners.push(ownerRecord(data.consumables.effect.owner,
+      'Native consumable effect function', [{
+        romStart: data.consumables.effect.romStart,
+        ramStart: data.consumables.effect.ramStart,
+        bytes: data.consumables.effect.bytes,
+        name: 'accepted source-owned consumable effect function',
+      }]));
+    owners.push(ownerRecord(data.consumables.descriptions.owner,
+      'Unified consumable descriptions', [{
+        romStart: data.consumables.descriptions.romStart,
+        bytes: data.consumables.descriptions.bytes,
+        name: 'unified consumable description slot',
+      }]));
+
     var featureMask = (selected['character-card-luck'] ? 1 : 0) |
       (selected['squad-menu-alignment'] ? 2 : 0) |
       (selected['cf-army-counter'] ? 4 : 0);
@@ -1170,6 +1609,21 @@ window.OB64 = window.OB64 || {};
       acceptedMatrixId: 'migrated-' + featureMask.toString(2).padStart(3, '0'),
       shopSelected: shopSelected,
       shopRecords: shopRecords,
+      consumables: {
+        effectSha256: effectSection.sha256,
+        models: effectSection.models,
+        descriptionSha256: sha256(descriptionSlot.bytes),
+        descriptionMode: descriptionSlot.mode,
+        descriptionEncodingPasses: descriptionSlot.encodingPasses,
+        descriptionCompressedBytes: descriptionSlot.compressedBytes,
+        descriptionCapacity: descriptionSlot.capacity,
+        manualDescriptionIds: descriptionSlot.manualIds.slice(),
+        healingValues: descriptionSlot.healingValues.slice(),
+        logicalOrder: descriptionSlot.logicalOrder.slice(),
+        conversion: classification.owners.consumables.state === 'legacy'
+          ? 'legacy-to-native' : 'none',
+        sourceOwnerState: classification.owners.consumables.ownerState,
+      },
       writes: writes,
       owners: owners,
       restorationOwners: restorationOwners,
@@ -1183,6 +1637,7 @@ window.OB64 = window.OB64 || {};
         experience: data.experience.generator,
         phase3: data.phase3.generator,
         shops: data.shops.generator,
+        consumables: data.consumables.generator,
       },
       inputIdentityCount: data.acceptedSource.inputs.length,
       used: false,
@@ -1273,6 +1728,7 @@ window.OB64 = window.OB64 || {};
     });
     plan.used = true;
     plan.appliedWrites = orderedWrites;
+    var consumableProvenanceRecord = registerConsumableProvenance(candidateRom.z64, plan);
     var crc = orderedWrites.some(function(write) {
       return write.offset < 0x101000 && write.offset + write.bytes.length > 0x1000;
     });
@@ -1288,6 +1744,8 @@ window.OB64 = window.OB64 || {};
       experiencePercent: plan.experiencePercent,
       shopSelected: plan.shopSelected,
       shopRecords: plan.shopRecords,
+      consumables: plan.consumables,
+      consumableProvenance: consumableProvenanceRecord,
     };
   }
 
@@ -1352,8 +1810,16 @@ window.OB64 = window.OB64 || {};
     } else if (rebuilt.owners.shops.state !== 'retail') {
       fail('the unselected native Shop owner was not restored to retail');
     }
+    var consumableNoOp = plan.consumables.effectSha256 ===
+      data.consumables.effect.retailSha256 && plan.consumables.descriptionSha256 ===
+        data.consumables.descriptions.retailSha256;
+    var expectedConsumableState = consumableNoOp ? 'retail' : 'native';
+    if (rebuilt.owners.consumables.state !== expectedConsumableState ||
+        !sameModels(rebuilt.owners.consumables.models, plan.consumables.models)) {
+      fail('native consumable effects and descriptions did not round-trip through trusted provenance');
+    }
     return {
-      summary: MODES.rebuild.label + ' authenticated all selected Phase 1 through Phase 4 owners.',
+      summary: MODES.rebuild.label + ' authenticated all selected Phase 1 through Phase 5A owners.',
       details: {
         buildMode: REBUILD_MODE,
         buildModeLabel: MODES.rebuild.label,
@@ -1368,6 +1834,11 @@ window.OB64 = window.OB64 || {};
         migratedCombination: plan.acceptedMatrixId,
         experienceScalePercent: plan.experiencePercent,
         nativeShops: plan.shopSelected,
+        consumableOwnerState: rebuilt.owners.consumables.ownerState,
+        consumableConversion: plan.consumables.conversion,
+        consumableDescriptionMode: plan.consumables.descriptionMode,
+        consumableDescriptionEncodingPasses:
+          plan.consumables.descriptionEncodingPasses,
         ownerCount: plan.owners.length,
         writeCount: plan.writes.length,
         authorizedOwners: plan.compositionAuthorization.owners.map(function(owner) {
@@ -1382,7 +1853,9 @@ window.OB64 = window.OB64 || {};
     var classification = classifySource(rom.z64, rom);
     var hasPartialNative = classification.owners &&
       Object.keys(classification.owners).some(function(key) {
-        return classification.owners[key].state === 'mixed';
+        var owner = classification.owners[key];
+        return owner.state === 'mixed' ||
+          (key === 'consumables' && owner.state === 'foreign');
       });
     if (classification.hasExclusiveNative || hasPartialNative) {
       throw new Error('Patch ROM cannot export from a Rebuild ROM or mixed native source. ' +
@@ -1493,6 +1966,10 @@ window.OB64 = window.OB64 || {};
       legacyShopFindings: legacyShopFindings,
       shopWriteComponents: shopWriteComponents,
       equalBytes: equalBytes,
+      buildConsumableEffectSection: buildConsumableEffectSection,
+      buildConsumableDescriptionSlot: buildConsumableDescriptionSlot,
+      classifyConsumableOwner: classifyConsumableOwner,
+      consumableOwnerImageKey: consumableOwnerImageKey,
     },
   };
 })(window.OB64, typeof window !== 'undefined' ? window : globalThis);

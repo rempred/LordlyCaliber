@@ -88,6 +88,19 @@ function freshRom(input) {
   const rom = OB64.loadROM(bytes.buffer.slice(bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength));
   OB64.nativeRebuild.initializeSource(rom);
+  const identity = OB64.consumableEffects.evaluateSourceIdentity({
+    filename: MASTER_NAME,
+    size: rom.z64.length,
+    sha256: sha256(rom.z64),
+    byteOrder: rom.byteOrder,
+    imageName: 'OgreBattle64',
+    gameId: 'NOBE',
+    country: rom.z64[0x3E],
+    version: rom.z64[0x3F],
+    crc1: OB64.readU32BE(rom.z64, 0x10),
+    crc2: OB64.readU32BE(rom.z64, 0x14),
+  });
+  OB64.consumableEffects.initializeSession(rom, identity, { filename: MASTER_NAME });
   OB64.patch.snapshotOriginal(rom);
   OB64.tools.initState(rom);
   OB64.nativeRebuild.initializeToolState(rom);
@@ -163,18 +176,18 @@ function emptyDirty() {
 }
 
 check('authenticated bundle names the accepted decomp commit and tree',
-  data.acceptedSource.commit === '05623e67b295f4f968e4a5cb416b9c002fb09bdd' &&
-  data.acceptedSource.tree === '90b193077b61eee0f6656a8d3f6848b2f17bdfaa');
+  data.acceptedSource.commit === 'e50fe500839288c94c538969acc7a5b966075626' &&
+  data.acceptedSource.tree === 'ef58ea271b2298be71b09be9318a359805c266c0');
 check('authenticated bundle names the accepted Shop contract and composition manifest',
   data.shops.contractSha256 ===
     'C6D71952A0AE7A813C3F79D8EEAAA4CCAADF53168E2AA627BE577726F64FD200' &&
   data.composition.manifestSha256 ===
     'DBCA8D456D8D786DE9A69130CBABF9CCF6FB27B8E746DEC0E0616511B4D420A3');
 check('authenticated bundle records build reports, layouts, relocations, and object manifests',
-  data.acceptedSource.inputs.length === 37 &&
+  data.acceptedSource.inputs.length === 52 &&
   data.acceptedSource.inputs.some(input => input.path.endsWith('objects/manifest.json')) &&
   data.acceptedSource.inputs.filter(input =>
-    input.path.endsWith('relocation-ledger.json')).length === 2 &&
+    input.path.endsWith('relocation-ledger.json')).length === 3 &&
   data.composition.phase4Extension.ownershipTransition.nativePhysicalOwner ===
     'runtime.shop-overrides');
 check('Rebuild ROM declares the accepted 8 MiB RDRAM product',
@@ -230,8 +243,10 @@ OB64.buildModes.set(allOff, 'rebuild');
 const allOffBuild = executeNativePlan(allOff, false);
 check('all migrated owners off produces exact US Rev 0',
   sha256(allOffBuild.candidate.z64) === data.acceptedSource.retailSha256);
-check('all-off build has no native producer or write',
-  allOffBuild.plan.owners.length === 0 && allOffBuild.plan.writes.length === 0);
+check('all-off build retains the two mandatory native consumable owners',
+  allOffBuild.plan.owners.map(owner => owner.id).sort().join('|') ===
+    'effects.consumable-code|text.consumable-descriptions' &&
+  allOffBuild.plan.writes.length === 2);
 
 for (const matrixEntry of data.phase3.matrix) {
   const rom = freshRom();
@@ -455,7 +470,8 @@ const fullNativeOwnerPlan = OB64.nativeRebuild.prepareExport(
   fullNativeOwnerRom, { shopsDirty: true });
 let passthroughCoverage = 0;
 data.composition.owners.forEach(ownerDefinition => {
-  if (data.composition.migratedOwners.includes(ownerDefinition.id)) return;
+  if (data.composition.migratedOwners.includes(ownerDefinition.id) ||
+      data.composition.retiredOwners.includes(ownerDefinition.id)) return;
   const kind = ownerDefinition.rom.length ? 'rom' : 'ram';
   const bound = ownerDefinition[kind][0];
   const representative = {
@@ -480,7 +496,8 @@ data.composition.owners.forEach(ownerDefinition => {
 });
 check('every non-migrated Phase 2 owner has coexistence coverage',
   passthroughCoverage === data.composition.owners.filter(owner =>
-    !data.composition.migratedOwners.includes(owner.id)).length);
+    !data.composition.migratedOwners.includes(owner.id) &&
+    !data.composition.retiredOwners.includes(owner.id)).length);
 expectThrow('unknown composition producers fail closed', () =>
   OB64.nativeRebuild.authorizeComposition([{
     id: 'unknown-producer', name: 'Unknown', regions: [],
@@ -528,7 +545,7 @@ const mixedRom = freshRom(mixedBytes);
 OB64.buildModes.set(mixedRom, 'rebuild');
 expectThrow('mixed native and non-native ownership fails before export', () =>
   OB64.nativeRebuild.prepareExport(mixedRom, { shopsDirty: false }),
-  /legacy, mixed, or unknown migrated ownership/);
+  /partial, mixed, or unknown migrated ownership/);
 expectThrow('Patch ROM rejects an authenticated rebuilt source', () =>
   OB64.nativeRebuild.patchSourceCheck(freshRom(shopBuild.candidate.z64)),
   /cannot export from a Rebuild ROM/);
@@ -649,7 +666,7 @@ const nativeOwnerDisableTarget = freshRom(shopBuild.candidate.z64);
 OB64.patch.applyPatch(nativeOwnerDisableTarget, allOffProject, emptyDirty());
 const disabledNativeBuild = executeNativePlan(nativeOwnerDisableTarget, false);
 check('an explicit all-off Rebuild Project restores a loaded native owner to retail',
-  disabledNativeBuild.plan.owners.length === 0 &&
+  disabledNativeBuild.plan.owners.length === 2 &&
   disabledNativeBuild.plan.restorationOwners.length === 1 &&
   equalBytes(disabledNativeBuild.candidate.z64, retailZ64));
 const resavedAllOffProject = OB64.patch.collectPatch(nativeOwnerDisableTarget);
