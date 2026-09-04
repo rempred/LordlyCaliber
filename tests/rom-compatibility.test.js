@@ -46,6 +46,8 @@ for (const filename of [
   'tools.js',
   'squadblob.js',
   'runtimeblob.js',
+  'native-rebuild-data.js',
+  'native-rebuild.js',
   'squads-data.js',
   'squads.js',
   'scenario-map-calibration.js',
@@ -75,6 +77,12 @@ function component(report, id) {
 async function initializeReadableFeatures(rom, sourceIdentity, filename) {
   const run = (spec, action) => OB64.romCompatibility.runInitializer(rom, spec, action);
   await run({
+    id: 'native-rebuild-source',
+    label: 'Authenticated native rebuild source',
+    affectsTabs: ['shops', 'tools'],
+    requiredForExport: true,
+  }, () => OB64.nativeRebuild.initializeSource(rom));
+  await run({
     id: 'native-art',
     label: 'Avatars, item icons, combat sprites, and Army sprites',
     affectsTabs: ['art']
@@ -96,7 +104,10 @@ async function initializeReadableFeatures(rom, sourceIdentity, filename) {
     id: 'project-baseline', label: 'Project and export baseline', requiredForExport: true,
   }, () => OB64.patch.snapshotOriginal(rom));
   await run({ id: 'tools-patches', label: 'Tools patch regions', affectsTabs: ['tools'] },
-    () => OB64.tools.initState(rom));
+    () => {
+      OB64.tools.initState(rom);
+      OB64.nativeRebuild.initializeToolState(rom);
+    });
   rom.squadOverrides = {};
   await run({ id: 'scenario-models', label: 'Scenario authoring models', affectsTabs: ['scenario'] },
     () => OB64.scenario.ensureState(rom));

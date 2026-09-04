@@ -214,6 +214,8 @@ vm.runInNewContext(
       featureState() { return 'clean'; },
       parameterValue() { return 100; },
     } },
+    displayedToolState() { return 'clean'; },
+    displayedToolPercent() { return 100; },
     formatToolPercent(value) { return value + '%'; },
     toolScaleWeightsText(_feature, value) { return 'weights ' + value; },
     toolScaleStatus() { return { className: 'pending', text: 'pending 125%' }; },
@@ -222,7 +224,7 @@ check('live card synchronization replaces the displayed percentage',
   outputNode.textContent === '125%' && weightsNode.textContent === 'weights 125' &&
   resetNode.disabled === false && statusNode.textContent === 'pending 125%');
 check('Projects store the percentage as a schema-1 value',
-  patchSource.includes('var PATCH_VERSION = 34') &&
+  patchSource.includes('var PATCH_VERSION = 35') &&
   patchSource.includes('toolsOut[toolId] = { schema: 1, percent: desiredValue }') &&
   patchSource.includes('validatedToolPercentages[toolKey] = OB64.tools.validateParameterValue('));
 check('the Tools stylesheet includes slider, output, reset, and weight-summary rules',

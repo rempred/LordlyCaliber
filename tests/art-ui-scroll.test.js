@@ -7,6 +7,11 @@ const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
 
+function sourceText(filename) {
+  return fs.readFileSync(path.join(EDITOR, filename), 'utf8')
+    .replace(/\r\n/g, '\n');
+}
+
 global.window = global;
 global.OB64 = {
   art: {
@@ -130,12 +135,11 @@ OB64.artUI.restoreBrowserScroll(ui, panel(unknown));
 assert.strictEqual(unknown.scrollTop, 25);
 assert.strictEqual(unknown.scrollLeft, 3);
 
-const source = fs.readFileSync(path.join(EDITOR, 'art-ui.js'), 'utf8');
-const animationSource = fs.readFileSync(path.join(EDITOR, 'animation-ui.js'), 'utf8');
-const cutsceneSpriteSource = fs.readFileSync(
-  path.join(EDITOR, 'cutscene-sprites.js'), 'utf8');
-const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
-const cssSource = fs.readFileSync(path.join(EDITOR, 'style.css'), 'utf8');
+const source = sourceText('art-ui.js');
+const animationSource = sourceText('animation-ui.js');
+const cutsceneSpriteSource = sourceText('cutscene-sprites.js');
+const appSource = sourceText('app.js');
+const cssSource = sourceText('style.css');
 assert(source.includes("data-art-scroll-key', 'avatars"));
 assert(source.includes("data-art-scroll-key', 'icons:' + ui.iconPack"));
 assert(source.includes("'Transparent Preview: ' +"));

@@ -62,12 +62,196 @@
 // are missing from the retail player atlases.
 // v34 lets a Tools entry store a schema-1 percentage value. Boolean entries
 // from v5 through v33 remain readable without conversion.
+// v35 records the explicit ROM build mode. Older Projects default to Patch ROM.
 
 window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 34;
+  var PATCH_VERSION = 35;
+
+  function projectBuildMode(patch) {
+    var value = patch && Object.prototype.hasOwnProperty.call(patch, 'build_mode')
+      ? patch.build_mode : 'patch';
+    if (value !== 'patch' && value !== 'rebuild') {
+      throw new PatchFormatError('Project build_mode must be "patch" or "rebuild".');
+    }
+    if (patch && patch.version >= 35 &&
+        !Object.prototype.hasOwnProperty.call(patch, 'build_mode')) {
+      throw new PatchFormatError('Project schema 35 requires an explicit build_mode.');
+    }
+    return value;
+  }
+
+  function validateRebuildShopProject(rom, shopsPatch) {
+    if (!OB64.nativeRebuild || !OB64.nativeRebuild.encodeShopContract) {
+      throw new PatchFormatError('Rebuild ROM Shop validation is unavailable.');
+    }
+    if (!shopsPatch || typeof shopsPatch !== 'object' || Array.isArray(shopsPatch)) {
+      throw new PatchFormatError('Rebuild ROM patches.shops must be an object.');
+    }
+    var records = [];
+    for (var index = 0; index < 36; index++) {
+      var shop = rom.shops[index] || {};
+      records.push({
+        index: index,
+        equipment: index === 0 ? [] : (shop.items || []).slice(),
+        expendables: index === 0 ? [] : (shop.consumables || []).slice(),
+      });
+    }
+    Object.keys(shopsPatch).forEach(function(key) {
+      if (!/^(0|[1-9][0-9]*)$/.test(key)) {
+        throw new PatchFormatError('Rebuild ROM Shop key "' + key + '" is malformed.');
+      }
+      var index = Number(key);
+      if (index < 0 || index >= 36) {
+        throw new PatchFormatError('Rebuild ROM Project references invalid Shop #' + key + '.');
+      }
+      var entry = shopsPatch[key];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new PatchFormatError('Rebuild ROM Shop #' + key + ' record is malformed.');
+      }
+      var fields = Object.keys(entry);
+      if (fields.some(function(field) {
+        return field !== 'items' && field !== 'consumables';
+      }) || (!Array.isArray(entry.items) && !Array.isArray(entry.consumables))) {
+        throw new PatchFormatError('Rebuild ROM Shop #' + key + ' has an unknown or malformed field.');
+      }
+      if (Array.isArray(entry.items)) records[index].equipment = entry.items.slice();
+      if (Array.isArray(entry.consumables)) records[index].expendables = entry.consumables.slice();
+    });
+    try {
+      OB64.nativeRebuild.encodeShopContract(records);
+    } catch (error) {
+      throw new PatchFormatError(error.message);
+    }
+  }
+
+  var REBUILD_TOOL_IDS = [
+    'experience-size-scale',
+    'cf-army-counter',
+    'character-card-luck',
+    'squad-menu-alignment',
+  ];
+
+  function collectRebuildOwners(rom, buildMode) {
+    if (buildMode !== 'rebuild') return null;
+    if (!OB64.nativeRebuild || !rom.nativeRebuild || !OB64.tools || !rom.tools) {
+      throw new Error('Rebuild ROM owner state is unavailable. Reload the ROM.');
+    }
+    var experience = OB64.tools.getFeature('experience-size-scale');
+    return {
+      schema: 1,
+      experience_scale_percent: OB64.tools.desiredPercent(rom, experience),
+      chaos_frame_counter: !!rom.tools.desired['cf-army-counter'],
+      character_card_luck: !!rom.tools.desired['character-card-luck'],
+      squad_menu_alignment: !!rom.tools.desired['squad-menu-alignment'],
+      shop_memberships: OB64.nativeRebuild.shopOwnerSelected(rom),
+    };
+  }
+
+  function validateRebuildOwnerProject(rom, patch, buildMode, patches) {
+    if (patch.version < 35) return null;
+    if (!Object.prototype.hasOwnProperty.call(patch, 'rebuild_owners')) {
+      throw new PatchFormatError('Project schema 35 requires explicit rebuild_owners state.');
+    }
+    if (buildMode === 'patch') {
+      if (patch.rebuild_owners !== null) {
+        throw new PatchFormatError('Patch ROM Project rebuild_owners must be null.');
+      }
+      return null;
+    }
+    var state = patch.rebuild_owners;
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      throw new PatchFormatError('Rebuild ROM Project rebuild_owners must be an object.');
+    }
+    var allowed = {
+      schema: true,
+      experience_scale_percent: true,
+      chaos_frame_counter: true,
+      character_card_luck: true,
+      squad_menu_alignment: true,
+      shop_memberships: true,
+    };
+    var keys = Object.keys(state);
+    if (keys.length !== Object.keys(allowed).length ||
+        keys.some(function(key) { return !allowed[key]; })) {
+      throw new PatchFormatError('Rebuild ROM Project rebuild_owners fields are incomplete or unknown.');
+    }
+    if (state.schema !== 1 || !Number.isInteger(state.experience_scale_percent) ||
+        state.experience_scale_percent < 0 || state.experience_scale_percent > 300) {
+      throw new PatchFormatError('Rebuild ROM Project has an invalid Experience Scale owner state.');
+    }
+    ['chaos_frame_counter', 'character_card_luck', 'squad_menu_alignment',
+      'shop_memberships'].forEach(function(field) {
+      if (typeof state[field] !== 'boolean') {
+        throw new PatchFormatError('Rebuild ROM Project ' + field + ' must be boolean.');
+      }
+    });
+    var toolsPatch = patches.tools || {};
+    if (REBUILD_TOOL_IDS.some(function(id) {
+      return Object.prototype.hasOwnProperty.call(toolsPatch, id);
+    })) {
+      throw new PatchFormatError(
+        'Rebuild ROM migrated owner state must appear only in rebuild_owners.');
+    }
+    var shopKeys = Object.keys(patches.shops || {}).sort(function(left, right) {
+      return Number(left) - Number(right);
+    });
+    if (state.shop_memberships) {
+      if (shopKeys.length !== 35 || shopKeys.some(function(key, index) {
+        return key !== String(index + 1);
+      })) {
+        throw new PatchFormatError(
+          'Rebuild ROM native Shop ownership requires complete records 1 through 35.');
+      }
+    } else if (shopKeys.length) {
+      throw new PatchFormatError(
+        'Rebuild ROM Project contains Shop records while native Shop ownership is unselected.');
+    }
+    validateRebuildShopProject(rom, patches.shops || {});
+    return {
+      experienceScalePercent: state.experience_scale_percent,
+      chaosFrameCounter: state.chaos_frame_counter,
+      characterCardLuck: state.character_card_luck,
+      squadMenuAlignment: state.squad_menu_alignment,
+      shopMemberships: state.shop_memberships,
+    };
+  }
+
+  function applyRebuildOwnerProject(rom, state, dirtyFlags) {
+    if (!state) return 0;
+    if (!OB64.nativeRebuild || !rom.nativeRebuild || !OB64.tools || !rom.tools) {
+      throw new PatchFormatError('Rebuild ROM owner state cannot be applied in this session.');
+    }
+    var changed = 0;
+    var experience = OB64.tools.getFeature('experience-size-scale');
+    if (OB64.tools.desiredPercent(rom, experience) !== state.experienceScalePercent) {
+      OB64.tools.setDesiredPercent(rom, experience.id, state.experienceScalePercent);
+      changed++;
+    }
+    [
+      ['cf-army-counter', state.chaosFrameCounter],
+      ['character-card-luck', state.characterCardLuck],
+      ['squad-menu-alignment', state.squadMenuAlignment],
+    ].forEach(function(entry) {
+      if (!!rom.tools.desired[entry[0]] !== entry[1]) {
+        rom.tools.desired[entry[0]] = entry[1];
+        changed++;
+      }
+    });
+    OB64.nativeRebuild.setShopOwnerSelected(rom, state.shopMemberships);
+    if (state.shopMemberships) {
+      for (var shopIndex = 0; shopIndex < 36; shopIndex++) {
+        if (!rom.shops[shopIndex]) continue;
+        rom.shops[shopIndex].nativeOverride = true;
+        rom.shops[shopIndex].runtimeOverride = false;
+      }
+    }
+    dirtyFlags.shops = !!state.shopMemberships;
+    dirtyFlags.tools = OB64.tools.pendingChanges(rom) > 0;
+    return changed;
+  }
 
   // Item-stat fields edited by the Items tab. Price stays in the legacy
   // item_prices map so v2 patches remain readable and easy to diff.
@@ -164,6 +348,9 @@ window.OB64 = window.OB64 || {};
   function collectPatch(rom) {
     if (!rom.original) throw new Error('OB64.snapshotOriginal() was not called on this rom');
 
+    var buildMode = OB64.buildModes ? OB64.buildModes.get(rom) : 'patch';
+    var rebuildOwners = collectRebuildOwners(rom, buildMode);
+
     var shopsOut = {};
     for (var i = 0; rom.shops && i < rom.shops.length; i++) {
       var shopNow = rom.shops[i];
@@ -174,6 +361,17 @@ window.OB64 = window.OB64 || {};
           items: (shopNow.items || []).slice(),
           consumables: (shopNow.consumables || []).slice()
         };
+      }
+    }
+    if (rebuildOwners) {
+      shopsOut = {};
+      if (rebuildOwners.shop_memberships) {
+        OB64.nativeRebuild.recordsFromRom(rom).slice(1).forEach(function(record) {
+          shopsOut[String(record.index)] = {
+            items: record.equipment.slice(),
+            consumables: record.expendables.slice(),
+          };
+        });
       }
     }
 
@@ -284,6 +482,9 @@ window.OB64 = window.OB64 || {};
         if (nowWanted !== wasApplied) toolsOut[toolId] = nowWanted;
       }
     }
+    if (rebuildOwners) {
+      REBUILD_TOOL_IDS.forEach(function(toolId) { delete toolsOut[toolId]; });
+    }
 
     var squadOverridesOut = collectSquadOverridePatch(rom);
     var scenarioOut = collectScenarioPatch(rom);
@@ -322,12 +523,22 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: new Date().toISOString(),
-      editor_version: '2026-08-30',
+      editor_version: '2026-09-03',
+      build_mode: buildMode,
+      rebuild_owners: rebuildOwners,
       rom_hint: {
         archives_count: rom.archives ? rom.archives.length : null,
         shop_count:     rom.shops ? rom.shops.length : null,
       },
       summary: {
+        build_mode: OB64.buildModes ? OB64.buildModes.info(buildMode).label : 'Patch ROM',
+        native_owners_selected: rebuildOwners
+          ? (Number(rebuildOwners.experience_scale_percent !== 100) +
+            Number(rebuildOwners.chaos_frame_counter) +
+            Number(rebuildOwners.character_card_luck) +
+            Number(rebuildOwners.squad_menu_alignment) +
+            Number(rebuildOwners.shop_memberships))
+          : 0,
         shops_modified:        Object.keys(shopsOut).length,
         item_prices_modified:  Object.keys(pricesOut).length,
         item_stats_modified:   Object.keys(itemsOut).length,
@@ -399,7 +610,10 @@ window.OB64 = window.OB64 || {};
         ' is newer than this editor understands (' + PATCH_VERSION + '). Update the editor.');
     }
 
+    var buildMode = projectBuildMode(patch);
+
     var p = patch.patches || {};
+    var rebuildOwnerState = validateRebuildOwnerProject(rom, patch, buildMode, p);
     preparedImports = preparedImports || {};
     var preparedDescriptions = null;
     try {
@@ -903,12 +1117,14 @@ window.OB64 = window.OB64 || {};
     if (toolsApplied > 0 && OB64.tools) {
       dirtyFlags.tools = OB64.tools.pendingChanges(rom) > 0;
     }
+    toolsApplied += applyRebuildOwnerProject(rom, rebuildOwnerState, dirtyFlags);
 
     var squadOverridePatch = p.squadOverrides || p.squad_overrides;
     if (squadOverridePatch && rom.layout && rom.layout.supportsSquadOverrides === false) {
       warnings.push('Patch includes squad overrides, but this ROM revision does not have a verified runtime override hook yet. Skipping.');
     } else {
-      squadOverridesApplied = applySquadOverridesPatch(rom, squadOverridePatch, warnings);
+      squadOverridesApplied = applySquadOverridesPatch(rom, squadOverridePatch, warnings,
+        preparedScenario && preparedScenario.scenarioOverrides);
     }
     if (squadOverridesApplied > 0) dirtyFlags.squadOverrides = true;
 
@@ -957,7 +1173,13 @@ window.OB64 = window.OB64 || {};
         rom, preparedSpriteLibrary);
     }
 
+    if (OB64.buildModes) OB64.buildModes.set(rom, buildMode);
+    else rom.buildMode = buildMode;
+
     return {
+      buildMode: buildMode,
+      buildModeLabel: OB64.buildModes ? OB64.buildModes.info(buildMode).label :
+        (buildMode === 'rebuild' ? 'Rebuild ROM' : 'Patch ROM'),
       applied: {
         shops: shopsApplied,
         prices: pricesApplied,
@@ -1033,6 +1255,8 @@ window.OB64 = window.OB64 || {};
 
   function blankProjectSummary() {
     return {
+      build_mode: 'Patch ROM',
+      native_owners_selected: 0,
       shops_modified: 0,
       item_prices_modified: 0,
       item_stats_modified: 0,
@@ -1104,7 +1328,9 @@ window.OB64 = window.OB64 || {};
       format: PATCH_FORMAT,
       version: PATCH_VERSION,
       created_at: project.created_at || new Date().toISOString(),
-      editor_version: '2026-08-30',
+      editor_version: '2026-09-03',
+      build_mode: 'patch',
+      rebuild_owners: null,
       source: 'legacy scenario project',
       summary: summary,
       patches: patches,
@@ -1196,10 +1422,9 @@ window.OB64 = window.OB64 || {};
     return out;
   }
 
-  function applySquadOverridesPatch(rom, patchObj, warnings) {
+  function applySquadOverridesPatch(rom, patchObj, warnings, scenarioOverrides) {
     if (!patchObj || typeof patchObj !== 'object') return 0;
-    rom.squadOverrides = rom.squadOverrides || {};
-    var applied = 0;
+    var staged = [];
     for (var k in patchObj) {
       var entry = patchObj[k];
       var parsed = parseSquadOverrideKey(k, entry);
@@ -1213,6 +1438,16 @@ window.OB64 = window.OB64 || {};
         warnings.push('Patch squad override ' + parsed.key + ' is not a 35-byte record - skipping.');
         continue;
       }
+      var scenarioOwned = scenarioOverrides &&
+        Object.prototype.hasOwnProperty.call(scenarioOverrides, parsed.key);
+      if (scenarioOwned) {
+        if (!arraysEqual(rec, scenarioOverrides[parsed.key])) {
+          throw new PatchFormatError('Patch squad override ' + parsed.key +
+            ' conflicts with the prepared Scenario owner.');
+        }
+        staged.push({ key: parsed.key, record: rec, scenarioOwned: true });
+        continue;
+      }
       var vanilla = squadVanillaRecord(parsed.sid, parsed.eid);
       if (!vanilla) {
         warnings.push('Patch squad override ' + parsed.key + ' does not match a known runtime-key EDAT row - skipping.');
@@ -1224,10 +1459,13 @@ window.OB64 = window.OB64 || {};
           warnings.push('Patch squad override ' + parsed.key + ' was based on a different original record; applying replacement anyway.');
         }
       }
-      rom.squadOverrides[parsed.key] = rec;
-      applied++;
+      staged.push({ key: parsed.key, record: rec, scenarioOwned: false });
     }
-    return applied;
+    rom.squadOverrides = rom.squadOverrides || {};
+    staged.forEach(function(item) {
+      if (!item.scenarioOwned) rom.squadOverrides[item.key] = item.record;
+    });
+    return staged.length;
   }
 
   function scenarioPatchCount(project) {

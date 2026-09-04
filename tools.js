@@ -307,11 +307,17 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function desiredRegionConflicts(rom, extraOwners) {
+  function excludedFeature(options, featureId) {
+    return !!(options && Array.isArray(options.excludeIds) &&
+      options.excludeIds.indexOf(featureId) !== -1);
+  }
+
+  function desiredRegionConflicts(rom, extraOwners, options) {
     if (!rom || !rom.tools) return [];
     var owners = [];
     var list = features();
     for (var i = 0; i < list.length; i++) {
+      if (excludedFeature(options, list[i].id)) continue;
       if (rom.tools.initial[list[i].id] === 'foreign') continue;
       if (!featureSupported(rom, list[i])) continue;
       if (isParameterized(list[i])) {
@@ -324,8 +330,8 @@ window.OB64 = window.OB64 || {};
     return findRegionConflicts(owners, { includeExclusive: true });
   }
 
-  function assertDesiredCompatible(rom, extraOwners) {
-    var conflicts = desiredRegionConflicts(rom, extraOwners);
+  function assertDesiredCompatible(rom, extraOwners, options) {
+    var conflicts = desiredRegionConflicts(rom, extraOwners, options);
     if (conflicts.length) {
       throw new Error('Selected patches cannot be enabled together:\n  ' +
         conflicts.map(describeConflict).join('\n  '));
@@ -562,7 +568,7 @@ window.OB64 = window.OB64 || {};
   //   crc: bool }. crc is true when any write touched the CIC-6102 CRC
   // window, in which case the caller must run OB64.recalcN64CRC before
   // exporting.
-  function applyDesired(rom) {
+  function applyDesired(rom, options) {
     var res = {
       applied: [],
       upgraded: [],
@@ -575,10 +581,11 @@ window.OB64 = window.OB64 || {};
     };
     if (!rom.tools) return res;
     if (rom.tools.disabledReason) return res;
-    assertDesiredCompatible(rom);
+    assertDesiredCompatible(rom, null, options);
     var list = features();
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
+      if (excludedFeature(options, f.id)) continue;
       if (!featureSupported(rom, f)) {
         var unsupportedSelected = isParameterized(f)
           ? desiredPercent(rom, f) !== parameterDefault(f)

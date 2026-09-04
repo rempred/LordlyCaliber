@@ -175,6 +175,45 @@ body::before {
   align-items: center;
 }
 
+.build-mode-control {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 7px;
+  color: var(--ob-gold-bright);
+  font-size: var(--ob-text-xs);
+  line-height: 1.1;
+}
+
+.header-buttons .build-mode-control > label {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  box-shadow: none;
+  cursor: default;
+}
+
+.build-mode-control select {
+  min-width: 130px;
+  padding: 5px 7px;
+  border: 1px solid var(--ob-gold-dim);
+  border-radius: 3px;
+  color: var(--ob-ink);
+  background: var(--ob-parchment);
+  font: 600 var(--ob-text-sm) var(--ob-serif);
+}
+
+.build-mode-control select:disabled {
+  opacity: 0.55;
+}
+
+.build-mode-control span {
+  grid-column: 1 / -1;
+  max-width: 260px;
+  color: var(--ob-parchment-2);
+}
+
 /* Stone / parchment buttons shared across the header */
 .header-buttons button,
 .header-buttons label {

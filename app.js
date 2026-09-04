@@ -154,6 +154,8 @@ window.OB64 = window.OB64 || {};
   var btnChangelog = document.getElementById('btn-changelog');
   var btnSavePatch = document.getElementById('btn-save-patch');
   var btnRomCompatibility = document.getElementById('btn-rom-compatibility');
+  var buildModeSelect = document.getElementById('build-mode');
+  var buildModeHelp = document.getElementById('build-mode-help');
   var patchFileInput = document.getElementById('patch-file');
   var btnLoadPatchLabel = document.getElementById('btn-load-patch-label');
   var patchChip = document.getElementById('patch-chip');
@@ -181,6 +183,48 @@ window.OB64 = window.OB64 || {};
 
   // Name of the most-recently loaded or saved project (for status display)
   var lastProjectFilename = null;
+
+  function currentBuildMode() {
+    return OB64.buildModes && rom ? OB64.buildModes.get(rom) : 'patch';
+  }
+
+  function currentBuildModeInfo() {
+    return OB64.buildModes
+      ? OB64.buildModes.info(currentBuildMode())
+      : { id: 'patch', label: 'Patch ROM', help: 'Uses the legacy export path.' };
+  }
+
+  function mergeDirtyFlags(target, source) {
+    target = Object.assign({}, target || {});
+    Object.keys(source || {}).forEach(function(key) {
+      target[key] = !!target[key] || !!source[key];
+    });
+    return target;
+  }
+
+  function syncBuildModeControl() {
+    if (!buildModeSelect) return;
+    var info = currentBuildModeInfo();
+    buildModeSelect.value = info.id;
+    buildModeHelp.textContent = info.help;
+  }
+
+  if (buildModeSelect) {
+    buildModeSelect.addEventListener('change', function() {
+      if (!rom || !OB64.buildModes) return;
+      var previous = OB64.buildModes.get(rom);
+      var next = OB64.buildModes.set(rom, buildModeSelect.value);
+      if (next === 'rebuild' && rom.nativeRebuild &&
+          rom.nativeRebuild.pendingRebuildDirty) {
+        dirty = mergeDirtyFlags(dirty, rom.nativeRebuild.pendingRebuildDirty);
+      }
+      syncBuildModeControl();
+      if (next !== previous) changes++;
+      renderTab(activeTab);
+      statusBar.textContent = OB64.buildModes.info(next).label +
+        ' selected. The in-memory edit model is unchanged.';
+    });
+  }
 
   // ============================================================
   // ROM Loading
@@ -213,6 +257,7 @@ window.OB64 = window.OB64 || {};
     btnSavePatch.disabled = !editEnabled;
     patchFileInput.disabled = !editEnabled;
     btnLoadPatchLabel.setAttribute('aria-disabled', editEnabled ? 'false' : 'true');
+    if (buildModeSelect) buildModeSelect.disabled = !editEnabled;
   }
 
   function setRomEditingContentUnavailable(busy) {
@@ -235,6 +280,8 @@ window.OB64 = window.OB64 || {};
     lastProjectFilename = null;
     updatePatchChip();
     setRomMutationControlsEnabled(false);
+    if (buildModeSelect) buildModeSelect.value = 'patch';
+    if (buildModeHelp) buildModeHelp.textContent = 'Patch ROM keeps the legacy export path.';
     if (btnRomCompatibility) {
       btnRomCompatibility.hidden = true;
       btnRomCompatibility.disabled = true;
@@ -319,6 +366,12 @@ window.OB64 = window.OB64 || {};
         // not discard the readable parts of the ROM or hide its own diagnostic.
         if (nextRom.compatibility.canEdit) {
           await OB64.romCompatibility.runInitializer(nextRom, {
+            id: 'native-rebuild-source',
+            label: 'Authenticated native rebuild source',
+            affectsTabs: ['shops', 'tools'],
+            requiredForExport: true
+          }, function() { return OB64.nativeRebuild.initializeSource(nextRom); });
+          await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'native-art',
             label: 'Avatars, item icons, combat sprites, and Army sprites',
             affectsTabs: ['art', 'sprites']
@@ -380,7 +433,10 @@ window.OB64 = window.OB64 || {};
           }, function() { return OB64.patch.snapshotOriginal(nextRom); });
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'tools-patches', label: 'Tools patch regions', affectsTabs: ['tools']
-          }, function() { return OB64.tools.initState(nextRom); });
+          }, function() {
+            OB64.tools.initState(nextRom);
+            OB64.nativeRebuild.initializeToolState(nextRom);
+          });
           if (nextRom.squadOverrides) nextRom.squadOverrides = {};
           if (OB64.scenario) {
             await OB64.romCompatibility.runInitializer(nextRom, {
@@ -401,6 +457,7 @@ window.OB64 = window.OB64 || {};
         changes = 0;
         dirty = nextDirty;
         lastProjectFilename = null;
+        syncBuildModeControl();
         emptyState.style.display = 'none';
         updatePatchChip();
         renderTab(activeTab);
@@ -416,7 +473,7 @@ window.OB64 = window.OB64 || {};
           : (rom.compatibility.overall === 'blocked'
             ? ' with blocked systems'
             : ' with compatibility warnings');
-        statusBar.textContent = 'ROM loaded' + loadDisposition +
+        statusBar.textContent = currentBuildModeInfo().label + ' · ROM loaded' + loadDisposition +
           ': ' + file.name + ' (' + (file.size / 1048576).toFixed(1) + ' MB) | ' +
           (rom.layout ? rom.layout.name : 'Unknown layout') + ' .' + (rom.byteOrder || 'v64') +
           ' | ' + rom.archives.length + ' archives | ' +
@@ -463,8 +520,11 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   btnExport.addEventListener('click', async function() {
     if (!rom) return;
+    var buildMode = currentBuildMode();
+    var buildInfo = currentBuildModeInfo();
     if (!rom.compatibility || !rom.compatibility.canExport) {
-      statusBar.textContent = 'ROM export is blocked by the compatibility report.';
+      statusBar.textContent = buildInfo.label +
+        ' export is blocked by the compatibility report.';
       if (rom.compatibility) showRomCompatibilityModal(rom.compatibility);
       return;
     }
@@ -481,10 +541,12 @@ window.OB64 = window.OB64 || {};
       exportContent.inert = true;
       exportContent.setAttribute('aria-busy', 'true');
     }
-    statusBar.textContent = 'Exporting...';
+    statusBar.textContent = buildInfo.label + ' · Exporting...';
     var exportProgress = showRomExportProgressModal();
     var sourceWorkingZ64 = rom.z64;
     var candidateRom = null;
+    var nativePlan = null;
+    var nativeResult = null;
     var effectTransaction = null;
     var effectAdoption = null;
     var effectOwners = [];
@@ -504,8 +566,20 @@ window.OB64 = window.OB64 || {};
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
+      if (buildMode === 'patch') {
+        OB64.nativeRebuild.patchSourceCheck(exportRom);
+      } else {
+        nativePlan = OB64.nativeRebuild.prepareExport(exportRom, {
+          shopsDirty: !!dirty.shops,
+        });
+      }
       candidateRom = OB64.romExportCandidate.create(exportRom);
+      if (nativePlan) candidateRom.z64 = nativePlan.baseZ64.slice();
+      sourceWorkingZ64 = candidateRom.z64;
       var touched = [];
+      if (nativePlan && nativePlan.writes.length === 0) {
+        touched.push('authenticated exact US Rev 0 retail product');
+      }
       if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
         await paintRomExportProgress(exportProgress, 4,
           'Planning and verifying all native art resources');
@@ -527,9 +601,10 @@ window.OB64 = window.OB64 || {};
       }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
-      var shopOverridesForRuntime = OB64.runtimeOverrides
+      var shopOverridesForRuntime = buildMode === 'patch' && OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectShopOverrides(rom)
         : [];
+      var legacyShopDirty = buildMode === 'patch' && !!dirty.shops;
       var scenarioRateOverridesForRuntime = OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectScenarioRateOverrides(rom)
         : [];
@@ -542,13 +617,13 @@ window.OB64 = window.OB64 || {};
 
       // Shop membership edits compile into the shared OBM2 runtime blob below.
       // Archive #751 remains the retail fallback for unchanged shop indices.
-      if (dirty.shops && (!OB64.runtimeOverrides ||
+      if (legacyShopDirty && (!OB64.runtimeOverrides ||
           (rom.layout && rom.layout.supportsShopOverrides === false))) {
-        showErrorModal('Export failed - runtime shops unavailable',
+        showErrorModal(buildInfo.label + ' - runtime shops unavailable',
           'This ROM revision can parse shopcsv, but its per-shop runtime ' +
           'source-list hook is unavailable. The archive fallback cannot ' +
           'represent per-shop consumables or the larger runtime limits.');
-        statusBar.textContent = 'Export failed (runtime shops unavailable)';
+        statusBar.textContent = buildInfo.label + ' failed (runtime shops unavailable)';
         return;
       }
 
@@ -581,9 +656,9 @@ window.OB64 = window.OB64 || {};
             deferRedirect: true,
           });
           if (scenarioResult.blocked && scenarioResult.blocked.length) {
-            showErrorModal('Export blocked - scenario edits',
+            showErrorModal(buildInfo.label + ' blocked - scenario edits',
               scenarioResult.blocked.join('\n\n'));
-            statusBar.textContent = 'Export blocked (scenario edits)';
+            statusBar.textContent = buildInfo.label + ' blocked (scenario edits)';
             return;
           }
         }
@@ -608,26 +683,26 @@ window.OB64 = window.OB64 || {};
           );
         }
       } catch (relocationError) {
-        showErrorModal('Export blocked - relocation ownership',
+        showErrorModal(buildInfo.label + ' blocked - relocation ownership',
           relocationError.message);
-        statusBar.textContent = 'Export blocked (relocation ownership): ' +
+        statusBar.textContent = buildInfo.label + ' blocked (relocation ownership): ' +
           relocationError.message;
         return;
       }
       if (dirty.neutralRuntime && (!OB64.runtimeOverrides ||
           (rom.layout && rom.layout.supportsNeutralRuntimeOverrides === false))) {
-        showErrorModal('Export failed - neutral runtime unavailable',
+        showErrorModal(buildInfo.label + ' - neutral runtime unavailable',
           'This ROM revision can edit retail encounter tables, but its ' +
           'per-scenario rate and weighted-drop hooks are unavailable.');
-        statusBar.textContent = 'Export failed (neutral runtime unavailable)';
+        statusBar.textContent = buildInfo.label + ' failed (neutral runtime unavailable)';
         return;
       }
       if (customNeutralSquadsForRuntime.length && rom.layout &&
           rom.layout.supportsNeutralCustomSquads === false) {
-        showErrorModal('Export failed - custom neutral squads unavailable',
+        showErrorModal(buildInfo.label + ' - custom neutral squads unavailable',
           'This ROM revision does not have verified custom neutral-squad hooks. ' +
           'Remove the custom squads or export from a supported US revision 0 ROM.');
-        statusBar.textContent = 'Export failed (custom neutral squads unavailable)';
+        statusBar.textContent = buildInfo.label + ' failed (custom neutral squads unavailable)';
         return;
       }
       var sharedRegionOwners = [];
@@ -638,19 +713,22 @@ window.OB64 = window.OB64 || {};
       if (cutsceneOwner) sharedRegionOwners.push(cutsceneOwner);
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
-      if (OB64.squad && (dirty.shops || dirty.squadOverrides || dirty.neutralRuntime ||
+      if (OB64.squad && (legacyShopDirty || dirty.squadOverrides || dirty.neutralRuntime ||
           squadOverridesForConflict.length || shopOverridesForRuntime.length ||
           scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
           customNeutralSquadsForRuntime.length)) {
+        var runtimeOwnerRegions = (shopOverridesForRuntime.length || legacyShopDirty || dirty.neutralRuntime ||
+            scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
+            customNeutralSquadsForRuntime.length) && OB64.runtimeOverrides
+          ? OB64.runtimeOverrides.patchRegions(rom)
+          : OB64.squad.patchRegions(rom);
         sharedRegionOwners.push({
           id: 'runtime-overrides',
           name: 'Shared Runtime Overrides',
           category: 'runtimeOverrides',
-          regions: (shopOverridesForRuntime.length || dirty.shops || dirty.neutralRuntime ||
-              scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
-              customNeutralSquadsForRuntime.length) && OB64.runtimeOverrides
-            ? OB64.runtimeOverrides.patchRegions(rom)
-            : OB64.squad.patchRegions(rom)
+          regions: buildMode === 'rebuild'
+            ? OB64.nativeRebuild.remainingRuntimeRegions(rom, runtimeOwnerRegions)
+            : runtimeOwnerRegions
         });
       }
       if (sourceRedirectPlan && OB64.sourceRedirect &&
@@ -659,36 +737,45 @@ window.OB64 = window.OB64 || {};
         sharedRegionOwners.push(OB64.sourceRedirect.patchOwner());
       }
       if (dirty.squadOverrides && rom.layout && rom.layout.supportsSquadOverrides === false) {
-        showErrorModal('Export failed - squad overrides unavailable',
+        showErrorModal(buildInfo.label + ' - squad overrides unavailable',
           'This ROM revision can be parsed and repacked, but the Squads runtime ' +
           'override hook has not been verified for it yet.\n\n' +
           (rom.layout.unsupportedFeaturesReason || 'Load a supported header revision 0 ROM to export squad overrides.'));
-        statusBar.textContent = 'Export failed (squad overrides unavailable for ' + rom.layout.name + ')';
+        statusBar.textContent = buildInfo.label + ' failed (squad overrides unavailable for ' + rom.layout.name + ')';
         return;
       }
       if ((dirty.squadOverrides || dirty.scenario) && OB64.scenario &&
           OB64.scenario.squadLeaderIssues) {
         var leaderIssues = OB64.scenario.squadLeaderIssues(rom);
         if (leaderIssues.length) {
-          showErrorModal('Export blocked - invalid squad leader', leaderIssues.join('\n\n'));
-          statusBar.textContent = 'Export blocked (invalid squad leader)';
+          showErrorModal(buildInfo.label + ' blocked - invalid squad leader', leaderIssues.join('\n\n'));
+          statusBar.textContent = buildInfo.label + ' blocked (invalid squad leader)';
           return;
         }
       }
 
-      effectOwners = OB64.consumableEffects.standardPatchOwners(candidateRom, dirty)
-        .concat(sharedRegionOwners);
+      var standardOwnerDirty = Object.assign({}, dirty);
+      if (buildMode === 'rebuild') standardOwnerDirty.tools = false;
+      effectOwners = OB64.consumableEffects.standardPatchOwners(
+        candidateRom, standardOwnerDirty).concat(sharedRegionOwners);
+      if (nativePlan) {
+        effectOwners = effectOwners.concat(
+          nativePlan.owners,
+          nativePlan.restorationOwners,
+          OB64.nativeRebuild.passthroughToolOwners(rom)
+        );
+      }
       var plannedOwnerConflicts = OB64.consumableEffects.findRegionConflicts(
         effectOwners
       );
       if (plannedOwnerConflicts.length) {
-        showErrorModal('Export blocked - feature collision',
+        showErrorModal(buildInfo.label + ' blocked - feature collision',
           plannedOwnerConflicts.map(function(conflict) {
             return conflict.a.ownerName + ' (' + conflict.a.label +
               ') overlaps ' + conflict.b.ownerName + ' (' +
               conflict.b.label + ').';
           }).join('\n\n'));
-        statusBar.textContent = 'Export blocked (feature collision)';
+        statusBar.textContent = buildInfo.label + ' blocked (feature collision)';
         return;
       }
       effectTransaction = OB64.consumableEffects.prepareTransaction(
@@ -696,6 +783,17 @@ window.OB64 = window.OB64 || {};
         sourceWorkingZ64,
         effectOwners
       );
+      if (nativePlan) {
+        var compositionOwners = effectOwners.slice();
+        if (effectTransaction) {
+          compositionOwners.push(effectTransaction.deltaOwner);
+          if (effectTransaction.textOwner) {
+            compositionOwners.push(effectTransaction.textOwner);
+          }
+        }
+        nativePlan.compositionAuthorization =
+          OB64.nativeRebuild.authorizeComposition(compositionOwners);
+      }
       // Tools adds its selected feature owners internally. Replace concrete
       // same-session effect ranges with the one broad effect collision guard.
       var toolCompatibilityOwners =
@@ -704,7 +802,8 @@ window.OB64 = window.OB64 || {};
           effectTransaction
         );
       if (OB64.tools && toolCompatibilityOwners.length) {
-        OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners);
+        OB64.tools.assertDesiredCompatible(rom, toolCompatibilityOwners,
+          nativePlan ? { excludeIds: OB64.nativeRebuild.migratedToolIds } : null);
       }
 
       await paintRomExportProgress(exportProgress, 14, 'Writing edited ROM data tables');
@@ -788,9 +887,10 @@ window.OB64 = window.OB64 || {};
       // skipped and reported.
       var toolsCrc = false;
       if (dirty.tools) {
-        toolsResult = OB64.tools.applyDesired(candidateRom);
+        toolsResult = OB64.tools.applyDesired(candidateRom,
+          nativePlan ? { excludeIds: OB64.nativeRebuild.migratedToolIds } : null);
         if (toolsResult.skipped.length) {
-          showErrorModal('Tool skipped — unrecognized bytes',
+          showErrorModal(buildInfo.label + ' - Tool skipped — unrecognized bytes',
             'These features could not be toggled because their ROM bytes ' +
             'match neither the retail original nor this editor\'s build ' +
             '(another patch may occupy them):\n\n  ' +
@@ -826,7 +926,7 @@ window.OB64 = window.OB64 || {};
       // Squads loader, ROM-tail lane, and upper-RAM module. A Squads-only
       // export retains its already-proven byte path.
       var runtimeCrc = false;
-      if ((dirty.squadOverrides || dirty.shops || dirty.neutralRuntime) && OB64.squad) {
+      if ((dirty.squadOverrides || legacyShopDirty || dirty.neutralRuntime) && OB64.squad) {
         var ovs = squadOverridesForConflict;
         var hasSharedRuntime = shopOverridesForRuntime.length ||
           scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
@@ -838,13 +938,14 @@ window.OB64 = window.OB64 || {};
               weightedDropOverrides: weightedDropOverridesForRuntime,
               customNeutralSquads: customNeutralSquadsForRuntime
             });
+          if (nativePlan) OB64.nativeRebuild.detachRuntimePlan(rtw);
           for (var rwi = 0; rwi < rtw.writes.length; rwi++) {
             candidateRom.z64.set(rtw.writes[rwi].bytes, rtw.writes[rwi].offset);
           }
           runtimeWritePlan = rtw;
           runtimeMode = 'write';
           runtimeCrc = rtw.crcWindow;
-          if (dirty.shops) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
+          if (legacyShopDirty) touched.push('runtime shops (' + shopOverridesForRuntime.length + ')');
           if (dirty.neutralRuntime) {
             touched.push('scenario rates (' + scenarioRateOverridesForRuntime.length + ')');
             touched.push('weighted drop classes (' + weightedDropOverridesForRuntime.length + ')');
@@ -854,7 +955,7 @@ window.OB64 = window.OB64 || {};
           if (dirty.squadOverrides) {
             var sharedUnmapped = OB64.squadCountUnmapped(rom);
             if (sharedUnmapped) {
-              showErrorModal('Some overrides skipped',
+              showErrorModal(buildInfo.label + ' - Some overrides skipped',
                 sharedUnmapped + ' squad override(s) are in scenarios whose scenario gate ' +
                 'is not mapped yet, so they were not written. They remain saved in the patch.');
             }
@@ -900,13 +1001,21 @@ window.OB64 = window.OB64 || {};
               ])
             });
           }
+          if (nativePlan) {
+            OB64.nativeRebuild.detachRuntimePlan(runtimeWritePlan);
+            for (var detachedIndex = 0;
+                detachedIndex < runtimeWritePlan.writes.length; detachedIndex++) {
+              candidateRom.z64.set(runtimeWritePlan.writes[detachedIndex].bytes,
+                runtimeWritePlan.writes[detachedIndex].offset);
+            }
+          }
           runtimeCrc = sqw.crcWindow;
-          if (dirty.shops) touched.push('runtime shops removed');
+          if (legacyShopDirty) touched.push('runtime shops removed');
           if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
           if (dirty.squadOverrides) touched.push('squad overrides (' + ovs.length + ')');
           var unmapped = OB64.squadCountUnmapped(rom);
           if (unmapped) {
-            showErrorModal('Some overrides skipped',
+            showErrorModal(buildInfo.label + ' - Some overrides skipped',
               unmapped + ' squad override(s) are in scenarios whose scenario gate ' +
               'is not mapped yet, so they were not written. They remain saved in the patch.');
           }
@@ -917,7 +1026,7 @@ window.OB64 = window.OB64 || {};
           else OB64.squad.restoreVanilla(candidateRom.z64, candidateRom);
           runtimeMode = 'restore';
           runtimeCrc = true;
-          if (dirty.shops) touched.push('runtime shops removed');
+          if (legacyShopDirty) touched.push('runtime shops removed');
           if (dirty.squadOverrides) touched.push('squad overrides removed');
           if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
         }
@@ -981,6 +1090,20 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      if (nativePlan) {
+        nativeResult = OB64.nativeRebuild.applyPlan(
+          nativePlan, candidateRom, runtimeWritePlan);
+        var nativeParts = [];
+        if (nativeResult.experiencePercent !== 100) {
+          nativeParts.push('Experience Scale ' + nativeResult.experiencePercent + '%');
+        }
+        if (nativePlan.selected['cf-army-counter']) nativeParts.push('Chaos Frame Counter');
+        if (nativePlan.selected['character-card-luck']) nativeParts.push('Character Card Luck');
+        if (nativePlan.selected['squad-menu-alignment']) nativeParts.push('Squad Menu Alignment');
+        if (nativeResult.shopSelected) nativeParts.push('Shop memberships');
+        if (nativeParts.length) touched.push('native owners: ' + nativeParts.join(', '));
+      }
+
       // CRC must be recalculated whenever we patch the CIC-6102 window
       // (z64 0x1000-0x101000). Encounter/drop tables and stat gates live
       // past that window; items/classes/
@@ -988,7 +1111,7 @@ window.OB64 = window.OB64 || {};
       await paintRomExportProgress(exportProgress, 66, 'Finalizing the N64 boot checksum');
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
         toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc ||
-        (artResult && artResult.crc));
+        (artResult && artResult.crc) || (nativeResult && nativeResult.crc));
       if (crcChanged) {
         OB64.recalcN64CRC(candidateRom.z64);
       }
@@ -1006,6 +1129,8 @@ window.OB64 = window.OB64 || {};
       }
 
       var validationOptions = {
+        buildMode: buildMode,
+        buildModeLabel: buildInfo.label,
         sourceRom: exportRom,
         candidateRom: candidateRom,
         dirty: exportDirty,
@@ -1021,6 +1146,8 @@ window.OB64 = window.OB64 || {};
         weightedDropOverrides: weightedDropOverridesForRuntime,
         customNeutralSquads: customNeutralSquadsForRuntime,
         toolsResult: toolsResult,
+        nativePlan: nativePlan,
+        nativeResult: nativeResult,
         selectorPlan: selectorPlan,
         effectTransaction: effectTransaction,
         artPlan: artPlan,
@@ -1045,31 +1172,37 @@ window.OB64 = window.OB64 || {};
         validationReport = OB64.romExportValidator.validate(validationOptions);
       }
       if (!validationReport.ok) {
-        statusBar.textContent = 'Export blocked: ' + validationReport.errors.length +
+        statusBar.textContent = buildInfo.label + ' blocked: ' + validationReport.errors.length +
           ' ROM validation error' + (validationReport.errors.length === 1 ? '' : 's') + '.';
         exportProgress.close();
-        showRomValidationModal(validationReport, {
-          onDownloadAnyway: function() {
-            if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) {
-              throw new Error('The loaded ROM changed after validation. Start a new export instead.');
-            }
-            var unsafeName = OB64.exportROM(candidateRom);
-            statusBar.textContent = 'Unvalidated ROM download initiated as ' + unsafeName +
-              '. The failed candidate was not adopted by the editor.';
-            return unsafeName;
-          },
-        });
+        var validationActions = null;
+        if (buildMode === 'patch') {
+          validationActions = {
+            onDownloadAnyway: function() {
+              if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) {
+                throw new Error('The loaded ROM changed after validation. Start a new export instead.');
+              }
+              var unsafeName = OB64.exportROM(candidateRom);
+              statusBar.textContent = buildInfo.label +
+                ' unvalidated download initiated as ' + unsafeName +
+                '. The failed candidate was not adopted by the editor.';
+              return unsafeName;
+            },
+          };
+        }
+        showRomValidationModal(validationReport, validationActions);
         return;
       }
 
-      if (touched.length === 0) {
-        statusBar.textContent = 'Nothing to export — no edits made yet.';
+      if (touched.length === 0 && buildMode === 'patch') {
+        statusBar.textContent = buildInfo.label + ' has nothing to export — no edits made yet.';
         return;
       }
 
       await paintRomExportProgress(exportProgress, 97, 'Preparing the validated ROM download');
       var exportedName;
       var provenance = null;
+      var exportFilenameBase = buildMode === 'rebuild' ? 'ob64_rebuilt' : 'ob64_modified';
       if (effectTransaction) {
         OB64.consumableEffects.validateFinalAfterImage(
           effectTransaction,
@@ -1082,7 +1215,7 @@ window.OB64 = window.OB64 || {};
         }
         var candidateOrder = rom.exportByteOrder || rom.byteOrder || 'v64';
         var candidateExtension = OB64.romByteOrderExtension(candidateOrder);
-        var candidateFilename = 'ob64_modified.' + candidateExtension;
+        var candidateFilename = exportFilenameBase + '.' + candidateExtension;
         var candidatePackage =
           OB64.consumableEffects.createVerifiedCandidatePackage(
             exportRom,
@@ -1109,22 +1242,13 @@ window.OB64 = window.OB64 || {};
           provenance
         );
         exportedName = downloadReceipt.candidateFilename;
-        effectAdoption = OB64.consumableEffects.commitAndAdoptTransaction(
-          exportRom.consumableEffects,
-          effectTransaction,
-          candidatePackage,
-          provenance,
-          downloadReceipt,
-          exportRom,
-          candidateRom
-        );
       } else {
         var ordinaryLedger = null;
         if (rom.consumableEffects && rom.consumableEffects.identity &&
             rom.consumableEffects.identity.eligible) {
           var ordinaryBytes = OB64.consumableEffects.serializeCandidate(candidateRom);
           var ordinaryOrder = rom.exportByteOrder || rom.byteOrder || 'v64';
-          var ordinaryFilename = 'ob64_modified.' +
+          var ordinaryFilename = exportFilenameBase + '.' +
             OB64.romByteOrderExtension(ordinaryOrder);
           ordinaryLedger = await OB64.consumableEffects.prepareOrdinaryExport(
             candidateRom,
@@ -1136,38 +1260,29 @@ window.OB64 = window.OB64 || {};
           );
           if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
         }
-        exportedName = OB64.exportROM(candidateRom);
-        if (ordinaryLedger) {
-          OB64.consumableEffects.commitOrdinaryExport(
-            rom.consumableEffects,
-            ordinaryLedger,
-            dirty.consumableDescriptions ? candidateRom.z64 : null
-          );
-        }
+        exportedName = OB64.exportROM(candidateRom,
+          { filenameBase: exportFilenameBase });
+        // The validated receipt is intentionally not adopted. Both build modes
+        // must remain able to consume the same in-memory edit model.
       }
-      OB64.romExportCandidate.adopt(exportRom, candidateRom, {
-        romBytesAlreadyAdopted: !!effectAdoption,
+      OB64.nativeRebuild.markExport(exportRom, {
+        outputFilename: exportedName,
+        dirty: Object.assign({}, exportDirty),
+        ownerIds: finalLedgerOwners.map(function(owner) { return owner.id; }),
+        migratedCombination: nativeResult ? nativeResult.acceptedMatrixId : null,
       });
-      if (cutscenePlan) OB64.cutsceneExport.adopt(exportRom, cutscenePlan);
-      OB64.combatAnimationOverrides.adopt(exportRom);
-      if (artResult) OB64.art.adoptExport(exportRom, artResult);
       await paintRomExportProgress(exportProgress, 100, 'ROM download started');
       if (artResult) console.info('[art export] ' + artResult.summary);
-      var exportMsg = 'ROM export initiated as ' + exportedName + ' ('
-        + touched.join(', ') + ') | ' + changes + ' changes applied';
+      var exportMsg = buildInfo.label + ' export initiated as ' + exportedName + ' ('
+        + touched.join(', ') + ') | ' + changes + ' staged changes exported';
       // A changed CRC makes Project64 key a NEW save folder for this ROM, so existing
       // native saves look gone. Surface the recovery recipe instead of a silent surprise.
       if (crcChanged) {
         exportMsg += ' | CRC changed: Project64 will use a NEW save folder for this ROM'
           + ' — reseed it (tools/seed_pj64_save.py) or copy your .sra into the new folder';
       }
-      // Clear dirty so subsequent exports without edits do nothing,
-      // but keep the success message visible in the status bar
-      dirty = { shops: false, items: false, itemDescriptions: false, classDefs: false, classDescriptions: false, actionDescriptions: false, art: OB64.art.hasPendingExport(exportRom.art), cutscenes: !!(exportRom.cutsceneStudio && OB64.cutsceneUI.editCount(exportRom.cutsceneStudio)), encounters: false, creatureDrops: false, neutralRuntime: false, consumables: false, consumableDescriptions: false, consumableEffects: false, combatAnimationOverrides: false, statGates: false, tools: false, squadOverrides: false, scenario: false };
-      // Art records remain Project edits after a successful ROM download.
-      // This lets the user keep authoring and export the same detached assets again.
-      changes = OB64.art.editCount(exportRom.art) +
-        (exportRom.cutsceneStudio ? OB64.cutsceneUI.editCount(exportRom.cutsceneStudio) : 0);
+      // Preserve the staged model and dirty categories after every download.
+      // A mode switch therefore rebuilds the same edits through the other path.
       if (activeTab === 'tools') renderTab('tools');
       if (activeTab === 'consumables') renderTab('consumables');
       if (activeTab === 'art') renderTab('art');
@@ -1176,14 +1291,15 @@ window.OB64 = window.OB64 || {};
       statusBar.textContent = exportMsg;
     } catch(err) {
       if (romLoadGeneration !== exportLoadGeneration || rom !== exportRom) return;
-      statusBar.textContent = 'Export error: ' + err.message;
+      statusBar.textContent = buildInfo.label + ' export error: ' + err.message;
       exportProgress.close();
       if (OB64.romExportValidator && OB64.romExportValidator.unexpectedReport) {
         showRomValidationModal(
-          OB64.romExportValidator.unexpectedReport(err, 'candidate-build')
+          OB64.romExportValidator.unexpectedReport(
+            err, 'candidate-build', buildMode, buildInfo.label)
         );
       } else {
-        showErrorModal('Export failed', err.message);
+        showErrorModal(buildInfo.label + ' failed', err.message);
       }
       console.error(err);
     } finally {
@@ -1271,6 +1387,7 @@ window.OB64 = window.OB64 || {};
       var statGatesN = patch.summary.stat_gates_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
       var toolsN = patch.summary.tools_modified || 0;
+      var nativeOwnersN = patch.summary.native_owners_selected || 0;
       var squadsN = patch.summary.squad_overrides_modified || 0;
       var scenarioN = patch.summary.scenario_modified || 0;
       var cutscenesN = patch.summary.cutscenes_modified || 0;
@@ -1283,15 +1400,18 @@ window.OB64 = window.OB64 || {};
       var separatedAnimationN =
         patch.summary.separated_animation_sequences_modified || 0;
       var spriteLibraryN = patch.summary.sprite_library_assets || 0;
+      var initialBuildMode = rom.nativeRebuild
+        ? rom.nativeRebuild.initialBuildMode : 'patch';
+      var buildModeChanged = patch.build_mode !== initialBuildMode;
       if (shopsN + pricesN + itemsN + classesN + neutralSlicesN +
           terrainRatesN + scenarioRatesN + customNeutralSquadsN +
           creatureDropsN + weightedDropRatesN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
           actionDescriptionsN + statGatesN +
-          globalRateN + toolsN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
+          globalRateN + toolsN + nativeOwnersN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
           avatarArtN + iconArtN + combatSpriteArtN + armySpriteArtN +
           separatedAnimationN +
-          spriteLibraryN === 0) {
+          spriteLibraryN === 0 && !buildModeChanged) {
         statusBar.textContent = 'No ROM-project edits to save - project would be empty.' +
           (saveState && saveState.dirty ? ' Save-game edits are separate; use Export Save.' : '');
         return;
@@ -1299,7 +1419,7 @@ window.OB64 = window.OB64 || {};
       OB64.patch.downloadPatch(patch);
       lastProjectFilename = 'ob64_project_' + patch.created_at.replace(/[:.]/g, '-') + '.json';
       updatePatchChip();
-      var parts = [];
+      var parts = [OB64.buildModes.info(patch.build_mode).label];
       if (shopsN) parts.push(shopsN + ' shop' + (shopsN === 1 ? '' : 's'));
       if (pricesN) parts.push(pricesN + ' price' + (pricesN === 1 ? '' : 's'));
       if (itemsN) parts.push(itemsN + ' item' + (itemsN === 1 ? '' : 's'));
@@ -1318,6 +1438,8 @@ window.OB64 = window.OB64 || {};
       if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
       if (globalRateN) parts.push('global encounter roll');
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
+      if (nativeOwnersN) parts.push(nativeOwnersN + ' native owner' +
+        (nativeOwnersN === 1 ? '' : 's'));
       if (squadsN) parts.push(squadsN + ' squad override' + (squadsN === 1 ? '' : 's'));
       if (scenarioN) parts.push(scenarioN + ' scenario change' + (scenarioN === 1 ? '' : 's'));
       if (cutscenesN) parts.push(cutscenesN + ' edited cutscene' + (cutscenesN === 1 ? '' : 's'));
@@ -1361,6 +1483,7 @@ window.OB64 = window.OB64 || {};
         if (romLoadGeneration !== projectLoadGeneration || rom !== projectRom) {
           throw new Error('The loaded ROM changed while the Project was being verified. Load the Project again.');
         }
+        var priorBuildMode = currentBuildMode();
         var result = OB64.patch.applyPatch(rom, patch, dirty, preparedImports);
         // Count applied changes so status + export modal show the right counts
         changes += result.applied.shops + result.applied.prices +
@@ -1383,11 +1506,13 @@ window.OB64 = window.OB64 || {};
           (result.applied.consumableEffects || 0) +
           (result.applied.combatAnimationOverrides || 0) +
           (result.applied.art || 0);
+        if (result.buildMode !== priorBuildMode) changes++;
         lastProjectFilename = file.name;
         updatePatchChip();
+        syncBuildModeControl();
         renderTab(activeTab);
 
-        var loadedParts = [];
+        var loadedParts = [result.buildModeLabel];
         if (result.applied.shops) loadedParts.push(result.applied.shops + ' shop' + (result.applied.shops === 1 ? '' : 's'));
         if (result.applied.prices) loadedParts.push(result.applied.prices + ' price' + (result.applied.prices === 1 ? '' : 's'));
         if (result.applied.itemStats) loadedParts.push(result.applied.itemStats + ' item' + (result.applied.itemStats === 1 ? '' : 's'));
@@ -1419,7 +1544,6 @@ window.OB64 = window.OB64 || {};
             patch.patches && patch.patches.consumableEffects
           ));
         }
-        if (!loadedParts.length) loadedParts.push('0 changes');
         var msg = 'Project loaded: ' + file.name + ' (' +
           loadedParts.join(', ') + ').';
         if (result.warnings.length) {
@@ -1729,6 +1853,7 @@ window.OB64 = window.OB64 || {};
   // Render dispatcher
   // ============================================================
   function renderTab(tab) {
+    syncBuildModeControl();
     var panel = document.getElementById('panel-' + tab);
     var compatibilityState = null;
     if (rom && rom.compatibility && tab !== 'save') {
@@ -1902,7 +2027,8 @@ window.OB64 = window.OB64 || {};
 
   function updateStatus() {
     if (!rom) return;
-    var text = 'ROM loaded | ' + rom.archives.length + ' archives';
+    var text = currentBuildModeInfo().label + ' | ROM loaded | ' +
+      rom.archives.length + ' archives';
     if (changes > 0) text += ' | <span class="changes">' + changes + ' pending changes</span>';
     else text += ' | 0 pending changes';
     statusBar.innerHTML = text;
@@ -1916,6 +2042,20 @@ window.OB64 = window.OB64 || {};
   // Export ROM writes it or restores the retail bytes.
   function formatToolPercent(value) {
     return String(Math.round(Number(value) * 1000) / 1000) + '%';
+  }
+
+  function displayedToolState(feature) {
+    var state = OB64.tools.featureState(rom.z64, feature);
+    return OB64.nativeRebuild
+      ? OB64.nativeRebuild.displayToolState(rom, feature, state)
+      : state;
+  }
+
+  function displayedToolPercent(feature) {
+    var value = OB64.tools.parameterValue(rom.z64, feature);
+    return OB64.nativeRebuild
+      ? OB64.nativeRebuild.displayToolPercent(rom, feature, value)
+      : value;
   }
 
   function toolScaleStatus(feature, currentState, currentPercent, desiredPercent, unsupported, foreign) {
@@ -1957,8 +2097,8 @@ window.OB64 = window.OB64 || {};
     var weights = card.querySelector('[data-tool-scale-weights]');
     var reset = card.querySelector('[data-tool-scale-reset]');
     var status = card.querySelector('[data-tool-scale-status]');
-    var currentState = OB64.tools.featureState(rom.z64, feature);
-    var currentPercent = OB64.tools.parameterValue(rom.z64, feature);
+    var currentState = displayedToolState(feature);
+    var currentPercent = displayedToolPercent(feature);
     var unsupported = rom.tools.initial[feature.id] === 'unsupported';
     var foreign = rom.tools.initial[feature.id] === 'foreign';
     var statusInfo = toolScaleStatus(
@@ -2019,7 +2159,7 @@ window.OB64 = window.OB64 || {};
     html += '<div class="tool-cards">';
     for (var i = 0; i < features.length; i++) {
       var f = features[i];
-      var cur = OB64.tools.featureState(rom.z64, f);
+      var cur = displayedToolState(f);
       var unsupported = rom.tools.initial[f.id] === 'unsupported';
       var foreign = rom.tools.initial[f.id] === 'foreign';
       var parameterized = OB64.tools.isParameterized(f);
@@ -2027,7 +2167,7 @@ window.OB64 = window.OB64 || {};
 
       if (parameterized) {
         var desiredScale = OB64.tools.desiredPercent(rom, f);
-        var currentScale = OB64.tools.parameterValue(rom.z64, f);
+        var currentScale = displayedToolPercent(f);
         var scaleStatus = toolScaleStatus(
           f, cur, currentScale, desiredScale, unsupported, foreign);
         html += '<div class="tool-card tool-scale-card' + ((foreign || unsupported) ? ' tool-foreign' : '') + '">' +
@@ -2174,6 +2314,9 @@ window.OB64 = window.OB64 || {};
     }
     if (Object.prototype.hasOwnProperty.call(dirty, flagName)) {
       dirty[flagName] = true;
+      if (flagName === 'shops' && rom && OB64.nativeRebuild) {
+        OB64.nativeRebuild.setShopOwnerSelected(rom, true);
+      }
     }
   }
 
@@ -2181,7 +2324,10 @@ window.OB64 = window.OB64 || {};
     // Map the currently-active tab to a dirty flag so export can skip
     // subsystems the user never touched.
     switch (activeTab) {
-      case 'shops':    dirty.shops = true; break;
+      case 'shops':
+        dirty.shops = true;
+        if (OB64.nativeRebuild) OB64.nativeRebuild.setShopOwnerSelected(rom, true);
+        break;
       case 'consumables':
         dirty.consumableEffects = OB64.consumableEffects.refreshPending(
           rom.consumableEffects
@@ -3003,6 +3149,7 @@ window.OB64 = window.OB64 || {};
 
   function renderShops(panel) {
     panel.innerHTML = '';
+    var rebuildShopContract = currentBuildMode() === 'rebuild';
 
     // shopIdx → list of stronghold records (for stronghold names + mission IDs).
     // Skips:
@@ -3023,31 +3170,39 @@ window.OB64 = window.OB64 || {};
     }
     var scenarioKeysByRecord = buildShopScenarioKeyIndex();
 
-    // The retail archive has a compression-dependent aggregate budget, but the
-    // consumer has separate fixed arrays per opened shop: 50 equipment and 15
-    // consumables. Runtime overrides therefore validate per shop, not against
-    // the old observed 324-entry archive total.
-    var total = OB64.totalShopItems(rom.shops);
-    var runtimeShopCount = OB64.runtimeOverrides
+    // Each build mode publishes its active per-Shop contract capacities.
+    var shopCapacities = OB64.nativeRebuild
+      ? OB64.nativeRebuild.capacities(currentBuildMode())
+      : { equipment: OB64.SHOP_MAX_EQUIPMENT_PER_SHOP,
+          expendables: OB64.SHOP_MAX_CONSUMABLES_PER_SHOP };
+    var activeShops = rebuildShopContract ? rom.shops.slice(1, 36) : rom.shops;
+    var total = OB64.totalShopItems(activeShops);
+    var runtimeShopCount = !rebuildShopContract && OB64.runtimeOverrides
       ? OB64.runtimeOverrides.collectShopOverrides(rom).length
       : 0;
     var overCapacity = false;
     var nearCapacity = false;
-    for (var capIdx = 0; capIdx < rom.shops.length; capIdx++) {
+    var capacityStart = rebuildShopContract ? 1 : 0;
+    var capacityEnd = rebuildShopContract ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var capIdx = capacityStart; capIdx < capacityEnd; capIdx++) {
       var capShop = rom.shops[capIdx];
       var equipCount = (capShop.items || []).length;
       var expendableCount = (capShop.consumables || []).length;
-      if (equipCount > OB64.SHOP_MAX_EQUIPMENT_PER_SHOP ||
-          expendableCount > OB64.SHOP_MAX_CONSUMABLES_PER_SHOP) overCapacity = true;
-      if (equipCount >= OB64.SHOP_MAX_EQUIPMENT_PER_SHOP - 3 ||
-          expendableCount >= OB64.SHOP_MAX_CONSUMABLES_PER_SHOP - 2) nearCapacity = true;
+      if (equipCount > shopCapacities.equipment ||
+          expendableCount > shopCapacities.expendables) overCapacity = true;
+      if (equipCount >= shopCapacities.equipment - 3 ||
+          expendableCount >= shopCapacities.expendables - 2) nearCapacity = true;
     }
     var counter = document.createElement('div');
     counter.className = 'shop-counter';
     var state = overCapacity ? 'over' : (nearCapacity ? 'near' : 'ok');
     counter.classList.add('shop-counter-' + state);
-    var countSpan = '<strong>' + total + '</strong> equipment entries · <strong>' +
-      runtimeShopCount + '</strong> runtime-overridden shops';
+    var countSpan = '<strong>' + total + '</strong> equipment entries · ' +
+      (rebuildShopContract
+        ? ('Shop owner: <strong>' +
+          (OB64.nativeRebuild.shopOwnerSelected(rom) ? 'native source' : 'retail') +
+          '</strong>')
+        : ('<strong>' + runtimeShopCount + '</strong> runtime-overridden shops'));
     var suffix = '';
     if (state === 'over') {
       suffix = ' <span class="shop-counter-warn">one or more shops exceeds the static consumer arrays</span>';
@@ -3055,8 +3210,9 @@ window.OB64 = window.OB64 || {};
       suffix = ' <span class="shop-counter-warn">one or more shops is near capacity</span>';
     }
     counter.innerHTML = countSpan + ' · per-shop limits: ' +
-      OB64.SHOP_MAX_EQUIPMENT_PER_SHOP + ' equipment / ' +
-      OB64.SHOP_MAX_CONSUMABLES_PER_SHOP + ' expendables' + suffix;
+      shopCapacities.equipment + ' equipment / ' +
+      shopCapacities.expendables + ' expendables (' +
+      currentBuildModeInfo().label + ')' + suffix;
     panel.appendChild(counter);
 
     var filter = makeFilterBar('Filter by stronghold, scenario, or item name...', function(q) {
@@ -3077,10 +3233,12 @@ window.OB64 = window.OB64 || {};
     // least one stronghold — that way emptying a real shop doesn't hide
     // its card, but shopcsv padding slots stay hidden.
     var shopOrder = [];
-    for (var si = 0; si < rom.shops.length; si++) {
+    var shopStart = rebuildShopContract ? 1 : 0;
+    var shopEnd = rebuildShopContract ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var si = shopStart; si < shopEnd; si++) {
       var shopRecsList = shopRecs[si] || [];
-      if (rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
-          !rom.shops[si].runtimeOverride) continue;
+      if (!rebuildShopContract && rom.shops[si].items.length === 0 && shopRecsList.length === 0 &&
+          !rom.shops[si].runtimeOverride && !rom.shops[si].nativeOverride) continue;
       var minWiki = Infinity;
       var minScenarioKey = Infinity;
       var minMission = Infinity;
@@ -3128,8 +3286,8 @@ window.OB64 = window.OB64 || {};
       // largest inventory observed in retail data.
       var perShopCount = shop.items.length;
       var perShopConsumables = (shop.consumables || []).length;
-      var perShopCap = OB64.SHOP_MAX_EQUIPMENT_PER_SHOP;
-      var perShopConsumableCap = OB64.SHOP_MAX_CONSUMABLES_PER_SHOP;
+      var perShopCap = shopCapacities.equipment;
+      var perShopConsumableCap = shopCapacities.expendables;
       var shopCounter = document.createElement('div');
       shopCounter.className = 'shop-item-count';
       if (perShopCount > perShopCap || perShopConsumables > perShopConsumableCap) {
@@ -3140,7 +3298,8 @@ window.OB64 = window.OB64 || {};
       }
       shopCounter.textContent = perShopCount + ' / ' + perShopCap + ' equipment · ' +
         perShopConsumables + ' / ' + perShopConsumableCap + ' expendable';
-      shopCounter.title = 'Static consumer capacities: 50 equipment slots and 15 consumable slots.';
+      shopCounter.title = currentBuildModeInfo().label + ' capacities: ' +
+        perShopCap + ' equipment and ' + perShopConsumableCap + ' Expendables.';
       card.appendChild(shopCounter);
 
       // Per-stronghold location rows: "Stronghold, Scenario".
@@ -3235,21 +3394,35 @@ window.OB64 = window.OB64 || {};
 
   // ---------- Shop-item modal ----------
   function openItemModal(shopIdx, category) {
+    if (currentBuildMode() === 'rebuild' && (shopIdx < 1 || shopIdx > 35)) {
+      showErrorModal('Rebuild ROM - Shop record unavailable',
+        'Rebuild ROM supports real Shop records 1 through 35. Record zero is the empty sentinel.');
+      return;
+    }
     var shop = rom.shops[shopIdx];
     var isConsumableModal = (category === 'expendable');
     var items = allItemsInCategory(category);
+    var shopCapacities = OB64.nativeRebuild
+      ? OB64.nativeRebuild.capacities(currentBuildMode())
+      : { equipment: OB64.SHOP_MAX_EQUIPMENT_PER_SHOP,
+          expendables: OB64.SHOP_MAX_CONSUMABLES_PER_SHOP };
 
     // Initial selection state.
     // Both ID spaces are per-shop; runtime encoding distinguishes them with
     // bit 15 rather than by changing their stored IDs here.
     var selected = {};
+    var selectedOrder = [];
     if (isConsumableModal) {
       (shop.consumables || []).forEach(function(id) {
         selected[id] = true;
+        selectedOrder.push(id);
       });
     } else {
       shop.items.forEach(function(id) {
-        if (categorizeShopItem(id) === category) selected[id] = true;
+        if (categorizeShopItem(id) === category) {
+          selected[id] = true;
+          selectedOrder.push(id);
+        }
       });
     }
 
@@ -3379,14 +3552,15 @@ window.OB64 = window.OB64 || {};
             }
             if (selected[item.id]) {
               delete selected[item.id];
+              selectedOrder = selectedOrder.filter(function(id) { return id !== item.id; });
               row.classList.remove('selected');
             } else {
               var currentCount = isConsumableModal
                 ? (shop.consumables || []).length
                 : shop.items.length;
               var maxCount = isConsumableModal
-                ? OB64.SHOP_MAX_CONSUMABLES_PER_SHOP
-                : OB64.SHOP_MAX_EQUIPMENT_PER_SHOP;
+                ? shopCapacities.expendables
+                : shopCapacities.equipment;
               if (currentCount >= maxCount) {
                 flashHint(hint, 'Shop #' + shopIdx + ' is already at the static ' +
                   maxCount + (isConsumableModal ? '-consumable' : '-equipment') +
@@ -3394,10 +3568,14 @@ window.OB64 = window.OB64 || {};
                 return;
               }
               selected[item.id] = true;
+              selectedOrder.push(item.id);
               row.classList.add('selected');
             }
-            if (isConsumableModal) commitConsumableSelectionToShop(shopIdx, selected);
-            else commitSelectionToShop(shopIdx, category, selected);
+            if (isConsumableModal) {
+              commitConsumableSelectionToShop(shopIdx, selectedOrder, selected);
+            } else {
+              commitSelectionToShop(shopIdx, category, selectedOrder, selected);
+            }
             updateRowUnused(row, item.id, isConsumableModal);
           });
           col.appendChild(row);
@@ -3414,8 +3592,10 @@ window.OB64 = window.OB64 || {};
     var hint = document.createElement('div');
     hint.className = 'item-modal-hint';
     hint.dataset.defaultText = isConsumableModal
-      ? 'Select up to the 15-entry consumer array. Non-retail badges mark entries whose purchase/use behavior is unproven. Runtime shops require the Expansion Pak; exact-max cold-boot proof is pending.'
-      : 'Select up to the 50-entry equipment array. Runtime shops require the Expansion Pak; exact-max cold-boot proof is pending. Ctrl+click removes an item from every other shop.';
+      ? 'Select up to ' + shopCapacities.expendables + ' Expendables for ' +
+        currentBuildModeInfo().label + '. Membership order is preserved; new entries append.'
+      : 'Select up to ' + shopCapacities.equipment + ' equipment entries for ' +
+        currentBuildModeInfo().label + '. Membership order is preserved; Ctrl+click removes an item elsewhere.';
     hint.textContent = hint.dataset.defaultText;
     modal.appendChild(hint);
 
@@ -3444,7 +3624,9 @@ window.OB64 = window.OB64 || {};
 
   function removeItemFromOtherShops(currentShopIdx, itemId) {
     var removedFrom = 0;
-    for (var i = 0; i < rom.shops.length; i++) {
+    var start = currentBuildMode() === 'rebuild' ? 1 : 0;
+    var end = currentBuildMode() === 'rebuild' ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var i = start; i < end; i++) {
       if (i === currentShopIdx) continue;
       var shop = rom.shops[i];
       var before = shop.items.length;
@@ -3460,7 +3642,9 @@ window.OB64 = window.OB64 || {};
 
   function removeConsumableFromOtherShops(currentShopIdx, consumableId) {
     var removedFrom = 0;
-    for (var i = 0; i < rom.shops.length; i++) {
+    var start = currentBuildMode() === 'rebuild' ? 1 : 0;
+    var end = currentBuildMode() === 'rebuild' ? Math.min(36, rom.shops.length) : rom.shops.length;
+    for (var i = start; i < end; i++) {
       if (i === currentShopIdx) continue;
       var shop = rom.shops[i];
       var before = (shop.consumables || []).length;
@@ -3895,18 +4079,47 @@ window.OB64 = window.OB64 || {};
   OB64.showRomValidationModal = showRomValidationModal;
   OB64.downloadRomValidationReport = downloadRomValidationReport;
 
-  function commitSelectionToShop(shopIdx, category, selected) {
+  function commitSelectionToShop(shopIdx, category, selectedOrder, selected) {
     var shop = rom.shops[shopIdx];
-    var kept = shop.items.filter(function(id) { return categorizeShopItem(id) !== category; });
-    var newIds = Object.keys(selected).map(function(k) { return parseInt(k, 10); });
-    shop.items = kept.concat(newIds);
+    if (currentBuildMode() === 'patch') {
+      var legacyKept = shop.items.filter(function(id) {
+        return categorizeShopItem(id) !== category;
+      });
+      var legacyIds = Object.keys(selected).map(function(key) {
+        return parseInt(key, 10);
+      });
+      shop.items = legacyKept.concat(legacyIds);
+      if (OB64.runtimeOverrides) {
+        OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
+      }
+      markChanged('shops');
+      return;
+    }
+    var selectedMap = Object.create(null);
+    selectedOrder.forEach(function(id) { selectedMap[id] = true; });
+    var emitted = Object.create(null);
+    var nextItems = [];
+    shop.items.forEach(function(id) {
+      if (categorizeShopItem(id) !== category) {
+        nextItems.push(id);
+      } else if (selectedMap[id]) {
+        nextItems.push(id);
+        emitted[id] = true;
+      }
+    });
+    selectedOrder.forEach(function(id) {
+      if (!emitted[id]) nextItems.push(id);
+    });
+    shop.items = nextItems;
     if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
     markChanged('shops');
   }
 
-  function commitConsumableSelectionToShop(shopIdx, selected) {
+  function commitConsumableSelectionToShop(shopIdx, selectedOrder, selected) {
     var shop = rom.shops[shopIdx];
-    shop.consumables = Object.keys(selected).map(function(k) { return parseInt(k, 10); });
+    shop.consumables = currentBuildMode() === 'patch'
+      ? Object.keys(selected).map(function(key) { return parseInt(key, 10); })
+      : selectedOrder.slice();
     if (OB64.runtimeOverrides) OB64.runtimeOverrides.refreshShopOverrideState(rom, shopIdx);
     markChanged('shops');
   }

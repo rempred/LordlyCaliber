@@ -7,6 +7,11 @@ const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
 
+function sourceText(filename) {
+  return fs.readFileSync(path.join(EDITOR, filename), 'utf8')
+    .replace(/\r\n/g, '\n');
+}
+
 global.window = global;
 global.btoa = value => Buffer.from(value, 'binary').toString('base64');
 global.atob = value => Buffer.from(value, 'base64').toString('binary');
@@ -258,21 +263,20 @@ assert.deepStrictEqual([afterLibrary.scrollTop, afterLibrary.scrollLeft], [420, 
 assert.deepStrictEqual([afterFrames.scrollTop, afterFrames.scrollLeft], [0, 725]);
 assert.strictEqual(afterViewport.scrollTop, 880);
 
-const indexSource = fs.readFileSync(path.join(EDITOR, 'index.html'), 'utf8');
-const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
-const librarySource = fs.readFileSync(path.join(EDITOR, 'sprite-library.js'), 'utf8');
-const uiSource = fs.readFileSync(path.join(EDITOR, 'sprite-editor-ui.js'), 'utf8');
-const artModelSource = fs.readFileSync(path.join(EDITOR, 'art.js'), 'utf8');
-const artSource = fs.readFileSync(path.join(EDITOR, 'art-ui.js'), 'utf8');
-const animationSource = fs.readFileSync(path.join(EDITOR, 'animation-ui.js'), 'utf8');
-const patchSource = fs.readFileSync(path.join(EDITOR, 'patch.js'), 'utf8');
-const compatibilitySource = fs.readFileSync(
-  path.join(EDITOR, 'rom-compatibility.js'), 'utf8');
-const changelogSource = fs.readFileSync(path.join(EDITOR, 'changelog.js'), 'utf8');
-const armyModelSource = fs.readFileSync(path.join(EDITOR, 'army-sprites.js'), 'utf8');
-const armyUiSource = fs.readFileSync(path.join(EDITOR, 'army-sprite-ui.js'), 'utf8');
-const cssSource = fs.readFileSync(path.join(EDITOR, 'style.css'), 'utf8');
-const readmeSource = fs.readFileSync(path.join(EDITOR, 'README.md'), 'utf8');
+const indexSource = sourceText('index.html');
+const appSource = sourceText('app.js');
+const librarySource = sourceText('sprite-library.js');
+const uiSource = sourceText('sprite-editor-ui.js');
+const artModelSource = sourceText('art.js');
+const artSource = sourceText('art-ui.js');
+const animationSource = sourceText('animation-ui.js');
+const patchSource = sourceText('patch.js');
+const compatibilitySource = sourceText('rom-compatibility.js');
+const changelogSource = sourceText('changelog.js');
+const armyModelSource = sourceText('army-sprites.js');
+const armyUiSource = sourceText('army-sprite-ui.js');
+const cssSource = sourceText('style.css');
+const readmeSource = sourceText('README.md');
 
 assert(indexSource.includes('<button data-tab="sprites">Sprite Editor</button>'));
 assert(indexSource.includes('<div class="tab-panel" id="panel-sprites"></div>'));
@@ -367,7 +371,7 @@ assert(animationSource.includes('singleLayerPixels: singleLayerPixels'));
 assert(uiSource.includes("element('span', '', 'Source layer')"));
 assert(cssSource.includes('.sprite-picker-layer[hidden] { display: none; }'));
 
-assert(patchSource.includes('var PATCH_VERSION = 34;'));
+assert(patchSource.includes('var PATCH_VERSION = 35;'));
 assert(patchSource.includes('spriteLibrary: spriteLibraryOut'));
 assert(patchSource.includes('sprite_library_assets: spriteLibraryChanges'));
 assert(patchSource.includes('preparedSpriteLibrary'));

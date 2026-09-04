@@ -33,6 +33,8 @@ for (const filename of [
   'tools.js',
   'squadblob.js',
   'runtimeblob.js',
+  'native-rebuild-data.js',
+  'native-rebuild.js',
   'squads-data.js',
   'squads.js',
   'scenario-map-calibration.js',

@@ -453,7 +453,11 @@ window.OB64 = window.OB64 || {};
     var retail = wordsToBytes(layout.SHOP_ORIGINAL_WORDS);
     var status = 'readable';
     var reason = 'The shop producer hook is retail-clean.';
-    if (equalBytes(observed, installed)) {
+    var nativeShop = rom.nativeRebuild && rom.nativeRebuild.sourceClassification &&
+      rom.nativeRebuild.sourceClassification.owners.shops;
+    if (nativeShop && nativeShop.state === 'native') {
+      reason = 'The authenticated Rebuild ROM Shop owner is installed; all 35 real Shop memberships were decoded.';
+    } else if (equalBytes(observed, installed)) {
       var count = OB64.runtimeOverrides.parseShopOverrides(rom.z64, rom);
       reason = 'The shop producer hook is editor-owned; ' + Object.keys(count).length + ' runtime shop overrides were decoded.';
     } else if (!equalBytes(observed, retail)) {

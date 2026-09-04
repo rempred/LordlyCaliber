@@ -1995,7 +1995,7 @@ function route(rom, classId, actionId, flags, rawMode) {
   vm.runInThisContext(fs.readFileSync(path.join(EDITOR, 'patch.js'), 'utf8'), {
     filename: 'patch.js',
   });
-  assert.strictEqual(OB64.patch.VERSION, 34);
+  assert.strictEqual(OB64.patch.VERSION, 35);
 
   OB64.animationSequences.removeSeparation(rom, separation);
   assert.strictEqual(rom.animationSequences.separations[separation.id], undefined);

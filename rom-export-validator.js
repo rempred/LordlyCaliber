@@ -9,7 +9,18 @@ window.OB64 = window.OB64 || {};
   'use strict';
 
   var REPORT_SCHEMA = 'ob64-rom-export-validation-report';
-  var REPORT_VERSION = 1;
+  var REPORT_VERSION = 2;
+
+  function modeIssue(report, found) {
+    var label = report && report.buildModeLabel || 'Patch ROM';
+    if (found.title && found.title.indexOf(label + ':') !== 0) {
+      found.title = label + ': ' + found.title;
+    }
+    if (found.message && found.message.indexOf(label + ':') !== 0) {
+      found.message = label + ': ' + found.message;
+    }
+    return found;
+  }
 
   function equalBytes(a, b) {
     if (!a || !b || a.length !== b.length) return false;
@@ -76,7 +87,7 @@ window.OB64 = window.OB64 || {};
       });
       return details.value;
     } catch (error) {
-      var found = issueFromException(error, fallback);
+      var found = modeIssue(report, issueFromException(error, fallback));
       report.checks.push({
         id: id,
         name: name,
@@ -920,6 +931,9 @@ window.OB64 = window.OB64 || {};
     var sourceRom = options && options.sourceRom;
     var candidateRom = options && options.candidateRom;
     var dirty = options && options.dirty || {};
+    var buildMode = options && options.buildMode === 'rebuild' ? 'rebuild' : 'patch';
+    var buildModeLabel = options && options.buildModeLabel ||
+      (buildMode === 'rebuild' ? 'Rebuild ROM' : 'Patch ROM');
     var report = {
       schema: REPORT_SCHEMA,
       schemaVersion: REPORT_VERSION,
@@ -927,6 +941,18 @@ window.OB64 = window.OB64 || {};
       editorVersion: OB64.consumableEffects && OB64.consumableEffects.EDITOR_VERSION || null,
       result: 'failed',
       ok: false,
+      buildMode: buildMode,
+      buildModeLabel: buildModeLabel,
+      nativeProvenance: options && options.nativePlan ? {
+        acceptedSourceCommit: options.nativePlan.acceptedCommit,
+        acceptedSourceTree: options.nativePlan.acceptedTree,
+        ownershipManifestSha256: options.nativePlan.manifestSha256,
+        shopContractSha256: options.nativePlan.contractSha256,
+        runtimeRdramBytes: options.nativePlan.runtimeRdramBytes,
+        migratedCombination: options.nativePlan.acceptedMatrixId,
+        generatorProvenance: options.nativePlan.generatorProvenance,
+        inputIdentityCount: options.nativePlan.inputIdentityCount,
+      } : null,
       outputByteOrder: sourceRom && (sourceRom.exportByteOrder || sourceRom.byteOrder) || null,
       dirtyCategories: Object.keys(dirty).filter(function(key) { return !!dirty[key]; }).sort(),
       touched: (options && options.touched || []).slice(),
@@ -940,7 +966,7 @@ window.OB64 = window.OB64 || {};
 
     if (!sourceRom || !candidateRom || !(sourceRom.z64 instanceof Uint8Array) ||
         !(candidateRom.z64 instanceof Uint8Array)) {
-      report.errors.push({
+      report.errors.push(modeIssue(report, {
         code: 'VALIDATION_INPUT_MISSING',
         title: 'ROM validation could not start',
         message: 'The editor did not retain both the source ROM and the finished candidate.',
@@ -951,7 +977,7 @@ window.OB64 = window.OB64 || {};
           sourceHasImage: !!(sourceRom && sourceRom.z64 instanceof Uint8Array),
           candidateHasImage: !!(candidateRom && candidateRom.z64 instanceof Uint8Array),
         },
-      });
+      }));
       report.durationMs = Date.now() - started;
       return report;
     }
@@ -960,12 +986,12 @@ window.OB64 = window.OB64 || {};
       report.source = imageIdentity(sourceRom);
       report.candidate = imageIdentity(candidateRom);
     } catch (identityError) {
-      report.errors.push(issueFromException(identityError, {
+      report.errors.push(modeIssue(report, issueFromException(identityError, {
         code: 'ROM_IDENTITY_FAILED',
         title: 'ROM identity could not be verified',
         message: 'The editor could not identify the source and finished ROM images.',
         suggestion: 'Reload the editor and export again.',
-      }));
+      })));
     }
 
     yield* runCheckStep(report, 'rom-envelope', 'ROM format and revision', {
@@ -1530,11 +1556,64 @@ window.OB64 = window.OB64 || {};
       message: 'The finished ROM does not contain the intended per-shop item lists.',
       suggestion: 'Keep the error report, review the affected shops, and export again.',
     }, function() {
+      if (buildMode === 'rebuild') {
+        return skipped('Rebuild ROM Shop data is checked through its authenticated native contract.');
+      }
       if (!dirty.shops && !options.runtimeWritePlan && options.runtimeMode !== 'restore') {
         return skipped('Runtime shops did not change during this export.');
       }
       return validateShopOverrides(candidateRom, options.shopOverrides || []);
     });
+
+    yield* runCheckStep(report, 'native-rebuild-integrity',
+      'Authenticated native ownership and Shop reload', {
+        code: 'NATIVE_REBUILD_INTEGRITY',
+        title: 'Native rebuild did not verify',
+        message: 'The finished ROM does not match its authenticated native ownership plan.',
+        suggestion: 'Keep the error report and recreate the ROM after updating the editor.',
+      }, function() {
+        if (buildMode !== 'rebuild') {
+          return skipped('Patch ROM does not use native source ownership.');
+        }
+        if (!OB64.nativeRebuild || !options.nativePlan || !options.nativeResult) {
+          throw issue(
+            'VALIDATOR_DEPENDENCY_MISSING',
+            'Native rebuild validation is missing',
+            'The editor did not retain the authenticated native build plan and result.',
+            'Reload the editor and export again.',
+            { hasNativeModule: !!OB64.nativeRebuild,
+              hasPlan: !!options.nativePlan, hasResult: !!options.nativeResult }
+          );
+        }
+        var nativeValidation = OB64.nativeRebuild.validateApplied(
+          candidateRom, options.nativePlan, options.runtimeWritePlan);
+        if (!reloadedRom) {
+          throw issue(
+            'NATIVE_REBUILD_RELOAD_FAILED',
+            'Native rebuilt ROM could not restore its model',
+            'The finished Rebuild ROM did not reopen, so its native Shop data could not be restored.',
+            'Keep the error report and recreate the ROM after updating the editor.'
+          );
+        }
+        OB64.nativeRebuild.initializeSource(reloadedRom);
+        if (options.nativePlan.shopSelected) {
+          var restoredRecords = OB64.nativeRebuild.recordsFromRom(reloadedRom);
+          var expectedContract = OB64.nativeRebuild.encodeShopContract(
+            options.nativePlan.shopRecords);
+          var restoredContract = OB64.nativeRebuild.encodeShopContract(restoredRecords);
+          if (!equalBytes(expectedContract, restoredContract)) {
+            throw issue(
+              'NATIVE_SHOP_RELOAD_MISMATCH',
+              'Native Shop data did not restore after reload',
+              'The reopened Rebuild ROM does not restore the intended ordered Shop memberships.',
+              'Keep the error report and recreate the ROM after updating the editor.'
+            );
+          }
+        }
+        nativeValidation.details.reloadedBuildMode = reloadedRom.buildMode;
+        nativeValidation.details.reloadedShopRecords = options.nativePlan.shopSelected ? 36 : 0;
+        return nativeValidation;
+      });
 
     yield* runCheckStep(report, 'scenario-rate-override-readback', 'Scenario encounter-rate semantic readback', {
       code: 'SEMANTIC_READBACK_MISMATCH',
@@ -1622,7 +1701,7 @@ window.OB64 = window.OB64 || {};
   function validationStepCount(options) {
     var targets = options && options.scenarioResult &&
       options.scenarioResult.validationTargets || [];
-    return 20 + Math.max(targets.length, 1);
+    return 21 + Math.max(targets.length, 1);
   }
 
   function yieldForProgressPaint() {
@@ -1677,15 +1756,20 @@ window.OB64 = window.OB64 || {};
     return step.value;
   }
 
-  function unexpectedReport(error, stage) {
+  function unexpectedReport(error, stage, buildMode, buildModeLabel) {
     var found = error && error.message || String(error);
-    return {
+    buildMode = buildMode === 'rebuild' ? 'rebuild' : 'patch';
+    buildModeLabel = buildModeLabel || (buildMode === 'rebuild' ? 'Rebuild ROM' : 'Patch ROM');
+    var report = {
       schema: REPORT_SCHEMA,
       schemaVersion: REPORT_VERSION,
       generatedAt: new Date().toISOString(),
       editorVersion: OB64.consumableEffects && OB64.consumableEffects.EDITOR_VERSION || null,
       result: 'failed',
       ok: false,
+      buildMode: buildMode,
+      buildModeLabel: buildModeLabel,
+      nativeProvenance: null,
       outputByteOrder: null,
       dirtyCategories: [],
       touched: [],
@@ -1695,14 +1779,14 @@ window.OB64 = window.OB64 || {};
         id: 'unexpected-' + (stage || 'export'),
         name: 'Unexpected export failure',
         status: 'failed',
-        summary: 'The editor stopped because an unexpected export error occurred.',
+        summary: buildModeLabel + ': the editor stopped because an unexpected export error occurred.',
         durationMs: 0,
         details: { stage: stage || 'export', exceptionMessage: found },
       }],
       errors: [{
         code: 'UNEXPECTED_EXPORT_ERROR',
-        title: 'Unexpected export error',
-        message: 'The editor stopped before downloading the ROM because an unexpected error occurred.',
+         title: buildModeLabel + ': Unexpected export error',
+         message: buildModeLabel + ': the editor stopped before downloading the ROM because an unexpected error occurred.',
         suggestion: 'Download the error report, then keep the project and source ROM for diagnosis.',
         technical: {
           stage: stage || 'export',
@@ -1714,6 +1798,7 @@ window.OB64 = window.OB64 || {};
       changeRanges: [],
       durationMs: 0,
     };
+    return report;
   }
 
   OB64.romExportValidator = {

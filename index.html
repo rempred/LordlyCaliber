@@ -27,6 +27,15 @@
           ROM Compatibility
         </button>
 
+        <div class="build-mode-control">
+          <label for="build-mode">Build</label>
+          <select id="build-mode" disabled>
+            <option value="patch" selected>Patch ROM</option>
+            <option value="rebuild">Rebuild ROM</option>
+          </select>
+          <span id="build-mode-help">Patch ROM keeps the legacy export path.</span>
+        </div>
+
         <div class="header-button-stack">
           <button id="btn-export" disabled>Export ROM</button>
           <button id="btn-changelog" class="btn-secondary" disabled>Changelog</button>
@@ -161,6 +170,8 @@
   <script src="tools.js"></script>
   <script src="squadblob.js"></script>
   <script src="runtimeblob.js"></script>
+  <script src="native-rebuild-data.js"></script>
+  <script src="native-rebuild.js"></script>
   <script src="squads-data.js"></script>
   <script src="squads.js"></script>
   <script src="scenario-map-calibration.js"></script>

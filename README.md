@@ -144,6 +144,25 @@ core and core version when reusing savestates.
 A LordlyCaliber Project is a JSON description of edits. It does not contain the
 source ROM. Load the same supported ROM before applying a Project.
 
+The header build control selects one of two separate export products:
+
+- **Patch ROM** keeps the existing fixed-offset and legacy runtime writers. It
+  supports the existing revision 0 and revision 1 matrix.
+- **Rebuild ROM** uses authenticated native source owners through Phase 4. It
+  supports revision 0 only and requires 8 MiB RDRAM.
+
+Projects created by this version record the selected mode and every migrated
+native-owner choice. A selected native Shop owner stores all 35 real Shop
+memberships in authored order. Older Projects default to **Patch ROM**.
+
+**Patch ROM** keeps the 50-equipment and 15-Expendable Shop limits.
+**Rebuild ROM** uses 50 equipment and 30 Expendables per Shop. Record zero
+remains an empty sentinel in the rebuilt Shop contract.
+
+Normal editor use does not require a decompilation checkout. The generated
+native-owner bundle authenticates its accepted source commit, layouts,
+relocations, object manifest, Shop contract, and composition records.
+
 The Sprite Library is part of the Project. A Sprite Library asset does not
 change the ROM. Import a compatible asset into Art and Animation before ROM export.
 
@@ -235,7 +254,8 @@ Exports use an isolated copy of the loaded ROM. Before download, the editor:
 - reads back supported semantic changes; and
 - recalculates the N64 CIC-6102 checksum when required.
 
-A no-edit export is byte-identical to the loaded input.
+A **Patch ROM** no-edit export is byte-identical to the loaded input. A
+**Rebuild ROM** export with every migrated owner off is exact US revision 0.
 
 Save Game Editor changes are separate from ROM Projects. Use **Export Save** in
 that tab for RetroArch `.state`, BizHawk `.SaveRAM`, Project64 `.sra`, or raw
