@@ -719,6 +719,10 @@ window.OB64 = window.OB64 || {};
       throw new Error(spec.label + ' header exceeds its fixed ROM slot.');
     }
     var decoded = OB64.lzssDecode(z64, headerOffset + 8, decompSize);
+    if (decoded.bytesConsumed > encodedCapacity) {
+      throw new Error(spec.label + ' decoder consumed ' + decoded.bytesConsumed +
+        ' compressed bytes, but its header declares only ' + encodedCapacity + '.');
+    }
     if (decoded.output.length !== decompSize) {
       throw new Error(spec.label + ' decoded ' + decoded.output.length +
         ' bytes; expected ' + decompSize + '.');

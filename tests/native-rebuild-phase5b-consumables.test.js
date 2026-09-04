@@ -204,10 +204,42 @@ const converted = executeNative(recognizedLegacy, false);
 check('recognized legacy ownership converts through the Phase 5A source owner',
   converted.plan.consumables.conversion === 'legacy-to-native' &&
   equalBytes(converted.candidate.z64, legacyConversion.candidate.z64));
+const convertedInMemory = OB64.nativeRebuild._test.classifyConsumableOwner(
+  converted.candidate.z64);
+check('validated candidate receipt is bound to the exact in-memory product',
+  convertedInMemory.ownerState === 'native-complete' &&
+  convertedInMemory.provenance.source === 'validated-phase5b-candidate' &&
+  convertedInMemory.provenance.lifecycle === 'validated-candidate' &&
+  convertedInMemory.provenance.romSha256 === sha256(converted.candidate.z64));
+const unchangedPatchReload = freshRom(legacyConversion.candidate.z64);
+let unchangedPatchError = null;
+try {
+  OB64.nativeRebuild.patchSourceCheck(unchangedPatchReload);
+} catch (error) {
+  unchangedPatchError = error;
+}
+check('an unchanged valid Patch image remains Patch-compatible after Rebuild validation',
+  !unchangedPatchError &&
+  unchangedPatchReload.nativeRebuild.sourceClassification.owners.consumables.ownerState ===
+    'legacy-complete', unchangedPatchError && unchangedPatchError.message);
 const convertedReload = freshRom(converted.candidate.z64);
-check('trusted generated provenance identifies the complete native owner on reload',
+check('a reloaded byte copy does not inherit an in-memory candidate receipt',
   convertedReload.nativeRebuild.sourceClassification.owners.consumables.ownerState ===
-    'native-complete');
+    'legacy-complete');
+
+const receiptOutsideOwnerOffset = 0x02000000;
+converted.candidate.z64[receiptOutsideOwnerOffset] ^= 0x01;
+const changedReceiptState = OB64.nativeRebuild._test.classifyConsumableOwner(
+  converted.candidate.z64);
+check('a validated receipt rejects a later full-ROM identity change outside its owner ranges',
+  changedReceiptState.ownerState === 'partial-native' &&
+  changedReceiptState.provenance.mismatch === true &&
+  changedReceiptState.provenance.expectedRomSha256 ===
+    convertedInMemory.provenance.romSha256);
+converted.candidate.z64[receiptOutsideOwnerOffset] ^= 0x01;
+check('restoring the exact validated full-ROM identity restores its lifecycle receipt',
+  OB64.nativeRebuild._test.classifyConsumableOwner(
+    converted.candidate.z64).ownerState === 'native-complete');
 
 const partialLegacy = legacyConversion.candidate.z64.slice();
 partialLegacy[effect.romStart] ^= 0x01;
@@ -243,6 +275,31 @@ expectThrow('Patch ROM rejects partial Consumables ownership', () => {
   const rom = freshRom(malformed);
   OB64.nativeRebuild.patchSourceCheck(rom);
 }, /cannot export from a Rebuild ROM or mixed native source/);
+
+const descriptionPayloadSize = OB64.readU32BE(retailZ64, descriptions.romStart);
+for (const malformedPayload of [
+  { label: 'zero-length', payloadSize: 4 },
+  { label: 'short', payloadSize: descriptionPayloadSize - 1 },
+]) {
+  const malformedDescription = retailZ64.slice();
+  OB64.writeU32BE(malformedDescription, descriptions.romStart,
+    malformedPayload.payloadSize);
+  expectThrow(malformedPayload.label + ' declared description payload is rejected by the codec',
+    () => OB64.descriptionCodec.parseBlock('consumables', malformedDescription),
+    /header declares only/);
+  const malformedDescriptionState =
+    OB64.nativeRebuild._test.classifyConsumableOwner(malformedDescription);
+  check(malformedPayload.label + ' declared description payload fails owner detection closed',
+    malformedDescriptionState.state === 'foreign' &&
+    malformedDescriptionState.ownerState === 'partial-legacy' &&
+    /header declares only/.test(malformedDescriptionState.reason));
+  expectThrow(malformedPayload.label + ' declared description payload cannot enter Rebuild planning',
+    () => {
+      const malformedDescriptionRom = freshRom(malformedDescription);
+      OB64.buildModes.set(malformedDescriptionRom, 'rebuild');
+      OB64.nativeRebuild.prepareExport(malformedDescriptionRom, {});
+    }, /partial, mixed, or unknown migrated ownership/);
+}
 
 for (const key of OB64.consumableEffects.MODEL_ORDER) {
   const def = OB64.consumableEffects.MODEL_DEFS[key];
@@ -308,6 +365,68 @@ check('healing-only descriptions use one legacy-compatible complete-slot encode'
   healingOnly.native.plan.consumables.descriptionEncodingPasses === 1 &&
   healingOnly.native.plan.consumables.descriptionMode ===
     'legacy-compatible-unified-healing');
+
+const arbitraryTextRom = freshRom();
+arbitraryTextRom.consumableDescriptions = OB64.descriptionCodec.withText(
+  arbitraryTextRom.consumableDescriptions, 1,
+  'Manual Patch description with no numeric healing token.');
+const arbitraryPatchBytes = arbitraryTextRom.z64.slice();
+OB64.serializeConsumableDescriptions(arbitraryTextRom.consumableDescriptions,
+  arbitraryPatchBytes);
+const arbitraryPatchReload = freshRom(arbitraryPatchBytes);
+let arbitraryPatchError = null;
+try {
+  OB64.nativeRebuild.patchSourceCheck(arbitraryPatchReload);
+} catch (error) {
+  arbitraryPatchError = error;
+}
+check('arbitrary manual healing text remains valid for Patch ROM load detection',
+  !arbitraryPatchError &&
+  arbitraryPatchReload.nativeRebuild.sourceClassification.owners.consumables.ownerState ===
+    'legacy-complete' &&
+  arbitraryPatchReload.nativeRebuild.sourceClassification.owners.consumables
+    .patchCompatible === true,
+  arbitraryPatchError && arbitraryPatchError.message);
+expectThrow('Rebuild ROM rejects manual healing text without a complete numeric HP token',
+  () => {
+    OB64.buildModes.set(arbitraryPatchReload, 'rebuild');
+    OB64.nativeRebuild.prepareExport(arbitraryPatchReload, {});
+  }, /complete numeric value before HP/);
+
+const fourDigitRom = freshRom();
+const fourDigitText = fourDigitRom.consumableDescriptions.records[1].editableText
+  .replace(/[0-9]+(?=HP)/, '1000')
+  .replace('Leaf of a curative herb', 'Edited four-digit curative leaf');
+fourDigitRom.consumableDescriptions = OB64.descriptionCodec.withText(
+  fourDigitRom.consumableDescriptions, 1, fourDigitText);
+const fourDigitPatchBytes = fourDigitRom.z64.slice();
+OB64.serializeConsumableDescriptions(fourDigitRom.consumableDescriptions,
+  fourDigitPatchBytes);
+const fourDigitPatchReload = freshRom(fourDigitPatchBytes);
+let fourDigitPatchError = null;
+try {
+  OB64.nativeRebuild.patchSourceCheck(fourDigitPatchReload);
+} catch (error) {
+  fourDigitPatchError = error;
+}
+check('a complete four-digit manual token remains Patch-compatible on reload',
+  !fourDigitPatchError &&
+  fourDigitPatchReload.nativeRebuild.sourceClassification.owners.consumables
+    .patchCompatible === true,
+  fourDigitPatchError && fourDigitPatchError.message);
+setModels(fourDigitRom, modelVariant('healLeaf', 'magnitude', 555));
+const fourDigitBuild = executeNative(fourDigitRom, false);
+const fourDigitBlock = OB64.descriptionCodec.parseBlock(
+  'consumables', fourDigitBuild.candidate.z64);
+const fourDigitOutput = fourDigitBlock.records[1].editableText;
+check('healing synchronization replaces the complete numeric token before HP',
+  fourDigitOutput.includes('Edited four-digit curative leaf') &&
+  (fourDigitOutput.match(/[0-9]+HP/) || [null])[0] === '555HP' &&
+  !fourDigitOutput.includes('1555HP'));
+check('serialized visible healing text equals the effect model value',
+  Number(((fourDigitOutput.match(/[0-9]+(?=HP)/) || [NaN])[0])) ===
+    fourDigitBuild.plan.consumables.models.healLeaf.magnitude &&
+  fourDigitBuild.validation.details.consumableOwnerState === 'native-complete');
 
 const combinedRom = freshRom();
 combinedRom.consumableDescriptions = OB64.descriptionCodec.withText(
@@ -399,9 +518,19 @@ check('consumable metadata remains a byte-exact passthrough owner',
   canonicalBase.slice(metadata.romStart, metadata.romStart + metadata.bytes)));
 
 const acceptedNativeLoad = freshRom(focusedProduct);
+const focusedAcceptedProvenance =
+  acceptedNativeLoad.nativeRebuild.sourceClassification.owners.consumables.provenance;
 check('accepted Phase 5A product provenance identifies native-complete ownership',
   acceptedNativeLoad.nativeRebuild.sourceClassification.owners.consumables.ownerState ===
-    'native-complete' && acceptedNativeLoad.buildMode === 'rebuild');
+    'native-complete' && acceptedNativeLoad.buildMode === 'rebuild' &&
+  focusedAcceptedProvenance.product === 'native-consumables' &&
+  focusedAcceptedProvenance.romSha256 === sha256(focusedProduct));
+const acceptedCanonicalLoad = freshRom(canonicalProduct);
+const canonicalAcceptedProvenance =
+  acceptedCanonicalLoad.nativeRebuild.sourceClassification.owners.consumables.provenance;
+check('canonical Phase 5A provenance requires its exact full-ROM identity',
+  canonicalAcceptedProvenance.product === 'canonical-native-consumables' &&
+  canonicalAcceptedProvenance.romSha256 === sha256(canonicalProduct));
 expectThrow('Patch ROM rejects authenticated native Consumables ownership', () =>
   OB64.nativeRebuild.patchSourceCheck(acceptedNativeLoad),
   /cannot export from a Rebuild ROM/);

@@ -49,7 +49,7 @@ window.OB64 = window.OB64 || {};
   var authorizedCompositions = new WeakSet();
   var issuedPlanSignatures = new WeakMap();
   var issuedConsumableProvenance = new WeakMap();
-  var trustedConsumableOwnerImages = Object.create(null);
+  var acceptedConsumableProductsByOwnerImage = Object.create(null);
 
   function fail(message) {
     throw new Error('Rebuild ROM rejected the export: ' + message);
@@ -311,11 +311,14 @@ window.OB64 = window.OB64 || {};
     });
     (consumables.acceptedSource.nativeOwnerImages || []).forEach(function(image) {
       var key = image.effectSha256 + '|' + image.descriptionSha256;
-      trustedConsumableOwnerImages[key] = Object.freeze({
+      var products = acceptedConsumableProductsByOwnerImage[key] || [];
+      products.push(Object.freeze({
         source: 'accepted-phase5a-product',
+        lifecycle: 'accepted-product',
         product: image.product,
         romSha256: image.romSha256,
-      });
+      }));
+      acceptedConsumableProductsByOwnerImage[key] = products;
     });
     verifiedData = deepFreeze(data);
     return data;
@@ -383,32 +386,79 @@ window.OB64 = window.OB64 || {};
   function consumableProvenance(bytes) {
     var key = consumableOwnerImageKey(bytes);
     var issued = issuedConsumableProvenance.get(bytes);
-    if (issued && issued.ownerImageKey !== key) {
-      return { trusted: false, mismatch: true, expectedOwnerImageKey: issued.ownerImageKey };
-    }
-    if (issued) return { trusted: true, source: issued.source, ownerImageKey: key };
-    var accepted = trustedConsumableOwnerImages[key];
-    if (accepted) {
+    if (issued) {
+      var currentRomSha256 = sha256(bytes);
+      if (issued.ownerImageKey !== key || issued.romSha256 !== currentRomSha256) {
+        return {
+          trusted: false,
+          mismatch: true,
+          expectedOwnerImageKey: issued.ownerImageKey,
+          expectedRomSha256: issued.romSha256,
+          ownerImageKey: key,
+          romSha256: currentRomSha256,
+        };
+      }
       return {
         trusted: true,
-        source: accepted.source,
-        product: accepted.product,
-        romSha256: accepted.romSha256,
+        source: issued.source,
+        lifecycle: issued.lifecycle,
+        product: issued.product,
+        planSignature: issued.planSignature,
         ownerImageKey: key,
+        romSha256: currentRomSha256,
       };
+    }
+    var acceptedProducts = acceptedConsumableProductsByOwnerImage[key] || [];
+    if (acceptedProducts.length) {
+      var fullRomSha256 = sha256(bytes);
+      for (var index = 0; index < acceptedProducts.length; index++) {
+        var accepted = acceptedProducts[index];
+        if (accepted.romSha256 === fullRomSha256) {
+          return {
+            trusted: true,
+            source: accepted.source,
+            lifecycle: accepted.lifecycle,
+            product: accepted.product,
+            romSha256: fullRomSha256,
+            ownerImageKey: key,
+          };
+        }
+      }
     }
     return { trusted: false, mismatch: false, ownerImageKey: key };
   }
 
-  function registerConsumableProvenance(bytes, plan) {
-    var key = consumableOwnerImageKey(bytes);
-    var record = Object.freeze({
+  function pendingConsumableProvenance(bytes, plan) {
+    return Object.freeze({
+      trusted: false,
       source: 'issued-phase5b-plan',
+      lifecycle: 'awaiting-validation',
+      ownerImageKey: consumableOwnerImageKey(bytes),
+      planSignature: issuedPlanSignatures.get(plan),
+    });
+  }
+
+  function registerValidatedConsumableProvenance(bytes, plan) {
+    var key = consumableOwnerImageKey(bytes);
+    var romSha256 = sha256(bytes);
+    var acceptedProducts = acceptedConsumableProductsByOwnerImage[key] || [];
+    var acceptedProduct = null;
+    for (var index = 0; index < acceptedProducts.length; index++) {
+      if (acceptedProducts[index].romSha256 === romSha256) {
+        acceptedProduct = acceptedProducts[index];
+        break;
+      }
+    }
+    var record = Object.freeze({
+      trusted: true,
+      source: 'validated-phase5b-candidate',
+      lifecycle: 'validated-candidate',
+      product: acceptedProduct && acceptedProduct.product,
       ownerImageKey: key,
+      romSha256: romSha256,
       planSignature: issuedPlanSignatures.get(plan),
     });
     issuedConsumableProvenance.set(bytes, record);
-    trustedConsumableOwnerImages[key] = record;
     return record;
   }
 
@@ -487,10 +537,10 @@ window.OB64 = window.OB64 || {};
   }
 
   function healingValueFromText(text, id) {
-    var matches = String(text).match(/\d{3}(?=HP)/g) || [];
+    var matches = String(text).match(/[0-9]+(?=HP)/g) || [];
     if (matches.length !== 1) {
       throw new Error('healing description ' + id +
-        ' must contain exactly one three-digit HP value');
+        ' must contain exactly one complete numeric value before HP');
     }
     return Number(matches[0]);
   }
@@ -502,6 +552,16 @@ window.OB64 = window.OB64 || {};
     var block;
     try {
       effect = decodeConsumableEffectSection(bytes);
+    } catch (error) {
+      return {
+        state: 'foreign',
+        ownerState: provenance.mismatch ? 'partial-native' : 'partial-legacy',
+        reason: error.message,
+        provenance: provenance,
+        models: null,
+      };
+    }
+    try {
       block = OB64.descriptionCodec.parseBlock('consumables', bytes);
       if (!block || block.records.length !== spec.descriptions.recordCount ||
           block.meta.compressedSize > spec.descriptions.streamCapacity) {
@@ -518,18 +578,41 @@ window.OB64 = window.OB64 || {};
         ownerState: provenance.mismatch ? 'partial-native' : 'partial-legacy',
         reason: error.message,
         provenance: provenance,
-        models: null,
+        models: effect.models,
       };
     }
+    if (provenance.mismatch) {
+      return {
+        state: 'foreign',
+        ownerState: 'partial-native',
+        reason: 'the validated candidate changed after its trusted receipt was issued',
+        provenance: provenance,
+        models: effect.models,
+        descriptions: block,
+      };
+    }
+    var patchCompatible = !provenance.trusted;
     var healing;
     try {
       healing = [1, 2, 3].map(function(id) {
         return healingValueFromText(block.records[id].editableText, id);
       });
     } catch (error) {
+      if (patchCompatible) {
+        return {
+          state: 'legacy',
+          ownerState: 'legacy-complete',
+          reason: error.message,
+          provenance: provenance,
+          models: effect.models,
+          descriptions: block,
+          patchCompatible: true,
+          healingSynchronized: false,
+        };
+      }
       return {
         state: 'foreign',
-        ownerState: provenance.mismatch ? 'partial-native' : 'partial-legacy',
+        ownerState: 'partial-native',
         reason: error.message,
         provenance: provenance,
         models: effect.models,
@@ -547,6 +630,9 @@ window.OB64 = window.OB64 || {};
         reason: 'effect values and healing descriptions do not reconcile',
         provenance: provenance,
         models: effect.models,
+        descriptions: block,
+        patchCompatible: patchCompatible,
+        healingSynchronized: false,
       };
     }
     var descriptionBytes = bytes.slice(spec.descriptions.romStart,
@@ -556,7 +642,8 @@ window.OB64 = window.OB64 || {};
     if (retail) {
       return {
         state: 'retail', ownerState: 'retail', models: effect.models,
-        descriptions: block, provenance: provenance,
+        descriptions: block, provenance: provenance, patchCompatible: true,
+        healingSynchronized: true,
       };
     }
     return {
@@ -565,12 +652,14 @@ window.OB64 = window.OB64 || {};
       models: effect.models,
       descriptions: block,
       provenance: provenance,
+      patchCompatible: patchCompatible,
+      healingSynchronized: true,
     };
   }
 
   function normalizedHealingText(text, id) {
     healingValueFromText(text, id);
-    return String(text).replace(/\d{3}(?=HP)/, '###');
+    return String(text).replace(/[0-9]+(?=HP)/, '###');
   }
 
   function buildConsumableDescriptionSlot(rom, retailBase, models) {
@@ -641,7 +730,8 @@ window.OB64 = window.OB64 || {};
       var text = staged.records[id].editableText;
       healingValueFromText(text, id);
       staged = codec.replaceText(staged, id,
-        String(text).replace(/\d{3}(?=HP)/, String(values[index]).padStart(3, '0')));
+        String(text).replace(/[0-9]+(?=HP)/,
+          String(values[index]).padStart(3, '0')));
     });
     var scratch = retailBase.slice();
     var measurement = codec.serializeBlock(staged, scratch);
@@ -1728,7 +1818,7 @@ window.OB64 = window.OB64 || {};
     });
     plan.used = true;
     plan.appliedWrites = orderedWrites;
-    var consumableProvenanceRecord = registerConsumableProvenance(candidateRom.z64, plan);
+    var consumableProvenanceRecord = pendingConsumableProvenance(candidateRom.z64, plan);
     var crc = orderedWrites.some(function(write) {
       return write.offset < 0x101000 && write.offset + write.bytes.length > 0x1000;
     });
@@ -1813,10 +1903,20 @@ window.OB64 = window.OB64 || {};
     var consumableNoOp = plan.consumables.effectSha256 ===
       data.consumables.effect.retailSha256 && plan.consumables.descriptionSha256 ===
         data.consumables.descriptions.retailSha256;
-    var expectedConsumableState = consumableNoOp ? 'retail' : 'native';
-    if (rebuilt.owners.consumables.state !== expectedConsumableState ||
+    var consumableState = rebuilt.owners.consumables.state;
+    var acceptableConsumableState = consumableNoOp
+      ? consumableState === 'retail'
+      : (consumableState === 'legacy' || consumableState === 'native');
+    if (!acceptableConsumableState ||
         !sameModels(rebuilt.owners.consumables.models, plan.consumables.models)) {
       fail('native consumable effects and descriptions did not round-trip through trusted provenance');
+    }
+    var consumableProvenanceRecord = null;
+    var validatedConsumableOwnerState = rebuilt.owners.consumables.ownerState;
+    if (!consumableNoOp) {
+      consumableProvenanceRecord = registerValidatedConsumableProvenance(
+        candidateRom.z64, plan);
+      validatedConsumableOwnerState = 'native-complete';
     }
     return {
       summary: MODES.rebuild.label + ' authenticated all selected Phase 1 through Phase 5A owners.',
@@ -1834,11 +1934,12 @@ window.OB64 = window.OB64 || {};
         migratedCombination: plan.acceptedMatrixId,
         experienceScalePercent: plan.experiencePercent,
         nativeShops: plan.shopSelected,
-        consumableOwnerState: rebuilt.owners.consumables.ownerState,
+        consumableOwnerState: validatedConsumableOwnerState,
         consumableConversion: plan.consumables.conversion,
         consumableDescriptionMode: plan.consumables.descriptionMode,
         consumableDescriptionEncodingPasses:
           plan.consumables.descriptionEncodingPasses,
+        consumableProvenance: consumableProvenanceRecord,
         ownerCount: plan.owners.length,
         writeCount: plan.writes.length,
         authorizedOwners: plan.compositionAuthorization.owners.map(function(owner) {
@@ -1854,6 +1955,8 @@ window.OB64 = window.OB64 || {};
     var hasPartialNative = classification.owners &&
       Object.keys(classification.owners).some(function(key) {
         var owner = classification.owners[key];
+        if (key === 'consumables' && owner.patchCompatible &&
+            !owner.provenance.trusted && !owner.provenance.mismatch) return false;
         return owner.state === 'mixed' ||
           (key === 'consumables' && owner.state === 'foreign');
       });
