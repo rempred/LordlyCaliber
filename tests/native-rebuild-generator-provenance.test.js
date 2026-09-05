@@ -29,28 +29,16 @@ function canonicalText(bytes) {
   return Buffer.from(Buffer.from(bytes).toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
 }
 
-const decomp = firstExisting('decomp worktree', 'OB64_NATIVE_DECOMP', [
+const inputRoot = firstExisting('restored native input root', 'OB64_NATIVE_RECOVERY_ROOT', [
+  process.env.OB64_NATIVE_RECOVERY_ROOT,
   process.env.OB64_NATIVE_DECOMP,
-  path.resolve(EDITOR, '..', 'lordly-native-rebuild-decomp'),
+  path.resolve(EDITOR, '..', 'lordly-native-rebuild-decomp', 'build',
+    'lordly-native-recovery', 'r1', 'empty-restore'),
 ]);
-const parentCandidates = [
-  process.env.OB64_PARENT_ROOT,
-  path.resolve(EDITOR, '..'),
-  path.resolve(EDITOR, '..', '..', 'OgreBattlel64'),
-];
-const phase3Approval = firstExisting('Phase 3 approval record', 'OB64_PHASE3_APPROVAL', [
-  process.env.OB64_PHASE3_APPROVAL,
-].concat(parentCandidates.map(root => root && path.join(root, 'docs', 'Plans', 'task-logs',
-  'lordly-native-rebuild-phase3-accepted-source-approval-20260902.json'))));
-const phase4Approval = firstExisting('Phase 4 approval record', 'OB64_PHASE4_APPROVAL', [
-  process.env.OB64_PHASE4_APPROVAL,
-].concat(parentCandidates.map(root => root && path.join(root, 'docs', 'Plans', 'task-logs',
-  'lordly-native-rebuild-phase4-accepted-source-approval-20260903.json'))));
-const phase5aReview = firstExisting('Phase 5A Critical-review record', 'OB64_PHASE5A_REVIEW', [
-  process.env.OB64_PHASE5A_REVIEW,
-].concat(parentCandidates.map(root => root && path.join(root, 'wiki',
-  'after-action-reports',
-  '20260904-lordly-native-rebuild-phase5a-native-consumables-critical-review-r1.md'))));
+const inputContract = firstExisting('native input contract', 'OB64_NATIVE_INPUT_CONTRACT', [
+  process.env.OB64_NATIVE_INPUT_CONTRACT,
+  path.join(inputRoot, 'config', 'lordly-native-editor-inputs-v1.json'),
+]);
 
 const outputParent = path.resolve(process.env.OB64_NATIVE_GENERATOR_TEST_OUTPUT || os.tmpdir());
 fs.mkdirSync(outputParent, { recursive: true });
@@ -59,6 +47,8 @@ const lfGenerator = path.join(outputRoot, 'generator-lf.js');
 const crlfGenerator = path.join(outputRoot, 'generator-crlf.js');
 const lfOutput = path.join(outputRoot, 'native-lf.js');
 const crlfOutput = path.join(outputRoot, 'native-crlf.js');
+const crlfContract = path.join(outputRoot, 'input-contract-crlf.json');
+const mutatedContract = path.join(outputRoot, 'input-contract-mutated.json');
 
 const workingSource = fs.readFileSync(GENERATOR);
 const canonicalSource = generatorApi.canonicalizeGeneratorSource(workingSource);
@@ -80,13 +70,23 @@ assert.notStrictEqual(
   generatorApi.identifyGeneratorSource(mutatedSource).sha256,
   'a source-content change must change generator provenance');
 
+const contractSource = canonicalText(fs.readFileSync(inputContract));
+fs.writeFileSync(crlfContract,
+  Buffer.from(contractSource.toString('utf8').replace(/\n/g, '\r\n'), 'utf8'));
+assert.strictEqual(generatorApi.loadInputContract(inputRoot, crlfContract).identity.sha256,
+  generatorApi.EXPECTED_INPUT_CONTRACT_SHA256,
+  'the input-contract identity must be invariant across LF and CRLF checkouts');
+fs.writeFileSync(mutatedContract, Buffer.from(contractSource.toString('utf8').replace(
+  'phase5a.editor-inputs.v1', 'phase5a.editor-inputs.changed'), 'utf8'));
+assert.throws(() => generatorApi.loadInputContract(inputRoot, mutatedContract),
+  /input contract canonical identity drift/,
+  'an input-contract content change must fail closed');
+
 function runGenerator(script, output) {
   const result = childProcess.spawnSync(process.execPath, [
     script,
-    '--decomp', decomp,
-    '--phase3-approval', phase3Approval,
-    '--phase4-approval', phase4Approval,
-    '--phase5a-review', phase5aReview,
+    '--input-root', inputRoot,
+    '--input-contract', inputContract,
     '--out', output,
   ], { encoding: 'utf8' });
   if (result.status !== 0) {
@@ -116,6 +116,9 @@ assert.deepStrictEqual(generatedBundle.payload.generator, Object.assign({
   path: 'tools/generate-native-rebuild-data.js',
 }, generatorApi.identifyGeneratorSource(canonicalSource)),
   'the generated bundle must record canonical generator provenance');
+assert.strictEqual(generatedBundle.payload.inputContract.sha256,
+  generatorApi.EXPECTED_INPUT_CONTRACT_SHA256,
+  'the generated bundle must record the versioned input-contract identity');
 
 global.window = global;
 global.OB64 = {
@@ -145,6 +148,7 @@ console.log(JSON.stringify({
   acceptedCommit: lfResult.acceptedCommit,
   acceptedTree: lfResult.acceptedTree,
   inputCount: lfResult.inputCount,
+  inputContractSha256: lfResult.inputContractSha256,
   lfRawSha256: sha256(canonicalSource),
   crlfRawSha256: sha256(crlfSource),
 }, null, 2));

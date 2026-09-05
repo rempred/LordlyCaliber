@@ -5,13 +5,20 @@
   var data = {
     "schema": "ob64-native-rebuild-data",
     "schemaVersion": 1,
-    "payloadSha256": "CEC4C606CD03F7D7968632BB868F0CC3CD43C9EC7A4E0D31FC230A213A9E6CEC",
+    "payloadSha256": "4B557C54E26C8CA086048FD08FF9A915D207A07CDC3AC646DC2F81B373E0871C",
     "payload": {
       "generator": {
         "path": "tools/generate-native-rebuild-data.js",
         "sourceIdentity": "sha256-canonical-utf8-lf-v1",
-        "canonicalBytes": 39680,
-        "sha256": "7C2DAE6B60990D18518BD78A4A10FD9B61EF0BB6B21155A78CC520B9D4565416"
+        "canonicalBytes": 34899,
+        "sha256": "C65F81C124AFABA7A6C444E7A7A76578C1EF6A50147596E7A24FE26EAD69D69D"
+      },
+      "inputContract": {
+        "schema": "ob64-native-rebuild-editor-input-contract",
+        "schemaVersion": 1,
+        "id": "lordly-native-rebuild.phase5a.editor-inputs.v1",
+        "canonicalBytes": 16388,
+        "sha256": "A7BE40F1F386239BCA42AAACBF60CCAF0B673051ACD74DFE90D50BA53C11223E"
       },
       "acceptedSource": {
         "commit": "e50fe500839288c94c538969acc7a5b966075626",
@@ -2656,7 +2663,8 @@
           "bytes": 1889,
           "sha256": "B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA",
           "approvedCommit": "000fb0dc2ef5cb3d658e0e0ffbf6b49d84c600fb",
-          "approvedTree": "917b52c27df857c6793f6320dc68e61244eb25a1"
+          "approvedTree": "917b52c27df857c6793f6320dc68e61244eb25a1",
+          "verdict": "Accepted"
         },
         {
           "phase": "Phase 4",
@@ -2664,7 +2672,8 @@
           "bytes": 3120,
           "sha256": "B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF",
           "approvedCommit": "05623e67b295f4f968e4a5cb416b9c002fb09bdd",
-          "approvedTree": "90b193077b61eee0f6656a8d3f6848b2f17bdfaa"
+          "approvedTree": "90b193077b61eee0f6656a8d3f6848b2f17bdfaa",
+          "verdict": "Accepted"
         },
         {
           "phase": "Phase 5A",

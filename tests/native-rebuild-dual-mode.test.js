@@ -14,6 +14,8 @@ const MASTER = [
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
 
 if (!MASTER) throw new Error('Set OB64_MASTER_ROM to the read-only US Rev 0 master ROM.');
+const NATIVE_BUNDLE = path.resolve(process.env.OB64_NATIVE_BUNDLE ||
+  path.join(EDITOR, 'native-rebuild-data.js'));
 
 global.window = global;
 global.module = undefined;
@@ -39,7 +41,8 @@ for (const filename of [
   'native-rebuild.js',
   'rom-export-validator.js',
 ]) {
-  const fullPath = path.join(EDITOR, filename);
+  const fullPath = filename === 'native-rebuild-data.js' ? NATIVE_BUNDLE :
+    path.join(EDITOR, filename);
   vm.runInThisContext(fs.readFileSync(fullPath, 'utf8'), { filename: fullPath });
 }
 
@@ -178,6 +181,10 @@ function emptyDirty() {
 check('authenticated bundle names the accepted decomp commit and tree',
   data.acceptedSource.commit === 'e50fe500839288c94c538969acc7a5b966075626' &&
   data.acceptedSource.tree === 'ef58ea271b2298be71b09be9318a359805c266c0');
+check('authenticated bundle names the versioned native input contract',
+  data.inputContract.id === 'lordly-native-rebuild.phase5a.editor-inputs.v1' &&
+  data.inputContract.sha256 ===
+    'A7BE40F1F386239BCA42AAACBF60CCAF0B673051ACD74DFE90D50BA53C11223E');
 check('authenticated bundle names the accepted Shop contract and composition manifest',
   data.shops.contractSha256 ===
     'C6D71952A0AE7A813C3F79D8EEAAA4CCAADF53168E2AA627BE577726F64FD200' &&

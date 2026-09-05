@@ -13,13 +13,19 @@ const MASTER = [
   path.resolve(EDITOR, '..', MASTER_NAME),
   path.resolve(EDITOR, '..', '..', 'OgreBattlel64', MASTER_NAME),
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
-const DECOMP = [
+const INPUT_ROOT = [
+  process.env.OB64_NATIVE_RECOVERY_ROOT,
   process.env.OB64_NATIVE_DECOMP,
-  path.resolve(EDITOR, '..', 'lordly-native-rebuild-decomp'),
+  path.resolve(EDITOR, '..', 'lordly-native-rebuild-decomp', 'build',
+    'lordly-native-recovery', 'r1', 'empty-restore'),
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
+const NATIVE_BUNDLE = path.resolve(process.env.OB64_NATIVE_BUNDLE ||
+  path.join(EDITOR, 'native-rebuild-data.js'));
 
 if (!MASTER) throw new Error('Set OB64_MASTER_ROM to the read-only US Rev 0 master ROM.');
-if (!DECOMP) throw new Error('Set OB64_NATIVE_DECOMP to the accepted Phase 5A decomp worktree.');
+if (!INPUT_ROOT) {
+  throw new Error('Set OB64_NATIVE_RECOVERY_ROOT to the restored native input root.');
+}
 
 global.window = global;
 global.module = undefined;
@@ -30,7 +36,8 @@ for (const filename of [
   'description-codec.js', 'consumable-effects.js', 'patch.js', 'tools-data.js',
   'tools.js', 'native-rebuild-data.js', 'native-rebuild.js',
 ]) {
-  const fullPath = path.join(EDITOR, filename);
+  const fullPath = filename === 'native-rebuild-data.js' ? NATIVE_BUNDLE :
+    path.join(EDITOR, filename);
   vm.runInThisContext(fs.readFileSync(fullPath, 'utf8'), { filename: fullPath });
 }
 
@@ -40,7 +47,7 @@ const data = OB64.nativeRebuild.verifyData();
 const effect = data.consumables.effect;
 const descriptions = data.consumables.descriptions;
 const metadata = data.consumables.metadata;
-const phase5Root = path.join(DECOMP, 'build', 'lordly-native-rebuild',
+const phase5Root = path.join(INPUT_ROOT, 'build', 'lordly-native-rebuild',
   'phase5a-consumables-r1');
 let checks = 0;
 
@@ -500,7 +507,7 @@ check('Editor Rebuild reproduces the accepted focused Phase 5A product',
   equalBytes(focusedBuild.candidate.z64, focusedProduct),
   sha256(focusedBuild.candidate.z64));
 
-const phase4CanonicalPath = path.join(DECOMP, 'build', 'lordly-native-rebuild',
+const phase4CanonicalPath = path.join(INPUT_ROOT, 'build', 'lordly-native-rebuild',
   'phase4-native-shops-r1', 'products', 'canonical-native-shops',
   'canonical-native-shops.us_rev0.z64');
 const canonicalBase = new Uint8Array(fs.readFileSync(phase4CanonicalPath));

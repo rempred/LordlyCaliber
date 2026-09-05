@@ -7,11 +7,16 @@ window.OB64 = window.OB64 || {};
   var DATA_SCHEMA = 'ob64-native-rebuild-data';
   var DATA_VERSION = 1;
   var EXPECTED_PAYLOAD_SHA256 =
-    'CEC4C606CD03F7D7968632BB868F0CC3CD43C9EC7A4E0D31FC230A213A9E6CEC';
+    '4B557C54E26C8CA086048FD08FF9A915D207A07CDC3AC646DC2F81B373E0871C';
   var EXPECTED_GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
-  var EXPECTED_GENERATOR_CANONICAL_BYTES = 39680;
+  var EXPECTED_GENERATOR_CANONICAL_BYTES = 34899;
   var EXPECTED_GENERATOR_SHA256 =
-    '7C2DAE6B60990D18518BD78A4A10FD9B61EF0BB6B21155A78CC520B9D4565416';
+    'C65F81C124AFABA7A6C444E7A7A76578C1EF6A50147596E7A24FE26EAD69D69D';
+  var INPUT_CONTRACT_SCHEMA = 'ob64-native-rebuild-editor-input-contract';
+  var INPUT_CONTRACT_VERSION = 1;
+  var INPUT_CONTRACT_ID = 'lordly-native-rebuild.phase5a.editor-inputs.v1';
+  var EXPECTED_INPUT_CONTRACT_SHA256 =
+    'A7BE40F1F386239BCA42AAACBF60CCAF0B673051ACD74DFE90D50BA53C11223E';
   var ACCEPTED_COMMIT = 'e50fe500839288c94c538969acc7a5b966075626';
   var ACCEPTED_TREE = 'ef58ea271b2298be71b09be9318a359805c266c0';
   var RETAIL_SHA256 = '571E83396BC81E70DA4C0A20313D82DBD7DFE685F2C37418C8E27F927E2CC67A';
@@ -140,6 +145,14 @@ window.OB64 = window.OB64 || {};
       fail('the native-owner data bundle failed its SHA-256 identity check');
     }
     var data = bundle.payload;
+    if (!data.inputContract || data.inputContract.schema !== INPUT_CONTRACT_SCHEMA ||
+        data.inputContract.schemaVersion !== INPUT_CONTRACT_VERSION ||
+        data.inputContract.id !== INPUT_CONTRACT_ID ||
+        data.inputContract.sha256 !== EXPECTED_INPUT_CONTRACT_SHA256 ||
+        !Number.isInteger(data.inputContract.canonicalBytes) ||
+        data.inputContract.canonicalBytes <= 0) {
+      fail('the versioned native input-contract identity drifted');
+    }
     if (data.acceptedSource.commit !== ACCEPTED_COMMIT ||
         data.acceptedSource.tree !== ACCEPTED_TREE ||
         data.acceptedSource.retailSha256 !== RETAIL_SHA256 ||

@@ -15,6 +15,8 @@ const MASTER = [
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
 
 if (!MASTER) throw new Error('Set OB64_MASTER_ROM to the read-only US Rev 0 master ROM.');
+const NATIVE_BUNDLE = path.resolve(process.env.OB64_NATIVE_BUNDLE ||
+  path.join(EDITOR, 'native-rebuild-data.js'));
 
 global.window = global;
 global.module = undefined;
@@ -54,7 +56,8 @@ for (const filename of [
   'scenario-eset-codec.js',
   'scenario.js',
 ]) {
-  const fullPath = path.join(EDITOR, filename);
+  const fullPath = filename === 'native-rebuild-data.js' ? NATIVE_BUNDLE :
+    path.join(EDITOR, filename);
   vm.runInThisContext(fs.readFileSync(fullPath, 'utf8'), { filename: fullPath });
 }
 
