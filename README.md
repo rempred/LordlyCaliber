@@ -199,6 +199,7 @@ Key source areas:
 - `app.js` and `style.css` — application shell and interface
 - `dataset-loader.js` — deferred animation and cutscene datasets during editable revision 0 ROM initialization
 - `parsers.js` and `repack.js` — ROM/save decoding and serialization
+- `rom-export-candidate.js` — detached export candidate creation and validated state adoption
 - `patch.js` and `changelog.js` — Project persistence and change reports
 - `scenario.js` and `scenario-eset-codec.js` — mission editing
 - `runtimeblob.js`, `squadblob.js`, and `tools.js` — runtime patches

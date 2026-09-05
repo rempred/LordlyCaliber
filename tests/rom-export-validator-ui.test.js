@@ -274,6 +274,7 @@ const statGateRelocationIndex = indexSource.indexOf('stat-gate-relocation.js');
 const scenarioIndex = indexSource.indexOf('scenario.js');
 const validatorIndex = indexSource.indexOf('rom-export-validator.js');
 const compatibilityIndex = indexSource.indexOf('rom-compatibility.js');
+const candidateIndex = indexSource.indexOf('rom-export-candidate.js');
 const appIndex = indexSource.indexOf('app.js');
 check('shared redirect module loads before stat, Scenario, and validation',
   sourceRedirectIndex >= 0 &&
@@ -288,11 +289,16 @@ check('validator module loads before the export controller',
   validatorIndex >= 0 && validatorIndex < appIndex);
 check('compatibility assessment loads after validation and before the controller',
   compatibilityIndex > validatorIndex && compatibilityIndex < appIndex);
+check('detached candidate lifecycle loads before the export controller',
+  candidateIndex >= 0 && candidateIndex < appIndex);
 check('header exposes the ROM compatibility report',
   indexSource.includes('id="btn-rom-compatibility"'));
 const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
 check('export controller uses cooperative validation progress',
   appSource.includes('validateAsync'));
+check('export controller delegates detached candidate creation and adoption',
+  appSource.includes('OB64.romExportCandidate.create(exportRom)') &&
+    appSource.includes('OB64.romExportCandidate.adopt(exportRom, candidateRom'));
 check('export controller defers Scenario redirect writes for shared planning',
   /exportScenarioArchives\(candidateRom,\s*\{\s*deferRedirect:\s*true/.test(
     appSource

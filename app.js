@@ -461,67 +461,6 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // Export
   // ============================================================
-  function cloneScenarioStateForExport(state) {
-    if (!state) return state;
-    var cloned = Object.assign({}, state);
-    cloned.archiveOriginalSlots = Object.assign({}, state.archiveOriginalSlots || {});
-    cloned.slotOwnedArchives = Object.assign({}, state.slotOwnedArchives || {});
-    cloned.relocationOwnedWindows = (state.relocationOwnedWindows || []).map(function(window) {
-      return Object.assign({}, window);
-    });
-    return cloned;
-  }
-
-  function createExportCandidate(sourceRom) {
-    var candidate = Object.assign({}, sourceRom);
-    candidate.z64 = sourceRom.z64.slice();
-    if (sourceRom.scenarioEditor) {
-      candidate.scenarioEditor = cloneScenarioStateForExport(sourceRom.scenarioEditor);
-    }
-    if (sourceRom.scenarioRelocations) {
-      candidate.scenarioRelocations = sourceRom.scenarioRelocations.map(function(relocation) {
-        return Object.assign({}, relocation);
-      });
-    }
-    return candidate;
-  }
-
-  function adoptExportCandidate(targetRom, candidateRom, verifiedAdoption) {
-    if (!verifiedAdoption) {
-      targetRom.z64 = candidateRom.z64;
-    }
-    if (candidateRom.scenarioEditor && targetRom.scenarioEditor) {
-      targetRom.scenarioEditor.archiveOriginalSlots =
-        candidateRom.scenarioEditor.archiveOriginalSlots;
-      targetRom.scenarioEditor.slotOwnedArchives =
-        candidateRom.scenarioEditor.slotOwnedArchives;
-      targetRom.scenarioEditor.relocationOwnedWindows =
-        candidateRom.scenarioEditor.relocationOwnedWindows;
-    }
-    if (candidateRom.scenarioRelocations) {
-      targetRom.scenarioRelocations = candidateRom.scenarioRelocations;
-    }
-    if (candidateRom.statGatePlan && OB64.statGateRelocation) {
-      var adoptedStatGates = OB64.statGateRelocation.parse(
-        candidateRom.z64,
-        targetRom.layout
-      );
-      targetRom.statGates.raw = adoptedStatGates.raw;
-      targetRom.statGates.meta = adoptedStatGates.meta;
-      Object.keys(adoptedStatGates.byClass).forEach(function(classId) {
-        if (targetRom.statGates.byClass[classId]) {
-          Object.assign(
-            targetRom.statGates.byClass[classId],
-            adoptedStatGates.byClass[classId]
-          );
-        } else {
-          targetRom.statGates.byClass[classId] =
-            adoptedStatGates.byClass[classId];
-        }
-      });
-    }
-  }
-
   btnExport.addEventListener('click', async function() {
     if (!rom) return;
     if (!rom.compatibility || !rom.compatibility.canExport) {
@@ -565,7 +504,7 @@ window.OB64 = window.OB64 || {};
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
-      candidateRom = createExportCandidate(exportRom);
+      candidateRom = OB64.romExportCandidate.create(exportRom);
       var touched = [];
       if (OB64.art && OB64.art.hasPendingExport(rom.art)) {
         await paintRomExportProgress(exportProgress, 4,
@@ -1206,7 +1145,9 @@ window.OB64 = window.OB64 || {};
           );
         }
       }
-      adoptExportCandidate(exportRom, candidateRom, effectAdoption);
+      OB64.romExportCandidate.adopt(exportRom, candidateRom, {
+        romBytesAlreadyAdopted: !!effectAdoption,
+      });
       if (cutscenePlan) OB64.cutsceneExport.adopt(exportRom, cutscenePlan);
       OB64.combatAnimationOverrides.adopt(exportRom);
       if (artResult) OB64.art.adoptExport(exportRom, artResult);
