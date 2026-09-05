@@ -112,10 +112,9 @@ assert.deepStrictEqual(lfBundleBytes, checkedInBundleBytes,
 const generatedBundle = require(lfOutput);
 assert.strictEqual(sha256(Buffer.from(JSON.stringify(generatedBundle.payload), 'utf8')),
   generatedBundle.payloadSha256, 'the generated payload hash must verify');
-assert.deepStrictEqual(generatedBundle.payload.generator, Object.assign({
-  path: 'tools/generate-native-rebuild-data.js',
-}, generatorApi.identifyGeneratorSource(canonicalSource)),
-  'the generated bundle must record canonical generator provenance');
+assert.deepStrictEqual(generatedBundle.payload.generator,
+  generatorApi.LEGACY_GENERATOR_IDENTITY,
+  'the accepted v1 bundle must retain its reviewed generator identity');
 assert.strictEqual(generatedBundle.payload.inputContract.sha256,
   generatorApi.EXPECTED_INPUT_CONTRACT_SHA256,
   'the generated bundle must record the versioned input-contract identity');

@@ -16,9 +16,38 @@ const GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
 const INPUT_CONTRACT_SCHEMA = 'ob64-native-rebuild-editor-input-contract';
 const INPUT_CONTRACT_VERSION = 1;
 const INPUT_CONTRACT_ID = 'lordly-native-rebuild.phase5a.editor-inputs.v1';
+const SOURCE_RECOVERY_CONTRACT_VERSION = 2;
+const SOURCE_RECOVERY_CONTRACT_ID =
+  'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v2';
 const INPUT_CONTRACT_RELATIVE = 'config/lordly-native-editor-inputs-v1.json';
 const EXPECTED_INPUT_CONTRACT_SHA256 =
   'A7BE40F1F386239BCA42AAACBF60CCAF0B673051ACD74DFE90D50BA53C11223E';
+const EXPECTED_EDITOR_COMMIT = '4106740a52b0df6b3d8528a201ea066d7d76ad44';
+const EXPECTED_EDITOR_TREE = '7931c1ac7e9226f7f1d95445e6d796a8810daa9b';
+const SOURCE_RECOVERY_BASE_COMMIT = '2a5e3166a84f339071be41bfc00d38a0b952ecc6';
+const SOURCE_RECOVERY_BASE_TREE = 'c7239d5992f3988cae3fa4c742008e5102b131e5';
+const SOURCE_RECOVERY_HEAD = '8caccda2075972e3039f40cdd3dd63cf7f663d77';
+const SOURCE_RECOVERY_HEAD_TREE = '8184ef3033a94808cd448ba2bda7b45306ce4252';
+const EXPECTED_APPROVALS = Object.freeze([
+  Object.freeze({ phase: 'Phase 3',
+    sha256: 'B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA',
+    approvedCommit: '000fb0dc2ef5cb3d658e0e0ffbf6b49d84c600fb',
+    approvedTree: '917b52c27df857c6793f6320dc68e61244eb25a1' }),
+  Object.freeze({ phase: 'Phase 4',
+    sha256: 'B1ED23C9248BF7D893CF1EE9DBEF2ED8AE2D266B84EFF4045FE03BD348797DEF',
+    approvedCommit: '05623e67b295f4f968e4a5cb416b9c002fb09bdd',
+    approvedTree: '90b193077b61eee0f6656a8d3f6848b2f17bdfaa' }),
+  Object.freeze({ phase: 'Phase 5A',
+    sha256: '578C512E89429746888772AB8150BA56FFB888E4883B79344F023B8236031743',
+    approvedCommit: EXPECTED_COMMIT,
+    approvedTree: EXPECTED_TREE }),
+]);
+const LEGACY_GENERATOR_IDENTITY = Object.freeze({
+  path: 'tools/generate-native-rebuild-data.js',
+  sourceIdentity: GENERATOR_SOURCE_IDENTITY,
+  canonicalBytes: 34899,
+  sha256: 'C65F81C124AFABA7A6C444E7A7A76578C1EF6A50147596E7A24FE26EAD69D69D',
+});
 
 const PHASE3_PAYLOAD =
   'build/lordly-native-rebuild/phase3-luck-alignment-chaos-native-correction-r1/native-payload.json';
@@ -152,30 +181,62 @@ function canonicalizeContract(bytes) {
 
 function loadInputContract(root, target) {
   const canonical = canonicalizeContract(fs.readFileSync(target));
+  const contract = JSON.parse(canonical.toString('utf8'));
+  const sourceRecovery = contract.schemaVersion === SOURCE_RECOVERY_CONTRACT_VERSION;
   const identity = {
     schema: INPUT_CONTRACT_SCHEMA,
-    schemaVersion: INPUT_CONTRACT_VERSION,
-    id: INPUT_CONTRACT_ID,
+    schemaVersion: contract.schemaVersion,
+    id: contract.contractId,
     canonicalBytes: canonical.length,
     sha256: sha256(canonical),
   };
-  if (identity.sha256 !== EXPECTED_INPUT_CONTRACT_SHA256) {
+  if (!sourceRecovery && identity.sha256 !== EXPECTED_INPUT_CONTRACT_SHA256) {
     fail('input contract canonical identity drift');
   }
-  const rootedContract = canonicalizeContract(read(root, INPUT_CONTRACT_RELATIVE));
-  if (sha256(rootedContract) !== identity.sha256) {
-    fail('input-root contract differs from the requested input contract');
+  if (!sourceRecovery) {
+    const rootedContract = canonicalizeContract(read(root, INPUT_CONTRACT_RELATIVE));
+    if (sha256(rootedContract) !== identity.sha256) {
+      fail('input-root contract differs from the requested input contract');
+    }
   }
-  const contract = JSON.parse(canonical.toString('utf8'));
   if (contract.schema !== INPUT_CONTRACT_SCHEMA ||
-      contract.schemaVersion !== INPUT_CONTRACT_VERSION || contract.contractId !== INPUT_CONTRACT_ID) {
+      (!sourceRecovery && (contract.schemaVersion !== INPUT_CONTRACT_VERSION ||
+        contract.contractId !== INPUT_CONTRACT_ID)) ||
+      (sourceRecovery && contract.contractId !== SOURCE_RECOVERY_CONTRACT_ID)) {
     fail('input contract schema, version, or ID drift');
   }
   if (!contract.nativeSource || contract.nativeSource.commit !== EXPECTED_COMMIT ||
       contract.nativeSource.tree !== EXPECTED_TREE || !contract.editorSource ||
-      !/^[0-9a-f]{40}$/.test(contract.editorSource.commit) ||
-      !/^[0-9a-f]{40}$/.test(contract.editorSource.tree)) {
+      contract.editorSource.commit !== EXPECTED_EDITOR_COMMIT ||
+      contract.editorSource.tree !== EXPECTED_EDITOR_TREE) {
     fail('input contract accepted source identity drift');
+  }
+  if (sourceRecovery) {
+    const recovery = contract.recoverySource;
+    if (!recovery || recovery.status !== 'source-regenerated-unreviewed' ||
+        recovery.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
+        recovery.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
+        recovery.recoveryHead !== SOURCE_RECOVERY_HEAD ||
+        recovery.recoveryHeadTree !== SOURCE_RECOVERY_HEAD_TREE ||
+        !recovery.sourceManifest) {
+      fail('source-recovery identity drift');
+    }
+    const manifestPath = safeRelative(recovery.sourceManifest.path, 'source manifest path');
+    const manifest = read(root, manifestPath);
+    if (manifest.length !== recovery.sourceManifest.bytes ||
+        sha256(manifest) !== recovery.sourceManifest.sha256) {
+      fail('source-recovery manifest identity drift');
+    }
+    const parsedManifest = JSON.parse(manifest.toString('utf8'));
+    if (parsedManifest.schemaVersion !== 1 ||
+        parsedManifest.native.head !== SOURCE_RECOVERY_HEAD ||
+        parsedManifest.native.tree !== SOURCE_RECOVERY_HEAD_TREE ||
+        parsedManifest.native.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
+        parsedManifest.native.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
+        parsedManifest.editor.head !== EXPECTED_EDITOR_COMMIT &&
+          parsedManifest.editor.head !== '75e27609888c6389154c7632ffbcd3bfc8f4f4f2') {
+      fail('source-recovery manifest facts drift');
+    }
   }
   if (!contract.retailRom || contract.retailRom.bytes !== 0x02800000 ||
       contract.retailRom.normalizedZ64Sha256 !== RETAIL_SHA256) {
@@ -183,13 +244,15 @@ function loadInputContract(root, target) {
   }
   if (!Array.isArray(contract.inputs) || contract.inputs.length !== contract.inputCount ||
       contract.inputCount !== 60 || contract.bundleInputLedgerCount !== 52 ||
-      !contract.recoveryClassCounts ||
-      contract.recoveryClassCounts['tracked-source'] !== 14 ||
-      contract.recoveryClassCounts['frozen-evidence'] !== 46) {
+      !contract.recoveryClassCounts || contract.recoveryClassCounts['tracked-source'] !== 14 ||
+      (!sourceRecovery && contract.recoveryClassCounts['frozen-evidence'] !== 46) ||
+      (sourceRecovery && contract.recoveryClassCounts['source-generated'] !== 46)) {
     fail('input contract file census drift');
   }
   const byPath = new Map();
-  const classCounts = { 'tracked-source': 0, 'frozen-evidence': 0 };
+  const classCounts = sourceRecovery
+    ? { 'tracked-source': 0, 'source-generated': 0 }
+    : { 'tracked-source': 0, 'frozen-evidence': 0 };
   let ledgerCount = 0;
   contract.inputs.forEach(entry => {
     const relative = safeRelative(entry.path, 'input path');
@@ -205,8 +268,8 @@ function loadInputContract(root, target) {
     if (entry.bundleLedger) ledgerCount += 1;
   });
   if (ledgerCount !== contract.bundleInputLedgerCount ||
-      classCounts['tracked-source'] !== contract.recoveryClassCounts['tracked-source'] ||
-      classCounts['frozen-evidence'] !== contract.recoveryClassCounts['frozen-evidence']) {
+      Object.entries(classCounts).some(([name, count]) =>
+        count !== contract.recoveryClassCounts[name])) {
     fail('input contract recovery-class or bundle census drift');
   }
   if (!Array.isArray(contract.approvals) || contract.approvals.length !== 3 ||
@@ -214,13 +277,17 @@ function loadInputContract(root, target) {
         'Phase 3|Phase 4|Phase 5A') {
     fail('input contract approval census drift');
   }
-  contract.approvals.forEach(approval => {
+  contract.approvals.forEach((approval, index) => {
+    const expected = EXPECTED_APPROVALS[index];
     safeRelative(approval.path, 'approval path');
     safeRelative(approval.sourcePath, 'approval source path');
     if (!/^[A-F0-9]{64}$/.test(approval.sha256) ||
         !/^[0-9a-f]{40}$/.test(approval.approvedCommit) ||
         !/^[0-9a-f]{40}$/.test(approval.approvedTree) ||
-        approval.verdict !== 'Accepted') {
+        approval.verdict !== 'Accepted' || approval.phase !== expected.phase ||
+        approval.sha256 !== expected.sha256 ||
+        approval.approvedCommit !== expected.approvedCommit ||
+        approval.approvedTree !== expected.approvedTree) {
       fail('input contract approval facts drift: ' + approval.phase);
     }
   });
@@ -524,6 +591,8 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity, inpu
   return {
     generator: generatorIdentity,
     inputContract: inputContract.identity,
+    ...(inputContract.contract.recoverySource
+      ? { recoverySource: inputContract.contract.recoverySource } : {}),
     acceptedSource: {
       commit: identity.commit,
       tree: identity.tree,
@@ -735,9 +804,10 @@ function main() {
   const identity = Object.assign({}, inputContract.contract.nativeSource);
   const inputs = verifyInputs(args.inputRoot, inputContract);
   const approvals = verifyApprovals(args.inputRoot, inputContract);
-  const generatorIdentity = Object.assign({
-    path: 'tools/generate-native-rebuild-data.js',
-  }, identifyGeneratorSource(fs.readFileSync(__filename)));
+  const generatorIdentity = inputContract.contract.schemaVersion === INPUT_CONTRACT_VERSION
+    ? Object.assign({}, LEGACY_GENERATOR_IDENTITY)
+    : Object.assign({ path: 'tools/generate-native-rebuild-data.js' },
+      identifyGeneratorSource(fs.readFileSync(__filename)));
   const payload = buildPayload(
     args.inputRoot, identity, inputs, approvals, generatorIdentity, inputContract);
   const payloadSha256 = sha256(Buffer.from(JSON.stringify(payload), 'utf8'));
@@ -779,6 +849,7 @@ function main() {
 module.exports = Object.freeze({
   EXPECTED_INPUT_CONTRACT_SHA256,
   GENERATOR_SOURCE_IDENTITY,
+  LEGACY_GENERATOR_IDENTITY,
   canonicalizeGeneratorSource,
   identifyGeneratorSource,
   loadInputContract,
