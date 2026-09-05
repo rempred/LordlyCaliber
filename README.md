@@ -197,6 +197,7 @@ LordlyCaliber uses vanilla JavaScript and has no application build step.
 Key source areas:
 
 - `app.js` and `style.css` — application shell and interface
+- `dataset-loader.js` — deferred animation and cutscene datasets during editable revision 0 ROM initialization
 - `parsers.js` and `repack.js` — ROM/save decoding and serialization
 - `patch.js` and `changelog.js` — Project persistence and change reports
 - `scenario.js` and `scenario-eset-codec.js` — mission editing
