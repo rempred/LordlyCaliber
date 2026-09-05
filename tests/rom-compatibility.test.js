@@ -126,6 +126,25 @@ async function run() {
   check('exact Rev0 native art is readable',
     component(retail0.compatibility, 'native-art').status === 'readable');
 
+  const datasetFailureBytes = rev0Bytes.slice();
+  const datasetFailureIdentity = await OB64.consumableEffects.inspectSourceIdentity(
+    datasetFailureBytes, 'missing-animation-corpus.v64');
+  const datasetFailure = OB64.loadROM(datasetFailureBytes.buffer);
+  await OB64.romCompatibility.identify(datasetFailure, datasetFailureIdentity);
+  await OB64.romCompatibility.runInitializer(datasetFailure, {
+    id: 'native-art',
+    label: 'Avatars, item icons, combat sprites, and Army sprites',
+    affectsTabs: ['art']
+  }, async () => {
+    throw new Error(
+      'Could not load the combat-animation corpus from animation-corpus-data.js.');
+  });
+  OB64.romCompatibility.assessFeatures(datasetFailure);
+  check('native-art dataset failure keeps its actionable loader reason',
+    component(datasetFailure.compatibility, 'native-art').status === 'blocked' &&
+      /animation-corpus-data\.js/.test(
+        component(datasetFailure.compatibility, 'native-art').reason));
+
   const harmless = rev0Bytes.slice();
   harmless[harmless.length - 2] ^= 1;
   const modified0 = await loadAndAssess(harmless, 'harmless-modified-rev0.v64');

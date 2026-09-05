@@ -278,6 +278,8 @@ window.OB64 = window.OB64 || {};
   }
 
   function assessArt(rom, report) {
+    var prior = component(report, 'native-art');
+    if (prior && prior.status === 'blocked') return;
     var state = rom.art;
     if (state && state.supported) {
       var armyReady = !!(state.armySprites && state.armySprites.supported);

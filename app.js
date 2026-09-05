@@ -185,6 +185,27 @@ window.OB64 = window.OB64 || {};
   // ============================================================
   // ROM Loading
   // ============================================================
+  function beginDatasetLoad(id) {
+    try {
+      if (!OB64.datasetLoader) {
+        throw new Error('The generated dataset loader is unavailable.');
+      }
+      return OB64.datasetLoader.load(id).then(function(value) {
+        return { value: value, error: null };
+      }, function(error) {
+        return { value: null, error: error };
+      });
+    } catch (error) {
+      return Promise.resolve({ value: null, error: error });
+    }
+  }
+
+  async function requireDataset(load) {
+    var result = await load;
+    if (result.error) throw result.error;
+    return result.value;
+  }
+
   function setRomMutationControlsEnabled(editEnabled, exportEnabled) {
     if (exportEnabled == null) exportEnabled = editEnabled;
     btnExport.disabled = !exportEnabled;
@@ -284,6 +305,15 @@ window.OB64 = window.OB64 || {};
           OB64.romCompatibility.recompute(nextRom.compatibility);
         }
 
+        // These independent generated datasets can download together. Each
+        // owning initializer still receives and reports its own load failure.
+        var datasetLoads = {};
+        if (nextRom.compatibility.canEdit && nextRom.layout &&
+            nextRom.layout.id === 'us-rev0') {
+          datasetLoads.animationCorpus = beginDatasetLoad('animation-corpus');
+          datasetLoads.cutsceneData = beginDatasetLoad('cutscene-data');
+        }
+
         // A recognized layout with at least one readable editor surface can
         // initialize each feature independently. One incompatible feature must
         // not discard the readable parts of the ROM or hide its own diagnostic.
@@ -292,7 +322,12 @@ window.OB64 = window.OB64 || {};
             id: 'native-art',
             label: 'Avatars, item icons, combat sprites, and Army sprites',
             affectsTabs: ['art', 'sprites']
-          }, function() { return OB64.art.initialize(nextRom); });
+          }, async function() {
+            if (nextRom.layout && nextRom.layout.id === 'us-rev0') {
+              await requireDataset(datasetLoads.animationCorpus);
+            }
+            return OB64.art.initialize(nextRom);
+          });
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'sprite-library', label: 'Sprite Editor Project library',
             affectsTabs: ['sprites']
@@ -332,7 +367,12 @@ window.OB64 = window.OB64 || {};
             await OB64.romCompatibility.runInitializer(nextRom, {
               id: 'cutscene-studio', label: 'Cutscene Studio scene and presentation catalog',
               affectsTabs: ['cutscenes', 'sprites']
-            }, function() { return OB64.cutsceneUI.initialize(nextRom); });
+            }, async function() {
+              if (nextRom.layout && nextRom.layout.id === 'us-rev0') {
+                await requireDataset(datasetLoads.cutsceneData);
+              }
+              return OB64.cutsceneUI.initialize(nextRom);
+            });
           }
           await OB64.romCompatibility.runInitializer(nextRom, {
             id: 'project-baseline', label: 'Project and export baseline',

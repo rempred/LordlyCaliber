@@ -358,10 +358,20 @@ window.OB64 = window.OB64 || {};
     }
   ];
 
-  var CORPUS = OB64.animationCorpusData || null;
-  var SPECS = CORPUS && Array.isArray(CORPUS.sequences)
-    ? CORPUS.sequences
-    : [];
+  var CORPUS = null;
+  var SPECS = [];
+
+  function bindCorpus() {
+    var next = OB64.animationCorpusData || null;
+    if (next === CORPUS) return;
+    CORPUS = next;
+    SPECS.length = 0;
+    if (CORPUS && Array.isArray(CORPUS.sequences)) {
+      Array.prototype.push.apply(SPECS, CORPUS.sequences);
+    }
+  }
+
+  bindCorpus();
 
   function AnimationArtError(message) {
     this.name = 'AnimationArtError';
@@ -970,6 +980,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function validateCorpus() {
+    bindCorpus();
     if (!CORPUS || CORPUS.schemaVersion !== 'ob64-combat-animation-product-data-v2') {
       fail('the generated complete combat-animation corpus is missing or has an unknown schema');
     }
