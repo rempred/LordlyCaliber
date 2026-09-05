@@ -4,6 +4,7 @@ const assert = require('assert');
 const childProcess = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const vm = require('vm');
 
@@ -11,8 +12,10 @@ const EDITOR = path.resolve(__dirname, '..');
 const ACCEPTED_COMMIT = '4106740a52b0df6b3d8528a201ea066d7d76ad44';
 const ACCEPTED_TREE = '7931c1ac7e9226f7f1d95445e6d796a8810daa9b';
 const SOURCE_RECOVERY_BASE = '2a5e3166a84f339071be41bfc00d38a0b952ecc6';
-const SOURCE_RECOVERY_HEAD = '8caccda2075972e3039f40cdd3dd63cf7f663d77';
+const NATIVE_RECOVERY_BASELINE = 'bd7aa1f9de0842db0628ab58a30e472b24729ec0';
+const EDITOR_RECOVERY_BASELINE = 'e282410f0e9b2885da8bd9fe7c84d47c35987b1b';
 const bundleFile = path.resolve(process.env.OB64_NATIVE_SOURCE_BUNDLE || '');
+const generatorApi = require(path.join(EDITOR, 'tools', 'generate-native-rebuild-data.js'));
 
 function sha256(bytes) {
   return crypto.createHash('sha256').update(Buffer.from(bytes)).digest('hex').toUpperCase();
@@ -94,15 +97,59 @@ function main() {
     accepted.payloadSha256, 'the accepted bundle failed self-verification');
   assert.strictEqual(sha256(Buffer.from(JSON.stringify(generated.payload), 'utf8')),
     generated.payloadSha256, 'the source-regenerated bundle failed self-verification');
-  assert.strictEqual(generated.payload.inputContract.schemaVersion, 2,
-    'the source-regenerated bundle did not use the v2 input contract');
+  assert.strictEqual(generated.payload.inputContract.schemaVersion, 3,
+    'the source-regenerated bundle did not use the committed-source input contract');
   assert.strictEqual(generated.payload.inputContract.id,
-    'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v2',
+    'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v3',
   'the source-regenerated input contract ID drifted');
-  assert.ok(generated.payload.recoverySource &&
-    generated.payload.recoverySource.baseCommit === SOURCE_RECOVERY_BASE &&
-    generated.payload.recoverySource.recoveryHead === SOURCE_RECOVERY_HEAD,
+  const recoverySource = generated.payload.recoverySource;
+  assert.ok(recoverySource && recoverySource.baseCommit === SOURCE_RECOVERY_BASE &&
+    recoverySource.sourceIdentityMode === 'bounded-clean-committed-descendant' &&
+    recoverySource.native.baselineCommit === NATIVE_RECOVERY_BASELINE &&
+    recoverySource.editor.baselineCommit === EDITOR_RECOVERY_BASELINE &&
+    recoverySource.native.commit !== NATIVE_RECOVERY_BASELINE &&
+    recoverySource.editor.commit !== EDITOR_RECOVERY_BASELINE &&
+    recoverySource.native.commitDistance > 0 && recoverySource.editor.commitDistance > 0,
   'the source-regeneration provenance is missing or wrong');
+  assert.strictEqual(recoverySource.editor.commit, git(['rev-parse', 'HEAD']).trim(),
+    'the generated provenance does not identify the executing Editor commit');
+  assert.strictEqual(recoverySource.editor.tree, git(['rev-parse', 'HEAD^{tree}']).trim(),
+    'the generated provenance does not identify the executing Editor tree');
+
+  const inputRoot = path.join(path.dirname(bundleFile), 'input-root');
+  const inputContractFile = path.join(
+    inputRoot, 'source-recovery', 'editor-input-contract-v3.json');
+  assert.ok(fs.existsSync(inputContractFile), 'the committed-source input contract is missing');
+  const loadedContract = generatorApi.loadInputContract(inputRoot, inputContractFile);
+  assert.strictEqual(loadedContract.identity.schemaVersion, 3,
+    'the Editor generator rejected the committed-source input contract');
+
+  const driftRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ob64-source-contract-drift-'));
+  try {
+    const driftSourceRoot = path.join(driftRoot, 'source-recovery');
+    fs.mkdirSync(driftSourceRoot, { recursive: true });
+    const contract = JSON.parse(fs.readFileSync(inputContractFile, 'utf8'));
+    const manifestSource = path.join(inputRoot, contract.recoverySource.sourceManifest.path);
+    const manifest = JSON.parse(fs.readFileSync(manifestSource, 'utf8'));
+    manifest.native.committedFiles.push({
+      status: 'M',
+      path: 'src/undeclared-drift.c',
+      bytes: 1,
+      sha256: 'A'.repeat(64),
+    });
+    const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const driftManifest = path.join(driftSourceRoot, 'native-source-manifest.json');
+    fs.writeFileSync(driftManifest, manifestBytes);
+    contract.recoverySource.sourceManifest.bytes = manifestBytes.length;
+    contract.recoverySource.sourceManifest.sha256 = sha256(manifestBytes);
+    const driftContract = path.join(driftSourceRoot, 'editor-input-contract-v3.json');
+    fs.writeFileSync(driftContract, `${JSON.stringify(contract, null, 2)}\n`, 'utf8');
+    assert.throws(() => generatorApi.loadInputContract(driftRoot, driftContract),
+      /native committed source inventory drift/,
+      'the Editor generator accepted committed source outside the authenticated contract');
+  } finally {
+    fs.rmSync(driftRoot, { recursive: true, force: false });
+  }
 
   assert.deepStrictEqual(semanticProjection(generated.payload), semanticProjection(accepted.payload),
     'source regeneration changed accepted game data, layout, or ownership');
@@ -113,6 +160,11 @@ function main() {
     status: 'pass',
     acceptedEditorCommit: ACCEPTED_COMMIT,
     acceptedEditorTree: ACCEPTED_TREE,
+    recoveryNativeCommit: recoverySource.native.commit,
+    recoveryNativeTree: recoverySource.native.tree,
+    recoveryEditorCommit: recoverySource.editor.commit,
+    recoveryEditorTree: recoverySource.editor.tree,
+    committedSourceDriftRejected: true,
     generatedPayloadSha256: generated.payloadSha256,
     semanticProjectionSha256: sha256(Buffer.from(JSON.stringify(
       semanticProjection(generated.payload)), 'utf8')),

@@ -16,9 +16,12 @@ const GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
 const INPUT_CONTRACT_SCHEMA = 'ob64-native-rebuild-editor-input-contract';
 const INPUT_CONTRACT_VERSION = 1;
 const INPUT_CONTRACT_ID = 'lordly-native-rebuild.phase5a.editor-inputs.v1';
-const SOURCE_RECOVERY_CONTRACT_VERSION = 2;
-const SOURCE_RECOVERY_CONTRACT_ID =
+const LEGACY_SOURCE_RECOVERY_CONTRACT_VERSION = 2;
+const LEGACY_SOURCE_RECOVERY_CONTRACT_ID =
   'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v2';
+const SOURCE_RECOVERY_CONTRACT_VERSION = 3;
+const SOURCE_RECOVERY_CONTRACT_ID =
+  'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v3';
 const INPUT_CONTRACT_RELATIVE = 'config/lordly-native-editor-inputs-v1.json';
 const EXPECTED_INPUT_CONTRACT_SHA256 =
   'A7BE40F1F386239BCA42AAACBF60CCAF0B673051ACD74DFE90D50BA53C11223E';
@@ -26,8 +29,27 @@ const EXPECTED_EDITOR_COMMIT = '4106740a52b0df6b3d8528a201ea066d7d76ad44';
 const EXPECTED_EDITOR_TREE = '7931c1ac7e9226f7f1d95445e6d796a8810daa9b';
 const SOURCE_RECOVERY_BASE_COMMIT = '2a5e3166a84f339071be41bfc00d38a0b952ecc6';
 const SOURCE_RECOVERY_BASE_TREE = 'c7239d5992f3988cae3fa4c742008e5102b131e5';
-const SOURCE_RECOVERY_HEAD = '8caccda2075972e3039f40cdd3dd63cf7f663d77';
-const SOURCE_RECOVERY_HEAD_TREE = '8184ef3033a94808cd448ba2bda7b45306ce4252';
+const LEGACY_SOURCE_RECOVERY_HEAD = '8caccda2075972e3039f40cdd3dd63cf7f663d77';
+const LEGACY_SOURCE_RECOVERY_HEAD_TREE = '8184ef3033a94808cd448ba2bda7b45306ce4252';
+const SOURCE_RECOVERY_IDENTITY_MODE = 'bounded-clean-committed-descendant';
+const SOURCE_RECOVERY_NATIVE_BASELINE = Object.freeze({
+  commit: 'bd7aa1f9de0842db0628ab58a30e472b24729ec0',
+  tree: 'dec1746f8af996cac9ea6d4e03068fe0d8e02ad7',
+});
+const SOURCE_RECOVERY_EDITOR_BASELINE = Object.freeze({
+  commit: 'e282410f0e9b2885da8bd9fe7c84d47c35987b1b',
+  tree: '958e14bef90045a69bf30b7ff11901dece8dd03d',
+});
+const SOURCE_RECOVERY_NATIVE_PATHS = Object.freeze([
+  'config/lordly-native-source-recovery-v3.json',
+  'docs/LORDLY_NATIVE_RECOVERY.md',
+  'tests/lordly_native_source_recovery.js',
+  'tools/lib/lordly_native_source_recovery.js',
+]);
+const SOURCE_RECOVERY_EDITOR_PATHS = Object.freeze([
+  'tests/native-rebuild-source-recovery-equivalence.test.js',
+  'tools/generate-native-rebuild-data.js',
+]);
 const EXPECTED_APPROVALS = Object.freeze([
   Object.freeze({ phase: 'Phase 3',
     sha256: 'B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA',
@@ -179,10 +201,89 @@ function canonicalizeContract(bytes) {
   return Buffer.from(canonical, 'utf8');
 }
 
+function sourceManifest(root, recovery) {
+  if (!recovery.sourceManifest) fail('source-recovery manifest reference is missing');
+  const manifestPath = safeRelative(recovery.sourceManifest.path, 'source manifest path');
+  const manifest = read(root, manifestPath);
+  if (manifest.length !== recovery.sourceManifest.bytes ||
+      sha256(manifest) !== recovery.sourceManifest.sha256) {
+    fail('source-recovery manifest identity drift');
+  }
+  return JSON.parse(manifest.toString('utf8'));
+}
+
+function verifyCommittedSourceFiles(files, expectedPaths, label) {
+  if (!Array.isArray(files) || files.length !== expectedPaths.length) {
+    fail(`${label} committed source inventory drift`);
+  }
+  const expected = new Set(expectedPaths);
+  const actual = new Set();
+  files.forEach((entry) => {
+    if (!entry || (entry.status !== 'A' && entry.status !== 'M') ||
+        typeof entry.path !== 'string' || !expected.has(entry.path) ||
+        !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0 ||
+        typeof entry.sha256 !== 'string' || !/^[0-9A-F]{64}$/.test(entry.sha256) ||
+        actual.has(entry.path)) {
+      fail(`${label} committed source inventory drift`);
+    }
+    actual.add(entry.path);
+  });
+  if (actual.size !== expected.size || expectedPaths.some((entry) => !actual.has(entry))) {
+    fail(`${label} committed source inventory drift`);
+  }
+}
+
+function verifyCommittedSourceIdentity(root, recovery) {
+  const native = recovery.native;
+  const editor = recovery.editor;
+  const gitObject = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+  const validIdentity = (identity, baseline) => identity &&
+    identity.baselineCommit === baseline.commit && identity.baselineTree === baseline.tree &&
+    gitObject(identity.commit) && gitObject(identity.tree) &&
+    Number.isSafeInteger(identity.commitDistance) && identity.commitDistance > 0;
+  if (recovery.status !== 'source-regenerated-unreviewed' ||
+      recovery.sourceIdentityMode !== SOURCE_RECOVERY_IDENTITY_MODE ||
+      recovery.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
+      recovery.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
+      !validIdentity(native, SOURCE_RECOVERY_NATIVE_BASELINE) ||
+      !validIdentity(editor, SOURCE_RECOVERY_EDITOR_BASELINE)) {
+    fail('committed source-recovery identity drift');
+  }
+
+  const manifest = sourceManifest(root, recovery);
+  if (manifest.schemaVersion !== 2 || manifest.sourceMode !== SOURCE_RECOVERY_IDENTITY_MODE ||
+      !manifest.native || !manifest.editor ||
+      manifest.native.head !== native.commit || manifest.native.tree !== native.tree ||
+      manifest.native.baselineCommit !== native.baselineCommit ||
+      manifest.native.baselineTree !== native.baselineTree ||
+      manifest.native.commitDistance !== native.commitDistance ||
+      manifest.native.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
+      manifest.native.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
+      manifest.editor.head !== editor.commit || manifest.editor.tree !== editor.tree ||
+      manifest.editor.baselineCommit !== editor.baselineCommit ||
+      manifest.editor.baselineTree !== editor.baselineTree ||
+      manifest.editor.commitDistance !== editor.commitDistance ||
+      !Array.isArray(manifest.native.workingChanges) ||
+      manifest.native.workingChanges.length !== 0 ||
+      !Array.isArray(manifest.editor.workingChanges) ||
+      manifest.editor.workingChanges.length !== 0) {
+    fail('committed source-recovery manifest facts drift');
+  }
+  verifyCommittedSourceFiles(
+    manifest.native.committedFiles, SOURCE_RECOVERY_NATIVE_PATHS, 'native');
+  verifyCommittedSourceFiles(
+    manifest.editor.committedFiles, SOURCE_RECOVERY_EDITOR_PATHS, 'Editor');
+}
+
 function loadInputContract(root, target) {
   const canonical = canonicalizeContract(fs.readFileSync(target));
   const contract = JSON.parse(canonical.toString('utf8'));
-  const sourceRecovery = contract.schemaVersion === SOURCE_RECOVERY_CONTRACT_VERSION;
+  const legacySourceRecovery =
+    contract.schemaVersion === LEGACY_SOURCE_RECOVERY_CONTRACT_VERSION &&
+    contract.contractId === LEGACY_SOURCE_RECOVERY_CONTRACT_ID;
+  const committedSourceRecovery = contract.schemaVersion === SOURCE_RECOVERY_CONTRACT_VERSION &&
+    contract.contractId === SOURCE_RECOVERY_CONTRACT_ID;
+  const sourceRecovery = legacySourceRecovery || committedSourceRecovery;
   const identity = {
     schema: INPUT_CONTRACT_SCHEMA,
     schemaVersion: contract.schemaVersion,
@@ -202,7 +303,8 @@ function loadInputContract(root, target) {
   if (contract.schema !== INPUT_CONTRACT_SCHEMA ||
       (!sourceRecovery && (contract.schemaVersion !== INPUT_CONTRACT_VERSION ||
         contract.contractId !== INPUT_CONTRACT_ID)) ||
-      (sourceRecovery && contract.contractId !== SOURCE_RECOVERY_CONTRACT_ID)) {
+      (legacySourceRecovery && contract.contractId !== LEGACY_SOURCE_RECOVERY_CONTRACT_ID) ||
+      (committedSourceRecovery && contract.contractId !== SOURCE_RECOVERY_CONTRACT_ID)) {
     fail('input contract schema, version, or ID drift');
   }
   if (!contract.nativeSource || contract.nativeSource.commit !== EXPECTED_COMMIT ||
@@ -211,26 +313,20 @@ function loadInputContract(root, target) {
       contract.editorSource.tree !== EXPECTED_EDITOR_TREE) {
     fail('input contract accepted source identity drift');
   }
-  if (sourceRecovery) {
+  if (legacySourceRecovery) {
     const recovery = contract.recoverySource;
     if (!recovery || recovery.status !== 'source-regenerated-unreviewed' ||
         recovery.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
         recovery.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
-        recovery.recoveryHead !== SOURCE_RECOVERY_HEAD ||
-        recovery.recoveryHeadTree !== SOURCE_RECOVERY_HEAD_TREE ||
+        recovery.recoveryHead !== LEGACY_SOURCE_RECOVERY_HEAD ||
+        recovery.recoveryHeadTree !== LEGACY_SOURCE_RECOVERY_HEAD_TREE ||
         !recovery.sourceManifest) {
       fail('source-recovery identity drift');
     }
-    const manifestPath = safeRelative(recovery.sourceManifest.path, 'source manifest path');
-    const manifest = read(root, manifestPath);
-    if (manifest.length !== recovery.sourceManifest.bytes ||
-        sha256(manifest) !== recovery.sourceManifest.sha256) {
-      fail('source-recovery manifest identity drift');
-    }
-    const parsedManifest = JSON.parse(manifest.toString('utf8'));
+    const parsedManifest = sourceManifest(root, recovery);
     if (parsedManifest.schemaVersion !== 1 ||
-        parsedManifest.native.head !== SOURCE_RECOVERY_HEAD ||
-        parsedManifest.native.tree !== SOURCE_RECOVERY_HEAD_TREE ||
+        parsedManifest.native.head !== LEGACY_SOURCE_RECOVERY_HEAD ||
+        parsedManifest.native.tree !== LEGACY_SOURCE_RECOVERY_HEAD_TREE ||
         parsedManifest.native.baseCommit !== SOURCE_RECOVERY_BASE_COMMIT ||
         parsedManifest.native.baseTree !== SOURCE_RECOVERY_BASE_TREE ||
         parsedManifest.editor.head !== EXPECTED_EDITOR_COMMIT &&
@@ -238,6 +334,7 @@ function loadInputContract(root, target) {
       fail('source-recovery manifest facts drift');
     }
   }
+  if (committedSourceRecovery) verifyCommittedSourceIdentity(root, contract.recoverySource || {});
   if (!contract.retailRom || contract.retailRom.bytes !== 0x02800000 ||
       contract.retailRom.normalizedZ64Sha256 !== RETAIL_SHA256) {
     fail('input contract retail identity drift');
