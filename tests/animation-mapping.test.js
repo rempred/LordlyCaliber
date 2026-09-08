@@ -889,20 +889,69 @@ function changedPixels(source, childOrdinal) {
   const giantDefinition = rom.classDefs[0x4D + 1];
   assert.strictEqual(giantDefinition.isTerm, true,
     'the retail Giant slot must begin as a terminator-classified record');
-  giantDefinition.stats[0].base = 0x005A;
-  giantDefinition.b43Raw = giantDefinition.b45Raw = 0x0B;
-  giantDefinition.b47Raw = 0x29;
-  OB64.refreshClassDefClassification(giantDefinition);
+  for (const [field, actionId] of [
+    ['b43Raw', 0x0B], ['b45Raw', 0x0B], ['b47Raw', 0x29],
+  ]) {
+    OB64.combatAnimationOverrides.applyLiveAttackChange(
+      rom.combatAnimationOverrides, giantDefinition, 0x4D, field, actionId);
+  }
+  assert.strictEqual(giantDefinition.isTerm, true,
+    'assigning attacks must not require changing the Giant base stats');
   effectiveCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
   const customGiantRows = effectiveCatalog.specs.filter(animation =>
     animation.spec.classId === 0x4D);
   assert.deepStrictEqual([...new Set(customGiantRows.map(animation =>
     animation.spec.actionId))], [0x0B, 0x29],
-  'a converted Giant class record must expose Smash and Earthquake routes');
+  'Giant attack edits alone must expose Smash and Earthquake routes');
   assert.deepStrictEqual(OB64.animationUI.animationActionChoices(
     customGiantRows, customGiantRows[0]).map(animation => animation.spec.actionId),
   [-1, -2, -3, -4, 0x0B, 0x29],
   'the Giant Action dropdown must include fixed actions and live attacks');
+  giantDefinition.stats[0].base = 0x005A;
+  effectiveCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  assert.strictEqual(giantDefinition.isTerm, false);
+  assert.deepStrictEqual([...new Set(effectiveCatalog.specs.filter(animation =>
+    animation.spec.classId === 0x4D).map(animation => animation.spec.actionId))],
+  [0x0B, 0x29], 'converting Giant must preserve its assigned actions');
+  giantDefinition.stats[0].base = 0xFFFF;
+  giantDefinition.b43Raw = giantDefinition.b45Raw = giantDefinition.b47Raw = 0;
+  effectiveCatalog = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom);
+  const resetGiantRows = effectiveCatalog.specs.filter(animation =>
+    animation.spec.classId === 0x4D);
+  assert.deepStrictEqual(OB64.animationUI.animationActionChoices(
+    resetGiantRows, resetGiantRows[0]).map(animation => animation.spec.actionId),
+  [-1, -2, -3, -4], 'restoring Giant must remove stale assigned actions');
+  const unusedClassIds = rom.classDefs.map((definition, index) => index - 1)
+    .filter(classId => {
+      const definition = rom.classDefs[classId + 1];
+      return definition.isTerm && !definition.isSentinel &&
+        OB64.combatAnimationOverrides.classInfo(classId) &&
+        state.artRouteTemplatesByClass[classId];
+    });
+  assert(unusedClassIds.includes(0x4D));
+  assert(unusedClassIds.length > 1, 'cover similar unused classes beyond Giant');
+  for (const classId of unusedClassIds) {
+    const definition = rom.classDefs[classId + 1];
+    const originalAttacks = [definition.b43Raw, definition.b45Raw, definition.b47Raw];
+    for (const [field, actionId] of [
+      ['b43Raw', 0x0B], ['b45Raw', 0x0B], ['b47Raw', 0x29],
+    ]) {
+      OB64.combatAnimationOverrides.applyLiveAttackChange(
+        rom.combatAnimationOverrides, definition, classId, field, actionId);
+    }
+    const rows = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom)
+      .specs.filter(animation => animation.spec.classId === classId);
+    assert.deepStrictEqual(OB64.animationUI.animationActionChoices(rows, rows[0])
+      .map(animation => animation.spec.actionId), [-1, -2, -3, -4, 0x0B, 0x29],
+    `unused class ${classId} must expose all assigned attacks without duplicates`);
+    assert.strictEqual(definition.isTerm, true);
+    [definition.b43Raw, definition.b45Raw, definition.b47Raw] = originalAttacks;
+    const restored = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom)
+      .specs.filter(animation => animation.spec.classId === classId);
+    assert(!restored.some(animation => [0x0B, 0x29].includes(animation.spec.actionId)),
+      `unused class ${classId} must remove stale attacks after restoration`);
+  }
+  console.log(`PASS assigned attacks and restoration for ${unusedClassIds.length} unused classes`);
   assert(!state.specs.some(OB64.animationUI.isClassMotionAnimation),
     'on-demand movement routes must not expand the startup combat corpus');
 

@@ -1870,7 +1870,9 @@ window.OB64 = window.OB64 || {};
         : classRows;
       var classInfo = api.classInfo(classId);
       var definition = classDefinition(rom, classId);
-      if (!classInfo || !definition || definition.isTerm || definition.isSentinel) {
+      // Unused class slots can receive attack edits before their base stats
+      // change. Keep those live assignments available in the Action menu.
+      if (!classInfo || !definition || definition.isSentinel) {
         appendCanonicalRows(classRows);
         if (!classRows.length) appendCanonicalRows(
           idleAnimationRows(animationState, classId));
