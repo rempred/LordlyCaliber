@@ -4167,8 +4167,119 @@ window.OB64 = window.OB64 || {};
     (sourceField || classField).select.focus();
   }
 
-  function importLibrarySequence(state, rom, separation, targetAnimation,
+  function prepareLibrarySequence(asset, animation, settings) {
+    if (!asset || asset.kind !== 'sequence' || !asset.frames.length || asset.frames.length > 256) {
+      throw new Error('Choose a sequence with 1–256 frames.');
+    }
+    var conversion = Object.assign({ placementMode: 'original', resizeMode: 'nearest',
+      panX: 0.5, panY: 0.5, dither: false }, settings, { anchor: asset.anchor });
+    return asset.frames.map(function(frame, index) {
+      return { ticks: frame.ticks, prepared: OB64.art.prepareAnimationFrameImport(
+        OB64.spriteLibrary.compositeFrame(asset, index), asset.width, asset.height,
+        animation.canvas.width, animation.canvas.height, conversion) };
+    });
+  }
+
+  function openLibrarySequenceImportModal(state, rom, separation, targetAnimation,
       previewAnimation, asset, ui, options, rerender) {
+    var animation = separation ? separation.syntheticAnimation : (previewAnimation || targetAnimation);
+    var sequenceRevision = rom.animationSequences.revision;
+    var editRevision = rom.art.animations.editRevision;
+    var settings = { placementMode: 'original', resizeMode: 'nearest', panX: 0.5, panY: 0.5 };
+    var prepared = null;
+    var overlay = element('div', 'error-modal-overlay art-import-overlay');
+    var modal = element('div', 'error-modal art-import-modal');
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'animation-sequence-import-title');
+    overlay.appendChild(modal);
+    var header = element('div', 'error-modal-header');
+    var title = element('h2', '', 'Prepare Sprite Library Sequence');
+    title.id = 'animation-sequence-import-title'; header.appendChild(title);
+    var closeButton = button('×', 'error-modal-close', close);
+    closeButton.setAttribute('aria-label', 'Cancel sequence import'); header.appendChild(closeButton);
+    modal.appendChild(header);
+    var body = element('div', 'error-modal-body art-import-body');
+    body.appendChild(element('p', 'art-import-intro', asset.name + ' · ' + asset.frames.length +
+      ' frames. Import replaces every frame and layer, retaining library durations.'));
+    var layout = element('div', 'art-import-layout');
+    var previewPanel = element('section', 'art-import-preview-panel');
+    previewPanel.appendChild(element('h3', '', 'Converted Frame Preview'));
+    var previewHost = element('div', 'art-import-preview-host'); previewPanel.appendChild(previewHost);
+    var stats = element('p', 'art-import-stats'); stats.setAttribute('aria-live', 'polite');
+    previewPanel.appendChild(stats); layout.appendChild(previewPanel);
+    var controls = element('section', 'art-import-controls');
+    function select(labelText, choices, value, change) {
+      var label = element('label', 'art-import-control'); label.appendChild(element('span', '', labelText));
+      var input = element('select');
+      choices.forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; input.appendChild(option);
+      });
+      input.value = value; input.addEventListener('change', function() { change(input.value); });
+      label.appendChild(input); controls.appendChild(label); return input;
+    }
+    var frameSelect = select('Preview frame', asset.frames.map(function(frame, index) {
+      return [String(index), 'Frame ' + (index + 1) + ' · ' + frame.ticks + ' ticks'];
+    }), '0', showPreview);
+    select('Sizing', [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'],
+      ['stretch', 'Stretch']], settings.placementMode, function(value) { settings.placementMode = value; prepare(); });
+    select('Resize method', [['nearest', 'Pixel Art — nearest-neighbor'], ['smooth', 'Smooth']],
+      settings.resizeMode, function(value) { settings.resizeMode = value; prepare(); });
+    ['panX', 'panY'].forEach(function(key) {
+      var label = element('label', 'art-import-control');
+      label.appendChild(element('span', '', key === 'panX' ? 'Horizontal crop position' : 'Vertical crop position'));
+      var input = element('input'); input.type = 'range'; input.min = '0'; input.max = '100'; input.value = '50';
+      input.addEventListener('input', function() { settings[key] = Number(input.value) / 100; prepare(); });
+      label.appendChild(input); controls.appendChild(label);
+    });
+    controls.appendChild(element('p', '', 'Sizing applies to every frame. Output uses the target sequence canvas. Original Size keeps pixel scale; larger sources can be cropped. The alignment anchor sets each frame’s local position.'));
+    layout.appendChild(controls); body.appendChild(layout); modal.appendChild(body);
+    var footer = element('div', 'error-modal-footer art-import-footer');
+    footer.appendChild(button('Cancel', 'error-modal-ok', close));
+    var apply = button('Import Sequence', 'error-modal-ok', function() {
+      if (!prepared) return;
+      if (sequenceRevision !== rom.animationSequences.revision || editRevision !== rom.art.animations.editRevision) {
+        stats.textContent = 'Target changed during preparation. Cancel and reopen sequence import.';
+        apply.disabled = true; return;
+      }
+      if (importLibrarySequence(state, rom, separation, targetAnimation, previewAnimation,
+          asset, ui, options, rerender, prepared)) close();
+    });
+    footer.appendChild(apply); modal.appendChild(footer);
+    function showPreview() {
+      if (!prepared) return;
+      var result = prepared[Number(frameSelect.value)].prepared, crop = result.crop;
+      previewHost.innerHTML = '';
+      var canvas = element('canvas', 'art-import-preview-canvas');
+      paintPixels(canvas, result.targetWidth, result.targetHeight, result.rgba,
+        Math.max(1, Math.min(6, Math.floor(360 / Math.max(result.targetWidth, result.targetHeight)))));
+      previewHost.appendChild(canvas);
+      stats.textContent = 'Source ' + asset.width + '×' + asset.height + ' · Output ' +
+        result.targetWidth + '×' + result.targetHeight + ' · Scale ' +
+        (result.targetWidth / crop.width).toFixed(2) + '× / ' +
+        (result.targetHeight / crop.height).toFixed(2) + '× · Anchor ' +
+        (asset.anchor ? asset.anchor.x + ', ' + asset.anchor.y : 'target origin') + ' → ' +
+        (result.alignmentAnchor ? result.alignmentAnchor.x + ', ' + result.alignmentAnchor.y : 'target origin');
+    }
+    function prepare() {
+      prepared = null; apply.disabled = true;
+      try {
+        prepared = prepareLibrarySequence(asset, animation, settings); showPreview(); apply.disabled = false;
+      } catch (error) {
+        previewHost.innerHTML = ''; stats.textContent = 'Conversion blocked: ' + error.message;
+      }
+    }
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escapeHandler);
+    }
+    var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
+    overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
+    document.addEventListener('keydown', escapeHandler); document.body.appendChild(overlay);
+    prepare(); frameSelect.focus();
+  }
+
+  function importLibrarySequence(state, rom, separation, targetAnimation,
+      previewAnimation, asset, ui, options, rerender, preparation) {
     if (!asset || asset.kind !== 'sequence' || !asset.frames.length) {
       notify(options, 'Sprite Library sequence import blocked: choose a frame sequence asset.');
       return;
@@ -4191,40 +4302,11 @@ window.OB64 = window.OB64 || {};
     var baseAnimation = separation && separation.syntheticAnimation
       ? separation.syntheticAnimation : (previewAnimation || targetAnimation);
     try {
-      var preparedFrames = asset.frames.map(function(frame) {
-        return {
-          ticks: frame.ticks,
-          prepared: OB64.art.prepareAnimationFrameImport(
-            OB64.spriteLibrary.compositeFrame(asset,
-              asset.frames.indexOf(frame)),
-            asset.width, asset.height,
-            baseAnimation.canvas.width, baseAnimation.canvas.height,
-            { resizeMode: 'nearest', panX: 0.5, panY: 0.5, dither: false })
-        };
-      });
+      var preparedFrames = preparation || prepareLibrarySequence(asset, baseAnimation, {});
       var created = !separation;
-      if (!separation) {
-        separation = OB64.animationSequences.separateAndAssign(
-          rom, baseAnimation, pair, targetAnimation);
-      }
+      separation = OB64.animationSequences.replaceSequenceFrames(
+        rom, separation, baseAnimation, pair, targetAnimation, preparedFrames);
       var animation = separation.syntheticAnimation;
-      while (animation.frames.length > preparedFrames.length) {
-        OB64.animationSequences.removeFrame(
-          rom, separation, animation.frames.length - 1);
-        animation = separation.syntheticAnimation;
-      }
-      while (animation.frames.length < preparedFrames.length) {
-        OB64.animationSequences.addBlankFrame(
-          rom, separation, animation.frames.length - 1, 0);
-        animation = separation.syntheticAnimation;
-      }
-      preparedFrames.forEach(function(row, frameIndex) {
-        OB64.animationSequences.importFrame(
-          rom, separation, frameIndex, row.prepared, { keepEquipment: false });
-        OB64.animationSequences.setFrameTicks(
-          rom, separation, frameIndex, row.ticks);
-      });
-      animation = separation.syntheticAnimation;
       ui.animationKey = animation.key;
       ui.animationFrame = 0;
       ui.animationLayer = 0;
@@ -4240,8 +4322,10 @@ window.OB64 = window.OB64 || {};
           (fixedActionTarget ? 'fixed action' : 'combat'))) + ' frame' +
         (preparedFrames.length === 1 ? '' : 's') + '.');
       rerender();
+      return true;
     } catch (error) {
       notify(options, 'Sprite Library sequence import blocked: ' + error.message);
+      return false;
     }
   }
 
@@ -4297,7 +4381,7 @@ window.OB64 = window.OB64 || {};
           kinds: ['sequence'],
           onStatus: function(message) { notify(options, message); }
         }, function(source) {
-          importLibrarySequence(state, rom, separation, targetAnimation,
+          openLibrarySequenceImportModal(state, rom, separation, targetAnimation,
             animation, source.asset, ui, options, rerender);
         });
       });
@@ -6785,6 +6869,9 @@ window.OB64 = window.OB64 || {};
   }
 
   OB64.animationUI = {
+    prepareLibrarySequence: prepareLibrarySequence,
+    importLibrarySequence: importLibrarySequence,
+    openLibrarySequenceImportModal: openLibrarySequenceImportModal,
     render: render,
     wordRgb: wordRgb,
     normalizeIntensity: normalizeIntensity,

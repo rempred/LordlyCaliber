@@ -2518,6 +2518,90 @@ window.OB64 = window.OB64 || {};
     return frame.layers.indexOf(importedLayer);
   }
 
+  // Stage complete sequence replacements away from live Project state. Canonical
+  // parsed animations are immutable inputs; private structures and edit maps are copied.
+  function replacementCandidate(rom) {
+    var copies = new Map();
+    Object.keys(rom.art.animations.byKey).forEach(function(key) {
+      var animation = rom.art.animations.byKey[key];
+      if (!animation.separationId) copies.set(animation, animation);
+    });
+    if (rom.z64) copies.set(rom.z64, rom.z64);
+    function copy(value) {
+      if (!value || typeof value !== 'object') return value;
+      if (copies.has(value)) return copies.get(value);
+      if (ArrayBuffer.isView(value)) {
+        var bytes = value.slice(); copies.set(value, bytes); return bytes;
+      }
+      var result = Array.isArray(value) ? [] : {};
+      copies.set(value, result);
+      Object.keys(value).forEach(function(key) { result[key] = copy(value[key]); });
+      return result;
+    }
+    var candidate = Object.assign({}, rom);
+    candidate.art = Object.assign({}, rom.art);
+    candidate.animationSequences = copy(rom.animationSequences);
+    candidate.combatAnimationOverrides = copy(rom.combatAnimationOverrides);
+    candidate.art.animations = Object.assign({}, rom.art.animations, {
+      artByKey: Object.assign({}, rom.art.animations.artByKey),
+      edits: copy(rom.art.animations.edits), history: copy(rom.art.animations.history)
+    });
+    Object.keys(candidate.animationSequences.separations).forEach(function(id) {
+      var animation = candidate.animationSequences.separations[id].syntheticAnimation;
+      Object.keys(animation.artByKey).forEach(function(key) {
+        candidate.art.animations.artByKey[key] = animation.artByKey[key];
+      });
+    });
+    candidate.art.sequenceCopies = candidate.animationSequences;
+    return { rom: candidate, copy: copy };
+  }
+
+  function replaceSequenceFrames(rom, separation, baseAnimation, pair,
+      targetAnimation, preparedFrames) {
+    if (!Array.isArray(preparedFrames) || !preparedFrames.length || preparedFrames.length > 256) {
+      fail('sequence replacement requires 1–256 frames');
+    }
+    var canvas = Object.assign({}, baseAnimation.canvas);
+    preparedFrames.forEach(function(row) {
+      integerInRange(row.ticks, 0, 255, 'Imported frame duration');
+      if (!row.prepared || row.prepared.targetWidth !== canvas.width ||
+          row.prepared.targetHeight !== canvas.height) {
+        fail('all imported frames must match the prepared sequence canvas');
+      }
+    });
+    var staged = replacementCandidate(rom), candidate = staged.rom;
+    var replacement = separation ? candidate.animationSequences.separations[separation.id] :
+      separateAndAssign(candidate, staged.copy(baseAnimation), pair, targetAnimation);
+    if (!replacement) fail('sequence replacement target is no longer available');
+    var animation = replacement.syntheticAnimation;
+    while (animation.frames.length > preparedFrames.length) {
+      removeFrame(candidate, replacement, animation.frames.length - 1);
+    }
+    while (animation.frames.length < preparedFrames.length) {
+      addBlankFrame(candidate, replacement, animation.frames.length - 1, 0);
+    }
+    preparedFrames.forEach(function(row, index) {
+      // Structural edits recompute bounds. Every conversion still belongs to the
+      // original preparation canvas, including transparent or smaller frames.
+      animation.canvas = Object.assign({}, canvas);
+      importFrame(candidate, replacement, index, row.prepared, { keepEquipment: false });
+      setFrameTicks(candidate, replacement, index, row.ticks);
+    });
+    // Exercise the same native structure guards used by Project import before adoption.
+    prepareProject(candidate, collectProject(candidate));
+    Object.keys(candidate.animationSequences.separations).forEach(function(id) {
+      var existing = rom.animationSequences.separations[id];
+      if (existing) {
+        Object.assign(existing, candidate.animationSequences.separations[id]);
+        candidate.animationSequences.separations[id] = existing;
+      }
+    });
+    Object.assign(rom.art.animations, candidate.art.animations);
+    Object.assign(rom.animationSequences, candidate.animationSequences);
+    Object.assign(rom.combatAnimationOverrides, candidate.combatAnimationOverrides);
+    return rom.animationSequences.separations[replacement.id];
+  }
+
   function removeLayer(rom, separation, frameIndex, layerOrdinal) {
     var animation = requirePrivateSequence(rom, separation);
     var frame = privateFrame(animation, frameIndex);
@@ -3844,6 +3928,7 @@ window.OB64 = window.OB64 || {};
     copyFrameFrom: copyFrameFrom,
     duplicateFrame: duplicateFrame,
     importFrame: importFrame,
+    replaceSequenceFrames: replaceSequenceFrames,
     removeLayer: removeLayer,
     removeFrame: removeFrame,
     moveFrame: moveFrame,

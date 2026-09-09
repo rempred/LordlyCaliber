@@ -8897,7 +8897,8 @@ td.attack-list {
   .sprite-panel-heading { grid-column: 1 / -1; }
   .sprite-layer-actions,
   .sprite-transform-tools { align-content: start; }
-  .sprite-color-panel { grid-column: 2; grid-row: 2 / span 3; }
+  .sprite-paint-color-panel { grid-column: 2; grid-row: 2 / span 2; }
+  .sprite-used-colors-panel { grid-column: 2; grid-row: 4; }
 }
 
 @media (max-width: 760px) {

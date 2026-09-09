@@ -555,7 +555,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function colorPanel(ui, rerender) {
-    var panel = element('section', 'sprite-color-panel');
+    var panel = element('section', 'sprite-color-panel sprite-paint-color-panel');
     panel.appendChild(element('h3', '', 'Paint Color'));
     var swatch = element('span', 'sprite-color-swatch');
     function swatchColor() {
@@ -731,7 +731,7 @@ window.OB64 = window.OB64 || {};
     });
     panel.appendChild(anchorTools);
     panel.appendChild(colorPanel(ui, rerender));
-    var usedPanel = element('section', 'sprite-color-panel');
+    var usedPanel = element('section', 'sprite-color-panel sprite-used-colors-panel');
     var scope = element('select');
     ['layer', 'frame', 'sequence'].forEach(function(value) {
       var option = element('option', '', 'Used colors · ' + value); option.value = value; scope.appendChild(option);
