@@ -65,7 +65,7 @@ function dirtyFlags() {
   const project = OB64.patch.collectPatch(source);
   assert.strictEqual(project.version, 34);
   assert.strictEqual(project.summary.sprite_library_assets, 1);
-  assert.strictEqual(project.patches.spriteLibrary.schemaVersion, 1);
+  assert.strictEqual(project.patches.spriteLibrary.schemaVersion, 2);
   assert.strictEqual(project.patches.spriteLibrary.assets.length, 1);
 
   const target = freshRom(bytes);

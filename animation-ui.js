@@ -323,6 +323,13 @@ window.OB64 = window.OB64 || {};
     paintPixels(canvas, animation.canvas.width, animation.canvas.height,
       framePixels(animation, frame, animationState, selectedKey, overrides,
         weaponChildOrdinal), scale, backgroundMode);
+    if (animation.showOrigin) {
+      var marker = canvas.getContext('2d');
+      var ox = -animation.canvas.originX * scale, oy = -animation.canvas.originY * scale;
+      marker.save(); marker.strokeStyle = '#ff5ad6'; marker.lineWidth = 1;
+      marker.beginPath(); marker.moveTo(ox - 7, oy); marker.lineTo(ox + 7, oy);
+      marker.moveTo(ox, oy - 7); marker.lineTo(ox, oy + 7); marker.stroke(); marker.restore();
+    }
     if (!selectedLayer) return;
     var context = canvas.getContext('2d');
     var metrics = layerPreviewMetrics(animation, selectedLayer);
@@ -1140,7 +1147,19 @@ window.OB64 = window.OB64 || {};
         seenFlags[flags] = true;
         templates.push(animation);
       });
-      api.selectorOptions(classId).forEach(function(option) {
+      if (!templates.length) {
+        var routeTable = animationState.artRouteTemplatesByClass && animationState.artRouteTemplatesByClass[classId];
+        Object.keys(routeTable || {}).forEach(function(flags) {
+          var template = routeTable[flags];
+          if (selectorFlagParts(template)[1] === side && (!requiredFlags || flags === requiredFlags)) templates.push(template);
+        });
+      }
+      var selectorOptions = api.selectorOptions(classId);
+      if (!selectorOptions.length && templates.length) {
+        var count = Math.min(256, Math.max.apply(null, templates.map(function(template) { return template.poseProgram.stateCount; })));
+        for (var selector = 0; selector < count; selector++) selectorOptions.push({ id: selector, status: 'native' });
+      }
+      selectorOptions.forEach(function(option) {
         templates.forEach(function(template) {
           [0, 1, 2].forEach(function(rawMode) {
             var represented = vanilla.some(function(animation) {
@@ -2500,7 +2519,7 @@ window.OB64 = window.OB64 || {};
   function samplePixel(ui, edit, pixel) {
     ui.animationPaletteIndex = edit.indices[pixel];
     ui.animationIntensity = normalizeIntensity(edit.intensity[pixel]);
-    ui.animationTool = 'pencil';
+    if (!OB64.spriteLibrary || !OB64.spriteLibrary.keepEyedropper()) ui.animationTool = 'pencil';
   }
 
   function animationStats(animation) {
@@ -3664,7 +3683,7 @@ window.OB64 = window.OB64 || {};
     modal.appendChild(header);
     var body = element('div', 'error-modal-body animation-copy-body');
     var intro = element('p', 'animation-copy-intro', copiesFrame
-      ? 'Choose any source frame. Its complete layer stack and positions will replace this frame.'
+      ? 'Copy Art preserves this frame duration. Copy Art and Duration also copies the source timing. Both copy every layer and position.'
       : 'Choose any sprite layer. Its art will replace this layer while keeping this layer position.');
     body.appendChild(intro);
     var controls = element('div', 'animation-copy-controls animation-sprite-copy-controls');
@@ -3674,6 +3693,12 @@ window.OB64 = window.OB64 || {};
       var select = element('select');
       label.appendChild(select); controls.appendChild(label);
       return { label: label, select: select };
+    }
+    var durationField = copiesFrame ? selectField('Copy properties') : null;
+    if (durationField) {
+      [['art', 'Copy Art'], ['duration', 'Copy Art and Duration']].forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; durationField.select.appendChild(option);
+      });
     }
     var sourceField = copiesFrame ? null : selectField('Source');
     var classField = selectField('Class');
@@ -3721,8 +3746,11 @@ window.OB64 = window.OB64 || {};
       copyCompleteFrameButton.hidden = true;
       footer.appendChild(copyCompleteFrameButton);
     }
-    var applyButton = button(copiesFrame ? 'Copy Frame' : 'Copy Sprite',
+    var applyButton = button(copiesFrame ? 'Copy Art' : 'Copy Sprite',
       'error-modal-ok', applyCopy);
+    if (durationField) durationField.select.addEventListener('change', function() {
+      applyButton.textContent = durationField.select.value === 'duration' ? 'Copy Art and Duration' : 'Copy Art';
+    });
     footer.appendChild(applyButton); modal.appendChild(footer);
     var classRows = animationClassChoices(sourceAnimations).filter(function(row) {
       return !row.missingAnimation;
@@ -4071,7 +4099,8 @@ window.OB64 = window.OB64 || {};
       try {
         if (copiesCompleteFrame) {
           OB64.animationSequences.copyFrameFrom(rom, separation,
-            targetFrame.sequenceIndex, donor, donorFrame.sequenceIndex);
+            targetFrame.sequenceIndex, donor, donorFrame.sequenceIndex,
+            { includeDuration: !!durationField && durationField.select.value === 'duration' });
           ui.animationLayer = 0;
         } else {
           var donorLayer = selectedDonorLayer();
@@ -5219,6 +5248,7 @@ window.OB64 = window.OB64 || {};
         if (event && canvas.hasPointerCapture(event.pointerId)) {
           canvas.releasePointerCapture(event.pointerId);
         }
+        if (event && event.type === 'pointercancel') { rerender(); return; }
         try {
           if (OB64.animationSequences.setLayerPosition(rom, separation,
               frame.sequenceIndex, layer.ordinal, wantedX, wantedY)) {
@@ -5277,6 +5307,23 @@ window.OB64 = window.OB64 || {};
   function toolbar(state, rom, animation, frame, layer, separation,
       ui, options, rerender) {
     var bar = element('div', 'art-toolbox animation-toolbox');
+    if (OB64.spriteLibrary) {
+      var eyedrop = element('select');
+      [['switch', 'Switch to Pencil'], ['keep', 'Keep Eyedropper']].forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; eyedrop.appendChild(option);
+      });
+      eyedrop.setAttribute('aria-label', 'After sampling a color');
+      eyedrop.setAttribute('data-art-focus-key', 'animation-eyedropper-preference');
+      eyedrop.value = OB64.spriteLibrary.keepEyedropper() ? 'keep' : 'switch';
+      eyedrop.addEventListener('change', function() { OB64.spriteLibrary.keepEyedropper(eyedrop.value === 'keep'); });
+      bar.appendChild(eyedrop);
+    }
+    var fit = button(ui.animationAutoFit ? 'Automatic Fit: On' : 'Automatic Fit: Off (Stable Origin)', 'btn-secondary', function() {
+      ui.animationAutoFit = !ui.animationAutoFit; rerender();
+    });
+    fit.title = 'Automatic Fit follows edited bounds. Stable Origin keeps the same local coordinate view across sequences.';
+    fit.setAttribute('data-art-focus-key', 'animation-preview-fit');
+    bar.appendChild(fit);
     var source = state.animations.artByKey[layer.sourceKey];
     if (source.editable) {
       [['pencil', 'Pencil'], ['eraser', 'Erase'], ['fill', 'Fill'],
@@ -5356,7 +5403,7 @@ window.OB64 = window.OB64 || {};
     return bar;
   }
 
-  function palettePanel(source, childOrdinal, ui, rerender) {
+  function palettePanel(source, childOrdinal, ui, rerender, animationState) {
     var panel = element('section', 'animation-palette-panel');
     if (!source.editable) {
       panel.appendChild(element('h3', '', 'Colors'));
@@ -5373,7 +5420,18 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(selected);
     var grid = element('div', 'animation-palette-grid');
     var paletteChoices = [];
-    var orderedIndices = paletteHueOrder(palette);
+    var paletteScope = element('select');
+    [['used', 'Used colors · selected layer'], ['all', 'Complete native palette']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; paletteScope.appendChild(option);
+    });
+    paletteScope.setAttribute('data-art-focus-key', 'animation-palette-scope');
+    paletteScope.value = ui.animationPaletteScope || 'used';
+    paletteScope.addEventListener('change', function() { ui.animationPaletteScope = paletteScope.value; rerender(); });
+    panel.appendChild(paletteScope);
+    var currentPixels = animationState ? M.currentEdit(animationState, source.key, childOrdinal) : M.originalChild(source, childOrdinal);
+    var usedIndices = {};
+    currentPixels.indices.forEach(function(value, pixel) { if (currentPixels.intensity[pixel]) usedIndices[value] = true; });
+    var orderedIndices = paletteHueOrder(palette).filter(function(value) { return paletteScope.value === 'all' || usedIndices[value]; });
     for (var index = 0; index < orderedIndices.length; index++) {
       (function(paletteIndex) {
         var word = palette[paletteIndex];
@@ -5393,11 +5451,11 @@ window.OB64 = window.OB64 || {};
     }
     panel.appendChild(grid);
     var intensity = element('label', 'animation-intensity-control');
-    var intensityText = element('span', '', 'Visibility / intensity: ' +
-      ui.animationIntensity + ' / 15');
+    var intensityText = element('span', '', 'Opacity: ' + Math.round(ui.animationIntensity * 100 / 15) + '% (' + ui.animationIntensity + ' / 15)');
     intensity.appendChild(intensityText);
     var slider = element('input'); slider.type = 'range'; slider.min = '0'; slider.max = '15';
     slider.step = '1'; slider.value = String(ui.animationIntensity);
+    slider.setAttribute('data-art-focus-key', 'animation-opacity');
     function paintIntensity() {
       swatch.style.background = intensityColorCss(selectedWord, ui.animationIntensity);
       paletteChoices.forEach(function(entry) {
@@ -5406,11 +5464,12 @@ window.OB64 = window.OB64 || {};
     }
     slider.addEventListener('input', function() {
       ui.animationIntensity = Number(slider.value);
-      intensityText.textContent = 'Visibility / intensity: ' + ui.animationIntensity + ' / 15';
+      intensityText.textContent = 'Opacity: ' + Math.round(ui.animationIntensity * 100 / 15) + '% (' + ui.animationIntensity + ' / 15)';
       paintIntensity();
     });
     paintIntensity();
     intensity.appendChild(slider); panel.appendChild(intensity);
+    panel.appendChild(element('small', '', '16 opacity levels: 0–15. Conversion rounds to the nearest level (about 6.67% per step).'));
     return panel;
   }
 
@@ -5433,7 +5492,7 @@ window.OB64 = window.OB64 || {};
     targetHeight = targetHeight === undefined ? sourceAsset.height : targetHeight;
     return OB64.art.prepareAnimationFrameImport(
       sourceAsset.rgba, sourceAsset.width, sourceAsset.height,
-      targetWidth, targetHeight, settings || { resizeMode: 'nearest' });
+      targetWidth, targetHeight, Object.assign({ resizeMode: 'nearest' }, settings || {}, { anchor: sourceAsset.anchor }));
   }
 
   function importLibrarySpriteLayer(rom, separation, animation, frame,
@@ -5639,7 +5698,8 @@ window.OB64 = window.OB64 || {};
   }
 
   function animationPreviewStructureSignature(animation) {
-    var parts = [animation.key, animation.canvas.width, animation.canvas.height];
+    var parts = [animation.key, animation.canvas.width, animation.canvas.height,
+      animation.canvas.originX, animation.canvas.originY, !!animation.showOrigin];
     animation.frames.forEach(function(frame) {
       parts.push('f', frame.sequenceIndex, frame.token, frame.ticks);
       frame.layers.forEach(function(layer) {
@@ -5684,7 +5744,28 @@ window.OB64 = window.OB64 || {};
     return surfaces;
   }
 
+  function stablePreviewAnimation(state, animation, ui) {
+    if (ui.animationAutoFit) return animation;
+    var key = animation.spec.classId + ':' + selectorFlags(animation);
+    if (!ui.animationViewports) ui.animationViewports = {};
+    if (!ui.animationViewports[key]) {
+      var left = 0, top = 0, right = 0, bottom = 0;
+      var rows = state.animations.specs.filter(function(row) { return row.spec.classId === animation.spec.classId; });
+      rows = rows.concat([animation.donorAnimation || animation]);
+      rows.forEach(function(row) {
+        if (!row.canvas) return;
+        left = Math.min(left, row.canvas.originX); top = Math.min(top, row.canvas.originY);
+        right = Math.max(right, row.canvas.originX + row.canvas.width);
+        bottom = Math.max(bottom, row.canvas.originY + row.canvas.height);
+      });
+      ui.animationViewports[key] = { originX: left - 16, originY: top - 16,
+        width: right - left + 32, height: bottom - top + 32, endX: right + 16, endY: bottom + 16 };
+    }
+    return Object.assign({}, animation, { canvas: ui.animationViewports[key], showOrigin: true });
+  }
+
   function fullFramePreview(state, animation, frame, ui) {
+    animation = stablePreviewAnimation(state, animation, ui);
     var preview = element('figure', 'animation-actual-preview');
     preview.appendChild(element('figcaption', '', 'Full frame'));
     var canvas = element('canvas');
@@ -5695,6 +5776,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function animationSequencePreview(state, animation, ui, previewOptions) {
+    animation = stablePreviewAnimation(state, animation, ui);
     previewOptions = previewOptions || {};
     var preview = element('figure', 'animation-sequence-preview' +
       (previewOptions.className ? ' ' + previewOptions.className : ''));
@@ -5788,6 +5870,16 @@ window.OB64 = window.OB64 || {};
     previewPanel.appendChild(stats); layout.appendChild(previewPanel);
 
     var controls = element('section', 'art-import-controls');
+    var sizingLabel = element('label', 'art-import-control'); sizingLabel.appendChild(element('span', '', 'Sizing'));
+    var sizing = element('select');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; sizing.appendChild(option);
+    });
+    sizing.value = settings.placementMode || 'fill';
+    sizing.addEventListener('change', function() { settings.placementMode = sizing.value; schedulePreview(); });
+    sizingLabel.appendChild(sizing); controls.appendChild(sizingLabel);
+    controls.appendChild(element('p', '', 'Opacity rounds to the nearest of 16 levels: 0–15 (about 6.67% per step). Original Size places pixels at the top left; fixed frame bounds can crop larger sources.'));
+
     var fields = element('div', 'animation-layer-resize-fields');
     function dimensionField(labelText, value) {
       var label = element('label', 'animation-layer-resize-field');
@@ -5980,7 +6072,7 @@ window.OB64 = window.OB64 || {};
           currentResult.rgba, scale);
         previewHost.appendChild(previewCanvas);
         var crop = currentResult.crop;
-        stats.textContent = 'Output ' + targetWidth + '\u00D7' + targetHeight +
+        stats.textContent = 'Source ' + source.width + '×' + source.height + ' · Scale ' + (targetWidth / crop.width).toFixed(2) + '× / ' + (targetHeight / crop.height).toFixed(2) + '× · Output ' + targetWidth + '\u00D7' + targetHeight +
           ' \u00B7 crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
           crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
@@ -6027,6 +6119,7 @@ window.OB64 = window.OB64 || {};
       resizeMode: 'nearest', panX: 0.5, panY: 0.5, zoom: 1,
       dither: false, keepEquipment: true
     };
+    settings.anchor = source.anchor;
     var currentResult = null, scheduledFrame = null;
     var overlay = element('div', 'error-modal-overlay art-import-overlay');
     var modal = element('div', 'error-modal art-import-modal animation-frame-import-modal');
@@ -6058,6 +6151,16 @@ window.OB64 = window.OB64 || {};
     previewPanel.appendChild(stats); layout.appendChild(previewPanel);
 
     var controls = element('section', 'art-import-controls');
+    var sizingLabel = element('label', 'art-import-control'); sizingLabel.appendChild(element('span', '', 'Sizing'));
+    var sizing = element('select');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; sizing.appendChild(option);
+    });
+    sizing.value = settings.placementMode || 'fill';
+    sizing.addEventListener('change', function() { settings.placementMode = sizing.value; schedulePreview(); });
+    sizingLabel.appendChild(sizing); controls.appendChild(sizingLabel);
+    controls.appendChild(element('p', '', 'Opacity rounds to the nearest of 16 levels: 0–15 (about 6.67% per step). Original Size places pixels at the top left; fixed frame bounds can crop larger sources.'));
+
     var resizeLabel = element('label', 'art-import-control');
     resizeLabel.appendChild(element('span', '', 'Resize method'));
     var resizeSelect = element('select');
@@ -6209,7 +6312,15 @@ window.OB64 = window.OB64 || {};
       }
     }
     function finalPreviewPixels(result) {
-      if (!settings.keepEquipment || !equipmentCount) return result.rgba;
+      var importedPixels = result.rgba;
+      if (result.alignmentAnchor && OB64.spriteLibrary) {
+        importedPixels = OB64.spriteLibrary.layerCanvasPixels({ width: targetWidth, height: targetHeight }, {
+          width: result.targetWidth, height: result.targetHeight,
+          x: -result.alignmentAnchor.x - animation.canvas.originX,
+          y: -result.alignmentAnchor.y - animation.canvas.originY, pixels: result.rgba
+        });
+      }
+      if (!settings.keepEquipment || !equipmentCount) return importedPixels;
       var output = new Uint8ClampedArray(result.rgba.length);
       var inserted = false;
       frame.layers.forEach(function(frameLayer) {
@@ -6218,10 +6329,10 @@ window.OB64 = window.OB64 || {};
           drawLayerInto(output, animation, frameLayer, state.animations,
             'normal', null, weaponChildForAnimation(ui, animation));
         } else if (!inserted) {
-          blendImportedPixels(output, result.rgba); inserted = true;
+          blendImportedPixels(output, importedPixels); inserted = true;
         }
       });
-      if (!inserted) blendImportedPixels(output, result.rgba);
+      if (!inserted) blendImportedPixels(output, importedPixels);
       return output;
     }
     function preview() {
@@ -6238,7 +6349,7 @@ window.OB64 = window.OB64 || {};
           finalPreviewPixels(currentResult), scale);
         previewHost.appendChild(previewCanvas);
         var crop = currentResult.crop;
-        stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
+        stats.textContent = 'Source ' + source.width + '×' + source.height + ' · Output ' + targetWidth + '×' + targetHeight + ' · Scale ' + (targetWidth / crop.width).toFixed(2) + '× / ' + (targetHeight / crop.height).toFixed(2) + '× · Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
           crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
           '\u00D7 zoom \u00B7 ' +
@@ -6273,6 +6384,87 @@ window.OB64 = window.OB64 || {};
     document.addEventListener('keydown', escapeHandler);
     document.body.appendChild(overlay);
     resizeSelect.focus(); schedulePreview();
+  }
+
+  function alignmentPanel(state, rom, animation, frame, layer, separation, ui, options, rerender) {
+    var panel = element('details', 'animation-alignment-panel');
+    panel.open = !!ui.animationAlignmentOpen;
+    panel.addEventListener('toggle', function() {
+      if (ui.animationAlignmentOpen === panel.open) return;
+      ui.animationAlignmentOpen = panel.open; rerender();
+    });
+    panel.appendChild(element('summary', '', 'Position and compare alignment'));
+    function numeric(labelText, value, key) {
+      var label = element('label', '', labelText); var input = element('input');
+      input.type = 'number'; input.min = '-32768'; input.max = '32767'; input.value = String(value);
+      input.setAttribute('data-art-focus-key', key); label.appendChild(input); panel.appendChild(label); return input;
+    }
+    panel.appendChild(element('p', '', 'Local sprite coordinates. Translation moves every layer without changing art or duration.'));
+    var x = numeric('Layer X', layer.drawOffsetX, 'animation-layer-x');
+    var y = numeric('Layer Y', layer.drawOffsetY, 'animation-layer-y');
+    x.disabled = y.disabled = !separation;
+    function position() {
+      try { OB64.animationSequences.setLayerPosition(rom, separation, frame.sequenceIndex, layer.ordinal, Number(x.value), Number(y.value)); changed(options); rerender(); }
+      catch (error) { notify(options, error.message); }
+    }
+    x.addEventListener('change', position); y.addEventListener('change', position);
+    var dx = numeric('Move X', ui.animationMoveX || 0, 'animation-move-x');
+    var dy = numeric('Move Y', ui.animationMoveY || 0, 'animation-move-y');
+    dx.addEventListener('input', function() { ui.animationMoveX = dx.value; });
+    dy.addEventListener('input', function() { ui.animationMoveY = dy.value; });
+    var frameLabel = element('label', '', 'Frames (all or 1, 3, 5)');
+    var frames = element('input'); frames.type = 'text'; frames.value = ui.animationAlignFrames || 'all';
+    frames.setAttribute('data-art-focus-key', 'animation-align-frames');
+    frames.addEventListener('input', function() { ui.animationAlignFrames = frames.value; });
+    frameLabel.appendChild(frames); panel.appendChild(frameLabel);
+    var sequenceLabel = element('label', '', 'Private sequences to translate');
+    var sequenceSelect = element('select'); sequenceSelect.multiple = true;
+    sequenceSelect.setAttribute('data-art-focus-key', 'animation-translate-sequences');
+    var privateRows = Object.keys(rom.animationSequences.separations).map(function(id) { return rom.animationSequences.separations[id]; })
+      .filter(function(row) { return row.classId === animation.spec.classId; });
+    if (ui.animationAlignSequences && !privateRows.some(function(row) { return ui.animationAlignSequences.indexOf(row.id) >= 0; })) ui.animationAlignSequences = null;
+    privateRows.forEach(function(row) {
+      var option = element('option', '', animationLabel(row.syntheticAnimation));
+      // Route identity is stable even when appended selectors are reindexed.
+      option.value = row.id;
+      option.selected = ui.animationAlignSequences ? ui.animationAlignSequences.indexOf(option.value) >= 0 : row === separation;
+      sequenceSelect.appendChild(option);
+    });
+    sequenceSelect.addEventListener('change', function() { ui.animationAlignSequences = Array.from(sequenceSelect.selectedOptions).map(function(option) { return option.value; }); });
+    sequenceLabel.appendChild(sequenceSelect); panel.appendChild(sequenceLabel);
+    var apply = button('Translate Selected Frames', 'btn-secondary', function() {
+      try {
+        var indexes = frames.value.trim().toLowerCase() === 'all' ? null : frames.value.split(',').map(function(value) {
+          if (!/^\s*\d+\s*$/.test(value)) throw new Error('Use all or comma-separated frame numbers.');
+          return Number(value.trim()) - 1;
+        });
+        var targets = Array.from(sequenceSelect.selectedOptions).map(function(option) { return { separation: rom.animationSequences.separations[option.value], frames: indexes }; });
+        OB64.animationSequences.translateFrames(rom, targets, Number(dx.value), Number(dy.value)); changed(options); rerender();
+      } catch (error) { notify(options, error.message); }
+    });
+    apply.disabled = !privateRows.length; panel.appendChild(apply);
+    var compareLabel = element('label', '', 'Compare sequence'); var compare = element('select');
+    compare.setAttribute('data-art-focus-key', 'animation-compare');
+    var choices = panel.open ? animationSequenceCatalogRows(state.animations, rom.animationSequences, animation.spec.classId, 0, { includeIdle: true, includeFixedActions: true }).concat(
+      animationSequenceCatalogRows(state.animations, rom.animationSequences, animation.spec.classId, 1, { includeIdle: true, includeFixedActions: true })) : [];
+    var none = element('option', '', 'Choose idle, movement, or attack'); none.value = ''; compare.appendChild(none);
+    choices.forEach(function(row) { var option = element('option', '', animationLabel(row)); option.value = row.key; compare.appendChild(option); });
+    compare.value = choices.some(function(row) { return row.key === ui.animationCompareKey; }) ? ui.animationCompareKey : '';
+    compare.addEventListener('change', function() { ui.animationCompareKey = compare.value; rerender(); });
+    compareLabel.appendChild(compare); panel.appendChild(compareLabel);
+    var compared = choices.find(function(row) { return row.key === compare.value; });
+    if (compared) {
+      var left = Math.min(0, animation.canvas.originX, compared.canvas.originX) - 16;
+      var top = Math.min(0, animation.canvas.originY, compared.canvas.originY) - 16;
+      var right = Math.max(0, animation.canvas.originX + animation.canvas.width, compared.canvas.originX + compared.canvas.width) + 16;
+      var bottom = Math.max(0, animation.canvas.originY + animation.canvas.height, compared.canvas.originY + compared.canvas.height) + 16;
+      var sharedCanvas = { originX: left, originY: top, endX: right, endY: bottom, width: right - left, height: bottom - top };
+      var baseline = Object.assign({}, animation, { canvas: sharedCanvas, showOrigin: true });
+      var comparison = Object.assign({}, compared, { canvas: sharedCanvas, showOrigin: true });
+      panel.appendChild(animationSequencePreview(state, baseline, Object.assign({}, ui, { animationAutoFit: true }), { caption: 'Current sequence · shared origin' }));
+      panel.appendChild(animationSequencePreview(state, comparison, Object.assign({}, ui, { animationAutoFit: true }), { caption: animationLabel(compared) + ' · shared origin' }));
+    }
+    return panel;
   }
 
   function editor(state, rom, animation, frame, layer, ui, options, rerender) {
@@ -6363,7 +6555,35 @@ window.OB64 = window.OB64 || {};
     copyFrame.title = separation
       ? 'Replace this frame from any class, sequence, and frame.'
       : 'Create a separated private sequence before replacing a frame.';
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.appendAssetTransfers) {
+      var transferKind = element('select');
+      [['sprite', 'Selected layer'], ['frame', 'Current frame'], ['sequence', 'Complete sequence']].forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; transferKind.appendChild(option);
+      });
+      transferKind.value = ui.animationTransferKind || 'frame';
+      transferKind.setAttribute('aria-label', 'Reusable asset content');
+      transferKind.addEventListener('change', function() { ui.animationTransferKind = transferKind.value; });
+      headingActions.appendChild(transferKind);
+      OB64.spriteEditorUI.appendAssetTransfers(headingActions, rom, function(library) {
+        var kind = transferKind.value;
+        return OB64.spriteLibrary.assetFromFrames(library, {
+          name: animationLabel(animation), kind: kind, width: animation.canvas.width, height: animation.canvas.height,
+          anchor: { x: -animation.canvas.originX, y: -animation.canvas.originY },
+          frames: OB64.spriteEditorUI.framesFromAnimation(rom, animation, kind, frame.sequenceIndex, layer.ordinal, weaponChildForAnimation(ui, animation)),
+          provenance: { source: 'combat-animation', key: animation.key }
+        });
+      }, options);
+    }
     headingActions.appendChild(copyFrame);
+    var duplicate = button('Duplicate Frame', 'btn-secondary', function() {
+      try {
+        ui.animationFrame = OB64.animationSequences.duplicateFrame(rom, separation, frame.sequenceIndex);
+        ui.animationLayer = 0; changed(options); rerender();
+      } catch (error) { notify(options, error.message); }
+    });
+    duplicate.disabled = !separation;
+    duplicate.title = 'Insert independent art, positions, and the same duration after this frame.';
+    headingActions.appendChild(duplicate);
     var addFrame = button('Add Frame', 'btn-secondary', function() {
       try {
         var frameIndex = OB64.animationSequences.addBlankFrame(
@@ -6420,21 +6640,30 @@ window.OB64 = window.OB64 || {};
         childOrdinal);
       if (scopePanel) section.appendChild(scopePanel);
     }
-    if (source.editable || separation) {
-      section.appendChild(toolbar(state, rom, animation, frame, layer,
-        separation, ui, options, rerender));
-    }
+    section.appendChild(toolbar(state, rom, animation, frame, layer,
+      separation, ui, options, rerender));
+    section.appendChild(alignmentPanel(state, rom, animation, frame, layer, separation, ui, options, rerender));
     var workbench = element('div', 'animation-frame-workbench');
     workbench.appendChild(fullFramePreview(state, animation, frame, ui));
     var editStage = element('div', 'animation-edit-stage');
+    editStage.setAttribute('data-art-scroll-key', 'animation:edit-stage:' + animation.key);
     var canvas = element('canvas', 'animation-edit-canvas');
-    drawFrame(canvas, animation, frame, state.animations, 8, layer, null,
+    canvas.setAttribute('data-art-focus-key', 'animation-edit-canvas');
+    var previewAnimation = stablePreviewAnimation(state, animation, ui);
+    drawFrame(canvas, previewAnimation, frame, state.animations, 8, layer, null,
       source.editable,
       weaponChildForAnimation(ui, animation));
     if (source.editable || separation) {
-      installEditing(canvas, state, rom, separation, animation, frame, layer,
+      installEditing(canvas, state, rom, separation, previewAnimation, frame, layer,
         ui, options, rerender);
     }
+    var coordinates = element('p', '', 'Local sprite coordinates · origin (0, 0) · Layer X ' + layer.drawOffsetX + ', Y ' + layer.drawOffsetY);
+    canvas.addEventListener('pointermove', function(event) {
+      var point = rawNativeCoordinate(canvas, event, previewAnimation);
+      coordinates.textContent = 'Local sprite coordinates · Cursor X ' + (point.x + previewAnimation.canvas.originX) + ', Y ' +
+        (point.y + previewAnimation.canvas.originY) + ' · Layer X ' + layer.drawOffsetX + ', Y ' + layer.drawOffsetY;
+    });
+    editStage.appendChild(coordinates);
     editStage.appendChild(canvas);
     workbench.appendChild(editStage);
     workbench.appendChild(animationSequencePreview(state, animation, ui));
@@ -6546,7 +6775,7 @@ window.OB64 = window.OB64 || {};
     var selectedSource = animation.artByKey[layer.sourceKey];
     if (selectedSource.editable) {
       sidebar.appendChild(palettePanel(selectedSource,
-        selectedChildOrdinal(layer, selectedSource, ui), ui, rerender));
+        selectedChildOrdinal(layer, selectedSource, ui), ui, rerender, state.animations));
     }
     workspace.appendChild(sidebar);
     mainColumn.appendChild(workspace);
@@ -6627,6 +6856,7 @@ window.OB64 = window.OB64 || {};
     preferredAnimation: preferredAnimation,
     defaultPreviewExplanation: defaultPreviewExplanation,
     canonicalAnimationCatalog: canonicalAnimationCatalog,
+    stablePreviewAnimation: stablePreviewAnimation,
     effectiveAnimationCatalog: effectiveAnimationCatalog,
     requestAnimationRoute: requestAnimationRoute,
     assignmentTargetAnimation: assignmentTargetAnimation,

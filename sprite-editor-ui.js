@@ -180,7 +180,7 @@ window.OB64 = window.OB64 || {};
     var output = new Uint8ClampedArray(asset.width * asset.height * 4);
     frame.layers.forEach(function(layer, index) {
       if (layer.visible === false) return;
-      var pixels = index === layerIndex && working ? working : layer.pixels;
+      var pixels = L.layerCanvasPixels(asset, layer, index === layerIndex && working ? working : layer.pixels);
       for (var offset = 0; offset < output.length; offset += 4) {
         if (!pixels[offset + 3]) continue;
         var blended = sourceOver(
@@ -266,7 +266,9 @@ window.OB64 = window.OB64 || {};
     var output = new Uint8ClampedArray(selection.width * selection.height * 4);
     for (var y = 0; y < selection.height; y++) {
       for (var x = 0; x < selection.width; x++) {
-        var sourceOffset = ((selection.y + y) * asset.width + selection.x + x) * 4;
+        var sx = selection.x + x - (layer.x || 0), sy = selection.y + y - (layer.y || 0);
+        if (sx < 0 || sy < 0 || sx >= (layer.width || asset.width) || sy >= (layer.height || asset.height)) continue;
+        var sourceOffset = (sy * (layer.width || asset.width) + sx) * 4;
         output.set(layer.pixels.subarray(sourceOffset, sourceOffset + 4),
           (y * selection.width + x) * 4);
       }
@@ -279,6 +281,7 @@ window.OB64 = window.OB64 || {};
     var working = null;
     var changedPixels = false;
     var selectionStart = null;
+    var moveStart = null;
     var frameIndex = ui.frameIndex;
     var layerIndex = ui.layerIndex;
     var layer = asset.frames[frameIndex].layers[layerIndex];
@@ -291,18 +294,29 @@ window.OB64 = window.OB64 || {};
         ui.zoom, ui.background, ui.showGrid, ui.selection);
     }
 
+    var layerWidth = layer.width || asset.width, layerHeight = layer.height || asset.height;
+    function localPoint(point) { return { x: point.x - (layer.x || 0), y: point.y - (layer.y || 0) }; }
     function pointAction(point) {
-      var offset = (point.y * asset.width + point.x) * 4;
+      if (ui.tool === 'move') {
+        moveStart = { point: point, x: layer.x || 0, y: layer.y || 0 };
+        return 'move';
+      }
+      if (ui.tool === 'select') {
+        selectionStart = point; ui.selection = { x: point.x, y: point.y, width: 1, height: 1 }; return 'select';
+      }
+      point = localPoint(point);
+      if (point.x < 0 || point.y < 0 || point.x >= layerWidth || point.y >= layerHeight) return 'done';
+      var offset = (point.y * layerWidth + point.x) * 4;
       if (ui.tool === 'eyedropper') {
         ui.color = [layer.pixels[offset], layer.pixels[offset + 1],
           layer.pixels[offset + 2], layer.pixels[offset + 3]];
-        ui.tool = 'pencil';
+        if (!L.keepEyedropper()) ui.tool = 'pencil';
         rerender();
         return 'done';
       }
       working = new Uint8ClampedArray(layer.pixels);
       if (ui.tool === 'fill') {
-        changedPixels = flood(working, asset.width, asset.height,
+        changedPixels = flood(working, layerWidth, layerHeight,
           point.x, point.y, ui.color);
         return 'instant';
       }
@@ -318,19 +332,14 @@ window.OB64 = window.OB64 || {};
         }
         return 'instant';
       }
-      if (ui.tool === 'select') {
-        selectionStart = point;
-        ui.selection = { x: point.x, y: point.y, width: 1, height: 1 };
-        return 'select';
-      }
       var color = ui.tool === 'eraser' ? [0, 0, 0, 0] : ui.color;
-      changedPixels = applyBrush(working, asset.width, asset.height,
+      changedPixels = applyBrush(working, layerWidth, layerHeight,
         point, ui.brushSize, color);
       return 'draw';
     }
 
     canvas.addEventListener('pointerdown', function(event) {
-      canvas.focus();
+      canvas.focus({ preventScroll: true });
       var point = coordinate(canvas, event, asset.width, asset.height);
       changedPixels = false;
       var mode = pointAction(point);
@@ -343,7 +352,15 @@ window.OB64 = window.OB64 || {};
     canvas.addEventListener('pointermove', function(event) {
       if (!drawing) return;
       var point = coordinate(canvas, event, asset.width, asset.height);
-      if (ui.tool === 'select') {
+      if (ui.tool === 'move') {
+        var rect = canvas.getBoundingClientRect();
+        point = { x: Math.floor((event.clientX - rect.left) * asset.width / rect.width),
+          y: Math.floor((event.clientY - rect.top) * asset.height / rect.height) };
+      }
+      if (ui.tool === 'move') {
+        layer.x = clamp(moveStart.x + point.x - moveStart.point.x, -32768, 32767);
+        layer.y = clamp(moveStart.y + point.y - moveStart.point.y, -32768, 32767);
+      } else if (ui.tool === 'select') {
         var left = Math.min(selectionStart.x, point.x);
         var top = Math.min(selectionStart.y, point.y);
         ui.selection = {
@@ -353,8 +370,9 @@ window.OB64 = window.OB64 || {};
           height: Math.max(selectionStart.y, point.y) - top + 1
         };
       } else if (ui.tool === 'pencil' || ui.tool === 'eraser') {
+        point = localPoint(point);
         var color = ui.tool === 'eraser' ? [0, 0, 0, 0] : ui.color;
-        changedPixels = applyBrush(working, asset.width, asset.height,
+        changedPixels = applyBrush(working, layerWidth, layerHeight,
           point, ui.brushSize, color) || changedPixels;
       }
       drawWorking();
@@ -364,6 +382,15 @@ window.OB64 = window.OB64 || {};
       drawing = false;
       if (event && canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
+      }
+      if (ui.tool === 'move') {
+        var x = layer.x, y = layer.y;
+        layer.x = moveStart.x; layer.y = moveStart.y;
+        if (!event || event.type !== 'pointercancel') {
+          L.setLayerPosition(state, asset.id, frameIndex, layerIndex, x, y);
+          changed(options);
+        }
+        rerender(); return;
       }
       if (ui.tool === 'select') {
         rerender();
@@ -396,12 +423,12 @@ window.OB64 = window.OB64 || {};
         var pasted = new Uint8ClampedArray(layer.pixels);
         for (var y = 0; y < ui.clipboard.height; y++) {
           for (var x = 0; x < ui.clipboard.width; x++) {
-            var targetX = ui.selection.x + x;
-            var targetY = ui.selection.y + y;
-            if (targetX >= asset.width || targetY >= asset.height) continue;
+            var targetX = ui.selection.x + x - (layer.x || 0);
+            var targetY = ui.selection.y + y - (layer.y || 0);
+            if (targetX < 0 || targetY < 0 || targetX >= (layer.width || asset.width) || targetY >= (layer.height || asset.height)) continue;
             var sourceOffset = (y * ui.clipboard.width + x) * 4;
             pasted.set(ui.clipboard.rgba.subarray(sourceOffset, sourceOffset + 4),
-              (targetY * asset.width + targetX) * 4);
+              (targetY * (layer.width || asset.width) + targetX) * 4);
           }
         }
         L.replaceLayerPixels(state, asset.id, frameIndex, layerIndex, pasted);
@@ -438,10 +465,19 @@ window.OB64 = window.OB64 || {};
     var bar = element('div', 'sprite-toolbox');
     [['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
       ['eyedropper', 'Eyedropper'], ['replace', 'Replace Color'],
-      ['select', 'Select']].forEach(function(row) {
+      ['select', 'Select'], ['move', 'Move Layer']].forEach(function(row) {
       bar.appendChild(toolButton(row[0], row[1], ui, rerender));
     });
 
+    var eyedrop = element('select');
+    [['switch', 'Switch to Pencil'], ['keep', 'Keep Eyedropper']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; eyedrop.appendChild(option);
+    });
+    eyedrop.setAttribute('aria-label', 'After sampling a color');
+    eyedrop.setAttribute('data-sprite-focus-key', 'eyedropper-preference');
+    eyedrop.value = L.keepEyedropper() ? 'keep' : 'switch';
+    eyedrop.addEventListener('change', function() { L.keepEyedropper(eyedrop.value === 'keep'); });
+    bar.appendChild(eyedrop);
     var brush = element('label', 'sprite-compact-control');
     brush.appendChild(element('span', '', 'Brush'));
     var brushSelect = element('select');
@@ -485,12 +521,12 @@ window.OB64 = window.OB64 || {};
       var output = new Uint8ClampedArray(layer.pixels);
       for (var y = 0; y < ui.clipboard.height; y++) {
         for (var x = 0; x < ui.clipboard.width; x++) {
-          var targetX = ui.selection.x + x;
-          var targetY = ui.selection.y + y;
-          if (targetX >= asset.width || targetY >= asset.height) continue;
+          var targetX = ui.selection.x + x - (layer.x || 0);
+          var targetY = ui.selection.y + y - (layer.y || 0);
+          if (targetX < 0 || targetY < 0 || targetX >= (layer.width || asset.width) || targetY >= (layer.height || asset.height)) continue;
           var sourceOffset = (y * ui.clipboard.width + x) * 4;
           output.set(ui.clipboard.rgba.subarray(sourceOffset, sourceOffset + 4),
-            (targetY * asset.width + targetX) * 4);
+            (targetY * (layer.width || asset.width) + targetX) * 4);
         }
       }
       L.replaceLayerPixels(state, asset.id, ui.frameIndex, ui.layerIndex, output);
@@ -542,21 +578,21 @@ window.OB64 = window.OB64 || {};
     colorLabel.appendChild(color);
     panel.appendChild(colorLabel);
     var alphaLabel = element('label', 'sprite-color-control');
-    var alphaText = element('span', '', 'Alpha: ' + ui.color[3] + ' / 255');
+    var alphaText = element('span', '', 'Opacity: ' + Math.round(ui.color[3] * 100 / 255) + '% (' + ui.color[3] + ' / 255)');
     alphaLabel.appendChild(alphaText);
     var alpha = element('input');
     alpha.type = 'range'; alpha.min = '0'; alpha.max = '255'; alpha.step = '1';
     alpha.value = String(ui.color[3]);
     alpha.addEventListener('input', function() {
       ui.color[3] = Number(alpha.value);
-      alphaText.textContent = 'Alpha: ' + ui.color[3] + ' / 255';
+      alphaText.textContent = 'Opacity: ' + Math.round(ui.color[3] * 100 / 255) + '% (' + ui.color[3] + ' / 255)';
       swatch.style.background = swatchColor();
     });
     alpha.addEventListener('change', rerender);
     alphaLabel.appendChild(alpha);
     panel.appendChild(alphaLabel);
     panel.appendChild(element('small', '',
-      'Alpha 0 is transparent. PNG and WebM exports preserve this channel.'));
+      'Opacity 0% is transparent. PNG and WebM exports preserve this channel.'));
     return panel;
   }
 
@@ -642,10 +678,28 @@ window.OB64 = window.OB64 || {};
     panel.appendChild(actions);
 
     var transform = element('div', 'sprite-transform-tools');
-    transform.appendChild(element('strong', '', 'Selected layer'));
+    transform.appendChild(element('strong', '', 'Layer position · local sprite coordinates'));
+    var selected = frame.layers[ui.layerIndex];
+    ['x', 'y'].forEach(function(axis) {
+      var label = element('label', '', axis.toUpperCase());
+      var input = element('input'); input.type = 'number'; input.min = '-32768'; input.max = '32767';
+      input.value = String((selected[axis] || 0) - (asset.anchor && asset.anchor[axis] || 0));
+      input.setAttribute('data-sprite-focus-key', 'layer-position-' + axis);
+      input.addEventListener('change', function() {
+        var x = axis === 'x' ? Number(input.value) + (asset.anchor && asset.anchor.x || 0) : selected.x || 0;
+        var y = axis === 'y' ? Number(input.value) + (asset.anchor && asset.anchor.y || 0) : selected.y || 0;
+        try { L.setLayerPosition(state, asset.id, ui.frameIndex, ui.layerIndex, x, y); changed(options); rerender(); }
+        catch (error) { notify(options, error.message); }
+      });
+      label.appendChild(input); transform.appendChild(label);
+    });
+    transform.appendChild(button('Crop Layer to Canvas', 'btn-secondary', function() {
+      L.cropLayerToCanvas(state, asset.id, ui.frameIndex, ui.layerIndex); changed(options); rerender();
+    }));
     [['←', -1, 0], ['→', 1, 0], ['↑', 0, -1], ['↓', 0, 1]].forEach(function(row) {
       transform.appendChild(button(row[0], 'btn-secondary', function() {
-        L.shiftLayer(state, asset.id, ui.frameIndex, ui.layerIndex, row[1], row[2]);
+        L.setLayerPosition(state, asset.id, ui.frameIndex, ui.layerIndex,
+          (selected.x || 0) + row[1], (selected.y || 0) + row[2]);
         changed(options);
         rerender();
       }));
@@ -661,7 +715,47 @@ window.OB64 = window.OB64 || {};
       rerender();
     }));
     panel.appendChild(transform);
+    var anchorTools = element('div', 'sprite-transform-tools');
+    anchorTools.appendChild(element('strong', '', 'Alignment anchor · canvas pixels'));
+    ['x', 'y'].forEach(function(axis) {
+      var label = element('label', '', axis.toUpperCase()); var input = element('input');
+      input.type = 'number'; input.min = '-32768'; input.max = '32767'; input.value = String(asset.anchor && asset.anchor[axis] || 0);
+      input.setAttribute('data-sprite-focus-key', 'alignment-anchor-' + axis);
+      input.addEventListener('change', function() {
+        var anchor = asset.anchor || { x: 0, y: 0 };
+        try { L.setAnchor(state, asset.id, axis === 'x' ? Number(input.value) : anchor.x,
+          axis === 'y' ? Number(input.value) : anchor.y); changed(options); rerender(); }
+        catch (error) { notify(options, error.message); }
+      });
+      label.appendChild(input); anchorTools.appendChild(label);
+    });
+    panel.appendChild(anchorTools);
     panel.appendChild(colorPanel(ui, rerender));
+    var usedPanel = element('section', 'sprite-color-panel');
+    var scope = element('select');
+    ['layer', 'frame', 'sequence'].forEach(function(value) {
+      var option = element('option', '', 'Used colors · ' + value); option.value = value; scope.appendChild(option);
+    });
+    scope.setAttribute('data-sprite-focus-key', 'used-color-scope');
+    scope.value = ui.usedColorScope || 'layer';
+    scope.addEventListener('change', function() { ui.usedColorScope = scope.value; ui.usedColorPage = 0; rerender(); });
+    usedPanel.appendChild(scope);
+    var colors = L.usedColors(asset, scope.value, ui.frameIndex, ui.layerIndex);
+    var page = clamp(ui.usedColorPage || 0, 0, Math.max(0, Math.ceil(colors.length / 256) - 1));
+    usedPanel.appendChild(element('small', '', colors.length + ' used colors'));
+    colors.slice(page * 256, (page + 1) * 256).forEach(function(color) {
+      var swatch = button('', 'sprite-color-swatch', function() { ui.color = color.slice(); rerender(); });
+      swatch.style.background = 'rgba(' + color.slice(0, 3).join(',') + ',' + color[3] / 255 + ')';
+      swatch.title = 'RGB ' + color.slice(0, 3).join(', ') + ' · Opacity ' + Math.round(color[3] * 100 / 255) + '%';
+      swatch.setAttribute('aria-label', swatch.title); usedPanel.appendChild(swatch);
+    });
+    if (colors.length > 256) {
+      [-1, 1].forEach(function(delta) {
+        var nav = button(delta < 0 ? 'Previous colors' : 'Next colors', 'btn-secondary', function() { ui.usedColorPage = page + delta; rerender(); });
+        nav.disabled = page + delta < 0 || (page + delta) * 256 >= colors.length; usedPanel.appendChild(nav);
+      });
+    }
+    panel.appendChild(usedPanel);
     return panel;
   }
 
@@ -746,7 +840,7 @@ window.OB64 = window.OB64 || {};
     var ticks = element('label', 'sprite-compact-control');
     ticks.appendChild(element('span', '', 'Frame ticks'));
     var tickInput = element('input');
-    tickInput.type = 'number'; tickInput.min = '1'; tickInput.max = '255';
+    tickInput.type = 'number'; tickInput.min = '0'; tickInput.max = '255';
     tickInput.step = '1'; tickInput.value = String(asset.frames[ui.frameIndex].ticks);
     tickInput.setAttribute('data-sprite-focus-key', 'frame-ticks');
     tickInput.addEventListener('change', function() {
@@ -780,10 +874,23 @@ window.OB64 = window.OB64 || {};
     var scroll = element('div', 'sprite-canvas-scroll');
     scroll.setAttribute('data-sprite-scroll-key', 'sprite:canvas:' + asset.id);
     var canvas = element('canvas', 'sprite-edit-canvas');
+    canvas.setAttribute('data-sprite-focus-key', 'sprite-edit-canvas');
     paintPixels(canvas, asset.width, asset.height,
       L.compositeFrame(asset, ui.frameIndex), ui.zoom,
       ui.background, ui.showGrid, ui.selection);
+    var anchor = asset.anchor || { x: 0, y: 0 };
+    var marker = canvas.getContext('2d'); marker.save(); marker.strokeStyle = '#ff5ad6'; marker.lineWidth = 1;
+    var ox = anchor.x * ui.zoom, oy = anchor.y * ui.zoom;
+    marker.beginPath(); marker.moveTo(ox - 7, oy); marker.lineTo(ox + 7, oy);
+    marker.moveTo(ox, oy - 7); marker.lineTo(ox, oy + 7); marker.stroke(); marker.restore();
     installCanvasEditing(canvas, state, asset, ui, options, rerender);
+    var coordinateLabel = element('p', '', 'Local sprite coordinates · Cursor —');
+    canvas.addEventListener('pointermove', function(event) {
+      var point = coordinate(canvas, event, asset.width, asset.height);
+      var anchor = asset.anchor || { x: 0, y: 0 };
+      coordinateLabel.textContent = 'Local sprite coordinates · Cursor X ' + (point.x - anchor.x) + ', Y ' + (point.y - anchor.y);
+    });
+    main.appendChild(coordinateLabel);
     scroll.appendChild(canvas);
     main.appendChild(scroll);
     workspace.appendChild(main);
@@ -935,7 +1042,7 @@ window.OB64 = window.OB64 || {};
     var maximumColors = spriteImageColorLimit(asset);
     var settings = {
       resizeMode: 'nearest', panX: 0.5, panY: 0.5,
-      zoom: 1, dither: false
+      zoom: 1, dither: false, placementMode: 'original'
     };
     var currentResult = null;
     var scheduledFrame = null;
@@ -973,6 +1080,16 @@ window.OB64 = window.OB64 || {};
     layout.appendChild(previewPanel);
 
     var controls = element('section', 'art-import-controls');
+    var placementLabel = element('label', 'art-import-control');
+    placementLabel.appendChild(element('span', '', 'Sizing'));
+    var placement = element('select');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; placement.appendChild(option);
+    });
+    placement.value = settings.placementMode;
+    placement.addEventListener('change', function() { settings.placementMode = placement.value; schedulePreview(); });
+    placementLabel.appendChild(placement); controls.appendChild(placementLabel);
+    controls.appendChild(element('p', '', 'Original Size preserves source pixels and may extend outside the canvas. Crop Layer to Canvas removes hidden pixels.'));
     var resizeLabel = element('label', 'art-import-control');
     resizeLabel.appendChild(element('span', '', 'Resize method'));
     var resizeSelect = element('select');
@@ -1071,8 +1188,8 @@ window.OB64 = window.OB64 || {};
     var applyButton = button('Import into Layer', 'error-modal-ok', function() {
       if (!currentResult) return;
       try {
-        L.replaceLayerPixels(
-          state, asset.id, frameIndex, layerIndex, currentResult.rgba);
+        L.replaceLayerImage(
+          state, asset.id, frameIndex, layerIndex, currentResult.rgba, currentResult.targetWidth, currentResult.targetHeight);
         changed(options);
         var crop = currentResult.crop;
         notify(options, 'Layer image import applied: file=' + source.name +
@@ -1104,6 +1221,9 @@ window.OB64 = window.OB64 || {};
     function preview() {
       scheduledFrame = null;
       try {
+        targetWidth = settings.placementMode === 'original' ? source.width : asset.width;
+        targetHeight = settings.placementMode === 'original' ? source.height : asset.height;
+        if (targetWidth > L.MAX_DIMENSION || targetHeight > L.MAX_DIMENSION) throw new Error('Source exceeds the Sprite Library dimension limit. Choose Fit, Fill/Crop, or Stretch.');
         currentResult = OB64.art.prepareSpriteImageImport(
           source.rgba, source.width, source.height,
           targetWidth, targetHeight, {
@@ -1112,7 +1232,8 @@ window.OB64 = window.OB64 || {};
             panY: settings.panY,
             zoom: settings.zoom,
             dither: settings.dither,
-            maximumColors: maximumColors
+            maximumColors: maximumColors, placementMode: settings.placementMode,
+            preserveRgba: settings.placementMode === 'original'
           });
         previewHost.innerHTML = '';
         var scale = Math.max(1, Math.min(8,
@@ -1122,7 +1243,8 @@ window.OB64 = window.OB64 || {};
           currentResult.rgba, scale, ui.background, false);
         previewHost.appendChild(canvas);
         var crop = currentResult.crop;
-        stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
+        stats.textContent = 'Source ' + source.width + '×' + source.height + ' · Output ' + targetWidth + '×' + targetHeight +
+          ' · Scale ' + (targetWidth / crop.width).toFixed(2) + '× / ' + (targetHeight / crop.height).toFixed(2) + '× · Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
           crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
           '\u00D7 zoom \u00B7 ' +
@@ -1133,6 +1255,8 @@ window.OB64 = window.OB64 || {};
           (currentResult.dithered ? ' \u00B7 ordered dither applied' : '') +
           ' \u00B7 ' + currentResult.outputNonOpaquePixels +
           ' non-opaque pixels';
+        if (currentResult.preservedRgba) stats.textContent = 'Source ' + source.width + '×' + source.height +
+          ' · Output ' + targetWidth + '×' + targetHeight + ' · Scale 1× · Exact RGBA preserved · ' + currentResult.colorCount + ' colors';
         stats.classList.remove('blocked');
         applyButton.disabled = false;
       } catch (error) {
@@ -1484,9 +1608,21 @@ window.OB64 = window.OB64 || {};
     format.focus();
   }
 
-  function animationSources(rom) {
+  function animationSources(rom, classId) {
+    if (Number.isInteger(classId) && OB64.animationUI && OB64.animationUI.animationSequenceCatalogRows) {
+      var rows = OB64.animationUI.animationSequenceCatalogRows(rom.art.animations, rom.animationSequences, classId, 0,
+        { includeIdle: true, includeFixedActions: true }).concat(
+        OB64.animationUI.animationSequenceCatalogRows(rom.art.animations, rom.animationSequences, classId, 1,
+        { includeIdle: true, includeFixedActions: true }));
+      var assigned = OB64.animationUI.effectiveAnimationCatalog(rom.art, rom).specs.filter(function(row) { return row.spec.classId === classId; });
+      var seen = {};
+      assigned = assigned.map(function(row) { return Object.assign({}, row, { spriteSourceAssigned: true }); });
+      return assigned.concat(rows).filter(function(row) {
+        if (seen[row.key]) return false; seen[row.key] = true; return true;
+      });
+    }
     var rows = rom && rom.art && rom.art.animations
-      ? rom.art.animations.specs.slice() : [];
+      ? rom.art.animations.specs.concat(rom.art.animations.artRouteTemplates || []) : [];
     Object.keys(rom && rom.animationSequences &&
       rom.animationSequences.separations || {}).sort().forEach(function(id) {
       var animation = rom.animationSequences.separations[id].syntheticAnimation;
@@ -1498,7 +1634,8 @@ window.OB64 = window.OB64 || {};
   }
 
   function animationLabel(animation) {
-    return animation.spec.className + ' · ' + animation.spec.actionName + ' · ' +
+    var action = animation.spec.nativeSelectorCandidate ? 'Native sequence ' + Number(animation.spec.selector).toString(16).toUpperCase().padStart(2, '0') : animation.spec.actionName;
+    return (animation.spriteSourceAssigned ? 'Assigned · ' : animation.spec.separatedCopy ? 'Private · ' : '') + animation.spec.className + ' · ' + action + ' · ' +
       (OB64.animationUI && OB64.animationUI.animationArtVariantLabel
         ? OB64.animationUI.animationArtVariantLabel(animation)
         : animation.spec.variantLabel || 'Art');
@@ -1566,12 +1703,14 @@ window.OB64 = window.OB64 || {};
   }
 
   function replaceOptions(select, rows, valueFor, labelFor) {
+    var wanted = select.value;
     select.innerHTML = '';
     rows.forEach(function(row) {
       var option = element('option', '', labelFor(row));
       option.value = valueFor(row);
       select.appendChild(option);
     });
+    if (rows.some(function(row) { return String(valueFor(row)) === wanted; })) select.value = wanted;
     if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
   }
 
@@ -1605,6 +1744,12 @@ window.OB64 = window.OB64 || {};
         var option = element('option', '', row[1]); option.value = row[0];
         kindField.select.appendChild(option);
       });
+    var classField = selectField('Combat class');
+    var classIds = {};
+    animationSources(rom).forEach(function(row) {
+      if (classIds[row.spec.classId]) return; classIds[row.spec.classId] = true;
+      var option = element('option', '', row.spec.className); option.value = String(row.spec.classId); classField.select.appendChild(option);
+    });
     var sourceField = selectField('Art source');
     var modeField = selectField('Import as');
     var frameField = selectField('Frame');
@@ -1651,6 +1796,7 @@ window.OB64 = window.OB64 || {};
     function populateSources() {
       var kind = kindField.select.value;
       populateModes();
+      show(classField, kind === 'combat');
       show(appearanceField, kind === 'cutscene');
       show(paletteField, kind === 'army');
       if (kind === 'avatar') {
@@ -1681,7 +1827,7 @@ window.OB64 = window.OB64 || {};
                 ? row.model.classNames.join(', ') : 'unused plane');
           });
       } else if (kind === 'combat') {
-        currentRows = animationSources(rom);
+        currentRows = animationSources(rom, Number(classField.select.value));
         replaceOptions(sourceField.select, currentRows,
           function(row) { return row.key; }, animationLabel);
       } else {
@@ -1751,7 +1897,7 @@ window.OB64 = window.OB64 || {};
         function(frame) { return String(frame.sequenceIndex); },
         function(frame) { return 'Frame ' + (frame.sequenceIndex + 1) +
           ' · ' + frame.ticks + ' ticks'; });
-      frameField.select.selectedIndex = 0;
+      if (frameField.select.selectedIndex < 0) frameField.select.selectedIndex = 0;
       populateLayers();
     }
 
@@ -1912,6 +2058,7 @@ window.OB64 = window.OB64 || {};
             width: currentAnimation.canvas.width,
             height: currentAnimation.canvas.height,
             frames: frames,
+            anchor: { x: -currentAnimation.canvas.originX, y: -currentAnimation.canvas.originY },
             provenance: { source: kind === 'combat'
               ? 'combat-animation' : 'cutscene-actor',
               key: currentAnimation.key, label: currentName }
@@ -1927,6 +2074,7 @@ window.OB64 = window.OB64 || {};
       }
     }
 
+    classField.select.addEventListener('change', populateSources);
     kindField.select.addEventListener('change', populateSources);
     sourceField.select.addEventListener('change', populateFrames);
     modeField.select.addEventListener('change', populateFrames);
@@ -2030,19 +2178,31 @@ window.OB64 = window.OB64 || {};
   }
 
   function selectedAssetSource(asset, frameIndex, layerIndex, layerOnly) {
-    var rgba = layerOnly
-      ? new Uint8ClampedArray(asset.frames[frameIndex].layers[layerIndex].pixels)
-      : L.compositeFrame(asset, frameIndex);
+    var layer = asset.frames[frameIndex].layers[layerIndex];
+    var anchor = asset.anchor || { x: 0, y: 0 };
     return {
-      name: asset.name,
-      format: 'Sprite Library',
-      width: asset.width,
-      height: asset.height,
-      rgba: rgba,
-      asset: asset,
-      frameIndex: frameIndex,
-      layerIndex: layerIndex
+      name: asset.name, format: 'Sprite Library',
+      width: layerOnly ? layer.width || asset.width : asset.width,
+      height: layerOnly ? layer.height || asset.height : asset.height,
+      rgba: layerOnly ? new Uint8ClampedArray(layer.pixels) : L.compositeFrame(asset, frameIndex),
+      anchor: layerOnly ? { x: anchor.x - (layer.x || 0), y: anchor.y - (layer.y || 0) } : Object.assign({}, anchor),
+      asset: asset, frameIndex: frameIndex, layerIndex: layerIndex
     };
+  }
+
+  function appendAssetTransfers(bar, rom, createAsset, options) {
+    if (!rom.spriteLibrary) L.initialize(rom);
+    function perform(exportFile) {
+      try {
+        var asset = createAsset(rom.spriteLibrary);
+        if (exportFile) downloadBlob(new Blob([L.assetFileText(asset)], { type: 'application/json' }), L.filename(asset));
+        else { L.addAsset(rom.spriteLibrary, asset); changed(options); notify(options, 'Saved ' + asset.name + ' to Sprite Library. Save Project to keep it.'); }
+      } catch (error) { notify(options, 'Asset transfer blocked: ' + error.message); }
+    }
+    var save = button('Save to Sprite Library', 'btn-secondary', function() { perform(false); });
+    var exportFile = button('Export Asset File', 'btn-secondary', function() { perform(true); });
+    save.title = exportFile.title = 'Preserves pixels, layer positions, frame durations, and the alignment anchor. Does not assign an animation.';
+    bar.appendChild(save); bar.appendChild(exportFile);
   }
 
   function openLibraryPicker(rom, options, onSelect) {
@@ -2125,7 +2285,7 @@ window.OB64 = window.OB64 || {};
       var previewCanvas = element('canvas');
       var previewScale = Math.max(1, Math.min(6,
         Math.floor(320 / Math.max(asset.width, asset.height))));
-      paintPixels(previewCanvas, asset.width, asset.height, source.rgba,
+      paintPixels(previewCanvas, source.width, source.height, source.rgba,
         previewScale, 'checkerboard', false);
       preview.appendChild(previewCanvas);
     }
@@ -2197,6 +2357,9 @@ window.OB64 = window.OB64 || {};
       shell.appendChild(empty);
     }
     panel.appendChild(shell);
+    Array.from(panel.querySelectorAll('input, select, button, canvas')).forEach(function(control, index) {
+      if (!control.getAttribute('data-sprite-focus-key')) control.setAttribute('data-sprite-focus-key', 'control-' + index);
+    });
     restoreScroll(panel, ui, preserveViewport);
     if (focus) {
       var replacement = panel.querySelector('[data-sprite-focus-key="' + focus.key + '"]');
@@ -2217,8 +2380,12 @@ window.OB64 = window.OB64 || {};
     captureScroll: captureScroll,
     restoreScroll: restoreScroll,
     selectedAssetSource: selectedAssetSource,
-    openLibraryPicker: openLibraryPicker,
+    appendAssetTransfers: appendAssetTransfers,
+    animationSources: animationSources,
     framesFromAnimation: framesFromAnimation,
+    installCanvasEditing: installCanvasEditing,
+    compositeWithLayer: compositeWithLayer,
+    openLibraryPicker: openLibraryPicker,
     knownSpriteTemplates: knownSpriteTemplates,
     spriteImageColorLimit: spriteImageColorLimit,
     webmSupported: webmSupported

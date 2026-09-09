@@ -773,6 +773,19 @@ window.OB64 = window.OB64 || {};
     return output;
   }
 
+  function importPlacement(width, height, targetWidth, targetHeight, options) {
+    options = options || {};
+    var mode = options.placementMode || 'fill';
+    if (mode === 'fill') return imageCropRect(width, height, targetWidth, targetHeight, options.panX, options.panY, options.zoom);
+    if (['original', 'fit', 'stretch'].indexOf(mode) < 0) throw new ArtError('Image placement mode is invalid');
+    var scale = mode === 'fit' ? Math.min(targetWidth / width, targetHeight / height) : 1;
+    var cropWidth = mode === 'stretch' ? width : targetWidth / scale;
+    var cropHeight = mode === 'stretch' ? height : targetHeight / scale;
+    return { x: mode === 'original' ? 0 : (width - cropWidth) / 2,
+      y: mode === 'original' ? 0 : (height - cropHeight) / 2,
+      width: cropWidth, height: cropHeight, zoom: 1 };
+  }
+
   function resizeImageSource(rgba, width, height, crop,
       targetWidth, targetHeight, mode) {
     if (mode === 'nearest') {
@@ -794,7 +807,7 @@ window.OB64 = window.OB64 || {};
       ? rgba5551Word(0, 0, 0, true) : options.backgroundWord;
     if (!(backgroundWord & 1)) throw new ArtError('Avatar import background must be opaque');
     var background = rgba5551(backgroundWord).slice(0, 3);
-    var crop = avatarCropRect(
+    var crop = options.placementMode ? importPlacement(width, height, 40, 48, options) : avatarCropRect(
       width, height, options.panX, options.panY, options.zoom);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeAvatarSource(rgba, width, height, crop, mode, background);
@@ -844,11 +857,22 @@ window.OB64 = window.OB64 || {};
     if (maximumColors < 1 || maximumColors > 256) {
       throw new ArtError('Sprite image color limit must be from 1 through 256');
     }
-    var crop = imageCropRect(width, height, targetWidth, targetHeight,
-      options.panX, options.panY, options.zoom);
+    var crop = importPlacement(width, height, targetWidth, targetHeight, options);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeImageSource(
       rgba, width, height, crop, targetWidth, targetHeight, mode);
+    if (options.preserveRgba) {
+      var exactColors = new Set(), nonOpaque = 0, sourceNonOpaque = 0;
+      for (var exactOffset = 0; exactOffset < resized.length; exactOffset += 4) {
+        exactColors.add(Array.prototype.join.call(resized.subarray(exactOffset, exactOffset + 4), ','));
+        if (resized[exactOffset + 3] !== 255) nonOpaque++;
+      }
+      for (var sourceOffset = 3; sourceOffset < rgba.length; sourceOffset += 4) if (rgba[sourceOffset] !== 255) sourceNonOpaque++;
+      return { rgba: resized, crop: crop, resizeMode: mode, targetWidth: targetWidth, targetHeight: targetHeight,
+        preservedRgba: true, sourceNativeColorCount: exactColors.size, colorCount: exactColors.size, quantized: false, dithered: false,
+        sourceNonOpaquePixels: sourceNonOpaque, outputNonOpaquePixels: nonOpaque };
+    }
+
     var pixelCount = targetWidth * targetHeight;
     var nativeWords = new Uint16Array(pixelCount);
     var visible = new Uint8Array(pixelCount);
@@ -909,8 +933,7 @@ window.OB64 = window.OB64 || {};
         targetHeight < 1 || targetHeight > 0xFFFF) {
       throw new ArtError('Animation frame target dimensions are invalid');
     }
-    var crop = imageCropRect(width, height, targetWidth, targetHeight,
-      options.panX, options.panY, options.zoom);
+    var crop = importPlacement(width, height, targetWidth, targetHeight, options);
     var mode = options.resizeMode || 'nearest';
     var resized = resizeImageSource(
       rgba, width, height, crop, targetWidth, targetHeight, mode);
@@ -959,7 +982,15 @@ window.OB64 = window.OB64 || {};
     for (var sourcePixel = 0; sourcePixel < width * height; sourcePixel++) {
       if (rgba[sourcePixel * 4 + 3] !== 255) sourceTransparentPixels++;
     }
+    var anchor = null;
+    if (options.anchor !== undefined && options.anchor !== null) {
+      if (!Number.isInteger(options.anchor.x) || !Number.isInteger(options.anchor.y)) throw new ArtError('Image alignment anchor must contain integer coordinates');
+      anchor = { x: Math.round((options.anchor.x - crop.x) * targetWidth / crop.width),
+        y: Math.round((options.anchor.y - crop.y) * targetHeight / crop.height) };
+      if (anchor.x < -32767 || anchor.x > 32768 || anchor.y < -32767 || anchor.y > 32768) throw new ArtError('Converted alignment anchor exceeds native layer position limits');
+    }
     return {
+      alignmentAnchor: anchor,
       indices: indices,
       intensity: intensity,
       paletteWords: paletteWords,
@@ -2672,6 +2703,7 @@ window.OB64 = window.OB64 || {};
     wuQuantizeWords: wuQuantizeWords,
     wuQuantizeAvatarWords: wuQuantizeAvatarWords,
     prepareAvatarImport: prepareAvatarImport,
+    importPlacement: importPlacement,
     prepareSpriteImageImport: prepareSpriteImageImport,
     prepareAnimationFrameImport: prepareAnimationFrameImport,
     colorCss: colorCss,

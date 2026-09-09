@@ -586,6 +586,16 @@ window.OB64 = window.OB64 || {};
     previewPanel.appendChild(stats); layout.appendChild(previewPanel);
 
     var controls = element('section', 'art-import-controls');
+    var sizingLabel = element('label', 'art-import-control'); sizingLabel.appendChild(element('span', '', 'Sizing'));
+    var sizing = element('select');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; sizing.appendChild(option);
+    });
+    sizing.value = settings.placementMode || 'fill';
+    sizing.addEventListener('change', function() { settings.placementMode = sizing.value; schedulePreview(); });
+    sizingLabel.appendChild(sizing); controls.appendChild(sizingLabel);
+    controls.appendChild(element('small', '', 'Original Size preserves scale. The fixed 40×48 avatar boundary crops larger sources.'));
+
     var resizeLabel = element('label', 'art-import-control');
     resizeLabel.appendChild(element('span', '', 'Resize method'));
     var resizeSelect = element('select');
@@ -714,7 +724,7 @@ window.OB64 = window.OB64 || {};
           currentResult.words, C.AVATAR_WIDTH, C.AVATAR_HEIGHT, 6,
           'art-import-preview-canvas'));
         var crop = currentResult.crop;
-        stats.textContent = 'Crop ' + crop.width.toFixed(1) + '\u00D7' +
+        stats.textContent = 'Source ' + source.width + '×' + source.height + ' · Output 40×48 · Scale ' + (40 / crop.width).toFixed(2) + '× / ' + (48 / crop.height).toFixed(2) + '× · Crop ' + crop.width.toFixed(1) + '\u00D7' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
           crop.y.toFixed(1) + ' \u00B7 ' + crop.zoom.toFixed(2) +
           '\u00D7 zoom \u00B7 ' + currentResult.sourceNativeColorCount +
@@ -991,6 +1001,16 @@ window.OB64 = window.OB64 || {};
 
   function toolButtons(ui, kind, state, key, rerender, options) {
     var toolbar = element('div', 'art-toolbox');
+    if (OB64.spriteLibrary) {
+      var preference = element('select');
+      [['switch', 'Switch to Pencil'], ['keep', 'Keep Eyedropper']].forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; preference.appendChild(option);
+      });
+      preference.setAttribute('aria-label', 'After sampling a color');
+      preference.value = OB64.spriteLibrary.keepEyedropper() ? 'keep' : 'switch';
+      preference.addEventListener('change', function() { OB64.spriteLibrary.keepEyedropper(preference.value === 'keep'); });
+      toolbar.appendChild(preference);
+    }
     [['pencil', 'Pencil'], ['fill', 'Fill'], ['eyedropper', 'Eyedropper'],
       ['replace', 'Replace Color'], ['select', 'Select']].forEach(function(row) {
       toolbar.appendChild(button(row[1], ui.tool === row[0] ? 'active' : '', function() {
@@ -1069,7 +1089,7 @@ window.OB64 = window.OB64 || {};
               (current[index] >>> 6) & 31, (current[index] >>> 1) & 31);
           }
         }
-        ui.tool = 'pencil'; rerender(); return;
+        if (!OB64.spriteLibrary || !OB64.spriteLibrary.keepEyedropper()) ui.tool = 'pencil'; rerender(); return;
       }
       if (ui.tool === 'fill' || ui.tool === 'replace') {
         var words = current.slice(), didChange = false;
@@ -1191,6 +1211,15 @@ window.OB64 = window.OB64 || {};
     }));
     workspace.appendChild(palette); editor.appendChild(workspace);
     var actions = element('div', 'art-asset-actions');
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.appendAssetTransfers) {
+      OB64.spriteEditorUI.appendAssetTransfers(actions, rom, function(library) {
+        return OB64.spriteLibrary.assetFromRgba(library, {
+          name: appearance.className + ' ' + appearance.label, kind: 'sprite', width: 40, height: 48,
+          rgba: rgbaPixelsForWords(A.currentWords(state, 'avatar', appearance.key)),
+          anchor: { x: 0, y: 0 }, provenance: { source: 'avatar', key: appearance.key }
+        });
+      }, options);
+    }
     var reset = button('Reset Current Avatar', 'btn-secondary', function() {
       if (!edited && !blockedReason) return;
       if (edited) A.setEditWords(state, 'avatar', appearance.key, appearance.originalWords);
@@ -1294,6 +1323,15 @@ window.OB64 = window.OB64 || {};
     }));
     workspace.appendChild(palette); editor.appendChild(workspace);
     var actions = element('div', 'art-asset-actions');
+    if (OB64.spriteEditorUI && OB64.spriteEditorUI.appendAssetTransfers) {
+      OB64.spriteEditorUI.appendAssetTransfers(actions, rom, function(library) {
+        return OB64.spriteLibrary.assetFromRgba(library, {
+          name: icon.name, kind: 'sprite', width: 16, height: 16,
+          rgba: rgbaPixelsForWords(A.currentWords(state, 'icon', icon.key)),
+          anchor: { x: 0, y: 0 }, provenance: { source: 'icon', key: icon.key }
+        });
+      }, options);
+    }
     var reset = button('Reset Current Icon', 'btn-secondary', function() {
       if (!edited && !blockedReason) return;
       if (edited) A.setEditWords(state, 'icon', icon.key, icon.originalWords);

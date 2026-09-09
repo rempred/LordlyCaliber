@@ -2305,13 +2305,16 @@ window.OB64 = window.OB64 || {};
     templateLayerOrdinal = integerInRange(templateLayerOrdinal, 0,
       frame.layers.length - 1, 'template layer index');
     var templateLayer = frame.layers[templateLayerOrdinal];
+    var x = prepared && prepared.alignmentAnchor ? -prepared.alignmentAnchor.x : templateLayer.drawOffsetX;
+    var y = prepared && prepared.alignmentAnchor ? -prepared.alignmentAnchor.y : templateLayer.drawOffsetY;
+    integerInRange(x, -32768, 32767, 'Imported layer X'); integerInRange(y, -32768, 32767, 'Imported layer Y');
     var source = appendImportedFrameSource(
       rom, separation, prepared, templateLayer);
     frame.layers.push({
       ordinal: frame.layers.length,
       artId: source.artId,
-      drawOffsetX: templateLayer.drawOffsetX,
-      drawOffsetY: templateLayer.drawOffsetY,
+      drawOffsetX: x,
+      drawOffsetY: y,
       width: source.sprite.width,
       height: source.sprite.height,
       flags: Number(templateLayer.flags) || 0,
@@ -2390,23 +2393,61 @@ window.OB64 = window.OB64 || {};
     return targetLayerOrdinal;
   }
 
+  function stagedFrameLayers(rom, separation, donorAnimation, donorFrame) {
+    if (!donorFrame.layers.length) fail('selected source frame has no layers');
+    var ordinal = nextSourceOrdinal(separation.syntheticAnimation), sources = [], sourceMap = {};
+    var layers = donorFrame.layers.map(function(layer, index) {
+      var source = sourceMap[layer.sourceKey];
+      if (!source) {
+        var donorSource = donorAnimation.artByKey[layer.sourceKey];
+        if (!donorSource) fail('selected source layer is unavailable');
+        source = cloneSource(rom.art.animations, separation, donorSource, layer.selectedChildOrdinal, ordinal++);
+        sourceMap[layer.sourceKey] = source; sources.push(source);
+      }
+      return clonedLayer(layer, source, index);
+    });
+    return { sources: sources, layers: layers };
+  }
+
+  function adoptFrameSources(rom, separation, staged) {
+    staged.sources.forEach(function(source) {
+      separation.syntheticAnimation.artByKey[source.key] = source;
+      rom.art.animations.artByKey[source.key] = source;
+      separation.syntheticSourceKeys.push(source.key);
+    });
+  }
+
   function copyFrameFrom(rom, separation, targetFrameIndex, donorAnimation,
-      donorFrameIndex) {
+      donorFrameIndex, options) {
     var animation = requirePrivateSequence(rom, separation);
     var targetFrame = privateFrame(animation, targetFrameIndex);
     var donorFrame = privateFrame(donorAnimation, donorFrameIndex);
-    if (!donorFrame.layers.length) fail('selected source frame has no layers');
-    var sourceMap = {};
-    targetFrame.layers = donorFrame.layers.map(function(donorLayer, ordinal) {
-      var source = sourceMap[donorLayer.sourceKey];
-      if (!source) {
-        source = appendClonedSource(rom, separation, donorAnimation, donorLayer);
-        sourceMap[donorLayer.sourceKey] = source;
-      }
-      return clonedLayer(donorLayer, source, ordinal);
-    });
+    var ticks = options && options.includeDuration ? donorFrame.ticks : targetFrame.ticks;
+    integerInRange(ticks, 0, 255, 'Copied frame duration');
+    var frames = animation.frames.map(function(frame) { return frame === targetFrame ? Object.assign({}, frame, { ticks: ticks }) : frame; });
+    var program = poseProgramWithFrames(animation.poseProgram, frames, separation.laneKey === 'idle');
+    var staged = stagedFrameLayers(rom, separation, donorAnimation, donorFrame);
+    adoptFrameSources(rom, separation, staged);
+    targetFrame.layers = staged.layers; targetFrame.ticks = ticks; animation.poseProgram = program;
+    animation.spec.frames = animation.frames.map(function(frame) { return [frame.token, frame.ticks]; });
     finishStructuralEdit(rom, separation);
     return 0;
+  }
+
+  function duplicateFrame(rom, separation, frameIndex) {
+    var animation = requirePrivateSequence(rom, separation);
+    var donorFrame = privateFrame(animation, frameIndex), inserted = frameIndex + 1;
+    var frame = Object.assign({}, donorFrame, { sequenceIndex: inserted,
+      sourceFrameIndex: unusedFrameIdentity(animation), token: unusedFrameToken(animation), metadataTarget: null });
+    var frames = animation.frames.slice(); frames.splice(inserted, 0, frame);
+    var program = poseProgramWithInsertedFrame(animation.poseProgram, frames, separation.laneKey === 'idle', frameIndex);
+    var staged = stagedFrameLayers(rom, separation, animation, donorFrame);
+    adoptFrameSources(rom, separation, staged); frame.layers = staged.layers;
+    animation.frames = frames; animation.poseProgram = program;
+    animation.frames.forEach(function(row, index) { row.sequenceIndex = index; });
+    animation.spec.frames = animation.frames.map(function(row) { return [row.token, row.ticks]; });
+    finishStructuralEdit(rom, separation);
+    return inserted;
   }
 
   function importFrame(rom, separation, targetFrameIndex, prepared, options) {
@@ -2427,13 +2468,16 @@ window.OB64 = window.OB64 || {};
     });
     var templateLayer = frame.layers[
       firstBodyOrdinal >= 0 ? firstBodyOrdinal : 0];
+    var x = prepared.alignmentAnchor ? -prepared.alignmentAnchor.x : animation.canvas.originX;
+    var y = prepared.alignmentAnchor ? -prepared.alignmentAnchor.y : animation.canvas.originY;
+    integerInRange(x, -32768, 32767, 'Imported frame X'); integerInRange(y, -32768, 32767, 'Imported frame Y');
     var source = appendImportedFrameSource(
       rom, separation, prepared, templateLayer);
     var importedLayer = {
       ordinal: 0,
       artId: source.artId,
-      drawOffsetX: animation.canvas.originX,
-      drawOffsetY: animation.canvas.originY,
+      drawOffsetX: x,
+      drawOffsetY: y,
       width: expectedWidth,
       height: expectedHeight,
       flags: Number(templateLayer && templateLayer.flags) || 0,
@@ -2581,6 +2625,32 @@ window.OB64 = window.OB64 || {};
     return true;
   }
 
+  function translateFrames(rom, targets, dx, dy) {
+    dx = integerInRange(dx, -32768, 32767, 'Horizontal translation');
+    dy = integerInRange(dy, -32768, 32767, 'Vertical translation');
+    if (!Array.isArray(targets) || !targets.length) fail('Select at least one sequence');
+    var pending = [], separations = [], seen = new Set();
+    targets.forEach(function(target) {
+      var animation = requirePrivateSequence(rom, target.separation);
+      var indexes = target.frames || animation.frames.map(function(frame) { return frame.sequenceIndex; });
+      if (!indexes.length) fail('Select at least one frame');
+      indexes.forEach(function(index) {
+        var frame = privateFrame(animation, index);
+        frame.layers.forEach(function(layer) {
+          if (seen.has(layer)) return;
+          seen.add(layer);
+          pending.push({ layer: layer,
+            x: integerInRange(layer.drawOffsetX + dx, -32768, 32767, 'Translated layer X'),
+            y: integerInRange(layer.drawOffsetY + dy, -32768, 32767, 'Translated layer Y') });
+        });
+      });
+      if (separations.indexOf(target.separation) < 0) separations.push(target.separation);
+    });
+    pending.forEach(function(row) { row.layer.drawOffsetX = row.x; row.layer.drawOffsetY = row.y; });
+    separations.forEach(function(separation) { finishStructuralEdit(rom, separation); });
+    return pending.length;
+  }
+
   function separationFor(animationOrRoute, state) {
     if (!state) return null;
     if (animationOrRoute && animationOrRoute.separationId) {
@@ -2696,19 +2766,22 @@ window.OB64 = window.OB64 || {};
     }
     var oldCount = oldDirectoryBytes / 4, records = [];
     rows.forEach(function(row) {
-      var byToken = {}, order = [];
+      // Native tokens address metadata, not timeline identities. Deduplicate only
+      // equal serialized metadata so legacy Projects with divergent repeated
+      // tokens retain every occurrence without wasting the bounded token table.
+      row.occurrenceTokens = [];
+      var unique = {};
       row.animation.frames.forEach(function(frame) {
-        if (!Object.prototype.hasOwnProperty.call(byToken, frame.token)) {
-          byToken[frame.token] = frame;
-          order.push(frame.token);
+        var record = metadataRecord(frame, row.artIdBySource);
+        var identity = Array.prototype.join.call(record, ',');
+        var nextToken = unique[identity];
+        if (nextToken === undefined) {
+          nextToken = oldCount + records.length;
+          if (nextToken > 255) fail('separated frame token exceeds the game u8 range');
+          unique[identity] = nextToken;
+          records.push(record);
         }
-      });
-      row.tokenMap = {};
-      order.forEach(function(token) {
-        var nextToken = oldCount + records.length;
-        if (nextToken > 255) fail('separated frame token exceeds the game u8 range');
-        row.tokenMap[token] = nextToken;
-        records.push(metadataRecord(byToken[token], row.artIdBySource));
+        row.occurrenceTokens.push(nextToken);
       });
     });
     var shift = records.length * 4;
@@ -2729,12 +2802,15 @@ window.OB64 = window.OB64 || {};
   function remappedProgram(row) {
     var poseProgram = row.animation.poseProgram;
     var program = poseProgram.program.slice();
+    var occurrence = 0;
     poseProgram.records.forEach(function(record) {
       if (record.opcode !== 1) return;
       var relative = record.offset - poseProgram.start;
-      var replacement = row.tokenMap[record.operands[0]];
-      if (Number.isInteger(replacement)) program[relative + 1] = replacement;
+      var replacement = row.occurrenceTokens[occurrence++];
+      if (!Number.isInteger(replacement)) fail('separated frame occurrence lacks metadata');
+      program[relative + 1] = replacement;
     });
+    if (occurrence !== row.animation.frames.length) fail('separated frame occurrence count differs');
     return program;
   }
 
@@ -3115,6 +3191,26 @@ window.OB64 = window.OB64 || {};
       group.sourceRows.forEach(function(row) {
         var decoded = A.readCompressedResource(bytes, row.allocation.key).decoded;
         if (!equalBytes(decoded, row.decoded)) fail(row.name + ' compressed readback differs');
+      });
+      var metadata = A.readCompressedResource(bytes, group.controls[0].allocation.key).decoded;
+      var pose = A.readCompressedResource(bytes, group.controls[1].allocation.key).decoded;
+      group.sequenceRows.forEach(function(row) {
+        var decodedProgram = M.parsePoseProgram(pose, row.separation.selector, 'exported sequence');
+        var occurrences = decodedProgram.records.filter(function(record) { return record.opcode === 1; });
+        if (occurrences.length !== row.animation.frames.length) fail('exported occurrence count differs from editor state');
+        occurrences.forEach(function(record, index) {
+          var intended = row.animation.frames[index];
+          if (record.operands[1] !== intended.ticks) fail('exported occurrence duration differs from editor state');
+          var actual = M.parseMetadataFrame(metadata, record.operands[0]);
+          if (actual.layers.length !== intended.layers.length) fail('exported occurrence layer count differs from editor state');
+          actual.layers.forEach(function(layer, ordinal) {
+            var wanted = intended.layers[ordinal];
+            if (layer.artId !== row.artIdBySource[wanted.sourceKey]) fail('exported occurrence art differs from editor state');
+            ['drawOffsetX', 'drawOffsetY', 'width', 'height', 'flags', 'scaleXRaw', 'scaleYRaw'].forEach(function(field) {
+              if (layer[field] !== wanted[field]) fail('exported occurrence ' + field + ' differs from editor state');
+            });
+          });
+        });
       });
       var handleOffset = handles.entry + 4 + CLASS_HANDLE_TABLE_OFFSET +
         group.handleIndex * 2;
@@ -3746,6 +3842,7 @@ window.OB64 = window.OB64 || {};
     addBlankFrame: addBlankFrame,
     copyLayerFrom: copyLayerFrom,
     copyFrameFrom: copyFrameFrom,
+    duplicateFrame: duplicateFrame,
     importFrame: importFrame,
     removeLayer: removeLayer,
     removeFrame: removeFrame,
@@ -3753,6 +3850,7 @@ window.OB64 = window.OB64 || {};
     setFrameTicks: setFrameTicks,
     moveLayer: moveLayer,
     setLayerPosition: setLayerPosition,
+    translateFrames: translateFrames,
     rotateIndexedPixels: rotateIndexedPixels,
     resizeIndexedPixels: resizeIndexedPixels,
     rotateLayer: rotateLayer,

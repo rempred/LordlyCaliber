@@ -8911,3 +8911,19 @@ td.attack-list {
   .sprite-frame-heading { align-items: flex-start; flex-direction: column; }
   .sprite-canvas-scroll { min-height: 320px; padding: 10px; }
 }
+
+/* Alignment tools retain readable controls on narrow editing panels. */
+.animation-alignment-panel { padding: 0.65rem; margin: 0.5rem 0; border: 1px solid var(--border, #444); }
+.animation-alignment-panel > label { display: inline-flex; flex-direction: column; gap: 0.25rem; margin: 0.4rem; max-width: 100%; }
+.animation-alignment-panel input[type=number], .sprite-transform-tools input[type=number] { width: 6rem; }
+.animation-alignment-panel select { max-width: 32rem; width: 100%; }
+.animation-alignment-panel select[multiple] { min-height: 6rem; }
+.animation-alignment-panel > figure { display: inline-flex; vertical-align: top; max-width: 100%; }
+.animation-alignment-panel canvas { max-width: 100%; height: auto; image-rendering: pixelated; }
+.animation-edit-stage { max-width: 100%; overflow: auto; }
+.sprite-color-panel .sprite-color-swatch { min-width: 1.5rem; min-height: 1.5rem; margin: 0.1rem; }
+.sprite-transform-tools label { display: inline-flex; flex-direction: column; gap: 0.2rem; }
+@media (max-width: 760px) {
+  .animation-alignment-panel > label { display: flex; }
+  .animation-alignment-panel select { max-width: 100%; }
+}

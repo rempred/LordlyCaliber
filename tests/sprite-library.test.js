@@ -96,7 +96,7 @@ assert.strictEqual(derivedSequence.frames.length, 2);
 
 const rom = { spriteLibrary: state };
 const payload = L.collectProjectPayload(rom);
-assert.strictEqual(payload.schemaVersion, 1);
+assert.strictEqual(payload.schemaVersion, 2);
 assert.strictEqual(payload.assets.length, 4);
 assert.strictEqual(typeof payload.assets[0].frames[0].layers[0].pixelsRgbaBase64,
   'string');

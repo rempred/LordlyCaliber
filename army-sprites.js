@@ -570,6 +570,7 @@ window.OB64 = window.OB64 || {};
     var prepared = A.prepareSpriteImageImport(
       source.rgba, source.width, source.height, atlas.width, atlas.height, {
         resizeMode: options.resizeMode || 'nearest',
+        placementMode: options.placementMode,
         panX: options.panX,
         panY: options.panY,
         zoom: options.zoom,

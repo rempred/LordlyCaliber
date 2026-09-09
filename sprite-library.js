@@ -5,9 +5,9 @@ window.OB64 = window.OB64 || {};
 (function() {
   'use strict';
 
-  var PROJECT_SCHEMA_VERSION = 1;
+  var PROJECT_SCHEMA_VERSION = 2;
   var FILE_FORMAT = 'lordlycaliber-sprite-asset';
-  var FILE_VERSION = 1;
+  var FILE_VERSION = 2;
   var MAX_DIMENSION = 4096;
   var MAX_ASSETS = 512;
   var MAX_FRAMES = 1024;
@@ -116,6 +116,8 @@ window.OB64 = window.OB64 || {};
       id: layer.id,
       name: layer.name,
       visible: layer.visible !== false,
+      x: layer.x === undefined ? 0 : layer.x, y: layer.y === undefined ? 0 : layer.y,
+      width: layer.width, height: layer.height,
       pixels: new Uint8ClampedArray(layer.pixels)
     };
   }
@@ -136,6 +138,7 @@ window.OB64 = window.OB64 || {};
       kind: asset.kind,
       width: asset.width,
       height: asset.height,
+      anchor: Object.assign({ x: 0, y: 0 }, asset.anchor || {}),
       frames: asset.frames.map(cloneFrame),
       provenance: Object.assign({}, asset.provenance || {})
     };
@@ -146,6 +149,8 @@ window.OB64 = window.OB64 || {};
       id: layer.id,
       name: layer.name,
       visible: layer.visible !== false,
+      x: layer.x === undefined ? 0 : layer.x, y: layer.y === undefined ? 0 : layer.y,
+      width: layer.width, height: layer.height,
       pixelsRgbaBase64: bytesToBase64(layer.pixels)
     };
   }
@@ -167,6 +172,7 @@ window.OB64 = window.OB64 || {};
       kind: asset.kind,
       width: asset.width,
       height: asset.height,
+      anchor: Object.assign({ x: 0, y: 0 }, asset.anchor || {}),
       frames: asset.frames.map(serializeFrame),
       provenance: Object.assign({}, asset.provenance || {})
     };
@@ -176,12 +182,17 @@ window.OB64 = window.OB64 || {};
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       fail(label + ' must be an object');
     }
+    var layerWidth = integer(payload.width === undefined ? width : payload.width, 1, MAX_DIMENSION, label + ' width');
+    var layerHeight = integer(payload.height === undefined ? height : payload.height, 1, MAX_DIMENSION, label + ' height');
     return {
       id: validId(payload.id, label),
       name: cleanName(payload.name, 'Layer'),
+      x: integer(payload.x === undefined ? 0 : payload.x, -32768, 32767, label + ' x'),
+      y: integer(payload.y === undefined ? 0 : payload.y, -32768, 32767, label + ' y'),
+      width: layerWidth, height: layerHeight,
       visible: payload.visible !== false,
       pixels: bytesFromBase64(payload.pixelsRgbaBase64,
-        width * height * 4, label)
+        layerWidth * layerHeight * 4, label)
     };
   }
 
@@ -204,7 +215,7 @@ window.OB64 = window.OB64 || {};
     return {
       id: validId(payload.id, label),
       name: cleanName(payload.name, 'Frame'),
-      ticks: integer(payload.ticks, 1, 255, label + ' ticks'),
+      ticks: integer(payload.ticks, 0, 255, label + ' ticks'),
       layers: layers
     };
   }
@@ -214,6 +225,7 @@ window.OB64 = window.OB64 || {};
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       fail(label + ' must be an object');
     }
+    if (payload.anchor !== undefined && (!payload.anchor || typeof payload.anchor !== 'object' || Array.isArray(payload.anchor))) fail(label + ' anchor must be an object');
     var width = integer(payload.width, 1, MAX_DIMENSION, label + ' width');
     var height = integer(payload.height, 1, MAX_DIMENSION, label + ' height');
     var kind = String(payload.kind || '');
@@ -230,7 +242,10 @@ window.OB64 = window.OB64 || {};
           frame.layers.length > MAX_LAYERS) {
         fail(label + ' frame ' + (frameIndex + 1) + ' has an invalid layer count');
       }
-      assetPixels += width * height * frame.layers.length;
+      frame.layers.forEach(function(layer) {
+        assetPixels += integer(layer.width === undefined ? width : layer.width, 1, MAX_DIMENSION, label + ' layer width') *
+          integer(layer.height === undefined ? height : layer.height, 1, MAX_DIMENSION, label + ' layer height');
+      });
       if (assetPixels > MAX_TOTAL_PIXELS) {
         fail(label + ' exceeds the ' + MAX_TOTAL_PIXELS + '-pixel Project limit');
       }
@@ -270,6 +285,8 @@ window.OB64 = window.OB64 || {};
       width: width,
       height: height,
       frames: frames,
+      anchor: { x: integer(payload.anchor === undefined ? 0 : payload.anchor && payload.anchor.x, -32768, 32767, label + ' anchor x'),
+        y: integer(payload.anchor === undefined ? 0 : payload.anchor && payload.anchor.y, -32768, 32767, label + ' anchor y') },
       provenance: provenance
     };
   }
@@ -286,6 +303,7 @@ window.OB64 = window.OB64 || {};
       kind: asset && asset.kind,
       width: asset && asset.width,
       height: asset && asset.height,
+      anchor: asset && asset.anchor,
       frames: (asset && asset.frames || []).map(function(frame) {
         return {
           id: frame.id,
@@ -296,6 +314,8 @@ window.OB64 = window.OB64 || {};
               id: layer.id,
               name: layer.name,
               visible: layer.visible !== false,
+              x: layer.x === undefined ? 0 : layer.x, y: layer.y === undefined ? 0 : layer.y,
+              width: layer.width, height: layer.height,
               pixelsRgbaBase64: bytesToBase64(layer.pixels || new Uint8ClampedArray())
             };
           })
@@ -390,6 +410,7 @@ window.OB64 = window.OB64 || {};
       kind: options.kind || 'sprite',
       width: width,
       height: height,
+      anchor: Object.assign({ x: 0, y: 0 }, options.anchor || {}),
       frames: [{
         id: 'frame-1', name: 'Frame 1', ticks: 8,
         layers: [{
@@ -410,9 +431,9 @@ window.OB64 = window.OB64 || {};
       kind: options.kind || 'sprite',
       width: width,
       height: height,
-      provenance: options.provenance
+      provenance: options.provenance, anchor: options.anchor
     });
-    asset.frames[0].ticks = integer(options.ticks || 8, 1, 255, 'Frame ticks');
+    asset.frames[0].ticks = integer(options.ticks === undefined ? 8 : options.ticks, 0, 255, 'Frame ticks');
     asset.frames[0].layers[0].pixels = pixelArray(
       options.rgba, width, height, 'Sprite pixels');
     return asset;
@@ -433,6 +454,7 @@ window.OB64 = window.OB64 || {};
       kind: options.kind || (options.frames.length > 1 ? 'sequence' : 'frame'),
       width: width,
       height: height,
+      anchor: Object.assign({ x: 0, y: 0 }, options.anchor || {}),
       frames: options.frames.map(function(frame, frameIndex) {
         var layerRows = frame.layers || [{
           name: 'Complete frame', rgba: frame.rgba
@@ -443,14 +465,16 @@ window.OB64 = window.OB64 || {};
         return {
           id: 'frame-' + (frameIndex + 1),
           name: cleanName(frame.name, 'Frame ' + (frameIndex + 1)),
-          ticks: integer(frame.ticks || 8, 1, 255,
+          ticks: integer(frame.ticks === undefined ? 8 : frame.ticks, 0, 255,
             'Frame ' + (frameIndex + 1) + ' ticks'),
           layers: layerRows.map(function(layer, layerIndex) {
             return {
               id: 'layer-' + (layerIndex + 1),
               name: cleanName(layer.name, 'Layer ' + (layerIndex + 1)),
               visible: layer.visible !== false,
-              pixels: pixelArray(layer.rgba, width, height,
+              x: layer.x === undefined ? 0 : layer.x, y: layer.y === undefined ? 0 : layer.y,
+              width: layer.width || width, height: layer.height || height,
+              pixels: pixelArray(layer.rgba, layer.width || width, layer.height || height,
                 'Frame ' + (frameIndex + 1) + ' layer ' + (layerIndex + 1))
             };
           })
@@ -460,6 +484,16 @@ window.OB64 = window.OB64 || {};
     };
     validateAsset(asset, 'Imported sprite asset');
     return asset;
+  }
+
+  function assertLibraryBudget(state, replacement, replacingId) {
+    var pixels = 0;
+    state.assets.filter(function(asset) { return asset.id !== replacingId; }).concat(replacement ? [replacement] : []).forEach(function(asset) {
+      asset.frames.forEach(function(frame) { frame.layers.forEach(function(layer) {
+        pixels += (layer.width || asset.width) * (layer.height || asset.height);
+      }); });
+    });
+    if (pixels > MAX_TOTAL_PIXELS) fail('Sprite Library exceeds the ' + MAX_TOTAL_PIXELS + '-pixel Project limit');
   }
 
   function addAsset(state, asset, options) {
@@ -474,6 +508,7 @@ window.OB64 = window.OB64 || {};
       if (!options.renameCollision) fail('Sprite asset ID ' + asset.id + ' already exists');
       asset.id = nextAssetId(state);
     }
+    assertLibraryBudget(state, asset);
     state.assets.push(asset);
     state.byId[asset.id] = asset;
     state.ui.assetId = asset.id;
@@ -498,8 +533,11 @@ window.OB64 = window.OB64 || {};
   function mutate(state, id, action) {
     var asset = assetFor(state, id);
     var before = cloneAsset(asset);
-    action(asset);
-    validateAsset(asset, 'Sprite asset');
+    var candidate = cloneAsset(asset);
+    action(candidate);
+    validateAsset(candidate, 'Sprite asset');
+    assertLibraryBudget(state, candidate, id);
+    Object.assign(asset, candidate);
     var history = historyFor(state, id);
     history.undo.push(before);
     if (history.undo.length > 100) history.undo.shift();
@@ -576,8 +614,8 @@ window.OB64 = window.OB64 || {};
 
   function replaceLayerPixels(state, id, frameIndex, layerIndex, pixels) {
     return mutate(state, id, function(asset) {
-      currentLayer(asset, frameIndex, layerIndex).pixels = pixelArray(
-        pixels, asset.width, asset.height, 'Edited sprite layer');
+      var layer = currentLayer(asset, frameIndex, layerIndex);
+      layer.pixels = pixelArray(pixels, layer.width || asset.width, layer.height || asset.height, 'Edited sprite layer');
     });
   }
 
@@ -597,29 +635,87 @@ window.OB64 = window.OB64 || {};
     ];
   }
 
+  function layerCanvasPixels(asset, layer, pixels) {
+    var output = transparentPixels(asset.width, asset.height);
+    var width = layer.width || asset.width, height = layer.height || asset.height;
+    pixels = pixels || layer.pixels;
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        var tx = x + (layer.x || 0), ty = y + (layer.y || 0);
+        if (tx < 0 || ty < 0 || tx >= asset.width || ty >= asset.height) continue;
+        var offset = (y * width + x) * 4;
+        output.set(pixels.subarray(offset, offset + 4), (ty * asset.width + tx) * 4);
+      }
+    }
+    return output;
+  }
+
   function compositeFrame(asset, frameIndex) {
     var frame = currentFrame(asset, frameIndex);
     var output = transparentPixels(asset.width, asset.height);
     frame.layers.forEach(function(layer) {
       if (layer.visible === false) return;
+      var pixels = layerCanvasPixels(asset, layer);
       for (var offset = 0; offset < output.length; offset += 4) {
-        if (!layer.pixels[offset + 3]) continue;
-        var blended = sourceOver(
-          [output[offset], output[offset + 1], output[offset + 2], output[offset + 3]],
-          [layer.pixels[offset], layer.pixels[offset + 1],
-            layer.pixels[offset + 2], layer.pixels[offset + 3]]);
-        output[offset] = blended[0];
-        output[offset + 1] = blended[1];
-        output[offset + 2] = blended[2];
-        output[offset + 3] = blended[3];
+        if (!pixels[offset + 3]) continue;
+        output.set(sourceOver(output.subarray(offset, offset + 4), pixels.subarray(offset, offset + 4)), offset);
       }
     });
     return output;
   }
 
+  function setLayerPosition(state, id, frameIndex, layerIndex, x, y) {
+    x = integer(x, -32768, 32767, 'Layer X');
+    y = integer(y, -32768, 32767, 'Layer Y');
+    return mutate(state, id, function(asset) {
+      var layer = currentLayer(asset, frameIndex, layerIndex);
+      layer.x = x; layer.y = y;
+    });
+  }
+
+  function setAnchor(state, id, x, y) {
+    x = integer(x, -32768, 32767, 'Anchor X');
+    y = integer(y, -32768, 32767, 'Anchor Y');
+    return mutate(state, id, function(asset) { asset.anchor = { x: x, y: y }; });
+  }
+
+  function cropLayerToCanvas(state, id, frameIndex, layerIndex) {
+    return mutate(state, id, function(asset) {
+      var layer = currentLayer(asset, frameIndex, layerIndex);
+      layer.pixels = layerCanvasPixels(asset, layer);
+      layer.x = 0; layer.y = 0; layer.width = asset.width; layer.height = asset.height;
+    });
+  }
+
+  function replaceLayerImage(state, id, frameIndex, layerIndex, pixels, width, height) {
+    width = integer(width, 1, MAX_DIMENSION, 'Image width');
+    height = integer(height, 1, MAX_DIMENSION, 'Image height');
+    var prepared = pixelArray(pixels, width, height, 'Image pixels');
+    return mutate(state, id, function(asset) {
+      var layer = currentLayer(asset, frameIndex, layerIndex);
+      layer.pixels = prepared; layer.width = width; layer.height = height;
+    });
+  }
+
+  function usedColors(asset, scope, frameIndex, layerIndex) {
+    var frames = scope === 'sequence' ? asset.frames : [currentFrame(asset, frameIndex)];
+    var seen = {}, colors = [];
+    frames.forEach(function(frame) {
+      var layers = scope === 'layer' ? [frame.layers[layerIndex]] : frame.layers;
+      layers.forEach(function(layer) {
+        for (var i = 0; i < layer.pixels.length; i += 4) {
+          var color = Array.prototype.slice.call(layer.pixels, i, i + 4);
+          var key = color.join(',');
+          if (!seen[key]) { seen[key] = true; colors.push(color); }
+        }
+      });
+    });
+    return colors;
+  }
+
   function setFrameTicks(state, id, frameIndex, ticks) {
     return mutate(state, id, function(asset) {
-      currentFrame(asset, frameIndex).ticks = integer(ticks, 1, 255, 'Frame ticks');
+      currentFrame(asset, frameIndex).ticks = integer(ticks, 0, 255, 'Frame ticks');
     });
   }
 
@@ -722,7 +818,7 @@ window.OB64 = window.OB64 || {};
   function shiftLayer(state, id, frameIndex, layerIndex, dx, dy) {
     return mutate(state, id, function(asset) {
       var layer = currentLayer(asset, frameIndex, layerIndex);
-      layer.pixels = shiftedPixels(layer.pixels, asset.width, asset.height,
+      layer.pixels = shiftedPixels(layer.pixels, layer.width || asset.width, layer.height || asset.height,
         integer(dx, -MAX_DIMENSION, MAX_DIMENSION, 'Horizontal shift'),
         integer(dy, -MAX_DIMENSION, MAX_DIMENSION, 'Vertical shift'));
     });
@@ -745,7 +841,7 @@ window.OB64 = window.OB64 || {};
   function flipLayer(state, id, frameIndex, layerIndex, vertical) {
     return mutate(state, id, function(asset) {
       var layer = currentLayer(asset, frameIndex, layerIndex);
-      layer.pixels = flippedPixels(layer.pixels, asset.width, asset.height, !!vertical);
+      layer.pixels = flippedPixels(layer.pixels, layer.width || asset.width, layer.height || asset.height, !!vertical);
     });
   }
 
@@ -767,38 +863,53 @@ window.OB64 = window.OB64 || {};
     return mutate(state, id, function(asset) {
       width = integer(width, 1, MAX_DIMENSION, 'Canvas width');
       height = integer(height, 1, MAX_DIMENSION, 'Canvas height');
+      var rows = [], pixels = 0;
       asset.frames.forEach(function(frame) {
         frame.layers.forEach(function(layer) {
-          layer.pixels = nearestResize(layer.pixels,
-            asset.width, asset.height, width, height);
+          var targetWidth = integer(Math.max(1, Math.round((layer.width || asset.width) * width / asset.width)), 1, MAX_DIMENSION, 'Resized layer width');
+          var targetHeight = integer(Math.max(1, Math.round((layer.height || asset.height) * height / asset.height)), 1, MAX_DIMENSION, 'Resized layer height');
+          pixels += targetWidth * targetHeight;
+          if (pixels > MAX_TOTAL_PIXELS) fail('Resized sprite exceeds the pixel Project limit');
+          rows.push({ layer: layer, width: targetWidth, height: targetHeight,
+            x: integer(Math.round((layer.x || 0) * width / asset.width), -32768, 32767, 'Resized layer X'),
+            y: integer(Math.round((layer.y || 0) * height / asset.height), -32768, 32767, 'Resized layer Y') });
         });
       });
-      asset.width = width;
-      asset.height = height;
+      var anchor = { x: integer(Math.round((asset.anchor && asset.anchor.x || 0) * width / asset.width), -32768, 32767, 'Resized anchor X'),
+        y: integer(Math.round((asset.anchor && asset.anchor.y || 0) * height / asset.height), -32768, 32767, 'Resized anchor Y') };
+      rows.forEach(function(row) {
+        row.layer.pixels = nearestResize(row.layer.pixels, row.layer.width || asset.width, row.layer.height || asset.height, row.width, row.height);
+        row.layer.width = row.width; row.layer.height = row.height; row.layer.x = row.x; row.layer.y = row.y;
+      });
+      asset.anchor = anchor; asset.width = width; asset.height = height;
     });
   }
 
   function rotateAsset(state, id, clockwise) {
     return mutate(state, id, function(asset) {
-      var oldWidth = asset.width;
-      var oldHeight = asset.height;
+      var oldWidth = asset.width, oldHeight = asset.height;
       asset.frames.forEach(function(frame) {
         frame.layers.forEach(function(layer) {
-          var output = transparentPixels(oldHeight, oldWidth);
-          for (var y = 0; y < oldHeight; y++) {
-            for (var x = 0; x < oldWidth; x++) {
-              var targetX = clockwise ? oldHeight - 1 - y : y;
-              var targetY = clockwise ? x : oldWidth - 1 - x;
-              var sourceOffset = (y * oldWidth + x) * 4;
-              output.set(layer.pixels.subarray(sourceOffset, sourceOffset + 4),
-                (targetY * oldHeight + targetX) * 4);
+          var width = layer.width || oldWidth, height = layer.height || oldHeight;
+          var output = transparentPixels(height, width);
+          for (var y = 0; y < height; y++) {
+            for (var x = 0; x < width; x++) {
+              var tx = clockwise ? height - 1 - y : y;
+              var ty = clockwise ? x : width - 1 - x;
+              var offset = (y * width + x) * 4;
+              output.set(layer.pixels.subarray(offset, offset + 4), (ty * height + tx) * 4);
             }
           }
-          layer.pixels = output;
+          var lx = layer.x || 0, ly = layer.y || 0;
+          layer.x = clockwise ? oldHeight - ly - height : ly;
+          layer.y = clockwise ? lx : oldWidth - lx - width;
+          layer.width = height; layer.height = width; layer.pixels = output;
         });
       });
-      asset.width = oldHeight;
-      asset.height = oldWidth;
+      var anchor = asset.anchor || { x: 0, y: 0 };
+      asset.anchor = clockwise ? { x: oldHeight - anchor.y, y: anchor.x } :
+        { x: anchor.y, y: oldWidth - anchor.x };
+      asset.width = oldHeight; asset.height = oldWidth;
     });
   }
 
@@ -846,18 +957,14 @@ window.OB64 = window.OB64 || {};
       output.name = source.name + ' Frame ' + (frameIndex + 1);
     } else if (kind === 'sprite') {
       var layer = currentLayer(source, frameIndex, layerIndex);
-      var trimmed = trimRgba(layer.pixels, source.width, source.height);
+      var layerWidth = layer.width || source.width, layerHeight = layer.height || source.height;
       output = {
-        id: source.id,
-        name: source.name + ' ' + layer.name,
-        kind: 'sprite',
-        width: trimmed.width,
-        height: trimmed.height,
-        frames: [{
-          id: 'frame-1', name: 'Frame 1', ticks: currentFrame(source, frameIndex).ticks,
-          layers: [{ id: 'layer-1', name: layer.name, visible: true,
-            pixels: trimmed.rgba }]
-        }],
+        id: source.id, name: source.name + ' ' + layer.name, kind: 'sprite',
+        width: layerWidth, height: layerHeight,
+        anchor: { x: (source.anchor && source.anchor.x || 0) - (layer.x || 0),
+          y: (source.anchor && source.anchor.y || 0) - (layer.y || 0) },
+        frames: [{ id: 'frame-1', name: 'Frame 1', ticks: currentFrame(source, frameIndex).ticks,
+          layers: [Object.assign(cloneLayer(layer), { id: 'layer-1', x: 0, y: 0 })] }],
         provenance: {}
       };
     } else {
@@ -886,9 +993,9 @@ window.OB64 = window.OB64 || {};
   function prepareProjectPayload(payload) {
     if (payload === undefined || payload === null) return { assets: [], count: 0 };
     if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
-        payload.schemaVersion !== PROJECT_SCHEMA_VERSION ||
+        (payload.schemaVersion !== 1 && payload.schemaVersion !== PROJECT_SCHEMA_VERSION) ||
         !Array.isArray(payload.assets)) {
-      fail('patches.spriteLibrary must use schemaVersion 1 with an assets array');
+      fail('patches.spriteLibrary must use schemaVersion 1 or 2 with an assets array');
     }
     if (payload.assets.length > MAX_ASSETS) {
       fail('patches.spriteLibrary contains more than ' + MAX_ASSETS + ' assets');
@@ -900,7 +1007,7 @@ window.OB64 = window.OB64 || {};
       if (ids[prepared.id]) fail('Sprite Library contains duplicate asset ID ' + prepared.id);
       ids[prepared.id] = true;
       prepared.frames.forEach(function(frame) {
-        totalPixels += prepared.width * prepared.height * frame.layers.length;
+        frame.layers.forEach(function(layer) { totalPixels += layer.width * layer.height; });
       });
       if (totalPixels > MAX_TOTAL_PIXELS) {
         fail('Sprite Library exceeds the ' + MAX_TOTAL_PIXELS + '-pixel Project limit');
@@ -946,8 +1053,8 @@ window.OB64 = window.OB64 || {};
         fail('The sprite asset file is not valid JSON');
       }
     }
-    if (!payload || payload.format !== FILE_FORMAT || payload.version !== FILE_VERSION) {
-      fail('The file is not a LordlyCaliber sprite asset version 1 file');
+    if (!payload || payload.format !== FILE_FORMAT || (payload.version !== 1 && payload.version !== FILE_VERSION)) {
+      fail('The file is not a LordlyCaliber sprite asset version 1 or 2 file');
     }
     return prepareAsset(payload.asset, 'Sprite asset file');
   }
@@ -958,7 +1065,24 @@ window.OB64 = window.OB64 || {};
     return (stem || 'sprite-asset') + '.ob64-sprite.json';
   }
 
+  var eyedropperPreference = false;
+  function keepEyedropper(value) {
+    try {
+      if (value !== undefined) {
+        eyedropperPreference = !!value;
+        window.localStorage.setItem('ob64.keepEyedropper', String(eyedropperPreference));
+      } else {
+        var saved = window.localStorage.getItem('ob64.keepEyedropper');
+        if (saved !== null) eyedropperPreference = saved === 'true';
+      }
+    } catch (error) {
+      if (value !== undefined) eyedropperPreference = !!value;
+    }
+    return eyedropperPreference;
+  }
+
   OB64.spriteLibrary = {
+    keepEyedropper: keepEyedropper,
     PROJECT_SCHEMA_VERSION: PROJECT_SCHEMA_VERSION,
     FILE_FORMAT: FILE_FORMAT,
     FILE_VERSION: FILE_VERSION,
@@ -980,6 +1104,12 @@ window.OB64 = window.OB64 || {};
     currentLayer: currentLayer,
     replaceLayerPixels: replaceLayerPixels,
     compositeFrame: compositeFrame,
+    layerCanvasPixels: layerCanvasPixels,
+    setLayerPosition: setLayerPosition,
+    setAnchor: setAnchor,
+    cropLayerToCanvas: cropLayerToCanvas,
+    replaceLayerImage: replaceLayerImage,
+    usedColors: usedColors,
     setFrameTicks: setFrameTicks,
     addFrame: addFrame,
     removeFrame: removeFrame,

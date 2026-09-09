@@ -434,7 +434,7 @@ window.OB64 = window.OB64 || {};
       var current = M.currentIndices(army, atlas.key, model.modelId);
       if (ui.armyTool === 'eyedropper') {
         ui.armySelectedIndex = current[pixel];
-        ui.armyTool = 'pencil';
+        if (!OB64.spriteLibrary || !OB64.spriteLibrary.keepEyedropper()) ui.armyTool = 'pencil';
         rerender();
         return;
       }
@@ -539,6 +539,16 @@ window.OB64 = window.OB64 || {};
 
   function toolbox(army, atlas, model, ui, options, rerender) {
     var bar = element('div', 'art-toolbox');
+    if (OB64.spriteLibrary) {
+      var preference = element('select');
+      [['switch', 'Switch to Pencil'], ['keep', 'Keep Eyedropper']].forEach(function(row) {
+        var option = element('option', '', row[1]); option.value = row[0]; preference.appendChild(option);
+      });
+      preference.setAttribute('aria-label', 'After sampling a color');
+      preference.value = OB64.spriteLibrary.keepEyedropper() ? 'keep' : 'switch';
+      preference.addEventListener('change', function() { OB64.spriteLibrary.keepEyedropper(preference.value === 'keep'); });
+      bar.appendChild(preference);
+    }
     [['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
       ['eyedropper', 'Eyedropper'], ['replace', 'Replace Color'],
       ['select', 'Select']].forEach(function(row) {
@@ -739,6 +749,16 @@ window.OB64 = window.OB64 || {};
     previewPanel.appendChild(stats);
     layout.appendChild(previewPanel);
     var controls = element('section', 'art-import-controls');
+    var sizingLabel = element('label', 'art-import-control'); sizingLabel.appendChild(element('span', '', 'Sizing'));
+    var sizing = element('select');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; sizing.appendChild(option);
+    });
+    sizing.value = settings.placementMode || 'fill';
+    sizing.addEventListener('change', function() { settings.placementMode = sizing.value; schedulePreview(); });
+    sizingLabel.appendChild(sizing); controls.appendChild(sizingLabel);
+    controls.appendChild(element('small', '', 'Original Size preserves scale. Fixed Army sprite bounds crop larger sources.'));
+
 
     function selectControl(labelText, values, current, change) {
       var label = element('label', 'art-import-control');
@@ -868,7 +888,7 @@ window.OB64 = window.OB64 || {};
         previewHost.appendChild(planeCanvas(atlas, result.indices,
           result.paletteIndex, scale, 'art-import-preview-canvas', ui));
         var crop = result.crop;
-        stats.textContent = 'Crop ' + crop.width.toFixed(1) + '×' +
+        stats.textContent = 'Source ' + source.width + '×' + source.height + ' · Output ' + atlas.width + '×' + atlas.height + ' · Scale ' + (atlas.width / crop.width).toFixed(2) + '× / ' + (atlas.height / crop.height).toFixed(2) + '× · Crop ' + crop.width.toFixed(1) + '×' +
           crop.height.toFixed(1) + ' at ' + crop.x.toFixed(1) + ', ' +
           crop.y.toFixed(1) + ' · ' + crop.zoom.toFixed(2) +
           '× zoom · Palette ' + result.paletteIndex + ' · ' +
@@ -932,6 +952,15 @@ window.OB64 = window.OB64 || {};
     var bar = element('div', 'art-asset-actions army-sprite-actions');
     var edited = !!army.edits[model.key];
     var present = M.hasCurrentPlane(army, atlas.key, model.modelId);
+    if (present && OB64.spriteEditorUI && OB64.spriteEditorUI.appendAssetTransfers) {
+      OB64.spriteEditorUI.appendAssetTransfers(bar, rom, function(library) {
+        var source = sourceForModel(army, atlas.key, model.modelId, ui.armyPaletteIndex);
+        return OB64.spriteLibrary.assetFromRgba(library, {
+          name: source.name, width: source.width, height: source.height, rgba: source.rgba,
+          anchor: { x: 0, y: 0 }, provenance: { source: 'army-sprite', key: model.key, paletteIndex: ui.armyPaletteIndex }
+        });
+      }, options);
+    }
     if (!present) {
       bar.appendChild(button('Create Blank Player Sprite', 'btn-primary',
         function() {
