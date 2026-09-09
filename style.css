@@ -7627,8 +7627,7 @@ td.attack-list {
 
 .animation-frame-workbench {
   display: grid;
-  grid-template-columns: max-content minmax(320px, 520px) max-content;
-  justify-content: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   align-items: start;
   gap: 14px;
   padding: 14px;
@@ -7822,11 +7821,6 @@ td.attack-list {
   .art-edit-canvas { width: min(100%, 480px); }
   .animation-workspace { grid-template-columns: 1fr; }
   .animation-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .animation-frame-workbench {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    overflow-x: visible;
-  }
   .animation-actual-preview canvas,
   .animation-sequence-preview canvas { max-width: 100%; }
 }
@@ -8915,11 +8909,11 @@ td.attack-list {
 
 /* Alignment tools retain readable controls on narrow editing panels. */
 .animation-alignment-panel { padding: 0.65rem; margin: 0.5rem 0; border: 1px solid var(--border, #444); }
-.animation-alignment-panel > label { display: inline-flex; flex-direction: column; gap: 0.25rem; margin: 0.4rem; max-width: 100%; }
+.animation-alignment-panel label { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; max-width: 100%; }
 .animation-alignment-panel input[type=number], .sprite-transform-tools input[type=number] { width: 6rem; }
 .animation-alignment-panel select { max-width: 32rem; width: 100%; }
 .animation-alignment-panel select[multiple] { min-height: 6rem; }
-.animation-alignment-panel > figure { display: inline-flex; vertical-align: top; max-width: 100%; }
+
 .animation-alignment-panel canvas { max-width: 100%; height: auto; image-rendering: pixelated; }
 .animation-edit-stage { max-width: 100%; overflow: auto; }
 .sprite-color-panel .sprite-color-swatch { min-width: 1.5rem; min-height: 1.5rem; margin: 0.1rem; }
@@ -8940,3 +8934,34 @@ td.attack-list {
 .editor-transport small { flex-basis: 100%; }
 .sprite-geometry-previews { display: flex; flex-wrap: wrap; gap: 12px; max-height: 360px; overflow: auto; }
 .sprite-geometry-previews canvas { image-rendering: pixelated; max-width: 100%; }
+
+/* Canvas cards shrink within their panel without changing native drawing geometry. */
+.animation-frame-workbench > *,
+.animation-alignment-previews > * { min-width: 0; width: 100%; box-sizing: border-box; }
+.animation-edit-stage { margin: 0; align-content: start; gap: 5px; }
+.animation-edit-stage figcaption { color: var(--ob-ink-soft); font-weight: 700; }
+.animation-edit-stage p { margin: 0; }
+.animation-frame-workbench canvas,
+.animation-alignment-previews canvas { max-width: 100%; height: auto; box-sizing: border-box; }
+.animation-frame-workbench figcaption,
+.animation-alignment-previews figcaption { text-align: center; overflow-wrap: anywhere; }
+.animation-frame-workbench .editor-transport,
+.animation-alignment-previews .editor-transport { width: 100%; min-width: 0; box-sizing: border-box; }
+.animation-frame-workbench .editor-transport > *,
+.animation-alignment-previews .editor-transport > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.animation-frame-workbench .editor-transport input[type=range] { flex: 1 1 100px; width: 100%; }
+.animation-keyboard-help { overflow-wrap: anywhere; }
+.animation-alignment-panel [hidden] { display: none; }
+.animation-alignment-section { min-width: 0; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--ob-parchment-edge); }
+.animation-alignment-section h4 { margin: 0 0 .4rem; }
+.animation-alignment-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: .75rem; }
+.animation-alignment-panel input,
+.animation-alignment-panel select { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.animation-alignment-prerequisite { padding: .6rem; background: rgba(255, 255, 255, .24); }
+.animation-alignment-summary { margin: .75rem 0; overflow-wrap: anywhere; }
+.animation-alignment-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; margin-top: .75rem; }
+.animation-alignment-previews figure { display: grid; }
+.animation-alignment-previews canvas { width: 100%; }
+@media (max-width: 760px) {
+  .animation-alignment-previews { grid-template-columns: minmax(0, 1fr); }
+}

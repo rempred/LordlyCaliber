@@ -6577,22 +6577,33 @@ window.OB64 = window.OB64 || {};
       ui.animationAlignmentOpen = panel.open; rerender();
     });
     panel.appendChild(element('summary', '', 'Position and compare alignment'));
-    function numeric(labelText, value, key) {
+    function numeric(parent, labelText, value, key) {
       var label = element('label', '', labelText); var input = element('input');
       input.type = 'number'; input.min = '-32768'; input.max = '32767'; input.value = String(value);
-      input.setAttribute('data-art-focus-key', key); label.appendChild(input); panel.appendChild(label); return input;
+      input.setAttribute('data-art-focus-key', key); label.appendChild(input); parent.appendChild(label); return input;
     }
-    panel.appendChild(element('p', '', 'Local sprite coordinates. Translation moves every layer without changing art or duration.'));
-    var x = numeric('Layer X', layer.drawOffsetX, 'animation-layer-x');
-    var y = numeric('Layer Y', layer.drawOffsetY, 'animation-layer-y');
+    panel.appendChild(element('p', 'animation-help', 'Use local sprite coordinates: the origin (0, 0) is the shared reference point. Positive X moves right; negative X moves left. Positive Y moves down; negative Y moves up.'));
+    function section(title, help) {
+      var group = element('section', 'animation-alignment-section');
+      group.appendChild(element('h4', '', title));
+      group.appendChild(element('p', 'animation-help', help)); panel.appendChild(group); return group;
+    }
+    var positionSection = section('Position selected Layer', 'Layer X and Layer Y set the selected Layer’s position in the current Frame. Changing either value applies immediately to that Layer only.');
+    var positionFields = element('div', 'animation-alignment-fields'); positionSection.appendChild(positionFields);
+    if (!separation) positionSection.appendChild(element('p', 'animation-alignment-prerequisite', 'This Frame Sequence is not an editable private copy. Use Copy From and Separate… above to create one, then select its Layer to change its position.'));
+
+    var x = numeric(positionFields, 'Layer X', layer.drawOffsetX, 'animation-layer-x');
+    var y = numeric(positionFields, 'Layer Y', layer.drawOffsetY, 'animation-layer-y');
     x.disabled = y.disabled = !separation;
     function position() {
       try { OB64.animationSequences.setLayerPosition(rom, separation, frame.sequenceIndex, layer.ordinal, Number(x.value), Number(y.value)); changed(options); rerender(); }
       catch (error) { notify(options, error.message); }
     }
     x.addEventListener('change', position); y.addEventListener('change', position);
-    var dx = numeric('Move X', ui.animationMoveX || 0, 'animation-move-x');
-    var dy = numeric('Move Y', ui.animationMoveY || 0, 'animation-move-y');
+    var batchSection = section('Move Layers across Frames', 'Choose editable private Frame Sequences for this class, choose the affected Frames, and enter a movement in pixels. Review the summary, then apply. Every Layer in the listed Frames moves by that amount; artwork and durations stay unchanged.');
+    var batchFields = element('div', 'animation-alignment-fields'); batchSection.appendChild(batchFields);
+    var dx = numeric(batchFields, 'Move X', ui.animationMoveX || 0, 'animation-move-x');
+    var dy = numeric(batchFields, 'Move Y', ui.animationMoveY || 0, 'animation-move-y');
     dx.addEventListener('input', function() { ui.animationMoveX = dx.value; });
     dy.addEventListener('input', function() { ui.animationMoveY = dy.value; });
     var modeLabel = element('label', '', 'Affected frames'); var mode = element('select');
@@ -6600,25 +6611,27 @@ window.OB64 = window.OB64 || {};
       var option = element('option', '', row[1]); option.value = row[0]; mode.appendChild(option);
     });
     mode.value = ui.animationAlignMode || 'all'; mode.setAttribute('data-art-focus-key', 'alignment-frame-mode');
-    modeLabel.appendChild(mode); panel.appendChild(modeLabel);
+    modeLabel.appendChild(mode); batchFields.appendChild(modeLabel);
     var frameLabel = element('label', '', 'Frame numbers (1, 3, 5)');
     var frames = element('input'); frames.type = 'text'; frames.value = ui.animationAlignFrames === 'all' ? '1' : ui.animationAlignFrames || '1';
     frames.setAttribute('data-art-focus-key', 'animation-align-frames');
     frames.addEventListener('input', function() { ui.animationAlignFrames = frames.value; updateSummary(); });
-    frameLabel.appendChild(frames); panel.appendChild(frameLabel);
+    frameLabel.appendChild(frames); batchFields.appendChild(frameLabel);
     var sequenceLabel = element('label', '', 'Private Frame Sequences to translate');
     var sequenceSelect = element('select'); sequenceSelect.multiple = true;
     sequenceSelect.setAttribute('data-art-focus-key', 'animation-translate-sequences');
     var privateRows = Object.keys(rom.animationSequences.separations).map(function(id) { return rom.animationSequences.separations[id]; })
       .filter(function(row) { return row.classId === animation.spec.classId; });
+    batchFields.hidden = !privateRows.length;
+    if (!privateRows.length) batchSection.appendChild(element('p', 'animation-alignment-prerequisite', 'No editable private Frame Sequences exist for this class. Use Copy From and Separate… above to create an editable copy. It will appear here for batch movement. Read-only comparison below is available now.'));
     privateRows.forEach(function(row) {
       var option = element('option', '', animationLabel(row.syntheticAnimation) + ' · ' + row.syntheticAnimation.frames.length + ' frames');
       option.value = row.id;
       option.selected = ui.animationAlignSequences ? ui.animationAlignSequences.indexOf(option.value) >= 0 : row === separation;
       sequenceSelect.appendChild(option);
     });
-    sequenceLabel.appendChild(sequenceSelect); panel.appendChild(sequenceLabel);
-    var visibleFrames = element('div', 'animation-visible-frame-selection'); panel.appendChild(visibleFrames);
+    sequenceLabel.appendChild(sequenceSelect); batchFields.appendChild(sequenceLabel);
+    var visibleFrames = element('div', 'animation-visible-frame-selection'); batchSection.appendChild(visibleFrames);
     if (!ui.animationAlignVisible) ui.animationAlignVisible = {};
     function selectedIds() { return Array.from(sequenceSelect.selectedOptions).map(function(option) { return option.value; }); }
     function showFrameChoices() {
@@ -6638,15 +6651,17 @@ window.OB64 = window.OB64 || {};
         }); visibleFrames.appendChild(group);
       });
     }
-    var summary = element('div', 'animation-alignment-summary'); summary.setAttribute('aria-live', 'polite'); panel.appendChild(summary);
+    var summary = element('div', 'animation-alignment-summary'); summary.setAttribute('aria-live', 'polite'); batchSection.appendChild(summary);
     var plan = null;
     var apply = button('Translate Previewed Frames', 'btn-secondary', function() {
       try { applyAlignment(rom, plan); changed(options); rerender(); }
       catch (error) { notify(options, error.message); updateSummary(); }
-    }); panel.appendChild(apply);
+    }); batchSection.appendChild(apply);
     function updateSummary() {
       plan = null; apply.disabled = true; summary.innerHTML = '';
-      visibleFrames.hidden = mode.value !== 'visible'; frameLabel.hidden = mode.value !== 'advanced';
+      visibleFrames.hidden = !privateRows.length || mode.value !== 'visible'; frameLabel.hidden = mode.value !== 'advanced';
+      apply.hidden = summary.hidden = !privateRows.length;
+      if (!privateRows.length) return;
       try {
         plan = prepareAlignment(rom, selectedIds(), mode.value, ui.animationFrame, ui.animationAlignVisible,
           frames.value, Number(dx.value), Number(dy.value));
@@ -6664,7 +6679,8 @@ window.OB64 = window.OB64 || {};
     sequenceSelect.addEventListener('change', function() { ui.animationAlignSequences = selectedIds(); showFrameChoices(); updateSummary(); });
     dx.addEventListener('input', updateSummary); dy.addEventListener('input', updateSummary);
     showFrameChoices(); updateSummary();
-    var compareLabel = element('label', '', 'Compare sequence'); var compare = element('select');
+    var compareSection = section('Compare Frame Sequences (read-only)', 'Choose a Frame Sequence to view beside the current one. Both previews use the same origin and scale. Compare Layer positions against that reference; this does not move artwork or align it automatically. No editable copy is required. Use the Animation playback controls below for both previews.');
+    var compareLabel = element('label', '', 'Compare Frame Sequence'); var compare = element('select');
     compare.setAttribute('data-art-focus-key', 'animation-compare');
     var choices = panel.open ? animationSequenceCatalogRows(state.animations, rom.animationSequences, animation.spec.classId, 0, { includeIdle: true, includeFixedActions: true }).concat(
       animationSequenceCatalogRows(state.animations, rom.animationSequences, animation.spec.classId, 1, { includeIdle: true, includeFixedActions: true })) : [];
@@ -6672,8 +6688,9 @@ window.OB64 = window.OB64 || {};
     choices.forEach(function(row) { var option = element('option', '', animationLabel(row)); option.value = row.key; compare.appendChild(option); });
     compare.value = choices.some(function(row) { return row.key === ui.animationCompareKey; }) ? ui.animationCompareKey : '';
     compare.addEventListener('change', function() { ui.animationCompareKey = compare.value; rerender(); });
-    compareLabel.appendChild(compare); panel.appendChild(compareLabel);
+    compareLabel.appendChild(compare); compareSection.appendChild(compareLabel);
     var compared = choices.find(function(row) { return row.key === compare.value; });
+    var comparisons = element('div', 'animation-alignment-previews'); compareSection.appendChild(comparisons);
     if (compared) {
       var left = Math.min(0, animation.canvas.originX, compared.canvas.originX) - 16;
       var top = Math.min(0, animation.canvas.originY, compared.canvas.originY) - 16;
@@ -6682,8 +6699,8 @@ window.OB64 = window.OB64 || {};
       var sharedCanvas = { originX: left, originY: top, endX: right, endY: bottom, width: right - left, height: bottom - top };
       var baseline = Object.assign({}, animation, { canvas: sharedCanvas, showOrigin: true });
       var comparison = Object.assign({}, compared, { canvas: sharedCanvas, showOrigin: true });
-      panel.appendChild(animationSequencePreview(state, baseline, Object.assign({}, ui, { animationAutoFit: true }), { caption: 'Current sequence · shared origin', controls: false }));
-      panel.appendChild(animationSequencePreview(state, comparison, Object.assign({}, ui, { animationAutoFit: true }), { caption: animationLabel(compared) + ' · shared origin', controls: false }));
+      comparisons.appendChild(animationSequencePreview(state, baseline, Object.assign({}, ui, { animationAutoFit: true }), { caption: 'Current sequence · shared origin', controls: false }));
+      comparisons.appendChild(animationSequencePreview(state, comparison, Object.assign({}, ui, { animationAutoFit: true }), { caption: animationLabel(compared) + ' · shared origin', controls: false }));
     }
     return panel;
   }
@@ -6876,7 +6893,8 @@ window.OB64 = window.OB64 || {};
     section.appendChild(alignmentPanel(state, rom, animation, frame, layer, separation, ui, options, rerender));
     var workbench = element('div', 'animation-frame-workbench');
     workbench.appendChild(fullFramePreview(state, animation, frame, ui));
-    var editStage = element('div', 'animation-edit-stage');
+    var editStage = element('figure', 'animation-edit-stage');
+    editStage.appendChild(element('figcaption', '', 'Edit selected Layer'));
     editStage.setAttribute('data-art-scroll-key', 'animation:edit-stage:' + animation.key);
     var canvas = element('canvas', 'animation-edit-canvas');
     canvas.setAttribute('data-art-focus-key', 'animation-edit-canvas');
@@ -6894,9 +6912,9 @@ window.OB64 = window.OB64 || {};
       coordinates.textContent = 'Local sprite coordinates · Cursor X ' + (point.x + previewAnimation.canvas.originX) + ', Y ' +
         (point.y + previewAnimation.canvas.originY) + ' · Layer X ' + layer.drawOffsetX + ', Y ' + layer.drawOffsetY;
     });
-    editStage.appendChild(coordinates);
-    editStage.appendChild(element('small', '', 'Keyboard: arrows move the pixel cursor; Space paints; Delete erases; I samples; Shift+arrows selects; Ctrl+C/V copies/pastes within this native palette; Ctrl+Z/Y undoes/redoes.'));
     editStage.appendChild(canvas);
+    editStage.appendChild(coordinates);
+    editStage.appendChild(element('small', 'animation-keyboard-help', 'Keyboard: arrows move the pixel cursor; Space paints; Delete erases; I samples; Shift+arrows selects; Ctrl+C/V copies/pastes within this native palette; Ctrl+Z/Y undoes/redoes.'));
     workbench.appendChild(editStage);
     workbench.appendChild(animationSequencePreview(state, animation, ui, { onSelect: function(index) {
       ui.animationFrame = index; ui.animationLayer = Math.min(ui.animationLayer || 0, animation.frames[index].layers.length - 1); rerender();
