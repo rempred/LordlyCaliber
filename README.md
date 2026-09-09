@@ -154,6 +154,10 @@ Sprite Editor layer imports provide Original Size, Fit, Fill/Crop, and Stretch.
 Original Size preserves source RGBA pixels and dimensions. Layer movement keeps
 off-canvas pixels until Crop Layer to Canvas is selected.
 
+Scale Artwork resamples pixels. Canvas Size changes working bounds and offers
+top-left, center, or bottom-right placement. Canvas Size preserves stored artwork
+unless Crop is selected. Both operations preview affected frames and support Undo.
+
 Sprite Library schema 2 and asset-file version 2 preserve layer dimensions,
 positions, and alignment anchors. Existing version 1 files load with validated
 defaults. Native imports retain alignment anchors where the target supports
@@ -163,6 +167,33 @@ native canvases can crop larger Original Size sources.
 Art and Animation can save supported content to the Sprite Library or export an
 asset file. Transfer controls identify the preserved pixels, layer positions,
 durations, and alignment anchor. Both editors share the Keep Eyedropper preference.
+
+Create Library Asset adds content to the current Project library. Export Asset File
+prepares a separate file download. Use in Art and Animation opens native-target
+selection for combat animation, avatars, item icons, or Army sprites. Preparation
+shows the replacement scope before application. Return navigation restores the
+originating library asset, frame, and layer. Transfer does not save or export a Project or ROM.
+
+Used colors appear in a bounded swatch grid with selected RGB and opacity details.
+Enter the grid once with Tab, then use arrow keys to navigate. Layer, frame, and
+sequence scope and paging remain available for large color sets.
+
+Sprite Editor provides inline frame-sequence playback. Both animation workflows
+provide play/pause, frame stepping, speed control, scrubbing, and current-frame
+feedback. Combat comparisons share one timeline. Playback uses approximate editor
+timing at 30 ticks per second.
+
+On a focused editable pixel canvas, arrow keys move the cursor. Space or Enter
+paints, Delete or Backspace erases, and I samples. Shift plus arrows extends a
+rectangular selection. Cancelling a selection drag restores its previous selection.
+Dialogs contain keyboard focus and return to an available launching control.
+
+Undo Delete restores one deleted library asset and its editing history. The current
+session retains the last 20 deletions. Recovery preserves later edits to other assets.
+Applying a Project clears deletion recovery.
+
+Batch alignment shows selected sequences, exact frame numbers, counts, and the
+movement vector before application. Review that summary before moving the listed frames.
 
 A combat frame can add one Sprite Library layer without replacing existing layers.
 The preparation dialog keeps its library dimensions and colors by default.
