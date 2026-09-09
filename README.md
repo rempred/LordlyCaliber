@@ -59,6 +59,17 @@ The assignment changes only when the user selects `Assign`.
 `Linked` means that two labels share one mutable body program.
 Independent private sequences are not linked, even when their program bytes match.
 
+Copy Art retains the destination frame duration. Copy Art and Duration also copies
+timing. Duplicate Frame creates independent art with the same duration.
+Stable Origin keeps the preview coordinate view fixed; Automatic Fit follows
+edited bounds. Position fields use local sprite coordinates.
+
+Whole-sequence imports open preparation before changing the target. Choose
+Original Size, Fit, Fill/Crop, or Stretch and inspect each converted frame.
+Preparation shows source and output dimensions, scale, and alignment anchors.
+Import applies every frame and duration together. A blocked conversion or
+replacement keeps the previous sequence and selection. Cancel makes no target changes.
+
 ## ROM compatibility
 
 The strongest supported baseline is the North American header revision 0 ROM:
@@ -139,8 +150,19 @@ change the ROM. Import a compatible asset into Art and Animation before ROM expo
 New blank assets use known target dimensions. Combat frame targets use the
 canvas dimensions from the loaded ROM.
 
-A Sprite Editor layer can import a PNG or JPEG image. The preparation dialog
-crops, resizes, quantizes, and optionally dithers the image before replacing the layer.
+Sprite Editor layer imports provide Original Size, Fit, Fill/Crop, and Stretch.
+Original Size preserves source RGBA pixels and dimensions. Layer movement keeps
+off-canvas pixels until Crop Layer to Canvas is selected.
+
+Sprite Library schema 2 and asset-file version 2 preserve layer dimensions,
+positions, and alignment anchors. Existing version 1 files load with validated
+defaults. Native imports retain alignment anchors where the target supports
+local layer positioning. Native palette conversion still applies, and fixed
+native canvases can crop larger Original Size sources.
+
+Art and Animation can save supported content to the Sprite Library or export an
+asset file. Transfer controls identify the preserved pixels, layer positions,
+durations, and alignment anchor. Both editors share the Keep Eyedropper preference.
 
 A combat frame can add one Sprite Library layer without replacing existing layers.
 The preparation dialog keeps its library dimensions and colors by default.
