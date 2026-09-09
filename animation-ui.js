@@ -3421,7 +3421,7 @@ window.OB64 = window.OB64 || {};
       return select;
     }
     var classSelect = selectField('Class');
-    var sequenceSelect = selectField('Sequence');
+    var sequenceSelect = selectField('Frame Sequence');
     body.appendChild(controls);
     var preview = element('div', 'animation-copy-preview');
     body.appendChild(preview);
@@ -3430,8 +3430,8 @@ window.OB64 = window.OB64 || {};
     var cancelButton = button('Cancel', 'error-modal-ok', close);
     footer.appendChild(cancelButton);
     var copyInProgress = false;
-    var defaultCopyLabel = separation ? 'Replace Sequence' : 'Create Separated Copy';
-    var copyButton = button(separation ? 'Replace Sequence' : 'Create Separated Copy',
+    var defaultCopyLabel = separation ? 'Replace Frame Sequence' : 'Create Separated Copy';
+    var copyButton = button(separation ? 'Replace Frame Sequence' : 'Create Separated Copy',
       'error-modal-ok', async function() {
       if (copyInProgress) return;
       var donor = currentDonor();
@@ -3708,7 +3708,7 @@ window.OB64 = window.OB64 || {};
     }
     var sourceField = copiesFrame ? null : selectField('Source');
     var classField = selectField('Class');
-    var sequenceField = selectField('Sequence');
+    var sequenceField = selectField('Frame Sequence');
     var actorArtField = copiesFrame ? null : selectField('Actor Art Source');
     var actorAnimationField = copiesFrame ? null : selectField('Animation');
     var actorFacingField = copiesFrame ? null : selectField('Facing');
@@ -4206,7 +4206,7 @@ window.OB64 = window.OB64 || {};
     modal.setAttribute('aria-labelledby', 'animation-sequence-import-title');
     overlay.appendChild(modal);
     var header = element('div', 'error-modal-header');
-    var title = element('h2', '', 'Prepare Sprite Library Sequence');
+    var title = element('h2', '', 'Prepare Sprite Library Frame Sequence');
     title.id = 'animation-sequence-import-title'; header.appendChild(title);
     var closeButton = button('×', 'error-modal-close', close);
     closeButton.setAttribute('aria-label', 'Cancel sequence import'); header.appendChild(closeButton);
@@ -4248,7 +4248,7 @@ window.OB64 = window.OB64 || {};
     layout.appendChild(controls); body.appendChild(layout); modal.appendChild(body);
     var footer = element('div', 'error-modal-footer art-import-footer');
     footer.appendChild(button('Cancel', 'error-modal-ok', close));
-    var apply = button('Import Sequence', 'error-modal-ok', function() {
+    var apply = button('Import Frame Sequence', 'error-modal-ok', function() {
       if (!prepared) return;
       if (sequenceRevision !== rom.animationSequences.revision || editRevision !== rom.art.animations.editRevision) {
         stats.textContent = 'Target changed during preparation. Cancel and reopen sequence import.';
@@ -4390,9 +4390,9 @@ window.OB64 = window.OB64 || {};
       'btn-secondary animation-copy-from', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: separation
-            ? 'Replace Private Sequence from Sprite Library'
-            : 'Create Private Sequence from Sprite Library',
-          actionLabel: separation ? 'Replace Sequence' : 'Import Sequence',
+            ? 'Replace Private Frame Sequence from Sprite Library'
+            : 'Create Private Frame Sequence from Sprite Library',
+          actionLabel: separation ? 'Replace Frame Sequence' : 'Import Frame Sequence',
           kinds: ['sequence'],
           onStatus: function(message) { notify(options, message); }
         }, function(source) {
@@ -6788,7 +6788,7 @@ window.OB64 = window.OB64 || {};
       : 'Create a separated private sequence before replacing a frame.';
     if (OB64.spriteEditorUI && OB64.spriteEditorUI.appendAssetTransfers) {
       var transferKind = element('select');
-      [['sprite', 'Selected layer'], ['frame', 'Current frame'], ['sequence', 'Complete sequence']].forEach(function(row) {
+      [['sprite', 'Selected layer'], ['frame', 'Current frame'], ['sequence', 'Complete Frame Sequence']].forEach(function(row) {
         var option = element('option', '', row[1]); option.value = row[0]; transferKind.appendChild(option);
       });
       transferKind.value = ui.animationTransferKind || 'frame';

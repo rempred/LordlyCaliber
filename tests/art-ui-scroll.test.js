@@ -202,7 +202,7 @@ assert(animationSource.includes("button('Assign', 'animation-variant-assign'"));
 assert(!animationSource.includes("button('Separate and Assign',"));
 assert(animationSource.includes("? 'Replace From…' : 'Copy From and Separate…'"));
 assert(animationSource.includes('openCopyFromModal('));
-assert(animationSource.includes("var sequenceSelect = selectField('Sequence')"));
+assert(animationSource.includes("var sequenceSelect = selectField('Frame Sequence')"));
 assert(animationSource.includes('animationClassVariantChoices(rowsForClass())'));
 assert(animationSource.includes('animationSequenceCatalogRows(\n        state.animations'));
 assert(!animationSource.includes('if (!motionTarget) {'));
@@ -266,7 +266,7 @@ assert(animationSource.includes('OB64.animationSequences.setLayerPosition('));
 assert(animationSource.includes("element('label', 'animation-brush-size-control')"));
 assert(animationSource.includes('ui.animationBrushSize'));
 assert(animationSource.includes(
-  "separation ? 'Replace Sequence' : 'Create Separated Copy'"));
+  "separation ? 'Replace Frame Sequence' : 'Create Separated Copy'"));
 assert(animationSource.includes('setCopyBusy(true);'));
 assert(animationSource.includes('await nextBrowserPaint();'));
 assert(animationSource.includes("modal.setAttribute('aria-busy', busy ? 'true' : 'false')"));

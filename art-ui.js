@@ -1110,7 +1110,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function installCanvasEditing(canvas, state, kind, key, width, height, scale, ui, options, rerender) {
-    var drawing = false, working = null, selectionStart = null, changedPixels = false;
+    var drawing = false, working = null, selectionStart = null, priorSelection = null, changedPixels = false;
     var backgroundMode = kind === 'icon'
       ? previewBackgroundMode(ui) : 'checkerboard';
     canvas.tabIndex = 0;
@@ -1161,7 +1161,7 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if (ui.tool === 'select') {
-        drawing = true; selectionStart = point;
+        drawing = true; selectionStart = point; priorSelection = ui.selection;
         ui.selection = { x: point.x, y: point.y, width: 1, height: 1 };
         canvas.setPointerCapture(event.pointerId);
         drawWords(canvas, current, width, height, scale, ui.selection, backgroundMode);
@@ -1192,7 +1192,11 @@ window.OB64 = window.OB64 || {};
       if (!drawing) return;
       drawing = false;
       if (event && canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-      if (ui.tool === 'select') { rerender(); return; }
+      if (ui.tool === 'select') {
+        if (event && event.type === 'pointercancel') ui.selection = priorSelection;
+        priorSelection = null;
+        rerender(); return;
+      }
       if (event && event.type === 'pointercancel') { working = null; changedPixels = false; rerender(); return; }
       if (!changedPixels) return;
       try {

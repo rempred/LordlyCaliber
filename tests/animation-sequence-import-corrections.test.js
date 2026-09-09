@@ -224,7 +224,7 @@ function stateSnapshot(rom, ui) {
   nodes.find(node => node.textContent === 'Cancel').listeners.click();
   assert.strictEqual(document.body.children.length, 0); assert.strictEqual(changes, 0);
   open(); nodes = descendants(document.body);
-  nodes.find(node => node.textContent === 'Import Sequence').listeners.click();
+  nodes.find(node => node.textContent === 'Import Frame Sequence').listeners.click();
   assert.strictEqual(document.body.children.length, 0); assert.strictEqual(changes, 1);
   assert.strictEqual(Object.keys(rom.animationSequences.separations).length, 1);
   assert.strictEqual(Object.values(rom.animationSequences.separations)[0].syntheticAnimation.frames.length, 2);

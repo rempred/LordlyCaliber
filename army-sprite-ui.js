@@ -413,6 +413,7 @@ window.OB64 = window.OB64 || {};
     var drawing = false;
     var working = null;
     var selectionStart = null;
+    var priorSelection = null;
     var changedPixels = false;
     canvas.tabIndex = 0;
     canvas.setAttribute('data-art-focus-key', 'army-edit-canvas');
@@ -463,6 +464,7 @@ window.OB64 = window.OB64 || {};
       }
       if (ui.armyTool === 'select') {
         drawing = true;
+        priorSelection = ui.armySelection;
         selectionStart = point;
         ui.armySelection = { x: point.x, y: point.y, width: 1, height: 1 };
         canvas.setPointerCapture(event.pointerId);
@@ -508,6 +510,8 @@ window.OB64 = window.OB64 || {};
         canvas.releasePointerCapture(event.pointerId);
       }
       if (ui.armyTool === 'select') {
+        if (event && event.type === 'pointercancel') ui.armySelection = priorSelection;
+        priorSelection = null;
         rerender();
         return;
       }

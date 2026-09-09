@@ -281,6 +281,7 @@ window.OB64 = window.OB64 || {};
     var working = null;
     var changedPixels = false;
     var selectionStart = null;
+    var priorSelection = null;
     var moveStart = null;
     var frameIndex = ui.frameIndex;
     var layerIndex = ui.layerIndex;
@@ -302,6 +303,7 @@ window.OB64 = window.OB64 || {};
         return 'move';
       }
       if (ui.tool === 'select') {
+        priorSelection = ui.selection;
         selectionStart = point; ui.selection = { x: point.x, y: point.y, width: 1, height: 1 }; return 'select';
       }
       point = localPoint(point);
@@ -393,6 +395,8 @@ window.OB64 = window.OB64 || {};
         rerender(); return;
       }
       if (ui.tool === 'select') {
+        if (event && event.type === 'pointercancel') ui.selection = priorSelection;
+        priorSelection = null;
         rerender();
         return;
       }
@@ -1505,7 +1509,7 @@ window.OB64 = window.OB64 || {};
     name.type = 'text';
     name.value = asset.name;
     name.maxLength = 120;
-    name.setAttribute('aria-label', 'Sprite asset name');
+    name.setAttribute('aria-label', 'Sprite Library Asset name');
     name.setAttribute('data-sprite-focus-key', 'asset-name');
     name.addEventListener('change', function() {
       try {
@@ -1587,7 +1591,7 @@ window.OB64 = window.OB64 || {};
     var input = element('input', 'art-image-input');
     input.type = 'file';
     input.accept = '.json,.ob64-sprite.json,application/json';
-    input.setAttribute('aria-label', 'Import a LordlyCaliber sprite asset file');
+    input.setAttribute('aria-label', 'Import a LordlyCaliber Sprite Library Asset file');
     input.addEventListener('change', function() {
       var file = input.files && input.files[0];
       if (!file) return;
@@ -1598,14 +1602,14 @@ window.OB64 = window.OB64 || {};
           asset = L.addAsset(state, asset, { renameCollision: true });
           ui.assetId = asset.id; ui.frameIndex = 0; ui.layerIndex = 0;
           changed(options);
-          notify(options, 'Imported sprite asset file ' + file.name + '.');
+          notify(options, 'Imported Sprite Library Asset file ' + file.name + '.');
           rerender();
         } catch (error) {
-          notify(options, 'Sprite asset file import blocked: ' + error.message);
+          notify(options, 'Sprite Library Asset file import blocked: ' + error.message);
         }
       };
       reader.onerror = function() {
-        notify(options, 'Sprite asset file import failed while reading ' + file.name + '.');
+        notify(options, 'Sprite Library Asset file import failed while reading ' + file.name + '.');
       };
       reader.readAsText(file);
       input.value = '';
@@ -2298,7 +2302,7 @@ window.OB64 = window.OB64 || {};
     bottom.appendChild(duplicate);
     var remove = button('Delete Asset', 'btn-secondary sprite-danger', function() {
       var asset = selectedAsset(state, ui);
-      if (!asset || !window.confirm('Delete Project sprite asset “' + asset.name + '”?')) return;
+      if (!asset || !window.confirm('Delete Project Sprite Library Asset “' + asset.name + '”?')) return;
       L.removeAsset(state, asset.id);
       changed(options); rerender();
     });
@@ -2514,7 +2518,7 @@ window.OB64 = window.OB64 || {};
     if (asset) shell.appendChild(editor(state, asset, ui, options, rerender));
     else {
       var empty = element('div', 'sprite-editor-empty');
-      empty.appendChild(element('h3', '', 'Create or import a sprite asset'));
+      empty.appendChild(element('h3', '', 'Create or import a Sprite Library Asset'));
       empty.appendChild(element('p', '',
         'Known sources include class avatars, item icons, combat animations, cutscene actors, PNG, JPEG, and Sprite Editor files.'));
       empty.appendChild(button('Create Library Asset…', 'btn-secondary', function() {
