@@ -511,6 +511,7 @@ window.OB64 = window.OB64 || {};
         rerender();
         return;
       }
+      if (event && event.type === 'pointercancel') { working = null; changedPixels = false; rerender(); return; }
       if (changedPixels && M.setEdit(
           army, atlas.key, model.modelId, working)) {
         changed(options);
@@ -520,6 +521,20 @@ window.OB64 = window.OB64 || {};
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
     canvas.addEventListener('lostpointercapture', finish);
+    if (OB64.editorInteraction) {
+      function keyboardRedraw(cursor) {
+        drawPlane(canvas, atlas, M.currentIndices(army, atlas.key, model.modelId), ui.armyPaletteIndex, scale, ui.armySelection, ui);
+        var context = canvas.getContext('2d'); if (context.strokeRect) { context.strokeStyle = '#ff00ff'; context.lineWidth = 2; context.strokeRect(cursor.x * scale, cursor.y * scale, scale, scale); }
+        canvas.title = 'Pixel ' + cursor.x + ', ' + cursor.y;
+      }
+      var cursor = OB64.editorInteraction.pixelKeyboard(canvas, ui, 'armyPixelCursor', atlas.width, atlas.height, function(operation, point, selection) {
+        if (operation === 'select') { ui.armySelection = selection; return; }
+        var indices = M.currentIndices(army, atlas.key, model.modelId).slice(), index = point.y * atlas.width + point.x;
+        if (operation === 'sample') { ui.armySelectedIndex = indices[index]; rerender(); return; }
+        indices[index] = operation === 'erase' ? atlas.transparentIndices[ui.armyPaletteIndex] : ui.armySelectedIndex;
+        if (M.setEdit(army, atlas.key, model.modelId, indices)) { changed(options); rerender(); }
+      }, keyboardRedraw); keyboardRedraw(cursor);
+    }
     canvas.addEventListener('keydown', function(event) {
       if (!(event.ctrlKey || event.metaKey)) return;
       var key = event.key.toLowerCase();
@@ -915,6 +930,7 @@ window.OB64 = window.OB64 || {};
       if (scheduled !== null) window.cancelAnimationFrame(scheduled);
       scheduled = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escape);
     }
     function escape(event) { if (event.key === 'Escape') close(); }
@@ -922,6 +938,7 @@ window.OB64 = window.OB64 || {};
       if (event.target === overlay) close();
     });
     document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     resizeSelect.focus();
     schedulePreview();
@@ -1038,6 +1055,9 @@ window.OB64 = window.OB64 || {};
           });
         }));
     }
+    if (OB64.spriteEditorUI) OB64.spriteEditorUI.transferButton(bar, rom, atlas.label + ' · ' + modelTitle(model), 'Replace Army Sprite', function(source) {
+      openImportDialog(source, army, atlas, model, ui, options, rerender);
+    }, options);
     [0, 1].forEach(function(paletteIndex) {
       var exportButton = button('Export Palette ' + paletteIndex + ' PNG',
         'btn-secondary', function() {
@@ -1110,6 +1130,7 @@ window.OB64 = window.OB64 || {};
         'No player sprite exists for this routed model');
     }
     workspace.appendChild(canvas);
+    workspace.appendChild(element('small', '', 'Keyboard: arrows move; Space paints; Delete erases; I samples; Shift+arrows selects. Copy/Paste and Undo/Redo are available in the toolbar.'));
     workspace.appendChild(palettePanel(atlas, ui, rerender));
     main.appendChild(workspace);
     main.appendChild(actions(rom, army, atlas, model, ui, options, rerender));
@@ -1166,6 +1187,7 @@ window.OB64 = window.OB64 || {};
 
   OB64.armySpriteUI = {
     render: render,
+    installCanvas: installCanvas,
     flood: flood,
     drawPlane: drawPlane,
     sourceForModel: sourceForModel,

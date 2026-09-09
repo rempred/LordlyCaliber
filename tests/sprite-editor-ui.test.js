@@ -304,10 +304,10 @@ assert(librarySource.includes('copyPart: copyPart'));
 
 for (const tool of ['Pencil', 'Eraser', 'Fill', 'Eyedropper', 'Replace Color',
   'Select', 'Undo', 'Redo', 'Flip H', 'Flip V', 'Rotate Left', 'Rotate Right',
-  'Resize Canvas…']) {
+  'Scale Artwork…', 'Canvas Size…']) {
   assert(uiSource.includes(tool), 'missing Sprite Editor tool: ' + tool);
 }
-assert(uiSource.includes("element('h3', '', 'Frame Collage')"));
+assert(uiSource.includes("element('h3', '', 'Frame Sequence')"));
 assert(uiSource.includes("['avatar', 'Class avatars']"));
 assert(uiSource.includes("['icon', 'Item icons']"));
 assert(uiSource.includes("['combat', 'Combat animations']"));
@@ -322,9 +322,9 @@ assert(!uiSource.includes("field('Height', 'number'"));
 assert(uiSource.includes("zoomInput.min = '1'"));
 assert(uiSource.includes('Math.max(asset.width, asset.height) > 512'));
 assert(uiSource.includes("Import Asset File"));
-assert(uiSource.includes("Save Layer as Sprite"));
-assert(uiSource.includes("Save Frame as Asset"));
-assert(uiSource.includes("Save Sequence as Asset"));
+assert(uiSource.includes("Create Library Asset from Layer"));
+assert(uiSource.includes("Create Library Asset from Frame"));
+assert(uiSource.includes("Create Library Asset from Frame Sequence"));
 assert(uiSource.includes("Import Image into Layer\\u2026"));
 assert(uiSource.includes("'Prepare Layer Image'"));
 assert(uiSource.includes('OB64.art.prepareSpriteImageImport('));
@@ -349,16 +349,16 @@ assert(armyModelSource.includes('zoom: options.zoom'));
 assert(artSource.includes("Import from Sprite Library…"));
 assert(artSource.includes("actionLabel: 'Convert to Avatar'"));
 assert(artSource.includes("actionLabel: 'Convert to Item Icon'"));
-assert(animationSource.includes("Import Library Frame…"));
-assert(animationSource.includes("Import Library Sprite…"));
-assert(animationSource.includes("actionLabel: 'Prepare Sprite Layer'"));
+assert(animationSource.includes("Replace Frame from Library…"));
+assert(animationSource.includes("Add Library Layer…"));
+assert(animationSource.includes("actionLabel: 'Prepare Library Layer'"));
 assert(animationSource.includes('layerOnly: true'));
 assert(animationSource.includes("'Prepare Sprite Library Layer'"));
 assert(animationSource.includes("dimensionField('Output width'"));
 assert(animationSource.includes("dimensionField('Output height'"));
 assert(animationSource.includes("'Image zoom'"));
-assert(animationSource.includes("Import Library Sequence…"));
-assert(animationSource.includes("Replace from Library…"));
+assert(animationSource.includes("Import Frame Sequence from Library…"));
+assert(animationSource.includes("Replace Frame Sequence from Library…"));
 assert(animationSource.includes('importLibrarySequence('));
 assert(animationSource.includes('prepareLibrarySpriteLayer('));
 assert(animationSource.includes('importLibrarySpriteLayer('));

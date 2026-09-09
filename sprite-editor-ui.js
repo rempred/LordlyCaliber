@@ -396,6 +396,7 @@ window.OB64 = window.OB64 || {};
         rerender();
         return;
       }
+      if (event && event.type === 'pointercancel') { working = null; changedPixels = false; rerender(); return; }
       if (changedPixels) {
         L.replaceLayerPixels(state, asset.id, frameIndex, layerIndex, working);
         changed(options);
@@ -405,6 +406,26 @@ window.OB64 = window.OB64 || {};
     }
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
+    if (OB64.editorInteraction) {
+      function keyboardRedraw(cursor) {
+        drawWorking(); var context = canvas.getContext('2d');
+        if (context.strokeRect) { context.strokeStyle = '#ff00ff'; context.lineWidth = 2; context.strokeRect(cursor.x * ui.zoom, cursor.y * ui.zoom, ui.zoom, ui.zoom); }
+        canvas.title = 'Pixel ' + cursor.x + ', ' + cursor.y;
+      }
+      var cursor = OB64.editorInteraction.pixelKeyboard(canvas, ui, 'pixelCursor', asset.width, asset.height,
+        function(operation, point, selection) {
+          if (operation === 'select') { ui.selection = selection; return; }
+          var local = localPoint(point);
+          if (local.x < 0 || local.y < 0 || local.x >= layerWidth || local.y >= layerHeight) return;
+          var offset = (local.y * layerWidth + local.x) * 4;
+          if (operation === 'sample') { ui.color = Array.from(layer.pixels.slice(offset, offset + 4)); rerender(); return; }
+          var pixels = new Uint8ClampedArray(layer.pixels);
+          if (applyBrush(pixels, layerWidth, layerHeight, local, ui.brushSize, operation === 'erase' ? [0, 0, 0, 0] : ui.color)) {
+            L.replaceLayerPixels(state, asset.id, frameIndex, layerIndex, pixels); changed(options); rerender();
+          }
+        }, keyboardRedraw);
+      keyboardRedraw(cursor);
+    }
     canvas.addEventListener('keydown', function(event) {
       if (!(event.ctrlKey || event.metaKey)) return;
       var key = event.key.toLowerCase();
@@ -619,11 +640,13 @@ window.OB64 = window.OB64 || {};
         ui.selection = null;
         rerender();
       });
+      select.setAttribute('data-sprite-focus-key', 'asset-' + asset.id + '-frame-' + frame.id + '-layer-' + layer.id);
       select.setAttribute('aria-pressed', index === ui.layerIndex ? 'true' : 'false');
       row.appendChild(select);
       var visible = element('input');
       visible.type = 'checkbox';
       visible.checked = layer.visible !== false;
+      visible.setAttribute('data-sprite-focus-key', 'asset-' + asset.id + '-frame-' + frame.id + '-visible-' + layer.id);
       visible.setAttribute('aria-label', 'Show ' + layer.name);
       visible.addEventListener('change', function() {
         L.setLayerVisible(state, asset.id, ui.frameIndex, index, visible.checked);
@@ -635,13 +658,13 @@ window.OB64 = window.OB64 || {};
     });
     panel.appendChild(list);
     var actions = element('div', 'sprite-layer-actions');
-    actions.appendChild(button('Duplicate', 'btn-secondary', function() {
+    actions.appendChild(button('Duplicate Layer', 'btn-secondary', function() {
       L.addLayer(state, asset.id, ui.frameIndex, ui.layerIndex);
       ui.layerIndex = frame.layers.length;
       changed(options);
       rerender();
     }));
-    var rename = button('Rename', 'btn-secondary', function() {
+    var rename = button('Rename Layer', 'btn-secondary', function() {
       var wanted = window.prompt('Layer name', frame.layers[ui.layerIndex].name);
       if (wanted === null) return;
       L.renameLayer(state, asset.id, ui.frameIndex, ui.layerIndex, wanted);
@@ -667,7 +690,7 @@ window.OB64 = window.OB64 || {};
     });
     down.disabled = ui.layerIndex <= 0;
     actions.appendChild(down);
-    var remove = button('Remove', 'btn-secondary sprite-danger', function() {
+    var remove = button('Remove Layer', 'btn-secondary sprite-danger', function() {
       L.removeLayer(state, asset.id, ui.frameIndex, ui.layerIndex);
       ui.layerIndex = clamp(ui.layerIndex, 0, frame.layers.length - 2);
       changed(options);
@@ -694,6 +717,7 @@ window.OB64 = window.OB64 || {};
       label.appendChild(input); transform.appendChild(label);
     });
     transform.appendChild(button('Crop Layer to Canvas', 'btn-secondary', function() {
+      if (!window.confirm('Crop hidden pixels from this layer? Undo can restore them.')) return;
       L.cropLayerToCanvas(state, asset.id, ui.frameIndex, ui.layerIndex); changed(options); rerender();
     }));
     [['←', -1, 0], ['→', 1, 0], ['↑', 0, -1], ['↓', 0, 1]].forEach(function(row) {
@@ -716,7 +740,7 @@ window.OB64 = window.OB64 || {};
     }));
     panel.appendChild(transform);
     var anchorTools = element('div', 'sprite-transform-tools');
-    anchorTools.appendChild(element('strong', '', 'Alignment anchor · canvas pixels'));
+    anchorTools.appendChild(element('strong', '', 'Alignment anchor · shared origin'));
     ['x', 'y'].forEach(function(axis) {
       var label = element('label', '', axis.toUpperCase()); var input = element('input');
       input.type = 'number'; input.min = '-32768'; input.max = '32767'; input.value = String(asset.anchor && asset.anchor[axis] || 0);
@@ -729,6 +753,7 @@ window.OB64 = window.OB64 || {};
       });
       label.appendChild(input); anchorTools.appendChild(label);
     });
+    anchorTools.appendChild(element('small', '', 'The alignment anchor is the shared origin used to place transferred artwork. Layers use coordinates relative to this origin.'));
     panel.appendChild(anchorTools);
     panel.appendChild(colorPanel(ui, rerender));
     var usedPanel = element('section', 'sprite-color-panel sprite-used-colors-panel');
@@ -743,12 +768,34 @@ window.OB64 = window.OB64 || {};
     var colors = L.usedColors(asset, scope.value, ui.frameIndex, ui.layerIndex);
     var page = clamp(ui.usedColorPage || 0, 0, Math.max(0, Math.ceil(colors.length / 256) - 1));
     usedPanel.appendChild(element('small', '', colors.length + ' used colors'));
-    colors.slice(page * 256, (page + 1) * 256).forEach(function(color) {
-      var swatch = button('', 'sprite-color-swatch', function() { ui.color = color.slice(); rerender(); });
+    usedPanel.appendChild(element('p', 'sprite-selected-color', 'Selected RGB ' + ui.color.slice(0, 3).join(', ') +
+      ' · Opacity ' + Math.round(ui.color[3] * 100 / 255) + '%'));
+    var grid = element('div', 'sprite-used-color-grid'); grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', 'Used colors; arrow keys navigate');
+    var pageColors = colors.slice(page * 256, (page + 1) * 256);
+    var selectedColor = pageColors.findIndex(function(color) { return color.join(',') === ui.color.join(','); });
+    var focusedColor = pageColors.findIndex(function(color) { return color.join(',') === ui.usedColorFocus; });
+    if (focusedColor < 0) focusedColor = selectedColor < 0 ? 0 : selectedColor;
+    pageColors.forEach(function(color, index) {
+      var chosen = color.join(',') === ui.color.join(',');
+      var swatch = button('', 'sprite-color-swatch' + (chosen ? ' selected' : ''), function() { ui.color = color.slice(); ui.usedColorFocus = color.join(','); rerender(); });
       swatch.style.background = 'rgba(' + color.slice(0, 3).join(',') + ',' + color[3] / 255 + ')';
       swatch.title = 'RGB ' + color.slice(0, 3).join(', ') + ' · Opacity ' + Math.round(color[3] * 100 / 255) + '%';
-      swatch.setAttribute('aria-label', swatch.title); usedPanel.appendChild(swatch);
+      swatch.setAttribute('aria-label', swatch.title); swatch.setAttribute('aria-pressed', String(chosen));
+      swatch.setAttribute('data-sprite-focus-key', 'used-color-' + color.join('-'));
+      swatch.tabIndex = index === focusedColor ? 0 : -1;
+      swatch.addEventListener('keydown', function(event) {
+        var step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -8, ArrowDown: 8 }[event.key];
+        if (step === undefined && event.key !== 'Home' && event.key !== 'End') return;
+        event.preventDefault();
+        var next = event.key === 'Home' ? 0 : event.key === 'End' ? pageColors.length - 1 : clamp(index + step, 0, pageColors.length - 1);
+        ui.usedColorFocus = pageColors[next].join(',');
+        Array.from(grid.children).forEach(function(control, ordinal) { control.tabIndex = ordinal === next ? 0 : -1; });
+        grid.children[next].focus({ preventScroll: true });
+        if (grid.children[next].scrollIntoView) grid.children[next].scrollIntoView({ block: 'nearest' });
+      });
+      grid.appendChild(swatch);
     });
+    usedPanel.appendChild(grid);
     if (colors.length > 256) {
       [-1, 1].forEach(function(delta) {
         var nav = button(delta < 0 ? 'Previous colors' : 'Next colors', 'btn-secondary', function() { ui.usedColorPage = page + delta; rerender(); });
@@ -762,25 +809,25 @@ window.OB64 = window.OB64 || {};
   function frameStrip(state, asset, ui, options, rerender) {
     var section = element('section', 'sprite-frame-section');
     var heading = element('div', 'sprite-frame-heading');
-    heading.appendChild(element('h3', '', 'Frame Collage'));
+    heading.appendChild(element('h3', '', 'Frame Sequence'));
     var actions = element('div', 'sprite-frame-heading-actions');
-    actions.appendChild(button('Add Blank', 'btn-secondary', function() {
+    actions.appendChild(button('Add Blank Frame', 'btn-secondary', function() {
       L.addFrame(state, asset.id, ui.frameIndex, false);
       ui.frameIndex++;
       ui.layerIndex = 0;
       changed(options);
       rerender();
     }));
-    actions.appendChild(button('Duplicate', 'btn-secondary', function() {
+    actions.appendChild(button('Duplicate Frame', 'btn-secondary', function() {
       L.addFrame(state, asset.id, ui.frameIndex, true);
       ui.frameIndex++;
       ui.layerIndex = 0;
       changed(options);
       rerender();
     }));
-    var remove = button('Remove', 'btn-secondary sprite-danger', function() {
+    var remove = button('Remove Frame', 'btn-secondary sprite-danger', function() {
       L.removeFrame(state, asset.id, ui.frameIndex);
-      ui.frameIndex = clamp(ui.frameIndex, 0, asset.frames.length - 2);
+      ui.frameIndex = clamp(ui.frameIndex, 0, asset.frames.length - 1);
       ui.layerIndex = 0;
       changed(options);
       rerender();
@@ -816,6 +863,7 @@ window.OB64 = window.OB64 || {};
           ui.selection = null;
           rerender();
         });
+      card.setAttribute('data-sprite-focus-key', 'asset-' + asset.id + '-frame-' + frame.id);
       card.setAttribute('aria-label', 'Select frame ' + (index + 1));
       card.setAttribute('aria-pressed', index === ui.frameIndex ? 'true' : 'false');
       card.appendChild(element('strong', '', 'Frame ' + (index + 1)));
@@ -871,6 +919,7 @@ window.OB64 = window.OB64 || {};
     canvasControls.appendChild(element('span', 'sprite-dimensions',
       asset.width + '×' + asset.height + ' pixels'));
     main.appendChild(canvasControls);
+    main.appendChild(element('small', '', 'Keyboard: arrows move the pixel cursor; Space paints; Delete erases; I samples; Shift+arrows selects; Ctrl+C/V copies/pastes; Ctrl+Z/Y undoes/redoes.'));
     var scroll = element('div', 'sprite-canvas-scroll');
     scroll.setAttribute('data-sprite-scroll-key', 'sprite:canvas:' + asset.id);
     var canvas = element('canvas', 'sprite-edit-canvas');
@@ -1277,12 +1326,14 @@ window.OB64 = window.OB64 || {};
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
       scheduledFrame = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) {
       if (event.key === 'Escape') close();
     };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     resizeSelect.focus();
     schedulePreview();
@@ -1313,19 +1364,85 @@ window.OB64 = window.OB64 || {};
     return input;
   }
 
+  function openGeometryModal(state, asset, ui, options, rerender, mode) {
+    var original = L.assetFileText(asset), candidate = null;
+    var overlay = element('div', 'error-modal-overlay art-import-overlay');
+    var modal = element('div', 'error-modal art-import-modal'); overlay.appendChild(modal);
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    var label = mode === 'scale' ? 'Scale Artwork' : 'Canvas Size'; modal.setAttribute('aria-label', label);
+    modal.appendChild(element('h2', '', label));
+    var body = element('div', 'error-modal-body'); modal.appendChild(body);
+    function field(name, value) {
+      var wrap = element('label', 'art-import-control', name), input = element('input'); input.type = 'number';
+      input.min = '1'; input.max = String(L.MAX_DIMENSION); input.value = String(value); input.setAttribute('aria-label', name);
+      input.addEventListener('input', preview); wrap.appendChild(input); body.appendChild(wrap); return input;
+    }
+    var width = field('Output width', asset.width), height = field('Output height', asset.height);
+    var placement = element('select'); placement.setAttribute('aria-label', 'Origin placement');
+    [['top-left', 'Keep top-left position'], ['center', 'Center artwork'], ['bottom-right', 'Keep bottom-right position']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; placement.appendChild(option);
+    });
+    placement.value = 'top-left'; placement.addEventListener('change', preview);
+    var cropLabel = element('label', '', 'Crop stored pixels outside the new canvas (undoable)');
+    var crop = element('input'); crop.type = 'checkbox'; crop.addEventListener('change', preview); cropLabel.prepend(crop);
+    if (mode === 'canvas') { body.appendChild(placement); body.appendChild(cropLabel); }
+    body.appendChild(element('p', '', mode === 'scale' ? 'Resamples every layer and scales layer positions and the shared alignment origin.' :
+      'Moves the canvas boundary without resampling. Stored pixels remain available unless Crop is selected. Artwork and alignment origin move together.'));
+    var previews = element('div', 'sprite-geometry-previews'); body.appendChild(previews);
+    var status = element('p'); status.setAttribute('aria-live', 'polite'); body.appendChild(status);
+    var footer = element('div', 'error-modal-footer'); modal.appendChild(footer);
+    footer.appendChild(button('Cancel', 'error-modal-ok', close));
+    var apply = button(label, 'error-modal-ok', function() {
+      if (!candidate) return;
+      try {
+        if (L.assetFileText(L.assetFor(state, asset.id)) !== original) throw new Error('Asset changed. Cancel and reopen this operation.');
+        if (mode === 'scale') L.resizeAsset(state, asset.id, Number(width.value), Number(height.value));
+        else L.resizeCanvas(state, asset.id, Number(width.value), Number(height.value), placement.value, crop.checked);
+        ui.selection = null; changed(options); close(); rerender();
+      } catch (error) { status.textContent = error.message; }
+    }); footer.appendChild(apply);
+    function preview() {
+      candidate = null; apply.disabled = true; previews.innerHTML = '';
+      try {
+        candidate = L.previewGeometry(asset, mode, Number(width.value), Number(height.value), placement.value, crop.checked);
+        [asset, candidate].forEach(function(row, index) {
+          var figure = element('figure'), canvas = element('canvas');
+          figure.appendChild(element('figcaption', '', (index ? 'After' : 'Before') + ' · ' + row.width + '×' + row.height));
+          paintPixels(canvas, row.width, row.height, L.compositeFrame(row, ui.frameIndex),
+            Math.max(1, Math.min(4, Math.floor(240 / Math.max(row.width, row.height)))), ui.background, false, null);
+          figure.appendChild(canvas); previews.appendChild(figure);
+        });
+        status.textContent = 'Affects all ' + asset.frames.length + ' frames (1–' + asset.frames.length + '). Preview: frame ' + (ui.frameIndex + 1) +
+          '. Alignment origin ' + asset.anchor.x + ', ' + asset.anchor.y + ' → ' + candidate.anchor.x + ', ' + candidate.anchor.y +
+          (mode === 'scale' ? '. Pixel scale ' + (candidate.width / asset.width).toFixed(2) + '× / ' + (candidate.height / asset.height).toFixed(2) + '×.' :
+          crop.checked ? '. Hidden pixels will be cropped; Undo restores them.' : '. Stored pixel dimensions stay unchanged.');
+        apply.disabled = false;
+      } catch (error) { status.textContent = 'Blocked: ' + error.message; }
+    }
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener('keydown', escape);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
+    }
+    function escape(event) { if (event.key === 'Escape') close(); }
+    document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
+    document.body.appendChild(overlay); preview(); width.focus(); width.select();
+  }
+
   function assetActions(state, asset, ui, options, rerender) {
     var bar = element('div', 'sprite-asset-actions');
-    bar.appendChild(button('Save Layer as Sprite', 'btn-secondary', function() {
+    bar.appendChild(button('Create Library Asset from Layer', 'btn-secondary', function() {
       var added = L.copyPart(state, asset.id, 'sprite', ui.frameIndex, ui.layerIndex);
       ui.assetId = added.id; ui.frameIndex = 0; ui.layerIndex = 0;
       changed(options); rerender();
     }));
-    bar.appendChild(button('Save Frame as Asset', 'btn-secondary', function() {
+    bar.appendChild(button('Create Library Asset from Frame', 'btn-secondary', function() {
       var added = L.copyPart(state, asset.id, 'frame', ui.frameIndex, ui.layerIndex);
       ui.assetId = added.id; ui.frameIndex = 0; ui.layerIndex = 0;
       changed(options); rerender();
     }));
-    var saveSequence = button('Save Sequence as Asset', 'btn-secondary', function() {
+    var saveSequence = button('Create Library Asset from Frame Sequence', 'btn-secondary', function() {
       var added = L.copyPart(state, asset.id, 'sequence', ui.frameIndex, ui.layerIndex);
       ui.assetId = added.id; ui.frameIndex = 0; ui.layerIndex = 0;
       changed(options); rerender();
@@ -1356,23 +1473,14 @@ window.OB64 = window.OB64 || {};
       var blob = new Blob([L.assetFileText(asset)], { type: 'application/json' });
       var filename = L.filename(asset);
       downloadBlob(blob, filename);
-      notify(options, 'Sprite asset exported as ' + filename + '.');
+      notify(options, 'Asset file download prepared: ' + filename + '. This does not save the Project or apply a native target.');
     }));
-    var resize = button('Resize Canvas…', 'btn-secondary', function() {
-      var width = window.prompt('Canvas width from 1 through ' + L.MAX_DIMENSION,
-        String(asset.width));
-      if (width === null) return;
-      var height = window.prompt('Canvas height from 1 through ' + L.MAX_DIMENSION,
-        String(asset.height));
-      if (height === null) return;
-      try {
-        L.resizeAsset(state, asset.id, Number(width), Number(height));
-        changed(options); rerender();
-      } catch (error) {
-        notify(options, 'Canvas resize blocked: ' + error.message);
-      }
-    });
-    bar.appendChild(resize);
+    bar.appendChild(button('Scale Artwork…', 'btn-secondary', function() {
+      openGeometryModal(state, asset, ui, options, rerender, 'scale');
+    }));
+    bar.appendChild(button('Canvas Size…', 'btn-secondary', function() {
+      openGeometryModal(state, asset, ui, options, rerender, 'canvas');
+    }));
     bar.appendChild(button('Rotate Left', 'btn-secondary', function() {
       L.rotateAsset(state, asset.id, false);
       ui.selection = null; changed(options); rerender();
@@ -1382,8 +1490,8 @@ window.OB64 = window.OB64 || {};
       ui.selection = null; changed(options); rerender();
     }));
     if (options && typeof options.onOpenArt === 'function') {
-      bar.appendChild(button('Open Art and Animation', 'btn-secondary', function() {
-        options.onOpenArt();
+      bar.appendChild(button('Use in Art and Animation…', 'btn-secondary', function() {
+        options.onOpenArt({ assetId: asset.id, frameIndex: ui.frameIndex, layerIndex: ui.layerIndex });
       }));
     }
     return bar;
@@ -1409,7 +1517,7 @@ window.OB64 = window.OB64 || {};
       }
     });
     title.appendChild(name);
-    title.appendChild(element('p', '', asset.kind + ' · ' + asset.width + '×' +
+    title.appendChild(element('p', '', assetKindLabel(asset) + ' · ' + asset.width + '×' +
       asset.height + ' · ' + asset.frames.length +
       (asset.frames.length === 1 ? ' frame' : ' frames') +
       (asset.provenance && asset.provenance.label
@@ -1417,6 +1525,20 @@ window.OB64 = window.OB64 || {};
     heading.appendChild(title);
     heading.appendChild(element('span', 'art-badge art-badge-edited', 'Project Asset'));
     main.appendChild(heading);
+    if (OB64.editorInteraction) {
+      var playback = OB64.editorInteraction.transportState(ui, 'playback', asset.id, ui.frameIndex);
+      OB64.editorInteraction.syncTransport(playback, asset.frames, ui.frameIndex, asset.id);
+      var preview = element('figure', 'sprite-inline-preview'), previewCanvas = element('canvas');
+      preview.appendChild(element('figcaption', '', 'Frame Sequence Playback · Editing frame ' + (ui.frameIndex + 1)));
+      preview.appendChild(previewCanvas);
+      OB64.editorInteraction.mountTransport(preview, playback, asset.frames, function(index) {
+        paintPixels(previewCanvas, asset.width, asset.height, L.compositeFrame(asset, index),
+          Math.max(1, Math.min(4, Math.floor(240 / Math.max(asset.width, asset.height)))), ui.background, false, null);
+      }, { identity: asset.id, onSelect: function(index) {
+        ui.frameIndex = index; ui.layerIndex = Math.min(ui.layerIndex, asset.frames[index].layers.length - 1); ui.selection = null; rerender();
+      } });
+      main.appendChild(preview);
+    }
     main.appendChild(frameStrip(state, asset, ui, options, rerender));
     main.appendChild(toolbar(state, asset, ui, options, rerender));
     main.appendChild(canvasWorkspace(state, asset, ui, options, rerender));
@@ -1527,7 +1649,7 @@ window.OB64 = window.OB64 || {};
     modal.setAttribute('aria-labelledby', 'sprite-new-title');
     overlay.appendChild(modal);
     var header = element('div', 'error-modal-header');
-    var title = element('h2', '', 'New Sprite Asset'); title.id = 'sprite-new-title';
+    var title = element('h2', '', 'Create Sprite Library Asset'); title.id = 'sprite-new-title';
     header.appendChild(title);
     header.appendChild(button('×', 'error-modal-close', close));
     modal.appendChild(header);
@@ -1600,10 +1722,12 @@ window.OB64 = window.OB64 || {};
     overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escape);
     }
     function escape(event) { if (event.key === 'Escape') close(); }
     document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     format.focus();
   }
@@ -1787,7 +1911,7 @@ window.OB64 = window.OB64 || {};
       var kind = kindField.select.value;
       var modes = kind === 'avatar' || kind === 'icon' || kind === 'army'
         ? [['sprite', 'Sprite']]
-        : [['sequence', 'Frame sequence'], ['frame', 'Complete frame'],
+        : [['sequence', 'Frame Sequence'], ['frame', 'Complete frame'],
           ['sprite', 'One sprite layer']];
       replaceOptions(modeField.select, modes,
         function(row) { return row[0]; }, function(row) { return row[1]; });
@@ -1980,6 +2104,10 @@ window.OB64 = window.OB64 || {};
     }
 
     function updatePreview() {
+      if (OB64.editorInteraction) return OB64.editorInteraction.preserveFocus(modal, 'data-sprite-focus-key', 'dialog-updatePreview', updatePreviewContents);
+      return updatePreviewContents();
+    }
+    function updatePreviewContents() {
       preview.innerHTML = '';
       var rows;
       try {
@@ -2086,10 +2214,12 @@ window.OB64 = window.OB64 || {};
     overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escape);
     }
     function escape(event) { if (event.key === 'Escape') close(); }
     document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     populateSources();
     kindField.select.focus();
@@ -2098,7 +2228,7 @@ window.OB64 = window.OB64 || {};
   function browser(rom, state, ui, options, rerender) {
     var sidebar = element('aside', 'sprite-library-browser');
     var actions = element('div', 'sprite-library-actions');
-    actions.appendChild(button('New Sprite', 'btn-secondary', function() {
+    actions.appendChild(button('Create Library Asset…', 'btn-secondary', function() {
       openNewAssetModal(rom, state, ui, options, rerender);
     }));
     actions.appendChild(button('Import Known Source', 'btn-secondary', function() {
@@ -2139,6 +2269,7 @@ window.OB64 = window.OB64 || {};
           ui.assetId = asset.id; ui.frameIndex = 0; ui.layerIndex = 0;
           ui.selection = null; rerender();
         });
+      card.setAttribute('data-sprite-focus-key', 'library-asset-' + asset.id);
       var canvas = element('canvas');
       var scale = Math.max(1, Math.min(3,
         Math.floor(64 / Math.max(asset.width, asset.height))));
@@ -2147,7 +2278,7 @@ window.OB64 = window.OB64 || {};
       card.appendChild(canvas);
       var copy = element('span');
       copy.appendChild(element('strong', '', asset.name));
-      copy.appendChild(element('small', '', asset.kind + ' · ' +
+      copy.appendChild(element('small', '', assetKindLabel(asset) + ' · ' +
         asset.width + '×' + asset.height + ' · ' + asset.frames.length +
         (asset.frames.length === 1 ? ' frame' : ' frames')));
       card.appendChild(copy);
@@ -2173,9 +2304,17 @@ window.OB64 = window.OB64 || {};
     });
     remove.disabled = !selectedAsset(state, ui);
     bottom.appendChild(remove);
+    var recover = button('Undo Delete', 'btn-secondary', function() {
+      try { L.undoDelete(state); changed(options); rerender(); }
+      catch (error) { notify(options, 'Undo Delete blocked: ' + error.message); }
+    });
+    recover.disabled = !(state.deletedAssets && state.deletedAssets.length); bottom.appendChild(recover);
+    bottom.appendChild(element('small', '', 'Undo Delete restores the last 20 deletions in this session. Loading a Project clears deletion recovery.'));
     sidebar.appendChild(bottom);
     return sidebar;
   }
+
+  function assetKindLabel(asset) { return { sprite: 'Layer', frame: 'Frame', sequence: 'Frame Sequence' }[asset.kind] || 'Sprite Library Asset'; }
 
   function selectedAssetSource(asset, frameIndex, layerIndex, layerOnly) {
     var layer = asset.frames[frameIndex].layers[layerIndex];
@@ -2195,14 +2334,33 @@ window.OB64 = window.OB64 || {};
     function perform(exportFile) {
       try {
         var asset = createAsset(rom.spriteLibrary);
-        if (exportFile) downloadBlob(new Blob([L.assetFileText(asset)], { type: 'application/json' }), L.filename(asset));
-        else { L.addAsset(rom.spriteLibrary, asset); changed(options); notify(options, 'Saved ' + asset.name + ' to Sprite Library. Save Project to keep it.'); }
+        if (exportFile) { downloadBlob(new Blob([L.assetFileText(asset)], { type: 'application/json' }), L.filename(asset)); notify(options, 'Asset file download prepared. The Project library and native targets are unchanged.'); }
+        else { L.addAsset(rom.spriteLibrary, asset); changed(options); notify(options, 'Created ' + asset.name + ' in the Sprite Library. Save Project to keep it.'); }
       } catch (error) { notify(options, 'Asset transfer blocked: ' + error.message); }
     }
-    var save = button('Save to Sprite Library', 'btn-secondary', function() { perform(false); });
+    var save = button('Create Library Asset', 'btn-secondary', function() { perform(false); });
     var exportFile = button('Export Asset File', 'btn-secondary', function() { perform(true); });
     save.title = exportFile.title = 'Preserves pixels, layer positions, frame durations, and the alignment anchor. Does not assign an animation.';
     bar.appendChild(save); bar.appendChild(exportFile);
+  }
+
+  function transferSource(rom, layerOnly) {
+    var pending = rom.art.pendingSpriteTransfer;
+    if (!pending || pending.library !== rom.spriteLibrary || pending.generation !== (rom.spriteLibrary.generation || 0)) throw new Error('The source Project changed. Start a new transfer.');
+    var asset = L.assetFor(rom.spriteLibrary, pending.assetId);
+    if (L.assetFileText(asset) !== pending.identity) throw new Error('The source asset changed. Start a new transfer.');
+    return selectedAssetSource(asset, pending.frameIndex, pending.layerIndex, !!layerOnly);
+  }
+
+  function transferButton(bar, rom, label, scope, prepare, options) {
+    if (!rom.art.pendingSpriteTransfer) return null;
+    var control = button('Prepare ' + scope + ' for ' + label, 'btn-secondary', function() {
+      try { prepare(transferSource(rom, scope === 'Add Library Layer')); }
+      catch (error) { notify(options, 'Transfer blocked: ' + error.message); }
+    });
+    control.setAttribute('data-art-focus-key', 'contextual-transfer-prepare');
+    control.title = 'Destination: selected native target. Preparation must be applied separately. Save Project and Export ROM remain separate actions.';
+    bar.appendChild(control); return control;
   }
 
   function openLibraryPicker(rom, options, onSelect) {
@@ -2228,7 +2386,7 @@ window.OB64 = window.OB64 || {};
     state.assets.filter(function(asset) {
       return !options.kinds || options.kinds.indexOf(asset.kind) >= 0;
     }).forEach(function(asset) {
-      var option = element('option', '', asset.name + ' · ' + asset.kind + ' · ' +
+      var option = element('option', '', asset.name + ' · ' + assetKindLabel(asset) + ' · ' +
         asset.width + '×' + asset.height);
       option.value = asset.id; assetSelect.appendChild(option);
     });
@@ -2254,6 +2412,10 @@ window.OB64 = window.OB64 || {};
     var selectedFrame = 0;
     var selectedLayer = 0;
     function renderPicker() {
+      if (OB64.editorInteraction) return OB64.editorInteraction.preserveFocus(modal, 'data-sprite-focus-key', 'dialog-renderPicker', renderPickerContents);
+      return renderPickerContents();
+    }
+    function renderPickerContents() {
       var asset = state.byId[assetSelect.value];
       frameStripNode.innerHTML = ''; layerSelect.innerHTML = ''; preview.innerHTML = '';
       use.disabled = !asset;
@@ -2266,6 +2428,7 @@ window.OB64 = window.OB64 || {};
           (index === selectedFrame ? ' selected' : ''), function() {
             selectedFrame = index; renderPicker();
           });
+        card.setAttribute('data-sprite-focus-key', 'picker-' + asset.id + '-frame-' + frame.id);
         var canvas = element('canvas');
         var scale = Math.max(1, Math.min(3,
           Math.floor(80 / Math.max(asset.width, asset.height))));
@@ -2299,16 +2462,19 @@ window.OB64 = window.OB64 || {};
     overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escape);
     }
     function escape(event) { if (event.key === 'Escape') close(); }
     document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     renderPicker(); assetSelect.focus();
     return true;
   }
 
   function render(panel, rom, options, preserveViewport) {
+    if (OB64.editorInteraction) OB64.editorInteraction.releaseWithin(panel);
     var state = rom && rom.spriteLibrary;
     if (!state) {
       panel.innerHTML = '';
@@ -2351,18 +2517,19 @@ window.OB64 = window.OB64 || {};
       empty.appendChild(element('h3', '', 'Create or import a sprite asset'));
       empty.appendChild(element('p', '',
         'Known sources include class avatars, item icons, combat animations, cutscene actors, PNG, JPEG, and Sprite Editor files.'));
-      empty.appendChild(button('New Sprite', 'btn-secondary', function() {
+      empty.appendChild(button('Create Library Asset…', 'btn-secondary', function() {
         openNewAssetModal(rom, state, ui, options, rerender);
       }));
       shell.appendChild(empty);
     }
     panel.appendChild(shell);
-    Array.from(panel.querySelectorAll('input, select, button, canvas')).forEach(function(control, index) {
-      if (!control.getAttribute('data-sprite-focus-key')) control.setAttribute('data-sprite-focus-key', 'control-' + index);
-    });
+    if (OB64.editorInteraction) OB64.editorInteraction.semanticFocus(panel, 'data-sprite-focus-key', ui.assetId || 'library');
+    var fallback = panel.querySelector('canvas[tabindex]') || panel.querySelector('button:not([disabled])');
+    if (fallback) fallback.setAttribute('data-editor-focus-fallback', 'sprites');
     restoreScroll(panel, ui, preserveViewport);
     if (focus) {
-      var replacement = panel.querySelector('[data-sprite-focus-key="' + focus.key + '"]');
+      var replacement = panel.querySelector('[data-sprite-focus-key="' + focus.key + '"]') || fallback;
+      if (replacement && replacement.disabled) replacement = fallback;
       if (replacement) {
         replacement.focus({ preventScroll: true });
         if (focus.start !== null && replacement.setSelectionRange) {
@@ -2384,8 +2551,11 @@ window.OB64 = window.OB64 || {};
     animationSources: animationSources,
     framesFromAnimation: framesFromAnimation,
     installCanvasEditing: installCanvasEditing,
+    openGeometryModal: openGeometryModal,
     compositeWithLayer: compositeWithLayer,
     openLibraryPicker: openLibraryPicker,
+    transferSource: transferSource,
+    transferButton: transferButton,
     knownSpriteTemplates: knownSpriteTemplates,
     spriteImageColorLimit: spriteImageColorLimit,
     webmSupported: webmSupported

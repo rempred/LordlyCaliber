@@ -3553,6 +3553,10 @@ window.OB64 = window.OB64 || {};
           : 'Choose a source sequence. This creates a private copy of every frame and weapon sprite, then assigns it to the selected target.');
     }
     function updatePreview() {
+      if (OB64.editorInteraction) return OB64.editorInteraction.preserveFocus(modal, 'data-art-focus-key', 'dialog-updatePreview', updatePreviewContents);
+      return updatePreviewContents();
+    }
+    function updatePreviewContents() {
       preview.innerHTML = '';
       var donor = currentDonor();
       copyButton.disabled = copyInProgress || !donor;
@@ -3596,10 +3600,12 @@ window.OB64 = window.OB64 || {};
     function close(force) {
       if (copyInProgress && force !== true) return;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     classSelect.focus();
   }
@@ -3968,6 +3974,10 @@ window.OB64 = window.OB64 || {};
       updatePreview();
     }
     function updatePreview() {
+      if (OB64.editorInteraction) return OB64.editorInteraction.preserveFocus(modal, 'data-art-focus-key', 'dialog-updatePreview', updatePreviewContents);
+      return updatePreviewContents();
+    }
+    function updatePreviewContents() {
       var oldBodyScroll = body.scrollTop;
       var oldLayerList = preview.querySelector('.animation-copy-layer-list');
       var oldLayerScroll = oldLayerList ? oldLayerList.scrollTop : 0;
@@ -4043,6 +4053,7 @@ window.OB64 = window.OB64 || {};
         selectedPane.appendChild(selectedCanvas); previewGrid.appendChild(selectedPane);
         if (showAnimationPreview) {
           previewGrid.appendChild(animationSequencePreview(state, donor, ui, {
+            transport: OB64.editorInteraction ? OB64.editorInteraction.transportState(ui, 'copyPreviewPlayback', donor.key, 0) : null,
             className: 'animation-sprite-copy-pane animation-copy-sequence-pane',
             caption: 'Animation preview · 30 ticks/sec',
             ariaLabel: 'Looping cutscene actor animation preview',
@@ -4157,10 +4168,12 @@ window.OB64 = window.OB64 || {};
     });
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     updateSourceFields();
     populateSequences(targetAnimation);
@@ -4270,11 +4283,13 @@ window.OB64 = window.OB64 || {};
     }
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
-    document.addEventListener('keydown', escapeHandler); document.body.appendChild(overlay);
+    document.addEventListener('keydown', escapeHandler); if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
+    document.body.appendChild(overlay);
     prepare(); frameSelect.focus();
   }
 
@@ -4333,7 +4348,7 @@ window.OB64 = window.OB64 || {};
       rerender, rom) {
     var section = element('section', 'animation-sequence-section');
     var heading = element('div', 'animation-section-heading');
-    heading.appendChild(element('h3', '', 'Frame sequence'));
+    heading.appendChild(element('h3', '', 'Frame Sequence'));
     var idleTarget = isIdleAnimation(targetAnimation);
     var motionTarget = isClassMotionAnimation(targetAnimation);
     var fixedActionTarget = isFixedClassActionAnimation(targetAnimation);
@@ -4371,7 +4386,7 @@ window.OB64 = window.OB64 || {};
     headingActions.appendChild(copyFrom);
     if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
       var librarySequence = button(separation
-        ? 'Replace from Library…' : 'Import Library Sequence…',
+        ? 'Replace Frame Sequence from Library…' : 'Import Frame Sequence from Library…',
       'btn-secondary animation-copy-from', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: separation
@@ -4409,6 +4424,7 @@ window.OB64 = window.OB64 || {};
       var card = element('button', 'animation-frame-card' +
         (isSelected ? ' selected' : ''));
       card.type = 'button';
+      card.setAttribute('data-art-focus-key', 'animation-' + animation.key + '-frame-' + frame.sourceFrameIndex);
       card.draggable = !!editableSeparation;
       card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       var cardHeading = element('span', 'animation-card-selection-row');
@@ -4828,10 +4844,12 @@ window.OB64 = window.OB64 || {};
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
       scheduledFrame = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     angleInput.focus(); angleInput.select(); schedulePreview();
   }
@@ -4980,10 +4998,12 @@ window.OB64 = window.OB64 || {};
     });
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     widthInput.focus(); widthInput.select(); updateStatus();
   }
@@ -5057,6 +5077,7 @@ window.OB64 = window.OB64 || {};
       var card = element('button', 'animation-layer-card' +
         (isSelected ? ' selected' : ''));
       card.type = 'button';
+      if (OB64.editorInteraction) card.setAttribute('data-art-focus-key', 'animation-layer-' + OB64.editorInteraction.objectKey(layer));
       card.draggable = !!separation;
       card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       var title = element('span', 'animation-layer-title');
@@ -5349,6 +5370,7 @@ window.OB64 = window.OB64 || {};
       drawing = false;
       lastPaintPoint = null;
       if (event && canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      if (event && event.type === 'pointercancel') { working = null; changedPixels = false; rerender(); return; }
       if (changedPixels && M.setEdit(state.animations, layer.sourceKey, childOrdinal,
           working.indices, working.intensity)) {
         changed(options); notify(options, 'Updated ' + animationLabel(animation) + ' art ' +
@@ -5358,9 +5380,56 @@ window.OB64 = window.OB64 || {};
     }
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
+    if (OB64.editorInteraction && source.editable) {
+      var pixelIdentity = layer.sourceKey + ':' + childOrdinal;
+      if (ui.animationPixelIdentity !== pixelIdentity) { ui.animationPixelIdentity = pixelIdentity; ui.animationPixelSelection = null; ui.animationPixelCursor = null; }
+      function keyboardRedraw(cursor) {
+        redraw(); var context = canvas.getContext('2d');
+        var metrics = layerPreviewMetrics(animation, layer);
+        var x = (metrics ? metrics.left : layer.drawOffsetX) - animation.canvas.originX;
+        var y = (metrics ? metrics.top : layer.drawOffsetY) - animation.canvas.originY;
+        if (context.strokeRect) { context.strokeStyle = '#ff00ff'; context.lineWidth = 2; context.strokeRect((x + cursor.x) * 8, (y + cursor.y) * 8, 8, 8); }
+        if (context.strokeRect && ui.animationPixelSelection) { var rect = ui.animationPixelSelection; context.strokeStyle = '#00ffff'; context.strokeRect((x + rect.x) * 8, (y + rect.y) * 8, rect.width * 8, rect.height * 8); }
+        canvas.title = 'Pixel ' + cursor.x + ', ' + cursor.y;
+      }
+      var cursor = OB64.editorInteraction.pixelKeyboard(canvas, ui, 'animationPixelCursor', source.sprite.width, source.sprite.height,
+        function(operation, point, selection) {
+          if (operation === 'select') { ui.animationPixelSelection = selection; return; }
+          var current = M.currentEdit(state.animations, layer.sourceKey, childOrdinal), index = point.y * source.sprite.width + point.x;
+          if (operation === 'sample') { samplePixel(ui, current, index); rerender(); return; }
+          var indices = current.indices.slice(), intensity = current.intensity.slice();
+          animationBrushIndices(source.sprite.width, source.sprite.height, point.x, point.y, ui.animationBrushSize).forEach(function(pixel) {
+            indices[pixel] = ui.animationPaletteIndex; intensity[pixel] = operation === 'erase' ? 0 : ui.animationIntensity;
+          });
+          if (M.setEdit(state.animations, layer.sourceKey, childOrdinal, indices, intensity)) { changed(options); rerender(); }
+        }, keyboardRedraw);
+      keyboardRedraw(cursor);
+    }
     canvas.addEventListener('keydown', function(event) {
       if (!(event.ctrlKey || event.metaKey)) return;
       var name = event.key.toLowerCase();
+      if ((name === 'c' || name === 'v') && ui.animationPixelSelection && source.editable) {
+        event.preventDefault();
+        var rect = ui.animationPixelSelection, current = M.currentEdit(state.animations, layer.sourceKey, childOrdinal);
+        if (name === 'c') {
+          var clip = { width: rect.width, height: rect.height, indices: [], intensity: [], sourceKey: layer.sourceKey };
+          for (var y = 0; y < rect.height; y++) for (var x = 0; x < rect.width; x++) {
+            var at = (rect.y + y) * source.sprite.width + rect.x + x; clip.indices.push(current.indices[at]); clip.intensity.push(current.intensity[at]);
+          }
+          ui.animationPixelClipboard = clip;
+        } else if (ui.animationPixelClipboard) {
+          var clip = ui.animationPixelClipboard;
+          if (clip.sourceKey !== layer.sourceKey) { notify(options, 'Paste pixel selections within the same native palette source. Use Add Library Layer for converted artwork.'); return; }
+          var indices = current.indices.slice(), intensity = current.intensity.slice();
+          for (var y = 0; y < clip.height; y++) for (var x = 0; x < clip.width; x++) {
+            if (rect.x + x >= source.sprite.width || rect.y + y >= source.sprite.height) continue;
+            var at = (rect.y + y) * source.sprite.width + rect.x + x, from = y * clip.width + x;
+            indices[at] = clip.indices[from]; intensity[at] = clip.intensity[from];
+          }
+          if (M.setEdit(state.animations, layer.sourceKey, childOrdinal, indices, intensity)) { changed(options); rerender(); }
+        }
+        return;
+      }
       if (name === 'z' && !event.shiftKey) {
         event.preventDefault(); if (M.undo(state.animations, layer.sourceKey,
             childOrdinal)) {
@@ -5873,6 +5942,7 @@ window.OB64 = window.OB64 || {};
     var status = element('span', 'animation-sequence-preview-status');
     preview.appendChild(status);
     var timeline = animationPreviewTimeline(animation);
+    if (OB64.editorInteraction) timeline.entries = animation.frames.map(function(frame, index) { return { frame: frame, frameIndex: index }; });
     var weaponChildOrdinal = Number.isInteger(previewOptions.weaponChildOrdinal)
       ? previewOptions.weaponChildOrdinal : weaponChildForAnimation(ui, animation);
     var surfaces = animationPreviewSurfaces(state, animation, timeline,
@@ -5897,18 +5967,13 @@ window.OB64 = window.OB64 || {};
       status.setAttribute('data-animation-preview-frame',
         String(entry.frame.sequenceIndex));
     }
-    show(timeline.entries[0]);
-    if (timeline.entries.length > 1 && typeof window !== 'undefined' &&
-        typeof window.requestAnimationFrame === 'function') {
-      var startedAt = null;
-      function advance(timestamp) {
-        if (!canvas.isConnected) return;
-        if (startedAt === null) startedAt = timestamp;
-        show(animationPreviewFrameAtMs(timeline, timestamp - startedAt));
-        window.requestAnimationFrame(advance);
-      }
-      window.requestAnimationFrame(advance);
-    }
+    if (OB64.editorInteraction) {
+      var model = previewOptions.transport || ui.animationPlayback ||
+        OB64.editorInteraction.transportState(ui, 'animationPlayback', animation.key, 0);
+      OB64.editorInteraction.mountTransport(preview, model, animation.frames, function(index) {
+        show({ frame: animation.frames[index], frameIndex: index });
+      }, { identity: animation.key, controls: previewOptions.controls !== false, onSelect: previewOptions.onSelect });
+    } else show(timeline.entries[0]);
     return preview;
   }
 
@@ -6182,10 +6247,12 @@ window.OB64 = window.OB64 || {};
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
       scheduledFrame = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     updateCropControls(); widthInput.focus(); widthInput.select(); schedulePreview();
   }
@@ -6462,12 +6529,44 @@ window.OB64 = window.OB64 || {};
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
       scheduledFrame = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     resizeSelect.focus(); schedulePreview();
+  }
+
+  function prepareAlignment(rom, ids, mode, currentFrame, visible, text, dx, dy) {
+    if (!ids.length) throw new Error('Select at least one private Frame Sequence.');
+    if (!Number.isInteger(dx) || !Number.isInteger(dy)) throw new Error('Movement must use whole pixels.');
+    var targets = ids.map(function(id) {
+      var separation = rom.animationSequences.separations[id];
+      if (!separation || !separation.syntheticAnimation) throw new Error('A selected Frame Sequence is unavailable.');
+      var animation = separation.syntheticAnimation, indexes;
+      if (mode === 'all') indexes = animation.frames.map(function(frame, index) { return index; });
+      else if (mode === 'current') indexes = [currentFrame];
+      else if (mode === 'visible') indexes = (visible[id] || []).slice();
+      else if (mode === 'advanced') indexes = text.split(',').map(function(value) {
+        if (!/^\s*\d+\s*$/.test(value)) throw new Error('Enter comma-separated frame numbers.'); return Number(value.trim()) - 1;
+      });
+      else throw new Error('Choose a frame selection mode.');
+      indexes = Array.from(new Set(indexes)).sort(function(a, b) { return a - b; });
+      if (!indexes.length || indexes.some(function(index) { return !Number.isInteger(index) || index < 0 || index >= animation.frames.length; })) {
+        throw new Error(animationLabel(animation) + ': choose valid frames from 1 to ' + animation.frames.length + '.');
+      }
+      return { separation: separation, animation: animation, frames: indexes, count: animation.frames.length };
+    });
+    return { revision: rom.animationSequences.revision, targets: targets, dx: dx, dy: dy };
+  }
+
+  function applyAlignment(rom, plan) {
+    if (!plan || plan.revision !== rom.animationSequences.revision || plan.targets.some(function(row) {
+      return rom.animationSequences.separations[row.separation.id] !== row.separation || row.separation.syntheticAnimation !== row.animation || row.animation.frames.length !== row.count;
+    })) throw new Error('Alignment targets changed. Review the target summary again.');
+    return OB64.animationSequences.translateFrames(rom, plan.targets, plan.dx, plan.dy);
   }
 
   function alignmentPanel(state, rom, animation, frame, layer, separation, ui, options, rerender) {
@@ -6496,37 +6595,75 @@ window.OB64 = window.OB64 || {};
     var dy = numeric('Move Y', ui.animationMoveY || 0, 'animation-move-y');
     dx.addEventListener('input', function() { ui.animationMoveX = dx.value; });
     dy.addEventListener('input', function() { ui.animationMoveY = dy.value; });
-    var frameLabel = element('label', '', 'Frames (all or 1, 3, 5)');
-    var frames = element('input'); frames.type = 'text'; frames.value = ui.animationAlignFrames || 'all';
+    var modeLabel = element('label', '', 'Affected frames'); var mode = element('select');
+    [['all', 'All Frames'], ['current', 'Current Frame'], ['visible', 'Select Frames'], ['advanced', 'Advanced frame numbers']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; mode.appendChild(option);
+    });
+    mode.value = ui.animationAlignMode || 'all'; mode.setAttribute('data-art-focus-key', 'alignment-frame-mode');
+    modeLabel.appendChild(mode); panel.appendChild(modeLabel);
+    var frameLabel = element('label', '', 'Frame numbers (1, 3, 5)');
+    var frames = element('input'); frames.type = 'text'; frames.value = ui.animationAlignFrames === 'all' ? '1' : ui.animationAlignFrames || '1';
     frames.setAttribute('data-art-focus-key', 'animation-align-frames');
-    frames.addEventListener('input', function() { ui.animationAlignFrames = frames.value; });
+    frames.addEventListener('input', function() { ui.animationAlignFrames = frames.value; updateSummary(); });
     frameLabel.appendChild(frames); panel.appendChild(frameLabel);
-    var sequenceLabel = element('label', '', 'Private sequences to translate');
+    var sequenceLabel = element('label', '', 'Private Frame Sequences to translate');
     var sequenceSelect = element('select'); sequenceSelect.multiple = true;
     sequenceSelect.setAttribute('data-art-focus-key', 'animation-translate-sequences');
     var privateRows = Object.keys(rom.animationSequences.separations).map(function(id) { return rom.animationSequences.separations[id]; })
       .filter(function(row) { return row.classId === animation.spec.classId; });
-    if (ui.animationAlignSequences && !privateRows.some(function(row) { return ui.animationAlignSequences.indexOf(row.id) >= 0; })) ui.animationAlignSequences = null;
     privateRows.forEach(function(row) {
-      var option = element('option', '', animationLabel(row.syntheticAnimation));
-      // Route identity is stable even when appended selectors are reindexed.
+      var option = element('option', '', animationLabel(row.syntheticAnimation) + ' · ' + row.syntheticAnimation.frames.length + ' frames');
       option.value = row.id;
       option.selected = ui.animationAlignSequences ? ui.animationAlignSequences.indexOf(option.value) >= 0 : row === separation;
       sequenceSelect.appendChild(option);
     });
-    sequenceSelect.addEventListener('change', function() { ui.animationAlignSequences = Array.from(sequenceSelect.selectedOptions).map(function(option) { return option.value; }); });
     sequenceLabel.appendChild(sequenceSelect); panel.appendChild(sequenceLabel);
-    var apply = button('Translate Selected Frames', 'btn-secondary', function() {
+    var visibleFrames = element('div', 'animation-visible-frame-selection'); panel.appendChild(visibleFrames);
+    if (!ui.animationAlignVisible) ui.animationAlignVisible = {};
+    function selectedIds() { return Array.from(sequenceSelect.selectedOptions).map(function(option) { return option.value; }); }
+    function showFrameChoices() {
+      visibleFrames.innerHTML = '';
+      selectedIds().forEach(function(id) {
+        var row = rom.animationSequences.separations[id], group = element('fieldset');
+        group.appendChild(element('legend', '', animationLabel(row.syntheticAnimation)));
+        row.syntheticAnimation.frames.forEach(function(frame, index) {
+          var label = element('label', '', 'Frame ' + (index + 1)), check = element('input'); check.type = 'checkbox';
+          check.checked = (ui.animationAlignVisible[id] || []).indexOf(index) >= 0;
+          check.setAttribute('data-art-focus-key', 'align-' + id + '-frame-' + index);
+          check.addEventListener('change', function() {
+            var indexes = (ui.animationAlignVisible[id] || []).filter(function(value) { return value !== index; });
+            if (check.checked) indexes.push(index); ui.animationAlignVisible[id] = indexes; updateSummary();
+          });
+          label.appendChild(check); group.appendChild(label);
+        }); visibleFrames.appendChild(group);
+      });
+    }
+    var summary = element('div', 'animation-alignment-summary'); summary.setAttribute('aria-live', 'polite'); panel.appendChild(summary);
+    var plan = null;
+    var apply = button('Translate Previewed Frames', 'btn-secondary', function() {
+      try { applyAlignment(rom, plan); changed(options); rerender(); }
+      catch (error) { notify(options, error.message); updateSummary(); }
+    }); panel.appendChild(apply);
+    function updateSummary() {
+      plan = null; apply.disabled = true; summary.innerHTML = '';
+      visibleFrames.hidden = mode.value !== 'visible'; frameLabel.hidden = mode.value !== 'advanced';
       try {
-        var indexes = frames.value.trim().toLowerCase() === 'all' ? null : frames.value.split(',').map(function(value) {
-          if (!/^\s*\d+\s*$/.test(value)) throw new Error('Use all or comma-separated frame numbers.');
-          return Number(value.trim()) - 1;
+        plan = prepareAlignment(rom, selectedIds(), mode.value, ui.animationFrame, ui.animationAlignVisible,
+          frames.value, Number(dx.value), Number(dy.value));
+        var total = 0;
+        plan.targets.forEach(function(row) {
+          total += row.frames.length;
+          summary.appendChild(element('p', '', animationLabel(row.animation) + ': frames ' + row.frames.map(function(index) { return index + 1; }).join(', ') +
+            ' (' + row.frames.length + ' of ' + row.count + ')'));
         });
-        var targets = Array.from(sequenceSelect.selectedOptions).map(function(option) { return { separation: rom.animationSequences.separations[option.value], frames: indexes }; });
-        OB64.animationSequences.translateFrames(rom, targets, Number(dx.value), Number(dy.value)); changed(options); rerender();
-      } catch (error) { notify(options, error.message); }
-    });
-    apply.disabled = !privateRows.length; panel.appendChild(apply);
+        summary.appendChild(element('strong', '', 'Move X ' + plan.dx + ', Y ' + plan.dy + ' · ' + total + ' frames across ' + plan.targets.length + ' Frame Sequences'));
+        apply.disabled = false;
+      } catch (error) { summary.appendChild(element('p', '', error.message)); }
+    }
+    mode.addEventListener('change', function() { ui.animationAlignMode = mode.value; updateSummary(); });
+    sequenceSelect.addEventListener('change', function() { ui.animationAlignSequences = selectedIds(); showFrameChoices(); updateSummary(); });
+    dx.addEventListener('input', updateSummary); dy.addEventListener('input', updateSummary);
+    showFrameChoices(); updateSummary();
     var compareLabel = element('label', '', 'Compare sequence'); var compare = element('select');
     compare.setAttribute('data-art-focus-key', 'animation-compare');
     var choices = panel.open ? animationSequenceCatalogRows(state.animations, rom.animationSequences, animation.spec.classId, 0, { includeIdle: true, includeFixedActions: true }).concat(
@@ -6545,13 +6682,13 @@ window.OB64 = window.OB64 || {};
       var sharedCanvas = { originX: left, originY: top, endX: right, endY: bottom, width: right - left, height: bottom - top };
       var baseline = Object.assign({}, animation, { canvas: sharedCanvas, showOrigin: true });
       var comparison = Object.assign({}, compared, { canvas: sharedCanvas, showOrigin: true });
-      panel.appendChild(animationSequencePreview(state, baseline, Object.assign({}, ui, { animationAutoFit: true }), { caption: 'Current sequence · shared origin' }));
-      panel.appendChild(animationSequencePreview(state, comparison, Object.assign({}, ui, { animationAutoFit: true }), { caption: animationLabel(compared) + ' · shared origin' }));
+      panel.appendChild(animationSequencePreview(state, baseline, Object.assign({}, ui, { animationAutoFit: true }), { caption: 'Current sequence · shared origin', controls: false }));
+      panel.appendChild(animationSequencePreview(state, comparison, Object.assign({}, ui, { animationAutoFit: true }), { caption: animationLabel(compared) + ' · shared origin', controls: false }));
     }
     return panel;
   }
 
-  function editor(state, rom, animation, frame, layer, ui, options, rerender) {
+  function editor(state, rom, animation, frame, layer, ui, options, rerender, targetAnimation) {
     var source = animation.artByKey[layer.sourceKey];
     var childOrdinal = selectedChildOrdinal(layer, source, ui);
     var separation = animation.spec.separatedCopy && OB64.animationSequences
@@ -6567,6 +6704,16 @@ window.OB64 = window.OB64 || {};
       headingActions.appendChild(badge('Edited', 'edited'));
     } else if (!source.editable) {
       headingActions.appendChild(badge('Read-only', 'locked'));
+    }
+    if (OB64.spriteEditorUI && rom.art.pendingSpriteTransfer) {
+      var scope = rom.art.pendingSpriteTransfer.scope;
+      var transfer = OB64.spriteEditorUI.transferButton(headingActions, rom, animationLabel(targetAnimation || animation) + ' · frame ' + (frame.sequenceIndex + 1),
+        scope === 'layer' ? 'Add Library Layer' : scope === 'frame' ? 'Replace Frame' : 'Replace Frame Sequence', function(source) {
+          if (scope === 'sequence') openLibrarySequenceImportModal(state, rom, separation, targetAnimation || animation, animation, source.asset, ui, options, rerender);
+          else if (scope === 'frame') openFrameImportModal(source, state, rom, separation, animation, frame, ui, options, rerender);
+          else openLibraryLayerImportModal(source, state, rom, separation, animation, frame, layer, ui, options, rerender);
+        }, options);
+      if (transfer && scope !== 'sequence' && !separation) { transfer.disabled = true; transfer.title = 'Separate this target sequence before editing its frame or adding a layer.'; }
     }
     var importInput = element('input', 'art-image-input');
     importInput.type = 'file';
@@ -6599,7 +6746,7 @@ window.OB64 = window.OB64 || {};
       : 'Create a separated private sequence before importing a frame.';
     headingActions.appendChild(importFrame);
     if (OB64.spriteEditorUI && OB64.spriteEditorUI.openLibraryPicker) {
-      var importLibraryFrame = button('Import Library Frame…', 'btn-secondary', function() {
+      var importLibraryFrame = button('Replace Frame from Library…', 'btn-secondary', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: 'Choose Sprite Library Frame',
           actionLabel: 'Convert to Animation Frame',
@@ -6614,10 +6761,10 @@ window.OB64 = window.OB64 || {};
         ? 'Choose any Sprite Library frame and convert it to this private sequence canvas.'
         : 'Create a separated private sequence before importing a Sprite Library frame.';
       headingActions.appendChild(importLibraryFrame);
-      var importLibrarySprite = button('Import Library Sprite…', 'btn-secondary', function() {
+      var importLibrarySprite = button('Add Library Layer…', 'btn-secondary', function() {
         OB64.spriteEditorUI.openLibraryPicker(rom, {
           title: 'Choose Sprite Library Art',
-          actionLabel: 'Prepare Sprite Layer',
+          actionLabel: 'Prepare Library Layer',
           layerOnly: true,
           onStatus: function(message) { notify(options, message); }
         }, function(sourceAsset) {
@@ -6748,9 +6895,12 @@ window.OB64 = window.OB64 || {};
         (point.y + previewAnimation.canvas.originY) + ' · Layer X ' + layer.drawOffsetX + ', Y ' + layer.drawOffsetY;
     });
     editStage.appendChild(coordinates);
+    editStage.appendChild(element('small', '', 'Keyboard: arrows move the pixel cursor; Space paints; Delete erases; I samples; Shift+arrows selects; Ctrl+C/V copies/pastes within this native palette; Ctrl+Z/Y undoes/redoes.'));
     editStage.appendChild(canvas);
     workbench.appendChild(editStage);
-    workbench.appendChild(animationSequencePreview(state, animation, ui));
+    workbench.appendChild(animationSequencePreview(state, animation, ui, { onSelect: function(index) {
+      ui.animationFrame = index; ui.animationLayer = Math.min(ui.animationLayer || 0, animation.frames[index].layers.length - 1); rerender();
+    } }));
     section.appendChild(workbench);
     var actions = element('div', 'art-asset-actions animation-actions');
     if (source.editable) {
@@ -6834,6 +6984,10 @@ window.OB64 = window.OB64 || {};
     }
     var frame = selectedFrame(animation, ui);
     var layer = selectedLayer(frame, ui);
+    if (OB64.editorInteraction) {
+      var playback = OB64.editorInteraction.transportState(ui, 'animationPlayback', animation.key, ui.animationFrame);
+      OB64.editorInteraction.syncTransport(playback, animation.frames, ui.animationFrame, animation.key);
+    }
     if (!Number.isInteger(ui.animationPaletteIndex) || ui.animationPaletteIndex < 0 ||
         ui.animationPaletteIndex > 255) ui.animationPaletteIndex = 0;
     ui.animationIntensity = normalizeIntensity(ui.animationIntensity);
@@ -6852,10 +7006,10 @@ window.OB64 = window.OB64 || {};
       state, animation, targetAnimation, ui, options, rerender, rom));
     var workspace = element('div', 'animation-workspace');
     workspace.appendChild(editor(
-      state, rom, animation, frame, layer, ui, options, rerender));
+      state, rom, animation, frame, layer, ui, options, rerender, targetAnimation));
     var sidebar = element('aside', 'animation-sidebar');
     sidebar.appendChild(layerList(
-      state, rom, animation, frame, layer, ui, options, rerender));
+      state, rom, animation, frame, layer, ui, options, rerender, targetAnimation));
     var selectedSource = animation.artByKey[layer.sourceKey];
     if (selectedSource.editable) {
       sidebar.appendChild(palettePanel(selectedSource,
@@ -6869,6 +7023,8 @@ window.OB64 = window.OB64 || {};
   }
 
   OB64.animationUI = {
+    prepareAlignment: prepareAlignment,
+    applyAlignment: applyAlignment,
     prepareLibrarySequence: prepareLibrarySequence,
     importLibrarySequence: importLibrarySequence,
     openLibrarySequenceImportModal: openLibrarySequenceImportModal,
@@ -6881,6 +7037,7 @@ window.OB64 = window.OB64 || {};
     sourceOver: sourceOver,
     selectLayer: selectLayer,
     samplePixel: samplePixel,
+    installEditing: installEditing,
     animationStats: animationStats,
     weaponItemsForChild: weaponItemsForChild,
     retailMappingText: retailMappingText,

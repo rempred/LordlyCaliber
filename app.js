@@ -1681,6 +1681,7 @@ window.OB64 = window.OB64 || {};
   // Tab Switching
   // ============================================================
   function activateTab(tab) {
+    if (OB64.editorInteraction) OB64.editorInteraction.stopAll();
     if (activeTab === 'cutscenes' && tab !== 'cutscenes' && rom &&
         rom.cutsceneStudio && OB64.cutsceneUI) {
       OB64.cutsceneUI.pause(rom.cutsceneStudio);
@@ -1756,6 +1757,7 @@ window.OB64 = window.OB64 || {};
       case 'items':     renderItems(panel); break;
       case 'art':
         OB64.artUI.render(panel, rom, {
+          onReturnSprites: function() { activateTab('sprites'); },
           onChange: function() { markChanged(); },
           onAnimationMappingChange: function() {
             markChanged('combatAnimationOverrides');
@@ -1778,7 +1780,7 @@ window.OB64 = window.OB64 || {};
             statusBar.textContent =
               'Sprite Library changed. Save Project to keep these reusable assets.';
           },
-          onOpenArt: function() { activateTab('art'); },
+          onOpenArt: function(request) { OB64.artUI.beginLibraryTransfer(rom, request); activateTab('art'); },
           onStatus: function(message) { statusBar.textContent = message; }
         });
         break;

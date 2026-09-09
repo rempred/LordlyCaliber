@@ -557,7 +557,9 @@ window.OB64 = window.OB64 || {};
     var history = historyFor(state, id);
     if (!history.undo.length) return false;
     var current = cloneAsset(assetFor(state, id));
-    var prior = history.undo.pop();
+    var prior = history.undo[history.undo.length - 1];
+    validateAsset(prior, 'Undo asset'); assertLibraryBudget(state, prior, id);
+    history.undo.pop();
     history.redo.push(current);
     restoreAsset(state, id, prior);
     return true;
@@ -567,7 +569,9 @@ window.OB64 = window.OB64 || {};
     var history = historyFor(state, id);
     if (!history.redo.length) return false;
     var current = cloneAsset(assetFor(state, id));
-    var next = history.redo.pop();
+    var next = history.redo[history.redo.length - 1];
+    validateAsset(next, 'Redo asset'); assertLibraryBudget(state, next, id);
+    history.redo.pop();
     history.undo.push(current);
     restoreAsset(state, id, next);
     return true;
@@ -575,7 +579,12 @@ window.OB64 = window.OB64 || {};
 
   function removeAsset(state, id) {
     var asset = assetFor(state, id);
-    state.assets.splice(state.assets.indexOf(asset), 1);
+    var index = state.assets.indexOf(asset);
+    if (!state.deletedAssets) state.deletedAssets = [];
+    state.deletedAssets.push({ asset: cloneAsset(asset), index: index,
+      history: state.history[id] || { undo: [], redo: [] } });
+    if (state.deletedAssets.length > 20) state.deletedAssets.shift();
+    state.assets.splice(index, 1);
     delete state.byId[id];
     delete state.history[id];
     state.ui.assetId = state.assets.length ? state.assets[0].id : null;
@@ -583,6 +592,20 @@ window.OB64 = window.OB64 || {};
     state.ui.layerIndex = 0;
     state.ui.selection = null;
     return true;
+  }
+
+  function undoDelete(state) {
+    var deleted = state.deletedAssets || [];
+    if (!deleted.length) return null;
+    var entry = deleted[deleted.length - 1], asset = cloneAsset(entry.asset);
+    indexState(state);
+    if (state.byId[asset.id]) fail('Undo Delete cannot replace an asset with the same identity');
+    if (state.assets.length >= MAX_ASSETS) fail('Undo Delete exceeds the library asset limit');
+    validateAsset(asset, 'Restored Sprite Library Asset'); assertLibraryBudget(state, asset);
+    state.assets.splice(Math.min(entry.index, state.assets.length), 0, asset);
+    state.history[asset.id] = entry.history; deleted.pop(); indexState(state);
+    state.ui.assetId = asset.id; state.ui.frameIndex = 0; state.ui.layerIndex = 0; state.ui.selection = null;
+    return asset;
   }
 
   function duplicateAsset(state, id) {
@@ -885,6 +908,36 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  function resizeCanvas(state, id, width, height, placement, crop) {
+    width = integer(width, 1, MAX_DIMENSION, 'Canvas width');
+    height = integer(height, 1, MAX_DIMENSION, 'Canvas height');
+    var placements = { 'top-left': [0, 0], center: [0.5, 0.5], 'bottom-right': [1, 1] };
+    if (!placements[placement]) fail('Choose a canvas origin placement');
+    return mutate(state, id, function(asset) {
+      var dx = Math.round((width - asset.width) * placements[placement][0]);
+      var dy = Math.round((height - asset.height) * placements[placement][1]);
+      var layers = asset.frames.reduce(function(count, frame) { return count + frame.layers.length; }, 0);
+      if (crop && layers * width * height > MAX_TOTAL_PIXELS) fail('Cropped canvas exceeds the pixel Project limit');
+      asset.frames.forEach(function(frame) { frame.layers.forEach(function(layer) {
+        layer.width = layer.width || asset.width; layer.height = layer.height || asset.height;
+        layer.x = integer((layer.x || 0) + dx, -32768, 32767, 'Canvas layer X');
+        layer.y = integer((layer.y || 0) + dy, -32768, 32767, 'Canvas layer Y');
+      }); });
+      asset.anchor = { x: integer(asset.anchor.x + dx, -32768, 32767, 'Canvas anchor X'),
+        y: integer(asset.anchor.y + dy, -32768, 32767, 'Canvas anchor Y') };
+      asset.width = width; asset.height = height;
+      if (crop) asset.frames.forEach(function(frame) { frame.layers.forEach(function(layer) {
+        layer.pixels = layerCanvasPixels(asset, layer); layer.width = width; layer.height = height; layer.x = 0; layer.y = 0;
+      }); });
+    });
+  }
+
+  function previewGeometry(asset, mode, width, height, placement, crop) {
+    var state = { assets: [cloneAsset(asset)], byId: {}, history: {}, ui: {} };
+    return mode === 'scale' ? resizeAsset(state, asset.id, width, height) :
+      resizeCanvas(state, asset.id, width, height, placement, crop);
+  }
+
   function rotateAsset(state, id, clockwise) {
     return mutate(state, id, function(asset) {
       var oldWidth = asset.width, oldHeight = asset.height;
@@ -1028,6 +1081,8 @@ window.OB64 = window.OB64 || {};
       }
     });
     state.history = {};
+    state.deletedAssets = [];
+    state.generation = (state.generation || 0) + 1;
     indexState(state);
     return prepared.assets.length;
   }
@@ -1097,6 +1152,9 @@ window.OB64 = window.OB64 || {};
     assetFromFrames: assetFromFrames,
     addAsset: addAsset,
     removeAsset: removeAsset,
+    undoDelete: undoDelete,
+    resizeCanvas: resizeCanvas,
+    previewGeometry: previewGeometry,
     duplicateAsset: duplicateAsset,
     renameAsset: renameAsset,
     assetFor: assetFor,

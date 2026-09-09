@@ -71,6 +71,54 @@ window.OB64 = window.OB64 || {};
     return state.ui;
   }
 
+  function beginLibraryTransfer(rom, request) {
+    var asset = OB64.spriteLibrary.assetFor(rom.spriteLibrary, request.assetId);
+    var priorUi = ensureUi(rom.art);
+    rom.art.pendingSpriteTransfer = { assetId: asset.id, frameIndex: request.frameIndex, layerIndex: request.layerIndex,
+      frameId: asset.frames[request.frameIndex].id, layerId: asset.frames[request.frameIndex].layers[request.layerIndex].id,
+      identity: OB64.spriteLibrary.assetFileText(asset), library: rom.spriteLibrary, generation: rom.spriteLibrary.generation || 0,
+      priorUi: priorUi, scope: asset.kind === 'sequence' ? 'sequence' : 'layer' };
+    rom.art.ui = Object.assign({}, priorUi, { subtab: 'animations' });
+  }
+
+  function endLibraryTransfer(rom) {
+    var pending = rom.art.pendingSpriteTransfer; if (!pending) return;
+    rom.art.ui = pending.priorUi; delete rom.art.pendingSpriteTransfer;
+    var asset = rom.spriteLibrary.byId[pending.assetId];
+    if (asset && pending.library === rom.spriteLibrary && pending.generation === (rom.spriteLibrary.generation || 0)) {
+      rom.spriteLibrary.ui.assetId = asset.id;
+      var frameIndex = asset.frames.findIndex(function(frame) { return frame.id === pending.frameId; });
+      rom.spriteLibrary.ui.frameIndex = frameIndex < 0 ? Math.min(pending.frameIndex, asset.frames.length - 1) : frameIndex;
+      var layers = asset.frames[rom.spriteLibrary.ui.frameIndex].layers;
+      var layerIndex = layers.findIndex(function(layer) { return layer.id === pending.layerId; });
+      rom.spriteLibrary.ui.layerIndex = layerIndex < 0 ? Math.min(pending.layerIndex, layers.length - 1) : layerIndex;
+    }
+  }
+
+  function transferBanner(panel, rom, ui, options, rerender) {
+    var pending = rom.art.pendingSpriteTransfer; if (!pending) return;
+    var banner = element('section', 'art-transfer-banner');
+    var asset = rom.spriteLibrary.byId[pending.assetId];
+    banner.appendChild(element('h3', '', 'Use Sprite Library Asset: ' + (asset ? asset.name : 'unavailable')));
+    banner.appendChild(element('p', '', 'Choose a destination, then select its exact target below. The target’s Prepare button opens guarded conversion.'));
+    var target = element('select'); target.setAttribute('aria-label', 'Compatible destination');
+    [['animations', 'Combat Layer, Frame, or Frame Sequence'], ['avatars', 'Class Avatar'], ['icons', 'Item Icon'], ['army', 'Army Sprite']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; target.appendChild(option);
+    });
+    target.value = ui.subtab; target.addEventListener('change', function() { ui.subtab = target.value; rerender(); }); banner.appendChild(target);
+    if (ui.subtab === 'animations') {
+      var scope = element('select'); scope.setAttribute('aria-label', 'Transfer scope');
+      [['layer', 'Add Library Layer'], ['frame', 'Replace Frame'], ['sequence', 'Replace Frame Sequence']].filter(function(row) {
+        return row[0] !== 'sequence' || asset && asset.kind === 'sequence';
+      }).forEach(function(row) { var option = element('option', '', row[1]); option.value = row[0]; scope.appendChild(option); });
+      scope.value = pending.scope; scope.addEventListener('change', function() { pending.scope = scope.value; rerender(); }); banner.appendChild(scope);
+    }
+    banner.appendChild(element('p', '', 'Destination: native editing state. Applying does not save the Project, download an asset file, or complete ROM export.'));
+    banner.appendChild(button('Return to Sprite Editor / Cancel Transfer', 'btn-secondary', function() {
+      endLibraryTransfer(rom); if (options.onReturnSprites) options.onReturnSprites(); else rerender();
+    })); panel.appendChild(banner);
+  }
+
   function openAnimationRoute(state, request) {
     if (!state || !state.supported || !state.animations ||
         !state.animations.supported || !OB64.animationUI) return false;
@@ -749,10 +797,12 @@ window.OB64 = window.OB64 || {};
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
       scheduledFrame = null;
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay);
       document.removeEventListener('keydown', escapeHandler);
     }
     var escapeHandler = function(event) { if (event.key === 'Escape') close(); };
     document.addEventListener('keydown', escapeHandler);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
     document.body.appendChild(overlay);
     resizeSelect.focus(); schedulePreview();
   }
@@ -1143,6 +1193,7 @@ window.OB64 = window.OB64 || {};
       drawing = false;
       if (event && canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
       if (ui.tool === 'select') { rerender(); return; }
+      if (event && event.type === 'pointercancel') { working = null; changedPixels = false; rerender(); return; }
       if (!changedPixels) return;
       try {
         if (A.setEditWords(state, kind, key, working)) { changed(options); rerender(); }
@@ -1153,6 +1204,22 @@ window.OB64 = window.OB64 || {};
     }
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
+    if (OB64.editorInteraction) {
+      function keyboardRedraw(cursor) {
+        drawWords(canvas, A.currentWords(state, kind, key), width, height, scale, ui.selection, backgroundMode);
+        var context = canvas.getContext('2d'); if (context.strokeRect) { context.strokeStyle = '#ff00ff'; context.lineWidth = 2; context.strokeRect(cursor.x * scale, cursor.y * scale, scale, scale); }
+        canvas.title = 'Pixel ' + cursor.x + ', ' + cursor.y;
+      }
+      var cursor = OB64.editorInteraction.pixelKeyboard(canvas, ui, 'artPixelCursor', width, height, function(operation, point, selection) {
+        if (operation === 'select') { ui.selection = selection; return; }
+        var current = A.currentWords(state, kind, key), index = point.y * width + point.x;
+        if (operation === 'sample') { if (kind === 'avatar') ui.selectedAvatarColor = current[index]; else ui.selectedIconColor = current[index]; rerender(); return; }
+        var words = current.slice();
+        words[index] = operation === 'erase' ? (kind === 'avatar' ? 1 : state.icons.packs[state.icons.byKey[key].pack].transparentWord) : selectedWord();
+        try { if (A.setEditWords(state, kind, key, words)) { changed(options); rerender(); } }
+        catch (error) { notify(options, error.message); }
+      }, keyboardRedraw); keyboardRedraw(cursor);
+    }
     canvas.addEventListener('keydown', function(event) {
       if (!(event.ctrlKey || event.metaKey)) return;
       var keyName = event.key.toLowerCase();
@@ -1197,6 +1264,7 @@ window.OB64 = window.OB64 || {};
     var canvas = wordCanvas(current, 40, 48, 12, 'art-edit-canvas', ui.selection);
     installCanvasEditing(canvas, state, 'avatar', appearance.key, 40, 48, 12, ui, options, rerender);
     workspace.appendChild(canvas);
+    workspace.appendChild(element('small', '', 'Keyboard: arrows move; Space paints; Delete clears (black for opaque avatars); I samples; Shift+arrows selects. Copy/Paste and Undo/Redo are also available in the toolbar.'));
     var palette = element('aside', 'art-palette-panel');
     var count = A.distinctCount(current, true);
     var counter = element('div', 'art-color-counter', 'Colors used: ' + count + ' / 80');
@@ -1261,6 +1329,9 @@ window.OB64 = window.OB64 || {};
         });
       }));
     }
+    if (OB64.spriteEditorUI) OB64.spriteEditorUI.transferButton(actions, rom, appearance.className + ' ' + appearance.label, 'Replace Avatar', function(source) {
+      showAvatarImportDialog(source, appearance, state, options, rerender);
+    }, options);
     actions.appendChild(button('Export Avatar PNG', 'btn-secondary', function() {
       nativePngDownload(current, 40, 48,
         'class-' + appearance.classId.toString(16).padStart(2, '0') + '-' + appearance.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png');
@@ -1275,6 +1346,57 @@ window.OB64 = window.OB64 || {};
       A.currentWords(state, 'icon', icon.key).forEach(function(word) { if (word & 1) colors.add(word); });
     });
     return colors.size;
+  }
+
+  function iconTransferWords(source, pack, placementMode) {
+    var result = A.prepareSpriteImageImport(source.rgba, source.width, source.height, 16, 16,
+      { placementMode: placementMode, resizeMode: 'nearest', preserveRgba: true });
+    var words = new Uint16Array(256);
+    for (var pixel = 0; pixel < 256; pixel++) {
+      var offset = pixel * 4, rgba = result.rgba;
+      words[pixel] = rgba[offset + 3] < 128 ? pack.transparentWord : nearestPaletteWord(pack, A.rgba5551Word(
+        Math.round(rgba[offset] * 31 / 255), Math.round(rgba[offset + 1] * 31 / 255), Math.round(rgba[offset + 2] * 31 / 255), true));
+    }
+    return { words: words, crop: result.crop };
+  }
+
+  function showIconTransferDialog(source, icon, pack, state, options, rerender) {
+    var overlay = element('div', 'error-modal-overlay art-import-overlay'), modal = element('div', 'error-modal art-import-modal'); overlay.appendChild(modal);
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-label', 'Prepare Item Icon');
+    modal.appendChild(element('h2', '', 'Prepare Replace Item Icon: ' + icon.name));
+    var original = A.currentWords(state, 'icon', icon.key).slice(), result = null;
+    var sizing = element('select'); sizing.setAttribute('aria-label', 'Sizing');
+    [['original', 'Original Size'], ['fit', 'Fit'], ['fill', 'Fill/Crop'], ['stretch', 'Stretch']].forEach(function(row) {
+      var option = element('option', '', row[1]); option.value = row[0]; sizing.appendChild(option);
+    }); sizing.value = 'original'; modal.appendChild(sizing);
+    var host = element('div'), status = element('p'); status.setAttribute('aria-live', 'polite'); modal.appendChild(host); modal.appendChild(status);
+    modal.appendChild(element('p', '', 'Replaces one native Item Icon using its shared palette. Save Project and Export ROM are separate actions.'));
+    modal.appendChild(button('Cancel', 'error-modal-ok', close));
+    var apply = button('Apply to Selected Item Icon', 'error-modal-ok', function() {
+      if (!result) return;
+      try {
+        var current = A.currentWords(state, 'icon', icon.key);
+        if (current.some(function(word, index) { return word !== original[index]; })) throw new Error('Target changed. Reopen preparation.');
+        if (A.setEditWords(state, 'icon', icon.key, result.words)) changed(options);
+        notify(options, 'Applied to Item Icon ' + icon.name + '. Save Project or Export ROM separately.'); close(); rerender();
+      } catch (error) { status.textContent = 'Blocked: ' + error.message; }
+    }); modal.appendChild(apply);
+    function preview() {
+      result = null; apply.disabled = true; host.innerHTML = '';
+      try {
+        result = iconTransferWords(source, pack, sizing.value);
+        host.appendChild(wordCanvas(result.words, 16, 16, 12, 'art-preview-canvas', null, 'checkerboard'));
+        status.textContent = source.name + ' · Source ' + source.width + '×' + source.height + ' · Output 16×16 · Scale ' +
+          (16 / result.crop.width).toFixed(2) + '× / ' + (16 / result.crop.height).toFixed(2) + '×. One frame; native palette conversion.';
+        apply.disabled = false;
+      } catch (error) { status.textContent = 'Conversion blocked: ' + error.message; }
+    }
+    function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); document.removeEventListener('keydown', escape);
+      if (OB64.editorInteraction) OB64.editorInteraction.releaseDialog(overlay); }
+    function escape(event) { if (event.key === 'Escape') close(); }
+    sizing.addEventListener('change', preview); document.addEventListener('keydown', escape);
+    if (OB64.editorInteraction) OB64.editorInteraction.bindDialog(overlay);
+    document.body.appendChild(overlay); preview(); sizing.focus();
   }
 
   function iconEditor(state, rom, ui, options, rerender) {
@@ -1308,6 +1430,7 @@ window.OB64 = window.OB64 || {};
       'art-edit-canvas art-icon-edit-canvas', ui.selection, backgroundMode);
     installCanvasEditing(canvas, state, 'icon', icon.key, 16, 16, 24, ui, options, rerender);
     workspace.appendChild(canvas);
+    workspace.appendChild(element('small', '', 'Keyboard: arrows move; Space paints; Delete clears (black for opaque avatars); I samples; Shift+arrows selects. Copy/Paste and Undo/Redo are also available in the toolbar.'));
     var palette = element('aside', 'art-palette-panel');
     var count = packColorCount(state, pack);
     var counter = element('div', 'art-color-counter', 'Pack colors used: ' + count + ' / 255');
@@ -1346,33 +1469,13 @@ window.OB64 = window.OB64 || {};
           actionLabel: 'Convert to Item Icon',
           onStatus: function(message) { notify(options, message); }
         }, function(source) {
-          try {
-            var rgba = OB64.spriteLibrary.nearestResize(source.rgba,
-              source.width, source.height, 16, 16);
-            var words = new Uint16Array(256);
-            for (var pixel = 0; pixel < 256; pixel++) {
-              var offset = pixel * 4;
-              if (rgba[offset + 3] < 128) {
-                words[pixel] = pack.transparentWord;
-              } else {
-                var word = A.rgba5551Word(
-                  Math.round(rgba[offset] * 31 / 255),
-                  Math.round(rgba[offset + 1] * 31 / 255),
-                  Math.round(rgba[offset + 2] * 31 / 255), true);
-                words[pixel] = nearestPaletteWord(pack, word);
-              }
-            }
-            if (A.setEditWords(state, 'icon', icon.key, words)) {
-              changed(options);
-              notify(options, source.name + ' converted to the current item-icon palette.');
-            }
-            rerender();
-          } catch (error) {
-            notify(options, 'Sprite Library icon import blocked: ' + error.message);
-          }
+          showIconTransferDialog(source, icon, pack, state, options, rerender);
         });
       }));
     }
+    if (OB64.spriteEditorUI) OB64.spriteEditorUI.transferButton(actions, rom, icon.name, 'Replace Item Icon', function(source) {
+      showIconTransferDialog(source, icon, pack, state, options, rerender);
+    }, options);
     actions.appendChild(button('Export Icon PNG', 'btn-secondary', function() {
       nativePngDownload(current, 16, 16,
         icon.pack + '-' + String(icon.itemId).padStart(3, '0') + '-' + icon.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.png');
@@ -1382,6 +1485,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function render(panel, rom, options, preserveViewport) {
+    if (OB64.editorInteraction) OB64.editorInteraction.releaseWithin(panel);
     var active = document.activeElement;
     var focus = null;
     if (active && panel.contains(active)) {
@@ -1410,6 +1514,7 @@ window.OB64 = window.OB64 || {};
     }
     function rerender() { render(panel, rom, options, true); }
     topHeader(panel, rom, state, ui, options, rerender);
+    transferBanner(panel, rom, ui, options, rerender);
     var shell = element('div', 'art-shell');
     if (ui.subtab === 'avatars') {
       shell.appendChild(avatarBrowser(state, ui, rerender));
@@ -1437,9 +1542,13 @@ window.OB64 = window.OB64 || {};
         'Combat animation component is not loaded.'));
     }
     panel.appendChild(shell);
+    if (OB64.editorInteraction) OB64.editorInteraction.semanticFocus(panel, 'data-art-focus-key', ui.subtab || 'art');
+    var fallback = panel.querySelector('canvas[tabindex]') || panel.querySelector('button:not([disabled])');
+    if (fallback) fallback.setAttribute('data-editor-focus-fallback', 'art');
     restoreBrowserScroll(ui, panel, preserveViewport);
     if (focus) {
-      var replacement = panel.querySelector('[data-art-focus-key="' + focus.key + '"]');
+      var replacement = panel.querySelector('[data-art-focus-key="' + focus.key + '"]') || fallback;
+      if (replacement && replacement.disabled) replacement = fallback;
       if (replacement) {
         replacement.focus({ preventScroll: true });
         if (focus.start !== null && replacement.setSelectionRange) {
@@ -1451,6 +1560,9 @@ window.OB64 = window.OB64 || {};
 
   OB64.artUI = {
     render: render,
+    iconTransferWords: iconTransferWords,
+    showIconTransferDialog: showIconTransferDialog,
+    installCanvasEditing: installCanvasEditing,
     drawWords: drawWords,
     rgbaPixelsForWords: rgbaPixelsForWords,
     nativePngCanvas: nativePngCanvas,
@@ -1460,6 +1572,8 @@ window.OB64 = window.OB64 || {};
     wordForHsv: wordForHsv,
     nearestPaletteWord: nearestPaletteWord,
     openAnimationRoute: openAnimationRoute,
+    beginLibraryTransfer: beginLibraryTransfer,
+    endLibraryTransfer: endLibraryTransfer,
     captureBrowserScroll: captureBrowserScroll,
     restoreBrowserScroll: restoreBrowserScroll,
     decodeImageSource: decodeAvatarImageSource,

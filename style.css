@@ -8928,3 +8928,15 @@ td.attack-list {
   .animation-alignment-panel > label { display: flex; }
   .animation-alignment-panel select { max-width: 100%; }
 }
+
+/* Bounded colors, geometry previews, and shared editor transport. */
+.sprite-used-color-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; max-height: 208px; overflow: auto; padding: 4px; }
+.sprite-layer-panel .sprite-used-color-grid .sprite-color-swatch { width: 100%; min-width: 0; height: 24px; min-height: 24px; margin: 0; padding: 0; }
+.sprite-used-color-grid .sprite-color-swatch.selected { outline: 3px solid var(--ob-ink); outline-offset: -3px; box-shadow: inset 0 0 0 5px white; }
+.sprite-used-color-grid .sprite-color-swatch:focus-visible { outline: 3px solid #1565c0; outline-offset: 1px; }
+.sprite-selected-color { font-size: .85rem; }
+.editor-transport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; }
+.editor-transport input[type=range] { min-width: 100px; flex: 1; }
+.editor-transport small { flex-basis: 100%; }
+.sprite-geometry-previews { display: flex; flex-wrap: wrap; gap: 12px; max-height: 360px; overflow: auto; }
+.sprite-geometry-previews canvas { image-rendering: pixelated; max-width: 100%; }
