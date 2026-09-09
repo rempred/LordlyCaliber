@@ -195,6 +195,18 @@ Applying a Project clears deletion recovery.
 Batch alignment shows selected sequences, exact frame numbers, counts, and the
 movement vector before application. Review that summary before moving the listed frames.
 
+Position and compare alignment helps keep artwork in a consistent position across
+animation states. Its three sections have different effects:
+
+- Position selected Layer sets Layer X/Y for one layer in the current frame. A changed value applies immediately.
+- Move Layers across Frames shifts every layer in the listed frames by Move X/Y when Translate Previewed Frames is selected.
+- Compare Frame Sequences shows two animations with the same origin and scale. It does not move or automatically align artwork.
+
+Positioning and batch movement require an editable private copy for the selected
+class. Use Copy From and Separate… to create one. Comparison works without a copy.
+For example, Move X `-10` and Move Y `-5` shifts the selected frames ten pixels left
+and five up. Choose the frames, inspect the summary, then apply the movement.
+
 A combat frame can add one Sprite Library layer without replacing existing layers.
 The preparation dialog keeps its library dimensions and colors by default.
 Users can change its output size, zoom, crop position, resize method, and dithering.
