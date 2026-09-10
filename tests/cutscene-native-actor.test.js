@@ -19,6 +19,15 @@ for (const file of ['data.js','art.js','animation-corpus-data.js','animation-art
 }
 const native = OB64.cutsceneRuntime.nativeActor;
 const catalog = OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData);
+let familyMatches=0;
+const acceptedFamilies=[[81,82,83],[84,85],[86,87],[95,96],[99,100]];
+for(let a=0;a<256;a++) for(let b=0;b<256;b++) {
+  const expected=a===b || acceptedFamilies.some(group=>group.includes(a)&&group.includes(b));
+  assert.strictEqual(native.classFamilyMatch(a,b),expected);
+  if(expected) familyMatches++;
+}
+assert.strictEqual(familyMatches,270);
+assert(native.classFamilyMatch(0x151,0x153));
 function pose() { return {decoderMode:0,poseCursor:-1,poseDelay:0,poseFrame:0,
   displayedFrameToken:0,poseStateIndex:0,x:0,y:0,z:0,material:Array(16).fill(255),materialDelta:Array(16).fill(0)}; }
 function resolve(records) {return ()=>({records:records.map(([opcode,...operands])=>({opcode,operands}))});}
@@ -63,6 +72,30 @@ native.advancePose(actor,a=>states[a.poseStateIndex],256);
 assert.strictEqual(actor.previousPoseStateIndex,0);assert.strictEqual(actor.poseStateIndex,1);assert.strictEqual(actor.displayedFrameToken,9);
 actor=pose();native.advancePose(actor,resolve([[2,255,2],[12,1,2,255],[13,255,3],[16,255,255],[3,2]]),256);
 assert.deepStrictEqual([actor.x,actor.y,actor.z],[2,2,-3]);assert(actor.material.every(v=>v===2));
+
+// Update zero is the saved in-walk state, not scene launch or sample zero.
+// Eligible movement and pose calls share the fixture's conditional schedule.
+const graduation=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-graduation-native.json'),'utf8'));
+const seed=graduation.seed;
+actor={...pose(),x:seed.x,z:0,poseCursor:seed.cursor,poseDelay:seed.delay,
+  displayedFrameToken:seed.frameToken,poseStateIndex:12};
+job={vx:seed.velocityX,vz:seed.velocityZ,remaining:seed.countdown,pauseByte:seed.pause,elapsed:0};
+const walkProgram=catalog.getPhysicalPoseProgramByStateIndex(30,12);
+assert.deepStrictEqual(walkProgram.records.map(r=>[r.opcode,...r.operands]),graduation.entries);
+let eligibleUpdates=0;
+for(const sample of graduation.samples) {
+  while(eligibleUpdates<sample.eligibleUpdate) {
+    native.advanceMovement(actor,job);
+    assert.strictEqual(native.advancePose(actor,()=>walkProgram,256),null);
+    eligibleUpdates++;
+  }
+  assert.strictEqual(bits(actor.x).toUpperCase(),sample.xBits);
+  assert.deepStrictEqual([actor.poseCursor,actor.poseDelay,actor.displayedFrameToken],sample.pose);
+  assert.strictEqual(actor.y,0);assert.strictEqual(actor.z,0);
+}
+assert.strictEqual(eligibleUpdates,69);
+assert.strictEqual(graduation.samples.length,120);
+assert.strictEqual(job.remaining,55);
 
 (async()=>{
  const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
@@ -120,6 +153,27 @@ assert.deepStrictEqual([actor.x,actor.y,actor.z],[2,2,-3]);assert(actor.material
  assert(!noMatch.missingInputs.some(v=>v.includes('binding')));
  const modeZeroClass=run([0x92,1,3,0x80000001],{sceneMode:0});
  assert(!modeZeroClass.missingInputs.some(v=>v.includes('class-family')));
+ const classInput=JSON.parse(JSON.stringify(frozenInput));
+ const classRow=Buffer.from(row);classRow.writeUInt32BE(0x151,0x48);
+ classInput.actorInputRows.value[2]=classRow.toString('hex');
+ const classBound=run([0x92,257,0x153,0x80000001],{sceneMode:2,nativeLaunchInputs:classInput});
+ assert.strictEqual(classBound.states[0].actors.find(a=>a.id==='fixture-actor').slot,1);
+ const classNoMatch=run([0x92,1,0x54,0x80000001],{sceneMode:2,nativeLaunchInputs:classInput});
+ assert.strictEqual(classNoMatch.states[0].actors.find(a=>a.id==='fixture-actor').slot,4);
+ classInput.actorInputRows.value[0]=classRow.toString('hex');
+ const firstRowMissingActor=run([0x92,1,0x53,0x80000001],{sceneMode:2,nativeLaunchInputs:classInput});
+ assert.strictEqual(firstRowMissingActor.states[0].actors.find(a=>a.id==='fixture-actor').slot,4);
+ classInput.actorInputRows.value[0]='00'.repeat(0xF8);
+ const component=Buffer.from(record);component.writeInt32BE(6,0xE4);
+ classInput.existingActors.value.slots[6]={identity:'second-component',recordHex:component.toString('hex'),movementHex:null};
+ const occupant=Buffer.from(record);occupant.writeInt32BE(1,0xE4);occupant[0x147]=5;
+ classInput.existingActors.value.slots[1]={identity:'destination-actor',recordHex:occupant.toString('hex'),movementHex:null};
+ const compositeBound=run([0x92,1,0x52,0x80000001],{sceneMode:2,nativeLaunchInputs:classInput});
+ const compositeActors=compositeBound.states[0].actors;
+ assert.strictEqual(compositeActors.find(a=>a.id==='fixture-actor').slot,1);
+ assert.strictEqual(compositeActors.find(a=>a.id==='destination-actor').slot,4);
+ assert.strictEqual(compositeActors.find(a=>a.id==='second-component').slot,6);
+ assert.strictEqual(OB64.cutsceneRuntime.decodeNativeActorState(compositeActors.find(a=>a.id==='fixture-actor').nativeActorState).sourceRowOrdinal,2);
  const absent=run([3,2,-1,-1,-1,-1000,-1000,-1000,-1,0x80000001]);
  assert.strictEqual(absent.outcome,'actor-input');
  const sentinel=run([3,-1,-1,-1,-1,-1000,-1000,-1000,-1,0x80000001]);
@@ -150,5 +204,6 @@ assert.deepStrictEqual([actor.x,actor.y,actor.z],[2,2,-3]);assert(actor.material
  console.log(JSON.stringify({status:'pass',command:process.argv,node:process.version,sourceHashes,
    generatorSha256:hash(fs.readFileSync(__filename)),romV64Sha256:hash(raw),romZ64Sha256:hash(z64),
    nativeMovementPositions:positions,bank57State39Tokens:tokens,contextCases,
-   bindingSlot:1,missingActor:absent.outcome,nonemptyRoster:roster.outcome,scope:'Offline native fixtures; synthetic binding inputs do not prove a natural launch.'},null,2));
+   familyMatches,graduationSamples:graduation.samples.length,graduationEligibleUpdates:eligibleUpdates,
+   bindingSlot:1,missingActor:absent.outcome,nonemptyRoster:roster.outcome,scope:'Offline native fixtures; synthetic binding inputs do not prove a natural launch. Graduation starts at saved in-walk state; scheduling is conditional, pose aliases every 24 updates, and Actor lifetime remains Supported.'},null,2));
 })().catch(e=>{console.error(e.stack || e);process.exitCode=1;});

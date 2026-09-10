@@ -47,8 +47,11 @@ Raw record preservation does not resolve external pointer graphs, shared effects
 Current-unit binding preserves Actor identity and swaps occupied records between slots.
 Slot-owned movement remains in its original slot.
 Complete empty input rows establish a supported roster no-op.
-Nonempty roster construction requires additional native helper contracts and linked-object inputs.
-Class binding requires the native class-family predicate.
+Nonempty roster construction requires linked-object inputs, terrain samples, final State setup, and the final slot-normalization producer contract.
+Class binding selects the first present matching row, then its first occupied Actor slot.
+Equal unsigned class bytes match. Unequal bytes match only within hexadecimal families `51/52/53`, `54/55`, `56/57`, `5F/60`, and `63/64`.
+If that first row has no Actor, binding does not try another matching row.
+Only the selected component moves. Source-row identity and slot-owned movement remain unchanged.
 Neither operation constructs a guessed party.
 
 Ordinary pose playback uses counted records, per-record delays, and the current frame token.

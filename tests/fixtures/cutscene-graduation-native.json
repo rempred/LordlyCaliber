@@ -1,0 +1,1269 @@
+{
+  "generator": "docs/reviews/cutscene-native-actor-playback-r3-20260910/build-graduation-fixture.cjs",
+  "generatorSha256": "4fab141a3a48539499262a3bab896c6428f027b254ba7a3f5c934000c55fb1b4",
+  "acceptedReview": "docs/reviews/cutscene-graduation-alignment-review-r1-20260910/report.md",
+  "acceptedReviewCommit": "6937c5d292ddb91af99fa95e0a030492c47fc697",
+  "inputs": {
+    "comparison.json": "1bb95b3164b7d5a1f1020c3ecf4026cd5e25c93d4924e4b4ea72d4e83624ead2",
+    "pose-comparison.json": "ff0bb12354662321a82b2f9339bb0020bb6efced227cbaa5f871c4233d6af4a7"
+  },
+  "sourceStateSha256": "C64929322C81ADCF6348BC41AC660E54B46CE6A6911818A316E09F0C2BC91E3D",
+  "origin": "Update zero is the saved in-walk state, candidate movement ordinal 48. Samples begin after ten eligible updates.",
+  "limits": "Conditional common movement/pose eligibility; 24-update pose alias; Supported Actor lifetime. No scene launch, elapsed-time, terrain, or pixel claim.",
+  "seed": {
+    "actor": "0x800e4e30",
+    "actorTable": "0x8019f470",
+    "countdown": 124,
+    "cursor": 4,
+    "delay": 4,
+    "frameToken": 33,
+    "mode": 0,
+    "movementOwner": "0x801a2d50",
+    "ownerHex": "bfe6b29b0000000000000000007c00f1",
+    "parserCursor": 267,
+    "pause": 0,
+    "sceneMode": 2,
+    "slotIdentity": 1,
+    "velocityX": -1.8023256063461304,
+    "velocityZ": 0,
+    "x": 263.48779296875
+  },
+  "entries": [
+    [
+      1,
+      35,
+      8
+    ],
+    [
+      1,
+      30,
+      8
+    ],
+    [
+      1,
+      31,
+      8
+    ],
+    [
+      1,
+      32,
+      8
+    ],
+    [
+      1,
+      33,
+      8
+    ],
+    [
+      1,
+      34,
+      8
+    ],
+    [
+      4,
+      0
+    ]
+  ],
+  "samples": [
+    {
+      "sampleIndex": 0,
+      "eligibleUpdate": 10,
+      "xBits": "437576EA",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 1,
+      "eligibleUpdate": 10,
+      "xBits": "437576EA",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 2,
+      "eligibleUpdate": 11,
+      "xBits": "4373A985",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 3,
+      "eligibleUpdate": 11,
+      "xBits": "4373A985",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 4,
+      "eligibleUpdate": 12,
+      "xBits": "4371DC20",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 5,
+      "eligibleUpdate": 12,
+      "xBits": "4371DC20",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 6,
+      "eligibleUpdate": 13,
+      "xBits": "43700EBB",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 7,
+      "eligibleUpdate": 13,
+      "xBits": "43700EBB",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 8,
+      "eligibleUpdate": 14,
+      "xBits": "436E4156",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 9,
+      "eligibleUpdate": 14,
+      "xBits": "436E4156",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 10,
+      "eligibleUpdate": 15,
+      "xBits": "436C73F1",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 11,
+      "eligibleUpdate": 15,
+      "xBits": "436C73F1",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 12,
+      "eligibleUpdate": 16,
+      "xBits": "436AA68C",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 13,
+      "eligibleUpdate": 16,
+      "xBits": "436AA68C",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 14,
+      "eligibleUpdate": 17,
+      "xBits": "4368D927",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 15,
+      "eligibleUpdate": 17,
+      "xBits": "4368D927",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 16,
+      "eligibleUpdate": 18,
+      "xBits": "43670BC2",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 17,
+      "eligibleUpdate": 18,
+      "xBits": "43670BC2",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 18,
+      "eligibleUpdate": 19,
+      "xBits": "43653E5D",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 19,
+      "eligibleUpdate": 19,
+      "xBits": "43653E5D",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 20,
+      "eligibleUpdate": 20,
+      "xBits": "436370F8",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 21,
+      "eligibleUpdate": 20,
+      "xBits": "436370F8",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 22,
+      "eligibleUpdate": 21,
+      "xBits": "4361A393",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 23,
+      "eligibleUpdate": 21,
+      "xBits": "4361A393",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 24,
+      "eligibleUpdate": 22,
+      "xBits": "435FD62E",
+      "pose": [
+        3,
+        0,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 25,
+      "eligibleUpdate": 22,
+      "xBits": "435FD62E",
+      "pose": [
+        3,
+        0,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 26,
+      "eligibleUpdate": 23,
+      "xBits": "435E08C9",
+      "pose": [
+        4,
+        6,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 27,
+      "eligibleUpdate": 23,
+      "xBits": "435E08C9",
+      "pose": [
+        4,
+        6,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 28,
+      "eligibleUpdate": 24,
+      "xBits": "435C3B64",
+      "pose": [
+        4,
+        4,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 29,
+      "eligibleUpdate": 24,
+      "xBits": "435C3B64",
+      "pose": [
+        4,
+        4,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 30,
+      "eligibleUpdate": 25,
+      "xBits": "435A6DFF",
+      "pose": [
+        4,
+        2,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 31,
+      "eligibleUpdate": 25,
+      "xBits": "435A6DFF",
+      "pose": [
+        4,
+        2,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 32,
+      "eligibleUpdate": 26,
+      "xBits": "4358A09A",
+      "pose": [
+        4,
+        0,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 33,
+      "eligibleUpdate": 26,
+      "xBits": "4358A09A",
+      "pose": [
+        4,
+        0,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 34,
+      "eligibleUpdate": 27,
+      "xBits": "4356D335",
+      "pose": [
+        5,
+        6,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 35,
+      "eligibleUpdate": 27,
+      "xBits": "4356D335",
+      "pose": [
+        5,
+        6,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 36,
+      "eligibleUpdate": 28,
+      "xBits": "435505D0",
+      "pose": [
+        5,
+        4,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 37,
+      "eligibleUpdate": 28,
+      "xBits": "435505D0",
+      "pose": [
+        5,
+        4,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 38,
+      "eligibleUpdate": 29,
+      "xBits": "4353386B",
+      "pose": [
+        5,
+        2,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 39,
+      "eligibleUpdate": 29,
+      "xBits": "4353386B",
+      "pose": [
+        5,
+        2,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 40,
+      "eligibleUpdate": 30,
+      "xBits": "43516B06",
+      "pose": [
+        5,
+        0,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 41,
+      "eligibleUpdate": 30,
+      "xBits": "43516B06",
+      "pose": [
+        5,
+        0,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 42,
+      "eligibleUpdate": 31,
+      "xBits": "434F9DA1",
+      "pose": [
+        0,
+        6,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 43,
+      "eligibleUpdate": 31,
+      "xBits": "434F9DA1",
+      "pose": [
+        0,
+        6,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 44,
+      "eligibleUpdate": 32,
+      "xBits": "434DD03C",
+      "pose": [
+        0,
+        4,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 45,
+      "eligibleUpdate": 32,
+      "xBits": "434DD03C",
+      "pose": [
+        0,
+        4,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 46,
+      "eligibleUpdate": 33,
+      "xBits": "434C02D7",
+      "pose": [
+        0,
+        2,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 47,
+      "eligibleUpdate": 33,
+      "xBits": "434C02D7",
+      "pose": [
+        0,
+        2,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 48,
+      "eligibleUpdate": 34,
+      "xBits": "434A3572",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 49,
+      "eligibleUpdate": 34,
+      "xBits": "434A3572",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 50,
+      "eligibleUpdate": 35,
+      "xBits": "4348680D",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 51,
+      "eligibleUpdate": 35,
+      "xBits": "4348680D",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 52,
+      "eligibleUpdate": 36,
+      "xBits": "43469AA8",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 53,
+      "eligibleUpdate": 36,
+      "xBits": "43469AA8",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 54,
+      "eligibleUpdate": 37,
+      "xBits": "4344CD43",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 55,
+      "eligibleUpdate": 37,
+      "xBits": "4344CD43",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 56,
+      "eligibleUpdate": 38,
+      "xBits": "4342FFDE",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 57,
+      "eligibleUpdate": 38,
+      "xBits": "4342FFDE",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 58,
+      "eligibleUpdate": 39,
+      "xBits": "43413279",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 59,
+      "eligibleUpdate": 39,
+      "xBits": "43413279",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 60,
+      "eligibleUpdate": 40,
+      "xBits": "433F6514",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 61,
+      "eligibleUpdate": 40,
+      "xBits": "433F6514",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 62,
+      "eligibleUpdate": 41,
+      "xBits": "433D97AF",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 63,
+      "eligibleUpdate": 41,
+      "xBits": "433D97AF",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 64,
+      "eligibleUpdate": 42,
+      "xBits": "433BCA4A",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 65,
+      "eligibleUpdate": 42,
+      "xBits": "433BCA4A",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 66,
+      "eligibleUpdate": 43,
+      "xBits": "4339FCE5",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 67,
+      "eligibleUpdate": 43,
+      "xBits": "4339FCE5",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 68,
+      "eligibleUpdate": 44,
+      "xBits": "43382F80",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 69,
+      "eligibleUpdate": 44,
+      "xBits": "43382F80",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 70,
+      "eligibleUpdate": 45,
+      "xBits": "4336621B",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 71,
+      "eligibleUpdate": 45,
+      "xBits": "4336621B",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 72,
+      "eligibleUpdate": 46,
+      "xBits": "433494B6",
+      "pose": [
+        3,
+        0,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 73,
+      "eligibleUpdate": 46,
+      "xBits": "433494B6",
+      "pose": [
+        3,
+        0,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 74,
+      "eligibleUpdate": 47,
+      "xBits": "4332C751",
+      "pose": [
+        4,
+        6,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 75,
+      "eligibleUpdate": 47,
+      "xBits": "4332C751",
+      "pose": [
+        4,
+        6,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 76,
+      "eligibleUpdate": 48,
+      "xBits": "4330F9EC",
+      "pose": [
+        4,
+        4,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 77,
+      "eligibleUpdate": 48,
+      "xBits": "4330F9EC",
+      "pose": [
+        4,
+        4,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 78,
+      "eligibleUpdate": 49,
+      "xBits": "432F2C87",
+      "pose": [
+        4,
+        2,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 79,
+      "eligibleUpdate": 49,
+      "xBits": "432F2C87",
+      "pose": [
+        4,
+        2,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 80,
+      "eligibleUpdate": 50,
+      "xBits": "432D5F22",
+      "pose": [
+        4,
+        0,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 81,
+      "eligibleUpdate": 50,
+      "xBits": "432D5F22",
+      "pose": [
+        4,
+        0,
+        33
+      ]
+    },
+    {
+      "sampleIndex": 82,
+      "eligibleUpdate": 51,
+      "xBits": "432B91BD",
+      "pose": [
+        5,
+        6,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 83,
+      "eligibleUpdate": 51,
+      "xBits": "432B91BD",
+      "pose": [
+        5,
+        6,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 84,
+      "eligibleUpdate": 52,
+      "xBits": "4329C458",
+      "pose": [
+        5,
+        4,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 85,
+      "eligibleUpdate": 52,
+      "xBits": "4329C458",
+      "pose": [
+        5,
+        4,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 86,
+      "eligibleUpdate": 53,
+      "xBits": "4327F6F3",
+      "pose": [
+        5,
+        2,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 87,
+      "eligibleUpdate": 53,
+      "xBits": "4327F6F3",
+      "pose": [
+        5,
+        2,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 88,
+      "eligibleUpdate": 54,
+      "xBits": "4326298E",
+      "pose": [
+        5,
+        0,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 89,
+      "eligibleUpdate": 54,
+      "xBits": "4326298E",
+      "pose": [
+        5,
+        0,
+        34
+      ]
+    },
+    {
+      "sampleIndex": 90,
+      "eligibleUpdate": 55,
+      "xBits": "43245C29",
+      "pose": [
+        0,
+        6,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 91,
+      "eligibleUpdate": 55,
+      "xBits": "43245C29",
+      "pose": [
+        0,
+        6,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 92,
+      "eligibleUpdate": 56,
+      "xBits": "43228EC4",
+      "pose": [
+        0,
+        4,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 93,
+      "eligibleUpdate": 56,
+      "xBits": "43228EC4",
+      "pose": [
+        0,
+        4,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 94,
+      "eligibleUpdate": 57,
+      "xBits": "4320C15F",
+      "pose": [
+        0,
+        2,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 95,
+      "eligibleUpdate": 57,
+      "xBits": "4320C15F",
+      "pose": [
+        0,
+        2,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 96,
+      "eligibleUpdate": 58,
+      "xBits": "431EF3FA",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 97,
+      "eligibleUpdate": 58,
+      "xBits": "431EF3FA",
+      "pose": [
+        0,
+        0,
+        35
+      ]
+    },
+    {
+      "sampleIndex": 98,
+      "eligibleUpdate": 59,
+      "xBits": "431D2695",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 99,
+      "eligibleUpdate": 59,
+      "xBits": "431D2695",
+      "pose": [
+        1,
+        6,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 100,
+      "eligibleUpdate": 60,
+      "xBits": "431B5930",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 101,
+      "eligibleUpdate": 60,
+      "xBits": "431B5930",
+      "pose": [
+        1,
+        4,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 102,
+      "eligibleUpdate": 61,
+      "xBits": "43198BCB",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 103,
+      "eligibleUpdate": 61,
+      "xBits": "43198BCB",
+      "pose": [
+        1,
+        2,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 104,
+      "eligibleUpdate": 62,
+      "xBits": "4317BE66",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 105,
+      "eligibleUpdate": 62,
+      "xBits": "4317BE66",
+      "pose": [
+        1,
+        0,
+        30
+      ]
+    },
+    {
+      "sampleIndex": 106,
+      "eligibleUpdate": 63,
+      "xBits": "4315F101",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 107,
+      "eligibleUpdate": 63,
+      "xBits": "4315F101",
+      "pose": [
+        2,
+        6,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 108,
+      "eligibleUpdate": 64,
+      "xBits": "4314239C",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 109,
+      "eligibleUpdate": 64,
+      "xBits": "4314239C",
+      "pose": [
+        2,
+        4,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 110,
+      "eligibleUpdate": 65,
+      "xBits": "43125637",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 111,
+      "eligibleUpdate": 65,
+      "xBits": "43125637",
+      "pose": [
+        2,
+        2,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 112,
+      "eligibleUpdate": 66,
+      "xBits": "431088D2",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 113,
+      "eligibleUpdate": 66,
+      "xBits": "431088D2",
+      "pose": [
+        2,
+        0,
+        31
+      ]
+    },
+    {
+      "sampleIndex": 114,
+      "eligibleUpdate": 67,
+      "xBits": "430EBB6D",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 115,
+      "eligibleUpdate": 67,
+      "xBits": "430EBB6D",
+      "pose": [
+        3,
+        6,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 116,
+      "eligibleUpdate": 68,
+      "xBits": "430CEE08",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 117,
+      "eligibleUpdate": 68,
+      "xBits": "430CEE08",
+      "pose": [
+        3,
+        4,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 118,
+      "eligibleUpdate": 69,
+      "xBits": "430B20A3",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    },
+    {
+      "sampleIndex": 119,
+      "eligibleUpdate": 69,
+      "xBits": "430B20A3",
+      "pose": [
+        3,
+        2,
+        32
+      ]
+    }
+  ]
+}

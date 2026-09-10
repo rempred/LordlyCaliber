@@ -177,6 +177,14 @@ window.OB64 = window.OB64 || {};
       material:Array.from(bytes.slice(16,32)), materialDelta:Array.from(bytes.slice(32,48)) };
   }
 
+  // Accepted unsigned-byte equivalence from func_00045E5C (CPR-R12).
+  function nativeClassFamilyMatch(a, b) {
+    a &= 255; b &= 255;
+    return a === b || [[81,82,83],[84,85],[86,87],[95,96],[99,100]].some(function(group) {
+      return group.indexOf(a) !== -1 && group.indexOf(b) !== -1;
+    });
+  }
+
   function validateLaunchInputs(input, assetId) {
     if (input == null) return null;
     if (JSON.stringify(input).length > 131072 || input.schema !== 'ob64-cutscene-launch-inputs.v1' ||
@@ -1486,10 +1494,10 @@ window.OB64 = window.OB64 || {};
           if ((row.getUint32(0x40) & 256) && row.getUint32(0x48) && row.getUint8(0xF6) === currentUnitMembers[member]) { ordinal=i; break; }
         }
       } else {
-        if (actorInputRows.some(function(hex) { return launchBytes(hex,0xF8).getUint32(0x48) !== 0; })) {
-          actorBoundary('Class binding requires the native class-family predicate; numeric class equality is insufficient.', 'class-family-helper');
+        for (var rowIndex=0; rowIndex<20; rowIndex++) {
+          var art = launchBytes(actorInputRows[rowIndex],0xF8).getUint32(0x48);
+          if (art && nativeClassFamilyMatch(art, words[2])) { ordinal=rowIndex; break; }
         }
-        return;
       }
       if (ordinal < 0) return; // Known complete rows establish a native no-match return.
       for (var from=0; from<28; from++) {
@@ -2603,7 +2611,7 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x45 || opcode === 0xAB) {
         if (!actorInputRows) actorBoundary('Actor-roster materializer requires the caller\'s complete 20 Actor-input rows.');
         else if (actorInputRows.some(function(hex) { return launchBytes(hex,0xF8).getUint32(0x48) !== 0; })) {
-          actorBoundary('Nonempty Actor roster requires reviewed composite-constructor helpers, linked coordinates, and terrain inputs.', 'roster-constructor-helper');
+          actorBoundary('Nonempty Actor roster requires qualified linked objects, terrain, final State setup, and the reviewed final slot-normalization producer func_002AB574.', 'roster-constructor-helper');
         }
       }
       else if (opcode === 0x92 || opcode === 0xA6) executeActorBinding(node, words);
@@ -4103,6 +4111,7 @@ window.OB64 = window.OB64 || {};
     validateLaunchInputs: validateLaunchInputs,
     decodeNativeActorState: decodeNativeActorState,
     nativeActor: Object.freeze({ createMovement: createNativeMovement,
-      advanceMovement: advanceNativeMovement, advancePose: advanceNativePose })
+      advanceMovement: advanceNativeMovement, advancePose: advanceNativePose,
+      classFamilyMatch: nativeClassFamilyMatch })
   });
 })(window.OB64);
