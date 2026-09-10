@@ -178,7 +178,7 @@ assert.strictEqual(job.remaining,55);
  assert.strictEqual(absent.outcome,'actor-input');
  const sentinel=run([3,-1,-1,-1,-1,-1000,-1000,-1000,-1,0x80000001]);
  assert(!sentinel.missingInputs.some(v=>v.includes('Actor State')));
- const roster=run([0x45,-1,-1,0x80000001]);assert.strictEqual(roster.outcome,'roster-constructor-helper');
+ const roster=run([0x45,-1,-1,0x80000001]);assert.strictEqual(roster.outcome,'roster-construction-input');
  const empty=JSON.parse(JSON.stringify(frozenInput));empty.actorInputRows.value=Array(20).fill('00'.repeat(0xF8));
  const emptyRoster=run([0x45,-1,-1,0x80000001],{nativeLaunchInputs:empty});
  assert(!emptyRoster.missingInputs.some(v=>v.includes('roster')));

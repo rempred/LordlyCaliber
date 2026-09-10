@@ -1,0 +1,4798 @@
+{
+  "generator": "build-roster-fixture.cjs",
+  "generatorSha256": "e5518b726057ef6eebb2b4e8b1717295724e88b840a4320dbe3b0661aa5fd2b4",
+  "inputs": {
+    "cutscene-roster-normalization-r1-20260910/native-examples.json": "7b02fa73ba6c69d0bb9bde85fb21021de616d76e68250c7880502ee7a684881d",
+    "cutscene-roster-finalization-r2-20260910/correction-checks.json": "30598a3bbe43aff825cc4891a799693b38ba0e86ad9f600feb071f522e04563f",
+    "cutscene-deployed-roster-reset-r3-20260910/pre-finalizer-examples.json": "0517338258cf56aaee80b40ec0a9db36172dcd8df93559db4b126900d1907179"
+  },
+  "constructors": [
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 1,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 1,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 10,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 25,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 123,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 1,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 136,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 136,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 161,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 2,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 161,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 2,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 2,
+          "context": 2,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 4294967295,
+        "sourceArt": 4294967295,
+        "variant": 0,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 0,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            10,
+            123,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            11,
+            123,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 0,
+          "context": 0,
+          "state": 10,
+          "position": [
+            12,
+            123,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [
+        [
+          10,
+          -20
+        ],
+        [
+          11,
+          -21
+        ],
+        [
+          12,
+          -22
+        ]
+      ],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        -1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        -1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 0,
+      "outputSlots": [
+        -1,
+        1,
+        3,
+        -1
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "sourceArt": 135,
+        "variant": 257,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2
+        ]
+      },
+      "presentationType": 4,
+      "records": [
+        {
+          "slot": 1,
+          "sourceRow": 7,
+          "linkedOrdinal": 0,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            10,
+            40,
+            -20
+          ]
+        },
+        {
+          "slot": 3,
+          "sourceRow": 7,
+          "linkedOrdinal": 1,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            11,
+            41,
+            -21
+          ]
+        },
+        {
+          "slot": 4,
+          "sourceRow": 7,
+          "linkedOrdinal": 2,
+          "sourceArt": 135,
+          "context": 2,
+          "state": 60,
+          "position": [
+            12,
+            42,
+            -22
+          ]
+        }
+      ],
+      "terrainCalls": [],
+      "returnedSlot": 1,
+      "outputSlots": [
+        1,
+        3,
+        4,
+        -1
+      ]
+    }
+  ],
+  "finalizers": [
+    {
+      "name": "two-eligible-same-row-context-0",
+      "before": [
+        "A",
+        "B",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "actors": {
+        "A": {
+          "row": 2,
+          "state": 10
+        },
+        "B": {
+          "row": 2,
+          "state": 10
+        }
+      },
+      "rows": {
+        "2": {
+          "context": 0,
+          "flags": 768
+        }
+      },
+      "after": [
+        "B",
+        "A",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "swaps": [
+        [
+          0,
+          1,
+          "A"
+        ]
+      ],
+      "steps": 402,
+      "actorFieldsExceptSlotPreserved": true,
+      "onlySlotPointersSlotFieldsAndStackWritten": true,
+      "visitedSlots": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "evaluatedActors": [
+        "A",
+        "A"
+      ],
+      "evaluationSlots": [
+        0,
+        1
+      ],
+      "skippedActorIdentities": [
+        "B"
+      ],
+      "repeatedActorIdentities": [
+        "A"
+      ],
+      "onePassActorResult": [
+        "A",
+        "B",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "two-eligible-same-row-context-10",
+      "before": [
+        "A",
+        "B",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "actors": {
+        "A": {
+          "row": 2,
+          "state": 10
+        },
+        "B": {
+          "row": 2,
+          "state": 10
+        }
+      },
+      "rows": {
+        "2": {
+          "context": 10,
+          "flags": 768
+        }
+      },
+      "after": [
+        "B",
+        "A",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "swaps": [
+        [
+          0,
+          1,
+          "A"
+        ]
+      ],
+      "steps": 406,
+      "actorFieldsExceptSlotPreserved": true,
+      "onlySlotPointersSlotFieldsAndStackWritten": true,
+      "visitedSlots": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "evaluatedActors": [
+        "A",
+        "A"
+      ],
+      "evaluationSlots": [
+        0,
+        1
+      ],
+      "skippedActorIdentities": [
+        "B"
+      ],
+      "repeatedActorIdentities": [
+        "A"
+      ],
+      "onePassActorResult": [
+        "A",
+        "B",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "same-row-three-actors",
+      "before": [
+        "A",
+        "B",
+        null,
+        null,
+        "C",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "actors": {
+        "A": {
+          "row": 2,
+          "state": 10
+        },
+        "B": {
+          "row": 2,
+          "state": 60
+        },
+        "C": {
+          "row": 2,
+          "state": 10
+        }
+      },
+      "rows": {
+        "2": {
+          "context": 10,
+          "flags": 768
+        }
+      },
+      "after": [
+        "B",
+        "C",
+        null,
+        null,
+        "A",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "swaps": [
+        [
+          0,
+          1,
+          "A"
+        ],
+        [
+          4,
+          1,
+          "C"
+        ]
+      ],
+      "steps": 468,
+      "actorFieldsExceptSlotPreserved": true,
+      "onlySlotPointersSlotFieldsAndStackWritten": true,
+      "visitedSlots": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "evaluatedActors": [
+        "A",
+        "A",
+        "C"
+      ],
+      "evaluationSlots": [
+        0,
+        1,
+        4
+      ],
+      "skippedActorIdentities": [
+        "B"
+      ],
+      "repeatedActorIdentities": [
+        "A"
+      ],
+      "predecessorOutputPreserved": true,
+      "limit": "The skipped B has State 60; this fixture does not test its State predicate."
+    }
+  ],
+  "resetRows": {
+    "classification": "synthetic static examples with explicit caller records; not retail roster observations",
+    "examples": {
+      "empty-unit": {
+        "currentUnitByteAfterSuccessfulReturn": 30,
+        "events": [],
+        "preservedOccupiedRows": [],
+        "produced": [],
+        "remaining": "Post-builder resource grouping and final registration are separate operations, defined in contract.json.",
+        "status": "conditional-row-construction-complete"
+      },
+      "full-preserved-pool": {
+        "events": [],
+        "produced": [],
+        "reason": "native first-unused scan has no row20 guard",
+        "status": "invalid-prerequisite"
+      },
+      "mixed-members-preserved-row": {
+        "currentUnitByteAfterSuccessfulReturn": 30,
+        "events": [
+          {
+            "action": "release-row-resource",
+            "handle": 0,
+            "row": 1
+          },
+          {
+            "action": "clear-selected-row",
+            "row": 1
+          }
+        ],
+        "preservedOccupiedRows": [
+          0
+        ],
+        "produced": [
+          {
+            "column": 0,
+            "destinationRow": 1,
+            "formationByte": 0,
+            "formationRow": 0,
+            "memberId": 2,
+            "nativeX": -152,
+            "nativeZ": -38,
+            "preFinalizerRowHex": "0000000000000000000000000000000000000000000000000000000000000000005B005A005C005D005E005F00600061080C001307000062006300640065090700000702000000000000000200000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200",
+            "remaining": "func_0020CBDC external terrain/projection/appearance/pool preparation and linked objects must complete; this example does not fabricate their outputs.",
+            "sourceMemberSlot": 0,
+            "sourceRecordIndex": 2
+          },
+          {
+            "column": 2,
+            "destinationRow": 2,
+            "formationByte": 8,
+            "formationRow": 2,
+            "memberId": 3,
+            "nativeX": -76,
+            "nativeZ": 38,
+            "preFinalizerRowHex": "0000000000000000000000000000000000000000000000000000000000000000005B005A005C005D005E005F00600061080C001307000062006300640065000700000500000000000000000300000001000000000000000200000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300",
+            "remaining": "func_0020CBDC external terrain/projection/appearance/pool preparation and linked objects must complete; this example does not fabricate their outputs.",
+            "sourceMemberSlot": 2,
+            "sourceRecordIndex": 3
+          },
+          {
+            "column": 1,
+            "destinationRow": 3,
+            "formationByte": 4,
+            "formationRow": 1,
+            "memberId": 101,
+            "nativeX": -114,
+            "nativeZ": 0,
+            "preFinalizerRowHex": "00000000000000000000000000000000000000000000000000000000000000000033005A005C005D005E005F00600061080C001307000062006300640065090700000502000000000000000200000002000000000000000100000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006500",
+            "remaining": "func_0020CBDC external terrain/projection/appearance/pool preparation and linked objects must complete; this example does not fabricate their outputs.",
+            "sourceMemberSlot": 3,
+            "sourceRecordIndex": 0
+          }
+        ],
+        "remaining": "Post-builder resource grouping and final registration are separate operations, defined in contract.json.",
+        "status": "conditional-row-construction-complete"
+      },
+      "unavailable-unit": {
+        "reason": "unit30 exact member and formation bytes are required",
+        "status": "unavailable-input"
+      }
+    },
+    "sourceRecords": {
+      "0": "000000000000000000000000000000000002020C0000005A005B1307005C005D005E005F00600061080000620063006400650900",
+      "2": "000000000000000000000000000000000002020C0000005A005B1307005C005D005E005F00600061080000620063006400650906",
+      "3": "000000000000000000000000000000000003010C0000005A005B1307005C005D005E005F00600061080000620063006400650900"
+    },
+    "unit30Hex": "00000200036500000108040000000000000000000000000000"
+  }
+}

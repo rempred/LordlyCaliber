@@ -270,13 +270,41 @@ window.OB64 = window.OB64 || {};
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
     ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch',
-      'poseRegistry','bodyPoseSetups','subordinateServices'].forEach(function(key) {
+      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (['poseRegistry','bodyPoseSetups','subordinateServices'].includes(key)) {
+      if (key === 'rosterResets') {
+        if(!Array.isArray(value))fail('Roster resets need ordered command occurrences.','launch-input');
+        var resetIds=new Set();
+        value.forEach(function(reset) {
+          if(!reset||typeof reset.nodeId!=='string'||!Number.isInteger(reset.occurrence)||reset.occurrence<0||reset.occurrence>=30000||resetIds.has(reset.nodeId+':'+reset.occurrence))fail('Reset occurrence identity is invalid.','launch-input');
+          resetIds.add(reset.nodeId+':'+reset.occurrence);
+          if(reset.unitHex!==null)launchBytes(reset.unitHex,25);
+          if(!Number.isInteger(reset.sceneRoot)||reset.sceneRoot<=0||reset.sceneRoot>4294940000||!Number.isInteger(reset.currentUnit)||reset.currentUnit<0||reset.currentUnit>255||!reset.records||!reset.objects||!reset.scratch||
+              !['primaryRegistry','secondaryRegistry','releases','rowFinalizers','descriptions','preparations','decodes','random'].every(function(k){return Array.isArray(reset[k]);}))fail('Reset memory and service groups must be explicit.','launch-input');
+          Object.keys(reset.records).forEach(function(k){if(!/^\d+$/.test(k)||Number(k)>99)fail('Invalid deployed record ID.','launch-input');launchBytes(reset.records[k],52);});
+          Object.keys(reset.objects).forEach(function(k){if(!/^\d+$/.test(k)||Number(k)<=0||Number(k)>4294967295)fail('Invalid child pointer.','launch-input');launchBytes(reset.objects[k],0x100);});
+          ['primaryRegistry','secondaryRegistry'].forEach(function(k){if(reset[k].length>256||reset[k].some(function(p){return !Number.isInteger(p)||p<=0||p>4294967295;}))fail('Reset registry backing is invalid.','launch-input');});
+          ['art','handle','variant','orientationA','orientationB','context'].forEach(function(k){if(!Array.isArray(reset.scratch[k])||reset.scratch[k].length!==9||reset.scratch[k].some(function(v){return v!==null&&(!Number.isInteger(v)||v<0||v>4294967295);}))fail('Reset scratch requires nine qualified or unavailable words per array.','launch-input');});
+          reset.rowFinalizers.forEach(function(f){if(!f||!Number.isInteger(f.row)||f.row<0||f.row>=20||![0,1].includes(f.mode)||!['returned','unavailable'].includes(f.status)||!f.objects)fail('Invalid reset finalizer response.','launch-input');launchBytes(f.beforeRowHex,248);launchBytes(f.afterRowHex,248);Object.keys(f.objects).forEach(function(p){if(!/^\d+$/.test(p)||Number(p)<=0||Number(p)>4294967295)fail('Invalid returned child pointer.','launch-input');launchBytes(f.objects[p],256);});});
+          reset.descriptions.forEach(function(d){if(!d||!Number.isInteger(d.row)||d.row<0||d.row>=20||!Number.isInteger(d.variant)||!Number.isInteger(d.handle)||d.handle<0||d.handle>4294967295)fail('Invalid reset description result.','launch-input');launchBytes(d.rowHex,248);});
+        });
+      } else if (key === 'rosterConstruction') {
+        if (!value || !Number.isInteger(value.presentationByte) || value.presentationByte<0 || value.presentationByte>255 ||
+            !Number.isInteger(value.route) || value.route < -128 || value.route > 127 || !Array.isArray(value.links)) fail('Roster construction needs qualified route, presentation byte, and linked objects.','launch-input');
+        var pointers=new Set();
+        value.links.forEach(function(link) {
+          if (!link || !Number.isInteger(link.pointer) || link.pointer<=0 || link.pointer>4294967295 || pointers.has(link.pointer) ||
+              ![link.x,link.y,link.z].every(function(v){return Number.isInteger(v)&&v>=-32768&&v<=32767;}) ||
+              typeof link.allocationSucceeded!=='boolean' ||
+              (link.terrainHeight!==null && (!Number.isFinite(link.terrainHeight)||Math.fround(link.terrainHeight)!==link.terrainHeight))) fail('Roster linked objects need unique pointers, signed coordinates, allocation and float-height qualification.','launch-input');
+          pointers.add(link.pointer);
+        });
+        if (value.excludedRows!==undefined && (!Array.isArray(value.excludedRows)||value.excludedRows.length!==20||value.excludedRows.some(function(v){return v!==null&&typeof v!=='boolean';}))) fail('Roster exclusion results need 20 known or unavailable entries.','launch-input');
+      } else if (['poseRegistry','bodyPoseSetups','subordinateServices'].includes(key)) {
         validateActorServiceGroup(key,value);
       } else if (key === 'actorInputRows') {
         if (!Array.isArray(value) || value.length !== 20) fail('Actor inputs require all 20 rows.', 'launch-input');
@@ -1067,7 +1095,7 @@ window.OB64 = window.OB64 || {};
     }
     var actorInputRows = launchValue('actorInputRows');
     var currentUnitMembers = launchValue('currentUnitMembers');
-    var actorServiceOccurrences = {}, qualifiedPoseCache = new Map(), subordinateSerial = 0;
+    var actorServiceOccurrences = {}, qualifiedPoseCache = new Map(), subordinateSerial = 0, nativeRosterResult = null;
     var state = {
       tick: 0,
       actors: {},
@@ -2609,6 +2637,238 @@ window.OB64 = window.OB64 || {};
       delete state.bodyPoseJobs[slot];
     }
 
+    function finalizeOrdinarySlots(node) {
+      if (!initialActors) {actorBoundary('Roster finalization requires known complete slot occupancy.','roster-slot-input');return;}
+      for (var slot=0;slot<28;slot++) {
+        // Read the current slot after every earlier swap. Actor identities may repeat or be skipped.
+        var actor=state.actors[slot];
+        if (!actor) continue;
+        if (!Number.isInteger(actor.sourceRowOrdinal)||actor.sourceRowOrdinal<0||actor.sourceRowOrdinal>=20) {
+          actorBoundary('Roster finalization needs an ordinary source row for each occupied slot.','roster-finalizer-row');return;
+        }
+        var row=launchBytes(actorInputRows[actor.sourceRowOrdinal],0xF8),flags=row.getUint32(0x40);
+        recordTrace({tick:state.tick,kind:'roster-finalizer-visit',nodeId:node.id,slot:slot,actorIdentity:actor.id});
+        if ([10,25,123].includes(row.getUint32(0x4C))&&lowS16(actor.animationKey)>=50 || !(flags&512)) continue;
+        var target=(flags&256)?1:0;
+        if (slot===target) continue;
+        var destination=state.actors[target];
+        state.actors[target]=actor;actor.slot=target;
+        if (destination) {state.actors[slot]=destination;destination.slot=slot;} else delete state.actors[slot];
+        recordTrace({tick:state.tick,kind:'roster-finalizer-swap',nodeId:node.id,slot:slot,target:target,actorIdentity:actor.id});
+      }
+    }
+
+    function executeOrdinaryRoster(node,words) {
+      if (!actorInputRows) {actorBoundary('Actor-roster materializer requires all 20 caller rows.');return;}
+      var construction=launchValue('rosterConstruction'), first=signed(words[1]),second=signed(words[2]),variant=0;
+      for(var ordinal=0;ordinal<20;ordinal++) {
+        var row=launchBytes(actorInputRows[ordinal],0xF8),art=row.getInt32(0x48),context=row.getInt32(0x4C),flags=row.getUint32(0x40);
+        if (!art) continue;
+        var side=!!(flags&256),enabled=!!(flags&512),selected=false;
+        if (first===-1&&side) selected=true;
+        else if(second===-1&&!side) selected=true;
+        else if(first===-2&&side&&enabled || second===-2&&!side&&enabled) selected=true;
+        else if(first===0&&side || second===0&&!side) selected=false;
+        else if(nativeClassFamilyMatch(first,art)) {first=0;selected=true;}
+        else if(nativeClassFamilyMatch(second,art)) {second=0;selected=true;}
+        if (!selected) continue;
+        if (!construction) {actorBoundary('Selected roster rows require qualified route, linked objects, terrain, and allocation inputs.','roster-construction-input');return;}
+        if ([-3,-10].includes(construction.route)) {
+          var excluded=construction.excludedRows&&construction.excludedRows[ordinal];
+          if(typeof excluded!=='boolean') {actorBoundary('This roster route requires its exact exclusion predicate result.','roster-exclusion-input');return;}
+          if(excluded) continue;
+        }
+        var pointers=[0,4,8].map(function(at){return row.getUint32(at);});
+        var type=context===1?1:[10,25,123].includes(context)?2:art===135?(variant?4:0):[136,161].includes(art)?2:0;
+        var free=Array.from({length:28},function(_,i){return i;}).filter(function(i){return !state.actors[i];});
+        if(!initialActors) {actorBoundary('Roster construction requires known slot occupancy.','roster-slot-input');return;}
+        if(free.length<pointers.filter(Boolean).length) {actorBoundary('Native roster allocation has no safe exhausted-capacity return.','roster-capacity');return;}
+        var links=pointers.map(function(pointer){return pointer?construction.links.find(function(link){return link.pointer===pointer;}):null;});
+        for(var check=0;check<3;check++) if(pointers[check]) {
+          var link=links[check];
+          if(!link||!link.allocationSucceeded||type!==4&&(link.terrainHeight===null||link.terrainHeight<-2147483648||link.terrainHeight>=2147483648)) {
+            actorBoundary('Roster construction requires valid linked coordinates, successful allocation, and convertible terrain results.','roster-linked-input');return;
+          }
+        }
+        var outputs=[-1,-1,-1,-1],orientation=row.getInt32(0x58)<4?1:0;
+        for(var linked=0;linked<3;linked++) if(pointers[linked]) {
+          var slot=free.shift(),raw=new DataView(new ArrayBuffer(0x150)),selector=type===4||type===2&&linked===1?60:10;
+          for(var material=0;material<16;material++)raw.setUint8(material,255);
+          raw.setUint32(0xE0,0x8022F2CC);raw.setInt32(0xE4,slot);
+          if(art!==-1)raw.setInt32(0xE8,art);if(context!==-1)raw.setInt32(0xEC,context);
+          raw.setInt32(0xF0,-1);
+          [0x104,0x108,0x10C,0x130].forEach(function(at){raw.setFloat32(at,1);});
+          raw.setFloat32(0x11C,links[linked].x);raw.setFloat32(0x124,links[linked].z);
+          raw.setFloat32(0x120,type===4?links[linked].y:lowS16(Math.trunc(links[linked].terrainHeight)));
+          raw.setInt16(0x134,selector);raw.setInt16(0x138,selector);raw.setInt16(0x13A,orientation);
+          raw.setUint8(0x13C,construction.presentationByte);raw.setUint8(0x13D,1);raw.setUint8(0x145,1);
+          [0x142,0x143,0x144].forEach(function(at){raw.setUint8(at,255);});
+          raw.setUint8(0x146,orientation);raw.setUint8(0x147,ordinal);raw.setUint8(0x149,linked);
+          var actor=ensureActor(slot);actor.id='roster:'+launchInputs.invocationId+':'+(++subordinateSerial);
+          actor.visible=true;actor.source={launchSourceIdentity:launchInputs.sourceIdentity,invocationId:launchInputs.invocationId,evidenceGrade:launchInputs.evidenceGrade,linkedPointer:pointers[linked]};
+          applyNativeRecord(actor,raw,'ordinary-constructor-before-State-setup');outputs[linked]=slot;
+          recordTrace({tick:state.tick,kind:'roster-construction',nodeId:node.id,slot:slot,linkedOrdinal:linked,sourceRow:ordinal,actorIdentity:actor.id,recordHex:recordHex(raw)});
+        }
+        if(art===135)variant=1;
+        if(outputs[0]!==-1) {
+          actorBoundary('Constructed roster Actors require the materializer-specific State-setup contract, including related-Actor effects.','roster-state-setup');return;
+        }
+      }
+      finalizeOrdinarySlots(node);
+    }
+
+    function executeRosterReset(node) {
+      if(state.directorMode!==2)return;
+      if(!actorInputRows){actorBoundary('Roster reset requires all 20 current rows.','roster-reset-input');return;}
+      var service=actorService('rosterResets',node);
+      if(!service){actorBoundary('Roster reset requires qualified unit, registry, child, and native-service inputs.','roster-reset-input');return;}
+      service=M.cloneJson(service,'reset service');
+      if(nativeRosterResult && (service.currentUnit!==nativeRosterResult.currentUnit ||
+          JSON.stringify(service.primaryRegistry)!==JSON.stringify(nativeRosterResult.primaryRegistry) ||
+          JSON.stringify(service.secondaryRegistry)!==JSON.stringify(nativeRosterResult.secondaryRegistry) ||
+          Object.keys(service.objects).length!==Object.keys(nativeRosterResult.objects).length ||
+          Object.keys(nativeRosterResult.objects).some(function(p){return !service.objects[p]||service.objects[p].toLowerCase()!==nativeRosterResult.objects[p].toLowerCase();}))) {
+        actorBoundary('A later reset must preserve the previously established registry, object, and selector state.','roster-reset-state');return;
+      }
+      var releaseIndex=0,finalizerIndex=0,prepareIndex=0,decodeIndex=0,randomIndex=0;
+      var rows=actorInputRows.map(function(hex){return launchBytes(hex,0xF8);});
+      nativeRosterResult={currentUnit:service.currentUnit,objects:service.objects,primaryRegistry:service.primaryRegistry,secondaryRegistry:service.secondaryRegistry,scratch:service.scratch,rows:actorInputRows,completed:false};
+      function need(condition,message,code){if(!condition)fail(message,code||'roster-reset-service');}
+      function publish(){actorInputRows=rows.map(recordHex);nativeRosterResult.rows=actorInputRows;}
+      function object(pointer){need(pointer&&service.objects[pointer],'Reset child backing is unavailable.','roster-reset-child');return launchBytes(service.objects[pointer],0x100);}
+      function store(pointer,bytes){service.objects[pointer]=recordHex(bytes);}
+      function remove(registry,pointer){var index=registry.indexOf(pointer);if(index>=0)registry.splice(index,1);}
+      function trace(kind,detail){recordTrace(Object.assign({tick:state.tick,nodeId:node.id,kind:kind},detail));}
+      function advanceChild(pointer,row,extra,rowOrdinal){
+        var child=object(pointer),base=0x44,steps=0;
+        // Child presentation state uses halfword counters, unlike the Director Actor's word counters.
+        function get(at){return child.getInt16(base+at);}
+        function put(at,v){child.setInt16(base+at,lowS16(v));}
+        function byte(at,v){child.setUint8(base+at,v&255);}
+        function arg(at){return child.getUint8(base+at);}
+        function random(){need(randomIndex<service.random.length,'Initial child pose requires an ordered random result.','roster-reset-random');var v=service.random[randomIndex++];need(Number.isInteger(v)&&v>=0&&v<=4294967295,'Invalid random result.');return v;}
+        try {
+          while(get(8)<=0) {
+            need(++steps<=256,'Initial child pose exceeded its bounded instruction budget.','roster-reset-pose-limit');
+            put(6,get(6)+1);store(pointer,child);
+            var alternate=row.getInt32(0x48)===256||extra;
+            if(!alternate){var linkedPrimary=object(child.getUint32(base+0x4C));need(linkedPrimary.getUint32(0x40)===service.sceneRoot+0x1C4+rowOrdinal*248,'Ordinary child decoding requires the qualified parent-row link.','roster-reset-child');}
+            var request={pointer:pointer,art:row.getInt32(0x48),context:row.getInt32(0x4C),flag8:extra?0:(row.getUint32(0x40)>>>8)&1,flag10:extra?0:(row.getUint32(0x40)>>>10)&1,selection:get(4),cursor:get(6)};
+            var decode=service.decodes[decodeIndex++];
+            need(decode&&Object.keys(request).every(function(k){return decode[k]===request[k];})&&Array.isArray(decode.bytes)&&decode.bytes.length===3&&decode.bytes.every(function(v){return Number.isInteger(v)&&v>=0&&v<=255;})&&Number.isInteger(decode.code),'Initial child decoder result is unavailable for its exact call.','roster-reset-decoder');
+            var a=decode.bytes[0],b=decode.bytes[1],c=decode.bytes[2],depth;
+            trace('reset-child-decode',Object.assign({code:decode.code,bytes:decode.bytes,currentUnit:nativeRosterResult.currentUnit},request));
+            switch(decode.code) {
+              case 0:
+                depth=arg(0x46);need(depth<=4,'Invalid child return depth.','roster-reset-pose-stack');
+                if(depth){depth--;byte(0x46,depth);put(4,arg(0x32+depth));put(6,arg(0x36+depth));break;}
+                var flags=arg(0x48),selection=0;
+                if(flags&2)selection=((((random()<<18)&0x0C000000)|(random()<<15)|random())>>>0)%5;
+                if(flags&1)selection+=50;
+                put(4,selection);put(6,-1);put(8,0);[0xC,0xE,0x10].forEach(function(at){put(at,0);});byte(0x46,0);byte(0x47,0);
+                for(var i=0;i<16;i++){byte(0x12+i,255);byte(0x22+i,0);}break;
+              case 1:put(0xA,a);put(8,b);break;
+              case 2:put(0x10,get(0x10)-(a<<24>>24));put(0xE,get(0xE)-(b<<24>>24));break;
+              case 3:put(8,a);break;
+              case 4:put(6,a-1);break;
+              case 15:
+                depth=arg(0x46);need(depth<4,'Child return stack capacity is unavailable.','roster-reset-pose-stack');
+                byte(0x32+depth,get(4));byte(0x36+depth,get(6));byte(0x46,depth+1);
+                // Native call-control falls through to state selection.
+              case 5:put(4,a);put(6,-1);break;
+              case 12:put(0x10,get(0x10)-(a<<24>>24));put(0xE,get(0xE)+(b<<24>>24));put(0xC,get(0xC)+(c<<24>>24));break;
+              case 13:case 16:
+                need(a===255||a<16,'Child material index exceeds backed storage.','roster-reset-pose-material');
+                var start=decode.code===13?0x12:0x22;
+                if(a===255)for(var j=0;j<16;j++)byte(start+j,b);else byte(start+a,b);break;
+              case 14:
+                depth=arg(0x47);need(depth<=4,'Invalid child loop depth.','roster-reset-pose-stack');
+                if(depth&&arg(0x3A+depth-1)===get(4)&&arg(0x3E+depth-1)===get(6)) {
+                  var count=(arg(0x42+depth-1)-1)&255;byte(0x42+depth-1,count);
+                  if(!count){byte(0x47,depth-1);break;}
+                } else {if(!b)break;need(depth<4,'Child loop stack capacity is unavailable.','roster-reset-pose-stack');byte(0x3A+depth,get(4));byte(0x3E+depth,get(6));byte(0x42+depth,b);byte(0x47,depth+1);}
+                put(6,a-1);break;
+              case 17:case 18:case 19:case 20:fail('Initial child pose requires its external sound-request producer.','roster-reset-sound');break;
+              case 21:put(0xA,a+(b<<8));put(8,c);break;
+            }
+          }
+          for(var index=0;index<16;index++)byte(0x12+index,clamp(arg(0x12+index)+child.getInt8(base+0x22+index),0,255));
+          put(8,get(8)-2);
+        } finally {store(pointer,child);}
+      }
+      try {
+        for(var ordinal=0;ordinal<20;ordinal++) {
+          var row=rows[ordinal];if(!row.getUint32(0x48)||!(row.getUint32(0x40)&256))continue;
+          var release=service.releases[releaseIndex++],handle=row.getUint32(0x50);
+          need(release&&release.handle===handle&&release.status==='returned','Reset resource release is unavailable.','roster-reset-release');
+          trace('reset-release',{row:ordinal,handle:handle});
+          for(var linked=0;linked<3;linked++) {
+            var primary=row.getUint32(linked*4);if(!primary)continue;
+            var child=object(primary);child.setUint32(0x18,0);store(primary,child);
+            var secondary=row.getUint32(12+linked*4),partner=object(secondary);partner.setUint32(0x18,0);store(secondary,partner);
+            remove(service.primaryRegistry,primary);remove(service.secondaryRegistry,secondary);
+            row.setUint32(linked*4,0);row.setUint32(12+linked*4,0);
+          }
+          rows[ordinal]=new DataView(new ArrayBuffer(0xF8));
+        }
+        need(service.unitHex!==null,'Deployed unit 30 is unavailable after selective cleanup.','roster-reset-unit');
+        var unit=launchBytes(service.unitHex,25),sticky=0;
+        for(var memberSlot=0;memberSlot<5;memberSlot++) {
+          var member=unit.getUint8(2+memberSlot);if(!member)continue;
+          var at=rows.findIndex(function(r){return !r.getUint32(0x48);});need(at>=0,'Preserved rows exhaust the reset row pool.','roster-reset-capacity');
+          var old=rows[at],finalizer=service.rowFinalizers[finalizerIndex++];
+          if(old.getUint32(0x40)&512) {need(finalizer&&Number.isInteger(finalizer.oldAppearanceClass),'Unused-row appearance classification is unavailable.','roster-reset-old-row');if((finalizer.oldAppearanceClass&255)===2)sticky=1;}
+          var source=service.records[member<100?member:0];need(source,'Selected deployed record is unavailable.','roster-reset-record');source=launchBytes(source,52);
+          row=new DataView(new ArrayBuffer(0xF8));rows[at]=row;
+          [[0x11,0x48,4],[0x12,0x4C,4],[0x13,0x31,1],[0x1A,0x33,1],[0x28,0x30,1],[0x32,0x3E,1]].forEach(function(pair){if(pair[2]===4)row.setUint32(pair[1],source.getUint8(pair[0]));else row.setUint8(pair[1],source.getUint8(pair[0]));});
+          [[0x16,0x22],[0x18,0x20],[0x1C,0x24],[0x1E,0x26],[0x20,0x28],[0x22,0x2A],[0x24,0x2C],[0x26,0x2E],[0x2A,0x36],[0x2C,0x38],[0x2E,0x3A],[0x30,0x3C]].forEach(function(pair){row.setUint16(pair[1],source.getUint16(pair[0]));});
+          row.setUint8(0x34,source.getUint8(0x1B));row.setUint8(0x3F,source.getUint8(0x1B));row.setUint8(0xF6,member<100?member:0);
+          if(row.getUint32(0x4C)===1)row.setUint8(0x3E,0);
+          row.setUint32(0x40,0x500|((source.getUint8(0x33)&2)?512:0)|((source.getUint8(0x33)&4)?2:0));
+          var formation=unit.getUint8(7+memberSlot);row.setUint32(0x54,formation%3);row.setUint32(0x58,Math.floor(formation/3));
+          if(member>=100){var override=service.specialOverrides&&service.specialOverrides[member];need(override&&Number.isInteger(override.halfword)&&override.halfword>=0&&override.halfword<=65535&&Number.isInteger(override.flags)&&override.flags>=0&&override.flags<=255,'Special-member override input is unavailable.','roster-reset-special');row.setUint8(0xF6,member);row.setUint16(0x20,override.halfword);if(override.flags&4)row.setUint32(0x40,row.getUint32(0x40)|2);}
+          var mode=member<100?0:sticky;
+          trace('reset-row-initialized',{row:at,member:member,mode:mode,rowHex:recordHex(row)});
+          need(finalizer&&finalizer.row===at&&finalizer.mode===mode&&finalizer.beforeRowHex.toLowerCase()===recordHex(row).toLowerCase(),'Reset row finalization needs exact qualified input identity.','roster-reset-finalizer');
+          var prepared=launchBytes(finalizer.afterRowHex,0xF8);
+          need(finalizer.objects&&typeof finalizer.objects==='object','Reset finalizer child effects are unavailable.','roster-reset-finalizer');
+          Object.keys(finalizer.objects).forEach(function(pointer){need(/^\d+$/.test(pointer)&&Number(pointer)>0&&Number(pointer)<=4294967295,'Invalid finalizer child identity.');launchBytes(finalizer.objects[pointer],0x100);service.objects[pointer]=finalizer.objects[pointer];});
+          rows[at]=prepared;row=prepared;
+          need(finalizer.status==='returned','Reset row finalizer did not return; its qualified partial effects remain.','roster-reset-finalizer');
+          for(var pair=0;pair<3;pair++){var p=row.getUint32(pair*4);if(!p)continue;object(p);var q=row.getUint32(12+pair*4);object(q);need(service.primaryRegistry.length<256&&service.secondaryRegistry.length<256,'Reset registry capacity input is insufficient.','roster-reset-registry');service.primaryRegistry.push(p);service.secondaryRegistry.push(q);}
+        }
+        var descriptions=[];
+        for(var rowIndex=0;rowIndex<20;rowIndex++) {
+          row=rows[rowIndex];if(!row.getUint32(0x48)||!(row.getUint32(0x40)&256))continue;
+          var description=service.descriptions.find(function(d){return d.row===rowIndex;});
+          need(description&&description.rowHex.toLowerCase()===recordHex(row).toLowerCase()&&Number.isInteger(description.variant)&&Number.isInteger(description.handle),'Reset description services require exact current-row identity.','roster-reset-description');
+          var item={art:row.getUint32(0x48),context:row.getUint32(0x4C),variant:description.variant&65535,handle:description.handle>>>0,orientationA:1,orientationB:1};
+          if(!descriptions.some(function(d){return d.art===item.art&&d.variant===item.variant;})) {var insert=descriptions.findIndex(function(d){return d.handle>item.handle;});if(insert<0)descriptions.push(item);else descriptions.splice(insert,0,item);}
+        }
+        need(descriptions.length<=5,'Reset descriptions exceed the accepted five-member domain.','roster-reset-descriptions');
+        var scratch=service.scratch,n=descriptions.length;
+        descriptions.forEach(function(d,i){Object.keys(scratch).forEach(function(k){scratch[k][i]=d[k];});});
+        function word(k,i){need(i<9&&scratch[k][i]!==null&&scratch[k][i]!==undefined,'Reset grouping requires an exact residual scratch word.','roster-reset-scratch');return scratch[k][i];}
+        for(var start=0;start<n;) {
+          var run=1;while(run<n&&word('handle',start+run)===word('handle',start))run++;
+          var args=['art','context','orientationB','orientationA','variant'].map(function(k){return Array.from({length:run},function(_,i){return word(k,start+i);});});
+          var preparation=service.preparations[prepareIndex++];
+          need(preparation&&preparation.count===run&&JSON.stringify(preparation.values)===JSON.stringify(args),'Grouped reset preparation requires the exact ordered slice and count.','roster-reset-preparation');
+          if(preparation.variants){need(Array.isArray(preparation.variants)&&preparation.variants.length===run&&preparation.variants.every(function(v){return Number.isInteger(v)&&v>=0&&v<=4294967295;}),'Invalid preparation variant writes.');preparation.variants.forEach(function(v,i){scratch.variant[start+i]=v;});}
+          trace('reset-preparation',{start:start,count:run,values:args,status:preparation.status});
+          need(preparation.status==='returned','Reset preparation did not return; prior effects remain.','roster-reset-preparation');start+=run;
+        }
+        if(n)for(var poseRow=0;poseRow<20;poseRow++) {
+          row=rows[poseRow];if(!row.getUint32(0x48)||!(row.getUint32(0x40)&256))continue;
+          for(var offset of [0,4,8,0x18,0x1C]){var pointer=row.getUint32(offset);if(pointer)advanceChild(pointer,row,offset>=0x18,poseRow);}
+        }
+        nativeRosterResult.currentUnit=30;nativeRosterResult.completed=true;
+        currentUnitMembers=Array.from({length:5},function(_,i){return unit.getUint8(2+i);});
+        trace('reset-selector-published',{currentUnit:30});
+      } catch(error) {if(!(error instanceof RuntimeError))throw error;actorBoundary(error.message,error.code);}
+      finally {publish();}
+    }
+
     function executeSubordinate(node, words) {
       var anchorSlot=lowS16(words[1]), initialState=lowU16(words[2]);
       if (anchorSlot<0 || anchorSlot>=28) {actorBoundary('Subordinate anchor must be a primary slot.','subordinate-anchor-input');return;}
@@ -2885,14 +3145,9 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x3D) executeProjection(node, words, true);
       else if (opcode === 0x3F) executeActorPresentationBootstrap(node);
       else if (opcode === 0x3A) executeSceneVignette(node, words);
-      else if (opcode === 0x45 || opcode === 0xAB) {
-        if (!actorInputRows) actorBoundary('Actor-roster materializer requires the caller\'s complete 20 Actor-input rows.');
-        else if (actorInputRows.some(function(hex) { return launchBytes(hex,0xF8).getUint32(0x48) !== 0; })) {
-          actorBoundary('Nonempty Actor roster requires qualified linked objects, terrain, final State setup, and the reviewed final slot-normalization producer func_002AB574.', 'roster-constructor-helper');
-        }
-      }
+      else if (opcode === 0x45 || opcode === 0xAB) executeOrdinaryRoster(node,words);
       else if (opcode === 0x92 || opcode === 0xA6) executeActorBinding(node, words);
-      else if (opcode === 0x96) actorBoundary('Roster reset requires deployed unit 30, persistent characters, and row-object producers.', 'roster-reset-input');
+      else if (opcode === 0x96) executeRosterReset(node);
       else if (opcode === 0xC2) executeSubordinate(node,words);
       else if (opcode === 0x46) executeSpriteEffect(node, words);
       else if (opcode === 0x47) state.shadowLight = {
@@ -4220,6 +4475,7 @@ window.OB64 = window.OB64 || {};
         ? 'mode-two-zero-loader-preview-clears-scene-root'
         : 'launch-may-inherit-existing-scene-root',
       nativeLaunchInputs: launchInputs,
+      nativeRosterResult: nativeRosterResult,
       launchStageTransform: M.cloneJson(
         launchProfile.stageTransform, 'launch Stage transform profile'),
       launchOperandTranslation: {

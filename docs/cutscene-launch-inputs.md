@@ -46,8 +46,8 @@ Raw record preservation does not resolve external pointer graphs, shared effects
 
 Current-unit binding preserves Actor identity and swaps occupied records between slots.
 Slot-owned movement remains in its original slot.
-Complete empty input rows establish a supported roster no-op.
-Nonempty roster construction requires linked-object inputs, terrain samples, final State setup, and the final slot-normalization producer contract.
+Complete empty input rows skip construction; final slot normalization still requires known Actor occupancy and source-row memory.
+Nonempty roster construction requires linked-object inputs and terrain samples. The materializer-specific State-setup dependency remains an explicit stop after construction.
 Class binding selects the first present matching row, then its first occupied Actor slot.
 Equal unsigned class bytes match. Unequal bytes match only within hexadecimal families `51/52/53`, `54/55`, `56/57`, `5F/60`, and `63/64`.
 If that first row has no Actor, binding does not try another matching row.
@@ -117,4 +117,78 @@ A second clone replaces the first clone in that slot. Slot-owned jobs remain in 
 Complete-record qualification ends after an older partially modeled Actor write, mode-two movement, or a concurrent Actor-context merge.
 A new qualified setup or snapshot is required before dependent shallow-copy construction.
 These stops prevent retained initial bytes from being mistaken for the complete current Actor.
-Ordinary roster construction, final slot normalization, and deployed-unit reset remain unavailable in this subset.
+Ordinary construction and final slot normalization support qualified inputs. The materializer-specific State-setup producer remains unavailable.
+
+## Ordinary roster construction
+
+`rosterConstruction.value` contains `route`, `presentationByte`, and `links`.
+`route` is the signed native launch-route byte. `presentationByte` is the shared presentation value narrowed to a byte.
+Each linked object contains a unique unsigned `pointer`, signed-halfword `x`, `y`, and `z`, and Boolean `allocationSucceeded`.
+Its `terrainHeight` is an exact finite single-precision result or null when unavailable.
+Type-four construction uses the linked Y value. Other types require terrain truncation within the signed-word domain before signed-halfword narrowing.
+The qualified pointer connects this object to a current input-row pointer; it does not authorize arbitrary memory access.
+
+Routes minus three and minus ten also require `excludedRows`, with 20 Boolean or null entries.
+Each Boolean is the native exclusion predicate result for that row. Null remains unavailable.
+Known complete slot occupancy and successful allocations are prerequisites. Exhausted native capacity has no safe native return.
+
+Construction scans each row's three pointers and preserves output holes, linked ordinals, source-row identity, and first-free-slot placement.
+The constructor's output is retained before an unavailable State-setup call. It is not promoted to final pose state.
+Finalization reads the current slot at each ascending index. Earlier swaps can skip an Actor or cause repeated evaluation.
+Only participating slot fields change. Separately owned jobs remain at their slots.
+
+## Deployed-unit reset
+
+`rosterResets.value` contains entries keyed by `nodeId` and zero-based `occurrence`.
+An occurrence counts a reset service request after the scene-mode and complete-row checks.
+Scene mode two executes reset. Other modes consume the command without invoking it.
+The operand does not choose the unit: successful reset publishes unit 30 only after all child calls return.
+
+Each entry supplies these explicit memory and service fields:
+
+| Field | Value and boundary |
+|---|---|
+| `sceneRoot` | Qualified unsigned scene-root pointer for child-to-row identity checks. |
+| `currentUnit` | Current selector byte before reset. |
+| `unitHex` | Exact 25-byte unit-30 row, or null when unavailable. |
+| `records` | Object mapping selected deployed IDs 0–99 to complete 52-byte records. Special members read record zero. |
+| `specialOverrides` | Object mapping special member IDs to unsigned `halfword` and `flags` bytes. |
+| `objects` | Object mapping nonzero child pointers to complete 256-byte child records. |
+| `primaryRegistry`, `secondaryRegistry` | Ordered active pointer arrays, including duplicates. This representation supports at most 256 entries per registry. |
+| `releases` | Ordered resource results with exact `handle` and `status: "returned"`. Missing or nonreturning results stop before dependent cleanup. |
+| `rowFinalizers` | Ordered qualified row-helper effects, described below. |
+| `descriptions` | Per-row `row`, exact `rowHex`, unsigned resource `handle`, and integer `variant` narrowed to a halfword. |
+| `scratch` | Six arrays named `art`, `handle`, `variant`, `orientationA`, `orientationB`, and `context`. Each supplies nine unsigned words or nulls. |
+| `preparations` | Ordered grouped-service results with exact `count`, `values`, `status`, and optional returned `variants`. |
+| `decodes` | Ordered child-pose decoder responses keyed by the exact request, described below. |
+| `random` | Ordered unsigned native random results consumed only when child-pose flags require them. |
+
+Reset clears only occupied bit-eight rows. It preserves other rows byte for byte.
+Cleanup releases the resource, clears paired child activity words, removes the first registry match, and clears the selected row.
+Unit members populate the first unused row in member order. Zero members skip; zero-art output remains unused.
+The runtime copies the accepted deployed-record fields and applies special-member and formation overrides before the row helper.
+
+A row-finalizer entry contains `row`, `mode`, `beforeRowHex`, `afterRowHex`, `objects`, and `status`.
+`beforeRowHex` must equal the runtime's complete initialized row. `objects` supplies the helper's complete changed child records.
+When the old unused row has bit nine set, `oldAppearanceClass` supplies its qualified classifier result.
+Status `returned` permits registration and later work. Status `unavailable` retains the supplied partial row and child effects, then stops.
+This interface supplies native row-helper effects; it does not implement or prove terrain, projection, appearance loading, allocation pools, or arbitrary initialization success.
+
+The runtime collects and sorts distinct resource descriptions, then executes the native total-count grouping loop.
+Grouping can read beyond initialized entries. Each actual residual read needs a supplied scratch word; null never becomes zero.
+Preparation `values` contains five arrays in order: art, context, orientation B, orientation A, and variant.
+An optional `variants` array supplies the service's exact variant writes, including partial writes before a nonreturning status.
+Preparation status `returned` continues. Other statuses stop with prior effects preserved.
+Successful loading remains a qualified service declaration.
+
+Each decoder response contains `pointer`, `art`, `context`, `flag8`, `flag10`, signed `selection`, signed `cursor`, integer `code`, and three unsigned `bytes`.
+The response must match the actual call after cursor preincrement. Ordinary decoding requires the primary-to-row identity graph.
+The runtime advances primaries and extra children in native order, using halfword state, stack, material, and delay rules.
+Secondary children do not receive independent pose calls. External sound controls stop before their unresolved request producer.
+The bounded sequencer supports at most 256 decoded controls per call and four backed loop and return entries.
+
+The final `nativeRosterResult` records current rows, objects, active registries, scratch words, selector, and completion status.
+It is one bounded command-state result, separate from the retained frame timeline.
+Later reset inputs must match previously established object, registry, and selector state.
+Unavailable services can follow completed row, registry, scratch, or child changes. The selector remains unchanged until success.
+These qualified synthetic paths do not establish a natural roster, universal timing, rendered-game agreement, or complete cutscene playback.
