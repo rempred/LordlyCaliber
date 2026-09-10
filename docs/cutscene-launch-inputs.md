@@ -47,7 +47,7 @@ Raw record preservation does not resolve external pointer graphs, shared effects
 Current-unit binding preserves Actor identity and swaps occupied records between slots.
 Slot-owned movement remains in its original slot.
 Complete empty input rows skip construction; final slot normalization still requires known Actor occupancy and source-row memory.
-Nonempty roster construction requires linked-object inputs and terrain samples. The materializer-specific State-setup dependency remains an explicit stop after construction.
+Nonempty roster construction requires linked-object inputs, terrain samples, and qualified State services.
 Class binding selects the first present matching row, then its first occupied Actor slot.
 Equal unsigned class bytes match. Unequal bytes match only within hexadecimal families `51/52/53`, `54/55`, `56/57`, `5F/60`, and `63/64`.
 If that first row has no Actor, binding does not try another matching row.
@@ -117,11 +117,13 @@ A second clone replaces the first clone in that slot. Slot-owned jobs remain in 
 Complete-record qualification ends after an older partially modeled Actor write, mode-two movement, or a concurrent Actor-context merge.
 A new qualified setup or snapshot is required before dependent shallow-copy construction.
 These stops prevent retained initial bytes from being mistaken for the complete current Actor.
-Ordinary construction and final slot normalization support qualified inputs. The materializer-specific State-setup producer remains unavailable.
+Ordinary construction, State setup, and final slot normalization support qualified inputs.
 
 ## Ordinary roster construction
 
-`rosterConstruction.value` contains `route`, `presentationByte`, and `links`.
+`rosterConstruction.value` contains `route`, `presentationByte`, `links`, and optional `sceneKey`.
+State selection requires the signed-halfword `sceneKey` when construction produces its first output Actor.
+The runtime derives caller control from the command: opcode `0x45` supplies zero; `0xAB` supplies one.
 `route` is the signed native launch-route byte. `presentationByte` is the shared presentation value narrowed to a byte.
 Each linked object contains a unique unsigned `pointer`, signed-halfword `x`, `y`, and `z`, and Boolean `allocationSucceeded`.
 Its `terrainHeight` is an exact finite single-precision result or null when unavailable.
@@ -133,9 +135,44 @@ Each Boolean is the native exclusion predicate result for that row. Null remains
 Known complete slot occupancy and successful allocations are prerequisites. Exhausted native capacity has no safe native return.
 
 Construction scans each row's three pointers and preserves output holes, linked ordinals, source-row identity, and first-free-slot placement.
-The constructor's output is retained before an unavailable State-setup call. It is not promoted to final pose state.
+The constructor's output and completed setup effects remain visible when a later prerequisite is unavailable.
 Finalization reads the current slot at each ascending index. Earlier swaps can skip an Actor or cause repeated evaluation.
 Only participating slot fields change. Separately owned jobs remain at their slots.
+
+## Materializer State services
+
+`rosterStateServices.value` contains entries keyed by `nodeId` and zero-based `occurrence`.
+One entry supplies ordered services for one materializer command, including related-Actor propagation.
+The occurrence counts the first appearance or marker service request. Earlier stops consume no entry.
+Each entry requires `appearances` and `preparations` arrays.
+
+Each appearance contains `slot`, four unsigned `halfwords`, a word `response`, and `status` (`returned` or `unavailable`).
+The halfwords must match the current source row's appearance fields. Preparation receives the response's low halfword.
+Each preparation contains `slot`, five unsigned `values`, optional five unsigned `localValues`, and the same status choices.
+The values represent art, context, flag B, flag A, and appearance, in that order.
+Changed local values do not replace the seeded Actor fields or original recursive arguments.
+Returned preparation does not establish a pose resource. The existing qualified pose provider must also resolve.
+
+Appearance and preparation entries can include `effects` describing qualified service outcomes.
+`effects.actors` contains `slot`, `beforeRecordHex`, and `afterRecordHex` for each complete 336-byte Actor record.
+`effects.rows` contains `ordinal`, `beforeHex`, and `afterHex` for each complete 248-byte source row.
+Every preimage must match current memory before any effect applies. Actor effects must preserve slot identity and finite coordinates.
+Pointer-table replacements and slot-owned job changes are outside this service representation.
+An unavailable response preserves the seed and its qualified partial effects.
+
+Optional `poseEffects` entries contain `call`, `slot`, `beforeRecordHex`, and `effects`.
+`call` is the zero-based immediate-pose call within this materializer command.
+These effects require the exact completed pose record. They describe qualified external effects, not inferred producer behavior.
+The runtime classifies the current Actor and row after pose, then visits current related slots in ascending order.
+Related setup receives original arguments. A sentinel therefore inherits each related Actor's own field.
+Secondary State values at least 50 return before seeding. Caller marker scanning can still follow that return.
+
+Optional `markerLookups` entries contain `slot`, `decoderMode`, `cursor`, `state`, `art`, `context`, `flagA`, `flagB`, `opcode`, and optional `effects`.
+Every lookup must match current Actor arguments. Without these entries, scanning uses the qualified current pose program.
+Scanning clears delay and advances the cursor before lookup. Only low-byte opcode four terminates scanning.
+Termination subtracts two from the current cursor. Scanning preserves the frame token and does not dispatch pose controls.
+Exhausted opcode zero is not completion. The lookup limit is 256; recursion depth is below 28 and total setup calls cannot exceed 256.
+Missing appearance, preparation, pose resources, or terminating marker remains an explicit playback boundary.
 
 ## Deployed-unit reset
 

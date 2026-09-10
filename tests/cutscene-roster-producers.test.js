@@ -59,11 +59,11 @@ const constructionFixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtur
  const poseStopped=run(resetProgram,missingDecoder);assert.strictEqual(poseStopped.outcome,'roster-reset-decoder');assert.strictEqual(poseStopped.nativeRosterResult.currentUnit,7);
  assert.strictEqual(Buffer.from(poseStopped.nativeRosterResult.objects[fixture.cases[0].rows[1].primary],'hex').readInt16BE(0x4A),0);
  const bypass=run(program([0x96,999,0x80000001],0),input(fixture.cases[0].export.rows));assert.strictEqual(bypass.nativeRosterResult,null);
- // Actual materializer constructors preserve native fields before the named State-setup dependency.
+ // Actual materializer constructors preserve native fields before unavailable State-selection inputs.
  const row=Buffer.alloc(248);row.writeUInt32BE(2,0x48);row.writeUInt32BE(10,0x4C);row.writeUInt32BE(256,0x40);row.writeUInt32BE(1,0);row.writeUInt32BE(2,4);
  const rows=Array(20).fill('00'.repeat(248));rows[7]=row.toString('hex');
  const ordinary=input(rows);ordinary.rosterConstruction={status:'known',value:{route:0,presentationByte:128,links:[1,2].map((pointer,i)=>({pointer,x:10+i,y:40+i,z:-20-i,terrainHeight:123.75,allocationSucceeded:true}))}};
- const built=run(program([0x45,-1,-1,0x80000001]),ordinary);assert.strictEqual(built.outcome,'roster-state-setup');
+ const built=run(program([0x45,-1,-1,0x80000001]),ordinary);assert.strictEqual(built.outcome,'roster-state-selection');
  for(let i=0;i<2;i++){const actor=built.states[0].actors.find(a=>a.slot===i),b=Buffer.from(actor.source.recordHex,'hex');assert.strictEqual(b[0x147],7);assert.strictEqual(b[0x149],i);assert.strictEqual(b.readInt16BE(0x138),i?60:10);assert.strictEqual(b.readFloatBE(0x120),123);}
  // Current-slot finalization can evaluate A twice and skip B entirely.
  const slots=Array(28).fill(null);for(let i=0;i<2;i++){const b=Buffer.alloc(0x150);b.writeInt32BE(i,0xE4);b.writeInt16BE(10,0x138);b[0x147]=2;slots[i]={identity:i?'B':'A',recordHex:b.toString('hex'),movementHex:null};}

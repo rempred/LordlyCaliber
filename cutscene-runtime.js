@@ -270,13 +270,30 @@ window.OB64 = window.OB64 || {};
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
     ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch',
-      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets'].forEach(function(key) {
+      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'rosterResets') {
+      if (key === 'rosterStateServices') {
+        if(!Array.isArray(value))fail('Roster State services require ordered occurrences.','launch-input');
+        var stateServiceIds=new Set();
+        value.forEach(function(service){
+          if(!service||typeof service.nodeId!=='string'||!Number.isInteger(service.occurrence)||service.occurrence<0||service.occurrence>=30000||stateServiceIds.has(service.nodeId+':'+service.occurrence)||!Array.isArray(service.appearances)||!Array.isArray(service.preparations))fail('Roster State service identity is invalid.','launch-input');
+          stateServiceIds.add(service.nodeId+':'+service.occurrence);
+          function effects(effect){if(!effect)return;['actors','rows'].forEach(function(k){if(effect[k]!==undefined&&!Array.isArray(effect[k]))fail('State service effects require arrays.','launch-input');});
+            if(new Set((effect.actors||[]).map(function(a){return a.slot;})).size!==(effect.actors||[]).length||new Set((effect.rows||[]).map(function(r){return r.ordinal;})).size!==(effect.rows||[]).length)fail('State effects must identify each changed record once.','launch-input');
+            (effect.actors||[]).forEach(function(a){if(!Number.isInteger(a.slot)||a.slot<0||a.slot>=28)fail('Invalid effect slot.','launch-input');launchBytes(a.beforeRecordHex,336);launchBytes(a.afterRecordHex,336);});
+            (effect.rows||[]).forEach(function(r){if(!Number.isInteger(r.ordinal)||r.ordinal<0||r.ordinal>=20)fail('Invalid effect row.','launch-input');launchBytes(r.beforeHex,248);launchBytes(r.afterHex,248);});}
+          service.appearances.forEach(function(a){if(!a||!Number.isInteger(a.slot)||!Array.isArray(a.halfwords)||a.halfwords.length!==4||a.halfwords.some(function(v){return !Number.isInteger(v)||v<0||v>65535;})||!Number.isInteger(a.response)||a.response<-2147483648||a.response>4294967295||!['returned','unavailable'].includes(a.status))fail('Invalid appearance response.','launch-input');effects(a.effects);});
+          service.preparations.forEach(function(p){if(!p||!Number.isInteger(p.slot)||!Array.isArray(p.values)||p.values.length!==5||p.values.some(function(v){return !Number.isInteger(v)||v<0||v>4294967295;})||!['returned','unavailable'].includes(p.status))fail('Invalid setup preparation response.','launch-input');if(p.localValues!==undefined&&(!Array.isArray(p.localValues)||p.localValues.length!==5||p.localValues.some(function(v){return !Number.isInteger(v)||v<0||v>4294967295;})))fail('Invalid local preparation effects.','launch-input');effects(p.effects);});
+          if(service.poseEffects!==undefined&&!Array.isArray(service.poseEffects)||service.markerLookups!==undefined&&!Array.isArray(service.markerLookups))fail('Invalid pose/marker service list.','launch-input');
+          if(new Set((service.poseEffects||[]).map(function(p){return p.call;})).size!==(service.poseEffects||[]).length)fail('Pose effects must identify each call once.','launch-input');
+          (service.poseEffects||[]).forEach(function(p){if(!Number.isInteger(p.call)||p.call<0||!Number.isInteger(p.slot))fail('Invalid pose effect call.','launch-input');launchBytes(p.beforeRecordHex,336);effects(p.effects);});
+          (service.markerLookups||[]).forEach(function(p){if(!p||!Number.isInteger(p.opcode)||p.opcode<-2147483648||p.opcode>4294967295)fail('Invalid marker lookup response.','launch-input');effects(p.effects);});
+        });
+      } else if (key === 'rosterResets') {
         if(!Array.isArray(value))fail('Roster resets need ordered command occurrences.','launch-input');
         var resetIds=new Set();
         value.forEach(function(reset) {
@@ -304,6 +321,7 @@ window.OB64 = window.OB64 || {};
           pointers.add(link.pointer);
         });
         if (value.excludedRows!==undefined && (!Array.isArray(value.excludedRows)||value.excludedRows.length!==20||value.excludedRows.some(function(v){return v!==null&&typeof v!=='boolean';}))) fail('Roster exclusion results need 20 known or unavailable entries.','launch-input');
+        if(value.sceneKey!==undefined&&(!Number.isInteger(value.sceneKey)||value.sceneKey<-32768||value.sceneKey>32767))fail('Roster State selection needs a signed scene key.','launch-input');
       } else if (['poseRegistry','bodyPoseSetups','subordinateServices'].includes(key)) {
         validateActorServiceGroup(key,value);
       } else if (key === 'actorInputRows') {
@@ -2661,6 +2679,77 @@ window.OB64 = window.OB64 || {};
     function executeOrdinaryRoster(node,words) {
       if (!actorInputRows) {actorBoundary('Actor-roster materializer requires all 20 caller rows.');return;}
       var construction=launchValue('rosterConstruction'), first=signed(words[1]),second=signed(words[2]),variant=0;
+      var callerControl=(unsigned(words[0])&0x7FFFFFFF)===0xAB?1:0;
+      var stateService=null,serviceRequested=false,appearanceIndex=0,preparationIndex=0,poseIndex=0,lookupIndex=0,setupCalls=0;
+      function trace(kind,detail){recordTrace(Object.assign({tick:state.tick,nodeId:node.id,kind:kind},detail));}
+      function need(condition,message,code){if(!condition)fail(message,code);}
+      function services(){if(!serviceRequested){stateService=actorService('rosterStateServices',node);serviceRequested=true;}return stateService;}
+      function effects(effect){
+        if(!effect)return;
+        var actors=effect.actors||[],rows=effect.rows||[];
+        actors.forEach(function(change){var actor=state.actors[change.slot],before=actor&&nativeRecordForActor(actor),after=launchBytes(change.afterRecordHex,336);
+          need(before&&recordHex(before).toLowerCase()===change.beforeRecordHex.toLowerCase()&&after.getInt32(0xE4)===change.slot&&[0x11C,0x120,0x124].every(function(at){return Number.isFinite(after.getFloat32(at));}),'State service Actor effects require exact current records and stable slot identity.','roster-state-effects');});
+        rows.forEach(function(change){need(actorInputRows[change.ordinal].toLowerCase()===change.beforeHex.toLowerCase(),'State service row effects require the exact current row.','roster-state-effects');});
+        actors.forEach(function(change){applyNativeRecord(state.actors[change.slot],launchBytes(change.afterRecordHex,336),'qualified-State-service-effect');});
+        rows.forEach(function(change){actorInputRows[change.ordinal]=change.afterHex;});
+      }
+      function classify(actor){
+        if(actor.sourceRowOrdinal===255)return 0;
+        need(Number.isInteger(actor.sourceRowOrdinal)&&actor.sourceRowOrdinal>=0&&actor.sourceRowOrdinal<20,'State setup requires a valid ordinary source row.','roster-state-row');
+        var row=launchBytes(actorInputRows[actor.sourceRowOrdinal],248);
+        return row.getUint32(0x48)&&[10,25,123].includes(row.getUint32(0x4C))?(actor.linkedOrdinal===1?2:1):0;
+      }
+      function setup(slot,args,depth){
+        trace('roster-setup-entry',{slot:slot,args:args.slice()});
+        if(slot===-1||!state.actors[slot])return;
+        need(depth<28&&++setupCalls<=256,'State propagation exceeded its bounded recursion/call prerequisites.','roster-state-recursion');
+        var actor=state.actors[slot],raw=nativeRecordForActor(actor);
+        need(raw,'State setup needs a complete current Actor record.','roster-state-record');
+        var art=args[0]===-1?raw.getInt32(0xE8):args[0],context=args[1]===-1?raw.getInt32(0xEC):args[1];
+        var requested=args[2]===-1?raw.getInt16(0x138):args[2],flagB=args[3]===-1?raw.getInt16(0x13A):args[3];
+        if(classify(actor)===2){if(requested>=50){trace('roster-setup-early-return',{slot:slot});return;}requested=signed(requested+50);}
+        raw.setUint32(0xE4,slot&255);if(art!==-1)raw.setInt32(0xE8,art);if(requested!==-1)raw.setUint16(0x138,requested);
+        if(context!==-1)raw.setInt32(0xEC,context);raw.setUint8(0x13D,1);raw.setUint16(0x134,requested);
+        raw.setInt32(0xF0,-1);raw.setInt32(0xF4,0);raw.setInt32(0xF8,0);raw.setInt32(0x12C,0);raw.setUint32(0xE0,0x8022F2CC);
+        raw.setInt32(0x128,0);raw.setUint16(0x13A,flagB);raw.setFloat32(0x130,1);raw.setUint8(0x13C,construction.presentationByte);raw.setUint8(0x145,1);
+        for(var i=0;i<16;i++){raw.setUint8(i,255);raw.setUint8(i+16,0);}
+        if(args[4]!==-1)raw.setUint8(0x146,args[4]);var flagA=raw.getUint8(0x146);
+        applyNativeRecord(actor,raw,'ordinary-State-seed-before-services');
+        need(actor.sourceRowOrdinal<20,'Existing-row State setup cannot index the source-row sentinel.','roster-state-row');
+        var row=launchBytes(actorInputRows[actor.sourceRowOrdinal],248),halfwords=[0x36,0x38,0x3A,0x3C].map(function(at){return row.getUint16(at);});
+        var service=services(),appearance=service&&service.appearances[appearanceIndex++];
+        need(appearance&&appearance.slot===slot&&JSON.stringify(appearance.halfwords)===JSON.stringify(halfwords),'State setup requires the exact appearance-selector response.','roster-state-appearance');
+        effects(appearance.effects);need(appearance.status==='returned','Appearance selection did not return after prior State effects.','roster-state-appearance');
+        var values=[art>>>0,context>>>0,flagB>>>0,flagA,appearance.response&65535],preparation=service.preparations[preparationIndex++];
+        need(preparation&&preparation.slot===slot&&JSON.stringify(preparation.values)===JSON.stringify(values),'State setup requires qualified preparation for its exact local inputs.','roster-state-preparation');
+        trace('roster-state-preparation',{slot:slot,values:values,localValues:preparation.localValues||values,status:preparation.status});
+        effects(preparation.effects);need(preparation.status==='returned','State preparation did not return; seeded Actor effects remain.','roster-state-preparation');
+        // Preparation changes its local words, not the already seeded Actor or recursive arguments.
+        updateActorPose(actor);if(actor.poseBlocked)fail('Immediate roster pose requires '+actor.poseBlocked+'.',actor.poseBlocked);
+        var call=poseIndex++,poseEffect=(service.poseEffects||[]).find(function(effect){return effect.call===call;});
+        if(poseEffect){need(poseEffect.slot===slot&&recordHex(nativeRecordForActor(actor)).toLowerCase()===poseEffect.beforeRecordHex.toLowerCase(),'Post-pose effects require the exact completed pose record.','roster-state-effects');effects(poseEffect.effects);}
+        trace('roster-immediate-pose',{slot:slot,call:call,recordHex:recordHex(nativeRecordForActor(actor))});
+        if(classify(actor)!==1)return;
+        for(var candidateSlot=0;candidateSlot<28;candidateSlot++){
+          var candidate=state.actors[candidateSlot];
+          if(candidate&&candidate.sourceRowOrdinal!==255&&candidate.sourceRowOrdinal===actor.sourceRowOrdinal&&classify(candidate)===2)setup(candidateSlot,args,depth+1);
+        }
+      }
+      function marker(actor){
+        actor.poseDelay=0;
+        for(var lookups=0;lookups<256;lookups++){
+          actor.poseCursor=signed(actor.poseCursor+1);
+          var service=services(),supplied=service&&service.markerLookups,opcode;
+          if(supplied){var response=supplied[lookupIndex++],request={slot:actor.slot,decoderMode:actor.decoderMode,cursor:actor.poseCursor,state:lowS16(actor.poseStateIndex),art:actor.bank,context:actor.nativeOwnerContext,flagA:actor.variantSelector,flagB:actor.nativeFlagB};
+            need(response&&Object.keys(request).every(function(key){return response[key]===request[key];}),'Marker lookup requires its exact current Actor arguments.','roster-marker-input');opcode=response.opcode;effects(response.effects);
+          }else{var program=actor.decoderMode!==0?qualifiedPoseForActor(actor,'alternate'):(qualifiedPoseForActor(actor,'ordinary')||programForActor(actor));
+            need(program&&Array.isArray(program.records),'Marker scanning requires a qualified current pose program.','roster-marker-input');opcode=(program.records[actor.poseCursor]||{opcode:0}).opcode;}
+          trace('roster-marker-lookup',{slot:actor.slot,cursor:actor.poseCursor,opcode:opcode});
+          if((opcode&255)===4){actor.poseCursor=signed(actor.poseCursor-2);return;}
+        }
+        fail('Marker scanning did not reach opcode four within the qualified lookup bound.','roster-marker-termination');
+      }
+      try {
       for(var ordinal=0;ordinal<20;ordinal++) {
         var row=launchBytes(actorInputRows[ordinal],0xF8),art=row.getInt32(0x48),context=row.getInt32(0x4C),flags=row.getUint32(0x40);
         if (!art) continue;
@@ -2710,11 +2799,21 @@ window.OB64 = window.OB64 || {};
           recordTrace({tick:state.tick,kind:'roster-construction',nodeId:node.id,slot:slot,linkedOrdinal:linked,sourceRow:ordinal,actorIdentity:actor.id,recordHex:recordHex(raw)});
         }
         if(art===135)variant=1;
-        if(outputs[0]!==-1) {
-          actorBoundary('Constructed roster Actors require the materializer-specific State-setup contract, including related-Actor effects.','roster-state-setup');return;
+        if(outputs[0]!==-1){
+          need(Number.isInteger(construction.sceneKey),'Materializer State selection requires the signed native scene key.','roster-state-selection');
+          var adjusted=[985,543,198,245,484,485].includes(construction.sceneKey)?1-orientation:orientation;
+          for(var output=0;outputs[output]!==-1;output++){
+            var actor=state.actors[outputs[output]],currentRow=launchBytes(actorInputRows[ordinal],248),currentFlags=currentRow.getUint32(0x40),request=-1,scan=false;
+            if((currentFlags&2)&&(currentFlags&0x300)!==0x300){request=lowS16(actor.animationKey)+28;scan=true;}
+            else if([-9,-6].includes(construction.route)&&adjusted===1){
+              if(callerControl===0){request=lowS16(actor.animationKey)+26;scan=true;}
+            }
+            setup(outputs[output],[-1,-1,request,-1,-1,0,1],0);if(scan)marker(actor);
+          }
         }
       }
       finalizeOrdinarySlots(node);
+      }catch(error){if(!(error instanceof RuntimeError))throw error;actorBoundary(error.message,error.code);}
     }
 
     function executeRosterReset(node) {
@@ -3089,7 +3188,7 @@ window.OB64 = window.OB64 || {};
       // A complete imported record is usable for shallow-copy construction only
       // while every intervening native byte write is represented here. Older
       // presentation commands have partial models, so they invalidate that input.
-      if (!node.query && ![0x07,0x2A,0x92,0xA6,0xC2].includes(opcode) &&
+      if (!node.query && ![0x07,0x2A,0x45,0xAB,0x92,0x96,0xA6,0xC2].includes(opcode) &&
           (/actor|body_pose/.test(node.name) || [0x1C,0x1D,0x1E,0x22,0x48].includes(opcode))) {
         Object.keys(state.actors).forEach(function(slot) {
           var actor=state.actors[slot];
