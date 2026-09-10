@@ -211,7 +211,15 @@ window.OB64 = window.OB64 || {};
     this.owners[slot]={ownerId:row.ownerId,payload:null};return slot;
   };
   Engine.prototype.service = function*(event) {
+    function rejectUnused(outcomes) {
+      if((outcomes||[]).length)boundary('Dialogue service supplied unused helper outcomes.','dialogue-helper-order');
+    }
+    if(!event.eligible) {
+      rejectUnused(event.helpers);rejectUnused(event.releaseHelpers);
+      if((event.registeredOwners||[]).length)boundary('Dialogue service supplied unused resource ownership outcomes.','dialogue-registration-owner');
+    }
     if(event.service==='opening'||event.service==='closing'||event.service==='priority') {
+      rejectUnused(event.releaseHelpers);
       if(!event.eligible)return;
       yield* this.machine.run(event.service==='opening'?0x800775ec:event.service==='closing'?0x80077bf8:0x8007819c,[],event.helpers);
       this.reconcile(event);
@@ -257,7 +265,7 @@ window.OB64 = window.OB64 || {};
     if(m.get(r+2,1)&4) {
       yield* m.run(0x80077f88,[slot],event.releaseHelpers||[]);
       if(!(m.get(r,2)&0x8000))this.owners[slot]=null;
-    }
+    } else rejectUnused(event.releaseHelpers);
     this.reconcile(event);
   };
   Engine.prototype.snapshot = function() {

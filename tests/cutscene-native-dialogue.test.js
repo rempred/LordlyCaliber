@@ -13,6 +13,31 @@ const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-
  function launch(events){return {schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'dialogue-fixture',sourceIdentity:'explicit-native-service-fixture',evidenceGrade:'Candidate',existingActors:{status:'known',value:{slots:Array(28).fill(null),otherJobsEmpty:true}},schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:5,initialDialogue:fixture.initialDialogue,menuCreates:[],colorCreates:[],poseCalls:[],events}}};}
  const service={tick:1,phase:'before-director',kind:'dialogue',service:'callback',slot:0,ownerId:'text-owner',eligible:true,storage:{restoreHandle:0x80630000,restoreReturned:true,freeReturned:true,saveHandle:0x80630000,saveReturned:true},helpers:[],controller:{actionMask:0,directionMask:0,dummyMask:0,historyMask:0,queueHead:0}};
  const p=program([0,0x80000000,0x10,0,2,0,0x80000001]);
+ const staleHelper={address:0x800ea9bc,args:[0,0,0,0,0],result:0,writes:[],preservesOtherRegisters:true};
+ const staleRelease={address:0x800712c4,args:[0x80630000],result:0,writes:[],preservesOtherRegisters:true};
+ const consumptionCases=[];
+ for(const kind of ['initialize','callback','opening','closing','priority']) {
+  for(const field of ['helpers','releaseHelpers','registeredOwners']) {
+   const event={...service,service:kind,eligible:false,[field]:field==='registeredOwners'?[{slot:1,ownerId:'unused-owner'}]:[field==='helpers'?staleHelper:staleRelease]};
+   const actual=OB64.cutsceneRuntime.compile(document,p.ir.program,p.selected,catalog,{z64,maxTicks:3,diagnosticAssumptions:false,nativeLaunchInputs:launch([event])});
+   assert.strictEqual(actual.unresolvedQuery.code,field==='registeredOwners'?'dialogue-registration-owner':'dialogue-helper-order',kind+':'+field);
+   consumptionCases.push(kind+':'+field);
+  }
+ }
+ for(const kind of ['callback','opening','closing','priority']) {
+  const event={...service,service:kind,releaseHelpers:[staleRelease]};
+  const actual=OB64.cutsceneRuntime.compile(document,p.ir.program,p.selected,catalog,{z64,maxTicks:3,diagnosticAssumptions:false,nativeLaunchInputs:launch([event])});
+  assert.strictEqual(actual.unresolvedQuery.code,'dialogue-helper-order',kind+':skipped-release');
+  consumptionCases.push(kind+':skipped-release');
+ }
+ console.log(JSON.stringify({unusedOutcomeCases:consumptionCases}));
+ for(const kind of ['initialize','callback','opening','closing','priority']) {
+  const engine=new OB64.cutsceneDialogue.Engine(structuredClone(fixture.initialDialogue),z64),before=engine.snapshot();
+  const run=engine.service({...service,service:kind,eligible:false});while(!run.next().done){}
+  assert.deepStrictEqual(engine.snapshot(),before,kind+':ineligible-empty');
+ }
+ const unusedOwner=OB64.cutsceneRuntime.compile(document,p.ir.program,p.selected,catalog,{z64,maxTicks:3,diagnosticAssumptions:false,nativeLaunchInputs:launch([{...service,registeredOwners:[{slot:1,ownerId:'unused-owner'}]}])});
+ assert.strictEqual(unusedOwner.unresolvedQuery.code,'dialogue-registration-owner');
  const result=OB64.cutsceneRuntime.compile(document,p.ir.program,p.selected,catalog,{z64,maxTicks:5,diagnosticAssumptions:false,nativeLaunchInputs:launch([service])});
  assert(result.terminated,JSON.stringify({outcome:result.outcome,missing:result.missingInputs,trace:result.trace}));assert.strictEqual(result.states.length,2);assert.strictEqual(result.states[1].nativeExternal.dialogue.owners[0].payloadHex.slice(0x3c*2,0x3c*2+2),'04');
  const waiting=OB64.cutsceneRuntime.compile(document,p.ir.program,p.selected,catalog,{z64,maxTicks:3,diagnosticAssumptions:false,nativeLaunchInputs:launch([])});assert(!waiting.terminated);assert.strictEqual(waiting.states.length,3);
