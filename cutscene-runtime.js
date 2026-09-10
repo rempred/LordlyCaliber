@@ -1716,6 +1716,7 @@ window.OB64 = window.OB64 || {};
         if (destination) { state.actors[from] = destination; destination.slot = from; }
         else delete state.actors[from];
         // Native binding swaps only Actor pointers. Slot-owned jobs stay in place.
+        swapMovementActivity(actor, destination);
         return;
       }
       if (!initialActors && !contextRuntime) actorBoundary('Binding found its caller row, but launch Actor occupancy was not supplied.');
@@ -1804,6 +1805,8 @@ window.OB64 = window.OB64 || {};
 
     function executeMove(node, words) {
       var slot = signed(words[1]);
+      // The native creator returns on a null Actor only when occupancy is known.
+      if (initialActors && slot >= 0 && slot < 28 && !state.actors[slot]) return;
       var actor = actorForCommand(slot, 'Movement');
       if (!actor) return;
       try {
@@ -2655,6 +2658,19 @@ window.OB64 = window.OB64 || {};
       delete state.bodyPoseJobs[slot];
     }
 
+    function swapMovementActivity(actor, destination) {
+      // Presentation activity follows slot ownership, including imported context activity.
+      var id = actor.activeMovementId, frame = actor.movementFrame;
+      function assign(occupant, inheritedId, inheritedFrame) {
+        var job = state.movementJobs[occupant.slot];
+        occupant.activeMovementId = job ? (job.nodeId === undefined
+          ? 'launch-movement:' + occupant.slot : 'runtime-movement:' + job.nodeId) : inheritedId;
+        occupant.movementFrame = job ? job.elapsed : inheritedFrame;
+      }
+      assign(actor, destination ? destination.activeMovementId : null, destination ? destination.movementFrame : 0);
+      if (destination) assign(destination, id, frame);
+    }
+
     function finalizeOrdinarySlots(node) {
       if (!initialActors) {actorBoundary('Roster finalization requires known complete slot occupancy.','roster-slot-input');return;}
       for (var slot=0;slot<28;slot++) {
@@ -2672,6 +2688,7 @@ window.OB64 = window.OB64 || {};
         var destination=state.actors[target];
         state.actors[target]=actor;actor.slot=target;
         if (destination) {state.actors[slot]=destination;destination.slot=slot;} else delete state.actors[slot];
+        swapMovementActivity(actor, destination);
         recordTrace({tick:state.tick,kind:'roster-finalizer-swap',nodeId:node.id,slot:slot,target:target,actorIdentity:actor.id});
       }
     }
