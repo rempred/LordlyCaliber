@@ -249,6 +249,7 @@ that tab for RetroArch `.state`, BizHawk `.SaveRAM`, Project64 `.sra`, or raw
 - A scenario squad leader must use a class with a valid map-unit sprite.
 - Shop and text edits must fit their validated capacity or relocation budget.
 - Cutscene and combat-animation previews are inspection tools, not cycle-exact Nintendo 64 rendering.
+- Cutscene Studio accepts explicit [Actor launch snapshots](docs/cutscene-launch-inputs.md). Missing party state and unsupported pose controls remain visible playback boundaries.
 - A structurally valid custom animation can still look wrong in-game; test the exported ROM.
 
 The editor reports the applicable limit at the affected control or during

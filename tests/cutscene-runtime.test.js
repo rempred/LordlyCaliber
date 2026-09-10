@@ -944,7 +944,7 @@ function hashBytes(input) {
   assert(materializerRuntime.states.some(state => state.actors.some(actor => actor.slot === 1)),
     'same-stream Actor constructors remain independent of unresolved roster inputs');
   assert(materializerRuntime.missingInputs.some(message =>
-    /requires the caller's 20 Actor-input rows/.test(message)));
+    /requires the caller's complete 20 Actor-input rows/.test(message)));
 
   const bodyScene = catalog.scenes.find(row => row.sceneId === 'scene:director:01f88edc');
   const bodySource = await OB64.cutsceneCodec.loadSceneSource(z64, bodyScene, { hashBytes });

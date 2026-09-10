@@ -296,6 +296,8 @@ window.OB64 = window.OB64 || {};
       launchContext: choice ? choice.context : null,
       launchOperandTranslations: launchOperandTranslations(scene, choice)
     };
+    runtimeOptions.nativeLaunchInputs = state.nativeLaunchInputsByAssetId &&
+      state.nativeLaunchInputsByAssetId[scene.assetId] || null;
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
       runtimeOptions.contextTickOffset = Number.isInteger(
@@ -462,6 +464,19 @@ window.OB64 = window.OB64 || {};
     });
     state.loadingByAssetId[scene.assetId] = promise;
     return promise;
+  }
+
+  function setNativeLaunchInputs(state, scene, input) {
+    var validated = OB64.cutsceneRuntime.validateLaunchInputs(input, scene.assetId);
+    state.launchImportRequest = (state.launchImportRequest || 0) + 1;
+    if (state.runtimeController) state.runtimeController.abort();
+    if (state.boundRuntimeDocument) OB64.cutsceneRuntime.unbind(state.boundRuntimeDocument);
+    state.nativeLaunchInputsByAssetId = state.nativeLaunchInputsByAssetId || {};
+    if (validated) state.nativeLaunchInputsByAssetId[scene.assetId] = validated;
+    else delete state.nativeLaunchInputsByAssetId[scene.assetId];
+    state.runtimeByAssetId = {};
+    state.concurrentRuntimeByLaunchContext = {};
+    delete state.sourceErrors['runtime-context:' + scene.assetId];
   }
 
   function activeKey(element) {
@@ -3880,6 +3895,48 @@ window.OB64 = window.OB64 || {};
     inspector.appendChild(sourceSummary);
 
     var eventContextChoices = launchContextChoices(state, scene);
+    if (scene.engine === 'director') {
+      inspector.appendChild(node('h3', '', 'Actor launch snapshot'));
+      var snapshot = state.nativeLaunchInputsByAssetId && state.nativeLaunchInputsByAssetId[scene.assetId];
+      inspector.appendChild(node('p', 'cutscene-field-hint', snapshot
+        ? 'Using ' + snapshot.sourceIdentity + ' · invocation ' + snapshot.invocationId + ' · ' + snapshot.evidenceGrade
+        : 'No Actor snapshot supplied. Party members and existing Actors remain unknown.'));
+      var snapshotFile = node('input', 'cutscene-background-select');
+      snapshotFile.type = 'file'; snapshotFile.accept = '.json,application/json';
+      snapshotFile.setAttribute('data-cutscene-focus-key', 'actor-launch-snapshot');
+      snapshotFile.addEventListener('change', async function() {
+        var file = snapshotFile.files && snapshotFile.files[0];
+        if (!file) return;
+        var epoch = state.projectionEpoch || 0;
+        var importRequest = state.launchImportRequest = (state.launchImportRequest || 0) + 1;
+        try {
+          if (file.size > 131072) throw new Error('Launch snapshot exceeds 128 KiB.');
+          var input = JSON.parse(await file.text());
+          if (importRequest !== state.launchImportRequest || epoch !== (state.projectionEpoch || 0) || state.selectedSceneId !== scene.sceneId) return;
+          setNativeLaunchInputs(state, scene, input);
+          await loadScene(rom, state, scene);
+          if (state.selectedSceneId === scene.sceneId) {
+            var view = viewFor(state, scene.sceneId);
+            view.frame = Math.min(view.frame, Math.max(0, OB64.cutscenePreview.sceneDurationFrames(document, view.pathId) - 1));
+            rerender(rom, state);
+          }
+        } catch (error) {
+          if (state.callbacks.onStatus) state.callbacks.onStatus(error.message);
+        }
+      });
+      inspector.appendChild(field('Import launch snapshot', snapshotFile,
+        'Loads a repeatable snapshot for this resource in this session. Project load clears the snapshot.'));
+      if (snapshot) inspector.appendChild(button('Clear Actor snapshot', 'btn-secondary', function() {
+        setNativeLaunchInputs(state, scene, null);
+        loadScene(rom, state, scene).then(function() {
+          if (state.selectedSceneId === scene.sceneId) {
+            var view = viewFor(state, scene.sceneId);
+            view.frame = Math.min(view.frame, Math.max(0, OB64.cutscenePreview.sceneDurationFrames(document, view.pathId) - 1));
+            rerender(rom, state);
+          }
+        });
+      }));
+    }
     if (eventContextChoices.length) {
       inspector.appendChild(node('h3', '', 'Native launch context'));
       var activeEventContext = launchContextChoice(state, scene, null);
@@ -3893,6 +3950,8 @@ window.OB64 = window.OB64 || {};
       eventContextSelect.value = activeEventContext.id;
       eventContextSelect.addEventListener('change', function() {
         var selectedId = eventContextSelect.value;
+        if (state.nativeLaunchInputsByAssetId) delete state.nativeLaunchInputsByAssetId[scene.assetId];
+        state.launchImportRequest = (state.launchImportRequest || 0) + 1;
         var view = viewFor(state, scene.sceneId);
         view.launchContextId = selectedId;
         var selectedChoice = launchContextChoice(state, scene, selectedId);
@@ -3913,7 +3972,7 @@ window.OB64 = window.OB64 || {};
           });
       });
       inspector.appendChild(field('Event invocation', eventContextSelect,
-        'This selection changes launch-time constants and concurrent shared scene state. It never edits Director words.'));
+        'This selection changes launch-time constants and concurrent shared scene state. It clears the Actor snapshot for the previous invocation.'));
       if (activeEventContext.contextScene) {
         inspector.appendChild(node('p', 'cutscene-field-hint',
           'Concurrent state source: ' +
@@ -4478,6 +4537,7 @@ window.OB64 = window.OB64 || {};
     state.programByAssetId = {};
     state.runtimeByAssetId = {};
     state.projectionLoadingByAssetId = {};
+    state.nativeLaunchInputsByAssetId = {};
     state.concurrentRuntimeByLaunchContext = {};
     state.sourceErrors = {};
     state.views = {};
@@ -4487,6 +4547,7 @@ window.OB64 = window.OB64 || {};
   }
 
   OB64.cutsceneUI = {
+    setNativeLaunchInputs: setNativeLaunchInputs,
     UiError: UiError,
     imageCacheLimit: IMAGE_CACHE_LIMIT,
     initialize: initialize,

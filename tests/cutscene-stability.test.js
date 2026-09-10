@@ -127,9 +127,10 @@ function texts(n) { return [n.text || '', ...n.children.map(texts)].join(' '); }
   await assert.rejects(OB64.cutsceneRuntime.compileAsync(expensive.document,expensive.program,expensive.scene,catalog,
     {z64,diagnosticAssumptions:true,signal:cancellation.signal}),{name:'AbortError'});
   const strict=await OB64.cutsceneRuntime.compileAsync(expensive.document,expensive.program,expensive.scene,catalog,{z64});
-  assert.strictEqual(strict.outcome,'external-input');
+  assert.strictEqual(strict.outcome,'shared-pose-control-18');
   assert.strictEqual(strict.terminated,false);
-  assert(strict.unresolvedQuery);
+  assert(strict.missingInputs.some(value=>value.includes('shared-pose-control-18')),
+    'strict Actor execution stops at the earlier unsupported shared control before reaching the external query');
 
   const rom={z64,layout:{id:'us-rev0'}};
   const ui=OB64.cutsceneUI.ensureState(rom);

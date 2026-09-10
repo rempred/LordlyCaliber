@@ -54,6 +54,176 @@ window.OB64 = window.OB64 || {};
   function mix(left, right, amount) { return left + (right - left) * amount; }
   function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
   function fixed(value) { return signed(value) / 1000; }
+  function actorCoordinate(value) { return Math.fround(Math.fround(signed(value)) / Math.fround(1000)); }
+
+  // Reviewed finite planar contract. Motion belongs to the slot, not the Actor pointer.
+  function createNativeMovement(actor, previous, words) {
+    var f = Math.fround;
+    var x = actorCoordinate(words[2]), z = actorCoordinate(words[3]);
+    if (x === -1 && z === -1) { x = f(actor.x); z = f(actor.z); }
+    else { actor.x = x; actor.z = z; }
+    var tx = actorCoordinate(words[4]), tz = actorCoordinate(words[5]);
+    var control = signed(words[6]), speed = signed(words[7]);
+    if (control === 1) { actor.x = tx; actor.z = tz; return previous; }
+    var snapX = tx - 0.1 < x && x < tx + 0.1;
+    var snapZ = tz - 0.1 < z && z < tz + 0.1;
+    if (snapX) actor.x = tx;
+    if (snapZ) actor.z = tz;
+    if (snapX && snapZ) return previous;
+    var dx = f(tx - x), dz = f(tz - z);
+    var distance = f(Math.sqrt(f(f(dx * dx) + f(dz * dz))));
+    if (speed && distance === 0) throw new RuntimeError('Movement requires allocator or retained pause-byte state.', 'movement-external-state');
+    var quotient = speed ? f(distance * (1000 / speed)) : control;
+    if (!Number.isFinite(quotient) || quotient < -2147483648 || quotient >= 2147483648) {
+      throw new RuntimeError('Movement float-to-integer conversion is outside the supported finite range.', 'movement-arithmetic');
+    }
+    var count = Math.trunc(quotient);
+    var denominator = f(speed ? lowS16(count) : control);
+    var vx = f(dx / denominator), vz = f(dz / denominator);
+    if (!Number.isFinite(vx) || !Number.isFinite(vz)) {
+      throw new RuntimeError('Movement produces a nonfinite native velocity.', 'movement-arithmetic');
+    }
+    return { remaining: lowU16(count), vx: vx, vz: vz, pauseByte: 0, elapsed: 0 };
+  }
+
+  function advanceNativeMovement(actor, job) {
+    if (!job.pauseByte) {
+      var x = Math.fround(actor.x + job.vx), z = Math.fround(actor.z + job.vz);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) throw new RuntimeError('Movement update produces nonfinite coordinates.', 'movement-arithmetic');
+      actor.x = x;
+      actor.z = z;
+      job.remaining = lowU16(job.remaining - 1);
+      job.elapsed += 1;
+    }
+    return lowS16(job.remaining) !== 0;
+  }
+
+  function advanceNativePose(actor, resolveProgram, limit) {
+    if (actor.decoderMode !== 0) return 'alternate-pose-decoder';
+    var result = 1, dispatches = 0;
+    while (actor.poseDelay <= 0) {
+      if (++dispatches > limit) return 'pose-dispatch-limit';
+      var program = resolveProgram(actor);
+      if (!program || !Array.isArray(program.records)) return 'missing-pose-program';
+      actor.poseCursor = signed(actor.poseCursor + 1);
+      var record = program.records[actor.poseCursor] || { opcode: 0, operands: [] };
+      var op = record.opcode, p = record.operands;
+      result = op;
+      if (op >= 17 && op <= 20) return 'shared-pose-control-' + op;
+      if (op === 0) actor.poseDelay = 2;
+      else if (op === 1 || op === 21) {
+        actor.displayedFrameToken = op === 1 ? p[0] : p[0] + 256 * p[1];
+        actor.poseDelay = op === 1 ? p[1] : p[2];
+      } else if (op === 2) {
+        actor.x = Math.fround(actor.x - lowS8(p[0]));
+        actor.z = Math.fround(actor.z - lowS8(p[1]));
+      } else if (op === 3) actor.poseDelay = p[0];
+      else if (op === 4) actor.poseCursor = p[0] - 1;
+      else if (op === 5) {
+        actor.previousPoseStateIndex = actor.poseStateIndex;
+        actor.poseStateIndex = p[0];
+        actor.poseCursor = -1;
+      } else if (op === 12) {
+        actor.x = Math.fround(actor.x + lowS8(p[0]));
+        actor.y = Math.fround(actor.y + lowS8(p[1]));
+        actor.z = Math.fround(actor.z + lowS8(p[2]));
+      } else if (op === 13 || op === 16) {
+        var bytes = op === 13 ? actor.material : actor.materialDelta;
+        if (p[0] === 255) bytes.fill(p[1]);
+        else if (p[0] < 16) bytes[p[0]] = p[1];
+        else return 'pose-material-index';
+      } else if (![6,7,8,9,10,11,14,15].includes(op)) return 'unsupported-pose-control-' + op;
+    }
+    for (var i = 0; i < 16; i++) actor.material[i] = clamp(actor.material[i] + lowS8(actor.materialDelta[i]), 0, 255);
+    actor.poseDelay = signed(actor.poseDelay - 2);
+    actor.poseSequencerResult = result & 255;
+    actor.poseFrame += 2;
+    return null;
+  }
+
+  function launchBytes(hex, length) {
+    if (typeof hex !== 'string' || hex.length !== length * 2 || !/^[0-9a-f]+$/i.test(hex)) {
+      fail('Launch record must contain exactly ' + length + ' big-endian bytes.', 'launch-input');
+    }
+    var bytes = new Uint8Array(length);
+    for (var i = 0; i < length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return new DataView(bytes.buffer);
+  }
+
+  // Lossless 48-byte native state keeps long-lived snapshot histories compact.
+  // Cursor, delay and physical state remain signed words; materials remain bytes.
+  function encodeNativeActorState(actor) {
+    var bytes = new Uint8Array(48), view = new DataView(bytes.buffer);
+    view.setInt32(0, actor.poseCursor || 0);
+    view.setInt32(4, actor.poseDelay || 0);
+    view.setInt32(8, Number.isInteger(actor.poseStateIndex) ? actor.poseStateIndex : -1);
+    bytes[14] = Number.isInteger(actor.poseStateIndex) ? 0 : 1;
+    bytes[12] = actor.decoderMode || 0;
+    bytes[13] = Number.isInteger(actor.sourceRowOrdinal) ? actor.sourceRowOrdinal : 255;
+    for (var i=0; i<16; i++) {
+      bytes[16+i] = actor.material ? actor.material[i] : 255;
+      bytes[32+i] = actor.materialDelta ? actor.materialDelta[i] : 0;
+    }
+    return btoa(String.fromCharCode.apply(null, bytes));
+  }
+
+  function decodeNativeActorState(encoded) {
+    var raw = atob(encoded);
+    if (raw.length !== 48) fail('Native Actor snapshot must contain 48 bytes.', 'native-actor-snapshot');
+    var bytes = Uint8Array.from(raw, function(c) { return c.charCodeAt(0); });
+    var view = new DataView(bytes.buffer);
+    return { poseCursor:view.getInt32(0), poseDelay:view.getInt32(4), poseStateIndex:bytes[14] ? null : view.getInt32(8),
+      decoderMode:bytes[12], sourceRowOrdinal:bytes[13],
+      material:Array.from(bytes.slice(16,32)), materialDelta:Array.from(bytes.slice(32,48)) };
+  }
+
+  function validateLaunchInputs(input, assetId) {
+    if (input == null) return null;
+    if (JSON.stringify(input).length > 131072 || input.schema !== 'ob64-cutscene-launch-inputs.v1' ||
+        input.assetId !== assetId || typeof input.invocationId !== 'string' || !input.invocationId ||
+        typeof input.sourceIdentity !== 'string' || !input.sourceIdentity ||
+        !['Candidate', 'Supported', 'Verified', 'Editor-ready'].includes(input.evidenceGrade)) {
+      fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
+    }
+    ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch'].forEach(function(key) {
+      var group = input[key];
+      if (!group) return;
+      if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
+      if (group.status === 'unknown') return;
+      var value = group.value;
+      if (key === 'actorInputRows') {
+        if (!Array.isArray(value) || value.length !== 20) fail('Actor inputs require all 20 rows.', 'launch-input');
+        value.forEach(function(hex) { launchBytes(hex, 0xF8); });
+      } else if (key === 'currentUnitMembers') {
+        if (!Array.isArray(value) || value.length !== 5 || value.some(function(id) {
+          return !Number.isInteger(id) || id < 0 || id > 255;
+        })) fail('Current-unit inputs require five byte member IDs.', 'launch-input');
+      } else if (key === 'schedulerBranch') {
+        if (!['normal', 'alternate'].includes(value)) fail('Scheduler branch must be normal or alternate.', 'launch-input');
+      } else {
+        if (!value || value.otherJobsEmpty !== true || !Array.isArray(value.slots) || value.slots.length !== 28) {
+          fail('Existing Actors require 28 slots and explicit empty unsupported job owners.', 'launch-input');
+        }
+        var identities = new Set();
+        value.slots.forEach(function(row, slot) {
+          if (row === null) return;
+          if (!row || typeof row.identity !== 'string' || !row.identity || identities.has(row.identity)) {
+            fail('Existing Actor identities must be present and unique.', 'launch-input');
+          }
+          identities.add(row.identity);
+          var bytes = launchBytes(row.recordHex, 0x150);
+          if (bytes.getInt32(0xE4) !== slot || [0x11C,0x120,0x124].some(function(at) {
+            return !Number.isFinite(bytes.getFloat32(at));
+          })) fail('Existing Actor slot identity or coordinates are invalid.', 'launch-input');
+          if (row.movementHex !== null) {
+            var job = launchBytes(row.movementHex, 16);
+            if (!Number.isFinite(job.getFloat32(0)) || !Number.isFinite(job.getFloat32(8))) fail('Movement input must be finite.', 'launch-input');
+          }
+        });
+      }
+    });
+    return M.cloneJson(input, 'launch inputs');
+  }
   function launchTranslationIndex(value) {
     value = unsigned(value);
     return (value & 0xFFFFFF00) === 0x08880000 ? value & 0xFF : null;
@@ -673,6 +843,10 @@ window.OB64 = window.OB64 || {};
 
     function assumption(text) { uniquePush(assumptions, text); }
     function missing(text) { uniquePush(missingInputs, text); }
+    function actorBoundary(text, code) {
+      missing(text);
+      if (options.diagnosticAssumptions !== true) stopReason = code || 'actor-input';
+    }
     function rowsFor(node) { return rowsByNode[node.id] || []; }
     function rowFor(node, kind) {
       return rowsFor(node).find(function(row) { return !kind || row.clip.kind === kind; }) || null;
@@ -799,6 +973,13 @@ window.OB64 = window.OB64 || {};
     if (launchProfile.cameras.actor.evidenceStatus === 'external-unresolved') {
       missing('The launch profile does not contain this scene\'s initial Actor camera.');
     }
+    var launchInputs = validateLaunchInputs(options.nativeLaunchInputs, scene.assetId);
+    function launchValue(key) {
+      var group = launchInputs && launchInputs[key];
+      return group && group.status === 'known' ? group.value : null;
+    }
+    var actorInputRows = launchValue('actorInputRows');
+    var currentUnitMembers = launchValue('currentUnitMembers');
     var state = {
       tick: 0,
       actors: {},
@@ -843,12 +1024,47 @@ window.OB64 = window.OB64 || {};
       terminal: false,
       terminalReason: null,
       presentationLifecycleRequest: 0,
-      alternateDirectorScheduling: null,
+      alternateDirectorScheduling: launchValue('schedulerBranch') === 'alternate',
       textSpeed: 512,
       sceneColor: { red: 255, green: 255, blue: 255 },
       overlay: null,
       executedNodeIds: []
     };
+
+    if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
+    var initialActors = launchValue('existingActors');
+    if (initialActors) initialActors.slots.forEach(function(row, slot) {
+      if (!row) return;
+      var bytes = launchBytes(row.recordHex, 0x150);
+      var actor = ensureActor(slot);
+      actor.id = row.identity;
+      actor.label = 'Existing Actor ' + row.identity;
+      actor.source = { launchSourceIdentity: launchInputs.sourceIdentity,
+        invocationId: launchInputs.invocationId, evidenceGrade: launchInputs.evidenceGrade,
+        recordHex: row.recordHex };
+      actor.bank = bytes.getInt32(0xE8);
+      actor.animationKey = bytes.getInt16(0x138);
+      actor.nativeFacing = bytes.getUint8(0x13F);
+      actor.variantSelector = bytes.getUint8(0x146);
+      actor.artSourceId = 'cutscene-art-bank:' + actor.bank;
+      actor.poseId = poseId(actor.bank, actor.animationKey, actor.nativeFacing);
+      actor.facing = 'native-' + actor.nativeFacing;
+      actor.x = bytes.getFloat32(0x11C); actor.y = bytes.getFloat32(0x120); actor.z = bytes.getFloat32(0x124);
+      actor.poseCursor = bytes.getInt32(0xF0); actor.poseDelay = bytes.getInt32(0xF4);
+      actor.displayedFrameToken = bytes.getInt32(0xF8);
+      actor.poseStateIndex = bytes.getInt16(0x134);
+      actor.decoderMode = bytes.getUint8(0x13D);
+      actor.sourceRowOrdinal = bytes.getUint8(0x147);
+      actor.material = Array.from({length:16}, function(_,i) { return bytes.getUint8(i); });
+      actor.materialDelta = Array.from({length:16}, function(_,i) { return bytes.getUint8(i+16); });
+      actor.visible = true;
+      if (row.movementHex !== null) {
+        var movement = launchBytes(row.movementHex, 16);
+        state.movementJobs[slot] = { slot:slot, vx:movement.getFloat32(0), vz:movement.getFloat32(8),
+          remaining:movement.getUint16(12), pauseByte:movement.getUint8(14), elapsed:0 };
+        actor.activeMovementId = 'launch-movement:' + slot;
+      }
+    });
 
     if (documentBackground) {
       recordTrace({ tick: 0, kind: 'runtime-input', label: 'Document mode-two launch context' });
@@ -886,13 +1102,28 @@ window.OB64 = window.OB64 || {};
       if (!catalog || !catalog.getPhysicalPoseProgram || !actor ||
           !Number.isInteger(actor.bank) || !Number.isInteger(actor.animationKey) ||
           !Number.isInteger(actor.nativeFacing)) return null;
+      if (Number.isInteger(actor.poseStateIndex) && catalog.getPhysicalPoseProgramByStateIndex) {
+        var selected = catalog.getPhysicalPoseProgram(actor.bank, actor.animationKey,
+          actor.nativeFacing, actor.variantSelector);
+        if (selected && selected.stateIndex === actor.poseStateIndex) return selected;
+        return catalog.getPhysicalPoseProgramByStateIndex(actor.bank, actor.poseStateIndex);
+      }
       return catalog.getPhysicalPoseProgram(actor.bank, actor.animationKey,
         actor.nativeFacing, actor.variantSelector);
     }
 
     function startPose(actor) {
       actor.poseFrame = 0;
+      actor.poseStateIndex = null;
       var poseProgram = programForActor(actor);
+      actor.poseStateIndex = poseProgram ? poseProgram.stateIndex : null;
+      actor.poseCursor = -1;
+      actor.poseDelay = 0;
+      actor.displayedFrameToken = 0;
+      actor.decoderMode = 0;
+      actor.material = new Array(16).fill(255);
+      actor.materialDelta = new Array(16).fill(0);
+      actor.poseBlocked = null;
       var controlOpcodes = poseProgram && poseProgram.controlOpcodes || [];
       actor.poseProgramStatus = !poseProgram ? 'unresolved' :
         (Array.isArray(poseProgram.frames) && poseProgram.frames.length
@@ -902,6 +1133,17 @@ window.OB64 = window.OB64 || {};
       actor.poseDuration = poseProgram ? poseProgram.durationFrames : 0;
       actor.poseReadyTick = state.tick + Math.max(1,
         Math.ceil((actor.poseDuration || 2) / 2));
+    }
+
+    function updateActorPose(actor) {
+      if (actor.poseBlocked) return;
+      var boundary = advanceNativePose(actor, programForActor, 256);
+      if (boundary) {
+        actor.poseBlocked = boundary;
+        actor.poseProgramStatus = boundary;
+        actorBoundary('Actor ' + actor.slot + ' requires ' + boundary +
+          ' at counted record ' + actor.poseCursor + '.', boundary);
+      }
     }
 
     function ensureActor(slot) {
@@ -951,7 +1193,7 @@ window.OB64 = window.OB64 || {};
 
     function actorForCommand(slot, purpose) {
       if (state.actors[slot]) return state.actors[slot];
-      missing(purpose + ' for slot ' + slot +
+      actorBoundary(purpose + ' for slot ' + slot +
         ' requires a launch-time Actor record that is not stored in the Director stream.');
       return null;
     }
@@ -970,6 +1212,16 @@ window.OB64 = window.OB64 || {};
 
     function applyContextActor(actorRow, priorRow) {
       var actor = state.actors[actorRow.slot] || ensureActor(actorRow.slot);
+      if (actorRow.nativeActorState && (!priorRow || actorRow.nativeActorState !== priorRow.nativeActorState)) {
+        var nativeFields = decodeNativeActorState(actorRow.nativeActorState);
+        var priorNativeFields = priorRow && priorRow.nativeActorState
+          ? decodeNativeActorState(priorRow.nativeActorState) : null;
+        Object.keys(nativeFields).forEach(function(field) {
+          if (!priorNativeFields || !sameContextValue(nativeFields[field], priorNativeFields[field])) {
+            actor[field] = nativeFields[field];
+          }
+        });
+      }
       [
         ['id', 'id'], ['label', 'label'], ['artSourceId', 'artSourceId'],
         ['capability', 'capability'], ['visible', 'visible'],
@@ -979,6 +1231,11 @@ window.OB64 = window.OB64 || {};
         ['facing', 'facing'], ['poseId', 'poseId'], ['bank', 'bank'],
         ['animationKey', 'animationKey'], ['nativeFacing', 'nativeFacing'],
         ['variantSelector', 'variantSelector'], ['poseFrame', 'poseFrame'],
+        ['displayedFrameToken', 'displayedFrameToken'], ['poseCursor', 'poseCursor'],
+        ['poseDelay', 'poseDelay'], ['poseStateIndex', 'poseStateIndex'],
+        ['poseBlocked', 'poseBlocked'], ['decoderMode', 'decoderMode'],
+        ['sourceRowOrdinal', 'sourceRowOrdinal'], ['material', 'material'],
+        ['materialDelta', 'materialDelta'],
         ['poseProgramStatus', 'poseProgramStatus'], ['poseLoop', 'poseLoop'],
         ['poseDuration', 'poseDuration'], ['bodyPoseProgram', 'bodyPoseProgram'],
         ['movementFrame', 'movementFrame'], ['activeMovementId', 'activeMovementId'],
@@ -1118,8 +1375,8 @@ window.OB64 = window.OB64 || {};
     function applyContextTimeline(tick) {
       if (!contextRuntime) return;
       if (tick + contextTickOffset >= contextFrameCount &&
-          (contextRuntime.safetyLimited || contextRuntime.outcome === 'external-input' ||
-           contextRuntime.outcome === 'context-input')) {
+          (contextRuntime.safetyLimited || (!contextRuntime.terminated &&
+           contextRuntime.outcome && contextRuntime.outcome !== 'stream-exhausted'))) {
         stopReason = contextRuntime.safetyLimited ? 'context-limit' : 'context-input';
         missing('The concurrent Director context has no supported state beyond its ' +
           contextFrameCount + ' retained updates.');
@@ -1213,6 +1470,41 @@ window.OB64 = window.OB64 || {};
       return actor ? [actor] : [];
     }
 
+    function executeActorBinding(node, words) {
+      if (node.opcode === 0x92 && state.directorMode !== 2) return;
+      var slot = unsigned(words[1]) & 255;
+      if (slot >= 28) { actorBoundary('Actor binding destination is outside the 28 primary slots.'); return; }
+      if (!actorInputRows) { actorBoundary('Actor binding requires all 20 caller Actor-input rows.'); return; }
+      var ordinal = -1;
+      if (node.opcode === 0xA6) {
+        var member = signed(words[2]);
+        if (!currentUnitMembers || member < 0 || member >= 5) {
+          actorBoundary('Current-unit binding requires five member IDs and a member index from 0 through 4.'); return;
+        }
+        for (var i=0; i<20; i++) {
+          var row = launchBytes(actorInputRows[i], 0xF8);
+          if ((row.getUint32(0x40) & 256) && row.getUint32(0x48) && row.getUint8(0xF6) === currentUnitMembers[member]) { ordinal=i; break; }
+        }
+      } else {
+        if (actorInputRows.some(function(hex) { return launchBytes(hex,0xF8).getUint32(0x48) !== 0; })) {
+          actorBoundary('Class binding requires the native class-family predicate; numeric class equality is insufficient.', 'class-family-helper');
+        }
+        return;
+      }
+      if (ordinal < 0) return; // Known complete rows establish a native no-match return.
+      for (var from=0; from<28; from++) {
+        var actor = state.actors[from];
+        if (!actor || actor.sourceRowOrdinal !== ordinal) continue;
+        var destination = state.actors[slot];
+        state.actors[slot] = actor; actor.slot = slot;
+        if (destination) { state.actors[from] = destination; destination.slot = from; }
+        else delete state.actors[from];
+        // Native binding swaps only Actor pointers. Slot-owned jobs stay in place.
+        return;
+      }
+      if (!initialActors && !contextRuntime) actorBoundary('Binding found its caller row, but launch Actor occupancy was not supplied.');
+    }
+
     function setActorSelector(actor, bank, key, facing, variant) {
       if (!actor) return;
       actor.bodyPoseProgram = null;
@@ -1231,10 +1523,12 @@ window.OB64 = window.OB64 || {};
         actor.poseId = poseId(actor.bank, actor.animationKey, actor.nativeFacing);
       }
       startPose(actor);
+      updateActorPose(actor);
     }
 
     function executeActorCreate(node, words, unresolvedWordOffsets) {
       var slot = signed(words[1]);
+      if (slot < 0 || slot >= 28) { actorBoundary('Actor construction requires a primary slot from 0 through 27.'); return; }
       var actor = ensureActor(slot);
       var template = templateForSlot(slot);
       var variantUnresolved = unresolvedWordOffsets.indexOf(9) !== -1;
@@ -1248,14 +1542,17 @@ window.OB64 = window.OB64 || {};
       var selector = templateOwnsNode
         ? selectorFromTemplate(template, rawSelector) : rawSelector;
       actor.visible = true;
-      actor.x = templateOwnsNode ? template.initial.x : fixed(words[5]);
-      actor.y = templateOwnsNode ? template.initial.y : fixed(words[6]);
-      actor.z = templateOwnsNode ? template.initial.z : fixed(words[7]);
+      actor.x = actorCoordinate(words[5]);
+      actor.y = actorCoordinate(words[6]);
+      actor.z = actorCoordinate(words[7]);
+      actor.sourceRowOrdinal = 0;
       actor.uniformScale = 1;
       actor.opacityByte = 255;
       actor.renderModeByte = unsigned(words[8]) & 0xFF;
       actor.secondaryY = 0;
       actor.heightModeByte = 0;
+      actor.transformChannel = 0;
+      actor.movementFrame = 0;
       actor.tint = { red: 255, green: 255, blue: 255 };
       actor.yawDegrees = 0;
       setActorSelector(actor, selector.bank, selector.key, selector.facing, selector.variant);
@@ -1267,6 +1564,7 @@ window.OB64 = window.OB64 || {};
 
     function executeActorState(node, words) {
       var slot = signed(words[1]);
+      if (slot === -1) return;
       var actor = actorForCommand(slot, 'Actor State');
       if (!actor) return;
       var row = rowFor(node, 'pose');
@@ -1278,12 +1576,12 @@ window.OB64 = window.OB64 || {};
       var variantWord = signed(words[8]);
       var variant = Number.isInteger(payload.variantSelector)
         ? payload.variantSelector : (variantWord === -1 ? actor.variantSelector : unsigned(words[8]) & 0xFF);
-      var x = Number.isFinite(payload.x) ? payload.x : (signed(words[5]) === -1000 ? null : fixed(words[5]));
-      var y = Number.isFinite(payload.y) ? payload.y : (signed(words[6]) === -1000 ? null : fixed(words[6]));
-      var z = Number.isFinite(payload.z) ? payload.z : (signed(words[7]) === -1000 ? null : fixed(words[7]));
-      if (x != null) actor.x = x;
-      if (y != null) actor.y = y;
-      if (z != null) actor.z = z;
+      var candidate = catalog.getPhysicalPoseProgram(bank === -1 ? actor.bank : bank,
+        key === -1 ? actor.animationKey : key, facing === -1 ? actor.nativeFacing : facing, variant);
+      if (!candidate) return; // Native failed selector lookup preserves the existing record.
+      var x = actorCoordinate(words[5]), y = actorCoordinate(words[6]), z = actorCoordinate(words[7]);
+      // func_002A08C0 tests X and Y (Y twice), then writes all three coordinates.
+      if (x !== -1 || y !== -1) { actor.x = x; actor.y = y; actor.z = z; }
       actor.yawDegrees = 0;
       setActorSelector(actor, bank, key, facing, variant);
     }
@@ -1292,44 +1590,20 @@ window.OB64 = window.OB64 || {};
       var slot = signed(words[1]);
       var actor = actorForCommand(slot, 'Movement');
       if (!actor) return;
-      var row = rowFor(node, 'movement');
-      var payload = row && row.clip.payload || {};
-      var rawStartX = fixed(words[2]);
-      var rawStartZ = fixed(words[3]);
-      var keepCurrent = rawStartX === -1 && rawStartZ === -1;
-      var startX = keepCurrent ? actor.x : rawStartX;
-      var startZ = keepCurrent ? actor.z : rawStartZ;
-      var targetX = payload.to && Number.isFinite(payload.to.x)
-        ? payload.to.x : fixed(words[4]);
-      var targetZ = payload.to && Number.isFinite(payload.to.z)
-        ? payload.to.z : fixed(words[5]);
-      var speedRaw = Number.isFinite(payload.nativeSpeed) &&
-        payload.nativeSpeed !== fixed(words[7])
-        ? Math.round(payload.nativeSpeed * 1000) : signed(words[7]);
-      var distance = Math.hypot(targetX - startX, targetZ - startZ);
-      var rawCount = speedRaw !== 0
-        ? Math.trunc(distance * (1000 / speedRaw)) : signed(words[6]);
-      var remaining = lowU16(rawCount);
-      var denominator = speedRaw !== 0 ? lowS16(rawCount) : signed(words[6]);
-      actor.x = startX;
-      actor.z = startZ;
-      if (!denominator || !remaining) {
-        assumption('A zero-count movement is shown as an immediate target assignment.');
-        actor.x = targetX;
-        actor.z = targetZ;
-        delete state.movementJobs[slot];
-        return;
+      try {
+        var previous = state.movementJobs[slot];
+        var next = createNativeMovement(actor, previous, words);
+        if (next && next !== previous) {
+          next.nodeId = node.id; next.slot = slot;
+          state.movementJobs[slot] = next;
+          actor.activeMovementId = 'runtime-movement:' + node.id;
+          actor.movementFrame = 0;
+        }
+        if (state.directorMode === 2) missing('Mode-two movement terrain and proximity helpers remain outside the planar Actor contract.');
+      } catch (error) {
+        if (!(error instanceof RuntimeError)) throw error;
+        actorBoundary(error.message, error.code);
       }
-      state.movementJobs[slot] = {
-        nodeId: node.id,
-        slot: slot,
-        remaining: remaining,
-        vx: (targetX - startX) / denominator,
-        vz: (targetZ - startZ) / denominator,
-        elapsed: 0
-      };
-      actor.activeMovementId = 'runtime-movement:' + node.id;
-      actor.movementFrame = 0;
     }
 
     function executeTurn(node, words) {
@@ -2138,6 +2412,9 @@ window.OB64 = window.OB64 || {};
         displayedFrameToken: 0,
         initialization: 'native-cleared-frame-state'
       };
+      actor.decoderMode = 1;
+      actor.poseBlocked = 'alternate-pose-decoder';
+      actorBoundary('Body-pose playback requires the alternate native decoder.', 'alternate-pose-decoder');
       delete state.bodyPoseJobs[slot];
     }
 
@@ -2324,10 +2601,14 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x3F) executeActorPresentationBootstrap(node);
       else if (opcode === 0x3A) executeSceneVignette(node, words);
       else if (opcode === 0x45 || opcode === 0xAB) {
-        missing('Actor-roster materializer ' + node.opcodeHex + ' at word ' +
-          node.startWord + ' requires the caller\'s 20 Actor-input rows; ' +
-          'catalog templates are not launch records.');
+        if (!actorInputRows) actorBoundary('Actor-roster materializer requires the caller\'s complete 20 Actor-input rows.');
+        else if (actorInputRows.some(function(hex) { return launchBytes(hex,0xF8).getUint32(0x48) !== 0; })) {
+          actorBoundary('Nonempty Actor roster requires reviewed composite-constructor helpers, linked coordinates, and terrain inputs.', 'roster-constructor-helper');
+        }
       }
+      else if (opcode === 0x92 || opcode === 0xA6) executeActorBinding(node, words);
+      else if (opcode === 0x96) actorBoundary('Roster reset requires deployed unit 30, persistent characters, and row-object producers.', 'roster-reset-input');
+      else if (opcode === 0xC2) actorBoundary('Subordinate construction requires qualifying caller rows, an anchor Actor, and native constructor helpers.', 'subordinate-constructor-helper');
       else if (opcode === 0x46) executeSpriteEffect(node, words);
       else if (opcode === 0x47) state.shadowLight = {
         x: signed(words[1]), y: signed(words[2]), z: signed(words[3])
@@ -2509,12 +2790,11 @@ window.OB64 = window.OB64 || {};
         var job = state.movementJobs[slot];
         var actor = state.actors[slot];
         if (!actor) { delete state.movementJobs[slot]; return; }
-        actor.x += job.vx;
-        actor.z += job.vz;
-        job.elapsed += 1;
-        job.remaining = (job.remaining - 1) & 0xFFFF;
+        var alive;
+        try { alive = advanceNativeMovement(actor, job); }
+        catch (error) { actorBoundary(error.message, error.code); job.pauseByte = 1; return; }
         actor.movementFrame = job.elapsed;
-        if (lowS16(job.remaining) === 0) {
+        if (!alive) {
           actor.activeMovementId = null;
           delete state.movementJobs[slot];
         }
@@ -2670,7 +2950,7 @@ window.OB64 = window.OB64 || {};
         updateSpriteEffectProgram(state.spriteEffects[slot]);
       });
       Object.keys(state.actors).forEach(function(slot) {
-        state.actors[slot].poseFrame += 2;
+        if (state.alternateDirectorScheduling !== true) updateActorPose(state.actors[slot]);
       });
       Object.keys(state.dialogues).forEach(function(windowId) {
         var window = state.dialogues[windowId];
@@ -2700,7 +2980,7 @@ window.OB64 = window.OB64 || {};
 
     function updateJobs() {
       updateOversizedImageTransition();
-      updateMovementJobs();
+      if (state.alternateDirectorScheduling !== true) updateMovementJobs();
       updateTurnJobs();
       updateProjectionJob();
       updateScreenTransition();
@@ -2858,7 +3138,18 @@ window.OB64 = window.OB64 || {};
       }
       if (query.name === 'actor_state_pose_opcode_query') {
         var actor = state.actors[input];
-        return actor && state.tick < actor.poseReadyTick ? 1 : 0;
+        if (!actor || actor.poseBlocked || actor.decoderMode !== 0) {
+          actorBoundary('Pose opcode query requires an occupied Actor with a supported counted program.');
+          if (options.diagnosticAssumptions === true) {
+            assumption('Diagnostic pose-query fallback uses the previous duration estimate for unsupported Actor state; it is not the native opcode query.');
+            return actor && state.tick < actor.poseReadyTick ? 1 : 0;
+          }
+          return NaN;
+        }
+        var poseProgram = programForActor(actor);
+        if (!poseProgram) { actorBoundary('Pose opcode query requires its physical counted program.'); return NaN; }
+        var poseRecord = poseProgram.records[actor.poseCursor];
+        return poseRecord ? poseRecord.opcode & 255 : 0;
       }
       if (query.name === 'animated_scene_sprite_program_opcode_query') {
         var spriteEffect = state.spriteEffects[input];
@@ -3008,6 +3299,9 @@ window.OB64 = window.OB64 || {};
           nativeFacing: actor.nativeFacing,
           variantSelector: actor.variantSelector,
           poseFrame: actor.poseFrame,
+          displayedFrameToken: actor.displayedFrameToken,
+          nativeActorState: encodeNativeActorState(actor),
+          poseBlocked: actor.poseBlocked,
           poseProgramStatus: actor.poseProgramStatus,
           poseLoop: actor.poseLoop,
           poseDuration: actor.poseDuration,
@@ -3632,6 +3926,7 @@ window.OB64 = window.OB64 || {};
       launchSceneStatePolicy: modeTwoCommandPreviewUsesFreshRoot
         ? 'mode-two-zero-loader-preview-clears-scene-root'
         : 'launch-may-inherit-existing-scene-root',
+      nativeLaunchInputs: launchInputs,
       launchStageTransform: M.cloneJson(
         launchProfile.stageTransform, 'launch Stage transform profile'),
       launchOperandTranslation: {
@@ -3662,6 +3957,8 @@ window.OB64 = window.OB64 || {};
       'opacityByte', 'renderModeByte', 'baseX', 'baseY', 'baseZ',
       'secondaryY', 'heightModeByte', 'facing', 'poseId', 'bank',
       'animationKey', 'nativeFacing', 'variantSelector', 'poseFrame',
+      'displayedFrameToken', 'poseCursor', 'poseDelay', 'poseStateIndex',
+      'poseBlocked', 'decoderMode', 'sourceRowOrdinal', 'material', 'materialDelta',
       'poseProgramStatus', 'poseLoop', 'poseDuration', 'bodyPoseProgram',
       'movementFrame', 'activeMovementId', 'nativeUniformScale', 'tint',
       'yawDegrees', 'transformChannel', 'source'
@@ -3714,6 +4011,13 @@ window.OB64 = window.OB64 || {};
         actorFields.forEach(function(field) {
           if (!same(current[field], previous[field])) actorDelta[field] = current[field];
         });
+        if (current.nativeActorState && current.nativeActorState !== previous.nativeActorState) {
+          var currentNative = decodeNativeActorState(current.nativeActorState);
+          var previousNative = previous.nativeActorState ? decodeNativeActorState(previous.nativeActorState) : {};
+          Object.keys(currentNative).forEach(function(field) {
+            if (!same(currentNative[field], previousNative[field])) actorDelta[field] = currentNative[field];
+          });
+        }
         if (Object.keys(actorDelta).length > 1) actorChanges.push(actorDelta);
       });
       if (actorChanges.length) delta.actors = actorChanges;
@@ -3795,6 +4099,10 @@ window.OB64 = window.OB64 || {};
     forDocument: forDocument,
     evaluate: evaluate,
     projectionFromCamera: projectionFromCamera,
-    decodeSceneTransformResource: decodeSceneTransformResource
+    decodeSceneTransformResource: decodeSceneTransformResource,
+    validateLaunchInputs: validateLaunchInputs,
+    decodeNativeActorState: decodeNativeActorState,
+    nativeActor: Object.freeze({ createMovement: createNativeMovement,
+      advanceMovement: advanceNativeMovement, advancePose: advanceNativePose })
   });
 })(window.OB64);

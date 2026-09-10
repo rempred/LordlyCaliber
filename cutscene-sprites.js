@@ -935,6 +935,16 @@ window.OB64 = window.OB64 || {};
       ? state.catalog.getPhysicalPoseProgram(actorState.bank, actorState.animationKey,
         actorState.nativeFacing, actorState.variantSelector) : null;
     program = program || state.catalog.getPoseProgram(actorState.poseId);
+    if (Number.isInteger(actorState.displayedFrameToken)) {
+      // The native token survives zero/hold records and State changes. It need
+      // not occur in the new program's flattened duration list.
+      program = Object.assign({}, program || {}, {
+        programId: 'native-token:' + actorState.bank + ':' + actorState.displayedFrameToken,
+        bank: actorState.bank,
+        durationFrames: 1,
+        frames: [{ frameToken: actorState.displayedFrameToken, durationFrames: 1 }]
+      });
+    }
     if (!program || !program.frames.length) return null;
     try {
       var prepared = prepareProgram(state, program);
