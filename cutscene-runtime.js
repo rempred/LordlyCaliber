@@ -1085,6 +1085,8 @@ window.OB64 = window.OB64 || {};
     }
     var priorContextState = null;
     var priorContextFrameIndex = -1;
+    // At most 28 slot records; imported activity must survive an empty Actor pointer.
+    var vacantMovementActivity = {};
     var registeredCamera = cameraFromLaunchProfile(
       launchProfile.cameras.registered, 'registered');
     var actorCamera = cameraFromLaunchProfile(launchProfile.cameras.actor, 'actor');
@@ -1426,6 +1428,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function applyContextActor(actorRow, priorRow) {
+      delete vacantMovementActivity[actorRow.slot];
       var actor = state.actors[actorRow.slot] || ensureActor(actorRow.slot);
       if (actorRow.nativeActorState && (!priorRow || actorRow.nativeActorState !== priorRow.nativeActorState)) {
         var nativeFields = decodeNativeActorState(actorRow.nativeActorState);
@@ -1538,6 +1541,7 @@ window.OB64 = window.OB64 || {};
         applyContextActor(actor, null);
       });
       (delta.removedActorSlots || []).forEach(function(slot) {
+        delete vacantMovementActivity[slot];
         if (state.actors[slot] &&
             state.actors[slot].contextSourceAssetId === contextRuntime.assetId) {
           delete state.actors[slot];
@@ -1716,7 +1720,7 @@ window.OB64 = window.OB64 || {};
         if (destination) { state.actors[from] = destination; destination.slot = from; }
         else delete state.actors[from];
         // Native binding swaps only Actor pointers. Slot-owned jobs stay in place.
-        swapMovementActivity(actor, destination);
+        swapMovementActivity(actor, destination, from);
         return;
       }
       if (!initialActors && !contextRuntime) actorBoundary('Binding found its caller row, but launch Actor occupancy was not supplied.');
@@ -2658,7 +2662,7 @@ window.OB64 = window.OB64 || {};
       delete state.bodyPoseJobs[slot];
     }
 
-    function swapMovementActivity(actor, destination) {
+    function swapMovementActivity(actor, destination, vacatedSlot) {
       // Presentation activity follows slot ownership, including imported context activity.
       var id = actor.activeMovementId, frame = actor.movementFrame;
       function assign(occupant, inheritedId, inheritedFrame) {
@@ -2667,8 +2671,13 @@ window.OB64 = window.OB64 || {};
           ? 'launch-movement:' + occupant.slot : 'runtime-movement:' + job.nodeId) : inheritedId;
         occupant.movementFrame = job ? job.elapsed : inheritedFrame;
       }
-      assign(actor, destination ? destination.activeMovementId : null, destination ? destination.movementFrame : 0);
+      var inherited = destination ? { id: destination.activeMovementId, frame: destination.movementFrame }
+        : vacantMovementActivity[actor.slot] || { id: null, frame: 0 };
+      assign(actor, inherited.id, inherited.frame);
       if (destination) assign(destination, id, frame);
+      else vacantMovementActivity[vacatedSlot] = { id: id, frame: frame };
+      delete vacantMovementActivity[actor.slot];
+      if (destination) delete vacantMovementActivity[destination.slot];
     }
 
     function finalizeOrdinarySlots(node) {
@@ -2688,7 +2697,7 @@ window.OB64 = window.OB64 || {};
         var destination=state.actors[target];
         state.actors[target]=actor;actor.slot=target;
         if (destination) {state.actors[slot]=destination;destination.slot=slot;} else delete state.actors[slot];
-        swapMovementActivity(actor, destination);
+        swapMovementActivity(actor, destination, slot);
         recordTrace({tick:state.tick,kind:'roster-finalizer-swap',nodeId:node.id,slot:slot,target:target,actorIdentity:actor.id});
       }
     }
@@ -3445,7 +3454,7 @@ window.OB64 = window.OB64 || {};
       Object.keys(state.movementJobs).forEach(function(slot) {
         var job = state.movementJobs[slot];
         var actor = state.actors[slot];
-        if (!actor) { delete state.movementJobs[slot]; return; }
+        if (!actor) { delete state.movementJobs[slot]; delete vacantMovementActivity[slot]; return; }
         var alive;
         try { alive = advanceNativeMovement(actor, job); }
         catch (error) { actorBoundary(error.message, error.code); job.pauseByte = 1; return; }
