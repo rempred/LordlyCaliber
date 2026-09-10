@@ -837,13 +837,15 @@ window.OB64 = window.OB64 || {};
 
   function prepareBodyProgram(state, bodyProgram) {
     var identity = bodyRouteIdentity(bodyProgram) + ':' + bodyProgram.selector + ':' +
-      bodyProgram.displayedFrameToken;
+      bodyProgram.displayedFrameToken + ':' + !!bodyProgram.nativeFrameSelection;
     if (state.bodyPrograms[identity]) return state.bodyPrograms[identity];
     var route = prepareBodyRoute(state, bodyProgram);
     var bank = prepareBank(state, route.source);
-    var pose = OB64.animationArt.parsePoseProgram(bank.pose, bodyProgram.selector,
-      route.className + ' body pose');
-    var sourceFrames = pose.frames.length ? pose.frames : [[
+    // A retained native token can outlive its requested State. Rendering that
+    // token needs metadata and art, not another elapsed-program interpretation.
+    var pose = bodyProgram.nativeFrameSelection ? {frames:[],records:[],recordCount:null} :
+      OB64.animationArt.parsePoseProgram(bank.pose, bodyProgram.selector, route.className + ' body pose');
+    var sourceFrames = bodyProgram.nativeFrameSelection ? [[bodyProgram.displayedFrameToken,1]] : pose.frames.length ? pose.frames : [[
       bodyProgram.displayedFrameToken, 1
     ]];
     var originX = 0;
@@ -903,6 +905,9 @@ window.OB64 = window.OB64 || {};
 
   function frameForBodyActor(state, actorState) {
     var bodyProgram = actorState.bodyPoseProgram;
+    if (!actorState.poseBlocked && Number.isInteger(actorState.displayedFrameToken)) {
+      bodyProgram=Object.assign({},bodyProgram,{displayedFrameToken:actorState.displayedFrameToken,nativeFrameSelection:true});
+    }
     if (!Number.isInteger(bodyProgram.artSource) ||
         !Number.isInteger(bodyProgram.ownerContext)) return null;
     try {
@@ -914,7 +919,7 @@ window.OB64 = window.OB64 || {};
       return Object.assign({}, rendered, {
         capability: 'preview-only',
         bodyPoseProgram: Object.assign({}, bodyProgram),
-        warning: prepared.emptyPoseProgram
+        warning: bodyProgram.nativeFrameSelection ? 'The current native frame token selects this artwork.' : prepared.emptyPoseProgram
           ? 'The native selector is empty; the initializer-cleared frame token 0 is displayed.'
           : 'The alternate body-pose decoder supplies this native frame sequence.'
       });

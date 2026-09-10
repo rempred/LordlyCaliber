@@ -99,13 +99,17 @@ window.OB64 = window.OB64 || {};
   }
 
   function advanceNativePose(actor, resolveProgram, limit) {
-    if (actor.decoderMode !== 0) return 'alternate-pose-decoder';
     var result = 1, dispatches = 0;
     while (actor.poseDelay <= 0) {
       if (++dispatches > limit) return 'pose-dispatch-limit';
+      if (actor.decoderMode !== 0) actor.poseCursor = signed(actor.poseCursor + 1);
+      if (actor.decoderMode !== 0 && [135,136,161,-1].includes(lowS16(actor.bank))) {
+        actor.poseStateIndex = lowS16(actor.poseStateIndex) < 50 ? 0 : 50;
+      }
       var program = resolveProgram(actor);
-      if (!program || !Array.isArray(program.records)) return 'missing-pose-program';
-      actor.poseCursor = signed(actor.poseCursor + 1);
+      if (!program || !Array.isArray(program.records)) return actor.decoderMode !== 0
+        ? 'alternate-pose-registration' : 'missing-pose-program';
+      if (actor.decoderMode === 0) actor.poseCursor = signed(actor.poseCursor + 1);
       var record = program.records[actor.poseCursor] || { opcode: 0, operands: [] };
       var op = record.opcode, p = record.operands;
       result = op;
@@ -185,6 +189,78 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  // Both native lookup paths use this 22-entry record-width table.
+  var NATIVE_POSE_WIDTHS = [1,3,3,2,2,2,1,1,1,1,1,1,4,3,3,2,3,3,3,3,3,4];
+  function decodeQualifiedPose(hex) {
+    if (typeof hex !== 'string' || !hex.length || hex.length % 2) fail('Pose program bytes are required.', 'launch-input');
+    var bytes = launchBytes(hex, hex.length / 2), cursor = 1, records = [];
+    for (var i=0; i<bytes.getUint8(0); i++) {
+      if (cursor >= bytes.byteLength) fail('Counted pose ends before its declared records.', 'launch-input');
+      var opcode = bytes.getUint8(cursor), width = NATIVE_POSE_WIDTHS[opcode];
+      if (!width || cursor + width > bytes.byteLength) fail('Counted pose opcode or extent is unsupported.', 'launch-input');
+      var operands = [];
+      for (var j=1; j<width; j++) operands.push(bytes.getUint8(cursor+j));
+      records.push({opcode:opcode, operands:operands}); cursor += width;
+    }
+    if (cursor !== bytes.byteLength) fail('Counted pose contains bytes outside its declared extent.', 'launch-input');
+    return {records:records};
+  }
+
+  function recordHex(view) {
+    return Array.from(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), function(v) {
+      return v.toString(16).padStart(2,'0');
+    }).join('');
+  }
+
+  function validateActorServiceGroup(key, value) {
+    function integer(v, min, max) { return Number.isInteger(v) && v >= min && v <= max; }
+    function tuple(row) {
+      return row && integer(row.sourceArt,-2147483648,2147483647) &&
+        integer(row.ownerContext,-2147483648,2147483647) && integer(row.flagA,0,255) && integer(row.flagB,-32768,32767);
+    }
+    if (key === 'poseRegistry') {
+      if (!value || !Array.isArray(value.alternate) || !Array.isArray(value.ordinary)) fail('Pose registry needs both explicit directory lists.', 'launch-input');
+      ['alternate','ordinary'].forEach(function(kind) {
+        var identities = new Set();
+        value[kind].forEach(function(row) {
+          var validTuple=kind==='alternate' ? tuple(row) && integer(row.handle,1,4095) :
+            row && integer(row.sourceArt,-2147483648,2147483647) && integer(row.flagA,0,255);
+          if (!validTuple || !Array.isArray(row.programs)) fail('Pose registry tuple or handle is invalid.', 'launch-input');
+          var identity = (kind === 'ordinary' ? [row.sourceArt,row.flagA] :
+            [row.sourceArt,row.ownerContext,row.flagA,row.flagB]).join(':');
+          if (identities.has(identity)) fail('Pose registry tuple is ambiguous.', 'launch-input');
+          identities.add(identity);
+          var states = new Set();
+          row.programs.forEach(function(program) {
+            if (!integer(program.state,-32768,32767) || states.has(program.state)) fail('Pose directory state is invalid or duplicated.', 'launch-input');
+            states.add(program.state); decodeQualifiedPose(program.programHex);
+          });
+        });
+      });
+      return;
+    }
+    if (!Array.isArray(value)) fail(key + ' needs an ordered service list.', 'launch-input');
+    var identities = new Set();
+    value.forEach(function(row) {
+      if (!row || typeof row.nodeId !== 'string' || !row.nodeId || !integer(row.occurrence,0,29999)) fail('Actor service needs command and occurrence identity.', 'launch-input');
+      var identity = row.nodeId + ':' + row.occurrence;
+      if (identities.has(identity)) fail('Actor service occurrence is ambiguous.', 'launch-input');
+      identities.add(identity);
+      if (key === 'bodyPoseSetups') {
+        if (!Array.isArray(row.words) || row.words.length !== 7 || row.words.some(function(v){return !integer(v,-2147483648,4294967295);}) ||
+            row.otherActorsUnchanged !== true) fail('Body setup requires exact command words and explicit unrelated-Actor preservation.', 'launch-input');
+        launchBytes(row.recordHex,0x150);
+      } else {
+        if (!Array.isArray(row.allocations) || row.allocations.length > 2 || row.allocations.some(function(v){return typeof v !== 'boolean';}) ||
+            !Array.isArray(row.preparations) || row.preparations.length > 3) fail('Subordinate service outcomes are invalid.', 'launch-input');
+        row.preparations.forEach(function(preparation) {
+          if (!tuple(preparation) || !integer(preparation.equipment,0,277) ||
+              !['ready','unavailable','cache-full'].includes(preparation.status)) fail('Subordinate preparation needs its exact tuple, equipment, and status.', 'launch-input');
+        });
+      }
+    });
+  }
+
   function validateLaunchInputs(input, assetId) {
     if (input == null) return null;
     if (JSON.stringify(input).length > 131072 || input.schema !== 'ob64-cutscene-launch-inputs.v1' ||
@@ -193,13 +269,16 @@ window.OB64 = window.OB64 || {};
         !['Candidate', 'Supported', 'Verified', 'Editor-ready'].includes(input.evidenceGrade)) {
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
-    ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch'].forEach(function(key) {
+    ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch',
+      'poseRegistry','bodyPoseSetups','subordinateServices'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'actorInputRows') {
+      if (['poseRegistry','bodyPoseSetups','subordinateServices'].includes(key)) {
+        validateActorServiceGroup(key,value);
+      } else if (key === 'actorInputRows') {
         if (!Array.isArray(value) || value.length !== 20) fail('Actor inputs require all 20 rows.', 'launch-input');
         value.forEach(function(hex) { launchBytes(hex, 0xF8); });
       } else if (key === 'currentUnitMembers') {
@@ -988,6 +1067,7 @@ window.OB64 = window.OB64 || {};
     }
     var actorInputRows = launchValue('actorInputRows');
     var currentUnitMembers = launchValue('currentUnitMembers');
+    var actorServiceOccurrences = {}, qualifiedPoseCache = new Map(), subordinateSerial = 0;
     var state = {
       tick: 0,
       actors: {},
@@ -1063,6 +1143,15 @@ window.OB64 = window.OB64 || {};
       actor.poseStateIndex = bytes.getInt16(0x134);
       actor.decoderMode = bytes.getUint8(0x13D);
       actor.sourceRowOrdinal = bytes.getUint8(0x147);
+      actor.nativeRecordBase = row.recordHex;
+      actor.nativeOwnerContext = bytes.getInt32(0xEC);
+      actor.nativeFlagB = bytes.getInt16(0x13A);
+      actor.linkedOrdinal = bytes.getUint8(0x149);
+      if (actor.decoderMode !== 0) actor.bodyPoseProgram = {
+        decoder:'alternate-body-pose',artSource:actor.bank,ownerContext:actor.nativeOwnerContext,
+        flagA:actor.variantSelector,flagB:actor.nativeFlagB,selector:actor.animationKey,
+        initialization:'qualified-existing-record'
+      };
       actor.material = Array.from({length:16}, function(_,i) { return bytes.getUint8(i); });
       actor.materialDelta = Array.from({length:16}, function(_,i) { return bytes.getUint8(i+16); });
       actor.visible = true;
@@ -1106,7 +1195,78 @@ window.OB64 = window.OB64 || {};
       };
     }
 
+    function qualifiedPoseForActor(actor, kind) {
+      var registry = launchValue('poseRegistry');
+      if (!registry) return null;
+      var body = actor.bodyPoseProgram || {};
+      var owner = Number.isInteger(body.ownerContext) ? body.ownerContext : actor.nativeOwnerContext;
+      var flagB = Number.isInteger(body.flagB) ? body.flagB : actor.nativeFlagB;
+      var match = registry[kind].find(function(row) {
+        return row.sourceArt === actor.bank && row.flagA === actor.variantSelector &&
+          (kind === 'ordinary' || (row.ownerContext === owner && row.flagB === flagB));
+      });
+      var program = match && match.programs.find(function(row) {return row.state === lowS16(actor.poseStateIndex);});
+      if (!program) return null;
+      if (!qualifiedPoseCache.has(program.programHex)) qualifiedPoseCache.set(program.programHex,decodeQualifiedPose(program.programHex));
+      return qualifiedPoseCache.get(program.programHex);
+    }
+
+    function actorService(key, node) {
+      var identity = key + ':' + node.id;
+      var occurrence = actorServiceOccurrences[identity] || 0;
+      actorServiceOccurrences[identity] = occurrence + 1;
+      return (launchValue(key) || []).find(function(row) {return row.nodeId === node.id && row.occurrence === occurrence;});
+    }
+
+    function nativeRecordForActor(actor) {
+      if (actor.nativeRecordUnavailable) return null;
+      var hex = actor.nativeRecordBase || actor.source && actor.source.recordHex;
+      if (!hex) return null;
+      var bytes = launchBytes(hex,0x150), body=actor.bodyPoseProgram || {};
+      for (var i=0;i<16;i++) {bytes.setUint8(i,actor.material[i]);bytes.setUint8(i+16,actor.materialDelta[i]);}
+      bytes.setInt32(0xE4,actor.slot);bytes.setInt32(0xE8,actor.bank);
+      var owner = Number.isInteger(body.ownerContext) ? body.ownerContext : actor.nativeOwnerContext;
+      if (Number.isInteger(owner)) bytes.setInt32(0xEC,owner);
+      bytes.setInt32(0xF0,actor.poseCursor);bytes.setInt32(0xF4,actor.poseDelay);bytes.setInt32(0xF8,actor.displayedFrameToken);
+      bytes.setFloat32(0x11C,actor.x);bytes.setFloat32(0x120,actor.y);bytes.setFloat32(0x124,actor.z);
+      if (Number.isInteger(actor.poseStateIndex)) bytes.setInt16(0x134,actor.poseStateIndex);
+      if (Number.isInteger(actor.previousPoseStateIndex)) bytes.setInt16(0x136,actor.previousPoseStateIndex);
+      bytes.setInt16(0x138,actor.animationKey);
+      var flagB=Number.isInteger(body.flagB) ? body.flagB : actor.nativeFlagB;
+      if (Number.isInteger(flagB)) bytes.setInt16(0x13A,flagB);
+      bytes.setUint8(0x13D,actor.decoderMode);bytes.setUint8(0x13F,actor.nativeFacing);
+      bytes.setUint8(0x146,actor.variantSelector);bytes.setUint8(0x147,actor.sourceRowOrdinal);
+      if (Number.isInteger(actor.linkedOrdinal)) bytes.setUint8(0x149,actor.linkedOrdinal);
+      return bytes;
+    }
+
+    function forgetNativeRecord(actor) {
+      actor.nativeRecordBase=null;actor.nativeRecordUnavailable=true;
+      actor.source=Object.assign({},actor.source);delete actor.source.recordHex;
+    }
+
+    function applyNativeRecord(actor, bytes, initialization) {
+      actor.nativeRecordBase=recordHex(bytes);
+      actor.nativeRecordUnavailable=false;
+      actor.bank=bytes.getInt32(0xE8);actor.nativeOwnerContext=bytes.getInt32(0xEC);
+      actor.poseCursor=bytes.getInt32(0xF0);actor.poseDelay=bytes.getInt32(0xF4);actor.displayedFrameToken=bytes.getInt32(0xF8);
+      actor.poseStateIndex=bytes.getInt16(0x134);actor.previousPoseStateIndex=bytes.getInt16(0x136);
+      actor.animationKey=bytes.getInt16(0x138);actor.nativeFlagB=bytes.getInt16(0x13A);
+      actor.decoderMode=bytes.getUint8(0x13D);actor.nativeFacing=bytes.getUint8(0x13F);
+      actor.variantSelector=bytes.getUint8(0x146);actor.sourceRowOrdinal=bytes.getUint8(0x147);actor.linkedOrdinal=bytes.getUint8(0x149);
+      actor.x=bytes.getFloat32(0x11C);actor.y=bytes.getFloat32(0x120);actor.z=bytes.getFloat32(0x124);
+      actor.material=Array.from({length:16},function(_,i){return bytes.getUint8(i);});
+      actor.materialDelta=Array.from({length:16},function(_,i){return bytes.getUint8(i+16);});
+      actor.bodyPoseProgram={decoder:'alternate-body-pose',artSource:actor.bank,ownerContext:actor.nativeOwnerContext,
+        selector:actor.animationKey,flagA:actor.variantSelector,flagB:actor.nativeFlagB,initialization:initialization};
+      actor.artSourceId='combat-actor-art-source:'+actor.bank;
+      actor.poseId='body-pose:'+actor.bank+':'+actor.animationKey+':'+actor.variantSelector+':'+actor.nativeFlagB+':'+actor.nativeOwnerContext;
+      actor.poseBlocked=null;actor.poseProgramStatus='qualified-alternate-program';
+      actor.poseFrame=0;
+    }
+
     function programForActor(actor) {
+      if (actor && actor.decoderMode !== 0) return qualifiedPoseForActor(actor,'alternate');
       if (!catalog || !catalog.getPhysicalPoseProgram || !actor ||
           !Number.isInteger(actor.bank) || !Number.isInteger(actor.animationKey) ||
           !Number.isInteger(actor.nativeFacing)) return null;
@@ -1123,6 +1283,7 @@ window.OB64 = window.OB64 || {};
     function startPose(actor) {
       actor.poseFrame = 0;
       actor.poseStateIndex = null;
+      actor.decoderMode = 0;
       var poseProgram = programForActor(actor);
       actor.poseStateIndex = poseProgram ? poseProgram.stateIndex : null;
       actor.poseCursor = -1;
@@ -1260,6 +1421,7 @@ window.OB64 = window.OB64 || {};
           ? M.cloneJson(value, 'context actor ' + sourceField) : value;
       });
       actor.contextSourceAssetId = contextRuntime.assetId;
+      if (actor.nativeRecordBase || actor.source && actor.source.recordHex) forgetNativeRecord(actor);
     }
 
     function contextDialogueMap(frameState) {
@@ -1607,7 +1769,10 @@ window.OB64 = window.OB64 || {};
           actor.activeMovementId = 'runtime-movement:' + node.id;
           actor.movementFrame = 0;
         }
-        if (state.directorMode === 2) missing('Mode-two movement terrain and proximity helpers remain outside the planar Actor contract.');
+        if (state.directorMode === 2) {
+          if (actor.nativeRecordBase || actor.source && actor.source.recordHex) forgetNativeRecord(actor);
+          missing('Mode-two movement terrain and proximity helpers remain outside the planar Actor contract.');
+        }
       } catch (error) {
         if (!(error instanceof RuntimeError)) throw error;
         actorBoundary(error.message, error.code);
@@ -2385,6 +2550,24 @@ window.OB64 = window.OB64 || {};
       var slot = signed(words[1]);
       var actor = actorForCommand(slot, 'Body-pose program');
       if (!actor) return;
+      var setup=actorService('bodyPoseSetups',node);
+      if (setup) {
+        if (!setup.words.every(function(v,i){return unsigned(v)===unsigned(words[i]);})) {
+          actorBoundary('Body-pose setup does not match this exact command occurrence.','alternate-pose-setup'); return;
+        }
+        var prepared=launchBytes(setup.recordHex,0x150);
+        if (prepared.getInt32(0xE4)!==slot || prepared.getUint8(0x13D)!==1 || prepared.getInt32(0xF0)!==-1 ||
+            prepared.getInt32(0xF4)!==0 || prepared.getInt32(0xF8)!==0 ||
+            [0x11C,0x120,0x124].some(function(at){return !Number.isFinite(prepared.getFloat32(at));}) ||
+            Array.from({length:16},function(_,i){return prepared.getUint8(i)!==255 || prepared.getUint8(i+16)!==0;}).some(Boolean)) {
+          actorBoundary('Body-pose setup lacks the successful initializer seed.','alternate-pose-setup'); return;
+        }
+        applyNativeRecord(actor,prepared,'qualified-post-preparation-before-immediate-pose');
+        actor.source=Object.assign({},actor.source,{launchSourceIdentity:launchInputs.sourceIdentity,
+          invocationId:launchInputs.invocationId,evidenceGrade:launchInputs.evidenceGrade});
+        updateActorPose(actor);
+        return;
+      }
       var previous = actor.bodyPoseProgram || {};
       var artSource = signed(words[2]);
       var selector = signed(words[3]);
@@ -2421,9 +2604,91 @@ window.OB64 = window.OB64 || {};
         initialization: 'native-cleared-frame-state'
       };
       actor.decoderMode = 1;
-      actor.poseBlocked = 'alternate-pose-decoder';
-      actorBoundary('Body-pose playback requires the alternate native decoder.', 'alternate-pose-decoder');
+      actor.poseBlocked = 'alternate-pose-setup';
+      actorBoundary('Body-pose playback requires qualified initializer and resource-registration inputs.', 'alternate-pose-setup');
       delete state.bodyPoseJobs[slot];
+    }
+
+    function executeSubordinate(node, words) {
+      var anchorSlot=lowS16(words[1]), initialState=lowU16(words[2]);
+      if (anchorSlot<0 || anchorSlot>=28) {actorBoundary('Subordinate anchor must be a primary slot.','subordinate-anchor-input');return;}
+      if (!actorInputRows) {actorBoundary('Subordinate construction requires the complete caller rows.','subordinate-row-input');return;}
+      var ordinal=-1, row;
+      for (var i=0;i<20;i++) {
+        var candidate=launchBytes(actorInputRows[i],0xF8), flags=candidate.getUint32(0x40);
+        if (candidate.getUint32(0x48) && !(flags&256) && (flags&512)) {ordinal=i;row=candidate;break;}
+      }
+      if (ordinal<0) return;
+      var anchor=state.actors[anchorSlot];
+      if (!anchor) {
+        if (!initialActors) actorBoundary('Subordinate construction requires known anchor occupancy.','subordinate-anchor-input');
+        return;
+      }
+      var present=[0,4,8].map(function(at){return row.getUint32(at)!==0;});
+      if (!present.some(Boolean)) return;
+      if (!present[0]) {actorBoundary('A later subordinate component cannot copy a missing ordinal-zero Actor.','subordinate-topology');return;}
+      if (!initialActors) {actorBoundary('Subordinate construction requires complete slot occupancy.','subordinate-anchor-input');return;}
+      var raw=nativeRecordForActor(anchor);
+      if (!raw) {actorBoundary('Subordinate construction requires a complete qualified anchor record.','subordinate-anchor-record');return;}
+      var context=row.getInt32(0x4C), art=row.getInt32(0x48), orientation=row.getInt32(0x58)<4 ? 1 : 0;
+      var cloneSlot=0;
+      if ([10,25,123].includes(context)) {
+        while(cloneSlot<28 && state.actors[cloneSlot]) cloneSlot++;
+        if (cloneSlot===28 && (present[1]||present[2])) {actorBoundary('Subordinate clone capacity is exhausted.','subordinate-capacity');return;}
+      }
+      var service=actorService('subordinateServices',node), allocationIndex=0, preparationIndex=0, previous=null;
+      for (var linked=0;linked<3;linked++) {
+        if (!present[linked]) continue;
+        var current;
+        if (linked===0) current=anchor;
+        else {
+          if (!service || allocationIndex>=service.allocations.length) {actorBoundary('Subordinate allocation result is unavailable after prior component effects.','subordinate-allocation-input');return;}
+          if (!service.allocations[allocationIndex++]) {
+            delete state.actors[cloneSlot];
+            actorBoundary('Subordinate allocation failed after publishing null; earlier Actor effects remain.','subordinate-allocation-failed');return;
+          }
+          raw=nativeRecordForActor(previous);
+          current=M.cloneJson(previous,'subordinate previous Actor');
+          current.id='subordinate:'+launchInputs.invocationId+':'+(++subordinateSerial);
+          current.slot=cloneSlot;current.label='Subordinate component '+linked;
+          state.actors[cloneSlot]=current;
+          raw.setFloat32(0x11C,Math.fround(previous.x-8));raw.setFloat32(0x124,Math.fround(previous.z+8));
+          recordTrace({tick:state.tick,kind:'subordinate-clone',nodeId:node.id,slot:cloneSlot,linkedOrdinal:linked,
+            allocationIdentity:current.id,copySourceIdentity:previous.id});
+        }
+        raw.setUint8(0x145,1);raw.setUint8(0x13D,1);
+        raw.setUint16(0x138,lowU16(initialState+50*linked));raw.setUint16(0x134,lowU16(initialState+50*linked));
+        raw.setUint8(0x149,linked);raw.setInt32(0xF8,0);raw.setInt32(0xF4,0);raw.setUint8(0x147,ordinal);
+        raw.setInt32(0xE4,current.slot);raw.setInt32(0xE8,art);raw.setInt32(0xEC,context);
+        raw.setUint16(0x13A,orientation);raw.setUint8(0x146,orientation);
+        applyNativeRecord(current,raw,'subordinate-field-writes-before-preparation');
+        var equipment=0;
+        if (!(options.z64 instanceof Uint8Array) || options.z64.length<0x62310+278*32) {
+          current.poseBlocked='subordinate-equipment-input';actorBoundary('Subordinate equipment types require the qualified ROM table.',current.poseBlocked);return;
+        }
+        for (var itemIndex=0;itemIndex<4;itemIndex++) {
+          var item=row.getUint16(0x36+2*itemIndex);
+          if (item>=278) {current.poseBlocked='subordinate-equipment-input';actorBoundary('Subordinate equipment is outside the supported native table.',current.poseBlocked);return;}
+          var type=options.z64[0x62310+item*32];
+          if ((type>=1&&type<=13)||type===24) {equipment=item;break;}
+        }
+        if (art>=0x39&&art<=0x46) {
+          var override=[2,8,11,13,15,18,2,2,3,4,5,6,null,8][art-0x39];
+          if (override!==null) equipment=override;
+        }
+        var preparation=service && service.preparations[preparationIndex++];
+        var preparationMatches=preparation && preparation.sourceArt===art && preparation.ownerContext===context &&
+          preparation.flagA===orientation && preparation.flagB===orientation && preparation.equipment===equipment;
+        if (!preparationMatches || preparation.status!=='ready') {
+          current.poseBlocked=preparationMatches && preparation.status==='cache-full' ? 'subordinate-cache-full' : 'subordinate-preparation-input';
+          actorBoundary('Subordinate preparation has not returned with qualified resources; current field writes remain.',current.poseBlocked);return;
+        }
+        recordTrace({tick:state.tick,kind:'subordinate-preparation',nodeId:node.id,slot:current.slot,
+          linkedOrdinal:linked,sourceArt:art,ownerContext:context,orientation:orientation,equipment:equipment,orientationArgumentsAlias:true});
+        updateActorPose(current);
+        if (current.poseBlocked) return;
+        previous=current;
+      }
     }
 
     function eventRow(node, kind, label, payload) {
@@ -2561,6 +2826,18 @@ window.OB64 = window.OB64 || {};
         return;
       }
 
+      // A complete imported record is usable for shallow-copy construction only
+      // while every intervening native byte write is represented here. Older
+      // presentation commands have partial models, so they invalidate that input.
+      if (!node.query && ![0x07,0x2A,0x92,0xA6,0xC2].includes(opcode) &&
+          (/actor|body_pose/.test(node.name) || [0x1C,0x1D,0x1E,0x22,0x48].includes(opcode))) {
+        Object.keys(state.actors).forEach(function(slot) {
+          var actor=state.actors[slot];
+          if (!actor.nativeRecordBase && !(actor.source && actor.source.recordHex)) return;
+          forgetNativeRecord(actor);
+        });
+      }
+
       if (opcode === 0x01) state.registeredCounter = { value: 1, armTick: state.tick };
       else if (opcode === 0x02) state.registeredCounter = null;
       else if (opcode === 0x03) executeActorState(node, words);
@@ -2616,7 +2893,7 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x92 || opcode === 0xA6) executeActorBinding(node, words);
       else if (opcode === 0x96) actorBoundary('Roster reset requires deployed unit 30, persistent characters, and row-object producers.', 'roster-reset-input');
-      else if (opcode === 0xC2) actorBoundary('Subordinate construction requires qualifying caller rows, an anchor Actor, and native constructor helpers.', 'subordinate-constructor-helper');
+      else if (opcode === 0xC2) executeSubordinate(node,words);
       else if (opcode === 0x46) executeSpriteEffect(node, words);
       else if (opcode === 0x47) state.shadowLight = {
         x: signed(words[1]), y: signed(words[2]), z: signed(words[3])
@@ -3146,6 +3423,14 @@ window.OB64 = window.OB64 || {};
       }
       if (query.name === 'actor_state_pose_opcode_query') {
         var actor = state.actors[input];
+        if (actor && actor.decoderMode !== 0) {
+          var ordinary=qualifiedPoseForActor(actor,'ordinary');
+          if (ordinary) {var currentRecord=ordinary.records[actor.poseCursor];return currentRecord ? currentRecord.opcode & 255 : 0;}
+          actorBoundary('Alternate Actor pose query requires its separate same-context ordinary directory.','ordinary-pose-query-input');
+          if (options.diagnosticAssumptions !== true) return NaN;
+          assumption('Diagnostic alternate pose query uses a legacy readiness estimate; no ordinary directory was supplied.');
+          return state.tick < actor.poseReadyTick ? 1 : 0;
+        }
         if (!actor || actor.poseBlocked || actor.decoderMode !== 0) {
           actorBoundary('Pose opcode query requires an occupied Actor with a supported counted program.');
           if (options.diagnosticAssumptions === true) {
@@ -3326,7 +3611,7 @@ window.OB64 = window.OB64 || {};
           sceneTransform: Object.assign({}, channel),
           renderPipeline: modeZeroStage ? 'mode-zero-registered-prepass-actor-camera' :
             'actor-camera-direct',
-          source: actor.source
+          source: actor.nativeRecordBase ? Object.assign({},actor.source,{recordHex:recordHex(nativeRecordForActor(actor))}) : actor.source
         };
       }).sort(function(left, right) { return left.z - right.z || left.slot - right.slot; });
       var dialogue = Object.keys(state.dialogues).map(function(windowId) {

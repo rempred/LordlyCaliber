@@ -1,0 +1,1445 @@
+{
+  "generator": "docs/reviews/cutscene-remaining-actor-producers-r1-20260910/build-fixtures.cjs",
+  "generatorSha256": "4ec004cf579fc96ae02155fe80821f41048b2ab7723e52b67f0bec4cd60009cd",
+  "acceptedReviews": [
+    "49cf6ee89a5e06c1bcb51f9dd680ad71b0ed3b14",
+    "2b76c027265e5d935cbcc5ef70618462e527cc64"
+  ],
+  "inputs": {
+    "docs/reviews/cutscene-subordinate-construction-r2-20260910/native-verification.json": "5b8c207e6d5336c86a09fbd6909712f3239b23a027763513ed2ee5617d4b5e86",
+    "docs/reviews/cutscene-alternate-pose-r1-20260910/physical-programs.json": "04ad62708645d907eb2bd7330b508cc638a7f8527095e6e860fba1684d716721"
+  },
+  "boundary": "Synthetic subordinate instruction fixtures and named physical empty programs. Services and successful setup remain declared prerequisites.",
+  "subordinates": [
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "E48289255CA4725048EA86ADD6F87A277D1BDBD93CC2CE798439D24B0D01DA24"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "E48289255CA4725048EA86ADD6F87A277D1BDBD93CC2CE798439D24B0D01DA24"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "EF50A9FBDD43C0725EC51867C91864DAFFAA467D0B8A0551A8A3189960A7CE39"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "E48289255CA4725048EA86ADD6F87A277D1BDBD93CC2CE798439D24B0D01DA24"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "2CE22FC607E5398F480E851414A52AED2846BFC4A26EA509B2FFEFC67B7363AF"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 1,
+        "art": 2,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "E48289255CA4725048EA86ADD6F87A277D1BDBD93CC2CE798439D24B0D01DA24"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "EF50A9FBDD43C0725EC51867C91864DAFFAA467D0B8A0551A8A3189960A7CE39"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "F89F2F7B262EA02D3E05B5EC98AB938DFF8487EF5834450B3240CF0A6312854F"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "2C14FCDC5BA84E44D567DEED6F3B920F2B6EE5BC2F7E2ED0B26327EA7661E86F"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "2C14FCDC5BA84E44D567DEED6F3B920F2B6EE5BC2F7E2ED0B26327EA7661E86F"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "684E16078DF935F06EB7A43C7D5388285AA16232E42FB6161CDBFDD1B936339C"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "2C14FCDC5BA84E44D567DEED6F3B920F2B6EE5BC2F7E2ED0B26327EA7661E86F"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "ACA6B5A363659055D8FB493A935C2553FDD85F58A56D0B41633653C187CE3FAA"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 2,
+        "art": 2,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "2C14FCDC5BA84E44D567DEED6F3B920F2B6EE5BC2F7E2ED0B26327EA7661E86F"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "684E16078DF935F06EB7A43C7D5388285AA16232E42FB6161CDBFDD1B936339C"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "922355540ECF606410CA240F2D08622E8CF629999D8DC0F8ED02764A57BC00EB"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "2F056BC5186CFA93300F6AEC189FD39A28F436D2D3DFEAE520F532F42EDD7AE6"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "9AC9EAE67D27602C5D8C10AACC07A8BA78398E869C3E574C6AC13DBD483FF02C"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "2F056BC5186CFA93300F6AEC189FD39A28F436D2D3DFEAE520F532F42EDD7AE6"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "6CB90CEDD29F5975027B2136DA7295B7388E994A1A50D346C13F742FDE0EEE3B"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B08F8643680BA7C481278E065E858A600C371FF1A119B1862BF3557A65190290"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B08F8643680BA7C481278E065E858A600C371FF1A119B1862BF3557A65190290"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "742C8B35B484EA95DDBDB4FC66C9503584A4FC586B73A861B80886465154D5F6"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B08F8643680BA7C481278E065E858A600C371FF1A119B1862BF3557A65190290"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "9A6BA88BA1AEA68CE42CBB344DEA568DF66C9F9F71B6E0B166F14FB701AB2430"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 25,
+        "art": 2,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B08F8643680BA7C481278E065E858A600C371FF1A119B1862BF3557A65190290"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "742C8B35B484EA95DDBDB4FC66C9503584A4FC586B73A861B80886465154D5F6"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "17E47372DCDE3BB59ACA11781F66E668DFDAFFC5AB45F842B601EC90DC8452B8"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 0,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "4BAB3E2D4000954AB348E117996C55D59EAB3C7DDED9B27B3FAE7D86573BCD23"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 2,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "4BAB3E2D4000954AB348E117996C55D59EAB3C7DDED9B27B3FAE7D86573BCD23"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "3AABDE90C053EEF31E669BA6C79DE4FB29580A64284EAA16155A14246BC0907E"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 4,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "4BAB3E2D4000954AB348E117996C55D59EAB3C7DDED9B27B3FAE7D86573BCD23"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "AE1E29E913749303BE44DD933C38D4373EB1BD0A51B454F6350CA65F7CD68946"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 6,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "null-address memory access",
+      "records": [
+        {
+          "slot": 1061571924,
+          "bytesSha256": "6D84C3DA76F1047B168E127D427DD232270D1FAC983D44EDFF7BB8BFEDD90C78"
+        },
+        {
+          "slot": 0,
+          "bytesSha256": "52A3E0804D93DC525EC3C67EF8AC5B01756ECF0513E36F3C19435E4C82CB5D29"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 123,
+        "art": 2,
+        "linkedMask": 7,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "4BAB3E2D4000954AB348E117996C55D59EAB3C7DDED9B27B3FAE7D86573BCD23"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "3AABDE90C053EEF31E669BA6C79DE4FB29580A64284EAA16155A14246BC0907E"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "6F131A48283A87DF778B366D3AC4A783E3402711C644F75F7FCD956E52A410A3"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "allocationFails": false,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        },
+        {
+          "slot": 28,
+          "bytesSha256": "DC3F7E2FE44B5E22F8F9283178D0928A6F555F8BC53D3C8C456C2FAE5F79A641"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 3,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": true,
+        "state": 9,
+        "poseDelay": 4
+      },
+      "failure": "allocator-null passed to clear",
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "29B2E25B5F39F0A43601E20E0922367366ABBD3D39BC8F2223DC399BEC3CA12A"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 2,
+        "linkedMask": 5,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 65520,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "E0F5C4C22492F06058D1B55C0291C2DEEC5260D9D16B6E9BC232EC074E8E2441"
+        },
+        {
+          "slot": 1,
+          "bytesSha256": "AF0805506C08C2C5F12521B5ADBFB77FF987664C289C7DECC5A970E037AE8F3D"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 135,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 49,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B59A2D8F183DB4D94F93251DAE9EBB6BD4CA1535DDB7D672048D697B446B9B41"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 135,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 50,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "B8C80F9C6A7D2324CA7A9CF12CF75AD1EAE95BE36E593E687B98AFBDBEF71850"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 135,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 65535,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "7B28E68283727A3035D4226651E63675410114DFE72627F7869E278085B2C0F3"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 161,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 49,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "52DB5CAED52BEBDC3C2D96B10945E29D59CE92CECC3FEE0BF409523D7F860471"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 161,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 50,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "109588A570ACEAD49779B8F07D2A4E1DC8960640A3523BEB24272DE38C134CBD"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 161,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 65535,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "11B93070498BE678C22730681EA8EF7F16C994AF44516DB4A18E52DA5CC10AC2"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 136,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 49,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "7C7658BABFC6E55E61B90C45FB71A3A3AAC448CE82D351C4EB854ADAB2E8D189"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 136,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 50,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "783A23CCB1A36D667D452D5BE4C46BE9E64B196DF93AC70581A81E2A77F9AA1B"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 136,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 65535,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "559605DAC3DFAF2E8E2724DDFD57C4041EB700381CB6A94153C707F536B0861B"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 4294967295,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 49,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "9B3F9139396ABC94AC320EF6BCDABD81CC2FBCCC8EE77A6175791FBADC788D5E"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 4294967295,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 50,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "449928B3C86386B3C8CD822E2099ADB40890E9F2A15399F4D11E2B029ECA70FE"
+        }
+      ]
+    },
+    {
+      "input": {
+        "context": 10,
+        "art": 4294967295,
+        "linkedMask": 1,
+        "occupiedSlots": [
+          0,
+          2,
+          5
+        ],
+        "allocationFails": false,
+        "state": 65535,
+        "poseDelay": 4
+      },
+      "failure": null,
+      "records": [
+        {
+          "slot": 5,
+          "bytesSha256": "12672DBBE4E3F4B1B8C42294092C7830B17AEF4F49447A31DDDD0CB78153AAAF"
+        }
+      ]
+    }
+  ],
+  "alternate": {
+    "programs": [
+      {
+        "compressedSha256": "BC46084F0B048DA5620ECFA6CD7045EA99537BE9A446433703834E8C4F8B2E83",
+        "decodedSha256": "9C43294DA096B8F24A19B170B54818328BC935E9E5CB1A47F3810968F3F5EC5C",
+        "descriptorEntryZ64": "0x13fa584",
+        "descriptorKey": "0xe66304",
+        "directoryCount": 43,
+        "entries": [],
+        "flagA": 0,
+        "flagB": 0,
+        "handle": 155,
+        "ownerContext": 83,
+        "poseEntryZ64": "0x13d5a38",
+        "poseKey": "0xe417b8",
+        "programHex": "00",
+        "programOffset": 308,
+        "rawHandle": 4251,
+        "sourceArt": 83,
+        "state": 7,
+        "tableIndex": 332
+      },
+      {
+        "compressedSha256": "140F0635AD9EB4DB95CC96C51E1A54B9AE3AA31D102198DF3058E7FF78CB37AD",
+        "decodedSha256": "140B1FAE4610BBBA8B3FD89B3AF4E7DA8FBC73B12035E8DEDF041C102E7E4A1F",
+        "descriptorEntryZ64": "0x145afd0",
+        "descriptorKey": "0xec6d50",
+        "directoryCount": 43,
+        "entries": [],
+        "flagA": 0,
+        "flagB": 1,
+        "handle": 158,
+        "ownerContext": 88,
+        "poseEntryZ64": "0x143d0e2",
+        "poseKey": "0xea8e62",
+        "programHex": "00",
+        "programOffset": 308,
+        "rawHandle": 158,
+        "sourceArt": 88,
+        "state": 7,
+        "tableIndex": 353
+      }
+    ],
+    "recordWidthsHex": "01030302020201010101010104030302030303030304",
+    "review": "pending",
+    "widthsRomZ64": "0x00212370..0x00212386"
+  }
+}
