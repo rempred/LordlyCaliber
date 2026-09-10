@@ -67,8 +67,9 @@ Normal Actor update eligibility does not establish a universal conversion to vid
 
 ## External producer inputs
 
-The optional `externalProducers` group supports transient menus, color objects, and shared pose requests.
-This implementation checkpoint remains review pending. Dialogue prompt and choice continuation remain separate unfinished work.
+The optional `externalProducers` group supports native dialogue services, transient menus, color objects, and shared pose requests.
+The combined implementation remains review pending.
+See [Dialogue inputs](cutscene-dialogue-inputs.md) for memory, ownership, service history, and helper outcomes.
 These inputs establish bounded product execution, not complete native scene timing, audible output, or image agreement.
 
 The `known` value contains `throughTick`, `menuCreates`, `colorCreates`, `events`, and `poseCalls`.

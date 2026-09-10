@@ -254,6 +254,15 @@ window.OB64 = window.OB64 || {};
       launchBytes(value.initialColor.recordHex,12);
     }
     if (value.initialRequests !== undefined && (!value.initialRequests || !['A','B'].every(function(k){return integer(value.initialRequests[k],-2147483648,2147483647);}))) fail('Initial shared requests must be signed words.', 'launch-input');
+    if(value.dialogueCreates!==undefined) {
+      if(!Array.isArray(value.dialogueCreates))fail('Dialogue creation outcomes must be an array.','launch-input');
+      var dialogueIds=new Set(), dialogueOwners=new Set();
+      value.dialogueCreates.forEach(function(row){
+        var identity=row&&row.nodeId+':'+row.occurrence;
+        if(!row||!id(row.nodeId)||!id(row.ownerId)||!integer(row.slot,0,5)||!integer(row.occurrence,0,29999)||dialogueIds.has(identity)||dialogueOwners.has(row.ownerId)||!Array.isArray(row.directorWords)||row.directorWords.length!==14||!row.directorWords.every(function(v){return integer(v,0,0xffffffff);}))fail('Dialogue creation requires unique native ownership and exact Director words.','launch-input');
+        launchBytes(row.recordHex,0xa8);dialogueIds.add(identity);dialogueOwners.add(row.ownerId);
+      });
+    }
     ['menuCreates','colorCreates'].forEach(function(k) {
       var seen = new Set(), owners = new Set();
       value[k].forEach(function(row) {
@@ -269,13 +278,21 @@ window.OB64 = window.OB64 || {};
     var previous=-1;
     value.events.forEach(function(event) {
       var order=event && event.tick*2+(event.phase==='after-director'?1:0);
-      if (!event || !integer(event.tick,0,value.throughTick) || !['before-director','after-director'].includes(event.phase) || order<previous || !['menu','color','request-reset','request-dispatch'].includes(event.kind)) fail('External service history must be ordered within its declared range.', 'launch-input');
+      if (!event || !integer(event.tick,0,value.throughTick) || !['before-director','after-director'].includes(event.phase) || order<previous || !['menu','color','dialogue','request-reset','request-dispatch'].includes(event.kind)) fail('External service history must be ordered within its declared range.', 'launch-input');
       previous=order;
       if (event.kind.startsWith('request-')) {
         if (!['A','B'].includes(event.context)) fail('Request service needs context A or B.', 'launch-input');
       } else {
         if (!id(event.ownerId) || typeof event.eligible !== 'boolean') fail('Producer service needs owner identity and eligibility.', 'launch-input');
-        if (event.kind==='menu') {
+        if(event.kind==='dialogue') {
+          if(!['initialize','callback','opening','closing','priority'].includes(event.service)||!Array.isArray(event.helpers))fail('Dialogue service needs its native phase and explicit helper outcomes.','launch-input');
+          if(['initialize','callback'].includes(event.service)&&!integer(event.slot,0,5))fail('Dialogue callback slot must be within the native six-slot pool.','launch-input');
+          if(event.controller&&!['actionMask','directionMask','dummyMask','historyMask','queueHead'].every(function(k){return integer(event.controller[k],0,65535);}))fail('Dialogue controller fields must be unsigned halfwords.','launch-input');
+          if(!OB64.cutsceneDialogue)fail('Dialogue input support is unavailable.','launch-input');
+          if(event.releaseHelpers!==undefined&&!Array.isArray(event.releaseHelpers))fail('Dialogue release outcomes must be an array.','launch-input');
+          if(event.registeredOwners!==undefined&&(!Array.isArray(event.registeredOwners)||event.registeredOwners.some(function(row){return !row||!integer(row.slot,0,5)||!id(row.ownerId);})))fail('Dialogue registration outcomes require native slots and owner identities.','launch-input');
+          try{event.helpers.concat(event.releaseHelpers||[]).forEach(OB64.cutsceneDialogue.validateHelper);}catch(error){fail(error.message,'launch-input');}
+        } else if (event.kind==='menu') {
           if (!integer(event.slot,0,65535) || !id(event.entityId)) fail('Menu service identity is invalid.', 'launch-input');
           if (event.readiness && (!integer(event.readiness.readyByte,0,255) || !integer(event.readiness.alpha,-32768,32767) || !integer(event.readiness.cooldown,0,65535))) fail('Menu readiness fields are invalid.', 'launch-input');
           ['actionMask','directionMask'].forEach(function(k){if(event[k]!==undefined&&!integer(event[k],0,65535))fail('Controller masks must be unsigned halfwords.','launch-input');});
@@ -1348,7 +1365,23 @@ window.OB64 = window.OB64 || {};
         return row.nodeId===node.id && row.occurrence===occurrence;
       });
     }
-    function applyExternalServices(phase) {
+    var dialogueEngine = null;
+    if(externalProducers && externalProducers.initialDialogue) {
+      try {
+        if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
+        dialogueEngine=new OB64.cutsceneDialogue.Engine(externalProducers.initialDialogue,options.z64);
+        dialogueEngine.owners.forEach(function(owner,slot){
+          if(!owner)return;
+          var record=0x800e82c8+slot*0xa8;
+          if(dialogueEngine.machine.get(record+0x10)!==0x80198be8)return;
+          var id=dialogueEngine.machine.get(record+0x8f,1);
+          state.dialogues[id]={windowId:id,nativeSlot:slot,nativeOwnerId:owner.ownerId,segments:[''],segmentIndex:0,
+            readyTick:Number.MAX_SAFE_INTEGER,closed:false,paused:false,archive:null,entry:null,layout:{},
+            speaker:'Dialogue',sourceNodeId:'native-initial:'+owner.ownerId};
+        });
+      } catch(error) { producerBoundary(error.message,error.code||'dialogue-native-input'); }
+    }
+    function* applyExternalServices(phase) {
       if (!externalProducers) return;
       var events=externalProducers.events;
       while (externalEventCursor<events.length) {
@@ -1356,7 +1389,10 @@ window.OB64 = window.OB64 || {};
         if (event.tick!==state.tick || event.phase!==phase) break;
         externalEventCursor++;
         try {
-          if (event.kind==='menu' && event.eligible) {
+          if(event.kind==='dialogue') {
+            if(!dialogueEngine)fail('Dialogue service requires initial native memory and ownership.','dialogue-initial-input');
+            yield* dialogueEngine.service(event);
+          } else if (event.kind==='menu' && event.eligible) {
             var menu=state.transientRenderEntities[event.slot];
             if (!menu || !menu.native || menu.ownerId!==event.ownerId) fail('Menu service targets a missing or replaced owner.', 'external-producer-owner');
             advanceNativeMenu(menu,event);
@@ -1374,7 +1410,7 @@ window.OB64 = window.OB64 || {};
           }
           recordTrace({tick:state.tick,kind:'external-producer-service',service:externalEventCursor-1,phase:phase,producer:event.kind,eligible:event.eligible});
         } catch(error) {
-          if (!(error instanceof RuntimeError)) throw error;
+          if (!(error instanceof RuntimeError) && !String(error.code||'').startsWith('dialogue-')) throw error;
           producerBoundary(error.message,error.code);return;
         }
       }
@@ -1720,6 +1756,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function applyContextDialogue(row, priorRow) {
+      if(dialogueEngine)return;
       var payload = row.payload || {};
       var labelMatch = String(row.label || '').match(/(\d+)$/);
       var windowId = Number.isInteger(payload.windowId)
@@ -2526,6 +2563,16 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeDialogueCreate(node, words, unresolvedWordOffsets) {
+      var nativeSlot = null;
+      if(dialogueEngine) {
+        try {
+          var key='dialogue:'+node.id, occurrence=externalOccurrences[key]||0;
+          externalOccurrences[key]=occurrence+1;
+          var registration=(externalProducers.dialogueCreates||[]).find(function(row){return row.nodeId===node.id&&row.occurrence===occurrence;});
+          if(unresolvedWordOffsets.length)fail('Dialogue constructor still has unresolved Director inputs.','dialogue-constructor-input');
+          nativeSlot=dialogueEngine.register(registration,words);
+        } catch(error) {producerBoundary(error.message,error.code||'dialogue-registration-input');return;}
+      } else if(producerBoundary('Dialogue requires native initial memory, constructor outcome, and complete service history.','dialogue-initial-input')) return;
       var windowId = signed(words[1]);
       var selector = signed(words[2]);
       var entrySelector = unresolvedWordOffsets.indexOf(3) === -1
@@ -2534,10 +2581,12 @@ window.OB64 = window.OB64 || {};
         ? catalog.getSerifuArchiveForPresentationSelector(selector) : null;
       var entry = entrySelector == null ? null :
         archive && archive.entries && archive.entries[entrySelector] || null;
-      var segments = dialogueSegments(entry);
+      var segments = nativeSlot===null?dialogueSegments(entry):[''];
       if (!entry && entrySelector != null) missing('Serifu selector ' + selector + ', entry ' + entrySelector +
         ' did not resolve to dialogue text.');
       state.dialogues[windowId] = {
+        nativeSlot:nativeSlot,
+        nativeOwnerId:nativeSlot===null?null:registration.ownerId,
         windowId: windowId,
         selector: selector,
         entrySelector: entrySelector,
@@ -2546,7 +2595,7 @@ window.OB64 = window.OB64 || {};
         entry: entry,
         segments: segments,
         segmentIndex: 0,
-        readyTick: state.tick + dialogueDuration(segments[0]),
+        readyTick: nativeSlot===null?state.tick + dialogueDuration(segments[0]):Number.MAX_SAFE_INTEGER,
         paused: false,
         closed: false,
         layout: {
@@ -2563,6 +2612,8 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeDialogueResume(words) {
+      if(dialogueEngine) {try{dialogueEngine.resume(signed(words[1]));}catch(error){producerBoundary(error.message,error.code);}return;}
+      if(producerBoundary('Dialogue resume requires current native resource ownership.','dialogue-initial-input'))return;
       var window = state.dialogues[signed(words[1])];
       if (!window || window.closed) return;
       window.segmentIndex = Math.min(window.segmentIndex + 1, window.segments.length - 1);
@@ -2571,6 +2622,8 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeDialogueClose(words) {
+      if(dialogueEngine) {try{dialogueEngine.close(signed(words[1]));}catch(error){producerBoundary(error.message,error.code);}return;}
+      if(producerBoundary('Dialogue close requires current native resource ownership.','dialogue-initial-input'))return;
       var window = state.dialogues[signed(words[1])];
       if (window) window.closed = true;
     }
@@ -3489,7 +3542,10 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x14) executeActorCreate(
         node, words, execution.unresolvedWordOffsets);
       else if (opcode === 0x15) executeTurn(node, words);
-      else if (opcode === 0x1A) state.textSpeed = lowU16(words[1]);
+      else if (opcode === 0x1A) {
+        state.textSpeed = lowU16(words[1]);
+        if(dialogueEngine)try{dialogueEngine.machine.put(0x800e9c0c,state.textSpeed,2);}catch(error){producerBoundary(error.message,error.code);}
+      }
       else if (opcode === 0x1B) executeOverlay(node, words);
       else if (opcode === 0x1C) {
         if (state.directorMode === 0) {
@@ -4038,9 +4094,19 @@ window.OB64 = window.OB64 || {};
       }
       if (query.name === 'actor_facing_turn_activity_query') return state.turnJobs[input] ? 1 : 0;
       if (query.name === 'dialogue_pause_query') {
+        if(dialogueEngine && state.tick<=externalProducers.throughTick) {
+          try{return dialogueEngine.query(input);}catch(error){producerBoundary(error.message,error.code);return null;}
+        }
+        if(producerBoundary('Dialogue query requires current native resource state and complete service history.','dialogue-query-input'))return null;
         var window = state.dialogues[input];
         if (!window || window.closed) return 0;
         return window.paused ? 2 : 1;
+      }
+      if(query.name==='dialogue_control_byte_query') {
+        if(dialogueEngine && state.tick<=externalProducers.throughTick && Number.isInteger(input)&&input>=0&&input<8) {
+          try{return dialogueEngine.machine.get(0x8019ee40+input,1);}catch(error){producerBoundary(error.message,error.code);return null;}
+        }
+        if(producerBoundary('Dialogue control query requires its current native byte and complete writer history.','dialogue-control-input'))return null;
       }
       if (query.name === 'scene_projection_transform_countdown_query_mode2' ||
           query.name === 'scene_projection_transform_countdown_query_unguarded') {
@@ -4281,8 +4347,19 @@ window.OB64 = window.OB64 || {};
           source: actor.nativeRecordBase ? Object.assign({},actor.source,{recordHex:recordHex(nativeRecordForActor(actor))}) : actor.source
         };
       }).sort(function(left, right) { return left.z - right.z || left.slot - right.slot; });
-      var dialogue = Object.keys(state.dialogues).map(function(windowId) {
-        var window = state.dialogues[windowId];
+      var dialogueWindows=Object.keys(state.dialogues).map(function(id){return state.dialogues[id];});
+      if(dialogueEngine)dialogueWindows=dialogueEngine.owners.map(function(owner,slot){
+        if(!owner)return null;
+        var record=0x800e82c8+slot*0xa8;
+        if(dialogueEngine.machine.get(record+0x10)!==0x80198be8)return null;
+        return dialogueWindows.find(function(w){return w.nativeOwnerId===owner.ownerId;})||{
+          windowId:dialogueEngine.machine.get(record+0x8f,1),nativeSlot:slot,nativeOwnerId:owner.ownerId,
+          segments:[''],segmentIndex:0,sourceNodeId:'native:'+owner.ownerId,layout:{},speaker:'Dialogue'};
+      }).filter(Boolean);
+      var dialogue = dialogueWindows.map(function(window) {
+        var nativePresentation = window.nativeSlot != null && dialogueEngine
+          ? dialogueEngine.presentation(window.nativeSlot,window.nativeOwnerId) : null;
+        if(window.nativeSlot != null && !nativePresentation)return null;
         if (window.closed) return null;
         var entry = window.entry;
         return {
@@ -4305,9 +4382,10 @@ window.OB64 = window.OB64 || {};
             speaker: entry && (entry.speakerLabel ||
               (entry.speakerId == null ? 'Narrator' : 'Speaker ' + entry.speakerId)) ||
               window.speaker || 'Narrator',
-            text: window.segments[window.segmentIndex],
+            text: nativePresentation?nativePresentation.text:window.segments[window.segmentIndex],
+            nativeDialogue:nativePresentation,
             rawText: entry && entry.rawText || window.rawText || '',
-            paused: window.paused,
+            paused: nativePresentation?nativePresentation.paused:window.paused,
             ownerActorSlot: window.ownerActorSlot,
             layout: window.layout
           }
@@ -4347,6 +4425,7 @@ window.OB64 = window.OB64 || {};
         }] : state.flowEvents.slice(),
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
         nativeExternal: {
+          dialogue:dialogueEngine?dialogueEngine.snapshot():null,
           sharedRequests:Object.assign({},state.sharedRequests),
           menus:Object.keys(state.transientRenderEntities).map(function(slot) {
             return Object.assign({},state.transientRenderEntities[slot]);
@@ -4618,7 +4697,7 @@ window.OB64 = window.OB64 || {};
       return installCursorAtPrimitive(persistentCursorPrimitiveIndex);
     }
 
-    function beginTick(tick) {
+    function* beginTick(tick) {
       state.tick = tick;
       parserResynchronization = false;
       branchDepth = 0;
@@ -4630,7 +4709,10 @@ window.OB64 = window.OB64 || {};
       state.flowEvents = [];
       applyContextTimeline(tick);
       if (stopReason) return;
-      applyExternalServices('before-director');
+      if(dialogueEngine && tick>externalProducers.throughTick && dialogueEngine.owners.some(Boolean)) {
+        producerBoundary('Dialogue service history ends before this update.','dialogue-service-history');return;
+      }
+      yield* applyExternalServices('before-director');
       if (stopReason) return;
       if (tick > 0) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
@@ -4782,7 +4864,7 @@ window.OB64 = window.OB64 || {};
 
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
-      beginTick(tick);
+      yield* beginTick(tick);
       if (!stopReason && block && blockComplete(block)) {
         var completedBlock = block;
         if (completedBlock.kind === 'until') {
@@ -4810,7 +4892,7 @@ window.OB64 = window.OB64 || {};
         if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
         yield;
       }
-      if (!stopReason) applyExternalServices('after-director');
+      if (!stopReason) yield* applyExternalServices('after-director');
       var frameBudget = { bytes: 0 };
       var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
       var frameBytes = frameBudget.bytes;

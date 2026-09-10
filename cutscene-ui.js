@@ -1130,20 +1130,30 @@ window.OB64 = window.OB64 || {};
     if (!state.ui || !state.ui.stageOverlay) return;
     var overlay = state.ui.stageOverlay;
     overlay.innerHTML = '';
-    if (preview.dialogue.length) {
-      var dialogue = preview.dialogue[preview.dialogue.length - 1].payload;
+    overlay.classList.toggle('cutscene-stage-overlay-native',preview.dialogue.some(function(row){return !!row.payload.nativeDialogue;}));
+    var dialogueRows=preview.dialogue.some(function(row){return !!row.payload.nativeDialogue;})?preview.dialogue:preview.dialogue.slice(-1);
+    dialogueRows.forEach(function(row) {
+      var dialogue = row.payload;
       var box = node('div', 'cutscene-preview-dialogue');
-      var portrait = dialoguePortraitCanvas(rom, dialogue);
+      if(dialogue.nativeDialogue && dialogue.nativeDialogue.rectangle) {
+        var rect=dialogue.nativeDialogue.rectangle;
+        box.classList.add('cutscene-preview-dialogue-native');
+        box.style.left=rect[0]/320*100+'%';box.style.top=rect[1]/240*100+'%';
+        box.style.width=Math.max(0,rect[2]-rect[0]+1)/320*100+'%';
+        box.style.height=Math.max(0,rect[3]-rect[1]+1)/240*100+'%';
+        box.title='Native window timing and position; text appearance is approximate.';
+      }
+      var portrait = dialogue.nativeDialogue?null:dialoguePortraitCanvas(rom, dialogue);
       if (portrait) {
         box.classList.add('cutscene-preview-dialogue-has-portrait');
         box.appendChild(portrait);
       }
       var copy = node('div', 'cutscene-preview-dialogue-copy');
       if (dialogue.speaker) copy.appendChild(node('strong', '', dialogue.speaker));
-      copy.appendChild(node('span', '', dialogue.text || 'Dialogue preview'));
+      copy.appendChild(node('span', '', dialogue.nativeDialogue?(dialogue.text||''):(dialogue.text || 'Dialogue preview')));
       box.appendChild(copy);
       overlay.appendChild(box);
-    }
+    });
     var cues = [];
     preview.audio.forEach(function(row) {
       cues.push('Sound · ' + (row.payload.cue || row.payload.assetId || 'unresolved cue'));

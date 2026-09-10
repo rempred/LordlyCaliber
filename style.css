@@ -8067,6 +8067,23 @@ td.attack-list {
   grid-template-columns: auto minmax(0, 1fr);
 }
 
+.cutscene-stage-overlay-native {
+  inset: 50% auto auto 50%;
+  width: min(calc(100% - 24px), 640px);
+  aspect-ratio: 4 / 3;
+  transform: translate(-50%, -50%);
+}
+
+.cutscene-preview-dialogue-native {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  white-space: pre-wrap;
+}
+
 .cutscene-preview-dialogue-copy {
   display: grid;
   gap: 2px;

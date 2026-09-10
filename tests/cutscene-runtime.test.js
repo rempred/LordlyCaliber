@@ -893,10 +893,14 @@ function hashBytes(input) {
     contextualSlot4.baseX, contextualSlot4.baseY, contextualSlot4.baseZ
   ], [16, 0, 1, 4, -1, 0, 79]);
   assert.deepStrictEqual(contextualLaunchRosterRuntime.missingInputs, [
+    'Dialogue query requires current native resource state and complete service history.',
+    'Dialogue requires native initial memory, constructor outcome, and complete service history.',
+    'Dialogue resume requires current native resource ownership.',
+    'Dialogue close requires current native resource ownership.',
     'Color creation requires initial ownership and successful allocation/registration inputs.',
     'Native input is unavailable for Color Overlay Countdown Query.',
     'Color cleanup requires the current object and ownership flag.'
-  ], 'the concurrent launch owner supplies selector 154; only separate color-producer inputs remain unavailable');
+  ], 'the concurrent launch owner supplies selector 154; native dialogue and color producer inputs remain separate');
   const compactConcurrentOwner = OB64.cutsceneRuntime.compactContextRuntime(
     concurrentOwnerRuntime);
   assert.strictEqual(compactConcurrentOwner.contextFrames.length, 1904);

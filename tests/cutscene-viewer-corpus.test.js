@@ -19,7 +19,7 @@ vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');
 for (const file of [
   'data.js', 'art.js', 'animation-corpus-data.js', 'animation-art.js',
   'cutscene-data.js', 'cutscene-model.js', 'cutscene-catalog.js',
-  'cutscene-director.js', 'cutscene-codec.js', 'cutscene-runtime.js',
+  'cutscene-director.js', 'cutscene-codec.js', 'cutscene-dialogue-data.js', 'cutscene-dialogue.js', 'cutscene-runtime.js',
   'cutscene-preview.js', 'cutscene-njpg.js', 'cutscene-assets.js', 'cutscene-sprites.js',
   'cutscene-renderer.js'
 ]) {

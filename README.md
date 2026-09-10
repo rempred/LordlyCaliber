@@ -250,6 +250,7 @@ that tab for RetroArch `.state`, BizHawk `.SaveRAM`, Project64 `.sra`, or raw
 - Shop and text edits must fit their validated capacity or relocation budget.
 - Cutscene and combat-animation previews are inspection tools, not cycle-exact Nintendo 64 rendering.
 - Cutscene Studio accepts explicit [playback inputs](docs/cutscene-launch-inputs.md). Missing party state and external producer inputs remain visible playback boundaries.
+- [Native dialogue inputs](docs/cutscene-dialogue-inputs.md) supply resource state, service history, controller ownership, and helper outcomes. The combined external implementation remains review pending.
 - A structurally valid custom animation can still look wrong in-game; test the exported ROM.
 
 The editor reports the applicable limit at the affected control or during
@@ -271,7 +272,7 @@ Key source areas:
 - `runtimeblob.js`, `squadblob.js`, and `tools.js` — runtime patches
 - `art.js`, `art-ui.js`, `army-sprites.js`, `army-sprite-ui.js`, `animation-art.js`, and `animation-ui.js` — art and animation
 - `sprite-library.js` and `sprite-editor-ui.js` — reusable sprite assets and pixel editing
-- `cutscene-codec.js`, `cutscene-runtime.js`, and `cutscene-renderer.js` — Cutscene Studio
+- `cutscene-codec.js`, `cutscene-runtime.js`, `cutscene-dialogue.js`, and `cutscene-renderer.js` — Cutscene Studio
 - `tests/` — focused static and serialization regressions
 
 Files named `*-data.js` are generally generated artifacts. Follow the source

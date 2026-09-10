@@ -11,7 +11,7 @@ global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');
 const files = ['data.js', 'art.js', 'animation-corpus-data.js', 'animation-art.js',
   'cutscene-data.js', 'cutscene-model.js', 'cutscene-catalog.js', 'cutscene-director.js',
-  'cutscene-codec.js', 'cutscene-runtime.js', 'cutscene-preview.js', 'cutscene-assets.js',
+  'cutscene-codec.js', 'cutscene-dialogue-data.js', 'cutscene-dialogue.js', 'cutscene-runtime.js', 'cutscene-preview.js', 'cutscene-assets.js',
   'cutscene-renderer.js', 'cutscene-project.js', 'cutscene-export.js', 'cutscene-ui.js'];
 const sourceHashes = {};
 for (const file of files) {
