@@ -286,11 +286,13 @@ window.OB64 = window.OB64 || {};
     return history.present;
   }
 
-  function compileRuntimeDocument(state, scene, document, choice, contextRuntime) {
+  function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal) {
     var program = state.programByAssetId[scene.assetId];
     if (!program) return null;
     var runtimeOptions = {
       z64: state.z64,
+      signal: signal,
+      diagnosticAssumptions: state.diagnosticAssumptions === true,
       launchContext: choice ? choice.context : null,
       launchOperandTranslations: launchOperandTranslations(scene, choice)
     };
@@ -300,36 +302,54 @@ window.OB64 = window.OB64 || {};
         choice.context.concurrentDirectorTickOffset)
         ? choice.context.concurrentDirectorTickOffset : 1;
     }
-    return OB64.cutsceneRuntime.compile(
+    return OB64.cutsceneRuntime.compileAsync(
       document, program, scene, state.catalog, runtimeOptions);
   }
 
   function publishRuntime(state, scene, document, runtime) {
     if (!runtime) return null;
+    if (state.boundRuntimeDocument) OB64.cutsceneRuntime.unbind(state.boundRuntimeDocument);
+    state.boundRuntimeDocument = document;
+    // Runtime bindings otherwise retain evicted frames through document history.
+    Object.keys(state.runtimeByAssetId).forEach(function(assetId) {
+      if (assetId === scene.assetId) return;
+      var oldScene = state.catalog.getScene(assetId);
+      var history = oldScene && historyFor(state, oldScene);
+      if (history) OB64.cutsceneRuntime.unbind(history.present);
+      delete state.runtimeByAssetId[assetId];
+    });
     state.runtimeByAssetId[scene.assetId] = runtime;
     OB64.cutsceneRuntime.bind(document, runtime);
     delete state.sourceErrors['runtime:' + scene.assetId];
     return runtime;
   }
 
-  function refreshRuntime(state, scene, document) {
+  function refreshRuntime(state, scene, document, rom) {
     if (!OB64.cutsceneRuntime || scene.engine !== 'director') return null;
     var choice = launchContextChoice(state, scene, null);
     var contextRuntime = choice && state.concurrentRuntimeByLaunchContext
       ? state.concurrentRuntimeByLaunchContext[
         launchContextCacheKey(scene, choice)] || null
       : null;
-    try {
-      return publishRuntime(state, scene, document,
-        compileRuntimeDocument(state, scene, document, choice, contextRuntime));
-    } catch (error) {
+    if (state.runtimeController) state.runtimeController.abort();
+    var controller = state.runtimeController = new AbortController();
+    state.loadingAssetId = scene.assetId;
+    return compileRuntimeDocument(state, scene, document, choice, contextRuntime,
+      controller.signal).then(function(runtime) {
+      if (controller.signal.aborted) return null;
+      publishRuntime(state, scene, document, runtime);
+      if (state.ui && state.ui.panel) rerender(rom, state);
+      return runtime;
+    }).catch(function(error) {
+      if (error.name === 'AbortError') return null;
       delete state.runtimeByAssetId[scene.assetId];
       state.sourceErrors['runtime:' + scene.assetId] = error && error.message || String(error);
       return null;
-    }
+    });
   }
 
   function ensureProjectedDocument(rom, state, scene) {
+    var epoch = state.projectionEpoch || 0;
     state.projectionLoadingByAssetId = state.projectionLoadingByAssetId || {};
     var existing = historyFor(state, scene);
     if (existing) return Promise.resolve(existing.present);
@@ -340,35 +360,47 @@ window.OB64 = window.OB64 || {};
       return Promise.resolve(cacheLoadedDocument(
         state, scene, presentationDocument(state, scene), null, null));
     }
-    var promise = OB64.cutsceneCodec.loadSceneSource(rom.z64, scene).then(function(source) {
+    var promise = new Promise(function(resolve) { setTimeout(resolve, 0); }).then(function() {
+      if (epoch !== (state.projectionEpoch || 0)) throw new Error('Project replaced during scene loading.');
+      return OB64.cutsceneCodec.loadSceneSource(rom.z64, scene);
+    }).then(function(source) {
+      if (epoch !== (state.projectionEpoch || 0)) throw new Error('Project replaced during scene loading.');
       var projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, state.catalog);
       return cacheLoadedDocument(
         state, scene, projected.document, source, projected.program);
     }).catch(function(error) {
+      if (epoch !== (state.projectionEpoch || 0)) throw error;
       var document = OB64.cutsceneCatalog.createSceneDocument(scene);
       cacheLoadedDocument(state, scene, document, null, null);
       state.sourceErrors[scene.assetId] = error && error.message || String(error);
       return document;
     }).finally(function() {
-      delete state.projectionLoadingByAssetId[scene.assetId];
+      if (state.projectionLoadingByAssetId[scene.assetId] === promise) {
+        delete state.projectionLoadingByAssetId[scene.assetId];
+      }
     });
     state.projectionLoadingByAssetId[scene.assetId] = promise;
     return promise;
   }
 
   function ensureContextualRuntime(rom, state, scene, document, forcedChoice, ancestry,
-      compactOutput) {
+      compactOutput, signal) {
     state.concurrentRuntimeByLaunchContext =
       state.concurrentRuntimeByLaunchContext || {};
     var choice = forcedChoice || launchContextChoice(state, scene, null);
     var contextScene = choice && choice.contextScene;
     ancestry = ancestry || [];
+    if (signal && signal.aborted) {
+      var abortError = new Error('Cutscene preparation cancelled.');
+      abortError.name = 'AbortError';
+      return Promise.reject(abortError);
+    }
     if (!contextScene) {
       var standaloneRuntime = compileRuntimeDocument(
-        state, scene, document, choice, null);
-      return Promise.resolve(compactOutput
-        ? OB64.cutsceneRuntime.compactContextRuntime(standaloneRuntime)
-        : standaloneRuntime);
+        state, scene, document, choice, null, signal);
+      return Promise.resolve(standaloneRuntime).then(function(runtime) {
+        return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
+      });
     }
     if (ancestry.indexOf(contextScene.assetId) !== -1 ||
         contextScene.assetId === scene.assetId) {
@@ -376,48 +408,57 @@ window.OB64 = window.OB64 || {};
         'The parent event launch chain is cyclic; this preview stops before reusing ' +
         contextScene.assetId + '.';
       var boundedRuntime = compileRuntimeDocument(
-        state, scene, document, choice, null);
-      return Promise.resolve(compactOutput
-        ? OB64.cutsceneRuntime.compactContextRuntime(boundedRuntime)
-        : boundedRuntime);
+        state, scene, document, choice, null, signal);
+      return Promise.resolve(boundedRuntime).then(function(runtime) {
+        return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
+      });
     }
     return ensureProjectedDocument(rom, state, contextScene).then(function(contextDocument) {
       var precedingChoice = precedingLaunchContextChoice(
         state, contextScene, choice.context);
       return ensureContextualRuntime(rom, state, contextScene, contextDocument,
-        precedingChoice, ancestry.concat(scene.assetId), true);
+        precedingChoice, ancestry.concat(scene.assetId), true, signal);
     }).then(function(contextRuntime) {
+      state.concurrentRuntimeByLaunchContext = {};
       state.concurrentRuntimeByLaunchContext[
         launchContextCacheKey(scene, choice)] = contextRuntime;
       delete state.sourceErrors['runtime-context:' + scene.assetId];
       var runtime = compileRuntimeDocument(
-        state, scene, document, choice, contextRuntime);
-      return compactOutput
-        ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
+        state, scene, document, choice, contextRuntime, signal);
+      return Promise.resolve(runtime).then(function(result) {
+        return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(result) : result;
+      });
     });
   }
 
   function loadScene(rom, state, scene) {
-    if (state.loadingByAssetId[scene.assetId]) return state.loadingByAssetId[scene.assetId];
+    if (state.loadingByAssetId[scene.assetId] && state.loadingAssetId === scene.assetId &&
+        state.runtimeController && !state.runtimeController.signal.aborted) {
+      return state.loadingByAssetId[scene.assetId];
+    }
+    if (state.runtimeController) state.runtimeController.abort();
+    var controller = state.runtimeController = new AbortController();
+    state.loadingAssetId = scene.assetId;
     var promise = ensureProjectedDocument(rom, state, scene).then(function(document) {
       if (scene.engine !== 'director' || !state.programByAssetId[scene.assetId]) {
         return document;
       }
-      return ensureContextualRuntime(rom, state, scene, document, null, [])
+      return ensureContextualRuntime(rom, state, scene, document, null, [], false, controller.signal)
         .then(function(runtime) {
+          if (controller.signal.aborted) return null;
           publishRuntime(state, scene, document, runtime);
           return document;
         });
     }).catch(function(error) {
+      if (controller.signal.aborted || error.name === 'AbortError') return null;
       var history = historyFor(state, scene);
-      if (history && state.programByAssetId[scene.assetId]) {
-        refreshRuntime(state, scene, history.present);
-      }
       state.sourceErrors['runtime-context:' + scene.assetId] =
         error && error.message || String(error);
       return history ? history.present : null;
     }).finally(function() {
-      delete state.loadingByAssetId[scene.assetId];
+      if (state.loadingByAssetId[scene.assetId] === promise) {
+        delete state.loadingByAssetId[scene.assetId];
+      }
     });
     state.loadingByAssetId[scene.assetId] = promise;
     return promise;
@@ -600,7 +641,7 @@ window.OB64 = window.OB64 || {};
       OB64.cutsceneModel.validateSceneDocument(document);
       refreshExportRequirements(state, scene, document);
     });
-    refreshRuntime(state, scene, history.present);
+    refreshRuntime(state, scene, history.present, rom);
     var view = viewFor(state, scene.sceneId);
     var duration = OB64.cutscenePreview.sceneDurationFrames(history.present, view.pathId);
     view.frame = Math.min(view.frame, duration - 1);
@@ -1265,6 +1306,8 @@ window.OB64 = window.OB64 || {};
     scenes.forEach(function(scene) {
       var row = button('', 'cutscene-scene-row', function() {
         if (state.selectedSceneId === scene.sceneId) return;
+        if (state.runtimeController) state.runtimeController.abort();
+        state.openRequest++;
         pauseAnimation(state);
         state.selectedSceneId = scene.sceneId;
         rerender(rom, state);
@@ -1727,6 +1770,7 @@ window.OB64 = window.OB64 || {};
     details.appendChild(node('p', '', selected.summary));
     var facts = node('dl', 'cutscene-source-summary');
     [
+      ['Stream', selected.streamAssetId || scene.assetId],
       ['Source words', selected.startWord + '..' + selected.endWord +
         ' (' + selected.wordCount + ')'],
       ['Native commands', String(selected.nodeCount)],
@@ -1888,25 +1932,32 @@ window.OB64 = window.OB64 || {};
 
   function renderDirectorRuntime(section, rom, state, scene, document, program, runtime) {
     var view = viewFor(state, scene.sceneId);
-    var entries = runtime.trace.filter(function(entry) { return entry.kind === 'composite'; });
-    var rows = entries.map(function(entry) {
-      var composite = program.compositeById[entry.compositeId];
+    var entries = runtime.trace.filter(function(entry) { return entry.kind === 'composite'; }).slice(0, 1000);
+    var rows = entries.map(function(entry, index) {
+      var owner = runtime.programsByAssetId && runtime.programsByAssetId[entry.streamAssetId] || program;
+      var composite = owner.compositeById[entry.compositeId];
+      if (!composite) return null;
       var duration = 1;
       var startState = runtime.states[entry.tick];
-      if (startState && startState.runtime.blockLabel === composite.label) {
+      if (startState && startState.runtime.activeStreamAssetId === entry.streamAssetId &&
+          startState.runtime.blockLabel === composite.label) {
         var endTick = entry.tick + 1;
         while (endTick < runtime.states.length &&
+            runtime.states[endTick].runtime.activeStreamAssetId === entry.streamAssetId &&
             runtime.states[endTick].runtime.blockLabel === composite.label) endTick++;
         duration = Math.max(1, endTick - entry.tick);
       }
-      var editorTarget = directorEditorTarget(document, program, composite);
+      var editorTarget = owner === program ? directorEditorTarget(document, owner, composite) : null;
       return Object.assign({}, composite, {
+        id: entry.streamAssetId + ':' + composite.id + ':' + index,
+        ownerProgram: owner,
+        streamAssetId: entry.streamAssetId,
         runtimeStartTick: entry.tick,
         runtimeDurationTicks: duration,
         editorTarget: editorTarget,
         editable: !!editorTarget
       });
-    });
+    }).filter(Boolean);
     var selected = directorSourceSelection(program, rows, view);
     var summary = node('div', 'cutscene-director-source-summary');
     summary.appendChild(node('strong', '', runtime.durationTicks + ' Director scheduler updates'));
@@ -1916,6 +1967,16 @@ window.OB64 = window.OB64 || {};
       'Horizontal position is execution time. Waits and completion gates occupy their scheduler duration.'));
     summary.appendChild(node('small', '', 'Runtime inputs · ' + runtime.assumptions.length +
       ' assumptions · ' + runtime.missingInputs.length + ' missing launch/resource inputs'));
+    summary.appendChild(node('small', '', 'Preview outcome: ' + runtime.outcome +
+      '. Modeled endings do not prove native completion.'));
+    summary.appendChild(node('small', '', 'Showing ' + rows.length +
+      ' actions (maximum 1,000) from ' + runtime.trace.length + ' retained trace entries. ' +
+      (runtime.traceTruncated ? 'The trace is truncated. ' : '') +
+      (runtime.unsupportedCommands || []).length + ' command kinds have unsupported behavior.'));
+    if (runtime.unresolvedQuery) summary.appendChild(node('small', '',
+      'Missing input: ' + runtime.unresolvedQuery.label + '.'));
+    if (runtime.pendingWait) summary.appendChild(node('small', '',
+      'Pending native wait: ' + runtime.pendingWait.label + ' (' + runtime.pendingWait.kind + ').'));
     section.appendChild(summary);
 
     var legend = node('div', 'cutscene-director-legend');
@@ -1983,13 +2044,27 @@ window.OB64 = window.OB64 || {};
     state.ui.timelinePlayhead = playhead;
     viewport.appendChild(surface);
     section.appendChild(viewport);
-    renderDirectorSourceDetails(section, program, selected, scene, state.catalog);
+    renderDirectorSourceDetails(section, selected && selected.ownerProgram || program, selected, scene, state.catalog);
   }
 
   function renderTimeline(center, rom, state, scene, document) {
     var section = node('section', 'cutscene-sequence');
     var tabs = node('div', 'cutscene-sequence-heading');
     tabs.appendChild(node('h3', '', 'Cutscene sequence'));
+    var diagnosticToggle = button(state.diagnosticAssumptions
+      ? 'Diagnostic assumptions: on' : 'Diagnostic assumptions: off', 'btn-secondary', function() {
+      state.diagnosticAssumptions = !state.diagnosticAssumptions;
+      if (state.boundRuntimeDocument) OB64.cutsceneRuntime.unbind(state.boundRuntimeDocument);
+      state.runtimeByAssetId = {};
+      state.concurrentRuntimeByLaunchContext = {};
+      delete state.sourceErrors['runtime-context:' + scene.assetId];
+      if (state.runtimeController) state.runtimeController.abort();
+      rerender(rom, state);
+    });
+    diagnosticToggle.setAttribute('aria-pressed', state.diagnosticAssumptions ? 'true' : 'false');
+    diagnosticToggle.setAttribute('data-cutscene-focus-key', 'diagnostic-assumptions');
+    diagnosticToggle.title = 'Allow labeled completion assumptions for unsupported external queries. This does not reproduce native input.';
+    tabs.appendChild(diagnosticToggle);
     var view = viewFor(state, scene.sceneId);
     var program = state.programByAssetId[scene.assetId] || null;
     var runtime = state.runtimeByAssetId[scene.assetId] || null;
@@ -2039,14 +2114,14 @@ window.OB64 = window.OB64 || {};
     actions.appendChild(button('Undo', 'btn-secondary', function() {
       var history = historyFor(state, scene);
       if (OB64.cutsceneModel.undo(history)) {
-        refreshRuntime(state, scene, history.present);
+        refreshRuntime(state, scene, history.present, rom);
         notifyChange(state, 'Undo Cutscene edit'); rerender(rom, state);
       }
     }));
     actions.appendChild(button('Redo', 'btn-secondary', function() {
       var history = historyFor(state, scene);
       if (OB64.cutsceneModel.redo(history)) {
-        refreshRuntime(state, scene, history.present);
+        refreshRuntime(state, scene, history.present, rom);
         notifyChange(state, 'Redo Cutscene edit'); rerender(rom, state);
       }
     }));
@@ -3824,10 +3899,9 @@ window.OB64 = window.OB64 || {};
         if (state.callbacks.onStatus) {
           state.callbacks.onStatus('Loading ' + selectedChoice.label + '…');
         }
-        ensureContextualRuntime(rom, state, scene, document, selectedChoice, [])
-          .then(function(runtime) {
-            if (view.launchContextId !== selectedId) return;
-            publishRuntime(state, scene, document, runtime);
+        if (state.runtimeController) state.runtimeController.abort();
+        loadScene(rom, state, scene).then(function() {
+            if (view.launchContextId !== selectedId || state.selectedSceneId !== scene.sceneId) return;
             var duration = OB64.cutscenePreview.sceneDurationFrames(
               document, view.pathId);
             view.frame = Math.min(view.frame, Math.max(0, duration - 1));
@@ -4356,13 +4430,17 @@ window.OB64 = window.OB64 || {};
     state.callbacks = callbacks || state.callbacks || {};
     pauseAnimation(state);
     var scene = selectedScene(state);
+    if (state.loadingAssetId && state.loadingAssetId !== scene.assetId && state.runtimeController) {
+      state.runtimeController.abort();
+    }
     var history = historyFor(state, scene);
     var runtimeMissing = history && scene.engine === 'director' &&
       state.programByAssetId[scene.assetId] &&
-      !state.runtimeByAssetId[scene.assetId];
+      !state.runtimeByAssetId[scene.assetId] && !state.sourceErrors['runtime-context:' + scene.assetId];
     if (!history || runtimeMissing) {
       state.ui = { panel: panel };
       renderLoading(panel, scene);
+      renderSceneBrowser(panel, rom, state);
       restoreUi(panel, restoreSnapshot);
       var request = ++state.openRequest;
       loadScene(rom, state, scene).then(function() {
@@ -4385,6 +4463,15 @@ window.OB64 = window.OB64 || {};
   }
 
   function resetAll(state) {
+    state.projectionEpoch = (state.projectionEpoch || 0) + 1;
+    if (state.boundRuntimeDocument) OB64.cutsceneRuntime.unbind(state.boundRuntimeDocument);
+    state.boundRuntimeDocument = null;
+    if (state.runtimeController) state.runtimeController.abort();
+    Object.keys(state.histories).forEach(function(key) {
+      OB64.cutsceneRuntime.unbind(state.histories[key].present);
+    });
+    state.openRequest++;
+    state.loadingByAssetId = {};
     state.histories = {};
     state.originalSerialized = {};
     state.sourceByAssetId = {};

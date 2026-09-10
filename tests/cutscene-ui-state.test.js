@@ -78,6 +78,8 @@ function hashBytes(input) {
 
   const contextualRom = { z64, layout: { id: 'us-rev0' } };
   const contextualState = OB64.cutsceneUI.ensureState(contextualRom);
+  // Preserve the existing contextual execution fixture in the now-explicit diagnostic mode.
+  contextualState.diagnosticAssumptions = true;
   const contextualScene = catalog.getScene('rom-director:01F56D8E');
   contextualState.selectedSceneId = contextualScene.sceneId;
   const contextualChoices = OB64.cutsceneUI.launchContextChoices(

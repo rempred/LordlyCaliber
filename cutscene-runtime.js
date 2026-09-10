@@ -510,7 +510,43 @@ window.OB64 = window.OB64 || {};
     return rowsByNode;
   }
 
+  // Both entry points execute the same iterator. Only the UI driver yields to
+  // the event loop; the synchronous driver remains useful for offline audits.
   function compile(document, program, scene, catalog, options) {
+    // Legacy offline callers explicitly receive diagnostic, assumed execution.
+    // Browser preparation uses compileAsync, whose default stops at missing input.
+    var iterator = compileSteps(document, program, scene, catalog,
+      Object.assign({ diagnosticAssumptions: true }, options || {}));
+    var result;
+    do { result = iterator.next(); } while (!result.done);
+    return result.value;
+  }
+
+  async function compileAsync(document, program, scene, catalog, options) {
+    options = options || {};
+    var iterator = compileSteps(document, program, scene, catalog, options);
+    function cancelled() {
+      if (options.signal && options.signal.aborted) {
+        iterator.return();
+        var error = new Error('Cutscene preparation cancelled.');
+        error.name = 'AbortError';
+        throw error;
+      }
+    }
+    for (;;) {
+      await new Promise(function(resolve) { setTimeout(resolve, 0); });
+      cancelled();
+      var start = Date.now();
+      var result;
+      do {
+        cancelled();
+        result = iterator.next();
+        if (result.done) return result.value;
+      } while (Date.now() - start < 8);
+    }
+  }
+
+  function* compileSteps(document, program, scene, catalog, options) {
     options = options || {};
     M.validateSceneDocument(document);
     if (!program || !Array.isArray(program.primitives) ||
@@ -522,18 +558,56 @@ window.OB64 = window.OB64 || {};
     }
 
     var maxTicks = Number.isInteger(options.maxTicks) && options.maxTicks > 0
-      ? options.maxTicks : DEFAULT_MAX_TICKS;
+      ? Math.min(options.maxTicks, DEFAULT_MAX_TICKS) : DEFAULT_MAX_TICKS;
+    var maxStateBytes = 128 * 1024 * 1024;
+    var maxTraceEntries = 12000;
+    var maxDispatches = 100000;
+    var retainedStateBytes = 0;
+    // Immutable snapshots share unchanged subtrees. Count newly retained nodes,
+    // keys and UTF-16 payloads conservatively; this is a storage estimate, not VM heap telemetry.
+    function shareSnapshot(previous, next, budget) {
+      if (previous === next) return previous;
+      if (next === null || typeof next !== 'object') {
+        budget.bytes += typeof next === 'string' ? next.length * 2 + 16 : 16;
+        return next;
+      }
+      var keys = Object.keys(next);
+      var before = budget.bytes;
+      var same = previous && typeof previous === 'object' &&
+        Array.isArray(previous) === Array.isArray(next) && Object.keys(previous).length === keys.length;
+      keys.forEach(function(key) {
+        next[key] = shareSnapshot(previous && previous[key], next[key], budget);
+        if (!previous || next[key] !== previous[key]) same = false;
+      });
+      if (same) { budget.bytes = before; return previous; }
+      budget.bytes += 64 + keys.reduce(function(sum, key) { return sum + 24 + key.length * 2; }, 0);
+      return next;
+    }
+    var dispatchCount = 0;
+    var traceCount = 0;
+    var stopReason = null;
+    var unresolvedQuery = null;
+    var unsupportedCommands = [];
     var rowsByNode = documentRows(document);
     var actorTemplateBySlot = {};
     document.actors.forEach(function(actor) { actorTemplateBySlot[actor.slot] = actor; });
     var assumptions = [];
     var missingInputs = [];
     var trace = [];
+    function recordTrace(entry) {
+      traceCount++;
+      if (trace.length < maxTraceEntries) {
+        entry.streamAssetId = activeStreamAssetId;
+        trace.push(entry);
+      }
+    }
     var states = [];
     var transformResourceCache = {};
     var rootProgram = program;
     var activeProgram = rootProgram;
     var activeStreamAssetId = scene.assetId;
+    var programsByAssetId = {};
+    programsByAssetId[scene.assetId] = rootProgram;
     var compositeIndexById = {};
     var directorLabelByMarker = {};
     var primitiveIndexById = {};
@@ -591,6 +665,7 @@ window.OB64 = window.OB64 || {};
       };
       var ir = OB64.cutsceneCodec.createIr(continuationScene, decoded);
       continuationProgramCache[selector] = ir.program;
+      programsByAssetId[entry.assetId] = ir.program;
       return ir.program;
     }
 
@@ -776,13 +851,13 @@ window.OB64 = window.OB64 || {};
     };
 
     if (documentBackground) {
-      trace.push({ tick: 0, kind: 'runtime-input', label: 'Document mode-two launch context' });
+      recordTrace({ tick: 0, kind: 'runtime-input', label: 'Document mode-two launch context' });
       documentBackground.issues.forEach(missing);
     } else if (observedBackground) {
-      trace.push({ tick: 0, kind: 'runtime-input', label: 'Observed background route' });
+      recordTrace({ tick: 0, kind: 'runtime-input', label: 'Observed background route' });
     }
     if (contextRuntime) {
-      trace.push({
+      recordTrace({
         tick: 0,
         kind: 'runtime-input',
         label: 'Parent-event concurrent Director context',
@@ -1042,6 +1117,14 @@ window.OB64 = window.OB64 || {};
 
     function applyContextTimeline(tick) {
       if (!contextRuntime) return;
+      if (tick + contextTickOffset >= contextFrameCount &&
+          (contextRuntime.safetyLimited || contextRuntime.outcome === 'external-input' ||
+           contextRuntime.outcome === 'context-input')) {
+        stopReason = contextRuntime.safetyLimited ? 'context-limit' : 'context-input';
+        missing('The concurrent Director context has no supported state beyond its ' +
+          contextFrameCount + ' retained updates.');
+        return;
+      }
       var contextIndex = clamp(tick + contextTickOffset, 0,
         contextFrameCount - 1);
       if (Array.isArray(contextRuntime.contextFrames)) {
@@ -1484,7 +1567,7 @@ window.OB64 = window.OB64 || {};
           state.oversizedImageView.zoomState === 2) {
         state.oversizedImageView.zoomState = 1;
       }
-      trace.push({
+      recordTrace({
         tick: state.tick,
         kind: 'oversized-image-transition-start',
         nodeId: node.id,
@@ -2141,11 +2224,12 @@ window.OB64 = window.OB64 || {};
       var execution = executionWords(node);
       var words = execution.words;
       var opcode = unsigned(words[0]);
-      state.executedNodeIds.push(node.id);
-      trace.push({ tick: state.tick, kind: 'command', nodeId: node.id,
+      dispatchCount++;
+      if (state.executedNodeIds.length < maxTraceEntries) state.executedNodeIds.push(node.id);
+      recordTrace({ tick: state.tick, kind: 'command', nodeId: node.id,
         opcode: node.opcodeHex, name: node.name });
       if (execution.translatedWordOffsets.length) {
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'launch-translation',
           nodeId: node.id,
@@ -2153,7 +2237,7 @@ window.OB64 = window.OB64 || {};
         });
       }
       if (execution.unresolvedWordOffsets.length) {
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'launch-translation-missing',
           nodeId: node.id,
@@ -2269,7 +2353,7 @@ window.OB64 = window.OB64 || {};
           label: 'Jump to Director label ' + marker,
           clock: 'director-evaluation'
         };
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'cursor-replacement',
           sourceNodeId: node.id,
@@ -2350,7 +2434,7 @@ window.OB64 = window.OB64 || {};
           state.presentationLifecycleRequest = 0xD7;
           state.terminalReason = 'presentation-reload-handoff';
           state.terminal = true;
-          trace.push({
+          recordTrace({
             tick: state.tick,
             kind: 'presentation-reload-handoff',
             nodeId: node.id,
@@ -2359,7 +2443,7 @@ window.OB64 = window.OB64 || {};
         } else {
           state.presentationLifecycleRequest = 0;
           state.alternateDirectorScheduling = false;
-          trace.push({
+          recordTrace({
             tick: state.tick,
             kind: 'presentation-lifecycle-switch',
             nodeId: node.id,
@@ -2415,6 +2499,9 @@ window.OB64 = window.OB64 || {};
         state.terminal = true;
       }
       else if (opcode === 0x80000006) executeBackground(node, words);
+      else if (node.name !== 'director_label_marker') {
+        uniquePush(unsupportedCommands, node.name);
+      }
     }
 
     function updateMovementJobs() {
@@ -2629,7 +2716,7 @@ window.OB64 = window.OB64 || {};
             entity.detached = true;
             entity.closing = false;
             entity.closeRemaining = null;
-            trace.push({
+            recordTrace({
               tick: state.tick,
               kind: 'transient-render-entity-detach',
               slot: entity.slot,
@@ -2644,7 +2731,7 @@ window.OB64 = window.OB64 || {};
             entity.preset >= 1 && entity.preset <= 3) {
           entity.status = -1;
           entity.statusSource = 'native-main-menu-neutral';
-          trace.push({
+          recordTrace({
             tick: state.tick,
             kind: 'transient-render-entity-status',
             slot: entity.slot,
@@ -2681,9 +2768,19 @@ window.OB64 = window.OB64 || {};
       return target;
     }
 
+    function unresolvedInput(query, context) {
+      missing('Native input is unavailable for ' + query.label + '.');
+      if (options.diagnosticAssumptions === true) return false;
+      stopReason = 'external-input';
+      unresolvedQuery = { nodeId: query.id, streamAssetId: activeStreamAssetId,
+        label: query.label, kind: context && context.kind || 'query' };
+      return true;
+    }
+
     function incompleteLifecycleValue(query, actual, context, message) {
       if (!context || context.kind !== 'wait' ||
           compare(actual, query.query.compareMode, query.query.target)) return actual;
+      if (unresolvedInput(query, context)) return NaN;
       assumption(message);
       return passingQueryValue(query);
     }
@@ -2749,6 +2846,7 @@ window.OB64 = window.OB64 || {};
           return suppliedPresentationStatus;
         }
         if (context.kind === 'wait') {
+          if (unresolvedInput(query, context)) return NaN;
           assumption('Actor-presentation lifecycle input is unavailable; the exact native wait uses an explicit completed-state assumption.');
           state.actorPresentationJob = null;
           return passingQueryValue(query);
@@ -2809,6 +2907,7 @@ window.OB64 = window.OB64 || {};
       }
       var externalValue = externalQueryValue(query);
       if (Number.isInteger(externalValue)) return externalValue;
+      if (unresolvedInput(query, context)) return NaN;
       if (context.kind === 'wait') {
         assumption('Native wait input for ' + query.label +
           ' is outside the preview model; the wait uses an explicit completed-state assumption.');
@@ -3102,7 +3201,7 @@ window.OB64 = window.OB64 || {};
     function executeBranchQuery(node, words) {
       var query = runtimeQuery(node, words);
       if (!queryEnabled(query)) {
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'query-mode-skip',
           nodeId: node.id,
@@ -3112,9 +3211,10 @@ window.OB64 = window.OB64 || {};
       }
       branchDepth += 1;
       var actual = queryActual(query, { kind: 'branch' });
+      if (stopReason) return;
       var passes = compare(actual, query.query.compareMode, query.query.target);
       if (passes) {
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'branch-query',
           nodeId: node.id,
@@ -3137,7 +3237,7 @@ window.OB64 = window.OB64 || {};
         return;
       }
       var resumeNode = installCursorAtPrimitive(destination.resumePrimitiveIndex);
-      trace.push({
+      recordTrace({
         tick: state.tick,
         kind: 'branch-query',
         nodeId: node.id,
@@ -3193,7 +3293,7 @@ window.OB64 = window.OB64 || {};
         activateStream(restored.program, restored.assetId,
           restored.persistentCursorPrimitiveIndex);
         var returnDestination = persistentCursorNode();
-        trace.push({
+        recordTrace({
           tick: state.tick,
           kind: 'director-substream-return',
           sourceNodeId: bridgeNode.id,
@@ -3220,7 +3320,7 @@ window.OB64 = window.OB64 || {};
       }
       activateStream(childProgram, 'director-continuation:' + selector, 0);
       var callDestination = persistentCursorNode();
-      trace.push({
+      recordTrace({
         tick: state.tick,
         kind: 'director-substream-call',
         sourceNodeId: bridgeNode.id,
@@ -3242,7 +3342,7 @@ window.OB64 = window.OB64 || {};
       persistentCursorPrimitiveIndex = Number.isInteger(primitiveIndex)
         ? primitiveIndex + 1 : persistentCursorPrimitiveIndex;
       var destination = persistentCursorNode();
-      trace.push({
+      recordTrace({
         tick: state.tick,
         kind: 'parser-resume-commit',
         sourceNodeId: node.id,
@@ -3267,6 +3367,7 @@ window.OB64 = window.OB64 || {};
       state.effectEvents = [];
       state.flowEvents = [];
       applyContextTimeline(tick);
+      if (stopReason) return;
       if (tick > 0) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });
@@ -3287,6 +3388,7 @@ window.OB64 = window.OB64 || {};
         if (!queryEnabled(activeBlock.query)) return true;
         branchDepth += 1;
         var actual = queryActual(activeBlock.query, { kind: 'wait' });
+        if (stopReason) return false;
         var passes = compare(actual, activeBlock.query.query.compareMode,
           activeBlock.query.query.target);
         if (!passes) branchDepth -= 1;
@@ -3299,7 +3401,7 @@ window.OB64 = window.OB64 || {};
       var revision = cursorRevision;
       for (var index = 0; index < nodes.length; index++) {
         executePrimitive(nodes[index]);
-        if (block || state.terminal || cursorRevision !== revision) break;
+        if (block || state.terminal || stopReason || cursorRevision !== revision) break;
       }
     }
 
@@ -3345,7 +3447,7 @@ window.OB64 = window.OB64 || {};
           return;
         }
         executePrimitive(node);
-        if (block || state.terminal || cursorRevision !== revision) return;
+        if (block || state.terminal || stopReason || cursorRevision !== revision) return;
       }
     }
 
@@ -3361,7 +3463,7 @@ window.OB64 = window.OB64 || {};
       }
       var nodes = allNodes.slice(entryOffset);
       var first = nodes[0];
-      trace.push({
+      recordTrace({
         tick: state.tick,
         kind: 'composite',
         compositeId: composite.id,
@@ -3415,8 +3517,9 @@ window.OB64 = window.OB64 || {};
     }
 
     for (var tick = 0; tick < maxTicks; tick++) {
+      yield;
       beginTick(tick);
-      if (block && blockComplete(block)) {
+      if (!stopReason && block && blockComplete(block)) {
         var completedBlock = block;
         if (completedBlock.kind === 'until') {
           state.registeredCounter = null;
@@ -3431,7 +3534,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       var instantGuard = 0;
-      while (!block && !state.terminal &&
+      while (!block && !state.terminal && !stopReason &&
           compositeIndex < activeProgram.composites.length) {
         if (++instantGuard > activeProgram.composites.length + 8) {
           fail('Director runtime exceeded its instantaneous-dispatch guard.', 'dispatch-loop');
@@ -3440,14 +3543,27 @@ window.OB64 = window.OB64 || {};
         var entryNodeId = compositeEntryNodeId;
         compositeEntryNodeId = null;
         processComposite(composite, entryNodeId);
+        if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
+        yield;
       }
-      states.push(snapshot(block));
+      var frameBudget = { bytes: 0 };
+      var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
+      var frameBytes = frameBudget.bytes;
+      if (retainedStateBytes + frameBytes > maxStateBytes) {
+        if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');
+        stopReason = 'state-storage-limit';
+        break;
+      }
+      states.push(frameState);
+      retainedStateBytes += frameBytes;
+      if (stopReason) break;
       if (state.terminal || compositeIndex >= activeProgram.composites.length && !block &&
           !Object.keys(state.movementJobs).length && !state.projectionJob &&
           !state.oversizedImageTransitionJob) break;
     }
 
     if (!state.terminal && states.length >= maxTicks) {
+      stopReason = 'tick-limit';
       missing('Director preview reached the ' + maxTicks + '-tick safety limit.');
     }
     if (!states.length) states.push(snapshot(null));
@@ -3467,6 +3583,7 @@ window.OB64 = window.OB64 || {};
     });
     states.forEach(function(frameState) {
       frameState.durationFrames = states.length;
+      frameState.runtime = Object.assign({}, frameState.runtime);
       frameState.runtime.assumptionCount = assumptions.length;
       frameState.runtime.missingInputCount = missingInputs.length;
       frameState.runtime.status = missingInputs.length ? 'missing-inputs' :
@@ -3476,7 +3593,7 @@ window.OB64 = window.OB64 || {};
         // The native launch camera is absent, so keep one honest preview fit
         // across the complete runtime instead of clamping moving Actors against
         // the static SceneDocument bounds or reframing every tick.
-        frameState.actorProjection.previewFitBounds = Object.assign({}, previewFitBounds);
+        frameState.actorProjection = Object.assign({}, frameState.actorProjection, { previewFitBounds: previewFitBounds });
       }
     });
 
@@ -3491,9 +3608,22 @@ window.OB64 = window.OB64 || {};
       assumptions: assumptions,
       missingInputs: missingInputs,
       trace: trace,
+      programsByAssetId: programsByAssetId,
+      outcome: stopReason || (state.terminal
+        ? (missingInputs.length ? 'modeled-ending-with-missing-inputs' : state.terminalReason === 'presentation-reload-handoff' ? 'modeled-handoff' : 'modeled-termination')
+        : 'stream-exhausted'),
+      pendingWait: block ? { kind: block.kind, label: block.label } : null,
+      unresolvedQuery: unresolvedQuery,
+      unsupportedCommands: unsupportedCommands,
+      inputPolicy: options.diagnosticAssumptions === true ? 'diagnostic-assumptions' : 'stop-at-missing-input',
+      limits: { maxTicks: maxTicks, maxStateBytes: maxStateBytes,
+        maxTraceEntries: maxTraceEntries, maxDispatches: maxDispatches },
+      retainedStateBytes: retainedStateBytes,
+      traceCount: traceCount,
+      traceTruncated: traceCount > trace.length,
       executedNodeIds: state.executedNodeIds.slice(),
       sourcePrimitiveCount: rootProgram.primitives.length,
-      executedPrimitiveCount: state.executedNodeIds.length,
+      executedPrimitiveCount: dispatchCount,
       concurrentContext: contextRuntime ? {
         assetId: contextRuntime.assetId,
         tickOffset: contextTickOffset,
@@ -3514,7 +3644,7 @@ window.OB64 = window.OB64 || {};
       },
       terminated: state.terminal,
       terminationReason: state.terminalReason,
-      safetyLimited: states.length >= maxTicks && !state.terminal
+      safetyLimited: /-limit$/.test(stopReason || '')
     };
   }
 
@@ -3625,6 +3755,7 @@ window.OB64 = window.OB64 || {};
       contextFrames: contextFrames,
       terminated: runtime.terminated,
       safetyLimited: runtime.safetyLimited,
+      outcome: runtime.outcome,
       sourceRuntimeEngine: runtime.engine,
       evidenceStatus: 'lossless-runtime-state-delta'
     };
@@ -3657,6 +3788,7 @@ window.OB64 = window.OB64 || {};
     RuntimeError: RuntimeError,
     defaultMaxTicks: DEFAULT_MAX_TICKS,
     compile: compile,
+    compileAsync: compileAsync,
     compactContextRuntime: compactContextRuntime,
     bind: bind,
     unbind: unbind,
