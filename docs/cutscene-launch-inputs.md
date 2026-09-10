@@ -1,11 +1,11 @@
-# Actor launch snapshots
+# Playback inputs
 
-Cutscene Studio can import a JSON Actor snapshot for one Director resource.
+Cutscene Studio can import JSON playback inputs for one Director resource.
 The snapshot supplies explicit caller state for preview playback.
 It does not edit the ROM or become part of the Project.
 Project load clears imported snapshots.
 
-The inspector's **Actor launch snapshot** control accepts files up to 128 KiB.
+The inspector's **Playback inputs** control accepts files up to 128 KiB.
 An invalid file preserves the previous snapshot.
 Import and Clear cancel obsolete playback preparation.
 The selected resource must match the snapshot's `assetId`.
@@ -55,7 +55,8 @@ Only the selected component moves. Source-row identity and slot-owned movement r
 Neither operation constructs a guessed party.
 
 Ordinary and qualified alternate pose playback use counted records, per-record delays, and the current frame token.
-Shared controls and unavailable alternate setup stop strict playback with a named boundary.
+Shared controls use qualified table reads and explicit caller inputs where required.
+Unavailable alternate setup and shared-control inputs stop strict playback with a named boundary.
 The diagnostic toggle can retain explicitly labeled legacy query estimates for unsupported Actor state.
 Those estimates do not prove native completion.
 
@@ -63,6 +64,113 @@ Movement uses single-precision arithmetic and a wrapping 16-bit countdown.
 Immediate placement preserves an existing movement owner.
 Mode-two terrain and proximity behavior remains outside the planar movement contract.
 Normal Actor update eligibility does not establish a universal conversion to video frames or seconds.
+
+## External producer inputs
+
+The optional `externalProducers` group supports transient menus, color objects, and shared pose requests.
+This implementation checkpoint remains review pending. Dialogue prompt and choice continuation remain separate unfinished work.
+These inputs establish bounded product execution, not complete native scene timing, audible output, or image agreement.
+
+The `known` value contains `throughTick`, `menuCreates`, `colorCreates`, `events`, and `poseCalls`.
+All four lists must be present, including empty lists.
+The existing 128 KiB import limit applies to the complete file.
+
+`throughTick` is an integer from 0 through 29,999.
+It declares the last Director update covered by the supplied external service history.
+It does not convert an external callback into a Director update or a video frame.
+Queries beyond that history require further inputs, even when the last recorded value would pass.
+
+Each event specifies `tick`, `phase`, and `kind`.
+The phase is `before-director` or `after-director`.
+Events must appear in update and phase order; array order selects multiple calls within one phase.
+Before events run before ordinary Actor updates and Director evaluation.
+After events run after Director evaluation and before its retained snapshot.
+An after event does not invent another Director query in the same update.
+
+Only listed events run. Missing updates do not imply one callback per Director update.
+`eligible: false` records a skipped menu or color callback without changing producer state.
+The supplier must qualify eligibility, selected input masks, owner identity, and the completeness of this history.
+
+### Initial state and creation
+
+`initialMenusEmpty: true` declares empty initial transient ownership slots.
+Otherwise, uncreated-slot queries require initial ownership input.
+Inherited populated menus are not represented by that declaration.
+Creation and explicit release establish ownership knowledge for their selected slot independently of other initial slots.
+
+`initialColor` can be null for a known absent object.
+An occupied value contains `ownerId` and a complete 12-byte `recordHex`.
+Omission leaves color ownership unknown.
+The record retains signed countdowns, RGB bytes, ownership flag, and current/start/target alpha.
+Explicit color ownership and history take priority over presentation-only overlays imported from a concurrent context.
+
+Every creation row identifies `nodeId`, zero-based `occurrence`, and a unique `ownerId` within its creation list.
+The occurrence counts executions of that command, including repeated execution through a loop.
+A new owner identifier distinguishes a replaced producer from its predecessor.
+
+| List | Additional creation fields |
+|---|---|
+| `menuCreates` | `entityId`, preset `1..24`, byte `substate`, signed-byte `selection`, `cancel`, and `optionCount` |
+| `colorCreates` | `allocationReady: true` and `registrationReturned: true` |
+
+Menu fields are qualified initializer results. They do not implement preset setup or the opening helper.
+Color outcomes declare successful native allocation and callback registration where required.
+They do not infer successful allocation from a command alone.
+
+### Menu callbacks
+
+A menu event uses `kind: "menu"`, `slot`, `ownerId`, `entityId`, and `eligible`.
+An eligible event must match the current creation generation and entity.
+Its `readiness` contains byte `readyByte`, signed-halfword `alpha`, and unsigned-halfword `cooldown`.
+Input-ready calls need unsigned-halfword `actionMask` and `directionMask`.
+The opening substate needs `openingReturned: true`; subsequent readiness remains supplied separately.
+
+Supported callbacks preserve neutral status, A-before-B priority, direction priority, and signed selection results.
+Graceful close requires eight eligible close calls.
+Immediate detach and ownership release remain separate commands.
+The snapshot's `nativeExternal.menus` exposes the retained producer states.
+
+### Color callbacks
+
+A color event uses `kind: "color"`, `ownerId`, and `eligible`.
+Positive signed countdowns decrement once per eligible event.
+Zero and negative countdowns remain unchanged.
+Cleanup always clears the countdown; only ownership flag 1 also removes the object.
+Creation preserves native byte truncation and the explicit inherited alpha branch.
+
+### Shared pose requests
+
+Controls 17 and 19 read their qualified table entries directly from the loaded z64 ROM input.
+Controls 18 and 20 consume `poseCalls` in execution order.
+Each row identifies `actorId`, signed-halfword `bank` and `stateIndex`, `recordOrdinal`, and `opcode`.
+Actor identity remains stable across primary-slot swaps.
+
+Ordinary controls 18 and 20 need `projectionReturned: true`.
+This qualifies the accepted zero-input-vector branch, valid nonaliasing buffers, and a normally returning projection helper.
+It does not supply a projected coordinate or move the Actor.
+
+Alternate controls 18 and 20 need an `alternate` object.
+`childPresent: false` suppresses registration.
+Otherwise, `metadataPresent` selects the accepted metadata branch.
+Present metadata needs unsigned-halfword `type` and signed-word `projectedX`.
+Types 29 and 30 also need unsigned-word `ownerMetaB`.
+Unresolved classification branches need `classification` and, where applicable, qualified predicate result `predicateKey` of 4 or 5.
+These values remain external owner, projector, and classifier inputs.
+
+Shared registration replaces one scalar request in context A or B.
+It adds no pose delay and does not replace the ordinary sequencer tail.
+`initialRequests`, when supplied, contains signed-word `A` and `B` values.
+An omitted slot starts unknown until registration or an explicit reset establishes its value.
+
+Events with `kind: "request-dispatch"` and `context: "A"` or `"B"` construct the accepted audio requests.
+They do not clear the scalar slot.
+Separate `request-reset` events write -1.
+Dispatch requires a known current slot; negative requests produce no dispatch record.
+The snapshot records `nativeExternal.sharedRequests`, and dispatched request descriptions appear in `audio`.
+These records do not prove audio queue acceptance, voice lifetime, or audible playback.
+
+The runtime preserves its existing update, storage, trace, cancellation, and timeline-action limits.
+Diagnostic assumptions remain labeled and do not turn missing native inputs into verified completion.
 
 ## Qualified Actor services
 

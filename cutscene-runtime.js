@@ -98,7 +98,7 @@ window.OB64 = window.OB64 || {};
     return lowS16(job.remaining) !== 0;
   }
 
-  function advanceNativePose(actor, resolveProgram, limit) {
+  function advanceNativePose(actor, resolveProgram, limit, sharedControl) {
     var result = 1, dispatches = 0;
     while (actor.poseDelay <= 0) {
       if (++dispatches > limit) return 'pose-dispatch-limit';
@@ -113,8 +113,12 @@ window.OB64 = window.OB64 || {};
       var record = program.records[actor.poseCursor] || { opcode: 0, operands: [] };
       var op = record.opcode, p = record.operands;
       result = op;
-      if (op >= 17 && op <= 20) return 'shared-pose-control-' + op;
-      if (op === 0) actor.poseDelay = 2;
+      if (op >= 17 && op <= 20) {
+        if (!sharedControl) return 'shared-pose-control-' + op;
+        var sharedBoundary = sharedControl(actor, record);
+        if (sharedBoundary) return sharedBoundary;
+      }
+      else if (op === 0) actor.poseDelay = 2;
       else if (op === 1 || op === 21) {
         actor.displayedFrameToken = op === 1 ? p[0] : p[0] + 256 * p[1];
         actor.poseDelay = op === 1 ? p[1] : p[2];
@@ -143,6 +147,152 @@ window.OB64 = window.OB64 || {};
     actor.poseSequencerResult = result & 255;
     actor.poseFrame += 2;
     return null;
+  }
+
+  // CPR-R03: these calls count eligible producer services, never video frames.
+  function advanceNativeMenu(menu, service) {
+    if (!service.eligible || menu.detached) return;
+    if (service.entityId !== menu.entityId) fail('Menu callback owner does not match its entity.', 'external-producer-owner');
+    if (menu.closing) {
+      menu.closeRemaining -= 1;
+      if (menu.closeRemaining === 0) { menu.detached = true; menu.closing = false; }
+      return;
+    }
+    var input = service.readiness;
+    if (!input) fail('Menu service needs explicit readiness fields.', 'menu-readiness-input');
+    menu.status = -1;
+    menu.statusSource = 'native-menu-callback';
+    if (menu.substate === 0) {
+      if (input.readyByte !== 0) menu.substate = 5;
+    } else if (menu.substate === 5) {
+      if (service.openingReturned !== true) fail('Menu opening helper outcome is unavailable.', 'menu-opening-input');
+      menu.substate = 6;
+    } else if (menu.substate === 6 && lowS16(input.alpha) === 255 && lowU16(input.cooldown) === 0) {
+      if (!Number.isInteger(service.actionMask) || !Number.isInteger(service.directionMask)) fail('Menu service needs selected action and direction masks.', 'menu-controller-input');
+      if (service.actionMask & 0x8000) { menu.status = lowS8(menu.selection); menu.substate = 3; }
+      else if (service.actionMask & 0x4000) {
+        if (lowS8(menu.cancel) !== -1) { menu.selection = lowS8(menu.cancel); menu.status = menu.selection; menu.substate = 3; }
+      } else if (service.directionMask & 0x0800) {
+        if (lowS8(menu.selection) > 0) menu.selection = lowS8(menu.selection - 1);
+      } else if ((service.directionMask & 0x0400) && lowS8(menu.selection) + 1 < lowS8(menu.optionCount)) {
+        menu.selection = lowS8(menu.selection + 1);
+      }
+    }
+  }
+
+  function createNativeColor(previous, words) {
+    var color = previous ? Object.assign({}, previous) : { alpha:0, ownershipFlag:0 };
+    color.ownershipFlag = previous ? (previous.ownershipFlag === 1 ? 0 : 2) : 0;
+    color.duration = color.remaining = lowS16(words[1]);
+    color.red = words[2] & 255; color.green = words[3] & 255; color.blue = words[4] & 255;
+    if (signed(words[5]) !== -1) color.alpha = words[5] & 255;
+    color.startAlpha = color.alpha; color.targetAlpha = words[6] & 255;
+    return color;
+  }
+  function advanceNativeColor(color, eligible) {
+    if (!color || !eligible || lowS16(color.remaining) <= 0) return;
+    color.remaining = lowS16(color.remaining - 1);
+    if (lowS16(color.duration) === 0) fail('Color producer has an invalid zero denominator.', 'color-initial-state');
+    color.alpha = (color.targetAlpha + Math.trunc((color.startAlpha - color.targetAlpha) * color.remaining / lowS16(color.duration))) & 255;
+  }
+  function cleanupNativeColor(color) {
+    if (!color) return null;
+    color.remaining = 0;
+    return color.ownershipFlag === 1 ? null : color;
+  }
+
+  // CPR-R07C: addresses are z64 table offsets; both request contexts are scalar slots.
+  function selectNativeSharedRequest(opcode, operands, mode, input, readHalfword) {
+    var key = (operands[0] & 255) * 256 + (operands[1] & 255), offset;
+    if (opcode === 17 || opcode === 19) {
+      if (key > 831) return {boundary:'shared-pose-table-input'};
+      offset = 0x212880 + 2 * key;
+    } else if (mode === 0) {
+      if (!input || input.projectionReturned !== true) return {boundary:'shared-pose-projection-input'};
+      if (key > 760) return {boundary:'shared-pose-table-input'};
+      offset = key >= 590 ? 0x212880 + 2 * (key + 2) : 0x2123A0 + 4 * key;
+    } else {
+      var alternate = input && input.alternate;
+      if (!alternate || typeof alternate.childPresent !== 'boolean') return {boundary:'shared-pose-owner-input'};
+      if (!alternate.childPresent) return {suppressed:true};
+      if (typeof alternate.metadataPresent !== 'boolean') return {boundary:'shared-pose-metadata-input'};
+      if (!alternate.metadataPresent) {
+        if (key > 727) return {boundary:'shared-pose-table-input'};
+        offset = 0x2123A0 + key * 4;
+      } else {
+        if (!Number.isInteger(alternate.type) || !Number.isInteger(alternate.projectedX)) return {boundary:'shared-pose-projection-input'};
+        if (alternate.type === 29 || alternate.type === 30) {
+          var meta = alternate.ownerMetaB;
+          if (!Number.isInteger(meta)) return {boundary:'shared-pose-metadata-input'};
+          if (meta === 51) key = 6;
+          else if (meta === 47) key = 11;
+          else if (meta >= 78 && meta <= 80) key = 10;
+          else if (meta >= 56 && meta <= 68) key = 8;
+          else if (alternate.classification === 2) key = 9;
+          else if (alternate.classification === 3 || alternate.classification >= 5) key = 7;
+          else if ([0,1,4].includes(alternate.classification) && [4,5].includes(alternate.predicateKey)) key = alternate.predicateKey;
+          else return {boundary:'shared-pose-classification-input'};
+        }
+        var x = alternate.projectedX;
+        offset = key >= 590 && key <= 760 ? 0x212880 + 2 * (key + (x >= 213 ? 0 : x >= 106 ? 1 : 2)) :
+          0x2123A0 + 4 * key + (x >= 160 ? 2 : 0);
+        if (offset < 0x2123A0 || offset + 2 > 0x212F00) return {boundary:'shared-pose-table-input'};
+      }
+    }
+    var request = readHalfword && readHalfword(offset);
+    if (!Number.isInteger(request)) return {boundary:'shared-pose-table-input'};
+    return {context:opcode === 17 || opcode === 18 ? 'A' : 'B', request:request & 65535, tableOffset:offset};
+  }
+
+  function validateExternalProducers(value) {
+    function integer(v,min,max) {return Number.isInteger(v) && v >= min && v <= max;}
+    function id(v) {return typeof v === 'string' && v.length > 0 && v.length <= 160;}
+    if (!value || !integer(value.throughTick,0,29999) || !['menuCreates','colorCreates','events','poseCalls'].every(function(k){return Array.isArray(value[k]);})) fail('External producers need bounded complete service history and creation lists.', 'launch-input');
+    if (value.initialMenusEmpty !== undefined && value.initialMenusEmpty !== true) fail('Initial menu ownership currently supports explicitly empty slots.', 'launch-input');
+    if (value.initialColor !== undefined && value.initialColor !== null) {
+      if (!id(value.initialColor.ownerId)) fail('Initial color needs owner identity.', 'launch-input');
+      launchBytes(value.initialColor.recordHex,12);
+    }
+    if (value.initialRequests !== undefined && (!value.initialRequests || !['A','B'].every(function(k){return integer(value.initialRequests[k],-2147483648,2147483647);}))) fail('Initial shared requests must be signed words.', 'launch-input');
+    ['menuCreates','colorCreates'].forEach(function(k) {
+      var seen = new Set(), owners = new Set();
+      value[k].forEach(function(row) {
+        var identity=row && row.nodeId+':'+row.occurrence;
+        if (!row || !id(row.nodeId) || !id(row.ownerId) || !integer(row.occurrence,0,29999) || seen.has(identity) || owners.has(row.ownerId)) fail('External creation identity is invalid or duplicated.', 'launch-input');
+        seen.add(identity); owners.add(row.ownerId);
+        if (k === 'colorCreates') {
+          if (row.allocationReady !== true || row.registrationReturned !== true) fail('Color creation needs successful allocation and registration outcomes.', 'launch-input');
+        } else if (!id(row.entityId) || !integer(row.preset,1,24) || !integer(row.substate,0,255) ||
+            !['selection','cancel','optionCount'].every(function(f){return integer(row[f],-128,127);})) fail('Menu creation needs supported preset and native initial fields.', 'launch-input');
+      });
+    });
+    var previous=-1;
+    value.events.forEach(function(event) {
+      var order=event && event.tick*2+(event.phase==='after-director'?1:0);
+      if (!event || !integer(event.tick,0,value.throughTick) || !['before-director','after-director'].includes(event.phase) || order<previous || !['menu','color','request-reset','request-dispatch'].includes(event.kind)) fail('External service history must be ordered within its declared range.', 'launch-input');
+      previous=order;
+      if (event.kind.startsWith('request-')) {
+        if (!['A','B'].includes(event.context)) fail('Request service needs context A or B.', 'launch-input');
+      } else {
+        if (!id(event.ownerId) || typeof event.eligible !== 'boolean') fail('Producer service needs owner identity and eligibility.', 'launch-input');
+        if (event.kind==='menu') {
+          if (!integer(event.slot,0,65535) || !id(event.entityId)) fail('Menu service identity is invalid.', 'launch-input');
+          if (event.readiness && (!integer(event.readiness.readyByte,0,255) || !integer(event.readiness.alpha,-32768,32767) || !integer(event.readiness.cooldown,0,65535))) fail('Menu readiness fields are invalid.', 'launch-input');
+          ['actionMask','directionMask'].forEach(function(k){if(event[k]!==undefined&&!integer(event[k],0,65535))fail('Controller masks must be unsigned halfwords.','launch-input');});
+        }
+      }
+    });
+    value.poseCalls.forEach(function(row) {
+      if (!row || !id(row.actorId) || !integer(row.bank,-32768,32767) || !integer(row.stateIndex,-32768,32767) || !integer(row.recordOrdinal,0,255) || !integer(row.opcode,17,20)) fail('Pose service needs exact Actor and counted-record identity.', 'launch-input');
+      if (row.projectionReturned!==undefined && typeof row.projectionReturned!=='boolean') fail('Projection outcome must be explicit.', 'launch-input');
+      if (row.alternate!==undefined) {
+        var a=row.alternate;
+        if (!a || typeof a.childPresent!=='boolean' || a.metadataPresent!==undefined && typeof a.metadataPresent!=='boolean') fail('Alternate request needs explicit child and metadata presence.', 'launch-input');
+        [['type',0,65535],['projectedX',-2147483648,2147483647],['ownerMetaB',0,4294967295],['classification',0,4294967295],['predicateKey',4,5]].forEach(function(f){
+          if(a[f[0]]!==undefined&&!integer(a[f[0]],f[1],f[2]))fail('Alternate request scalar input is invalid.','launch-input');
+        });
+      }
+    });
   }
 
   function launchBytes(hex, length) {
@@ -270,13 +420,15 @@ window.OB64 = window.OB64 || {};
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
     ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch',
-      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices'].forEach(function(key) {
+      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'rosterStateServices') {
+      if (key === 'externalProducers') {
+        validateExternalProducers(value);
+      } else if (key === 'rosterStateServices') {
         if(!Array.isArray(value))fail('Roster State services require ordered occurrences.','launch-input');
         var stateServiceIds=new Set();
         value.forEach(function(service){
@@ -1115,6 +1267,9 @@ window.OB64 = window.OB64 || {};
     }
     var actorInputRows = launchValue('actorInputRows');
     var currentUnitMembers = launchValue('currentUnitMembers');
+    var externalProducers = launchValue('externalProducers');
+    var externalOccurrences = {}, externalEventCursor = 0, sharedPoseCallCursor = 0;
+    var knownTransientSlots = new Set(), allTransientSlotsKnown = !!(externalProducers && externalProducers.initialMenusEmpty);
     var actorServiceOccurrences = {}, qualifiedPoseCache = new Map(), subordinateSerial = 0, nativeRosterResult = null;
     var state = {
       tick: 0,
@@ -1166,6 +1321,85 @@ window.OB64 = window.OB64 || {};
       overlay: null,
       executedNodeIds: []
     };
+
+    state.sharedRequests = externalProducers && externalProducers.initialRequests
+      ? Object.assign({}, externalProducers.initialRequests) : { A:null, B:null };
+    if (externalProducers && externalProducers.initialColor) {
+      var initialColor = launchBytes(externalProducers.initialColor.recordHex,12);
+      state.overlay = { ownerId:externalProducers.initialColor.ownerId,
+        remaining:initialColor.getInt16(0),duration:initialColor.getInt16(2),
+        red:initialColor.getUint8(4),green:initialColor.getUint8(5),blue:initialColor.getUint8(6),
+        ownershipFlag:initialColor.getUint8(7),alpha:initialColor.getUint8(8),
+        targetAlpha:initialColor.getUint8(9),startAlpha:initialColor.getUint8(10),native:true };
+      state.overlayJob = state.overlay;
+    }
+
+    function producerBoundary(message, code) {
+      missing(message);
+      if (options.diagnosticAssumptions === true) return false;
+      stopReason = 'external-input';
+      unresolvedQuery = {kind:'producer',code:code,label:message,streamAssetId:activeStreamAssetId};
+      return true;
+    }
+    function externalCreation(kind, node) {
+      var key=kind+':'+node.id, occurrence=externalOccurrences[key] || 0;
+      externalOccurrences[key]=occurrence+1;
+      return externalProducers && externalProducers[kind].find(function(row) {
+        return row.nodeId===node.id && row.occurrence===occurrence;
+      });
+    }
+    function applyExternalServices(phase) {
+      if (!externalProducers) return;
+      var events=externalProducers.events;
+      while (externalEventCursor<events.length) {
+        var event=events[externalEventCursor];
+        if (event.tick!==state.tick || event.phase!==phase) break;
+        externalEventCursor++;
+        try {
+          if (event.kind==='menu' && event.eligible) {
+            var menu=state.transientRenderEntities[event.slot];
+            if (!menu || !menu.native || menu.ownerId!==event.ownerId) fail('Menu service targets a missing or replaced owner.', 'external-producer-owner');
+            advanceNativeMenu(menu,event);
+          } else if (event.kind==='color' && event.eligible) {
+            if (!state.overlay || !state.overlay.native || state.overlay.ownerId!==event.ownerId) fail('Color service targets a missing or replaced owner.', 'external-producer-owner');
+            advanceNativeColor(state.overlay,true);
+          } else if (event.kind==='request-reset') state.sharedRequests[event.context]=-1;
+          else if (event.kind==='request-dispatch') {
+            var request=state.sharedRequests[event.context];
+            if (request===null) fail('Request dispatch requires its current scalar slot.', 'shared-request-initial-state');
+            if (request>=0) {
+              if (event.context==='B') state.audioEvents.push({kind:'native-shared-request',context:'B',mode:2,category:6,program:0,priority:16384,flags:2});
+              state.audioEvents.push({kind:'native-shared-request',context:event.context,mode:1,category:event.context==='A'?5:6,program:request&65535,priority:16384,flags:event.context==='A'?0:2});
+            }
+          }
+          recordTrace({tick:state.tick,kind:'external-producer-service',service:externalEventCursor-1,phase:phase,producer:event.kind,eligible:event.eligible});
+        } catch(error) {
+          if (!(error instanceof RuntimeError)) throw error;
+          producerBoundary(error.message,error.code);return;
+        }
+      }
+    }
+
+    function registerSharedPoseRequest(actor, record) {
+      var input=null;
+      if (record.opcode===18 || record.opcode===20) {
+        input=externalProducers && externalProducers.poseCalls[sharedPoseCallCursor];
+        if (!input || input.actorId!==actor.id || input.bank!==actor.bank || input.stateIndex!==actor.poseStateIndex ||
+            input.recordOrdinal!==actor.poseCursor || input.opcode!==record.opcode) return 'shared-pose-control-'+record.opcode;
+      }
+      var selected=selectNativeSharedRequest(record.opcode,record.operands,actor.decoderMode,input,function(offset) {
+        if (!(options.z64 instanceof Uint8Array) || offset+2>options.z64.length) return null;
+        return options.z64[offset]*256+options.z64[offset+1];
+      });
+      if (selected.boundary) return selected.boundary;
+      if (input) sharedPoseCallCursor++;
+      if (!selected.suppressed) {
+        state.sharedRequests[selected.context]=selected.request;
+        recordTrace({tick:state.tick,kind:'shared-pose-request',actorId:actor.id,recordOrdinal:actor.poseCursor,
+          opcode:record.opcode,context:selected.context,request:selected.request,tableOffsetZ64:selected.tableOffset});
+      }
+      return null;
+    }
 
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var initialActors = launchValue('existingActors');
@@ -1354,7 +1588,7 @@ window.OB64 = window.OB64 || {};
 
     function updateActorPose(actor) {
       if (actor.poseBlocked) return;
-      var boundary = advanceNativePose(actor, programForActor, 256);
+      var boundary = advanceNativePose(actor, programForActor, 256, registerSharedPoseRequest);
       if (boundary) {
         actor.poseBlocked = boundary;
         actor.poseProgramStatus = boundary;
@@ -1579,7 +1813,8 @@ window.OB64 = window.OB64 || {};
       if (Object.prototype.hasOwnProperty.call(delta, 'sceneColor')) {
         state.sceneColor = Object.assign({}, delta.sceneColor);
       }
-      if (Object.prototype.hasOwnProperty.call(delta, 'overlays')) {
+      // Explicit native ownership/history takes priority over a presentation-only context.
+      if (Object.prototype.hasOwnProperty.call(delta, 'overlays') && (!externalProducers || externalProducers.initialColor===undefined)) {
         state.overlay = delta.overlays && delta.overlays.length
           ? M.cloneJson(delta.overlays[0], 'context overlay') : null;
       }
@@ -1664,8 +1899,8 @@ window.OB64 = window.OB64 || {};
           !sameContextValue(frameState.sceneColor, priorContextState.sceneColor)) {
         state.sceneColor = Object.assign({}, frameState.sceneColor);
       }
-      if (!priorContextState ||
-          !sameContextValue(frameState.overlays, priorContextState.overlays)) {
+      if ((!externalProducers || externalProducers.initialColor===undefined) && (!priorContextState ||
+          !sameContextValue(frameState.overlays, priorContextState.overlays))) {
         state.overlay = frameState.overlays && frameState.overlays.length
           ? M.cloneJson(frameState.overlays[0], 'context overlay') : null;
       }
@@ -2131,6 +2366,17 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeOverlay(node, words) {
+      var creation=externalCreation('colorCreates',node);
+      if (creation && externalProducers.initialColor !== undefined) {
+        state.overlay=createNativeColor(state.overlay,words);
+        state.overlay.ownerId=creation.ownerId;
+        state.overlay.native=true;
+        state.overlay.sourceNodeId=node.id;
+        state.overlayJob=state.overlay;
+        return;
+      }
+      if (producerBoundary('Color creation requires initial ownership and successful allocation/registration inputs.','color-creation-input')) return;
+      assumption('Diagnostic color completion uses the legacy Director-update estimate; native callback history is unavailable.');
       var duration = Math.max(1, lowU16(words[1]));
       var startAlpha = signed(words[5]);
       if (startAlpha === -1 && state.overlay) startAlpha = state.overlay.alpha;
@@ -3318,6 +3564,8 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x62) {
         var transientSlot = signed(words[1]);
+        knownTransientSlots.add(transientSlot);
+        var menuCreation=externalCreation('menuCreates',node);
         state.transientRenderEntities[transientSlot] = {
           slot: transientSlot,
           preset: signed(words[2]),
@@ -3328,6 +3576,14 @@ window.OB64 = window.OB64 || {};
           closing: false,
           closeRemaining: null
           };
+        if (menuCreation) {
+          if (menuCreation.preset!==signed(words[2])) { producerBoundary('Menu initializer preset does not match its command.','menu-initial-state'); return; }
+          Object.assign(state.transientRenderEntities[transientSlot],{
+            native:true,ownerId:menuCreation.ownerId,entityId:menuCreation.entityId,
+            substate:menuCreation.substate,selection:menuCreation.selection,
+            cancel:menuCreation.cancel,optionCount:menuCreation.optionCount
+          });
+        }
       }
       else if (opcode === 0x63) executeAnimatedSceneSprite(node, words);
       else if (opcode === 0x64) executeAnimatedSceneSpriteRestart(node, words);
@@ -3338,8 +3594,14 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x6B) {
         var releaseTransientSlot = signed(words[1]);
-        if (releaseTransientSlot === -1) state.transientRenderEntities = {};
-        else delete state.transientRenderEntities[releaseTransientSlot];
+        if (releaseTransientSlot === -1) {
+          state.transientRenderEntities = {};
+          allTransientSlotsKnown = true;
+          knownTransientSlots.clear();
+        } else {
+          delete state.transientRenderEntities[releaseTransientSlot];
+          knownTransientSlots.add(releaseTransientSlot);
+        }
       }
       else if (opcode === 0x69) {
         var secondary = state.actors[signed(words[1])];
@@ -3404,8 +3666,14 @@ window.OB64 = window.OB64 || {};
         state.terminal = true;
       }
       else if (opcode === 0x7E) {
-        state.overlay = null;
-        state.overlayJob = null;
+        if (state.overlay && state.overlay.native) {
+          state.overlay=cleanupNativeColor(state.overlay);
+          state.overlayJob=state.overlay;
+        } else if (externalProducers && externalProducers.initialColor !== undefined) {
+          state.overlay=null;state.overlayJob=null;
+        } else if (!producerBoundary('Color cleanup requires the current object and ownership flag.','color-cleanup-input')) {
+          state.overlay=null;state.overlayJob=null;
+        }
       }
       else if (opcode === 0x83) {
         var closingTransient = state.transientRenderEntities[signed(words[1])];
@@ -3538,7 +3806,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function updateColorJobs() {
-      if (state.overlayJob && state.overlay) {
+      if (state.overlayJob && state.overlay && !state.overlay.native) {
         state.overlayJob.elapsed += 1;
         state.overlayJob.remaining -= 1;
         state.overlay.alpha = Math.round(mix(state.overlayJob.startAlpha,
@@ -3655,6 +3923,7 @@ window.OB64 = window.OB64 || {};
       Object.keys(state.transientRenderEntities).forEach(function(slot) {
         var entity = state.transientRenderEntities[slot];
         if (!entity || entity.detached) return;
+        if (entity.native || options.diagnosticAssumptions !== true) return;
         if (entity.closing) {
           entity.closeRemaining -= 1;
           if (entity.closeRemaining <= 0) {
@@ -3799,6 +4068,11 @@ window.OB64 = window.OB64 || {};
         return state.actorPresentationJob ? 1 : 0;
       }
       if (query.name === 'color_overlay_countdown_query') {
+        if (!externalProducers || externalProducers.initialColor===undefined || state.overlay && !state.overlay.native) {
+          if (unresolvedInput(query,context)) return NaN;
+        } else if (state.tick>externalProducers.throughTick) {
+          if (unresolvedInput(query,context)) return NaN;
+        }
         return state.overlayJob ? state.overlayJob.remaining : 0;
       }
       if (query.name === 'actor_state_pose_opcode_query') {
@@ -3852,8 +4126,21 @@ window.OB64 = window.OB64 || {};
         var suppliedTransientStatus = externalQueryValue(query);
         if (Number.isInteger(suppliedTransientStatus)) return suppliedTransientStatus;
         var transientEntity = state.transientRenderEntities[input];
+        if (!transientEntity && !allTransientSlotsKnown && !knownTransientSlots.has(input)) {
+          if (unresolvedInput(query,context)) return NaN;
+        }
         var transientStatus = !transientEntity ? -5 :
           (transientEntity.detached ? -6 : transientEntity.status);
+        if (transientEntity && transientEntity.native) {
+          if (state.tick>externalProducers.throughTick) {
+            if (unresolvedInput(query,context)) return NaN;
+          }
+          return transientStatus;
+        }
+        if (transientEntity && (transientEntity.preset<1 || transientEntity.preset>24) && options.diagnosticAssumptions!==true) {
+          actorBoundary('Transient preset '+transientEntity.preset+' has no supported menu producer.','unsupported-transient-menu-preset');
+          return NaN;
+        }
         if (context.kind === 'branch' && transientEntity &&
             transientEntity.statusSource === 'native-main-menu-neutral') {
           missing('Transient render-entity preset ' + transientEntity.preset +
@@ -3918,7 +4205,7 @@ window.OB64 = window.OB64 || {};
         return !!state.screenTransition &&
           state.screenTransition.progress !== state.screenTransition.duration;
       }
-      if (start.name === 'full_screen_color_overlay_fade') return !!state.overlayJob;
+      if (start.name === 'full_screen_color_overlay_fade') return !!state.overlayJob && (!state.overlay.native || state.overlay.remaining!==0);
       return false;
     }
 
@@ -4059,6 +4346,14 @@ window.OB64 = window.OB64 || {};
           payload: { nativeClock: block.clock || 'director-evaluation' }
         }] : state.flowEvents.slice(),
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
+        nativeExternal: {
+          sharedRequests:Object.assign({},state.sharedRequests),
+          menus:Object.keys(state.transientRenderEntities).map(function(slot) {
+            return Object.assign({},state.transientRenderEntities[slot]);
+          }),
+          consumedServices:externalEventCursor,
+          consumedPoseCalls:sharedPoseCallCursor
+        },
         sceneColor: Object.assign({}, state.sceneColor),
         screenTransition: state.screenTransition
           ? Object.assign({}, state.screenTransition) : null,
@@ -4335,6 +4630,8 @@ window.OB64 = window.OB64 || {};
       state.flowEvents = [];
       applyContextTimeline(tick);
       if (stopReason) return;
+      applyExternalServices('before-director');
+      if (stopReason) return;
       if (tick > 0) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });
@@ -4513,6 +4810,7 @@ window.OB64 = window.OB64 || {};
         if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
         yield;
       }
+      if (!stopReason) applyExternalServices('after-director');
       var frameBudget = { bytes: 0 };
       var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
       var frameBytes = frameBudget.bytes;
@@ -4778,6 +5076,8 @@ window.OB64 = window.OB64 || {};
     decodeNativeActorState: decodeNativeActorState,
     nativeActor: Object.freeze({ createMovement: createNativeMovement,
       advanceMovement: advanceNativeMovement, advancePose: advanceNativePose,
-      classFamilyMatch: nativeClassFamilyMatch })
+      classFamilyMatch: nativeClassFamilyMatch }),
+    nativeExternal: Object.freeze({advanceMenu:advanceNativeMenu,createColor:createNativeColor,
+      advanceColor:advanceNativeColor,cleanupColor:cleanupNativeColor,selectSharedRequest:selectNativeSharedRequest})
   });
 })(window.OB64);

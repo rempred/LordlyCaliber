@@ -892,8 +892,11 @@ function hashBytes(input) {
     contextualSlot4.nativeFacing, contextualSlot4.variantSelector,
     contextualSlot4.baseX, contextualSlot4.baseY, contextualSlot4.baseZ
   ], [16, 0, 1, 4, -1, 0, 79]);
-  assert.strictEqual(contextualLaunchRosterRuntime.missingInputs.length, 0,
-    'the exact concurrent launch owner must supply selector 154 without invented inputs');
+  assert.deepStrictEqual(contextualLaunchRosterRuntime.missingInputs, [
+    'Color creation requires initial ownership and successful allocation/registration inputs.',
+    'Native input is unavailable for Color Overlay Countdown Query.',
+    'Color cleanup requires the current object and ownership flag.'
+  ], 'the concurrent launch owner supplies selector 154; only separate color-producer inputs remain unavailable');
   const compactConcurrentOwner = OB64.cutsceneRuntime.compactContextRuntime(
     concurrentOwnerRuntime);
   assert.strictEqual(compactConcurrentOwner.contextFrames.length, 1904);

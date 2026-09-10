@@ -3896,11 +3896,11 @@ window.OB64 = window.OB64 || {};
 
     var eventContextChoices = launchContextChoices(state, scene);
     if (scene.engine === 'director') {
-      inspector.appendChild(node('h3', '', 'Actor launch snapshot'));
+      inspector.appendChild(node('h3', '', 'Playback inputs'));
       var snapshot = state.nativeLaunchInputsByAssetId && state.nativeLaunchInputsByAssetId[scene.assetId];
       inspector.appendChild(node('p', 'cutscene-field-hint', snapshot
         ? 'Using ' + snapshot.sourceIdentity + ' · invocation ' + snapshot.invocationId + ' · ' + snapshot.evidenceGrade
-        : 'No Actor snapshot supplied. Party members and existing Actors remain unknown.'));
+        : 'No playback inputs supplied. Existing Actors and external producer state remain unknown.'));
       var snapshotFile = node('input', 'cutscene-background-select');
       snapshotFile.type = 'file'; snapshotFile.accept = '.json,application/json';
       snapshotFile.setAttribute('data-cutscene-focus-key', 'actor-launch-snapshot');
@@ -3924,9 +3924,9 @@ window.OB64 = window.OB64 || {};
           if (state.callbacks.onStatus) state.callbacks.onStatus(error.message);
         }
       });
-      inspector.appendChild(field('Import launch snapshot', snapshotFile,
+      inspector.appendChild(field('Import playback inputs', snapshotFile,
         'Loads a repeatable snapshot for this resource in this session. Project load clears the snapshot.'));
-      if (snapshot) inspector.appendChild(button('Clear Actor snapshot', 'btn-secondary', function() {
+      if (snapshot) inspector.appendChild(button('Clear playback inputs', 'btn-secondary', function() {
         setNativeLaunchInputs(state, scene, null);
         loadScene(rom, state, scene).then(function() {
           if (state.selectedSceneId === scene.sceneId) {

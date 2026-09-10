@@ -1,0 +1,1731 @@
+{
+  "schema": "ob64-native-external-fixture.v1",
+  "generator": "C:\\Users\\Joe\\Projects\\OgreBattlel64\\docs\\reviews\\cutscene-native-external-playback-r2-20260910\\export-fixture.py",
+  "inputs": [
+    {
+      "path": "docs/reviews/cutscene-external-behavior-r1-20260909/verification.json",
+      "revision": "fe8ce1684d31d3cca344465f51a103da4d48f172",
+      "gitSha256": "e954cb81c8d2190e00a9af871f7ef3844a03fde3bfacbee4599eb3fd25c88b5b"
+    },
+    {
+      "path": "docs/reviews/cutscene-shared-pose-controls-r1-20260909/examples.json",
+      "revision": "c26b117123eee49b2f162c9971befe0869e57b44",
+      "gitSha256": "dab3b326a9f9a1879e3d17b74d3f083abc921b7961231cf38e11f16ae39a5e9d"
+    }
+  ],
+  "menus": [
+    [
+      6,
+      255,
+      0,
+      0,
+      1,
+      -2,
+      -1
+    ],
+    [
+      6,
+      255,
+      0,
+      32768,
+      1,
+      -2,
+      1
+    ],
+    [
+      6,
+      255,
+      0,
+      16384,
+      1,
+      -1,
+      -1
+    ],
+    [
+      6,
+      255,
+      0,
+      16384,
+      1,
+      -2,
+      -2
+    ],
+    [
+      5,
+      255,
+      0,
+      32768,
+      1,
+      -2,
+      -1
+    ],
+    [
+      6,
+      254,
+      0,
+      32768,
+      1,
+      -2,
+      -1
+    ],
+    [
+      6,
+      255,
+      1,
+      32768,
+      1,
+      -2,
+      -1
+    ],
+    [
+      6,
+      255,
+      0,
+      49152,
+      1,
+      -2,
+      1
+    ]
+  ],
+  "colors": [
+    {
+      "initialS16": -32768,
+      "threeEligibleUpdates": [
+        -32768,
+        -32768,
+        -32768,
+        -32768
+      ]
+    },
+    {
+      "initialS16": -1,
+      "threeEligibleUpdates": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "initialS16": 0,
+      "threeEligibleUpdates": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "initialS16": 1,
+      "threeEligibleUpdates": [
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "initialS16": 2,
+      "threeEligibleUpdates": [
+        2,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "initialS16": 32767,
+      "threeEligibleUpdates": [
+        32767,
+        32766,
+        32765,
+        32764
+      ]
+    }
+  ],
+  "shared": {
+    "actualPrograms": [
+      {
+        "control": {
+          "stateId": "state:bank:001:state:0050",
+          "bank": 1,
+          "stateIndex": 50,
+          "recordOrdinal": 6,
+          "rawRecordHex": "11033B",
+          "opcode": 17,
+          "operands": [
+            3,
+            59
+          ],
+          "key": 827,
+          "ordinaryModeResult": {
+            "context": "A",
+            "slotLive": "0x801D06C4",
+            "tableReadZ64": "0x00212EF6",
+            "tableReadLive": "0x801CFA66",
+            "requestId": 714
+          },
+          "programArtifact": "artifacts/programs/bank-001/state-0050.bin",
+          "programSha256": "CC5E959346788E5AD32F38179EC7EB6706358E1763FFD498E6FFA78FC5F99CCD"
+        },
+        "physicalProgram": {
+          "artifact": "artifacts/programs/bank-001/state-0050.bin",
+          "bank": 1,
+          "byteLength": 38,
+          "canonicalRawHex": "0D018908018A08018B08018C08018D06018E1011033B018F1801900801911001920801860800",
+          "containerSha256": "5FE45610AB6F41C4B61E7012D458870BB844ABACE360DAAA69F81FF9BFC42D59",
+          "countedEntryCount": 13,
+          "decodeWarnings": [],
+          "decodedEntries": [
+            {
+              "byteLength": 3,
+              "index": 0,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x89",
+                "0x08"
+              ],
+              "operands": [
+                137,
+                8
+              ],
+              "rawHex": "018908",
+              "sourceOffset": 1
+            },
+            {
+              "byteLength": 3,
+              "index": 1,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8A",
+                "0x08"
+              ],
+              "operands": [
+                138,
+                8
+              ],
+              "rawHex": "018A08",
+              "sourceOffset": 4
+            },
+            {
+              "byteLength": 3,
+              "index": 2,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8B",
+                "0x08"
+              ],
+              "operands": [
+                139,
+                8
+              ],
+              "rawHex": "018B08",
+              "sourceOffset": 7
+            },
+            {
+              "byteLength": 3,
+              "index": 3,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8C",
+                "0x08"
+              ],
+              "operands": [
+                140,
+                8
+              ],
+              "rawHex": "018C08",
+              "sourceOffset": 10
+            },
+            {
+              "byteLength": 3,
+              "index": 4,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8D",
+                "0x06"
+              ],
+              "operands": [
+                141,
+                6
+              ],
+              "rawHex": "018D06",
+              "sourceOffset": 13
+            },
+            {
+              "byteLength": 3,
+              "index": 5,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8E",
+                "0x10"
+              ],
+              "operands": [
+                142,
+                16
+              ],
+              "rawHex": "018E10",
+              "sourceOffset": 16
+            },
+            {
+              "byteLength": 3,
+              "index": 6,
+              "opcode": 17,
+              "opcodeHex": "0x11",
+              "operandHex": [
+                "0x03",
+                "0x3B"
+              ],
+              "operands": [
+                3,
+                59
+              ],
+              "rawHex": "11033B",
+              "sourceOffset": 19
+            },
+            {
+              "byteLength": 3,
+              "index": 7,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x8F",
+                "0x18"
+              ],
+              "operands": [
+                143,
+                24
+              ],
+              "rawHex": "018F18",
+              "sourceOffset": 22
+            },
+            {
+              "byteLength": 3,
+              "index": 8,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x90",
+                "0x08"
+              ],
+              "operands": [
+                144,
+                8
+              ],
+              "rawHex": "019008",
+              "sourceOffset": 25
+            },
+            {
+              "byteLength": 3,
+              "index": 9,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x91",
+                "0x10"
+              ],
+              "operands": [
+                145,
+                16
+              ],
+              "rawHex": "019110",
+              "sourceOffset": 28
+            },
+            {
+              "byteLength": 3,
+              "index": 10,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x92",
+                "0x08"
+              ],
+              "operands": [
+                146,
+                8
+              ],
+              "rawHex": "019208",
+              "sourceOffset": 31
+            },
+            {
+              "byteLength": 3,
+              "index": 11,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x86",
+                "0x08"
+              ],
+              "operands": [
+                134,
+                8
+              ],
+              "rawHex": "018608",
+              "sourceOffset": 34
+            },
+            {
+              "byteLength": 1,
+              "index": 12,
+              "opcode": 0,
+              "opcodeHex": "0x00",
+              "operandHex": [],
+              "operands": [],
+              "rawHex": "00",
+              "sourceOffset": 37
+            }
+          ],
+          "decodedTableRange": {
+            "endExclusive": "0x000004CA",
+            "start": "0x000004A4",
+            "unit": "bytes"
+          },
+          "decodedTableSha256": "95A702D566ECAEB3B819B0E822995621CCEB1A8F0F58995B27BE0322D61BD3C9",
+          "id": "state:bank:001:state:0050",
+          "normalizedSignature": "count=13;01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);11(reference16_hi,reference16_lo);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);00()",
+          "normalizedSignatureSha256": "ADD260A0BD51F3EBD40056D2BD76F27BD735D33284EC7A4B0512DEDF1013707E",
+          "originResourceKey": "0x010A0BE0",
+          "physicalSourceEnvelope": {
+            "granularity": "compressed-container; no false bijective compressed subrange assigned",
+            "normalizedZ64": {
+              "endExclusive": "0x016352A7",
+              "start": "0x01634E60"
+            },
+            "rawV64": {
+              "mapping": "rawV64Offset = normalizedZ64Offset XOR 1 (bytewise)",
+              "spans": [
+                {
+                  "endExclusive": "0x016352A6",
+                  "start": "0x01634E60"
+                },
+                {
+                  "endExclusive": "0x016352A8",
+                  "start": "0x016352A7"
+                }
+              ]
+            }
+          },
+          "rawSha256": "CC5E959346788E5AD32F38179EC7EB6706358E1763FFD498E6FFA78FC5F99CCD",
+          "resolutionDisposition": "rom-container-exact-decoded-range-exact",
+          "selector": {
+            "facing": 1,
+            "key": 435,
+            "rawHex": "0x10FF",
+            "rawValue": 4351
+          },
+          "sourceProgramIdentityIds": [
+            "program:bank:001:variant:0:slot:5:state:0050",
+            "program:bank:001:variant:2:slot:3:state:0050",
+            "program:bank:001:variant:3:slot:1:state:0050"
+          ],
+          "sourceProgramOccurrenceCount": 7,
+          "stateIndex": 50
+        },
+        "expectedEndOfSameEligibleCall": {
+          "scope": "start immediately before this control with nonpositive delay; valid ordinary mode; every called helper returns normally",
+          "cursorOrdinal": 7,
+          "delayAfterEpilogue": 22,
+          "poseQueryOpcode": 1,
+          "nextFrameToken": 143
+        },
+        "expectedAtControlReturn": {
+          "sharedSlotWrite": {
+            "context": "A",
+            "slotLive": "0x801D06C4",
+            "tableReadZ64": "0x00212EF6",
+            "tableReadLive": "0x801CFA66",
+            "requestId": 714
+          },
+          "poseDelayChange": 0,
+          "frameTokenChange": false,
+          "cursorBehavior": "same normal preincrement then continue in this invocation while delay nonpositive",
+          "additionalEligibleCallsConsumed": 0,
+          "audioCompleted": false
+        }
+      },
+      {
+        "control": {
+          "stateId": "state:bank:001:state:0014",
+          "bank": 1,
+          "stateIndex": 14,
+          "recordOrdinal": 1,
+          "rawRecordHex": "1202EF",
+          "opcode": 18,
+          "operands": [
+            2,
+            239
+          ],
+          "key": 751,
+          "ordinaryModeResult": {
+            "context": "A",
+            "slotLive": "0x801D06C4",
+            "tableReadZ64": "0x00212E62",
+            "tableReadLive": "0x801CF9D2",
+            "requestId": 635
+          },
+          "programArtifact": "artifacts/programs/bank-001/state-0014.bin",
+          "programSha256": "DFE1E91BF27A43BFC07A5B01EFD7FDDBC138F23E47137393B29E7F28D4BAAA0F"
+        },
+        "physicalProgram": {
+          "artifact": "artifacts/programs/bank-001/state-0014.bin",
+          "bank": 1,
+          "byteLength": 27,
+          "canonicalRawHex": "09012C061202EF0127060128060129061202EF012A06012B060400",
+          "containerSha256": "5FE45610AB6F41C4B61E7012D458870BB844ABACE360DAAA69F81FF9BFC42D59",
+          "countedEntryCount": 9,
+          "decodeWarnings": [],
+          "decodedEntries": [
+            {
+              "byteLength": 3,
+              "index": 0,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x2C",
+                "0x06"
+              ],
+              "operands": [
+                44,
+                6
+              ],
+              "rawHex": "012C06",
+              "sourceOffset": 1
+            },
+            {
+              "byteLength": 3,
+              "index": 1,
+              "opcode": 18,
+              "opcodeHex": "0x12",
+              "operandHex": [
+                "0x02",
+                "0xEF"
+              ],
+              "operands": [
+                2,
+                239
+              ],
+              "rawHex": "1202EF",
+              "sourceOffset": 4
+            },
+            {
+              "byteLength": 3,
+              "index": 2,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x27",
+                "0x06"
+              ],
+              "operands": [
+                39,
+                6
+              ],
+              "rawHex": "012706",
+              "sourceOffset": 7
+            },
+            {
+              "byteLength": 3,
+              "index": 3,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x28",
+                "0x06"
+              ],
+              "operands": [
+                40,
+                6
+              ],
+              "rawHex": "012806",
+              "sourceOffset": 10
+            },
+            {
+              "byteLength": 3,
+              "index": 4,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x29",
+                "0x06"
+              ],
+              "operands": [
+                41,
+                6
+              ],
+              "rawHex": "012906",
+              "sourceOffset": 13
+            },
+            {
+              "byteLength": 3,
+              "index": 5,
+              "opcode": 18,
+              "opcodeHex": "0x12",
+              "operandHex": [
+                "0x02",
+                "0xEF"
+              ],
+              "operands": [
+                2,
+                239
+              ],
+              "rawHex": "1202EF",
+              "sourceOffset": 16
+            },
+            {
+              "byteLength": 3,
+              "index": 6,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x2A",
+                "0x06"
+              ],
+              "operands": [
+                42,
+                6
+              ],
+              "rawHex": "012A06",
+              "sourceOffset": 19
+            },
+            {
+              "byteLength": 3,
+              "index": 7,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x2B",
+                "0x06"
+              ],
+              "operands": [
+                43,
+                6
+              ],
+              "rawHex": "012B06",
+              "sourceOffset": 22
+            },
+            {
+              "byteLength": 2,
+              "index": 8,
+              "opcode": 4,
+              "opcodeHex": "0x04",
+              "operandHex": [
+                "0x00"
+              ],
+              "operands": [
+                0
+              ],
+              "rawHex": "0400",
+              "sourceOffset": 25
+            }
+          ],
+          "decodedTableRange": {
+            "endExclusive": "0x00000171",
+            "start": "0x00000156",
+            "unit": "bytes"
+          },
+          "decodedTableSha256": "95A702D566ECAEB3B819B0E822995621CCEB1A8F0F58995B27BE0322D61BD3C9",
+          "id": "state:bank:001:state:0014",
+          "normalizedSignature": "count=9;01(frame8,duration);12(reference16_hi,reference16_lo);01(frame8,duration);01(frame8,duration);01(frame8,duration);12(reference16_hi,reference16_lo);01(frame8,duration);01(frame8,duration);04(entry_target)",
+          "normalizedSignatureSha256": "22B35630BB4A79F41EA900A1CC53854A71F128F9E1A13D71E593C5D574F6E487",
+          "originResourceKey": "0x010A0BE0",
+          "physicalSourceEnvelope": {
+            "granularity": "compressed-container; no false bijective compressed subrange assigned",
+            "normalizedZ64": {
+              "endExclusive": "0x016352A7",
+              "start": "0x01634E60"
+            },
+            "rawV64": {
+              "mapping": "rawV64Offset = normalizedZ64Offset XOR 1 (bytewise)",
+              "spans": [
+                {
+                  "endExclusive": "0x016352A6",
+                  "start": "0x01634E60"
+                },
+                {
+                  "endExclusive": "0x016352A8",
+                  "start": "0x016352A7"
+                }
+              ]
+            }
+          },
+          "rawSha256": "DFE1E91BF27A43BFC07A5B01EFD7FDDBC138F23E47137393B29E7F28D4BAAA0F",
+          "resolutionDisposition": "rom-container-exact-decoded-range-exact",
+          "selector": {
+            "facing": 0,
+            "key": 3,
+            "rawHex": "0x001E",
+            "rawValue": 30
+          },
+          "sourceProgramIdentityIds": [
+            "program:bank:001:variant:0:slot:5:state:0014",
+            "program:bank:001:variant:2:slot:3:state:0014",
+            "program:bank:001:variant:3:slot:1:state:0014"
+          ],
+          "sourceProgramOccurrenceCount": 7,
+          "stateIndex": 14
+        },
+        "expectedEndOfSameEligibleCall": {
+          "scope": "start immediately before this control with nonpositive delay; valid ordinary mode; every called helper returns normally",
+          "cursorOrdinal": 2,
+          "delayAfterEpilogue": 4,
+          "poseQueryOpcode": 1,
+          "nextFrameToken": 39
+        },
+        "expectedAtControlReturn": {
+          "sharedSlotWrite": {
+            "context": "A",
+            "slotLive": "0x801D06C4",
+            "tableReadZ64": "0x00212E62",
+            "tableReadLive": "0x801CF9D2",
+            "requestId": 635
+          },
+          "poseDelayChange": 0,
+          "frameTokenChange": false,
+          "cursorBehavior": "same normal preincrement then continue in this invocation while delay nonpositive",
+          "additionalEligibleCallsConsumed": 0,
+          "audioCompleted": false
+        }
+      },
+      {
+        "control": {
+          "stateId": "state:bank:021:state:0000",
+          "bank": 21,
+          "stateIndex": 0,
+          "recordOrdinal": 2,
+          "rawRecordHex": "130336",
+          "opcode": 19,
+          "operands": [
+            3,
+            54
+          ],
+          "key": 822,
+          "ordinaryModeResult": {
+            "context": "B",
+            "slotLive": "0x801D06C8",
+            "tableReadZ64": "0x00212EEC",
+            "tableReadLive": "0x801CFA5C",
+            "requestId": 710
+          },
+          "programArtifact": "artifacts/programs/bank-021/state-0000.bin",
+          "programSha256": "4075F36D3DB8E24250AC79E5B1EE951D632389EF72585148513A8B59ECDCA040"
+        },
+        "physicalProgram": {
+          "artifact": "artifacts/programs/bank-021/state-0000.bin",
+          "bank": 21,
+          "byteLength": 111,
+          "canonicalRawHex": "250D000001006413033610000401000A01010A01020A01030A1000FF01020A01010A01000A10000701010A01020A01030A1000FF01020A01010A01000A10000701010A01020A01030A01020A01010A1000000D00FF01040A01050A01080A01090A01080A01070A01060A01070A041E",
+          "containerSha256": "63C6ACE0D346744A635A0F8171D14DD7114C6041943EC69BC162FF3BAF191872",
+          "countedEntryCount": 37,
+          "decodeWarnings": [],
+          "decodedEntries": [
+            {
+              "byteLength": 3,
+              "index": 0,
+              "opcode": 13,
+              "opcodeHex": "0x0D",
+              "operandHex": [
+                "0x00",
+                "0x00"
+              ],
+              "operands": [
+                0,
+                0
+              ],
+              "rawHex": "0D0000",
+              "sourceOffset": 1
+            },
+            {
+              "byteLength": 3,
+              "index": 1,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x00",
+                "0x64"
+              ],
+              "operands": [
+                0,
+                100
+              ],
+              "rawHex": "010064",
+              "sourceOffset": 4
+            },
+            {
+              "byteLength": 3,
+              "index": 2,
+              "opcode": 19,
+              "opcodeHex": "0x13",
+              "operandHex": [
+                "0x03",
+                "0x36"
+              ],
+              "operands": [
+                3,
+                54
+              ],
+              "rawHex": "130336",
+              "sourceOffset": 7
+            },
+            {
+              "byteLength": 3,
+              "index": 3,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0x04"
+              ],
+              "operands": [
+                0,
+                4
+              ],
+              "rawHex": "100004",
+              "sourceOffset": 10
+            },
+            {
+              "byteLength": 3,
+              "index": 4,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x00",
+                "0x0A"
+              ],
+              "operands": [
+                0,
+                10
+              ],
+              "rawHex": "01000A",
+              "sourceOffset": 13
+            },
+            {
+              "byteLength": 3,
+              "index": 5,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 16
+            },
+            {
+              "byteLength": 3,
+              "index": 6,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 19
+            },
+            {
+              "byteLength": 3,
+              "index": 7,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x03",
+                "0x0A"
+              ],
+              "operands": [
+                3,
+                10
+              ],
+              "rawHex": "01030A",
+              "sourceOffset": 22
+            },
+            {
+              "byteLength": 3,
+              "index": 8,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0xFF"
+              ],
+              "operands": [
+                0,
+                255
+              ],
+              "rawHex": "1000FF",
+              "sourceOffset": 25
+            },
+            {
+              "byteLength": 3,
+              "index": 9,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 28
+            },
+            {
+              "byteLength": 3,
+              "index": 10,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 31
+            },
+            {
+              "byteLength": 3,
+              "index": 11,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x00",
+                "0x0A"
+              ],
+              "operands": [
+                0,
+                10
+              ],
+              "rawHex": "01000A",
+              "sourceOffset": 34
+            },
+            {
+              "byteLength": 3,
+              "index": 12,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0x07"
+              ],
+              "operands": [
+                0,
+                7
+              ],
+              "rawHex": "100007",
+              "sourceOffset": 37
+            },
+            {
+              "byteLength": 3,
+              "index": 13,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 40
+            },
+            {
+              "byteLength": 3,
+              "index": 14,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 43
+            },
+            {
+              "byteLength": 3,
+              "index": 15,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x03",
+                "0x0A"
+              ],
+              "operands": [
+                3,
+                10
+              ],
+              "rawHex": "01030A",
+              "sourceOffset": 46
+            },
+            {
+              "byteLength": 3,
+              "index": 16,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0xFF"
+              ],
+              "operands": [
+                0,
+                255
+              ],
+              "rawHex": "1000FF",
+              "sourceOffset": 49
+            },
+            {
+              "byteLength": 3,
+              "index": 17,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 52
+            },
+            {
+              "byteLength": 3,
+              "index": 18,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 55
+            },
+            {
+              "byteLength": 3,
+              "index": 19,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x00",
+                "0x0A"
+              ],
+              "operands": [
+                0,
+                10
+              ],
+              "rawHex": "01000A",
+              "sourceOffset": 58
+            },
+            {
+              "byteLength": 3,
+              "index": 20,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0x07"
+              ],
+              "operands": [
+                0,
+                7
+              ],
+              "rawHex": "100007",
+              "sourceOffset": 61
+            },
+            {
+              "byteLength": 3,
+              "index": 21,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 64
+            },
+            {
+              "byteLength": 3,
+              "index": 22,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 67
+            },
+            {
+              "byteLength": 3,
+              "index": 23,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x03",
+                "0x0A"
+              ],
+              "operands": [
+                3,
+                10
+              ],
+              "rawHex": "01030A",
+              "sourceOffset": 70
+            },
+            {
+              "byteLength": 3,
+              "index": 24,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x02",
+                "0x0A"
+              ],
+              "operands": [
+                2,
+                10
+              ],
+              "rawHex": "01020A",
+              "sourceOffset": 73
+            },
+            {
+              "byteLength": 3,
+              "index": 25,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x01",
+                "0x0A"
+              ],
+              "operands": [
+                1,
+                10
+              ],
+              "rawHex": "01010A",
+              "sourceOffset": 76
+            },
+            {
+              "byteLength": 3,
+              "index": 26,
+              "opcode": 16,
+              "opcodeHex": "0x10",
+              "operandHex": [
+                "0x00",
+                "0x00"
+              ],
+              "operands": [
+                0,
+                0
+              ],
+              "rawHex": "100000",
+              "sourceOffset": 79
+            },
+            {
+              "byteLength": 3,
+              "index": 27,
+              "opcode": 13,
+              "opcodeHex": "0x0D",
+              "operandHex": [
+                "0x00",
+                "0xFF"
+              ],
+              "operands": [
+                0,
+                255
+              ],
+              "rawHex": "0D00FF",
+              "sourceOffset": 82
+            },
+            {
+              "byteLength": 3,
+              "index": 28,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x04",
+                "0x0A"
+              ],
+              "operands": [
+                4,
+                10
+              ],
+              "rawHex": "01040A",
+              "sourceOffset": 85
+            },
+            {
+              "byteLength": 3,
+              "index": 29,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x05",
+                "0x0A"
+              ],
+              "operands": [
+                5,
+                10
+              ],
+              "rawHex": "01050A",
+              "sourceOffset": 88
+            },
+            {
+              "byteLength": 3,
+              "index": 30,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x08",
+                "0x0A"
+              ],
+              "operands": [
+                8,
+                10
+              ],
+              "rawHex": "01080A",
+              "sourceOffset": 91
+            },
+            {
+              "byteLength": 3,
+              "index": 31,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x09",
+                "0x0A"
+              ],
+              "operands": [
+                9,
+                10
+              ],
+              "rawHex": "01090A",
+              "sourceOffset": 94
+            },
+            {
+              "byteLength": 3,
+              "index": 32,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x08",
+                "0x0A"
+              ],
+              "operands": [
+                8,
+                10
+              ],
+              "rawHex": "01080A",
+              "sourceOffset": 97
+            },
+            {
+              "byteLength": 3,
+              "index": 33,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x07",
+                "0x0A"
+              ],
+              "operands": [
+                7,
+                10
+              ],
+              "rawHex": "01070A",
+              "sourceOffset": 100
+            },
+            {
+              "byteLength": 3,
+              "index": 34,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x06",
+                "0x0A"
+              ],
+              "operands": [
+                6,
+                10
+              ],
+              "rawHex": "01060A",
+              "sourceOffset": 103
+            },
+            {
+              "byteLength": 3,
+              "index": 35,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x07",
+                "0x0A"
+              ],
+              "operands": [
+                7,
+                10
+              ],
+              "rawHex": "01070A",
+              "sourceOffset": 106
+            },
+            {
+              "byteLength": 2,
+              "index": 36,
+              "opcode": 4,
+              "opcodeHex": "0x04",
+              "operandHex": [
+                "0x1E"
+              ],
+              "operands": [
+                30
+              ],
+              "rawHex": "041E",
+              "sourceOffset": 109
+            }
+          ],
+          "decodedTableRange": {
+            "endExclusive": "0x0000008B",
+            "start": "0x0000001C",
+            "unit": "bytes"
+          },
+          "decodedTableSha256": "C70BBA95641B621D0641D5EA9872DA52956E8DDCA2EABAF82BDB82226F62DD75",
+          "id": "state:bank:021:state:0000",
+          "normalizedSignature": "count=37;0D(u8,u8);01(frame8,duration);13(reference16_hi,reference16_lo);10(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);10(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);10(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);10(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);10(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);10(u8,u8);0D(u8,u8);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);01(frame8,duration);04(entry_target)",
+          "normalizedSignatureSha256": "B9F975B5EF102CB4A519A5C68D21557EDDE82CF68A6203180524BD96AFE9D683",
+          "originResourceKey": "0x012B2E30",
+          "physicalSourceEnvelope": {
+            "granularity": "compressed-container; no false bijective compressed subrange assigned",
+            "normalizedZ64": {
+              "endExclusive": "0x018475CC",
+              "start": "0x018470B0"
+            },
+            "rawV64": {
+              "mapping": "rawV64Offset = normalizedZ64Offset XOR 1 (bytewise)",
+              "spans": [
+                {
+                  "endExclusive": "0x018475CC",
+                  "start": "0x018470B0"
+                }
+              ]
+            }
+          },
+          "rawSha256": "4075F36D3DB8E24250AC79E5B1EE951D632389EF72585148513A8B59ECDCA040",
+          "resolutionDisposition": "rom-container-exact-decoded-range-exact",
+          "selector": {
+            "facing": 1,
+            "key": 400,
+            "rawHex": "0x0FA1",
+            "rawValue": 4001
+          },
+          "sourceProgramIdentityIds": [],
+          "sourceProgramOccurrenceCount": 0,
+          "stateIndex": 0
+        },
+        "expectedEndOfSameEligibleCall": {
+          "scope": "start immediately before this control with nonpositive delay; valid ordinary mode; every called helper returns normally",
+          "cursorOrdinal": 4,
+          "delayAfterEpilogue": 8,
+          "poseQueryOpcode": 1,
+          "nextFrameToken": 0
+        },
+        "expectedAtControlReturn": {
+          "sharedSlotWrite": {
+            "context": "B",
+            "slotLive": "0x801D06C8",
+            "tableReadZ64": "0x00212EEC",
+            "tableReadLive": "0x801CFA5C",
+            "requestId": 710
+          },
+          "poseDelayChange": 0,
+          "frameTokenChange": false,
+          "cursorBehavior": "same normal preincrement then continue in this invocation while delay nonpositive",
+          "additionalEligibleCallsConsumed": 0,
+          "audioCompleted": false
+        }
+      },
+      {
+        "control": {
+          "stateId": "state:bank:001:state:0022",
+          "bank": 1,
+          "stateIndex": 22,
+          "recordOrdinal": 2,
+          "rawRecordHex": "140286",
+          "opcode": 20,
+          "operands": [
+            2,
+            134
+          ],
+          "key": 646,
+          "ordinaryModeResult": {
+            "context": "B",
+            "slotLive": "0x801D06C8",
+            "tableReadZ64": "0x00212D90",
+            "tableReadLive": "0x801CF900",
+            "requestId": 527
+          },
+          "programArtifact": "artifacts/programs/bank-001/state-0022.bin",
+          "programSha256": "CCD66DC7432A4B4416E0A6625FF9900DE9F6075213499148AF6ADEC3B9CB0666"
+        },
+        "physicalProgram": {
+          "artifact": "artifacts/programs/bank-001/state-0022.bin",
+          "bank": 1,
+          "byteLength": 17,
+          "canonicalRawHex": "0601650801660814028601670801640800",
+          "containerSha256": "5FE45610AB6F41C4B61E7012D458870BB844ABACE360DAAA69F81FF9BFC42D59",
+          "countedEntryCount": 6,
+          "decodeWarnings": [],
+          "decodedEntries": [
+            {
+              "byteLength": 3,
+              "index": 0,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x65",
+                "0x08"
+              ],
+              "operands": [
+                101,
+                8
+              ],
+              "rawHex": "016508",
+              "sourceOffset": 1
+            },
+            {
+              "byteLength": 3,
+              "index": 1,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x66",
+                "0x08"
+              ],
+              "operands": [
+                102,
+                8
+              ],
+              "rawHex": "016608",
+              "sourceOffset": 4
+            },
+            {
+              "byteLength": 3,
+              "index": 2,
+              "opcode": 20,
+              "opcodeHex": "0x14",
+              "operandHex": [
+                "0x02",
+                "0x86"
+              ],
+              "operands": [
+                2,
+                134
+              ],
+              "rawHex": "140286",
+              "sourceOffset": 7
+            },
+            {
+              "byteLength": 3,
+              "index": 3,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x67",
+                "0x08"
+              ],
+              "operands": [
+                103,
+                8
+              ],
+              "rawHex": "016708",
+              "sourceOffset": 10
+            },
+            {
+              "byteLength": 3,
+              "index": 4,
+              "opcode": 1,
+              "opcodeHex": "0x01",
+              "operandHex": [
+                "0x64",
+                "0x08"
+              ],
+              "operands": [
+                100,
+                8
+              ],
+              "rawHex": "016408",
+              "sourceOffset": 13
+            },
+            {
+              "byteLength": 1,
+              "index": 5,
+              "opcode": 0,
+              "opcodeHex": "0x00",
+              "operandHex": [],
+              "operands": [],
+              "rawHex": "00",
+              "sourceOffset": 16
+            }
+          ],
+          "decodedTableRange": {
+            "endExclusive": "0x0000020C",
+            "start": "0x000001FB",
+            "unit": "bytes"
+          },
+          "decodedTableSha256": "95A702D566ECAEB3B819B0E822995621CCEB1A8F0F58995B27BE0322D61BD3C9",
+          "id": "state:bank:001:state:0022",
+          "normalizedSignature": "count=6;01(frame8,duration);01(frame8,duration);14(reference16_hi,reference16_lo);01(frame8,duration);01(frame8,duration);00()",
+          "normalizedSignatureSha256": "EEF224272D65F3293BE1A17E6478DA4F89816790B650F054989E1E03E940619F",
+          "originResourceKey": "0x010A0BE0",
+          "physicalSourceEnvelope": {
+            "granularity": "compressed-container; no false bijective compressed subrange assigned",
+            "normalizedZ64": {
+              "endExclusive": "0x016352A7",
+              "start": "0x01634E60"
+            },
+            "rawV64": {
+              "mapping": "rawV64Offset = normalizedZ64Offset XOR 1 (bytewise)",
+              "spans": [
+                {
+                  "endExclusive": "0x016352A6",
+                  "start": "0x01634E60"
+                },
+                {
+                  "endExclusive": "0x016352A8",
+                  "start": "0x016352A7"
+                }
+              ]
+            }
+          },
+          "rawSha256": "CCD66DC7432A4B4416E0A6625FF9900DE9F6075213499148AF6ADEC3B9CB0666",
+          "resolutionDisposition": "rom-container-exact-decoded-range-exact",
+          "selector": {
+            "facing": 3,
+            "key": 250,
+            "rawHex": "0x09C7",
+            "rawValue": 2503
+          },
+          "sourceProgramIdentityIds": [
+            "program:bank:001:variant:0:slot:5:state:0022",
+            "program:bank:001:variant:2:slot:3:state:0022",
+            "program:bank:001:variant:3:slot:1:state:0022"
+          ],
+          "sourceProgramOccurrenceCount": 7,
+          "stateIndex": 22
+        },
+        "expectedEndOfSameEligibleCall": {
+          "scope": "start immediately before this control with nonpositive delay; valid ordinary mode; every called helper returns normally",
+          "cursorOrdinal": 3,
+          "delayAfterEpilogue": 6,
+          "poseQueryOpcode": 1,
+          "nextFrameToken": 103
+        },
+        "expectedAtControlReturn": {
+          "sharedSlotWrite": {
+            "context": "B",
+            "slotLive": "0x801D06C8",
+            "tableReadZ64": "0x00212D90",
+            "tableReadLive": "0x801CF900",
+            "requestId": 527
+          },
+          "poseDelayChange": 0,
+          "frameTokenChange": false,
+          "cursorBehavior": "same normal preincrement then continue in this invocation while delay nonpositive",
+          "additionalEligibleCallsConsumed": 0,
+          "audioCompleted": false
+        }
+      }
+    ],
+    "bank57State39": {
+      "stateId": "state:bank:057:state:0039",
+      "bank": 57,
+      "stateIndex": 39,
+      "recordOrdinal": 0,
+      "rawRecordHex": "110252",
+      "opcode": 17,
+      "operands": [
+        2,
+        82
+      ],
+      "key": 594,
+      "ordinaryModeResult": {
+        "context": "A",
+        "slotLive": "0x801D06C4",
+        "tableReadZ64": "0x00212D24",
+        "tableReadLive": "0x801CF894",
+        "requestId": 477
+      },
+      "programArtifact": "artifacts/programs/bank-057/state-0039.bin",
+      "programSha256": "243475B3BC91354C0E76655B6335D586624EC77AC680622D37D952074DAED2E8"
+    },
+    "contrastOnlyHypotheticalProjectionBands": {
+      "specialKey": 751,
+      "rows": [
+        {
+          "x": 0,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E62",
+          "tableReadLive": "0x801CF9D2",
+          "requestId": 635
+        },
+        {
+          "x": 105,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E62",
+          "tableReadLive": "0x801CF9D2",
+          "requestId": 635
+        },
+        {
+          "x": 106,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E60",
+          "tableReadLive": "0x801CF9D0",
+          "requestId": 636
+        },
+        {
+          "x": 159,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E60",
+          "tableReadLive": "0x801CF9D0",
+          "requestId": 636
+        },
+        {
+          "x": 160,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E60",
+          "tableReadLive": "0x801CF9D0",
+          "requestId": 636
+        },
+        {
+          "x": 212,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E60",
+          "tableReadLive": "0x801CF9D0",
+          "requestId": 636
+        },
+        {
+          "x": 213,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E5E",
+          "tableReadLive": "0x801CF9CE",
+          "requestId": 637
+        },
+        {
+          "x": 320,
+          "context": "A",
+          "slotLive": "0x801D06C4",
+          "tableReadZ64": "0x00212E5E",
+          "tableReadLive": "0x801CF9CE",
+          "requestId": 637
+        }
+      ],
+      "otherKey": 4,
+      "otherRows": [
+        {
+          "x": 0,
+          "context": "B",
+          "slotLive": "0x801D06C8",
+          "tableReadZ64": "0x002123B0",
+          "tableReadLive": "0x801CEF20",
+          "requestId": 53
+        },
+        {
+          "x": 159,
+          "context": "B",
+          "slotLive": "0x801D06C8",
+          "tableReadZ64": "0x002123B0",
+          "tableReadLive": "0x801CEF20",
+          "requestId": 53
+        },
+        {
+          "x": 160,
+          "context": "B",
+          "slotLive": "0x801D06C8",
+          "tableReadZ64": "0x002123B2",
+          "tableReadLive": "0x801CEF22",
+          "requestId": 34
+        },
+        {
+          "x": 320,
+          "context": "B",
+          "slotLive": "0x801D06C8",
+          "tableReadZ64": "0x002123B2",
+          "tableReadLive": "0x801CEF22",
+          "requestId": 34
+        }
+      ],
+      "limit": "These branch-input comparisons do not replace the actual ordinary branch input of zero."
+    },
+    "lastWriterWins": {
+      "operations": [
+        {
+          "context": "A",
+          "request": 10
+        },
+        {
+          "context": "A",
+          "request": 20
+        },
+        {
+          "context": "B",
+          "request": 30
+        }
+      ],
+      "beforeFlush": {
+        "A": 20,
+        "B": 30
+      },
+      "flushOrder": [
+        "A",
+        "B"
+      ],
+      "afterSeparateReset": {
+        "A": -1,
+        "B": -1
+      }
+    },
+    "nullAlternateChild": {
+      "mode": "nonzero",
+      "ownerChildPointer": 0,
+      "requestWrites": [],
+      "extraPoseDelay": 0
+    }
+  }
+}

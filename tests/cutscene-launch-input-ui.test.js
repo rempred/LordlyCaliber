@@ -5,7 +5,7 @@ const path=require('path');
 const vm=require('vm');
 const crypto=require('crypto');
 const source=fs.readFileSync(path.join(__dirname,'../cutscene-ui.js'),'utf8');
-const start=source.indexOf("    if (scene.engine === 'director') {\n      inspector.appendChild(node('h3', '', 'Actor launch snapshot'));");
+const start=source.indexOf("    if (scene.engine === 'director') {\n      inspector.appendChild(node('h3', '', 'Playback inputs'));");
 const end=source.indexOf('    if (eventContextChoices.length)',start);
 assert(start>=0 && end>start);
 function node(){return {children:[],listeners:{},appendChild(n){this.children.push(n);},
