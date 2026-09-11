@@ -436,7 +436,7 @@ window.OB64 = window.OB64 || {};
         !['Candidate', 'Supported', 'Verified', 'Editor-ready'].includes(input.evidenceGrade)) {
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
-    ['actorInputRows', 'existingActors', 'currentUnitMembers', 'schedulerBranch',
+    ['actorInputRows', 'existingActors', 'capturedSnapshot', 'currentUnitMembers', 'schedulerBranch',
       'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
@@ -503,7 +503,16 @@ window.OB64 = window.OB64 || {};
       } else if (key === 'schedulerBranch') {
         if (!['normal', 'alternate'].includes(value)) fail('Scheduler branch must be normal or alternate.', 'launch-input');
       } else {
-        if (!value || value.otherJobsEmpty !== true || !Array.isArray(value.slots) || value.slots.length !== 28) {
+        var captured = key === 'capturedSnapshot';
+        if (captured && (!value || value.resumeState !== 'unknown' || value.otherJobOwners !== 'unknown' ||
+            Object.prototype.hasOwnProperty.call(value, 'otherJobsEmpty') ||
+            !Number.isInteger(value.sceneMode) || value.sceneMode < 0 || value.sceneMode > 255 ||
+            !Number.isInteger(value.observedParserCursor) || value.observedParserCursor < 0 || value.observedParserCursor > 0xFFFFFFFF ||
+            input.existingActors && input.existingActors.status === 'known' ||
+            input.externalProducers && input.externalProducers.status === 'known')) {
+          fail('Captured snapshots require unknown resume and other-job ownership, captured mode/cursor, and no launch or service-history substitution.', 'launch-input');
+        }
+        if (!value || !captured && value.otherJobsEmpty !== true || !Array.isArray(value.slots) || value.slots.length !== 28) {
           fail('Existing Actors require 28 slots and explicit empty unsupported job owners.', 'launch-input');
         }
         var identities = new Set();
@@ -1438,7 +1447,8 @@ window.OB64 = window.OB64 || {};
     }
 
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
-    var initialActors = launchValue('existingActors');
+    var capturedSnapshot = launchValue('capturedSnapshot');
+    var initialActors = launchValue('existingActors') || capturedSnapshot;
     if (initialActors) initialActors.slots.forEach(function(row, slot) {
       if (!row) return;
       var bytes = launchBytes(row.recordHex, 0x150);
@@ -1472,6 +1482,7 @@ window.OB64 = window.OB64 || {};
       };
       actor.material = Array.from({length:16}, function(_,i) { return bytes.getUint8(i); });
       actor.materialDelta = Array.from({length:16}, function(_,i) { return bytes.getUint8(i+16); });
+      if (capturedSnapshot) applyNativeRecord(actor, bytes, 'captured-snapshot');
       actor.visible = true;
       if (row.movementHex !== null) {
         var movement = launchBytes(row.movementHex, 16);
@@ -4862,9 +4873,15 @@ window.OB64 = window.OB64 || {};
       executeNodes(nodes);
     }
 
+    if (capturedSnapshot) {
+      state.directorMode = capturedSnapshot.sceneMode;
+      state.directorModeStatus = 'captured-snapshot';
+      stopReason = 'captured-snapshot-resume-input';
+      missing('Static captured snapshot only: native scheduler phase, resume state, other job owners, inherited menu ownership, and service history are not qualified. No Director or Actor update ran.');
+    }
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
-      yield* beginTick(tick);
+      if (!capturedSnapshot) yield* beginTick(tick);
       if (!stopReason && block && blockComplete(block)) {
         var completedBlock = block;
         if (completedBlock.kind === 'until') {
@@ -4949,7 +4966,9 @@ window.OB64 = window.OB64 || {};
       engine: 'director-scheduler',
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
-      clockUnit: 'native scheduler update',
+      clockUnit: capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
+      capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
+        resumeState: 'unknown', otherJobOwners: 'unknown', executedUpdates: 0 } : null,
       durationTicks: states.length,
       states: states,
       assumptions: assumptions,

@@ -31,6 +31,7 @@ Omitted groups remain unknown.
 | `currentUnitMembers` | Five unsigned byte member IDs from the selected current gameplay unit |
 | `schedulerBranch` | `"normal"` or `"alternate"` |
 | `existingActors` | Object containing `slots` and `otherJobsEmpty: true` |
+| `capturedSnapshot` | Static Actor snapshot with unknown resume state, described below |
 
 All byte strings use native big-endian RAM order. They do not use V64 ROM byte order.
 `existingActors.slots` contains exactly 28 elements.
@@ -43,6 +44,24 @@ Coordinates and movement velocities must be finite.
 `otherJobsEmpty: true` explicitly declares that unsupported job owners are absent.
 Snapshots with active unsupported jobs cannot use this representation.
 Raw record preservation does not resolve external pointer graphs, shared effects, terrain, or concurrent scheduler ownership.
+
+### Static captured Actors
+
+`capturedSnapshot` imports observed Actor records without declaring other jobs absent.
+Its `slots` use the same 28-slot record format described above.
+Its value also requires byte `sceneMode`, unsigned 32-bit `observedParserCursor`, `resumeState: "unknown"`, and `otherJobOwners: "unknown"`.
+It must not contain `otherJobsEmpty` or accompany known `existingActors` or `externalProducers`.
+
+Compilation retains one static snapshot and reports `captured-snapshot-resume-input`.
+`capturedSnapshot.executedUpdates` is zero, and `clockUnit` identifies the absence of elapsed updates.
+The parser cursor is retained as an observation; it does not resume Director execution.
+The diagnostic toggle does not bypass this stop.
+Actor coordinates and pose fields can be compared with the capture.
+Camera, dialogue, menus, service history, cadence, and rendered agreement remain unqualified.
+
+The normal import size, cancellation, preparation, and retained-state limits still apply.
+This path does not execute Actor updates or external callbacks.
+It does not establish resumed scene playback.
 
 Current-unit binding preserves Actor identity and swaps occupied records between slots.
 Slot-owned movement remains in its original slot.
