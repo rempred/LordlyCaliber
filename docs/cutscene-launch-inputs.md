@@ -391,3 +391,25 @@ It is one bounded command-state result, separate from the retained frame timelin
 Later reset inputs must match previously established object, registry, and selector state.
 Unavailable services can follow completed row, registry, scratch, or child changes. The selector remains unchanged until success.
 These qualified synthetic paths do not establish a natural roster, universal timing, rendered-game agreement, or complete cutscene playback.
+# Captured main-Actor presentation
+
+`capturedPresentation` optionally supplies qualified camera and scene-channel state alongside a mode-zero `capturedSnapshot`.
+Its status is `known` or `unknown`. Unknown or omitted presentation remains an explicit missing input; initializer geometry is not captured evidence.
+It does not enable resume. Only the existing qualified `capturedResume` group can execute its one prospective update.
+
+The known value has `scope: "mode-zero-main-actor-geometry"`, `actorCamera`, `registeredCamera`, and twenty `channels` entries.
+Each camera has fourteen finite `values` in native order: FOV, aspect, near, far, perspective scale, eye XYZ, target XYZ, and up XYZ.
+Each camera also supplies `modelScale`. The composed Actor camera requires one; registered projection uses its independently qualified model scale.
+Perspective scale and model scale are different inputs. The former uniformly scales homogeneous projection and does not change divided screen coordinates.
+
+Each channel is null or contains `translateX`, `translateY`, `translateZ`, `rotationX`, `rotationY`, and `uniformScale`.
+Every occupied Actor must select a supplied channel through its captured channel byte.
+This bounded path currently requires zero channel rotations, channel scale one, and positive equal Actor X/Y/Z scales.
+Captured Actor scale supplies main-sprite geometry without rewriting retained native matrix or shadow fields.
+Invalid cameras, missing selected channels, other channel families, and anisotropic Actors reject before execution.
+
+The chair fixture compares eighteen Actor observations across static sample zero and one prospective update against conditional sample one.
+Its numerical limits are 0.05 pixels for registered anchors, 0.002 native matrix-translation units, and 0.0001 matrix-scale units.
+These are bounded host-math comparisons to stored native packed matrices, not exact native trigonometry or fixed-point serialization.
+The actual renderer consumes the supplied cameras, channel translations, and captured Actor scales.
+Shadow passes, the matrix mirror, synchronized game pixels, historical cadence, and later creation remain outside this path.

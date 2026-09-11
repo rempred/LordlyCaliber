@@ -436,14 +436,52 @@ window.OB64 = window.OB64 || {};
         !['Candidate', 'Supported', 'Verified', 'Editor-ready'].includes(input.evidenceGrade)) {
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
-    ['actorInputRows', 'existingActors', 'capturedSnapshot', 'currentUnitMembers', 'schedulerBranch',
+    ['actorInputRows', 'existingActors', 'capturedSnapshot', 'capturedPresentation', 'currentUnitMembers', 'schedulerBranch',
       'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'externalProducers') {
+      if (key === 'capturedPresentation') {
+        if (!input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
+            input.capturedSnapshot.value.sceneMode !== 0 || !value ||
+            value.scope !== 'mode-zero-main-actor-geometry' ||
+            !Array.isArray(value.channels) || value.channels.length !== 20 ||
+            !value.actorCamera || value.actorCamera.modelScale !== 1) {
+          fail('Captured presentation requires a mode-zero snapshot, composed Actor-camera scale one, and twenty explicit channel entries.', 'captured-presentation-input');
+        }
+        ['actorCamera', 'registeredCamera'].forEach(function(name) {
+          var camera = value[name];
+          if (!camera || !Array.isArray(camera.values) || camera.values.length !== 14 ||
+              !camera.values.every(Number.isFinite) || !Number.isFinite(camera.modelScale) || camera.modelScale <= 0 ||
+              camera.values[0] < 1 || camera.values[0] >= 179 || camera.values[1] <= 0 ||
+              camera.values[2] <= 0 || camera.values[3] <= camera.values[2] || camera.values[4] <= 0) {
+            fail('Captured camera requires fourteen finite native values and a positive model scale.', 'captured-presentation-input');
+          }
+          var a=camera.values, dx=a[8]-a[5], dy=a[9]-a[6], dz=a[10]-a[7];
+          var cx=dy*a[13]-dz*a[12], cy=dz*a[11]-dx*a[13], cz=dx*a[12]-dy*a[11];
+          if (!(dx*dx+dy*dy+dz*dz>0) || !(cx*cx+cy*cy+cz*cz>0)) {
+            fail('Captured camera eye, target and up must define a basis.', 'captured-presentation-input');
+          }
+        });
+        value.channels.forEach(function(channel) {
+          if (channel === null) return;
+          if (!channel || !['translateX','translateY','translateZ','rotationX','rotationY','uniformScale'].every(function(k){return Number.isFinite(channel[k]);}) ||
+              channel.rotationX !== 0 || channel.rotationY !== 0 || channel.uniformScale !== 1) {
+            fail('Captured main-Actor geometry currently requires unit-scale unrotated scene channels.', 'captured-presentation-input');
+          }
+        });
+        input.capturedSnapshot.value.slots.forEach(function(row) {
+          if (!row) return;
+          var view=launchBytes(row.recordHex,0x150);
+          var channel=view.getUint8(0x13E), scale=view.getFloat32(0x104,false);
+          if (!value.channels[channel] || !(scale>0) || !Number.isFinite(scale) ||
+              view.getFloat32(0x108,false)!==scale || view.getFloat32(0x10C,false)!==scale || view.getUint8(0x13D)!==0) {
+            fail('Captured main-Actor geometry requires a supplied channel and positive uniform ordinary Actor scale.', 'captured-presentation-input');
+          }
+        });
+      } else if (key === 'externalProducers') {
         validateExternalProducers(value);
       } else if (key === 'rosterStateServices') {
         if(!Array.isArray(value))fail('Roster State services require ordered occurrences.','launch-input');
@@ -1508,6 +1546,7 @@ window.OB64 = window.OB64 || {};
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var capturedSnapshot = launchValue('capturedSnapshot');
     var capturedResume = launchValue('capturedResume');
+    var capturedPresentation = launchValue('capturedPresentation');
     var resumedMenuSelection = null;
     var initialActors = launchValue('existingActors') || capturedSnapshot;
     if (initialActors) initialActors.slots.forEach(function(row, slot) {
@@ -1533,6 +1572,7 @@ window.OB64 = window.OB64 || {};
       actor.decoderMode = bytes.getUint8(0x13D);
       actor.sourceRowOrdinal = bytes.getUint8(0x147);
       actor.nativeRecordBase = row.recordHex;
+      if (capturedPresentation) actor.capturedMainScale = bytes.getFloat32(0x104, false);
       actor.nativeOwnerContext = bytes.getInt32(0xEC);
       actor.nativeFlagB = bytes.getInt16(0x13A);
       actor.linkedOrdinal = bytes.getUint8(0x149);
@@ -4417,7 +4457,7 @@ window.OB64 = window.OB64 || {};
           movementFrame: actor.movementFrame,
           activeMovementId: actor.activeMovementId,
           uniformScale: actor.uniformScale * channel.uniformScale,
-          nativeUniformScale: actor.uniformScale,
+          nativeUniformScale: capturedPresentation ? actor.capturedMainScale : actor.uniformScale,
           tint: Object.assign({}, actor.tint),
           yawDegrees: actor.yawDegrees + channel.rotationY,
           pitchDegrees: channel.rotationX,
@@ -4945,6 +4985,18 @@ window.OB64 = window.OB64 || {};
 
     if (capturedSnapshot) {
       state.directorMode = capturedSnapshot.sceneMode;
+      if (capturedPresentation) {
+        ['actor', 'registered'].forEach(function(bank) {
+          var source=capturedPresentation[bank+'Camera'], a=source.values;
+          state.cameras[bank]=cameraFromProjection({fovYDegrees:a[0],aspect:a[1],near:a[2],far:a[3],
+            modelScale:source.modelScale,eye:{x:a[5],y:a[6],z:a[7]},target:{x:a[8],y:a[9],z:a[10]},
+            up:{x:a[11],y:a[12],z:a[13]},screenWidth:320,screenHeight:240,evidenceStatus:'qualified-captured-main-actor'},
+            'Qualified captured main-Actor camera; native rounding and image agreement remain separate.');
+        });
+        state.transformChannels=capturedPresentation.channels.map(function(channel){return channel ? Object.assign(identityTransformChannel(),channel) : identityTransformChannel();});
+      } else {
+        missing('Captured main-Actor camera and scene transforms are unknown; initializer geometry is not captured presentation.');
+      }
       state.directorModeStatus = 'captured-snapshot';
       if (!capturedResume) {
         stopReason = 'captured-snapshot-resume-input';
