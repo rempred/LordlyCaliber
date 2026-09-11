@@ -1482,7 +1482,16 @@ window.OB64 = window.OB64 || {};
       };
       actor.material = Array.from({length:16}, function(_,i) { return bytes.getUint8(i); });
       actor.materialDelta = Array.from({length:16}, function(_,i) { return bytes.getUint8(i+16); });
-      if (capturedSnapshot) applyNativeRecord(actor, bytes, 'captured-snapshot');
+      if (capturedSnapshot) {
+        applyNativeRecord(actor, bytes, 'captured-snapshot');
+        // Record preservation must not select the alternate sprite consumer for ordinary Actors.
+        if (actor.decoderMode === 0) {
+          actor.bodyPoseProgram = null;
+          actor.artSourceId = 'cutscene-art-bank:' + actor.bank;
+          actor.poseId = poseId(actor.bank, actor.animationKey, actor.nativeFacing);
+          actor.poseProgramStatus = 'captured-ordinary-token';
+        }
+      }
       actor.visible = true;
       if (row.movementHex !== null) {
         var movement = launchBytes(row.movementHex, 16);

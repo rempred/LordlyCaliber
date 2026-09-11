@@ -143,10 +143,23 @@ const checked=[];
   assert(nativeFrame,'qualified empty pose still renders its retained native token');
   assert.strictEqual(nativeFrame.bodyPoseProgram.displayedFrameToken,0);
   assert.strictEqual(nativeFrame.bodyPoseProgram.nativeFrameSelection,true);
+  const capturedInput=JSON.parse(JSON.stringify(launch));
+  delete capturedInput.existingActors;
+  const capturedSlots=Array(28).fill(null);
+  capturedSlots[actor.slot]={identity:'qualified-alternate-snapshot',recordHex:actor.source.recordHex,movementHex:null};
+  capturedInput.capturedSnapshot={status:'known',value:{slots:capturedSlots,sceneMode:0,observedParserCursor:0,resumeState:'unknown',otherJobOwners:'unknown'}};
+  const capturedResult=run(p,capturedInput),capturedActor=capturedResult.states[0].actors[0];
+  assert.strictEqual(capturedResult.outcome,'captured-snapshot-resume-input');
+  assert.strictEqual(capturedResult.capturedSnapshot.executedUpdates,0);
+  assert(capturedActor.bodyPoseProgram);
+  const capturedFrame=OB64.cutsceneSprites.frameForActor(spriteState,capturedActor);
+  assert(capturedFrame,'qualified alternate captured record retains its sprite consumer');
+  assert.strictEqual(capturedFrame.bodyPoseProgram.nativeFrameSelection,true);
+  assert.strictEqual(capturedFrame.bodyPoseProgram.artSource,named.sourceArt);
   const retainedOutsideState={...actor,bodyPoseProgram:{...actor.bodyPoseProgram,selector:32767}};
   assert(OB64.cutsceneSprites.frameForActor(spriteState,retainedOutsideState),
    'retained native token does not require resolving a stale requested-State directory');
-  alternateResults.push({sourceArt:named.sourceArt,handle:named.handle,immediateCursor:decoded.poseCursor,calls:24});
+  alternateResults.push({sourceArt:named.sourceArt,handle:named.handle,immediateCursor:decoded.poseCursor,calls:24,capturedAlternateFrame:true});
  }
  console.log(JSON.stringify({status:'pass',node:process.version,sourceHashes,generatorSha256:hash(fs.readFileSync(__filename)),
   fixtureSha256:hash(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-actor-services.json'))),checked,alternateResults,

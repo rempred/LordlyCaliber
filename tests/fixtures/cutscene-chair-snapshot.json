@@ -1,6 +1,6 @@
 {
-  "generator": "compare-chair.cjs",
-  "sourceSha256": "f8008d54a10f0711fb7fca9df2888ae682acc9555e70c752ee515c38d1620475",
+  "generator": "docs/reviews/cutscene-chair-snapshot-render-routing-r1-20260911/compare-chair.cjs",
+  "sourceSha256": "2d72c9a5431adaf332b5b577e7e2e3e9bad38af356cfddcf452715ba04e1c8d4",
   "input": {
     "schema": "ob64-cutscene-launch-inputs.v1",
     "assetId": "rom-director:01F4558C",
