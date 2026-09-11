@@ -63,6 +63,40 @@ The normal import size, cancellation, preparation, and retained-state limits sti
 This path does not execute Actor updates or external callbacks.
 It does not establish resumed scene playback.
 
+### Qualified single-update resume
+
+An explicit known `capturedResume` group can qualify one prospective update from a captured snapshot.
+The supported entry is `normal-director-held-movement-query`; `origin` must be `prospective-captured-state`, and `updates` must be one.
+This entry starts inside the selected wrapper at the normal Director call, after resource staging.
+It does not replay initialization, controller selection, or resource-pass helpers.
+The supplied captured parser cursor must identify an enabled movement query that remains blocked after the update.
+
+The value supplies `primaryOwnerAddress` and complete `primaryOwnerHex` (`0x1CB2` bytes), plus `secondaryOwnerAddress` and `secondaryOwnerHex` (`0x844` bytes).
+It also supplies `registeredCounter: 0` and a negative signed-byte `tailTimer`.
+The primary and secondary fields must select the qualified inactive non-Actor helper paths.
+These checks describe inactive consumers in this update; they do not declare all game jobs absent.
+All occupied Actors must use ordinary pose mode.
+Movement jobs must advance without pause, countdown wrap, or allocator cleanup.
+Shared pose controls require a later qualification and stop this bounded path.
+
+`menuRootAddress` and complete `menuRootHex` (`0xD8` bytes) supply the selected list context.
+The next-pointer at root offset four must be zero.
+`menuOwners` contains fourteen null entries or `{address, recordHex}` records of 22 bytes each.
+Their pointers must agree with the primary owner table.
+Supplied memory regions must be valid and disjoint, including Actor and movement owners.
+
+The product runs movement, pose, and the actual Director query before publishing the menu-selection result.
+Inactive native helper guards and the held query establish selection preservation for this entry.
+The preserved empty list then selects no menu entity; retained owner records do not become creation events or list membership.
+The result reports `qualified-resume-update-complete`, one executed update, and the retained query boundary.
+`resumedState` exposes the resulting movement slots, counter, and parser word.
+`resumedMenuSelection` identifies its `after-director` phase and preservation basis.
+
+Other entry phases, passing queries, active unsupported owners, and concurrent Director contexts require further inputs.
+Omitting `capturedResume` retains the static behavior above.
+Existing size, cancellation, trace, and retained-state limits still apply.
+This prospective update does not establish historical cadence, service history, natural launch, camera agreement, or synchronized game pixels.
+
 Current-unit binding preserves Actor identity and swaps occupied records between slots.
 Slot-owned movement remains in its original slot.
 Complete empty input rows skip construction; final slot normalization still requires known Actor occupancy and source-row memory.

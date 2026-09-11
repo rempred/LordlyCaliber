@@ -533,6 +533,64 @@ window.OB64 = window.OB64 || {};
         });
       }
     });
+    if (input.capturedResume) {
+      var resumeGroup = input.capturedResume;
+      if (!['known','unknown'].includes(resumeGroup.status)) fail('Invalid captured resume status.','launch-input');
+      if (resumeGroup.status === 'known') {
+        var resume = resumeGroup.value, capturedValue = input.capturedSnapshot && input.capturedSnapshot.value;
+        if (!resume || !input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
+            !input.schedulerBranch || input.schedulerBranch.status !== 'known' || input.schedulerBranch.value !== 'normal' ||
+            capturedValue.sceneMode !== 0 || resume.entry !== 'normal-director-held-movement-query' ||
+            resume.origin !== 'prospective-captured-state' || resume.updates !== 1 ||
+            resume.registeredCounter !== 0 || !Number.isInteger(resume.tailTimer) || resume.tailTimer < -128 || resume.tailTimer >= 0) {
+          fail('Resume requires an explicit prospective normal mode-zero entry and qualified counter/timer state.','resume-input');
+        }
+        var primary = launchBytes(resume.primaryOwnerHex,0x1CB2), secondary = launchBytes(resume.secondaryOwnerHex,0x844);
+        if (primary.getUint8(0x1CB1) !== 0 || secondary.getInt32(0x824) !== 0 ||
+            secondary.getInt32(0x82C) !== 0 || secondary.getUint8(0x840) !== 0) {
+          fail('Resume requires qualified inactive secondary scheduler fields.','resume-job-input');
+        }
+        [[0x1BB4,20],[0x1BB0,1],[0x19B4,1],[0x1A4C,1],[0x1A44,1],[0x19F4,20],
+          [0x1A50,28],[0x168,28],[0x1D8,28],[0x2B8,28],[0x1CA4,1]].forEach(function(range) {
+          for (var i=0;i<range[1];i++) if (primary.getUint32(range[0]+i*4)!==0) {
+            fail('Resume requires the guarded non-Actor owner tables to be empty.','resume-job-input');
+          }
+        });
+        var root = launchBytes(resume.menuRootHex,0xD8);
+        var ranges=[[0x8018FDC0,0x8018FDC4],[0x8022A950,0x8022A99C],
+          [0x801CFC70,0x801CFC71],[0x800E7A32,0x800E7A33]];
+        function range(address,size) {
+          if (!Number.isInteger(address) || address < 0x80000000 || address+size > 0x80400000 || address%4 ||
+              ranges.some(function(other){return address<other[1] && other[0]<address+size;})) {
+            fail('Qualified resume memory regions must be valid and disjoint.','resume-memory-input');
+          }
+          ranges.push([address,address+size]);
+        }
+        range(resume.primaryOwnerAddress,0x1CB2);range(resume.secondaryOwnerAddress,0x844);range(resume.menuRootAddress,0xD8);
+        if (root.getUint32(4)!==0) fail('This resume boundary requires an empty selected menu list.','resume-menu-input');
+        if (!Array.isArray(resume.menuOwners) || resume.menuOwners.length!==14) fail('Resume requires fourteen menu owner slots.','resume-menu-input');
+        resume.menuOwners.forEach(function(owner,slot) {
+          var pointer=primary.getUint32(0x19B8+slot*4);
+          if (owner===null) {if(pointer!==0)fail('Menu owner pointer disagrees with its supplied record.','resume-menu-input');return;}
+          if (!owner || owner.address!==pointer) fail('Menu owner pointer disagrees with its supplied record.','resume-menu-input');
+          launchBytes(owner.recordHex,22);range(pointer,22);
+        });
+        capturedValue.slots.forEach(function(row,slot) {
+          var actorPointer=primary.getUint32(0x18+slot*4),movementPointer=primary.getUint32(0xF8+slot*4);
+          if (!row) {if(actorPointer || movementPointer)fail('Empty Actor slot has a native owner.','resume-memory-input');return;}
+          range(actorPointer,0x150);
+          if (launchBytes(row.recordHex,0x150).getUint8(0x13D)!==0) fail('Resume currently requires ordinary captured Actors.','resume-pose-input');
+          if (row.movementHex===null) {if(movementPointer)fail('Movement pointer lacks its record.','resume-memory-input');}
+          else {
+            var movement=launchBytes(row.movementHex,16);
+            if (movement.getUint8(14)!==0 || movement.getInt16(12)<=1) {
+              fail('Resume movement must advance without pause, wrap, or allocator cleanup.','resume-movement-input');
+            }
+            range(movementPointer,16);
+          }
+        });
+      }
+    }
     return M.cloneJson(input, 'launch inputs');
   }
   function launchTranslationIndex(value) {
@@ -1426,6 +1484,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function registerSharedPoseRequest(actor, record) {
+      if (capturedResume) return 'resume-shared-pose-input';
       var input=null;
       if (record.opcode===18 || record.opcode===20) {
         input=externalProducers && externalProducers.poseCalls[sharedPoseCallCursor];
@@ -1448,6 +1507,8 @@ window.OB64 = window.OB64 || {};
 
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var capturedSnapshot = launchValue('capturedSnapshot');
+    var capturedResume = launchValue('capturedResume');
+    var resumedMenuSelection = null;
     var initialActors = launchValue('existingActors') || capturedSnapshot;
     if (initialActors) initialActors.slots.forEach(function(row, slot) {
       if (!row) return;
@@ -4734,7 +4795,7 @@ window.OB64 = window.OB64 || {};
       }
       yield* applyExternalServices('before-director');
       if (stopReason) return;
-      if (tick > 0) updateJobs();
+      if (tick > 0 || capturedResume) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });
       scheduled.forEach(function(item) { executePrimitive(item.node); });
@@ -4885,12 +4946,33 @@ window.OB64 = window.OB64 || {};
     if (capturedSnapshot) {
       state.directorMode = capturedSnapshot.sceneMode;
       state.directorModeStatus = 'captured-snapshot';
-      stopReason = 'captured-snapshot-resume-input';
-      missing('Static captured snapshot only: native scheduler phase, resume state, other job owners, inherited menu ownership, and service history are not qualified. No Director or Actor update ran.');
+      if (!capturedResume) {
+        stopReason = 'captured-snapshot-resume-input';
+        missing('Static captured snapshot only: native scheduler phase, resume state, other job owners, inherited menu ownership, and service history are not qualified. No Director or Actor update ran.');
+      } else {
+        if (contextRuntime) fail('Captured resume requires an isolated qualified Director context.','resume-context-input');
+        var resumeIndex=activeProgram.primitives.findIndex(function(node){return node.startWord===capturedSnapshot.observedParserCursor;});
+        var resumeNode=activeProgram.primitives[resumeIndex];
+        if (!resumeNode || resumeNode.name!=='actor_movement_countdown_query' || !resumeNode.query || !queryEnabled(resumeNode)) {
+          fail('Resume requires a native parser cursor at an enabled movement query.','resume-transition-input');
+        }
+        var resumeSlot=resumeNode.query.producerInput, resumeJob=state.movementJobs[resumeSlot];
+        var predictedJob=resumeJob && Object.assign({},resumeJob);
+        var predictedActor=state.actors[resumeSlot] && Object.assign({},state.actors[resumeSlot]);
+        var predictedAlive=predictedJob && predictedActor && advanceNativeMovement(predictedActor,predictedJob);
+        var predictedValue=predictedAlive ? lowS16(predictedJob.remaining) : 0;
+        if (compare(predictedValue,resumeNode.query.compareMode,resumeNode.query.target)) {
+          fail('A passing movement query requires qualification of the following Director effects.','resume-transition-input');
+        }
+        persistentCursorPrimitiveIndex=resumeIndex;
+        installCursorAtPrimitive(resumeIndex);
+        state.directorModeStatus='qualified-prospective-resume';
+        recordTrace({tick:0,kind:'captured-resume-entry',entry:capturedResume.entry,parserWord:capturedSnapshot.observedParserCursor});
+      }
     }
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
-      if (!capturedSnapshot) yield* beginTick(tick);
+      if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
       if (!stopReason && block && blockComplete(block)) {
         var completedBlock = block;
         if (completedBlock.kind === 'until') {
@@ -4919,6 +5001,20 @@ window.OB64 = window.OB64 || {};
         yield;
       }
       if (!stopReason) yield* applyExternalServices('after-director');
+      if (capturedResume && !stopReason) {
+        if (!block || block.kind!=='query' || block.query.id!==resumeNode.id ||
+            Object.keys(state.actors).some(function(slot){return !!state.actors[slot].poseBlocked;})) {
+          fail('The resumed transition exceeded the qualified held-query boundary.','resume-transition-input');
+        }
+        // Inactive owner guards and the held query preserve selection; only then resolve the menu list.
+        resumedMenuSelection={phase:'after-director',rootAddress:capturedResume.menuRootAddress,
+          rootHex:capturedResume.menuRootHex,menuOwners:M.cloneJson(capturedResume.menuOwners),
+          selectedEntity:null,outcome:'empty-selected-list',preservation:'guarded-normal-pass-and-held-query'};
+        recordTrace({tick:tick,kind:'captured-resume-query',nodeId:resumeNode.id,
+          actual:queryActual(block.query,{kind:'wait'}),target:block.query.query.target,held:true});
+        recordTrace({tick:tick,kind:'resumed-menu-selection',phase:'after-director',selectedEntity:null});
+        stopReason='qualified-resume-update-complete';
+      }
       var frameBudget = { bytes: 0 };
       var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
       var frameBytes = frameBudget.bytes;
@@ -4935,7 +5031,7 @@ window.OB64 = window.OB64 || {};
           !state.oversizedImageTransitionJob) break;
     }
 
-    if (!state.terminal && states.length >= maxTicks) {
+    if (!state.terminal && states.length >= maxTicks && !(capturedResume && resumedMenuSelection)) {
       stopReason = 'tick-limit';
       missing('Director preview reached the ' + maxTicks + '-tick safety limit.');
     }
@@ -4975,9 +5071,16 @@ window.OB64 = window.OB64 || {};
       engine: 'director-scheduler',
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
-      clockUnit: capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
+      clockUnit: capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
       capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
-        resumeState: 'unknown', otherJobOwners: 'unknown', executedUpdates: 0 } : null,
+        resumeState: capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',
+        executedUpdates: capturedResume && resumedMenuSelection ? 1 : 0 } : null,
+      resumedMenuSelection: resumedMenuSelection,
+      resumedState: capturedResume && resumedMenuSelection ? {
+        parserWord: capturedSnapshot.observedParserCursor, registeredCounter: state.registeredCounter ? state.registeredCounter.value : 0,
+        movementSlots: Array.from({length:28},function(_,slot){var job=state.movementJobs[slot];return job ?
+          {vx:job.vx,vz:job.vz,remaining:job.remaining,pauseByte:job.pauseByte,elapsed:job.elapsed} : null;})
+      } : null,
       durationTicks: states.length,
       states: states,
       assumptions: assumptions,
