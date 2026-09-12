@@ -53,7 +53,7 @@ const SOURCE_RECOVERY_EDITOR_PATHS = Object.freeze([
 const ALIGNMENT_SOURCE_NATIVE_BASELINE = Object.freeze({commit:'774b8aa41b1c3780a8aa568816d5137c85501918',tree:'a2e6482b75070fd59a1dad040189556226a0716e'});
 const ALIGNMENT_SOURCE_EDITOR_BASELINE = Object.freeze({commit:'aaeffde75b394dc2c41162933299d099c317d792',tree:'ab7009686e932db2c326319fa08cf5142a44ef8c'});
 const ALIGNMENT_SOURCE_NATIVE_PATHS = Object.freeze(['config/lordly-native-source-recovery-v4.json','tools/build_squad_alignment_correction.py','tools/lib/lordly_native_source_recovery.js','tests/squad_alignment_correction.py','tests/lordly_native_source_recovery.js']);
-const ALIGNMENT_SOURCE_EDITOR_PATHS = Object.freeze(['tools/generate-native-rebuild-data.js','tests/native-rebuild-alignment-correction.test.js']);
+const ALIGNMENT_SOURCE_EDITOR_PATHS = Object.freeze(['tools/generate-native-rebuild-data.js','tests/native-rebuild-alignment-correction.test.js','native-rebuild.js','tests/native-rebuild-phase5b-consumables.test.js']);
 const EXPECTED_APPROVALS = Object.freeze([
   Object.freeze({ phase: 'Phase 3',
     sha256: 'B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA',
@@ -135,6 +135,7 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index];
+    if (name === '--runtime') { args.runtime = true; continue; }
     if (name === '--input-root' || name === '--decomp' ||
         name === '--input-contract' || name === '--out' || name === '--alignment-correction') {
       if (!argv[index + 1]) fail(name + ' needs a path');
@@ -901,7 +902,7 @@ function buildPayload(root, identity, inputs, approvals, generatorIdentity, inpu
   };
 }
 
-function applyAlignmentCorrection(payload, file) {
+function applyAlignmentCorrection(payload, file, runtime = false) {
   const correction = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (correction.schemaVersion !== 1 || correction.contractId !== 'lordly-native-rebuild.squad-alignment.v10' ||
       correction.status !== 'pass' || correction.review !== 'pending' || correction.runtime !== 'not-tested' ||
@@ -910,6 +911,7 @@ function applyAlignmentCorrection(payload, file) {
   }
   const expectedComponents = {'source-loader':'32917C8B0B4B70551C5AF40F5EF5639EC654FEFA02E18A420CD40E2BABF1BB14', 'source-module':'7B934CDE557BCF400DFCCE5F0E8DA5723A048E3E9F07E181DEB574C500EEAEB8'};
   if (new Set(correction.components.map(x=>x.before.name)).size !== 2) fail('duplicate Alignment component');
+  const supersededComponents = JSON.parse(JSON.stringify(payload.phase3.components.filter(x=>x.owner==='tool.squad-menu-alignment')));
   const historicalProducts = {phase3: JSON.parse(JSON.stringify(payload.phase3.matrix)),
     phase4: JSON.parse(JSON.stringify(payload.shops.products || [])),
     consumables: JSON.parse(JSON.stringify(payload.consumables.acceptedSource.products))};
@@ -947,15 +949,29 @@ function applyAlignmentCorrection(payload, file) {
   // Update product identities only. Approval and historical input ledgers retain their own identities.
   payload.phase3.matrix = update(payload.phase3.matrix);
   payload.shops.products = update(payload.shops.products);
-  payload.consumables.acceptedSource.products = update(payload.consumables.acceptedSource.products);
-  payload.consumables.acceptedSource.nativeOwnerImages = update(payload.consumables.acceptedSource.nativeOwnerImages);
+  const currentConsumableOwnerImages = update(payload.consumables.acceptedSource.nativeOwnerImages).filter((x,i)=>x.romSha256!==payload.consumables.acceptedSource.nativeOwnerImages[i].romSha256);
   payload.phase3.historicalSource = {generator:payload.phase3.generator, payloadSha256:payload.phase3.payloadSha256};
   payload.phase3.generator = 'tools/build_squad_alignment_correction.py';
   payload.phase3.payloadSha256 = sha256(Buffer.from(JSON.stringify(payload.phase3.components)));
   payload.alignmentCorrection = {contractId:correction.contractId, version:10, review:'pending', runtime:'not-tested',
     reportSha256:sha256(fs.readFileSync(file)), generator:correction.generator, parentGenerator:correction.parentGenerator,
-    historicalProducts, products:correction.products};
+    historicalProducts, supersededComponents, currentConsumableOwnerImages, products:correction.products};
+  if (runtime) {
+    delete payload.alignmentCorrection.reportSha256;
+    for (const key of ['generator','parentGenerator']) payload.alignmentCorrection[key].path = key === 'generator' ? 'tools/build_squad_alignment_correction.py' : 'tools/luck_alignment_display_patch.py';
+    payload.alignmentCorrection.editorGenerator = identifyGeneratorSource(fs.readFileSync(__filename));
+    payload.alignmentCorrection.products = Object.fromEntries(Object.entries(correction.products).map(([key,value])=>[key,{bytes:value.bytes,beforeSha256:value.beforeSha256,sha256:value.sha256,alignmentEnabled:value.alignmentEnabled,unrelatedBytesPreserved:value.unrelatedBytesPreserved}]));
+  }
   return payload;
+}
+
+function historicalRuntimePayload() {
+  const cp = require('child_process'), vm = require('vm');
+  const source = cp.execFileSync('git', ['-C',path.resolve(__dirname,'..'),'show',
+    'aaeffde75b394dc2c41162933299d099c317d792:native-rebuild-data.js']);
+  if (sha256(source) !== '354BD5A73CBB103A7C08C200BE354CEA1F1BBAFF6D0DCEA2B5F4FDEE3127984F') fail('historical runtime bundle identity drift');
+  const context = {}; vm.runInNewContext(source.toString('utf8'),context);
+  return JSON.parse(JSON.stringify(context.OB64_NATIVE_REBUILD_DATA.payload));
 }
 
 function main() {
@@ -968,9 +984,10 @@ function main() {
     ? Object.assign({}, LEGACY_GENERATOR_IDENTITY)
     : Object.assign({ path: 'tools/generate-native-rebuild-data.js' },
       identifyGeneratorSource(fs.readFileSync(__filename)));
-  const payload = buildPayload(
+  const payload = args.runtime ? historicalRuntimePayload() : buildPayload(
     args.inputRoot, identity, inputs, approvals, generatorIdentity, inputContract);
-  if (args.alignmentCorrection) applyAlignmentCorrection(payload, args.alignmentCorrection);
+  if (args.runtime && !args.alignmentCorrection) fail('runtime generation requires an explicit Alignment correction');
+  if (args.alignmentCorrection) applyAlignmentCorrection(payload, args.alignmentCorrection, args.runtime);
   const payloadSha256 = sha256(Buffer.from(JSON.stringify(payload), 'utf8'));
   const bundle = { schema: 'ob64-native-rebuild-data', schemaVersion: 1, payloadSha256, payload };
   const source = [
@@ -988,6 +1005,7 @@ function main() {
   fs.writeFileSync(args.out, source, 'utf8');
   process.stdout.write(JSON.stringify({
     output: args.out,
+    currentRuntimeCorrection: !!args.runtime,
     bytes: Buffer.byteLength(source),
     sha256: sha256(Buffer.from(source)),
     payloadSha256,

@@ -20,9 +20,31 @@ assert.deepStrictEqual(after.shops.contract,before.shops.contract);
 assert.deepStrictEqual(after.phase3.components.filter(x=>x.owner!=='tool.squad-menu-alignment'),before.phase3.components.filter(x=>x.owner!=='tool.squad-menu-alignment'));
 assert.strictEqual(after.phase3.components.find(x=>x.owner==='tool.squad-menu-alignment'&&x.name==='source-module').payloadBytes,3328);
 assert.strictEqual(after.alignmentCorrection.review,'pending');
-assert.strictEqual(after.consumables.acceptedSource.products.canonicalNativeConsumables,'3F71E57BBAAE9624609969D800D70035E0CED094D37BFA053920B6D1C8609508');
+assert.deepStrictEqual(after.consumables.acceptedSource,before.consumables.acceptedSource);
+assert.strictEqual(after.alignmentCorrection.currentConsumableOwnerImages[0].romSha256,'3F71E57BBAAE9624609969D800D70035E0CED094D37BFA053920B6D1C8609508');
 const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'ob64-alignment-test-'));
 for (const mutation of [r=>{r.components[0].after.romStart++;},r=>{r.components[1].after.bytes++;},r=>{r.components.push(r.components[0]);},r=>{r.runtime='accepted';}]) {
   const r=JSON.parse(fs.readFileSync(report,'utf8'));mutation(r);const file=path.join(scratch,'bad.json');fs.writeFileSync(file,JSON.stringify(r));assert.throws(()=>generator.applyAlignmentCorrection(baseline(),file));
 }
 console.log('Alignment correction: preservation and four rejection cases pass.');
+
+// The optional bundle argument exercises the real consumer's historical upgrade
+// and mixed-owner rejection without opening a browser or emulator.
+if (process.argv[3]) {
+  const script = String.raw`
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const root=process.argv[1], report=JSON.parse(fs.readFileSync(process.argv[2],'utf8')), bundle=process.argv[3];
+global.window=global;global.module=undefined;global.localStorage={getItem(){return null;},setItem(){},removeItem(){}};
+vm.runInThisContext('var OB64 = window.OB64 = {};');
+for(const name of ['data.js','rom-names-data.js','portraits.js','parsers.js','repack.js','description-codec.js','consumable-effects.js','patch.js','tools-data.js','tools.js','native-rebuild-data.js','native-rebuild.js'])vm.runInThisContext(fs.readFileSync(name==='native-rebuild-data.js'?bundle:path.join(root,name),'utf8'));
+const bytes=new Uint8Array(fs.readFileSync(report.products.phase5aCanonicalNativeConsumables.path));
+assert.strictEqual(OB64.nativeRebuild._test.detectPhase3Owner(bytes,'squad-menu-alignment').state,'native');
+const provenance=OB64.nativeRebuild._test.classifyConsumableOwner(bytes).provenance;
+assert.strictEqual(provenance.source,'alignment-v10-source-product');assert.strictEqual(provenance.lifecycle,'source-regenerated-unreviewed');
+const old=bytes.slice();for(const x of report.components)old.set(Buffer.from(x.before.dataHex,'hex'),x.before.romStart);
+const detected=OB64.nativeRebuild._test.detectPhase3Owner(old,'squad-menu-alignment');assert.strictEqual(detected.state,'native');assert.strictEqual(detected.updateRequired,true);
+const mixed=bytes.slice(),loader=report.components.find(x=>x.before.name==='source-loader').before;mixed.set(Buffer.from(loader.dataHex,'hex'),loader.romStart);assert.strictEqual(OB64.nativeRebuild._test.detectPhase3Owner(mixed,'squad-menu-alignment').state,'mixed');
+console.log('Current source provenance, v9 upgrade detection, and mixed-version rejection pass.');
+`;
+  cp.execFileSync(process.execPath,['-e',script,root,path.resolve(report),path.resolve(process.argv[3])],{stdio:'inherit'});
+}

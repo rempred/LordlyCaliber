@@ -8,6 +8,7 @@ window.OB64 = window.OB64 || {};
   var DATA_VERSION = 1;
   var EXPECTED_PAYLOAD_SHA256 =
     '4B557C54E26C8CA086048FD08FF9A915D207A07CDC3AC646DC2F81B373E0871C';
+  var ALIGNMENT_V10_PAYLOAD_SHA256 = 'C2212EECA37F4E40EA061B4063254A9B5C8EB7F81C917A2E9EF11850C12F9354';
   var EXPECTED_GENERATOR_SOURCE_IDENTITY = 'sha256-canonical-utf8-lf-v1';
   var EXPECTED_GENERATOR_CANONICAL_BYTES = 34899;
   var EXPECTED_GENERATOR_SHA256 =
@@ -97,7 +98,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function componentBytes(component, kind) {
-    var key = component.owner + '|' + component.name + '|' + kind;
+    var key = component.owner + '|' + component.name + '|' + component.sha256 + '|' + kind;
     if (!byteCache[key]) {
       byteCache[key] = hexBytes(kind === 'retail' ? component.retailHex : component.dataHex);
     }
@@ -141,7 +142,7 @@ window.OB64 = window.OB64 || {};
       fail('the authenticated native-owner data bundle is missing or malformed');
     }
     var payloadHash = sha256(utf8Bytes(JSON.stringify(bundle.payload)));
-    if (payloadHash !== bundle.payloadSha256 || payloadHash !== EXPECTED_PAYLOAD_SHA256) {
+    if (payloadHash !== bundle.payloadSha256 || payloadHash !== EXPECTED_PAYLOAD_SHA256 && payloadHash !== ALIGNMENT_V10_PAYLOAD_SHA256) {
       fail('the native-owner data bundle failed its SHA-256 identity check');
     }
     var data = bundle.payload;
@@ -333,6 +334,22 @@ window.OB64 = window.OB64 || {};
       }));
       acceptedConsumableProductsByOwnerImage[key] = products;
     });
+    if (data.alignmentCorrection) {
+      var correction = data.alignmentCorrection;
+      if (payloadHash !== ALIGNMENT_V10_PAYLOAD_SHA256 || correction.version !== 10 ||
+          correction.contractId !== 'lordly-native-rebuild.squad-alignment.v10' ||
+          correction.review !== 'pending' || correction.runtime !== 'not-tested') {
+        fail('the current Alignment correction contract drifted');
+      }
+      correction.supersededComponents.forEach(verifyComponent);
+      correction.currentConsumableOwnerImages.forEach(function(image) {
+        var key = image.effectSha256 + '|' + image.descriptionSha256;
+        var products = acceptedConsumableProductsByOwnerImage[key] || [];
+        products.push(Object.freeze({source:'alignment-v10-source-product', lifecycle:'source-regenerated-unreviewed',
+          product:image.product, romSha256:image.romSha256}));
+        acceptedConsumableProductsByOwnerImage[key] = products;
+      });
+    }
     verifiedData = deepFreeze(data);
     return data;
   }
@@ -853,6 +870,11 @@ window.OB64 = window.OB64 || {};
     });
     if (retailCount === components.length) return { state: 'retail' };
     if (nativeCount === components.length) return { state: 'native' };
+    var correction = verifyData().alignmentCorrection;
+    if (toolId === 'squad-menu-alignment' && correction && correction.supersededComponents.every(function(component) {
+      return equalAt(bytes, component.romStart, hexBytes(component.dataHex));
+    })) return { state: 'native', moduleVersion: 9, updateRequired: true };
+
     var feature = OB64.tools && OB64.tools.getFeature(toolId);
     var legacy = feature && OB64.tools.featureState(bytes, feature);
     if (legacy === 'applied' || legacy === 'outdated') return { state: 'legacy' };

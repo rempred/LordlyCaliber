@@ -495,9 +495,12 @@ check('switching or uninstalling a build path does not fork the project model',
 
 const focusedProduct = new Uint8Array(fs.readFileSync(path.join(phase5Root,
   'products', 'native-consumables', 'native-consumables.us_rev0.z64')));
-const canonicalProduct = new Uint8Array(fs.readFileSync(path.join(phase5Root,
-  'products', 'canonical-native-consumables',
-  'canonical-native-consumables.us_rev0.z64')));
+const historicalCanonicalPath = path.join(phase5Root, 'products', 'canonical-native-consumables', 'canonical-native-consumables.us_rev0.z64');
+const correctionReport = process.env.OB64_ALIGNMENT_CORRECTION_REPORT
+  ? JSON.parse(fs.readFileSync(process.env.OB64_ALIGNMENT_CORRECTION_REPORT,'utf8')) : null;
+if (data.alignmentCorrection && !correctionReport) throw new Error('The corrected bundle test requires OB64_ALIGNMENT_CORRECTION_REPORT.');
+const canonicalProduct = new Uint8Array(fs.readFileSync(data.alignmentCorrection
+  ? correctionReport.products.phase5aCanonicalNativeConsumables.path : historicalCanonicalPath));
 const focusedRom = freshRom();
 setModels(focusedRom, allModels);
 focusedRom.consumableDescriptions = OB64.descriptionCodec.withText(
@@ -532,12 +535,13 @@ check('accepted Phase 5A product provenance identifies native-complete ownership
     'native-complete' && acceptedNativeLoad.buildMode === 'rebuild' &&
   focusedAcceptedProvenance.product === 'native-consumables' &&
   focusedAcceptedProvenance.romSha256 === sha256(focusedProduct));
-const acceptedCanonicalLoad = freshRom(canonicalProduct);
+const acceptedCanonicalBytes = new Uint8Array(fs.readFileSync(historicalCanonicalPath));
+const acceptedCanonicalLoad = freshRom(acceptedCanonicalBytes);
 const canonicalAcceptedProvenance =
   acceptedCanonicalLoad.nativeRebuild.sourceClassification.owners.consumables.provenance;
 check('canonical Phase 5A provenance requires its exact full-ROM identity',
   canonicalAcceptedProvenance.product === 'canonical-native-consumables' &&
-  canonicalAcceptedProvenance.romSha256 === sha256(canonicalProduct));
+  canonicalAcceptedProvenance.romSha256 === sha256(acceptedCanonicalBytes));
 expectThrow('Patch ROM rejects authenticated native Consumables ownership', () =>
   OB64.nativeRebuild.patchSourceCheck(acceptedNativeLoad),
   /cannot export from a Rebuild ROM/);
