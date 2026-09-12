@@ -53,7 +53,7 @@ const SOURCE_RECOVERY_EDITOR_PATHS = Object.freeze([
 const ALIGNMENT_SOURCE_NATIVE_BASELINE = Object.freeze({commit:'774b8aa41b1c3780a8aa568816d5137c85501918',tree:'a2e6482b75070fd59a1dad040189556226a0716e'});
 const ALIGNMENT_SOURCE_EDITOR_BASELINE = Object.freeze({commit:'aaeffde75b394dc2c41162933299d099c317d792',tree:'ab7009686e932db2c326319fa08cf5142a44ef8c'});
 const ALIGNMENT_SOURCE_NATIVE_PATHS = Object.freeze(['config/lordly-native-source-recovery-v4.json','tools/build_squad_alignment_correction.py','tools/lib/lordly_native_source_recovery.js','tests/squad_alignment_correction.py','tests/lordly_native_source_recovery.js']);
-const ALIGNMENT_SOURCE_EDITOR_PATHS = Object.freeze(['tools/generate-native-rebuild-data.js','tests/native-rebuild-alignment-correction.test.js','native-rebuild.js','tests/native-rebuild-phase5b-consumables.test.js']);
+const ALIGNMENT_SOURCE_EDITOR_PATHS = Object.freeze(['tools/generate-native-rebuild-data.js','tests/native-rebuild-alignment-correction.test.js','native-rebuild.js','tests/native-rebuild-phase5b-consumables.test.js','tests/native-rebuild-generator-provenance.test.js']);
 const EXPECTED_APPROVALS = Object.freeze([
   Object.freeze({ phase: 'Phase 3',
     sha256: 'B458CD6BFC5964938D61BE855AD9792D59A2509D73CF6FCB57844275A97D2ABA',

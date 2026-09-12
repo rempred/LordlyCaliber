@@ -5,7 +5,7 @@
   var data = {
     "schema": "ob64-native-rebuild-data",
     "schemaVersion": 1,
-    "payloadSha256": "B51FB2814273B2F003AAF56D28519E88F3526318C7FAB6ABCD68762B7ED2271E",
+    "payloadSha256": "7D2F3A6D237821DB1BAFCA7EA7465C9DF66FB9696EBA36F011571170B4E42D47",
     "payload": {
       "generator": {
         "path": "tools/generate-native-rebuild-data.js",
@@ -4158,8 +4158,8 @@
         },
         "editorGenerator": {
           "sourceIdentity": "sha256-canonical-utf8-lf-v1",
-          "canonicalBytes": 51115,
-          "sha256": "71F74F7274128781AC89326299BA1D584C0BE4C97BF92D0B1B832EDCACCCF398"
+          "canonicalBytes": 51167,
+          "sha256": "6E89A2E6D5D63CDA97E3DC3CF7AEA6E17E6CBCF0E6DEF21F68E827E1782E7C69"
         }
       }
     }

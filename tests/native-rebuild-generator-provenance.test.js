@@ -10,6 +10,7 @@ const path = require('path');
 const EDITOR = path.resolve(__dirname, '..');
 const GENERATOR = path.join(EDITOR, 'tools', 'generate-native-rebuild-data.js');
 const CHECKED_IN_BUNDLE = path.join(EDITOR, 'native-rebuild-data.js');
+const HISTORICAL_BUNDLE_COMMIT = 'aaeffde75b394dc2c41162933299d099c317d792';
 const generatorApi = require(GENERATOR);
 
 function sha256(bytes) {
@@ -106,8 +107,13 @@ assert.deepStrictEqual(lfResult, Object.assign({}, crlfResult, { output: lfResul
   'LF and CRLF generator reports must differ only by requested output path');
 assert.deepStrictEqual(lfBundleBytes, crlfBundleBytes,
   'LF and CRLF checkouts must generate byte-identical native bundles');
-assert.deepStrictEqual(lfBundleBytes, checkedInBundleBytes,
-  'the checked-in native bundle must match the supported generator result');
+const historicalBundleBytes = childProcess.execFileSync('git', ['-C', EDITOR,
+  'show', HISTORICAL_BUNDLE_COMMIT + ':native-rebuild-data.js']);
+assert.strictEqual(sha256(historicalBundleBytes),
+  '354BD5A73CBB103A7C08C200BE354CEA1F1BBAFF6D0DCEA2B5F4FDEE3127984F',
+  'the historical bundle fixture must retain its exact reviewed identity');
+assert.deepStrictEqual(lfBundleBytes, historicalBundleBytes,
+  'the historical v1 bundle must match historical generation');
 
 const generatedBundle = require(lfOutput);
 assert.strictEqual(sha256(Buffer.from(JSON.stringify(generatedBundle.payload), 'utf8')),
@@ -126,8 +132,8 @@ global.OB64 = {
 global.OB64_NATIVE_REBUILD_DATA = generatedBundle;
 require(path.join(EDITOR, 'native-rebuild.js'));
 const verifiedData = global.OB64.nativeRebuild.verifyData();
-assert.strictEqual(verifiedData.generator.sha256, lfResult.generatorSha256,
-  'the Editor runtime must accept the regenerated bundle and its generator identity');
+assert.deepStrictEqual(verifiedData.generator, generatorApi.LEGACY_GENERATOR_IDENTITY,
+  'the runtime must retain historical generator provenance independently of the executing generator');
 assert.strictEqual(verifiedData.acceptedSource.commit,
   'e50fe500839288c94c538969acc7a5b966075626',
   'the bundle must authenticate the accepted Phase 5A commit');
@@ -135,6 +141,53 @@ assert.strictEqual(verifiedData.consumables.effect.bytes, 1380,
   'the bundle must own the complete Phase 5A effect section');
 assert.strictEqual(verifiedData.consumables.descriptions.streamCapacity, 2055,
   'the bundle must retain the accepted consumable description capacity');
+
+// Current recovery inputs are explicit because source runs use unique output roots.
+// A missing current input is an error, never permission to skip the current gate.
+const currentInputRoot = firstExisting('current v4 input root', 'OB64_NATIVE_CURRENT_INPUT_ROOT', [
+  process.env.OB64_NATIVE_CURRENT_INPUT_ROOT,
+]);
+const currentInputContract = firstExisting('current v4 input contract', 'OB64_NATIVE_CURRENT_INPUT_CONTRACT', [
+  process.env.OB64_NATIVE_CURRENT_INPUT_CONTRACT,
+  path.join(currentInputRoot, 'source-recovery', 'editor-input-contract-v4.json'),
+]);
+const correctionReport = firstExisting('current Alignment correction report', 'OB64_ALIGNMENT_CORRECTION_REPORT', [
+  process.env.OB64_ALIGNMENT_CORRECTION_REPORT,
+]);
+const currentContract = JSON.parse(fs.readFileSync(currentInputContract, 'utf8'));
+assert.strictEqual(currentContract.schemaVersion, 4);
+assert.strictEqual(currentContract.contractId, 'lordly-native-rebuild.phase5a.editor-inputs.source-recovery.v4');
+const currentIdentity = generatorApi.loadInputContract(currentInputRoot, currentInputContract).identity;
+const currentCrlfContract = path.join(outputRoot, 'current-contract-crlf.json');
+fs.writeFileSync(currentCrlfContract, canonicalText(fs.readFileSync(currentInputContract)).toString('utf8').replace(/\n/g, '\r\n'));
+assert.deepStrictEqual(generatorApi.loadInputContract(currentInputRoot, currentCrlfContract).identity.sha256,
+  currentIdentity.sha256, 'current contract identity must be line-ending invariant');
+const invalidCurrentContract = path.join(outputRoot, 'current-contract-unsupported.json');
+fs.writeFileSync(invalidCurrentContract, JSON.stringify(Object.assign({}, currentContract, {schemaVersion: 5})));
+assert.throws(() => generatorApi.loadInputContract(currentInputRoot, invalidCurrentContract),
+  'unsupported current input contracts must reject');
+const currentOutput = path.join(outputRoot, 'native-current.js');
+const currentRun = childProcess.spawnSync(process.execPath, [GENERATOR,
+  '--input-root', currentInputRoot, '--input-contract', currentInputContract,
+  '--alignment-correction', correctionReport, '--runtime', '--out', currentOutput,
+], {encoding: 'utf8'});
+assert.strictEqual(currentRun.status, 0, currentRun.stderr || currentRun.stdout);
+const currentResult = JSON.parse(currentRun.stdout);
+assert.strictEqual(currentResult.inputContractId, currentContract.contractId);
+assert.deepStrictEqual(fs.readFileSync(currentOutput), checkedInBundleBytes,
+  'the delivered v10 bundle must exactly match authenticated current v4 generation');
+const currentBundle = require(currentOutput);
+assert.notStrictEqual(currentBundle.payloadSha256, generatedBundle.payloadSha256,
+  'historical and current products must retain distinct identities');
+assert.deepStrictEqual(currentBundle.payload.alignmentCorrection.editorGenerator,
+  generatorApi.identifyGeneratorSource(workingSource));
+assert.deepStrictEqual(currentBundle.payload.consumables.acceptedSource,
+  generatedBundle.payload.consumables.acceptedSource);
+// Reload the consumer to avoid its verified-data cache from the historical check.
+global.OB64_NATIVE_REBUILD_DATA = currentBundle;
+delete require.cache[require.resolve(path.join(EDITOR, 'native-rebuild.js'))];
+require(path.join(EDITOR, 'native-rebuild.js'));
+assert.strictEqual(global.OB64.nativeRebuild.verifyData().alignmentCorrection.version, 10);
 
 console.log(JSON.stringify({
   result: 'pass',
@@ -150,5 +203,6 @@ console.log(JSON.stringify({
   inputContractSha256: lfResult.inputContractSha256,
   lfRawSha256: sha256(canonicalSource),
   crlfRawSha256: sha256(crlfSource),
+  current: currentResult,
 }, null, 2));
 console.log('\nNative rebuild generator provenance tests passed.');
