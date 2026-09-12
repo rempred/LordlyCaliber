@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
+const root=path.resolve(__dirname,'..');global.window=global;
+for(const name of ['tools-data.js','tools.js'])vm.runInThisContext(fs.readFileSync(path.join(root,name),'utf8'));
+const f=OB64.tools.getFeature('squad-menu-alignment');
+const clean=new Uint8Array(0x2800000);
+for(const feature of OB64.tools.features()) for(const w of feature.writes)clean.set(Buffer.from(w.original,'hex'),w.offset);
+const old=new Uint8Array(clean);
+for(const w of f.superseded[0].writes)old.set(Buffer.from(w.patched,'hex'),w.offset);
+assert.strictEqual(OB64.tools.featureState(old,f),'outdated');
+const rom={z64:old,revision:0,layout:{id:'us-rev0'}};
+OB64.tools.initState(rom);
+rom.tools.desired[f.id]=true;
+const result=OB64.tools.applyDesired(rom);
+assert(result.upgraded.includes(f.name));
+assert.strictEqual(OB64.tools.featureState(rom.z64,f),'applied');
+for(const w of f.writes)assert(Buffer.from(rom.z64.subarray(w.offset,w.offset+w.patched.length/2)).equals(Buffer.from(w.patched,'hex')));
+rom.tools.desired[f.id]=false;OB64.tools.applyDesired(rom);
+assert.deepStrictEqual(rom.z64,clean);
+const moduleWrite=f.writes.find(w=>w.label.includes('module'));
+assert.strictEqual(Buffer.from(moduleWrite.patched,'hex').readUInt32BE(4),10);
+assert.strictEqual(moduleWrite.patched.length/2,3328);
+console.log('Alignment six-row export: v9 upgrade, current bytes, and removal pass.');
+
