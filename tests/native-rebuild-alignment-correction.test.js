@@ -19,6 +19,12 @@ assert.deepStrictEqual(after.shops.components,before.shops.components);
 assert.deepStrictEqual(after.shops.contract,before.shops.contract);
 assert.deepStrictEqual(after.phase3.components.filter(x=>x.owner!=='tool.squad-menu-alignment'),before.phase3.components.filter(x=>x.owner!=='tool.squad-menu-alignment'));
 assert.strictEqual(after.phase3.components.find(x=>x.owner==='tool.squad-menu-alignment'&&x.name==='source-module').payloadBytes,3328);
+for (const component of after.phase3.components.filter(x=>x.owner==='tool.squad-menu-alignment')) {
+  const raw = Buffer.from(component.dataHex,'hex');
+  const digest = bytes=>require('crypto').createHash('sha256').update(bytes).digest('hex').toUpperCase();
+  assert.strictEqual(component.payloadSha256,digest(raw.subarray(0,component.payloadBytes)));
+  assert.strictEqual(component.sha256,digest(raw));
+}
 assert.strictEqual(after.alignmentCorrection.review,'pending');
 assert.deepStrictEqual(after.consumables.acceptedSource,before.consumables.acceptedSource);
 assert.strictEqual(after.alignmentCorrection.currentConsumableOwnerImages[0].romSha256,'3F71E57BBAAE9624609969D800D70035E0CED094D37BFA053920B6D1C8609508');

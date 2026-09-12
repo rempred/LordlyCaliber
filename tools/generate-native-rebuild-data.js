@@ -931,6 +931,7 @@ function applyAlignmentCorrection(payload, file, runtime = false) {
     }
     target.dataHex = after.dataHex; target.sha256 = after.sha256;
     if (before.name === 'source-module') target.payloadBytes = 3328;
+    target.payloadSha256 = sha256(Buffer.from(target.dataHex, 'hex').subarray(0, target.payloadBytes));
   }
   const replacements = new Map();
   for (const entry of Object.values(correction.products)) {
