@@ -244,10 +244,26 @@ window.OB64 = window.OB64 || {};
     return {context:opcode === 17 || opcode === 18 ? 'A' : 'B', request:request & 65535, tableOffset:offset};
   }
 
+  function externalEventCount(events) {
+    return Array.isArray(events) ? events.length : events.sequence.length;
+  }
+  function externalEventAt(events,index) {
+    if (Array.isArray(events)) return events[index];
+    var entry=events.sequence[index];
+    return Object.assign({},events.templates[entry[1]],{tick:entry[0]});
+  }
   function validateExternalProducers(value) {
     function integer(v,min,max) {return Number.isInteger(v) && v >= min && v <= max;}
     function id(v) {return typeof v === 'string' && v.length > 0 && v.length <= 160;}
-    if (!value || !integer(value.throughTick,0,29999) || !['menuCreates','colorCreates','events','poseCalls'].every(function(k){return Array.isArray(value[k]);})) fail('External producers need bounded complete service history and creation lists.', 'launch-input');
+    if (!value || !integer(value.throughTick,0,29999) || !['menuCreates','colorCreates','poseCalls'].every(function(k){return Array.isArray(value[k]);})) fail('External producers need bounded complete service history and creation lists.', 'launch-input');
+    if (!Array.isArray(value.events)) {
+      var eventTable=value.events;
+      if (!eventTable || !Array.isArray(eventTable.templates) || !Array.isArray(eventTable.sequence) || eventTable.sequence.length>60000 ||
+          eventTable.templates.some(function(event){return !event || typeof event!=='object' || Array.isArray(event) || Object.prototype.hasOwnProperty.call(event,'tick');}) ||
+          eventTable.sequence.some(function(entry){return !Array.isArray(entry) || entry.length!==2 || !integer(entry[0],0,value.throughTick) || !integer(entry[1],0,eventTable.templates.length-1);})) {
+        fail('Compact service history requires explicit tick/template pairs and templates without tick fields.','launch-input');
+      }
+    }
     if (value.initialMenusEmpty !== undefined && value.initialMenusEmpty !== true) fail('Initial menu ownership currently supports explicitly empty slots.', 'launch-input');
     if (value.initialColor !== undefined && value.initialColor !== null) {
       if (!id(value.initialColor.ownerId)) fail('Initial color needs owner identity.', 'launch-input');
@@ -276,7 +292,8 @@ window.OB64 = window.OB64 || {};
       });
     });
     var previous=-1;
-    value.events.forEach(function(event) {
+    for(var eventIndex=0;eventIndex<externalEventCount(value.events);eventIndex++) {
+      var event=externalEventAt(value.events,eventIndex);
       var order=event && event.tick*2+(event.phase==='after-director'?1:0);
       if (!event || !integer(event.tick,0,value.throughTick) || !['before-director','after-director'].includes(event.phase) || order<previous || !['menu','color','dialogue','request-reset','request-dispatch'].includes(event.kind)) fail('External service history must be ordered within its declared range.', 'launch-input');
       previous=order;
@@ -298,7 +315,7 @@ window.OB64 = window.OB64 || {};
           ['actionMask','directionMask'].forEach(function(k){if(event[k]!==undefined&&!integer(event[k],0,65535))fail('Controller masks must be unsigned halfwords.','launch-input');});
         }
       }
-    });
+    }
     value.poseCalls.forEach(function(row) {
       if (!row || !id(row.actorId) || !integer(row.bank,-32768,32767) || !integer(row.stateIndex,-32768,32767) || !integer(row.recordOrdinal,0,255) || !integer(row.opcode,17,20)) fail('Pose service needs exact Actor and counted-record identity.', 'launch-input');
       if (row.projectionReturned!==undefined && typeof row.projectionReturned!=='boolean') fail('Projection outcome must be explicit.', 'launch-input');
@@ -437,13 +454,29 @@ window.OB64 = window.OB64 || {};
       fail('Launch inputs require matching resource, invocation, source identity, and evidence grade.', 'launch-input');
     }
     ['actorInputRows', 'existingActors', 'capturedSnapshot', 'capturedPresentation', 'currentUnitMembers', 'schedulerBranch',
-      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers'].forEach(function(key) {
+      'poseRegistry','bodyPoseSetups','subordinateServices','rosterConstruction','rosterResets','rosterStateServices','externalProducers','directActorCreates'].forEach(function(key) {
       var group = input[key];
       if (!group) return;
       if (!['known', 'unknown'].includes(group.status)) fail(key + ' needs known or unknown status.', 'launch-input');
       if (group.status === 'unknown') return;
       var value = group.value;
-      if (key === 'capturedPresentation') {
+      if (key === 'directActorCreates') {
+        if (!Array.isArray(value) || value.length > 256) fail('Direct creation requires a bounded service list.','actor-creation-input');
+        var creationIds = new Set();
+        value.forEach(function(row) {
+          var identity = row && row.nodeId + ':' + row.occurrence;
+          if (!row || typeof row.nodeId !== 'string' || !row.nodeId || !Number.isInteger(row.occurrence) || row.occurrence < 0 ||
+              creationIds.has(identity) || !Array.isArray(row.words) || row.words.length !== 10 ||
+              !row.words.every(function(v){return Number.isInteger(v) && v >= 0 && v <= 0xFFFFFFFF;}) ||
+              row.registration !== 'existing' || typeof row.evidenceReference !== 'string' || !row.evidenceReference ||
+              !Number.isInteger(row.allocationAddress) || row.allocationAddress < 0x80000000 || row.allocationAddress + 336 > 0x80400000 || row.allocationAddress % 4 ||
+              !Number.isInteger(row.presentationByte) || row.presentationByte < 0 || row.presentationByte > 255 ||
+              !Number.isInteger(row.stateIndex) || row.stateIndex < 0 || row.stateIndex > 32767) {
+            fail('Direct creation requires exact command identity, allocation, existing registration, State result, and evidence reference.','actor-creation-input');
+          }
+          creationIds.add(identity);
+        });
+      } else if (key === 'capturedPresentation') {
         if (!input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
             input.capturedSnapshot.value.sceneMode !== 0 || !value ||
             value.scope !== 'mode-zero-main-actor-geometry' ||
@@ -547,7 +580,9 @@ window.OB64 = window.OB64 || {};
             !Number.isInteger(value.sceneMode) || value.sceneMode < 0 || value.sceneMode > 255 ||
             !Number.isInteger(value.observedParserCursor) || value.observedParserCursor < 0 || value.observedParserCursor > 0xFFFFFFFF ||
             input.existingActors && input.existingActors.status === 'known' ||
-            input.externalProducers && input.externalProducers.status === 'known')) {
+            input.externalProducers && input.externalProducers.status === 'known' &&
+              !(input.capturedResume && input.capturedResume.status === 'known' && input.capturedResume.value &&
+                input.capturedResume.value.entry === 'normal-director-continuous'))) {
           fail('Captured snapshots require unknown resume and other-job ownership, captured mode/cursor, and no launch or service-history substitution.', 'launch-input');
         }
         if (!value || !captured && value.otherJobsEmpty !== true || !Array.isArray(value.slots) || value.slots.length !== 28) {
@@ -578,8 +613,9 @@ window.OB64 = window.OB64 || {};
         var resume = resumeGroup.value, capturedValue = input.capturedSnapshot && input.capturedSnapshot.value;
         if (!resume || !input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
             !input.schedulerBranch || input.schedulerBranch.status !== 'known' || input.schedulerBranch.value !== 'normal' ||
-            capturedValue.sceneMode !== 0 || resume.entry !== 'normal-director-held-movement-query' ||
-            resume.origin !== 'prospective-captured-state' || resume.updates !== 1 ||
+            capturedValue.sceneMode !== 0 || !['normal-director-held-movement-query','normal-director-continuous'].includes(resume.entry) ||
+            resume.origin !== 'prospective-captured-state' ||
+            (resume.entry === 'normal-director-continuous' ? !Number.isInteger(resume.updates) || resume.updates < 1 || resume.updates > 30000 || resume.directorControllerMask !== 0 : resume.updates !== 1) ||
             resume.registeredCounter !== 0 || !Number.isInteger(resume.tailTimer) || resume.tailTimer < -128 || resume.tailTimer >= 0) {
           fail('Resume requires an explicit prospective normal mode-zero entry and qualified counter/timer state.','resume-input');
         }
@@ -627,6 +663,9 @@ window.OB64 = window.OB64 || {};
             range(movementPointer,16);
           }
         });
+        if (input.directActorCreates && input.directActorCreates.status === 'known') {
+          input.directActorCreates.value.forEach(function(row) { range(row.allocationAddress,336); });
+        }
       }
     }
     return M.cloneJson(input, 'launch inputs');
@@ -1489,8 +1528,8 @@ window.OB64 = window.OB64 || {};
     function* applyExternalServices(phase) {
       if (!externalProducers) return;
       var events=externalProducers.events;
-      while (externalEventCursor<events.length) {
-        var event=events[externalEventCursor];
+      while (externalEventCursor<externalEventCount(events)) {
+        var event=externalEventAt(events,externalEventCursor);
         if (event.tick!==state.tick || event.phase!==phase) break;
         externalEventCursor++;
         try {
@@ -1522,7 +1561,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function registerSharedPoseRequest(actor, record) {
-      if (capturedResume) return 'resume-shared-pose-input';
+      if (capturedResume && !continuousResume) return 'resume-shared-pose-input';
       var input=null;
       if (record.opcode===18 || record.opcode===20) {
         input=externalProducers && externalProducers.poseCalls[sharedPoseCallCursor];
@@ -1546,6 +1585,11 @@ window.OB64 = window.OB64 || {};
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var capturedSnapshot = launchValue('capturedSnapshot');
     var capturedResume = launchValue('capturedResume');
+    var continuousResume = capturedResume && capturedResume.entry === 'normal-director-continuous';
+    if (continuousResume && Number.isInteger(options.controllerMask) && options.controllerMask !== 0) {
+      fail('Continuous captured resume requires the declared neutral Director controller input.', 'launch-input');
+    }
+    var completedResumeUpdates = 0;
     var capturedPresentation = launchValue('capturedPresentation');
     var resumedMenuSelection = null;
     var initialActors = launchValue('existingActors') || capturedSnapshot;
@@ -2143,6 +2187,42 @@ window.OB64 = window.OB64 || {};
     function executeActorCreate(node, words, unresolvedWordOffsets) {
       var slot = signed(words[1]);
       if (slot < 0 || slot >= 28) { actorBoundary('Actor construction requires a primary slot from 0 through 27.'); return; }
+      if (continuousResume) {
+        var service = actorService('directActorCreates',node);
+        if (!service || !service.words.every(function(v,i){return unsigned(v) === unsigned(words[i]);}) ||
+            state.actors[slot] || unresolvedWordOffsets.length) {
+          actorBoundary('Direct creation requires the exact command occurrence, an empty slot, and qualified allocation and registration.','actor-creation-input'); return;
+        }
+        var selectedProgram = catalog.getPhysicalPoseProgram(signed(words[2]),signed(words[3]),signed(words[4]),unsigned(words[9]) & 255);
+        var x = actorCoordinate(words[5]), y = actorCoordinate(words[6]), z = actorCoordinate(words[7]);
+        if (!selectedProgram || selectedProgram.stateIndex !== service.stateIndex || y === -1) {
+          actorBoundary('Direct creation requires its qualified ordinary State and explicit terrain-free height.','actor-creation-state'); return;
+        }
+        // func_0029D790 clears the allocation. func_0029DC0C initializes this
+        // ordinary mode-zero path, then the creator performs one immediate pose.
+        // Allocation and existing registration are supplied service results.
+        var bytes = new DataView(new ArrayBuffer(336));
+        bytes.setUint32(0xE0,0x8022F2CC); bytes.setInt32(0xE4,slot); bytes.setInt32(0xE8,signed(words[2]));
+        bytes.setInt32(0xF0,-1); bytes.setInt16(0x134,service.stateIndex); bytes.setInt16(0x138,signed(words[3]));
+        [0x104,0x108,0x10C,0x130].forEach(function(at){bytes.setFloat32(at,1);});
+        if (x !== -1 || y !== -1) {bytes.setFloat32(0x11C,x);bytes.setFloat32(0x120,y);bytes.setFloat32(0x124,z);}
+        bytes.setUint8(0x13C,service.presentationByte);
+        bytes.setUint8(0x13F,words[4]);bytes.setUint8(0x140,words[4]);bytes.setUint8(0x141,words[8]);
+        [0x142,0x143,0x144,0x147].forEach(function(at){bytes.setUint8(at,255);});
+        bytes.setUint8(0x146,words[9]);
+        for(var materialIndex=0;materialIndex<16;materialIndex++)bytes.setUint8(materialIndex,255);
+        var created = ensureActor(slot);
+        applyNativeRecord(created,bytes,'qualified-direct-creation');
+        created.bodyPoseProgram=null;created.artSourceId='cutscene-art-bank:'+created.bank;
+        created.poseId=poseId(created.bank,created.animationKey,created.nativeFacing);
+        created.facing='native-'+created.nativeFacing;created.visible=true;
+        created.capturedMainScale=1;created.uniformScale=1;created.transformChannel=0;
+        updateActorPose(created);
+        recordTrace({tick:state.tick,kind:'direct-actor-creation',nodeId:node.id,slot:slot,
+          allocationAddress:service.allocationAddress,stateIndex:service.stateIndex,
+          evidenceReference:service.evidenceReference,review:'pending',recordHex:recordHex(nativeRecordForActor(created))});
+        return;
+      }
       var actor = ensureActor(slot);
       var template = templateForSlot(slot);
       var variantUnresolved = unresolvedWordOffsets.indexOf(9) !== -1;
@@ -3677,6 +3757,7 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x1D) selectedActors(signed(words[1])).forEach(function(actor) {
         actor.uniformScale = signed(words[2]) / 100;
+        if (continuousResume && capturedPresentation) actor.capturedMainScale = Math.fround(Math.fround(signed(words[2])) / Math.fround(100));
       });
       else if (opcode === 0x1E) executeTint(node, words);
       else if (opcode === 0x22) selectedActors(signed(words[1])).forEach(function(actor) {
@@ -3844,7 +3925,10 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x7E) {
         if (state.overlay && state.overlay.native) {
-          state.overlay=cleanupNativeColor(state.overlay);
+          // The continuous Director path calls func_002839A8: request release.
+          // Cleanup belongs to a later external callback, not this command.
+          if (continuousResume) state.overlay.ownershipFlag=1;
+          else state.overlay=cleanupNativeColor(state.overlay);
           state.overlayJob=state.overlay;
         } else if (externalProducers && externalProducers.initialColor !== undefined) {
           state.overlay=null;state.overlayJob=null;
@@ -3926,12 +4010,21 @@ window.OB64 = window.OB64 || {};
         actor.facing = 'native-' + facing;
         actor.poseId = Number.isInteger(actor.bank) && Number.isInteger(actor.animationKey)
           ? poseId(actor.bank, actor.animationKey, facing) : actor.poseId;
+        if (job.appliedStep !== step) {
+          // func_0029C790 calls the State setter on each phase change. That
+          // setter performs an immediate pose before the ordinary Actor pass.
+          // It clears material values, but retains the material delta bytes.
+          var retainedDelta=actor.materialDelta;
+          startPose(actor);
+          actor.materialDelta=retainedDelta;
+          updateActorPose(actor);
+          job.appliedStep=step;
+        }
         if (job.elapsed >= job.completionCalls) {
           actor.nativeFacing = job.targetFacing;
           actor.facing = 'native-' + job.targetFacing;
           actor.poseId = Number.isInteger(actor.bank) && Number.isInteger(actor.animationKey)
             ? poseId(actor.bank, actor.animationKey, job.targetFacing) : actor.poseId;
-          startPose(actor);
           delete state.turnJobs[slot];
         }
       });
@@ -4950,7 +5043,7 @@ window.OB64 = window.OB64 || {};
       }
       if (composite.kind === 'skippable-registered-wait') {
         state.registeredCounter = { value: 1, armTick: state.tick };
-        assumption('A-button input is not supplied; skippable waits use their authored maximum.');
+        if (!continuousResume) assumption('A-button input is not supplied; skippable waits use their authored maximum.');
         var details = composite.details || {};
         if (details.shape === 'staged-actor-action') {
           (details.actionNodeIds || []).forEach(function(nodeId, index) {
@@ -5013,12 +5106,12 @@ window.OB64 = window.OB64 || {};
         var predictedActor=state.actors[resumeSlot] && Object.assign({},state.actors[resumeSlot]);
         var predictedAlive=predictedJob && predictedActor && advanceNativeMovement(predictedActor,predictedJob);
         var predictedValue=predictedAlive ? lowS16(predictedJob.remaining) : 0;
-        if (compare(predictedValue,resumeNode.query.compareMode,resumeNode.query.target)) {
+        if (!continuousResume && compare(predictedValue,resumeNode.query.compareMode,resumeNode.query.target)) {
           fail('A passing movement query requires qualification of the following Director effects.','resume-transition-input');
         }
         persistentCursorPrimitiveIndex=resumeIndex;
         installCursorAtPrimitive(resumeIndex);
-        state.directorModeStatus='qualified-prospective-resume';
+        state.directorModeStatus=continuousResume ? 'candidate-continuous-resume' : 'qualified-prospective-resume';
         recordTrace({tick:0,kind:'captured-resume-entry',entry:capturedResume.entry,parserWord:capturedSnapshot.observedParserCursor});
       }
     }
@@ -5053,7 +5146,11 @@ window.OB64 = window.OB64 || {};
         yield;
       }
       if (!stopReason) yield* applyExternalServices('after-director');
-      if (capturedResume && !stopReason) {
+      if (continuousResume && !stopReason) {
+        completedResumeUpdates++;
+        if (completedResumeUpdates >= capturedResume.updates && !state.terminal) stopReason='prospective-update-limit';
+      }
+      if (capturedResume && !continuousResume && !stopReason) {
         if (!block || block.kind!=='query' || block.query.id!==resumeNode.id ||
             Object.keys(state.actors).some(function(slot){return !!state.actors[slot].poseBlocked;})) {
           fail('The resumed transition exceeded the qualified held-query boundary.','resume-transition-input');
@@ -5083,7 +5180,7 @@ window.OB64 = window.OB64 || {};
           !state.oversizedImageTransitionJob) break;
     }
 
-    if (!state.terminal && states.length >= maxTicks && !(capturedResume && resumedMenuSelection)) {
+    if (!state.terminal && states.length >= maxTicks && !(capturedResume && resumedMenuSelection) && (!continuousResume || !stopReason)) {
       stopReason = 'tick-limit';
       missing('Director preview reached the ' + maxTicks + '-tick safety limit.');
     }
@@ -5123,10 +5220,10 @@ window.OB64 = window.OB64 || {};
       engine: 'director-scheduler',
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
-      clockUnit: capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
+      clockUnit: continuousResume ? 'declared prospective normal Director updates; no historical cadence' : capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
       capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
-        resumeState: capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',
-        executedUpdates: capturedResume && resumedMenuSelection ? 1 : 0 } : null,
+        resumeState: continuousResume ? 'candidate-continuous-updates' : capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',
+        executedUpdates: continuousResume ? completedResumeUpdates : capturedResume && resumedMenuSelection ? 1 : 0 } : null,
       resumedMenuSelection: resumedMenuSelection,
       resumedState: capturedResume && resumedMenuSelection ? {
         parserWord: capturedSnapshot.observedParserCursor, registeredCounter: state.registeredCounter ? state.registeredCounter.value : 0,

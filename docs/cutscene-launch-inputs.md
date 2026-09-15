@@ -395,7 +395,7 @@ These qualified synthetic paths do not establish a natural roster, universal tim
 
 `capturedPresentation` optionally supplies qualified camera and scene-channel state alongside a mode-zero `capturedSnapshot`.
 Its status is `known` or `unknown`. Unknown or omitted presentation remains an explicit missing input; initializer geometry is not captured evidence.
-It does not enable resume. Only the existing qualified `capturedResume` group can execute its one prospective update.
+It does not enable resume. The `capturedResume` group separately selects the qualified single update or candidate continuous entry.
 
 The known value has `scope: "mode-zero-main-actor-geometry"`, `actorCamera`, `registeredCamera`, and twenty `channels` entries.
 Each camera has fourteen finite `values` in native order: FOV, aspect, near, far, perspective scale, eye XYZ, target XYZ, and up XYZ.
@@ -413,3 +413,43 @@ Its numerical limits are 0.05 pixels for registered anchors, 0.002 native matrix
 These are bounded host-math comparisons to stored native packed matrices, not exact native trigonometry or fixed-point serialization.
 The actual renderer consumes the supplied cameras, channel translations, and captured Actor scales.
 Shadow passes, the matrix mirror, synchronized game pixels, historical cadence, and later creation remain outside this path.
+
+## Candidate continuous chair playback
+
+`capturedResume.value.entry: "normal-director-continuous"` enables repeated normal updates from the qualified captured entry.
+This candidate remains pending independent review. The retained single-update entry and static default keep their existing boundaries.
+`updates` must be an integer from 1 through 30000. `directorControllerMask` must be zero.
+The runtime rejects a nonzero `options.controllerMask` override. Dialogue callback input remains separately declared in service events.
+The existing execution, memory, trace, and cancellation limits still apply.
+
+Known `externalProducers` can accompany this entry. Each event declares its tick, phase, owner, eligibility, inputs, and helper outcomes.
+`events` accepts the existing array or `{templates, sequence}`.
+Each template contains an event without `tick`. Each sequence row is `[tick, templateIndex]`.
+Rows retain exact order, including multiple events in one phase. This representation does not imply any omitted callback.
+The expanded event validation and 128 KiB import ceiling still apply.
+
+Known `directActorCreates` supplies an array of exact direct-creation occurrences.
+Each row requires `nodeId`, `occurrence`, ten `words`, `allocationAddress`, `presentationByte`, `stateIndex`, `registration: "existing"`, and `evidenceReference`.
+The allocation must be aligned, inside captured RAM, and disjoint from retained Actor, owner, movement, and other creation records.
+The runtime requires an empty destination slot, resolved operands, an ordinary matching ROM State, and explicit terrain-free height.
+It initializes the record and executes the immediate pose. Allocation and existing registration remain supplied outcomes.
+
+The preview executes JavaScript models of Director commands, Actor updates, sprite effects, and color updates.
+Its dialogue interpreter executes the retained native instruction data, using supplied helper outcomes at the existing service boundaries.
+It does not execute allocation, archive, registration, or storage implementations.
+The continuous color-release command sets the native release-request flag. The chair reaches termination before a later cleanup callback.
+The retained noncontinuous color-cleanup behavior is unchanged. This result does not validate other scenes or post-termination callbacks.
+
+The chair generator is `../docs/reviews/cutscene-chair-continuous-playback-20260915/probe.js` in the parent repository.
+It consumes saved native execution outcomes from sibling `native_probe.py` and `native_services.py`.
+The direct import artifact is `../docs/reviews/cutscene-chair-continuous-playback-20260915/playback-input.json`.
+Load the Rev0 ROM, open Cutscene Studio, and select resource `rom-director:01F4558C`.
+In the scene inspector, use **Playback inputs → Import playback inputs**, select that artifact, then press **Play**.
+The input is session-local. Loading a Project clears it.
+
+This declared run uses neutral Director input and A on dialogue callbacks whose update index is divisible by 30.
+It reaches termination after 616 updates. These inputs and callback order are prospective choices, not recovered historical timing.
+The integration test exercises all 616 states through the Actor and effect renderer, with backgrounds omitted.
+Existing camera bounds remain unchanged. Browser interaction, synchronized original-game pixels, shadows, and historical cadence remain unverified.
+Conditional stored-sample comparison matches Actor fields and dialogue pause bits, but all 48 complete original dialogue payloads differ.
+The first payload difference appears at sample 42. Full historical dialogue-state agreement remains unresolved.
