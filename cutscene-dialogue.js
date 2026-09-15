@@ -140,6 +140,44 @@ window.OB64 = window.OB64 || {};
     return Uint8Array.from(hex.match(/../g),function(v){return parseInt(v,16);});
   }
   function hex(data) {return Array.from(data,function(v){return v.toString(16).padStart(2,'0');}).join('');}
+  // Preview-owned first-fit arena. This implements the uncompressed payload
+  // wrapper contract; it does not emulate the retail allocator's global trees.
+  function PayloadStorage(machine, config) {
+    if(!config||config.kind!=='preview-arena-v1'||!Number.isInteger(config.address)||config.address<=0||config.address>0xffffffff||
+        config.address%16||!Number.isInteger(config.byteLength)||config.byteLength<16||config.byteLength>65536||config.byteLength%16||config.address<0x80200000||config.address+config.byteLength>0x80700000)
+      boundary('Payload storage requires a bounded, aligned preview arena.','dialogue-storage-arena');
+    machine.region(config.address,config.byteLength,true);
+    this.machine=machine;this.config={kind:config.kind,address:config.address,byteLength:config.byteLength};this.leases=[];
+  }
+  PayloadStorage.prototype.reserve = function(owner,handle,length) {
+    var size=Math.ceil((length+6)/16)*16,c=this.config;
+    if(typeof owner!=='string'||!owner||!Number.isInteger(length)||length<1||length>65535||!Number.isInteger(handle)||handle%16||handle<c.address||handle+size>c.address+c.byteLength||
+        this.leases.some(function(r){return r.owner===owner||(handle<r.handle+r.size&&r.handle<handle+size);}))
+      boundary('Payload allocation is outside its arena or already owned.','dialogue-payload-owner');
+    var lease={owner:owner,handle:handle,length:length,size:size};this.leases.push(lease);this.leases.sort(function(a,b){return a.handle-b.handle;});return lease;
+  };
+  PayloadStorage.prototype.save = function(owner,flags,source,length) {
+    if(!Number.isInteger(flags)||flags<0||flags>255||!Number.isInteger(length)||length<0||length>65535||(length&&(flags&1)))
+      boundary('Shared payload storage supports uncompressed unsigned-length payloads.','dialogue-payload-mode');
+    if(this.leases.some(function(r){return r.owner===owner;}))boundary('Payload owner must restore or release before saving again.','dialogue-payload-owner');
+    if(!length)return 0;
+    var m=this.machine,c=this.config,size=Math.ceil((length+6)/16)*16,handle=c.address;
+    for(var i=0;i<this.leases.length;i++){var lease=this.leases[i];if(handle+size<=lease.handle)break;handle=lease.handle+lease.size;}
+    if(handle+size>c.address+c.byteLength)boundary('The declared preview payload arena is exhausted.','dialogue-storage-exhaustion');
+    var data=Uint8Array.from({length:length},function(_,j){return m.get(source+j,1);});
+    this.reserve(owner,handle,length);
+    m.put(handle,flags,1);m.put(handle+2,length,2);m.put(handle+4,length,2);
+    data.forEach(function(v,j){m.put(handle+6+j,v,1);});return handle;
+  };
+  PayloadStorage.prototype.restore = function(owner,handle,destination) {
+    var lease=this.leases.find(function(r){return r.owner===owner&&r.handle===handle;}),m=this.machine;
+    if(!lease||m.get(handle+2,2)!==lease.length||m.get(handle+4,2)!==lease.length||(m.get(handle,1)&1))
+      boundary('Saved payload does not match its arena ownership and header.','dialogue-payload-identity');
+    m.region(destination,lease.length,true);
+    var data=Uint8Array.from({length:lease.length},function(_,i){return m.get(handle+6+i,1);});
+    data.forEach(function(v,i){m.put(destination+i,v,1);});this.release(owner);return lease.length;
+  };
+  PayloadStorage.prototype.release = function(owner) {this.leases=this.leases.filter(function(r){return r.owner!==owner;});};
   function Engine(input, rom) {
     if(!input || !Array.isArray(input.memory) || !Array.isArray(input.owners) || input.owners.length!==6)boundary('Dialogue requires initial memory and six resource ownership entries.');
     if(!(rom instanceof Uint8Array)||!OB64.cutsceneDialogueWords)boundary('Dialogue requires its qualified original image.');
@@ -165,6 +203,8 @@ window.OB64 = window.OB64 || {};
       return {ownerId:row.ownerId,payload:payload};
     },this);
     if(new Set(this.owners.filter(Boolean).map(function(row){return row.ownerId;})).size!==this.owners.filter(Boolean).length)boundary('Dialogue owner identities must be unique.');
+    this.payloadStorage=input.payloadStorage===undefined?null:new PayloadStorage(this.machine,input.payloadStorage);
+    if(this.payloadStorage)this.owners.forEach(function(owner,slot){if(owner&&owner.payload)this.payloadStorage.reserve(owner.ownerId,this.machine.get(POOL+slot*STRIDE+0x24),owner.payload.length);},this);
   }
   Engine.prototype.copy = function(from,to,length) {
     var data=[];for(var i=0;i<length;i++)data.push(this.machine.get(from+i,1));
@@ -174,7 +214,7 @@ window.OB64 = window.OB64 || {};
     var claimed=event.registeredOwners||[],used=0;
     for(var slot=0;slot<6;slot++) {
       var active=!!(this.machine.get(POOL+slot*STRIDE,2)&0x8000);
-      if(!active){this.owners[slot]=null;continue;}
+      if(!active){if(this.payloadStorage&&this.owners[slot])this.payloadStorage.release(this.owners[slot].ownerId);this.owners[slot]=null;continue;}
       if(this.owners[slot])continue;
       var row=claimed.find(function(r){return r.slot===slot;});
       if(!row||typeof row.ownerId!=='string'||!row.ownerId||this.owners.some(function(r){return r&&r.ownerId===row.ownerId;}))boundary('Native registration requires the new resource owner identity.','dialogue-registration-owner');
@@ -214,6 +254,7 @@ window.OB64 = window.OB64 || {};
     function rejectUnused(outcomes) {
       if((outcomes||[]).length)boundary('Dialogue service supplied unused helper outcomes.','dialogue-helper-order');
     }
+    if(this.payloadStorage&&event.storage!==undefined)boundary('Shared payload storage must not receive recorded storage outcomes.','dialogue-storage-outcome');
     if(!event.eligible) {
       rejectUnused(event.helpers);rejectUnused(event.releaseHelpers);
       if((event.registeredOwners||[]).length)boundary('Dialogue service supplied unused resource ownership outcomes.','dialogue-registration-owner');
@@ -230,7 +271,7 @@ window.OB64 = window.OB64 || {};
     if(!event.eligible)return;
     var flags=m.get(r,2);if(!(flags&0x8000))boundary('Dialogue callback requires an active resource.');
     var storage=event.storage;
-    if(!storage||storage.saveReturned!==true||!Number.isInteger(storage.saveHandle)||storage.saveHandle<=0||storage.saveHandle>0xffffffff)boundary('Dialogue callback requires its payload-save allocation outcome.','dialogue-payload-allocation');
+    if(!this.payloadStorage&&(!storage||storage.saveReturned!==true||!Number.isInteger(storage.saveHandle)||storage.saveHandle<=0||storage.saveHandle>0xffffffff))boundary('Dialogue callback requires its payload-save allocation outcome.','dialogue-payload-allocation');
     this.copy(r,RECORD,STRIDE);
     if(event.service==='initialize') {
       if(flags&0x2000)boundary('Dialogue initialization cannot repeat for an initialized resource.');
@@ -239,10 +280,11 @@ window.OB64 = window.OB64 || {};
     } else if(event.service==='callback') {
       if(!(flags&0x2000)||!owner.payload)boundary('Dialogue callback requires initialized saved payload.');
       var oldHandle=m.get(RECORD+0x24);
-      if(!oldHandle||storage.restoreHandle!==oldHandle||storage.restoreReturned!==true||storage.freeReturned!==true)boundary('Dialogue callback requires matching payload restoration and release outcomes.','dialogue-payload-restore');
+      if(!oldHandle||(!this.payloadStorage&&(storage.restoreHandle!==oldHandle||storage.restoreReturned!==true||storage.freeReturned!==true)))boundary('Dialogue callback requires matching payload restoration and release outcomes.','dialogue-payload-restore');
       var restoredLength=m.get(oldHandle+2,2);
       if(restoredLength!==0x478)boundary('Dialogue saved allocation has an unsupported payload length.','dialogue-payload-identity');
-      this.copy(oldHandle+6,PAYLOAD,restoredLength);
+      if(this.payloadStorage)this.payloadStorage.restore(owner.ownerId,oldHandle,PAYLOAD);
+      else this.copy(oldHandle+6,PAYLOAD,restoredLength);
       if([9,10].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue portrait continuation requires a qualified external producer.','dialogue-portrait-input');
       if(![0,1,2,3,4,5,6,7,8,11,99,100].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue state is outside the accepted continuation domain.','dialogue-state-input');
       if(!event.controller || !['actionMask','directionMask','dummyMask','historyMask','queueHead'].every(function(k){return Number.isInteger(event.controller[k]);}))boundary('Dialogue callback requires selected controller ownership and masks.','dialogue-controller-input');
@@ -256,21 +298,24 @@ window.OB64 = window.OB64 || {};
     } else boundary('Dialogue service kind is unsupported.','dialogue-service-input');
     var length=m.get(RECORD+0x20,2),saveFlags=m.get(RECORD+1,1);
     if(length!==0x478||(saveFlags&1))boundary('Dialogue requires a qualified payload storage mode.','dialogue-payload-mode');
+    if(this.payloadStorage)storage={saveHandle:this.payloadStorage.save(owner.ownerId,saveFlags,PAYLOAD,length)};
     m.region(storage.saveHandle,length+6,true);
     if(this.owners.some(function(o,i){return i!==slot&&o&&m.get(POOL+i*STRIDE+0x24)===storage.saveHandle;}))boundary('Dialogue payload allocation belongs to another active resource.','dialogue-payload-owner');
-    m.put(storage.saveHandle,saveFlags,1);m.put(storage.saveHandle+2,length,2);m.put(storage.saveHandle+4,length,2);
-    this.copy(PAYLOAD,storage.saveHandle+6,length);m.put(RECORD+0x24,storage.saveHandle);
+    if(!this.payloadStorage){m.put(storage.saveHandle,saveFlags,1);m.put(storage.saveHandle+2,length,2);m.put(storage.saveHandle+4,length,2);this.copy(PAYLOAD,storage.saveHandle+6,length);}
+    m.put(RECORD+0x24,storage.saveHandle);
     this.copy(RECORD,r,STRIDE);
     owner.payload=Uint8Array.from({length:0x478},function(_,i){return m.get(PAYLOAD+i,1);});
     if(m.get(r+2,1)&4) {
       yield* m.run(0x80077f88,[slot],event.releaseHelpers||[]);
-      if(!(m.get(r,2)&0x8000))this.owners[slot]=null;
+      if(!(m.get(r,2)&0x8000)){if(this.payloadStorage)this.payloadStorage.release(owner.ownerId);this.owners[slot]=null;}
     } else rejectUnused(event.releaseHelpers);
     this.reconcile(event);
   };
   Engine.prototype.snapshot = function() {
-    return {memory:this.machine.regions.filter(function(r){return r.writable;}).map(function(r){return {address:r.address,hex:hex(r.bytes)};}),
+    var snapshot={memory:this.machine.regions.filter(function(r){return r.writable;}).map(function(r){return {address:r.address,hex:hex(r.bytes)};}),
       owners:this.owners.map(function(o){return o?{ownerId:o.ownerId,payloadHex:o.payload?hex(o.payload):null}:null;})};
+    if(this.payloadStorage)snapshot.payloadStorage={...this.payloadStorage.config};
+    return snapshot;
   };
   Engine.prototype.presentation = function(slot, ownerId) {
     var owner=this.owners[slot],r=POOL+slot*STRIDE;
@@ -288,5 +333,5 @@ window.OB64 = window.OB64 || {};
       presentationGate:p[0x4f],displayedHistoryLine:p[0x54],generatedHistoryLine:p[0x55],
       rectangle:[6,8,10,12].map(function(o){return this.machine.get(r+o,2)<<16>>16;},this)};
   };
-  OB64.cutsceneDialogue={Machine:Machine,Engine:Engine,validateHelper:validateHelper};
+  OB64.cutsceneDialogue={Machine:Machine,Engine:Engine,PayloadStorage:PayloadStorage,validateHelper:validateHelper};
 })(window.OB64);

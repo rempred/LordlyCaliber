@@ -52,11 +52,53 @@ The first two services require the resource `slot` and its current `ownerId`.
 The queue services execute their supplied invocation against the current pool and queue memory.
 Provide the actual service order; the runtime does not create missing queue or callback invocations.
 
-Initialization and callbacks require `storage.saveReturned: true` and a nonzero `storage.saveHandle`.
+Without shared storage, initialization and callbacks require `storage.saveReturned: true` and a nonzero `storage.saveHandle`.
 The destination allocation must provide the six-byte header and complete payload extent.
 Callbacks also require the matching `storage.restoreHandle`, `restoreReturned: true`, and `freeReturned: true`.
 These fields qualify allocator outcomes; the runtime does not simulate the allocation pool.
 Native payload bytes, length fields, and the current handle are published after the service.
+
+### Shared preview payload storage
+
+The optional `initialDialogue.payloadStorage` selects a computed persistence service:
+
+```json
+{"kind":"preview-arena-v1","address":2150968560,"byteLength":1152}
+```
+
+This candidate service removes per-call `storage` outcomes from initialization and callbacks.
+Events must omit `storage`, including ineligible events.
+Inputs without this option retain the existing recorded-outcome behavior.
+
+The address declares an exclusively owned preview arena, not a captured retail heap.
+It must be 16-byte aligned within RAM virtual range `0x80200000..0x80700000`.
+The complete arena must already exist in one writable `initialDialogue.memory` allocation.
+Its size must be a positive multiple of 16, between 16 and 65,536 bytes.
+No missing bytes become zero. The existing 128 KiB combined memory limit still applies.
+
+The preview allocator selects the lowest available span and rounds allocations to 16 bytes.
+It reserves six header bytes plus the current payload length.
+Save copies current workspace bytes and writes the native flags and two length fields.
+The unused header byte remains unchanged.
+Restore validates the current owner and header, copies the saved bytes, and releases the span.
+Resource removal also releases that owner's preview span.
+These operations execute shared JavaScript; they do not execute the retail heap allocator.
+
+Existing captured payloads reserve their current handles when the Engine starts.
+Their complete aligned extents must fit the arena without overlapping another owner.
+A live owner must restore or release before another save.
+Exhaustion returns `dialogue-storage-exhaustion`; it does not invent a handle or report success.
+Compressed payload mode remains unsupported.
+
+Constructor records, archive lookup, controller choices, service order, and eligibility remain explicit inputs.
+Native closing and immediate-release helpers can still require recorded retail free outcomes.
+Those helpers retain their retail memory effects; preview span ownership is released separately.
+The shared arena does not establish compatibility with arbitrary retail heap state.
+
+The focused test compares native wrapper bytes, captured-payload adoption, allocation controls, and a second retail command path.
+Run `node tests/cutscene-shared-storage.test.js` from the Editor directory.
+The second path uses an extracted command slice and an explicit stop sentinel.
+Its supplied constructor context and archive resolution do not establish a natural scene launch.
 
 Callbacks supply `controller` with unsigned halfwords named `actionMask`, `directionMask`, `dummyMask`, `historyMask`, and `queueHead`.
 The queue head must match current queue memory.

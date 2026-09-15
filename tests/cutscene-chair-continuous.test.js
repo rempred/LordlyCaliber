@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-chair-continuous.json');
+const root=path.resolve(__dirname,'../..'),fixture=require(process.argv[2]?path.resolve(process.argv[2]):'./fixtures/cutscene-chair-continuous.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
 for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js',
  'cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-runtime.js','cutscene-preview.js',
