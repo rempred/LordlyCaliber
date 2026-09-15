@@ -3,7 +3,7 @@ const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require(
 const root=path.resolve(__dirname,'../..'),fixture=require(process.argv[2]?path.resolve(process.argv[2]):'./fixtures/cutscene-chair-continuous.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
 for(const file of ['data.js','parsers.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js',
- 'cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue.js','cutscene-dialogue-lifecycle.js','cutscene-runtime.js','cutscene-preview.js',
+ 'cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue.js','cutscene-dialogue-lifecycle.js','cutscene-resource-scheduler-data.js','cutscene-resource-scheduler.js','cutscene-runtime.js','cutscene-preview.js',
  'cutscene-assets.js','cutscene-sprites.js','cutscene-renderer.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
 const clone=value=>JSON.parse(JSON.stringify(value));
 (async()=>{

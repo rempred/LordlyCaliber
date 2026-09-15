@@ -256,6 +256,7 @@ window.OB64 = window.OB64 || {};
     function integer(v,min,max) {return Number.isInteger(v) && v >= min && v <= max;}
     function id(v) {return typeof v === 'string' && v.length > 0 && v.length <= 160;}
     if (!value || !integer(value.throughTick,0,29999) || !['menuCreates','colorCreates','poseCalls'].every(function(k){return Array.isArray(value[k]);})) fail('External producers need bounded complete service history and creation lists.', 'launch-input');
+    if(value.resourceSchedule!==undefined&&!value.initialDialogue)fail('Resource scheduling requires initial native resource memory.','launch-input');
     if (!Array.isArray(value.events)) {
       var eventTable=value.events;
       if (!eventTable || !Array.isArray(eventTable.templates) || !Array.isArray(eventTable.sequence) || eventTable.sequence.length>60000 ||
@@ -1509,12 +1510,17 @@ window.OB64 = window.OB64 || {};
         return row.nodeId===node.id && row.occurrence===occurrence;
       });
     }
-    var dialogueEngine = null;
+    var dialogueEngine = null, resourceScheduler = null;
     if(externalProducers && externalProducers.initialDialogue) {
       try {
         if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
         dialogueEngine=new OB64.cutsceneDialogue.Engine(externalProducers.initialDialogue,options.z64);
         if(dialogueEngine.lifecycle&&(externalProducers.dialogueCreates||[]).length)fail('Shared dialogue construction must omit recorded constructor outcomes.','dialogue-constructor-input');
+        if(externalProducers.resourceSchedule!==undefined){
+          if(!OB64.cutsceneResourceScheduler)fail('Resource scheduling support is unavailable.','dialogue-scheduler-input');
+          for(var ei=0;ei<externalEventCount(externalProducers.events);ei++)if(externalEventAt(externalProducers.events,ei).kind==='dialogue')fail('Computed scheduling must omit recorded dialogue service events.','dialogue-scheduler-input');
+          resourceScheduler=new OB64.cutsceneResourceScheduler.Scheduler(dialogueEngine,externalProducers.resourceSchedule,options.z64);
+        }
         dialogueEngine.owners.forEach(function(owner,slot){
           if(!owner)return;
           var record=0x800e82c8+slot*0xa8;
@@ -1559,6 +1565,14 @@ window.OB64 = window.OB64 || {};
           producerBoundary(error.message,error.code);return;
         }
       }
+    }
+    function currentControllerMask(){return resourceScheduler&&resourceScheduler.control?resourceScheduler.control.actionMask:options.controllerMask;}
+    function* applyResourcePass(phase){
+      if(!resourceScheduler)return;
+      try{
+        if(phase==='before')yield* resourceScheduler.before(state.tick);
+        else{yield* resourceScheduler.after(state.terminal);recordTrace({tick:state.tick,kind:'resource-pass',clock:'declared-resource-pass',actions:resourceScheduler.trace.slice()});}
+      }catch(error){producerBoundary(error.message,error.code||'dialogue-scheduler-input');}
     }
 
     function registerSharedPoseRequest(actor, record) {
@@ -4306,8 +4320,8 @@ window.OB64 = window.OB64 || {};
       if (query.name === 'registered_counter_query' ||
           query.name === 'a_button_skippable_registered_wait_query') {
         if (query.name === 'a_button_skippable_registered_wait_query' &&
-            Number.isInteger(options.controllerMask) &&
-            (options.controllerMask & 0x8000) !== 0) {
+            Number.isInteger(currentControllerMask()) &&
+            (currentControllerMask() & 0x8000) !== 0) {
           state.registeredCounter = {
             value: (query.query.target + 1) >>> 0,
             armTick: state.tick,
@@ -4408,9 +4422,9 @@ window.OB64 = window.OB64 || {};
         return state.titleJob && state.titleJob.kind === 'reveal' ? 1 : 0;
       }
       if (query.name === 'global_halfword_mask_query') {
-        var controllerMask = Number.isInteger(options.controllerMask)
-          ? options.controllerMask & 0xFFFF : 0;
-        if (!Number.isInteger(options.controllerMask)) {
+        var controllerMask = Number.isInteger(currentControllerMask())
+          ? currentControllerMask() & 0xFFFF : 0;
+        if (!Number.isInteger(currentControllerMask())) {
           var neutralMaskValue = (controllerMask & (input & 0xFFFF)) !== 0 ? 1 : 0;
           return incompleteLifecycleValue(query, neutralMaskValue, context,
             'No controller input is supplied; this native input wait uses an explicit completed-state assumption.');
@@ -4675,6 +4689,7 @@ window.OB64 = window.OB64 || {};
         }),
         runtime: {
           engine: 'director-scheduler',
+          clock: resourceScheduler?'declared-resource-pass':'director-evaluation',
           directorMode: state.directorMode,
           directorModeStatus: state.directorModeStatus,
           directorSelector: screenTransitionVariant,
@@ -4942,6 +4957,7 @@ window.OB64 = window.OB64 || {};
         producerBoundary('Dialogue service history ends before this update.','dialogue-service-history');return;
       }
       yield* applyExternalServices('before-director');
+      if(!stopReason)yield* applyResourcePass('before');
       if (stopReason) return;
       if (tick > 0 || capturedResume) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
@@ -5057,6 +5073,7 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if (composite.kind === 'skippable-registered-wait') {
+        if(resourceScheduler){processCompositeSuffix(nodes,composite);return;}
         state.registeredCounter = { value: 1, armTick: state.tick };
         if (!continuousResume) assumption('A-button input is not supplied; skippable waits use their authored maximum.');
         var details = composite.details || {};
@@ -5161,6 +5178,7 @@ window.OB64 = window.OB64 || {};
         yield;
       }
       if (!stopReason) yield* applyExternalServices('after-director');
+      if (!stopReason) yield* applyResourcePass('after');
       if (continuousResume && !stopReason) {
         completedResumeUpdates++;
         if (completedResumeUpdates >= capturedResume.updates && !state.terminal) stopReason='prospective-update-limit';
@@ -5235,7 +5253,7 @@ window.OB64 = window.OB64 || {};
       engine: 'director-scheduler',
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
-      clockUnit: continuousResume ? 'declared prospective normal Director updates; no historical cadence' : capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
+      clockUnit: resourceScheduler ? 'declared resource passes with explicit projection preparation; not video frames' : continuousResume ? 'declared prospective normal Director updates; no historical cadence' : capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
       capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
         resumeState: continuousResume ? 'candidate-continuous-updates' : capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',
         executedUpdates: continuousResume ? completedResumeUpdates : capturedResume && resumedMenuSelection ? 1 : 0 } : null,

@@ -110,7 +110,7 @@ window.OB64 = window.OB64 || {};
         pc=result.target;
         if(this.code[pc]===undefined && pc!==0xdead0000) {
           if(this.serviceHelper&&this.serviceHelper(pc)) {pc=this.r[31];continue;}
-          var helper=helpers[cursor];
+          var shared=this.sharedOutcome&&this.sharedOutcome(pc),helper=shared||helpers[cursor];
           // Audio, archive lookup, formatter, copy, free, allocation, registration,
           // and optional position adjustment retain explicit external outcomes.
           var arity=({0x800ea9bc:5,0x8007938c:4,0x800934b0:3,0x80093540:3,
@@ -127,7 +127,7 @@ window.OB64 = window.OB64 || {};
           if(!Number.isInteger(helper.result))boundary('Dialogue helper return value is missing.', 'dialogue-helper-outcome');
           (helper.registerWrites||[]).forEach(function(row){this.r[row.register]=row.value;},this);
           if(helper.hi!==undefined)this.hi=helper.hi;if(helper.lo!==undefined)this.lo=helper.lo;
-          this.r[2]=helper.result;cursor++;pc=this.r[31];
+          this.r[2]=helper.result;if(!shared)cursor++;pc=this.r[31];
         }
       }
       if((this.steps-start)%2048<2)yield {kind:'dialogue-native-progress',instructions:this.steps-start};
@@ -254,7 +254,7 @@ window.OB64 = window.OB64 || {};
     for(var control=0;control<8;control++)this.machine.put(0x8019ee40+control,0,1);
     this.owners[slot]={ownerId:row.ownerId,payload:null};return slot;
   };
-  Engine.prototype.service = function*(event) {
+  Engine.prototype.service = function*(event, nativeDispatch) {
     function rejectUnused(outcomes) {
       if((outcomes||[]).length)boundary('Dialogue service supplied unused helper outcomes.','dialogue-helper-order');
     }
@@ -277,6 +277,7 @@ window.OB64 = window.OB64 || {};
     var storage=event.storage;
     if(!this.payloadStorage&&(!storage||storage.saveReturned!==true||!Number.isInteger(storage.saveHandle)||storage.saveHandle<=0||storage.saveHandle>0xffffffff))boundary('Dialogue callback requires its payload-save allocation outcome.','dialogue-payload-allocation');
     this.copy(r,RECORD,STRIDE);
+    if(nativeDispatch&&slot===m.get(0x800c4c10,2))m.put(RECORD+2,m.get(RECORD+2,1)|4,1);
     if(event.service==='initialize') {
       if(flags&0x2000)boundary('Dialogue initialization cannot repeat for an initialized resource.');
       yield* m.run(0x80198be8,[slot],event.helpers);
@@ -295,11 +296,13 @@ window.OB64 = window.OB64 || {};
       var c=event.controller;
       if(c.queueHead!==m.get(0x800c4c10,2))boundary('Dialogue controller owner differs from the current resource queue.','dialogue-controller-owner');
       m.put(0x800e8100,c.actionMask,2);m.put(0x800e8700,c.directionMask,2);m.put(0x800af0a6,c.dummyMask,2);
+      if(nativeDispatch)m.put(0x800e8108,c.queueHead===slot?0x800e79b0:0x800af0a6);
       var textState=m.get(PAYLOAD+0x3c,1);
       if(textState===3||textState===6||(textState===7&&m.get(PAYLOAD+0x52,1)))m.put(m.get(0x800e8108),c.historyMask,2);
       m.put(0x800c4bdc,c.queueHead===slot?0x800e8100:0x800af0a6);m.put(0x800c4c4c,c.queueHead===slot?0x800e8700:0x800af0a6);
       yield* m.run(0x8019981c,[slot],event.helpers);
     } else boundary('Dialogue service kind is unsupported.','dialogue-service-input');
+    if(nativeDispatch&&slot===m.get(0x800c4c10,2))m.put(RECORD+2,m.get(RECORD+2,1)&~4,1);
     var length=m.get(RECORD+0x20,2),saveFlags=m.get(RECORD+1,1);
     if(length!==0x478||(saveFlags&1))boundary('Dialogue requires a qualified payload storage mode.','dialogue-payload-mode');
     if(this.payloadStorage)storage={saveHandle:this.payloadStorage.save(owner.ownerId,saveFlags,PAYLOAD,length)};
@@ -309,7 +312,7 @@ window.OB64 = window.OB64 || {};
     m.put(RECORD+0x24,storage.saveHandle);
     this.copy(RECORD,r,STRIDE);
     owner.payload=Uint8Array.from({length:0x478},function(_,i){return m.get(PAYLOAD+i,1);});
-    if(m.get(r+2,1)&4) {
+    if(m.get(r+2,1)&(nativeDispatch?2:4)) {
       yield* m.run(0x80077f88,[slot],event.releaseHelpers||[]);
       if(!(m.get(r,2)&0x8000)){if(this.payloadStorage)this.payloadStorage.release(owner.ownerId);this.owners[slot]=null;}
     } else rejectUnused(event.releaseHelpers);

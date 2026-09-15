@@ -1,6 +1,6 @@
 # Native dialogue inputs
 
-Native dialogue playback uses explicit initial state and ordered service history.
+Native dialogue playback uses explicit initial state and either ordered service history or the optional computed resource pass.
 The combined external-producer implementation remains review pending.
 Director queries no longer infer native pauses or release from text length.
 Diagnostic playback retains an approximate text presentation when these inputs are absent.
@@ -91,7 +91,8 @@ Exhaustion returns `dialogue-storage-exhaustion`; it does not invent a handle or
 Compressed payload mode remains unsupported.
 
 Without shared lifecycle services, constructor records and archive lookup remain explicit outcomes.
-Controller choices, service order, and eligibility always remain explicit inputs.
+Controller choices remain explicit inputs.
+Without computed resource scheduling, service order and eligibility also remain explicit inputs.
 Without shared lifecycle services, native closing and immediate-release helpers can require recorded retail free outcomes.
 Those helpers retain their retail memory effects; preview span ownership is released separately.
 The shared arena does not establish compatibility with arbitrary retail heap state.
@@ -174,6 +175,75 @@ Helpers outside the selected shared services retain their accepted external boun
 `releaseHelpers` supplies outcomes when callback flags request immediate native release after copyback.
 `registeredOwners` supplies `{slot, ownerId}` identities for resources created by a native text registration control.
 An unclaimed new active resource stops before later dependent services.
+
+### Computed resource passes
+
+The optional `externalProducers.value.resourceSchedule` replaces recorded dialogue service events:
+
+```json
+{
+  "kind": "resident-resource-pass-v1",
+  "directorSlot": 0,
+  "directorCallback": 2149735100,
+  "controller": {
+    "throughPass": 89,
+    "changes": [{"pass": 0, "actionMask": 0, "directionMask": 0, "historyMask": 0, "dummyMask": 0}]
+  },
+  "helperOutcomes": []
+}
+```
+
+This candidate profile requires shared dialogue lifecycle and payload storage.
+Its Director binding identifies the initialized resource in the current six-slot pool.
+The callback value identifies RAM virtual address `0x80225ABC`, qualified against the current ROM.
+The profile rejects recorded dialogue events, including ineligible events.
+Other external producer events remain separate inputs.
+Inputs without this profile preserve their existing service history behavior.
+
+Each preview tick represents one declared resource pass with explicit Actor projection preparation.
+The result reports this clock through `clockUnit`; it does not establish video frames or seconds.
+The profile runs the queue opening, closing, and priority services when the current queue count is nonzero.
+It then performs the native circular initialization scan and rebuilds priority.
+Each successful initialization changes the scan's stopping point.
+An initializer can register a lower slot that initializes during the same pass.
+
+Callbacks execute in ascending pool-slot order, subject to current active flags, initialization, callback pointers, and the callback budget.
+Priority determines queue ownership, not callback order.
+The declared Director executes at its actual slot between lower and higher callbacks.
+Resources registered by a callback remain uninitialized until the next pass.
+The final priority rebuild publishes the changed pool.
+The current parent-resource slot follows the executing callback and controls registration context.
+
+The dispatcher supplies the temporary queue-head flag and controller pointers before dialogue execution.
+It clears that flag after execution and uses the native immediate-release flag.
+Controller changes start at pass zero, increase strictly, and contain unsigned halfword masks.
+Each change remains active until the next change or `throughPass`.
+The action mask also drives reached Director controller queries during the same pass.
+This declaration does not compute physical edges, analog sampling, or controller repeat behavior.
+
+`helperOutcomes` contains a single ordered stream for remaining external helpers.
+Each row uses the existing exact-address, arguments, writes, and register-effect contract.
+Supported residual helpers cover audio, formatting, copying, optional position adjustment, and text allocation.
+Shared archive and free services must not receive recorded outcomes.
+Missing, mismatched, or unused terminal outcomes stop execution.
+The generated chair input retains audio outcomes; the second retail slice retains one formatter outcome.
+
+The scheduler implements the qualified native control flow in JavaScript.
+Queue, dialogue initializer, and dialogue callback bodies still execute ROM-verified native instructions in the bounded machine.
+The Director, Actor updates, projection, lifecycle, and preview storage retain their documented implementations and limits.
+The native comparison executes the actual resource gate and dispatcher with declared allocator boundaries.
+The second comparison substitutes a bounded retail-parser callback for the complete scene wrapper.
+
+Unknown resource callbacks, uninitialized Director resources, render-node attachment, and pending bulk cleanup stop with explicit diagnostics.
+This profile ends immediately after a modeled terminal Director return, before outer resource teardown or the next scene load.
+Color callback opportunities remain externally supplied; the resource pool does not produce that wrapper-internal order.
+Initial scene, Actor, queue, metrics, and projection context remain required.
+This profile does not establish ordinary ROM-selected scene initialization.
+
+Run `node tests/cutscene-resource-scheduling.test.js` from the Editor directory.
+The second retail slice takes 164 passes with Director slot zero and 163 passes with Director slot three.
+Both results match independently executed native resource records and payloads.
+The moved-slot case exposes the callback-order dependency without changing dialogue outcomes in a fixture.
 
 ## Results and boundaries
 
