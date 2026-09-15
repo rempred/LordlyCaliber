@@ -109,6 +109,7 @@ window.OB64 = window.OB64 || {};
         if(!result.annul && this.step((pc+4)>>>0).target!==null)boundary('Native control in a delay slot is unsupported.', 'dialogue-instruction');
         pc=result.target;
         if(this.code[pc]===undefined && pc!==0xdead0000) {
+          if(this.serviceHelper&&this.serviceHelper(pc)) {pc=this.r[31];continue;}
           var helper=helpers[cursor];
           // Audio, archive lookup, formatter, copy, free, allocation, registration,
           // and optional position adjustment retain explicit external outcomes.
@@ -182,7 +183,9 @@ window.OB64 = window.OB64 || {};
     if(!input || !Array.isArray(input.memory) || !Array.isArray(input.owners) || input.owners.length!==6)boundary('Dialogue requires initial memory and six resource ownership entries.');
     if(!(rom instanceof Uint8Array)||!OB64.cutsceneDialogueWords)boundary('Dialogue requires its qualified original image.');
     var code={};
-    OB64.cutsceneDialogueWords.forEach(function(row){
+    var words=OB64.cutsceneDialogueWords;
+    if(input.lifecycle!==undefined){if(!input.lifecycle||typeof input.lifecycle!=='object'||!OB64.cutsceneDialogueLifecycleWords||!OB64.cutsceneDialogueLifecycle)boundary('Dialogue lifecycle services are unavailable or invalid.','dialogue-lifecycle-input');words=words.concat(OB64.cutsceneDialogueLifecycleWords);}
+    words.forEach(function(row){
       var a=row[1];
       if(a+4>rom.length||((rom[a]*16777216+rom[a+1]*65536+rom[a+2]*256+rom[a+3])>>>0)!==row[2])boundary('Dialogue code differs from its qualified original image.','dialogue-image-identity');
       code[row[0]]=row[2];
@@ -205,6 +208,7 @@ window.OB64 = window.OB64 || {};
     if(new Set(this.owners.filter(Boolean).map(function(row){return row.ownerId;})).size!==this.owners.filter(Boolean).length)boundary('Dialogue owner identities must be unique.');
     this.payloadStorage=input.payloadStorage===undefined?null:new PayloadStorage(this.machine,input.payloadStorage);
     if(this.payloadStorage)this.owners.forEach(function(owner,slot){if(owner&&owner.payload)this.payloadStorage.reserve(owner.ownerId,this.machine.get(POOL+slot*STRIDE+0x24),owner.payload.length);},this);
+    this.lifecycle=input.lifecycle===undefined?null:new OB64.cutsceneDialogueLifecycle(this,input.lifecycle,rom);
   }
   Engine.prototype.copy = function(from,to,length) {
     var data=[];for(var i=0;i<length;i++)data.push(this.machine.get(from+i,1));

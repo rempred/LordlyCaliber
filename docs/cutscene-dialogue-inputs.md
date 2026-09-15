@@ -38,7 +38,7 @@ Selected strings, source allocation tails, and reached scratch bytes remain sepa
 
 ## Creation and services
 
-`dialogueCreates` contains `{nodeId, occurrence, ownerId, slot, directorWords, recordHex}` entries.
+Without shared lifecycle services, `dialogueCreates` contains `{nodeId, occurrence, ownerId, slot, directorWords, recordHex}` entries.
 The words must match the resolved fourteen-word Director command.
 The record supplies the qualified constructor and registration outcome.
 Registration must select the first inactive resource slot.
@@ -90,8 +90,9 @@ A live owner must restore or release before another save.
 Exhaustion returns `dialogue-storage-exhaustion`; it does not invent a handle or report success.
 Compressed payload mode remains unsupported.
 
-Constructor records, archive lookup, controller choices, service order, and eligibility remain explicit inputs.
-Native closing and immediate-release helpers can still require recorded retail free outcomes.
+Without shared lifecycle services, constructor records and archive lookup remain explicit outcomes.
+Controller choices, service order, and eligibility always remain explicit inputs.
+Without shared lifecycle services, native closing and immediate-release helpers can require recorded retail free outcomes.
 Those helpers retain their retail memory effects; preview span ownership is released separately.
 The shared arena does not establish compatibility with arbitrary retail heap state.
 
@@ -99,6 +100,60 @@ The focused test compares native wrapper bytes, captured-payload adoption, alloc
 Run `node tests/cutscene-shared-storage.test.js` from the Editor directory.
 The second path uses an extracted command slice and an explicit stop sentinel.
 Its supplied constructor context and archive resolution do not establish a natural scene launch.
+
+### Shared dialogue lifecycle
+
+The optional `initialDialogue.lifecycle` selects candidate shared creation, archive resolution, and cleanup:
+
+```json
+{"kind":"shared-dialogue-v1","archiveArena":{"address":2150949088,"byteLength":4096}}
+```
+
+This option requires `payloadStorage` and omits all `dialogueCreates` outcomes.
+Constructor owners use `dialogue:<nodeId>:<occurrence>`.
+Events must omit archive-lookup and payload-free outcomes when the shared service executes those calls.
+Unused outcomes still stop execution.
+Inputs without this option retain the recorded constructor and helper contracts.
+
+The archive arena follows the payload arena's address, alignment, writable-memory, and size requirements.
+The arenas must not overlap.
+Both arenas declare exclusive preview ownership; they are not retail heap captures.
+The archive cache starts empty and retains decoded archives for this Engine's lifetime.
+It uses aligned, sequential allocation and reports `dialogue-archive-exhaustion` without writing partial results.
+This cache does not reproduce retail archive-cache eviction or heap placement.
+
+Lookup reads the current ROM's Serifu selector table and resource size words.
+It supports bounded LHA level-zero or level-two archives with `-lh5-` or `-lh0-` data.
+It validates container bounds, decoded length, and the stored data checksum.
+It computes decoded bytes with the existing LH5 decoder.
+Archive lookup does not consume catalog text, saved archive bytes, or per-call results.
+Native initialization still resolves the selected entry within those bytes.
+
+Creation executes ROM-verified native core-constructor, window-registration, and resource-registration instructions.
+Shared JavaScript applies the Director wrapper's supported flags, portrait selector, and placement fields.
+Fixed placement mode one uses the command's coordinates.
+Actor-linked mode zero uses the current Actor, transform channel, registered camera, and Actor camera.
+The six changed-input controls compare complete records against native construction.
+They establish the tested placements, not universal floating-point equivalence with the N64 matrix pipeline.
+Continuous following of a moving dialogue anchor is outside this creation service.
+The service does not execute the wrapper's retail Actor-link allocation or rebuild scene name/resource context.
+
+The initial memory must supply reached scene context, resource ownership, queue state, text metrics, and constructor globals.
+The parent resource slot, registration tag, and window edge globals are included in the generated chair input.
+Missing bytes remain errors.
+Portrait lookup through the command's `-1` sentinel and placement modes outside zero or one are unsupported.
+Actor-linked creation requires qualified mode-zero cameras.
+
+Native closing and immediate-release instructions still decide when a resource becomes inactive.
+Their free call releases the current preview payload lease.
+An unknown handle returns `dialogue-cleanup-owner`.
+This replaces the retail heap operation; it does not reproduce retail free-list memory writes.
+Other native text registration, formatting, audio, and optional position helper boundaries remain explicit.
+
+Run `node tests/cutscene-dialogue-lifecycle.test.js` from the Editor directory.
+The second retail slice runs 164 updates and releases its dialogue at update 142.
+It uses declared saved Actor context, neutral controller samples, and explicit service cadence.
+The extracted slice and stop sentinel do not establish a natural second-scene launch.
 
 Callbacks supply `controller` with unsigned halfwords named `actionMask`, `directionMask`, `dummyMask`, `historyMask`, and `queueHead`.
 The queue head must match current queue memory.
@@ -115,7 +170,7 @@ Optional `hi` and `lo` provide arithmetic-register effects.
 Preservation applies to registers outside the declared effects.
 Unknown helper targets, unmatched arguments, and unused outcomes stop execution.
 
-Allocator, archive, formatter, copy, audio, registration, and optional position services retain their accepted external boundaries.
+Helpers outside the selected shared services retain their accepted external boundaries.
 `releaseHelpers` supplies outcomes when callback flags request immediate native release after copyback.
 `registeredOwners` supplies `{slot, ownerId}` identities for resources created by a native text registration control.
 An unclaimed new active resource stops before later dependent services.

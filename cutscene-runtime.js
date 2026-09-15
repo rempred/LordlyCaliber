@@ -1514,6 +1514,7 @@ window.OB64 = window.OB64 || {};
       try {
         if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
         dialogueEngine=new OB64.cutsceneDialogue.Engine(externalProducers.initialDialogue,options.z64);
+        if(dialogueEngine.lifecycle&&(externalProducers.dialogueCreates||[]).length)fail('Shared dialogue construction must omit recorded constructor outcomes.','dialogue-constructor-input');
         dialogueEngine.owners.forEach(function(owner,slot){
           if(!owner)return;
           var record=0x800e82c8+slot*0xa8;
@@ -2771,7 +2772,21 @@ window.OB64 = window.OB64 || {};
           externalOccurrences[key]=occurrence+1;
           var registration=(externalProducers.dialogueCreates||[]).find(function(row){return row.nodeId===node.id&&row.occurrence===occurrence;});
           if(unresolvedWordOffsets.length)fail('Dialogue constructor still has unresolved Director inputs.','dialogue-constructor-input');
-          nativeSlot=dialogueEngine.register(registration,words);
+          if(dialogueEngine.lifecycle){
+            if(registration)fail('Shared dialogue construction must not receive a recorded constructor outcome.','dialogue-constructor-input');
+            var point=null;
+            if((words[13]|0)===0){
+              var ownerActor=state.actors[signed(words[4])],renderer=OB64.cutsceneRenderer;
+              if(!ownerActor||!renderer||state.directorMode!==0||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
+              var channel=state.transformChannels[ownerActor.transformChannel]||identityTransformChannel();
+              var renderedY=ownerActor.heightModeByte&4?ownerActor.y+ownerActor.secondaryY:ownerActor.heightModeByte&2?ownerActor.secondaryY:ownerActor.y;
+              var geometry=renderer.modeZeroActorGeometry({x:ownerActor.x,y:renderedY,z:ownerActor.z,sceneTransform:channel,renderPipeline:'mode-zero-registered-prepass-actor-camera'},
+                {registeredProjection:projectionFromCamera(state.cameras.registered)},projectionFromCamera(state.cameras.actor));
+              if(!geometry)fail('Dialogue placement could not project the current Actor.','dialogue-constructor-placement');
+              point=renderer.projectPointFloat(geometry.scenePoint,geometry.projection);
+            }
+            registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;
+          }else nativeSlot=dialogueEngine.register(registration,words);
         } catch(error) {producerBoundary(error.message,error.code||'dialogue-registration-input');return;}
       } else if(producerBoundary('Dialogue requires native initial memory, constructor outcome, and complete service history.','dialogue-initial-input')) return;
       var windowId = signed(words[1]);
