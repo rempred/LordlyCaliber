@@ -440,9 +440,12 @@ It does not execute allocation, archive, registration, or storage implementation
 The continuous color-release command sets the native release-request flag. The chair reaches termination before a later cleanup callback.
 The retained noncontinuous color-cleanup behavior is unchanged. This result does not validate other scenes or post-termination callbacks.
 
-The chair generator is `../docs/reviews/cutscene-chair-continuous-playback-20260915/probe.js` in the parent repository.
-It consumes saved native execution outcomes from sibling `native_probe.py` and `native_services.py`.
-The direct import artifact is `../docs/reviews/cutscene-chair-continuous-playback-20260915/playback-input.json`.
+The corrected chair generator is `../docs/reviews/cutscene-chair-projection-correction-20260915/probe.js` in the parent repository.
+It consumes native execution outcomes from sibling `native_probe.py` and `native_services.py`.
+The research execution uses corrected paired floating-point registers and runs the native Actor matrix producer after each declared update.
+Projection therefore consumes evolving matrices. No later captured matrix or dialogue payload becomes a full-run playback input.
+The preview consumes the resulting projection-related service outcomes; it does not execute that native matrix producer.
+The direct import artifact is `../docs/reviews/cutscene-chair-projection-correction-20260915/playback-input.json`.
 Load the Rev0 ROM, open Cutscene Studio, and select resource `rom-director:01F4558C`.
 In the scene inspector, use **Playback inputs → Import playback inputs**, select that artifact, then press **Play**.
 The input is session-local. Loading a Project clears it.
@@ -451,5 +454,5 @@ This declared run uses neutral Director input and A on dialogue callbacks whose 
 It reaches termination after 616 updates. These inputs and callback order are prospective choices, not recovered historical timing.
 The integration test exercises all 616 states through the Actor and effect renderer, with backgrounds omitted.
 Existing camera bounds remain unchanged. Browser interaction, synchronized original-game pixels, shadows, and historical cadence remain unverified.
-Conditional stored-sample comparison matches Actor fields and dialogue pause bits, but all 48 complete original dialogue payloads differ.
-The first payload difference appears at sample 42. Full historical dialogue-state agreement remains unresolved.
+The separate 90-update neutral run matches all 48 complete stored dialogue payloads and window rectangles under conditional sample alignment.
+The declared A input changes later dialogue progression. Neither run establishes unique historical controller input or universal scheduler cadence.

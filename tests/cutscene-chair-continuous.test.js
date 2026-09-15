@@ -15,7 +15,7 @@ const clone=value=>JSON.parse(JSON.stringify(value));
  const before=JSON.stringify(fixture.input),result=run();
  assert(Buffer.byteLength(before)<=131072,'the direct JSON input fits the existing import ceiling');
  assert.equal(JSON.stringify(fixture.input),before);
- assert.equal(result.outcome,'modeled-termination');assert.equal(result.states.length,616);assert.equal(result.capturedSnapshot.executedUpdates,616);
+ assert.equal(result.outcome,'modeled-termination');assert.equal(result.states.length,fixture.expectedUpdates);assert.equal(result.capturedSnapshot.executedUpdates,fixture.expectedUpdates);
  assert.deepStrictEqual(result.missingInputs,[]);assert.deepStrictEqual(result.assumptions,[]);
  assert.equal(result.resumedMenuSelection,null,'continuous execution does not claim the one-update menu-preservation result');
  assert.equal(result.trace.find(row=>row.kind==='direct-actor-creation').recordHex,fixture.expectedCreation);
@@ -47,6 +47,12 @@ const clone=value=>JSON.parse(JSON.stringify(value));
   assert.equal(image.rgba.length,320*240*4);rendered++;
  }
  assert.deepStrictEqual(sprites.errors,{});
+ const neutral=run(fixture.neutralInput);
+ assert.equal(neutral.states.length,90);assert.equal(neutral.outcome,'prospective-update-limit');
+ for(const row of fixture.originalDialogueSamples){const state=neutral.states[row.sample-1];
+  assert.equal(state.nativeExternal.dialogue.owners[row.slot].payloadHex,row.payloadHex,`original payload sample ${row.sample}`);
+  assert.deepStrictEqual(state.dialogue.find(d=>d.payload.nativeDialogue).payload.nativeDialogue.rectangle,row.rectangle,`original rectangle sample ${row.sample}`);
+ }
  const shorter=clone(fixture.input);shorter.capturedResume.value.updates=50;
  const table=shorter.externalProducers.value.events;
  table.sequence=table.sequence.filter(([tick])=>tick<50);shorter.externalProducers.value.throughTick=49;
@@ -74,7 +80,8 @@ const clone=value=>JSON.parse(JSON.stringify(value));
  assert.deepStrictEqual(asynchronous.states,result.states);
  const controller=new AbortController();controller.abort();
  await assert.rejects(OB64.cutsceneRuntime.compileAsync(p.document,p.program,scene,catalog,{z64,nativeLaunchInputs:fixture.input,signal:controller.signal}),e=>e.name==='AbortError');
- console.log(JSON.stringify({status:'pass',updates:616,milestoneActorComparisons:compared,actorFrames:frames,renderedFrames:rendered,effectFrames:effects,
+ console.log(JSON.stringify({status:'pass',updates:fixture.expectedUpdates,milestoneActorComparisons:compared,actorFrames:frames,renderedFrames:rendered,effectFrames:effects,
+  neutralHistoricalPayloads:fixture.originalDialogueSamples.length,neutralHistoricalRectangles:fixture.originalDialogueSamples.length,
   inputBytes:Buffer.byteLength(before),retainedStateBytes:result.retainedStateBytes,asyncParity:true,compactHistoryParity:true,
   renderingScope:'Actual Actor/effect renderer; backgrounds omitted; no original-game pixel claim'}));
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
