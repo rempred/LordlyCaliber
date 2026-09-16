@@ -186,6 +186,20 @@ window.OB64 = window.OB64 || {};
     return selected;
   }
 
+  function importedFreshLaunch(state, scene) {
+    var input = state.nativeLaunchInputsByAssetId && state.nativeLaunchInputsByAssetId[scene.assetId];
+    var external = input && input.externalProducers;
+    return !!(external && external.status === 'known' && external.value &&
+      external.value.directorLaunch !== undefined);
+  }
+
+  function runtimeLaunchChoice(state, scene, forcedChoice) {
+    // Fresh launch owns its initial namespace. Preserve the event selection for
+    // ordinary contextual playback after the imported profile is cleared.
+    if (importedFreshLaunch(state, scene)) return null;
+    return forcedChoice || launchContextChoice(state, scene, null);
+  }
+
   function precedingLaunchContextChoice(state, scene, parentContext) {
     var choices = launchContextChoices(state, scene);
     var exact = choices.find(function(choice) {
@@ -329,7 +343,7 @@ window.OB64 = window.OB64 || {};
 
   function refreshRuntime(state, scene, document, rom) {
     if (!OB64.cutsceneRuntime || scene.engine !== 'director') return null;
-    var choice = launchContextChoice(state, scene, null);
+    var choice = runtimeLaunchChoice(state, scene, null);
     var contextRuntime = choice && state.concurrentRuntimeByLaunchContext
       ? state.concurrentRuntimeByLaunchContext[
         launchContextCacheKey(scene, choice)] || null
@@ -390,7 +404,7 @@ window.OB64 = window.OB64 || {};
       compactOutput, signal) {
     state.concurrentRuntimeByLaunchContext =
       state.concurrentRuntimeByLaunchContext || {};
-    var choice = forcedChoice || launchContextChoice(state, scene, null);
+    var choice = runtimeLaunchChoice(state, scene, forcedChoice);
     var contextScene = choice && choice.contextScene;
     ancestry = ancestry || [];
     if (signal && signal.aborted) {
@@ -4003,7 +4017,10 @@ window.OB64 = window.OB64 || {};
       });
       inspector.appendChild(field('Event invocation', eventContextSelect,
         'This selection changes launch-time constants and concurrent shared scene state. It clears the Actor snapshot for the previous invocation.'));
-      if (activeEventContext.contextScene) {
+      if (importedFreshLaunch(state, scene)) {
+        inspector.appendChild(node('p', 'cutscene-field-hint',
+          'Imported fresh launch uses its own initial scene state. Clear playback inputs to use this event invocation.'));
+      } else if (activeEventContext.contextScene) {
         inspector.appendChild(node('p', 'cutscene-field-hint',
           'Concurrent state source: ' +
           OB64.cutsceneCatalog.displayName(activeEventContext.contextScene) +
