@@ -12,6 +12,16 @@ window.OB64=window.OB64||{};
   if(a.address<p.address+p.byteLength&&p.address<a.address+a.byteLength)stop('Archive and payload arenas must not overlap.');
   engine.machine.region(a.address,a.byteLength,true);
   this.engine=engine;this.machine=engine.machine;this.rom=rom;this.arena={address:a.address,byteLength:a.byteLength};this.used=0;this.archives=new Map();
+  var machine=this.machine;
+  (OB64.cutsceneDialogueLifecycleTables||[]).forEach(function(table){
+   var data=Uint8Array.from(table.hex.match(/../g),x=>parseInt(x,16));
+   if(table.rom+data.length>rom.length||data.some((v,i)=>v!==rom[table.rom+i]))stop('Dialogue control table differs from its qualified ROM.','dialogue-table-image');
+   for(var i=0;i<data.length;i+=4){var address=table.address+i,existing=machine.regions.find(r=>address<r.address+r.bytes.length&&r.address<address+4);
+    if(existing){if(address<existing.address||address+4>existing.address+existing.bytes.length||data.slice(i,i+4).some((v,j)=>v!==machine.get(address+j,1)))stop('Supplied dialogue memory conflicts with a qualified control table.','dialogue-table-memory');}
+    else machine.regions.push({address:address,bytes:data.slice(i,i+4),writable:false});
+   }
+  });
+  if(machine.regions.reduce((n,r)=>n+r.bytes.length,0)>131072)stop('Dialogue control tables exceed the bounded native memory.','dialogue-memory-bound');
   this.machine.serviceHelper=this.helper.bind(this);
  }
  Lifecycle.prototype.archive=function(selector){
@@ -56,7 +66,7 @@ window.OB64=window.OB64||{};
   var slot=-1;for(var i=0;i<6;i++)if(!(m.get(POOL+i*STRIDE,2)&0x8000)){slot=i;break;}
   if(slot<0)stop('Dialogue resource pool is exhausted.','dialogue-resource-exhaustion');
   if(e.owners.some(function(o){return o&&o.ownerId===ownerId;}))stop('Dialogue constructor owner must be fresh.','dialogue-service-owner');
-  if(mode===0&&(!point||!Number.isFinite(point.x)||!Number.isFinite(point.y)))stop('Actor-linked dialogue requires current qualified placement.','dialogue-constructor-placement');
+  if(mode===0&&(!point||point.absentActor!==true&&(!Number.isFinite(point.x)||!Number.isFinite(point.y))))stop('Actor-linked dialogue requires current qualified placement.','dialogue-constructor-placement');
   var g=m.run(0x8019ee58,[words[1]&255,words[2]&65535,words[3]&65535,mode===0?((words[6]<<4)+words[5])&255:0,words[8]&255],[],16384),result;
   do{result=g.next();}while(!result.done);
   if(result.value!==slot)stop('Native constructor did not select the first free resource.','dialogue-registration-input');
@@ -65,7 +75,8 @@ window.OB64=window.OB64||{};
   var portrait=words[11]|0;if(words[12]===1)portrait=-portrait;
   m.put(r+0x92,portrait,2);
   if(mode===1){flags|=0x40;m.put(r+0x8c,words[5]&255,2);m.put(r+0x94,words[6],2);}
-  else{var threshold=((words[6]*14+49)<<16)>>16;m.put(r+0x8c,Math.trunc(point.x),2);m.put(r+0x94,Math.trunc(point.y)-(point.y<threshold?20:45),2);}
+  // Native placement skips a known empty Actor slot and retains constructor bytes.
+  else if(point.absentActor!==true){var threshold=((words[6]*14+49)<<16)>>16;m.put(r+0x8c,Math.trunc(point.x),2);m.put(r+0x94,Math.trunc(point.y)-(point.y<threshold?20:45),2);}
   m.put(r+0x8a,flags,1);for(i=0;i<8;i++)m.put(0x8019ee40+i,0,1);
   e.owners[slot]={ownerId:ownerId,payload:null};return {slot:slot,ownerId:ownerId};
  };

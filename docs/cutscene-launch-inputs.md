@@ -457,7 +457,7 @@ Existing camera bounds remain unchanged. Browser interaction, synchronized origi
 The separate 90-update neutral run matches all 48 complete stored dialogue payloads and window rectangles under conditional sample alignment.
 The declared A input changes later dialogue progression. Neither run establishes unique historical controller input or universal scheduler cadence.
 
-## Candidate fresh Director launch and framebuffer iris
+## Candidate fresh Director launch, iris, and image echo
 
 The `directorLaunch` profile starts an active, uninitialized Director resource in mode zero.
 It uses the selected ROM directory entry and declared caller state.
@@ -467,8 +467,8 @@ It is available through the existing import and Play controls.
 Load the Rev0 ROM and open Cutscene Studio.
 Select `rom-director:01F4558C`.
 Use **Playback inputs → Import playback inputs** in the scene inspector.
-Import `../docs/reviews/cutscene-framebuffer-effects-20260916/playback-input.json`, then press **Play**.
-The compact file is 53,872 bytes, below the 128 KiB import limit.
+Import `../docs/reviews/cutscene-image-echo-20260916/playback-input.json`, then press **Play**.
+The compact file is 70,110 bytes, below the 128 KiB import limit.
 The automated checks exercise the runtime and renderer; browser interaction was not performed.
 
 The new `externalProducers.value.directorLaunch` object has these fields:
@@ -499,18 +499,20 @@ Director commands and ordinary Actor construction/updates use the existing JavaS
 Native graphics-cache preparation is not executed by Actor construction.
 
 The input supplies caller resource memory, font metrics, camera fields, world state, roster rows, and initial audio queue state.
-It supplies A for one resource pass every thirty passes and neutral masks otherwise.
+It supplies A for one resource pass every thirty passes through pass 3,999, with neutral masks otherwise.
+This is an explicit playback experiment. It does not reproduce historical controller timing.
 One tick means one resource pass, not a verified rendered frame.
 The audio implementation updates its queue and emits request events.
 It does not consume that queue through the audio engine or synthesize sound.
 
-The framebuffer candidate retains 693 states after 692 completed resource passes.
+The echo candidate retains 1,435 states after 1,434 completed resource passes.
 It captures the current product stage at pass 641, immediately before the iris constructor.
 The iris closes, releases all seven Actors and six sprite effects, and retains the captured image.
-Playback stops before `image_transform_echo_start`, opcode `0x50`, at stream word `0x0181`.
-Its matrix endpoints, three cyclic matrices, fade updater, and renderer remain unimplemented.
-Existing native sources describe that dependency; this boundary does not require new user input.
-The optional profile preserves earlier inputs: without it, fresh launch stops at the iris constructor.
+Echo starts at pass 692 and completes after 53 updater calls, at pass 745.
+The map dialogue then completes. Playback stops before transient preset 33, opcode `0x62`, at stream word `0x03C6`.
+Its menu constructor and recurring service remain unsupported. Existing native sources describe the next implementation path.
+Without `imageEcho`, the framebuffer profile retains its earlier stop at the echo constructor.
+Without `framebuffer`, fresh launch retains its earlier stop at the iris constructor.
 
 The candidate adds `externalProducers.value.framebuffer`:
 
@@ -534,7 +536,7 @@ Native controls compare both phases; an edited retail prefix exercises paired cl
 That control is not the unmodified retail continuation after the echo boundary.
 Opening restores saved layers and releases the live captured image; released Actors do not return.
 The selected layer index is restored. The active layer count does not change.
-The product preserves current transform fields; it does not reproduce native graphics matrices byte for byte.
+The product preserves current layer transform fields. General layer projection remains a product rendering model.
 
 Seeking retains at most eight runtime-owned image buffers, totaling 2,457,600 bytes, within the runtime's 128 MiB limit.
 The ninth capture stops before retaining another image.
@@ -552,3 +554,31 @@ The separate neutral control runs 120 passes; it is not the older historical cap
 
 The framebuffer generators, native controls, checks, and render artifacts are listed in `../docs/reviews/cutscene-framebuffer-effects-20260916/handoff.md`.
 Earlier captured playback inputs and their comparison evidence remain separate.
+
+The echo profile adds `externalProducers.value.imageEcho: { "kind": "native-image-echo-v1" }`.
+It requires the framebuffer profile and one initialized scene image.
+Native instructions compute the vignette endpoints, echo matrices, cyclic matrix copies, query, fade, and release.
+The source image comes from the current ROM-selected image. Echo does not capture another framebuffer.
+The constructor selects the original image while the processed vignette and captured stage retain separate ownership.
+The normal scene pass updates echo before iris and before the Director. Alternate scheduling skips both updates.
+At most three 64-byte echo matrices remain live. Completion releases all three.
+Combined launch, resource, and matrix execution memory remains bounded to 128 KiB.
+The tested timeline retains 76,609,314 bytes, including its image, within the 128 MiB runtime limit.
+
+The renderer uses the computed fixed-point matrices and native copy order.
+Reverse mode can draw four trails by visiting one cyclic slot twice; this behavior is preserved.
+Vignette projection now uses the current registered-camera producer under the echo profile.
+The native current-image combiner and trail alpha rules remain distinct.
+The renderer uses product perspective projection and texture sampling, not an N64 rasterizer.
+Whole-scene pixel equivalence, near-plane clipping parity, backgrounds, shadows, dialogue glyphs, portraits, and historical cadence remain unverified.
+The capture service still rejects active dialogue rather than inventing captured text pixels.
+
+After iris cleanup, a known empty Actor slot leaves the native dialogue constructor's placement bytes intact.
+Unknown Actor namespaces still require qualified context.
+The shared lifecycle supplies the ROM-backed text-control dispatch table used by the later `@*` control.
+This adds no recorded helper return or per-call outcome.
+The following 2D sprite markers retain their computed render layer and scale in renderer payloads.
+
+Echo checks and native comparisons are described in `../docs/reviews/cutscene-image-echo-20260916/handoff.md`.
+The actual default initialize/import/load route, repeat compilation, seek rendering, and cancellation are tested offline.
+The original framebuffer route regression remains unchanged and passes.

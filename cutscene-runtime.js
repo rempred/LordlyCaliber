@@ -1555,6 +1555,8 @@ window.OB64 = window.OB64 || {};
     }
     var dialogueEngine = null, resourceScheduler = null, nativeLaunch = null, launchInitialization = null, launchParserRan = false;
     var framebufferProfile=externalProducers&&externalProducers.framebuffer,iris=null,pendingIris=null,framebuffers=[],framebufferBytes=0,framebufferLayerCount=0;
+    var echoProfile=externalProducers&&externalProducers.imageEcho,imageEcho=null;
+    if(echoProfile&&(!framebufferProfile||!OB64.cutsceneImageEcho||echoProfile.kind!=='native-image-echo-v1'))fail('Image echo requires its native profile and framebuffer lifecycle.','image-echo-input');
     if(framebufferProfile&&framebufferProfile.backgroundPolicy!==undefined&&!['omit','require'].includes(framebufferProfile.backgroundPolicy))fail('Framebuffer background policy must be explicit.','framebuffer-input');
     if(framebufferProfile&&(!OB64.cutsceneFramebuffer||framebufferProfile.kind!=='product-framebuffer-v1'||framebufferProfile.capturePolicy!=='constructor-current-state'))fail('Framebuffer playback requires its explicit product capture policy.','framebuffer-input');
     if(framebufferProfile){if(!externalProducers.directorLaunch)fail('Framebuffer playback requires fresh Director launch context.','framebuffer-input');OB64.cutsceneFramebuffer.validateRom(options.z64);}
@@ -2529,6 +2531,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeSceneVignette(node, words) {
+      if(echoProfile&&imageEcho){producerBoundary('Image echo currently supports one initialized scene image per launch.','image-echo-owner');return;}
       var presentation = launchProfile.oversizedImagePresentation || null;
       var slot = signed(words[1]);
       var alphaCap = signed(words[7]);
@@ -2564,6 +2567,13 @@ window.OB64 = window.OB64 || {};
         missing('Scene vignette ' + node.id +
           ' requires the class-4 launch image selected through event property 0xE9.');
       }
+      if(echoProfile){try{
+        var image=catalog.getImageAsset(state.sceneVignette.sourceAssetId),c=state.cameras.registered;
+        if(!image)fail('Image echo initialization requires current source image metadata.','image-echo-input');
+        imageEcho=new OB64.cutsceneImageEcho(options.z64);
+        if([imageEcho.machine,nativeLaunch.machine,dialogueEngine.machine].reduce(function(total,m){return total+m.regions.reduce(function(n,r){return n+r.bytes.length;},0);},0)>131072)fail('Combined launch, resource, and image matrix memory exceeds 128 KiB.','image-echo-memory-bound');
+        imageEcho.initialize(state.sceneVignette,[c.fovYDegrees,c.aspect,c.near,c.far,0,c.eye.x,c.eye.y,c.eye.z,c.target.x,c.target.y,c.target.z,c.up.x,c.up.y,c.up.z],image.width,image.height);
+      }catch(error){producerBoundary(error.message,error.code);return;}}
       state.effectEvents.push(eventRow(node, 'effect', 'Scene vignette', {
         sourceSystem: 'director-native',
         nativeOpcode: '0x3A',
@@ -2856,6 +2866,8 @@ window.OB64 = window.OB64 || {};
             var point=null;
             if((words[13]|0)===0){
               var ownerActor=state.actors[signed(words[4])],renderer=OB64.cutsceneRenderer;
+              if(!ownerActor&&nativeLaunch&&signed(words[4])>=0&&signed(words[4])<28)point={absentActor:true};
+              else {
               if(!ownerActor||!renderer||state.directorMode!==0||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
               var channel=state.transformChannels[ownerActor.transformChannel]||identityTransformChannel();
               var renderedY=ownerActor.heightModeByte&4?ownerActor.y+ownerActor.secondaryY:ownerActor.heightModeByte&2?ownerActor.secondaryY:ownerActor.y;
@@ -2863,6 +2875,7 @@ window.OB64 = window.OB64 || {};
                 {registeredProjection:projectionFromCamera(state.cameras.registered)},projectionFromCamera(state.cameras.actor));
               if(!geometry)fail('Dialogue placement could not project the current Actor.','dialogue-constructor-placement');
               point=renderer.projectPointFloat(geometry.scenePoint,geometry.projection);
+              }
             }
             registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;
           }else nativeSlot=dialogueEngine.register(registration,words);
@@ -2944,6 +2957,8 @@ window.OB64 = window.OB64 || {};
       payload.animationKey = program ? program.animationKey : effect.animationKey;
       payload.nativeFacing = program ? program.facing : effect.stateFacing;
       payload.variantSelector = effect.variantSelector;
+      payload.renderPassSelector = effect.renderPassSelector;
+      payload.scale = effect.scale;
       payload.poseId = program ? program.poseId : poseId(
         effect.bank, effect.animationKey, effect.stateFacing);
       payload.nativeStateIndex = effect.stateIndex;
@@ -3788,7 +3803,14 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if (node.name === 'branch_barrier') return;
-      if(framebufferProfile&&node.name==='image_transform_echo_start'){producerBoundary('Image-transform echo requires its matrix endpoints, three cyclic matrix slots, and recurring fade renderer.','framebuffer-echo');return;}
+      if(framebufferProfile&&node.name==='image_transform_echo_start'){
+        if(!echoProfile){producerBoundary('Image-transform echo requires its matrix endpoints, three cyclic matrix slots, and recurring fade renderer.','framebuffer-echo');return;}
+        try{if(!imageEcho||!iris||!iris.saved)fail('Image echo requires its current image and completed iris close.','image-echo-input');
+          var echoLayer=imageEcho.create(words.slice(1),state.transformChannels[1]);
+          state.transformChannels[1]=echoLayer;syncIrisTransforms();iris.layers[1].resource={kind:'image-echo',assetId:state.sceneVignette.sourceAssetId};
+          recordTrace({tick:state.tick,kind:'image-echo-start',operands:words.slice(1),clock:'native-resource-pass'});
+        }catch(error){producerBoundary(error.message,error.code);}return;
+      }
       if(nativeLaunch&&node.name==='frozen_frame_iris_transition'){
         if(!framebufferProfile){producerBoundary('Frozen-frame iris construction requires framebuffer capture and the render-layer lifecycle.','director-launch-iris');return;}
         if((words[8]>>>0)===0){try{if(!iris)iris=irisLayers();if(iris.record)fail('Closing iris cannot replace an active singleton.','framebuffer-phase');pendingIris={node:node,words:words.slice(1)};block={kind:'framebuffer-capture'};}catch(error){producerBoundary(error.message,error.code);}}
@@ -3923,8 +3945,9 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x62) {
         var transientSlot = signed(words[1]);
-        knownTransientSlots.add(transientSlot);
         var menuCreation=externalCreation('menuCreates',node);
+        if(nativeLaunch&&!menuCreation){producerBoundary('Transient render-entity preset '+signed(words[2])+' requires its constructor and recurring menu service.','transient-menu-constructor');return;}
+        knownTransientSlots.add(transientSlot);
         state.transientRenderEntities[transientSlot] = {
           slot: transientSlot,
           preset: signed(words[2]),
@@ -4541,6 +4564,7 @@ window.OB64 = window.OB64 || {};
       }
       var externalValue = externalQueryValue(query);
       if(framebufferProfile&&query.name==='frozen_frame_iris_activity_query')return iris?iris.query():0;
+      if(echoProfile&&query.name==='image_transform_echo_activity_query')return imageEcho?imageEcho.query():0;
       if(nativeLaunch&&query.name==='alternate_presentation_context_presence_query'&&nativeLaunch.input.world.alternateContextPointer!==undefined)return nativeLaunch.input.world.alternateContextPointer?1:0;
       if (Number.isInteger(externalValue)) return externalValue;
       if (unresolvedInput(query, context)) return NaN;
@@ -4744,6 +4768,7 @@ window.OB64 = window.OB64 || {};
         }] : state.flowEvents.slice(),
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
         framebufferEffect:iris?OB64.cutsceneFramebuffer.snapshot(iris):null,
+        imageEcho:imageEcho?imageEcho.snapshot():null,
         nativeExternal: {
           dialogue:dialogueEngine?dialogueEngine.snapshot():null,
           sharedRequests:Object.assign({},state.sharedRequests),
@@ -5038,6 +5063,7 @@ window.OB64 = window.OB64 || {};
       if (stopReason) return;
       if(launchParserRan){parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;launchParserRan=false;}
       if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
+      if(imageEcho&&!state.alternateDirectorScheduling){try{imageEcho.advance();if(imageEcho.started)state.oversizedImageView.zoomState=imageEcho.snapshot().zoomState;}catch(error){producerBoundary(error.message,error.code);}}
       if(iris&&!state.alternateDirectorScheduling){syncIrisTransforms();if(iris.advance())releaseIrisActors();applyIrisLayers();}
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });

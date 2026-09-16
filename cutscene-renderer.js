@@ -274,6 +274,29 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  function renderImageEcho(output, source, echo, projection, channel, processed) {
+    if(!source||!echo||!OB64.cutsceneImageEcho)return null;
+    if(source.width!==echo.width||source.height!==echo.height)fail('Image echo source dimensions differ from its matrix initialization.');
+    var image=processed?buildSceneVignetteImage(source,echo.alphaCap):source;
+    var draws=processed?[{matrixHex:echo.matrixHex,kind:'current',alpha:1}]:OB64.cutsceneImageEcho.draws(echo),quads=[];
+    draws.forEach(function(draw){
+      var matrix=OB64.cutsceneImageEcho.matrix(draw.matrixHex),factor=processed?2:1;
+      var x=-Math.trunc(image.width/2),y=-Math.trunc(image.height/2);
+      var points=[[x,-y],[x+image.width,-y],[x+image.width,-y-image.height],[x,-y-image.height]].map(function(p){
+        var px=p[0]*factor,py=p[1]*factor,point={x:px*matrix[0]+py*matrix[4]+matrix[12],y:px*matrix[1]+py*matrix[5]+matrix[13],z:px*matrix[2]+py*matrix[6]+matrix[14]};
+        var scale=channel&&Number.isFinite(channel.uniformScale)?channel.uniformScale:1;point.x*=scale;point.y*=scale;point.z*=scale;
+        return transformModeZeroStagePoint(point,channel||{},projection);
+      });
+      if(points.some(function(p){return projectionDepth(p,projection,1)<=0;}))return;
+      var quad=points.map(function(p){return projectPointFloat(p,projection,1);});
+      // Native trail combiner uses primitive alpha directly. The current image
+      // combiner adds primitive alpha 1 to texture alpha and clamps the result.
+      var rgba=new Uint8ClampedArray(image.rgba);for(var i=3;i<rgba.length;i+=4)rgba[i]=draw.kind==='trail'?draw.alpha:Math.min(255,rgba[i]+1);
+      blitProjectedQuad(output,{width:image.width,height:image.height,rgba:rgba},quad,255,null);quads.push({kind:draw.kind,slot:draw.slot,quad:quad,alpha:draw.alpha});
+    });
+    return {draws:quads,sourceAssetId:echo.sourceAssetId,sourceImage:processed?'processed-half-size':'original',evidenceStatus:'native-matrix-and-draw-order'};
+  }
+
   function invertMatrix3(matrix) {
     var a = matrix[0], b = matrix[1], c = matrix[2];
     var d = matrix[3], e = matrix[4], f = matrix[5];
@@ -1119,6 +1142,7 @@ window.OB64 = window.OB64 || {};
       if(resource&&resource.kind==='background')backgrounds=(options.backgrounds||[]).filter(function(row){return row.layer&&row.layer.assetId===resource.assetId;}).map(function(row){return {image:row.image,layer:Object.assign({},row.layer,{nativeOrdinal:index,depth:index,sceneTransform:entry.transform})};});
       var actors=preview.actors.filter(function(a){return a.transformChannel===index;}),frames=(options.effectFrames||[]).filter(function(e){return e.renderPassSelector===index;});
       var vignette=resource&&resource.kind==='vignette'?options.sceneVignette:null;
+      if(resource&&resource.kind==='image-echo')renderImageEcho(output,options.sceneVignetteImage,preview.imageEcho,preview.actorProjection,entry.transform,false);
       var rendered=renderFrame(document,Object.assign({},preview,{actors:actors,framebufferEffect:null}),Object.assign({},options,{_layerPass:true,backgrounds:backgrounds,scenePropFrames:[],effectFrames:frames,sceneVignette:vignette,overlays:[],screenTransition:null,selectedActorId:null}));
       blitScaled(output,rendered,0,0,320,240,255,null);hits.push.apply(hits,rendered.hitRegions);
       if(effect.record&&effect.record.layer===index)drawIris(output,effect.record);
@@ -1258,7 +1282,7 @@ window.OB64 = window.OB64 || {};
       blitScaledRotated(output, image, center.x, center.y, width, height,
         anchorX, anchorY, effect.rotationDegrees);
     });
-    var renderedSceneVignette = renderSceneVignette(
+    var renderedSceneVignette = previewState.imageEcho&&options.sceneVignette?renderImageEcho(output,options.sceneVignetteImage,previewState.imageEcho,previewState.actorProjection,(previewState.transformChannels||[])[options.sceneVignette.activeSlotByte],true):renderSceneVignette(
       output, options.sceneVignetteImage, options.sceneVignette,
       options.oversizedImageView, camera);
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
