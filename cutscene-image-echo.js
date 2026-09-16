@@ -90,5 +90,6 @@ window.OB64=window.OB64||{};
   const current={matrixHex:s.matrixHex,alpha:1,kind:'current'};
   return s.mode===0?trails.concat(current):[current].concat(trails);
  };
+ Echo.installFpu=installFpu;
  O.cutsceneImageEcho=Echo;
 })(window.OB64);

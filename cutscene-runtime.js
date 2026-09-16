@@ -1556,6 +1556,15 @@ window.OB64 = window.OB64 || {};
     var dialogueEngine = null, resourceScheduler = null, nativeLaunch = null, launchInitialization = null, launchParserRan = false;
     var framebufferProfile=externalProducers&&externalProducers.framebuffer,iris=null,pendingIris=null,framebuffers=[],framebufferBytes=0,framebufferLayerCount=0;
     var echoProfile=externalProducers&&externalProducers.imageEcho,imageEcho=null;
+    var menuProfile=externalProducers&&externalProducers.mapMenu,mapMenu=null;
+    if(menuProfile){
+      var menuEvents=Array.isArray(externalProducers.events)?externalProducers.events:externalProducers.events.templates;
+      if(!echoProfile||!externalProducers.directorLaunch||!OB64.cutsceneMapMenu||
+          menuProfile.kind!=='native-map-menu-v1'||menuProfile.initialEntitiesEmpty!==true||menuProfile.displayMode!==0||
+          menuProfile.controllerSource!=='declared-action-mask'||externalProducers.menuCreates.length||menuEvents.some(e=>e.kind==='menu')) {
+        fail('Computed map menus require fresh launch, empty entity ownership, declared action masks, and no recorded menu outcomes.','map-menu-input');
+      }
+    }
     if(echoProfile&&(!framebufferProfile||!OB64.cutsceneImageEcho||echoProfile.kind!=='native-image-echo-v1'))fail('Image echo requires its native profile and framebuffer lifecycle.','image-echo-input');
     if(framebufferProfile&&framebufferProfile.backgroundPolicy!==undefined&&!['omit','require'].includes(framebufferProfile.backgroundPolicy))fail('Framebuffer background policy must be explicit.','framebuffer-input');
     if(framebufferProfile&&(!OB64.cutsceneFramebuffer||framebufferProfile.kind!=='product-framebuffer-v1'||framebufferProfile.capturePolicy!=='constructor-current-state'))fail('Framebuffer playback requires its explicit product capture policy.','framebuffer-input');
@@ -1625,6 +1634,24 @@ window.OB64 = window.OB64 || {};
           producerBoundary(error.message,error.code);return;
         }
       }
+    }
+    function checkMenuMemory(){
+      var size=[mapMenu,imageEcho,nativeLaunch,dialogueEngine].filter(Boolean).reduce(function(n,service){
+        return n+service.machine.regions.reduce((v,r)=>v+r.bytes.length,0);
+      },0);
+      if(size>131072)fail('Combined native services exceed 128 KiB: '+size+'.','map-menu-memory-bound');
+      return size;
+    }
+    function advanceMapMenu(){
+      if(!mapMenu)return;
+      try{
+        checkMenuMemory();
+        state.audioEvents.push.apply(state.audioEvents,mapMenu.advance(currentControllerMask()));
+        Object.keys(state.transientRenderEntities).forEach(function(slot){
+          var entity=state.transientRenderEntities[slot];
+          if(entity.computedMenu){entity.status=mapMenu.query(Number(slot));entity.detached=entity.status===-6;}
+        });
+      }catch(error){producerBoundary(error.message,error.code);}
     }
     function currentControllerMask(){return resourceScheduler&&resourceScheduler.control?resourceScheduler.control.actionMask:options.controllerMask;}
     function* applyResourcePass(phase){
@@ -3946,6 +3973,16 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x62) {
         var transientSlot = signed(words[1]);
         var menuCreation=externalCreation('menuCreates',node);
+        if(menuProfile){
+          if(signed(words[2])!==33){producerBoundary('Transient preset '+signed(words[2])+' has no supported shared constructor.','transient-menu-constructor');return;}
+          try{if(!imageEcho)fail('Map menu requires the current scene image dimensions.','map-menu-input');
+            if(!mapMenu){mapMenu=new OB64.cutsceneMapMenu(options.z64,menuProfile);
+              recordTrace({tick:state.tick,kind:'map-menu-memory',bytes:checkMenuMemory(),limit:131072});}
+            var computedMenu=mapMenu.create(transientSlot,signed(words[2]),imageEcho.width,imageEcho.height);
+            state.transientRenderEntities[transientSlot]={slot:transientSlot,preset:33,native:true,computedMenu:true,status:computedMenu.status,statusSource:'computed-native-map-menu',createdTick:state.tick,detached:false};knownTransientSlots.add(transientSlot);
+            recordTrace({tick:state.tick,kind:'map-menu-create',slot:transientSlot,preset:33});
+          }catch(error){producerBoundary(error.message,error.code);}return;
+        }
         if(nativeLaunch&&!menuCreation){producerBoundary('Transient render-entity preset '+signed(words[2])+' requires its constructor and recurring menu service.','transient-menu-constructor');return;}
         knownTransientSlots.add(transientSlot);
         state.transientRenderEntities[transientSlot] = {
@@ -3976,6 +4013,7 @@ window.OB64 = window.OB64 || {};
       }
       else if (opcode === 0x6B) {
         var releaseTransientSlot = signed(words[1]);
+        if(mapMenu){try{mapMenu.release(releaseTransientSlot);}catch(error){producerBoundary(error.message,error.code);return;}}
         if (releaseTransientSlot === -1) {
           state.transientRenderEntities = {};
           allTransientSlotsKnown = true;
@@ -4529,6 +4567,7 @@ window.OB64 = window.OB64 || {};
         return (controllerMask & (input & 0xFFFF)) !== 0 ? 1 : 0;
       }
       if (query.name === 'transient_render_entity_status_query') {
+        if(menuProfile){try{if(!Number.isInteger(input)||input<0||input>=14)fail('Menu query slot is outside the owner pool.','map-menu-input');return mapMenu?mapMenu.query(input):-5;}catch(error){producerBoundary(error.message,error.code);return NaN;}}
         var suppliedTransientStatus = externalQueryValue(query);
         if (Number.isInteger(suppliedTransientStatus)) return suppliedTransientStatus;
         var transientEntity = state.transientRenderEntities[input];
@@ -4769,6 +4808,7 @@ window.OB64 = window.OB64 || {};
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
         framebufferEffect:iris?OB64.cutsceneFramebuffer.snapshot(iris):null,
         imageEcho:imageEcho?imageEcho.snapshot():null,
+        mapMenu:mapMenu?mapMenu.snapshot():null,
         nativeExternal: {
           dialogue:dialogueEngine?dialogueEngine.snapshot():null,
           sharedRequests:Object.assign({},state.sharedRequests),
@@ -5380,6 +5420,7 @@ window.OB64 = window.OB64 || {};
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
       yield* evaluateDirector();
+      if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');
       if (!stopReason) yield* applyResourcePass('after');
       if (continuousResume && !stopReason) {

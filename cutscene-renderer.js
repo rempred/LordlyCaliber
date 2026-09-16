@@ -1130,6 +1130,23 @@ window.OB64 = window.OB64 || {};
     for(var i=0;i<30;i++){var at=i*3,next=at+3;[[at,at+1,next+1],[at,next+1,next],[at+1,at+2,next+1],[at+2,next+2,next+1]].forEach(function(t){triangle(points[t[0]],points[t[1]],points[t[2]]);});}
     for(var i=0;i<mask.length;i++)if(mask[i]>0)pixel(output,i%320,Math.floor(i/320),[0,0,0,Math.min(255,mask[i])]);
   }
+  // Product 5x7 lettering is deliberately separate from native glyph textures.
+  // Current native line pointers, positions, panel bounds and alpha drive it.
+  var MENU_FONT={A:[14,17,17,31,17,17,17],B:[30,17,17,30,17,17,30],C:[14,17,16,16,16,17,14],D:[30,17,17,17,17,17,30],E:[31,16,16,30,16,16,31],F:[31,16,16,30,16,16,16],G:[14,17,16,23,17,17,15],H:[17,17,17,31,17,17,17],I:[14,4,4,4,4,4,14],J:[7,2,2,2,2,18,12],K:[17,18,20,24,20,18,17],L:[16,16,16,16,16,16,31],M:[17,27,21,21,17,17,17],N:[17,25,21,19,17,17,17],O:[14,17,17,17,17,17,14],P:[30,17,17,30,16,16,16],Q:[14,17,17,17,21,18,13],R:[30,17,17,30,20,18,17],S:[15,16,16,14,1,1,30],T:[31,4,4,4,4,4,4],U:[17,17,17,17,17,17,14],V:[17,17,17,17,17,10,4],W:[17,17,17,21,21,21,10],X:[17,17,10,4,10,17,17],Y:[17,17,10,4,4,4,4],Z:[31,1,2,4,8,16,31],'0':[14,17,19,21,25,17,14],'1':[4,12,4,4,4,4,14],'2':[14,17,1,2,4,8,31],'3':[30,1,1,14,1,1,30],'4':[2,6,10,18,31,2,2],'5':[31,16,16,30,1,1,30],'6':[14,16,16,30,17,17,14],'7':[31,1,2,4,8,8,8],'8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,1,14],':':[0,4,4,0,4,4,0],'/':[1,2,2,4,8,8,16],'-':[0,0,0,31,0,0,0],'.':[0,0,0,0,0,12,12],'?':[14,17,1,2,4,0,4],'up':[4,14,21,4,4,4,4],'down':[4,4,4,4,21,14,4]};
+  function renderMapMenus(output,menu){
+    if(!menu)return;
+    if(!OB64.cutsceneMapMenu)fail('Map menu rendering is unavailable.');
+    menu.entities.forEach(function(entity){
+      var b=entity.bounds,alpha=clamp(entity.alpha,0,255);if(!alpha)return;
+      // The retail frame texture is not yet decoded. This product panel uses
+      // computed corner coordinates with a plain frame and explicit opacity.
+      fillRect(output,b[0],b[1],b[2]-b[0]+1,b[3]-b[1]+1,[22,28,43,Math.round(alpha*.94)]);
+      line(output,b[0],b[1],b[2],b[1],[211,208,186,alpha]);line(output,b[0],b[3],b[2],b[3],[211,208,186,alpha]);line(output,b[0],b[1],b[0],b[3],[211,208,186,alpha]);line(output,b[2],b[1],b[2],b[3],[211,208,186,alpha]);
+      OB64.cutsceneMapMenu.lines(entity).forEach(function(row){var data=Uint8Array.from(row.hex.match(/../g)||[],x=>parseInt(x,16)),x=row.x;
+        for(var i=0;i<data.length;i++){var key=String.fromCharCode(data[i]).toUpperCase();if(data[i]===0x81){key=data[i+1]===0xaa?'up':data[i+1]===0xab?'down':'?';i++;}var glyph=MENU_FONT[key]||(key===' '?null:MENU_FONT['?']);if(glyph)for(var y=0;y<7;y++)for(var col=0;col<5;col++)if(glyph[y]&(16>>col)){var px=x+col,py=row.y+y;if(px>b[0]&&px<b[2]&&py>b[1]&&py<b[3])pixel(output,px,py,[245,244,225,alpha]);}x+=6;}
+      });
+    });
+  }
   function renderFramebufferLayers(document,preview,options){
     var effect=preview.framebufferEffect,output=surface(WIDTH,HEIGHT),hits=[],paths=[];fallbackBackground(output);
     if(!OB64.cutsceneFramebuffer||!effect||!Array.isArray(effect.layers)||effect.layers.length!==20)fail('Framebuffer rendering requires the current layer stack.');
@@ -1147,6 +1164,7 @@ window.OB64 = window.OB64 || {};
       blitScaled(output,rendered,0,0,320,240,255,null);hits.push.apply(hits,rendered.hitRegions);
       if(effect.record&&effect.record.layer===index)drawIris(output,effect.record);
     }
+    renderMapMenus(output,preview.mapMenu);
     (options.overlays||[]).forEach(function(o){fillRect(output,0,0,320,240,[o.red,o.green,o.blue,o.alpha]);});applyScreenTransitionMask(output,options.screenTransition);
     return {width:320,height:240,rgba:output.rgba,projection:options.projection,camera:options.camera,hitRegions:hits,movementPaths:paths,framebufferEffect:effect};
   }
@@ -1288,6 +1306,7 @@ window.OB64 = window.OB64 || {};
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
       'foreground', backgroundCamera);
     modulateSurface(output, options.colorModulation);
+    if(!options._layerPass)renderMapMenus(output,previewState.mapMenu);
     (options.overlays || []).forEach(function(overlay) {
       fillRect(output, 0, 0, output.width, output.height, [
         clamp(Number(overlay.red) || 0, 0, 255),

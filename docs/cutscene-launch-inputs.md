@@ -350,7 +350,7 @@ Each entry supplies these explicit memory and service fields:
 | `sceneRoot` | Qualified unsigned scene-root pointer for child-to-row identity checks. |
 | `currentUnit` | Current selector byte before reset. |
 | `unitHex` | Exact 25-byte unit-30 row, or null when unavailable. |
-| `records` | Object mapping selected deployed IDs 0–99 to complete 52-byte records. Special members read record zero. |
+| `records` | Object mapping selected deployed IDs 0â€“99 to complete 52-byte records. Special members read record zero. |
 | `specialOverrides` | Object mapping special member IDs to unsigned `halfword` and `flags` bytes. |
 | `objects` | Object mapping nonzero child pointers to complete 256-byte child records. |
 | `primaryRegistry`, `secondaryRegistry` | Ordered active pointer arrays, including duplicates. This representation supports at most 256 entries per registry. |
@@ -447,7 +447,7 @@ Projection therefore consumes evolving matrices. No later captured matrix or dia
 The preview consumes the resulting projection-related service outcomes; it does not execute that native matrix producer.
 The direct import artifact is `../docs/reviews/cutscene-chair-projection-correction-20260915/playback-input.json`.
 Load the Rev0 ROM, open Cutscene Studio, and select resource `rom-director:01F4558C`.
-In the scene inspector, use **Playback inputs → Import playback inputs**, select that artifact, then press **Play**.
+In the scene inspector, use **Playback inputs â†’ Import playback inputs**, select that artifact, then press **Play**.
 The input is session-local. Loading a Project clears it.
 
 This declared run uses neutral Director input and A on dialogue callbacks whose update index is divisible by 30.
@@ -466,7 +466,7 @@ It is available through the existing import and Play controls.
 
 Load the Rev0 ROM and open Cutscene Studio.
 Select `rom-director:01F4558C`.
-Use **Playback inputs → Import playback inputs** in the scene inspector.
+Use **Playback inputs â†’ Import playback inputs** in the scene inspector.
 Import `../docs/reviews/cutscene-image-echo-20260916/playback-input.json`, then press **Play**.
 The compact file is 70,110 bytes, below the 128 KiB import limit.
 The automated checks exercise the runtime and renderer; browser interaction was not performed.
@@ -582,3 +582,53 @@ The following 2D sprite markers retain their computed render layer and scale in 
 Echo checks and native comparisons are described in `../docs/reviews/cutscene-image-echo-20260916/handoff.md`.
 The actual default initialize/import/load route, repeat compilation, seek rendering, and cancellation are tested offline.
 The original framebuffer route regression remains unchanged and passes.
+
+
+## Computed map help panel
+
+The candidate input is `../docs/reviews/cutscene-map-menu-20260916/playback-input.json`.
+Load the Rev0 ROM, select `rom-director:01F4558C` in Cutscene Studio, and use **Playback inputs → Import playback inputs**.
+Import that file, then press **Play**.
+The actual file contains 70,234 bytes, below the 128 KiB import limit.
+The default contextual selection is covered by the offline Editor-route test.
+
+The optional `externalProducers.value.mapMenu` profile requires these fields:
+
+| Field | Value |
+|---|---|
+| `kind` | `native-map-menu-v1` |
+| `initialEntitiesEmpty` | `true` |
+| `displayMode` | `0`, the supported 320-by-240 menu mode |
+| `controllerSource` | `declared-action-mask` |
+
+This profile requires fresh Director launch and the echo profile.
+It maps the current declared action mask into the native help-panel controller global.
+It must not contain recorded menu constructors or callback events.
+Earlier inputs without this profile retain their previous behavior.
+
+Qualified native instructions construct preset 33, resolve its text, animate the panel, test controller input, query ownership, and detach its entity.
+Image dimensions come from the current ROM-selected image header.
+The updater runs after the Director and advances the shared panel animation itself.
+A pulse before alpha reaches 255 does not dismiss the panel.
+The helper's accepted mask excludes `0x00C0`; the declared A mask `0x8000` dismisses it.
+Owner release and entity detachment remain separate native operations.
+
+This input retains the echo experiment's one-pass A pulse every thirty passes, through pass 3,999.
+One tick represents a resource pass; historical frame timing remains unverified.
+The panel starts at pass 1434, dismisses at pass 1470, and detaches at pass 1482.
+Playback retains 1,487 states after 1,486 completed passes.
+It stops before preset 3 at `node:01F4558C:w03E5`; that option-menu controller is not implemented by this profile.
+The detached preset-33 ownership record remains until a later explicit release.
+
+The renderer consumes native line pointers, text bytes, coordinates, panel bounds, and alpha.
+It uses product 5-by-7 glyphs and a plain frame instead of retail font and frame textures.
+These approximations do not establish native pixel equivalence.
+The existing background omission, dialogue glyph/portrait, shadow, projection, and historical-cadence limits remain.
+The confirmation sound becomes a request event; no menu audio queue or sound synthesis executes.
+
+The menu owns an 8 KiB preview arena and bounded native memory ranges.
+Its allocator computes addresses, exhaustion, and release; it does not emulate the retail heap.
+Combined native service memory remains below 128 KiB.
+The tested timeline retains 78,263,428 bytes within the existing 128 MiB limit.
+Seeking, repeat compilation, cancellation during menu construction, and earlier input compatibility are tested.
+Native controls and generated images are described in `../docs/reviews/cutscene-map-menu-20260916/handoff.md`.
