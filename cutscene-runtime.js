@@ -1136,13 +1136,51 @@ window.OB64 = window.OB64 || {};
     var iterator = compileSteps(document, program, scene, catalog,
       Object.assign({ diagnosticAssumptions: true }, options || {}));
     var result;
-    do { result = iterator.next(); } while (!result.done);
+    var response;
+    do {
+      result = iterator.next(response);
+      response = undefined;
+      if (!result.done && result.value && result.value.kind === 'framebuffer-capture') {
+        try {
+          response = options && options.captureFrame ? options.captureFrame(result.value) : null;
+          if (response && typeof response.then === 'function') {
+            Promise.resolve(response).catch(function() {});
+            response = { error: 'Synchronous playback requires a synchronous render-target service.' };
+          }
+        } catch (error) { response = { error: error.message }; }
+      }
+    } while (!result.done);
     return result.value;
   }
 
   async function compileAsync(document, program, scene, catalog, options) {
     options = options || {};
+    var response;
     var iterator = compileSteps(document, program, scene, catalog, options);
+    function captureTarget(request) {
+      var work = Promise.resolve().then(function() {
+        return options.captureFrame ? options.captureFrame(request) : null;
+      });
+      var signal = options.signal;
+      if (!signal || typeof signal.addEventListener !== 'function') return work;
+      return new Promise(function(resolve, reject) {
+        function abort() {
+          signal.removeEventListener('abort', abort);
+          var error = new Error('Cutscene preparation cancelled.');
+          error.name = 'AbortError';
+          reject(error);
+        }
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+        work.then(function(value) {
+          signal.removeEventListener('abort', abort);
+          resolve(value);
+        }, function(error) {
+          signal.removeEventListener('abort', abort);
+          reject(error);
+        });
+      });
+    }
     function cancelled() {
       if (options.signal && options.signal.aborted) {
         iterator.return();
@@ -1158,7 +1196,11 @@ window.OB64 = window.OB64 || {};
       var result;
       do {
         cancelled();
-        result = iterator.next();
+        result = iterator.next(response);response=undefined;
+        if(!result.done&&result.value&&result.value.kind==='framebuffer-capture'){
+          try{response=await captureTarget(result.value);}catch(e){response={error:e.message};}
+          cancelled();
+        }
         if (result.done) return result.value;
       } while (Date.now() - start < 8);
     }
@@ -1512,6 +1554,10 @@ window.OB64 = window.OB64 || {};
       });
     }
     var dialogueEngine = null, resourceScheduler = null, nativeLaunch = null, launchInitialization = null, launchParserRan = false;
+    var framebufferProfile=externalProducers&&externalProducers.framebuffer,iris=null,pendingIris=null,framebuffers=[],framebufferBytes=0,framebufferLayerCount=0;
+    if(framebufferProfile&&framebufferProfile.backgroundPolicy!==undefined&&!['omit','require'].includes(framebufferProfile.backgroundPolicy))fail('Framebuffer background policy must be explicit.','framebuffer-input');
+    if(framebufferProfile&&(!OB64.cutsceneFramebuffer||framebufferProfile.kind!=='product-framebuffer-v1'||framebufferProfile.capturePolicy!=='constructor-current-state'))fail('Framebuffer playback requires its explicit product capture policy.','framebuffer-input');
+    if(framebufferProfile){if(!externalProducers.directorLaunch)fail('Framebuffer playback requires fresh Director launch context.','framebuffer-input');OB64.cutsceneFramebuffer.validateRom(options.z64);}
     if(externalProducers && externalProducers.initialDialogue) {
       try {
         if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
@@ -2691,6 +2737,7 @@ window.OB64 = window.OB64 || {};
 
     function executeBackground(node, words) {
       var commandOperand = signed(words[1]);
+      if(framebufferProfile&&nativeLaunch){try{if(framebufferLayerCount)fail('Additional background registrations require cumulative layer resource ownership.','framebuffer-layers');var directory=nativeLaunch.resource(0x016b3d18);if(commandOperand<0||commandOperand*4+4>directory.length)fail('Background selector exceeds its ROM directory.','framebuffer-layers');var key=new DataView(directory.buffer,directory.byteOffset,directory.byteLength).getUint32(commandOperand*4),group=nativeLaunch.resource(key);if(group.length%4)fail('Background group is not word aligned.','framebuffer-layers');framebufferLayerCount+=group.length/4;if(framebufferLayerCount>20)fail('Background registration exceeds twenty layers.','framebuffer-layers');}catch(error){producerBoundary(error.message,error.code);return;}}
       if (documentBackground && directorMode.value === 2) {
         state.background = M.cloneJson(documentBackground.background,
           'document launch background');
@@ -2705,6 +2752,7 @@ window.OB64 = window.OB64 || {};
       var requestProfile = launchProfile.background.requests.find(function(request) {
         return request.wordStart === node.startWord;
       }) || null;
+      if(framebufferProfile&&requestProfile&&requestProfile.stageLayers&&requestProfile.stageLayers.length&&requestProfile.selector!==commandOperand){producerBoundary('Changed background selector lacks matching current layer metadata.','framebuffer-layers');return;}
       var requestStageProps = requestProfile &&
         modeTwoStageProps(catalog, requestProfile.foregroundSelector);
       if (requestProfile && (Array.isArray(requestProfile.stageLayers) &&
@@ -3740,8 +3788,12 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if (node.name === 'branch_barrier') return;
+      if(framebufferProfile&&node.name==='image_transform_echo_start'){producerBoundary('Image-transform echo requires its matrix endpoints, three cyclic matrix slots, and recurring fade renderer.','framebuffer-echo');return;}
       if(nativeLaunch&&node.name==='frozen_frame_iris_transition'){
-        producerBoundary('Frozen-frame iris construction requires framebuffer capture and the render-layer lifecycle.','director-launch-iris');return;
+        if(!framebufferProfile){producerBoundary('Frozen-frame iris construction requires framebuffer capture and the render-layer lifecycle.','director-launch-iris');return;}
+        if((words[8]>>>0)===0){try{if(!iris)iris=irisLayers();if(iris.record)fail('Closing iris cannot replace an active singleton.','framebuffer-phase');pendingIris={node:node,words:words.slice(1)};block={kind:'framebuffer-capture'};}catch(error){producerBoundary(error.message,error.code);}}
+        else finishIris(words.slice(1),null);
+        return;
       }
       if (node.name === 'control_bridge_and_pending_substream_handoff') {
         if (parserResumeMarked) commitPersistentCursorAfter(node);
@@ -4488,6 +4540,7 @@ window.OB64 = window.OB64 || {};
           'Army Management cursor input is not supplied; this native wait uses an explicit completed-state assumption.');
       }
       var externalValue = externalQueryValue(query);
+      if(framebufferProfile&&query.name==='frozen_frame_iris_activity_query')return iris?iris.query():0;
       if(nativeLaunch&&query.name==='alternate_presentation_context_presence_query'&&nativeLaunch.input.world.alternateContextPointer!==undefined)return nativeLaunch.input.world.alternateContextPointer?1:0;
       if (Number.isInteger(externalValue)) return externalValue;
       if (unresolvedInput(query, context)) return NaN;
@@ -4690,6 +4743,7 @@ window.OB64 = window.OB64 || {};
           payload: { nativeClock: block.clock || 'director-evaluation' }
         }] : state.flowEvents.slice(),
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
+        framebufferEffect:iris?OB64.cutsceneFramebuffer.snapshot(iris):null,
         nativeExternal: {
           dialogue:dialogueEngine?dialogueEngine.snapshot():null,
           sharedRequests:Object.assign({},state.sharedRequests),
@@ -4984,6 +5038,7 @@ window.OB64 = window.OB64 || {};
       if (stopReason) return;
       if(launchParserRan){parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;launchParserRan=false;}
       if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
+      if(iris&&!state.alternateDirectorScheduling){syncIrisTransforms();if(iris.advance())releaseIrisActors();applyIrisLayers();}
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });
       scheduled.forEach(function(item) { executePrimitive(item.node); });
@@ -5016,6 +5071,7 @@ window.OB64 = window.OB64 || {};
       var revision = cursorRevision;
       for (var index = 0; index < nodes.length; index++) {
         executePrimitive(nodes[index]);
+        if(pendingIris)pendingIris.resumeNodes=nodes.slice(index+1);
         if (block || state.terminal || stopReason || cursorRevision !== revision) break;
       }
     }
@@ -5062,6 +5118,7 @@ window.OB64 = window.OB64 || {};
           return;
         }
         executePrimitive(node);
+        if(pendingIris){pendingIris.resumeNodes=nodes.slice(index+1);pendingIris.resumeComposite=composite;}
         if (block || state.terminal || stopReason || cursorRevision !== revision) return;
       }
     }
@@ -5132,6 +5189,51 @@ window.OB64 = window.OB64 || {};
       executeNodes(nodes);
     }
 
+    function irisLayers() {
+      var count=framebufferLayerCount,layers=Array.from({length:20},function(_,i){var v=new DataView(new ArrayBuffer(88)),c=state.transformChannels[i]||identityTransformChannel();[c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});return {resource:null,record:new Uint8Array(v.buffer)};});
+      (state.background.layers||[]).forEach(function(row){var i=row.nativeOrdinal;if(!Number.isInteger(i)||i<0||i>=count)fail('Framebuffer layers require known native ordinals.','framebuffer-layers');layers[i].resource={kind:'background',assetId:row.assetId,ordinal:i};});
+      var selected=state.sceneVignette&&state.sceneVignette.activeSlotByte;
+      if(!Number.isInteger(selected)||selected<0||selected>=count)fail('Iris requires its current selected image layer.','framebuffer-layers');
+      layers[selected].resource={kind:'vignette',assetId:state.sceneVignette.sourceAssetId};
+      return new OB64.cutsceneFramebuffer.Iris(count,selected,layers);
+    }
+    function syncIrisTransforms(){if(!iris)return;iris.layers.forEach(function(row,i){var c=state.transformChannels[i];if(!c)return;var v=new DataView(row.record.buffer,row.record.byteOffset,88);[c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});});}
+    function applyIrisLayers(){if(!iris)return;if(state.sceneVignette)state.sceneVignette.activeSlotByte=iris.selected;var rows=OB64.cutsceneFramebuffer.snapshot(iris).layers;state.transformChannels=rows.map(function(row){return row.transform;});}
+    function releaseIrisActors(){
+      Object.keys(state.actors).forEach(function(slot){var a=launchInitialization.rootAddress+24+Number(slot)*4,p=nativeLaunch.machine.get(a),at=nativeLaunch.leases.findIndex(function(r){return r.address===p;});if(p&&at<0)fail('Iris Actor release lacks allocation ownership.','framebuffer-owner');if(at>=0)nativeLaunch.leases.splice(at,1);nativeLaunch.machine.put(a,0);});
+      state.actors={};state.spriteEffects={};
+    }
+    function finishIris(words,target){try{
+      if(!iris)iris=irisLayers();
+      var imageId=null,pendingImage=null;
+      if((words[7]>>>0)===0){
+        if(!target||target.error||target.width!==320||target.height!==240||!(target.rgba instanceof Uint8ClampedArray)||target.rgba.length!==307200||typeof target.targetId!=='string'||!target.targetId)fail(target&&target.error||'Iris requires an identified 320-by-240 product render target.','framebuffer-target');
+        if(framebuffers.length>=8||retainedStateBytes+framebufferBytes+307200>maxStateBytes)fail('Framebuffer retention exceeds the playback storage budget.','framebuffer-storage-limit');
+        var rgba=new Uint8ClampedArray(target.rgba);for(var i=0;i<rgba.length;i+=4){if(rgba[i+3]!==255)fail('Product framebuffer capture requires an opaque current render target.','framebuffer-target');for(var j=0;j<3;j++)rgba[i+j]=Math.round((rgba[i+j]>>>3)*255/31);rgba[i+3]=255;}
+        imageId=framebuffers.length;pendingImage={id:imageId,targetId:target.targetId,pass:state.tick,policy:'constructor-current-state',width:320,height:240,rgba:rgba};
+      }
+      var actors=Object.keys(state.actors).map(function(slot){return {actor:state.actors[slot],layer:state.actors[slot].transformChannel};}),effects=Object.keys(state.spriteEffects).map(function(slot){return {effect:state.spriteEffects[slot],layer:state.spriteEffects[slot].renderPassSelector};});
+      syncIrisTransforms();iris.create(words,imageId,actors,effects);if(pendingImage){framebuffers.push(pendingImage);framebufferBytes+=pendingImage.rgba.length;}actors.forEach(function(row){row.actor.transformChannel=row.layer;});effects.forEach(function(row){row.effect.renderPassSelector=row.layer;syncSpriteEffectPayload(row.effect);});applyIrisLayers();
+      recordTrace({tick:state.tick,kind:'framebuffer-iris',phase:words[7],captureId:imageId,targetId:target&&target.targetId||null,capturePolicy:'constructor-current-state'});
+    }catch(error){producerBoundary(error.message,error.code||'framebuffer-input');}}
+    function* capturePendingIris() {
+      while (pendingIris && !stopReason) {
+        var request = pendingIris;
+        pendingIris = null;
+        var target = yield {
+          kind: 'framebuffer-capture', policy: 'constructor-current-state',
+          pass: state.tick, nodeId: request.node.id,
+          backgroundPolicy: framebufferProfile.backgroundPolicy || 'require',
+          preview: snapshot(null)
+        };
+        block = null;
+        finishIris(request.words, target);
+        if (!stopReason && request.resumeNodes && request.resumeNodes.length) {
+          if (request.resumeComposite) processCompositeSuffix(request.resumeNodes, request.resumeComposite);
+          else executeNodes(request.resumeNodes);
+        }
+      }
+    }
     function* evaluateDirector() {
       if (!stopReason && block && blockComplete(block)) {
         var completedBlock = block;
@@ -5147,6 +5249,7 @@ window.OB64 = window.OB64 || {};
             completedBlock.resumeComposite);
         }
       }
+      yield* capturePendingIris();
       var instantGuard = 0;
       while (!block && !state.terminal && !stopReason &&
           compositeIndex < activeProgram.composites.length) {
@@ -5157,6 +5260,7 @@ window.OB64 = window.OB64 || {};
         var entryNodeId = compositeEntryNodeId;
         compositeEntryNodeId = null;
         processComposite(composite, entryNodeId);
+        yield* capturePendingIris();
         if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
         yield;
       }
@@ -5273,7 +5377,7 @@ window.OB64 = window.OB64 || {};
       var frameBudget = { bytes: 0 };
       var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
       var frameBytes = frameBudget.bytes;
-      if (retainedStateBytes + frameBytes > maxStateBytes) {
+      if (retainedStateBytes + framebufferBytes + frameBytes > maxStateBytes) {
         if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');
         stopReason = 'state-storage-limit';
         break;
@@ -5351,8 +5455,9 @@ window.OB64 = window.OB64 || {};
       unsupportedCommands: unsupportedCommands,
       inputPolicy: options.diagnosticAssumptions === true ? 'diagnostic-assumptions' : 'stop-at-missing-input',
       limits: { maxTicks: maxTicks, maxStateBytes: maxStateBytes,
-        maxTraceEntries: maxTraceEntries, maxDispatches: maxDispatches },
-      retainedStateBytes: retainedStateBytes,
+        maxTraceEntries: maxTraceEntries, maxDispatches: maxDispatches, maxFramebuffers:8, maxFramebufferBytes:2457600 },
+      retainedStateBytes: retainedStateBytes+framebufferBytes,
+      framebuffers:framebuffers,
       traceCount: traceCount,
       traceTruncated: traceCount > trace.length,
       executedNodeIds: state.executedNodeIds.slice(),
@@ -5387,6 +5492,7 @@ window.OB64 = window.OB64 || {};
   function compactContextRuntime(runtime) {
     if (!runtime) fail('A Director runtime is required for context compaction.',
       'context-runtime');
+    if(runtime.framebuffers&&runtime.framebuffers.length)fail('Framebuffer playback cannot yet become a concurrent Director context.','framebuffer-context');
     if (Array.isArray(runtime.contextFrames) && runtime.contextFrames.length) {
       return runtime;
     }
@@ -5523,6 +5629,7 @@ window.OB64 = window.OB64 || {};
     if (!Number.isInteger(requestedTick)) fail('Director tick must be an integer.', 'invalid-tick');
     var tick = clamp(requestedTick, 0, runtime.states.length - 1);
     var output = M.cloneJson(runtime.states[tick], 'runtime state');
+    if(runtime.framebuffers&&runtime.framebuffers.length)output.framebuffers=runtime.framebuffers;
     output.frame = tick;
     output.timeSeconds = tick / M.previewFps;
     output.durationFrames = runtime.states.length;

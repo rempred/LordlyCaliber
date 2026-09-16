@@ -1097,10 +1097,40 @@ window.OB64 = window.OB64 || {};
     return paths;
   }
 
+  function drawIris(output, record) {
+    var g=OB64.cutsceneFramebuffer.geometry(record);if(!g)return;
+    if(g.quad){fillRect(output,0,0,WIDTH,HEIGHT,[0,0,0,g.alpha]);return;}
+    var points=OB64.cutsceneFramebuffer.mesh(g).map(function(p){return [160+p[0],120-p[1],p[2]];}),mask=new Float32Array(WIDTH*HEIGHT);
+    function triangle(a,b,c){var d=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1]);if(!d)return;
+      var x0=Math.max(0,Math.floor(Math.min(a[0],b[0],c[0]))),x1=Math.min(319,Math.ceil(Math.max(a[0],b[0],c[0]))),y0=Math.max(0,Math.floor(Math.min(a[1],b[1],c[1]))),y1=Math.min(239,Math.ceil(Math.max(a[1],b[1],c[1])));
+      for(var y=y0;y<=y1;y++)for(var x=x0;x<=x1;x++){var u=((b[1]-c[1])*(x+.5-c[0])+(c[0]-b[0])*(y+.5-c[1]))/d,v=((c[1]-a[1])*(x+.5-c[0])+(a[0]-c[0])*(y+.5-c[1]))/d,w=1-u-v;if(u>=-1e-7&&v>=-1e-7&&w>=-1e-7)mask[y*320+x]=Math.max(mask[y*320+x],u*a[2]+v*b[2]+w*c[2]);}}
+    for(var i=0;i<30;i++){var at=i*3,next=at+3;[[at,at+1,next+1],[at,next+1,next],[at+1,at+2,next+1],[at+2,next+2,next+1]].forEach(function(t){triangle(points[t[0]],points[t[1]],points[t[2]]);});}
+    for(var i=0;i<mask.length;i++)if(mask[i]>0)pixel(output,i%320,Math.floor(i/320),[0,0,0,Math.min(255,mask[i])]);
+  }
+  function renderFramebufferLayers(document,preview,options){
+    var effect=preview.framebufferEffect,output=surface(WIDTH,HEIGHT),hits=[],paths=[];fallbackBackground(output);
+    if(!OB64.cutsceneFramebuffer||!effect||!Array.isArray(effect.layers)||effect.layers.length!==20)fail('Framebuffer rendering requires the current layer stack.');
+    preview.actors.forEach(function(actor){if(!Number.isInteger(actor.transformChannel)||actor.transformChannel<0||actor.transformChannel>=effect.count)fail('Framebuffer Actor layer is outside the current registered stack.');});
+    if((options.scenePropFrames||[]).length)fail('Framebuffer rendering lacks native layer ownership for scene props.');
+    (options.effectFrames||[]).forEach(function(e){if(!Number.isInteger(e.renderPassSelector)||e.renderPassSelector<0||e.renderPassSelector>=effect.count)fail('Framebuffer sprite rendering requires its current native layer.');});
+    for(var index=0;index<effect.count;index++){
+      var entry=effect.layers[index],resource=entry.resource,backgrounds=[];
+      if(resource&&resource.kind==='framebuffer'){var image=(preview.framebuffers||options.framebuffers||[]).find(function(row){return row.id===resource.id;});if(!image||!image.rgba)fail('The retained framebuffer for this seek position is unavailable.');blitScaled(output,image,0,0,320,240,255,null);}
+      if(resource&&resource.kind==='background')backgrounds=(options.backgrounds||[]).filter(function(row){return row.layer&&row.layer.assetId===resource.assetId;}).map(function(row){return {image:row.image,layer:Object.assign({},row.layer,{nativeOrdinal:index,depth:index,sceneTransform:entry.transform})};});
+      var actors=preview.actors.filter(function(a){return a.transformChannel===index;}),frames=(options.effectFrames||[]).filter(function(e){return e.renderPassSelector===index;});
+      var vignette=resource&&resource.kind==='vignette'?options.sceneVignette:null;
+      var rendered=renderFrame(document,Object.assign({},preview,{actors:actors,framebufferEffect:null}),Object.assign({},options,{_layerPass:true,backgrounds:backgrounds,scenePropFrames:[],effectFrames:frames,sceneVignette:vignette,overlays:[],screenTransition:null,selectedActorId:null}));
+      blitScaled(output,rendered,0,0,320,240,255,null);hits.push.apply(hits,rendered.hitRegions);
+      if(effect.record&&effect.record.layer===index)drawIris(output,effect.record);
+    }
+    (options.overlays||[]).forEach(function(o){fillRect(output,0,0,320,240,[o.red,o.green,o.blue,o.alpha]);});applyScreenTransitionMask(output,options.screenTransition);
+    return {width:320,height:240,rgba:output.rgba,projection:options.projection,camera:options.camera,hitRegions:hits,movementPaths:paths,framebufferEffect:effect};
+  }
   function renderFrame(document, previewState, options) {
     options = options || {};
+    if(previewState.framebufferEffect&&!options._layerPass)return renderFramebufferLayers(document,previewState,options);
     var output = surface(WIDTH, HEIGHT);
-    fallbackBackground(output);
+    if(!options._layerPass)fallbackBackground(output);
     var backgrounds = Array.isArray(options.backgrounds)
       ? options.backgrounds : (options.background ? [options.background] : []);
     var backgroundProjection = options.backgroundProjection ||
@@ -1120,7 +1150,7 @@ window.OB64 = window.OB64 || {};
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
       'base', backgroundCamera);
     renderOrthographicStageProps(output, scenePropFrames, 'far', backgroundCamera);
-    var paths = movementPaths(document, projection, options.selectedActorId);
+    var paths = options._layerPass||options.showMovementPaths===false?[]:movementPaths(document, projection, options.selectedActorId);
     paths = paths.map(function(path) {
       return {
         clipId: path.clipId,
@@ -1242,7 +1272,7 @@ window.OB64 = window.OB64 || {};
         clamp(Number(overlay.alpha) || 0, 0, 255)
       ]);
     });
-    if (backgroundProjection.viewport) {
+    if (backgroundProjection.viewport&&!options._layerPass) {
       applyViewportMask(output, backgroundProjection.viewport);
     }
     applyScreenTransitionMask(output, options.screenTransition);
@@ -1300,6 +1330,7 @@ window.OB64 = window.OB64 || {};
     untransformStagePoint: untransformStagePoint,
     movementPaths: movementPaths,
     renderFrame: renderFrame,
+    drawIris:drawIris,
     hitTest: hitTest,
     paintCanvas: paintCanvas,
     blitScaled: blitScaled,

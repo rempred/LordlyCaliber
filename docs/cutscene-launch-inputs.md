@@ -457,7 +457,7 @@ Existing camera bounds remain unchanged. Browser interaction, synchronized origi
 The separate 90-update neutral run matches all 48 complete stored dialogue payloads and window rectangles under conditional sample alignment.
 The declared A input changes later dialogue progression. Neither run establishes unique historical controller input or universal scheduler cadence.
 
-## Candidate fresh Director launch
+## Candidate fresh Director launch and framebuffer iris
 
 The `directorLaunch` profile starts an active, uninitialized Director resource in mode zero.
 It uses the selected ROM directory entry and declared caller state.
@@ -467,8 +467,8 @@ It is available through the existing import and Play controls.
 Load the Rev0 ROM and open Cutscene Studio.
 Select `rom-director:01F4558C`.
 Use **Playback inputs → Import playback inputs** in the scene inspector.
-Import `../docs/reviews/cutscene-director-launch-20260916/playback-input.json`, then press **Play**.
-The compact file is 53,750 bytes, below the 128 KiB import limit.
+Import `../docs/reviews/cutscene-framebuffer-effects-20260916/playback-input.json`, then press **Play**.
+The compact file is 53,872 bytes, below the 128 KiB import limit.
 The automated checks exercise the runtime and renderer; browser interaction was not performed.
 
 The new `externalProducers.value.directorLaunch` object has these fields:
@@ -504,17 +504,51 @@ One tick means one resource pass, not a verified rendered frame.
 The audio implementation updates its queue and emits request events.
 It does not consume that queue through the audio engine or synthesize sound.
 
-This run retains 642 states after 641 completed passes.
-It stops at the frozen-frame iris constructor, after opening fade, seven Actor creations, and dialogue progression.
-This is a bounded startup result, not complete scene playback.
-The next implementation requires a product framebuffer capture, render-layer lifecycle, and iris updater.
-It does not currently require a new emulator observation or user input.
+The framebuffer candidate retains 693 states after 692 completed resource passes.
+It captures the current product stage at pass 641, immediately before the iris constructor.
+The iris closes, releases all seven Actors and six sprite effects, and retains the captured image.
+Playback stops before `image_transform_echo_start`, opcode `0x50`, at stream word `0x0181`.
+Its matrix endpoints, three cyclic matrices, fade updater, and renderer remain unimplemented.
+Existing native sources describe that dependency; this boundary does not require new user input.
+The optional profile preserves earlier inputs: without it, fresh launch stops at the iris constructor.
+
+The candidate adds `externalProducers.value.framebuffer`:
+
+| Field | Contract |
+|---|---|
+| `kind` | `product-framebuffer-v1` |
+| `capturePolicy` | `constructor-current-state` |
+| `backgroundPolicy` | `omit` or `require`; omitted means `require` |
+
+The Editor renders the current stage when the constructor requests capture.
+This service does not reuse the last displayed frame or a captured game image.
+The supplied candidate explicitly omits background groups and retains the decoded vignette image.
+Its preview uses the same omission policy before and after capture.
+Editor movement guides do not enter the captured image.
+Capture requires an opaque 320-by-240 render target with current Actor and effect sprites.
+Active dialogue, unavailable images, and scene props without native layer ownership fail explicitly.
+Dialogue glyphs and portraits are not supplied by this capture service.
+
+Shared JavaScript computes layer rotation, the three-ring iris mesh, update/query state, and release from current operands.
+Native controls compare both phases; an edited retail prefix exercises paired close/open through terminal hold.
+That control is not the unmodified retail continuation after the echo boundary.
+Opening restores saved layers and releases the live captured image; released Actors do not return.
+The selected layer index is restored. The active layer count does not change.
+The product preserves current transform fields; it does not reproduce native graphics matrices byte for byte.
+
+Seeking retains at most eight runtime-owned image buffers, totaling 2,457,600 bytes, within the runtime's 128 MiB limit.
+The ninth capture stops before retaining another image.
+Recompilation owns separate buffers; cancellation prevents a pending capture from publishing runtime state.
+Image history remains available after live iris release so earlier positions can still render.
+The current profile requires fresh mode-zero launch and one background registration.
+Additional registrations require cumulative layer ownership and stop explicitly.
+Durations outside 1..30,000, unsupported phases, unsafe geometry, and changed qualified code also fail explicitly.
 
 Checks compare initialization bytes, seven complete Actor constructor records, initial-parser camera and Actor fields, color lifecycle, and changed audio queues.
 A second ROM directory entry and changed world inputs exercise the same initializer.
-The integrated renderer consumes 642 states, 4,494 Actor frames, and 3,852 effect frames, with backgrounds omitted.
+The launch-only regression consumes 642 states, 4,494 Actor frames, and 3,852 effect frames, with backgrounds omitted.
 Dialogue glyphs remain approximate byte text; portrait states, shadows, native pixels, and historical cadence remain outside this validation.
 The separate neutral control runs 120 passes; it is not the older historical capture window.
 
-The generators and native reference commands are listed in the parent assignment's `handoff.md`.
+The framebuffer generators, native controls, checks, and render artifacts are listed in `../docs/reviews/cutscene-framebuffer-effects-20260916/handoff.md`.
 Earlier captured playback inputs and their comparison evidence remain separate.

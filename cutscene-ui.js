@@ -286,7 +286,7 @@ window.OB64 = window.OB64 || {};
     return history.present;
   }
 
-  function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal) {
+  function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal, rom) {
     var program = state.programByAssetId[scene.assetId];
     if (!program) return null;
     var runtimeOptions = {
@@ -296,6 +296,7 @@ window.OB64 = window.OB64 || {};
       launchContext: choice ? choice.context : null,
       launchOperandTranslations: launchOperandTranslations(scene, choice)
     };
+    runtimeOptions.captureFrame=function(request){return capturePreviewFrame(rom,state,document,request);};
     runtimeOptions.nativeLaunchInputs = state.nativeLaunchInputsByAssetId &&
       state.nativeLaunchInputsByAssetId[scene.assetId] || null;
     if (contextRuntime) {
@@ -337,7 +338,7 @@ window.OB64 = window.OB64 || {};
     var controller = state.runtimeController = new AbortController();
     state.loadingAssetId = scene.assetId;
     return compileRuntimeDocument(state, scene, document, choice, contextRuntime,
-      controller.signal).then(function(runtime) {
+      controller.signal, rom).then(function(runtime) {
       if (controller.signal.aborted) return null;
       publishRuntime(state, scene, document, runtime);
       if (state.ui && state.ui.panel) rerender(rom, state);
@@ -399,7 +400,7 @@ window.OB64 = window.OB64 || {};
     }
     if (!contextScene) {
       var standaloneRuntime = compileRuntimeDocument(
-        state, scene, document, choice, null, signal);
+        state, scene, document, choice, null, signal, rom);
       return Promise.resolve(standaloneRuntime).then(function(runtime) {
         return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
       });
@@ -410,7 +411,7 @@ window.OB64 = window.OB64 || {};
         'The parent event launch chain is cyclic; this preview stops before reusing ' +
         contextScene.assetId + '.';
       var boundedRuntime = compileRuntimeDocument(
-        state, scene, document, choice, null, signal);
+        state, scene, document, choice, null, signal, rom);
       return Promise.resolve(boundedRuntime).then(function(runtime) {
         return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
       });
@@ -426,7 +427,7 @@ window.OB64 = window.OB64 || {};
         launchContextCacheKey(scene, choice)] = contextRuntime;
       delete state.sourceErrors['runtime-context:' + scene.assetId];
       var runtime = compileRuntimeDocument(
-        state, scene, document, choice, contextRuntime, signal);
+        state, scene, document, choice, contextRuntime, signal, rom);
       return Promise.resolve(runtime).then(function(result) {
         return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(result) : result;
       });
@@ -934,6 +935,7 @@ window.OB64 = window.OB64 || {};
         });
         return cutsceneImage ? {
           image: cutsceneImage,
+          renderPassSelector:row.payload.renderPassSelector,
           x: Number.isFinite(row.payload.stageX) ? row.payload.stageX : 160,
           y: Number.isFinite(row.payload.stageY) ? row.payload.stageY : 120,
           scale: Number.isFinite(row.payload.scale) ? row.payload.scale : 1,
@@ -1037,6 +1039,22 @@ window.OB64 = window.OB64 || {};
     return preview;
   }
 
+  async function capturePreviewFrame(rom,state,document,request) {
+    if(!rom||!state.spriteState)fail('Product framebuffer capture requires the loaded ROM and sprite decoder.');
+    if(request.preview.dialogue&&request.preview.dialogue.length)fail('Framebuffer capture of active dialogue requires a glyph and portrait compositor.');
+    var preview=request.preview,omit=request.backgroundPolicy==='omit';
+    var rows=omit?[]:selectedBackgroundLayers(state,preview),vignetteId=preview.sceneVignette&&preview.sceneVignette.sourceAssetId;
+    var ids=rows.map(function(r){return r.layer.assetId;});if(vignetteId)ids.push(vignetteId);
+    await Promise.all(Array.from(new Set(ids)).map(async function(id){var asset=state.catalog.getImageAsset(id);if(!asset)fail('Capture image '+id+' is unavailable.');var image=await decodeImageAsset(rom,state,asset);if(!image.renderable)fail('Capture image '+id+' is not renderable.');}));
+    var backgrounds=rows.map(function(row){return {layer:row.layer,image:state.imageCache[row.layer.assetId].result};}),actorFrames=OB64.cutsceneSprites.framesForPreview(state.spriteState,preview),effects=activeEffectFrames(rom,state,preview);
+    if(Object.keys(actorFrames).length!==preview.actors.length)fail('Capture lacks a current Actor sprite.');
+    if(effects.length!==preview.effects.filter(function(e){return !e.payload.nativeLifetimeEmpty;}).length)fail('Capture lacks a current effect sprite.');
+    var projection=preview.background&&preview.background.projection||document.background.projection;
+    if(OB64.cutsceneSprites.framesForStageProps(state.spriteState,projection,preview.frame).length)fail('Framebuffer capture lacks native layer ownership for scene props.');
+    var image=OB64.cutsceneRenderer.renderFrame(document,preview,{showMovementPaths:false,backgrounds:backgrounds,actorFrames:actorFrames,effectFrames:effects,projection:preview.actorProjection,camera:preview.cameraState,overlays:preview.overlays||[],colorModulation:preview.sceneColor,sceneVignette:preview.sceneVignette,sceneVignetteImage:vignetteId?state.imageCache[vignetteId].result:null,oversizedImageView:preview.oversizedImageView});
+    image.targetId='product-stage:pass:'+request.pass+':before:'+request.nodeId;return image;
+  }
+
   function paintStage(rom, state) {
     if (!state.ui || !state.ui.canvas) return;
     var scene = selectedScene(state);
@@ -1044,7 +1062,8 @@ window.OB64 = window.OB64 || {};
     var preview = previewState(state);
     if (!scene || !document || !preview) return;
     var view = viewFor(state, scene.sceneId);
-    var backgroundRows = selectedBackgroundLayers(state, preview);
+    var launchInput=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId],framebuffer=launchInput&&launchInput.externalProducers&&launchInput.externalProducers.value&&launchInput.externalProducers.value.framebuffer;
+    var backgroundRows = framebuffer&&framebuffer.backgroundPolicy==='omit'?[]:selectedBackgroundLayers(state, preview);
     var stageImageRows = selectedStageImageRows(state, preview);
     if (stageImageRows.some(function(entry) {
       return !entry.cached && !state.imageLoading[entry.layer.assetId];
@@ -1068,6 +1087,7 @@ window.OB64 = window.OB64 || {};
         state.spriteState, backgroundProjection, preview.frame) : [];
     var rendered = OB64.cutsceneRenderer.renderFrame(document, preview, {
       backgrounds: backgrounds,
+      showMovementPaths: !framebuffer,
       backgroundProjection: backgroundProjection,
       projection: preview.actorProjection || null,
       actorFrames: actorFrames,
@@ -4571,6 +4591,7 @@ window.OB64 = window.OB64 || {};
     loadScene: loadScene,
     presentationDocument: presentationDocument,
     decodeImageAsset: decodeImageAsset,
+    capturePreviewFrame:capturePreviewFrame,
     captureUi: captureUi,
     restoreUi: restoreUi,
     sceneHasChanges: sceneHasChanges,
