@@ -1646,7 +1646,7 @@ window.OB64 = window.OB64 || {};
       if(!mapMenu)return;
       try{
         checkMenuMemory();
-        state.audioEvents.push.apply(state.audioEvents,mapMenu.advance(currentControllerMask()));
+        state.audioEvents.push.apply(state.audioEvents,mapMenu.advance(currentControllerMask(),resourceScheduler&&resourceScheduler.control?resourceScheduler.control.directionMask:0));
         Object.keys(state.transientRenderEntities).forEach(function(slot){
           var entity=state.transientRenderEntities[slot];
           if(entity.computedMenu){entity.status=mapMenu.query(Number(slot));entity.detached=entity.status===-6;}
@@ -3974,13 +3974,13 @@ window.OB64 = window.OB64 || {};
         var transientSlot = signed(words[1]);
         var menuCreation=externalCreation('menuCreates',node);
         if(menuProfile){
-          if(signed(words[2])!==33){producerBoundary('Transient preset '+signed(words[2])+' has no supported shared constructor.','transient-menu-constructor');return;}
+          if(signed(words[2])!==33&&!([1,3].includes(signed(words[2]))&&menuProfile.optionController==='declared-action-direction-v1')){producerBoundary('Transient preset '+signed(words[2])+' has no supported shared constructor.','transient-menu-constructor');return;}
           try{if(!imageEcho)fail('Map menu requires the current scene image dimensions.','map-menu-input');
             if(!mapMenu){mapMenu=new OB64.cutsceneMapMenu(options.z64,menuProfile);
               recordTrace({tick:state.tick,kind:'map-menu-memory',bytes:checkMenuMemory(),limit:131072});}
             var computedMenu=mapMenu.create(transientSlot,signed(words[2]),imageEcho.width,imageEcho.height);
-            state.transientRenderEntities[transientSlot]={slot:transientSlot,preset:33,native:true,computedMenu:true,status:computedMenu.status,statusSource:'computed-native-map-menu',createdTick:state.tick,detached:false};knownTransientSlots.add(transientSlot);
-            recordTrace({tick:state.tick,kind:'map-menu-create',slot:transientSlot,preset:33});
+            state.transientRenderEntities[transientSlot]={slot:transientSlot,preset:signed(words[2]),native:true,computedMenu:true,status:computedMenu.status,statusSource:'computed-native-map-menu',createdTick:state.tick,detached:false};knownTransientSlots.add(transientSlot);
+            recordTrace({tick:state.tick,kind:'map-menu-create',slot:transientSlot,preset:signed(words[2])});
           }catch(error){producerBoundary(error.message,error.code);}return;
         }
         if(nativeLaunch&&!menuCreation){producerBoundary('Transient render-entity preset '+signed(words[2])+' requires its constructor and recurring menu service.','transient-menu-constructor');return;}
@@ -4603,7 +4603,8 @@ window.OB64 = window.OB64 || {};
       }
       var externalValue = externalQueryValue(query);
       if(framebufferProfile&&query.name==='frozen_frame_iris_activity_query')return iris?iris.query():0;
-      if(echoProfile&&query.name==='image_transform_echo_activity_query')return imageEcho?imageEcho.query():0;
+      // Native v0 is 0xffffffff during the reverse echo tail; Q4 compares it with signed -1.
+      if(echoProfile&&query.name==='image_transform_echo_activity_query')return imageEcho?(imageEcho.query()|0):0;
       if(nativeLaunch&&query.name==='alternate_presentation_context_presence_query'&&nativeLaunch.input.world.alternateContextPointer!==undefined)return nativeLaunch.input.world.alternateContextPointer?1:0;
       if (Number.isInteger(externalValue)) return externalValue;
       if (unresolvedInput(query, context)) return NaN;

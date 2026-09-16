@@ -350,7 +350,7 @@ Each entry supplies these explicit memory and service fields:
 | `sceneRoot` | Qualified unsigned scene-root pointer for child-to-row identity checks. |
 | `currentUnit` | Current selector byte before reset. |
 | `unitHex` | Exact 25-byte unit-30 row, or null when unavailable. |
-| `records` | Object mapping selected deployed IDs 0â€“99 to complete 52-byte records. Special members read record zero. |
+| `records` | Object mapping selected deployed IDs 0–99 to complete 52-byte records. Special members read record zero. |
 | `specialOverrides` | Object mapping special member IDs to unsigned `halfword` and `flags` bytes. |
 | `objects` | Object mapping nonzero child pointers to complete 256-byte child records. |
 | `primaryRegistry`, `secondaryRegistry` | Ordered active pointer arrays, including duplicates. This representation supports at most 256 entries per registry. |
@@ -447,7 +447,7 @@ Projection therefore consumes evolving matrices. No later captured matrix or dia
 The preview consumes the resulting projection-related service outcomes; it does not execute that native matrix producer.
 The direct import artifact is `../docs/reviews/cutscene-chair-projection-correction-20260915/playback-input.json`.
 Load the Rev0 ROM, open Cutscene Studio, and select resource `rom-director:01F4558C`.
-In the scene inspector, use **Playback inputs â†’ Import playback inputs**, select that artifact, then press **Play**.
+In the scene inspector, use **Playback inputs → Import playback inputs**, select that artifact, then press **Play**.
 The input is session-local. Loading a Project clears it.
 
 This declared run uses neutral Director input and A on dialogue callbacks whose update index is divisible by 30.
@@ -466,7 +466,7 @@ It is available through the existing import and Play controls.
 
 Load the Rev0 ROM and open Cutscene Studio.
 Select `rom-director:01F4558C`.
-Use **Playback inputs â†’ Import playback inputs** in the scene inspector.
+Use **Playback inputs → Import playback inputs** in the scene inspector.
 Import `../docs/reviews/cutscene-image-echo-20260916/playback-input.json`, then press **Play**.
 The compact file is 70,110 bytes, below the 128 KiB import limit.
 The automated checks exercise the runtime and renderer; browser interaction was not performed.
@@ -632,3 +632,38 @@ Combined native service memory remains below 128 KiB.
 The tested timeline retains 78,263,428 bytes within the existing 128 MiB limit.
 Seeking, repeat compilation, cancellation during menu construction, and earlier input compatibility are tested.
 Native controls and generated images are described in `../docs/reviews/cutscene-map-menu-20260916/handoff.md`.
+
+## Candidate map option menu and briefing confirmation
+
+The `native-map-menu-v1` profile can enable `optionController: "declared-action-direction-v1"`.
+This extension supports presets 3 and 1 in addition to preset 33.
+The unchanged profile without this field retains the preset-3 boundary.
+The extension consumes the existing resource scheduler's declared `actionMask` and `directionMask` each pass.
+The native controller computes selection, readiness, query results, closure, and release.
+No recorded menu outcome or selected-option answer is supplied.
+
+Load the Rev0 ROM, open Cutscene Studio, and select `rom-director:01F4558C`.
+Use **Playback inputs → Import playback inputs** in the scene inspector.
+Import `../docs/reviews/cutscene-map-option-menu-20260916/playback-input.json`, then press **Play**.
+The actual compact file is 70,286 bytes, below the 128 KiB import limit.
+The automated default import/load route is tested; browser interaction was not performed.
+
+This experiment declares A for one pass every 30 passes through pass 3999.
+At pass 1500, Down replaces A and selects End Briefing.
+A at pass 1530 confirms that choice; A at pass 1560 confirms Yes on the following question.
+Other passes are neutral. These are explicit experiment choices, not recovered historical input or video-frame timing.
+The controller ignores direction while its opening animation remains active.
+
+The run retains 2,307 states after 2,306 completed resource passes.
+It stops at `shared-pose-control-18`, reached by Actor state command `node:01F4558C:w0620`.
+That shared audio-request control still requires its projection/caller contract; this run does not supply a recorded answer.
+It is a missing service integration boundary, not scene termination or a request for new game capture.
+The negative reverse-echo query is interpreted as signed 32-bit by the Director query consumer.
+
+Menu drawing uses native text positions, selection positions, corner coordinates, and opacity.
+The confirmation includes its native-created Yes/No child entity and current selection.
+Frames, cursors, and 5-by-7 uppercase glyphs remain product approximations.
+Audio requests are reported without synthesis. Background groups remain omitted.
+Existing Actor projection, dialogue glyph/portrait, shadow, and historical timing limits remain.
+The run's service-region total is 130,065 bytes; retained-state accounting is 118,186,236 bytes.
+Those figures are bounded accounting measures, not total browser or process memory.

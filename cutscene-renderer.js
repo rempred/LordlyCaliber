@@ -1142,6 +1142,7 @@ window.OB64 = window.OB64 || {};
       // computed corner coordinates with a plain frame and explicit opacity.
       fillRect(output,b[0],b[1],b[2]-b[0]+1,b[3]-b[1]+1,[22,28,43,Math.round(alpha*.94)]);
       line(output,b[0],b[1],b[2],b[1],[211,208,186,alpha]);line(output,b[0],b[3],b[2],b[3],[211,208,186,alpha]);line(output,b[0],b[1],b[0],b[3],[211,208,186,alpha]);line(output,b[2],b[1],b[2],b[3],[211,208,186,alpha]);
+      var cursor=OB64.cutsceneMapMenu.cursor(entity);if(cursor)for(var cy=0;cy<7;cy++)for(var cx=0;cx<=3-Math.abs(3-cy);cx++)pixel(output,cursor.x+cx,cursor.y+cy,[245,244,225,alpha]);
       OB64.cutsceneMapMenu.lines(entity).forEach(function(row){var data=Uint8Array.from(row.hex.match(/../g)||[],x=>parseInt(x,16)),x=row.x;
         for(var i=0;i<data.length;i++){var key=String.fromCharCode(data[i]).toUpperCase();if(data[i]===0x81){key=data[i+1]===0xaa?'up':data[i+1]===0xab?'down':'?';i++;}var glyph=MENU_FONT[key]||(key===' '?null:MENU_FONT['?']);if(glyph)for(var y=0;y<7;y++)for(var col=0;col<5;col++)if(glyph[y]&(16>>col)){var px=x+col,py=row.y+y;if(px>b[0]&&px<b[2]&&py>b[1]&&py<b[3])pixel(output,px,py,[245,244,225,alpha]);}x+=6;}
       });
