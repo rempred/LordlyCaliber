@@ -23,6 +23,7 @@ window.OB64=window.OB64||{};
  Scheduler.prototype.queue=function*(kind){yield* this.engine.service({service:kind,eligible:true,ownerId:'resource-pool',helpers:[]});this.trace.push({service:kind});};
  Scheduler.prototype.dialogue=function*(slot,kind){
   var r=this.read(slot),owner=this.engine.owners[slot];
+  if(r.initialize===0x8022643c&&this.colorService){if(kind==='callback'&&r.callback!==0x80226538)stop('The color resource callback differs from its qualified binding.','dialogue-scheduler-callback');this.machine.put(0x800c4c20,slot);yield* this.colorService(slot,kind);this.trace.push({service:kind,slot:slot,resource:'color'});return;}
   if(r.initialize!==0x80198be8||(kind==='callback'&&r.callback!==0x8019981c)||!owner)stop('A reached resource callback lacks a supported dialogue owner.','dialogue-scheduler-callback');
   this.machine.put(0x800c4c20,slot);
   yield* this.engine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:{...this.control,queueHead:this.machine.get(0x800c4c10,2)}},true);
@@ -36,12 +37,12 @@ window.OB64=window.OB64||{};
   if(this.machine.get(0x800c4c26,2)!==0xffff)stop('A pending bulk resource cleanup is outside this pass profile.','dialogue-scheduler-cleanup');
   if(this.machine.get(0x800c49d0,2)>6)stop('The resource queue count exceeds the six-slot pool.','dialogue-scheduler-queue');
   if(this.machine.get(0x800c49d0,2)){yield* this.queue('opening');yield* this.queue('closing');yield* this.queue('priority');}
-  yield* initializePlan(this.read.bind(this),function*(slot){yield* this.dialogue(slot,'initialize');}.bind(this));
+  yield* initializePlan(this.read.bind(this),function*(slot){if(slot===this.input.directorSlot&&this.initializeDirector)yield* this.initializeDirector(slot);else yield* this.dialogue(slot,'initialize');}.bind(this));
   yield* this.queue('priority');this.budget=this.machine.get(0x800c49d0,2);
   for(var slot=0;slot<this.input.directorSlot;slot++)yield* this.callback(slot);
   var r=this.read(this.input.directorSlot);
   if((r.flags&0xa000)!==0xa000||r.callback!==this.input.directorCallback||this.budget<=0)stop('The declared Director resource is not eligible in this pass.','dialogue-scheduler-director');
-  this.machine.put(0x800c4c20,this.input.directorSlot);this.trace.push({service:'director',slot:this.input.directorSlot});
+  this.machine.put(0x800c4c20,this.input.directorSlot);this.trace.push({service:'director',slot:this.input.directorSlot});if(this.beforeDirector)yield* this.beforeDirector();
  };
  Scheduler.prototype.callback=function*(slot){
   if(this.budget<=0)return;
@@ -50,6 +51,7 @@ window.OB64=window.OB64||{};
  };
  Scheduler.prototype.after=function*(terminal){
   if(terminal){if(this.helperCursor!==this.input.helperOutcomes.length)stop('The explicit helper stream contains unused outcomes.','dialogue-helper-outcome');return;}
+  if(this.afterDirector)yield* this.afterDirector();
   this.budget--;this.machine.put(0x800c49d0,this.budget,2);
   for(var slot=this.input.directorSlot+1;slot<6;slot++)yield* this.callback(slot);yield* this.queue('priority');
   this.machine.put(0x800c4c20,0xffffffff);

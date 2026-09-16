@@ -456,3 +456,65 @@ The integration test exercises all 616 states through the Actor and effect rende
 Existing camera bounds remain unchanged. Browser interaction, synchronized original-game pixels, shadows, and historical cadence remain unverified.
 The separate 90-update neutral run matches all 48 complete stored dialogue payloads and window rectangles under conditional sample alignment.
 The declared A input changes later dialogue progression. Neither run establishes unique historical controller input or universal scheduler cadence.
+
+## Candidate fresh Director launch
+
+The `directorLaunch` profile starts an active, uninitialized Director resource in mode zero.
+It uses the selected ROM directory entry and declared caller state.
+This candidate requires independent review before acceptance.
+It is available through the existing import and Play controls.
+
+Load the Rev0 ROM and open Cutscene Studio.
+Select `rom-director:01F4558C`.
+Use **Playback inputs → Import playback inputs** in the scene inspector.
+Import `../docs/reviews/cutscene-director-launch-20260916/playback-input.json`, then press **Play**.
+The compact file is 53,750 bytes, below the 128 KiB import limit.
+The automated checks exercise the runtime and renderer; browser interaction was not performed.
+
+The new `externalProducers.value.directorLaunch` object has these fields:
+
+| Field | Contract |
+|---|---|
+| `kind` | `mode-zero-director-v1` |
+| `sceneMode` | Zero |
+| `selector` | Index in the current ROM Director directory; must resolve to the selected resource |
+| `world` | Byte fields `mapKind`, `scenarioByte`, `red`, `green`, `blue`, and unsigned word `eventState` |
+| `world.alternateContextPointer` | Optional current caller pointer for the alternate-context presence query |
+| `actorPresentationWord` | Current unsigned caller word; Actor construction consumes its low byte |
+| `cameraBaseHex` | Both camera banks, 144 bytes; native initialization replaces selected fields |
+| `operandTranslations` | Required placeholder indexes mapped to current unsigned halfword values |
+| `arena` | Exclusive aligned preview storage, with `address` and `byteLength`; maximum 65,536 bytes |
+| `audioQueueHex` | Optional current sixteen-entry audio queue, 128 bytes |
+
+The profile requires `initialDialogue`, its shared storage/lifecycle configuration, and `resourceSchedule`.
+The Director resource must identify the supported initializer and remain uninitialized.
+Captured Actor snapshots and concurrent Actor context are incompatible with this profile.
+Recorded resource events and color creation outcomes are rejected.
+Combined native launch and resource memory remains bounded to 128 KiB.
+
+The preview executes qualified native initialization, scene-root setup, stream loading, camera initialization, color resource callbacks, and audio queue instructions.
+It computes ROM resource access, decompression, allocation, and release through shared preview services.
+The allocator uses a declared preview arena; it does not emulate the retail heap.
+Director commands and ordinary Actor construction/updates use the existing JavaScript implementations.
+Native graphics-cache preparation is not executed by Actor construction.
+
+The input supplies caller resource memory, font metrics, camera fields, world state, roster rows, and initial audio queue state.
+It supplies A for one resource pass every thirty passes and neutral masks otherwise.
+One tick means one resource pass, not a verified rendered frame.
+The audio implementation updates its queue and emits request events.
+It does not consume that queue through the audio engine or synthesize sound.
+
+This run retains 642 states after 641 completed passes.
+It stops at the frozen-frame iris constructor, after opening fade, seven Actor creations, and dialogue progression.
+This is a bounded startup result, not complete scene playback.
+The next implementation requires a product framebuffer capture, render-layer lifecycle, and iris updater.
+It does not currently require a new emulator observation or user input.
+
+Checks compare initialization bytes, seven complete Actor constructor records, initial-parser camera and Actor fields, color lifecycle, and changed audio queues.
+A second ROM directory entry and changed world inputs exercise the same initializer.
+The integrated renderer consumes 642 states, 4,494 Actor frames, and 3,852 effect frames, with backgrounds omitted.
+Dialogue glyphs remain approximate byte text; portrait states, shadows, native pixels, and historical cadence remain outside this validation.
+The separate neutral control runs 120 passes; it is not the older historical capture window.
+
+The generators and native reference commands are listed in the parent assignment's `handoff.md`.
+Earlier captured playback inputs and their comparison evidence remain separate.

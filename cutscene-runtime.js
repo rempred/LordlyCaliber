@@ -256,6 +256,7 @@ window.OB64 = window.OB64 || {};
     function integer(v,min,max) {return Number.isInteger(v) && v >= min && v <= max;}
     function id(v) {return typeof v === 'string' && v.length > 0 && v.length <= 160;}
     if (!value || !integer(value.throughTick,0,29999) || !['menuCreates','colorCreates','poseCalls'].every(function(k){return Array.isArray(value[k]);})) fail('External producers need bounded complete service history and creation lists.', 'launch-input');
+    if(value.directorLaunch!==undefined&&!value.resourceSchedule)fail('Director initialization requires the computed resource scheduler.','launch-input');
     if(value.resourceSchedule!==undefined&&!value.initialDialogue)fail('Resource scheduling requires initial native resource memory.','launch-input');
     if (!Array.isArray(value.events)) {
       var eventTable=value.events;
@@ -1311,7 +1312,7 @@ window.OB64 = window.OB64 || {};
     var translationProfile = launchProfile.operandTranslation || {
       required: false, tableIndexes: []
     };
-    var suppliedTranslationTable = options.launchOperandTranslations || {};
+    var suppliedTranslationTable = options.launchOperandTranslations || (options.nativeLaunchInputs && options.nativeLaunchInputs.externalProducers && options.nativeLaunchInputs.externalProducers.value && options.nativeLaunchInputs.externalProducers.value.directorLaunch && options.nativeLaunchInputs.externalProducers.value.directorLaunch.operandTranslations) || {};
     var suppliedTranslationIndexes = [];
     var missingTranslationIndexes = [];
     (translationProfile.tableIndexes || []).forEach(function(tableIndex) {
@@ -1510,7 +1511,7 @@ window.OB64 = window.OB64 || {};
         return row.nodeId===node.id && row.occurrence===occurrence;
       });
     }
-    var dialogueEngine = null, resourceScheduler = null;
+    var dialogueEngine = null, resourceScheduler = null, nativeLaunch = null, launchInitialization = null, launchParserRan = false;
     if(externalProducers && externalProducers.initialDialogue) {
       try {
         if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
@@ -1520,6 +1521,17 @@ window.OB64 = window.OB64 || {};
           if(!OB64.cutsceneResourceScheduler)fail('Resource scheduling support is unavailable.','dialogue-scheduler-input');
           for(var ei=0;ei<externalEventCount(externalProducers.events);ei++)if(externalEventAt(externalProducers.events,ei).kind==='dialogue')fail('Computed scheduling must omit recorded dialogue service events.','dialogue-scheduler-input');
           resourceScheduler=new OB64.cutsceneResourceScheduler.Scheduler(dialogueEngine,externalProducers.resourceSchedule,options.z64);
+          if(externalProducers.directorLaunch!==undefined){
+            if(!OB64.cutsceneDirectorLaunch||launchValue('capturedSnapshot')||launchValue('existingActors')||contextRuntime)fail('Fresh Director launch cannot inherit a captured or concurrent Actor namespace.','director-launch-input');
+            nativeLaunch=new OB64.cutsceneDirectorLaunch(externalProducers.directorLaunch,options.z64);
+            var launchBinding=resourceScheduler.read(resourceScheduler.input.directorSlot);
+            if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==0x80225a1c)fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
+            if(externalEventCount(externalProducers.events)||(externalProducers.colorCreates||[]).length)fail('Fresh launch must omit recorded resource and color events.','director-launch-input');
+            if(nativeLaunch.resourceKey!==parseInt(scene.directorKey,16))fail('Director selector does not resolve to the selected ROM stream.','director-launch-selector');
+            resourceScheduler.initializeDirector=initializeDirectorResource;
+            nativeLaunch.attachResources(dialogueEngine);resourceScheduler.colorService=serviceColorResource;resourceScheduler.beforeDirector=restoreDirectorResource;resourceScheduler.afterDirector=saveDirectorResource;
+            nativeLaunch.audioRequest=function(event){state.audioEvents.push(event);};
+          }
         }
         dialogueEngine.owners.forEach(function(owner,slot){
           if(!owner)return;
@@ -1607,7 +1619,7 @@ window.OB64 = window.OB64 || {};
     var completedResumeUpdates = 0;
     var capturedPresentation = launchValue('capturedPresentation');
     var resumedMenuSelection = null;
-    var initialActors = launchValue('existingActors') || capturedSnapshot;
+    var initialActors = launchValue('existingActors') || capturedSnapshot || (nativeLaunch?{slots:new Array(28).fill(null),otherJobsEmpty:true}:null);
     if (initialActors) initialActors.slots.forEach(function(row, slot) {
       if (!row) return;
       var bytes = launchBytes(row.recordHex, 0x150);
@@ -2202,10 +2214,11 @@ window.OB64 = window.OB64 || {};
     function executeActorCreate(node, words, unresolvedWordOffsets) {
       var slot = signed(words[1]);
       if (slot < 0 || slot >= 28) { actorBoundary('Actor construction requires a primary slot from 0 through 27.'); return; }
-      if (continuousResume) {
-        var service = actorService('directActorCreates',node);
+      if (continuousResume || nativeLaunch) {
+        var resolved=nativeLaunch&&catalog.getPhysicalPoseProgram(signed(words[2]),signed(words[3]),signed(words[4]),unsigned(words[9])&255);
+        var service = nativeLaunch ? {words:words,stateIndex:resolved&&resolved.stateIndex,presentationByte:nativeLaunch.input.actorPresentationWord&255,evidenceReference:'computed ROM State selection and preview launch allocation'} : actorService('directActorCreates',node);
         if (!service || !service.words.every(function(v,i){return unsigned(v) === unsigned(words[i]);}) ||
-            state.actors[slot] || unresolvedWordOffsets.length) {
+            (state.actors[slot]&&!nativeLaunch) || unresolvedWordOffsets.length) {
           actorBoundary('Direct creation requires the exact command occurrence, an empty slot, and qualified allocation and registration.','actor-creation-input'); return;
         }
         var selectedProgram = catalog.getPhysicalPoseProgram(signed(words[2]),signed(words[3]),signed(words[4]),unsigned(words[9]) & 255);
@@ -2213,9 +2226,10 @@ window.OB64 = window.OB64 || {};
         if (!selectedProgram || selectedProgram.stateIndex !== service.stateIndex || y === -1) {
           actorBoundary('Direct creation requires its qualified ordinary State and explicit terrain-free height.','actor-creation-state'); return;
         }
+        if(nativeLaunch){try{var pointer=nativeLaunch.machine.get(launchInitialization.rootAddress+24+slot*4);service.allocationAddress=pointer||nativeLaunch.allocate(336);nativeLaunch.machine.put(launchInitialization.rootAddress+24+slot*4,service.allocationAddress);}catch(error){producerBoundary(error.message,error.code);return;}}
         // func_0029D790 clears the allocation. func_0029DC0C initializes this
         // ordinary mode-zero path, then the creator performs one immediate pose.
-        // Allocation and existing registration are supplied service results.
+        // Captured resume supplies allocation; fresh launch owns its preview arena.
         var bytes = new DataView(new ArrayBuffer(336));
         bytes.setUint32(0xE0,0x8022F2CC); bytes.setInt32(0xE4,slot); bytes.setInt32(0xE8,signed(words[2]));
         bytes.setInt32(0xF0,-1); bytes.setInt16(0x134,service.stateIndex); bytes.setInt16(0x138,signed(words[3]));
@@ -2233,6 +2247,7 @@ window.OB64 = window.OB64 || {};
         created.facing='native-'+created.nativeFacing;created.visible=true;
         created.capturedMainScale=1;created.uniformScale=1;created.transformChannel=0;
         updateActorPose(created);
+        if(nativeLaunch)nativeLaunch.write(service.allocationAddress,new Uint8Array(nativeRecordForActor(created).buffer));
         recordTrace({tick:state.tick,kind:'direct-actor-creation',nodeId:node.id,slot:slot,
           allocationAddress:service.allocationAddress,stateIndex:service.stateIndex,
           evidenceReference:service.evidenceReference,review:'pending',recordHex:recordHex(nativeRecordForActor(created))});
@@ -2591,6 +2606,7 @@ window.OB64 = window.OB64 || {};
         status: bank === 'actor' ? 'opcode 0x36 actor-side camera' :
           'opcode 0x35 registered-object camera'
       };
+      if(nativeLaunch)camera=Object.assign({},state.cameras[bank],camera);
       state.cameras[bank] = camera;
       state.cameraEvents.push(eventRow(node, 'camera', 'Camera pose', {
         presentationKind: 'camera-pose',
@@ -2619,6 +2635,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeOverlay(node, words) {
+      if(nativeLaunch){try{state.overlay=nativeLaunch.createColor(words);state.overlay.sourceNodeId=node.id;state.overlayJob=state.overlay;}catch(error){producerBoundary(error.message,error.code);}return;}
       var creation=externalCreation('colorCreates',node);
       if (creation && externalProducers.initialColor !== undefined) {
         state.overlay=createNativeColor(state.overlay,words);
@@ -3723,6 +3740,9 @@ window.OB64 = window.OB64 || {};
         return;
       }
       if (node.name === 'branch_barrier') return;
+      if(nativeLaunch&&node.name==='frozen_frame_iris_transition'){
+        producerBoundary('Frozen-frame iris construction requires framebuffer capture and the render-layer lifecycle.','director-launch-iris');return;
+      }
       if (node.name === 'control_bridge_and_pending_substream_handoff') {
         if (parserResumeMarked) commitPersistentCursorAfter(node);
         consumePendingSubstream(node);
@@ -3948,6 +3968,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       else if (opcode === 0x7D) {
+        if(nativeLaunch)nativeLaunch.releaseColor();
         state.terminalStateReleased = true;
         state.terminalReason = 'terminal-state-release';
         state.terminal = true;
@@ -3956,7 +3977,8 @@ window.OB64 = window.OB64 || {};
         if (state.overlay && state.overlay.native) {
           // The continuous Director path calls func_002839A8: request release.
           // Cleanup belongs to a later external callback, not this command.
-          if (continuousResume) state.overlay.ownershipFlag=1;
+          if (nativeLaunch){nativeLaunch.releaseColor();state.overlay=nativeLaunch.color();}
+          else if (continuousResume) state.overlay.ownershipFlag=1;
           else state.overlay=cleanupNativeColor(state.overlay);
           state.overlayJob=state.overlay;
         } else if (externalProducers && externalProducers.initialColor !== undefined) {
@@ -4466,6 +4488,7 @@ window.OB64 = window.OB64 || {};
           'Army Management cursor input is not supplied; this native wait uses an explicit completed-state assumption.');
       }
       var externalValue = externalQueryValue(query);
+      if(nativeLaunch&&query.name==='alternate_presentation_context_presence_query'&&nativeLaunch.input.world.alternateContextPointer!==undefined)return nativeLaunch.input.world.alternateContextPointer?1:0;
       if (Number.isInteger(externalValue)) return externalValue;
       if (unresolvedInput(query, context)) return NaN;
       if (context.kind === 'wait') {
@@ -4959,7 +4982,8 @@ window.OB64 = window.OB64 || {};
       yield* applyExternalServices('before-director');
       if(!stopReason)yield* applyResourcePass('before');
       if (stopReason) return;
-      if (tick > 0 || capturedResume) updateJobs();
+      if(launchParserRan){parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;launchParserRan=false;}
+      if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
       state.scheduled = state.scheduled.filter(function(item) { return item.tick !== tick; });
       scheduled.forEach(function(item) { executePrimitive(item.node); });
@@ -5108,6 +5132,81 @@ window.OB64 = window.OB64 || {};
       executeNodes(nodes);
     }
 
+    function* evaluateDirector() {
+      if (!stopReason && block && blockComplete(block)) {
+        var completedBlock = block;
+        if (completedBlock.kind === 'until') {
+          state.registeredCounter = null;
+          branchDepth = 1;
+        }
+        block = null;
+        if (completedBlock.kind === 'parser-boundary') {
+          restartAtPersistentCursor();
+        } else if (completedBlock.resumeNodes && completedBlock.resumeNodes.length) {
+          processCompositeSuffix(completedBlock.resumeNodes,
+            completedBlock.resumeComposite);
+        }
+      }
+      var instantGuard = 0;
+      while (!block && !state.terminal && !stopReason &&
+          compositeIndex < activeProgram.composites.length) {
+        if (++instantGuard > activeProgram.composites.length + 8) {
+          fail('Director runtime exceeded its instantaneous-dispatch guard.', 'dispatch-loop');
+        }
+        var composite = activeProgram.composites[compositeIndex++];
+        var entryNodeId = compositeEntryNodeId;
+        compositeEntryNodeId = null;
+        processComposite(composite, entryNodeId);
+        if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
+        yield;
+      }
+    }
+    function syncLaunchCamera() {
+      var m=dialogueEngine.machine;
+      ['actor','registered'].forEach(function(bank,index){var c=projectionFromCamera(state.cameras[bank]),at=0x8022a720+(index?88:0),values=[c.fovYDegrees,c.aspect,c.near,c.far,null,c.eye.x,c.eye.y,c.eye.z,c.target.x,c.target.y,c.target.z,c.up.x,c.up.y,c.up.z];
+        values.forEach(function(value,i){if(value===null)return;var b=new DataView(new ArrayBuffer(4));b.setFloat32(0,value);m.put(at+i*4,b.getUint32(0));});});
+    }
+    function* serviceColorResource(slot,kind) {
+      syncLaunchCamera();var m=dialogueEngine.machine,owner=dialogueEngine.owners[slot];
+      if(!owner)fail('Color resource ownership is missing.','director-launch-color');
+      yield* dialogueEngine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:Object.assign({},resourceScheduler.control,{queueHead:m.get(0x800c4c10,2)})},true,{initialize:0x8022643c,callback:0x80226538,length:92});
+      state.overlay=nativeLaunch.color();state.overlayJob=state.overlay;
+    }
+    function* restoreDirectorResource() {
+      var e=dialogueEngine,m=e.machine,slot=resourceScheduler.input.directorSlot,a=0x800e82c8+slot*168,owner=e.owners[slot];e.copy(a,0x800e7a30,168);
+      if(!owner||!owner.payload||owner.payload.length!==92)fail('Fresh Director callback requires its initialized payload.','director-launch-payload');
+      e.payloadStorage.restore(owner.ownerId,m.get(a+0x24),0x800e91d0);
+    }
+    function* saveDirectorResource() {
+      var e=dialogueEngine,m=e.machine,slot=resourceScheduler.input.directorSlot,a=0x800e82c8+slot*168,owner=e.owners[slot];
+      var handle=e.payloadStorage.save(owner.ownerId,m.get(0x800e7a31,1),0x800e91d0,92);m.put(0x800e7a54,handle);e.copy(0x800e7a30,a,168);owner.payload=Uint8Array.from({length:92},function(_,i){return m.get(0x800e91d0+i,1);});
+    }
+    function* initializeDirectorResource(slot) {
+      var e=dialogueEngine,m=e.machine,a=0x800e82c8+slot*168;
+      if(m.get(a+0x10)!==0x80225a1c)fail('Fresh launch requires the qualified Director initializer.','director-launch-binding');
+      m.put(0x800c4c20,slot);
+      var record=Uint8Array.from({length:168},function(_,i){return m.get(a+i,1);});
+      record[4]=6;
+      if(slot===m.get(0x800c4c10,2))record[2]|=4;
+      yield* nativeLaunch.initialize(record);
+      launchInitialization=nativeLaunch.snapshot();
+      state.directorMode=0;state.directorModeStatus='computed-mode-zero-launch';
+      var camera=launchBytes(launchInitialization.cameraHex,144);
+      ['actor','registered'].forEach(function(bank,index){var at=index?88:0,values=Array.from({length:14},function(_,i){return camera.getFloat32(at+i*4);});
+        state.cameras[bank]=cameraFromProjection({fovYDegrees:values[0],aspect:values[1],near:values[2],far:values[3],modelScale:bank==='actor'?1:Math.fround(0.1),eye:{x:values[5],y:values[6],z:values[7]},target:{x:values[8],y:values[9],z:values[10]},up:{x:values[11],y:values[12],z:values[13]},evidenceStatus:'computed-native-initializer'},'Computed mode-zero camera from native initialization and declared preserved fields.');});
+      var context=launchBytes(launchInitialization.contextHex,30);state.sceneColor={red:context.getUint16(0),green:context.getUint16(2),blue:context.getUint16(4)};
+      recordTrace({tick:state.tick,kind:'director-launch-initializer',selector:nativeLaunch.input.selector,resourceKey:nativeLaunch.resourceKey,rootAddress:launchInitialization.rootAddress});
+      for(var j=0;j<168;j++)m.put(0x800e7a30+j,parseInt(launchInitialization.recordHex.slice(j*2,j*2+2),16),1);
+      yield* evaluateDirector();launchParserRan=true;
+      syncLaunchCamera();
+      launchInitialization.initialParser={actors:Object.keys(state.actors).map(function(slot){return {slot:Number(slot),values:(function(a){return [a.x,a.y,a.z,a.bank,a.poseCursor,a.poseDelay,a.displayedFrameToken,a.poseStateIndex,a.animationKey,a.nativeFacing];})(state.actors[slot])};}),cameraHex:recordHex(new DataView(nativeLaunch.readEngine(0x8022a720,144).buffer)),blockedQuery:block&&block.query?block.query.id:null};
+      if(block&&['parser-boundary','cursor-replacement'].includes(block.kind))block.untilTick=state.tick;
+      var result=new DataView(Uint8Array.from({length:168},function(_,i){return m.get(0x800e7a30+i,1);}).buffer);result.setUint16(0,result.getUint16(0)|0x2000);if(slot===m.get(0x800c4c10,2))result.setUint8(2,result.getUint8(2)&~4);
+      for(var i=0;i<92;i++)m.put(0x800e91d0+i,nativeLaunch.machine.get(0x800e91d0+i,1),1);
+      var owner=e.owners[slot],handle=e.payloadStorage.save(owner.ownerId,result.getUint8(1),0x800e91d0,92);result.setUint32(0x24,handle);
+      for(i=0;i<168;i++)m.put(a+i,result.getUint8(i),1);owner.payload=Uint8Array.from({length:92},function(_,i){return m.get(0x800e91d0+i,1);});
+    }
+
     if (capturedSnapshot) {
       state.directorMode = capturedSnapshot.sceneMode;
       if (capturedPresentation) {
@@ -5150,33 +5249,7 @@ window.OB64 = window.OB64 || {};
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
-      if (!stopReason && block && blockComplete(block)) {
-        var completedBlock = block;
-        if (completedBlock.kind === 'until') {
-          state.registeredCounter = null;
-          branchDepth = 1;
-        }
-        block = null;
-        if (completedBlock.kind === 'parser-boundary') {
-          restartAtPersistentCursor();
-        } else if (completedBlock.resumeNodes && completedBlock.resumeNodes.length) {
-          processCompositeSuffix(completedBlock.resumeNodes,
-            completedBlock.resumeComposite);
-        }
-      }
-      var instantGuard = 0;
-      while (!block && !state.terminal && !stopReason &&
-          compositeIndex < activeProgram.composites.length) {
-        if (++instantGuard > activeProgram.composites.length + 8) {
-          fail('Director runtime exceeded its instantaneous-dispatch guard.', 'dispatch-loop');
-        }
-        var composite = activeProgram.composites[compositeIndex++];
-        var entryNodeId = compositeEntryNodeId;
-        compositeEntryNodeId = null;
-        processComposite(composite, entryNodeId);
-        if (dispatchCount >= maxDispatches) stopReason = 'dispatch-limit';
-        yield;
-      }
+      yield* evaluateDirector();
       if (!stopReason) yield* applyExternalServices('after-director');
       if (!stopReason) yield* applyResourcePass('after');
       if (continuousResume && !stopReason) {
@@ -5253,6 +5326,7 @@ window.OB64 = window.OB64 || {};
       engine: 'director-scheduler',
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
+      directorInitialization: launchInitialization,
       clockUnit: resourceScheduler ? 'declared resource passes with explicit projection preparation; not video frames' : continuousResume ? 'declared prospective normal Director updates; no historical cadence' : capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
       capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
         resumeState: continuousResume ? 'candidate-continuous-updates' : capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',

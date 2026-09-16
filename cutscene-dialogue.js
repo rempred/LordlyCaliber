@@ -254,7 +254,7 @@ window.OB64 = window.OB64 || {};
     for(var control=0;control<8;control++)this.machine.put(0x8019ee40+control,0,1);
     this.owners[slot]={ownerId:row.ownerId,payload:null};return slot;
   };
-  Engine.prototype.service = function*(event, nativeDispatch) {
+  Engine.prototype.service = function*(event, nativeDispatch, resourceSpec) {
     function rejectUnused(outcomes) {
       if((outcomes||[]).length)boundary('Dialogue service supplied unused helper outcomes.','dialogue-helper-order');
     }
@@ -280,38 +280,40 @@ window.OB64 = window.OB64 || {};
     if(nativeDispatch&&slot===m.get(0x800c4c10,2))m.put(RECORD+2,m.get(RECORD+2,1)|4,1);
     if(event.service==='initialize') {
       if(flags&0x2000)boundary('Dialogue initialization cannot repeat for an initialized resource.');
-      yield* m.run(0x80198be8,[slot],event.helpers);
+      // Resident dispatcher initializes this byte before calling any initializer.
+      if(nativeDispatch)m.put(RECORD+4,6,1);
+      yield* m.run(resourceSpec?resourceSpec.initialize:0x80198be8,[slot],event.helpers);
       m.put(RECORD,m.get(RECORD,2)|0x2000,2);
     } else if(event.service==='callback') {
       if(!(flags&0x2000)||!owner.payload)boundary('Dialogue callback requires initialized saved payload.');
       var oldHandle=m.get(RECORD+0x24);
       if(!oldHandle||(!this.payloadStorage&&(storage.restoreHandle!==oldHandle||storage.restoreReturned!==true||storage.freeReturned!==true)))boundary('Dialogue callback requires matching payload restoration and release outcomes.','dialogue-payload-restore');
       var restoredLength=m.get(oldHandle+2,2);
-      if(restoredLength!==0x478)boundary('Dialogue saved allocation has an unsupported payload length.','dialogue-payload-identity');
+      if(restoredLength!==(resourceSpec?resourceSpec.length:0x478))boundary('Dialogue saved allocation has an unsupported payload length.','dialogue-payload-identity');
       if(this.payloadStorage)this.payloadStorage.restore(owner.ownerId,oldHandle,PAYLOAD);
       else this.copy(oldHandle+6,PAYLOAD,restoredLength);
-      if([9,10].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue portrait continuation requires a qualified external producer.','dialogue-portrait-input');
-      if(![0,1,2,3,4,5,6,7,8,11,99,100].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue state is outside the accepted continuation domain.','dialogue-state-input');
+      if(!resourceSpec&&[9,10].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue portrait continuation requires a qualified external producer.','dialogue-portrait-input');
+      if(!resourceSpec&&![0,1,2,3,4,5,6,7,8,11,99,100].includes(m.get(PAYLOAD+0x3c,1)))boundary('Dialogue state is outside the accepted continuation domain.','dialogue-state-input');
       if(!event.controller || !['actionMask','directionMask','dummyMask','historyMask','queueHead'].every(function(k){return Number.isInteger(event.controller[k]);}))boundary('Dialogue callback requires selected controller ownership and masks.','dialogue-controller-input');
       var c=event.controller;
       if(c.queueHead!==m.get(0x800c4c10,2))boundary('Dialogue controller owner differs from the current resource queue.','dialogue-controller-owner');
       m.put(0x800e8100,c.actionMask,2);m.put(0x800e8700,c.directionMask,2);m.put(0x800af0a6,c.dummyMask,2);
       if(nativeDispatch)m.put(0x800e8108,c.queueHead===slot?0x800e79b0:0x800af0a6);
-      var textState=m.get(PAYLOAD+0x3c,1);
+      var textState=resourceSpec?-1:m.get(PAYLOAD+0x3c,1);
       if(textState===3||textState===6||(textState===7&&m.get(PAYLOAD+0x52,1)))m.put(m.get(0x800e8108),c.historyMask,2);
       m.put(0x800c4bdc,c.queueHead===slot?0x800e8100:0x800af0a6);m.put(0x800c4c4c,c.queueHead===slot?0x800e8700:0x800af0a6);
-      yield* m.run(0x8019981c,[slot],event.helpers);
+      yield* m.run(resourceSpec?resourceSpec.callback:0x8019981c,[slot],event.helpers);
     } else boundary('Dialogue service kind is unsupported.','dialogue-service-input');
     if(nativeDispatch&&slot===m.get(0x800c4c10,2))m.put(RECORD+2,m.get(RECORD+2,1)&~4,1);
     var length=m.get(RECORD+0x20,2),saveFlags=m.get(RECORD+1,1);
-    if(length!==0x478||(saveFlags&1))boundary('Dialogue requires a qualified payload storage mode.','dialogue-payload-mode');
+    if(length!==(resourceSpec?resourceSpec.length:0x478)||(saveFlags&1))boundary('Dialogue requires a qualified payload storage mode.','dialogue-payload-mode');
     if(this.payloadStorage)storage={saveHandle:this.payloadStorage.save(owner.ownerId,saveFlags,PAYLOAD,length)};
     m.region(storage.saveHandle,length+6,true);
     if(this.owners.some(function(o,i){return i!==slot&&o&&m.get(POOL+i*STRIDE+0x24)===storage.saveHandle;}))boundary('Dialogue payload allocation belongs to another active resource.','dialogue-payload-owner');
     if(!this.payloadStorage){m.put(storage.saveHandle,saveFlags,1);m.put(storage.saveHandle+2,length,2);m.put(storage.saveHandle+4,length,2);this.copy(PAYLOAD,storage.saveHandle+6,length);}
     m.put(RECORD+0x24,storage.saveHandle);
     this.copy(RECORD,r,STRIDE);
-    owner.payload=Uint8Array.from({length:0x478},function(_,i){return m.get(PAYLOAD+i,1);});
+    owner.payload=Uint8Array.from({length:length},function(_,i){return m.get(PAYLOAD+i,1);});
     if(m.get(r+2,1)&(nativeDispatch?2:4)) {
       yield* m.run(0x80077f88,[slot],event.releaseHelpers||[]);
       if(!(m.get(r,2)&0x8000)){if(this.payloadStorage)this.payloadStorage.release(owner.ownerId);this.owners[slot]=null;}
