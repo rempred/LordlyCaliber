@@ -1053,9 +1053,22 @@ window.OB64 = window.OB64 || {};
     return preview;
   }
 
+  function composeDialogue(rom,state,preview,strict) {
+    var rows=[],composedIds=[];
+    (preview.dialogue||[]).forEach(function(row){
+      var input=row.payload.nativeDialogue&&row.payload.nativeDialogue.drawingState;
+      try {
+        if(!input||!OB64.cutsceneDialogueDraw)fail('Framebuffer capture of active dialogue requires its supported native compositor inputs.');
+        if(!state.dialogueDrawer)state.dialogueDrawer=new OB64.cutsceneDialogueDraw(rom.z64);
+        rows.push(state.dialogueDrawer.compose(input.recordHex,input.payloadHex));composedIds.push(row.id);
+      } catch(error){if(strict)throw error;}
+    });
+    return {rows:rows,ids:composedIds};
+  }
+
   async function capturePreviewFrame(rom,state,document,request) {
     if(!rom||!state.spriteState)fail('Product framebuffer capture requires the loaded ROM and sprite decoder.');
-    if(request.preview.dialogue&&request.preview.dialogue.length)fail('Framebuffer capture of active dialogue requires a glyph and portrait compositor.');
+    var dialogueComposition=composeDialogue(rom,state,request.preview,true);
     var preview=request.preview,omit=request.backgroundPolicy==='omit';
     var rows=omit?[]:selectedBackgroundLayers(state,preview),vignetteId=preview.sceneVignette&&preview.sceneVignette.sourceAssetId;
     var ids=rows.map(function(r){return r.layer.assetId;});if(vignetteId)ids.push(vignetteId);
@@ -1066,6 +1079,7 @@ window.OB64 = window.OB64 || {};
     var projection=preview.background&&preview.background.projection||document.background.projection;
     if(OB64.cutsceneSprites.framesForStageProps(state.spriteState,projection,preview.frame).length)fail('Framebuffer capture lacks native layer ownership for scene props.');
     var image=OB64.cutsceneRenderer.renderFrame(document,preview,{showMovementPaths:false,backgrounds:backgrounds,actorFrames:actorFrames,effectFrames:effects,projection:preview.actorProjection,camera:preview.cameraState,overlays:preview.overlays||[],colorModulation:preview.sceneColor,sceneVignette:preview.sceneVignette,sceneVignetteImage:vignetteId?state.imageCache[vignetteId].result:null,oversizedImageView:preview.oversizedImageView});
+    OB64.cutsceneDialogueDraw&&dialogueComposition.rows.forEach(function(row){OB64.cutsceneDialogueDraw.paint(image,row);});
     image.targetId='product-stage:pass:'+request.pass+':before:'+request.nodeId;return image;
   }
 
@@ -1118,6 +1132,9 @@ window.OB64 = window.OB64 || {};
       selectedActorId: view.selectedActorId
     });
     state.renderedStage = rendered;
+    var dialogueComposition=composeDialogue(rom,state,preview,false);
+    dialogueComposition.rows.forEach(function(row){OB64.cutsceneDialogueDraw.paint(rendered,row);});
+    state.composedDialogueIds=dialogueComposition.ids;
     OB64.cutsceneRenderer.paintCanvas(state.ui.canvas, rendered, 2);
     if (state.ui.stageFrame) {
       var visibleActors = preview.actors.filter(function(actor) { return actor.visible; }).length;
@@ -1167,6 +1184,7 @@ window.OB64 = window.OB64 || {};
     overlay.classList.toggle('cutscene-stage-overlay-native',preview.dialogue.some(function(row){return !!row.payload.nativeDialogue;}));
     var dialogueRows=preview.dialogue.some(function(row){return !!row.payload.nativeDialogue;})?preview.dialogue:preview.dialogue.slice(-1);
     dialogueRows.forEach(function(row) {
+      if((state.composedDialogueIds||[]).indexOf(row.id)!==-1)return;
       var dialogue = row.payload;
       var box = node('div', 'cutscene-preview-dialogue');
       if(dialogue.nativeDialogue && dialogue.nativeDialogue.rectangle) {
@@ -4590,6 +4608,8 @@ window.OB64 = window.OB64 || {};
     state.views = {};
     state.imageCache = {};
     state.imageCacheBytes = 0;
+    state.dialogueDrawer = null;
+    state.composedDialogueIds = [];
     pauseAnimation(state);
   }
 
@@ -4609,6 +4629,7 @@ window.OB64 = window.OB64 || {};
     presentationDocument: presentationDocument,
     decodeImageAsset: decodeImageAsset,
     capturePreviewFrame:capturePreviewFrame,
+    composeDialogue:composeDialogue,
     captureUi: captureUi,
     restoreUi: restoreUi,
     sceneHasChanges: sceneHasChanges,

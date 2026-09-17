@@ -734,3 +734,26 @@ Same-state renders and geometry comparisons are in `../docs/reviews/cutscene-nat
 The saved chair comparison retains its conditional alignment through sample 89.
 A tilted-camera comparison is an explicit changed-state control, not an original-game observation.
 Whole-scene pixel agreement and historical video timing remain unmeasured.
+
+## Candidate ordinary dialogue drawing
+
+Ordinary preview and framebuffer capture share the current dialogue compositor.
+Presentation snapshots include `drawingState.recordHex` and `drawingState.payloadHex` from current resource and owner memory.
+These are outputs; the compositor requires no new launch inputs.
+The opening sample 42 correctly contains no text. Later samples 60 and 89 include current text and portrait artwork.
+
+The supported path uses the ordinary frame, left portrait, opaque presentation, and default speech-pointer tile.
+It decodes ROM frame artwork, portrait pixels, and native glyph pixels.
+Printable ASCII and uppercase `{Tn}`, `{Cn}`, `{Hn}`, and `{Vn}` tags use native glyph, color, and spacing rules.
+Unsupported presentation states retain the approximate HTML preview and an explicit framebuffer-capture boundary.
+Other styles, prompts, portrait states, backgrounds, shadows, hardware filtering, and exact original displayed pixels remain outside this result.
+
+The compositor adds no native service regions. Existing service storage remains 130,578 bytes within 128 KiB.
+The complete 3,392-state route retains an estimated 117,173,782 bytes within the unchanged 128 MiB limit.
+Current drawing-state strings are included in that retained accounting.
+The UI owns a decoded artwork cache, limited to 16 KiB; the reached cases use 1,710 bytes.
+Reset clears that cache. Temporary command textures are not retained in runtime snapshots or the UI cache.
+The tested peak is 5,840 texture-plane bytes per composition, excluding decoder scratch, JavaScript objects, and garbage-collection timing.
+These graphics allocations do not redefine the existing service or retained-state ceilings.
+
+Native command comparisons and same-state preview/capture images are in `../docs/reviews/cutscene-active-dialogue-drawing-20260917/handoff.md`.

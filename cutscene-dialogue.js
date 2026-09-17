@@ -345,6 +345,7 @@ window.OB64 = window.OB64 || {};
     return {text:Array.from(visible,function(b){return String.fromCharCode(b);}).join(''),
       glyphAppearance:'approximate-byte-text',
       outputHex:hex(p.slice(0x178,0x178+count)),paused:!!(this.machine.get(r+0x8a,1)&1),state:p[0x3c],
+      drawingState:{recordHex:hex(Uint8Array.from({length:STRIDE},function(_,i){return this.machine.get(r+i,1);},this)),payloadHex:hex(p)},
       presentationGate:p[0x4f],displayedHistoryLine:p[0x54],generatedHistoryLine:p[0x55],
       rectangle:[6,8,10,12].map(function(o){return this.machine.get(r+o,2)<<16>>16;},this)};
   };
