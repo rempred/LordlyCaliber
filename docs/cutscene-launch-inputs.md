@@ -742,18 +742,18 @@ Presentation snapshots include `drawingState.recordHex` and `drawingState.payloa
 These are outputs; the compositor requires no new launch inputs.
 The opening sample 42 correctly contains no text. Later samples 60 and 89 include current text and portrait artwork.
 
-The supported path uses the ordinary frame, left portrait, opaque presentation, and default speech-pointer tile.
+The supported path uses the ordinary opaque frame, either portrait side, horizontal speech-pointer tiles zero and one, and the ordinary continuation indicator.
 It decodes ROM frame artwork, portrait pixels, and native glyph pixels.
 Printable ASCII and uppercase `{Tn}`, `{Cn}`, `{Hn}`, and `{Vn}` tags use native glyph, color, and spacing rules.
 Unsupported presentation states retain the approximate HTML preview and an explicit framebuffer-capture boundary.
-Other styles, prompts, portrait states, backgrounds, shadows, hardware filtering, and exact original displayed pixels remain outside this result.
+Other styles, prompts, portrait states, shadows, hardware filtering, and exact original displayed pixels remain outside this result.
 
 The compositor adds no native service regions. Existing service storage remains 130,578 bytes within 128 KiB.
 The complete 3,392-state route retains an estimated 117,173,782 bytes within the unchanged 128 MiB limit.
 Current drawing-state strings are included in that retained accounting.
-The UI owns a decoded artwork cache, limited to 16 KiB; the reached cases use 1,710 bytes.
+The UI owns a decoded artwork cache, limited to 16 KiB; opening-dialogue cases including the continuation artwork use 2,874 bytes.
 Reset clears that cache. Temporary command textures are not retained in runtime snapshots or the UI cache.
-The tested peak is 5,840 texture-plane bytes per composition, excluding decoder scratch, JavaScript objects, and garbage-collection timing.
+The opening-dialogue cases reach 9,904 texture-plane bytes per composition, excluding decoder scratch, JavaScript objects, and garbage-collection timing.
 These graphics allocations do not redefine the existing service or retained-state ceilings.
 
 Native command comparisons and same-state preview/capture images are in `../docs/reviews/cutscene-active-dialogue-drawing-20260917/handoff.md`.
@@ -774,7 +774,7 @@ Controller declarations remain indexed by resource pass, with unchanged ordering
 No numeric clock change or historical delay schedule is inferred from this result.
 Source qualification, native controls, and the missing timing-observation plan are in `../docs/reviews/cutscene-playback-cadence-20260917/handoff.md`.
 
-## Candidate mode-zero room drawing
+## Mode-zero room drawing
 
 Import `../docs/reviews/cutscene-room-background-drawing-20260917/playback-input.json` for the reached room with backgrounds enabled.
 This input changes only `externalProducers.value.framebuffer.backgroundPolicy` from `omit` to `require` in the existing shared-Actor input.
@@ -786,13 +786,26 @@ Native B5 geometry applies uniform scale after rotation and translation, includi
 The mode-zero driver draws each background before its matching Actor layer.
 Actor depth ordering remains within each layer; the dialogue compositor paints the current dialogue afterward.
 The same renderer supplies ordinary preview and constructor framebuffer captures.
-The first text state at pass 106 retains the existing approximate dialogue preview.
-Its presentation variant remains unsupported by native dialogue capture; the constructor capture at pass 641 remains supported.
-Pass 3076 shows supported ordinary dialogue over the current room and Actors.
+The opening state at pass 106 and later opening text now use shared native-artwork composition over the current room and Actors.
+The constructor capture at pass 641 remains supported.
 
-Native geometry and layer-selection controls support this candidate; independent review remains pending.
+Native geometry and layer-selection controls belong to the accepted room milestone.
 Other scene modes, shadows, special-effect ordering, exact N64 rasterization, and synchronized original displayed pixels remain outside this result.
 The candidate introduces no native service regions or retained snapshot fields.
 Decoded room artwork uses the existing UI image cache and its unchanged 32 MiB limit.
 Temporary render queues reference existing images and Actors; they do not retain image copies or runtime states.
 The existing 128 KiB service and 128 MiB retained-state limits keep their existing meaning.
+
+## Candidate opening dialogue presentation
+
+The room input above also enables the opening presentation; no additional supplied input is needed.
+Portrait side comes from the current dialogue payload. A right portrait starts at `7 * textColumns + 16` in frame-local coordinates.
+Text starts eight pixels inside the left edge for the right portrait, or 56 pixels inside for the left portrait.
+The horizontal pointer tile selects the current texture offset with the native eight-pixel wrapping behavior.
+The ordinary continuation indicator uses the current visibility byte and animation phase, without a separate preview timer.
+Its four 16-row frames come from the existing ROM artwork.
+
+Other frame styles, continuation types, pointer rows, and nonopaque presentation retain explicit capture boundaries and approximate HTML fallback.
+The first opening window composes through the checked interval ending at pass 640.
+Native controls, composed images, and the next reached boundary are recorded in `../docs/reviews/cutscene-opening-dialogue-presentation-20260917/handoff.md`.
+This candidate adds no native service regions or retained-state fields. Cache and retained-state limits keep their existing meanings.

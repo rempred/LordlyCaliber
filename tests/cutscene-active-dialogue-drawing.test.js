@@ -16,7 +16,7 @@ for(const native of fixture.cases){
 }
 const a=fixture.cases[2],b=fixture.cases[3],first={rgba:new Uint8Array(307200)},changed={rgba:new Uint8Array(307200)};
 OB64.cutsceneDialogueDraw.paint(first,drawer.compose(a.recordHex,a.payloadHex));OB64.cutsceneDialogueDraw.paint(changed,drawer.compose(b.recordHex,b.payloadHex));assert.notDeepStrictEqual(first.rgba,changed.rgba);
-for(const offset of [0x47,0x3d,0x42]){const p=Buffer.from(a.payloadHex,'hex');p[offset]=1;assert.throws(()=>drawer.compose(a.recordHex,p.toString('hex')),/unsupported ordinary dialogue/);}
+for(const offset of [0x47,0x3d,0x42]){const p=Buffer.from(a.payloadHex,'hex');p[offset]=offset===0x47?1:2;assert.throws(()=>drawer.compose(a.recordHex,p.toString('hex')),/unsupported ordinary dialogue/);}
 const unsupported=Buffer.from(a.payloadHex,'hex');unsupported[0x178]=0x81;assert.throws(()=>drawer.compose(a.recordHex,unsupported.toString('hex')),/unsupported encoded/);
 assert.throws(()=>drawer.compose('',a.payloadHex),/complete current/);
 console.log(JSON.stringify({status:'pass',nativeCases:fixture.cases.length,rectangles,changedTextPlacement:true,negativeClipping:true,nativeServiceBytes:0,artworkCacheBytes:drawer.assetBytes,peakTemporaryTextureBytes:peakTextureBytes}));

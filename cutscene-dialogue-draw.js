@@ -56,7 +56,7 @@ Draw.prototype.compose=function(recordHex,payloadHex){
  const r=bytes(recordHex),p=bytes(payloadHex);
  if(r.length!==168||p.length!==1144)fail('complete current dialogue state is required');
  const rv=new DataView(r.buffer),pv=new DataView(p.buffer),s=o=>pv.getInt16(o),u=o=>pv.getUint16(o);
- if(p[0x47]!==0||p[0x3d]!==0||(r[0x91]&4)||p[0x50]||p[0x42]||p[0x56]!==255||p[0x49]!==255)fail('unsupported ordinary dialogue presentation state');
+ if(p[0x47]!==0||p[0x3d]>1||(r[0x91]&4)||p[0x50]||p[0x42]>1||p[0x56]!==255||p[0x49]!==255)fail('unsupported ordinary dialogue presentation state');
  const left=rv.getInt16(6),top=rv.getInt16(8),right=rv.getInt16(10),bottom=rv.getInt16(12),width=s(0x20),height=s(0x22);
  if(width<=0||height<=0||right<left||bottom<top)fail('invalid dialogue rectangle');
  const fx=Math.fround((right-left+1)/width),fy=Math.fround((bottom-top+1)/height),commands=[],clip=[Math.max(0,left),Math.max(0,top),Math.min(319,right+1),Math.min(239,bottom+1)];
@@ -69,13 +69,14 @@ Draw.prototype.compose=function(recordHex,payloadHex){
  }
  const frame=(member)=>({...this.frame(0x2093576,0,member),wrapX:member===1||member===3});
  rectangle(frame(1),8,0,width-12,60);rectangle(frame(0),0,0,7,60);rectangle(frame(2),width-11,0,width-1,60);
- const portrait=s(0x14)>=0;
- if(portrait){const mirror=!!(r[0x8a]&32);rectangle(this.portrait(s(0x14),p[0x4a]),8,5,47,52,mirror?39:0,0,mirror?0:39,47);}
+ // The right portrait follows the native text-column count, not frame width.
+ const portrait=s(0x14)>=0,portraitX=p[0x3d]?7*u(0x1a)+16:8;
+ if(portrait){const mirror=!!(r[0x8a]&32);rectangle(this.portrait(s(0x14),p[0x4a]),portraitX,5,portraitX+39,52,mirror?39:0,0,mirror?0:39,47);}
  if(!(rv.getUint16(0)&0x1000)&&p[0x178]){
   const start=p[0x4f]?u(0xb8+p[0x54]*2):u(0x36),count=u(0x34);
   if(start>count||count>0x300)fail('invalid dialogue text bounds');
   const text=p.subarray(0x178+start,0x178+count),metrics=O.art.readResource(this.z64,0x218c450).stored;
-  const origin=left+(portrait?56:8);let x=origin,y=top+5,color=p[0x4b]<10?p[0x4b]:0,spacing=0,lineGap=3;
+  const origin=left+(portrait&&!p[0x3d]?56:8);let x=origin,y=top+5,color=p[0x4b]<10?p[0x4b]:0,spacing=0,lineGap=3;
   const view=new DataView(this.z64.buffer,this.z64.byteOffset,this.z64.byteLength);
   const emit=(index)=>{
    if(index<0||index>=metrics.length)fail('unsupported glyph index');
@@ -93,9 +94,18 @@ Draw.prototype.compose=function(recordHex,payloadHex){
    if(c<32||c>=128)fail('unsupported encoded dialogue character');if(c===32)x+=metrics[48]+spacing;else emit(c+16);
   }
  }
+ if(p[0x42]===1){
+  // Native continuation animation selects one 16-row frame from member 4.
+  const indicator=frame(4),frameBytes=indicator.stride*16,phase=p[0x43]>>>6;
+  if(indicator.width!==16||indicator.height!==64)fail('unsupported continuation artwork');
+  indicator.indices=indicator.indices.slice(phase*frameBytes,(phase+1)*frameBytes);indicator.height=16;
+  const x=7*u(0x1a)+(portrait&&!p[0x3d]?40:-8);
+  rectangle(indicator,x,38,x+15,53);
+ }
  // Ordinary speech pointer uses the current payload's local position and tile.
- if(p[0x3a]||p[0x3b])fail('unsupported speech pointer tile');
- rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,0,0,7,12,[0,0,319,239]);
+ if(p[0x3a]>1||p[0x3b])fail('unsupported speech pointer tile');
+ // Tile 1 begins at U=8 and wraps over the existing eight-pixel texture.
+ rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,p[0x3a]*8,0,p[0x3a]*8+7,12,[0,0,319,239]);
  const seen=new Set();let textureBytes=0;commands.forEach(c=>{if(!seen.has(c.texture.indices)){seen.add(c.texture.indices);textureBytes+=c.texture.indices.byteLength;} });
  return {commands,nativeServiceBytes:0,artworkCacheBytes:this.assetBytes,temporaryTextureBytes:textureBytes};
 };
