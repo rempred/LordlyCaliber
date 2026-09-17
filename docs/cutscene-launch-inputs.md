@@ -773,3 +773,26 @@ Graphics-task capture indices have no fixed video-time conversion.
 Controller declarations remain indexed by resource pass, with unchanged ordering and Actor values per pass.
 No numeric clock change or historical delay schedule is inferred from this result.
 Source qualification, native controls, and the missing timing-observation plan are in `../docs/reviews/cutscene-playback-cadence-20260917/handoff.md`.
+
+## Candidate mode-zero room drawing
+
+Import `../docs/reviews/cutscene-room-background-drawing-20260917/playback-input.json` for the reached room with backgrounds enabled.
+This input changes only `externalProducers.value.framebuffer.backgroundPolicy` from `omit` to `require` in the existing shared-Actor input.
+The ordinary launch route and its declared controller, camera, world, and audio inputs remain unchanged.
+The earlier omission inputs still explicitly omit room artwork.
+
+The renderer decodes the six current room image resources and applies their current transform channels.
+Native B5 geometry applies uniform scale after rotation and translation, including the translated coordinates.
+The mode-zero driver draws each background before its matching Actor layer.
+Actor depth ordering remains within each layer; the dialogue compositor paints the current dialogue afterward.
+The same renderer supplies ordinary preview and constructor framebuffer captures.
+The first text state at pass 106 retains the existing approximate dialogue preview.
+Its presentation variant remains unsupported by native dialogue capture; the constructor capture at pass 641 remains supported.
+Pass 3076 shows supported ordinary dialogue over the current room and Actors.
+
+Native geometry and layer-selection controls support this candidate; independent review remains pending.
+Other scene modes, shadows, special-effect ordering, exact N64 rasterization, and synchronized original displayed pixels remain outside this result.
+The candidate introduces no native service regions or retained snapshot fields.
+Decoded room artwork uses the existing UI image cache and its unchanged 32 MiB limit.
+Temporary render queues reference existing images and Actors; they do not retain image copies or runtime states.
+The existing 128 KiB service and 128 MiB retained-state limits keep their existing meaning.

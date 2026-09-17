@@ -1208,7 +1208,10 @@ window.OB64 = window.OB64 || {};
     });
     var cues = [];
     preview.audio.forEach(function(row) {
-      cues.push('Sound · ' + (row.payload.cue || row.payload.assetId || 'unresolved cue'));
+      // Native request events describe service requests rather than timeline clips.
+      cues.push(row.payload
+        ? 'Sound · ' + (row.payload.cue || row.payload.assetId || 'unresolved cue')
+        : 'Sound request');
     });
     preview.effects.forEach(function(row) {
       if (row.payload.sourceSystem === 'cutscene-sprite-native') {

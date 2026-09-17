@@ -1,0 +1,544 @@
+{
+  "generator": "docs/reviews/cutscene-room-background-drawing-20260917/generate-fixture.js",
+  "projection": {
+    "mode": "native-perspective-runtime",
+    "status": "Qualified captured main-Actor camera; native rounding and image agreement remain separate.",
+    "modelScale": 1,
+    "eye": {
+      "x": 0,
+      "y": 0,
+      "z": 120
+    },
+    "target": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "up": {
+      "x": 0,
+      "y": 1,
+      "z": 0
+    },
+    "fovYDegrees": 5,
+    "aspect": 1.3333300352096558,
+    "near": 1,
+    "far": 5000,
+    "screenWidth": 320,
+    "screenHeight": 240,
+    "sourceNodeId": "runtime-observation",
+    "evidenceStatus": "qualified-captured-main-actor"
+  },
+  "cases": [
+    {
+      "layer": 0,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": 94,
+          "assetId": "archive:94",
+          "compound": null,
+          "consumerEvidence": null,
+          "container": "bg2",
+          "declaredRecordCount": 4,
+          "displayName": "kaigi_base.bg2",
+          "exportCapability": "needs-research",
+          "family": "background",
+          "filename": "kaigi_base.bg2",
+          "format": 1,
+          "height": 303,
+          "layout": null,
+          "nativeRecord": null,
+          "nativeRecords": [
+            {
+              "dataSize": 153600,
+              "height": 240,
+              "ordinal": 0,
+              "reserved": 0,
+              "width": 320,
+              "x": -200,
+              "y": -150
+            },
+            {
+              "dataSize": 40960,
+              "height": 64,
+              "ordinal": 1,
+              "reserved": 0,
+              "width": 320,
+              "x": -200,
+              "y": 89
+            },
+            {
+              "dataSize": 46080,
+              "height": 240,
+              "ordinal": 2,
+              "reserved": 0,
+              "width": 96,
+              "x": 119,
+              "y": -150
+            },
+            {
+              "dataSize": 12288,
+              "height": 64,
+              "ordinal": 3,
+              "reserved": 0,
+              "width": 96,
+              "x": 119,
+              "y": 89
+            }
+          ],
+          "previewCapability": "native",
+          "reference": {
+            "x": 200,
+            "y": 150
+          },
+          "renderable": true,
+          "source": {
+            "archiveHeaderZ64": 29655068,
+            "compressedSize": 86791,
+            "compressionMethod": "-lh5-",
+            "consumerStatus": "unresolved",
+            "decodedSha256": "A40BF8B8E582744C45E09341283ECD502D40775363F9169B1CFE6098B676DA61",
+            "decodedSize": 253000,
+            "signatureHex": "4235010400C80096FF38FF6A014000F0",
+            "uncompressedSize": 253000
+          },
+          "sourceKind": "lha-archive",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 415
+        },
+        "container": "bg2",
+        "format": 1,
+        "renderable": true,
+        "capability": "native",
+        "width": 415,
+        "height": 303,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": -200,
+        "originY": -150,
+        "compoundAssembled": false,
+        "warning": "Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 1,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016CF91E",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016CF91E",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 128,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 4,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "4FA24167576D309443FBCBBB5DD60C9442DE5FFB38ED13848B34A295C450E9B6",
+            "decodedSize": 32632,
+            "resourceKey": 23918878,
+            "sizeWordZ64": 29768606,
+            "storedSha256": "40E5114867A13BF5B516AFA2E5C17F281FE05F9F9E4C88EB927D68D440AF4DE8",
+            "storedSize": 8680,
+            "z64EndExclusive": 29777290,
+            "z64Start": 29768610
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 96
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 96,
+        "height": 128,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": -152,
+        "originY": -102,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 3,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016C90D4",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016C90D4",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 96,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 6,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "ADE7425143D7F9823623E96DD009116AF02E86C8E6703E695F89C17EE4762EFD",
+            "decodedSize": 30008,
+            "resourceKey": 23892180,
+            "sizeWordZ64": 29741908,
+            "storedSha256": "B1A5002D2936E5E6AD8DFAFE16517194B08FBAC3260BBA112333B3C1668F82E9",
+            "storedSize": 5704,
+            "z64EndExclusive": 29747616,
+            "z64Start": 29741912
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 161
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 161,
+        "height": 96,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": -88,
+        "originY": 10,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 4,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016CA720",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016CA720",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 176,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 4,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "37476F30F1C69BFB9299A124F5E6DCC23B24920ECDBEAB1FECEFDA4585F38E7D",
+            "decodedSize": 25464,
+            "resourceKey": 23897888,
+            "sizeWordZ64": 29747616,
+            "storedSha256": "36AB772A590875B1FC58ADEB436B55183EA64346F537DFFB54BED76527DDEAC8",
+            "storedSize": 5562,
+            "z64EndExclusive": 29753182,
+            "z64Start": 29747620
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 64
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 64,
+        "height": 176,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": 136,
+        "originY": -70,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 5,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016CBCDE",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016CBCDE",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 76,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 3,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "98484D434444EFAFCD4E3C0BA9675BC9EE1D5D4BED872F5EBBFD7A0F2288DD45",
+            "decodedSize": 13240,
+            "resourceKey": 23903454,
+            "sizeWordZ64": 29753182,
+            "storedSha256": "8CC607EF82A3B8D51D86CC7BC60633F07175F57B8C01E348BAE608BA86FDFC3E",
+            "storedSize": 3206,
+            "z64EndExclusive": 29756392,
+            "z64Start": 29753186
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 64
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 64,
+        "height": 76,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": 56,
+        "originY": 74,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 6,
+      "changed": false,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016CC968",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016CC968",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 80,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 2,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "7638CC6D7F2E3A336F8F4A6D2E80114F9876DD1613047B73759F3C33B655F0F4",
+            "decodedSize": 11816,
+            "resourceKey": 23906664,
+            "sizeWordZ64": 29756392,
+            "storedSha256": "C2F13B1FE9B0E70667F77BA0DAD2C8A9EF8A2B87A33CB537C8519C2B87CC7E7D",
+            "storedSize": 3189,
+            "z64EndExclusive": 29759585,
+            "z64Start": 29756396
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 48
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 48,
+        "height": 80,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": -152,
+        "originY": 42,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -45,
+        "translateY": 25,
+        "rotationX": 0,
+        "rotationY": 0,
+        "translateZ": 0,
+        "uniformScale": 1
+      },
+      "matrixHex": "000000000000000000000000000000000000000000000000fffe0001000000010b2d00000000000000000b2d00000000000000000b2d00000907176e00000000"
+    },
+    {
+      "layer": 1,
+      "changed": true,
+      "image": {
+        "asset": {
+          "archiveIndex": null,
+          "assetId": "scene-resource:016CF91E",
+          "consumerEvidence": {
+            "consumerStatus": "exact ordered member of one or more native scene groups",
+            "evidenceGrade": "direct",
+            "firstMissingJoin": "final per-member depth and blend semantics"
+          },
+          "container": "bg2",
+          "displayName": "Scene visual resource 0x016CF91E",
+          "exportCapability": "native-group-selector",
+          "family": "background",
+          "filename": null,
+          "format": 0,
+          "height": 128,
+          "layout": null,
+          "previewCapability": "preview-only",
+          "renderable": true,
+          "source": {
+            "b5Format": 0,
+            "b5RecordCount": 4,
+            "b5ReferenceHeight": 150,
+            "b5ReferenceWidth": 200,
+            "compressionKind": "ob64-custom-lz",
+            "consumerStatus": "native scene-group member",
+            "decodedSha256": "4FA24167576D309443FBCBBB5DD60C9442DE5FFB38ED13848B34A295C450E9B6",
+            "decodedSize": 32632,
+            "resourceKey": 23918878,
+            "sizeWordZ64": 29768606,
+            "storedSha256": "40E5114867A13BF5B516AFA2E5C17F281FE05F9F9E4C88EB927D68D440AF4DE8",
+            "storedSize": 8680,
+            "z64EndExclusive": 29777290,
+            "z64Start": 29768610
+          },
+          "sourceKind": "rom-resource",
+          "subtype": null,
+          "unsupportedReason": null,
+          "width": 96
+        },
+        "container": "bg2",
+        "format": 0,
+        "renderable": true,
+        "capability": "preview-only",
+        "width": 96,
+        "height": 128,
+        "reference": {
+          "x": 200,
+          "y": 150
+        },
+        "originX": -152,
+        "originY": -102,
+        "compoundAssembled": false,
+        "warning": "The paired I8 plane is previewed as alpha. Native blend and occlusion semantics remain unresolved. Record order is used as preview depth; native depth ordering remains unresolved. B5 reference coordinates are retained as container metadata; Stage placement uses the signed native record coordinates."
+      },
+      "transform": {
+        "translateX": -21,
+        "translateY": 37,
+        "rotationX": 12,
+        "rotationY": -17,
+        "translateZ": 4,
+        "uniformScale": 0.75
+      },
+      "matrixHex": "0000000000000000ffff000000000000ffffffff00000000ffff0001000000010804000002730000ff7f083201aa0000fd9bfe4307d700004ff6362a21870000"
+    }
+  ]
+}

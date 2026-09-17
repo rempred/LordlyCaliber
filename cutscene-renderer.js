@@ -834,15 +834,13 @@ window.OB64 = window.OB64 || {};
       { x: origin.x + image.width, y: -origin.y, z: 0 },
       { x: origin.x + image.width, y: -(origin.y + image.height), z: 0 },
       { x: origin.x, y: -(origin.y + image.height), z: 0 }
-    ].map(function(point) {
-      return {
-        x: point.x * uniformScale,
-        y: point.y * uniformScale,
-        z: point.z * uniformScale
-      };
-    });
+    ];
     var sceneQuad = localQuad.map(function(point) {
-      return transformModeZeroStagePoint(point, channel, actorProjection);
+      // The native B5 consumer concatenates scale after the prepared stage
+      // matrix. Translation therefore receives the same uniform scale.
+      var transformed = transformModeZeroStagePoint(point, channel, actorProjection);
+      return { x: transformed.x * uniformScale,
+        y: transformed.y * uniformScale, z: transformed.z * uniformScale };
     });
     if (sceneQuad.some(function(point) {
       var depth = projectionDepth(point, actorProjection, 1);
@@ -1256,7 +1254,21 @@ window.OB64 = window.OB64 || {};
       ? options.scenePropFrames : [];
     var backgroundCamera = backgroundProjection.calibrationCamera
       ? relativeCameraTransform(camera, backgroundProjection.calibrationCamera) : camera;
-    renderBackgrounds(output, backgrounds, backgroundProjection, projection,
+    // The mode-zero driver visits native layer ordinals in order. Each layer's
+    // background precedes its Actor pass; depth sorting applies within that pass.
+    var nativeBackgrounds = nativePerspectiveProjection(projection) &&
+        backgroundProjection.mode !== 'b5-reference-capture'
+      ? backgrounds.filter(function(entry) {
+        return entry && entry.layer &&
+          entry.layer.renderPipeline === 'mode-zero-b5-actor-camera' &&
+          Number.isInteger(entry.layer.nativeOrdinal) &&
+          backgroundRole(entry) !== 'foreground-mask';
+      }) : [];
+    var orderedLayers = nativeBackgrounds.length > 0 ||
+      !!options._layerPass && nativePerspectiveProjection(projection);
+    renderBackgrounds(output, backgrounds.filter(function(entry) {
+      return nativeBackgrounds.indexOf(entry) < 0;
+    }), backgroundProjection, projection,
       'base', backgroundCamera);
     renderOrthographicStageProps(output, scenePropFrames, 'far', backgroundCamera);
     var paths = options._layerPass||options.showMovementPaths===false?[]:movementPaths(document, projection, options.selectedActorId);
@@ -1280,6 +1292,7 @@ window.OB64 = window.OB64 || {};
       var modeZeroGeometry = nativeActorGeometry(actor,previewState)||modeZeroActorGeometry(actor, previewState, projection);
       return {
         kind: 'actor', actor: actor, geometry: modeZeroGeometry, order: index,
+        layer: Number.isInteger(actor.transformChannel) ? actor.transformChannel : 0,
         depth: modeZeroGeometry&&modeZeroGeometry.nativePacked?modeZeroGeometry.depth:modeZeroGeometry
           ? projectionDepth(modeZeroGeometry.scenePoint, modeZeroGeometry.projection)
           : (nativePerspectiveProjection(projection)
@@ -1287,6 +1300,23 @@ window.OB64 = window.OB64 || {};
           )
       };
     });
+    nativeBackgrounds.forEach(function(entry, index) {
+      renderQueue.push({ kind: 'background', entry: entry,
+        layer: entry.layer.nativeOrdinal, order: index });
+    });
+    var renderedSceneVignette = null;
+    function drawCurrentVignette() {
+      return previewState.imageEcho && options.sceneVignette
+        ? renderImageEcho(output, options.sceneVignetteImage, previewState.imageEcho,
+          previewState.actorProjection,
+          (previewState.transformChannels || [])[options.sceneVignette.activeSlotByte], true)
+        : renderSceneVignette(output, options.sceneVignetteImage, options.sceneVignette,
+          options.oversizedImageView, camera);
+    }
+    var orderedVignette = orderedLayers && options.sceneVignette &&
+      Number.isInteger(options.sceneVignette.activeSlotByte);
+    if (orderedVignette) renderQueue.push({ kind: 'vignette',
+      layer: options.sceneVignette.activeSlotByte, order: 0 });
     scenePropFrames.filter(function(entry) {
       return entry && entry.placement &&
         entry.placement.projection === 'native-actor-perspective';
@@ -1299,12 +1329,28 @@ window.OB64 = window.OB64 || {};
     });
     if (nativePerspectiveProjection(projection)) {
       renderQueue.sort(function(left, right) {
+        if (orderedLayers) {
+          var layerDifference = (left.layer || 0) - (right.layer || 0);
+          if (layerDifference) return layerDifference;
+          var leftBackground = left.kind === 'background' || left.kind === 'vignette';
+          var rightBackground = right.kind === 'background' || right.kind === 'vignette';
+          if (leftBackground !== rightBackground) return leftBackground ? -1 : 1;
+        }
         var leftDepth = Number.isFinite(left.depth) ? left.depth : 0;
         var rightDepth = Number.isFinite(right.depth) ? right.depth : 0;
         return rightDepth - leftDepth || left.order - right.order;
       });
     }
     renderQueue.forEach(function(renderEntry) {
+      if (renderEntry.kind === 'background') {
+        renderBackgrounds(output, [renderEntry.entry], backgroundProjection, projection,
+          'base', backgroundCamera);
+        return;
+      }
+      if (renderEntry.kind === 'vignette') {
+        renderedSceneVignette = drawCurrentVignette();
+        return;
+      }
       if (renderEntry.kind === 'stage-prop') {
         var prop = renderEntry.entry.placement;
         var propPoint = transformStagePoint(projectPointFloat(prop, projection), camera);
@@ -1371,9 +1417,7 @@ window.OB64 = window.OB64 || {};
       blitScaledRotated(output, image, center.x, center.y, width, height,
         anchorX, anchorY, effect.rotationDegrees);
     });
-    var renderedSceneVignette = previewState.imageEcho&&options.sceneVignette?renderImageEcho(output,options.sceneVignetteImage,previewState.imageEcho,previewState.actorProjection,(previewState.transformChannels||[])[options.sceneVignette.activeSlotByte],true):renderSceneVignette(
-      output, options.sceneVignetteImage, options.sceneVignette,
-      options.oversizedImageView, camera);
+    if (!orderedVignette) renderedSceneVignette = drawCurrentVignette();
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
       'foreground', backgroundCamera);
     modulateSurface(output, options.colorModulation);
