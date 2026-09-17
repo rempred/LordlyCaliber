@@ -41,7 +41,15 @@ window.OB64=window.OB64||{};
   if(r.initialize===0x8022643c&&this.colorService){if(kind==='callback'&&r.callback!==0x80226538)stop('The color resource callback differs from its qualified binding.','dialogue-scheduler-callback');this.machine.put(0x800c4c20,slot);yield* this.colorService(slot,kind);this.trace.push({service:kind,slot:slot,resource:'color'});return;}
   if(r.initialize!==0x80198be8||(kind==='callback'&&r.callback!==0x8019981c)||!owner)stop('A reached resource callback lacks a supported dialogue owner.','dialogue-scheduler-callback');
   this.machine.put(0x800c4c20,slot);
-  yield* this.engine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:{...this.control,queueHead:this.machine.get(0x800c4c10,2)}},true);
+  // Generated input belongs to this callback owner. Declared controller masks
+  // retain the native dispatch semantics for every resource, including history.
+  var controller={...this.control,queueHead:this.machine.get(0x800c4c10,2)},pulse=this.autoPulse;
+  if(kind==='callback'&&pulse&&pulse.slot===slot&&pulse.owner===owner&&controller.queueHead===slot){
+   controller.actionMask|=0x8000;controller.historyMask|=0x8000;
+   this.autoPulse=null;this.autoRelease=pulse;
+   this.trace.push({service:'automatic-page-acknowledgement',slot:slot,timing:'simulated-next-eligible-pass'});
+  }
+  yield* this.engine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:controller},true);
   if(this.machine.get(POOL+slot*STRIDE+3,1)&2)stop('This callback requires the native render-node attachment service.','dialogue-scheduler-render-context');
   this.trace.push({service:kind,slot:slot});
  };
@@ -49,7 +57,8 @@ window.OB64=window.OB64||{};
   if(pass>this.input.controller.throughPass)stop('Controller declaration ends before this resource pass.','dialogue-controller-history');
   while(this.controlCursor+1<this.input.controller.changes.length&&this.input.controller.changes[this.controlCursor+1].pass<=pass)this.controlCursor++;
   this.control={...this.input.controller.changes[this.controlCursor]};this.trace=[];
-  const release=this.autoRelease;this.autoRelease=false;
+  // The following pass supplies no generated pulse; it never clears manual input.
+  const release=this.autoRelease;this.autoRelease=null;this.autoPulse=null;
   if(this.machine.get(0x800c4c26,2)!==0xffff)stop('A pending bulk resource cleanup is outside this pass profile.','dialogue-scheduler-cleanup');
   if(this.machine.get(0x800c49d0,2)>6)stop('The resource queue count exceeds the six-slot pool.','dialogue-scheduler-queue');
   if(this.machine.get(0x800c49d0,2)){yield* this.queue('opening');yield* this.queue('closing');yield* this.queue('priority');}
@@ -58,7 +67,7 @@ window.OB64=window.OB64||{};
   // Only the focused, ordinary dialogue resource can receive an automatic pulse.
   const page=this.machine.get(0x800c4c10,2),owner=this.engine.owners[page],binding=page<6?this.read(page):null;
   if(this.input.pageAdvancePolicy==='automatic'&&!release&&binding&&(binding.flags&0xa000)===0xa000&&binding.initialize===0x80198be8&&binding.callback===0x8019981c&&owner&&owner.payload&&owner.payload.length===1144&&[3,6].includes(owner.payload[0x3c])){
-   this.control.actionMask|=0x8000;this.control.historyMask|=0x8000;this.autoRelease=true;this.trace.push({service:'automatic-page-acknowledgement',slot:page,timing:'simulated-next-eligible-pass'});
+   this.autoPulse={slot:page,owner:owner};
   }
 
   for(var slot=0;slot<this.input.directorSlot;slot++)yield* this.callback(slot);
