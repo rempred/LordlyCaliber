@@ -1419,9 +1419,10 @@ window.OB64 = window.OB64 || {};
         translatedWordOffsets: translatedWordOffsets
       };
     }
-    var observedBackground = observationBackground(scene, document, catalog);
+    var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.invocationId==='rom-start';
+    var observedBackground = romOnlyStart?null:observationBackground(scene, document, catalog);
     var documentBackground = documentModeTwoBackground(document, catalog);
-    var directorMode = directorModeFromProfile(scene);
+    var directorMode = romOnlyStart?{value:2,status:'Isolated preview mode-two caller',evidenceStatus:'preview-default'}:directorModeFromProfile(scene);
     var modeTwoCommandPreviewUsesFreshRoot = directorMode.value === 2 &&
       launchProfile.background && launchProfile.background.requestCount > 0;
     var suppliedContextRuntime = options.contextRuntime && (
@@ -1483,7 +1484,7 @@ window.OB64 = window.OB64 || {};
     if (directorMode.evidenceStatus === 'external-unresolved') {
       missing('The launch profile cannot identify this stream\'s Director mode.');
     }
-    if (launchProfile.cameras.actor.evidenceStatus === 'external-unresolved') {
+    if (!romOnlyStart && launchProfile.cameras.actor.evidenceStatus === 'external-unresolved') {
       missing('The launch profile does not contain this scene\'s initial Actor camera.');
     }
     var launchInputs = validateLaunchInputs(options.nativeLaunchInputs, scene.assetId);
@@ -1610,7 +1611,7 @@ window.OB64 = window.OB64 || {};
             if(!OB64.cutsceneDirectorLaunch||launchValue('capturedSnapshot')||launchValue('existingActors')||contextRuntime)fail('Fresh Director launch cannot inherit a captured or concurrent Actor namespace.','director-launch-input');
             nativeLaunch=new OB64.cutsceneDirectorLaunch(externalProducers.directorLaunch,options.z64);
             var launchBinding=resourceScheduler.read(resourceScheduler.input.directorSlot);
-            if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==0x80225a1c)fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
+            if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==(nativeLaunch.input.sceneMode===2?0x802260f0:0x80225a1c))fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
             if(externalEventCount(externalProducers.events)||(externalProducers.colorCreates||[]).length)fail('Fresh launch must omit recorded resource and color events.','director-launch-input');
             if(nativeLaunch.resourceKey!==parseInt(scene.directorKey,16))fail('Director selector does not resolve to the selected ROM stream.','director-launch-selector');
             resourceScheduler.initializeDirector=initializeDirectorResource;
@@ -1859,6 +1860,7 @@ window.OB64 = window.OB64 || {};
 
     function qualifiedPoseForActor(actor, kind) {
       var registry = launchValue('poseRegistry');
+      if (!registry&&nativeLaunch&&nativeLaunch.input.sceneMode===2)registry={ordinary:[],alternate:nativeLaunch.poseRegistry};
       if (!registry) return null;
       var body = actor.bodyPoseProgram || {};
       var owner = Number.isInteger(body.ownerContext) ? body.ownerContext : actor.nativeOwnerContext;
@@ -2484,7 +2486,7 @@ window.OB64 = window.OB64 || {};
         }
         if (state.directorMode === 2) {
           if (actor.nativeRecordBase || actor.source && actor.source.recordHex) forgetNativeRecord(actor);
-          missing('Mode-two movement terrain and proximity helpers remain outside the planar Actor contract.');
+          if(!nativeLaunch||nativeLaunch.input.proximityFlags&8||actor.heightModeByte&1)missing('Mode-two movement requires terrain or proximity inputs outside the planar Actor contract.');
         }
       } catch (error) {
         if (!(error instanceof RuntimeError)) throw error;
@@ -2555,6 +2557,7 @@ window.OB64 = window.OB64 || {};
         duration = lowU16(Math.max(lowS16(translationCount), lowS16(scaleCount)));
       }
       if (duration === 0) return;
+      if(nativeLaunch&&nativeLaunch.input.sceneMode===2)OB64.cutsceneRomStart.projection(nativeLaunch,target,duration);
       state.projectionJob = {
         nodeId: node.id,
         duration: duration,
@@ -2857,6 +2860,16 @@ window.OB64 = window.OB64 || {};
 
     function executeBackground(node, words) {
       var commandOperand = signed(words[1]);
+      if(nativeLaunch&&nativeLaunch.input.sceneMode===2){
+        var selector=nativeLaunch.input.environmentSelector;
+        if(!Number.isInteger(selector)||selector<0||selector>=80){producerBoundary('Fresh Stage requires an explicit ROM environment selector.','rom-start-environment');return;}
+        var base=catalog.getBackgroundSelectorEntry('background-table:mode2-environment:80',selector);
+        var front=catalog.getBackgroundSelectorEntry('background-table:mode2-overlay:80',selector);
+        var layers=(base&&base.stageLayers||[]).concat(backgroundLayers(front,M.capabilities.PREVIEW_ONLY,catalog).map(function(layer){return {assetId:layer.assetId,role:'foreground-mask',depth:100+layer.nativeOrdinal,nativeOrdinal:layer.nativeOrdinal,evidenceStatus:'ROM-selector',associationStatus:'ROM foreground selector'};}));
+        state.background=stagedBackground(layers,{background:{projection:{mode:'native-perspective-runtime'}}},{sourceKind:'ROM-launch-prescan',runtimeStatus:'ROM launch pre-scan and normal foreground copy',selectorTableId:'background-table:mode2-environment:80',selector:selector,environmentSelector:selector,foregroundSelector:selector,foregroundSelectorTableId:'background-table:mode2-overlay:80',nativeSceneProps:modeTwoStageProps(catalog,selector)});
+        if(!state.background){producerBoundary('ROM environment has no supported Stage.','rom-start-environment');return;}
+        return;
+      }
       if(framebufferProfile&&nativeLaunch){try{if(framebufferLayerCount)fail('Additional background registrations require cumulative layer resource ownership.','framebuffer-layers');var directory=nativeLaunch.resource(0x016b3d18);if(commandOperand<0||commandOperand*4+4>directory.length)fail('Background selector exceeds its ROM directory.','framebuffer-layers');var key=new DataView(directory.buffer,directory.byteOffset,directory.byteLength).getUint32(commandOperand*4),group=nativeLaunch.resource(key);if(group.length%4)fail('Background group is not word aligned.','framebuffer-layers');framebufferLayerCount+=group.length/4;if(framebufferLayerCount>20)fail('Background registration exceeds twenty layers.','framebuffer-layers');}catch(error){producerBoundary(error.message,error.code);return;}}
       if (documentBackground && directorMode.value === 2) {
         state.background = M.cloneJson(documentBackground.background,
@@ -2978,13 +2991,16 @@ window.OB64 = window.OB64 || {};
               var ownerActor=state.actors[signed(words[4])],renderer=OB64.cutsceneRenderer;
               if(!ownerActor&&nativeLaunch&&signed(words[4])>=0&&signed(words[4])<28)point={absentActor:true};
               else {
-              if(!ownerActor||!renderer||(!extendedModeTwoResume && state.directorMode!==0)||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
+              if(!ownerActor||!renderer||(!extendedModeTwoResume && !nativeLaunch && state.directorMode!==0)||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
+              if(nativeLaunch&&state.directorMode===2)point=OB64.cutsceneRomStart.dialoguePoint(nativeLaunch,ownerActor,state.cameras.actor);
+              else {
               var channel=state.transformChannels[ownerActor.transformChannel]||identityTransformChannel();
               var renderedY=ownerActor.heightModeByte&4?ownerActor.y+ownerActor.secondaryY:ownerActor.heightModeByte&2?ownerActor.secondaryY:ownerActor.y;
               var geometry=renderer.modeZeroActorGeometry({x:ownerActor.x,y:renderedY,z:ownerActor.z,sceneTransform:channel,renderPipeline:'mode-zero-registered-prepass-actor-camera'},
                 {registeredProjection:projectionFromCamera(state.cameras.registered)},projectionFromCamera(state.cameras.actor));
               if(!geometry)fail('Dialogue placement could not project the current Actor.','dialogue-constructor-placement');
               point=extendedModeTwoResume?capturedScheduler.dialoguePoint(ownerActor.slot):renderer.projectPointFloat(geometry.scenePoint,geometry.projection);
+              }
               }
             }
             registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;if(extendedModeTwoResume)capturedScheduler.compareDialogueRegistration(nativeSlot);
@@ -3322,6 +3338,10 @@ window.OB64 = window.OB64 || {};
       var slot = signed(words[1]);
       var actor = actorForCommand(slot, 'Body-pose program');
       if (!actor) return;
+      if(nativeLaunch&&nativeLaunch.input.sceneMode===2){
+        try{var computed=OB64.cutsceneRomStart.bodyPose(nativeLaunch,words,Object.keys(state.actors).map(function(slot){var record=nativeRecordForActor(state.actors[slot]);if(!record)fail('Missing fresh Actor record '+slot,'rom-start-record');return {slot:Number(slot),bytes:new Uint8Array(record.buffer)};}));applyNativeRecord(actor,new DataView(computed.buffer),'computed-ROM-body-initializer');updateActorPose(actor);return;}
+        catch(error){actorBoundary(error.message,error.code||'rom-start-body');return;}
+      }
       var setup=actorService('bodyPoseSetups',node);
       if (setup) {
         if (!setup.words.every(function(v,i){return unsigned(v)===unsigned(words[i]);})) {
@@ -3947,7 +3967,7 @@ window.OB64 = window.OB64 || {};
       // A complete imported record is usable for shallow-copy construction only
       // while every intervening native byte write is represented here. Older
       // presentation commands have partial models, so they invalidate that input.
-      if (!(extendedModeTwoResume && opcode===0x03) && !node.query && ![0x07,0x2A,0x45,0xAB,0x92,0x96,0xA6,0xC2].includes(opcode) &&
+      if (!(nativeLaunch&&opcode===0x14) && !(extendedModeTwoResume && opcode===0x03) && !node.query && ![0x07,0x2A,0x45,0xAB,0x92,0x96,0xA6,0xC2].includes(opcode) &&
           (/actor|body_pose/.test(node.name) || [0x1C,0x1D,0x1E,0x22,0x48].includes(opcode))) {
         Object.keys(state.actors).forEach(function(slot) {
           var actor=state.actors[slot];
@@ -4299,6 +4319,7 @@ window.OB64 = window.OB64 || {};
       if (!job) return;
       job.elapsed += 1;
       job.remaining -= 1;
+      if(nativeLaunch&&nativeLaunch.input.sceneMode===2){state.projectionTransform=OB64.cutsceneRomStart.projection(nativeLaunch);if(job.remaining<=0)state.projectionJob=null;return;}
       var amount = clamp(job.elapsed / job.duration, 0, 1);
       state.projectionTransform = {
         translateX: mix(job.from.translateX, job.to.translateX, amount),
@@ -5447,17 +5468,18 @@ window.OB64 = window.OB64 || {};
     }
     function* initializeDirectorResource(slot) {
       var e=dialogueEngine,m=e.machine,a=0x800e82c8+slot*168;
-      if(m.get(a+0x10)!==0x80225a1c)fail('Fresh launch requires the qualified Director initializer.','director-launch-binding');
+      if(m.get(a+0x10)!==(nativeLaunch.input.sceneMode===2?0x802260f0:0x80225a1c))fail('Fresh launch requires the qualified Director initializer.','director-launch-binding');
       m.put(0x800c4c20,slot);
       var record=Uint8Array.from({length:168},function(_,i){return m.get(a+i,1);});
       record[4]=6;
       if(slot===m.get(0x800c4c10,2))record[2]|=4;
       yield* nativeLaunch.initialize(record);
       launchInitialization=nativeLaunch.snapshot();
-      state.directorMode=0;state.directorModeStatus='computed-mode-zero-launch';
+      state.directorMode=nativeLaunch.input.sceneMode;
+      if(state.directorMode===2)state.projectionTransform=OB64.cutsceneRomStart.projectionState(nativeLaunch);state.directorModeStatus='computed-native-launch';
       var camera=launchBytes(launchInitialization.cameraHex,144);
       ['actor','registered'].forEach(function(bank,index){var at=index?88:0,values=Array.from({length:14},function(_,i){return camera.getFloat32(at+i*4);});
-        state.cameras[bank]=cameraFromProjection({fovYDegrees:values[0],aspect:values[1],near:values[2],far:values[3],modelScale:bank==='actor'?1:Math.fround(0.1),eye:{x:values[5],y:values[6],z:values[7]},target:{x:values[8],y:values[9],z:values[10]},up:{x:values[11],y:values[12],z:values[13]},evidenceStatus:'computed-native-initializer'},'Computed mode-zero camera from native initialization and declared preserved fields.');});
+        state.cameras[bank]=cameraFromProjection({fovYDegrees:values[0],aspect:values[1],near:values[2],far:values[3],modelScale:nativeLaunch.input.sceneMode===2?new DataView(nativeLaunch.read(0x801ce8e4,4).buffer).getFloat32(0):bank==='actor'?1:Math.fround(0.1),eye:{x:values[5],y:values[6],z:values[7]},target:{x:values[8],y:values[9],z:values[10]},up:{x:values[11],y:values[12],z:values[13]},sourceNodeId:'rom-director-initializer',evidenceStatus:'computed-native-initializer'},'Computed camera from native initialization and declared preserved fields.','rom-director-initializer');});
       var context=launchBytes(launchInitialization.contextHex,30);state.sceneColor={red:context.getUint16(0),green:context.getUint16(2),blue:context.getUint16(4)};
       recordTrace({tick:state.tick,kind:'director-launch-initializer',selector:nativeLaunch.input.selector,resourceKey:nativeLaunch.resourceKey,rootAddress:launchInitialization.rootAddress});
       for(var j=0;j<168;j++)m.put(0x800e7a30+j,parseInt(launchInitialization.recordHex.slice(j*2,j*2+2),16),1);
@@ -5527,7 +5549,7 @@ window.OB64 = window.OB64 || {};
       if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');
       if (!stopReason) yield* applyResourcePass('after');
-      if (!stopReason && capturedServices && options.stopAtInputWait!==false && block && block.kind==='query' && block.query.name==='dialogue_pause_query') {
+      if (!stopReason && (capturedServices||romOnlyStart) && options.stopAtInputWait!==false && block && block.kind==='query' && block.query.name==='dialogue_pause_query') {
         var waitSlot=dialogueEngine.find(block.query.query.producerInput),waitOwner=waitSlot>=0&&dialogueEngine.owners[waitSlot];
         var waitState=waitOwner&&waitOwner.payload&&waitOwner.payload[0x3c];
         var controls=resourceScheduler.input.controller.changes;

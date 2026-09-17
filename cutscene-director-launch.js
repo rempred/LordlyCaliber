@@ -6,7 +6,7 @@ window.OB64=window.OB64||{};
  function hex(bytes){return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
  function bytes(text){if(typeof text!=='string'||text.length%2||!/^[0-9a-f]+$/i.test(text))stop('Launch memory requires hexadecimal bytes.');return Uint8Array.from(text.match(/../g),x=>parseInt(x,16));}
  function Launch(input,rom){
-  if(!input||input.kind!=='mode-zero-director-v1'||input.sceneMode!==0||!Number.isInteger(input.selector)||input.selector<0||!input.world||!input.arena||!OB64.cutsceneDirectorLaunchCode||!(rom instanceof Uint8Array))stop('Director launch requires mode zero, a ROM selector, caller world state, and a preview arena.');
+  if(!input||!((input.kind==='mode-zero-director-v1'&&input.sceneMode===0)||(input.kind==='rom-mode-two-director-v1'&&input.sceneMode===2))||!Number.isInteger(input.selector)||input.selector<0||!input.world||!input.arena||!OB64.cutsceneDirectorLaunchCode||!(rom instanceof Uint8Array))stop('Director launch requires a supported mode, a ROM selector, caller world state, and a preview arena.');
   if(!Number.isInteger(input.actorPresentationWord)||input.actorPresentationWord<0||input.actorPresentationWord>0xffffffff)stop('Actor construction requires the current caller presentation word.');
   var w=input.world;for(var k of ['mapKind','scenarioByte','red','green','blue'])if(!Number.isInteger(w[k])||w[k]<0||w[k]>255)stop('World inputs require unsigned bytes.');
   if(!Number.isInteger(w.eventState)||w.eventState<0||w.eventState>0xffffffff)stop('World event state requires an unsigned word.');
@@ -23,8 +23,9 @@ window.OB64=window.OB64||{};
    {address:0x802395b0,bytes:new Uint8Array(4),writable:true},{address:0x801976da,bytes:Uint8Array.of(w.mapKind),writable:false},
    {address:0x801936a7,bytes:Uint8Array.of(w.scenarioByte),writable:false},{address:0x8018f557,bytes:Uint8Array.of(w.red,w.green,w.blue),writable:false},
    {address:0x801ceab0,bytes:Uint8Array.of(w.eventState>>>24,w.eventState>>>16,w.eventState>>>8,w.eventState),writable:false},
-   {address:0x8018fc19,bytes:Uint8Array.of(0),writable:false}];
+   {address:0x8018fc19,bytes:Uint8Array.of(input.sceneMode),writable:false}];
   data.tables.forEach(function(r){var b=bytes(r.hex);if(r.rom+b.length>rom.length||b.some((x,i)=>x!==rom[r.rom+i]))stop('World-context dispatch table differs from its qualified ROM.','director-launch-image');regions.push({address:r.address,bytes:b,writable:false});});
+  if(input.sceneMode===2)OB64.cutsceneRomStart.installCode(code,regions,rom);
   var table=this.resource(0x019a8804);if(table.length%4||input.selector>=table.length/4)stop('Director selector exceeds the current ROM directory.','director-launch-selector');
   this.resourceKey=new DataView(table.buffer,table.byteOffset,table.byteLength).getUint32(input.selector*4);
   var decoded=OB64.cutsceneCodec.decodeCustomLz(this.resource(this.resourceKey),{requireExact:false,maxOutput:65536}).bytes;
@@ -43,6 +44,7 @@ window.OB64=window.OB64||{};
    else if(op===8){var sum=(this.r[rs]|0)+si;if(sum< -2147483648||sum>2147483647)stop('Native launch signed addition overflow.','director-launch-instruction');this.r[rt]=sum;}
    else return step(pc);this.r[0]=0;this.steps++;return {target:null,annul:false};};
   m.serviceHelper=this.helper.bind(this);
+  if(input.sceneMode===2)OB64.cutsceneRomStart.attachLaunch(this);
  }
  Launch.prototype.resource=function(key){var p=(key&0x0fffffff)+0x594280,r=this.rom;if(!Number.isInteger(key)||key<=0||key>0xffffffff||key>>>28||p+4>r.length)stop('Launch resource key is invalid.','director-launch-resource');var n=new DataView(r.buffer,r.byteOffset,r.byteLength).getUint32(p);if(n<1||n>65536||p+4+n>r.length)stop('Launch resource extent is invalid or exceeds the supported bound.','director-launch-resource');return r.slice(p+4,p+4+n);};
  Launch.prototype.write=function(a,b){for(var i=0;i<b.length;i++)this.machine.put(a+i,b[i],1);};
@@ -59,7 +61,7 @@ window.OB64=window.OB64||{};
   else if(pc===0x802282b8){this.parserReached=true;m.r[2]=0;}
   else return false;return true;
  };
- Launch.prototype.initialize=function*(record){if(this.initialized)stop('Director launch cannot initialize twice.');if(record.length!==168)stop('Director resource record has the wrong size.');this.write(0x800e7a30,record);yield* this.machine.run(0x80225a1c,[],[],262144);if(!this.parserReached)stop('Director initialization did not reach its parser.','director-launch-parser');this.initialized=true;};
+ Launch.prototype.initialize=function*(record){if(this.initialized)stop('Director launch cannot initialize twice.');if(record.length!==168)stop('Director resource record has the wrong size.');this.write(0x800e7a30,record);yield* this.machine.run(this.input.sceneMode===2?0x802260f0:0x80225a1c,[],[],262144);if(!this.parserReached)stop('Director initialization did not reach its parser.','director-launch-parser');this.initialized=true;};
  Launch.prototype.snapshot=function(){var m=this.machine,root=m.get(0x8022a974),stream=m.get(0x8022a958);return {resourceKey:this.resourceKey,selector:this.input.selector,rootAddress:root,rootHex:hex(this.read(root,0x1cb8)),recordHex:hex(this.read(0x800e7a30,168)),contextHex:hex(this.read(0x80220e70,30)),cameraHex:hex(this.read(0x8022a720,144)),streamAddress:stream,streamHex:hex(this.read(stream,this.decodedLength)),allocations:this.leases.map(r=>({address:r.address,hex:hex(this.read(r.address,r.size))})),parserReached:this.parserReached};};
 
  Launch.prototype.installMemory=function(m,address,data){

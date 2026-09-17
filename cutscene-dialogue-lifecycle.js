@@ -11,7 +11,7 @@ window.OB64=window.OB64||{};
   var p=engine.payloadStorage.config;
   if(a.address<p.address+p.byteLength&&p.address<a.address+a.byteLength)stop('Archive and payload arenas must not overlap.');
   engine.machine.region(a.address,a.byteLength,true);
-  this.engine=engine;this.machine=engine.machine;this.rom=rom;this.arena={address:a.address,byteLength:a.byteLength};this.used=0;this.archives=new Map();
+  this.computeAlignment=input.computeAlignment===true;this.engine=engine;this.machine=engine.machine;this.rom=rom;this.arena={address:a.address,byteLength:a.byteLength};this.used=0;this.archives=new Map();
   var machine=this.machine;
   (OB64.cutsceneDialogueLifecycleTables||[]).forEach(function(table){
    var data=Uint8Array.from(table.hex.match(/../g),x=>parseInt(x,16));
@@ -49,6 +49,13 @@ window.OB64=window.OB64||{};
  };
  Lifecycle.prototype.helper=function(pc){
   var m=this.machine;
+  if(pc===0x800934b0&&this.computeAlignment){
+   // The native text parser emits a computed horizontal-space control.
+   // Only its bounded, nonnegative integer format is qualified here.
+   const format=Array.from({length:8},(_,i)=>m.get(m.r[5]+i,1));
+   if(String.fromCharCode.apply(null,format)!=='{X%03d}\0'||m.r[6]>999||m.r[4]<0x800e9348||m.r[4]+7>0x800e9648)stop('Computed text alignment exceeds its qualified format or payload range.','dialogue-format-input');
+   const text='{X'+String(m.r[6]).padStart(3,'0')+'}';for(let i=0;i<text.length;i++)m.put(m.r[4]+i,text.charCodeAt(i),1);m.put(m.r[4]+text.length,0,1);m.r[2]=text.length;return true;
+  }
   if(pc===0x8007938c){
    if(m.r[4]!==0x01a3b7b2||m.r[6]!==0xfffffffc||m.r[7]!==0)stop('Archive call is outside the supported Serifu lookup contract.','dialogue-archive-input');
    m.r[2]=this.archive(m.r[5]);return true;

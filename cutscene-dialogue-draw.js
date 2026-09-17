@@ -56,7 +56,8 @@ Draw.prototype.compose=function(recordHex,payloadHex){
  const r=bytes(recordHex),p=bytes(payloadHex);
  if(r.length!==168||p.length!==1144)fail('complete current dialogue state is required');
  const rv=new DataView(r.buffer),pv=new DataView(p.buffer),s=o=>pv.getInt16(o),u=o=>pv.getUint16(o);
- if(p[0x47]!==0||p[0x3d]>1||(r[0x91]&4)||p[0x50]||p[0x42]>1||p[0x56]!==255||p[0x49]!==255)fail('unsupported ordinary dialogue presentation state');
+ if(p[0x47]!==0||p[0x3d]>1||p[0x50]||p[0x42]>1||p[0x56]!==255||p[0x49]!==255)fail('unsupported ordinary dialogue presentation state');
+ const frameless=!!(r[0x91]&4);
  const left=rv.getInt16(6),top=rv.getInt16(8),right=rv.getInt16(10),bottom=rv.getInt16(12),width=s(0x20),height=s(0x22);
  if(width<=0||height<=0||right<left||bottom<top)fail('invalid dialogue rectangle');
  const fx=Math.fround((right-left+1)/width),fy=Math.fround((bottom-top+1)/height),commands=[],clip=[Math.max(0,left),Math.max(0,top),Math.min(319,right+1),Math.min(239,bottom+1)];
@@ -68,7 +69,9 @@ Draw.prototype.compose=function(recordHex,payloadHex){
   commands.push({kind:'texture',texture,bounds:[Math.max(0,b[0]),Math.max(0,b[1]),Math.min(320,b[2]),Math.min(240,b[3])],uv,step:[dx,dy],scissor:scissor.slice()});
  }
  const frame=(member)=>({...this.frame(0x2093576,0,member),wrapX:member===1||member===3});
- rectangle(frame(1),8,0,width-12,60);rectangle(frame(0),0,0,7,60);rectangle(frame(2),width-11,0,width-1,60);
+ // func_000E6D90's frameless branch emits a zero-alpha primitive rectangle
+ // instead of the three frame textures. It leaves the framebuffer unchanged.
+ if(!frameless){rectangle(frame(1),8,0,width-12,60);rectangle(frame(0),0,0,7,60);rectangle(frame(2),width-11,0,width-1,60);}
  // The right portrait follows the native text-column count, not frame width.
  const portrait=s(0x14)>=0,portraitX=p[0x3d]?7*u(0x1a)+16:8;
  if(portrait){const mirror=!!(r[0x8a]&32);rectangle(this.portrait(s(0x14),p[0x4a]),portraitX,5,portraitX+39,52,mirror?39:0,0,mirror?0:39,47);}
@@ -76,7 +79,7 @@ Draw.prototype.compose=function(recordHex,payloadHex){
   const start=p[0x4f]?u(0xb8+p[0x54]*2):u(0x36),count=u(0x34);
   if(start>count||count>0x300)fail('invalid dialogue text bounds');
   const text=p.subarray(0x178+start,0x178+count),metrics=O.art.readResource(this.z64,0x218c450).stored;
-  const origin=left+(portrait&&!p[0x3d]?56:8);let x=origin,y=top+5,color=p[0x4b]<10?p[0x4b]:0,spacing=0,lineGap=3;
+  const origin=left+(frameless?0:portrait&&!p[0x3d]?56:8);let x=origin,y=top+(frameless?0:5),color=p[0x4b]<10?p[0x4b]:0,spacing=0,lineGap=3;
   const view=new DataView(this.z64.buffer,this.z64.byteOffset,this.z64.byteLength);
   const emit=(index)=>{
    if(index<0||index>=metrics.length)fail('unsupported glyph index');
@@ -88,7 +91,7 @@ Draw.prototype.compose=function(recordHex,payloadHex){
    const c=text[i];if(c===10){x=origin;y+=14+lineGap;continue;}if(c===13){x=origin;continue;}
    if(c===123){let j=i+2;while(j<text.length&&text[j]>=48&&text[j]<=57)j++;if(j>=text.length||text[j]!==125)fail('unsupported glyph tag');
     const n=Number(String.fromCharCode(...text.subarray(i+2,j))),tag=String.fromCharCode(text[i+1]);
-    if(tag==='T')emit(n-1);else if(tag==='C'){if(n>9)fail('unsupported text color');color=n;}else if(tag==='H')spacing=n;else if(tag==='V')lineGap=n;else fail('unsupported glyph tag '+tag);
+    if(tag==='T')emit(n-1);else if(tag==='C'){if(n>9)fail('unsupported text color');color=n;}else if(tag==='H')spacing=n;else if(tag==='V')lineGap=n;else if(tag==='X')x+=n;else fail('unsupported glyph tag '+tag);
     i=j;continue;
    }
    if(c<32||c>=128)fail('unsupported encoded dialogue character');if(c===32)x+=metrics[48]+spacing;else emit(c+16);
@@ -100,13 +103,13 @@ Draw.prototype.compose=function(recordHex,payloadHex){
   const indicator=frame(4),frameBytes=indicator.stride*16,phase=p[0x43]>>>6;
   if(indicator.width!==16||indicator.height!==64)fail('unsupported continuation artwork');
   indicator.indices=indicator.indices.slice(phase*frameBytes,(phase+1)*frameBytes);indicator.height=16;
-  const x=7*u(0x1a)+(portrait&&!p[0x3d]?40:-8);
-  rectangle(indicator,x,38,x+15,53);
+  const x=7*u(0x1a)+(frameless?-16:portrait&&!p[0x3d]?40:-8),y=frameless?33:38;
+  rectangle(indicator,x,y,x+15,y+15);
  }
  // Ordinary speech pointer uses the current payload's local position and tile.
  if(p[0x3a]>1||p[0x3b])fail('unsupported speech pointer tile');
  // Tile 1 begins at U=8 and wraps over the existing eight-pixel texture.
- rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,p[0x3a]*8,0,p[0x3a]*8+7,12,[0,0,319,239]);
+ if(!frameless)rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,p[0x3a]*8,0,p[0x3a]*8+7,12,[0,0,319,239]);
  const seen=new Set();let textureBytes=0;commands.forEach(c=>{if(!seen.has(c.texture.indices)){seen.add(c.texture.indices);textureBytes+=c.texture.indices.byteLength;} });
  return {commands,nativeServiceBytes:0,artworkCacheBytes:this.assetBytes,temporaryTextureBytes:textureBytes};
 };

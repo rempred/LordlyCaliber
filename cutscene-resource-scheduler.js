@@ -8,7 +8,7 @@ window.OB64=window.OB64||{};
  function* initializePlan(read,initialize){var slot=0,last=0,visits=0;do{if(++visits>256)stop('Resource initialization exceeded its bounded circular scan.');var r=read(slot);if((r.flags&0xa000)===0x8000&&r.initialize){yield* initialize(slot);last=slot;}slot=(slot+1)%6;}while(slot!==last);}
  function Scheduler(engine,input,rom){
   if(!input||input.kind!=='resident-resource-pass-v1'||!engine.lifecycle||!Number.isInteger(input.directorSlot)||input.directorSlot<0||input.directorSlot>5||!Number.isInteger(input.directorCallback)||input.directorCallback<=0)stop('Resource scheduling requires shared lifecycle and an explicit Director resource binding.');
-  if(input.directorCallback===0x80226190&&input.directorBinding!=='captured-mode-two-v1')stop('Mode-two resource scheduling requires its captured callback binding.');
+  if(input.directorCallback===0x80226190&&!['captured-mode-two-v1','rom-mode-two-v1'].includes(input.directorBinding))stop('Mode-two resource scheduling requires a qualified callback binding.');
   if(![0x80225abc,0x80226190].includes(input.directorCallback)||!(rom instanceof Uint8Array)||!OB64.cutsceneResourceSchedulerWords)stop('The Director callback binding lacks a qualified scheduling contract.');
   var view=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);OB64.cutsceneResourceSchedulerWords.forEach(function(r){if(r[0]+4>rom.length||view.getUint32(r[0])!==r[1])stop('Resource scheduling code differs from its qualified ROM.','dialogue-scheduler-image');});
   var c=input.controller;

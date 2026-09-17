@@ -811,3 +811,32 @@ The first opening window composes through the checked interval ending at pass 64
 Native controls, composed images, and the next reached boundary are recorded in `../docs/reviews/cutscene-opening-dialogue-presentation-20260917/handoff.md`.
 The combined opening result and history correction are independently accepted in `../docs/reviews/cutscene-opening-dialogue-history-review-20260917/review.md`.
 The result adds no native service regions or retained-state fields. Cache and retained-state limits keep their existing meanings.
+
+## Graduation from ROM
+
+Without imported inputs, selecting Graduation starts its loaded ROM stream from the beginning.
+The ordinary Play control uses this computed run through modeled scene release.
+Explicit imported inputs retain priority.
+Clearing them restores ROM startup.
+
+The preview creates an isolated mode-two scene with an empty roster and audio queue.
+It uses standard Actor presentation, zero map/scenario/event values, no alternate world context, and white world tint.
+Controls remain neutral except automatic acknowledgement after native page completion.
+Text speed is 150, and proximity checks are disabled.
+The timing label identifies these preview defaults and simulated acknowledgement timing.
+These defaults do not represent historical gameplay inputs.
+
+The loaded ROM supplies the Director selector, environment, Actor commands, class-body registration, pose programs, cameras, and text resources.
+The shared native initializer and services compute the runtime state.
+No checkpoint, captured Actor record, or saved-state input enters this path.
+The generated `cutscene-rom-start-data.js` contains qualified code words and immutable ROM extents.
+
+Support currently selects the Graduation catalog asset only.
+Special body variants, terrain-dependent movement, depth attachments, and unsupported launch pre-scan routes remain explicit boundaries.
+Audio commands update the modeled queue; the preview does not synthesize game audio.
+Scene props retain the existing composed-preview qualification.
+The compiler retains its memory ceiling, cancellation, neutral-policy wait, and immutable seek behavior.
+
+Run `node tests/cutscene-graduation-rom-start.test.js` from the Editor directory for the fresh-load controls.
+Run `node tests/cutscene-graduation-narration.test.js` for native narration drawing comparisons.
+The parent evidence generator and native checks are in `docs/reviews/cutscene-graduation-rom-start-20260917/`.
