@@ -94,7 +94,8 @@ Draw.prototype.compose=function(recordHex,payloadHex){
    if(c<32||c>=128)fail('unsupported encoded dialogue character');if(c===32)x+=metrics[48]+spacing;else emit(c+16);
   }
  }
- if(p[0x42]===1){
+ if(p[0x42]===1&&!p[0x4f]){
+  // Native history return suppresses continuation until its presentation gate clears.
   // Native continuation animation selects one 16-row frame from member 4.
   const indicator=frame(4),frameBytes=indicator.stride*16,phase=p[0x43]>>>6;
   if(indicator.width!==16||indicator.height!==64)fail('unsupported continuation artwork');
