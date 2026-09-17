@@ -2,7 +2,8 @@
 
 The saved Graduation input advances all eight Actors through 69 eligible scheduler updates.
 The input includes both alternate-pose Actors, camera state, owner records, and native auxiliary memory.
-This candidate requires independent review before acceptance.
+Independent review accepts this bounded saved-state continuation.
+See the parent review at `docs/reviews/cutscene-graduation-resume-review-20260917/review.md`.
 
 Load the US revision-zero ROM and select the Graduation scene.
 Use **Import playback inputs** to load `../../docs/reviews/cutscene-graduation-resume-integration-20260917/playback-input.json` from this document directory.
