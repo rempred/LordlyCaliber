@@ -1,8 +1,9 @@
 # Graduation continuation
 
-This candidate plays the saved Graduation checkpoint through modeled terminal release.
+This profile plays the saved Graduation checkpoint through modeled terminal release.
 It keeps all eight Actors, completes movement and pose changes, advances dialogue, and fades to black.
-Independent review is pending.
+Independent review accepts this saved-checkpoint continuation.
+The parent combined review is `docs/reviews/cutscene-graduation-focus-review-20260917/review.md`.
 
 Load the US revision-zero ROM and select Graduation.
 Use **Import playback inputs** to load `../../docs/reviews/cutscene-graduation-continuous-20260917/playback-input.json` relative to this document directory.
