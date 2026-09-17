@@ -621,10 +621,10 @@ window.OB64 = window.OB64 || {};
       if (!['known','unknown'].includes(resumeGroup.status)) fail('Invalid captured resume status.','launch-input');
       if (resumeGroup.status === 'known') {
         var resume = resumeGroup.value, capturedValue = input.capturedSnapshot && input.capturedSnapshot.value;
-        var heldModeTwo=resume && resume.entry==='normal-mode-two-held-movement-window';
+        var heldModeTwo=resume && ['normal-mode-two-held-movement-window','normal-mode-two-continuous'].includes(resume.entry);
         if (!resume || !input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
             !input.schedulerBranch || input.schedulerBranch.status !== 'known' || input.schedulerBranch.value !== 'normal' ||
-            capturedValue.sceneMode !== (heldModeTwo?2:0) || !['normal-director-held-movement-query','normal-director-continuous','normal-mode-two-held-movement-window'].includes(resume.entry) ||
+            capturedValue.sceneMode !== (heldModeTwo?2:0) || !['normal-director-held-movement-query','normal-director-continuous','normal-mode-two-held-movement-window','normal-mode-two-continuous'].includes(resume.entry) ||
             resume.origin !== 'prospective-captured-state' ||
             (resume.entry === 'normal-director-continuous' || heldModeTwo ? !Number.isInteger(resume.updates) || resume.updates < 1 || resume.updates > 30000 || resume.directorControllerMask !== 0 : resume.updates !== 1) ||
             resume.registeredCounter !== 0 || !Number.isInteger(resume.tailTimer) || resume.tailTimer < -128 || resume.tailTimer >= 0) {
@@ -1494,6 +1494,9 @@ window.OB64 = window.OB64 || {};
     var actorInputRows = launchValue('actorInputRows');
     var currentUnitMembers = launchValue('currentUnitMembers');
     var externalProducers = launchValue('externalProducers');
+    var capturedServices=launchValue('capturedResume') && launchValue('capturedResume').entry==='normal-mode-two-continuous' && launchValue('capturedResume').resourceServices;
+    if(capturedServices){if(!capturedServices.resourceSchedule||capturedServices.resourceSchedule.directorCallback!==0x80226190||capturedServices.resourceSchedule.directorSlot!==0)fail('Captured mode-two services require the saved Director binding.','resume-resource-binding');if(externalProducers)fail('Captured services cannot combine an external timeline.','resume-context-input');externalProducers={throughTick:capturedServices.resourceSchedule.controller.throughPass,initialDialogue:capturedServices.initialDialogue,resourceSchedule:capturedServices.resourceSchedule,initialColor:null,events:[],menuCreates:[],colorCreates:[],poseCalls:[]};}
+
     var externalOccurrences = {}, externalEventCursor = 0, sharedPoseCallCursor = 0;
     var knownTransientSlots = new Set(), allTransientSlotsKnown = !!(externalProducers && externalProducers.initialMenusEmpty);
     var actorServiceOccurrences = {}, qualifiedPoseCache = new Map(), subordinateSerial = 0, nativeRosterResult = null;
@@ -1597,6 +1600,7 @@ window.OB64 = window.OB64 || {};
       try {
         if(!OB64.cutsceneDialogue)fail('Native dialogue support is unavailable.','dialogue-module');
         dialogueEngine=new OB64.cutsceneDialogue.Engine(externalProducers.initialDialogue,options.z64);
+        if(capturedServices)OB64.cutsceneDirectorLaunch.installAudioQueue(dialogueEngine,options.z64,function(event){state.audioEvents.push(event);});
         if(dialogueEngine.lifecycle&&(externalProducers.dialogueCreates||[]).length)fail('Shared dialogue construction must omit recorded constructor outcomes.','dialogue-constructor-input');
         if(externalProducers.resourceSchedule!==undefined){
           if(!OB64.cutsceneResourceScheduler)fail('Resource scheduling support is unavailable.','dialogue-scheduler-input');
@@ -1660,7 +1664,7 @@ window.OB64 = window.OB64 || {};
       }
     }
     function checkMenuMemory(){
-      var size=[mapMenu,imageEcho,nativeLaunch,dialogueEngine].filter(Boolean).reduce(function(n,service){
+      var size=[mapMenu,imageEcho,nativeLaunch,dialogueEngine,capturedScheduler].filter(Boolean).reduce(function(n,service){
         return n+service.machine.regions.reduce((v,r)=>v+r.bytes.length,0);
       },0);
       if(size>131072)fail('Combined native services exceed 128 KiB: '+size+'.','map-menu-memory-bound');
@@ -1681,6 +1685,7 @@ window.OB64 = window.OB64 || {};
     function* applyResourcePass(phase){
       if(!resourceScheduler)return;
       try{
+        checkMenuMemory();
         if(phase==='before')yield* resourceScheduler.before(state.tick);
         else{yield* resourceScheduler.after(state.terminal);recordTrace({tick:state.tick,kind:'resource-pass',clock:'declared-resource-pass',actions:resourceScheduler.trace.slice()});}
       }catch(error){producerBoundary(error.message,error.code||'dialogue-scheduler-input');}
@@ -1756,7 +1761,8 @@ window.OB64 = window.OB64 || {};
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var capturedSnapshot = launchValue('capturedSnapshot');
     var capturedResume = launchValue('capturedResume');
-    var heldModeTwoResume=capturedResume && capturedResume.entry==='normal-mode-two-held-movement-window';
+    var extendedModeTwoResume=capturedResume && capturedResume.entry==='normal-mode-two-continuous';
+    var heldModeTwoResume=capturedResume && ['normal-mode-two-held-movement-window','normal-mode-two-continuous'].includes(capturedResume.entry);
     var continuousResume = capturedResume && (capturedResume.entry === 'normal-director-continuous' || heldModeTwoResume);
     var capturedScheduler=null;
     if (continuousResume && Number.isInteger(options.controllerMask) && options.controllerMask !== 0) {
@@ -2795,7 +2801,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeOverlay(node, words) {
-      if(nativeLaunch){try{state.overlay=nativeLaunch.createColor(words);state.overlay.sourceNodeId=node.id;state.overlayJob=state.overlay;}catch(error){producerBoundary(error.message,error.code);}return;}
+      if(nativeLaunch||capturedServices){try{state.overlay=(nativeLaunch||capturedScheduler).createColor(words);state.overlay.sourceNodeId=node.id;state.overlayJob=state.overlay;}catch(error){producerBoundary(error.message,error.code);}return;}
       var creation=externalCreation('colorCreates',node);
       if (creation && externalProducers.initialColor !== undefined) {
         state.overlay=createNativeColor(state.overlay,words);
@@ -2972,16 +2978,16 @@ window.OB64 = window.OB64 || {};
               var ownerActor=state.actors[signed(words[4])],renderer=OB64.cutsceneRenderer;
               if(!ownerActor&&nativeLaunch&&signed(words[4])>=0&&signed(words[4])<28)point={absentActor:true};
               else {
-              if(!ownerActor||!renderer||state.directorMode!==0||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
+              if(!ownerActor||!renderer||(!extendedModeTwoResume && state.directorMode!==0)||state.cameras.actor.evidenceStatus==='external-unresolved'||state.cameras.registered.evidenceStatus==='external-unresolved')fail('Dialogue placement requires a current Actor and qualified mode-zero cameras.','dialogue-constructor-placement');
               var channel=state.transformChannels[ownerActor.transformChannel]||identityTransformChannel();
               var renderedY=ownerActor.heightModeByte&4?ownerActor.y+ownerActor.secondaryY:ownerActor.heightModeByte&2?ownerActor.secondaryY:ownerActor.y;
               var geometry=renderer.modeZeroActorGeometry({x:ownerActor.x,y:renderedY,z:ownerActor.z,sceneTransform:channel,renderPipeline:'mode-zero-registered-prepass-actor-camera'},
                 {registeredProjection:projectionFromCamera(state.cameras.registered)},projectionFromCamera(state.cameras.actor));
               if(!geometry)fail('Dialogue placement could not project the current Actor.','dialogue-constructor-placement');
-              point=renderer.projectPointFloat(geometry.scenePoint,geometry.projection);
+              point=extendedModeTwoResume?capturedScheduler.dialoguePoint(ownerActor.slot):renderer.projectPointFloat(geometry.scenePoint,geometry.projection);
               }
             }
-            registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;
+            registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;if(extendedModeTwoResume)capturedScheduler.compareDialogueRegistration(nativeSlot);
           }else nativeSlot=dialogueEngine.register(registration,words);
         } catch(error) {producerBoundary(error.message,error.code||'dialogue-registration-input');return;}
       } else if(producerBoundary('Dialogue requires native initial memory, constructor outcome, and complete service history.','dialogue-initial-input')) return;
@@ -3941,7 +3947,7 @@ window.OB64 = window.OB64 || {};
       // A complete imported record is usable for shallow-copy construction only
       // while every intervening native byte write is represented here. Older
       // presentation commands have partial models, so they invalidate that input.
-      if (!node.query && ![0x07,0x2A,0x45,0xAB,0x92,0x96,0xA6,0xC2].includes(opcode) &&
+      if (!(extendedModeTwoResume && opcode===0x03) && !node.query && ![0x07,0x2A,0x45,0xAB,0x92,0x96,0xA6,0xC2].includes(opcode) &&
           (/actor|body_pose/.test(node.name) || [0x1C,0x1D,0x1E,0x22,0x48].includes(opcode))) {
         Object.keys(state.actors).forEach(function(slot) {
           var actor=state.actors[slot];
@@ -4158,7 +4164,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       else if (opcode === 0x7D) {
-        if(nativeLaunch)nativeLaunch.releaseColor();
+        if(nativeLaunch||capturedServices)(nativeLaunch||capturedScheduler).releaseColor();
         state.terminalStateReleased = true;
         state.terminalReason = 'terminal-state-release';
         state.terminal = true;
@@ -4167,7 +4173,7 @@ window.OB64 = window.OB64 || {};
         if (state.overlay && state.overlay.native) {
           // The continuous Director path calls func_002839A8: request release.
           // Cleanup belongs to a later external callback, not this command.
-          if (nativeLaunch){nativeLaunch.releaseColor();state.overlay=nativeLaunch.color();}
+          if (nativeLaunch||capturedServices){(nativeLaunch||capturedScheduler).releaseColor();state.overlay=(nativeLaunch||capturedScheduler).color();}
           else if (continuousResume) state.overlay.ownershipFlag=1;
           else state.overlay=cleanupNativeColor(state.overlay);
           state.overlayJob=state.overlay;
@@ -5182,8 +5188,10 @@ window.OB64 = window.OB64 || {};
       if (stopReason) return;
       if(launchParserRan){parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;launchParserRan=false;}
       if(capturedScheduler){
-        try{state.projectionTransform=yield* capturedScheduler.advance({
+        if(extendedModeTwoResume && state.registeredCounter && state.registeredCounter.value>=1 && state.registeredCounter.value<=0x0ffffffe)state.registeredCounter.value++;
+        try{if(extendedModeTwoResume&&resourceScheduler){capturedScheduler.syncResourceContext(dialogueEngine);capturedScheduler.machine.put(0x800e8100,resourceScheduler.control.actionMask,2);capturedScheduler.machine.put(0x800c4c20,resourceScheduler.input.directorSlot);}state.projectionTransform=yield* capturedScheduler.advance({
           movement:updateMovementJobs,
+          dialogueQuery:function(id){if(!dialogueEngine)fail('Dialogue query requires current resource state.','dialogue-initial-input');return dialogueEngine.query(id);},
           actors:function(){Object.keys(state.actors).forEach(function(slot){updateActorPose(state.actors[slot]);});},
           records:function(){return Object.keys(state.actors).map(function(slot){return {slot:Number(slot),bytes:new Uint8Array(nativeRecordForActor(state.actors[slot]).buffer),movement:state.movementJobs[slot]};});}
         });if(Object.keys(state.actors).some(function(slot){return state.actors[slot].poseBlocked;}))fail('Captured Actor progression reached an unavailable program.','resume-pose-input');}
@@ -5426,7 +5434,7 @@ window.OB64 = window.OB64 || {};
       syncLaunchCamera();var m=dialogueEngine.machine,owner=dialogueEngine.owners[slot];
       if(!owner)fail('Color resource ownership is missing.','director-launch-color');
       yield* dialogueEngine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:Object.assign({},resourceScheduler.control,{queueHead:m.get(0x800c4c10,2)})},true,{initialize:0x8022643c,callback:0x80226538,length:92});
-      state.overlay=nativeLaunch.color();state.overlayJob=state.overlay;
+      state.overlay=(nativeLaunch||capturedScheduler).color();state.overlayJob=state.overlay;
     }
     function* restoreDirectorResource() {
       var e=dialogueEngine,m=e.machine,slot=resourceScheduler.input.directorSlot,a=0x800e82c8+slot*168,owner=e.owners[slot];e.copy(a,0x800e7a30,168);
@@ -5497,11 +5505,12 @@ window.OB64 = window.OB64 || {};
           fail('A passing movement query requires qualification of the following Director effects.','resume-transition-input');
         }
         if(heldModeTwoResume){
-          if(externalProducers || nativeLaunch || launchValue('directActorCreates'))fail('A held native scheduling window cannot combine another service timeline or Actor constructor.','resume-context-input');
-          if(!resumeJob || resumeJob.pauseByte || capturedResume.updates>=lowS16(resumeJob.remaining) ||
+          if((externalProducers && !capturedServices) || nativeLaunch || launchValue('directActorCreates'))fail('A held native scheduling window cannot combine another service timeline or Actor constructor.','resume-context-input');
+          if(!resumeJob || resumeJob.pauseByte || (!extendedModeTwoResume && capturedResume.updates>=lowS16(resumeJob.remaining)) ||
               resumeNode.query.compareMode!==0 || resumeNode.query.target!==0)fail('Mode-two continuation requires a bounded nonpassing zero-count movement query.','resume-transition-input');
           if(!OB64.cutsceneCapturedScheduler)fail('Captured native scheduler is unavailable.','resume-native-input');
           capturedScheduler=new OB64.cutsceneCapturedScheduler(options.z64,capturedResume,capturedSnapshot);
+          if(capturedServices&&resourceScheduler){capturedScheduler.attachColorResources(dialogueEngine,capturedServices.colorArena,options.z64);resourceScheduler.colorService=serviceColorResource;resourceScheduler.beforeDirector=function*(){dialogueEngine.copy(0x800e82c8+resourceScheduler.input.directorSlot*168,0x800e7a30,168);};}
           recordTrace({tick:0,kind:'captured-native-memory',bytes:capturedScheduler.memoryBytes});
         }
         persistentCursorPrimitiveIndex=resumeIndex;
@@ -5514,9 +5523,18 @@ window.OB64 = window.OB64 || {};
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
       yield* evaluateDirector();
+      if(capturedScheduler&&extendedModeTwoResume&&!stopReason){try{capturedScheduler.assertActors(true);}catch(error){producerBoundary(error.message,error.code);}}
       if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');
       if (!stopReason) yield* applyResourcePass('after');
+      if (!stopReason && capturedServices && options.stopAtInputWait!==false && block && block.kind==='query' && block.query.name==='dialogue_pause_query') {
+        var waitSlot=dialogueEngine.find(block.query.query.producerInput),waitOwner=waitSlot>=0&&dialogueEngine.owners[waitSlot];
+        var waitState=waitOwner&&waitOwner.payload&&waitOwner.payload[0x3c];
+        var controls=resourceScheduler.input.controller.changes;
+        if(resourceScheduler.input.pageAdvancePolicy!=='automatic' && [3,6].includes(waitState) && controls.filter(function(c){return c.pass>=state.tick;}).every(function(c){return c.actionMask===0&&c.historyMask===0&&c.directionMask===0&&c.dummyMask===0;}) && !resourceScheduler.control.actionMask && !resourceScheduler.control.historyMask){
+          stopReason='awaiting-dialogue-input';unresolvedQuery={kind:'user-input',code:'dialogue-page-acknowledgement',nodeId:block.query.id,windowId:block.query.query.producerInput,label:'Press A to advance the dialogue page.',nativeState:waitState};
+        }
+      }
       if (!stopReason) yield* prepareSharedActors();
       if (continuousResume && !stopReason) {
         completedResumeUpdates++;

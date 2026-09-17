@@ -69,6 +69,13 @@ window.OB64=window.OB64||{};
   if(m.regions.reduce((n,r)=>n+r.bytes.length,0)+this.machine.regions.reduce((n,r)=>n+r.bytes.length,0)+data.length>131072)stop('Computed launch memory exceeds the shared allocation ceiling.','director-launch-memory');
   m.regions.push({address:address,bytes:new Uint8Array(data),writable:true});
  };
+ Launch.installAudioQueue=function(engine,rom,onRequest){
+  var m=engine.machine,view=new DataView(rom.buffer,rom.byteOffset,rom.byteLength),rows=OB64.cutsceneDirectorLaunchCode.words.filter(r=>r[0]>=0x800ea9bc&&r[0]<0x800eac24);
+  if(rows.length!==154)stop('Native audio queue code is incomplete.','director-launch-audio');
+  rows.forEach(r=>{if(view.getUint32(r[1])!==r[2])stop('Audio queue code differs from its qualified ROM.','director-launch-audio');m.code[r[0]]=r[2];});
+  for(var i=0;i<128;i++)m.get(0x800eb8f0+i,1);
+  var step=m.step.bind(m);m.step=function(pc){if(pc===0x800ea9bc&&onRequest)onRequest({kind:'native-audio-request',mode:this.r[4]&255,category:this.r[5]&255,program:this.r[6]&65535,priority:this.r[7]&65535,flags:this.get(this.r[29]+16)&255,playback:'queue-only'});return step(pc);};
+ };
  Launch.prototype.attachResources=function(engine){
   this.engine=engine;this.colorSerial=0;this.colorAddress=0;var self=this,m=engine.machine,old=m.serviceHelper;
   var arena=this.input.arena;

@@ -1053,6 +1053,12 @@ window.OB64 = window.OB64 || {};
     return preview;
   }
 
+  function playbackTimingLabel(state,scene) {
+    var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
+    var services=input&&input.capturedResume&&input.capturedResume.value.resourceServices;
+    return services&&services.resourceSchedule.pageAdvancePolicy==='automatic'?'Automatic dialogue advance: simulated timing.':'';
+  }
+
   function composeDialogue(rom,state,preview,strict) {
     var rows=[],composedIds=[];
     (preview.dialogue||[]).forEach(function(row){
@@ -1490,6 +1496,7 @@ window.OB64 = window.OB64 || {};
       calibrationText += ' ' + stageRuntime.missingInputs.length +
         ' launch inputs remain unresolved because they live outside this stream.';
     }
+    var timingLabel=playbackTimingLabel(state,scene);if(timingLabel)calibrationText+=' '+timingLabel;
     var calibration = node('span', 'cutscene-stage-calibration', calibrationText);
     calibration.title = nativeRuntime
       ? [stageRuntime.directorModeStatus,
@@ -4633,6 +4640,7 @@ window.OB64 = window.OB64 || {};
     decodeImageAsset: decodeImageAsset,
     capturePreviewFrame:capturePreviewFrame,
     composeDialogue:composeDialogue,
+    playbackTimingLabel:playbackTimingLabel,
     captureUi: captureUi,
     restoreUi: restoreUi,
     sceneHasChanges: sceneHasChanges,

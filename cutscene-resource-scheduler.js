@@ -8,7 +8,8 @@ window.OB64=window.OB64||{};
  function* initializePlan(read,initialize){var slot=0,last=0,visits=0;do{if(++visits>256)stop('Resource initialization exceeded its bounded circular scan.');var r=read(slot);if((r.flags&0xa000)===0x8000&&r.initialize){yield* initialize(slot);last=slot;}slot=(slot+1)%6;}while(slot!==last);}
  function Scheduler(engine,input,rom){
   if(!input||input.kind!=='resident-resource-pass-v1'||!engine.lifecycle||!Number.isInteger(input.directorSlot)||input.directorSlot<0||input.directorSlot>5||!Number.isInteger(input.directorCallback)||input.directorCallback<=0)stop('Resource scheduling requires shared lifecycle and an explicit Director resource binding.');
-  if(input.directorCallback!==0x80225abc||!(rom instanceof Uint8Array)||!OB64.cutsceneResourceSchedulerWords)stop('The Director callback binding lacks a qualified scheduling contract.');
+  if(input.directorCallback===0x80226190&&input.directorBinding!=='captured-mode-two-v1')stop('Mode-two resource scheduling requires its captured callback binding.');
+  if(![0x80225abc,0x80226190].includes(input.directorCallback)||!(rom instanceof Uint8Array)||!OB64.cutsceneResourceSchedulerWords)stop('The Director callback binding lacks a qualified scheduling contract.');
   var view=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);OB64.cutsceneResourceSchedulerWords.forEach(function(r){if(r[0]+4>rom.length||view.getUint32(r[0])!==r[1])stop('Resource scheduling code differs from its qualified ROM.','dialogue-scheduler-image');});
   var c=input.controller;
   if(!c||!Number.isInteger(c.throughPass)||c.throughPass<0||c.throughPass>29999||!Array.isArray(c.changes)||!c.changes.length||c.changes.length>60000)stop('Resource scheduling requires bounded controller changes.');
@@ -16,6 +17,7 @@ window.OB64=window.OB64||{};
   if(c.changes[0].pass!==0)stop('Controller state must start at pass zero.');
   if(!Array.isArray(input.helperOutcomes)||input.helperOutcomes.length>10000)stop('Resource scheduling requires an explicit external helper outcome stream.');
   input.helperOutcomes.forEach(function(r){OB64.cutsceneDialogue.validateHelper(r);if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(r.address))stop('Computed archive/free services must not receive external outcomes.');});
+  if(input.pageAdvancePolicy!==undefined&&!['neutral','automatic'].includes(input.pageAdvancePolicy))stop('Unsupported dialogue page policy.');
   this.engine=engine;this.machine=engine.machine;this.input=input;this.helperCursor=0;this.controlCursor=0;this.trace=[];
   // The native priority rebuild resets its count, then writes each live queue
   // entry before reading it. Preserve the initial live prefix; reserve output
@@ -30,7 +32,7 @@ window.OB64=window.OB64||{};
     else if(start>=0){m.regions.push({address:0x800c4c10+start,bytes:new Uint8Array(qi-start),writable:true});start=-1;}
   }
   }
-  var self=this;this.machine.sharedOutcome=function(pc){if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(pc))return null;var row=input.helperOutcomes[self.helperCursor++];if(!row)stop('The explicit external helper outcome stream is exhausted.','dialogue-helper-outcome');return row;};
+  var self=this;this.machine.sharedOutcome=function(pc){if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(pc))return null;var row=input.helperOutcomes[self.helperCursor++];if(!row)stop('The explicit external helper outcome stream is exhausted at RAM 0x'+pc.toString(16)+'.','dialogue-helper-outcome');return row;};
  }
  Scheduler.prototype.read=function(slot){var a=POOL+slot*STRIDE,m=this.machine;return {flags:m.get(a,2),initialize:m.get(a+0x10),callback:m.get(a+0x14)};};
  Scheduler.prototype.queue=function*(kind){yield* this.engine.service({service:kind,eligible:true,ownerId:'resource-pool',helpers:[]});this.trace.push({service:kind});};
@@ -46,12 +48,19 @@ window.OB64=window.OB64||{};
  Scheduler.prototype.before=function*(pass){
   if(pass>this.input.controller.throughPass)stop('Controller declaration ends before this resource pass.','dialogue-controller-history');
   while(this.controlCursor+1<this.input.controller.changes.length&&this.input.controller.changes[this.controlCursor+1].pass<=pass)this.controlCursor++;
-  this.control=this.input.controller.changes[this.controlCursor];this.trace=[];
+  this.control={...this.input.controller.changes[this.controlCursor]};this.trace=[];
+  const release=this.autoRelease;this.autoRelease=false;
   if(this.machine.get(0x800c4c26,2)!==0xffff)stop('A pending bulk resource cleanup is outside this pass profile.','dialogue-scheduler-cleanup');
   if(this.machine.get(0x800c49d0,2)>6)stop('The resource queue count exceeds the six-slot pool.','dialogue-scheduler-queue');
   if(this.machine.get(0x800c49d0,2)){yield* this.queue('opening');yield* this.queue('closing');yield* this.queue('priority');}
   yield* initializePlan(this.read.bind(this),function*(slot){if(slot===this.input.directorSlot&&this.initializeDirector)yield* this.initializeDirector(slot);else yield* this.dialogue(slot,'initialize');}.bind(this));
   yield* this.queue('priority');this.budget=this.machine.get(0x800c49d0,2);
+  // Only the focused, ordinary dialogue resource can receive an automatic pulse.
+  const page=this.machine.get(0x800c4c10,2),owner=this.engine.owners[page],binding=page<6?this.read(page):null;
+  if(this.input.pageAdvancePolicy==='automatic'&&!release&&binding&&(binding.flags&0xa000)===0xa000&&binding.initialize===0x80198be8&&binding.callback===0x8019981c&&owner&&owner.payload&&owner.payload.length===1144&&[3,6].includes(owner.payload[0x3c])){
+   this.control.actionMask|=0x8000;this.control.historyMask|=0x8000;this.autoRelease=true;this.trace.push({service:'automatic-page-acknowledgement',slot:page,timing:'simulated-next-eligible-pass'});
+  }
+
   for(var slot=0;slot<this.input.directorSlot;slot++)yield* this.callback(slot);
   var r=this.read(this.input.directorSlot);
   if((r.flags&0xa000)!==0xa000||r.callback!==this.input.directorCallback||this.budget<=0)stop('The declared Director resource is not eligible in this pass.','dialogue-scheduler-director');
