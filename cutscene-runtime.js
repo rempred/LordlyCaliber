@@ -104,7 +104,7 @@ window.OB64 = window.OB64 || {};
     return lowS16(job.remaining) !== 0;
   }
 
-  function advanceNativePose(actor, resolveProgram, limit, sharedControl) {
+  function advanceNativePose(actor, resolveProgram, limit, sharedControl, recordCheck) {
     var result = 1, dispatches = 0;
     while (actor.poseDelay <= 0) {
       if (++dispatches > limit) return 'pose-dispatch-limit';
@@ -118,6 +118,7 @@ window.OB64 = window.OB64 || {};
       if (actor.decoderMode === 0) actor.poseCursor = signed(actor.poseCursor + 1);
       var record = program.records[actor.poseCursor] || { opcode: 0, operands: [] };
       var op = record.opcode, p = record.operands;
+      if(recordCheck){var rejected=recordCheck(record);if(rejected)return rejected;}
       result = op;
       if (op >= 17 && op <= 20) {
         if (!sharedControl) return 'shared-pose-control-' + op;
@@ -486,12 +487,13 @@ window.OB64 = window.OB64 || {};
         });
       } else if (key === 'capturedPresentation') {
         if (!input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
-            input.capturedSnapshot.value.sceneMode !== 0 || !value ||
-            value.scope !== 'mode-zero-main-actor-geometry' ||
+            ![0,2].includes(input.capturedSnapshot.value.sceneMode) || !value ||
+            value.scope !== (input.capturedSnapshot.value.sceneMode===2?'mode-two-main-actor-geometry':'mode-zero-main-actor-geometry') ||
             !Array.isArray(value.channels) || value.channels.length !== 20 ||
-            !value.actorCamera || value.actorCamera.modelScale !== 1) {
-          fail('Captured presentation requires a mode-zero snapshot, composed Actor-camera scale one, and twenty explicit channel entries.', 'captured-presentation-input');
+            !value.actorCamera || (input.capturedSnapshot.value.sceneMode===0 && value.actorCamera.modelScale !== 1)) {
+          fail('Captured presentation requires a supported scene mode, its matching geometry scope, and twenty explicit channel entries.', 'captured-presentation-input');
         }
+        if(input.capturedSnapshot.value.sceneMode===2 && value.channels.some(function(c){return c!==null;}))fail('Direct mode-two geometry does not consume mode-zero scene channels.','captured-presentation-input');
         ['actorCamera', 'registeredCamera'].forEach(function(name) {
           var camera = value[name];
           if (!camera || !Array.isArray(camera.values) || camera.values.length !== 14 ||
@@ -517,9 +519,9 @@ window.OB64 = window.OB64 || {};
           if (!row) return;
           var view=launchBytes(row.recordHex,0x150);
           var channel=view.getUint8(0x13E), scale=view.getFloat32(0x104,false);
-          if (!value.channels[channel] || !(scale>0) || !Number.isFinite(scale) ||
-              view.getFloat32(0x108,false)!==scale || view.getFloat32(0x10C,false)!==scale || view.getUint8(0x13D)!==0) {
-            fail('Captured main-Actor geometry requires a supplied channel and positive uniform ordinary Actor scale.', 'captured-presentation-input');
+          if ((input.capturedSnapshot.value.sceneMode===0 && !value.channels[channel]) || !(scale>0) || !Number.isFinite(scale) ||
+              view.getFloat32(0x108,false)!==scale || view.getFloat32(0x10C,false)!==scale || (input.capturedSnapshot.value.sceneMode===0 && view.getUint8(0x13D)!==0)) {
+            fail('Captured Actor geometry requires positive uniform scale and the channel and decoder prerequisites for its scene mode.', 'captured-presentation-input');
           }
         });
       } else if (key === 'externalProducers') {
@@ -619,17 +621,18 @@ window.OB64 = window.OB64 || {};
       if (!['known','unknown'].includes(resumeGroup.status)) fail('Invalid captured resume status.','launch-input');
       if (resumeGroup.status === 'known') {
         var resume = resumeGroup.value, capturedValue = input.capturedSnapshot && input.capturedSnapshot.value;
+        var heldModeTwo=resume && resume.entry==='normal-mode-two-held-movement-window';
         if (!resume || !input.capturedSnapshot || input.capturedSnapshot.status !== 'known' ||
             !input.schedulerBranch || input.schedulerBranch.status !== 'known' || input.schedulerBranch.value !== 'normal' ||
-            capturedValue.sceneMode !== 0 || !['normal-director-held-movement-query','normal-director-continuous'].includes(resume.entry) ||
+            capturedValue.sceneMode !== (heldModeTwo?2:0) || !['normal-director-held-movement-query','normal-director-continuous','normal-mode-two-held-movement-window'].includes(resume.entry) ||
             resume.origin !== 'prospective-captured-state' ||
-            (resume.entry === 'normal-director-continuous' ? !Number.isInteger(resume.updates) || resume.updates < 1 || resume.updates > 30000 || resume.directorControllerMask !== 0 : resume.updates !== 1) ||
+            (resume.entry === 'normal-director-continuous' || heldModeTwo ? !Number.isInteger(resume.updates) || resume.updates < 1 || resume.updates > 30000 || resume.directorControllerMask !== 0 : resume.updates !== 1) ||
             resume.registeredCounter !== 0 || !Number.isInteger(resume.tailTimer) || resume.tailTimer < -128 || resume.tailTimer >= 0) {
-          fail('Resume requires an explicit prospective normal mode-zero entry and qualified counter/timer state.','resume-input');
+          fail('Resume requires an explicit supported prospective entry and qualified counter/timer state.','resume-input');
         }
-        var primary = launchBytes(resume.primaryOwnerHex,0x1CB2), secondary = launchBytes(resume.secondaryOwnerHex,0x844);
-        if (primary.getUint8(0x1CB1) !== 0 || secondary.getInt32(0x824) !== 0 ||
-            secondary.getInt32(0x82C) !== 0 || secondary.getUint8(0x840) !== 0) {
+        var primary = launchBytes(resume.primaryOwnerHex,0x1CB2), secondary = heldModeTwo && resume.secondaryOwnerAddress===0 && resume.secondaryOwnerHex===null ? null : launchBytes(resume.secondaryOwnerHex,0x844);
+        if (primary.getUint8(0x1CB1) !== 0 || (secondary && (secondary.getInt32(0x824) !== 0 ||
+            secondary.getInt32(0x82C) !== 0 || secondary.getUint8(0x840) !== 0))) {
           fail('Resume requires qualified inactive secondary scheduler fields.','resume-job-input');
         }
         [[0x1BB4,20],[0x1BB0,1],[0x19B4,1],[0x1A4C,1],[0x1A44,1],[0x19F4,20],
@@ -648,7 +651,7 @@ window.OB64 = window.OB64 || {};
           }
           ranges.push([address,address+size]);
         }
-        range(resume.primaryOwnerAddress,0x1CB2);range(resume.secondaryOwnerAddress,0x844);range(resume.menuRootAddress,0xD8);
+        range(resume.primaryOwnerAddress,0x1CB2);if(secondary)range(resume.secondaryOwnerAddress,0x844);range(resume.menuRootAddress,0xD8);
         if (root.getUint32(4)!==0) fail('This resume boundary requires an empty selected menu list.','resume-menu-input');
         if (!Array.isArray(resume.menuOwners) || resume.menuOwners.length!==14) fail('Resume requires fourteen menu owner slots.','resume-menu-input');
         resume.menuOwners.forEach(function(owner,slot) {
@@ -661,7 +664,7 @@ window.OB64 = window.OB64 || {};
           var actorPointer=primary.getUint32(0x18+slot*4),movementPointer=primary.getUint32(0xF8+slot*4);
           if (!row) {if(actorPointer || movementPointer)fail('Empty Actor slot has a native owner.','resume-memory-input');return;}
           range(actorPointer,0x150);
-          if (launchBytes(row.recordHex,0x150).getUint8(0x13D)!==0) fail('Resume currently requires ordinary captured Actors.','resume-pose-input');
+          if (!heldModeTwo && launchBytes(row.recordHex,0x150).getUint8(0x13D)!==0) fail('Resume currently requires ordinary captured Actors.','resume-pose-input');
           if (row.movementHex===null) {if(movementPointer)fail('Movement pointer lacks its record.','resume-memory-input');}
           else {
             var movement=launchBytes(row.movementHex,16);
@@ -1426,9 +1429,10 @@ window.OB64 = window.OB64 || {};
       Array.isArray(options.contextRuntime.contextFrames) &&
         options.contextRuntime.contextFrames.length)
       ? options.contextRuntime : null;
-    var contextRuntime = modeTwoCommandPreviewUsesFreshRoot
+    var hasCapturedSnapshot=options.nativeLaunchInputs && options.nativeLaunchInputs.capturedSnapshot && options.nativeLaunchInputs.capturedSnapshot.status==='known';
+    var contextRuntime = modeTwoCommandPreviewUsesFreshRoot || hasCapturedSnapshot
       ? null : suppliedContextRuntime;
-    if (modeTwoCommandPreviewUsesFreshRoot && suppliedContextRuntime) {
+    if (modeTwoCommandPreviewUsesFreshRoot && suppliedContextRuntime && !hasCapturedSnapshot) {
       assumption('The event route preserves resource-loader mode 0x8023A981, but its launch value is not statically known; this explicit mode-two background preview uses the native zero-mode fresh-root branch.');
     }
     var contextFrameCount = !contextRuntime ? 0 :
@@ -1752,7 +1756,9 @@ window.OB64 = window.OB64 || {};
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
     var capturedSnapshot = launchValue('capturedSnapshot');
     var capturedResume = launchValue('capturedResume');
-    var continuousResume = capturedResume && capturedResume.entry === 'normal-director-continuous';
+    var heldModeTwoResume=capturedResume && capturedResume.entry==='normal-mode-two-held-movement-window';
+    var continuousResume = capturedResume && (capturedResume.entry === 'normal-director-continuous' || heldModeTwoResume);
+    var capturedScheduler=null;
     if (continuousResume && Number.isInteger(options.controllerMask) && options.controllerMask !== 0) {
       fail('Continuous captured resume requires the declared neutral Director controller input.', 'launch-input');
     }
@@ -1956,7 +1962,8 @@ window.OB64 = window.OB64 || {};
 
     function updateActorPose(actor) {
       if (actor.poseBlocked) return;
-      var boundary = advanceNativePose(actor, programForActor, 256, registerSharedPoseRequest);
+      var boundary = advanceNativePose(actor, programForActor, 256, registerSharedPoseRequest,
+        capturedScheduler ? function(record){return [0,1,4,21].includes(record.opcode)?null:'resume-pose-control';} : null);
       if (boundary) {
         actor.poseBlocked = boundary;
         actor.poseProgramStatus = boundary;
@@ -5174,7 +5181,14 @@ window.OB64 = window.OB64 || {};
       if(!stopReason)yield* applyResourcePass('before');
       if (stopReason) return;
       if(launchParserRan){parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;launchParserRan=false;}
-      if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
+      if(capturedScheduler){
+        try{state.projectionTransform=yield* capturedScheduler.advance({
+          movement:updateMovementJobs,
+          actors:function(){Object.keys(state.actors).forEach(function(slot){updateActorPose(state.actors[slot]);});},
+          records:function(){return Object.keys(state.actors).map(function(slot){return {slot:Number(slot),bytes:new Uint8Array(nativeRecordForActor(state.actors[slot]).buffer),movement:state.movementJobs[slot]};});}
+        });if(Object.keys(state.actors).some(function(slot){return state.actors[slot].poseBlocked;}))fail('Captured Actor progression reached an unavailable program.','resume-pose-input');}
+        catch(error){producerBoundary(error.message,error.code||'resume-native-input');return;}
+      }else if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
       if(imageEcho&&!state.alternateDirectorScheduling){try{imageEcho.advance();if(imageEcho.started)state.oversizedImageView.zoomState=imageEcho.snapshot().zoomState;}catch(error){producerBoundary(error.message,error.code);}}
       if(iris&&!state.alternateDirectorScheduling){syncIrisTransforms();if(iris.advance())releaseIrisActors();applyIrisLayers();}
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
@@ -5481,6 +5495,14 @@ window.OB64 = window.OB64 || {};
         var predictedValue=predictedAlive ? lowS16(predictedJob.remaining) : 0;
         if (!continuousResume && compare(predictedValue,resumeNode.query.compareMode,resumeNode.query.target)) {
           fail('A passing movement query requires qualification of the following Director effects.','resume-transition-input');
+        }
+        if(heldModeTwoResume){
+          if(externalProducers || nativeLaunch || launchValue('directActorCreates'))fail('A held native scheduling window cannot combine another service timeline or Actor constructor.','resume-context-input');
+          if(!resumeJob || resumeJob.pauseByte || capturedResume.updates>=lowS16(resumeJob.remaining) ||
+              resumeNode.query.compareMode!==0 || resumeNode.query.target!==0)fail('Mode-two continuation requires a bounded nonpassing zero-count movement query.','resume-transition-input');
+          if(!OB64.cutsceneCapturedScheduler)fail('Captured native scheduler is unavailable.','resume-native-input');
+          capturedScheduler=new OB64.cutsceneCapturedScheduler(options.z64,capturedResume,capturedSnapshot);
+          recordTrace({tick:0,kind:'captured-native-memory',bytes:capturedScheduler.memoryBytes});
         }
         persistentCursorPrimitiveIndex=resumeIndex;
         installCursorAtPrimitive(resumeIndex);
