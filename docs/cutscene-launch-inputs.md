@@ -757,3 +757,19 @@ The tested peak is 5,840 texture-plane bytes per composition, excluding decoder 
 These graphics allocations do not redefine the existing service or retained-state ceilings.
 
 Native command comparisons and same-state preview/capture images are in `../docs/reviews/cutscene-active-dialogue-drawing-20260917/handoff.md`.
+
+## Nominal playback cadence
+
+The existing preview clock advances 30 modeled resource passes per preview second.
+Playback, displayed time, and integer seeking retain this convention; the clock's final two digits count passes within a nominal second.
+The native outer loop requires two delivered retrace messages before an eligible resource pass when its timing bypass is clear.
+The boot path requests one message per video refresh; the saved US configuration records a nominal refresh value of 60.
+This supports the existing unstalled nominal rate. It does not prove constant native update intervals or accurate historical wall time.
+
+Native display readiness and mode gates can delay a pass.
+After an eligible pass, the loop replaces its previous-update stamp with the current counter; it does not catch up missed passes.
+The saved chair window contains 88 two-message stamp intervals and one three-message interval.
+Graphics-task capture indices have no fixed video-time conversion.
+Controller declarations remain indexed by resource pass, with unchanged ordering and Actor values per pass.
+No numeric clock change or historical delay schedule is inferred from this result.
+Source qualification, native controls, and the missing timing-observation plan are in `../docs/reviews/cutscene-playback-cadence-20260917/handoff.md`.
