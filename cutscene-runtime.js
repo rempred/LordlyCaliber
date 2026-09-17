@@ -1575,6 +1575,7 @@ window.OB64 = window.OB64 || {};
     var echoProfile=externalProducers&&externalProducers.imageEcho,imageEcho=null;
     var menuProfile=externalProducers&&externalProducers.mapMenu,mapMenu=null;
     var sharedActorProfile=externalProducers&&externalProducers.sharedActor,sharedActor=null;
+    var nativeActorDrawing=null;
     if(sharedActorProfile&&(!echoProfile||!externalProducers.directorLaunch||!OB64.cutsceneSharedActor||externalProducers.poseCalls.length||!externalProducers.initialRequests||!['A','B'].every(k=>Number.isInteger(externalProducers.initialRequests[k]))))fail('Computed Actor projection requires shared matrices, fresh launch, initial request slots, and no recorded pose calls.','shared-actor-input');
     if(menuProfile){
       var menuEvents=Array.isArray(externalProducers.events)?externalProducers.events:externalProducers.events.templates;
@@ -1721,11 +1722,14 @@ window.OB64 = window.OB64 || {};
       if(!sharedActorProfile||state.terminal)return;
       try{
         ensureSharedActor();
+        var drawingActors=[];
         for(var slot of Object.keys(state.actors)){
           var actor=state.actors[slot],record=nativeMatrixRecordForActor(actor);if(!record)fail('Matrix preparation requires a qualified ordinary Actor construction.','shared-actor-record');
           var prepared=sharedActor.prepare([{slot:Number(slot),bytes:new Uint8Array(record.buffer)}],state.cameras,state.transformChannels)[0].bytes;
-          actor.matrixRecordBase=recordHex(new DataView(prepared.buffer));yield;
+          actor.matrixRecordBase=recordHex(new DataView(prepared.buffer));
+          drawingActors.push({slot:Number(slot),key:OB64.cutsceneSharedActor.actorDrawingKey(actor,state.transformChannels[actor.transformChannel]),matrixHex:actor.matrixRecordBase.slice(320,448)});yield;
         }
+        nativeActorDrawing={camera:sharedActor.drawingCamera(state.cameras,nativeLaunch.machine.get(0x8022a730)),cameraKey:OB64.cutsceneSharedActor.cameraDrawingKey(projectionFromCamera(state.cameras.actor),projectionFromCamera(state.cameras.registered)),actors:drawingActors};
         for(var context of ['A','B']){
           var request=state.sharedRequests[context];if(request===null)fail('Shared request dispatch requires its initial scalar slots.','shared-request-initial-state');
           if(request>=0){yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}
@@ -2136,6 +2140,7 @@ window.OB64 = window.OB64 || {};
 
     function applyContextDelta(delta) {
       if (!delta) return;
+      if(Object.prototype.hasOwnProperty.call(delta,'nativeActorDrawing'))nativeActorDrawing=delta.nativeActorDrawing?M.cloneJson(delta.nativeActorDrawing,'context native Actor drawing'):null;
       (delta.actors || []).forEach(function(actor) {
         applyContextActor(actor, null);
       });
@@ -2214,6 +2219,7 @@ window.OB64 = window.OB64 || {};
       }
       // The importer consumes own fields; retained records can share a schema.
       var frameState = plainRetainedFrame(contextRuntime.states[contextIndex]);
+      nativeActorDrawing=frameState.nativeActorDrawing?M.cloneJson(frameState.nativeActorDrawing,'context native Actor drawing'):null;
       var currentActors = contextActorMap(frameState);
       var priorActors = contextActorMap(priorContextState);
       Object.keys(currentActors).forEach(function(slot) {
@@ -4844,6 +4850,7 @@ window.OB64 = window.OB64 || {};
       var cameraProjection = projectionFromCamera(state.cameras.actor);
       var registeredProjection = projectionFromCamera(state.cameras.registered);
       return {
+        ...(nativeActorDrawing?{nativeActorDrawing:nativeActorDrawing}:{}),
         frame: state.tick,
         timeSeconds: state.tick / M.previewFps,
         pathId: 'default',
@@ -5321,14 +5328,14 @@ window.OB64 = window.OB64 || {};
     }
 
     function irisLayers() {
-      var count=framebufferLayerCount,layers=Array.from({length:20},function(_,i){var v=new DataView(new ArrayBuffer(88)),c=state.transformChannels[i]||identityTransformChannel();[c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});return {resource:null,record:new Uint8Array(v.buffer)};});
+      var count=framebufferLayerCount,layers=Array.from({length:20},function(_,i){var v=new DataView(new ArrayBuffer(88)),c=state.transformChannels[i]||identityTransformChannel();[c.translateX,c.translateY,c.rotationX,c.rotationY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});return {resource:null,record:new Uint8Array(v.buffer)};});
       (state.background.layers||[]).forEach(function(row){var i=row.nativeOrdinal;if(!Number.isInteger(i)||i<0||i>=count)fail('Framebuffer layers require known native ordinals.','framebuffer-layers');layers[i].resource={kind:'background',assetId:row.assetId,ordinal:i};});
       var selected=state.sceneVignette&&state.sceneVignette.activeSlotByte;
       if(!Number.isInteger(selected)||selected<0||selected>=count)fail('Iris requires its current selected image layer.','framebuffer-layers');
       layers[selected].resource={kind:'vignette',assetId:state.sceneVignette.sourceAssetId};
       return new OB64.cutsceneFramebuffer.Iris(count,selected,layers);
     }
-    function syncIrisTransforms(){if(!iris)return;iris.layers.forEach(function(row,i){var c=state.transformChannels[i];if(!c)return;var v=new DataView(row.record.buffer,row.record.byteOffset,88);[c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});});}
+    function syncIrisTransforms(){if(!iris)return;iris.layers.forEach(function(row,i){var c=state.transformChannels[i];if(!c)return;var v=new DataView(row.record.buffer,row.record.byteOffset,88);[c.translateX,c.translateY,c.rotationX,c.rotationY,c.translateZ,c.uniformScale].forEach(function(n,j){v.setFloat32(64+j*4,n);});});}
     function applyIrisLayers(){if(!iris)return;if(state.sceneVignette)state.sceneVignette.activeSlotByte=iris.selected;var rows=OB64.cutsceneFramebuffer.snapshot(iris).layers;state.transformChannels=rows.map(function(row){return row.transform;});}
     function releaseIrisActors(){
       Object.keys(state.actors).forEach(function(slot){var a=launchInitialization.rootAddress+24+Number(slot)*4,p=nativeLaunch.machine.get(a),at=nativeLaunch.leases.findIndex(function(r){return r.address===p;});if(p&&at<0)fail('Iris Actor release lacks allocation ownership.','framebuffer-owner');if(at>=0)nativeLaunch.leases.splice(at,1);nativeLaunch.machine.put(a,0);});
@@ -5727,7 +5734,7 @@ window.OB64 = window.OB64 || {};
       [
         'background', 'transformChannels', 'cameraState', 'actorProjection',
         'registeredProjection', 'sceneColor', 'overlays', 'sceneVignette',
-        'oversizedImageView'
+        'oversizedImageView', 'nativeActorDrawing'
       ].forEach(function(field) {
         if (!prior || !same(frameState[field], prior[field])) {
           delta[field] = frameState[field];

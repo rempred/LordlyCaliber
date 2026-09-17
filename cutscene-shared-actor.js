@@ -43,8 +43,8 @@ window.OB64=window.OB64||{};
  Shared.prototype.prepare=function(records,cameras,channels){
   this.cameras(cameras);const m=this.machine,e=this.echo;
   for(let i=0;i<20;i++){
-   const c=channels[i];if(!c||![c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale].every(Number.isFinite))fail('Actor preparation requires twenty current transform channels.');
-   e.floats(LAYERS+88*i+64,[c.rotationX,c.rotationY,c.translateX,c.translateY,c.translateZ,c.uniformScale]);
+   const c=channels[i];if(!c||![c.translateX,c.translateY,c.rotationX,c.rotationY,c.translateZ,c.uniformScale].every(Number.isFinite))fail('Actor preparation requires twenty current transform channels.');
+   e.floats(LAYERS+88*i+64,[c.translateX,c.translateY,c.rotationX,c.rotationY,c.translateZ,c.uniformScale]);
   }
   const key=JSON.stringify([cameras,channels]);
   if(key!==this.preparedCameraKey){m.put(0x8022a997,19,1);e.invoke(0x8023ac68,[]);this.preparedCameraKey=key;}
@@ -63,6 +63,30 @@ window.OB64=window.OB64||{};
   if(e.read(INPUT,12).some(Boolean))fail('Native projection changed its separate zero input.','shared-actor-nonaliasing');
   const output=e.read(OUTPUT,8),v=new DataView(output.buffer),point=[v.getFloat32(0),v.getFloat32(4)];if(point.some(n=>!Number.isFinite(n)))fail('Actor projection exceeds the supported finite domain.','shared-actor-projection-domain');
   return {inputX:0,projectionInput:e.read(INPUT,12),output:point,outputHex:Array.from(output,b=>b.toString(16).padStart(2,'0')).join('')};
+ };
+ Shared.prototype.drawingCamera=function(cameras,perspectiveScaleWord){
+  this.cameras(cameras);const e=this.echo,m=this.machine,a=0x8022a720;
+  // Echo scratch initialization does not own this caller field. Fresh playback
+  // supplies its preserved word from the current launch camera bank.
+  if(perspectiveScaleWord!==undefined)m.put(a+16,perspectiveScaleWord);
+  const camera=Array.from({length:14},(_,i)=>m.get(a+4*i)),key=camera.join(':');
+  if(key===this.drawingCameraKey)return this.drawingCameraState;
+  // The render wrapper passes the caller's fifth camera word as homogeneous
+  // perspective scale. It is distinct from the Actor world-scale input.
+  e.invoke(0x800924d0,[ACTOR,ACTOR+128,...camera.slice(0,5)]);
+  e.invoke(0x80090cc0,[ACTOR+64,...camera.slice(5)]);
+  const hex=b=>Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+  const result={kind:'native-packed-actor-camera',projectionMatrixHex:hex(e.read(ACTOR,64)),viewMatrixHex:hex(e.read(ACTOR+64,64)),perspectiveNormalize:m.get(ACTOR+128,2),perspectiveScaleWord:camera[4]};
+  this.drawingCameraKey=key;this.drawingCameraState=result;return result;
+ };
+ Shared.actorDrawingKey=function(actor,channel){
+  channel=channel||actor.sceneTransform||{};
+  return JSON.stringify([actor.id,actor.baseX===undefined?actor.x:actor.baseX,actor.baseY===undefined?actor.y:actor.baseY,actor.baseZ===undefined?actor.z:actor.baseZ,
+   actor.nativeUniformScale===undefined?actor.uniformScale:actor.nativeUniformScale,actor.nativeFacing,actor.heightModeByte,actor.secondaryY,actor.transformChannel,
+   ...['rotationX','rotationY','translateX','translateY','translateZ','uniformScale'].map(k=>channel[k])]);
+ };
+ Shared.cameraDrawingKey=function(actor,registered){
+  return JSON.stringify([actor,registered].map(c=>[c.fovYDegrees,c.aspect,c.near,c.far,c.modelScale,...['eye','target','up'].flatMap(k=>[c[k].x,c[k].y,c[k].z])]));
  };
  O.cutsceneSharedActor=Shared;
 })(window.OB64);

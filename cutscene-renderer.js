@@ -921,6 +921,72 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  function unpackDrawingMatrix(hex) {
+    if(typeof hex!=='string'||!/^[0-9a-f]{128}$/i.test(hex))fail('Native Actor drawing requires a packed matrix.');
+    var bytes=Uint8Array.from(hex.match(/../g),function(v){return parseInt(v,16);}),view=new DataView(bytes.buffer);
+    return Array.from({length:4},function(_,row){return Array.from({length:4},function(_,column){var i=row*4+column;return view.getInt16(i*2)+view.getUint16(32+i*2)/65536;});});
+  }
+
+  function nativeActorGeometry(actor,previewState) {
+    var drawing=previewState&&previewState.nativeActorDrawing,service=OB64.cutsceneSharedActor;
+    if(!drawing||!service||drawing.cameraKey!==service.cameraDrawingKey(previewState.actorProjection,previewState.registeredProjection))return null;
+    var entry=drawing.actors.find(function(row){return row.slot===actor.slot;});
+    // Concurrent child commands can change presentation after importing a frame.
+    // Such changes must not draw with the parent's now-stale native matrix.
+    if(!entry||entry.key!==service.actorDrawingKey(actor))return null;
+    var modelView=multiplyMatrices(unpackDrawingMatrix(entry.matrixHex),unpackDrawingMatrix(drawing.camera.viewMatrixHex));
+    var combined=multiplyMatrices(modelView,unpackDrawingMatrix(drawing.camera.projectionMatrixHex));
+    var origin=multiplyPoint({x:0,y:0,z:0},combined),depth=-modelView[3][2];
+    return {nativePacked:true,matrix:combined,depth:depth,screenPoint:{x:origin[3]?160+160*origin[0]/origin[3]:0,y:origin[3]?120-120*origin[1]/origin[3]:0}};
+  }
+
+  function nativeActorLayerGeometry(geometry,layer) {
+    if(!geometry||!geometry.nativePacked)return null;
+    var sx=Number.isFinite(layer.scaleX)?layer.scaleX:1,sy=Number.isFinite(layer.scaleY)?layer.scaleY:1;
+    var x=layer.drawOffsetX,y=-layer.drawOffsetY,w=layer.width-1,h=layer.height-1;
+    // The ordinary native callback uses signed 16-bit vertices at texel centers.
+    var s16=function(v){return (v<<16)>>16;};
+    var local=[[x,y],[x+w,y],[x+w,y-h],[x,y-h]].map(function(p){return {x:s16(p[0])*sx,y:s16(p[1])*sy,z:0};});
+    var vertices=local.map(function(p,i){return {clip:multiplyPoint(p,geometry.matrix),u:i===1||i===2?1:0,v:i>=2?1:0};});
+    var polygon=vertices;
+    // Homogeneous clipping retains partial sprites that cross the near plane.
+    [function(c){return c[3]+c[0];},function(c){return c[3]-c[0];},function(c){return c[3]+c[1];},function(c){return c[3]-c[1];},function(c){return c[3]+c[2];},function(c){return c[3]-c[2];}].forEach(function(distance){
+      var input=polygon;polygon=[];if(!input.length)return;
+      var previous=input[input.length-1],pd=distance(previous.clip);
+      input.forEach(function(current){var cd=distance(current.clip);if((pd>=0)!==(cd>=0)){var t=pd/(pd-cd);polygon.push({clip:previous.clip.map(function(v,i){return v+t*(current.clip[i]-v);}),u:previous.u+t*(current.u-previous.u),v:previous.v+t*(current.v-previous.v)});}if(cd>=0)polygon.push(current);previous=current;pd=cd;});
+    });
+    polygon=polygon.filter(function(p){return p.clip.every(Number.isFinite)&&p.clip[3]>0;});
+    return {localQuad:local,clipQuad:vertices.map(function(p){return p.clip;}),polygon:polygon.map(function(p){return {x:160+160*p.clip[0]/p.clip[3],y:120-120*p.clip[1]/p.clip[3],u:p.u,v:p.v,inverseW:1/p.clip[3]};})};
+  }
+
+  function drawPackedActorLayers(output,frame,geometry,camera,opacityByte,tint) {
+    var bounds=null;var opacity=Number.isFinite(opacityByte)?clamp(opacityByte,0,255)/255:1;
+    tint=tint||{};var color=['red','green','blue'].map(function(k){return Number.isFinite(tint[k])?clamp(tint[k],0,255)/255:1;});
+    frame.nativeLayers.forEach(function(layer){
+      var result=nativeActorLayerGeometry(geometry,layer),points=result.polygon.map(function(p){return Object.assign({},p,transformStagePoint(p,camera));});
+      if(points.length<3)return;
+      var left=Math.max(0,Math.floor(Math.min.apply(null,points.map(p=>p.x)))),right=Math.min(output.width,Math.ceil(Math.max.apply(null,points.map(p=>p.x))));
+      var top=Math.max(0,Math.floor(Math.min.apply(null,points.map(p=>p.y)))),bottom=Math.min(output.height,Math.ceil(Math.max.apply(null,points.map(p=>p.y))));
+      if(left>=right||top>=bottom)return;
+      bounds=bounds?{left:Math.min(bounds.left,left),top:Math.min(bounds.top,top),right:Math.max(bounds.right,right),bottom:Math.max(bounds.bottom,bottom)}:{left:left,top:top,right:right,bottom:bottom};
+      var cross=function(a,b,p){return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);};
+      var ownsEdge=function(a,b){return b.y<a.y||(b.y===a.y&&b.x>a.x);};
+      for(var triangle=1;triangle<points.length-1;triangle++){
+        var a=points[0],b=points[triangle],c=points[triangle+1],area=cross(a,b,c);
+        if(Math.abs(area)<1e-10)continue;if(area<0){var swap=b;b=c;c=swap;area=-area;}
+        for(var py=top;py<bottom;py++)for(var px=left;px<right;px++){
+          var p={x:px+0.5,y:py+0.5},wa=cross(b,c,p),wb=cross(c,a,p),wc=cross(a,b,p);
+          if(wa<0||wb<0||wc<0||wa===0&&!ownsEdge(b,c)||wb===0&&!ownsEdge(c,a)||wc===0&&!ownsEdge(a,b))continue;
+          wa/=area;wb/=area;wc/=area;var inverseW=wa*a.inverseW+wb*b.inverseW+wc*c.inverseW;if(!(inverseW>0))continue;
+          var u=(wa*a.u*a.inverseW+wb*b.u*b.inverseW+wc*c.u*c.inverseW)/inverseW,v=(wa*a.v*a.inverseW+wb*b.v*b.inverseW+wc*c.v*c.inverseW)/inverseW;
+          var tx=clamp(Math.round(u*(layer.width-1)),0,layer.width-1),ty=clamp(Math.round(v*(layer.height-1)),0,layer.height-1),offset=(ty*layer.width+tx)*4;
+          pixel(output,px,py,[Math.round(layer.rgba[offset]*color[0]),Math.round(layer.rgba[offset+1]*color[1]),Math.round(layer.rgba[offset+2]*color[2]),Math.round(layer.rgba[offset+3]*opacity)]);
+        }
+      }
+    });
+    return bounds;
+  }
+
   function spritePerspectiveScale(point, projection) {
     if (!projection || (projection.mode !== 'native-perspective-capture' &&
         projection.mode !== 'native-perspective-runtime')) return 1;
@@ -1211,10 +1277,10 @@ window.OB64 = window.OB64 || {};
       return actor.visible && actorHasRenderablePass(actor) && actorSpriteOpacity(actor) > 0;
     });
     var renderQueue = renderActors.map(function(actor, index) {
-      var modeZeroGeometry = modeZeroActorGeometry(actor, previewState, projection);
+      var modeZeroGeometry = nativeActorGeometry(actor,previewState)||modeZeroActorGeometry(actor, previewState, projection);
       return {
         kind: 'actor', actor: actor, geometry: modeZeroGeometry, order: index,
-        depth: modeZeroGeometry
+        depth: modeZeroGeometry&&modeZeroGeometry.nativePacked?modeZeroGeometry.depth:modeZeroGeometry
           ? projectionDepth(modeZeroGeometry.scenePoint, modeZeroGeometry.projection)
           : (nativePerspectiveProjection(projection)
           ? projectionDepth(actor, projection) : null
@@ -1254,6 +1320,10 @@ window.OB64 = window.OB64 || {};
       point = transformStagePoint(point, camera);
       var frame = options.actorFrames && options.actorFrames[actor.id];
       if (frame && frame.rgba) {
+        if(modeZeroGeometry&&modeZeroGeometry.nativePacked&&Array.isArray(frame.nativeLayers)){
+          var packedBounds=drawPackedActorLayers(output,frame,modeZeroGeometry,camera,actorSpriteOpacity(actor),actor.tint);
+          if(packedBounds)hitRegions.push(Object.assign({actorId:actor.id},packedBounds));return;
+        }
         var actorScale = modeZeroGeometry ? modeZeroGeometry.scale :
           (Number.isFinite(actor.uniformScale) ? actor.uniformScale : 1) *
             perspectivePixelsPerModelUnit(actor, projection);
@@ -1370,6 +1440,8 @@ window.OB64 = window.OB64 || {};
     transformModeZeroStagePoint: transformModeZeroStagePoint,
     modeZeroBackgroundGeometry: modeZeroBackgroundGeometry,
     modeZeroActorGeometry: modeZeroActorGeometry,
+    nativeActorGeometry: nativeActorGeometry,
+    nativeActorLayerGeometry: nativeActorLayerGeometry,
     unprojectPoint: unprojectPoint,
     untransformStagePoint: untransformStagePoint,
     movementPaths: movementPaths,

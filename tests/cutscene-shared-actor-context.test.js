@@ -19,10 +19,15 @@ for(const f of ['cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene
  assert.deepStrictEqual(direct.actors,compact.actors,'raw and compact context Actors');
  assert.deepStrictEqual(direct.effects,serialized.effects,'raw and serialized context effects');
  assert.deepStrictEqual(direct.effects,compact.effects,'raw and compact context effects');
+ assert.deepStrictEqual(direct.nativeActorDrawing,serialized.nativeActorDrawing,'raw context preserves drawing inputs');
+ assert.deepStrictEqual(direct.nativeActorDrawing,compact.nativeActorDrawing,'compact context preserves drawing inputs');
+ assert(direct.actors.every(a=>OB64.cutsceneRenderer.nativeActorGeometry(a,direct)),'unchanged inherited Actors retain native geometry');
+ const moved=structuredClone(direct);moved.actors[0].baseX+=1;assert.equal(OB64.cutsceneRenderer.nativeActorGeometry(moved.actors[0],moved),null,'child movement rejects stale parent geometry');
  assert.strictEqual(direct.actors.length,7);const slotZero=direct.actors.find(a=>a.slot===0);assert.strictEqual(slotZero.bank,30);
  assert.strictEqual(slotZero.baseX,-34);assert.strictEqual(slotZero.baseZ,117);
  const before=JSON.stringify(parent),childBefore=JSON.stringify(runtime.evaluate(rawChild,0));
  direct.actors[0].bank=999;direct.actors[0].tint.r=3;direct.actors[0].sceneTransform.translateX=999;
+ direct.nativeActorDrawing.camera.viewMatrixHex='changed copy';
  assert.strictEqual(JSON.stringify(parent),before,'child evaluation does not mutate retained parent');
  assert.strictEqual(JSON.stringify(runtime.evaluate(rawChild,0)),childBefore,'evaluations are independent mutable copies');
  assert.deepStrictEqual(runtime.evaluate(run(parent),0).actors,serialized.actors,'repeat import preserves values');

@@ -74,8 +74,8 @@ window.OB64=window.OB64||{};
  Echo.prototype.create=function(args,layer){
   if(!this.initialized||this.query()||!Array.isArray(args)||args.length!==3||args.some(x=>!Number.isInteger(x)||x<0||x>255)||args[0]>1||args[1]<1)fail('Image echo requires an initialized image, idle effect, and bounded mode/duration/fade operands.');
   if(!layer||![layer.translateX,layer.translateY,layer.uniformScale].every(Number.isFinite))fail('Image echo requires current layer-one translation and scale.');
-  this.floats(LAYERS+88+64,[layer.rotationX||0,layer.rotationY||0,layer.translateX,layer.translateY,layer.translateZ||0,layer.uniformScale]);this.invoke(0x8023e998,args);this.started=true;
-  const v=new DataView(this.read(LAYERS+88+64,24).buffer);return {rotationX:v.getFloat32(0),rotationY:v.getFloat32(4),translateX:v.getFloat32(8),translateY:v.getFloat32(12),translateZ:v.getFloat32(16),uniformScale:v.getFloat32(20)};
+  this.floats(LAYERS+88+64,[layer.translateX,layer.translateY,layer.rotationX||0,layer.rotationY||0,layer.translateZ||0,layer.uniformScale]);this.invoke(0x8023e998,args);this.started=true;
+  const v=new DataView(this.read(LAYERS+88+64,24).buffer);return {translateX:v.getFloat32(0),translateY:v.getFloat32(4),rotationX:v.getFloat32(8),rotationY:v.getFloat32(12),translateZ:v.getFloat32(16),uniformScale:v.getFloat32(20)};
  };
  Echo.prototype.advance=function(){if(this.started)this.invoke(0x8023ead0,[]);};
  Echo.prototype.query=function(){return this.invoke(0x8023eaa0,[]);};

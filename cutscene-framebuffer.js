@@ -159,8 +159,8 @@ window.OB64 = window.OB64 || {};
       layers: iris.layers.map(function(row) {
         var view = new DataView(row.record.buffer, row.record.byteOffset, 88);
         return { resource: row.resource, transform: {
-          rotationX: view.getFloat32(64), rotationY: view.getFloat32(68),
-          translateX: view.getFloat32(72), translateY: view.getFloat32(76),
+          translateX: view.getFloat32(64), translateY: view.getFloat32(68),
+          rotationX: view.getFloat32(72), rotationY: view.getFloat32(76),
           translateZ: view.getFloat32(80), uniformScale: view.getFloat32(84)
         } };
       })

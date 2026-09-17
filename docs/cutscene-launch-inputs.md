@@ -688,8 +688,8 @@ It reaches modeled `terminal-state-release` at `node:01F4558C:w0A25` with no unr
 This is modeled scene termination. Outer teardown callbacks and audio queue consumption or synthesis are not implemented by this candidate.
 Earlier inputs without `sharedActor` retain their existing service boundaries.
 
-The final service-region total is 130,530 bytes, below the unchanged 128 KiB bound.
-Retained-state accounting is 108,126,526 bytes, below the unchanged 128 MiB bound.
+The accepted service-only result used 130,530 service bytes and 108,126,526 retained bytes.
+The drawing extension below adds current packed camera and Actor drawing data within the same limits.
 Writable dialogue memory uses lossless 256-byte pages so unchanged pages can share storage.
 Actor and effect records share field schemas and retain immutable value arrays.
 Accounting charges each retained schema once, each new value array, and other newly retained nodes and framebuffer bytes.
@@ -698,6 +698,39 @@ The reader and seek APIs return ordinary records. Evaluated snapshots remain ind
 
 Tests cover native changed-state controls, lossless memory paging, snapshot equivalence, seek rendering, repeat compilation, and cancellation.
 The final release render is black. The earlier pass-2306 render contains Actors and partial room imagery.
-Existing background omission, host-camera Actor rendering, approximate text, missing dialogue portraits, and shadow limits remain.
-Computed native matrices for shared controls do not establish native pixel equivalence in the rendering consumer.
+Existing background omission, approximate text, missing dialogue portraits, and shadow limits remain.
+Inputs without computed drawing data retain the host-camera Actor path.
+Computed matrices do not establish native pixel equivalence in the rendering consumer.
 Candidate evidence and review limits are in `../docs/reviews/cutscene-shared-actor-projection-20260917/handoff.md`.
+
+## Candidate native Actor drawing
+
+Import `../docs/reviews/cutscene-native-actor-drawing-20260917/playback-input.json` through the same default scene route.
+The file contains 70,411 bytes.
+This uses the existing `native-ordinary-actor-v1` profile and its explicit inputs.
+It adds no recorded matrices, display results, or controller choices.
+
+Ordinary sprites now use the current packed Actor matrix and native packed view and perspective matrices.
+The perspective producer consumes the preserved fifth camera word from the launch camera bank.
+That homogeneous perspective scale is distinct from the Actor world-scale input.
+The ordinary native sprite callback establishes local layer vertices and layer scales.
+The renderer transforms those corners, clips partial polygons, and samples the existing selected sprite artwork.
+It preserves the source's sprite flips and layer order.
+These calculations do not emulate exact N64 matrix multiplication, raster coverage, texture filtering, or depth-buffer behavior.
+
+Native record boundaries store X/Y translations before X/Y rotations.
+The native keyframe writer independently establishes that order for all twenty channels.
+Actor, iris, and echo record adapters use that order; public field names and keyframe decoding remain unchanged.
+
+Drawing data follows evaluate, seek, raw-context, serialized-context, and compact-context readers.
+Evaluated copies own their mutable drawing data independently.
+If child commands change the retained Actor or camera inputs, drawing rejects the stale parent matrix and uses the existing host path.
+The default route remains modeled termination after 3,392 resource passes.
+Service regions total 130,578 bytes; retained-state accounting totals 109,153,514 bytes.
+The existing 128 KiB service and 128 MiB retention limits remain unchanged.
+Earlier option-only inputs retain the shared-control-18 boundary after 2,306 completed passes.
+
+Same-state renders and geometry comparisons are in `../docs/reviews/cutscene-native-actor-drawing-20260917/handoff.md`.
+The saved chair comparison retains its conditional alignment through sample 89.
+A tilted-camera comparison is an explicit changed-state control, not an original-game observation.
+Whole-scene pixel agreement and historical video timing remain unmeasured.

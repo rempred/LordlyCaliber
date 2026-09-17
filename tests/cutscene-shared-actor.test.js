@@ -9,7 +9,7 @@ for(const row of fixture.cases){
  [row.scale,row.scale,1].forEach((x,i)=>b.setFloat32(0x104+i*4,x));row.position.forEach((x,i)=>b.setFloat32(0x11c+i*4,x));b.setFloat32(0x130,1);
  const cameras={actor:camera(row.camera),registered:camera([38,4/3,1,5000,1,0,0,400,0,0,0,0,1,0])},channels=Array.from({length:20},()=>({rotationX:0,rotationY:0,translateX:0,translateY:0,translateZ:0,uniformScale:1}));
  echo.machine.put(0x8022a730,0x3e000000);
- b.setUint8(0x13f,row.fields.facing);b.setUint8(0x145,row.fields.heightMode);[row.fields.secondaryY,row.fields.yaw,row.fields.uniformScale].forEach((v,i)=>b.setFloat32(0x128+i*4,v));['rotationX','rotationY','translateX','translateY','translateZ','uniformScale'].forEach((k,i)=>channels[0][k]=row.fields.channel[i]);
+ b.setUint8(0x13f,row.fields.facing);b.setUint8(0x145,row.fields.heightMode);[row.fields.secondaryY,row.fields.yaw,row.fields.uniformScale].forEach((v,i)=>b.setFloat32(0x128+i*4,v));['translateX','translateY','rotationX','rotationY','translateZ','uniformScale'].forEach((k,i)=>channels[0][k]=row.fields.channel[i]);
  const result=service.prepare([{slot:0,bytes:new Uint8Array(b.buffer)}],cameras,channels)[0].bytes;
  assert.equal(Buffer.from(result.slice(0xa0,0xe0)).toString('hex'),row.matrixHex,row.name+' matrix');
  assert.equal(echo.machine.get(0x8022a730),0x3e000000);
