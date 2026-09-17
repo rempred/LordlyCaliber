@@ -667,3 +667,37 @@ Audio requests are reported without synthesis. Background groups remain omitted.
 Existing Actor projection, dialogue glyph/portrait, shadow, and historical timing limits remain.
 The run's service-region total is 130,065 bytes; retained-state accounting is 118,186,236 bytes.
 Those figures are bounded accounting measures, not total browser or process memory.
+
+## Candidate ordinary shared Actor projection
+
+Import `../docs/reviews/cutscene-shared-actor-projection-20260917/playback-input.json` through the same default scene route.
+The file contains 70,411 bytes and keeps the preceding declared controller choices.
+It adds `externalProducers.value.sharedActor: {kind: "native-ordinary-actor-v1", worldScale: 0.10000000149011612}`.
+It supplies initial shared request slots `initialRequests: {A: -1, B: -1}`.
+Fresh launch and the image-echo profile are required. Recorded `poseCalls` must be empty.
+
+The profile executes native preparation for the current 20 declared transform channels and ordinary Actor matrices after each resource pass.
+Shared controls use the current cached matrix and separate native zero-input and output vectors.
+Native request selection and direct-start code feed the existing bounded audio queue; a separate step resets both request slots.
+The profile supplies no recorded projection return or request-selection answer.
+Preparation order and controller timing remain declared experiment inputs, not recovered historical cadence.
+Alternate Actor decoding and alternate Director scheduling remain unsupported by this profile.
+
+The default initialize/import/load route completes 3,392 resource passes and retains 3,392 states.
+It reaches modeled `terminal-state-release` at `node:01F4558C:w0A25` with no unresolved query.
+This is modeled scene termination. Outer teardown callbacks and audio queue consumption or synthesis are not implemented by this candidate.
+Earlier inputs without `sharedActor` retain their existing service boundaries.
+
+The final service-region total is 130,530 bytes, below the unchanged 128 KiB bound.
+Retained-state accounting is 108,126,526 bytes, below the unchanged 128 MiB bound.
+Writable dialogue memory uses lossless 256-byte pages so unchanged pages can share storage.
+Actor and effect records share field schemas and retain immutable value arrays.
+Accounting charges each retained schema once, each new value array, and other newly retained nodes and framebuffer bytes.
+These figures estimate retained representation size; they do not measure total browser memory.
+The reader and seek APIs return ordinary records. Evaluated snapshots remain independently mutable copies.
+
+Tests cover native changed-state controls, lossless memory paging, snapshot equivalence, seek rendering, repeat compilation, and cancellation.
+The final release render is black. The earlier pass-2306 render contains Actors and partial room imagery.
+Existing background omission, host-camera Actor rendering, approximate text, missing dialogue portraits, and shadow limits remain.
+Computed native matrices for shared controls do not establish native pixel equivalence in the rendering consumer.
+Candidate evidence and review limits are in `../docs/reviews/cutscene-shared-actor-projection-20260917/handoff.md`.

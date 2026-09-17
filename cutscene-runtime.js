@@ -27,6 +27,12 @@ window.OB64 = window.OB64 || {};
   var PHASE_FOR_FACING = [0, 9, 6, 3];
   var FACING_FOR_PHASE = [0, 9, 8, 3, 7, 7, 2, 6, 5, 1, 4, 4];
   var bindings = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var retainedRecordFields = new WeakMap();
+  function plainRetainedFrame(frame) {
+    var result=Object.assign({},frame);
+    ['actors','effects'].forEach(function(field){result[field]=(frame[field]||[]).map(function(row){var keys=retainedRecordFields.get(row);if(!keys)return row;var plain={};keys.forEach(function(key,i){plain[key]=row.values[i];});return plain;});});
+    return result;
+  }
 
   function RuntimeError(message, code) {
     this.name = 'CutsceneRuntimeError';
@@ -208,7 +214,7 @@ window.OB64 = window.OB64 || {};
       if (key > 831) return {boundary:'shared-pose-table-input'};
       offset = 0x212880 + 2 * key;
     } else if (mode === 0) {
-      if (!input || input.projectionReturned !== true) return {boundary:'shared-pose-projection-input'};
+      if (!input || (input.projectionReturned !== true && !(input.projectionInput instanceof Uint8Array && input.projectionInput.length===12 && !input.projectionInput.some(Boolean)))) return {boundary:'shared-pose-projection-input'};
       if (key > 760) return {boundary:'shared-pose-table-input'};
       offset = key >= 590 ? 0x212880 + 2 * (key + 2) : 0x2123A0 + 4 * key;
     } else {
@@ -1223,6 +1229,17 @@ window.OB64 = window.OB64 || {};
     var maxTraceEntries = 12000;
     var maxDispatches = 100000;
     var retainedStateBytes = 0;
+    var recordSchemas=new Map(),recordValueArrays=new WeakSet();
+    function compactRecords(rows){return rows.map(function(row){
+      var keys=Object.keys(row),signature=JSON.stringify(keys),schema=recordSchemas.get(signature);
+      if(!schema){
+        var prototype={toJSON:function(){var output={};keys.forEach((key,i)=>{output[key]=this.values[i];});return output;}};
+        keys.forEach(function(key,i){Object.defineProperty(prototype,key,{get:function(){return this.values[i];}});});
+        schema={keys:keys,prototype:Object.freeze(prototype)};recordSchemas.set(signature,schema);
+        retainedStateBytes+=128+keys.reduce((n,k)=>n+96+k.length*2,0);
+      }
+      var record=Object.create(schema.prototype);record.values=schema.keys.map(k=>row[k]);recordValueArrays.add(record.values);retainedRecordFields.set(record,schema.keys);return record;
+    });}
     // Immutable snapshots share unchanged subtrees. Count newly retained nodes,
     // keys and UTF-16 payloads conservatively; this is a storage estimate, not VM heap telemetry.
     function shareSnapshot(previous, next, budget) {
@@ -1234,13 +1251,13 @@ window.OB64 = window.OB64 || {};
       var keys = Object.keys(next);
       var before = budget.bytes;
       var same = previous && typeof previous === 'object' &&
-        Array.isArray(previous) === Array.isArray(next) && Object.keys(previous).length === keys.length;
+        Object.getPrototypeOf(previous) === Object.getPrototypeOf(next) && Object.keys(previous).length === keys.length;
       keys.forEach(function(key) {
         next[key] = shareSnapshot(previous && previous[key], next[key], budget);
         if (!previous || next[key] !== previous[key]) same = false;
       });
       if (same) { budget.bytes = before; return previous; }
-      budget.bytes += 64 + keys.reduce(function(sum, key) { return sum + 24 + key.length * 2; }, 0);
+      budget.bytes += recordValueArrays.has(next) ? 64+next.length*16 : 64 + keys.reduce(function(sum, key) { return sum + 24 + key.length * 2; }, 0);
       return next;
     }
     var dispatchCount = 0;
@@ -1557,6 +1574,8 @@ window.OB64 = window.OB64 || {};
     var framebufferProfile=externalProducers&&externalProducers.framebuffer,iris=null,pendingIris=null,framebuffers=[],framebufferBytes=0,framebufferLayerCount=0;
     var echoProfile=externalProducers&&externalProducers.imageEcho,imageEcho=null;
     var menuProfile=externalProducers&&externalProducers.mapMenu,mapMenu=null;
+    var sharedActorProfile=externalProducers&&externalProducers.sharedActor,sharedActor=null;
+    if(sharedActorProfile&&(!echoProfile||!externalProducers.directorLaunch||!OB64.cutsceneSharedActor||externalProducers.poseCalls.length||!externalProducers.initialRequests||!['A','B'].every(k=>Number.isInteger(externalProducers.initialRequests[k]))))fail('Computed Actor projection requires shared matrices, fresh launch, initial request slots, and no recorded pose calls.','shared-actor-input');
     if(menuProfile){
       var menuEvents=Array.isArray(externalProducers.events)?externalProducers.events:externalProducers.events.templates;
       if(!echoProfile||!externalProducers.directorLaunch||!OB64.cutsceneMapMenu||
@@ -1666,22 +1685,64 @@ window.OB64 = window.OB64 || {};
       if (capturedResume && !continuousResume) return 'resume-shared-pose-input';
       var input=null;
       if (record.opcode===18 || record.opcode===20) {
+        if(sharedActorProfile&&actor.decoderMode===0){
+          try{ensureSharedActor();var nativeRecord=nativeMatrixRecordForActor(actor);if(!nativeRecord)return 'shared-actor-record';input=sharedActor.project(new Uint8Array(nativeRecord.buffer),state.cameras);recordTrace({tick:state.tick,kind:'shared-actor-projection',actorId:actor.id,output:input.output,inputX:input.inputX});}
+          catch(error){producerBoundary(error.message,error.code);return error.code||'shared-actor-projection';}
+        }else{
         input=externalProducers && externalProducers.poseCalls[sharedPoseCallCursor];
         if (!input || input.actorId!==actor.id || input.bank!==actor.bank || input.stateIndex!==actor.poseStateIndex ||
             input.recordOrdinal!==actor.poseCursor || input.opcode!==record.opcode) return 'shared-pose-control-'+record.opcode;
+        }
       }
       var selected=selectNativeSharedRequest(record.opcode,record.operands,actor.decoderMode,input,function(offset) {
         if (!(options.z64 instanceof Uint8Array) || offset+2>options.z64.length) return null;
         return options.z64[offset]*256+options.z64[offset+1];
       });
       if (selected.boundary) return selected.boundary;
-      if (input) sharedPoseCallCursor++;
+      if (input && !sharedActor) sharedPoseCallCursor++;
       if (!selected.suppressed) {
         state.sharedRequests[selected.context]=selected.request;
         recordTrace({tick:state.tick,kind:'shared-pose-request',actorId:actor.id,recordOrdinal:actor.poseCursor,
           opcode:record.opcode,context:selected.context,request:selected.request,tableOffsetZ64:selected.tableOffset});
       }
       return null;
+    }
+
+    function ensureSharedActor(){
+      if(sharedActor)return;
+      if(state.directorMode!==0||state.alternateDirectorScheduling)fail('Computed ordinary Actor projection requires the declared normal mode-zero service path.','shared-actor-mode');
+      if(!imageEcho)imageEcho=new OB64.cutsceneImageEcho(options.z64);
+      sharedActor=new OB64.cutsceneSharedActor(imageEcho,sharedActorProfile,options.z64);
+      checkMenuMemory();
+      if(!nativeLaunch.input.audioQueueHex)fail('Shared request dispatch requires the current native audio request queue.','shared-actor-audio');
+      OB64.cutsceneSharedActorCode.words.forEach(function(r){if(r[0]>=0x800ea604&&r[0]<0x800eac24)dialogueEngine.machine.code[r[0]]=r[2];});
+    }
+    function* prepareSharedActors(){
+      if(!sharedActorProfile||state.terminal)return;
+      try{
+        ensureSharedActor();
+        for(var slot of Object.keys(state.actors)){
+          var actor=state.actors[slot],record=nativeMatrixRecordForActor(actor);if(!record)fail('Matrix preparation requires a qualified ordinary Actor construction.','shared-actor-record');
+          var prepared=sharedActor.prepare([{slot:Number(slot),bytes:new Uint8Array(record.buffer)}],state.cameras,state.transformChannels)[0].bytes;
+          actor.matrixRecordBase=recordHex(new DataView(prepared.buffer));yield;
+        }
+        for(var context of ['A','B']){
+          var request=state.sharedRequests[context];if(request===null)fail('Shared request dispatch requires its initial scalar slots.','shared-request-initial-state');
+          if(request>=0){yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}
+        }
+        // The reset follows dispatch; the dispatcher does not clear its slots.
+        state.sharedRequests.A=-1;state.sharedRequests.B=-1;
+      }catch(error){producerBoundary(error.message,error.code||'shared-actor-input');}
+    }
+    function nativeMatrixRecordForActor(actor){
+      // This scoped record supplies only the matrix producer's read fields.
+      // It does not restore the full-record authority invalidated by other commands.
+      if(!actor.matrixRecordBase||actor.decoderMode!==0)return null;
+      var b=launchBytes(actor.matrixRecordBase,336);
+      b.setFloat32(0x11c,actor.x);b.setFloat32(0x120,actor.y);b.setFloat32(0x124,actor.z);
+      b.setFloat32(0x128,actor.secondaryY);b.setFloat32(0x12c,actor.yawDegrees);b.setFloat32(0x130,actor.uniformScale);
+      b.setUint8(0x13e,actor.transformChannel);b.setUint8(0x13f,actor.nativeFacing);b.setUint8(0x145,actor.heightModeByte);
+      return b;
     }
 
     if (!launchValue('schedulerBranch')) assumption('Preview selects normal Actor update eligibility; no universal video-frame or seconds conversion is proved.');
@@ -2321,6 +2382,7 @@ window.OB64 = window.OB64 || {};
         created.poseId=poseId(created.bank,created.animationKey,created.nativeFacing);
         created.facing='native-'+created.nativeFacing;created.visible=true;
         created.capturedMainScale=1;created.uniformScale=1;created.transformChannel=0;
+        if(sharedActorProfile)created.matrixRecordBase=recordHex(bytes);
         updateActorPose(created);
         if(nativeLaunch)nativeLaunch.write(service.allocationAddress,new Uint8Array(nativeRecordForActor(created).buffer));
         recordTrace({tick:state.tick,kind:'direct-actor-creation',nodeId:node.id,slot:slot,
@@ -2598,6 +2660,7 @@ window.OB64 = window.OB64 || {};
         var image=catalog.getImageAsset(state.sceneVignette.sourceAssetId),c=state.cameras.registered;
         if(!image)fail('Image echo initialization requires current source image metadata.','image-echo-input');
         imageEcho=new OB64.cutsceneImageEcho(options.z64);
+        sharedActor=null;
         if([imageEcho.machine,nativeLaunch.machine,dialogueEngine.machine].reduce(function(total,m){return total+m.regions.reduce(function(n,r){return n+r.bytes.length;},0);},0)>131072)fail('Combined launch, resource, and image matrix memory exceeds 128 KiB.','image-echo-memory-bound');
         imageEcho.initialize(state.sceneVignette,[c.fovYDegrees,c.aspect,c.near,c.far,0,c.eye.x,c.eye.y,c.eye.z,c.target.x,c.target.y,c.target.z,c.up.x,c.up.y,c.up.z],image.width,image.height);
       }catch(error){producerBoundary(error.message,error.code);return;}}
@@ -4808,10 +4871,10 @@ window.OB64 = window.OB64 || {};
         }] : state.flowEvents.slice(),
         overlays: state.overlay ? [Object.assign({}, state.overlay)] : [],
         framebufferEffect:iris?OB64.cutsceneFramebuffer.snapshot(iris):null,
-        imageEcho:imageEcho?imageEcho.snapshot():null,
+        imageEcho:imageEcho&&imageEcho.initialized?imageEcho.snapshot():null,
         mapMenu:mapMenu?mapMenu.snapshot():null,
         nativeExternal: {
-          dialogue:dialogueEngine?dialogueEngine.snapshot():null,
+          dialogue:dialogueEngine?dialogueEngine.snapshot(sharedActorProfile?256:undefined):null,
           sharedRequests:Object.assign({},state.sharedRequests),
           menus:Object.keys(state.transientRenderEntities).map(function(slot) {
             return Object.assign({},state.transientRenderEntities[slot]);
@@ -5424,6 +5487,7 @@ window.OB64 = window.OB64 || {};
       if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');
       if (!stopReason) yield* applyResourcePass('after');
+      if (!stopReason) yield* prepareSharedActors();
       if (continuousResume && !stopReason) {
         completedResumeUpdates++;
         if (completedResumeUpdates >= capturedResume.updates && !state.terminal) stopReason='prospective-update-limit';
@@ -5443,7 +5507,10 @@ window.OB64 = window.OB64 || {};
         stopReason='qualified-resume-update-complete';
       }
       var frameBudget = { bytes: 0 };
-      var frameState = shareSnapshot(states[states.length - 1], snapshot(block), frameBudget);
+      var nextSnapshot=snapshot(block);
+      if(sharedActorProfile){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
+      var frameState = shareSnapshot(states[states.length - 1], nextSnapshot, frameBudget);
+      if(sharedActorProfile)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
       var frameBytes = frameBudget.bytes;
       if (retainedStateBytes + framebufferBytes + frameBytes > maxStateBytes) {
         if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');
@@ -5610,7 +5677,8 @@ window.OB64 = window.OB64 || {};
 
     var contextFrames = [];
     var prior = null;
-    runtime.states.forEach(function(frameState) {
+    runtime.states.forEach(function(storedFrame) {
+      var frameState=plainRetainedFrame(storedFrame);
       var delta = {};
       var currentActors = bySlot(frameState.actors);
       var priorActors = bySlot(prior && prior.actors);
@@ -5696,7 +5764,7 @@ window.OB64 = window.OB64 || {};
     }
     if (!Number.isInteger(requestedTick)) fail('Director tick must be an integer.', 'invalid-tick');
     var tick = clamp(requestedTick, 0, runtime.states.length - 1);
-    var output = M.cloneJson(runtime.states[tick], 'runtime state');
+    var output = M.cloneJson(plainRetainedFrame(runtime.states[tick]), 'runtime state');
     if(runtime.framebuffers&&runtime.framebuffers.length)output.framebuffers=runtime.framebuffers;
     output.frame = tick;
     output.timeSeconds = tick / M.previewFps;

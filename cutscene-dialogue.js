@@ -320,8 +320,14 @@ window.OB64 = window.OB64 || {};
     } else rejectUnused(event.releaseHelpers);
     this.reconcile(event);
   };
-  Engine.prototype.snapshot = function() {
-    var snapshot={memory:this.machine.regions.filter(function(r){return r.writable;}).map(function(r){return {address:r.address,hex:hex(r.bytes)};}),
+  Engine.prototype.snapshot = function(pageBytes) {
+    if(pageBytes!==undefined&&pageBytes!==256)boundary('Dialogue snapshot pages must contain 256 bytes.','dialogue-snapshot-page');
+    var memory=[];
+    this.machine.regions.filter(function(r){return r.writable;}).forEach(function(r){
+      var size=pageBytes||r.bytes.length;
+      for(var offset=0;offset<r.bytes.length;offset+=size)memory.push({address:r.address+offset,hex:hex(r.bytes.subarray(offset,Math.min(r.bytes.length,offset+size)))});
+    });
+    var snapshot={memory:memory,
       owners:this.owners.map(function(o){return o?{ownerId:o.ownerId,payloadHex:o.payload?hex(o.payload):null}:null;})};
     if(this.payloadStorage)snapshot.payloadStorage={...this.payloadStorage.config};
     return snapshot;

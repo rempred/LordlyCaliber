@@ -17,6 +17,19 @@ window.OB64=window.OB64||{};
   if(!Array.isArray(input.helperOutcomes)||input.helperOutcomes.length>10000)stop('Resource scheduling requires an explicit external helper outcome stream.');
   input.helperOutcomes.forEach(function(r){OB64.cutsceneDialogue.validateHelper(r);if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(r.address))stop('Computed archive/free services must not receive external outcomes.');});
   this.engine=engine;this.machine=engine.machine;this.input=input;this.helperCursor=0;this.controlCursor=0;this.trace=[];
+  // The native priority rebuild resets its count, then writes each live queue
+  // entry before reading it. Preserve the initial live prefix; reserve output
+  // capacity for all six slots without treating unused cells as caller inputs.
+  var m=this.machine,count=m.get(0x800c49d0,2);
+  if(count<=6){
+  for(var q=0;q<count;q++)m.region(0x800c4c10+q*2,2,false);
+  var start=-1;
+  for(var qi=0;qi<=12;qi++){
+    var present=qi<12&&m.regions.some(r=>0x800c4c10+qi>=r.address&&0x800c4c10+qi<r.address+r.bytes.length);
+    if(qi<12&&!present){if(start<0)start=qi;}
+    else if(start>=0){m.regions.push({address:0x800c4c10+start,bytes:new Uint8Array(qi-start),writable:true});start=-1;}
+  }
+  }
   var self=this;this.machine.sharedOutcome=function(pc){if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(pc))return null;var row=input.helperOutcomes[self.helperCursor++];if(!row)stop('The explicit external helper outcome stream is exhausted.','dialogue-helper-outcome');return row;};
  }
  Scheduler.prototype.read=function(slot){var a=POOL+slot*STRIDE,m=this.machine;return {flags:m.get(a,2),initialize:m.get(a+0x10),callback:m.get(a+0x14)};};

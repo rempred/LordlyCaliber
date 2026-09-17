@@ -1,0 +1,32 @@
+'use strict';
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=path.resolve(__dirname,'../..');
+new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-framebuffer-integration.test.js'),'utf8').split('(async()=>')[0])(require,__dirname);
+for(const f of ['cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js','cutscene-map-menu-data.js','cutscene-map-menu.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',f),'utf8'),{filename:f});
+(async()=>{
+ const v=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){z64[i]=v[i+1];z64[i+1]=v[i];}
+ const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},state=OB64.cutsceneUI.initialize(rom),input=structuredClone(require('./fixtures/cutscene-shared-actor.json').input),before=JSON.stringify(input),scene=state.catalog.getScene(input.assetId);
+ assert(Buffer.byteLength(before)<131072);assert.equal(OB64.cutsceneUI.launchContextChoice(state,scene,null).id,'event-director:7:b00A4:invocation:52:context:0');
+ OB64.cutsceneUI.setNativeLaunchInputs(state,scene,input);await OB64.cutsceneUI.loadScene(rom,state,scene);const r=state.runtimeByAssetId[scene.assetId],runtime=OB64.cutsceneRuntime;
+ assert.equal(JSON.stringify(input),before);assert.equal(r.states.length,3392,JSON.stringify(r.unresolvedQuery));assert.equal(r.outcome,'modeled-termination');assert.equal(r.unresolvedQuery,null);assert.equal(r.states.at(-1).runtime.terminalReason,'terminal-state-release');assert.equal(r.states.at(-1).runtime.status,'profiled');assert.deepStrictEqual(r.assumptions,[]);assert(r.retainedStateBytes<128*1024*1024);assert(r.trace.find(t=>t.kind==='map-menu-memory').bytes<=131072);
+ assert.deepStrictEqual(r.trace.filter(t=>t.kind==='shared-pose-request').map(t=>[t.tick,t.opcode,t.context,t.request]),[[2306,18,'A',515],[2541,18,'A',515],[2945,18,'A',577],[2948,19,'B',578]]);
+ assert.equal(input.externalProducers.value.poseCalls.length,0);assert(!before.includes('projectionReturned'));assert(r.states.every(s=>s.nativeExternal.consumedPoseCalls===0));
+ const source=await OB64.cutsceneCodec.loadSceneSource(z64,scene),p=OB64.cutsceneCodec.projectSceneDocument(scene,source,state.catalog),images={};
+ for(const pass of [2306,2948,3391,2306,2948]){
+  const preview=runtime.evaluate(r,pass),plain=JSON.parse(JSON.stringify(r.states[pass]));delete preview.framebuffers;assert.deepStrictEqual(preview,plain);
+  const target=await OB64.cutsceneUI.capturePreviewFrame(rom,state,p.document,{preview:runtime.evaluate(r,pass),pass,nodeId:'shared-actor-seek',backgroundPolicy:'omit'});assert(!target.error);if(images[pass])assert.deepStrictEqual(target.rgba,images[pass]);else images[pass]=target.rgba;
+ }
+ const sample=runtime.evaluate(r,2306),x=sample.actors[0].x;sample.actors[0].x=9999;sample.nativeExternal.dialogue.memory[0].hex='bad';assert.equal(runtime.evaluate(r,2306).actors[0].x,x);assert.notEqual(runtime.evaluate(r,2306).nativeExternal.dialogue.memory[0].hex,'bad');assert(Object.isFrozen(r.states[2306].actors[0]));
+ const options={z64,nativeLaunchInputs:input,diagnosticAssumptions:false,maxTicks:3500,captureFrame:request=>{const f=r.framebuffers.find(x=>x.pass===request.pass);assert(f);return {width:320,height:240,rgba:f.rgba,targetId:f.targetId};}};
+ const again=await runtime.compileAsync(p.document,p.program,scene,state.catalog,options);assert.equal(JSON.stringify(again.states),JSON.stringify(r.states));assert.notStrictEqual(again.framebuffers[0].rgba,r.framebuffers[0].rgba);assert.notStrictEqual(again.states[2306].actors[0],r.states[2306].actors[0]);
+ // Compare the retained representation with ordinary objects and unsplit regions.
+ const compact=runtime.compile(p.document,p.program,scene,state.catalog,{...options,maxTicks:80});
+ let plainSource=fs.readFileSync(path.join(R,'editor/cutscene-runtime.js'),'utf8').replace('if(sharedActorProfile){nextSnapshot.actors=compactRecords','if(false){nextSnapshot.actors=compactRecords').replace('dialogueEngine.snapshot(sharedActorProfile?256:undefined)','dialogueEngine.snapshot()');
+ vm.runInThisContext(plainSource);const ordinary=OB64.cutsceneRuntime.compile(p.document,p.program,scene,state.catalog,{...options,maxTicks:80});OB64.cutsceneRuntime=runtime;
+ function merge(rows){const out=[];for(const r of rows.slice().sort((a,b)=>a.address-b.address)){const last=out.at(-1);if(last&&last.address+last.hex.length/2===r.address)last.hex+=r.hex;else out.push({...r});}return out;}
+ for(let i=0;i<80;i++){const a=runtime.evaluate(compact,i),b=runtime.evaluate(ordinary,i);a.nativeExternal.dialogue.memory=merge(a.nativeExternal.dialogue.memory);b.nativeExternal.dialogue.memory=merge(b.nativeExternal.dialogue.memory);assert.deepStrictEqual(a,b);}
+ assert(compact.retainedStateBytes<ordinary.retainedStateBytes);assert.deepStrictEqual(runtime.compactContextRuntime(compact).contextFrames,runtime.compactContextRuntime(ordinary).contextFrames);
+ const cancel=new AbortController(),prepare=OB64.cutsceneSharedActor.prototype.prepare;let reached=false;OB64.cutsceneSharedActor.prototype.prepare=function(...args){const result=prepare.apply(this,args);reached=true;cancel.abort();return result;};
+ try{await assert.rejects(runtime.compileAsync(p.document,p.program,scene,state.catalog,{...options,signal:cancel.signal}),e=>e.name==='AbortError');}finally{OB64.cutsceneSharedActor.prototype.prepare=prepare;}assert(reached);
+ const captureCancel=new AbortController();await assert.rejects(runtime.compileAsync(p.document,p.program,scene,state.catalog,{...options,signal:captureCancel.signal,captureFrame:()=>{captureCancel.abort();return {width:320,height:240,rgba:r.framebuffers[0].rgba,targetId:'cancel'};}}),e=>e.name==='AbortError');
+ console.log(JSON.stringify({status:'pass',states:r.states.length,completedPasses:r.trace.filter(t=>t.kind==='resource-pass').length,termination:r.states.at(-1).runtime.terminalReason,retainedStateBytes:r.retainedStateBytes,nativeMemoryBytes:r.trace.find(t=>t.kind==='map-menu-memory').bytes,defaultUiRoute:true,seekRendering:true,recompileParity:true,plainSnapshotEquivalence:80,contextDeltaEquivalence:true,cancellation:true,inputBytes:Buffer.byteLength(before)+1}));
+})().catch(e=>{console.error(e.stack||e);process.exitCode=1;});
