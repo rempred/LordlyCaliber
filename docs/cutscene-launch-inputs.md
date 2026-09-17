@@ -791,21 +791,23 @@ The constructor capture at pass 641 remains supported.
 
 Native geometry and layer-selection controls belong to the accepted room milestone.
 Other scene modes, shadows, special-effect ordering, exact N64 rasterization, and synchronized original displayed pixels remain outside this result.
-The candidate introduces no native service regions or retained snapshot fields.
+The room result introduces no native service regions or retained snapshot fields.
 Decoded room artwork uses the existing UI image cache and its unchanged 32 MiB limit.
 Temporary render queues reference existing images and Actors; they do not retain image copies or runtime states.
 The existing 128 KiB service and 128 MiB retained-state limits keep their existing meaning.
 
-## Candidate opening dialogue presentation
+## Ordinary opening dialogue presentation
 
 The room input above also enables the opening presentation; no additional supplied input is needed.
 Portrait side comes from the current dialogue payload. A right portrait starts at `7 * textColumns + 16` in frame-local coordinates.
 Text starts eight pixels inside the left edge for the right portrait, or 56 pixels inside for the left portrait.
 The horizontal pointer tile selects the current texture offset with the native eight-pixel wrapping behavior.
 The ordinary continuation indicator uses the current visibility byte and animation phase, without a separate preview timer.
+A nonzero history presentation gate suppresses the indicator until the current page returns; history-arrow presentation retains its existing guard.
 Its four 16-row frames come from the existing ROM artwork.
 
 Other frame styles, continuation types, pointer rows, and nonopaque presentation retain explicit capture boundaries and approximate HTML fallback.
 The first opening window composes through the checked interval ending at pass 640.
 Native controls, composed images, and the next reached boundary are recorded in `../docs/reviews/cutscene-opening-dialogue-presentation-20260917/handoff.md`.
-This candidate adds no native service regions or retained-state fields. Cache and retained-state limits keep their existing meanings.
+The combined opening result and history correction are independently accepted in `../docs/reviews/cutscene-opening-dialogue-history-review-20260917/review.md`.
+The result adds no native service regions or retained-state fields. Cache and retained-state limits keep their existing meanings.
