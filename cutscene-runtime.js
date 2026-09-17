@@ -2212,7 +2212,8 @@ window.OB64 = window.OB64 || {};
         priorContextFrameIndex = Math.max(priorContextFrameIndex, contextIndex);
         return;
       }
-      var frameState = contextRuntime.states[contextIndex];
+      // The importer consumes own fields; retained records can share a schema.
+      var frameState = plainRetainedFrame(contextRuntime.states[contextIndex]);
       var currentActors = contextActorMap(frameState);
       var priorActors = contextActorMap(priorContextState);
       Object.keys(currentActors).forEach(function(slot) {
