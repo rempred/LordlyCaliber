@@ -1611,7 +1611,7 @@ window.OB64 = window.OB64 || {};
             if(!OB64.cutsceneDirectorLaunch||launchValue('capturedSnapshot')||launchValue('existingActors')||contextRuntime)fail('Fresh Director launch cannot inherit a captured or concurrent Actor namespace.','director-launch-input');
             nativeLaunch=new OB64.cutsceneDirectorLaunch(externalProducers.directorLaunch,options.z64);
             var launchBinding=resourceScheduler.read(resourceScheduler.input.directorSlot);
-            if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==(nativeLaunch.input.sceneMode===2?0x802260f0:0x80225a1c))fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
+            if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==nativeLaunch.initializeCallback)fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
             if(externalEventCount(externalProducers.events)||(externalProducers.colorCreates||[]).length)fail('Fresh launch must omit recorded resource and color events.','director-launch-input');
             if(nativeLaunch.resourceKey!==parseInt(scene.directorKey,16))fail('Director selector does not resolve to the selected ROM stream.','director-launch-selector');
             resourceScheduler.initializeDirector=initializeDirectorResource;
@@ -1695,8 +1695,9 @@ window.OB64 = window.OB64 || {};
     function registerSharedPoseRequest(actor, record) {
       if (capturedResume && !continuousResume) return 'resume-shared-pose-input';
       var input=null;
+      if(nativeLaunch&&nativeLaunch.stage&&actor.decoderMode!==0&&[18,20].includes(record.opcode)){try{var computed=nativeLaunch.stage.sharedRequest(actor,record);if(!computed.suppressed){state.sharedRequests[computed.context]=computed.request;recordTrace({tick:state.tick,kind:'shared-pose-request',actorId:actor.id,opcode:record.opcode,context:computed.context,request:computed.request,source:'native-preserved-Stage'});}return null;}catch(error){producerBoundary(error.message,error.code);return error.code||'preserved-stage-request';}}
       if (record.opcode===18 || record.opcode===20) {
-        if(sharedActorProfile&&actor.decoderMode===0){
+        if(nativeLaunch&&nativeLaunch.stage&&actor.decoderMode===0){try{OB64.cutsceneRomStart.dialoguePoint(nativeLaunch,actor,state.cameras.actor);input={projectionReturned:true,projectionInput:new Uint8Array(12),inputX:0};}catch(error){producerBoundary(error.message,error.code);return error.code;}}else if(sharedActorProfile&&actor.decoderMode===0){
           try{ensureSharedActor();var nativeRecord=nativeMatrixRecordForActor(actor);if(!nativeRecord)return 'shared-actor-record';input=sharedActor.project(new Uint8Array(nativeRecord.buffer),state.cameras);recordTrace({tick:state.tick,kind:'shared-actor-projection',actorId:actor.id,output:input.output,inputX:input.inputX});}
           catch(error){producerBoundary(error.message,error.code);return error.code||'shared-actor-projection';}
         }else{
@@ -1727,6 +1728,10 @@ window.OB64 = window.OB64 || {};
       checkMenuMemory();
       if(!nativeLaunch.input.audioQueueHex)fail('Shared request dispatch requires the current native audio request queue.','shared-actor-audio');
       OB64.cutsceneSharedActorCode.words.forEach(function(r){if(r[0]>=0x800ea604&&r[0]<0x800eac24)dialogueEngine.machine.code[r[0]]=r[2];});
+    }
+    function* dispatchPreservedRequests(){
+      if(!nativeLaunch||!nativeLaunch.stage)return;
+      try{for(var context of ['A','B']){var request=state.sharedRequests[context];if(request>=0){yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}}state.sharedRequests.A=-1;state.sharedRequests.B=-1;}catch(error){producerBoundary(error.message,error.code);}
     }
     function* prepareSharedActors(){
       if(!sharedActorProfile||state.terminal)return;
@@ -3443,6 +3448,15 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeOrdinaryRoster(node,words) {
+      if(nativeLaunch&&nativeLaunch.stage){
+        try{
+          if(Object.keys(state.actors).length)fail('Preserved Stage roster construction currently requires an empty Director Actor namespace.','preserved-stage-input');
+          var current=Object.keys(state.actors).map(function(slot){return {slot:Number(slot),bytes:new Uint8Array(nativeRecordForActor(state.actors[slot]).buffer)};}),made=nativeLaunch.stage.materialize(words,current);
+          actorInputRows=nativeLaunch.stage.rows();
+          made.forEach(function(r){var actor=ensureActor(r.slot);actor.id=actor.id||'preview-roster:'+r.slot;actor.visible=true;actor.source={launchSourceIdentity:launchInputs.sourceIdentity,invocationId:launchInputs.invocationId,evidenceGrade:'Candidate'};applyNativeRecord(actor,new DataView(r.bytes.buffer),'native-ROM-roster-construction');if(r.poseRequested)updateActorPose(actor);recordTrace({tick:state.tick,kind:'roster-construction',nodeId:node.id,slot:r.slot,sourceRow:actor.sourceRowOrdinal,actorIdentity:actor.id});});
+        }catch(error){actorBoundary(error.message,error.code||'preserved-stage-input');}
+        return;
+      }
       if (!actorInputRows) {actorBoundary('Actor-roster materializer requires all 20 caller rows.');return;}
       var construction=launchValue('rosterConstruction'), first=signed(words[1]),second=signed(words[2]),variant=0;
       var callerControl=(unsigned(words[0])&0x7FFFFFFF)===0xAB?1:0;
@@ -4786,7 +4800,9 @@ window.OB64 = window.OB64 || {};
         var channel = state.transformChannels[actor.transformChannel] ||
           identityTransformChannel();
         var modeZeroStage = state.directorMode === 0;
-        var renderedY = actor.heightModeByte & 0x04
+        var renderedY = nativeLaunch&&nativeLaunch.stage&&(actor.heightModeByte&1)
+          ? nativeLaunch.stage.height(actor.x,actor.z)
+          : actor.heightModeByte & 0x04
           ? actor.y + actor.secondaryY
           : (actor.heightModeByte & 0x02 ? actor.secondaryY : actor.y);
         return {
@@ -5469,7 +5485,7 @@ window.OB64 = window.OB64 || {};
     }
     function* initializeDirectorResource(slot) {
       var e=dialogueEngine,m=e.machine,a=0x800e82c8+slot*168;
-      if(m.get(a+0x10)!==(nativeLaunch.input.sceneMode===2?0x802260f0:0x80225a1c))fail('Fresh launch requires the qualified Director initializer.','director-launch-binding');
+      if(m.get(a+0x10)!==nativeLaunch.initializeCallback)fail('Fresh launch requires the qualified Director initializer.','director-launch-binding');
       m.put(0x800c4c20,slot);
       var record=Uint8Array.from({length:168},function(_,i){return m.get(a+i,1);});
       record[4]=6;
@@ -5477,6 +5493,7 @@ window.OB64 = window.OB64 || {};
       yield* nativeLaunch.initialize(record);
       launchInitialization=nativeLaunch.snapshot();
       state.directorMode=nativeLaunch.input.sceneMode;
+      if(nativeLaunch.stage){executeBackground({id:'preview-world-environment'},[0,0]);state.sharedRequests={A:nativeLaunch.stage.machine.get(0x801d06c4)|0,B:nativeLaunch.stage.machine.get(0x801d06c8)|0};}
       if(state.directorMode===2)state.projectionTransform=OB64.cutsceneRomStart.projectionState(nativeLaunch);state.directorModeStatus='computed-native-launch';
       var camera=launchBytes(launchInitialization.cameraHex,144);
       ['actor','registered'].forEach(function(bank,index){var at=index?88:0,values=Array.from({length:14},function(_,i){return camera.getFloat32(at+i*4);});
@@ -5542,6 +5559,8 @@ window.OB64 = window.OB64 || {};
         recordTrace({tick:0,kind:'captured-resume-entry',entry:capturedResume.entry,parserWord:capturedSnapshot.observedParserCursor});
       }
     }
+    var preservedStageMemory=null;
+    try {
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
@@ -5559,6 +5578,7 @@ window.OB64 = window.OB64 || {};
         }
       }
       if (!stopReason) yield* prepareSharedActors();
+      if (!stopReason) yield* dispatchPreservedRequests();
       if (continuousResume && !stopReason) {
         completedResumeUpdates++;
         if (completedResumeUpdates >= capturedResume.updates && !state.terminal) stopReason='prospective-update-limit';
@@ -5595,6 +5615,8 @@ window.OB64 = window.OB64 || {};
           !Object.keys(state.movementJobs).length && !state.projectionJob &&
           !state.oversizedImageTransitionJob) break;
     }
+
+    } finally {if(nativeLaunch&&nativeLaunch.stage){preservedStageMemory={arenaLimitBytes:524288,workingLimitBytes:655360,workingBytes:nativeLaunch.stage.byteLength(),liveAllocations:nativeLaunch.stage.leases.filter(r=>!r.freed).length,rootAddress:nativeLaunch.stage.root,retainedPerSnapshotBytes:0,released:true};nativeLaunch.stage.dispose();}}
 
     if (!state.terminal && states.length >= maxTicks && !(capturedResume && resumedMenuSelection) && (!continuousResume || !stopReason)) {
       stopReason = 'tick-limit';
@@ -5637,6 +5659,7 @@ window.OB64 = window.OB64 || {};
       directorMode: state.directorMode,
       directorModeStatus: state.directorModeStatus,
       directorInitialization: launchInitialization,
+      preservedStageMemory:preservedStageMemory,
       clockUnit: resourceScheduler ? 'declared resource passes with explicit projection preparation; not video frames' : continuousResume ? 'declared prospective normal Director updates; no historical cadence' : capturedResume ? 'one prospective native Director update; no historical cadence' : capturedSnapshot ? 'captured snapshot; no elapsed update' : 'native scheduler update',
       capturedSnapshot: capturedSnapshot ? { observedParserCursor: capturedSnapshot.observedParserCursor,
         resumeState: continuousResume ? 'candidate-continuous-updates' : capturedResume ? 'qualified-prospective-update' : 'unknown', otherJobOwners: 'unknown',

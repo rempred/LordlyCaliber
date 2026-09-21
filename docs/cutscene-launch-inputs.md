@@ -822,10 +822,10 @@ The native terminal resource class and the runtime scene mode are separate value
 Terminal class `1` selects caller route `-3`, scene mode `2`, and map kind `24`.
 The supported fresh route requires one initial, nonnegative environment command and no secondary or stop pre-scan flags.
 Missing environment setup retains an inherited-Stage boundary.
-Negative environment sentinels, other terminal classes, and delayed or repeated Stage construction retain specific boundaries.
+Negative environment sentinels, unsupported terminal classes, and delayed or repeated Stage construction retain specific boundaries.
 Caller and dialogue source contracts must match the current loaded ROM.
 
-The preview creates an isolated scene with an empty roster and audio queue.
+The fresh class-one preview creates an isolated scene with an empty roster and audio queue.
 It uses standard Actor presentation, zero scenario/event values, no alternate world context, and white world tint.
 Controls remain neutral except automatic acknowledgement after native page completion.
 Text speed is 150, and proximity checks are disabled.
@@ -851,7 +851,7 @@ Audio commands update the modeled queue; the preview does not synthesize game au
 Scene props retain the existing composed-preview qualification.
 
 ROM startup uses the existing compact Actor records and 256-byte dialogue snapshot pages.
-The retained-state ceiling remains 128 MiB, and the service-memory ceiling remains 128 KiB.
+The retained-state ceiling remains 128 MiB. The existing Director/dialogue service-memory ceiling remains 128 KiB.
 Neutral preview controls cover the compiler's existing 30,000-pass bound.
 Cancellation, neutral-policy waits, and immutable seeking remain supported.
 
@@ -859,3 +859,51 @@ Run `node tests/cutscene-shared-rom-start.test.js` for shared eligibility, non-G
 Run `node tests/cutscene-graduation-rom-start.test.js` for fresh Graduation, changed-ROM, cancellation, and composed controls.
 The predecessor native narration drawing comparisons remain in `tests/cutscene-graduation-narration.test.js`.
 Parent evidence is in `../docs/reviews/cutscene-shared-rom-start-20260921/`.
+
+
+## Preserved Stage preview for terminal class two
+
+Terminal class `2` selects route `-6`, scene mode `2`, callback `0x80226324`, and loader mode `1`.
+The preview constructs its own Stage before that callback runs.
+The callback preserves that Stage instead of allocating an empty replacement.
+Selection follows the loaded terminal class and caller contract; catalog identities do not select behavior.
+Additional environment setup commands retain a specific boundary on this path.
+
+The declared preview unit contains level-one Hero and Fighter members in formation positions `4` and `1`.
+It uses unit zero, environment zero, one-unit terrain mode, clear launch flags, white world tint, and random seed one.
+The native character initializer reads current ROM class records.
+The native unit builder computes the twenty input rows, linked objects, formation positions, terrain, and class resources.
+These choices are preview inputs. They do not claim the historical party or the selected event's exact gameplay caller.
+The existing protagonist text default remains separate from character membership.
+
+The fixed-owner initializer executes through its shared construction and subsystem initialization, before its final battle callback.
+The preview does not start that battle callback.
+The actual class-two callback then releases temporary subsystems and retains the Stage and input rows.
+Native roster materialization consumes those rows and allocates Director Actors in the existing Director arena.
+Its requested immediate poses use the existing shared pose interpreter and current ROM registration.
+This initial materialization requires an empty Director Actor namespace; a later materialization retains an explicit boundary.
+
+Terrain height for the reached Actor origin and presentation paths is computed by the native terrain query.
+Ordinary pose controls `18` and `20` retain the projector's unchanged zero-input semantics.
+The modeled shared requests reach the native audio queue. Audio synthesis remains unsupported.
+The upward speech pointer uses the native atlas coordinates and mirrored texture addressing.
+HUFF environment decoding retains the existing approximate pixel-color qualification.
+
+The checked entries are `Director resource 01F450D0` and `Director resource 01F4C45A`.
+They reach modeled terminal release after 485 and 627 retained states, with two Actors and composed before/after class changes.
+The second resource also composes its reached upward speech pointer.
+These results do not establish universal class-two playback or original-framebuffer equality.
+Movement with unresolved proximity prerequisites, special body variants, depth attachments, and other missing services retain their boundaries.
+
+Each compilation owns a separate 512 KiB Stage resource arena and a 640 KiB limit for Stage native memory regions.
+The decoded environment occupies 153,608 bytes of that arena.
+Freed allocations become inaccessible. Compilation completion, limits, and cancellation dispose the Stage regions.
+Stage memory is not copied into retained frame snapshots; seeking uses immutable published Actor and presentation values.
+The checked live Stage region total is 281,418 bytes before disposal.
+These limits do not bound the whole browser, decoded artwork caches, or JavaScript code objects.
+The existing 128 KiB Director/dialogue arena and 128 MiB retained-state ceiling remain unchanged.
+
+`cutscene-preserved-stage-data.js` contains qualified native code and the HUFF header contract.
+Its generator and source list are `../docs/reviews/cutscene-preserved-stage-20260921/generate.py` and `stage-sources.json`.
+Run `node tests/cutscene-preserved-stage.test.js` for ordinary playback, visible Actors, current-ROM changes, preservation, cancellation, input priority, and memory controls.
+Parent native controls and composed samples are in `../docs/reviews/cutscene-preserved-stage-20260921/`.

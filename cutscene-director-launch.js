@@ -45,6 +45,8 @@ window.OB64=window.OB64||{};
    else return step(pc);this.r[0]=0;this.steps++;return {target:null,annul:false};};
   m.serviceHelper=this.helper.bind(this);
   if(input.sceneMode===2)OB64.cutsceneRomStart.attachLaunch(this);
+  this.initializeCallback=input.preservedStage===true?0x80226324:input.sceneMode===2?0x802260f0:0x80225a1c;
+  if(input.preservedStage===true){if(!OB64.cutscenePreservedStage)stop('Preserved Stage native services are unavailable.','preserved-stage-contract');if(input.sceneMode!==2||input.environmentSelector!==0||input.world.mapKind!==0||input.world.eventState!==0||dv.getUint32(decoded.length-4)!==0xff000002)stop('Preserved Stage preview requires terminal class two and its declared environment-zero world.','preserved-stage-contract');this.stage=new OB64.cutscenePreservedStage(rom,input);this.stage.attach(this);}
  }
  Launch.prototype.resource=function(key){var p=(key&0x0fffffff)+0x594280,r=this.rom;if(!Number.isInteger(key)||key<=0||key>0xffffffff||key>>>28||p+4>r.length)stop('Launch resource key is invalid.','director-launch-resource');var n=new DataView(r.buffer,r.byteOffset,r.byteLength).getUint32(p);if(n<1||n>65536||p+4+n>r.length)stop('Launch resource extent is invalid or exceeds the supported bound.','director-launch-resource');return r.slice(p+4,p+4+n);};
  Launch.prototype.write=function(a,b){for(var i=0;i<b.length;i++)this.machine.put(a+i,b[i],1);};
@@ -53,7 +55,7 @@ window.OB64=window.OB64||{};
  Launch.prototype.helper=function(pc){var m=this.machine,a=m.r[4],b=m.r[5];
   if(pc===0x80093380){m.region(a,b,true);for(var i=0;i<b;i++)m.put(a+i,0,1);m.r[2]=a;}
   else if(pc===0x80070f30)m.r[2]=this.allocate(a);
-  else if(pc===0x800712c4){var at=this.leases.findIndex(r=>r.address===a);if(at<0)stop('Launch free targets an unowned allocation.','director-launch-owner');this.leases.splice(at,1);m.r[2]=0;}
+  else if(pc===0x800712c4){if(this.stage&&(a===0||this.stage.leases.some(r=>r.address===a)))return this.stage.service(pc,m);var at=this.leases.findIndex(r=>r.address===a);if(at<0)stop('Launch free targets an unowned allocation.','director-launch-owner');this.leases.splice(at,1);m.r[2]=0;}
   else if(pc===0x8009daf4)m.r[2]=this.resource(a).length;
   else if(pc===0x8009dbb8){var data=this.resource(b),target=a||this.allocate(data.length);this.write(target,data);this.leases.find(r=>r.address===target).contentLength=data.length;if(data.length&1)m.put(target+data.length,this.rom[(b&0x0fffffff)+0x594284+data.length],1);m.r[2]=target;}
   else if(pc===0x8007a7e0)m.r[2]=m.get(a);
@@ -61,7 +63,7 @@ window.OB64=window.OB64||{};
   else if(pc===0x802282b8){this.parserReached=true;m.r[2]=0;}
   else return false;return true;
  };
- Launch.prototype.initialize=function*(record){if(this.initialized)stop('Director launch cannot initialize twice.');if(record.length!==168)stop('Director resource record has the wrong size.');this.write(0x800e7a30,record);yield* this.machine.run(this.input.sceneMode===2?0x802260f0:0x80225a1c,[],[],262144);if(!this.parserReached)stop('Director initialization did not reach its parser.','director-launch-parser');this.initialized=true;};
+ Launch.prototype.initialize=function*(record){if(this.initialized)stop('Director launch cannot initialize twice.');if(record.length!==168)stop('Director resource record has the wrong size.');this.write(0x800e7a30,record);yield* this.machine.run(this.initializeCallback,[],[],262144);if(!this.parserReached)stop('Director initialization did not reach its parser.','director-launch-parser');this.initialized=true;};
  Launch.prototype.snapshot=function(){var m=this.machine,root=m.get(0x8022a974),stream=m.get(0x8022a958);return {resourceKey:this.resourceKey,selector:this.input.selector,rootAddress:root,rootHex:hex(this.read(root,0x1cb8)),recordHex:hex(this.read(0x800e7a30,168)),contextHex:hex(this.read(0x80220e70,30)),cameraHex:hex(this.read(0x8022a720,144)),streamAddress:stream,streamHex:hex(this.read(stream,this.decodedLength)),allocations:this.leases.map(r=>({address:r.address,hex:hex(this.read(r.address,r.size))})),parserReached:this.parserReached};};
 
  Launch.prototype.installMemory=function(m,address,data){
@@ -79,6 +81,7 @@ window.OB64=window.OB64||{};
   var step=m.step.bind(m);m.step=function(pc){if(pc===0x800ea9bc&&onRequest)onRequest({kind:'native-audio-request',mode:this.r[4]&255,category:this.r[5]&255,program:this.r[6]&65535,priority:this.r[7]&65535,flags:this.get(this.r[29]+16)&255,playback:'queue-only'});return step(pc);};
  };
  Launch.prototype.attachResources=function(engine){
+  if(this.stage){const v=new DataView(this.rom.buffer,this.rom.byteOffset,this.rom.byteLength);OB64.cutsceneSharedActorCode.words.filter(r=>r[0]>=0x800ea604&&r[0]<0x800ea9bc).forEach(r=>{if(v.getUint32(r[1])!==r[2])stop('Shared audio dispatcher differs from its qualified ROM.');engine.machine.code[r[0]]=r[2];});}
   this.engine=engine;this.colorSerial=0;this.colorAddress=0;var self=this,m=engine.machine,old=m.serviceHelper;
   var arena=this.input.arena;
   if(m.regions.some(r=>arena.address<r.address+r.bytes.length&&r.address<arena.address+arena.byteLength))stop('Launch arena overlaps supplied resource memory.','director-launch-memory');

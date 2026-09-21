@@ -68,7 +68,7 @@ Draw.prototype.compose=function(recordHex,payloadHex){
   const uv=[s0,t0];if(b[0]<0)uv[0]+=Math.trunc(-b[0]*dx*32)/32;if(b[1]<0)uv[1]+=Math.trunc(-b[1]*dy*32)/32;
   commands.push({kind:'texture',texture,bounds:[Math.max(0,b[0]),Math.max(0,b[1]),Math.min(320,b[2]),Math.min(240,b[3])],uv,step:[dx,dy],scissor:scissor.slice()});
  }
- const frame=(member)=>({...this.frame(0x2093576,0,member),wrapX:member===1||member===3});
+ const frame=(member)=>({...this.frame(0x2093576,0,member),wrapX:member===1||member===3,mirrorX:member===3,mirrorY:member===3,maskHeight:member===3?16:undefined});
  // func_000E6D90's frameless branch emits a zero-alpha primitive rectangle
  // instead of the three frame textures. It leaves the framebuffer unchanged.
  if(!frameless){rectangle(frame(1),8,0,width-12,60);rectangle(frame(0),0,0,7,60);rectangle(frame(2),width-11,0,width-1,60);}
@@ -107,18 +107,19 @@ Draw.prototype.compose=function(recordHex,payloadHex){
   rectangle(indicator,x,y,x+15,y+15);
  }
  // Ordinary speech pointer uses the current payload's local position and tile.
- if(p[0x3a]>1||p[0x3b])fail('unsupported speech pointer tile');
- // Tile 1 begins at U=8 and wraps over the existing eight-pixel texture.
- if(!frameless)rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,p[0x3a]*8,0,p[0x3a]*8+7,12,[0,0,319,239]);
+ if(p[0x3a]>1||p[0x3b]>1)fail('unsupported speech pointer tile');
+ // Native func_000E6D90 selects U=8*horizontal and V=19*vertical from the pointer atlas.
+ if(!frameless)rectangle(frame(3),s(0x30),s(0x32),s(0x30)+7,s(0x32)+12,p[0x3a]*8,p[0x3b]*19,p[0x3a]*8+7,p[0x3b]*19+12,[0,0,319,239]);
  const seen=new Set();let textureBytes=0;commands.forEach(c=>{if(!seen.has(c.texture.indices)){seen.add(c.texture.indices);textureBytes+=c.texture.indices.byteLength;} });
  return {commands,nativeServiceBytes:0,artworkCacheBytes:this.assetBytes,temporaryTextureBytes:textureBytes};
 };
 Draw.paint=function(image,result){
+ const mirror=(value,size)=>{const at=((value%(size*2))+size*2)%(size*2);return at<size?at:size*2-1-at;};
  const out=image.rgba||image.data;
  for(const c of result.commands){const t=c.texture,b=c.bounds,s=c.scissor;
   if(!t.palette)fail('texture palette is unavailable');
   for(let y=Math.max(0,Math.ceil(b[1]),s[1]);y<Math.min(240,Math.ceil(b[3]),s[3]);y++)for(let x=Math.max(0,Math.ceil(b[0]),s[0]);x<Math.min(320,Math.ceil(b[2]),s[2]);x++){
-   const sourceX=Math.floor(c.uv[0]+(x-b[0])*c.step[0]),sx=t.wrapX?((sourceX%t.width)+t.width)%t.width:Math.min(t.width-1,Math.max(0,sourceX)),sy=Math.min(t.height-1,Math.max(0,Math.floor(c.uv[1]+(y-b[1])*c.step[1])));
+   const sourceX=Math.floor(c.uv[0]+(x-b[0])*c.step[0]),sx=t.mirrorX?mirror(sourceX,t.width):t.wrapX?((sourceX%t.width)+t.width)%t.width:Math.min(t.width-1,Math.max(0,sourceX)),sourceY=Math.floor(c.uv[1]+(y-b[1])*c.step[1]),sy=t.mirrorY?mirror(sourceY,t.maskHeight):Math.min(t.height-1,Math.max(0,sourceY));
    const raw=t.indices[sy*t.stride+(t.bits===8?sx:sx>>>1)],index=t.bits===8?raw:(raw>>>(sx&1?0:4))&15,p=t.palette[index];
    if(!p)fail('texture index exceeds its palette');if(!p[3])continue;
    const at=(y*320+x)*4,alpha=p[3]/255;for(let ch=0;ch<3;ch++)out[at+ch]=Math.round(p[ch]*alpha+out[at+ch]*(1-alpha));out[at+3]=255;

@@ -317,7 +317,7 @@ window.OB64 = window.OB64 || {};
     state.romStartupByAssetId[scene.assetId]=false;
     if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
       runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(state.z64,scene,program);
-      state.romStartupByAssetId[scene.assetId]=!!runtimeOptions.nativeLaunchInputs;
+      state.romStartupByAssetId[scene.assetId]=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch.preservedStage?'preserved-stage':!!runtimeOptions.nativeLaunchInputs;
     }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
@@ -1068,6 +1068,7 @@ window.OB64 = window.OB64 || {};
 
   function playbackTimingLabel(state,scene) {
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a preview-owned Stage. Declared preview unit: level-one Hero and Fighter, formation positions 4 and 1; environment 0, one unit, zero scenario/event values, white world tint, and random seed 1. This is a preview party, not the historical cast. Automatic dialogue advance: simulated timing. Audio queue only.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup from the loaded scene and caller rules. Preview defaults: isolated scene, empty roster and audio queue, standard appearance, zero scenario/event state, protagonist name Magnus (text only), neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
     var services=input&&((input.capturedResume&&input.capturedResume.value.resourceServices)||(input.externalProducers&&input.externalProducers.value));
     return services&&services.resourceSchedule&&services.resourceSchedule.pageAdvancePolicy==='automatic'?'Automatic dialogue advance: simulated timing.':'';
