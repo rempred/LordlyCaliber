@@ -344,6 +344,7 @@ window.OB64 = window.OB64 || {};
     state.runtimeByAssetId[scene.assetId] = runtime;
     OB64.cutsceneRuntime.bind(document, runtime);
     delete state.sourceErrors['runtime:' + scene.assetId];
+    delete state.sourceErrors['runtime-context:' + scene.assetId];
     return runtime;
   }
 
@@ -476,6 +477,11 @@ window.OB64 = window.OB64 || {};
     }).catch(function(error) {
       if (controller.signal.aborted || error.name === 'AbortError') return null;
       var history = historyFor(state, scene);
+      delete state.runtimeByAssetId[scene.assetId];
+      if (history && state.boundRuntimeDocument === history.present) {
+        OB64.cutsceneRuntime.unbind(history.present);
+        state.boundRuntimeDocument = null;
+      }
       state.sourceErrors['runtime-context:' + scene.assetId] =
         error && error.message || String(error);
       return history ? history.present : null;
@@ -1253,6 +1259,11 @@ window.OB64 = window.OB64 || {};
     if (cues.length) overlay.appendChild(node('div', 'cutscene-preview-cues', cues.join('  |  ')));
   }
 
+  function transportPlayLabel(state, scene, playing) {
+    var storyboard = scene.engine === 'director' && !state.runtimeByAssetId[scene.assetId];
+    return (playing ? 'Pause' : 'Play') + (storyboard ? ' storyboard' : '');
+  }
+
   function updateTransport(state, preview) {
     if (!state.ui || !preview) return;
     var scene = selectedScene(state);
@@ -1261,7 +1272,7 @@ window.OB64 = window.OB64 || {};
       state.ui.scrubber.max = Math.max(0, preview.durationFrames - 1);
       state.ui.scrubber.value = preview.frame;
     }
-    if (state.ui.playButton) state.ui.playButton.textContent = state.ui.clock.playing ? 'Pause' : 'Play';
+    if (state.ui.playButton) state.ui.playButton.textContent = transportPlayLabel(state, scene, state.ui.clock.playing);
     if (state.ui.loopButton) state.ui.loopButton.setAttribute('aria-pressed', view.loop ? 'true' : 'false');
     if (state.ui.timelinePlayhead) {
       state.ui.timelinePlayhead.style.left = preview.frame / preview.durationFrames * 100 + '%';
@@ -1453,6 +1464,16 @@ window.OB64 = window.OB64 || {};
       center.appendChild(node('div', 'cutscene-source-warning',
         'ROM source unavailable: ' + state.sourceErrors[scene.assetId]));
     }
+    var startupError = !state.runtimeByAssetId[scene.assetId] &&
+      (state.sourceErrors['runtime-context:' + scene.assetId] ||
+       state.sourceErrors['runtime:' + scene.assetId]);
+    if (startupError) {
+      var startupWarning = node('div', 'cutscene-source-warning',
+        'Director playback unavailable: ' + startupError +
+        ' Approximate storyboard only; Play storyboard does not execute the Director stream.');
+      startupWarning.setAttribute('role', 'status');
+      center.appendChild(startupWarning);
+    }
     if (document.exportRequirements.reasons.length) {
       center.appendChild(node('div', document.exportRequirements.capability === 'native'
         ? 'cutscene-export-note' : 'cutscene-source-warning',
@@ -1522,7 +1543,7 @@ window.OB64 = window.OB64 || {};
       state.ui.clock = OB64.cutscenePreview.step(state.ui.clock, -1);
       view.frame = state.ui.clock.frame; paintStage(rom, state);
     }, 'Previous frame');
-    var play = transportButton('Play', function() {
+    var play = transportButton(transportPlayLabel(state, scene, false), function() {
       state.ui.clock = state.ui.clock.playing
         ? OB64.cutscenePreview.pause(state.ui.clock) : OB64.cutscenePreview.play(state.ui.clock);
       if (state.ui.clock.playing) startAnimation(rom, state);
