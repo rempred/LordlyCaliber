@@ -1419,10 +1419,10 @@ window.OB64 = window.OB64 || {};
         translatedWordOffsets: translatedWordOffsets
       };
     }
-    var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.invocationId==='rom-start';
+    var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.externalProducers&&options.nativeLaunchInputs.externalProducers.value&&options.nativeLaunchInputs.externalProducers.value.directorLaunch&&options.nativeLaunchInputs.externalProducers.value.directorLaunch.kind==='rom-mode-two-director-v1';
     var observedBackground = romOnlyStart?null:observationBackground(scene, document, catalog);
     var documentBackground = documentModeTwoBackground(document, catalog);
-    var directorMode = romOnlyStart?{value:2,status:'Isolated preview mode-two caller',evidenceStatus:'preview-default'}:directorModeFromProfile(scene);
+    var directorMode = romOnlyStart?{value:2,status:'ROM terminal-class dispatcher selects mode two',evidenceStatus:'ROM-caller-rule'}:directorModeFromProfile(scene);
     var modeTwoCommandPreviewUsesFreshRoot = directorMode.value === 2 &&
       launchProfile.background && launchProfile.background.requestCount > 0;
     var suppliedContextRuntime = options.contextRuntime && (
@@ -3003,6 +3003,7 @@ window.OB64 = window.OB64 || {};
               }
               }
             }
+            if(romOnlyStart&&nativeLaunch&&nativeLaunch.input.previewHeroName!==undefined)OB64.cutsceneRomStart.prepareDialogue(nativeLaunch,dialogueEngine,signed(words[4]));
             registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;if(extendedModeTwoResume)capturedScheduler.compareDialogueRegistration(nativeSlot);
           }else nativeSlot=dialogueEngine.register(registration,words);
         } catch(error) {producerBoundary(error.message,error.code||'dialogue-registration-input');return;}
@@ -4916,7 +4917,7 @@ window.OB64 = window.OB64 || {};
         imageEcho:imageEcho&&imageEcho.initialized?imageEcho.snapshot():null,
         mapMenu:mapMenu?mapMenu.snapshot():null,
         nativeExternal: {
-          dialogue:dialogueEngine?dialogueEngine.snapshot(sharedActorProfile?256:undefined):null,
+          dialogue:dialogueEngine?dialogueEngine.snapshot(sharedActorProfile||romOnlyStart?256:undefined):null,
           sharedRequests:Object.assign({},state.sharedRequests),
           menus:Object.keys(state.transientRenderEntities).map(function(slot) {
             return Object.assign({},state.transientRenderEntities[slot]);
@@ -5578,9 +5579,9 @@ window.OB64 = window.OB64 || {};
       }
       var frameBudget = { bytes: 0 };
       var nextSnapshot=snapshot(block);
-      if(sharedActorProfile){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
+      if(sharedActorProfile||romOnlyStart){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
       var frameState = shareSnapshot(states[states.length - 1], nextSnapshot, frameBudget);
-      if(sharedActorProfile)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
+      if(sharedActorProfile||romOnlyStart)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
       var frameBytes = frameBudget.bytes;
       if (retainedStateBytes + framebufferBytes + frameBytes > maxStateBytes) {
         if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');

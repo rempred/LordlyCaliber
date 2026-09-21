@@ -812,31 +812,50 @@ Native controls, composed images, and the next reached boundary are recorded in 
 The combined opening result and history correction are independently accepted in `../docs/reviews/cutscene-opening-dialogue-history-review-20260917/review.md`.
 The result adds no native service regions or retained-state fields. Cache and retained-state limits keep their existing meanings.
 
-## Graduation from ROM
+## Shared startup from ROM
 
-Without imported inputs, selecting Graduation starts its loaded ROM stream from the beginning.
-The ordinary Play control uses this computed run through modeled scene release.
-Explicit imported inputs retain priority.
-Clearing them restores ROM startup.
+Without imported inputs, eligible Director streams start from their loaded ROM commands.
+Startup does not select a catalog identity or scene title.
+Explicit imported inputs retain priority; clearing them restores ROM startup.
 
-The preview creates an isolated mode-two scene with an empty roster and audio queue.
-It uses standard Actor presentation, zero map/scenario/event values, no alternate world context, and white world tint.
+The native terminal resource class and the runtime scene mode are separate values.
+Terminal class `1` selects caller route `-3`, scene mode `2`, and map kind `24`.
+The supported fresh route requires one initial, nonnegative environment command and no secondary or stop pre-scan flags.
+Missing environment setup retains an inherited-Stage boundary.
+Negative environment sentinels, other terminal classes, and delayed or repeated Stage construction retain specific boundaries.
+Caller and dialogue source contracts must match the current loaded ROM.
+
+The preview creates an isolated scene with an empty roster and audio queue.
+It uses standard Actor presentation, zero scenario/event values, no alternate world context, and white world tint.
 Controls remain neutral except automatic acknowledgement after native page completion.
 Text speed is 150, and proximity checks are disabled.
-The timing label identifies these preview defaults and simulated acknowledgement timing.
-These defaults do not represent historical gameplay inputs.
+These declared preview defaults do not represent historical gameplay inputs.
+
+The dialogue wrapper supplies the protagonist-name substitution before native text construction.
+Its declared text-only preview name is `Magnus`; this creates no roster member or gameplay state.
+In an explicit ROM-start input, `directorLaunch.previewHeroName` overrides that default with 1-16 printable ASCII characters.
+The current Actor name falls back to the protagonist name only when the native Actor/scene-roster lookup is empty.
+A populated Actor name requiring roster suffixes, an army name, or a selected unit leader name retains a boundary when consumed.
+Imported launches without this preview-name field retain their supplied dialogue memory.
 
 The loaded ROM supplies the Director selector, environment, Actor commands, class-body registration, pose programs, cameras, and text resources.
 The shared native initializer and services compute the runtime state.
 No checkpoint, captured Actor record, or saved-state input enters this path.
-The generated `cutscene-rom-start-data.js` contains qualified code words and immutable ROM extents.
+The generated `cutscene-rom-start-data.js` contains qualified code words, immutable ROM extents, and source contracts.
+Its current generator is `../docs/reviews/cutscene-shared-rom-start-20260921/generate.py`.
 
-Support currently selects the Graduation catalog asset only.
-Special body variants, terrain-dependent movement, depth attachments, and unsupported launch pre-scan routes remain explicit boundaries.
+The checked Graduation, Formation, and Traveling streams reach modeled terminal release with their Actors and composed Stage artwork.
+This is a bounded playback result, not a claim that every eligible stream has complete presentation support.
+Special body variants, terrain-dependent movement, depth attachments, and unsupported launch routes remain explicit boundaries.
 Audio commands update the modeled queue; the preview does not synthesize game audio.
 Scene props retain the existing composed-preview qualification.
-The compiler retains its memory ceiling, cancellation, neutral-policy wait, and immutable seek behavior.
 
-Run `node tests/cutscene-graduation-rom-start.test.js` from the Editor directory for the fresh-load controls.
-Run `node tests/cutscene-graduation-narration.test.js` for native narration drawing comparisons.
-The parent evidence generator and native checks are in `docs/reviews/cutscene-graduation-rom-start-20260917/`.
+ROM startup uses the existing compact Actor records and 256-byte dialogue snapshot pages.
+The retained-state ceiling remains 128 MiB, and the service-memory ceiling remains 128 KiB.
+Neutral preview controls cover the compiler's existing 30,000-pass bound.
+Cancellation, neutral-policy waits, and immutable seeking remain supported.
+
+Run `node tests/cutscene-shared-rom-start.test.js` for shared eligibility, non-Graduation playback, name substitution, and snapshot controls.
+Run `node tests/cutscene-graduation-rom-start.test.js` for fresh Graduation, changed-ROM, cancellation, and composed controls.
+The predecessor native narration drawing comparisons remain in `tests/cutscene-graduation-narration.test.js`.
+Parent evidence is in `../docs/reviews/cutscene-shared-rom-start-20260921/`.

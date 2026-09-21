@@ -313,8 +313,12 @@ window.OB64 = window.OB64 || {};
     runtimeOptions.captureFrame=function(request){return capturePreviewFrame(rom,state,document,request);};
     runtimeOptions.nativeLaunchInputs = state.nativeLaunchInputsByAssetId &&
       state.nativeLaunchInputsByAssetId[scene.assetId] || null;
-    if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart)runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(state.z64,scene,program);
-    if(!state.romStartupByAssetId)state.romStartupByAssetId={};state.romStartupByAssetId[scene.assetId]=!!(runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.invocationId==='rom-start');
+    if(!state.romStartupByAssetId)state.romStartupByAssetId={};
+    state.romStartupByAssetId[scene.assetId]=false;
+    if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
+      runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(state.z64,scene,program);
+      state.romStartupByAssetId[scene.assetId]=!!runtimeOptions.nativeLaunchInputs;
+    }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
       runtimeOptions.contextTickOffset = Number.isInteger(
@@ -1058,9 +1062,9 @@ window.OB64 = window.OB64 || {};
 
   function playbackTimingLabel(state,scene) {
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
-    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup. Preview defaults: isolated mode-two scene, empty roster and audio queue, standard appearance, zero map/scenario/event state, neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
-    var services=input&&input.capturedResume&&input.capturedResume.value.resourceServices;
-    return services&&services.resourceSchedule.pageAdvancePolicy==='automatic'?'Automatic dialogue advance: simulated timing.':'';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup from the loaded scene and caller rules. Preview defaults: isolated scene, empty roster and audio queue, standard appearance, zero scenario/event state, protagonist name Magnus (text only), neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
+    var services=input&&((input.capturedResume&&input.capturedResume.value.resourceServices)||(input.externalProducers&&input.externalProducers.value));
+    return services&&services.resourceSchedule&&services.resourceSchedule.pageAdvancePolicy==='automatic'?'Automatic dialogue advance: simulated timing.':'';
   }
 
   function composeDialogue(rom,state,preview,strict) {

@@ -11,7 +11,7 @@ for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscen
  assert(!r.trace.some(t=>t.kind==='captured-resume-entry'||t.label==='Observed background route'));
  const source=await OB64.cutsceneCodec.loadSceneSource(z64,scene),p=OB64.cutsceneCodec.projectSceneDocument(scene,source,ui.catalog),input=OB64.cutsceneRomStart.input(z64,scene,p.program);
  assert(!('capturedSnapshot'in input));assert(!('capturedResume'in input));assert(!('capturedPresentation'in input));assert.equal(input.externalProducers.value.directorLaunch.selector,2);assert.equal(input.externalProducers.value.directorLaunch.environmentSelector,57);
- assert.equal(OB64.cutsceneRomStart.supports({...scene,assetId:'another-scene'},p.program),false);
+ assert.equal(OB64.cutsceneRomStart.supports({...scene,assetId:'another-scene'},p.program),true);
  // Exclude all observation-derived launch geometry and predecessor choices.
  const clean=structuredClone(scene);delete clean.actorCameraObservation;delete clean.backgroundRuntimeObservation;
  clean.launchProfile.directorMode={value:null,status:'Excluded test observation',source:'test',evidenceStatus:'external-unresolved'};

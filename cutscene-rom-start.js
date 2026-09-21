@@ -3,38 +3,66 @@ window.OB64=window.OB64||{};
 (function(O){
  'use strict';
  const hex=b=>Array.from(b,v=>v.toString(16).padStart(2,'0')).join('');
- function fail(s){const e=new Error(s);e.code='rom-start-input';throw e;}
+ function fail(s,code){const e=new Error(s);e.code=code||'rom-start-input';throw e;}
  function resource(rom,key){const p=key+0x594280,v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);if(p<0||p+4>rom.length)fail('Resource key exceeds the loaded ROM.');const n=v.getUint32(p);if(!n||n>65536||p+4+n>rom.length)fail('Resource extent exceeds the preview bound.');return rom.slice(p+4,p+4+n);}
- function supports(scene,program){return !!scene&&!!program&&Array.isArray(program.primitives)&&scene.assetId==='rom-custom-lz:01F3EAD2'&&program.primitives[0]?.opcode===0x80000006&&program.primitives.at(-1)?.rawWords.at(-1)===0xff000001;}
- function input(rom,scene,program){
-
-  if(!supports(scene,program))return null;
-  // Match the caller's word-wise pre-scan, including its early-stop condition.
-  const words=program.primitives.flatMap(node=>node.rawWords);let flags=0,environmentSelector=null;
+ // func_00283E14 maps terminal class 1 to route -3. func_002827EC then
+ // installs scene mode two and callback 0x802260F0. These are separate values.
+ function analyze(program){
+  const reject=(code,reason)=>({supported:false,code,reason});
+  if(!program||!Array.isArray(program.primitives)||!program.primitives.length)return reject('rom-start-stream','ROM startup requires a decoded Director stream.');
+  if(program.primitives.some(n=>!Array.isArray(n.rawWords)||!n.rawWords.length||n.opcode!==n.rawWords[0]||n.rawWords.some(w=>!Number.isInteger(w)||w<0||w>0xffffffff)))return reject('rom-start-stream','ROM startup requires complete unsigned Director words.');
+  const words=program.primitives.flatMap(n=>n.rawWords),last=words.at(-1);
+  if(words.length>16384||(last>>>24)!==255)return reject('rom-start-trailer','ROM startup requires the native terminal resource class.');
+  const terminal=program.primitives.at(-1);
+  if(terminal.opcode!==0x80000001||terminal.rawWords.length!==2||program.primitives.filter(n=>n.opcode===0x80000001).length!==1)return reject('rom-start-trailer','ROM startup requires one final terminal command and resource class.');
+  const terminalClass=last&255;
+  if(terminalClass!==1)return reject('rom-start-class','ROM startup does not implement terminal resource class '+terminalClass+' and its caller setup.');
+  // The word-wise pre-scan must retain missing fields as unresolved. In
+  // particular, an absent environment command must not become environment zero.
+  let flags=0,environmentSelector=null;
   for(let i=0;i<words.length;i++){
    if(words[i]===0x80000008)flags|=4;
    if(words[i]===0x80000007)flags|=2;
-   if(words[i]===0x80000006){if(i+1>=words.length)fail('Environment pre-scan has no operand.');flags|=1;environmentSelector=words[i+1]&65535;}
+   if(words[i]===0x80000006){if(i+1>=words.length)return reject('rom-start-environment','Environment pre-scan has no operand.');flags|=1;environmentSelector=words[i+1]<<16>>16;}
    if(flags===4||words[i]===0x80000001)break;
   }
-  if(flags!==1)fail('ROM startup requires the supported normal environment-copy route.');
+  if(environmentSelector===null)return reject('rom-start-inherited-stage','ROM startup requires inherited Stage and caller state because this stream supplies no environment.');
+  if(environmentSelector<0)return reject('rom-start-derived-environment','ROM startup requires the caller environment mapper for environment sentinel '+environmentSelector+'.');
+  if(environmentSelector>=80)return reject('rom-start-environment','ROM startup environment exceeds the supported ROM table.');
+  if(flags!==1)return reject('rom-start-prescan','ROM startup does not implement the secondary or stop pre-scan route.');
+  const setups=program.primitives.filter(n=>n.opcode===0x80000006);
+  if(setups.length!==1||program.primitives[0]!==setups[0]||setups[0].rawWords.length!==2||setups[0].rawWords[1]!==environmentSelector)return reject('rom-start-stage-sequence','ROM startup requires one initial environment command; delayed or repeated Stage construction is not implemented.');
+  return {supported:true,terminalClass,sceneMode:2,environmentSelector,mapKind:24};
+ }
+ function supports(scene,program){return !!scene&&analyze(program).supported;}
+ function qualify(rom){
+  // Source-derived caller and name-binding rules must match the current ROM.
+  for(const row of O.cutsceneRomStartData.contracts){if(hex(rom.subarray(row.rom,row.rom+row.hex.length/2))!==row.hex)fail('ROM startup caller or dialogue rules differ from the qualified ROM: '+row.name+'.','rom-start-code');}
+ }
+ function input(rom,scene,program){
+
+  if(!scene||!program)return null;
+  const contract=analyze(program);if(!contract.supported)fail(contract.reason,contract.code);
+  qualify(rom);
+  const environmentSelector=contract.environmentSelector;
   const directory=resource(rom,0x019a8804),dv=new DataView(directory.buffer),key=parseInt(scene.directorKey,16);let selector=-1;
-  for(let i=0;i<directory.length;i+=4)if(dv.getUint32(i)===key){selector=i/4;break;}if(selector<0)return null;
+  if(directory.length%4)fail('Director directory is not word aligned.','rom-start-directory');
+  for(let i=0;i<directory.length;i+=4)if(dv.getUint32(i)===key){selector=i/4;break;}if(selector<0)fail('Selected Director resource is absent from the loaded ROM directory.','rom-start-directory');
   const memory=[],add=(address,length)=>{const bytes=new Uint8Array(length);memory.push({address,bytes});return new DataView(bytes.buffer);};
   const region=(a,n=4)=>{const r=memory.find(r=>a>=r.address&&a+n<=r.address+r.bytes.length);if(!r)fail('Fresh setup field is outside its allocated region.');return [new DataView(r.bytes.buffer),a-r.address];};
   const put=(a,v,n=4)=>{const[b,i]=region(a,n);n===1?b.setUint8(i,v):n===2?b.setUint16(i,v):b.setUint32(i,v);};
   // Clean isolated pool, controller, scratch, audio queue and preview allocation state.
-  [[0x800af0a6,2],[0x800af0c0,8],[0x800a8740,4],[0x800c4800,0x460],[0x800e7900,0x2400],[0x8018f500,4],[0x8018fc70,8],[0x80190f74,2],[0x80193bf8,8],[0x8019ee30,32],[0x80380000,8192],[0x80350000,8192],[0x807fe000,8192]].forEach(r=>add(...r));
+  [[0x800af0a6,2],[0x800af0c0,8],[0x800a8740,4],[0x800c4800,0x460],[0x800e7900,0x2400],[0x8018f500,16],[0x8018fc70,8],[0x80190f74,2],[0x80193bf8,8],[0x8019ee30,32],[0x80380000,8192],[0x80350000,8192],[0x80383400,17],[0x807fe000,8192]].forEach(r=>add(...r));
   put(0x800c4c20,0xffffffff);put(0x800c4c26,0xffff,2);put(0x800c49d0,1,2);put(0x800e82c8,0xc000,2);put(0x800e82cc,6,1);put(0x800e82c8+0x10,0x802260f0);
   put(0x800e8108,0x800e79b0);put(0x800c4bdc,0x800e8100);put(0x800c4c4c,0x800e8700);put(0x80190f74,0xffff,2);put(0x800e9c0c,150,2);
   // Metric arrays are retail resources. Preview addresses are owned allocations.
   for(const [address,key]of [[0x80383000,0x0218c450],[0x80383100,0x0218de48]]){const bytes=resource(rom,key);memory.push({address,bytes});}
   put(0x8018fc70,0x80383000);put(0x8018fc74,0x80383100);
   memory.push({address:0x8019e180,bytes:rom.slice(0xeaf00,0xebbb0)});
-  const launch={kind:'rom-mode-two-director-v1',sceneMode:2,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,world:{mapKind:0,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
-  return {schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'rom-start',sourceIdentity:'Loaded ROM startup; isolated preview pool and empty playthrough roster',evidenceGrade:'Candidate',schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:2999,events:[],menuCreates:[],colorCreates:[],poseCalls:[],initialColor:null,initialDialogue:{memory:memory.map(r=>({address:r.address,hex:hex(r.bytes),writable:true})),owners:[{ownerId:'rom-director',payloadHex:null},null,null,null,null,null],payloadStorage:{kind:'preview-arena-v1',address:0x80380000,byteLength:8192},lifecycle:{kind:'shared-dialogue-v1',computeAlignment:true,archiveArena:{address:0x80350000,byteLength:8192}}},resourceSchedule:{kind:'resident-resource-pass-v1',directorSlot:0,directorCallback:0x80226190,directorBinding:'rom-mode-two-v1',pageAdvancePolicy:'automatic',controller:{throughPass:2999,changes:[{pass:0,actionMask:0,directionMask:0,historyMask:0,dummyMask:0}]},helperOutcomes:[]},directorLaunch:launch}}};
+  const launch={kind:'rom-mode-two-director-v1',sceneMode:contract.sceneMode,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,previewHeroName:'Magnus',world:{mapKind:contract.mapKind,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
+  return {schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'rom-start',sourceIdentity:'Loaded ROM startup; isolated preview pool and empty playthrough roster',evidenceGrade:'Candidate',schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:29999,events:[],menuCreates:[],colorCreates:[],poseCalls:[],initialColor:null,initialDialogue:{memory:memory.map(r=>({address:r.address,hex:hex(r.bytes),writable:true})),owners:[{ownerId:'rom-director',payloadHex:null},null,null,null,null,null],payloadStorage:{kind:'preview-arena-v1',address:0x80380000,byteLength:8192},lifecycle:{kind:'shared-dialogue-v1',computeAlignment:true,archiveArena:{address:0x80350000,byteLength:8192}}},resourceSchedule:{kind:'resident-resource-pass-v1',directorSlot:0,directorCallback:0x80226190,directorBinding:'rom-mode-two-v1',pageAdvancePolicy:'automatic',controller:{throughPass:29999,changes:[{pass:0,actionMask:0,directionMask:0,historyMask:0,dummyMask:0}]},helperOutcomes:[]},directorLaunch:launch}}};
  }
- function installCode(code,regions,rom){const v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);for(const [a,p,w]of O.cutsceneRomStartData.words){if(v.getUint32(p)!==w)fail('Mode-two initialization code differs from the qualified ROM.');code[a]=w;}for(const r of O.cutsceneRomStartData.constants)regions.push({address:r.address,bytes:rom.slice(r.rom,r.rom+r.length),writable:false});}
+ function installCode(code,regions,rom){qualify(rom);const v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);for(const [a,p,w]of O.cutsceneRomStartData.words){if(v.getUint32(p)!==w)fail('Mode-two initialization code differs from the qualified ROM.');code[a]=w;}for(const r of O.cutsceneRomStartData.constants)regions.push({address:r.address,bytes:rom.slice(r.rom,r.rom+r.length),writable:false});}
  function attachLaunch(l){
   const m=l.machine;
   // Class definitions are ROM data. Actor-input rows start empty in this isolated preview.
@@ -89,6 +117,24 @@ window.OB64=window.OB64||{};
   return projectionState(l);
  }
  function projectionState(l){const m=l.machine,p=m.get(m.get(0x8022a974)+0x19f0),b=new DataView(l.read(p,76).buffer);return {translateX:b.getFloat32(0x30),translateY:b.getFloat32(0x34),scaleX:b.getFloat32(0x24),scaleY:b.getFloat32(0x28)};}
+ function prepareDialogue(l,engine,slot){
+  // func_002A0088 installs four text substitutions before the constructor.
+  // Binding 0 is the name found by primary classes 0x51, 0x52, then 0x53.
+  // This name-only preview default creates no gameplay or Actor roster row.
+  const name=l.input.previewHeroName;
+  if(typeof name!=='string'||!name.length||name.length>16||!/^[\x20-\x7e]+$/.test(name))fail('The preview protagonist name must contain 1–16 printable ASCII bytes.','rom-start-player-name');
+  const m=engine.machine,nameAddress=0x80383400;
+  for(let i=0;i<17;i++)m.put(nameAddress+i,i<name.length?name.charCodeAt(i):0,1);
+  const root=l.machine.get(0x8022a974);
+  if(!Number.isInteger(slot)||slot<0||slot>=28)fail('Dialogue name setup requires a valid current Actor slot.','rom-start-dialogue-name');
+  const actor=l.machine.get(root+24+slot*4);
+  let actorNameAbsent=!actor;
+  if(actor){const index=l.machine.get(actor+0x147,1);actorNameAbsent=index>=20;
+   if(!actorNameAbsent){const scene=l.machine.get(0x801ce8bc);if(!scene)fail('Dialogue name setup requires the current scene roster.','rom-start-dialogue-name');actorNameAbsent=l.machine.get(scene+0x1c4+index*0xf8+0x48)===0;}}
+  m.romTextBindingStatus=[null,actorNameAbsent?null:'the current Actor roster name and suffixes','the player army name','the selected unit leader name'];
+  for(let i=0;i<4;i++)m.put(0x8018f500+i*4,i===0||i===1&&actorNameAbsent?nameAddress:0);
+  if(!m.romTextBindingGuard){const get=m.get;m.get=function(a,n){if((n===undefined||n===4)&&a>=0x8018f500&&a<0x8018f510&&a%4===0){const reason=this.romTextBindingStatus[(a-0x8018f500)/4];if(reason)fail('Dialogue substitution '+((a-0x8018f500)/4)+' requires '+reason+'.','rom-start-dialogue-name');}return get.call(this,a,n);};m.romTextBindingGuard=true;}
+ }
  function dialoguePoint(l,actor,camera){
   // func_002AA3B0 supplies world scale; func_002A9AD0 composes the Actor
   // origin before packing. With zero record rotations, only translation
@@ -107,5 +153,5 @@ window.OB64=window.OB64||{};
   const run=m.run(0x8022d534,[input,out,mat],[],32768);while(!run.next().done){}
   const f=a=>{b.setUint32(0,m.get(a));return b.getFloat32(0);};return {x:f(out),y:f(out+4)};
  }
- O.cutsceneRomStart={supports,input,installCode,attachLaunch,resource,bodyPose,dialoguePoint,projection,projectionState};
+ O.cutsceneRomStart={analyze,supports,input,installCode,attachLaunch,resource,bodyPose,dialoguePoint,prepareDialogue,projection,projectionState};
 })(window.OB64);
