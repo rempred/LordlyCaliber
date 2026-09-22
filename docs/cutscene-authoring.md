@@ -4,6 +4,14 @@ Load a US Rev 0 ROM and choose a scene in Cutscene Studio.
 Supported scenes build their starting state from the ROM and play without an imported profile.
 The Stage identifies simulated dialogue timing and other preview approximations.
 
+Class-five scenes can start directly when their stream supplies a scene group and both cameras.
+This includes First Cutscene Flashback, Opening Title, and Traveling Cutscene 3.
+Class-eight scenes use the stream's environment and a sample level-one Hero and Fighter unit.
+The sample unit supplies party-dependent Actors; it does not reconstruct a saved game's cast.
+Automatic dialogue choices confirm the first option. Returns to sample party positions use approximate movement.
+Scenes requiring an inherited environment or unsupported dialogue portraits still show their playback boundary.
+Some party-dependent casts remain incomplete with this sample unit.
+
 1. Select an Actor to change its initial position, appearance, or facing.
 2. Use **Projected clips** to edit movement, poses, and existing dialogue actions.
 3. Use **Hold**, **Move**, and **Set pose** to insert supported native actions.

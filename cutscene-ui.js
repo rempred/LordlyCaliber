@@ -349,7 +349,7 @@ window.OB64 = window.OB64 || {};
     if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
       runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(playbackRom,scene,program);
       var generatedLaunch=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch;
-      state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
+      state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.previewParty?'preview-party':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
     }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
@@ -1110,6 +1110,7 @@ window.OB64 = window.OB64 || {};
   function playbackTimingLabel(state,scene) {
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a preview-owned Stage. Declared preview unit: level-one Hero and Fighter, formation positions 4 and 1; environment 0, one unit, zero scenario/event values, white world tint, and random seed 1. This is a preview party, not the historical cast. Automatic dialogue advance: simulated timing. Audio queue only.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preview-party')return 'ROM scene with a sample party: level-one Hero and Fighter. The scene supplies its environment, camera and actions. Party-dependent Actors use this sample unit; scenario/event values are zero. Return to party positions: approximate. Automatic dialogue advance: simulated timing; choices confirm the first option.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='room')return 'Standalone ROM room startup: current camera commands, Actors and registered layers. Declared preview defaults: empty roster, neutral controls, white world tint, protagonist Magnus and army Preview Army (text only). Automatic dialogue advance: simulated timing. Playback stops at unsupported dependencies; optional event predecessors are not reconstructed.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup from the loaded scene and caller rules. Preview defaults: isolated scene, empty roster and audio queue, standard appearance, zero scenario/event state, protagonist name Magnus (text only), neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
     var services=input&&((input.capturedResume&&input.capturedResume.value.resourceServices)||(input.externalProducers&&input.externalProducers.value));

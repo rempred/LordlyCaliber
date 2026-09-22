@@ -18,6 +18,7 @@ window.OB64=window.OB64||{};
   if(!Array.isArray(input.helperOutcomes)||input.helperOutcomes.length>10000)stop('Resource scheduling requires an explicit external helper outcome stream.');
   input.helperOutcomes.forEach(function(r){OB64.cutsceneDialogue.validateHelper(r);if(![0x800ea9bc,0x800934b0,0x80093540,0x8019d5d0,0x80070f30].includes(r.address))stop('Computed archive/free services must not receive external outcomes.');});
   if(input.pageAdvancePolicy!==undefined&&!['neutral','automatic'].includes(input.pageAdvancePolicy))stop('Unsupported dialogue page policy.');
+  if(input.dialogueChoicePolicy!==undefined&&!['manual','first'].includes(input.dialogueChoicePolicy))stop('Unsupported dialogue choice policy.');
   this.engine=engine;this.machine=engine.machine;this.input=input;this.helperCursor=0;this.controlCursor=0;this.trace=[];
   // The native priority rebuild resets its count, then writes each live queue
   // entry before reading it. Preserve the initial live prefix; reserve output
@@ -47,7 +48,7 @@ window.OB64=window.OB64||{};
   if(kind==='callback'&&pulse&&pulse.slot===slot&&pulse.owner===owner&&controller.queueHead===slot){
    controller.actionMask|=0x8000;controller.historyMask|=0x8000;
    this.autoPulse=null;this.autoRelease=pulse;
-   this.trace.push({service:'automatic-page-acknowledgement',slot:slot,timing:'simulated-next-eligible-pass'});
+   this.trace.push({service:pulse.choice?'automatic-dialogue-choice':'automatic-page-acknowledgement',slot:slot,timing:'simulated-next-eligible-pass'});
   }
   yield* this.engine.service({service:kind,slot:slot,ownerId:owner.ownerId,eligible:true,helpers:[],controller:controller},true);
   if(this.machine.get(POOL+slot*STRIDE+3,1)&2)stop('This callback requires the native render-node attachment service.','dialogue-scheduler-render-context');
@@ -66,8 +67,9 @@ window.OB64=window.OB64||{};
   yield* this.queue('priority');this.budget=this.machine.get(0x800c49d0,2);
   // Only the focused, ordinary dialogue resource can receive an automatic pulse.
   const page=this.machine.get(0x800c4c10,2),owner=this.engine.owners[page],binding=page<6?this.read(page):null;
-  if(this.input.pageAdvancePolicy==='automatic'&&!release&&binding&&(binding.flags&0xa000)===0xa000&&binding.initialize===0x80198be8&&binding.callback===0x8019981c&&owner&&owner.payload&&owner.payload.length===1144&&[3,6].includes(owner.payload[0x3c])){
-   this.autoPulse={slot:page,owner:owner};
+  if(this.input.pageAdvancePolicy==='automatic'&&!release&&binding&&(binding.flags&0xa000)===0xa000&&binding.initialize===0x80198be8&&binding.callback===0x8019981c&&owner&&owner.payload&&owner.payload.length===1144){
+   const textState=owner.payload[0x3c],choice=this.input.dialogueChoicePolicy==='first'&&textState===7&&!this.control.actionMask&&!this.control.directionMask&&!this.control.historyMask;
+   if([3,6].includes(textState)||choice)this.autoPulse={slot:page,owner:owner,choice:choice};
   }
 
   for(var slot=0;slot<this.input.directorSlot;slot++)yield* this.callback(slot);
