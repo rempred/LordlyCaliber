@@ -317,7 +317,8 @@ window.OB64 = window.OB64 || {};
     state.romStartupByAssetId[scene.assetId]=false;
     if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
       runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(state.z64,scene,program);
-      state.romStartupByAssetId[scene.assetId]=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch.preservedStage?'preserved-stage':!!runtimeOptions.nativeLaunchInputs;
+      var generatedLaunch=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch;
+      state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
     }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
@@ -441,8 +442,16 @@ window.OB64 = window.OB64 || {};
     return ensureProjectedDocument(rom, state, contextScene).then(function(contextDocument) {
       var precedingChoice = precedingLaunchContextChoice(
         state, contextScene, choice.context);
-      return ensureContextualRuntime(rom, state, contextScene, contextDocument,
-        precedingChoice, ancestry.concat(scene.assetId), true, signal);
+      return Promise.resolve().then(function() {
+        return ensureContextualRuntime(rom, state, contextScene, contextDocument,
+          precedingChoice, ancestry.concat(scene.assetId), true, signal);
+      }).catch(function(error) {
+          if (error && error.name === 'AbortError') throw error;
+          var attributed = new Error('Preceding Director ' + contextScene.assetId +
+            ' could not start: ' + (error && error.message || String(error)));
+          attributed.code = error && error.code;
+          throw attributed;
+        });
     }).then(function(contextRuntime) {
       state.concurrentRuntimeByLaunchContext = {};
       state.concurrentRuntimeByLaunchContext[
@@ -1069,6 +1078,7 @@ window.OB64 = window.OB64 || {};
   function playbackTimingLabel(state,scene) {
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a preview-owned Stage. Declared preview unit: level-one Hero and Fighter, formation positions 4 and 1; environment 0, one unit, zero scenario/event values, white world tint, and random seed 1. This is a preview party, not the historical cast. Automatic dialogue advance: simulated timing. Audio queue only.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='room')return 'Standalone ROM room startup: current camera commands, Actors and registered layers. Declared preview defaults: empty roster, neutral controls, white world tint, protagonist Magnus and army Preview Army (text only). Automatic dialogue advance: simulated timing. Playback stops at unsupported dependencies; optional event predecessors are not reconstructed.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup from the loaded scene and caller rules. Preview defaults: isolated scene, empty roster and audio queue, standard appearance, zero scenario/event state, protagonist name Magnus (text only), neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
     var services=input&&((input.capturedResume&&input.capturedResume.value.resourceServices)||(input.externalProducers&&input.externalProducers.value));
     return services&&services.resourceSchedule&&services.resourceSchedule.pageAdvancePolicy==='automatic'?'Automatic dialogue advance: simulated timing.':'';
@@ -1522,9 +1532,12 @@ window.OB64 = window.OB64 || {};
     } else {
       calibrationText = 'Fit-to-scene storyboard projection; no compiled Director runtime is available.';
     }
-    if (nativeRuntime && stageRuntime.missingInputs.length) {
+    if (nativeRuntime && stageRuntime.unresolvedQuery) {
+      calibrationText += ' Playback boundary: ' + stageRuntime.unresolvedQuery.label +
+        '. Earlier computed frames remain available.';
+    } else if (nativeRuntime && stageRuntime.missingInputs.length) {
       calibrationText += ' ' + stageRuntime.missingInputs.length +
-        ' launch inputs remain unresolved because they live outside this stream.';
+        ' launch or service inputs remain unresolved.';
     }
     var timingLabel=playbackTimingLabel(state,scene);if(timingLabel)calibrationText+=' '+timingLabel;
     var calibration = node('span', 'cutscene-stage-calibration', calibrationText);

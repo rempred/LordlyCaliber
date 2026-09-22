@@ -6,7 +6,7 @@ window.OB64=window.OB64||{};
  function hex(bytes){return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
  function bytes(text){if(typeof text!=='string'||text.length%2||!/^[0-9a-f]+$/i.test(text))stop('Launch memory requires hexadecimal bytes.');return Uint8Array.from(text.match(/../g),x=>parseInt(x,16));}
  function Launch(input,rom){
-  if(!input||!((input.kind==='mode-zero-director-v1'&&input.sceneMode===0)||(input.kind==='rom-mode-two-director-v1'&&input.sceneMode===2))||!Number.isInteger(input.selector)||input.selector<0||!input.world||!input.arena||!OB64.cutsceneDirectorLaunchCode||!(rom instanceof Uint8Array))stop('Director launch requires a supported mode, a ROM selector, caller world state, and a preview arena.');
+  if(!input||!((['mode-zero-director-v1','rom-mode-zero-director-v1'].includes(input.kind)&&input.sceneMode===0)||(input.kind==='rom-mode-two-director-v1'&&input.sceneMode===2))||!Number.isInteger(input.selector)||input.selector<0||!input.world||!input.arena||!OB64.cutsceneDirectorLaunchCode||!(rom instanceof Uint8Array))stop('Director launch requires a supported mode, a ROM selector, caller world state, and a preview arena.');
   if(!Number.isInteger(input.actorPresentationWord)||input.actorPresentationWord<0||input.actorPresentationWord>0xffffffff)stop('Actor construction requires the current caller presentation word.');
   var w=input.world;for(var k of ['mapKind','scenarioByte','red','green','blue'])if(!Number.isInteger(w[k])||w[k]<0||w[k]>255)stop('World inputs require unsigned bytes.');
   if(!Number.isInteger(w.eventState)||w.eventState<0||w.eventState>0xffffffff)stop('World event state requires an unsigned word.');

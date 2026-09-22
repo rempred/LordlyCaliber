@@ -835,7 +835,8 @@ The dialogue wrapper supplies the protagonist-name substitution before native te
 Its declared text-only preview name is `Magnus`; this creates no roster member or gameplay state.
 In an explicit ROM-start input, `directorLaunch.previewHeroName` overrides that default with 1-16 printable ASCII characters.
 The current Actor name falls back to the protagonist name only when the native Actor/scene-roster lookup is empty.
-A populated Actor name requiring roster suffixes, an army name, or a selected unit leader name retains a boundary when consumed.
+A populated Actor name requiring roster suffixes or a selected unit leader name retains a boundary when consumed.
+Class-one startup retains the army-name boundary unless an explicit supported name binding is supplied.
 Imported launches without this preview-name field retain their supplied dialogue memory.
 
 The loaded ROM supplies the Director selector, environment, Actor commands, class-body registration, pose programs, cameras, and text resources.
@@ -907,3 +908,24 @@ The existing 128 KiB Director/dialogue arena and 128 MiB retained-state ceiling 
 Its generator and source list are `../docs/reviews/cutscene-preserved-stage-20260921/generate.py` and `stage-sources.json`.
 Run `node tests/cutscene-preserved-stage.test.js` for ordinary playback, visible Actors, current-ROM changes, preservation, cancellation, input priority, and memory controls.
 Parent native controls and composed samples are in `../docs/reviews/cutscene-preserved-stage-20260921/`.
+
+## Standalone room startup
+
+Eligible terminal-class-four streams use direct ROM startup when no explicit playback inputs are imported.
+The supported route requires one initial scene-group selector, one explicit oversized-image selector, and both camera commands before Actor construction.
+The loaded ROM supplies the stream and camera commands; shared services construct Actors and registered image layers.
+An optional event predecessor does not block this declared standalone namespace.
+Imported inputs retain priority, including supplied camera fields, names, and controller policy.
+
+Defaults include an empty roster/audio queue, white tint, zero scenario/event values, neutral controls, and simulated automatic dialogue acknowledgement.
+The protagonist name is `Magnus`; the army name is `Preview Army`. Both are text-only defaults and create no roster membership.
+Explicit generated-profile fields `previewHeroName` and `previewArmyName` accept 1-16 printable ASCII characters.
+Missing populated Actor names and selected-unit leader names retain precise boundaries.
+
+The checked room `rom-director:01F440B2` draws eight Actors and six ordered image layers through ordinary selection and Play.
+Playback currently reaches 997 retained states before the Animated Path Ribbon Activity Query.
+The ribbon constructor/update/query lifecycle remains unsupported. Earlier frames remain available for playback and seeking.
+This is a bounded standalone preview, not reconstruction of the complete historical event or every class-four presentation.
+If an unsupported predecessor is required on another route, its error identifies that predecessor.
+
+Run `node tests/cutscene-room-rom-start.test.js` for ordinary room startup, binding, dependency, selection, and cancellation controls.

@@ -13,7 +13,7 @@ for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscen
   const renamedProjection=OB64.cutsceneCodec.projectSceneDocument(renamed,source,ui.catalog),renamedRun=OB64.cutsceneRuntime.compile(renamedProjection.document,renamedProjection.program,renamed,ui.catalog,{z64,diagnosticAssumptions:false,nativeLaunchInputs:renamedInput,maxTicks:120}),facts=s=>({actors:s.actors.map(a=>[a.slot,a.baseX,a.baseY,a.baseZ,a.bank,a.animationKey,a.displayedFrameToken]),camera:s.cameraState,projection:s.actorProjection});
   assert.equal(renamedRun.unresolvedQuery,null);for(const pass of [0,50,119])assert.deepStrictEqual(facts(renamedRun.states[pass]),facts(r.states[pass]),'identity-independent execution '+pass);
   const altered=structuredClone(p.program);altered.primitives.at(-1).rawWords[altered.primitives.at(-1).rawWords.length-1]=0xff000004;
-  assert.equal(OB64.cutsceneRomStart.analyze(altered).code,'rom-start-class');assert(!OB64.cutsceneRomStart.supports({...scene,assetId:'rom-custom-lz:01F3EAD2'},altered));
+  assert.equal(OB64.cutsceneRomStart.analyze(altered).code,'rom-start-room-group');assert(!OB64.cutsceneRomStart.supports({...scene,assetId:'rom-custom-lz:01F3EAD2'},altered));
   const noStage=structuredClone(p.program);noStage.primitives.shift();assert.equal(OB64.cutsceneRomStart.analyze(noStage).code,'rom-start-inherited-stage');
   for(const value of [0xffffffff,0xfffffffe]){const q=structuredClone(p.program);q.primitives[0].rawWords[1]=value;assert.equal(OB64.cutsceneRomStart.analyze(q).code,'rom-start-derived-environment');}
   const duplicate=structuredClone(p.program);duplicate.primitives.splice(1,0,structuredClone(duplicate.primitives[0]));assert.equal(OB64.cutsceneRomStart.analyze(duplicate).code,'rom-start-stage-sequence');

@@ -1,4 +1,4 @@
-// ROM-derived fresh mode-two preview setup. No captured memory or Actor records.
+// ROM-derived preview startup. No captured memory or Actor records.
 window.OB64=window.OB64||{};
 (function(O){
  'use strict';
@@ -16,6 +16,16 @@ window.OB64=window.OB64||{};
   const terminal=program.primitives.at(-1);
   if(terminal.opcode!==0x80000001||terminal.rawWords.length!==2||program.primitives.filter(n=>n.opcode===0x80000001).length!==1)return reject('rom-start-trailer','ROM startup requires one final terminal command and resource class.');
   const terminalClass=last&255;
+  if(terminalClass===4){
+   // func_002827EC route -4 selects the shared mode-zero initializer.
+   // This standalone contract requires the stream to supply both cameras.
+   const nodes=program.primitives,groups=nodes.filter(n=>n.opcode===0x80000006),media=nodes.filter(n=>n.opcode===0x80000007);
+   if(groups.length!==1||groups[0].rawWords.length!==2||groups[0].rawWords[1]>=31||nodes.indexOf(groups[0])>1)return reject('rom-start-room-group','Fresh room startup requires one initial explicit scene group.');
+   if(media.length!==1||nodes[0]!==media[0]||media[0].rawWords.length!==2||media[0].rawWords[1]>=69)return reject('rom-start-room-media','Fresh room startup requires an explicit supported oversized-image selector.');
+   const firstActor=nodes.findIndex(n=>n.opcode===0x14),prefix=nodes.slice(2,firstActor);
+   if(firstActor<0||prefix.length!==2||!prefix.some(n=>n.opcode===0x35&&n.rawWords.length===8)||!prefix.some(n=>n.opcode===0x36&&n.rawWords.length===8))return reject('rom-start-room-camera','Fresh room startup requires both explicit cameras before Actor construction.');
+   return {supported:true,terminalClass,sceneMode:0,environmentSelector:null,mapKind:24};
+  }
   if(terminalClass===2){if(program.primitives.some(n=>[0x80000006,0x80000007,0x80000008].includes(n.opcode)))return reject('rom-start-preserved-setup','Preserved Stage preview does not implement an additional environment setup command.');return {supported:true,terminalClass,sceneMode:2,environmentSelector:0,mapKind:0,preservedStage:true};}
   if(terminalClass!==1)return reject('rom-start-class','ROM startup does not implement terminal resource class '+terminalClass+' and its caller setup.');
   // The word-wise pre-scan must retain missing fields as unresolved. In
@@ -54,14 +64,18 @@ window.OB64=window.OB64||{};
   const put=(a,v,n=4)=>{const[b,i]=region(a,n);n===1?b.setUint8(i,v):n===2?b.setUint16(i,v):b.setUint32(i,v);};
   // Clean isolated pool, controller, scratch, audio queue and preview allocation state.
   [[0x800af0a6,2],[0x800af0c0,8],[0x800a8740,4],[0x800c4800,0x460],[0x800e7900,0x2400],[0x8018f500,16],[0x8018fc70,8],[0x80190f74,2],[0x80193bf8,8],[0x8019ee30,32],[0x80380000,8192],[0x80350000,8192],[0x80383400,17],[0x807fe000,8192]].forEach(r=>add(...r));
-  put(0x800c4c20,0xffffffff);put(0x800c4c26,0xffff,2);put(0x800c49d0,1,2);put(0x800e82c8,0xc000,2);put(0x800e82cc,6,1);put(0x800e82c8+0x10,contract.preservedStage?0x80226324:0x802260f0);
+  if(contract.sceneMode===0)add(0x80196a58,17);
+  put(0x800c4c20,0xffffffff);put(0x800c4c26,0xffff,2);put(0x800c49d0,1,2);put(0x800e82c8,0xc000,2);put(0x800e82cc,6,1);put(0x800e82c8+0x10,contract.preservedStage?0x80226324:contract.sceneMode===0?0x80225a1c:0x802260f0);
   put(0x800e8108,0x800e79b0);put(0x800c4bdc,0x800e8100);put(0x800c4c4c,0x800e8700);put(0x80190f74,0xffff,2);put(0x800e9c0c,150,2);
   // Metric arrays are retail resources. Preview addresses are owned allocations.
   for(const [address,key]of [[0x80383000,0x0218c450],[0x80383100,0x0218de48]]){const bytes=resource(rom,key);memory.push({address,bytes});}
   put(0x8018fc70,0x80383000);put(0x8018fc74,0x80383100);
   memory.push({address:0x8019e180,bytes:rom.slice(0xeaf00,0xebbb0)});
-  const launch={kind:'rom-mode-two-director-v1',preservedStage:contract.preservedStage===true,sceneMode:contract.sceneMode,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,previewHeroName:'Magnus',world:{mapKind:contract.mapKind,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
-  return {schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'rom-start',sourceIdentity:contract.preservedStage?'Loaded ROM Stage; declared level-one Hero and Fighter preview unit, environment 0':'Loaded ROM startup; isolated preview pool and empty playthrough roster',evidenceGrade:'Candidate',schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:29999,events:[],menuCreates:[],colorCreates:[],poseCalls:[],initialColor:null,initialDialogue:{memory:memory.map(r=>({address:r.address,hex:hex(r.bytes),writable:true})),owners:[{ownerId:'rom-director',payloadHex:null},null,null,null,null,null],payloadStorage:{kind:'preview-arena-v1',address:0x80380000,byteLength:8192},lifecycle:{kind:'shared-dialogue-v1',computeAlignment:true,archiveArena:{address:0x80350000,byteLength:8192}}},resourceSchedule:{kind:'resident-resource-pass-v1',directorSlot:0,directorCallback:0x80226190,directorBinding:'rom-mode-two-v1',pageAdvancePolicy:'automatic',controller:{throughPass:29999,changes:[{pass:0,actionMask:0,directionMask:0,historyMask:0,dummyMask:0}]},helperOutcomes:[]},directorLaunch:launch}}};
+  const launch={kind:contract.sceneMode===0?'rom-mode-zero-director-v1':'rom-mode-two-director-v1',preservedStage:contract.preservedStage===true,sceneMode:contract.sceneMode,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,previewHeroName:'Magnus',world:{mapKind:contract.mapKind,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
+  if(contract.sceneMode===0)launch.previewArmyName='Preview Army';
+  const result={schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'rom-start',sourceIdentity:contract.preservedStage?'Loaded ROM Stage; declared level-one Hero and Fighter preview unit, environment 0':'Loaded ROM startup; isolated preview pool and empty playthrough roster',evidenceGrade:'Candidate',schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:29999,events:[],menuCreates:[],colorCreates:[],poseCalls:[],initialColor:null,initialDialogue:{memory:memory.map(r=>({address:r.address,hex:hex(r.bytes),writable:true})),owners:[{ownerId:'rom-director',payloadHex:null},null,null,null,null,null],payloadStorage:{kind:'preview-arena-v1',address:0x80380000,byteLength:8192},lifecycle:{kind:'shared-dialogue-v1',computeAlignment:true,archiveArena:{address:0x80350000,byteLength:8192}}},resourceSchedule:{kind:'resident-resource-pass-v1',directorSlot:0,directorCallback:0x80226190,directorBinding:'rom-mode-two-v1',pageAdvancePolicy:'automatic',controller:{throughPass:29999,changes:[{pass:0,actionMask:0,directionMask:0,historyMask:0,dummyMask:0}]},helperOutcomes:[]},directorLaunch:launch}}};
+  if(contract.sceneMode===0){const e=result.externalProducers.value;e.resourceSchedule.directorCallback=0x80225abc;delete e.resourceSchedule.directorBinding;e.initialRequests={A:-1,B:-1};e.imageEcho={kind:'native-image-echo-v1'};e.sharedActor={kind:'native-ordinary-actor-v1',worldScale:Math.fround(.1)};e.framebuffer={kind:'product-framebuffer-v1',capturePolicy:'constructor-current-state',backgroundPolicy:'require'};}
+  return result;
  }
  function installCode(code,regions,rom){qualify(rom);const v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);for(const [a,p,w]of O.cutsceneRomStartData.words){if(v.getUint32(p)!==w)fail('Mode-two initialization code differs from the qualified ROM.');code[a]=w;}for(const r of O.cutsceneRomStartData.constants)regions.push({address:r.address,bytes:rom.slice(r.rom,r.rom+r.length),writable:false});}
  function attachLaunch(l){
@@ -132,8 +146,10 @@ window.OB64=window.OB64||{};
   let actorNameAbsent=!actor;
   if(actor){const index=l.machine.get(actor+0x147,1);actorNameAbsent=index>=20;
    if(!actorNameAbsent){const scene=l.machine.get(0x801ce8bc);if(!scene)fail('Dialogue name setup requires the current scene roster.','rom-start-dialogue-name');actorNameAbsent=l.machine.get(scene+0x1c4+index*0xf8+0x48)===0;}}
-  m.romTextBindingStatus=[null,actorNameAbsent?null:'the current Actor roster name and suffixes','the player army name','the selected unit leader name'];
-  for(let i=0;i<4;i++)m.put(0x8018f500+i*4,i===0||i===1&&actorNameAbsent?nameAddress:0);
+  const army=l.input.previewArmyName;
+  if(army!==undefined){if(typeof army!=='string'||!army.length||army.length>16||!/^[\x20-\x7e]+$/.test(army))fail('The preview army name must contain 1-16 printable ASCII bytes.','rom-start-army-name');for(let i=0;i<17;i++)m.put(0x80196a58+i,i<army.length?army.charCodeAt(i):0,1);}
+  m.romTextBindingStatus=[null,actorNameAbsent?null:'the current Actor roster name and suffixes',army===undefined?'the player army name':null,'the selected unit leader name'];
+  for(let i=0;i<4;i++)m.put(0x8018f500+i*4,i===0||i===1&&actorNameAbsent?nameAddress:i===2&&army!==undefined?0x80196a58:0);
   if(!m.romTextBindingGuard){const get=m.get;m.get=function(a,n){if((n===undefined||n===4)&&a>=0x8018f500&&a<0x8018f510&&a%4===0){const reason=this.romTextBindingStatus[(a-0x8018f500)/4];if(reason)fail('Dialogue substitution '+((a-0x8018f500)/4)+' requires '+reason+'.','rom-start-dialogue-name');}return get.call(this,a,n);};m.romTextBindingGuard=true;}
  }
  function dialoguePoint(l,actor,camera){

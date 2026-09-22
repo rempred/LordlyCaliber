@@ -938,6 +938,15 @@ window.OB64 = window.OB64 || {};
     return {nativePacked:true,matrix:combined,depth:depth,screenPoint:{x:origin[3]?160+160*origin[0]/origin[3]:0,y:origin[3]?120-120*origin[1]/origin[3]:0}};
   }
 
+  function mainSpritePoint(actor) {
+    // Mode-two func_002A9AD0 builds the ordinary sprite matrix (+0xA0)
+    // from base Y (+0x120). Height-mode selection feeds the separate
+    // secondary matrices (+0x20/+0x60), not this sprite matrix.
+    if (actor.renderPipeline !== 'actor-camera-direct' || !Number.isFinite(actor.baseY)) return actor;
+    return { x: actor.x, y: actor.baseY +
+      (actor.sceneTransform && Number(actor.sceneTransform.translateY) || 0), z: actor.z };
+  }
+
   function nativeActorLayerGeometry(geometry,layer) {
     if(!geometry||!geometry.nativePacked)return null;
     var sx=Number.isFinite(layer.scaleX)?layer.scaleX:1,sy=Number.isFinite(layer.scaleY)?layer.scaleY:1;
@@ -1292,11 +1301,12 @@ window.OB64 = window.OB64 || {};
       var modeZeroGeometry = nativeActorGeometry(actor,previewState)||modeZeroActorGeometry(actor, previewState, projection);
       return {
         kind: 'actor', actor: actor, geometry: modeZeroGeometry, order: index,
+        spritePoint: mainSpritePoint(actor),
         layer: Number.isInteger(actor.transformChannel) ? actor.transformChannel : 0,
         depth: modeZeroGeometry&&modeZeroGeometry.nativePacked?modeZeroGeometry.depth:modeZeroGeometry
           ? projectionDepth(modeZeroGeometry.scenePoint, modeZeroGeometry.projection)
           : (nativePerspectiveProjection(projection)
-          ? projectionDepth(actor, projection) : null
+          ? projectionDepth(mainSpritePoint(actor), projection) : null
           )
       };
     });
@@ -1362,7 +1372,7 @@ window.OB64 = window.OB64 || {};
       }
       var actor = renderEntry.actor;
       var modeZeroGeometry = renderEntry.geometry;
-      var point = modeZeroGeometry ? modeZeroGeometry.screenPoint : projectPointFloat(actor, projection);
+      var point = modeZeroGeometry ? modeZeroGeometry.screenPoint : projectPointFloat(renderEntry.spritePoint, projection);
       point = transformStagePoint(point, camera);
       var frame = options.actorFrames && options.actorFrames[actor.id];
       if (frame && frame.rgba) {
@@ -1372,7 +1382,7 @@ window.OB64 = window.OB64 || {};
         }
         var actorScale = modeZeroGeometry ? modeZeroGeometry.scale :
           (Number.isFinite(actor.uniformScale) ? actor.uniformScale : 1) *
-            perspectivePixelsPerModelUnit(actor, projection);
+            perspectivePixelsPerModelUnit(renderEntry.spritePoint, projection);
         actorScale = clamp(actorScale, 0.05, 16);
         if (Array.isArray(frame.nativeLayers) && frame.nativeLayers.length) {
           var nativeBounds = drawNativeActorLayers(output, frame, point, actorScale, camera,

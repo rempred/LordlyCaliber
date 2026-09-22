@@ -1419,10 +1419,10 @@ window.OB64 = window.OB64 || {};
         translatedWordOffsets: translatedWordOffsets
       };
     }
-    var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.externalProducers&&options.nativeLaunchInputs.externalProducers.value&&options.nativeLaunchInputs.externalProducers.value.directorLaunch&&options.nativeLaunchInputs.externalProducers.value.directorLaunch.kind==='rom-mode-two-director-v1';
+    var romOnlyStart=options.nativeLaunchInputs&&options.nativeLaunchInputs.externalProducers&&options.nativeLaunchInputs.externalProducers.value&&options.nativeLaunchInputs.externalProducers.value.directorLaunch&&['rom-mode-two-director-v1','rom-mode-zero-director-v1'].includes(options.nativeLaunchInputs.externalProducers.value.directorLaunch.kind);
     var observedBackground = romOnlyStart?null:observationBackground(scene, document, catalog);
     var documentBackground = documentModeTwoBackground(document, catalog);
-    var directorMode = romOnlyStart?{value:2,status:'ROM terminal-class dispatcher selects mode two',evidenceStatus:'ROM-caller-rule'}:directorModeFromProfile(scene);
+    var directorMode = romOnlyStart?{value:options.nativeLaunchInputs.externalProducers.value.directorLaunch.sceneMode,status:'ROM terminal-class dispatcher selects scene mode',evidenceStatus:'ROM-caller-rule'}:directorModeFromProfile(scene);
     var modeTwoCommandPreviewUsesFreshRoot = directorMode.value === 2 &&
       launchProfile.background && launchProfile.background.requestCount > 0;
     var suppliedContextRuntime = options.contextRuntime && (
@@ -1431,7 +1431,7 @@ window.OB64 = window.OB64 || {};
         options.contextRuntime.contextFrames.length)
       ? options.contextRuntime : null;
     var hasCapturedSnapshot=options.nativeLaunchInputs && options.nativeLaunchInputs.capturedSnapshot && options.nativeLaunchInputs.capturedSnapshot.status==='known';
-    var contextRuntime = modeTwoCommandPreviewUsesFreshRoot || hasCapturedSnapshot
+    var contextRuntime = romOnlyStart || modeTwoCommandPreviewUsesFreshRoot || hasCapturedSnapshot
       ? null : suppliedContextRuntime;
     if (modeTwoCommandPreviewUsesFreshRoot && suppliedContextRuntime && !hasCapturedSnapshot) {
       assumption('The event route preserves resource-loader mode 0x8023A981, but its launch value is not statically known; this explicit mode-two background preview uses the native zero-mode fresh-root branch.');
@@ -1453,7 +1453,7 @@ window.OB64 = window.OB64 || {};
       launchInvocationContexts.every(function(context) {
         return !!context.concurrentDirectorAssetId;
       });
-    if (!contextRuntime && !modeTwoCommandPreviewUsesFreshRoot &&
+    if (!romOnlyStart && !contextRuntime && !modeTwoCommandPreviewUsesFreshRoot &&
         (selectedContextOwner || everyLaunchNeedsContext)) {
       var contextOwners = Array.from(new Set(launchInvocationContexts.map(function(context) {
         return context.concurrentDirectorAssetId;
