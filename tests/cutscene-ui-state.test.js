@@ -440,7 +440,7 @@ function hashBytes(input) {
   assert(uiSource.includes("window.addEventListener('pointerup', up)"));
   assert(uiSource.includes('selectedClipId'));
   assert(uiSource.includes('OB64.cutscenePreview.snapFrame'));
-  assert(uiSource.includes("timelineMode: 'runtime'"));
+  assert(uiSource.includes("timelineMode: 'preview'"));
   assert(uiSource.includes('Horizontal position is execution time'));
   assert(uiSource.includes('Horizontal position is physical Director-stream order'));
   assert(uiSource.includes(
@@ -460,6 +460,65 @@ function hashBytes(input) {
   assert(uiSource.includes('focus({ preventScroll: true })'));
   assert(!uiSource.includes('Actor projection is approximate until visual calibration passes.'));
   assert(!uiSource.includes('addRenderPass'));
+  vm.runInThisContext(uiSource.replace('    render: render,',
+    '    render: render, testRenderInspector: renderInspector, testViewFor: viewFor,'));
+  function inspectorElement(tag) {
+    return {
+      tag, children: [], attrs: {}, listeners: {}, style: {},
+      classList: { toggle() {} },
+      appendChild(child) { this.children.push(child); return child; },
+      setAttribute(key, value) { this.attrs[key] = value; },
+      addEventListener(key, listener) { this.listeners[key] = listener; },
+      get firstChild() { return this.children[0] || null; }
+    };
+  }
+  function inspectorText(element) {
+    return [element.textContent || '', ...element.children.map(inspectorText)].join(' ');
+  }
+  function inspectorTree(documentToRender = baseline) {
+    global.document = { createElement: inspectorElement };
+    state.ui = {};
+    state.imageCache = {};
+    const shell = inspectorElement('main');
+    OB64.cutsceneUI.testRenderInspector(shell, { z64 }, state, scene, documentToRender);
+    return shell;
+  }
+  const editorView = OB64.cutsceneUI.testViewFor(state, scene.sceneId);
+  assert.strictEqual(editorView.timelineMode, 'preview');
+  assert.strictEqual(editorView.editPanel, 'actors');
+  let pane = inspectorTree();
+  assert(inspectorText(pane).includes('Actors and placement'));
+  assert(inspectorText(pane).includes('Starting position'));
+  assert(inspectorText(pane).includes('Appearance timing'));
+  assert(!inspectorText(pane).includes('Source and launch facts'));
+  editorView.editPanel = 'actions';
+  editorView.selectedClipId = movementTarget.clipId;
+  pane = inspectorTree();
+  assert(inspectorText(pane).includes('Movement and timing'));
+  assert(inspectorText(pane).includes('Edit selected action'));
+  assert(inspectorText(pane).includes('From X'));
+  assert(inspectorText(pane).includes('To X'));
+  editorView.editPanel = 'dialogue';
+  const dialogueDocument = OB64.cutsceneModel.cloneSceneDocument(baseline);
+  dialogueDocument.tracks.push(OB64.cutsceneModel.createTrack({
+    id: 'track:ui-state:dialogue', type: 'dialogue',
+    label: 'UI state dialogue', clips: [OB64.cutsceneModel.createClip({
+      id: 'clip:ui-state:dialogue', kind: 'dialogue', startFrame: 45,
+      durationFrames: 30, capability: 'native',
+      payload: { nativeDialogueEditable: true, rawText: 'Test@' }
+    })]
+  }));
+  editorView.selectedClipId = 'clip:ui-state:dialogue';
+  pane = inspectorTree(dialogueDocument);
+  assert(inspectorText(pane).includes('Dialogue boxes'));
+  assert(inspectorText(pane).includes('Add dialogue box (preview only)'));
+  assert(inspectorText(pane).includes('Native dialogue text'));
+  assert(!inspectorText(pane).includes('Starting appearance'));
+  editorView.editPanel = 'scene';
+  pane = inspectorTree();
+  assert(inspectorText(pane).includes('Scene settings'));
+  assert(inspectorText(pane).includes('Source and launch facts'));
+  assert(inspectorText(pane).includes('Playback inputs'));
   const indexSource = fs.readFileSync(path.join(EDITOR, 'index.html'), 'utf8');
   assert(indexSource.indexOf('cutscene-director.js') < indexSource.indexOf('cutscene-codec.js'),
     'the lossless Director model must load before the projection codec');

@@ -22,11 +22,17 @@ ROM preview frames retain drawing data without copying the interpreter's working
 Unresolved event branches and other external scene dependencies can still show a playback boundary.
 Some party-dependent casts remain incomplete with this sample unit.
 
-1. Select an Actor to change its initial position, appearance, or facing.
-2. Use **Projected clips** to edit movement, poses, and existing dialogue actions.
-3. Use **Hold**, **Move**, and **Set pose** to insert supported native actions.
-4. Preview the change, then use **Save Project** to retain the editable scene.
-5. Export the ROM and test the scene through its normal game entry.
+1. Select **Actors** to set a starting position, art, appearance, and facing.
+2. Use **Appear at playhead**, **Disappear at playhead**, and **Set pose now** for timed Actor changes.
+3. Select **Movement** to edit action timing and movement endpoints.
+4. Select **Dialogue** to edit existing boxes. Its **Add dialogue box** action creates a preview only.
+5. Preview the change, then use **Save Project** to retain the editable scene.
+6. Export the ROM and test the scene through its normal game entry.
+
+The Stage lets you select an Actor. Dragging an Actor adds or edits a timed pose at the playhead.
+Use the starting position fields to change a native Place command when one exists.
+The timeline opens on the editable sequence. **Advanced playback views** contains runtime and opcode diagnostics.
+**Scene** holds the Project name, background, and playback inputs.
 
 **Create replacement from this template** starts a named replacement of the selected scene.
 It inherits the template's Actors, resources, and action sequence.
@@ -38,7 +44,7 @@ Keep the text's `@` control tokens and use printable ASCII characters.
 Changing an entry affects every scene that uses it.
 Edits to different entries in the same archive combine into one resource.
 Conflicting edits to the same entry stop export with an explanation.
-The **Speak (storyboard only)** action previews a new dialogue action but does not export it.
+The **Dialogue (preview)** action previews a new dialogue box but does not export it.
 
 Larger Director streams and dialogue archives use the shared Cutscene allocation area.
 The current allocation budget is 188 KiB, with up to 144 relocated resources.

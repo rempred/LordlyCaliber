@@ -141,7 +141,8 @@ window.OB64 = window.OB64 || {};
     if (!state.views[sceneId]) {
       state.views[sceneId] = {
         frame: initialViewFrame(state, sceneId), pathId: 'default', selectedActorId: null,
-        selectedClipId: null, selectedSourceId: null, timelineMode: 'runtime',
+        selectedClipId: null, selectedSourceId: null, timelineMode: 'preview',
+        editPanel: 'actors',
         launchContextId: null, loop: false, snap: 'frame', zoom: 1
       };
     }
@@ -730,6 +731,9 @@ window.OB64 = window.OB64 || {};
     if (!state.ui || !state.ui.panel) return;
     var panel = state.ui.panel;
     var snapshot = preserve === false ? null : captureUi(panel);
+    if (snapshot && state.ui.resetInspectorScroll && snapshot.scrolls.inspector) {
+      snapshot.scrolls.inspector.top = 0;
+    }
     render(panel, rom, state.callbacks, snapshot);
   }
 
@@ -1576,17 +1580,37 @@ window.OB64 = window.OB64 || {};
         return capture.stageLabel;
       }) : [];
     var captureStageCount = captureStages.length;
-    copy.appendChild(node('p', '', scene.technicalName +
-      (scene.engine === 'director'
-        ? (captureStageCount ? ' · ' + captureStageCount + ' captured presentation stages' : '') +
-          ' · Preview clock: 30 frames/second · Native waits remain integer ticks'
-        : ' · Visual Storyboard workspace · Native presentation adapter unresolved')));
+    copy.appendChild(node('p', '',
+      'Set Actor placement and appearance, then edit movement and dialogue along the timeline.'));
     heading.appendChild(copy);
     var badges = node('div', 'cutscene-heading-badges');
     badges.appendChild(capabilityBadge(scene.previewCapability, 'Visual'));
     badges.appendChild(capabilityBadge(document.exportRequirements.capability, 'ROM'));
     heading.appendChild(badges);
     center.appendChild(heading);
+    var overview = node('div', 'cutscene-edit-overview');
+    var overviewView = viewFor(state, scene.sceneId);
+    var sceneClips = orderedClips(document);
+    [
+      ['Actors', document.actors.length, 'actors'],
+      ['Movement & poses', sceneClips.filter(function(row) {
+        return row.clip.kind === 'movement' || row.clip.kind === 'pose';
+      }).length, 'actions'],
+      ['Dialogue boxes', sceneClips.filter(function(row) {
+        return row.clip.kind === 'dialogue';
+      }).length, 'dialogue']
+    ].forEach(function(entry) {
+      var card = button('', 'cutscene-overview-card', function() {
+        overviewView.editPanel = entry[2];
+        if (state.ui) state.ui.resetInspectorScroll = true;
+        rerender(rom, state);
+      });
+      card.appendChild(node('strong', '', String(entry[1])));
+      card.appendChild(node('span', '', entry[0]));
+      card.setAttribute('aria-label', 'Edit ' + entry[0]);
+      overview.appendChild(card);
+    });
+    center.appendChild(overview);
 
     if (state.sourceErrors[scene.assetId]) {
       center.appendChild(node('div', 'cutscene-source-warning',
@@ -1608,6 +1632,11 @@ window.OB64 = window.OB64 || {};
       document.exportRequirements.reasons.join(' ')));
     }
     var stagePanel = node('section', 'cutscene-stage-panel');
+    var stageHeading = node('div', 'cutscene-stage-heading');
+    stageHeading.appendChild(node('strong', '', 'Stage'));
+    stageHeading.appendChild(node('span', '',
+      'Select an Actor. Dragging it adds or edits a timed pose at the playhead.'));
+    stagePanel.appendChild(stageHeading);
     var canvasWrap = node('div', 'cutscene-stage-wrap');
     var canvas = node('canvas', 'cutscene-stage');
     canvas.width = 320; canvas.height = 240; canvas.tabIndex = 0;
@@ -1669,7 +1698,15 @@ window.OB64 = window.OB64 || {};
         stageRuntime.states[0].actorProjection.source].filter(Boolean).join(' ')
       : (calibrated ? [projection.calibrationResult,
         actorProjection.calibrationResult].filter(Boolean).join(' ') : '');
-    stageFooter.appendChild(calibration);
+    var previewDetails = node('details', 'cutscene-stage-details');
+    previewDetails.appendChild(node('summary', '', 'Preview details'));
+    previewDetails.appendChild(calibration);
+    previewDetails.appendChild(node('p', '', scene.technicalName +
+      (scene.engine === 'director'
+        ? (captureStageCount ? ' · ' + captureStageCount + ' captured presentation stages' : '') +
+          ' · Preview clock: 30 frames/second · Native waits remain integer ticks'
+        : ' · Visual Storyboard workspace · Native presentation adapter unresolved')));
+    stageFooter.appendChild(previewDetails);
     stagePanel.appendChild(stageFooter);
     center.appendChild(stagePanel);
 
@@ -1867,9 +1904,12 @@ window.OB64 = window.OB64 || {};
 
   function selectClip(rom, state, scene, row) {
     var view = viewFor(state, scene.sceneId);
+    view.timelineMode = 'preview';
     view.selectedClipId = row.clip.id;
     view.frame = row.clip.startFrame;
     if (row.track.actorId) view.selectedActorId = row.track.actorId;
+    view.editPanel = row.clip.kind === 'dialogue' ? 'dialogue' : 'actions';
+    if (state.ui) state.ui.resetInspectorScroll = true;
     rerender(rom, state);
   }
 
@@ -1881,6 +1921,7 @@ window.OB64 = window.OB64 || {};
       var view = viewFor(state, scene.sceneId);
       view.selectedClipId = row.clip.id;
       if (row.track.actorId) view.selectedActorId = row.track.actorId;
+      view.editPanel = row.clip.kind === 'dialogue' ? 'dialogue' : 'actions';
       var startX = event.clientX;
       var originalStart = row.clip.startFrame;
       var originalDuration = row.clip.durationFrames;
@@ -2165,6 +2206,9 @@ window.OB64 = window.OB64 || {};
           if (row.editorTarget) {
             view.selectedClipId = row.editorTarget.clipId;
             if (row.editorTarget.actorId) view.selectedActorId = row.editorTarget.actorId;
+            var targetRow = findClipRow(document, row.editorTarget.clipId);
+            view.editPanel = row.editorTarget.kind === 'actor' ? 'actors'
+              : (targetRow && targetRow.clip.kind === 'dialogue' ? 'dialogue' : 'actions');
           }
           rerender(rom, state);
         });
@@ -2275,6 +2319,9 @@ window.OB64 = window.OB64 || {};
           if (row.editorTarget) {
             view.selectedClipId = row.editorTarget.clipId;
             if (row.editorTarget.actorId) view.selectedActorId = row.editorTarget.actorId;
+            var targetRow = findClipRow(document, row.editorTarget.clipId);
+            view.editPanel = row.editorTarget.kind === 'actor' ? 'actors'
+              : (targetRow && targetRow.clip.kind === 'dialogue' ? 'dialogue' : 'actions');
           }
           if (state.ui.clock) state.ui.clock = OB64.cutscenePreview.pause(
             OB64.cutscenePreview.seek(state.ui.clock, view.frame));
@@ -2303,7 +2350,7 @@ window.OB64 = window.OB64 || {};
   function renderTimeline(center, rom, state, scene, document) {
     var section = node('section', 'cutscene-sequence');
     var tabs = node('div', 'cutscene-sequence-heading');
-    tabs.appendChild(node('h3', '', 'Cutscene sequence'));
+    tabs.appendChild(node('h3', '', 'Scene timeline'));
     var diagnosticToggle = button(state.diagnosticAssumptions
       ? 'Diagnostic assumptions: on' : 'Diagnostic assumptions: off', 'btn-secondary', function() {
       state.diagnosticAssumptions = !state.diagnosticAssumptions;
@@ -2317,7 +2364,6 @@ window.OB64 = window.OB64 || {};
     diagnosticToggle.setAttribute('aria-pressed', state.diagnosticAssumptions ? 'true' : 'false');
     diagnosticToggle.setAttribute('data-cutscene-focus-key', 'diagnostic-assumptions');
     diagnosticToggle.title = 'Allow labeled completion assumptions for unsupported external queries. This does not reproduce native input.';
-    tabs.appendChild(diagnosticToggle);
     var view = viewFor(state, scene.sceneId);
     var program = state.programByAssetId[scene.assetId] || null;
     var runtime = state.runtimeByAssetId[scene.assetId] || null;
@@ -2330,6 +2376,10 @@ window.OB64 = window.OB64 || {};
     ] : [['Projected clips', 'preview']];
     if (!program) view.timelineMode = 'preview';
     if (view.timelineMode === 'runtime' && !runtime) view.timelineMode = 'composite';
+    var advanced = node('details', 'cutscene-timeline-advanced');
+    advanced.open = view.timelineMode !== 'preview';
+    advanced.appendChild(node('summary', '', 'Advanced playback views'));
+    var advancedActions = node('div', 'cutscene-story-actions');
     modes.forEach(function(entry) {
       var modeButton = button(entry[0], 'btn-secondary', function() {
         view.timelineMode = entry[1];
@@ -2340,32 +2390,38 @@ window.OB64 = window.OB64 || {};
       modeButton.classList.toggle('active', view.timelineMode === entry[1]);
       modeButton.setAttribute('aria-pressed', view.timelineMode === entry[1] ? 'true' : 'false');
       modeButton.setAttribute('data-cutscene-focus-key', 'timeline-mode:' + entry[1]);
-      actions.appendChild(modeButton);
+      advancedActions.appendChild(modeButton);
     });
-    actions.appendChild(button('Create replacement from this template','btn-secondary',function(){createFromTemplate(rom,state);}));
-    actions.appendChild(node('small','','Export replaces this native scene at its existing game triggers. Template names are Project labels.'));
+    advancedActions.appendChild(diagnosticToggle);
+    advanced.appendChild(advancedActions);
+    tabs.appendChild(advanced);
     if (program && view.timelineMode === 'runtime') {
-      tabs.appendChild(actions);
       section.appendChild(tabs);
       renderDirectorRuntime(section, rom, state, scene, document, program, runtime);
       center.appendChild(section);
       return;
     }
     if (program && view.timelineMode !== 'preview') {
-      tabs.appendChild(actions);
       section.appendChild(tabs);
       renderDirectorSource(section, rom, state, scene, document, program, view.timelineMode);
       center.appendChild(section);
       return;
     }
-    [['Enter', addEnter], ['Exit', addExit], ['Set pose', addPose], ['Move', addMove],
-      ['Opacity', addOpacity],
-      ['Hold', addHold], ['Speak (storyboard only)', addDialogue], ['Sound (storyboard only)', addAudio],
-      ['Effect', addEffect], ['Battle action', addCombatAction],
-      ['Projection', addCamera], ['Branch', addBranch],
-      ['End', addEnd]].forEach(function(entry) {
+    actions.appendChild(node('span', 'cutscene-story-actions-label', 'Add at playhead'));
+    [['Appear', addEnter], ['Disappear', addExit], ['Pose', addPose],
+      ['Move', addMove], ['Hold', addHold], ['Dialogue (preview)', addDialogue]].forEach(function(entry) {
       actions.appendChild(button(entry[0], 'btn-secondary', function() { entry[1](rom, state); }));
     });
+    var moreActions = node('details', 'cutscene-more-actions');
+    moreActions.appendChild(node('summary', '', 'More actions'));
+    var moreActionButtons = node('div', 'cutscene-story-actions');
+    [['Opacity', addOpacity], ['Sound (storyboard only)', addAudio],
+      ['Effect', addEffect], ['Battle action', addCombatAction],
+      ['Projection', addCamera], ['Branch', addBranch], ['End', addEnd]].forEach(function(entry) {
+      moreActionButtons.appendChild(button(entry[0], 'btn-secondary', function() { entry[1](rom, state); }));
+    });
+    moreActions.appendChild(moreActionButtons);
+    actions.appendChild(moreActions);
     actions.appendChild(button('Undo', 'btn-secondary', function() {
       var history = historyFor(state, scene);
       if (OB64.cutsceneModel.undo(history)) {
@@ -2380,8 +2436,8 @@ window.OB64 = window.OB64 || {};
         notifyChange(state, 'Redo Cutscene edit'); rerender(rom, state);
       }
     }));
-    tabs.appendChild(actions);
     section.appendChild(tabs);
+    section.appendChild(actions);
 
     var storyboard = node('div', 'cutscene-storyboard');
     storyboard.setAttribute('data-cutscene-scroll', 'storyboard');
@@ -2531,8 +2587,10 @@ window.OB64 = window.OB64 || {};
     var boundary = options.nativePreferred === true
       ? boundaryForFrame(scene, document, view.frame) : null;
     var id = authoredClipId(document, options.kind);
+    view.timelineMode = 'preview';
     view.selectedClipId = id;
     if (options.actorId) view.selectedActorId = options.actorId;
+    view.editPanel = options.kind === 'dialogue' ? 'dialogue' : 'actions';
     return executeEdit(rom, state, options.label, function(next) {
       var actor = options.actorId && next.actors.find(function(candidate) {
         return candidate.id === options.actorId;
@@ -2926,7 +2984,9 @@ window.OB64 = window.OB64 || {};
     do { branchId = 'branch:authored:' + branchIndex++; }
     while (document.branches.some(function(branch) { return branch.id === branchId; }));
     var clipIdValue = authoredClipId(document, 'branch');
+    view.timelineMode = 'preview';
     view.selectedClipId = clipIdValue;
+    view.editPanel = 'actions';
     executeEdit(rom, state, 'Add branch', function(next) {
       next.branches.push({ id: branchId, label: 'Authored path ' + (branchIndex - 1),
         condition: { kind: 'preview-choice' } });
@@ -2953,6 +3013,7 @@ window.OB64 = window.OB64 || {};
     var selectedRow = findClipRow(document, view.selectedClipId);
     if (selectedRow && selectedRow.track.type === 'movement' &&
         selectedRow.track.actorId === actorId) {
+      view.editPanel = 'actions';
       executeEdit(rom, state, 'Move movement endpoint on Stage', function(next) {
         var row = findClipRow(next, selectedRow.clip.id);
         row.clip.payload.to = { x: position.x, y: position.y, z: position.z };
@@ -2969,6 +3030,7 @@ window.OB64 = window.OB64 || {};
     });
     if (poseRow) {
       view.selectedClipId = poseRow.clip.id;
+      view.editPanel = 'actions';
       executeEdit(rom, state, 'Place actor on Stage', function(next) {
         var row = findClipRow(next, poseRow.clip.id);
         row.clip.payload.x = position.x;
@@ -2997,6 +3059,7 @@ window.OB64 = window.OB64 || {};
       var scene = selectedScene(state);
       var view = viewFor(state, scene.sceneId);
       view.selectedActorId = actorId;
+      view.editPanel = 'actors';
       var actor = previewState(state).actors.find(function(candidate) { return candidate.id === actorId; });
       state.drag = {
         actorId: actorId,
@@ -3118,14 +3181,15 @@ window.OB64 = window.OB64 || {};
         }, source: {}
       }));
       view.selectedClipId = secondId;
+      view.editPanel = 'actions';
     });
   }
 
-  function renderClipInspector(inspector, rom, state, scene, document, row) {
-    inspector.appendChild(node('h3', '', 'Selected action editor'));
+  function renderClipInspector(inspector, rom, state, scene, document, row, title) {
+    inspector.appendChild(node('h3', '', title || 'Selected action editor'));
     if (!row) {
       inspector.appendChild(node('p', 'cutscene-empty-note',
-        'Select an editable composite action, Storyboard card, or Preview timing clip.'));
+        'Select a step from the list or timeline to edit it.'));
       return;
     }
     var heading = node('div', 'cutscene-clip-heading');
@@ -3998,6 +4062,7 @@ window.OB64 = window.OB64 || {};
     } : { visible: true, x: 0, y: 0, z: 0, facing: 'native-0', poseId: null };
     view.selectedActorId = id;
     view.selectedClipId = null;
+    view.editPanel = 'actors';
     executeEdit(rom, state, sourceActor ? 'Duplicate actor' : 'Activate unused actor slot',
       function(next) {
         next.actors.push(OB64.cutsceneModel.createActor({
@@ -4024,13 +4089,73 @@ window.OB64 = window.OB64 || {};
       });
   }
 
-  function renderInspector(shell, rom, state, scene, document) {
-    var inspector = node('aside', 'cutscene-inspector');
-    inspector.setAttribute('data-cutscene-scroll', 'inspector');
-    inspector.appendChild(node('h3', '', 'Scene'));
+  function renderEditClipList(host, rom, state, scene, document, dialogueOnly) {
+    var view = viewFor(state, scene.sceneId);
+    var rows = orderedClips(document).filter(function(row) {
+      return (row.clip.kind === 'dialogue') === dialogueOnly &&
+        OB64.cutscenePreview.appliesToPath(row.clip, view.pathId);
+    });
+    var list = node('div', 'cutscene-edit-list');
+    if (!rows.length) list.appendChild(node('p', 'cutscene-empty-note', dialogueOnly
+      ? 'No dialogue boxes are timed in this scene.'
+      : 'No actions are mapped to this preview path.'));
+    rows.forEach(function(row) {
+      var item = button('', 'cutscene-edit-row', function() {
+        selectClip(rom, state, scene, row);
+      });
+      item.classList.toggle('active', row.clip.id === view.selectedClipId);
+      item.setAttribute('aria-pressed', row.clip.id === view.selectedClipId ? 'true' : 'false');
+      item.setAttribute('data-cutscene-focus-key', 'edit-clip:' + row.clip.id);
+      item.appendChild(node('strong', '', dialogueOnly
+        ? (row.clip.payload.speaker || 'Dialogue box')
+        : clipLabel(row, document)));
+      item.appendChild(node('span', 'cutscene-edit-row-time',
+        OB64.cutscenePreview.formatTime(row.clip.startFrame)));
+      if (dialogueOnly) {
+        item.appendChild(node('span', 'cutscene-edit-row-preview',
+          String(row.clip.payload.text || row.clip.payload.rawText || 'Text unavailable')
+            .replace(/\s+/g, ' ').slice(0, 105)));
+      }
+      item.appendChild(capabilityBadge(row.clip.capability, 'ROM'));
+      list.appendChild(item);
+    });
+    host.appendChild(list);
+    return rows;
+  }
+
+  function renderStoredDialogueReferences(host, state, capturedStages) {
+    var untimedDialogueCaptures = capturedStages.filter(function(capture) {
+      return capture.dialogueAssociation;
+    });
+    if (!untimedDialogueCaptures.length) return;
+    host.appendChild(node('h3', '', 'Stored dialogue references'));
+    untimedDialogueCaptures.forEach(function(capture) {
+      var association = capture.dialogueAssociation;
+      var entry = state.catalog.getDialogueEntry(association.entryId);
+      var dialogue = node('div', 'cutscene-untimed-dialogue');
+      var heading = node('div', 'cutscene-untimed-dialogue-heading');
+      heading.appendChild(node('strong', '', association.speaker));
+      heading.appendChild(capabilityBadge(association.capability, 'Dialogue'));
+      dialogue.appendChild(heading);
+      dialogue.appendChild(node('p', '', entry && entry.text || association.entryId));
+      dialogue.appendChild(node('p', 'cutscene-field-hint',
+        'Serifu archive selector ' + association.archiveSelector + ' · entry selector ' +
+        association.entrySelector + ' · ' + capture.stageLabel));
+      dialogue.appendChild(node('p', 'cutscene-field-hint', association.status));
+      dialogue.appendChild(node('p', 'cutscene-field-hint', association.timelineStatus));
+      host.appendChild(dialogue);
+    });
+  }
+
+  function renderSceneSettings(inspector, rom, state, scene, document, capturedStages) {
+    inspector.appendChild(node('h3', '', 'Scene settings'));
     inspector.appendChild(field('Project scene name',textInput(document.identity.friendlyName||OB64.cutsceneCatalog.displayName(scene),function(value){
       executeEdit(rom,state,'Name authored scene',function(next){next.identity.friendlyName=value||null;});
     },'scene-project-name'),'Export replaces '+OB64.cutsceneCatalog.displayName(scene)+' at its existing game triggers. This name stays in the Project.'));
+    inspector.appendChild(button('Create replacement from this template', 'btn-secondary',
+      function() { createFromTemplate(rom, state); }));
+    inspector.appendChild(node('p', 'cutscene-field-hint',
+      'The replacement uses this scene’s game triggers. The Project name does not add a new trigger.'));
     var sourceSummary = node('dl', 'cutscene-source-summary');
     var parseLabel = scene.parseStatus === 'runtime-tiled-static'
       ? 'Complete boundaries · static'
@@ -4138,10 +4263,6 @@ window.OB64 = window.OB64 || {};
         scene.audioAssociations.length + ' exact payload association' +
         (scene.audioAssociations.length === 1 ? '' : 's')]);
     }
-    var capturedStages = Array.isArray(document.identity.captures)
-      ? document.identity.captures.filter(function(capture) {
-        return capture.stageLabel;
-      }) : [];
     if (capturedStages.length) {
       sourceRows.push(['Captured stages', capturedStages.map(function(capture) {
         return capture.stageLabel;
@@ -4150,7 +4271,10 @@ window.OB64 = window.OB64 || {};
     sourceRows.forEach(function(row) {
       sourceSummary.appendChild(node('dt', '', row[0])); sourceSummary.appendChild(node('dd', '', row[1]));
     });
-    inspector.appendChild(sourceSummary);
+    var sourceDetails = node('details', 'cutscene-source-details');
+    sourceDetails.appendChild(node('summary', '', 'Source and launch facts'));
+    sourceDetails.appendChild(sourceSummary);
+    inspector.appendChild(sourceDetails);
 
     var eventContextChoices = launchContextChoices(state, scene);
     if (scene.engine === 'director') {
@@ -4242,29 +4366,6 @@ window.OB64 = window.OB64 || {};
           ' native update' +
           (activeEventContext.context.concurrentDirectorTickOffset === 1 ? '' : 's') + '.'));
       }
-    }
-
-    var untimedDialogueCaptures = capturedStages.filter(function(capture) {
-      return capture.dialogueAssociation;
-    });
-    if (untimedDialogueCaptures.length) {
-      inspector.appendChild(node('h3', '', 'Stored dialogue'));
-      untimedDialogueCaptures.forEach(function(capture) {
-        var association = capture.dialogueAssociation;
-        var entry = state.catalog.getDialogueEntry(association.entryId);
-        var dialogue = node('div', 'cutscene-untimed-dialogue');
-        var heading = node('div', 'cutscene-untimed-dialogue-heading');
-        heading.appendChild(node('strong', '', association.speaker));
-        heading.appendChild(capabilityBadge(association.capability, 'Dialogue'));
-        dialogue.appendChild(heading);
-        dialogue.appendChild(node('p', '', entry && entry.text || association.entryId));
-        dialogue.appendChild(node('p', 'cutscene-field-hint',
-          'Serifu archive selector ' + association.archiveSelector + ' · entry selector ' +
-          association.entrySelector + ' · ' + capture.stageLabel));
-        dialogue.appendChild(node('p', 'cutscene-field-hint', association.status));
-        dialogue.appendChild(node('p', 'cutscene-field-hint', association.timelineStatus));
-        inspector.appendChild(dialogue);
-      });
     }
 
     inspector.appendChild(node('h3', '', 'Background'));
@@ -4559,37 +4660,136 @@ window.OB64 = window.OB64 || {};
       inspector.appendChild(node('p', 'cutscene-field-hint', routeText));
     }
 
-    var view = viewFor(state, scene.sceneId);
-    renderClipInspector(inspector, rom, state, scene, document,
-      findClipRow(document, view.selectedClipId));
+    return backgroundStatus;
+  }
 
-    inspector.appendChild(node('h3', '', 'Cast'));
-    var castActions = node('div', 'cutscene-inspector-actions');
-    castActions.appendChild(button('Activate unused slot', 'btn-secondary', function() {
-      addPreviewActor(rom, state, null);
-    }));
-    inspector.appendChild(castActions);
-    var occupiedActorSlots = {};
-    document.actors.concat(scene.actors || []).forEach(function(actor) {
-      if (actor.slot != null && actor.slot < 20) occupiedActorSlots[actor.slot] = true;
-    });
-    inspector.appendChild(node('p', 'cutscene-field-hint', document.actors.length +
-      ' actors · ' + (20 - Object.keys(occupiedActorSlots).length) +
-      ' unclaimed slots in the observed 0–19 range. Place activates a free slot; Exit emits opcode 0x13; Deactivate removes that slot’s Place commands.'));
-    var cast = node('div', 'cutscene-cast');
-    if (!view.selectedActorId && document.actors.length) view.selectedActorId = document.actors[0].id;
-    document.actors.forEach(function(actor) {
-      var row = button(actor.label, 'cutscene-cast-row', function() {
-        view.selectedActorId = actor.id; rerender(rom, state);
+  function renderInspector(shell, rom, state, scene, document) {
+    var view = viewFor(state, scene.sceneId);
+    var capturedStages = Array.isArray(document.identity.captures)
+      ? document.identity.captures.filter(function(capture) {
+        return capture.stageLabel;
+      }) : [];
+    var inspector = node('section', 'cutscene-settings-pane');
+    var backgroundStatus = view.editPanel === 'scene'
+      ? renderSceneSettings(inspector, rom, state, scene, document, capturedStages)
+      : null;
+    var sceneSettings = inspector;
+    var storedDialoguePanel = node('div', 'cutscene-stored-dialogue');
+    if (view.editPanel === 'dialogue') {
+      renderStoredDialogueReferences(storedDialoguePanel, state, capturedStages);
+    }
+    var selectedRow = findClipRow(document, view.selectedClipId);
+    if (['actors', 'actions', 'dialogue', 'scene'].indexOf(view.editPanel) === -1) {
+      view.editPanel = 'actors';
+    }
+    if (!view.selectedActorId && document.actors.length) {
+      view.selectedActorId = document.actors[0].id;
+    }
+    var actorPane = null;
+    if (view.editPanel === 'actors') {
+      actorPane = node('section', 'cutscene-workspace-pane');
+      inspector = actorPane;
+      inspector.appendChild(node('h3', '', 'Actors and placement'));
+      inspector.appendChild(node('p', 'cutscene-pane-intro',
+        'Choose an Actor to set its starting position and appearance. Use the playhead for timed changes.'));
+      var castActions = node('div', 'cutscene-inspector-actions');
+      castActions.appendChild(button('Activate unused slot', 'btn-secondary', function() {
+        addPreviewActor(rom, state, null);
+      }));
+      inspector.appendChild(castActions);
+      var occupiedActorSlots = {};
+      document.actors.concat(scene.actors || []).forEach(function(actor) {
+        if (actor.slot != null && actor.slot < 20) occupiedActorSlots[actor.slot] = true;
       });
-      row.classList.toggle('active', actor.id === view.selectedActorId);
-      row.appendChild(node('span', '', 'Slot ' + actor.slot));
-      cast.appendChild(row);
+      inspector.appendChild(node('p', 'cutscene-field-hint', document.actors.length +
+        ' Actors · ' + (20 - Object.keys(occupiedActorSlots).length) +
+        ' free observed slots. Appear and disappear actions use the current playhead.'));
+      var cast = node('div', 'cutscene-cast');
+      document.actors.forEach(function(actor) {
+        var row = button(actor.label, 'cutscene-cast-row', function() {
+          view.selectedActorId = actor.id; rerender(rom, state);
+        });
+        row.classList.toggle('active', actor.id === view.selectedActorId);
+        row.appendChild(node('span', '', 'Slot ' + actor.slot));
+        cast.appendChild(row);
+      });
+      inspector.appendChild(cast);
+      var actor = document.actors.find(function(candidate) { return candidate.id === view.selectedActorId; });
+      if (actor) {
+        renderActorInspector(inspector, rom, state, actor);
+        var actorSteps = orderedClips(document).filter(function(row) {
+          return row.track.actorId === actor.id &&
+            OB64.cutscenePreview.appliesToPath(row.clip, view.pathId);
+        });
+        inspector.appendChild(node('h4', '', 'Timed Actor actions'));
+        var actorStepList = node('div', 'cutscene-edit-list cutscene-actor-steps');
+        if (!actorSteps.length) actorStepList.appendChild(node('p', 'cutscene-empty-note',
+          'No timed actions for this Actor on the selected preview path.'));
+        actorSteps.forEach(function(row) {
+          var step = button('', 'cutscene-edit-row', function() {
+            selectClip(rom, state, scene, row);
+          });
+          step.appendChild(node('strong', '', clipLabel(row, document)));
+          step.appendChild(node('span', 'cutscene-edit-row-time',
+            OB64.cutscenePreview.formatTime(row.clip.startFrame)));
+          actorStepList.appendChild(step);
+        });
+        inspector.appendChild(actorStepList);
+      }
+    }
+
+    var actionPane = null;
+    if (view.editPanel === 'actions') {
+      actionPane = node('section', 'cutscene-workspace-pane');
+      actionPane.appendChild(node('h3', '', 'Movement and timing'));
+      actionPane.appendChild(node('p', 'cutscene-pane-intro',
+        'Select an action to change when it starts, how long it lasts, or where an Actor moves.'));
+      renderClipInspector(actionPane, rom, state, scene, document,
+        selectedRow && selectedRow.clip.kind !== 'dialogue' ? selectedRow : null,
+        'Edit selected action');
+      actionPane.appendChild(node('h4', '', 'Scene actions'));
+      renderEditClipList(actionPane, rom, state, scene, document, false);
+    }
+
+    var dialoguePane = null;
+    if (view.editPanel === 'dialogue') {
+      dialoguePane = node('section', 'cutscene-workspace-pane');
+      dialoguePane.appendChild(node('h3', '', 'Dialogue boxes'));
+      dialoguePane.appendChild(node('p', 'cutscene-pane-intro',
+        'Select a box to edit its text and preview timing. Native text changes every use of its shared archive entry.'));
+      dialoguePane.appendChild(button('Add dialogue box (preview only)', 'btn-secondary', function() {
+        view.editPanel = 'dialogue'; addDialogue(rom, state);
+      }));
+      renderClipInspector(dialoguePane, rom, state, scene, document,
+        selectedRow && selectedRow.clip.kind === 'dialogue' ? selectedRow : null,
+        'Edit selected dialogue box');
+      dialoguePane.appendChild(node('h4', '', 'Timed dialogue boxes'));
+      renderEditClipList(dialoguePane, rom, state, scene, document, true);
+      if (storedDialoguePanel.firstChild) dialoguePane.appendChild(storedDialoguePanel);
+    }
+
+    var sidebar = node('aside', 'cutscene-inspector');
+    sidebar.setAttribute('data-cutscene-scroll', 'inspector');
+    sidebar.appendChild(node('div', 'cutscene-workspace-kicker', 'EDIT THIS SCENE'));
+    var navigation = node('nav', 'cutscene-workspace-tabs');
+    navigation.setAttribute('aria-label', 'Cutscene editing tools');
+    var panels = { actors: actorPane, actions: actionPane,
+      dialogue: dialoguePane, scene: sceneSettings };
+    [['actors', 'Actors'], ['actions', 'Movement'],
+      ['dialogue', 'Dialogue'], ['scene', 'Scene']].forEach(function(entry) {
+      var tab = button(entry[1], 'cutscene-workspace-tab', function() {
+        view.editPanel = entry[0];
+        if (state.ui) state.ui.resetInspectorScroll = true;
+        rerender(rom, state);
+      });
+      tab.classList.toggle('active', view.editPanel === entry[0]);
+      tab.setAttribute('aria-pressed', view.editPanel === entry[0] ? 'true' : 'false');
+      tab.setAttribute('data-cutscene-focus-key', 'edit-panel:' + entry[0]);
+      navigation.appendChild(tab);
     });
-    inspector.appendChild(cast);
-    var actor = document.actors.find(function(candidate) { return candidate.id === view.selectedActorId; });
-    if (actor) renderActorInspector(inspector, rom, state, actor);
-    shell.appendChild(inspector);
+    sidebar.appendChild(navigation);
+    sidebar.appendChild(panels[view.editPanel]);
+    shell.appendChild(sidebar);
     state.ui.backgroundStatus = backgroundStatus;
     updateBackgroundStatus(state);
   }
@@ -4608,6 +4808,7 @@ window.OB64 = window.OB64 || {};
       });
     });
     inspector.appendChild(field('Display name', labelInput, 'Project label; it does not change game text.'));
+    inspector.appendChild(node('h4', '', 'Starting appearance'));
     var bankMatch = String(actor.artSourceId || '').match(/:(\d+)$/);
     var bank = bankMatch ? Number(bankMatch[1]) : 1;
     var artSelect = node('select');
@@ -4643,6 +4844,7 @@ window.OB64 = window.OB64 || {};
     inspector.appendChild(field('Default Actor Art Source', artSelect,
       'All 68 catalogued cutscene art banks are available. Exact Place-backed actors compile directly.'));
 
+    inspector.appendChild(node('h4', '', 'Pose at playhead'));
     var poseSelect = node('select');
     var scene = selectedScene(state);
     var view = viewFor(state, scene.sceneId);
@@ -4698,6 +4900,7 @@ window.OB64 = window.OB64 || {};
     });
     inspector.appendChild(field('Default facing', facing,
       'Place-backed actors compile this initial facing. Use a pose step for a timed facing change.'));
+    inspector.appendChild(node('h4', '', 'Starting position'));
     var coordinates = node('div', 'cutscene-coordinate-grid');
     ['x', 'y', 'z'].forEach(function(axis) {
       coordinates.appendChild(field(axis.toUpperCase(), numericInput(actor.initial[axis], '0.001',
@@ -4710,15 +4913,16 @@ window.OB64 = window.OB64 || {};
     inspector.appendChild(coordinates);
     inspector.appendChild(node('p', 'cutscene-field-hint',
       'These coordinates compile into the actor Place command when that exact boundary exists. Stage dragging adds or edits a timed pose.'));
+    inspector.appendChild(node('h4', '', 'Appearance timing'));
     var actions = node('div', 'cutscene-inspector-actions');
     actions.appendChild(button('Set pose now', 'btn-secondary', function() {
       viewFor(state, selectedScene(state).sceneId).selectedActorId = actor.id;
       addPose(rom, state);
     }));
-    actions.appendChild(button('Enter', 'btn-secondary', function() {
+    actions.appendChild(button('Appear at playhead', 'btn-secondary', function() {
       viewFor(state, selectedScene(state).sceneId).selectedActorId = actor.id; addEnter(rom, state);
     }));
-    actions.appendChild(button('Exit', 'btn-secondary', function() {
+    actions.appendChild(button('Disappear at playhead', 'btn-secondary', function() {
       viewFor(state, selectedScene(state).sceneId).selectedActorId = actor.id; addExit(rom, state);
     }));
     actions.appendChild(button('Duplicate', 'btn-secondary', function() {
