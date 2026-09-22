@@ -1221,6 +1221,20 @@ window.OB64 = window.OB64 || {};
       });
     });
   }
+  function renderTitle(output,preview,options){
+    var title=preview.titlePresentation;if(!title||!options.titleImages)return;
+    fillRect(output,0,0,WIDTH,HEIGHT,[0,0,0,255]);
+    var ticks=title.revealTicks;
+    options.titleImages.forEach(function(row,i){
+      if(i===0){blitScaled(output,row.image,row.x,row.y,row.image.width,row.image.height,title.alpha,null);return;}
+      var duration=Math.ceil((row.image.width+48)/2),progress=clamp(ticks/duration,0,1);ticks-=duration;
+      if(!progress)return;
+      // Keep the image's scale and reveal it from left to right.
+      var width=Math.ceil(row.image.width*progress),clip={width:width,height:row.image.height,rgba:new Uint8ClampedArray(width*row.image.height*4)};
+      for(var y=0;y<clip.height;y++)clip.rgba.set(row.image.rgba.subarray(y*row.image.width*4,(y*row.image.width+width)*4),y*width*4);
+      blitScaled(output,clip,row.x,row.y,width,clip.height,255,null);
+    });
+  }
   function renderFramebufferLayers(document,preview,options){
     var effect=preview.framebufferEffect,output=surface(WIDTH,HEIGHT),hits=[],paths=[];fallbackBackground(output);
     if(!OB64.cutsceneFramebuffer||!effect||!Array.isArray(effect.layers)||effect.layers.length!==20)fail('Framebuffer rendering requires the current layer stack.');
@@ -1240,6 +1254,7 @@ window.OB64 = window.OB64 || {};
     }
     renderPathRibbons(output,preview.pathRibbons,options.camera);
     renderMapMenus(output,preview.mapMenu);
+    renderTitle(output,preview,options);
     (options.overlays||[]).forEach(function(o){fillRect(output,0,0,320,240,[o.red,o.green,o.blue,o.alpha]);});applyScreenTransitionMask(output,options.screenTransition);
     return {width:320,height:240,rgba:output.rgba,projection:options.projection,camera:options.camera,hitRegions:hits,movementPaths:paths,framebufferEffect:effect};
   }
@@ -1472,6 +1487,7 @@ window.OB64 = window.OB64 || {};
     modulateSurface(output, options.colorModulation);
     if (!options._layerPass) renderPathRibbons(output, previewState.pathRibbons, options.camera);
     if(!options._layerPass)renderMapMenus(output,previewState.mapMenu);
+    if(!options._layerPass)renderTitle(output,previewState,options);
     (options.overlays || []).forEach(function(overlay) {
       fillRect(output, 0, 0, output.width, output.height, [
         clamp(Number(overlay.red) || 0, 0, 255),

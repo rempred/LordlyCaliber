@@ -20,7 +20,7 @@ function add(a,n,bytes){need(ownedRegions.reduce((sum,r)=>sum+r.bytes.length,0)+
 // Explicit preview choices: isolated resource registries and clear launch flags.
 add(0x80196aed,1);add(0x801976d8,0x20);add(0x80197b60,2);add(0x80197b18,8);add(0x801ce8bc,0x1dc4,rom.slice(0x211d4c,0x213b10));add(0x801d0680,0x1c0);add(0x80197774,4);
 m.put(0x80196aed,environmentSelector,1);
-add(0x801971f0,750);add(0x80193bc0,5600);add(0x80190f80,0x16c);add(0x800c47d0,4);m.put(0x800c47d0,1);
+add(0x801971f0,775);add(0x80193bc0,5600);add(0x80195560,5200);add(0x80190f80,0x16c);add(0x800c47d0,4);m.put(0x800c47d0,1);
 add(0x80187c20,165*72,rom.slice(0x5db20,0x5db20+165*72));
 add(0x8018c400,256*32,rom.slice(0x62300,0x64300));
 add(0x8018f557,3,Uint8Array.of(input.world.red,input.world.green,input.world.blue));add(0x801936a7,1,Uint8Array.of(input.world.scenarioByte));add(0x8020a2d4,4);add(0x80220000,0x2000);
@@ -72,7 +72,7 @@ m.serviceHelper=function(pc){const a=m.r[4],b=m.r[5],c=m.r[6];if(calls.length<40
  else if(pc===0x8007a110){const lease=leases.find(r=>r.address===b&&!r.freed);need(lease);const bytes=O.cutsceneCodec.decodeCustomLz(read(b,lease.length),{requireExact:false,maxOutput:arenaLimit}).bytes;write(a,bytes);m.r[2]=bytes.length;}
  else if(pc===0x8009daf4)m.r[2]=a?resource(a).length:0;
  else if(pc===0x8009dbb8){const bytes=resource(b);write(a,bytes);m.r[2]=a;}
- else return false;
+ else {m.lastUnhandledHelper=pc;return false;}
  return true;
 };
 const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>>>26;if(![34,38,42,46].includes(op))return alignedStep(pc);const rs=w>>>21&31,rt=w>>>16&31,a=(this.r[rs]+(w<<16>>16))>>>0,k=a&3,base=a-k;if(op===34||op===42){for(let j=k;j<4;j++){const shift=24-8*(j-k),mask=(255<<shift)>>>0;if(op===34)this.r[rt]=((this.r[rt]&~mask)|(this.get(base+j,1)<<shift))>>>0;else this.put(base+j,(this.r[rt]>>>shift)&255,1);}}else for(let j=0;j<=k;j++){const shift=8*(k-j),mask=(255<<shift)>>>0;if(op===38)this.r[rt]=((this.r[rt]&~mask)|(this.get(base+j,1)<<shift))>>>0;else this.put(base+j,(this.r[rt]>>>shift)&255,1);}this.r[0]=0;this.steps++;return {target:null,annul:false};};
@@ -82,11 +82,16 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
  // Execute the fixed owner through shared construction and subsystem initialization.
  // Stop before its final battle callback; this preview owner does not start a battle.
  m.step=function(pc){if(pc===0x801afe18){reached=true;throw boundary;}return nativeStep(pc);};
- for(const [member,primary,formation] of [[1,81,4],[2,2,1]]){const p=0x80193bc0+member*56;m.put(p+0x11,primary,1);m.put(p+0x12,rom[0x5db20+primary*72+57]||primary,1);run(0x8016f11c,[p,1],100000);m.put(0x801971f0+member+1,member,1);m.put(0x801971f0+member+6,formation,1);}
+ const party=input.previewClasses||[81,2];need(party.length>0&&party.length<=5,'Preview unit supports up to five members.');
+ for(const [index,primary]of party.entries()){const member=index+1,formation=[4,1,3,5,7][index],p=0x80193bc0+member*56;need(Number.isInteger(primary)&&primary>0&&primary<165,'Preview member class exceeds the ROM table.');m.put(p+0x11,primary,1);m.put(p+0x12,rom[0x5db20+primary*72+57]||primary,1);run(0x8016f11c,[p,1],100000);if(index===0)m.put(p+0x33,m.get(p+0x33,1)|2,1);const name=primary>=81&&primary<=83?'Magnus':O.className?O.className(primary):'Member '+member;for(let i=0;i<16;i++)m.put(p+i,i<name.length?name.charCodeAt(i):0,1);m.put(0x801971f0+member+1,member,1);m.put(0x801971f0+member+6,formation,1);}
  try{run(0x801afc0c,[],200000);}catch(e){if(e!==boundary)throw e;}finally{m.step=nativeStep;}
  need(reached,'Native preview Stage construction did not reach the shared-owner boundary before the battle callback.');
  run(0x801c58f0,[]);
- function run(pc,args,limit){need(active,'The preview Stage has been released.');const g=m.run(pc,args,[],limit||200000);while(!g.next().done){}}
+ // Unit 30 supplies the deployed members used by opcode 0x96 and 0xA6.
+ // They are declared preview characters, built from current ROM class data.
+ for(let i=0;i<party.length;i++){const member=i+1;write(0x80195560+member*52,read(0x80193bc0+member*56,52));m.put(0x801971f0+30*25+2+i,member,1);m.put(0x801971f0+30*25+7+i,[4,1,3,5,7][i],1);}
+ if(input.previewDeployed)run(0x8023d7a8,[]);
+ function run(pc,args,limit){need(active,'The preview Stage has been released.');const g=m.run(pc,args,[],limit||200000);try{while(!g.next().done){}}catch(error){if(error.code==='dialogue-unqualified-helper')error.message+=' Native Stage helper 0x'+m.lastUnhandledHelper.toString(16)+'.';throw error;}}
  const service=m.serviceHelper;this.service=function(pc,target){const before=m;m=target;try{return service(pc);}finally{m=before;}};
  this.close=()=>{active=false;};this.machine=m;this.rom=rom;this.leases=leases;this.calls=calls;this.root=m.get(0x801ce8bc);this.read=read;this.write=write;this.run=run;this.environment=environment;this.live=true;this.arenaLimitBytes=arenaLimit;this.workingLimitBytes=workingLimit;this.heightCache=new Map();
  this.rows=()=>Array.from({length:20},(_,i)=>hex(read(this.root+0x1c4+i*248,248)));
@@ -110,23 +115,22 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
   // Stage construction uses the complete native cache function in its separate machine.
   delete lm.code[0x801c41c8];
   const launchHelper=lm.serviceHelper,stage=this;lm.serviceHelper=function(pc){return launchHelper(pc)||stage.service(pc,lm);};
-  m.regions.push({address:0x8022ac80,bytes:Uint8Array.of(l.input.previewParty?246:250),writable:false});
-  lm.put(0x8022a981,l.input.preservedStage?1:0,1);
+  m.regions.push({address:0x8022ac80,bytes:Uint8Array.of(l.input.previewParty?(l.input.terminalClass===1?253:246):l.input.terminalClass===7?247:250),writable:false});
+  lm.put(0x8022a981,l.input.preservedStage?(l.input.terminalClass===7?2:1):0,1);
  };
  Stage.prototype.materialize=function(words,records){
   need(this.live,'The preview Stage has been released.');
-  need(records.length===0,'Preserved Stage roster construction currently requires an empty Director Actor namespace.');
   const poseCalls=new Set();
   const l=this.launch,m=this.machine,root=m.get(0x8022a974),original=m.serviceHelper;
   for(const r of records){const at=m.get(root+24+r.slot*4);need(at,'Current Actor allocation is missing.');this.write(at,r.bytes);}
   m.serviceHelper=function(pc){
-   if(pc===0x80070f30&&m.r[4]===336){m.r[2]=l.allocate(336);return true;}
+   if(pc===0x80070f30&&m.r[4]===336){need(Array.from({length:28},(_,i)=>m.get(root+24+i*4)).some(p=>!p),'Director Actor capacity is exhausted.');m.r[2]=l.allocate(336);return true;}
    if(pc===0x801c41c8){O.cutsceneRomStart.preparePose(l,m.get(m.r[4]),m.get(m.r[5]),m.get(m.r[7]),m.get(m.r[6]),m.get(m.get(m.r[29]+16)));return true;}
    if(pc===0x8022e9e8){poseCalls.add(m.r[4]);return true;} // The shared runtime evaluates each requested immediate pose after publication.
    if(original(pc))return true;need(false,'Preview Stage reached native helper 0x'+pc.toString(16)+'.');
   };
   try{this.run(0x8023c3dc,[words[1],words[2],(words[0]&0x7fffffff)===0xab?1:0]);}finally{m.serviceHelper=original;}
-  return Array.from({length:28},(_,slot)=>{const at=m.get(root+24+slot*4);if(!at)return null;const ordinal=m.get(at+0x147,1),row=this.root+0x1c4+ordinal*248;need(ordinal<20,'Roster Actor has no native source row.');this.run(0x8016fa34,[0x36,0x38,0x3a,0x3c].map(off=>m.get(row+off,2)));O.cutsceneRomStart.preparePose(l,m.get(at+0xe8),m.get(at+0xec),m.get(at+0x146,1),m.get(at+0x13a,2),m.r[2]&65535);return {slot,bytes:this.read(at,336),poseRequested:poseCalls.has(at)};}).filter(Boolean);
+  return Array.from({length:28},(_,slot)=>{const at=m.get(root+24+slot*4);if(!at)return null;const ordinal=m.get(at+0x147,1),row=this.root+0x1c4+ordinal*248;need(ordinal<20||ordinal===255,'Roster Actor has no native source row.');if(ordinal<20){this.run(0x8016fa34,[0x36,0x38,0x3a,0x3c].map(off=>m.get(row+off,2)));O.cutsceneRomStart.preparePose(l,m.get(at+0xe8),m.get(at+0xec),m.get(at+0x146,1),m.get(at+0x13a,2),m.r[2]&65535);}return {slot,bytes:this.read(at,336),poseRequested:poseCalls.has(at)};}).filter(Boolean);
  };
  Stage.prototype.height=function(x,z){need(this.live,'The preview Stage has been released.');need(Number.isFinite(x)&&Number.isFinite(z),'Terrain query requires finite coordinates.');x=Math.trunc(x)<<16>>16;z=Math.trunc(z)<<16>>16;const key=x+','+z;if(this.heightCache.has(key))return this.heightCache.get(key);this.run(0x801bc35c,[x,z]);const b=new DataView(new ArrayBuffer(4));b.setUint32(0,this.machine.f[0]);const height=b.getFloat32(0);if(this.heightCache.size>=4096)this.heightCache.clear();this.heightCache.set(key,height);return height;};
  Stage.prototype.sharedRequest=function(actor,record){
@@ -136,6 +140,7 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
   this.run(0x8022e72c,[child+0x44,m.get(row+0x48),m.get(row+0x4c),record.operands[0],record.operands[1],record.opcode]);
   const request=m.get(at)|0;return request<0?{suppressed:true}:{context,request};
  };
+ Stage.prototype.resetRoster=function(){this.run(0x8023d7a8,[]);return Array.from({length:5},(_,i)=>this.machine.get(0x801971f0+30*25+2+i,1));};
  Stage.prototype.actorProfile=function(actor){
   if(!actor)return -1;const ordinal=actor.sourceRowOrdinal;if(!Number.isInteger(ordinal)||ordinal<0||ordinal>=20)return -1;
   const m=this.machine,row=this.root+0x1c4+ordinal*248,art=m.get(row+0x48);if(!art)return -1;
@@ -143,6 +148,12 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
   const deployed=!!(m.get(row+0x40)&256),member=m.get(row+0xf6,1),gender=m.get((deployed?0x80195560:0x80193bc0)+member*(deployed?52:56)+0x14,1);
   for(let i=0;i<46;i+=2){const kind=this.rom[0x2868f1+i];if(kind===255)break;if(kind===art)return this.rom[0x2868f0+i];}
   return 3*gender+Math.floor(Math.min(m.get(row+0x34,1),98)/33);
+ };
+ Stage.prototype.actorName=function(ordinal){
+  if(!Number.isInteger(ordinal)||ordinal<0||ordinal>=20)return null;
+  const m=this.machine,row=this.root+0x1c4+ordinal*248;if(!m.get(row+0x48))return null;
+  const deployed=!!(m.get(row+0x40)&256),at=(deployed?0x80195560:0x80193bc0)+m.get(row+0xf6,1)*(deployed?52:56);
+  let name='';for(let i=0;i<16;i++){const c=m.get(at+i,1);if(!c)break;name+=String.fromCharCode(c);}return name;
  };
  O.cutscenePreservedStage=Stage;
 })(window.OB64);

@@ -34,15 +34,24 @@ function saveFrame(file, frame) {
     ['rom-custom-lz:01F3E836', 5, 2, 'modeled-termination', 400],
     ['rom-director:01F40958', 8, 2, 'modeled-handoff', 250],
     ['rom-director:01F66DE4', 8, 2, 'modeled-termination', 1100],
-    ['rom-director:01F4DBBE', 8, 5, 'modeled-termination', 650]
+    ['rom-director:01F4DBBE', 8, 5, 'modeled-termination', 650],
+    ['rom-director:01F40860', 8, 2, 'modeled-handoff', 650],
+    ['rom-director:01F3F074', 8, 1, 'modeled-handoff', 650],
+    ['rom-custom-lz:01FAA4DA', 6, 0, 'modeled-termination', 350],
+    ['rom-director:01F93B88', 1, 2, 'modeled-termination', 350],
+    ['rom-director:01F93F60', 1, 2, 'modeled-termination', 350],
+    ['rom-director:01F70FB6', 7, 9, 'modeled-handoff', 900],
+    ['rom-director:01F4015C', 1, 3, 'modeled-termination', 650]
   ];
   for (const [id, resourceClass, actorCount, ending, tick] of cases.filter(row => process.argv.length < 3 || process.argv.slice(2).includes(row[0]))) {
     const scene = ui.catalog.getScene(id);
     const source = await OB64.cutsceneCodec.loadSceneSource(z64, scene);
     const projection = OB64.cutsceneCodec.projectSceneDocument(scene, source, ui.catalog);
     const contract = OB64.cutsceneRomStart.analyze(projection.program);
-    assert(contract.supported); assert.equal(contract.terminalClass, resourceClass);
-    assert(OB64.cutsceneRomStart.supports({ ...scene, assetId: 'unrelated-id' }, projection.program));
+    const inherited=id==='rom-director:01F4015C';
+    if(inherited)assert.equal(contract.code,'rom-start-inherited-stage');
+    else {assert(contract.supported); assert.equal(contract.terminalClass, resourceClass);
+      assert(OB64.cutsceneRomStart.supports({ ...scene, assetId: 'unrelated-id' }, projection.program));}
     const doc = await OB64.cutsceneUI.loadScene(rom, ui, scene), run = ui.runtimeByAssetId[id];
     assert(run, JSON.stringify(ui.sourceErrors));
     assert.equal(run.outcome, ending, JSON.stringify(run.missingInputs));
@@ -51,7 +60,7 @@ function saveFrame(file, frame) {
     assert(run.retainedStateBytes < run.limits.maxStateBytes);
     const preview = OB64.cutsceneRuntime.evaluate(run, tick);
     let frame;
-    if (resourceClass === 5) frame = await OB64.cutsceneUI.capturePreviewFrame(rom, ui, doc,
+    if ([5,6].includes(resourceClass)) frame = await OB64.cutsceneUI.capturePreviewFrame(rom, ui, doc,
       { preview, pass: tick, nodeId: 'resource-class-check', backgroundPolicy: 'require' });
     else {
       const backgrounds = [];
@@ -93,10 +102,16 @@ function saveFrame(file, frame) {
       saveFrame(path.join(process.env.OB64_CUTSCENE_RENDER_DIR, scene.directorKey.replace(/^0x/, '') + '.png'), frame);
     }
     const missingEnvironment = structuredClone(projection.program); missingEnvironment.primitives.shift();
-    assert(!OB64.cutsceneRomStart.analyze(missingEnvironment).supported);
+    if(![6,7].includes(resourceClass))assert(!OB64.cutsceneRomStart.analyze(missingEnvironment).supported);
+    if(resourceClass===6){assert.equal(preview.titlePresentation.alpha,255);assert(preview.titlePresentation.revealTicks>0);assert.equal(run.states.length,492);assert(frame.rgba.some((v,i)=>i%4===0&&v>200&&Math.floor(i/4/frame.width)>90));}
+    if(inherited){assert.equal(ui.romStartupByAssetId[id],'inherited');assert(run.eventDirectors.every(entry=>entry.terminal));assert(run.previewStartTick>500);assert.equal(run.states[0].actors.length,3);assert.equal(run.eventDirectors.at(-1).enteredTick,run.previewStartTick);assert(run.trace.some(row=>row.kind==='shared-pose-request'&&row.opcode===18));}
     results.push({ id, resourceClass, actors: actorCount, ticks: run.states.length, ending });
     console.log(JSON.stringify(results.at(-1)));
     delete ui.runtimeByAssetId[id];
   }
+  const helpScene=ui.catalog.getScene('rom-director:01F3E500');
+  await OB64.cutsceneUI.loadScene(rom,ui,helpScene);
+  assert.equal(OB64.cutsceneCatalog.displayName(helpScene),"Hugo's Report interface");
+  assert(Object.values(ui.sourceErrors).some(message=>message.includes("Hugo's Report")));
   console.log(JSON.stringify({ status: 'pass', scenes: results.length, visibleFrames: results.length }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

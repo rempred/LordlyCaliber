@@ -2648,6 +2648,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function displayName(scene) {
+    if(scene.previewResourceKind==='help-interface')return "Hugo's Report interface";
     return scene.friendlyName || scene.technicalName;
   }
 

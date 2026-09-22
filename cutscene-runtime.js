@@ -1290,6 +1290,19 @@ window.OB64 = window.OB64 || {};
     if (!scene || scene.engine !== 'director') {
       fail('The execution runtime accepts Director scenes only.', 'invalid-scene');
     }
+    var contextChain=options.romContextChain||[];
+    if(!Array.isArray(contextChain)||contextChain.length>8)fail('ROM context requires a bounded predecessor chain.','rom-context');
+    var startupScene=contextChain.length?contextChain[0].scene:scene;
+    var startupProgram=contextChain.length?contextChain[0].program:program;
+    if(contextChain.length){
+      var startupContract=OB64.cutsceneRomStart.analyze(startupProgram);
+      contextChain.concat([{scene:scene,program:program}]).forEach(function(entry,index){
+        if(!entry.scene||!entry.program||!Array.isArray(entry.program.primitives))fail('ROM context requires decoded predecessor programs.','rom-context');
+        var terminal=entry.program.primitives.at(-1).rawWords.at(-1)&255;
+        if(index&&!(startupContract.sceneMode===0?[4,5]:[1,8]).includes(terminal))fail('The event continuation changes Director mode.','rom-context-mode');
+        if(index&&entry.program.primitives.some(node=>[0x80000006,0x80000007,0x80000008].includes(node.opcode)))fail('The event continuation requires a separate scene load.','rom-context-stage');
+      });
+    }
 
     var maxTicks = Number.isInteger(options.maxTicks) && options.maxTicks > 0
       ? Math.min(options.maxTicks, DEFAULT_MAX_TICKS) : DEFAULT_MAX_TICKS;
@@ -1335,6 +1348,7 @@ window.OB64 = window.OB64 || {};
     var unsupportedCommands = [];
     var rowsByNode = documentRows(document);
     var actorTemplateBySlot = {};
+    contextChain.forEach(function(entry){Object.assign(rowsByNode,documentRows(entry.document));entry.document.actors.forEach(function(actor){actorTemplateBySlot[actor.slot]=actor;});});
     document.actors.forEach(function(actor) { actorTemplateBySlot[actor.slot] = actor; });
     var assumptions = [];
     var missingInputs = [];
@@ -1349,10 +1363,11 @@ window.OB64 = window.OB64 || {};
     var states = [];
     var transformResourceCache = {};
     var rootProgram = program;
-    var activeProgram = rootProgram;
-    var activeStreamAssetId = scene.assetId;
+    var activeProgram = startupProgram;
+    var activeStreamAssetId = startupScene.assetId;
     var programsByAssetId = {};
     programsByAssetId[scene.assetId] = rootProgram;
+    contextChain.forEach(function(entry){programsByAssetId[entry.scene.assetId]=entry.program;});
     var compositeIndexById = {};
     var directorLabelByMarker = {};
     var primitiveIndexById = {};
@@ -1435,11 +1450,12 @@ window.OB64 = window.OB64 || {};
       return decoded;
     }
 
-    var launchProfile = scene.launchProfile;
+    var launchProfile = startupScene.launchProfile;
     var translationProfile = launchProfile.operandTranslation || {
       required: false, tableIndexes: []
     };
     var suppliedTranslationTable = options.launchOperandTranslations || (options.nativeLaunchInputs && options.nativeLaunchInputs.externalProducers && options.nativeLaunchInputs.externalProducers.value && options.nativeLaunchInputs.externalProducers.value.directorLaunch && options.nativeLaunchInputs.externalProducers.value.directorLaunch.operandTranslations) || {};
+    if(contextChain.length)suppliedTranslationTable=contextChain[0].translations||{};
     var suppliedTranslationIndexes = [];
     var missingTranslationIndexes = [];
     (translationProfile.tableIndexes || []).forEach(function(tableIndex) {
@@ -1679,7 +1695,7 @@ window.OB64 = window.OB64 || {};
             var launchBinding=resourceScheduler.read(resourceScheduler.input.directorSlot);
             if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==nativeLaunch.initializeCallback)fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
             if(externalEventCount(externalProducers.events)||(externalProducers.colorCreates||[]).length)fail('Fresh launch must omit recorded resource and color events.','director-launch-input');
-            if(nativeLaunch.resourceKey!==parseInt(scene.directorKey,16))fail('Director selector does not resolve to the selected ROM stream.','director-launch-selector');
+            if(nativeLaunch.resourceKey!==parseInt(startupScene.directorKey,16))fail('Director selector does not resolve to the starting ROM stream.','director-launch-selector');
             resourceScheduler.initializeDirector=initializeDirectorResource;
             nativeLaunch.attachResources(dialogueEngine);resourceScheduler.colorService=serviceColorResource;resourceScheduler.beforeDirector=restoreDirectorResource;resourceScheduler.afterDirector=saveDirectorResource;
             nativeLaunch.audioRequest=function(event){state.audioEvents.push(event);};
@@ -1785,7 +1801,7 @@ window.OB64 = window.OB64 || {};
       var input=null;
       if(nativeLaunch&&nativeLaunch.stage&&actor.decoderMode!==0&&[18,20].includes(record.opcode)){try{var computed=nativeLaunch.stage.sharedRequest(actor,record);if(!computed.suppressed){state.sharedRequests[computed.context]=computed.request;recordTrace({tick:state.tick,kind:'shared-pose-request',actorId:actor.id,opcode:record.opcode,context:computed.context,request:computed.request,source:'native-preserved-Stage'});}return null;}catch(error){producerBoundary(error.message,error.code);return error.code||'preserved-stage-request';}}
       if (record.opcode===18 || record.opcode===20) {
-        if(nativeLaunch&&nativeLaunch.stage&&actor.decoderMode===0){try{OB64.cutsceneRomStart.dialoguePoint(nativeLaunch,actor,state.cameras.actor);input={projectionReturned:true,projectionInput:new Uint8Array(12),inputX:0};}catch(error){producerBoundary(error.message,error.code);return error.code;}}else if(sharedActorProfile&&actor.decoderMode===0){
+        if(nativeLaunch&&nativeLaunch.input.sceneMode===2&&actor.decoderMode===0){try{OB64.cutsceneRomStart.dialoguePoint(nativeLaunch,actor,state.cameras.actor);input={projectionReturned:true,projectionInput:new Uint8Array(12),inputX:0};}catch(error){producerBoundary(error.message,error.code);return error.code;}}else if(sharedActorProfile&&actor.decoderMode===0){
           try{ensureSharedActor();var nativeRecord=nativeMatrixRecordForActor(actor);if(!nativeRecord)return 'shared-actor-record';input=sharedActor.project(new Uint8Array(nativeRecord.buffer),state.cameras);recordTrace({tick:state.tick,kind:'shared-actor-projection',actorId:actor.id,output:input.output,inputX:input.inputX});}
           catch(error){producerBoundary(error.message,error.code);return error.code||'shared-actor-projection';}
         }else{
@@ -1818,8 +1834,8 @@ window.OB64 = window.OB64 || {};
       OB64.cutsceneSharedActorCode.words.forEach(function(r){if(r[0]>=0x800ea604&&r[0]<0x800eac24)dialogueEngine.machine.code[r[0]]=r[2];});
     }
     function* dispatchPreservedRequests(){
-      if(!nativeLaunch||!nativeLaunch.stage)return;
-      try{for(var context of ['A','B']){var request=state.sharedRequests[context];if(request>=0){yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}}state.sharedRequests.A=-1;state.sharedRequests.B=-1;}catch(error){producerBoundary(error.message,error.code);}
+      if(!nativeLaunch||nativeLaunch.input.sceneMode!==2)return;
+      try{for(var context of ['A','B']){var request=state.sharedRequests[context];if(Number.isInteger(request)&&request>=0){if(nativeLaunch.stage)yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);else state.audioEvents.push({kind:'native-shared-audio-request',context:context,request:request,playback:'queue-only'});recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}}state.sharedRequests.A=-1;state.sharedRequests.B=-1;}catch(error){producerBoundary(error.message,error.code);}
     }
     function* prepareSharedActors(){
       if(!sharedActorProfile||state.terminal)return;
@@ -1835,7 +1851,7 @@ window.OB64 = window.OB64 || {};
         nativeActorDrawing={camera:sharedActor.drawingCamera(state.cameras,nativeLaunch.machine.get(0x8022a730)),cameraKey:OB64.cutsceneSharedActor.cameraDrawingKey(projectionFromCamera(state.cameras.actor),projectionFromCamera(state.cameras.registered)),actors:drawingActors};
         for(var context of ['A','B']){
           var request=state.sharedRequests[context];if(request===null)fail('Shared request dispatch requires its initial scalar slots.','shared-request-initial-state');
-          if(request>=0){yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}
+          if(Number.isInteger(request)&&request>=0){if(nativeLaunch.stage)yield* dialogueEngine.machine.run(0x800ea604,[context==='A'?0x800eb240:0x800eb290,request],[],8192);else state.audioEvents.push({kind:'native-shared-audio-request',context:context,request:request,playback:'queue-only'});recordTrace({tick:state.tick,kind:'shared-request-dispatch',context:context,request:request,playback:'queue-only'});}
         }
         // The reset follows dispatch; the dispatcher does not clear its slots.
         state.sharedRequests.A=-1;state.sharedRequests.B=-1;
@@ -2409,7 +2425,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeActorBinding(node, words) {
-      if (node.opcode === 0x92 && state.directorMode !== 2) return;
+      if ([0x92,0x95].includes(node.opcode) && state.directorMode !== 2) return;
       var slot = unsigned(words[1]) & 255;
       if (slot >= 28) { actorBoundary('Actor binding destination is outside the 28 primary slots.'); return; }
       if (!actorInputRows) { actorBoundary('Actor binding requires all 20 caller Actor-input rows.'); return; }
@@ -2423,6 +2439,9 @@ window.OB64 = window.OB64 || {};
           var row = launchBytes(actorInputRows[i], 0xF8);
           if ((row.getUint32(0x40) & 256) && row.getUint32(0x48) && row.getUint8(0xF6) === currentUnitMembers[member]) { ordinal=i; break; }
         }
+      } else if(node.opcode===0x95){
+        const cell=signed(words[2])-1,depth=Math.trunc(cell/3),lateral=cell-depth*3;
+        for(let i=0;i<20;i++){const row=launchBytes(actorInputRows[i],248);if(row.getUint32(0x48)&&row.getInt32(0x54)===lateral&&row.getInt32(0x58)===depth){ordinal=i;break;}}
       } else {
         for (var rowIndex=0; rowIndex<20; rowIndex++) {
           var art = launchBytes(actorInputRows[rowIndex],0xF8).getUint32(0x48);
@@ -2723,7 +2742,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function executeActorPresentationBootstrap(node) {
-      if(nativeLaunch&&nativeLaunch.input.previewParty&&nativeLaunch.stage.presentationTargets){
+      if(nativeLaunch&&nativeLaunch.stage&&nativeLaunch.stage.presentationTargets){
         // Standalone preview restores only the sample unit's existing Actors.
         // The game also uses persistent scenario actors, which are not in this preview party.
         var slots=[];
@@ -3115,7 +3134,8 @@ window.OB64 = window.OB64 || {};
               }
             }
             if(romOnlyStart&&nativeLaunch&&nativeLaunch.input.previewHeroName!==undefined)OB64.cutsceneRomStart.prepareDialogue(nativeLaunch,dialogueEngine,signed(words[4]));
-            registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point);nativeSlot=registration.slot;if(extendedModeTwoResume)capturedScheduler.compareDialogueRegistration(nativeSlot);
+            var actorPortrait=words[11]===0xffffffff&&nativeLaunch?OB64.cutsceneRomStart.actorPortrait(nativeLaunch,state.actors[signed(words[4])]):undefined;
+            registration=dialogueEngine.lifecycle.create(words,'dialogue:'+node.id+':'+occurrence,point,actorPortrait);nativeSlot=registration.slot;if(extendedModeTwoResume)capturedScheduler.compareDialogueRegistration(nativeSlot);
           }else nativeSlot=dialogueEngine.register(registration,words);
         } catch(error) {producerBoundary(error.message,error.code||'dialogue-registration-input');return;}
       } else if(producerBoundary('Dialogue requires native initial memory, constructor outcome, and complete service history.','dialogue-initial-input')) return;
@@ -3556,10 +3576,9 @@ window.OB64 = window.OB64 || {};
     function executeOrdinaryRoster(node,words) {
       if(nativeLaunch&&nativeLaunch.stage){
         try{
-          if(Object.keys(state.actors).length)fail('Preserved Stage roster construction currently requires an empty Director Actor namespace.','preserved-stage-input');
           var current=Object.keys(state.actors).map(function(slot){return {slot:Number(slot),bytes:new Uint8Array(nativeRecordForActor(state.actors[slot]).buffer)};}),made=nativeLaunch.stage.materialize(words,current);
           actorInputRows=nativeLaunch.stage.rows();
-          if(nativeLaunch.input.previewParty&&!nativeLaunch.stage.presentationTargets){nativeLaunch.stage.presentationTargets={};made.forEach(function(r){var v=new DataView(r.bytes.buffer,r.bytes.byteOffset,r.bytes.byteLength);nativeLaunch.stage.presentationTargets[v.getUint8(0x147)+':'+v.getUint8(0x149)]={x:v.getFloat32(0x11c),z:v.getFloat32(0x124)};});}
+          if(!nativeLaunch.stage.presentationTargets){nativeLaunch.stage.presentationTargets={};made.forEach(function(r){var v=new DataView(r.bytes.buffer,r.bytes.byteOffset,r.bytes.byteLength);nativeLaunch.stage.presentationTargets[v.getUint8(0x147)+':'+v.getUint8(0x149)]={x:v.getFloat32(0x11c),z:v.getFloat32(0x124)};});}
           made.forEach(function(r){var actor=ensureActor(r.slot);actor.id=actor.id||'preview-roster:'+r.slot;actor.visible=true;actor.source={launchSourceIdentity:launchInputs.sourceIdentity,invocationId:launchInputs.invocationId,evidenceGrade:'Candidate'};applyNativeRecord(actor,new DataView(r.bytes.buffer),'native-ROM-roster-construction');if(r.poseRequested)updateActorPose(actor);recordTrace({tick:state.tick,kind:'roster-construction',nodeId:node.id,slot:r.slot,sourceRow:actor.sourceRowOrdinal,actorIdentity:actor.id});});
         }catch(error){actorBoundary(error.message,error.code||'preserved-stage-input');}
         return;
@@ -3705,6 +3724,7 @@ window.OB64 = window.OB64 || {};
 
     function executeRosterReset(node) {
       if(state.directorMode!==2)return;
+      if(nativeLaunch&&nativeLaunch.stage){try{currentUnitMembers=nativeLaunch.stage.resetRoster();actorInputRows=nativeLaunch.stage.rows();}catch(error){actorBoundary(error.message,error.code||'roster-reset-input');}return;}
       if(!actorInputRows){actorBoundary('Roster reset requires all 20 current rows.','roster-reset-input');return;}
       var service=actorService('rosterResets',node);
       if(!service){actorBoundary('Roster reset requires qualified unit, registry, child, and native-service inputs.','roster-reset-input');return;}
@@ -4113,6 +4133,11 @@ window.OB64 = window.OB64 || {};
           actor.visible = false;
           delete state.movementJobs[actor.slot];
           delete state.turnJobs[actor.slot];
+          if(romOnlyStart&&nativeLaunch){
+            var address=launchInitialization.rootAddress+24+actor.slot*4,pointer=nativeLaunch.machine.get(address),lease=nativeLaunch.leases.findIndex(function(r){return r.address===pointer;});
+            if(lease>=0)nativeLaunch.leases.splice(lease,1);
+            nativeLaunch.machine.put(address,0);delete state.actors[actor.slot];
+          }
         });
       }
       else if (opcode === 0x14) executeActorCreate(
@@ -4147,10 +4172,10 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x36) executeCamera(node, words, 'actor');
       else if (opcode === 0x3B) executeScreenTransition(node, words);
       else if (opcode === 0x3D) executeProjection(node, words, true);
-      else if (opcode === 0x3F) executeActorPresentationBootstrap(node);
+      else if (opcode === 0x3F || opcode === 0xA4) executeActorPresentationBootstrap(node);
       else if (opcode === 0x3A) executeSceneVignette(node, words);
       else if (opcode === 0x45 || opcode === 0xAB) executeOrdinaryRoster(node,words);
-      else if (opcode === 0x92 || opcode === 0xA6) executeActorBinding(node, words);
+      else if (opcode === 0x92 || opcode === 0x95 || opcode === 0xA6) executeActorBinding(node, words);
       else if (opcode === 0x96) executeRosterReset(node);
       else if (opcode === 0xC2) executeSubordinate(node,words);
       else if (opcode === 0x46) executeSpriteEffect(node, words);
@@ -4363,12 +4388,14 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x99) pendingSubstreamSelector = unsigned(words[1]) & 0xFF;
       else if (opcode === 0x9A) pendingSubstreamSelector = 0xFE;
       else if (opcode === 0xAF) {
-        state.titleJob = { nodeId: node.id, remaining: 30, duration: 30, kind: 'alpha' };
-        assumption('Prologue title alpha uses a 30-tick preview envelope.');
+        state.titleAlphaStart=state.tick;
+        state.titleJob = { nodeId: node.id, remaining: 85, duration: 85, kind: 'alpha' };
       }
       else if (opcode === 0xB0) {
-        state.titleJob = { nodeId: node.id, remaining: 85, duration: 85, kind: 'reveal' };
-        assumption('Prologue secondary-title reveal uses its static 85-update Stage envelope.');
+        state.titleRevealStart=state.tick;
+        var titleVariant=nativeLaunch&&nativeLaunch.input.titleVariant,titleDuration=Number.isInteger(titleVariant)?OB64.cutsceneRomStart.titleImages(options.z64,titleVariant).slice(1).reduce(function(n,row){return n+Math.ceil((row.image.width+48)/2);},0):85;
+        state.titleJob = { nodeId: node.id, remaining: titleDuration, duration: titleDuration, kind: 'reveal' };
+        assumption('Chapter titles use ROM artwork and timing with a smooth reveal instead of the randomized pixel effect.');
       }
       else if (opcode === 0xBB) {
         state.directorTeardown = true;
@@ -4634,12 +4661,13 @@ window.OB64 = window.OB64 || {};
           });
         }
       });
-      if (state.registeredCounter) {
-        var registeredValue = state.registeredCounter.value >>> 0;
+      var counters=directorContexts?directorContexts.map(function(context){return context===activeDirectorContext&&!directorContextsIdle?state.registeredCounter:context.counter;}):[state.registeredCounter];
+      counters.forEach(function(counter){if (counter) {
+        var registeredValue = counter.value >>> 0;
         if (registeredValue >= 1 && registeredValue <= 0x0FFFFFFE) {
-          state.registeredCounter.value = (registeredValue + 1) >>> 0;
+          counter.value = (registeredValue + 1) >>> 0;
         }
-      }
+      }});
     }
 
     function compare(actual, mode, target) {
@@ -4747,8 +4775,8 @@ window.OB64 = window.OB64 || {};
         if (!ribbon) { producerBoundary('Path ribbon query selects absent slot ' + input + '.', 'path-ribbon-slot'); return NaN; }
         return ribbon.active;
       }
-      if (query.name === 'actor_presentation_activity_query') {
-        if(nativeLaunch&&nativeLaunch.input.previewParty&&state.actorPresentationPreview){
+      if ((query.name === 'actor_presentation_activity_query' || query.name === 'filtered_actor_presentation_activity_query')) {
+        if(nativeLaunch&&nativeLaunch.stage&&state.actorPresentationPreview){
           if(state.actorPresentationJob&&state.actorPresentationJob.slots.some(function(slot){return !!state.movementJobs[slot];}))return 1;
           state.actorPresentationJob=null;return 0;
         }
@@ -4766,6 +4794,10 @@ window.OB64 = window.OB64 || {};
         return state.actorPresentationJob ? 1 : 0;
       }
       if(query.name==='actor_gender_alignment_profile_query'&&nativeLaunch&&nativeLaunch.stage){try{return nativeLaunch.stage.actorProfile(state.actors[input]);}catch(error){producerBoundary(error.message,error.code);return NaN;}}
+      if(query.name==='actor_roster_source_query'&&actorInputRows){
+        var linkedActor=state.actors[input],ordinal=linkedActor&&linkedActor.sourceRowOrdinal;
+        return !Number.isInteger(ordinal)||ordinal<0||ordinal>=20?0:(launchBytes(actorInputRows[ordinal],248).getUint32(0x40)&256)?2:1;
+      }
       if (query.name === 'color_overlay_countdown_query') {
         if (!externalProducers || externalProducers.initialColor===undefined || state.overlay && !state.overlay.native) {
           if (unresolvedInput(query,context)) return NaN;
@@ -5073,6 +5105,7 @@ window.OB64 = window.OB64 || {};
         framebufferEffect:iris?OB64.cutsceneFramebuffer.snapshot(iris):null,
         imageEcho:imageEcho&&imageEcho.initialized?imageEcho.snapshot():null,
         mapMenu:mapMenu?mapMenu.snapshot():null,
+        titlePresentation:nativeLaunch&&Number.isInteger(nativeLaunch.input.titleVariant)?{variant:nativeLaunch.input.titleVariant,alpha:state.titleAlphaStart===undefined?0:Math.min(255,(state.tick-state.titleAlphaStart+1)*3),revealTicks:state.titleRevealStart===undefined?0:state.tick-state.titleRevealStart+1}:null,
         nativeExternal: {
           dialogue:dialogueEngine?dialogueEngine.snapshot(sharedActorProfile||romOnlyStart?256:undefined):null,
           sharedRequests:Object.assign({},state.sharedRequests),
@@ -5256,6 +5289,59 @@ window.OB64 = window.OB64 || {};
     var parserResumeMarked = false;
     var pendingSubstreamSelector = 0xFF;
     var savedStreamFrame = null;
+    var directorContexts=null,activeDirectorContext=null,directorContextsIdle=false;
+    if(contextChain.length){
+      directorContexts=contextChain.concat([{scene:scene,program:program,translations:options.launchOperandTranslations||{},startTick:options.romContextStartTick}]).map(function(entry){
+        return {scene:entry.scene,program:entry.program,assetId:entry.scene.assetId,translations:entry.translations||{},startTick:entry.startTick,
+          compositeIndex:0,entryNodeId:null,cursorRevision:0,cursor:0,block:null,savedStreamFrame:null,counter:null,terminal:false,terminalReason:null};
+      });
+      activeDirectorContext=directorContexts[0];
+      assumption('ROM event predecessors prepare shared Actors, dialogue and presentation. Opening dialogue gates select the preview entry; event-update distances use preview ticks and acknowledgement is simulated.');
+    }
+
+    function saveDirectorContext(){
+      if(!activeDirectorContext||directorContextsIdle)return;
+      Object.assign(activeDirectorContext,{program:activeProgram,assetId:activeStreamAssetId,
+        compositeIndex:compositeIndex,entryNodeId:compositeEntryNodeId,cursorRevision:cursorRevision,cursor:persistentCursorPrimitiveIndex,
+        block:block,savedStreamFrame:savedStreamFrame,counter:state.registeredCounter,terminal:state.terminal,terminalReason:state.terminalReason,
+        indexes:{composite:compositeIndexById,labels:directorLabelByMarker,primitive:primitiveIndexById}});
+    }
+    function selectDirectorContext(context){
+      saveDirectorContext();activeDirectorContext=context;directorContextsIdle=false;
+      activeProgram=context.program;activeStreamAssetId=context.assetId;launchProfile=context.scene.launchProfile;suppliedTranslationTable=context.translations;
+      compositeIndex=context.compositeIndex;compositeEntryNodeId=context.entryNodeId;cursorRevision=context.cursorRevision;persistentCursorPrimitiveIndex=context.cursor;
+      block=context.block;savedStreamFrame=context.savedStreamFrame;state.registeredCounter=context.counter;state.terminal=context.terminal;state.terminalReason=context.terminalReason;
+      parserResynchronization=false;branchDepth=0;parserResumeMarked=false;pendingSubstreamSelector=0xff;
+      if(context.indexes){compositeIndexById=context.indexes.composite;directorLabelByMarker=context.indexes.labels;primitiveIndexById=context.indexes.primitive;}else indexActiveProgram();
+    }
+    function* evaluateDirectors(){
+      if(!directorContexts){yield* evaluateDirector();return;}
+      for(var context of directorContexts){
+        if(context.startTick>state.tick||context.terminal||context.lastPass===state.tick)continue;
+        if(context!==directorContexts[0]&&context.lastPass===undefined){
+          var entryQuery=context.program.primitives[0];
+          if(entryQuery.name==='dialogue_pause_query'){
+            var windowId=entryQuery.query.producerInput;
+            var predecessorCreatesWindow=directorContexts.slice(0,directorContexts.indexOf(context)).some(function(parent){return parent.program.primitives.some(function(node){return node.opcode===0xbf&&(node.rawWords[1]&255)===windowId;});});
+            // A query for a closed window also passes before it ever exists.
+            // Wait for the predecessor's window lifecycle before taking that edge.
+            if(predecessorCreatesWindow&&(!state.dialogues[windowId]||!compare(dialogueEngine.query(windowId),entryQuery.query.compareMode,entryQuery.query.target)))continue;
+          }
+        }
+        selectDirectorContext(context);
+        if(context.lastPass===undefined){context.enteredTick=state.tick;recordTrace({tick:state.tick,kind:'rom-event-director-start',assetId:context.scene.assetId});}
+        context.lastPass=state.tick;
+        yield* evaluateDirector();saveDirectorContext();
+        if(stopReason)break;
+      }
+      // Keep the selected stream's wait visible while every live program shares
+      // the same service pass. A predecessor ending must not close that pass.
+      var selected=directorContexts.at(-1);
+      if(selected.startTick<=state.tick)selectDirectorContext(selected);
+      saveDirectorContext();directorContextsIdle=true;
+      state.terminal=directorContexts.every(function(context){return context.terminal;});
+      state.terminalReason=state.terminal?selected.terminalReason:null;
+    }
 
     function activateStream(nextProgram, assetId, primitiveIndex) {
       activeProgram = nextProgram;
@@ -5637,7 +5723,7 @@ window.OB64 = window.OB64 || {};
       yield* nativeLaunch.initialize(record);
       launchInitialization=nativeLaunch.snapshot();
       state.directorMode=nativeLaunch.input.sceneMode;
-      if(nativeLaunch.stage){executeBackground({id:'preview-world-environment'},[0,0]);state.sharedRequests={A:nativeLaunch.stage.machine.get(0x801d06c4)|0,B:nativeLaunch.stage.machine.get(0x801d06c8)|0};}
+      if(nativeLaunch.stage){executeBackground({id:'preview-world-environment'},[0,0]);state.sharedRequests={A:nativeLaunch.stage.machine.get(0x801d06c4)|0,B:nativeLaunch.stage.machine.get(0x801d06c8)|0};if(nativeLaunch.input.previewDeployed)currentUnitMembers=Array.from({length:5},(_,i)=>nativeLaunch.stage.machine.get(0x801971f0+30*25+2+i,1));}
       if(state.directorMode===2)state.projectionTransform=OB64.cutsceneRomStart.projectionState(nativeLaunch);state.directorModeStatus='computed-native-launch';
       var camera=launchBytes(launchInitialization.cameraHex,144);
       ['actor','registered'].forEach(function(bank,index){var at=index?88:0,values=Array.from({length:14},function(_,i){return camera.getFloat32(at+i*4);});
@@ -5645,7 +5731,7 @@ window.OB64 = window.OB64 || {};
       var context=launchBytes(launchInitialization.contextHex,30);state.sceneColor={red:context.getUint16(0),green:context.getUint16(2),blue:context.getUint16(4)};
       recordTrace({tick:state.tick,kind:'director-launch-initializer',selector:nativeLaunch.input.selector,resourceKey:nativeLaunch.resourceKey,rootAddress:launchInitialization.rootAddress});
       for(var j=0;j<168;j++)m.put(0x800e7a30+j,parseInt(launchInitialization.recordHex.slice(j*2,j*2+2),16),1);
-      yield* evaluateDirector();launchParserRan=true;
+      yield* evaluateDirectors();launchParserRan=true;
       syncLaunchCamera();
       launchInitialization.initialParser={actors:Object.keys(state.actors).map(function(slot){return {slot:Number(slot),values:(function(a){return [a.x,a.y,a.z,a.bank,a.poseCursor,a.poseDelay,a.displayedFrameToken,a.poseStateIndex,a.animationKey,a.nativeFacing];})(state.actors[slot])};}),cameraHex:recordHex(new DataView(nativeLaunch.readEngine(0x8022a720,144).buffer)),blockedQuery:block&&block.query?block.query.id:null};
       if(block&&['parser-boundary','cursor-replacement'].includes(block.kind))block.untilTick=state.tick;
@@ -5708,7 +5794,7 @@ window.OB64 = window.OB64 || {};
     for (var tick = 0; tick < maxTicks; tick++) {
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
-      yield* evaluateDirector();
+      yield* evaluateDirectors();
       if(capturedScheduler&&extendedModeTwoResume&&!stopReason){try{capturedScheduler.assertActors(true);}catch(error){producerBoundary(error.message,error.code);}}
       if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');
@@ -5741,6 +5827,9 @@ window.OB64 = window.OB64 || {};
         recordTrace({tick:tick,kind:'resumed-menu-selection',phase:'after-director',selectedEntity:null});
         stopReason='qualified-resume-update-complete';
       }
+      // Run predecessor setup without retaining its entire movie. The selected
+      // scene starts at its actual entry with the live native resources intact.
+      if(directorContexts&&directorContexts.at(-1).enteredTick===undefined&&!stopReason&&tick+1<maxTicks)continue;
       var frameBudget = { bytes: 0 };
       var nextSnapshot=snapshot(block);
       if(sharedActorProfile||romOnlyStart){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
@@ -5755,14 +5844,14 @@ window.OB64 = window.OB64 || {};
       states.push(frameState);
       retainedStateBytes += frameBytes;
       if (stopReason) break;
-      if (state.terminal || compositeIndex >= activeProgram.composites.length && !block &&
+      if (state.terminal || !directorContexts && compositeIndex >= activeProgram.composites.length && !block &&
           !Object.keys(state.movementJobs).length && !state.projectionJob &&
           !state.oversizedImageTransitionJob) break;
     }
 
     } finally {if(nativeLaunch&&nativeLaunch.stage){preservedStageMemory={arenaLimitBytes:nativeLaunch.stage.arenaLimitBytes,workingLimitBytes:nativeLaunch.stage.workingLimitBytes,workingBytes:nativeLaunch.stage.byteLength(),liveAllocations:nativeLaunch.stage.leases.filter(r=>!r.freed).length,rootAddress:nativeLaunch.stage.root,retainedPerSnapshotBytes:0,released:true};nativeLaunch.stage.dispose();}}
 
-    if (!state.terminal && states.length >= maxTicks && !(capturedResume && resumedMenuSelection) && (!continuousResume || !stopReason)) {
+    if (!state.terminal && tick >= maxTicks && !(capturedResume && resumedMenuSelection) && (!continuousResume || !stopReason)) {
       stopReason = 'tick-limit';
       missing('Director preview reached the ' + maxTicks + '-tick safety limit.');
     }
@@ -5815,11 +5904,13 @@ window.OB64 = window.OB64 || {};
           {vx:job.vx,vz:job.vz,remaining:job.remaining,pauseByte:job.pauseByte,elapsed:job.elapsed} : null;})
       } : null,
       durationTicks: states.length,
+      previewStartTick:states.length?states[0].runtime.tick:0,
       states: states,
       assumptions: assumptions,
       missingInputs: missingInputs,
       trace: trace,
       programsByAssetId: programsByAssetId,
+      eventDirectors:directorContexts?directorContexts.map(function(context){return {assetId:context.scene.assetId,startTick:context.startTick,enteredTick:context.enteredTick,terminal:context.terminal,reason:context.terminalReason};}):null,
       outcome: stopReason || (state.terminal
         ? (missingInputs.length ? 'modeled-ending-with-missing-inputs' : state.terminalReason === 'presentation-reload-handoff' ? 'modeled-handoff' : 'modeled-termination')
         : 'stream-exhausted'),

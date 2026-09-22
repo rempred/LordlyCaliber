@@ -6,10 +6,16 @@ The Stage identifies simulated dialogue timing and other preview approximations.
 
 Class-five scenes can start directly when their stream supplies a scene group and both cameras.
 This includes First Cutscene Flashback, Opening Title, and Traveling Cutscene 3.
-Class-eight scenes use the stream's environment and a sample level-one Hero and Fighter unit.
+Party scenes use a sample unit selected from class requests in the stream.
+Class data comes from the ROM. Missing playthrough names use preview names.
 The sample unit supplies party-dependent Actors; it does not reconstruct a saved game's cast.
 Automatic dialogue choices confirm the first option. Returns to sample party positions use approximate movement.
-Scenes requiring an inherited environment or unsupported dialogue portraits still show their playback boundary.
+Actor-derived dialogue portraits, roster rebuilding, leader selection, and class-seven playback are supported.
+Class-six chapter titles display ROM artwork with a smooth reveal. Their timing follows the image widths.
+Hugo's Report is labeled as an interface resource. Its People, Events, Miscellany, and Tips menus are outside timed cutscene playback.
+Event-linked scenes can run their predecessors to obtain shared Actors, dialogue, and background.
+The selected timeline starts after this setup. Opening dialogue checks select entry; event timing remains approximate.
+Unresolved event branches and other external scene dependencies can still show a playback boundary.
 Some party-dependent casts remain incomplete with this sample unit.
 
 1. Select an Actor to change its initial position, appearance, or facing.

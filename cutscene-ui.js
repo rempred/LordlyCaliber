@@ -282,6 +282,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function cacheLoadedDocument(state, scene, document, source, program) {
+    if(program&&OB64.cutsceneRomStart)scene.previewResourceKind=OB64.cutsceneRomStart.analyze(program).resourceKind||null;
     if (source && OB64.cutsceneExport) {
       document.exportRequirements = {
         capability: 'native',
@@ -300,7 +301,7 @@ window.OB64 = window.OB64 || {};
     return history.present;
   }
 
-  async function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal, rom) {
+  async function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal, rom, contextChain) {
     var program = state.programByAssetId[scene.assetId];
     if (!program) return null;
     var playbackRom=state.z64;
@@ -311,7 +312,7 @@ window.OB64 = window.OB64 || {};
         });
       });
     });
-    if(sceneHasChanges(state,scene) || sharedTextEdited){
+    if(sceneHasChanges(state,scene) || sharedTextEdited || (contextChain||[]).some(entry=>sceneHasChanges(state,entry.scene))){
       var source=state.sourceByAssetId[scene.assetId], baseline=baselineDocument(state,scene);
       var assessment=OB64.cutsceneExport.assessNativeDelta(scene,baseline,document,source);
       if(assessment.capability!=='native')throw new UiError('These changes are storyboard-only: '+assessment.reasons.join(' '));
@@ -347,9 +348,31 @@ window.OB64 = window.OB64 || {};
     if(!state.romStartupByAssetId)state.romStartupByAssetId={};
     state.romStartupByAssetId[scene.assetId]=false;
     if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
-      runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(playbackRom,scene,program);
+      var startupScene=scene,startupProgram=program;
+      if(contextChain&&contextChain.length){
+        runtimeOptions.romContextChain=contextChain.map(function(entry){
+          var contextScene=entry.scene,contextProgram=entry.program;
+          if(sceneHasChanges(state,contextScene)){
+            var compiledContext=OB64.cutsceneCodec.compileSceneDocument(contextScene,state.sourceByAssetId[contextScene.assetId],entry.document);
+            contextScene=OB64.cutsceneCodec.sceneForBytes(contextScene,compiledContext.decodedBytes);
+            var plannedContext=plan&&plan.changedEntries.find(change=>change.scene.assetId===contextScene.assetId);
+            if(plannedContext&&plannedContext.result.resourceKey)contextScene.directorKey=plannedContext.result.resourceKey;
+            contextProgram=OB64.cutsceneCodec.createIr(contextScene,compiledContext.decodedBytes).program;
+          }
+          return Object.assign({},entry,{scene:contextScene,program:contextProgram});
+        });
+        startupScene=runtimeOptions.romContextChain[0].scene;
+        startupProgram=runtimeOptions.romContextChain[0].program;
+      }
+      runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(playbackRom,startupScene,startupProgram);
+      runtimeOptions.nativeLaunchInputs.assetId=scene.assetId;
       var generatedLaunch=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch;
-      state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.previewParty?'preview-party':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
+      if(contextChain&&contextChain.length){
+        generatedLaunch.operandTranslations=contextChain[0].translations;
+        runtimeOptions.romContextStartTick=contextChain.at(-1).nextStartTick;
+      }
+      state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.interfacePreview?'interface':generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.previewParty?'preview-party':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
+      if(contextChain&&contextChain.length)state.romStartupByAssetId[scene.assetId]='inherited';
     }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
@@ -390,8 +413,8 @@ window.OB64 = window.OB64 || {};
     if (state.runtimeController) state.runtimeController.abort();
     var controller = state.runtimeController = new AbortController();
     state.loadingAssetId = scene.assetId;
-    return compileRuntimeDocument(state, scene, document, choice, contextRuntime,
-      controller.signal, rom).then(function(runtime) {
+    return ensureContextualRuntime(rom,state,scene,document,choice,[],false,
+      controller.signal).then(function(runtime) {
       if (controller.signal.aborted) return null;
       publishRuntime(state, scene, document, runtime);
       if (state.ui && state.ui.panel) rerender(rom, state);
@@ -458,6 +481,28 @@ window.OB64 = window.OB64 || {};
       return Promise.resolve(standaloneRuntime).then(function(runtime) {
         return compactOutput ? OB64.cutsceneRuntime.compactContextRuntime(runtime) : runtime;
       });
+    }
+    if(!(state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId])&&OB64.cutsceneRomStart){
+      // Event requests can overlap. Materialize their programs once, then run
+      // them against one live scene and dialogue pool instead of replaying snapshots.
+      async function predecessors(child,childChoice,seen){
+        var parent=childChoice&&childChoice.contextScene;
+        if(!parent)throw new UiError('No ROM event predecessor supplies this scene\'s starting state.');
+        if(seen.includes(parent.assetId)||seen.length>=8)throw new UiError('The ROM event predecessor chain is cyclic or exceeds eight streams.');
+        var parentDocument=await ensureProjectedDocument(rom,state,parent);
+        var parentProgram=state.programByAssetId[parent.assetId];
+        var parentChoice=precedingLaunchContextChoice(state,parent,childChoice.context);
+        var earlier=OB64.cutsceneRomStart.supports(parent,parentProgram)?[]:await predecessors(parent,parentChoice,seen.concat(parent.assetId));
+        var startTick=earlier.length?earlier.at(-1).nextStartTick:0;
+        var distance=childChoice.context.concurrentDirectorTickOffset;
+        earlier.push({scene:parent,document:parentDocument,program:parentProgram,
+          translations:launchOperandTranslations(parent,parentChoice),startTick:startTick,
+          nextStartTick:startTick+(Number.isInteger(distance)?Math.max(1,distance):1)});
+        return earlier;
+      }
+      return predecessors(scene,choice,[scene.assetId]).then(function(chain){
+        return compileRuntimeDocument(state,scene,document,choice,null,signal,rom,chain);
+      }).then(function(runtime){return compactOutput?OB64.cutsceneRuntime.compactContextRuntime(runtime):runtime;});
     }
     if (ancestry.indexOf(contextScene.assetId) !== -1 ||
         contextScene.assetId === scene.assetId) {
@@ -964,7 +1009,7 @@ window.OB64 = window.OB64 || {};
     var duration = animation.frames.reduce(function(total, frame) {
       return total + Math.max(1, frame.ticks);
     }, 0);
-    var position = Math.max(0, preview.frame - row.startFrame) % duration;
+    var position = Math.max(0, (preview.runtime ? preview.runtime.tick : preview.frame) - row.startFrame) % duration;
     var frameIndex = 0;
     for (; frameIndex < animation.frames.length; frameIndex++) {
       var ticks = Math.max(1, animation.frames[frameIndex].ticks);
@@ -996,7 +1041,7 @@ window.OB64 = window.OB64 || {};
           nativeFacing: row.payload.nativeFacing,
           variantSelector: row.payload.variantSelector,
           poseFrame: Number.isFinite(row.payload.poseFrame)
-            ? row.payload.poseFrame : Math.max(0, preview.frame - row.startFrame),
+            ? row.payload.poseFrame : Math.max(0, (preview.runtime ? preview.runtime.tick : preview.frame) - row.startFrame),
           poseLoop: row.payload.poseLoop,
           displayedFrameToken: Number.isInteger(row.payload.displayedFrameToken)
             ? row.payload.displayedFrameToken : null
@@ -1026,7 +1071,7 @@ window.OB64 = window.OB64 || {};
       if (!cached || !cached.result.renderable) return null;
       var result = cached.result;
       var frames = result.frames && result.frames.length ? result.frames : [result];
-      var elapsed = Math.max(0, preview.frame - row.startFrame);
+      var elapsed = Math.max(0, (preview.runtime ? preview.runtime.tick : preview.frame) - row.startFrame);
       return {
         image: frames[elapsed % frames.length],
         x: Number.isFinite(row.payload.stageX) ? row.payload.stageX : 160,
@@ -1109,8 +1154,10 @@ window.OB64 = window.OB64 || {};
 
   function playbackTimingLabel(state,scene) {
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
-    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a preview-owned Stage. Declared preview unit: level-one Hero and Fighter, formation positions 4 and 1; environment 0, one unit, zero scenario/event values, white world tint, and random seed 1. This is a preview party, not the historical cast. Automatic dialogue advance: simulated timing. Audio queue only.';
-    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preview-party')return 'ROM scene with a sample party: level-one Hero and Fighter. The scene supplies its environment, camera and actions. Party-dependent Actors use this sample unit; scenario/event values are zero. Return to party positions: approximate. Automatic dialogue advance: simulated timing; choices confirm the first option.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='inherited')return 'ROM event sequence with shared Actors, dialogue and background. Predecessor streams supply starting state. Opening dialogue gates select entry; event-update distances and automatic dialogue acknowledgement use simulated timing. Scenario and player choices use preview defaults.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a sample party selected from the stream\'s class requests. Members use level-one ROM class data and preview names. Inherited environment defaults to 0; scenario/event values are zero. Party returns and dialogue timing are simulated. Audio queue only.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preview-party')return 'ROM scene with a sample party selected from the stream\'s class requests. The scene supplies its environment, camera and actions. Members use level-one ROM class data and preview names; scenario/event values are zero. Party returns are approximate. Automatic dialogue advance: simulated timing; choices confirm the first option.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='interface')return 'ROM interface stream. Chapter titles use ROM artwork and timing with a smooth reveal. The preview uses the first matching chapter variant. Interactive screens require their own interface services.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='room')return 'Standalone ROM room startup: current camera commands, Actors and registered layers. Declared preview defaults: empty roster, neutral controls, white world tint, protagonist Magnus and army Preview Army (text only). Automatic dialogue advance: simulated timing. Playback stops at unsupported dependencies; optional event predecessors are not reconstructed.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId])return 'ROM startup from the loaded scene and caller rules. Preview defaults: isolated scene, empty roster and audio queue, standard appearance, zero scenario/event state, protagonist name Magnus (text only), neutral controls, text speed 150, no proximity checks, white world tint. Automatic dialogue advance: simulated timing.';
     var services=input&&((input.capturedResume&&input.capturedResume.value.resourceServices)||(input.externalProducers&&input.externalProducers.value));
@@ -1141,8 +1188,8 @@ window.OB64 = window.OB64 || {};
     if(Object.keys(actorFrames).length!==preview.actors.length)fail('Capture lacks a current Actor sprite.');
     if(effects.length!==preview.effects.filter(function(e){return !e.payload.nativeLifetimeEmpty;}).length)fail('Capture lacks a current effect sprite.');
     var projection=preview.background&&preview.background.projection||document.background.projection;
-    if(OB64.cutsceneSprites.framesForStageProps(state.spriteState,projection,preview.frame).length)fail('Framebuffer capture lacks native layer ownership for scene props.');
-    var image=OB64.cutsceneRenderer.renderFrame(document,preview,{showMovementPaths:false,backgrounds:backgrounds,actorFrames:actorFrames,effectFrames:effects,projection:preview.actorProjection,camera:preview.cameraState,overlays:preview.overlays||[],colorModulation:preview.sceneColor,sceneVignette:preview.sceneVignette,sceneVignetteImage:vignetteId?state.imageCache[vignetteId].result:null,oversizedImageView:preview.oversizedImageView});
+    if(OB64.cutsceneSprites.framesForStageProps(state.spriteState,projection,preview.runtime ? preview.runtime.tick : preview.frame).length)fail('Framebuffer capture lacks native layer ownership for scene props.');
+    var image=OB64.cutsceneRenderer.renderFrame(document,preview,{showMovementPaths:false,titleImages:preview.titlePresentation?OB64.cutsceneRomStart.titleImages(rom.z64,preview.titlePresentation.variant):null,backgrounds:backgrounds,actorFrames:actorFrames,effectFrames:effects,projection:preview.actorProjection,camera:preview.cameraState,overlays:preview.overlays||[],colorModulation:preview.sceneColor,sceneVignette:preview.sceneVignette,sceneVignetteImage:vignetteId?state.imageCache[vignetteId].result:null,oversizedImageView:preview.oversizedImageView});
     OB64.cutsceneDialogueDraw&&dialogueComposition.rows.forEach(function(row){OB64.cutsceneDialogueDraw.paint(image,row);});
     image.targetId='product-stage:pass:'+request.pass+':before:'+request.nodeId;return image;
   }
@@ -1176,8 +1223,9 @@ window.OB64 = window.OB64 || {};
     var vignetteCached = vignetteAssetId && state.imageCache[vignetteAssetId];
     var scenePropFrames = state.spriteState
       ? OB64.cutsceneSprites.framesForStageProps(
-        state.spriteState, backgroundProjection, preview.frame) : [];
+        state.spriteState, backgroundProjection, preview.runtime ? preview.runtime.tick : preview.frame) : [];
     var rendered = OB64.cutsceneRenderer.renderFrame(document, preview, {
+      titleImages:preview.titlePresentation?OB64.cutsceneRomStart.titleImages(rom.z64,preview.titlePresentation.variant):null,
       backgrounds: backgrounds,
       showMovementPaths: !framebuffer,
       backgroundProjection: backgroundProjection,

@@ -67,9 +67,9 @@ window.OB64=window.OB64||{};
   }
   return false;
  };
- Lifecycle.prototype.create=function(words,ownerId,point){
+ Lifecycle.prototype.create=function(words,ownerId,point,actorPortrait){
   var m=this.machine,e=this.engine,mode=words[13]|0;
-  if(words.length!==14||words[0]!==191||![0,1].includes(mode)||words[11]===0xffffffff)stop('Dialogue constructor mode or portrait source is unsupported.','dialogue-constructor-input');
+  if(words.length!==14||words[0]!==191||![0,1].includes(mode)||words[11]===0xffffffff&&!Number.isInteger(actorPortrait))stop('Dialogue constructor mode or portrait source is unsupported.','dialogue-constructor-input');
   var slot=-1;for(var i=0;i<6;i++)if(!(m.get(POOL+i*STRIDE,2)&0x8000)){slot=i;break;}
   if(slot<0)stop('Dialogue resource pool is exhausted.','dialogue-resource-exhaustion');
   if(e.owners.some(function(o){return o&&o.ownerId===ownerId;}))stop('Dialogue constructor owner must be fresh.','dialogue-service-owner');
@@ -79,7 +79,7 @@ window.OB64=window.OB64||{};
   if(result.value!==slot)stop('Native constructor did not select the first free resource.','dialogue-registration-input');
   var r=POOL+slot*STRIDE,flags=m.get(r+0x8a,1);
   if(words[9]===1)flags|=0x20;if(words[10]===1)flags|=8;
-  var portrait=words[11]|0;if(words[12]===1)portrait=-portrait;
+  var portrait=words[11]===0xffffffff?actorPortrait:words[11]|0;if(words[12]===1)portrait=-portrait;
   m.put(r+0x92,portrait,2);
   if(mode===1){flags|=0x40;m.put(r+0x8c,words[5]&255,2);m.put(r+0x94,words[6],2);}
   // Native placement skips a known empty Actor slot and retains constructor bytes.
