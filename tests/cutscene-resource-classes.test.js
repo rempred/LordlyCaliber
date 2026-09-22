@@ -41,14 +41,18 @@ function saveFrame(file, frame) {
     ['rom-director:01F93B88', 1, 2, 'modeled-termination', 350],
     ['rom-director:01F93F60', 1, 2, 'modeled-termination', 350],
     ['rom-director:01F70FB6', 7, 9, 'modeled-handoff', 900],
-    ['rom-director:01F4015C', 1, 3, 'modeled-termination', 650]
+    ['rom-director:01F4015C', 1, 3, 'modeled-termination', 650],
+    ['rom-director:01F516AC', 8, 2, 'modeled-handoff', 300],
+    ['rom-director:01F820BE', 1, 12, 'modeled-termination', 950],
+    ['rom-director:01FA6206', 2, 2, 'modeled-termination', 250],
+    ['rom-director:01F8909A', 1, 12, 'modeled-termination', 300]
   ];
   for (const [id, resourceClass, actorCount, ending, tick] of cases.filter(row => process.argv.length < 3 || process.argv.slice(2).includes(row[0]))) {
     const scene = ui.catalog.getScene(id);
     const source = await OB64.cutsceneCodec.loadSceneSource(z64, scene);
     const projection = OB64.cutsceneCodec.projectSceneDocument(scene, source, ui.catalog);
     const contract = OB64.cutsceneRomStart.analyze(projection.program);
-    const inherited=id==='rom-director:01F4015C';
+    const inherited=['rom-director:01F4015C','rom-director:01F8909A'].includes(id);
     if(inherited)assert.equal(contract.code,'rom-start-inherited-stage');
     else {assert(contract.supported); assert.equal(contract.terminalClass, resourceClass);
       assert(OB64.cutsceneRomStart.supports({ ...scene, assetId: 'unrelated-id' }, projection.program));}
@@ -59,6 +63,12 @@ function saveFrame(file, frame) {
     assert.equal(Math.max(...run.states.map(state => state.actors.length)), actorCount);
     assert(run.retainedStateBytes < run.limits.maxStateBytes);
     const preview = OB64.cutsceneRuntime.evaluate(run, tick);
+    assert.equal(preview.nativeExternal.dialogue.memoryScope, 'resource-records-and-preview-name');
+    assert(preview.nativeExternal.dialogue.owners.every(owner => !owner || !('payloadHex' in owner)));
+    const storedMemory = preview.nativeExternal.dialogue.memory[0].hex;
+    preview.nativeExternal.dialogue.memory[0].hex = 'changed';
+    assert.equal(OB64.cutsceneRuntime.evaluate(run, tick).nativeExternal.dialogue.memory[0].hex, storedMemory);
+    preview.nativeExternal.dialogue.memory[0].hex = storedMemory;
     let frame;
     if ([5,6].includes(resourceClass)) frame = await OB64.cutsceneUI.capturePreviewFrame(rom, ui, doc,
       { preview, pass: tick, nodeId: 'resource-class-check', backgroundPolicy: 'require' });
@@ -88,7 +98,7 @@ function saveFrame(file, frame) {
       }
     }
     if (resourceClass === 8) {
-      assert.equal(ui.romStartupByAssetId[id], 'preview-party');
+      assert.equal(ui.romStartupByAssetId[id], contract.previewEnvironmentDefault?'preview-party-terrain':'preview-party');
       assert(OB64.cutsceneUI.playbackTimingLabel(ui, scene).includes('sample party'));
       assert(OB64.cutsceneUI.playbackTimingLabel(ui, scene).includes('first option'));
       assert.equal(run.preservedStageMemory.released, true);
@@ -102,9 +112,13 @@ function saveFrame(file, frame) {
       saveFrame(path.join(process.env.OB64_CUTSCENE_RENDER_DIR, scene.directorKey.replace(/^0x/, '') + '.png'), frame);
     }
     const missingEnvironment = structuredClone(projection.program); missingEnvironment.primitives.shift();
-    if(![6,7].includes(resourceClass))assert(!OB64.cutsceneRomStart.analyze(missingEnvironment).supported);
+    if(![2,6,7].includes(resourceClass))assert(!OB64.cutsceneRomStart.analyze(missingEnvironment).supported);
     if(resourceClass===6){assert.equal(preview.titlePresentation.alpha,255);assert(preview.titlePresentation.revealTicks>0);assert.equal(run.states.length,492);assert(frame.rgba.some((v,i)=>i%4===0&&v>200&&Math.floor(i/4/frame.width)>90));}
-    if(inherited){assert.equal(ui.romStartupByAssetId[id],'inherited');assert(run.eventDirectors.every(entry=>entry.terminal));assert(run.previewStartTick>500);assert.equal(run.states[0].actors.length,3);assert.equal(run.eventDirectors.at(-1).enteredTick,run.previewStartTick);assert(run.trace.some(row=>row.kind==='shared-pose-request'&&row.opcode===18));}
+    if(inherited){assert.equal(ui.romStartupByAssetId[id],'inherited');assert(run.eventDirectors.every(entry=>entry.terminal));assert(run.previewStartTick>500);assert.equal(run.states[0].actors.length,actorCount);assert.equal(run.eventDirectors.at(-1).enteredTick,run.previewStartTick);}
+    if(id==='rom-director:01F4015C')assert(run.trace.some(row=>row.kind==='shared-pose-request'&&row.opcode===18));
+    if(id==='rom-director:01F8909A')assert(run.trace.some(row=>row.kind==='top-level-tail-call'&&row.selector===535));
+    if(id==='rom-director:01F820BE')assert(run.states.some(state=>state.sceneColorEffect?.amount===1));
+    if(id==='rom-director:01FA6206'){assert.equal(preview.specialActorFadeAlpha,255);assert(preview.actors.some(actor=>actor.bank===163));}
     results.push({ id, resourceClass, actors: actorCount, ticks: run.states.length, ending });
     console.log(JSON.stringify(results.at(-1)));
     delete ui.runtimeByAssetId[id];

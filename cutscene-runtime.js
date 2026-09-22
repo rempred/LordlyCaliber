@@ -1300,7 +1300,7 @@ window.OB64 = window.OB64 || {};
         if(!entry.scene||!entry.program||!Array.isArray(entry.program.primitives))fail('ROM context requires decoded predecessor programs.','rom-context');
         var terminal=entry.program.primitives.at(-1).rawWords.at(-1)&255;
         if(index&&!(startupContract.sceneMode===0?[4,5]:[1,8]).includes(terminal))fail('The event continuation changes Director mode.','rom-context-mode');
-        if(index&&entry.program.primitives.some(node=>[0x80000006,0x80000007,0x80000008].includes(node.opcode)))fail('The event continuation requires a separate scene load.','rom-context-stage');
+        if(index&&entry.program.primitives.some(node=>[0x80000006,0x80000007].includes(node.opcode)))fail('The event continuation requires a separate scene load.','rom-context-stage');
       });
     }
 
@@ -1692,6 +1692,7 @@ window.OB64 = window.OB64 || {};
           if(externalProducers.directorLaunch!==undefined){
             if(!OB64.cutsceneDirectorLaunch||launchValue('capturedSnapshot')||launchValue('existingActors')||contextRuntime)fail('Fresh Director launch cannot inherit a captured or concurrent Actor namespace.','director-launch-input');
             nativeLaunch=new OB64.cutsceneDirectorLaunch(externalProducers.directorLaunch,options.z64);
+            if(nativeLaunch.input.previewEnvironmentDefault)assumption('The battle caller selects terrain in-game; this preview uses sample ROM environment 0. Export retains the original caller-selected terrain operand.');
             var launchBinding=resourceScheduler.read(resourceScheduler.input.directorSlot);
             if((launchBinding.flags&0xa000)!==0x8000||launchBinding.initialize!==nativeLaunch.initializeCallback)fail('Fresh launch requires an active, uninitialized Director resource.','director-launch-binding');
             if(externalEventCount(externalProducers.events)||(externalProducers.colorCreates||[]).length)fail('Fresh launch must omit recorded resource and color events.','director-launch-input');
@@ -1751,7 +1752,7 @@ window.OB64 = window.OB64 || {};
         return n+service.machine.regions.reduce((v,r)=>v+r.bytes.length,0);
       },0);
       // The menu has a separate bounded arena in addition to Actor/image services.
-      var limit = mapMenu ? 163840 : 131072;
+      var limit = Math.max(mapMenu ? 163840 : 131072,nativeLaunch?nativeLaunch.memoryLimit:0);
       if(size>limit)fail('Combined native services exceed '+(limit/1024)+' KiB: '+size+'.','map-menu-memory-bound');
       return size;
     }
@@ -4311,8 +4312,9 @@ window.OB64 = window.OB64 || {};
           nativeOperands: words.slice(1).map(signed)
         }));
       }
-      else if (opcode === 0x73) state.effectEvents.push(eventRow(node, 'effect',
-        'Sepia vignette cleanup', { sourceSystem: 'director-native', nativeOpcode: '0x73' }));
+      else if (opcode === 0x73) {state.sepiaAmount=1;state.sepiaVignette=1;}
+      else if (opcode === 0x80) state.fullColorActorSlot=signed(words[1]);
+      else if (opcode === 0xA9) state.specialActorFade={progress:0,duration:60};
       else if (opcode === 0x76) executeOversizedImageTransition(node, words);
       else if (opcode === 0x7B) {
         var yActor = state.actors[signed(words[1])];
@@ -4409,6 +4411,35 @@ window.OB64 = window.OB64 || {};
         state.terminal = true;
       }
       else if (opcode === 0x80000006) executeBackground(node, words);
+      else if (opcode === 0x80000003) {
+        try{
+          var selector=words[1]>>>0,table=OB64.cutsceneRomStart.resource(options.z64,0x019a8804);
+          if(selector*4+4>table.length)fail('Top-level Director selector exceeds its ROM directory.','director-tail-call');
+          var key=new DataView(table.buffer).getUint32(selector*4);
+          if(!key)fail('Top-level Director selector references an empty resource.','director-tail-call');
+          var nextScene=catalog.directorScenes.find(function(candidate){return candidate.source.directorSelectorRows.includes(selector);});
+          if(!nextScene)fail('Top-level Director target has no scene metadata.','director-tail-call');
+          var waiting=directorContexts&&directorContexts.find(function(context){return context.tailCallSelector===selector&&context.enteredTick===undefined;});
+          recordTrace({tick:state.tick,kind:'top-level-tail-call',selector:selector,destinationAssetId:nextScene.assetId});
+          savedStreamFrame=null;
+          if(waiting){waiting.readyTick=state.tick+1;state.terminal=true;state.terminalReason='top-level-tail-call';}
+          else {
+            var decoded=OB64.cutsceneCodec.decodeCustomLz(OB64.cutsceneRomStart.resource(options.z64,key),{requireExact:false,allowZeroPadding:true,maxOutput:65536}).bytes;
+            var nextProgram=OB64.cutsceneCodec.createIr(OB64.cutsceneCodec.sceneForBytes(nextScene,decoded),decoded).program;
+            programsByAssetId[nextScene.assetId]=nextProgram;activateStream(nextProgram,nextScene.assetId,0);launchProfile=nextScene.launchProfile;
+            if(activeDirectorContext)activeDirectorContext.scene=nextScene;
+            block={kind:'parser-boundary',untilTick:state.tick+1,label:'Load the next Director stream',clock:'director-evaluation'};
+          }
+        }catch(error){producerBoundary(error.message,error.code||'director-tail-call');}
+      }
+      else if (opcode === 0x80000008) {
+        var selector=words[1]&255,duration=words[2]&65535;
+        if(selector>=2&&selector<=4){
+          if(!duration){producerBoundary('Scene color transition has a zero duration.','scene-color-duration');return;}
+          state.sceneColorTransition={selector:selector,duration:duration,progress:0,from:state.sepiaAmount||0,to:selector===2?1:0};
+          assumption('Sepia and normal-color transitions use a live crossfade and a smooth vignette. Actor-pass fades use a color blend; frozen-frame raster effects are approximate.');
+        }else if(selector>4)producerBoundary('Scene color transition selector '+selector+' has no supported visual behavior.','scene-color-selector');
+      }
       else if (node.name !== 'director_label_marker') {
         uniquePush(unsupportedCommands, node.name);
       }
@@ -4618,6 +4649,7 @@ window.OB64 = window.OB64 || {};
     }
 
     function updateJobs() {
+      if(state.specialActorFade&&state.directorMode===2&&state.alternateDirectorScheduling!==true)state.specialActorFade.progress=Math.min(60,state.specialActorFade.progress+1);
       updateOversizedImageTransition();
       if (state.alternateDirectorScheduling !== true) updateMovementJobs();
       updateTurnJobs();
@@ -4894,6 +4926,15 @@ window.OB64 = window.OB64 || {};
       if(echoProfile&&query.name==='image_transform_echo_activity_query')return imageEcho?(imageEcho.query()|0):0;
       if(nativeLaunch&&query.name==='alternate_presentation_context_presence_query'&&nativeLaunch.input.world.alternateContextPointer!==undefined)return nativeLaunch.input.world.alternateContextPointer?1:0;
       if (Number.isInteger(externalValue)) return externalValue;
+      if(romOnlyStart&&query.name==='chaos_frame_band_query'){
+        var band=activeDirectorContext&&activeDirectorContext.previewChaosBand;
+        assumption(Number.isInteger(band)?'The preview selects the Chaos Frame branch that reaches the chosen ending.':'Chaos Frame uses preview band 1. Other values can select another ending.');
+        return Number.isInteger(band)?band:1;
+      }
+      if(romOnlyStart&&query.name==='persistent_global_flag_query'){
+        assumption('Saved story flags default to clear in the ROM-only preview. A saved game can choose another dialogue branch.');
+        return 0;
+      }
       if (unresolvedInput(query, context)) return NaN;
       if (context.kind === 'wait') {
         assumption('Native wait input for ' + query.label +
@@ -5066,7 +5107,15 @@ window.OB64 = window.OB64 || {};
         };
       }).filter(Boolean);
       var effects = Object.keys(state.spriteEffects).map(function(slot) {
-        return M.cloneJson(state.spriteEffects[slot], 'runtime sprite effect');
+        var effect = state.spriteEffects[slot];
+        // The payload contains every drawing input. Keep the live pose interpreter
+        // out of ROM preview frames; it duplicates those inputs and changes each tick.
+        if (romOnlyStart) return {
+          id: effect.id, kind: effect.kind, slot: effect.slot, trackId: effect.trackId,
+          label: effect.label, startFrame: effect.startFrame, durationFrames: effect.durationFrames,
+          capability: effect.capability, payload: M.cloneJson(effect.payload, 'runtime sprite payload')
+        };
+        return M.cloneJson(effect, 'runtime sprite effect');
       }).concat(state.effectEvents);
       var cameraProjection = projectionFromCamera(state.cameras.actor);
       var registeredProjection = projectionFromCamera(state.cameras.registered);
@@ -5106,8 +5155,10 @@ window.OB64 = window.OB64 || {};
         imageEcho:imageEcho&&imageEcho.initialized?imageEcho.snapshot():null,
         mapMenu:mapMenu?mapMenu.snapshot():null,
         titlePresentation:nativeLaunch&&Number.isInteger(nativeLaunch.input.titleVariant)?{variant:nativeLaunch.input.titleVariant,alpha:state.titleAlphaStart===undefined?0:Math.min(255,(state.tick-state.titleAlphaStart+1)*3),revealTicks:state.titleRevealStart===undefined?0:state.tick-state.titleRevealStart+1}:null,
+        sceneColorEffect:state.sepiaAmount||state.actorSepiaAmount||state.sepiaVignette?{amount:state.sepiaAmount||0,actorAmount:state.actorSepiaAmount||0,vignette:state.sepiaVignette||0,fullColorActorSlot:Number.isInteger(state.fullColorActorSlot)?state.fullColorActorSlot:null}:null,
+        specialActorFadeAlpha:state.specialActorFade?Math.floor(state.specialActorFade.progress*255/60):null,
         nativeExternal: {
-          dialogue:dialogueEngine?dialogueEngine.snapshot(sharedActorProfile||romOnlyStart?256:undefined):null,
+          dialogue:dialogueEngine?(romOnlyStart?dialogueEngine.previewSnapshot():dialogueEngine.snapshot(sharedActorProfile?256:undefined)):null,
           sharedRequests:Object.assign({},state.sharedRequests),
           menus:Object.keys(state.transientRenderEntities).map(function(slot) {
             return Object.assign({},state.transientRenderEntities[slot]);
@@ -5291,8 +5342,9 @@ window.OB64 = window.OB64 || {};
     var savedStreamFrame = null;
     var directorContexts=null,activeDirectorContext=null,directorContextsIdle=false;
     if(contextChain.length){
-      directorContexts=contextChain.concat([{scene:scene,program:program,translations:options.launchOperandTranslations||{},startTick:options.romContextStartTick}]).map(function(entry){
+      directorContexts=contextChain.concat([{scene:scene,program:program,translations:options.launchOperandTranslations||{},startTick:options.romContextStartTick,tailCallSelector:options.romContextTailCallSelector}]).map(function(entry){
         return {scene:entry.scene,program:entry.program,assetId:entry.scene.assetId,translations:entry.translations||{},startTick:entry.startTick,
+          tailCallSelector:entry.tailCallSelector,previewChaosBand:entry.previewChaosBand,
           compositeIndex:0,entryNodeId:null,cursorRevision:0,cursor:0,block:null,savedStreamFrame:null,counter:null,terminal:false,terminalReason:null};
       });
       activeDirectorContext=directorContexts[0];
@@ -5318,6 +5370,7 @@ window.OB64 = window.OB64 || {};
       if(!directorContexts){yield* evaluateDirector();return;}
       for(var context of directorContexts){
         if(context.startTick>state.tick||context.terminal||context.lastPass===state.tick)continue;
+        if(Number.isInteger(context.tailCallSelector)&&(context.readyTick===undefined||context.readyTick>state.tick))continue;
         if(context!==directorContexts[0]&&context.lastPass===undefined){
           var entryQuery=context.program.primitives[0];
           if(entryQuery.name==='dialogue_pause_query'){
@@ -5795,6 +5848,14 @@ window.OB64 = window.OB64 || {};
       yield;
       if (!capturedSnapshot || capturedResume) yield* beginTick(tick);
       yield* evaluateDirectors();
+      if(state.sceneColorTransition&&state.alternateDirectorScheduling!==true){
+        var colorTransition=state.sceneColorTransition;
+        colorTransition.progress=Math.min(colorTransition.duration,colorTransition.progress+1);
+        var colorProgress=colorTransition.progress/colorTransition.duration;
+        if(colorTransition.selector===4)state.actorSepiaAmount=colorProgress;
+        else {state.sepiaAmount=colorTransition.from+(colorTransition.to-colorTransition.from)*colorProgress;state.sepiaVignette=state.sepiaAmount;}
+        if(colorTransition.progress===colorTransition.duration)state.sceneColorTransition=null;
+      }
       if(capturedScheduler&&extendedModeTwoResume&&!stopReason){try{capturedScheduler.assertActors(true);}catch(error){producerBoundary(error.message,error.code);}}
       if (!stopReason) advanceMapMenu();
       if (!stopReason) yield* applyExternalServices('after-director');

@@ -127,6 +127,7 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
    if(pc===0x80070f30&&m.r[4]===336){need(Array.from({length:28},(_,i)=>m.get(root+24+i*4)).some(p=>!p),'Director Actor capacity is exhausted.');m.r[2]=l.allocate(336);return true;}
    if(pc===0x801c41c8){O.cutsceneRomStart.preparePose(l,m.get(m.r[4]),m.get(m.r[5]),m.get(m.r[7]),m.get(m.r[6]),m.get(m.get(m.r[29]+16)));return true;}
    if(pc===0x8022e9e8){poseCalls.add(m.r[4]);return true;} // The shared runtime evaluates each requested immediate pose after publication.
+   if(pc===0x8022eedc)return true; // Immediate draw is supplied by the preview renderer after materialization.
    if(original(pc))return true;need(false,'Preview Stage reached native helper 0x'+pc.toString(16)+'.');
   };
   try{this.run(0x8023c3dc,[words[1],words[2],(words[0]&0x7fffffff)===0xab?1:0]);}finally{m.serviceHelper=original;}

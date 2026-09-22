@@ -15,6 +15,7 @@ window.OB64=window.OB64||{};
   var camera=bytes(input.cameraBaseHex);if(camera.length!==144)stop('Director launch requires both current camera banks and their preserved fields.');
   var cameraView=new DataView(camera.buffer);for(var bank of [0,88])for(var ci=0;ci<14;ci++)if(!Number.isFinite(cameraView.getFloat32(bank+ci*4)))stop('Caller camera fields must be finite.');
   this.input=input;this.rom=rom;this.leases=[];this.parserReached=false;this.initialized=false;this.allocations=[];
+  this.memoryLimit=input.kind==='rom-mode-two-director-v1'?262144:131072;
   var v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength),code={},data=OB64.cutsceneDirectorLaunchCode;
   data.words.forEach(function(r){if(r[1]+4>rom.length||v.getUint32(r[1])!==r[2])stop('Director initialization code differs from its qualified ROM.','director-launch-image');code[r[0]]=r[2];});
   var regions=[{address:a.address,bytes:new Uint8Array(a.byteLength),writable:true},{address:0x807fe000,bytes:new Uint8Array(8192),writable:true},
@@ -71,7 +72,7 @@ window.OB64=window.OB64||{};
   var region=m.regions.find(r=>r.address<=address&&r.address+r.bytes.length>=address+data.length);
   if(region){if(!region.writable)stop('Computed launch state overlaps read-only memory.','director-launch-memory');region.bytes.set(data,address-region.address);return;}
   if(m.regions.some(r=>address<r.address+r.bytes.length&&r.address<address+data.length))stop('Computed launch memory overlaps a partial allocation.','director-launch-memory');
-  if(m.regions.reduce((n,r)=>n+r.bytes.length,0)+this.machine.regions.reduce((n,r)=>n+r.bytes.length,0)+data.length>131072)stop('Computed launch memory exceeds the shared allocation ceiling.','director-launch-memory');
+  if(m.regions.reduce((n,r)=>n+r.bytes.length,0)+this.machine.regions.reduce((n,r)=>n+r.bytes.length,0)+data.length>this.memoryLimit)stop('Computed launch memory exceeds the shared allocation ceiling.','director-launch-memory');
   m.regions.push({address:address,bytes:new Uint8Array(data),writable:true});
  };
  Launch.installAudioQueue=function(engine,rom,onRequest){
@@ -86,7 +87,7 @@ window.OB64=window.OB64||{};
   this.engine=engine;this.colorSerial=0;this.colorAddress=0;var self=this,m=engine.machine,old=m.serviceHelper;
   var arena=this.input.arena;
   if(m.regions.some(r=>arena.address<r.address+r.bytes.length&&r.address<arena.address+arena.byteLength))stop('Launch arena overlaps supplied resource memory.','director-launch-memory');
-  if(m.regions.reduce((n,r)=>n+r.bytes.length,0)+this.machine.regions.reduce((n,r)=>n+r.bytes.length,0)>131072)stop('Combined launch and resource memory exceeds 128 KiB.','director-launch-memory');
+  if(m.regions.reduce((n,r)=>n+r.bytes.length,0)+this.machine.regions.reduce((n,r)=>n+r.bytes.length,0)>this.memoryLimit)stop('Combined launch and resource memory exceeds its working-memory limit.','director-launch-memory');
   OB64.cutsceneDirectorLaunchCode.words.forEach(function(r){m.code[r[0]]=r[2];});
   var table=OB64.cutsceneDirectorLaunchCode.tables.find(r=>r.address===0x8022ab80);this.installMemory(m,table.address,bytes(table.hex));
   this.installMemory(m,0x8018fc10,new Uint8Array(4));

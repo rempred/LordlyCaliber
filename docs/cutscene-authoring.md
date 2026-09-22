@@ -15,6 +15,10 @@ Class-six chapter titles display ROM artwork with a smooth reveal. Their timing 
 Hugo's Report is labeled as an interface resource. Its People, Events, Miscellany, and Tips menus are outside timed cutscene playback.
 Event-linked scenes can run their predecessors to obtain shared Actors, dialogue, and background.
 The selected timeline starts after this setup. Opening dialogue checks select entry; event timing remains approximate.
+Ending streams can also inherit the scene that calls them. The preview selects the branch leading to the chosen ending.
+Caller-selected battle terrain uses sample environment zero in previews. Export preserves the original terrain request.
+Sepia transitions and highlighted-Actor fades now have visual previews. Their raster effects remain approximate.
+ROM preview frames retain drawing data without copying the interpreter's working memory into each frame.
 Unresolved event branches and other external scene dependencies can still show a playback boundary.
 Some party-dependent casts remain incomplete with this sample unit.
 

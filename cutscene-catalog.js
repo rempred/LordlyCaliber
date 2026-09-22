@@ -2649,6 +2649,7 @@ window.OB64 = window.OB64 || {};
 
   function displayName(scene) {
     if(scene.previewResourceKind==='help-interface')return "Hugo's Report interface";
+    if(scene.previewResourceKind==='control-resource')return 'Director synchronization resource';
     return scene.friendlyName || scene.technicalName;
   }
 

@@ -370,9 +370,11 @@ window.OB64 = window.OB64 || {};
       if(contextChain&&contextChain.length){
         generatedLaunch.operandTranslations=contextChain[0].translations;
         runtimeOptions.romContextStartTick=contextChain.at(-1).nextStartTick;
+        runtimeOptions.romContextTailCallSelector=choice&&choice.context.tailCallSelector;
       }
       state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.interfacePreview?'interface':generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.previewParty?'preview-party':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
       if(contextChain&&contextChain.length)state.romStartupByAssetId[scene.assetId]='inherited';
+      else if(generatedLaunch&&generatedLaunch.previewEnvironmentDefault)state.romStartupByAssetId[scene.assetId]='preview-party-terrain';
     }
     if (contextRuntime) {
       runtimeOptions.contextRuntime = contextRuntime;
@@ -462,12 +464,44 @@ window.OB64 = window.OB64 || {};
     return promise;
   }
 
-  function ensureContextualRuntime(rom, state, scene, document, forcedChoice, ancestry,
+  async function tailCallChoice(rom,state,scene,signal){
+    if(!state.romTailCalls){
+      var calls={};
+      for(var index=0;index<state.catalog.directorScenes.length;index++){
+        if(signal&&signal.aborted){var cancelled=new Error('Cutscene preparation cancelled.');cancelled.name='AbortError';throw cancelled;}
+        var parent=state.catalog.directorScenes[index];
+        try{
+          var source=await OB64.cutsceneCodec.loadSceneSource(rom.z64,parent,{allowModified:true});
+          var words=new DataView(source.decodedBytes.buffer,source.decodedBytes.byteOffset,source.decodedBytes.byteLength),hasCall=false;
+          for(var at=0;at<words.byteLength;at+=4)if(words.getUint32(at)===0x80000003){hasCall=true;break;}
+          if(hasCall){
+            var nodes=OB64.cutsceneCodec.createIr(parent,source.decodedBytes).program.primitives;
+            nodes.forEach(function(node,i){if(node.opcode!==0x80000003)return;var selector=node.rawWords[1],query=nodes[i-1];
+              (calls[selector]||(calls[selector]=[])).push({scene:parent,chaosBand:query&&query.opcode===0xbe&&query.rawWords[1]===0?query.rawWords[2]:null});});
+          }
+        }catch(error){if(error.name==='AbortError')throw error;}
+        if(index%32===0)await new Promise(resolve=>setTimeout(resolve,0));
+      }
+      state.romTailCalls=calls;
+    }
+    for(var selector of scene.source.directorSelectorRows||[]){
+      var caller=(state.romTailCalls[selector]||[])[0];
+      if(caller)return {id:'rom-tail-call:'+caller.scene.assetId+':'+selector,contextScene:caller.scene,
+        context:{concurrentDirectorTickOffset:1,tailCallSelector:selector,previewChaosBand:caller.chaosBand}};
+    }
+    return null;
+  }
+
+  async function ensureContextualRuntime(rom, state, scene, document, forcedChoice, ancestry,
       compactOutput, signal) {
     state.concurrentRuntimeByLaunchContext =
       state.concurrentRuntimeByLaunchContext || {};
     var choice = runtimeLaunchChoice(state, scene, forcedChoice);
     var contextScene = choice && choice.contextScene;
+    if(!contextScene&&!(state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId])&&OB64.cutsceneRomStart&&OB64.cutsceneRomStart.analyze(state.programByAssetId[scene.assetId]).code==='rom-start-inherited-stage'){
+      var callerChoice=await tailCallChoice(rom,state,scene,signal);
+      if(callerChoice){choice=callerChoice;contextScene=callerChoice.contextScene;}
+    }
     if(!(state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId])&&OB64.cutsceneRomStart&&OB64.cutsceneRomStart.supports(scene,state.programByAssetId[scene.assetId]))contextScene=null;
     ancestry = ancestry || [];
     if (signal && signal.aborted) {
@@ -497,6 +531,7 @@ window.OB64 = window.OB64 || {};
         var distance=childChoice.context.concurrentDirectorTickOffset;
         earlier.push({scene:parent,document:parentDocument,program:parentProgram,
           translations:launchOperandTranslations(parent,parentChoice),startTick:startTick,
+          previewChaosBand:childChoice.context.previewChaosBand,
           nextStartTick:startTick+(Number.isInteger(distance)?Math.max(1,distance):1)});
         return earlier;
       }
@@ -1156,6 +1191,7 @@ window.OB64 = window.OB64 || {};
     var input=state.nativeLaunchInputsByAssetId&&state.nativeLaunchInputsByAssetId[scene.assetId];
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='inherited')return 'ROM event sequence with shared Actors, dialogue and background. Predecessor streams supply starting state. Opening dialogue gates select entry; event-update distances and automatic dialogue acknowledgement use simulated timing. Scenario and player choices use preview defaults.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preserved-stage')return 'ROM startup with a sample party selected from the stream\'s class requests. Members use level-one ROM class data and preview names. Inherited environment defaults to 0; scenario/event values are zero. Party returns and dialogue timing are simulated. Audio queue only.';
+    if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preview-party-terrain')return 'Battle caller selects terrain in-game. This ROM preview uses sample environment 0 and a sample party from the stream\'s class requests. The exported stream retains its caller-selected terrain. Dialogue timing is simulated; choices confirm the first option.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='preview-party')return 'ROM scene with a sample party selected from the stream\'s class requests. The scene supplies its environment, camera and actions. Members use level-one ROM class data and preview names; scenario/event values are zero. Party returns are approximate. Automatic dialogue advance: simulated timing; choices confirm the first option.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='interface')return 'ROM interface stream. Chapter titles use ROM artwork and timing with a smooth reveal. The preview uses the first matching chapter variant. Interactive screens require their own interface services.';
     if(!input&&state.romStartupByAssetId&&state.romStartupByAssetId[scene.assetId]==='room')return 'Standalone ROM room startup: current camera commands, Actors and registered layers. Declared preview defaults: empty roster, neutral controls, white world tint, protagonist Magnus and army Preview Army (text only). Automatic dialogue advance: simulated timing. Playback stops at unsupported dependencies; optional event predecessors are not reconstructed.';

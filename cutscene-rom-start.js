@@ -16,6 +16,7 @@ window.OB64=window.OB64||{};
   const terminal=program.primitives.at(-1);
   if(terminal.opcode!==0x80000001||terminal.rawWords.length!==2||program.primitives.filter(n=>n.opcode===0x80000001).length!==1)return reject('rom-start-trailer','ROM startup requires one final terminal command and resource class.');
   const terminalClass=last&255;
+  if(program.primitives.every(n=>[0,1,2,0x0e,0x7d,0x80000000,0x80000001,0x80000002].includes(n.opcode)))return {supported:false,code:'rom-control-resource',resourceKind:'control-resource',reason:'This Director resource only waits and releases its scheduler slot. It has no standalone scene imagery or dialogue.'};
   // Early interface streams use the same Director language. The preview supplies
   // the common empty root and models their visible interface operations separately.
   if(terminalClass===6){
@@ -27,15 +28,15 @@ window.OB64=window.OB64||{};
    // This standalone contract requires the stream to supply both cameras.
    const nodes=program.primitives,groups=nodes.filter(n=>n.opcode===0x80000006),media=nodes.filter(n=>n.opcode===0x80000007);
    if(groups.length!==1||groups[0].rawWords.length!==2||groups[0].rawWords[1]>=31||nodes.indexOf(groups[0])>1)return reject('rom-start-room-group','Fresh room startup requires one initial explicit scene group.');
-   if(terminalClass===4&&(media.length!==1||nodes[0]!==media[0]||media[0].rawWords.length!==2||media[0].rawWords[1]>=69))return reject('rom-start-room-media','Fresh room startup requires an explicit supported oversized-image selector.');
+   if(terminalClass===4&&(media.length>1||media.length&&(nodes[0]!==media[0]||media[0].rawWords.length!==2||media[0].rawWords[1]>=69)))return reject('rom-start-room-media','Room startup requires a supported oversized-image selector when present.');
    // Class five uses the same Director without class four's oversized-image owner.
    // Its opening camera pair also supports scenes that contain no Actors.
    if(terminalClass===5&&(media.length||nodes[0]!==groups[0]))return reject('rom-start-room-media','Class-five room startup requires its scene group first and no oversized-image selector.');
-   const firstActor=nodes.findIndex(n=>n.opcode===0x14),prefix=terminalClass===4?nodes.slice(2,firstActor):nodes.slice(1,3);
-   if((terminalClass===4&&firstActor<0)||prefix.length!==2||!prefix.some(n=>n.opcode===0x35&&n.rawWords.length===8)||!prefix.some(n=>n.opcode===0x36&&n.rawWords.length===8))return reject('rom-start-room-camera','Fresh room startup requires both explicit cameras before Actor construction.');
+   const firstActor=nodes.findIndex(n=>n.opcode===0x14),prefix=nodes.slice(nodes.indexOf(groups[0])+1,firstActor<0?nodes.length:firstActor);
+   if(!prefix.some(n=>n.opcode===0x35&&n.rawWords.length===8)||!prefix.some(n=>n.opcode===0x36&&n.rawWords.length===8))return reject('rom-start-room-camera','Fresh room startup requires both explicit cameras before Actor construction.');
    return {supported:true,terminalClass,sceneMode:0,environmentSelector:null,mapKind:24};
   }
-  if(terminalClass===2||terminalClass===7){if(program.primitives.some(n=>[0x80000006,0x80000007,0x80000008].includes(n.opcode)))return reject('rom-start-preserved-setup','Preserved Stage preview does not implement an additional environment setup command.');return {supported:true,terminalClass,sceneMode:2,environmentSelector:0,mapKind:0,preservedStage:true};}
+  if(terminalClass===2||terminalClass===7){if(program.primitives.some(n=>[0x80000006,0x80000007].includes(n.opcode)))return reject('rom-start-preserved-setup','Preserved Stage preview does not implement an additional environment setup command.');return {supported:true,terminalClass,sceneMode:2,environmentSelector:0,mapKind:0,preservedStage:true};}
   if(terminalClass!==1&&terminalClass!==8)return reject('rom-start-class','ROM startup does not implement terminal resource class '+terminalClass+' and its caller setup.');
   // The word-wise pre-scan must retain missing fields as unresolved. In
   // particular, an absent environment command must not become environment zero.
@@ -47,14 +48,19 @@ window.OB64=window.OB64||{};
    if(flags===4||words[i]===0x80000001)break;
   }
   if(environmentSelector===null)return reject('rom-start-inherited-stage','ROM startup requires inherited Stage and caller state because this stream supplies no environment.');
-  if(environmentSelector<0)return reject('rom-start-derived-environment','ROM startup requires the caller environment mapper for environment sentinel '+environmentSelector+'.');
+  const previewEnvironmentDefault=environmentSelector===-1;
+  const environmentOperand=environmentSelector;
+  // -1 asks the battle caller to choose terrain. A ROM-only preview can use
+  // the same sample environment as preserved battle scenes, without rewriting it.
+  if(previewEnvironmentDefault)environmentSelector=0;
+  if(environmentSelector<0)return reject('rom-start-derived-environment','ROM startup requires inherited presentation for environment sentinel '+environmentSelector+'.');
   if(environmentSelector>=80)return reject('rom-start-environment','ROM startup environment exceeds the supported ROM table.');
-  if(flags!==1)return reject('rom-start-prescan','ROM startup does not implement the secondary or stop pre-scan route.');
+  if(flags!==1&&flags!==5)return reject('rom-start-prescan','ROM startup does not implement the secondary or stop pre-scan route.');
   const setups=program.primitives.filter(n=>n.opcode===0x80000006);
-  if(setups.length!==1||program.primitives[0]!==setups[0]||setups[0].rawWords.length!==2||setups[0].rawWords[1]!==environmentSelector)return reject('rom-start-stage-sequence','ROM startup requires one initial environment command; delayed or repeated Stage construction is not implemented.');
+  if(setups.length!==1||program.primitives[0]!==setups[0]||setups[0].rawWords.length!==2||(setups[0].rawWords[1]<<16>>16)!==environmentOperand)return reject('rom-start-stage-sequence','ROM startup requires one initial environment command; delayed or repeated Stage construction is not implemented.');
   // Class eight shares class one's callback but retains the caller's map kind.
   // An isolated world preview uses map kind zero.
-  return {supported:true,terminalClass,sceneMode:2,environmentSelector,mapKind:terminalClass===8?0:24,previewParty:terminalClass===8||program.primitives.some(n=>[0x45,0xab,0xa6,0x3f,0xa4].includes(n.opcode))};
+  return {supported:true,terminalClass,sceneMode:2,environmentSelector,previewEnvironmentDefault,mapKind:terminalClass===8?0:24,previewParty:terminalClass===8||program.primitives.some(n=>[0x45,0xab,0xa6,0x3f,0xa4].includes(n.opcode))};
  }
  function supports(scene,program){return !!scene&&analyze(program).supported;}
  function qualify(rom){
@@ -82,15 +88,17 @@ window.OB64=window.OB64||{};
   for(const [address,key]of [[0x80383000,0x0218c450],[0x80383100,0x0218de48]]){const bytes=resource(rom,key);memory.push({address,bytes});}
   put(0x8018fc70,0x80383000);put(0x8018fc74,0x80383100);
   memory.push({address:0x8019e180,bytes:rom.slice(0xeaf00,0xebbb0)});
-  const launch={kind:contract.sceneMode===0?'rom-mode-zero-director-v1':'rom-mode-two-director-v1',preservedStage:contract.preservedStage===true,sceneMode:contract.sceneMode,terminalClass:contract.terminalClass,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,previewHeroName:'Magnus',world:{mapKind:contract.mapKind,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
+  const launch={kind:contract.sceneMode===0?'rom-mode-zero-director-v1':'rom-mode-two-director-v1',preservedStage:contract.preservedStage===true,sceneMode:contract.sceneMode,terminalClass:contract.terminalClass,selector,environmentSelector,proximityFlags:0,actorPresentationWord:0,previewHeroName:'Magnus',world:{mapKind:contract.mapKind,scenarioByte:0,eventState:0,red:255,green:255,blue:255,alternateContextPointer:0},arena:{address:0x80360000,byteLength:contract.sceneMode===2?65536:49152},cameraBaseHex:hex(rom.slice(0x2866f0,0x2866f0+144)),audioQueueHex:'00'.repeat(128),operandTranslations:{}};
   if(contract.previewParty)launch.previewParty=true;
+  if(contract.previewEnvironmentDefault)launch.previewEnvironmentDefault=true;
   if(contract.interfacePreview)launch.interfacePreview=true;
   if(contract.interfacePreview&&program.primitives.some(n=>n.opcode===0xaf))launch.titleVariant=Math.max(0,Math.min(4,selector-0x431));
   if(contract.previewParty||contract.preservedStage){
    const classes=[];
    const addClass=c=>{if(Number.isInteger(c)&&c>0&&c<165&&!classes.some(old=>O.cutsceneRuntime.nativeActor.classFamilyMatch(old,c)))classes.push(c);};
    for(const n of program.primitives){if(n.opcode===0x92)addClass(n.rawWords[2]&255);if([0x45,0xab].includes(n.opcode))n.rawWords.slice(1).forEach(c=>addClass(c|0));}
-   addClass(81);addClass(2);
+   if(!classes.length||!program.primitives.some(n=>n.opcode===0xa9))addClass(81);
+   addClass(2);
    if(program.primitives.some(n=>n.opcode===0xa6))for(const c of [4,5,13,2,4]){if(classes.length>=5)break;classes.push(c);}
    launch.previewClasses=classes.slice(0,5);
    const binding=program.primitives.findIndex(n=>n.opcode===0xa6),reset=program.primitives.findIndex(n=>n.opcode===0x96);

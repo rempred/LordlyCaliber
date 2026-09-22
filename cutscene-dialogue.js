@@ -332,6 +332,16 @@ window.OB64 = window.OB64 || {};
     if(this.payloadStorage)snapshot.payloadStorage={...this.payloadStorage.config};
     return snapshot;
   };
+  Engine.prototype.previewSnapshot = function() {
+    // Rendering already carries each visible window's drawing state. Keep small
+    // resource records for inspection, not a per-frame copy of interpreter RAM.
+    var m=this.machine,memory=[];
+    for(var slot=0;slot<6;slot++)memory.push({address:POOL+slot*STRIDE,
+      hex:hex(Uint8Array.from({length:STRIDE},function(_,i){return m.get(POOL+slot*STRIDE+i,1);}))});
+    if(m.regions.some(function(r){return 0x80196a58>=r.address&&0x80196a58+17<=r.address+r.bytes.length;}))memory.push({address:0x80196a58,
+      hex:hex(Uint8Array.from({length:17},function(_,i){return m.get(0x80196a58+i,1);}))});
+    return {memory:memory,owners:this.owners.map(function(owner){return owner?{ownerId:owner.ownerId,state:owner.payload?owner.payload[0x3c]:null}:null;}),memoryScope:'resource-records-and-preview-name'};
+  };
   Engine.prototype.presentation = function(slot, ownerId) {
     var owner=this.owners[slot],r=POOL+slot*STRIDE;
     if(!owner||owner.ownerId!==ownerId||(this.machine.get(r,2)&0xa000)!==0xa000)return null;

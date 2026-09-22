@@ -1221,6 +1221,40 @@ window.OB64 = window.OB64 || {};
       });
     });
   }
+  function sepiaPixels(rgba,amount){
+    for(var i=0;i<rgba.length;i+=4){
+      var luminance=(30*rgba[i]+59*rgba[i+1]+11*rgba[i+2])/100;
+      rgba[i]=Math.round(rgba[i]*(1-amount)+Math.min(255,luminance*1.15)*amount);
+      rgba[i+1]=Math.round(rgba[i+1]*(1-amount)+luminance*.95*amount);
+      rgba[i+2]=Math.round(rgba[i+2]*(1-amount)+luminance*.65*amount);
+    }
+  }
+  function processedActorFrame(frame,amount){
+    if(!frame||!amount)return frame;
+    var result=Object.assign({},frame,{rgba:frame.rgba.slice()});sepiaPixels(result.rgba,amount);
+    if(frame.nativeLayers)result.nativeLayers=frame.nativeLayers.map(function(layer){return processedActorFrame(layer,amount);});
+    return result;
+  }
+  function renderSceneColorEffects(output,document,preview,options){
+    var effect=preview.sceneColorEffect;
+    if(effect&&effect.amount)sepiaPixels(output.rgba,effect.amount);
+    if(effect&&effect.vignette){
+      for(var y=0;y<HEIGHT;y++)for(var x=0;x<WIDTH;x++){
+        var dx=(x-WIDTH/2)/(WIDTH/2),dy=(y-HEIGHT/2)/(HEIGHT/2);
+        var opacity=(10+190*Math.min(1,(dx*dx+dy*dy)/2))/255*effect.vignette,at=(y*WIDTH+x)*4;
+        for(var c=0;c<3;c++)output.rgba[at+c]=Math.round(output.rgba[at+c]*(1-opacity));
+      }
+    }
+    var special=Number.isFinite(preview.specialActorFadeAlpha),fullColor=effect&&Number.isInteger(effect.fullColorActorSlot);
+    if(!special&&!fullColor)return;
+    if(special)fillRect(output,0,0,WIDTH,HEIGHT,[0,0,0,preview.specialActorFadeAlpha]);
+    var selected=preview.actors.filter(function(actor){return special?[81,82,83,163].includes(actor.bank):actor.slot===effect.fullColorActorSlot;});
+    if(!selected.length)return;
+    var top=renderFrame(document,Object.assign({},preview,{actors:selected,framebufferEffect:null,specialActorFadeAlpha:null,
+      sceneColorEffect:effect?{actorAmount:effect.actorAmount}:null}),Object.assign({},options,{_layerPass:true,
+      backgrounds:[],scenePropFrames:[],effectFrames:[],sceneVignette:null,overlays:[],screenTransition:null,showMovementPaths:false}));
+    blitScaled(output,top,0,0,WIDTH,HEIGHT,255,null);
+  }
   function renderTitle(output,preview,options){
     var title=preview.titlePresentation;if(!title||!options.titleImages)return;
     fillRect(output,0,0,WIDTH,HEIGHT,[0,0,0,255]);
@@ -1255,6 +1289,7 @@ window.OB64 = window.OB64 || {};
     renderPathRibbons(output,preview.pathRibbons,options.camera);
     renderMapMenus(output,preview.mapMenu);
     renderTitle(output,preview,options);
+    renderSceneColorEffects(output,document,preview,options);
     (options.overlays||[]).forEach(function(o){fillRect(output,0,0,320,240,[o.red,o.green,o.blue,o.alpha]);});applyScreenTransitionMask(output,options.screenTransition);
     return {width:320,height:240,rgba:output.rgba,projection:options.projection,camera:options.camera,hitRegions:hits,movementPaths:paths,framebufferEffect:effect};
   }
@@ -1429,6 +1464,7 @@ window.OB64 = window.OB64 || {};
       var point = modeZeroGeometry ? modeZeroGeometry.screenPoint : projectPointFloat(renderEntry.spritePoint, projection);
       point = transformStagePoint(point, camera);
       var frame = options.actorFrames && options.actorFrames[actor.id];
+      if(previewState.sceneColorEffect&&previewState.sceneColorEffect.actorAmount)frame=processedActorFrame(frame,previewState.sceneColorEffect.actorAmount);
       if (frame && frame.rgba) {
         if(modeZeroGeometry&&modeZeroGeometry.nativePacked&&Array.isArray(frame.nativeLayers)){
           var packedBounds=drawPackedActorLayers(output,frame,modeZeroGeometry,camera,actorSpriteOpacity(actor),actor.tint);
@@ -1488,6 +1524,7 @@ window.OB64 = window.OB64 || {};
     if (!options._layerPass) renderPathRibbons(output, previewState.pathRibbons, options.camera);
     if(!options._layerPass)renderMapMenus(output,previewState.mapMenu);
     if(!options._layerPass)renderTitle(output,previewState,options);
+    if(!options._layerPass)renderSceneColorEffects(output,document,previewState,options);
     (options.overlays || []).forEach(function(overlay) {
       fillRect(output, 0, 0, output.width, output.height, [
         clamp(Number(overlay.red) || 0, 0, 255),
