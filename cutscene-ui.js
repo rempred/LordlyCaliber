@@ -1540,6 +1540,12 @@ window.OB64 = window.OB64 || {};
         ' launch or service inputs remain unresolved.';
     }
     var timingLabel=playbackTimingLabel(state,scene);if(timingLabel)calibrationText+=' '+timingLabel;
+    if (nativeRuntime && stageRuntime.assumptions.some(function(note) { return note.indexOf('Path-ribbon shapes') === 0; })) {
+      calibrationText += ' Path ribbons: approximate shapes, textures and reveal timing.';
+    }
+    if (nativeRuntime && stageRuntime.assumptions.some(function(note) { return note.indexOf('Map panels advance') === 0; })) {
+      calibrationText += ' Menus advance automatically; the preview chooses the last option.';
+    }
     var calibration = node('span', 'cutscene-stage-calibration', calibrationText);
     calibration.title = nativeRuntime
       ? [stageRuntime.directorModeStatus,

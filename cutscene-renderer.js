@@ -1238,10 +1238,49 @@ window.OB64 = window.OB64 || {};
       blitScaled(output,rendered,0,0,320,240,255,null);hits.push.apply(hits,rendered.hitRegions);
       if(effect.record&&effect.record.layer===index)drawIris(output,effect.record);
     }
+    renderPathRibbons(output,preview.pathRibbons,options.camera);
     renderMapMenus(output,preview.mapMenu);
     (options.overlays||[]).forEach(function(o){fillRect(output,0,0,320,240,[o.red,o.green,o.blue,o.alpha]);});applyScreenTransitionMask(output,options.screenTransition);
     return {width:320,height:240,rgba:output.rgba,projection:options.projection,camera:options.camera,hitRegions:hits,movementPaths:paths,framebufferEffect:effect};
   }
+  function renderPathRibbons(output, ribbons, cameraValue) {
+    var camera = cameraTransform(cameraValue);
+    var palette = [[100, 120, 250], [255, 50, 50], [50, 255, 100], [200, 100, 180]];
+    (ribbons || []).forEach(function(ribbon) {
+      if (!ribbon.points || ribbon.points.length < 2 || ribbon.revealed <= 0) return;
+      var fade = ribbon.fadeAge === null ? 1 : Math.max(0, 1 - ribbon.fadeAge / 30);
+      var color = palette[ribbon.palette] || palette[0];
+      var radius = Math.max(1, (ribbon.width + 3) / 2 * Math.abs(camera.scaleX));
+      for (var i = 1; i < ribbon.points.length; i++) {
+        var start = ribbon.points[i - 1], end = ribbon.points[i];
+        if (start.distance >= ribbon.revealed) break;
+        var distance = end.distance - start.distance;
+        if (distance <= 0) continue;
+        var fraction = Math.min(1, (ribbon.revealed - start.distance) / distance);
+        var a = transformStagePointFloat({ x: WIDTH / 2 + start.x, y: HEIGHT / 2 + start.y }, camera);
+        var b = transformStagePointFloat({ x: WIDTH / 2 + start.x + (end.x - start.x) * fraction,
+          y: HEIGHT / 2 + start.y + (end.y - start.y) * fraction }, camera);
+        var dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+        if (!(length2 > 0)) continue;
+        var left = Math.max(0, Math.floor(Math.min(a.x, b.x) - radius));
+        var right = Math.min(WIDTH - 1, Math.ceil(Math.max(a.x, b.x) + radius));
+        var top = Math.max(0, Math.floor(Math.min(a.y, b.y) - radius));
+        var bottom = Math.min(HEIGHT - 1, Math.ceil(Math.max(a.y, b.y) + radius));
+        for (var y = top; y <= bottom; y++) for (var x = left; x <= right; x++) {
+          var t = clamp(((x - a.x) * dx + (y - a.y) * dy) / length2, 0, 1);
+          var across = Math.hypot(x - a.x - dx * t, y - a.y - dy * t);
+          if (across > radius) continue;
+          var along = start.distance + distance * fraction * t;
+          var alpha = 180 * fade * (ribbon.gradient ? 0.25 + 0.75 * along / Math.max(1, ribbon.revealed) : 1);
+          // A moving highlight suggests the native textured strip without an RDP emulator.
+          var highlight = (Math.floor(along) - ribbon.phase + 32) % 8 < 2 ? 1.3 : 1;
+          pixel(output, x, y, [Math.min(255, color[0] * highlight), Math.min(255, color[1] * highlight),
+            Math.min(255, color[2] * highlight), Math.round(alpha * Math.min(1, radius - across + 0.5))]);
+        }
+      }
+    });
+  }
+
   function renderFrame(document, previewState, options) {
     options = options || {};
     if(previewState.framebufferEffect&&!options._layerPass)return renderFramebufferLayers(document,previewState,options);
@@ -1431,6 +1470,7 @@ window.OB64 = window.OB64 || {};
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
       'foreground', backgroundCamera);
     modulateSurface(output, options.colorModulation);
+    if (!options._layerPass) renderPathRibbons(output, previewState.pathRibbons, options.camera);
     if(!options._layerPass)renderMapMenus(output,previewState.mapMenu);
     (options.overlays || []).forEach(function(overlay) {
       fillRect(output, 0, 0, output.width, output.height, [

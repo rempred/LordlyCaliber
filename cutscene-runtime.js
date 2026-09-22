@@ -724,6 +724,71 @@ window.OB64 = window.OB64 || {};
     return channels;
   }
 
+  // Preview counterpart of the path-ribbon family (0x49–0x4C).
+  // Read the ROM path and preserve endpoint precedence and lifecycle. Polyline
+  // geometry and reveal distance approximate the native resampled strip.
+  function createPathRibbon(z64, words) {
+    if (!(z64 instanceof Uint8Array) || !OB64.art) fail('Path ribbons require the loaded ROM.', 'path-ribbon-rom');
+    var slot = signed(words[1]), group = signed(words[2]), entry = signed(words[3]);
+    if (slot < 0 || slot >= 20 || group < 0 || entry < 0) fail('Path ribbon selector is out of range.', 'path-ribbon-selector');
+    function select(key, index) {
+      var table = OB64.art.readResource(z64, key).stored;
+      if (index * 4 + 4 > table.length) fail('Path ribbon resource selector is out of range.', 'path-ribbon-selector');
+      var selected = readU32(table, index * 4, 'Path ribbon directory');
+      if (!selected) fail('Path ribbon selects an empty ROM resource.', 'path-ribbon-resource');
+      return selected;
+    }
+    var key = select(select(0x01A8D7A6, group), entry);
+    var bytes = OB64.art.readCompressedResource(z64, key).decoded;
+    if (bytes.length < 24 || bytes.length > 240 || bytes.length % 12) fail('Path ribbon point data is malformed.', 'path-ribbon-resource');
+    var points = [], length = 0;
+    for (var offset = 0; offset < bytes.length; offset += 12) {
+      var marker = signed(readU32(bytes, offset, 'Path ribbon point'));
+      if (marker !== -1) fail('Path ribbon requires map marker ' + marker + '.', 'path-ribbon-map-marker');
+      var point = { x: signed(readU32(bytes, offset + 4, 'Path ribbon X')),
+        y: signed(readU32(bytes, offset + 8, 'Path ribbon Y')), distance: length };
+      if (points.length) {
+        var previous = points[points.length - 1];
+        length += Math.hypot(point.x - previous.x, point.y - previous.y);
+        point.distance = length;
+      }
+      points.push(point);
+    }
+    if (!(length > 0) || length > 8192) fail('Path ribbon length is outside the preview bounds.', 'path-ribbon-resource');
+    var ribbon = { slot: slot, resourceKey: key, points: points, length: length,
+      percentage: -1, milestone: -1, width: lowU16(words[6]), palette: lowU16(words[7]),
+      gradient: !!words[9], revealed: Math.min(5, length), active: 1, fadeAge: null, phase: 0 };
+    if (ribbon.width < 1 || ribbon.width > 5 || ribbon.palette > 3) fail('Path ribbon style is out of range.', 'path-ribbon-style');
+    setPathRibbonEndpoint(ribbon, signed(words[4]), signed(words[5]));
+    if (words[8]) { ribbon.revealed = pathRibbonEndpoint(ribbon); ribbon.active = 0; }
+    return ribbon;
+  }
+
+  function setPathRibbonEndpoint(ribbon, percentage, milestone) {
+    if (milestone !== -1) {
+      if (milestone < 0 || milestone >= ribbon.points.length) fail('Path ribbon milestone is out of range.', 'path-ribbon-endpoint');
+      ribbon.milestone = milestone;
+    } else if (percentage !== -1) {
+      if (percentage < 0 || percentage > 100) fail('Path ribbon percentage must be between zero and 100.', 'path-ribbon-endpoint');
+      ribbon.percentage = percentage;
+    }
+  }
+
+  function pathRibbonEndpoint(ribbon) {
+    if (ribbon.milestone !== -1) return ribbon.points[ribbon.milestone].distance;
+    return ribbon.percentage === -1 ? ribbon.length : ribbon.length * ribbon.percentage / 100;
+  }
+
+  function advancePathRibbon(ribbon) {
+    var endpoint = pathRibbonEndpoint(ribbon);
+    // Retargeting can resume growth but must not reactivate a completed query.
+    if (ribbon.revealed < endpoint) ribbon.revealed = Math.min(endpoint, ribbon.revealed + 2);
+    else ribbon.active = 0;
+    ribbon.phase = (ribbon.phase + 1) & 31;
+    if (ribbon.fadeAge !== null && ++ribbon.fadeAge >= 30) return false;
+    return true;
+  }
+
   function decodeSceneTransformResource(z64, resourceIndex) {
     if (!(z64 instanceof Uint8Array)) {
       fail('Normalized z64 bytes are required to decode a scene transform.',
@@ -1537,6 +1602,7 @@ window.OB64 = window.OB64 || {};
         (observedBackground || M.cloneJson(document.background, 'background')),
       dialogues: {},
       spriteEffects: {},
+      pathRibbons: {},
       audioEvents: [],
       cameraEvents: [],
       effectEvents: [],
@@ -1668,14 +1734,36 @@ window.OB64 = window.OB64 || {};
       var size=[mapMenu,imageEcho,nativeLaunch,dialogueEngine,capturedScheduler].filter(Boolean).reduce(function(n,service){
         return n+service.machine.regions.reduce((v,r)=>v+r.bytes.length,0);
       },0);
-      if(size>131072)fail('Combined native services exceed 128 KiB: '+size+'.','map-menu-memory-bound');
+      // The menu has a separate bounded arena in addition to Actor/image services.
+      var limit = mapMenu ? 163840 : 131072;
+      if(size>limit)fail('Combined native services exceed '+(limit/1024)+' KiB: '+size+'.','map-menu-memory-bound');
       return size;
     }
     function advanceMapMenu(){
       if(!mapMenu)return;
       try{
         checkMenuMemory();
-        state.audioEvents.push.apply(state.audioEvents,mapMenu.advance(currentControllerMask(),resourceScheduler&&resourceScheduler.control?resourceScheduler.control.directionMask:0));
+        var action = currentControllerMask(), direction = resourceScheduler&&resourceScheduler.control?resourceScheduler.control.directionMask:0;
+        if (menuProfile.previewAdvancePolicy === 'automatic-last-option' && resourceScheduler &&
+            resourceScheduler.input.pageAdvancePolicy === 'automatic' && !action && !direction) {
+          var menuState = mapMenu.snapshot();
+          var readyOwner = menuState.owners.find(function(owner) {
+            var entity = owner && state.transientRenderEntities[owner.slot];
+            return entity && !entity.detached && state.tick - entity.createdTick >= 45 &&
+              menuState.entities.some(function(row) { return row.address === owner.entity && row.alpha === 255; });
+          });
+          if (readyOwner) {
+            var row = menuState.entities.find(function(row) { return row.address === readyOwner.entity; });
+            var target = row.drawCallback === 0x8017eae8 ? 1 : row.drawCallback === 0x8017ec84 && row.payloadHex
+              ? Math.max(0, parseInt(row.payloadHex.slice(0x5f5 * 2, 0x5f5 * 2 + 2), 16) - 1) : 0;
+            // Use native menu input, including its readiness and cursor rules.
+            // Spaced direction pulses let the native repeat latch reset.
+            if (row.selection < target) direction = state.tick % 2 ? 0x400 : 0;
+            else action = 0x8000;
+            assumption('Map panels advance automatically; option menus select their last entry with simulated controller input.');
+          }
+        }
+        state.audioEvents.push.apply(state.audioEvents,mapMenu.advance(action,direction));
         Object.keys(state.transientRenderEntities).forEach(function(slot){
           var entity=state.transientRenderEntities[slot];
           if(entity.computedMenu){entity.status=mapMenu.query(Number(slot));entity.detached=entity.status===-6;}
@@ -4053,6 +4141,25 @@ window.OB64 = window.OB64 || {};
       else if (opcode === 0x48) selectedActors(signed(words[1])).forEach(function(actor) {
         actor.opacityByte = unsigned(words[2]) & 0xFF;
       });
+      else if (opcode >= 0x49 && opcode <= 0x4B) {
+        var ribbonSlot = signed(words[1]);
+        try {
+          if (opcode === 0x49) {
+            state.pathRibbons[ribbonSlot] = createPathRibbon(options.z64, words);
+            assumption('Path-ribbon shapes, textures, and reveal timing are approximated from the loaded ROM paths.');
+          } else if (opcode === 0x4A) {
+            if (!state.pathRibbons[ribbonSlot]) fail('Path ribbon endpoint selects an absent slot.', 'path-ribbon-slot');
+            setPathRibbonEndpoint(state.pathRibbons[ribbonSlot], signed(words[2]), signed(words[3]));
+          } else {
+            if (ribbonSlot < -1 || ribbonSlot >= 20) fail('Path ribbon release selector is out of range.', 'path-ribbon-selector');
+            (ribbonSlot === -1 ? Object.keys(state.pathRibbons) : [ribbonSlot]).forEach(function(slot) {
+              if (!state.pathRibbons[slot]) return;
+              if (words[2] === 1) state.pathRibbons[slot].fadeAge = 0;
+              else delete state.pathRibbons[slot];
+            });
+          }
+        } catch (error) { producerBoundary(error.message, error.code || 'path-ribbon-resource'); }
+      }
       else if (opcode === 0x56) parserResynchronization = true;
       else if (opcode === 0x59) {
         var marker = signed(words[1]);
@@ -4095,7 +4202,7 @@ window.OB64 = window.OB64 || {};
           if(signed(words[2])!==33&&!([1,3].includes(signed(words[2]))&&menuProfile.optionController==='declared-action-direction-v1')){producerBoundary('Transient preset '+signed(words[2])+' has no supported shared constructor.','transient-menu-constructor');return;}
           try{if(!imageEcho)fail('Map menu requires the current scene image dimensions.','map-menu-input');
             if(!mapMenu){mapMenu=new OB64.cutsceneMapMenu(options.z64,menuProfile);
-              recordTrace({tick:state.tick,kind:'map-menu-memory',bytes:checkMenuMemory(),limit:131072});}
+              recordTrace({tick:state.tick,kind:'map-menu-memory',bytes:checkMenuMemory(),limit:163840});}
             var computedMenu=mapMenu.create(transientSlot,signed(words[2]),imageEcho.width,imageEcho.height);
             state.transientRenderEntities[transientSlot]={slot:transientSlot,preset:signed(words[2]),native:true,computedMenu:true,status:computedMenu.status,statusSource:'computed-native-map-menu',createdTick:state.tick,detached:false};knownTransientSlots.add(transientSlot);
             recordTrace({tick:state.tick,kind:'map-menu-create',slot:transientSlot,preset:signed(words[2])});
@@ -4616,6 +4723,11 @@ window.OB64 = window.OB64 || {};
       if (query.name === 'scripted_oversized_image_transition_query') {
         return state.oversizedImageTransitionJob ? 1 : 0;
       }
+      if (query.name === 'animated_path_ribbon_activity_query') {
+        var ribbon = state.pathRibbons[input];
+        if (!ribbon) { producerBoundary('Path ribbon query selects absent slot ' + input + '.', 'path-ribbon-slot'); return NaN; }
+        return ribbon.active;
+      }
       if (query.name === 'actor_presentation_activity_query') {
         var suppliedPresentationStatus = externalQueryValue(query);
         if (Number.isInteger(suppliedPresentationStatus)) {
@@ -4918,6 +5030,9 @@ window.OB64 = window.OB64 || {};
         actorProjection: cameraProjection,
         registeredProjection: registeredProjection,
         effects: effects,
+        pathRibbons: Object.keys(state.pathRibbons).map(function(slot) {
+          return M.cloneJson(state.pathRibbons[slot], 'path ribbon');
+        }),
         flow: block ? [{
           id: 'runtime-flow:' + state.tick,
           kind: 'wait',
@@ -5235,6 +5350,9 @@ window.OB64 = window.OB64 || {};
         });if(Object.keys(state.actors).some(function(slot){return state.actors[slot].poseBlocked;}))fail('Captured Actor progression reached an unavailable program.','resume-pose-input');}
         catch(error){producerBoundary(error.message,error.code||'resume-native-input');return;}
       }else if (tick > 0 || capturedResume || nativeLaunch) updateJobs();
+      if (!state.alternateDirectorScheduling) Object.keys(state.pathRibbons).forEach(function(slot) {
+        if (!advancePathRibbon(state.pathRibbons[slot])) delete state.pathRibbons[slot];
+      });
       if(imageEcho&&!state.alternateDirectorScheduling){try{imageEcho.advance();if(imageEcho.started)state.oversizedImageView.zoomState=imageEcho.snapshot().zoomState;}catch(error){producerBoundary(error.message,error.code);}}
       if(iris&&!state.alternateDirectorScheduling){syncIrisTransforms();if(iris.advance())releaseIrisActors();applyIrisLayers();}
       var scheduled = state.scheduled.filter(function(item) { return item.tick === tick; });
@@ -5878,6 +5996,7 @@ window.OB64 = window.OB64 || {};
     evaluate: evaluate,
     projectionFromCamera: projectionFromCamera,
     decodeSceneTransformResource: decodeSceneTransformResource,
+    pathRibbon: Object.freeze({ create: createPathRibbon, setEndpoint: setPathRibbonEndpoint, advance: advancePathRibbon }),
     validateLaunchInputs: validateLaunchInputs,
     decodeNativeActorState: decodeNativeActorState,
     nativeActor: Object.freeze({ createMovement: createNativeMovement,

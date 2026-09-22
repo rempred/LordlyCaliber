@@ -923,9 +923,16 @@ Explicit generated-profile fields `previewHeroName` and `previewArmyName` accept
 Missing populated Actor names and selected-unit leader names retain precise boundaries.
 
 The checked room `rom-director:01F440B2` draws eight Actors and six ordered image layers through ordinary selection and Play.
-Playback currently reaches 997 retained states before the Animated Path Ribbon Activity Query.
-The ribbon constructor/update/query lifecycle remains unsupported. Earlier frames remain available for playback and seeking.
-This is a bounded standalone preview, not reconstruction of the complete historical event or every class-four presentation.
+Playback reaches terminal release, including the map-path sequence and map menus.
+Path ribbons read their points from the loaded ROM and support reveal, retargeting, activity queries, and fade/release.
+Their shapes, textures, and reveal timing are approximated; paths requiring live map markers retain an explicit boundary.
+Map help panels advance automatically after opening. Option menus select their last entry through simulated controller input.
+These defaults are labeled below the preview. Explicit neutral dialogue policy also disables automatic menu input.
+Set `mapMenu.previewAdvancePolicy` to `automatic-last-option` to request this behavior in explicit inputs; omit it for supplied controls.
+Manual map panning, zoom controls, and Start-button skipping are not implemented by this preview.
+Native services retain a 128 KiB memory limit, raised to 160 KiB when the separate map-menu arena is active.
+The 128 MiB retained-state limit remains unchanged.
+This standalone preview does not reconstruct the complete historical event or every class-four presentation.
 If an unsupported predecessor is required on another route, its error identifies that predecessor.
 
 Run `node tests/cutscene-room-rom-start.test.js` for ordinary room startup, binding, dependency, selection, and cancellation controls.
