@@ -1678,6 +1678,7 @@ window.OB64 = window.OB64 || {};
     var echoProfile=externalProducers&&externalProducers.imageEcho,imageEcho=null;
     var menuProfile=externalProducers&&externalProducers.mapMenu,mapMenu=null;
     var sharedActorProfile=externalProducers&&externalProducers.sharedActor,sharedActor=null;
+    var preparedActorCache=null;
     var nativeActorDrawing=null;
     if(sharedActorProfile&&(!echoProfile||!externalProducers.directorLaunch||!OB64.cutsceneSharedActor||externalProducers.poseCalls.length||!externalProducers.initialRequests||!['A','B'].every(k=>Number.isInteger(externalProducers.initialRequests[k]))))fail('Computed Actor projection requires shared matrices, fresh launch, initial request slots, and no recorded pose calls.','shared-actor-input');
     if(menuProfile){
@@ -1843,6 +1844,7 @@ window.OB64 = window.OB64 || {};
       if(state.directorMode!==0||state.alternateDirectorScheduling)fail('Computed ordinary Actor projection requires the declared normal mode-zero service path.','shared-actor-mode');
       if(!imageEcho)imageEcho=new OB64.cutsceneImageEcho(options.z64);
       sharedActor=new OB64.cutsceneSharedActor(imageEcho,sharedActorProfile,options.z64);
+      preparedActorCache=null;
       checkMenuMemory();
       if(!nativeLaunch.input.audioQueueHex)fail('Shared request dispatch requires the current native audio request queue.','shared-actor-audio');
       OB64.cutsceneSharedActorCode.words.forEach(function(r){if(r[0]>=0x800ea604&&r[0]<0x800eac24)dialogueEngine.machine.code[r[0]]=r[2];});
@@ -1855,13 +1857,32 @@ window.OB64 = window.OB64 || {};
       if(!sharedActorProfile||state.terminal)return;
       try{
         ensureSharedActor();
+        var contextKey=JSON.stringify([state.cameras,state.transformChannels]);
+        var records=Object.keys(state.actors).map(function(slot){
+          var actor=state.actors[slot],record=nativeMatrixRecordForActor(actor);
+          if(!record)fail('Matrix preparation requires a qualified ordinary Actor construction.','shared-actor-record');
+          return {slot:Number(slot),actor:actor,bytes:new Uint8Array(record.buffer,record.byteOffset,record.byteLength)};
+        });
+        // Reuse a complete matrix pass only when every native input byte and
+        // both camera/transform banks match. A changed Actor reruns the full pass.
+        var reusable=preparedActorCache&&preparedActorCache.contextKey===contextKey&&
+          preparedActorCache.records.length===records.length&&records.every(function(row,index){
+            var old=preparedActorCache.records[index];
+            return old.slot===row.slot&&old.bytes.length===row.bytes.length&&
+              row.bytes.every(function(byte,offset){return byte===old.bytes[offset];});
+          });
         var drawingActors=[];
-        for(var slot of Object.keys(state.actors)){
-          var actor=state.actors[slot],record=nativeMatrixRecordForActor(actor);if(!record)fail('Matrix preparation requires a qualified ordinary Actor construction.','shared-actor-record');
-          var prepared=sharedActor.prepare([{slot:Number(slot),bytes:new Uint8Array(record.buffer)}],state.cameras,state.transformChannels)[0].bytes;
-          actor.matrixRecordBase=recordHex(new DataView(prepared.buffer));
-          drawingActors.push({slot:Number(slot),key:OB64.cutsceneSharedActor.actorDrawingKey(actor,state.transformChannels[actor.transformChannel]),matrixHex:actor.matrixRecordBase.slice(320,448)});yield;
+        for(var index=0;index<records.length;index++){
+          var row=records[index],actor=row.actor;
+          if(reusable)actor.matrixRecordBase=preparedActorCache.records[index].outputHex;
+          else {
+            var prepared=sharedActor.prepare([{slot:row.slot,bytes:row.bytes}],state.cameras,state.transformChannels)[0].bytes;
+            actor.matrixRecordBase=recordHex(new DataView(prepared.buffer,prepared.byteOffset,prepared.byteLength));
+            row.outputHex=actor.matrixRecordBase;
+          }
+          drawingActors.push({slot:row.slot,key:OB64.cutsceneSharedActor.actorDrawingKey(actor,state.transformChannels[actor.transformChannel]),matrixHex:actor.matrixRecordBase.slice(320,448)});yield;
         }
+        if(!reusable)preparedActorCache={contextKey:contextKey,records:records.map(function(row){return {slot:row.slot,bytes:row.bytes,outputHex:row.outputHex};})};
         nativeActorDrawing={camera:sharedActor.drawingCamera(state.cameras,nativeLaunch.machine.get(0x8022a730)),cameraKey:OB64.cutsceneSharedActor.cameraDrawingKey(projectionFromCamera(state.cameras.actor),projectionFromCamera(state.cameras.registered)),actors:drawingActors};
         for(var context of ['A','B']){
           var request=state.sharedRequests[context];if(request===null)fail('Shared request dispatch requires its initial scalar slots.','shared-request-initial-state');

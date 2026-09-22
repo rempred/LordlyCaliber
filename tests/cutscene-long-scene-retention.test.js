@@ -18,7 +18,15 @@ new Function('require', '__dirname', fs.readFileSync(path.join(__dirname,
   const rom = { z64, archives: OB64.findArchives(z64), layout: { id: 'us-rev0' } };
   const ui = OB64.cutsceneUI.initialize(rom);
   const scene = ui.catalog.getScene('rom-director:01F58B0A');
+  const prepare = OB64.cutsceneSharedActor.prototype.prepare;
+  let matrixPreparations = 0;
+  OB64.cutsceneSharedActor.prototype.prepare = function(records, cameras, channels) {
+    matrixPreparations += records.length;
+    return prepare.call(this, records, cameras, channels);
+  };
+  const started = performance.now();
   const document = await OB64.cutsceneUI.loadScene(rom, ui, scene);
+  const preparationMs = performance.now() - started;
   const run = ui.runtimeByAssetId[scene.assetId];
 
   assert(run, JSON.stringify(ui.sourceErrors));
@@ -26,6 +34,7 @@ new Function('require', '__dirname', fs.readFileSync(path.join(__dirname,
   assert.deepStrictEqual(run.missingInputs, []);
   assert(run.states.length > 4109, 'the full room continuation must pass the old storage stop');
   assert(run.retainedStateBytes < run.limits.maxStateBytes);
+  assert(matrixPreparations < 1000, 'unchanged native matrix inputs must reuse the preceding pass');
 
   const tick = 4000;
   const preview = OB64.cutsceneRuntime.evaluate(run, tick);
@@ -44,5 +53,5 @@ new Function('require', '__dirname', fs.readFileSync(path.join(__dirname,
   assert(frame.rgba.some((value, index) => index % 4 !== 3 && value));
   console.log(JSON.stringify({ status: 'pass', scene: scene.assetId,
     ticks: run.states.length, retainedBytes: run.retainedStateBytes, lateSeek: tick,
-    rendered: true }));
+    matrixPreparations, preparationMs: Math.round(preparationMs), rendered: true }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
