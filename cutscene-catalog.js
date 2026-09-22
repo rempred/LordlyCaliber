@@ -2671,7 +2671,8 @@ window.OB64 = window.OB64 || {};
 
   function createCatalog(data, options) {
     data = validateData(data, options);
-    var directorScenes = data.scenes.slice();
+    // Each loaded ROM owns its current source metadata; never mutate the shared retail catalog.
+    var directorScenes = data.scenes.map(function(scene){return Object.assign({},scene,{source:Object.assign({},scene.source)});});
     var presentationScenes = data.presentationScenes.slice();
     var partialDirectorResources = data.partialDirectorResources.slice();
     var scenes = directorScenes.concat(presentationScenes);

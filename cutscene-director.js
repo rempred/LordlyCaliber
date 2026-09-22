@@ -272,15 +272,19 @@ window.OB64 = window.OB64 || {};
     primitives.forEach(function(start, index) {
       if (start.name !== 'registered_counter_arm' || assigned[start.id]) return;
       var envelope = envelopeAt(primitives, index + 1);
-      if (!envelope || envelope.query.name !== 'a_button_skippable_registered_wait_query') return;
+      if (!envelope || ['registered_counter_query', 'a_button_skippable_registered_wait_query']
+          .indexOf(envelope.query.name) === -1) return;
+      if (envelope.query.name === 'registered_counter_query' && !scene.source.reparsedForAuthoring) return;
       var reset = primitives[envelope.endIndex + 1];
       if (!reset || reset.name !== 'registered_counter_reset') return;
       var nodes = [start].concat(envelope.nodes, [reset]);
-      claim(makeComposite('skippable-registered-wait',
-        'Hold up to ' + envelope.query.query.target + ' native updates · A skips', nodes, {
+      var skippable = envelope.query.name === 'a_button_skippable_registered_wait_query';
+      claim(makeComposite(skippable ? 'skippable-registered-wait' : 'registered-wait',
+        'Hold ' + (skippable ? 'up to ' : 'for ') + envelope.query.query.target +
+          ' native updates' + (skippable ? ' · A skips' : ''), nodes, {
           category: 'flow', confidence: 'High', clock: 'registered-counter-updates',
           nativeTicks: envelope.query.query.target, editable: false,
-          summary: 'A-button-skippable registered wait with exact arm, gate, and reset ownership.'
+          summary: 'Registered wait with arm, gate, and reset commands.'
         }));
     });
 

@@ -28,7 +28,7 @@ window.OB64=window.OB64||{};
   if(input.sceneMode===2)OB64.cutsceneRomStart.installCode(code,regions,rom);
   var table=this.resource(0x019a8804);if(table.length%4||input.selector>=table.length/4)stop('Director selector exceeds the current ROM directory.','director-launch-selector');
   this.resourceKey=new DataView(table.buffer,table.byteOffset,table.byteLength).getUint32(input.selector*4);
-  var decoded=OB64.cutsceneCodec.decodeCustomLz(this.resource(this.resourceKey),{requireExact:false,maxOutput:65536}).bytes;
+  var decoded=OB64.cutsceneCodec.decodeCustomLz(this.resource(this.resourceKey),{requireExact:false,allowZeroPadding:true,maxOutput:65536}).bytes;
   if(decoded.length%4)stop('Director stream is not word aligned.','director-launch-stream');
   var substitutions=input.operandTranslations||{},seen=new Set(),dv=new DataView(decoded.buffer,decoded.byteOffset,decoded.byteLength);
   for(var i=0;i<decoded.length;i+=4){var word=dv.getUint32(i);if((word&0xffffff00)===0x08880000){var index=word&255,value=substitutions[index];if(!Number.isInteger(value)||value<0||value>65535)stop('Director operand translation '+index+' is missing.','director-launch-translation');if(!seen.has(index)){regions.push({address:0x80196f60+index*2,bytes:Uint8Array.of(value>>>8,value),writable:false});seen.add(index);}}}
@@ -59,7 +59,7 @@ window.OB64=window.OB64||{};
   else if(pc===0x8009daf4)m.r[2]=this.resource(a).length;
   else if(pc===0x8009dbb8){var data=this.resource(b),target=a||this.allocate(data.length);this.write(target,data);this.leases.find(r=>r.address===target).contentLength=data.length;if(data.length&1)m.put(target+data.length,this.rom[(b&0x0fffffff)+0x594284+data.length],1);m.r[2]=target;}
   else if(pc===0x8007a7e0)m.r[2]=m.get(a);
-  else if(pc===0x8007a110){var lease=this.leases.find(r=>r.address===b);if(!lease)stop('Custom-LZ input lacks a current launch allocation.','director-launch-owner');var decoded=OB64.cutsceneCodec.decodeCustomLz(this.read(b,lease.contentLength||lease.size),{requireExact:false,maxOutput:65536}).bytes;this.write(a,decoded);m.r[2]=decoded.length;}
+  else if(pc===0x8007a110){var lease=this.leases.find(r=>r.address===b);if(!lease)stop('Custom-LZ input lacks a current launch allocation.','director-launch-owner');var decoded=OB64.cutsceneCodec.decodeCustomLz(this.read(b,lease.contentLength||lease.size),{requireExact:false,allowZeroPadding:true,maxOutput:65536}).bytes;this.write(a,decoded);m.r[2]=decoded.length;}
   else if(pc===0x802282b8){this.parserReached=true;m.r[2]=0;}
   else return false;return true;
  };

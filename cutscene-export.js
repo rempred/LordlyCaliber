@@ -62,30 +62,55 @@ window.OB64 = window.OB64 || {};
     return key;
   }
 
-  function buildRelocationDescriptor(entries, dataEnd) {
+  function readRelocationArena(z64) {
+    if (z64.length < RELOCATION_ARENA_END) {
+      fail('The ROM has no Cutscene allocation arena.', 'relocation-owner');
+    }
+    if (allByte(z64, RELOCATION_ARENA_START, RELOCATION_ARENA_END, RELOCATION_FILL)) {
+      return { records: [], dataEnd: RELOCATION_ARENA_START };
+    }
+    var start = RELOCATION_DESCRIPTOR_START;
+    var count = readU32(z64, start + 8);
+    var dataEnd = readU32(z64, start + 12);
+    if (readU32(z64, start) !== 0x4F424353 || readU32(z64, start + 4) !== 1 ||
+        readU32(z64, start + 16) !== RESOURCE_BASE_Z64 || count > 144 ||
+        dataEnd < RELOCATION_ARENA_START || dataEnd > start || (dataEnd & 1) ||
+        !allByte(z64, dataEnd, start, RELOCATION_FILL)) {
+      fail('The Cutscene arena contains unrecognized data.', 'relocation-owner');
+    }
+    var records = [];
+    for (var index = 0; index < count; index++) {
+      var row = [];
+      for (var word = 0; word < 7; word++) row.push(readU32(z64, start + 0x40 + index * 28 + word * 4));
+      if ((row[0] >>> 28) || row[2] !== row[1] + RESOURCE_BASE_Z64 ||
+          row[2] < RELOCATION_ARENA_START || (row[2] & 1) || row[3] < 1 ||
+          row[2] + 4 + row[3] > dataEnd || readU32(z64, row[2]) !== row[3] ||
+          records.some(function(other) {
+            return other[0] === row[0] || other[2] < row[2] + 4 + row[3] && row[2] < other[2] + 4 + other[3];
+          })) {
+        fail('A Cutscene allocation record is invalid.', 'relocation-owner');
+      }
+      records.push(row);
+    }
+    return { records: records, dataEnd: dataEnd };
+  }
+
+  function buildRelocationDescriptor(records, dataEnd) {
     var descriptor = new Uint8Array(RELOCATION_DESCRIPTOR_SIZE);
     descriptor.fill(RELOCATION_FILL);
     descriptor.set([0x4F, 0x42, 0x43, 0x53], 0); // OBCS
     writeU32(descriptor, 4, 1);
-    writeU32(descriptor, 8, entries.length);
+    writeU32(descriptor, 8, records.length);
     writeU32(descriptor, 12, dataEnd);
     writeU32(descriptor, 16, RESOURCE_BASE_Z64);
     writeU32(descriptor, 20, 0x01F3CA88);
     var cursor = 0x40;
-    entries.forEach(function(entry) {
-      var result = entry.result;
+    records.forEach(function(record) {
       if (cursor + 28 > descriptor.length) {
         fail('Cutscene relocation descriptor has no room for every allocation.',
           'relocation-descriptor-capacity');
       }
-      writeU32(descriptor, cursor, Number(entry.scene.directorKey));
-      writeU32(descriptor, cursor + 4, result.resourceKey);
-      writeU32(descriptor, cursor + 8, result.relocationEntry);
-      writeU32(descriptor, cursor + 12, result.encodedBytes);
-      writeU32(descriptor, cursor + 16, result.selectorRows.length);
-      writeU32(descriptor, cursor + 20, result.intendedDecodedBytes.length);
-      writeU32(descriptor, cursor + 24,
-        parseInt(result.intendedDecodedSha256.slice(0, 8), 16));
+      record.forEach(function(value, index) { writeU32(descriptor, cursor + index * 4, value); });
       cursor += 28;
     });
     return descriptor;
@@ -216,7 +241,8 @@ window.OB64 = window.OB64 || {};
 
   function assertFixedSlotDelta(scene, baseline, document) {
     OB64.cutsceneModel.validateSceneDocument(document);
-    if (!equal(baseline.identity, document.identity)) {
+    var identity=Object.assign({},document.identity,{friendlyName:baseline.identity.friendlyName});
+    if (!equal(baseline.identity, identity)) {
       fail('Scene identity cannot change inside an existing physical cutscene.', 'identity-change');
     }
     if (!equal(baseline.native, document.native)) {
@@ -299,6 +325,12 @@ window.OB64 = window.OB64 || {};
       var oldRow = before[id];
       var nextRow = after[id];
       var definition = sourceDefinition(scene, oldRow.clip);
+      if(oldRow.clip.kind==='dialogue'&&oldRow.clip.payload.nativeDialogueEditable){
+        if(!nextRow)fail('Native dialogue lifecycle cannot be deleted independently.','dialogue-lifecycle');
+        var check=JSON.parse(JSON.stringify(nextRow.clip));check.payload.rawText=oldRow.clip.payload.rawText;
+        if(!equal(check,oldRow.clip)||nextRow.track.actorId!==oldRow.track.actorId)fail('Only native dialogue text can change; keep its lifecycle and selectors.','dialogue-edit');
+        return;
+      }
       var expectedPolicy = null;
       if (oldRow.clip.kind === 'pose' && oldRow.clip.payload.nativeApplied === true) {
         expectedPolicy = 'typed-state';
@@ -444,6 +476,7 @@ window.OB64 = window.OB64 || {};
   function assessFixedSlotDelta(scene, baseline, document, source) {
     try {
       assertFixedSlotDelta(scene, baseline, document);
+      if (OB64.cutsceneAuthoring && source.rom) OB64.cutsceneAuthoring.dialogueResources(source.rom, [document]);
       var compiled = OB64.cutsceneCodec.compileSceneDocument(scene, source, document);
       var encodedBytes = compiled.noOp ? source.consumedEncodedBytes :
         OB64.cutsceneCodec.encodeCustomLzOptimal(compiled.decodedBytes).length;
@@ -543,32 +576,62 @@ window.OB64 = window.OB64 || {};
     }
     var relocationCursor = RELOCATION_ARENA_START;
     var relocationCount = 0;
+    var arena = null;
+    var textResources = [];
+    var textWrites = [];
+    var relocatedDialogueCount = 0;
+    function allocate(key, size, selectorCount, decodedSize) {
+      if (!arena) arena = readRelocationArena(candidateRom.z64);
+      var start = (arena.dataEnd + 1) & ~1;
+      var end = (start + 4 + size + 1) & ~1;
+      if (end > RELOCATION_DESCRIPTOR_START) {
+        fail('Edited scenes and dialogue exceed the shared Cutscene allocation area.', 'relocation-capacity');
+      }
+      var record = arena.records.find(function(row) { return row[1] === key; });
+      var originalKey = record ? record[0] : key;
+      var replacement = [originalKey, relocationKey(start), start, size, selectorCount, decodedSize, 0];
+      if (record) arena.records[arena.records.indexOf(record)] = replacement;
+      else arena.records.push(replacement);
+      if (arena.records.length > 144) fail('The Cutscene allocation directory is full.', 'relocation-descriptor-capacity');
+      arena.dataEnd = relocationCursor = end;
+      relocationCount++;
+      return { entry: start, endExclusive: end, key: replacement[1] };
+    }
+    function write(start, patchedBytes, label) {
+      return { start: start, endExclusive: start + patchedBytes.length,
+        originalBytes: candidateRom.z64.slice(start, start + patchedBytes.length), patchedBytes: patchedBytes, label: label };
+    }
     try {
       entries.forEach(function(entry) {
         if (entry.assessment.allocationBytes <= entry.scene.source.storedPayloadLength) return;
-        relocationCursor = (relocationCursor + 1) & ~1;
-        var end = relocationCursor + 4 + entry.assessment.allocationBytes;
-        end = (end + 1) & ~1;
-        if (end > RELOCATION_DESCRIPTOR_START) {
-          fail('Edited Cutscenes exceed the shared relocation arena.',
-            'relocation-capacity', { requiredEnd: end });
-        }
-        entry.allocation = {
-          entry: relocationCursor,
-          endExclusive: end,
-          key: relocationKey(relocationCursor)
-        };
-        relocationCursor = end;
-        relocationCount++;
+        var key = typeof entry.scene.directorKey === 'string'
+          ? parseInt(entry.scene.directorKey.replace(/^0x/i, ''), 16) : entry.scene.directorKey;
+        entry.allocation = allocate(key, entry.assessment.allocationBytes,
+          entry.scene.source.directorSelectorRows.length, 0);
       });
-      if (relocationCount) {
-        if (candidateRom.z64.length < RELOCATION_ARENA_END ||
-            !allByte(candidateRom.z64, RELOCATION_ARENA_START,
-              RELOCATION_ARENA_END, RELOCATION_FILL)) {
-          fail('The Cutscene relocation arena is not unused retail 0xFF fill.',
-            'relocation-owner');
-        }
+      if (OB64.cutsceneAuthoring) {
+        textResources = OB64.cutsceneAuthoring.dialogueResources(candidateRom.z64,
+          entries.map(function(entry) { return entry.document; }));
       }
+      textResources.forEach(function(resource) {
+        var archive = resource.archive;
+        var label = 'Shared dialogue archive ' + resource.selector;
+        if (resource.bytes.length <= archive.capacity) {
+          textWrites.push(write(archive.start, resource.bytes, label));
+        } else {
+          var allocation = allocate(archive.key, resource.bytes.length, archive.selectorWords.length, resource.data.length);
+          var envelope = new Uint8Array(allocation.endExclusive - allocation.entry);
+          writeU32(envelope, 0, resource.bytes.length);
+          envelope.set(resource.bytes, 4);
+          textWrites.push(write(allocation.entry, envelope, label + ' relocated resource'));
+          archive.selectorWords.forEach(function(at) {
+            var keyBytes = new Uint8Array(4);
+            writeU32(keyBytes, 0, allocation.key);
+            textWrites.push(write(at, keyBytes, label + ' selector'));
+          });
+          relocatedDialogueCount++;
+        }
+      });
     } catch (error) {
       return Promise.reject(error);
     }
@@ -578,6 +641,7 @@ window.OB64 = window.OB64 || {};
       chain = chain.then(function() {
         var knownSource = state.sourceByAssetId[entry.scene.assetId];
         var planOptions = Object.assign({}, options, {
+          allowZeroPadding: true,
           expectedDecodedSha256: knownSource && knownSource.decodedSha256 ||
             entry.scene.source.decodedSha256
         });
@@ -589,6 +653,19 @@ window.OB64 = window.OB64 || {};
         return planner.then(function(result) {
           if (!entry.allocation) result.placement = 'fixed';
           result.writes = resultWrites(result);
+          if (textWrites.length && !planned.length) {
+            result.noOp = false;
+            result.changes.push({ operation: 'edit-dialogue', archives: textResources.length });
+            result.writes = result.writes.concat(textWrites);
+          }
+          if (entry.allocation) {
+            var record = arena.records.find(function(row) { return row[1] === result.resourceKey; });
+            record[5] = result.intendedDecodedBytes.length;
+            record[6] = parseInt(result.intendedDecodedSha256.slice(0, 8), 16);
+          }
+          // The final candidate is assembled once by apply(); retain only each
+          // resource's writes, rather than one full ROM copy per edited scene.
+          delete result.candidateZ64;
           result.changedRanges = result.writes.map(function(write) {
             return { start: write.start, endExclusive: write.endExclusive };
           });
@@ -607,8 +684,8 @@ window.OB64 = window.OB64 || {};
         return entry.result.placement === 'relocated';
       });
       var descriptorWrite = null;
-      if (relocated.length) {
-        var descriptor = buildRelocationDescriptor(relocated, relocationCursor);
+      if (relocationCount) {
+        var descriptor = buildRelocationDescriptor(arena.records, relocationCursor);
         descriptorWrite = {
           start: RELOCATION_DESCRIPTOR_START,
           endExclusive: RELOCATION_ARENA_END,
@@ -642,8 +719,10 @@ window.OB64 = window.OB64 || {};
         entries: planned,
         changedEntries: changed,
         relocatedEntries: relocated,
+        dialogueResources: textResources,
+        relocatedDialogueCount: relocatedDialogueCount,
         relocationDescriptorWrite: descriptorWrite,
-        relocationArena: relocated.length ? {
+        relocationArena: relocationCount ? {
           start: RELOCATION_ARENA_START,
           dataEnd: relocationCursor,
           descriptorStart: RELOCATION_DESCRIPTOR_START,
@@ -724,6 +803,7 @@ window.OB64 = window.OB64 || {};
       fail('A prepared Cutscene export plan is required for readback.', 'missing-plan');
     }
     plan.changedEntries.forEach(function(entry) {
+      entry.result.writes.forEach(function(write){if(!equalBytes(candidateRom.z64.slice(write.start,write.endExclusive),write.patchedBytes))fail('Finished ROM differs from a planned Cutscene or dialogue write.','semantic-readback');});
       var scene = entry.scene;
       var source = scene.source;
       var result = entry.result;
@@ -761,6 +841,11 @@ window.OB64 = window.OB64 || {};
           'semantic-readback', { sceneId: scene.sceneId });
       }
     });
+    (plan.dialogueResources || []).forEach(function(resource) {
+      var decoded = OB64.cutsceneAuthoring.readDialogue(candidateRom.z64, resource.selector);
+      if (!equalBytes(decoded.data, resource.data)) fail('Exported dialogue differs from the edited text.', 'semantic-readback');
+    });
+    if (plan.relocationDescriptorWrite) readRelocationArena(candidateRom.z64);
     return {
       summary: plan.changedEntries.length + ' Cutscene Director payload' +
         (plan.changedEntries.length === 1 ? '' : 's') + ' reparsed exactly; ' +

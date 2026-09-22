@@ -300,11 +300,42 @@ window.OB64 = window.OB64 || {};
     return history.present;
   }
 
-  function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal, rom) {
+  async function compileRuntimeDocument(state, scene, document, choice, contextRuntime, signal, rom) {
     var program = state.programByAssetId[scene.assetId];
     if (!program) return null;
+    var playbackRom=state.z64;
+    var sharedTextEdited = Object.keys(state.histories).some(function(id) {
+      return state.histories[id].present.tracks.some(function(track) {
+        return track.clips.some(function(clip) {
+          return clip.payload.nativeDialogueEditable && clip.payload.rawText !== clip.payload.originalRawText;
+        });
+      });
+    });
+    if(sceneHasChanges(state,scene) || sharedTextEdited){
+      var source=state.sourceByAssetId[scene.assetId], baseline=baselineDocument(state,scene);
+      var assessment=OB64.cutsceneExport.assessNativeDelta(scene,baseline,document,source);
+      if(assessment.capability!=='native')throw new UiError('These changes are storyboard-only: '+assessment.reasons.join(' '));
+      // Dialogue entries are shared between scenes. Include native edits from
+      // the Project so this preview reads the same resources as the exported ROM.
+      var histories = {};
+      Object.keys(state.histories).forEach(function(id) {
+        var history = state.histories[id];
+        if (id === scene.storageId || history.present.exportRequirements.capability === 'native') histories[id] = history;
+      });
+      var single=Object.assign({},state,{histories:histories});
+      var candidate={z64:state.z64.slice(),layout:{id:'us-rev0'}};
+      var plan=await OB64.cutsceneExport.prepare({z64:state.z64,layout:candidate.layout,cutsceneStudio:single},candidate);
+      if(signal&&signal.aborted){var cancelled=new Error('Cutscene preparation cancelled.');cancelled.name='AbortError';throw cancelled;}
+      OB64.cutsceneExport.apply(candidate,plan);OB64.cutsceneExport.validateApplied(candidate,plan);
+      playbackRom=candidate.z64;
+      var compiled=OB64.cutsceneCodec.compileSceneDocument(scene,source,document);
+      scene=OB64.cutsceneCodec.sceneForBytes(scene,compiled.decodedBytes);
+      var plannedScene = plan.changedEntries.find(function(entry) { return entry.scene.assetId === scene.assetId; });
+      if(plannedScene && plannedScene.result.resourceKey)scene.directorKey=plannedScene.result.resourceKey;
+      program=OB64.cutsceneCodec.createIr(scene,compiled.decodedBytes).program;
+    }
     var runtimeOptions = {
-      z64: state.z64,
+      z64: playbackRom,
       signal: signal,
       diagnosticAssumptions: state.diagnosticAssumptions === true,
       launchContext: choice ? choice.context : null,
@@ -316,7 +347,7 @@ window.OB64 = window.OB64 || {};
     if(!state.romStartupByAssetId)state.romStartupByAssetId={};
     state.romStartupByAssetId[scene.assetId]=false;
     if(!runtimeOptions.nativeLaunchInputs&&OB64.cutsceneRomStart){
-      runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(state.z64,scene,program);
+      runtimeOptions.nativeLaunchInputs=OB64.cutsceneRomStart.input(playbackRom,scene,program);
       var generatedLaunch=runtimeOptions.nativeLaunchInputs&&runtimeOptions.nativeLaunchInputs.externalProducers.value.directorLaunch;
       state.romStartupByAssetId[scene.assetId]=generatedLaunch&&generatedLaunch.preservedStage?'preserved-stage':generatedLaunch&&generatedLaunch.sceneMode===0?'room':!!generatedLaunch;
     }
@@ -387,7 +418,7 @@ window.OB64 = window.OB64 || {};
     }
     var promise = new Promise(function(resolve) { setTimeout(resolve, 0); }).then(function() {
       if (epoch !== (state.projectionEpoch || 0)) throw new Error('Project replaced during scene loading.');
-      return OB64.cutsceneCodec.loadSceneSource(rom.z64, scene);
+      return OB64.cutsceneCodec.loadSceneSource(rom.z64, scene, {allowModified:true});
     }).then(function(source) {
       if (epoch !== (state.projectionEpoch || 0)) throw new Error('Project replaced during scene loading.');
       var projected = OB64.cutsceneCodec.projectSceneDocument(scene, source, state.catalog);
@@ -693,7 +724,7 @@ window.OB64 = window.OB64 || {};
       OB64.cutsceneModel.validateSceneDocument(document);
       refreshExportRequirements(state, scene, document);
     });
-    refreshRuntime(state, scene, history.present, rom);
+    var preparation=refreshRuntime(state, scene, history.present, rom);
     var view = viewFor(state, scene.sceneId);
     var duration = OB64.cutscenePreview.sceneDurationFrames(history.present, view.pathId);
     view.frame = Math.min(view.frame, duration - 1);
@@ -707,6 +738,7 @@ window.OB64 = window.OB64 || {};
     }
     notifyChange(state, label);
     rerender(rom, state);
+    return preparation;
   }
 
   function sceneHasChanges(state, scene) {
@@ -1453,7 +1485,7 @@ window.OB64 = window.OB64 || {};
     var center = node('main', 'cutscene-main');
     var heading = node('div', 'cutscene-heading');
     var copy = node('div');
-    copy.appendChild(node('h2', '', OB64.cutsceneCatalog.displayName(scene)));
+    copy.appendChild(node('h2', '', document.identity.friendlyName||OB64.cutsceneCatalog.displayName(scene)));
     var captureStages = Array.isArray(document.identity.captures)
       ? document.identity.captures.filter(function(capture) {
         return capture.stageLabel;
@@ -2225,6 +2257,8 @@ window.OB64 = window.OB64 || {};
       modeButton.setAttribute('data-cutscene-focus-key', 'timeline-mode:' + entry[1]);
       actions.appendChild(modeButton);
     });
+    actions.appendChild(button('Create replacement from this template','btn-secondary',function(){createFromTemplate(rom,state);}));
+    actions.appendChild(node('small','','Export replaces this native scene at its existing game triggers. Template names are Project labels.'));
     if (program && view.timelineMode === 'runtime') {
       tabs.appendChild(actions);
       section.appendChild(tabs);
@@ -2241,7 +2275,7 @@ window.OB64 = window.OB64 || {};
     }
     [['Enter', addEnter], ['Exit', addExit], ['Set pose', addPose], ['Move', addMove],
       ['Opacity', addOpacity],
-      ['Hold', addHold], ['Speak', addDialogue], ['Sound', addAudio],
+      ['Hold', addHold], ['Speak (storyboard only)', addDialogue], ['Sound (storyboard only)', addAudio],
       ['Effect', addEffect], ['Battle action', addCombatAction],
       ['Projection', addCamera], ['Branch', addBranch],
       ['End', addEnd]].forEach(function(entry) {
@@ -2414,7 +2448,7 @@ window.OB64 = window.OB64 || {};
     var id = authoredClipId(document, options.kind);
     view.selectedClipId = id;
     if (options.actorId) view.selectedActorId = options.actorId;
-    executeEdit(rom, state, options.label, function(next) {
+    return executeEdit(rom, state, options.label, function(next) {
       var actor = options.actorId && next.actors.find(function(candidate) {
         return candidate.id === options.actorId;
       });
@@ -2532,8 +2566,19 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  function createFromTemplate(rom,state){
+    var scene=selectedScene(state);
+    var preparation=executeEdit(rom,state,'Create replacement from template',function(document){
+      document.identity.friendlyName='New scene - '+OB64.cutsceneCatalog.displayName(scene);
+    });
+    viewFor(state,scene.sceneId).timelineMode='preview';
+    if(state.callbacks.onStatus)state.callbacks.onStatus('New scene uses this template and replaces '+OB64.cutsceneCatalog.displayName(scene)+' at every existing game trigger. Edit its actions, save the Project, then export.');
+    rerender(rom,state);
+    return preparation;
+  }
+
   function addHold(rom, state) {
-    addAuthoredClip(rom, state, {
+    return addAuthoredClip(rom, state, {
       label: 'Add hold', type: 'flow', kind: 'wait', durationFrames: 30,
       nativePreferred: true, payload: { timingStatus: 'authored-preview-frame' }
     });
@@ -2543,7 +2588,7 @@ window.OB64 = window.OB64 || {};
     var selected = selectedActorState(state);
     if (!selected) return;
     var current = selected.preview;
-    addAuthoredClip(rom, state, {
+    return addAuthoredClip(rom, state, {
       label: 'Add movement', type: 'movement', kind: 'movement', actorId: selected.actor.id,
       durationFrames: 30, nativePreferred: true,
       payload: {
@@ -2579,7 +2624,7 @@ window.OB64 = window.OB64 || {};
       ? current.variantSelector
       : (Number.isInteger(actor.source.variantSelector) && actor.source.variantSelector >= 0
         ? actor.source.variantSelector : 0);
-    addAuthoredClip(rom, state, {
+    return addAuthoredClip(rom, state, {
       label: label || (positionOverride ? 'Place actor on Stage' : 'Set actor pose'),
       type: 'pose', kind: 'pose', actorId: actor.id,
       durationFrames: program && program.durationFrames || 30, nativePreferred: true,
@@ -2600,7 +2645,7 @@ window.OB64 = window.OB64 || {};
   }
 
   function addPose(rom, state, positionOverride) {
-    addPoseProgram(rom, state, null, positionOverride);
+    return addPoseProgram(rom, state, null, positionOverride);
   }
 
   function addActorVisibility(rom, state, visible) {
@@ -3218,6 +3263,10 @@ window.OB64 = window.OB64 || {};
       inspector.appendChild(button('Add keyframe at playhead', 'btn-secondary', function() {
         splitMovementAtPlayhead(rom, state, row);
       }));
+    } else if (row.clip.kind === 'dialogue' && row.clip.payload.nativeDialogueEditable) {
+      inspector.appendChild(field('Native dialogue text',textInput(row.clip.payload.rawText,function(value){
+        editClip(rom,state,row.clip.id,'Edit native dialogue text',function(next){next.clip.payload.rawText=value;});
+      },'clip-native-dialogue:'+row.clip.id,true),'Keep the @ control tokens. Printable ASCII only. This shared archive entry changes wherever the game uses it. Longer text uses the shared Cutscene allocation area.'));
     } else if (row.clip.kind === 'dialogue') {
       var dialogueEntryId = row.clip.payload.dialogueEntryId || row.clip.payload.serifuEntryId;
       var dialogueArchiveId = row.clip.payload.dialogueArchiveId || row.clip.payload.serifuArchiveId;
@@ -3894,6 +3943,9 @@ window.OB64 = window.OB64 || {};
     var inspector = node('aside', 'cutscene-inspector');
     inspector.setAttribute('data-cutscene-scroll', 'inspector');
     inspector.appendChild(node('h3', '', 'Scene'));
+    inspector.appendChild(field('Project scene name',textInput(document.identity.friendlyName||OB64.cutsceneCatalog.displayName(scene),function(value){
+      executeEdit(rom,state,'Name authored scene',function(next){next.identity.friendlyName=value||null;});
+    },'scene-project-name'),'Export replaces '+OB64.cutsceneCatalog.displayName(scene)+' at its existing game triggers. This name stays in the Project.'));
     var sourceSummary = node('dl', 'cutscene-source-summary');
     var parseLabel = scene.parseStatus === 'runtime-tiled-static'
       ? 'Complete boundaries · static'
@@ -4695,6 +4747,11 @@ window.OB64 = window.OB64 || {};
     sceneHasChanges: sceneHasChanges,
     editCount: editCount,
     refreshExportRequirements: refreshExportRequirements,
+    executeEdit: executeEdit,
+    createFromTemplate: createFromTemplate,
+    addHold: addHold,
+    addMove: addMove,
+    addPose: addPose,
     insertionBoundaries: insertionBoundaries,
     boundaryForFrame: boundaryForFrame,
     findClipRow: findClipRow,

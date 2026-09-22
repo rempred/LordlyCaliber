@@ -203,7 +203,7 @@ window.OB64 = window.OB64 || {};
         if (seen[scene.storageId]) fail(label + ' duplicates physical scene ' + scene.storageId + '.');
         seen[scene.storageId] = true;
         var document = OB64.cutsceneModel.parseSceneDocument(row.document);
-        validateSceneIdentity(scene, document, label);
+        if (scene.engine !== 'director') validateSceneIdentity(scene, document, label);
         var view = validateView(row.view, scene, document, label + '.view');
         return { scene: scene, document: document, view: view, label: label };
       });
@@ -231,7 +231,9 @@ window.OB64 = window.OB64 || {};
           originalSerialized: OB64.cutsceneModel.serializeSceneDocument(baseline, 0)
         });
       }
-      return OB64.cutsceneCodec.loadSceneSource(rom.z64, row.scene, options).then(function(source) {
+      return OB64.cutsceneCodec.loadSceneSource(rom.z64, row.scene,
+        Object.assign({}, options, { allowModified: true })).then(function(source) {
+        validateSceneIdentity(row.scene, row.document, row.label);
         var baseline = OB64.cutsceneCodec.projectSceneDocument(
           row.scene, source, state.catalog).document;
         validateNativePreimage(row.scene, baseline, row.document, row.label);
@@ -273,6 +275,9 @@ window.OB64 = window.OB64 || {};
         OB64.cutsceneModel.createHistory(entry.document, 200);
       state.originalSerialized[entry.scene.storageId] = entry.originalSerialized;
       state.sourceByAssetId[entry.scene.assetId] = entry.source;
+      state.programByAssetId=state.programByAssetId||{};
+      if (entry.source) state.programByAssetId[entry.scene.assetId] = OB64.cutsceneCodec.createIr(
+        entry.scene, entry.source.decodedBytes, entry.source.nodeDefinitions).program;
       state.views[entry.scene.sceneId] = cleanView(entry.view, entry.scene, entry.document);
       delete state.sourceErrors[entry.scene.assetId];
     });

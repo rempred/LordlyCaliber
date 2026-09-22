@@ -399,10 +399,36 @@ window.OB64 = window.OB64 || {};
     return definitions;
   }
 
+  // Reparse edited streams with the same complete retail grammar. Source identity
+  // stays on the native entry; physical offsets and typed boundaries are current.
+  function sceneForBytes(scene, decodedBytes) {
+    var next = Object.assign({}, scene, {source:Object.assign({},scene.source,{
+      dynamicGrammar:true,decodedLength:decodedBytes.length,decodedWordCount:decodedBytes.length/4,
+      runtimeNodeCount:null, registeredWaits:[], corpusRegisteredWaitCount:0, reparsedForAuthoring:true
+    })});
+    var defs=dynamicDirectorDefinitions(next,decodedBytes);
+    var policies={20:'typed-place',3:'typed-state',7:'typed-move',44:'typed-projection-transform',72:'typed-actor-opacity'};
+    defs.forEach(function(d){d.editPolicy=policies[d.opcodeU32]||'preserve-native';d.insertBefore=d.opcodeU32===0x80000001;});
+    next.source.nodes=defs;next.source.dynamicGrammar=false;
+    return next;
+  }
+
   function loadSceneSource(z64Input, scene, options) {
     var z64 = bytes(z64Input, 'Normalized ROM');
     options = options || {};
     var source = scene.source;
+    if(options.allowModified){
+      var offsets=source.directorSelectorWordZ64||[],key=offsets.length?readU32(z64,offsets[0]):directorKey(scene.directorKey);
+      if(offsets.some(function(at){return readU32(z64,at)!==key;}))fail('Scene aliases point to different resources.','selector-owner-preimage');
+      if(key!==directorKey(scene.directorKey)){
+        var descriptor=0x27af000,count=readU32(z64,descriptor+8),owned=false;
+        if(readU32(z64,descriptor)!==0x4f424353||readU32(z64,descriptor+4)!==1||count>144)fail('Scene relocation has no supported ownership descriptor.','selector-owner-preimage');
+        for(var r=0;r<count;r++){var at=descriptor+0x40+r*28;if(readU32(z64,at)===directorKey(scene.directorKey)&&readU32(z64,at+4)===key&&readU32(z64,at+8)===key+0x594280)owned=true;}
+        var entry=key+0x594280,size=readU32(z64,entry);
+        if(!owned||entry<0x2780000||entry+4+size>descriptor||size<1)fail('Scene relocation exceeds its owned arena.','source-range');
+        scene.directorKey=typeof scene.directorKey==='string'?'0x'+key.toString(16).toUpperCase().padStart(8,'0'):key;source=scene.source=Object.assign({},source,{z64PrefixStart:entry,z64PayloadStart:entry+4,z64PayloadEndExclusive:entry+4+size,storedPayloadLength:size,dmaExtent:(size+1)&~1});
+      }
+    }
     var selectorWords = source && source.directorSelectorWordZ64 || [];
     var originalDirectorKey = directorKey(scene.directorKey);
     for (var selectorIndex = 0; selectorIndex < selectorWords.length; selectorIndex++) {
@@ -428,23 +454,29 @@ window.OB64 = window.OB64 || {};
     var payload = z64.slice(source.z64PayloadStart, source.z64PayloadEndExclusive);
     var decoded;
     try {
-      decoded = decodeCustomLz(payload, { requireExact: true });
+      var padded = !!(options.allowModified || options.allowZeroPadding);
+      decoded = decodeCustomLz(payload, { requireExact: !padded, allowZeroPadding: padded, maxOutput:65536 });
     } catch (error) {
       return Promise.reject(error);
     }
-    if (decoded.bytes.length !== source.decodedLength) {
+    if (!options.allowModified && decoded.bytes.length !== source.decodedLength) {
       return Promise.reject(new CutsceneCodecError(
         'Cutscene decoded length does not match the catalog.', 'source-preimage'));
     }
     return hashWith(decoded.bytes, options.hashBytes).then(function(hash) {
       var expectedHash = String(options.expectedDecodedSha256 || source.decodedSha256).toUpperCase();
-      if (hash !== expectedHash) {
+      if (options.allowModified && (hash !== expectedHash || decoded.bytes.length !== source.decodedLength)) {
+        var adapted=sceneForBytes(scene,decoded.bytes);
+        scene.source=source=Object.assign(adapted.source,{decodedSha256:hash});
+      }
+      if (!options.allowModified && hash !== expectedHash) {
         fail('Cutscene decoded bytes do not match the selected US Rev 0 source.', 'source-preimage', {
           expectedSha256: expectedHash, actualSha256: hash
         });
       }
       return {
         scene: scene,
+        rom: z64,
         payload: payload,
         decodedBytes: decoded.bytes,
         decodedSha256: hash,
@@ -931,6 +963,15 @@ window.OB64 = window.OB64 || {};
       var projected = [];
       var actor, track, clip, current, distance, duration;
       var counterRole = counterTiming[node.id] || null;
+      if(node.rawWords[0]===0xbf && node.rawWords.length===14 && source.rom && OB64.cutsceneAuthoring){
+        var dw=node.rawWords, archive=catalog.getSerifuArchiveForPresentationSelector(dw[2]);
+        if(archive && archive.entries[dw[3]]){
+          var de=OB64.cutsceneAuthoring.dialogueEntry(source.rom,dw[2],dw[3]);
+          track=trackFor(document,'dialogue',null,'Native dialogue');
+          clip=addClip(track,node,'dialogue',cursorFrame,90,{nativeDialogueEditable:true,sourceSystem:'serifu-native',presentationArchiveSelector:dw[2],presentationEntrySelector:dw[3],dialogueArchiveId:archive.archiveId,dialogueEntryId:archive.entries[dw[3]].entryId,rawText:de.rawText,originalRawText:de.rawText,text:de.rawText,speaker:'Native dialogue',nativeWords:dw.slice()},M.capabilities.NATIVE);
+          projected.push(clip.id);
+        }
+      }
       if (counterRole && counterRole.kind === 'arm') {
         activeCounter = { startFrame: cursorFrame, target: 0 };
       } else if (counterRole && counterRole.kind === 'gate' && activeCounter) {
@@ -2039,9 +2080,7 @@ window.OB64 = window.OB64 || {};
         fail('Cutscene outer capacity prefix changed.', 'diff-containment');
       }
       var readbackPayload = candidate.slice(slotStart, slotStart + sourceInfo.storedPayloadLength);
-      var readback = compiled.noOp
-        ? decodeCustomLz(readbackPayload, { requireExact: true })
-        : decodeCustomLz(readbackPayload, { requireExact: false, allowZeroPadding: true });
+      var readback = decodeCustomLz(readbackPayload, { requireExact: false, allowZeroPadding: true });
       if (!equalBytes(readback.bytes, compiled.decodedBytes)) {
         fail('Cutscene candidate readback differs from the intended scene.', 'readback');
       }
@@ -2201,6 +2240,7 @@ window.OB64 = window.OB64 || {};
     equalBytes: equalBytes,
     loadSceneSource: loadSceneSource,
     createIr: createIr,
+    sceneForBytes: sceneForBytes,
     decodeNode: decodeNode,
     projectSceneDocument: projectSceneDocument,
     compileSceneDocument: compileSceneDocument,

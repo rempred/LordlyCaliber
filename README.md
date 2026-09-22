@@ -34,7 +34,7 @@ the byte order of the loaded ROM.
 | Scenario | Enemy squads, formations, levels, equipment, placements, routes, triggers, treasure, towns, and added squads |
 | Art and Animation | Class-card avatars, item icons, Army sprites, combat sprites, frame layers, and separated combat sequences |
 | Sprite Editor | Reusable sprites, frames, sequences, layers, pixel tools, native art imports, PNG, JPEG, asset files, and transparent exports |
-| Cutscene Studio | Native scene inspection and evidence-backed previews |
+| Cutscene Studio | ROM playback, Actor/action/text edits, template replacements, and Project persistence |
 | Tools | Experience Size Weight Scale, Chaos Frame, Character Card Luck, Squad Menu Alignment, and High Attack Streamsplit patches |
 | Save Game Editor | Characters, classes, stats, equipment, inventory, Goth, and Chaos Frame |
 | Changelog | A readable report generated from the current Project changes |
@@ -249,8 +249,8 @@ that tab for RetroArch `.state`, BizHawk `.SaveRAM`, Project64 `.sra`, or raw
 - A scenario squad leader must use a class with a valid map-unit sprite.
 - Shop and text edits must fit their validated capacity or relocation budget.
 - Cutscene and combat-animation previews are inspection tools, not cycle-exact Nintendo 64 rendering.
-- Cutscene Studio accepts explicit [playback inputs](docs/cutscene-launch-inputs.md). Missing party state and external producer inputs remain visible playback boundaries.
-- [Native dialogue inputs](docs/cutscene-dialogue-inputs.md) supply resource state, service history, controller ownership, and helper outcomes. The combined external implementation remains review pending.
+- Cutscene Studio supports [editing and template replacements](docs/cutscene-authoring.md). Supported scenes start from the loaded ROM; some game-dependent starting states remain unresolved.
+- Cutscene dialogue auto-advance uses simulated timing. Shared text edits affect every scene using that archive entry.
 - A structurally valid custom animation can still look wrong in-game; test the exported ROM.
 
 The editor reports the applicable limit at the affected control or during
