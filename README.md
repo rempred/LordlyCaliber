@@ -34,7 +34,7 @@ the byte order of the loaded ROM.
 | Scenario | Enemy squads, formations, levels, equipment, placements, routes, triggers, treasure, towns, and added squads |
 | Art and Animation | Class-card avatars, item icons, Army sprites, combat sprites, frame layers, and separated combat sequences |
 | Sprite Editor | Reusable sprites, frames, sequences, layers, pixel tools, native art imports, PNG, JPEG, asset files, and transparent exports |
-| Cutscene Studio | ROM playback, Actor/action/text edits, template replacements, and Project persistence |
+| Cutscene Studio | ROM playback and [authoring](docs/cutscene-authoring.md): Actor/action/text edits, template replacements, and Project persistence |
 | Tools | Experience Size Weight Scale, Chaos Frame, Character Card Luck, Squad Menu Alignment, and High Attack Streamsplit patches |
 | Save Game Editor | Characters, classes, stats, equipment, inventory, Goth, and Chaos Frame |
 | Changelog | A readable report generated from the current Project changes |
