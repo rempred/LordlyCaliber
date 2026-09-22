@@ -28,9 +28,21 @@ window.OB64 = window.OB64 || {};
   var FACING_FOR_PHASE = [0, 9, 8, 3, 7, 7, 2, 6, 5, 1, 4, 4];
   var bindings = typeof WeakMap === 'function' ? new WeakMap() : null;
   var retainedRecordFields = new WeakMap();
+  function plainRetainedRecord(row) {
+    var keys = retainedRecordFields.get(row);
+    if (!keys) return row;
+    var plain = {};
+    keys.forEach(function(key, index) { plain[key] = row.values[index]; });
+    return plain;
+  }
   function plainRetainedFrame(frame) {
     var result=Object.assign({},frame);
-    ['actors','effects'].forEach(function(field){result[field]=(frame[field]||[]).map(function(row){var keys=retainedRecordFields.get(row);if(!keys)return row;var plain={};keys.forEach(function(key,i){plain[key]=row.values[i];});return plain;});});
+    result.actors=(frame.actors||[]).map(plainRetainedRecord);
+    result.effects=(frame.effects||[]).map(function(row){
+      var plain=plainRetainedRecord(row);
+      if(plain!==row)plain.payload=plainRetainedRecord(plain.payload);
+      return plain;
+    });
     return result;
   }
 
@@ -1311,7 +1323,7 @@ window.OB64 = window.OB64 || {};
     var maxDispatches = 100000;
     var retainedStateBytes = 0;
     var recordSchemas=new Map(),recordValueArrays=new WeakSet();
-    function compactRecords(rows){return rows.map(function(row){
+    function compactRecord(row){
       var keys=Object.keys(row),signature=JSON.stringify(keys),schema=recordSchemas.get(signature);
       if(!schema){
         var prototype={toJSON:function(){var output={};keys.forEach((key,i)=>{output[key]=this.values[i];});return output;}};
@@ -1320,7 +1332,8 @@ window.OB64 = window.OB64 || {};
         retainedStateBytes+=128+keys.reduce((n,k)=>n+96+k.length*2,0);
       }
       var record=Object.create(schema.prototype);record.values=schema.keys.map(k=>row[k]);recordValueArrays.add(record.values);retainedRecordFields.set(record,schema.keys);return record;
-    });}
+    }
+    function compactRecords(rows){return rows.map(compactRecord);}
     // Immutable snapshots share unchanged subtrees. Count newly retained nodes,
     // keys and UTF-16 payloads conservatively; this is a storage estimate, not VM heap telemetry.
     function shareSnapshot(previous, next, budget) {
@@ -5893,9 +5906,13 @@ window.OB64 = window.OB64 || {};
       if(directorContexts&&directorContexts.at(-1).enteredTick===undefined&&!stopReason&&tick+1<maxTicks)continue;
       var frameBudget = { bytes: 0 };
       var nextSnapshot=snapshot(block);
+      // Effect payloads change each tick. Store their shared field schema once,
+      // while retaining the complete drawing values for public frames and seeking.
+      if(romOnlyStart)nextSnapshot.effects.forEach(function(effect){effect.payload=compactRecord(effect.payload);});
       if(sharedActorProfile||romOnlyStart){nextSnapshot.actors=compactRecords(nextSnapshot.actors);nextSnapshot.effects=compactRecords(nextSnapshot.effects);}
       var frameState = shareSnapshot(states[states.length - 1], nextSnapshot, frameBudget);
       if(sharedActorProfile||romOnlyStart)['actors','effects'].forEach(function(k){frameState[k].forEach(function(row){Object.freeze(row.values);Object.freeze(row);});});
+      if(romOnlyStart)frameState.effects.forEach(function(effect){Object.freeze(effect.payload.values);Object.freeze(effect.payload);});
       var frameBytes = frameBudget.bytes;
       if (retainedStateBytes + framebufferBytes + frameBytes > maxStateBytes) {
         if (!states.length) fail('The first Director snapshot exceeds the storage budget.', 'state-storage-limit');
