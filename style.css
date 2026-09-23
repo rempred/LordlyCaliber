@@ -8769,6 +8769,90 @@ td.attack-list {
   .cutscene-stage-details { max-width: none; text-align: left; }
 }
 
+/* Cutscene creator: Stage and action cards; technical tools live in a drawer. */
+.cutscene-studio.cutscene-creator {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  align-items: start;
+}
+.cutscene-creator-toolbar {
+  grid-column: 1 / -1;
+  order: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-parchment-edge);
+}
+.cutscene-creator-name {
+  flex: 1 1 260px;
+  min-width: 0;
+  font: 700 var(--ob-text-lg) var(--ob-display);
+  color: var(--ob-ink);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 5px;
+}
+.cutscene-creator-name:focus { border-color: var(--ob-wax-gold); }
+.cutscene-creator-toolbar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.cutscene-creator-export-status { flex: 1 0 100%; font-size: var(--ob-text-xs); }
+.cutscene-creator > .cutscene-main { order: 2; min-width: 0; }
+.cutscene-creator-sequence {
+  order: 3;
+  min-width: 0;
+  padding: 14px;
+  background: var(--ob-parchment);
+  border: 1px solid var(--ob-parchment-edge);
+  max-height: calc(100vh - var(--app-top-height) - 150px);
+  overflow: auto;
+}
+.cutscene-creator-sequence > h3 { margin: 0 0 12px; font-family: var(--ob-display); }
+.cutscene-creator-details { margin: 10px 0; min-width: 0; }
+.cutscene-creator-details > summary { cursor: pointer; padding: 7px 0; font-weight: 700; }
+.cutscene-creator-details > .cutscene-field { margin-top: 10px; }
+.cutscene-creator-action-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cutscene-creator-action-list { display: grid; gap: 8px; }
+.cutscene-creator-action { border: 1px solid var(--ob-parchment-edge); background: #fff8e6; min-width: 0; }
+.cutscene-creator-action.selected { border-color: var(--ob-wax-red); }
+.cutscene-creator-action.at-playhead { box-shadow: inset 3px 0 var(--ob-wax-gold); }
+.cutscene-creator-action-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 12px;
+  color: var(--ob-ink);
+  background: transparent;
+  text-align: left;
+  box-shadow: none;
+  cursor: pointer;
+}
+.cutscene-creator-action-heading strong { overflow-wrap: anywhere; }
+.cutscene-creator-action-number { color: var(--ob-ink-soft); min-width: 20px; font: var(--ob-text-xs) var(--ob-mono); }
+.cutscene-creator-action-copy { margin: 0 12px 12px 42px; color: var(--ob-ink-soft); font-size: var(--ob-text-sm); }
+.cutscene-creator-action-controls { padding: 0 12px 12px; border-top: 1px solid var(--ob-parchment-edge); }
+.cutscene-creator-action-controls .cutscene-field { margin-top: 10px; }
+.cutscene-creator-action-controls textarea { min-height: 100px; width: 100%; box-sizing: border-box; }
+.cutscene-creator-cast { margin-top: 12px; padding: 12px; background: var(--ob-parchment); border: 1px solid var(--ob-parchment-edge); }
+.cutscene-creator-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cutscene-creator-cast-list [aria-pressed="true"] { outline: 2px solid var(--ob-wax-gold); }
+.cutscene-creator-actor-controls { display: grid; grid-template-columns: minmax(100px, 1.3fr) 1fr 1fr auto; gap: 8px; align-items: end; margin-top: 12px; }
+.cutscene-creator-actor-controls .cutscene-field { margin: 0; }
+.cutscene-creator-drawer { order: 1; grid-column: 1 / -1; padding: 12px; background: var(--ob-parchment); border: 1px solid var(--ob-parchment-edge); }
+.cutscene-creator-drawer .cutscene-browser { position: static; max-height: 420px; box-shadow: none; margin-top: 10px; }
+.cutscene-creator-drawer .cutscene-scene-list { max-height: 300px; }
+.cutscene-creator-drawer .cutscene-sequence { margin-top: 10px; }
+.cutscene-creator .cutscene-stage { width: min(100%, 800px) !important; }
+.cutscene-destination-hint { color: var(--ob-wax-red) !important; font-weight: 700; }
+@media (max-width: 900px) {
+  .cutscene-studio.cutscene-creator { grid-template-columns: 1fr; }
+  .cutscene-creator-sequence { max-height: none; }
+  .cutscene-creator-actor-controls { grid-template-columns: 1fr 1fr; }
+}
+
 /* ============================================================
    Sprite Editor
    ============================================================ */

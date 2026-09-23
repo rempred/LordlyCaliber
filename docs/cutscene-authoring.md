@@ -22,19 +22,21 @@ ROM preview frames retain drawing data without copying the interpreter's working
 Unresolved event branches and other external scene dependencies can still show a playback boundary.
 Some party-dependent casts remain incomplete with this sample unit.
 
-1. Select **Actors** to set a starting position, art, appearance, and facing.
-2. Use **Appear at playhead**, **Disappear at playhead**, and **Set pose now** for timed Actor changes.
-3. Select **Movement** to edit action timing and movement endpoints.
-4. Select **Dialogue** to edit existing boxes or add a box at the playhead.
-5. Preview the change, then use **Save Project** to retain the editable scene.
-6. Export the ROM and test the scene through its normal game entry.
+1. Use **Choose scene** to select a scene. Use **Use as template** to name a replacement.
+2. Select an Actor on the Stage or beneath it to change its appearance and facing.
+3. Use **+ Actor** to add a cast member. Its art and animation controls open beneath the Stage.
+4. Use **+ Add action** to add movement, pose, speech, wait, effect, camera, appearance, or disappearance actions.
+5. Select an action card to expand its controls. For movement, **Choose destination on Stage** accepts a Stage click.
+6. Preview the change, then use **Save Project** and **Export ROM** in the app toolbar.
+7. Test the exported scene through its normal game entry.
 
 The Stage lets you select an Actor. Dragging an Actor adds or edits a timed pose at the playhead.
 Use the starting position fields to change a native Place command when one exists.
-The timeline opens on the editable sequence. **Advanced playback views** contains runtime and opcode diagnostics.
-**Scene** holds the Project name, background, and playback inputs.
+The default workspace contains the Stage and one action list. Active cards are highlighted during preview.
+**Advanced** contains the timeline, runtime diagnostics, background settings, and playback inputs.
+Action cards retain the template's native command structure. Drag reordering and **Together** groups are not available yet.
 
-**Create replacement from this template** starts a named replacement of the selected scene.
+**Use as template** starts a named replacement of the selected scene.
 It inherits the template's Actors, resources, and action sequence.
 Export replaces that scene at every existing game trigger.
 The Project name does not add a new game trigger or resource-selector entry.
@@ -48,9 +50,9 @@ Dialogue cards and the selected-box preview show readable text without ROM contr
 Open **Raw ROM dialogue source · advanced** to inspect or edit an existing entry's exact script.
 The readable preview labels unresolved game markers; it does not replace the raw source.
 
-**Add dialogue box** exports a new box when the scene contains a native dialogue command and an insertion point.
+**Speak** exports a new box when the scene contains a native dialogue command and an insertion point.
 The new box gets its own archive entry, so editing it leaves existing lines intact.
-Edit its speaker, text, and **Delay before opening** in the Dialogue inspector.
+Edit its speaker, text, and **Delay before opening** inside the selected action card.
 Use printable ASCII for the speaker and text. New lines are supported.
 The editor wraps long lines, adds page breaks, and waits for A before closing the box.
 The delay counts native Director updates; preview seconds and box duration are approximate.
