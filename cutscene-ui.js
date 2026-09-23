@@ -3560,9 +3560,29 @@ window.OB64 = window.OB64 || {};
         'The scene uses a new entry in serifu archive selector ' +
         row.clip.payload.presentationArchiveSelector + '. Timeline duration is a preview aid.'));
     } else if (row.clip.kind === 'dialogue' && row.clip.payload.nativeDialogueEditable) {
-      inspector.appendChild(field('Native dialogue text',textInput(row.clip.payload.rawText,function(value){
-        editClip(rom,state,row.clip.id,'Edit native dialogue text',function(next){next.clip.payload.rawText=value;});
-      },'clip-native-dialogue:'+row.clip.id,true),'Keep the @ control tokens. Printable ASCII only. This shared archive entry changes wherever the game uses it. Longer text uses the shared Cutscene allocation area.'));
+      inspector.appendChild(node('h4', '', 'Readable dialogue'));
+      inspector.appendChild(node('p', 'cutscene-dialogue-readable',
+        readableNativeDialogue(row.clip.payload.rawText)));
+      inspector.appendChild(node('p', 'cutscene-field-hint',
+        'Control codes are hidden here. Unresolved game markers appear in brackets.'));
+      var nativeSourceView = viewFor(state, scene.sceneId);
+      var nativeSource = node('details', 'cutscene-source-details');
+      nativeSource.open = nativeSourceView.openNativeDialogueSourceId === row.clip.id;
+      nativeSource.addEventListener('toggle', function() {
+        nativeSourceView.openNativeDialogueSourceId = nativeSource.open ? row.clip.id : null;
+      });
+      var nativeSourceSummary = node('summary', '', 'Raw ROM dialogue source · advanced');
+      nativeSourceSummary.setAttribute('data-cutscene-focus-key',
+        'clip-native-dialogue-source:' + row.clip.id);
+      nativeSource.appendChild(nativeSourceSummary);
+      nativeSource.appendChild(field('Raw source', textInput(row.clip.payload.rawText,
+        function(value) {
+          editClip(rom, state, row.clip.id, 'Edit native dialogue text', function(next) {
+            next.clip.payload.rawText = value;
+          });
+        }, 'clip-native-dialogue:' + row.clip.id, true),
+      'Keep the @ control tokens. Printable ASCII only. This shared archive entry changes wherever the game uses it. Longer text uses the shared Cutscene allocation area.'));
+      inspector.appendChild(nativeSource);
     } else if (row.clip.kind === 'dialogue') {
       var dialogueEntryId = row.clip.payload.dialogueEntryId || row.clip.payload.serifuEntryId;
       var dialogueArchiveId = row.clip.payload.dialogueArchiveId || row.clip.payload.serifuArchiveId;
@@ -4236,6 +4256,37 @@ window.OB64 = window.OB64 || {};
       });
   }
 
+  function readableNativeDialogue(raw) {
+    var value = String(raw || '')
+      .replace(/\{T\d+\}/g, ' [game marker] ')
+      .replace(/\{[^}]*\}/g, '')
+      .replace(/@(?:%|!|z|:)./g, ' [dynamic text] ')
+      .replace(/@&../g, ' [dynamic text] ')
+      .replace(/@w.{4}/g, '')
+      .replace(/@(?:T|t|f|F|e|v|y|<)\d{3}/g, '')
+      .replace(/@(?:l|S)./g, '')
+      .replace(/@n/g, '\n')
+      .replace(/@(?:p|c|s|a|i|\/)/g, '\n\n')
+      .replace(/@./g, '')
+      .replace(/\r/g, '')
+      .replace(/[ \t]*\n[ \t]*/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+    return value || 'No readable dialogue text';
+  }
+
+  function dialogueCardText(clip) {
+    var payload = clip.payload || {};
+    var value = payload.nativeDialogueEditable && typeof payload.rawText === 'string'
+      ? readableNativeDialogue(payload.rawText)
+      : String(payload.text || payload.rawText || 'Text unavailable');
+    value = value.replace(/\n{2,}/g, ' · ').replace(/\s+/g, ' ').trim();
+    if (value.length <= 105) return value;
+    var end = value.lastIndexOf(' ', 105);
+    return value.slice(0, end > 70 ? end : 105).trimEnd() + '…';
+  }
+
   function renderEditClipList(host, rom, state, scene, document, dialogueOnly) {
     var view = viewFor(state, scene.sceneId);
     var rows = orderedClips(document).filter(function(row) {
@@ -4260,8 +4311,7 @@ window.OB64 = window.OB64 || {};
         OB64.cutscenePreview.formatTime(row.clip.startFrame)));
       if (dialogueOnly) {
         item.appendChild(node('span', 'cutscene-edit-row-preview',
-          String(row.clip.payload.text || row.clip.payload.rawText || 'Text unavailable')
-            .replace(/\s+/g, ' ').slice(0, 105)));
+          dialogueCardText(row.clip)));
       }
       item.appendChild(capabilityBadge(row.clip.capability, 'ROM'));
       list.appendChild(item);

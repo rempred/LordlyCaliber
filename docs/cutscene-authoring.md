@@ -39,11 +39,14 @@ It inherits the template's Actors, resources, and action sequence.
 Export replaces that scene at every existing game trigger.
 The Project name does not add a new game trigger or resource-selector entry.
 
-Existing **Native dialogue text** fields write the shared dialogue archive.
+Editing an existing entry's raw source writes the shared dialogue archive.
 Keep the text's `@` control tokens and use printable ASCII characters.
 Changing an entry affects every scene that uses it.
 Edits to different entries in the same archive combine into one resource.
 Conflicting edits to the same entry stop export with an explanation.
+Dialogue cards and the selected-box preview show readable text without ROM control codes.
+Open **Raw ROM dialogue source · advanced** to inspect or edit an existing entry's exact script.
+The readable preview labels unresolved game markers; it does not replace the raw source.
 
 **Add dialogue box** exports a new box when the scene contains a native dialogue command and an insertion point.
 The new box gets its own archive entry, so editing it leaves existing lines intact.

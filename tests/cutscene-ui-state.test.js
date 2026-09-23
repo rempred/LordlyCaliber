@@ -475,6 +475,14 @@ function hashBytes(input) {
   function inspectorText(element) {
     return [element.textContent || '', ...element.children.map(inspectorText)].join(' ');
   }
+  function findElement(element, predicate) {
+    if (predicate(element)) return element;
+    for (const child of element.children) {
+      const found = findElement(child, predicate);
+      if (found) return found;
+    }
+    return null;
+  }
   function inspectorTree(documentToRender = baseline) {
     global.document = { createElement: inspectorElement };
     state.ui = {};
@@ -500,19 +508,58 @@ function hashBytes(input) {
   assert(inspectorText(pane).includes('To X'));
   editorView.editPanel = 'dialogue';
   const dialogueDocument = OB64.cutsceneModel.cloneSceneDocument(baseline);
+  const rawDialogue = '@-@x@l3@r@S0@A@=Six years later{T05}@T030@n@n@=' +
+    'Winnea, Capital of Palatinus@s@c';
+  const rawPageDialogue = 'Archbishop Odiron@n"He who has learned the way of@n' +
+    ' the sword and god\'s teachings,@p@c in accordance with"@a@c';
   dialogueDocument.tracks.push(OB64.cutsceneModel.createTrack({
     id: 'track:ui-state:dialogue', type: 'dialogue',
-    label: 'UI state dialogue', clips: [OB64.cutsceneModel.createClip({
-      id: 'clip:ui-state:dialogue', kind: 'dialogue', startFrame: 45,
-      durationFrames: 30, capability: 'native',
-      payload: { nativeDialogueEditable: true, rawText: 'Test@' }
-    })]
+    label: 'UI state dialogue', clips: [
+      OB64.cutsceneModel.createClip({
+        id: 'clip:ui-state:dialogue', kind: 'dialogue', startFrame: 45,
+        durationFrames: 30, capability: 'native',
+        payload: { nativeDialogueEditable: true, rawText: rawDialogue, text: rawDialogue }
+      }),
+      OB64.cutsceneModel.createClip({
+        id: 'clip:ui-state:dialogue:page', kind: 'dialogue', startFrame: 75,
+        durationFrames: 30, capability: 'native',
+        payload: { nativeDialogueEditable: true, rawText: rawPageDialogue,
+          text: rawPageDialogue }
+      })
+    ]
   }));
   editorView.selectedClipId = 'clip:ui-state:dialogue';
   pane = inspectorTree(dialogueDocument);
   assert(inspectorText(pane).includes('Dialogue boxes'));
   assert(inspectorText(pane).includes('Add dialogue box'));
-  assert(inspectorText(pane).includes('Native dialogue text'));
+  const dialogueCard = findElement(pane, element =>
+    element.className === 'cutscene-edit-row-preview');
+  assert(dialogueCard && dialogueCard.textContent.includes('Six years later'));
+  assert(dialogueCard.textContent.includes('Winnea, Capital of Palatinus'));
+  assert(!dialogueCard.textContent.includes('@'),
+    'the dialogue card must hide ROM control codes');
+  const pageCard = findElement(pane, element =>
+    element.className === 'cutscene-edit-row-preview' &&
+    element.textContent.includes('Archbishop Odiron'));
+  assert(pageCard && pageCard.textContent.includes('teachings, · in accordance'),
+    'page prompts and clears must read as a break between phrases');
+  const rawSource = findElement(pane, element =>
+    element.tag === 'details' && element.children[0] &&
+    element.children[0].textContent === 'Raw ROM dialogue source · advanced');
+  assert(rawSource && rawSource.open === false,
+    'exact ROM dialogue starts inside a collapsed advanced section');
+  const rawInput = findElement(rawSource, element =>
+    element.attrs['data-cutscene-focus-key'] ===
+      'clip-native-dialogue:clip:ui-state:dialogue');
+  assert(rawInput && rawInput.value === rawDialogue,
+    'the advanced field preserves every original control code');
+  rawSource.open = true;
+  rawSource.listeners.toggle();
+  pane = inspectorTree(dialogueDocument);
+  assert(findElement(pane, element => element.tag === 'details' && element.open &&
+    element.children[0] && element.children[0].textContent ===
+      'Raw ROM dialogue source · advanced'),
+  'the advanced section stays open after rerender');
   assert(!inspectorText(pane).includes('Starting appearance'));
   editorView.editPanel = 'scene';
   pane = inspectorTree();

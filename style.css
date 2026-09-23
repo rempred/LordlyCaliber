@@ -8003,6 +8003,7 @@ td.attack-list {
 .cutscene-edit-row strong { min-width: 0; overflow-wrap: anywhere; }
 .cutscene-edit-row-time { font-family: var(--ob-mono); font-size: var(--ob-text-xs); }
 .cutscene-edit-row-preview { grid-column: 1 / -1; color: var(--ob-ink-soft); }
+.cutscene-dialogue-readable { white-space: pre-line; margin: 8px 0; }
 .cutscene-edit-row .cutscene-capability { grid-column: 1 / -1; }
 .cutscene-actor-steps { max-height: 180px; }
 
