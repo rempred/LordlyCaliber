@@ -3182,6 +3182,17 @@ window.OB64 = window.OB64 || {};
         ? catalog.getSerifuArchiveForPresentationSelector(selector) : null;
       var entry = entrySelector == null ? null :
         archive && archive.entries && archive.entries[entrySelector] || null;
+      if (!entry && entrySelector != null && options.z64 && OB64.cutsceneAuthoring) {
+        try {
+          var romEntry = OB64.cutsceneAuthoring.dialogueEntry(options.z64,
+            selector, entrySelector);
+          entry = { entryId: 'serifu:' + selector + ':entry:' + entrySelector,
+            entryIndex: entrySelector, rawText: romEntry.rawText,
+            text: romEntry.rawText };
+        } catch (_error) {
+          // Keep the missing-input boundary for an invalid ROM selector.
+        }
+      }
       var segments = nativeSlot===null?dialogueSegments(entry):[''];
       if (!entry && entrySelector != null) missing('Serifu selector ' + selector + ', entry ' + entrySelector +
         ' did not resolve to dialogue text.');

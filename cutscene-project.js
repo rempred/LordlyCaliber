@@ -140,14 +140,11 @@ window.OB64 = window.OB64 || {};
     }
   }
 
-  function validateNativePreimage(scene, baseline, document, label) {
+  function validateNativePreimage(baseline, document, label) {
     var expected = OB64.cutsceneModel.stableStringify(baseline.native, 0);
     var actual = OB64.cutsceneModel.stableStringify(document.native, 0);
     if (actual !== expected) {
       fail(label + ' changed preserved native command boundaries or words.');
-    }
-    if (document.native.commands.length !== scene.source.nodes.length) {
-      fail(label + ' does not preserve every catalogued source boundary.');
     }
   }
 
@@ -214,7 +211,7 @@ window.OB64 = window.OB64 || {};
     return Promise.all(rows.map(function(row) {
       if (row.scene.engine !== 'director') {
         var baseline = OB64.cutsceneUI.presentationDocument(state, row.scene);
-        validateNativePreimage(row.scene, baseline, row.document, row.label);
+        validateNativePreimage(baseline, row.document, row.label);
         row.document.exportRequirements = {
           capability: 'needs-research',
           reasons: [row.scene.source.adapterStatus],
@@ -236,7 +233,7 @@ window.OB64 = window.OB64 || {};
         validateSceneIdentity(row.scene, row.document, row.label);
         var baseline = OB64.cutsceneCodec.projectSceneDocument(
           row.scene, source, state.catalog).document;
-        validateNativePreimage(row.scene, baseline, row.document, row.label);
+        validateNativePreimage(baseline, row.document, row.label);
         if (OB64.cutsceneExport && (OB64.cutsceneExport.assessNativeDelta ||
             OB64.cutsceneExport.assessFixedSlotDelta)) {
           var assessDelta = OB64.cutsceneExport.assessNativeDelta ||

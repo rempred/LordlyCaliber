@@ -965,10 +965,10 @@ window.OB64 = window.OB64 || {};
       var counterRole = counterTiming[node.id] || null;
       if(node.rawWords[0]===0xbf && node.rawWords.length===14 && source.rom && OB64.cutsceneAuthoring){
         var dw=node.rawWords, archive=catalog.getSerifuArchiveForPresentationSelector(dw[2]);
-        if(archive && archive.entries[dw[3]]){
+        if(archive){
           var de=OB64.cutsceneAuthoring.dialogueEntry(source.rom,dw[2],dw[3]);
           track=trackFor(document,'dialogue',null,'Native dialogue');
-          clip=addClip(track,node,'dialogue',cursorFrame,90,{nativeDialogueEditable:true,sourceSystem:'serifu-native',presentationArchiveSelector:dw[2],presentationEntrySelector:dw[3],dialogueArchiveId:archive.archiveId,dialogueEntryId:archive.entries[dw[3]].entryId,rawText:de.rawText,originalRawText:de.rawText,text:de.rawText,speaker:'Native dialogue',nativeWords:dw.slice()},M.capabilities.NATIVE);
+          clip=addClip(track,node,'dialogue',cursorFrame,90,{nativeDialogueEditable:true,sourceSystem:'serifu-native',presentationArchiveSelector:dw[2],presentationEntrySelector:dw[3],dialogueArchiveId:archive.archiveId,dialogueEntryId:archive.entries[dw[3]]?archive.entries[dw[3]].entryId:archive.archiveId+':entry:'+dw[3],rawText:de.rawText,originalRawText:de.rawText,text:de.rawText,speaker:'Native dialogue',nativeWords:dw.slice()},M.capabilities.NATIVE);
           projected.push(clip.id);
         }
       }
@@ -1704,6 +1704,38 @@ window.OB64 = window.OB64 || {};
       [0x66, slot]);
   }
 
+  function compileAuthoredDialogue(clip, ir) {
+    var payload = clip.payload || {};
+    if (payload.nativeDialogueAuthored !== true ||
+        payload.sourceSystem !== 'serifu-authored-native') {
+      fail('This dialogue clip has no native Director command adapter.', 'dialogue-source');
+    }
+    var template = ir.nodes.find(function(node) {
+      return node.id === payload.nativeTemplateNodeId;
+    });
+    if (!template || template.rawWords.length !== 14 ||
+        unsigned(template.rawWords[0]) !== 0xBF) {
+      fail('New dialogue lost its native window template.', 'dialogue-template');
+    }
+    var windowId = integer(payload.windowId, 'Dialogue window ID', 0, 255);
+    var selector = integer(payload.presentationArchiveSelector,
+      'Dialogue archive selector', 0, 502);
+    var entry = integer(payload.presentationEntrySelector,
+      'Dialogue entry selector', 0, 65535);
+    var delay = integer(payload.nativeDelayTicks,
+      'Dialogue start delay', 0, 0x7FFFFFFF);
+    if (selector !== unsigned(template.rawWords[2])) {
+      fail('New dialogue must use its source window template archive.', 'dialogue-archive');
+    }
+    var words = template.rawWords.slice();
+    words[1] = windowId;
+    words[2] = selector;
+    words[3] = entry;
+    var result = delay ? [1, 0, 0x80000002, 0x80000000, 0x0E, 0, delay, 2] : [];
+    return result.concat(words, [0, 0x80000002, 0x80000000, 0x10, 0, 2, windowId,
+      0x06, windowId, 0x05, windowId]);
+  }
+
   function compileActorByte(opcode, clip, slot, field, label, rawWords) {
     slot = integer(slot, 'Actor slot', 0, 255);
     var value = integer(clip.payload[field], label, 0, 255);
@@ -1812,6 +1844,7 @@ window.OB64 = window.OB64 || {};
         else if (row.clip.kind === 'movement') words = compileMove(row.clip, authoredSlot);
         else if (row.clip.kind === 'wait') words = [1, 0, 0x80000002, 0x80000000, 0x0E, 0,
           integer(row.clip.durationFrames, 'Hold duration', 1, 0x7FFFFFFF), 2];
+        else if (row.clip.kind === 'dialogue') words = compileAuthoredDialogue(row.clip, ir);
         else if (row.clip.kind === 'camera') words = compileCamera(row.clip, null);
         else if (row.clip.kind === 'effect' &&
             row.clip.payload.sourceSystem === 'cutscene-sprite-native') {

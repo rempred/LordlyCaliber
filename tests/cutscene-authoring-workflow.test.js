@@ -109,5 +109,69 @@ async function exported(rom) {
   const newTarget = bothState.catalog.getScene(template.assetId);
   await OB64.cutsceneUI.loadScene(both, bothState, newTarget);
   assert.equal(runFor(bothState, newTarget).states.length, created.states.length);
-  console.log('PASS Actor/text edits, Project reload, exported-ROM re-editing, template replacement, and added-hold playback.');
+
+  const dialogueRom = freshRom(z64);
+  const dialogueState = OB64.cutsceneUI.initialize(dialogueRom);
+  const dialogueScene = dialogueState.catalog.getScene('rom-director:01F4F586');
+  dialogueState.selectedSceneId = dialogueScene.sceneId;
+  await OB64.cutsceneUI.loadScene(dialogueRom, dialogueState, dialogueScene);
+  const firstNativeBox = OB64.cutsceneUI.selectedDocument(dialogueState).tracks
+    .flatMap(track => track.clips).find(clip => clip.payload.nativeDialogueEditable);
+  assert(firstNativeBox, 'Scene 6 has a native dialogue template');
+  dialogueState.views[dialogueScene.sceneId].frame = firstNativeBox.startFrame;
+  await OB64.cutsceneUI.addDialogue(dialogueRom, dialogueState);
+  let addedDialogue = OB64.cutsceneUI.selectedDocument(dialogueState).tracks
+    .flatMap(track => track.clips).find(clip => clip.payload.nativeDialogueAuthored);
+  assert(addedDialogue && addedDialogue.capability === 'native',
+    'Add dialogue creates a native Director command in Scene 6');
+  await OB64.cutsceneUI.executeEdit(dialogueRom, dialogueState, 'Write new dialogue', document => {
+    document.tracks.flatMap(track => track.clips)
+      .find(clip => clip.id === addedDialogue.id).payload.text = 'A new line from the editor.';
+  });
+  addedDialogue = OB64.cutsceneUI.selectedDocument(dialogueState).tracks
+    .flatMap(track => track.clips).find(clip => clip.id === addedDialogue.id);
+  assert.equal(addedDialogue.payload.text, 'A new line from the editor.');
+  const dialoguePreview = OB64.cutscenePreview.evaluateAtFrame(
+    OB64.cutsceneUI.selectedDocument(dialogueState), addedDialogue.startFrame);
+  assert(dialoguePreview.dialogue.some(row => row.id === addedDialogue.id),
+    'the new box appears in the editable preview');
+  const dialogueProject = JSON.parse(JSON.stringify(
+    OB64.cutsceneProject.collect(dialogueState)));
+  const importedDialogueRom = freshRom(z64.slice());
+  const preparedDialogueProject = await OB64.cutsceneProject.prepareImport(
+    importedDialogueRom, dialogueProject);
+  OB64.cutsceneProject.applyPrepared(importedDialogueRom.cutsceneStudio,
+    preparedDialogueProject);
+  const importedDialogueScene = importedDialogueRom.cutsceneStudio.catalog.getScene(
+    dialogueScene.assetId);
+  await OB64.cutsceneUI.loadScene(importedDialogueRom,
+    importedDialogueRom.cutsceneStudio, importedDialogueScene);
+  assert(importedDialogueRom.cutsceneStudio.histories[importedDialogueScene.storageId]
+    .present.tracks.flatMap(track => track.clips).some(clip =>
+      clip.id === addedDialogue.id && clip.payload.text === addedDialogue.payload.text),
+  'Project reload retains the new dialogue');
+  const dialogueCandidate = await exported(dialogueRom);
+  const addedArchive = OB64.cutsceneAuthoring.readDialogue(dialogueCandidate.z64,
+    addedDialogue.payload.presentationArchiveSelector);
+  assert.equal(addedArchive.entries[addedDialogue.payload.presentationEntrySelector].rawText,
+    OB64.cutsceneAuthoring.authoredDialogueRawText(addedDialogue.payload));
+  const reopenedDialogue = OB64.cutsceneUI.initialize(dialogueCandidate);
+  const reopenedDialogueScene = reopenedDialogue.catalog.getScene(dialogueScene.assetId);
+  reopenedDialogue.selectedSceneId = reopenedDialogueScene.sceneId;
+  await OB64.cutsceneUI.loadScene(dialogueCandidate, reopenedDialogue, reopenedDialogueScene);
+  const reopenedDialogueRun = reopenedDialogue.runtimeByAssetId[reopenedDialogueScene.assetId];
+  assert(textAppears(reopenedDialogueRun,
+    'A new line from the editor.'),
+  'the exported stream presents the new text when reopened');
+  const newWindowFirst = reopenedDialogueRun.states.findIndex(frame =>
+    frame.dialogue.some(row => row.payload.windowId === addedDialogue.payload.windowId));
+  assert(newWindowFirst >= 0, JSON.stringify(reopenedDialogueRun.states
+    .flatMap(frame => frame.dialogue.map(row => ({ id: row.payload.windowId,
+      text: row.payload.nativeDialogue && row.payload.nativeDialogue.text }))
+    ).filter((row, index, rows) => index === 0 ||
+      row.id !== rows[index - 1].id || row.text !== rows[index - 1].text).slice(0, 18)));
+  assert(reopenedDialogueRun.states.slice(newWindowFirst + 1).some(frame =>
+    !frame.dialogue.some(row => row.payload.windowId === addedDialogue.payload.windowId)),
+  'the new dialogue window eventually releases');
+  console.log('PASS Actor/text edits, Project reload, exported-ROM re-editing, template replacement, added-hold playback, and native dialogue authoring.');
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

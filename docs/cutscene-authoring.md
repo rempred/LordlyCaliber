@@ -25,7 +25,7 @@ Some party-dependent casts remain incomplete with this sample unit.
 1. Select **Actors** to set a starting position, art, appearance, and facing.
 2. Use **Appear at playhead**, **Disappear at playhead**, and **Set pose now** for timed Actor changes.
 3. Select **Movement** to edit action timing and movement endpoints.
-4. Select **Dialogue** to edit existing boxes. Its **Add dialogue box** action creates a preview only.
+4. Select **Dialogue** to edit existing boxes or add a box at the playhead.
 5. Preview the change, then use **Save Project** to retain the editable scene.
 6. Export the ROM and test the scene through its normal game entry.
 
@@ -44,7 +44,14 @@ Keep the text's `@` control tokens and use printable ASCII characters.
 Changing an entry affects every scene that uses it.
 Edits to different entries in the same archive combine into one resource.
 Conflicting edits to the same entry stop export with an explanation.
-The **Dialogue (preview)** action previews a new dialogue box but does not export it.
+
+**Add dialogue box** exports a new box when the scene contains a native dialogue command and an insertion point.
+The new box gets its own archive entry, so editing it leaves existing lines intact.
+Edit its speaker, text, and **Delay before opening** in the Dialogue inspector.
+Use printable ASCII for the speaker and text. New lines are supported.
+The editor wraps long lines, adds page breaks, and waits for A before closing the box.
+The delay counts native Director updates; preview seconds and box duration are approximate.
+Scenes without a usable native dialogue command or insertion point still create a preview-only box.
 
 Larger Director streams and dialogue archives use the shared Cutscene allocation area.
 The current allocation budget is 188 KiB, with up to 144 relocated resources.

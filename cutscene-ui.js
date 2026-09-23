@@ -1968,7 +1968,9 @@ window.OB64 = window.OB64 || {};
               if (next.clip.kind === 'movement') next.clip.payload.durationMode = 'duration';
             } else {
               next.clip.startFrame = Math.max(0, originalStart + delta);
-              if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
+              if (next.clip.payload.nativeDialogueAuthored === true) {
+                retimeAuthoredDialogue(document, next.clip, next.clip.startFrame);
+              } else if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
                 var boundary = boundaryForFrame(scene, document, next.clip.startFrame);
                 next.clip.source.insertBeforeNodeId = boundary && boundary.id ||
                   next.clip.source.insertBeforeNodeId;
@@ -2409,7 +2411,7 @@ window.OB64 = window.OB64 || {};
     }
     actions.appendChild(node('span', 'cutscene-story-actions-label', 'Add at playhead'));
     [['Appear', addEnter], ['Disappear', addExit], ['Pose', addPose],
-      ['Move', addMove], ['Hold', addHold], ['Dialogue (preview)', addDialogue]].forEach(function(entry) {
+      ['Move', addMove], ['Hold', addHold], ['Dialogue box', addDialogue]].forEach(function(entry) {
       actions.appendChild(button(entry[0], 'btn-secondary', function() { entry[1](rom, state); }));
     });
     var moreActions = node('details', 'cutscene-more-actions');
@@ -2539,6 +2541,45 @@ window.OB64 = window.OB64 || {};
     })[0].sourceNode;
   }
 
+  function dialogueInsertionBoundaries(document) {
+    var cursorFrame = 0;
+    var clipsByNode = {};
+    document.tracks.forEach(function(track) {
+      track.clips.forEach(function(clip) {
+        if (clip.source && clip.source.nodeId) clipsByNode[clip.source.nodeId] = clip;
+      });
+    });
+    return document.native.commands.map(function(command) {
+      var row = clipsByNode[command.source.nodeId];
+      var at = row ? row.startFrame : cursorFrame;
+      if (row && row.kind === 'wait') cursorFrame = at + row.durationFrames;
+      else cursorFrame = Math.max(cursorFrame, at);
+      return { id: command.source.nodeId, frame: at,
+        sourceNode: { startWord: command.source.startWord },
+        approved: [0x01, 0xBF, 0x80000001].indexOf(command.words[0]) !== -1 &&
+          command.source.editPolicy !== 'immutable-gap' };
+    }).filter(function(boundary) { return boundary.approved; });
+  }
+
+  function dialogueBoundaryForFrame(document, frame) {
+    var boundaries = dialogueInsertionBoundaries(document);
+    if (!boundaries.length) return null;
+    var preceding = boundaries.filter(function(boundary) { return boundary.frame <= frame; });
+    return (preceding.length ? preceding : boundaries).sort(function(left, right) {
+      return preceding.length
+        ? right.frame - left.frame || right.sourceNode.startWord - left.sourceNode.startWord
+        : left.frame - right.frame || left.sourceNode.startWord - right.sourceNode.startWord;
+    })[0];
+  }
+
+  function retimeAuthoredDialogue(document, clip, frame) {
+    var boundary = dialogueBoundaryForFrame(document, frame);
+    if (!boundary) return;
+    clip.startFrame = Math.max(frame, boundary.frame);
+    clip.source.insertBeforeNodeId = boundary.id;
+    clip.payload.nativeDelayTicks = clip.startFrame - boundary.frame;
+  }
+
   function trackOrCreate(document, type, actorId, label) {
     var track = document.tracks.find(function(candidate) {
       return candidate.type === type && candidate.actorId === actorId;
@@ -2584,8 +2625,8 @@ window.OB64 = window.OB64 || {};
     var scene = selectedScene(state);
     var view = viewFor(state, scene.sceneId);
     var document = selectedDocument(state);
-    var boundary = options.nativePreferred === true
-      ? boundaryForFrame(scene, document, view.frame) : null;
+    var boundary = options.boundary || (options.nativePreferred === true
+      ? boundaryForFrame(scene, document, view.frame) : null);
     var id = authoredClipId(document, options.kind);
     view.timelineMode = 'preview';
     view.selectedClipId = id;
@@ -2600,7 +2641,7 @@ window.OB64 = window.OB64 || {};
       track.clips.push(OB64.cutsceneModel.createClip({
         id: id,
         kind: options.kind,
-        startFrame: view.frame,
+        startFrame: options.startFrame == null ? view.frame : options.startFrame,
         durationFrames: options.durationFrames,
         pathIds: options.pathIds || [],
         capability: options.capability || (boundary ? 'native' : 'preview-only'),
@@ -2834,11 +2875,85 @@ window.OB64 = window.OB64 || {};
   function addDialogue(rom, state) {
     var scene = selectedScene(state);
     var view = viewFor(state, scene.sceneId);
-    var actor = selectedDocument(state).actors.find(function(candidate) {
+    var document = selectedDocument(state);
+    var actor = document.actors.find(function(candidate) {
       return candidate.id === view.selectedActorId;
     });
+    var boundary = dialogueBoundaryForFrame(document, view.frame);
+    var templates = document.native.commands.filter(function(command) {
+      return command.words[0] === 0xBF && command.words.length === 14;
+    }).sort(function(left, right) {
+      var leftMatch = actor && left.words[4] === actor.slot ? 0 : 1;
+      var rightMatch = actor && right.words[4] === actor.slot ? 0 : 1;
+      return leftMatch - rightMatch || left.source.startWord - right.source.startWord;
+    });
+    if (boundary && templates.length && OB64.cutsceneAuthoring) {
+      var template = null;
+      var archive = null;
+      templates.some(function(candidate) {
+        try {
+          archive = OB64.cutsceneAuthoring.readDialogue(rom.z64, candidate.words[2]);
+          template = candidate;
+          return true;
+        } catch (_error) {
+          return false;
+        }
+      });
+      if (template) {
+        var selector = template.words[2];
+        var usedWindows = {};
+        document.native.commands.forEach(function(command) {
+          if (command.words[0] === 0xBF) usedWindows[command.words[1]] = true;
+        });
+        document.tracks.forEach(function(track) {
+          track.clips.forEach(function(clip) {
+            if (clip.payload.nativeDialogueAuthored) usedWindows[clip.payload.windowId] = true;
+          });
+        });
+        var windowId = 0;
+        while (usedWindows[windowId] && windowId <= 255) windowId++;
+        if (windowId <= 255) {
+          var entryIndex = archive.entries.length;
+          var projectDocuments = [document].concat(Object.keys(state.histories || {}).map(function(key) {
+            return state.histories[key] && state.histories[key].present;
+          }).filter(Boolean));
+          projectDocuments.forEach(function(projectDocument) {
+            projectDocument.tracks.forEach(function(track) {
+              track.clips.forEach(function(clip) {
+                if (clip.payload.nativeDialogueAuthored === true &&
+                    clip.payload.presentationArchiveSelector === selector) {
+                  entryIndex = Math.max(entryIndex, clip.payload.presentationEntrySelector + 1);
+                }
+              });
+            });
+          });
+          var owner = document.actors.find(function(candidate) {
+            return candidate.slot === template.words[4];
+          });
+          var speaker = owner && owner.label;
+          if (!speaker || speaker.length > 28 || /[^\x20-\x7e]|[@{}]/.test(speaker)) {
+            speaker = 'Speaker';
+          }
+          var startFrame = Math.max(view.frame, boundary.frame);
+          return addAuthoredClip(rom, state, {
+            label: 'Add native dialogue', type: 'dialogue', kind: 'dialogue',
+            actorId: owner ? owner.id : null, durationFrames: 90,
+            nativePreferred: true, boundary: boundary, startFrame: startFrame,
+            payload: {
+              sourceSystem: 'serifu-authored-native', nativeDialogueAuthored: true,
+              nativeTemplateNodeId: template.source.nodeId,
+              presentationArchiveSelector: selector,
+              presentationEntrySelector: entryIndex,
+              windowId: windowId, nativeDelayTicks: startFrame - boundary.frame,
+              speaker: speaker, text: 'New dialogue',
+              timingStatus: 'native registered-counter start delay; preview seconds are approximate'
+            }
+          });
+        }
+      }
+    }
     addAuthoredClip(rom, state, {
-      label: 'Add dialogue', type: 'dialogue', kind: 'dialogue',
+      label: 'Add dialogue preview', type: 'dialogue', kind: 'dialogue',
       actorId: actor ? actor.id : null, durationFrames: 90,
       payload: {
         sourceSystem: 'authored-dialogue',
@@ -3222,7 +3337,9 @@ window.OB64 = window.OB64 || {};
       timing.appendChild(field('Start frame', numericInput(row.clip.startFrame, '1', function(value) {
       editClip(rom, state, row.clip.id, 'Change clip start', function(next, nextDocument) {
         next.clip.startFrame = Math.max(0, Math.round(value));
-        if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
+        if (next.clip.payload.nativeDialogueAuthored === true) {
+          retimeAuthoredDialogue(nextDocument, next.clip, next.clip.startFrame);
+        } else if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
           var boundary = boundaryForFrame(scene, nextDocument, next.clip.startFrame);
           if (boundary) next.clip.source.insertBeforeNodeId = boundary.id;
         }
@@ -3232,7 +3349,9 @@ window.OB64 = window.OB64 || {};
       '0.1', function(value) {
         editClip(rom, state, row.clip.id, 'Change clip start', function(next, nextDocument) {
           next.clip.startFrame = Math.max(0, Math.round(value * 30));
-          if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
+          if (next.clip.payload.nativeDialogueAuthored === true) {
+            retimeAuthoredDialogue(nextDocument, next.clip, next.clip.startFrame);
+          } else if (!next.clip.source.nodeId && next.clip.source.insertBeforeNodeId) {
             var boundary = boundaryForFrame(scene, nextDocument, next.clip.startFrame);
             if (boundary) next.clip.source.insertBeforeNodeId = boundary.id;
           }
@@ -3412,6 +3531,34 @@ window.OB64 = window.OB64 || {};
       inspector.appendChild(button('Add keyframe at playhead', 'btn-secondary', function() {
         splitMovementAtPlayhead(rom, state, row);
       }));
+    } else if (row.clip.kind === 'dialogue' && row.clip.payload.nativeDialogueAuthored === true) {
+      inspector.appendChild(field('Speaker', textInput(row.clip.payload.speaker, function(value) {
+        editClip(rom, state, row.clip.id, 'Edit dialogue speaker', function(next) {
+          next.clip.payload.speaker = value;
+        });
+      }, 'clip-speaker:' + row.clip.id),
+      'This name appears in the game dialogue box.'));
+      inspector.appendChild(field('Dialogue', textInput(row.clip.payload.text, function(value) {
+        editClip(rom, state, row.clip.id, 'Edit dialogue text', function(next) {
+          next.clip.payload.text = value;
+        });
+      }, 'clip-dialogue:' + row.clip.id, true),
+      'The game waits for A after this text. New lines are supported.'));
+      inspector.appendChild(field('Delay before opening · native updates', numericInput(
+        row.clip.payload.nativeDelayTicks, '1', function(value) {
+          editClip(rom, state, row.clip.id, 'Change dialogue start delay', function(next, nextDocument) {
+            var ticks = Math.max(0, Math.round(value));
+            var boundary = dialogueInsertionBoundaries(nextDocument).find(function(candidate) {
+              return candidate.id === next.clip.source.insertBeforeNodeId;
+            });
+            next.clip.payload.nativeDelayTicks = ticks;
+            if (boundary) next.clip.startFrame = boundary.frame + ticks;
+          });
+        }, 'clip-dialogue-delay:' + row.clip.id),
+      'The Director waits this many native updates before creating the box.'));
+      inspector.appendChild(node('p', 'cutscene-field-hint',
+        'The scene uses a new entry in serifu archive selector ' +
+        row.clip.payload.presentationArchiveSelector + '. Timeline duration is a preview aid.'));
     } else if (row.clip.kind === 'dialogue' && row.clip.payload.nativeDialogueEditable) {
       inspector.appendChild(field('Native dialogue text',textInput(row.clip.payload.rawText,function(value){
         editClip(rom,state,row.clip.id,'Edit native dialogue text',function(next){next.clip.payload.rawText=value;});
@@ -4756,8 +4903,8 @@ window.OB64 = window.OB64 || {};
       dialoguePane = node('section', 'cutscene-workspace-pane');
       dialoguePane.appendChild(node('h3', '', 'Dialogue boxes'));
       dialoguePane.appendChild(node('p', 'cutscene-pane-intro',
-        'Select a box to edit its text and preview timing. Native text changes every use of its shared archive entry.'));
-      dialoguePane.appendChild(button('Add dialogue box (preview only)', 'btn-secondary', function() {
+        'Select a box to edit its text and timing. New native boxes get their own text entry; editing an existing native entry changes every use of that entry.'));
+      dialoguePane.appendChild(button('Add dialogue box', 'btn-secondary', function() {
         view.editPanel = 'dialogue'; addDialogue(rom, state);
       }));
       renderClipInspector(dialoguePane, rom, state, scene, document,
@@ -5039,6 +5186,7 @@ window.OB64 = window.OB64 || {};
     executeEdit: executeEdit,
     createFromTemplate: createFromTemplate,
     addHold: addHold,
+    addDialogue: addDialogue,
     addMove: addMove,
     addPose: addPose,
     insertionBoundaries: insertionBoundaries,

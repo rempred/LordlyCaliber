@@ -92,6 +92,35 @@ window.OB64 = window.OB64 || {};
     return bytes;
   }
 
+  function authoredRawText(payload) {
+    var speaker = payload.speaker;
+    var text = payload.text;
+    if (typeof speaker !== 'string' || !speaker.length || speaker.length > 28 ||
+        /[^\x20-\x7e]|[@{}]/.test(speaker) ||
+        typeof text !== 'string' || !text.length || text.length > 4096 ||
+        /[^\x20-\x7e\r\n]|[@{}]/.test(text)) {
+      fail('New dialogue needs a speaker and printable text without control tokens.');
+    }
+    var lines = [];
+    text.replace(/\r\n?/g, '\n').split('\n').forEach(function(paragraph) {
+      var rest = paragraph.trim();
+      if (!rest) { lines.push(''); return; }
+      while (rest.length > 30) {
+        var cut = rest.lastIndexOf(' ', 30);
+        if (cut < 1) cut = 30;
+        lines.push(rest.slice(0, cut));
+        rest = rest.slice(cut).trimStart();
+      }
+      lines.push(rest);
+    });
+    if (lines.length > 24) fail('New dialogue exceeds eight pages of text.');
+    var pages = [];
+    for (var index = 0; index < lines.length; index += 3) {
+      pages.push(lines.slice(index, index + 3).join('@n'));
+    }
+    return speaker + '@n"' + pages.join('@p@c') + '"@a@s@c';
+  }
+
   function resources(rom, documents) {
     var archives = new Map();
     var selectors = new Map();
@@ -99,18 +128,33 @@ window.OB64 = window.OB64 || {};
       document.tracks.forEach(function(track) {
         track.clips.forEach(function(clip) {
           var payload = clip.payload;
-          if (!payload.nativeDialogueEditable || payload.rawText === payload.originalRawText) return;
-          if (typeof payload.rawText !== 'string' || !payload.rawText.length || /[^\x20-\x7e]/.test(payload.rawText)) {
-            fail('Native dialogue requires printable ASCII and its existing @ control tokens.');
-          }
+          if (payload.nativeDialogueAuthored !== true &&
+              (!payload.nativeDialogueEditable || payload.rawText === payload.originalRawText)) return;
           var selector = payload.presentationArchiveSelector;
           var archive = selectors.get(selector);
           if (!archive) { archive = read(rom, selector); selectors.set(selector, archive); }
+          var group = archives.get(archive.key);
+          if (!group) {
+            group = { archive: archive, edits: new Map(), additions: new Map(), selector: selector };
+            archives.set(archive.key, group);
+          }
           var index = payload.presentationEntrySelector;
+          if (payload.nativeDialogueAuthored === true) {
+            if (!Number.isInteger(index) || index < archive.entries.length || index > 65535) {
+              fail('New dialogue entry selector is outside the append range.');
+            }
+            var authoredText = authoredRawText(payload);
+            if (group.additions.has(index)) {
+              fail('Two new dialogue boxes use the same archive entry.');
+            }
+            group.additions.set(index, authoredText);
+            return;
+          }
+          if (typeof payload.rawText !== 'string' || !payload.rawText.length || /[^\x20-\x7e]/.test(payload.rawText)) {
+            fail('Native dialogue requires printable ASCII and its existing @ control tokens.');
+          }
           if (!Number.isInteger(index) || !archive.entries[index]) fail('Dialogue entry selector is outside its archive.');
           if (archive.entries[index].rawText !== payload.originalRawText) fail('Dialogue entry changed since this Project was created.');
-          var group = archives.get(archive.key);
-          if (!group) { group = { archive: archive, edits: new Map(), selector: selector }; archives.set(archive.key, group); }
           if (group.edits.has(index) && group.edits.get(index) !== payload.rawText) {
             fail('Two scenes assign different text to shared dialogue archive ' + selector + ', entry ' + index + '.');
           }
@@ -125,6 +169,15 @@ window.OB64 = window.OB64 || {};
         return group.edits.has(index) ? Uint8Array.from(group.edits.get(index) + '\0', function(c) { return c.charCodeAt(0); })
           : archive.data.slice(row.offset, row.end);
       });
+      if (group.additions.size) {
+        var last = Math.max.apply(null, Array.from(group.additions.keys()));
+        for (var index = parts.length; index <= last; index++) {
+          var added = group.additions.get(index);
+          // Preserve later selectors when an earlier authored box is deleted.
+          parts.push(Uint8Array.from((added === undefined ? '@c' : added) + '\0',
+            function(c) { return c.charCodeAt(0); }));
+        }
+      }
       var size = parts.length * 4 + parts.reduce(function(total, part) { return total + part.length; }, 0);
       if (size > 65536) fail('Dialogue archive exceeds its 64 KiB decoded bound.');
       var data = new Uint8Array(size);
@@ -136,5 +189,6 @@ window.OB64 = window.OB64 || {};
     return output;
   }
 
-  O.cutsceneAuthoring = { readDialogue: read, dialogueEntry: entry, dialogueResources: resources };
+  O.cutsceneAuthoring = { readDialogue: read, dialogueEntry: entry,
+    authoredDialogueRawText: authoredRawText, dialogueResources: resources };
 })(window.OB64);

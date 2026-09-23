@@ -321,6 +321,11 @@ window.OB64 = window.OB64 || {};
       }
     });
     var authoredEffectSlots = {};
+    var reservedDialogueWindowIds = {};
+    var authoredDialogueWindowIds = {};
+    baseline.native.commands.forEach(function(command) {
+      if (command.words[0] === 0xBF) reservedDialogueWindowIds[command.words[1]] = true;
+    });
     Object.keys(before).forEach(function(id) {
       var oldRow = before[id];
       var nextRow = after[id];
@@ -430,7 +435,7 @@ window.OB64 = window.OB64 || {};
     Object.keys(after).forEach(function(id) {
       if (before[id]) return;
       var row = after[id];
-      if (['pose', 'movement', 'wait', 'camera', 'enter', 'exit', 'effect',
+      if (['pose', 'movement', 'wait', 'camera', 'enter', 'exit', 'effect', 'dialogue',
           'opacity'].indexOf(row.clip.kind) === -1 ||
           row.clip.capability !== 'native' ||
           !row.clip.source || typeof row.clip.source.insertBeforeNodeId !== 'string') {
@@ -439,8 +444,15 @@ window.OB64 = window.OB64 || {};
         'preview-only-clip', { clipId: id, kind: row.clip.kind });
       }
       var target = insertionDefinition(scene, row.clip.source.insertBeforeNodeId);
-      if (!target || target.insertBefore !== true || target.nodeType === 'gap' ||
-          target.editPolicy === 'immutable-gap' || target.controlEntryAlias) {
+      var dialogueBoundary = row.clip.kind === 'dialogue' &&
+        baseline.native.commands.find(function(command) {
+          return command.source.nodeId === row.clip.source.insertBeforeNodeId &&
+            [0x01, 0xBF, 0x80000001].indexOf(command.words[0]) !== -1 &&
+            command.source.editPolicy !== 'immutable-gap';
+        });
+      if (!dialogueBoundary && (!target || target.insertBefore !== true ||
+          target.nodeType === 'gap' || target.editPolicy === 'immutable-gap' ||
+          target.controlEntryAlias)) {
         fail('An authored clip lost its approved insertion boundary.',
           'insertion-boundary', { clipId: id });
       }
@@ -470,13 +482,36 @@ window.OB64 = window.OB64 || {};
         }
         authoredEffectSlots[effectSlot] = true;
       }
+      if (row.clip.kind === 'dialogue') {
+        var dialogue = row.clip.payload || {};
+        var template = baseline.native.commands.find(function(command) {
+          return command.source.nodeId === dialogue.nativeTemplateNodeId &&
+            command.words[0] === 0xBF && command.words.length === 14;
+        });
+        var windowId = dialogue.windowId;
+        if (dialogue.nativeDialogueAuthored !== true ||
+            dialogue.sourceSystem !== 'serifu-authored-native' ||
+            !template || dialogue.presentationArchiveSelector !== template.words[2] ||
+            !Number.isInteger(dialogue.presentationEntrySelector) ||
+            dialogue.presentationEntrySelector < 0 ||
+            !Number.isInteger(dialogue.nativeDelayTicks) ||
+            dialogue.nativeDelayTicks < 0 || dialogue.nativeDelayTicks > 0x7FFFFFFF ||
+            !Number.isInteger(windowId) || windowId < 0 || windowId > 255 ||
+            reservedDialogueWindowIds[windowId] || authoredDialogueWindowIds[windowId]) {
+          fail('A new dialogue box needs a unique window ID and a valid native template.',
+            'dialogue-insertion', { clipId: id });
+        }
+        authoredDialogueWindowIds[windowId] = true;
+      }
     });
   }
 
   function assessFixedSlotDelta(scene, baseline, document, source) {
     try {
       assertFixedSlotDelta(scene, baseline, document);
-      if (OB64.cutsceneAuthoring && source.rom) OB64.cutsceneAuthoring.dialogueResources(source.rom, [document]);
+      if (OB64.cutsceneAuthoring && source.rom) {
+        OB64.cutsceneAuthoring.dialogueResources(source.rom, [document]);
+      }
       var compiled = OB64.cutsceneCodec.compileSceneDocument(scene, source, document);
       var encodedBytes = compiled.noOp ? source.consumedEncodedBytes :
         OB64.cutsceneCodec.encodeCustomLzOptimal(compiled.decodedBytes).length;

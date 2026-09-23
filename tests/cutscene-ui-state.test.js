@@ -511,7 +511,7 @@ function hashBytes(input) {
   editorView.selectedClipId = 'clip:ui-state:dialogue';
   pane = inspectorTree(dialogueDocument);
   assert(inspectorText(pane).includes('Dialogue boxes'));
-  assert(inspectorText(pane).includes('Add dialogue box (preview only)'));
+  assert(inspectorText(pane).includes('Add dialogue box'));
   assert(inspectorText(pane).includes('Native dialogue text'));
   assert(!inspectorText(pane).includes('Starting appearance'));
   editorView.editPanel = 'scene';
