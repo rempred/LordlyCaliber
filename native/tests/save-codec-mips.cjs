@@ -110,7 +110,7 @@ for (let i=0;i<sectionCount;++i) {
   const names=sections+elf.readUInt32BE(h+24)*40,strings=elf.readUInt32BE(names+16);
   for(let s=start;s<end;s+=16) if((elf[s+12]&15)===2) {
     const text=strings+elf.readUInt32BE(s),name=elf.toString('ascii',text,elf.indexOf(0,text));
-    if(name.startsWith('lc_save_') || name.startsWith('lc_load_') || name.startsWith('lc_discovery_')) entries[name]=elf.readUInt32BE(s+4);
+    if(name.startsWith('lc_save_') || name.startsWith('lc_load_') || name.startsWith('lc_discovery_') || name.startsWith('lc_pak_')) entries[name]=elf.readUInt32BE(s+4);
   }
 }
 const code=fs.readFileSync(path.join(work,'save-format.bin'));
@@ -307,6 +307,24 @@ if(process.argv[3]) {
   }
   const catalog=JSON.parse(fs.readFileSync(path.join(native,'game/classes/save-owners.json')));
   for(const owner of catalog.owners)entries[owner.symbol]=0x8006FC00+owner.start;
+  if(header.readUInt32BE(96)>=2)for(const owner of catalog.pakOwners) {
+    m.load(owner.delta+owner.start,candidate.subarray(owner.start,owner.start+owner.size));
+    const calls=[];
+    for(let at=owner.fragment;at<owner.fragment+owner.fragmentSize;at+=4) {
+      const word=candidate.readUInt32BE(at),target=(0x80000000|((word&0x3FFFFFF)<<2))>>>0;
+      if(word>>>26===3&&target>=0x80187F00&&target<codeEnd)calls.push(target);
+    }
+    assert.equal(calls.length,1);entries[owner.symbol]=calls[0];
+    const workspace=0x803A0000,file=0x80390000;
+    for(const slot of [0,1])for(const result of [0,1]) {
+      m.w32(0x8019780C,workspace);m.w32(workspace+0x48,slot);m.w32(workspace+0x54+3*32,0x1900);
+      m.set('s5',file);m.set('s6',3);m.set('v0',file);
+      m.trap(calls[0],c=>{assert.deepEqual([c.get('a0'),c.get('a1'),c.get('a2')],[slot,file,0x1900]);c.set('v0',result);});
+      m.call(owner.delta+owner.fragment,owner.delta+(result?owner.resume:owner.reject));
+      if(owner.symbol==='lc_pak_export')assert.equal(m.get('s4'),file);
+    }
+    m.traps.delete(calls[0]);
+  }
   const table=0x800A824C;
   entries.lc_save_main_payload=m.r32(table+28+8);
   entries.lc_discovery_init=m.r32(table+4*28);
@@ -379,6 +397,43 @@ assert.equal(call('lc_save_check_slot',1),0);call(0x80074BF0,0x37081383);
 assert.deepEqual(cartridge.subarray(0,0x1880),beforeRepair.subarray(0,0x1880));
 assert.deepEqual(cartridge.subarray(0x30F0),beforeRepair.subarray(0x30F0));
 assert.equal(call('lc_save_check_slot',1),1);call(0x80074BF0,0x37081383);
+const pakBuffer=0x80390000,pakSentinel=Buffer.alloc(16,0xA6);
+let pakRoundTrips=0,pakRejections=0;
+for(const legacy of [false,true])for(const slot of [0,1]) {
+  m.load(runtimeFlags,flags);call('lc_save_game',slot);
+  m.load(pakBuffer-16,Buffer.alloc(0x1920,0xA6));
+  assert.equal(call('lc_pak_export',slot,pakBuffer,0x1900),1);
+  assert.deepEqual(read(pakBuffer-16,16),pakSentinel);assert.deepEqual(read(pakBuffer+0x1900,16),pakSentinel);
+  assert.deepEqual(read(pakBuffer,26),summaryPayload);
+  assert.deepEqual(read(pakBuffer+0x1870+0x20,0x70),Buffer.alloc(0x70));
+  const sum=call(0x80075AC4,pakBuffer+0x2C,0x1864)&65535;
+  const count=call(0x80075B60,pakBuffer+0x2C,0x1864)&65535;
+  assert.equal(m.r32(pakBuffer+0x20),((sum<<16)|count)>>>0,'original zero-seed checksum functions');
+  if(legacy) {
+    const legacyOffset=16+slot*0x1850;
+    m.load(pakBuffer+0x20,originalCartridge.subarray(legacyOffset,legacyOffset+0x1850));
+    const oldSum=call(0x80075AC4,pakBuffer+0x2C,0x1844)&65535;
+    const oldCount=call(0x80075B60,pakBuffer+0x2C,0x1844)&65535;
+    m.w32(pakBuffer+0x20,((oldSum<<16)|oldCount)>>>0);
+  }
+  const file=read(pakBuffer,0x1900),size=legacy?0x1870:0x1900;
+  assert.equal(call('lc_pak_import',1-slot,pakBuffer,size),1);pakRoundTrips++;
+  assert.deepEqual(read(pakBuffer,0x1900),file,'import preserves its input file');
+  const destination=16+(1-slot)*0x1870;
+  if(!legacy)assert.deepEqual(cartridge.subarray(destination+0x1850,destination+0x1870),flags);
+  else assert.deepEqual(cartridge.subarray(destination+0x1850+11,destination+0x1870),Buffer.alloc(21));
+  const beforeBad=Buffer.from(cartridge);
+  m.w8(pakBuffer+0x300,m.r8(pakBuffer+0x300)^1);
+  assert.equal(call('lc_pak_import',1-slot,pakBuffer,size),0);pakRejections++;
+  assert.deepEqual(cartridge,beforeBad);assert.equal(live.size,0);
+  m.load(pakBuffer,file);
+  for(const shortSize of [0,31,0x186F,...(legacy?[]:[0x188F])]) {
+    assert.equal(call('lc_pak_import',slot,pakBuffer,shortSize),0);pakRejections++;
+    assert.deepEqual(cartridge,beforeBad);
+  }
+}
+console.log(JSON.stringify({pakRoundTrips,pakRejections,pakFileBytes:0x1900,
+  originalChecksumComparison:true,scope:'source-built Pak conversion with synthetic files; device UI installation checked separately'}));
 cartridge[0x7C07]^=1;const damaged=Buffer.from(cartridge),writesBefore=io.filter(x=>x[1]).length;
 assert.equal(call('lc_save_headers_missing'),0);
 for(const slot of [0,1,14,15]){assert.equal(call('lc_save_check_slot',slot),0);call('lc_save_initialize_slot',slot);}

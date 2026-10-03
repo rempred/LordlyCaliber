@@ -28,6 +28,12 @@ int lc_save_expand_record(unsigned char *record, unsigned int capacity, unsigned
  */
 int lc_save_image_version(const unsigned char *image, unsigned int capacity);
 int lc_save_expand_image(unsigned char *image, unsigned int capacity);
+/* Pak records use the same payload and signatures but checksum seeds are zero.
+ * Decode accepts legacy or expanded data and reseals for the destination slot.
+ * Failure does not modify the buffer; the caller supplies expanded capacity.
+ */
+int lc_save_pak_decode(unsigned char *record, unsigned int capacity, unsigned int slot);
+int lc_save_pak_encode(unsigned char *record, unsigned int capacity, unsigned int slot);
 #ifdef __cplusplus
 }
 #endif

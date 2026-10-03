@@ -143,3 +143,21 @@ int lc_save_expand_image(u8 *image, u32 capacity)
     put32(marker + 8, 0x00010020U); put32(marker + 12, marker_crc(marker));
     return 1;
 }
+int lc_save_pak_decode(u8 *record, u32 capacity, u32 slot)
+{
+    u32 expanded, length;
+    if (!record || slot >= 2 || capacity < LC_SAVE_EXPANDED_NORMAL_BYTES) return 0;
+    if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) expanded = 1;
+    else if (get32(record + 4) == 0x51756573U && get32(record + 8) == 0x744F4733U) expanded = 0;
+    else return 0;
+    length = lc_save_record_size(slot, expanded);
+    if (get32(record) != checksums(record, length, 0)) return 0;
+    lc_save_record_seal(record, capacity, slot, expanded);
+    return expanded || lc_save_expand_record(record, capacity, slot);
+}
+int lc_save_pak_encode(u8 *record, u32 capacity, u32 slot)
+{
+    if (slot >= 2 || !lc_save_record_valid(record, capacity, slot, 1)) return 0;
+    put32(record, checksums(record, LC_SAVE_EXPANDED_NORMAL_BYTES, 0));
+    return 1;
+}

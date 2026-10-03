@@ -103,5 +103,31 @@
     "start": 230988,
     "size": 364,
     "retailSha256": "2ffdad51bc4a06896055d54584f95407f054689a26feaa18fd681a1314205aab"
-  }
+  },
+  "pakOwners": [
+    {
+      "start": 477852,
+      "size": 1268,
+      "fragment": 478388,
+      "fragmentSize": 212,
+      "source": "pak-import.s",
+      "symbol": "lc_pak_import",
+      "resume": 478600,
+      "reject": 478740,
+      "delta": 2148701472,
+      "retailSha256": "8c04c99ad69e76dede94b61c95b114d58cf15fc72cc658e755516ac9e9f0c1fc"
+    },
+    {
+      "start": 479120,
+      "size": 880,
+      "fragment": 479272,
+      "fragmentSize": 240,
+      "source": "pak-export.s",
+      "symbol": "lc_pak_export",
+      "resume": 479512,
+      "reject": 479952,
+      "delta": 2148701472,
+      "retailSha256": "49c488363e39ba477f69f10b4f15f74e2ca0a739eccfccbdb78a514fdb2c939d"
+    }
+  ]
 }

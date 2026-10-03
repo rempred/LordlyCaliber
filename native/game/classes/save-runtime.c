@@ -256,3 +256,43 @@ SaveByte *lc_save_summary(SaveWord slot)
     lc_native_save_cleanup(0x37081383U);
     return summary;
 }
+int lc_pak_export(SaveWord slot, SaveByte *file, SaveWord capacity)
+{
+    SaveByte *cache, *record;
+    if (slot >= 2 || !file || capacity < 0x20U + LC_SAVE_EXPANDED_NORMAL_BYTES) return 0;
+    cache = save_cache();
+    if (!cache) { lc_native_save_cleanup(0x37081383U); return 0; }
+    record = cache + lc_save_record_offset(slot, 1);
+    if (!lc_save_record_valid(record, LC_SAVE_EXPANDED_NORMAL_BYTES, slot, 1)) {
+        lc_native_save_cleanup(0x37081383U); return 0;
+    }
+    clear_save_bytes(file, capacity);
+    copy_save_bytes(file + 0x20, record, LC_SAVE_EXPANDED_NORMAL_BYTES);
+    lc_save_pak_encode(file + 0x20, capacity - 0x20, slot);
+    copy_save_bytes(file, record + 12 + lc_save_callbacks[0].offset, 26);
+    lc_native_save_cleanup(0x37081383U);
+    return 1;
+}
+int lc_pak_import(SaveWord slot, const SaveByte *file, SaveWord size)
+{
+    SaveByte *record;
+    SaveWord bytes;
+    int valid;
+    if (slot >= 2 || !file || size < 0x20U + LC_SAVE_NORMAL_BYTES) return 0;
+    bytes = size - 0x20;
+    if (bytes > LC_SAVE_EXPANDED_NORMAL_BYTES) bytes = LC_SAVE_EXPANDED_NORMAL_BYTES;
+    /* A short expanded record must not be completed with fabricated zeroes. */
+    if (save_word(file + 0x24) == 0x4C433035U && bytes < LC_SAVE_EXPANDED_NORMAL_BYTES) return 0;
+    record = (SaveByte *)lc_native_save_alloc(LC_SAVE_EXPANDED_NORMAL_BYTES);
+    if (!record) return 0;
+    clear_save_bytes(record, LC_SAVE_EXPANDED_NORMAL_BYTES);
+    copy_save_bytes(record, file + 0x20, bytes);
+    valid = lc_save_pak_decode(record, LC_SAVE_EXPANDED_NORMAL_BYTES, slot);
+    if (valid) {
+        if (save_cache()) write_save_record(slot, record);
+        else valid = 0;
+    }
+    lc_native_save_free(record);
+    lc_native_save_cleanup(0x37081383U);
+    return valid;
+}

@@ -5,6 +5,7 @@ namespace lordly {
 struct SaveRuntimeBuild {
     CompiledModule code;
     SavePlacement placement;
+    QMap<quint32, QByteArray> pakFragments;
 };
 SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
                                   const QString &directory);

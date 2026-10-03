@@ -29,7 +29,24 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
                                           {"lc_native_options_save", 0x8016cdf4}});
     result.placement.codeBytes = quint32(result.code.bytes.size());
     result.placement.codeChecksum = crc32(result.code.bytes);
+    result.placement.version = 2;
     result.placement.validate();
+    for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
+        const auto row = value.toObject();
+        const auto symbol = row["symbol"].toString();
+        const auto delta = quint32(row["delta"].toDouble());
+        const auto bytes =
+            compiler.assembleOwner(source(row["source"].toString()), directory, symbol,
+                                   delta + quint32(row["fragment"].toInt()),
+                                   {{symbol, result.code.entries.value(symbol)},
+                                    {symbol + "_continue", delta + quint32(row["resume"].toInt())},
+                                    {symbol + "_reject", delta + quint32(row["reject"].toInt())}});
+        if (!result.code.entries.contains(symbol) || bytes.isEmpty() ||
+            bytes.size() > row["fragmentSize"].toInt())
+            throw Error("Controller Pak service exceeds its source allocation");
+        result.pakFragments[row["fragment"].toInt()] =
+            bytes + QByteArray(row["fragmentSize"].toInt() - bytes.size(), 0);
+    }
     return result;
 }
 SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
@@ -52,6 +69,13 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
                             QString::number(row["start"].toInt(), 16));
         }
     }
+    if (prior.version < 2)
+        for (const auto value : catalog["pakOwners"].toArray()) {
+            const auto row = value.toObject();
+            if (sha256(rom.mid(row["start"].toInt(), row["size"].toInt())) !=
+                row["retailSha256"].toString().toLatin1())
+                throw Error("Unrecognized Controller Pak runtime owner");
+        }
     auto entry = [&](const QString &name) {
         if (!build.code.entries.contains(name))
             throw Error("Missing save entry " + name);
@@ -72,7 +96,14 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
     put32(rom, table + 4 * 28 + 4, entry("lc_discovery_load"));
     put32(rom, table + 4 * 28 + 8, entry("lc_discovery_save"));
     put32(rom, table + 4 * 28 + 12, 0x1844);
-    next.ownerChecksum = saveRuntimeOwnerChecksum(rom);
+    for (const auto value : catalog["pakOwners"].toArray()) {
+        const auto row = value.toObject();
+        const auto start = row["fragment"].toInt(), size = row["fragmentSize"].toInt();
+        if (!build.pakFragments.contains(start) || build.pakFragments[start].size() != size)
+            throw Error("Missing Controller Pak rebuild fragment");
+        rom.replace(start, size, build.pakFragments[start]);
+    }
+    next.ownerChecksum = saveRuntimeOwnerChecksum(rom, next.version);
     next.verify(rom);
     return next;
 }

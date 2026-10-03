@@ -18,6 +18,15 @@ const rows=[
 ];
 const owners=rows.map(([start,end,symbol])=>({start,size:end-start,symbol,retailSha256:hash(rom.subarray(start,end))}));
 const callbacks={start:0x3864C,size:13*28,retailSha256:hash(rom.subarray(0x3864C,0x3864C+13*28))};
+// Placement from full-function direct signatures in two captured inputs of the
+// parent overlay atlas: input-0499/0503, validated slabs 4705/4763 (42 anchors).
+// Both map z64 74F90 to RAM8019E4B0, delta80129520; not the early-boot delta.
+const pakOwners=[
+  {start:0x74A9C,size:0x4F4,fragment:0x74CB4,fragmentSize:0xD4,source:'pak-import.s',
+   symbol:'lc_pak_import',resume:0x74D88,reject:0x74E14},
+  {start:0x74F90,size:0x370,fragment:0x75028,fragmentSize:0xF0,source:'pak-export.s',
+   symbol:'lc_pak_export',resume:0x75118,reject:0x752D0}
+].map(row=>({...row,delta:0x80129520,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
 fs.writeFileSync(path.join(__dirname,'../game/classes/save-owners.json'),JSON.stringify({
-  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks
+  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks,pakOwners
 },null,2)+'\n');

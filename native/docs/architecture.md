@@ -170,8 +170,20 @@ of the class descriptor records its size and integrity checks for code, entry
 dispatch and the callback directory; version 1 remains readable. Rebuilds compile
 the save module again when class names move the discovery allocation. Isolated
 instruction checks execute the exported boot/reset and save dispatch with guarded
-allocations and synthetic SRAM. Controller Pak integration and full-game validation
-remain outstanding; public new-class export is still guarded.
+allocations and synthetic SRAM. Public new-class export remains guarded while
+the remaining class consumers and full-game behavior are checked.
+
+Controller Pak import/export retains the existing device workflow and 0x1900-byte
+file allocation. Two assembled adapters call maintained C to validate either
+legacy or expanded records, convert discovery data, and seed cartridge checksums
+for the chosen destination slot. Pak checksums retain the original zero seed.
+Import leaves its input file intact; corrupt and truncated records cannot write
+SRAM. Export clears unused file bytes. Save installation version 2 adds both
+whole Pak owners to its integrity checks; earlier SRAM-only metadata upgrades
+after authenticating the original Pak owners. The adapter placement is supported
+by full-function direct signatures in the parent runtime atlas, inputs 0499 and
+0503, with delta 0x80129520. Candidate instruction tests check helper arguments
+and both continuation branches, separately from the synthetic device data tests.
 
 ## Migration baseline
 

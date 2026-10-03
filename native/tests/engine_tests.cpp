@@ -79,10 +79,12 @@ class EngineTests : public QObject {
                 placed->saves.verify(image);
                 QCOMPARE(image.mid(SavePlacement::romAddress, placed->saves.codeBytes),
                          runtime.saves->code.bytes);
-                for (const auto site : {SavePlacement::romAddress, 0x4c5cU, 0x38670U}) {
+                for (const auto site :
+                     {SavePlacement::romAddress, 0x4c5cU, 0x38670U, 0x74cb4U, 0x75028U}) {
                     auto changedSave = image;
                     changedSave[site] ^= 1;
-                    QVERIFY_THROWS_EXCEPTION(Error, ClassPlacement::read(Rom::fromBytes(changedSave)));
+                    QVERIFY_THROWS_EXCEPTION(Error,
+                                             ClassPlacement::read(Rom::fromBytes(changedSave)));
                 }
                 menus.inventory.verify(candidateRom,
                                        ClassRuntimeInventory::dataBases(runtime.data.layout));
@@ -136,10 +138,28 @@ class EngineTests : public QObject {
                                               {"discovery", double(runtime.data.layout.discovery)}})
                         .toJson());
                 candidate.setAutoRemove(false);
-                qInfo().noquote()
-                    << "Expanded-menu candidate (Controller Pak and remaining consumers pending):"
-                    << candidate.filePath("menu-layout.json");
+                qInfo().noquote() << "Expanded-class candidate (remaining consumers and full-game "
+                                     "checks pending):"
+                                  << candidate.filePath("menu-layout.json");
                 priorRom = candidateRom;
+                if (count == 166) {
+                    // Previous save installation metadata omitted the Pak owners.
+                    // Reopening and upgrading it must authenticate both sets.
+                    auto older = image;
+                    for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
+                        const auto row = value.toObject();
+                        older.replace(row["start"].toInt(), row["size"].toInt(),
+                                      rom.bytes().mid(row["start"].toInt(), row["size"].toInt()));
+                    }
+                    auto legacyPlacement = *placed;
+                    legacyPlacement.saves.version = 1;
+                    legacyPlacement.saves.ownerChecksum = saveRuntimeOwnerChecksum(older, 1);
+                    older.replace(
+                        ClassPlacement::descriptorRomOffset, ClassPlacement::descriptorSize,
+                        legacyPlacement.descriptor(runtime.compiledData, runtime.code.bytes));
+                    priorRom = Rom::fromBytes(older);
+                    QCOMPARE(ClassPlacement::read(priorRom)->saves.version, 1U);
+                }
             }
             // Longer names move the discovery bitmap without changing the count.
             auto named = classes.entries().last();

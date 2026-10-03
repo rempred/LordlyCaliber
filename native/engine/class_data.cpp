@@ -62,6 +62,7 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     put32(header, 84, saves.codeBytes);
     put32(header, 88, saves.codeChecksum);
     put32(header, 92, saves.ownerChecksum);
+    put32(header, 96, saves.version >= 2 ? saves.version : 0);
     put32(header, 124, crc32(header.first(124)));
     return header;
 }
@@ -71,8 +72,8 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
         return std::nullopt;
     const auto version = u32(header, 8);
     if (rom.revision() != 0 || header.size() != descriptorSize || (version != 1 && version != 2) ||
-        u32(header, 124) != crc32(header.first(124)) || header.mid(96, 28) != QByteArray(28, 0) ||
-        (version == 1 && header.mid(84, 12) != QByteArray(12, 0)) ||
+        u32(header, 124) != crc32(header.first(124)) || header.mid(100, 24) != QByteArray(24, 0) ||
+        (version == 1 && header.mid(84, 16) != QByteArray(16, 0)) ||
         (version == 2 && !u32(header, 84)))
         throw Error("Unrecognized or damaged relocated class descriptor");
     ClassPlacement result;
@@ -93,6 +94,7 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     result.directoryCapacity = int(u32(header, 76));
     result.codeBytes = u32(header, 80);
     result.saves = {u32(header, 84), u32(header, 88), u32(header, 92)};
+    result.saves.version = version == 2 ? (u32(header, 96) ? u32(header, 96) : 1) : 0;
     validatePlacement(result);
     result.saves.verify(rom.bytes());
     if (u32(header, 16) != l.end - l.indexBase ||
