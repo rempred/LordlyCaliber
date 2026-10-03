@@ -83,6 +83,16 @@ save consumers are integrated. The relocation linker authenticates the complete
 normalized code before choosing a source-built owner's reference locations;
 recompiled instructions need not retain the original load/store positions.
 
+`rebuild/class_menu_layout.*` derives the expanded Army allocation and both C
+and assembly configuration from the class/promotion count. Four terminated
+halfword arrays follow the original owner: the family/equipment list, category
+class IDs, current counts and eligible counts. Their locations are shared by
+generated readers and future installation metadata; unrelated screen storage
+keeps its original positions. Layout validation requires matching table counts,
+aligned nonoverlapping arrays, and resident data inside the 4 MB address range.
+This allocation model does not yet install the expanded runtime or prove peak
+game memory use.
+
 Compiled C modules expose their actual global function addresses through the
 linked ELF32/MIPS symbol table. Callers must use these entries, not assume source
 order or an entry at the allocation start. Module extraction rejects nonempty

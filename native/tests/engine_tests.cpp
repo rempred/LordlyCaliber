@@ -1,6 +1,7 @@
 #include "engine/class_data.h"
 #include "engine/project.h"
 #include "engine/resource.h"
+#include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
 #include <QJsonArray>
@@ -613,6 +614,103 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         base.originalGates = base.gates;
         base.originalMasks = base.masks;
         base.originalFlags = base.flags;
+        // Every supported class count gets independent, terminated buffers;
+        // a mismatch with either runtime table must fail before compilation.
+        for (int count = 165; count <= 256; ++count) {
+            auto promotion = base;
+            promotion.growToClassCount(count);
+            const auto payload = promotion.buildExpandedData();
+            ClassDataLayout classes;
+            classes.count = count;
+            classes.records = 0x80243df8;
+            classes.aliases = 0x80250000;
+            classes.discovery = 0x80250800;
+            const auto layout = ClassMenuLayout::build(classes, payload);
+            QCOMPARE(layout.capacity, count + 1);
+            QCOMPARE(layout.list, quint32(0x2528));
+            const quint32 bytes = (count + 1) * 2;
+            QVERIFY(layout.list + bytes <= layout.categoryClasses);
+            QVERIFY(layout.categoryClasses + bytes <= layout.currentCounts);
+            QVERIFY(layout.currentCounts + bytes <= layout.eligibleCounts);
+            QVERIFY(layout.eligibleCounts + bytes <= layout.ownerBytes);
+            QCOMPARE((layout.categoryClasses | layout.currentCounts | layout.eligibleCounts |
+                      layout.ownerBytes) &
+                         15,
+                     quint32(0));
+            if (count == 166) {
+                QCOMPARE(layout.categoryClasses, quint32(0x2680));
+                QCOMPARE(layout.currentCounts, quint32(0x27d0));
+                QCOMPARE(layout.eligibleCounts, quint32(0x2920));
+                QCOMPARE(layout.ownerBytes, quint32(0x2a70));
+            }
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (!tools.isEmpty() && (count == 166 || count == 255 || count == 256)) {
+                Compiler compiler(tools);
+                compiler.authenticate();
+                QTemporaryDir work;
+                for (const auto &entry : promotionOwners()["owners"].toArray()) {
+                    const auto owner = entry.toObject();
+                    if (!owner.contains("cSource"))
+                        continue;
+                    QFile source(":/game/promotion/" + owner["cSource"].toString());
+                    QVERIFY(source.open(QIODevice::ReadOnly));
+                    QMap<QString, quint32> symbols = layout.dataSymbols;
+                    const auto bindings = owner["symbols"].toObject();
+                    for (auto it = bindings.begin(); it != bindings.end(); ++it)
+                        if (!symbols.contains(it.key()))
+                            symbols[it.key()] = quint32(it.value().toDouble());
+                    const auto code = compiler.compileModule(
+                        source.readAll(), work.path(), owner["name"].toString(),
+                        quint32(owner["start"].toInt()) + 0x801135a0U,
+                        {{"class_menu_config.h", layout.cHeader}}, symbols);
+                    const auto size = owner.value("cExtent").toInt(owner["size"].toInt());
+                    QVERIFY2(code.functionExtent <= quint32(size),
+                             qPrintable(QString("%1 with %2 classes needs %3 bytes, allocation %4")
+                                            .arg(owner["name"].toString())
+                                            .arg(count)
+                                            .arg(code.functionExtent)
+                                            .arg(size)));
+                    QCOMPARE(code.fitOwner(size).size(), size);
+                }
+            }
+            if (count == 256) {
+                QCOMPARE(layout.categoryClasses, quint32(0x2730));
+                QCOMPARE(layout.currentCounts, quint32(0x2940));
+                QCOMPARE(layout.eligibleCounts, quint32(0x2b50));
+                QCOMPARE(layout.ownerBytes, quint32(0x2d60));
+                auto mismatched = payload;
+                --mismatched.classCount;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassMenuLayout::build(classes, mismatched));
+                mismatched = payload;
+                ++mismatched.maskOffset;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassMenuLayout::build(classes, mismatched));
+                auto invalid = classes;
+                invalid.discovery = 0x803ffff0;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassMenuLayout::build(invalid, payload));
+                invalid = classes;
+                invalid.aliases = classes.records + 16;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassMenuLayout::build(invalid, payload));
+                invalid = classes;
+                invalid.records |= 1;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassMenuLayout::build(invalid, payload));
+                if (!tools.isEmpty()) {
+                    Compiler compiler(tools);
+                    compiler.authenticate();
+                    QTemporaryDir work;
+                    const auto configData = compiler.compile(
+                        "#include \"class_menu_config.h\"\nunsigned int config[] = {"
+                        "LC_CLASS_COUNT, LC_LIST_OFFSET, LC_CATEGORY_CLASSES_OFFSET, "
+                        "LC_CATEGORY_CURRENT_OFFSET, LC_CATEGORY_ELIGIBLE_OFFSET, "
+                        "LC_DISCOVERY_ADDRESS, LC_FAMILY_OFFSET, LC_MASK_RESOURCE_OFFSET, "
+                        "LC_FLAGS_RESOURCE_OFFSET};\n",
+                        work.path(), "menu_config", 0, ".data",
+                        {{"class_menu_config.h", layout.cHeader}});
+                    QCOMPARE(configData.first(36),
+                             QByteArray::fromHex("0000010000002528000027300000294000002b50802508000"
+                                                 "000080000000c0000000d00"));
+                }
+            }
+        }
         auto legacy = base.json();
         legacy.remove("flags");
         auto legacyRestored = base;
