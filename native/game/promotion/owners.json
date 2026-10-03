@@ -1,0 +1,76 @@
+{
+  "generator": "native/tools/generate-promotion-owner-catalog.cjs",
+  "input": "native-classes-data.js (validated Rebuild baseline 559b231)",
+  "romStart": 41746432,
+  "romSize": 65536,
+  "resourceKey": 35896704,
+  "owners": [
+    {
+      "name": "func_000aeb8c",
+      "start": 715660,
+      "size": 8304,
+      "retailSha256": "af91327c17cd71b9370af22b514253e221ef8f400f499dda7f2b8ba9bb9c38b3",
+      "familySha256": "e7513211d223a1d1a81076f1eb721f5b888582c1af549bbcc49ca7635e5e2794",
+      "keySite": 716672
+    },
+    {
+      "name": "func_000cc828",
+      "start": 837672,
+      "size": 3008,
+      "retailSha256": "5655541f674226b742455c549229a3d75f0388335a4715cb3fe8e1431544b1d9",
+      "familySha256": "5dabd8a9f8d5b4be75a710270dd0bf60b32de973edde8ee5ff994d77f3fe0b8d",
+      "keySite": 837772
+    },
+    {
+      "name": "func_000cd3e8",
+      "start": 840680,
+      "size": 2568,
+      "retailSha256": "87e97278985be7a289969d5165af97d48ae926cec3bd839b28195494e59b5890",
+      "familySha256": "a9f643b48205651a122fd9d50b5601426aab5a97a2c9c18b4f7c94fc06666aa9",
+      "keySite": 840900
+    },
+    {
+      "name": "func_000cddf0",
+      "start": 843248,
+      "size": 6204,
+      "retailSha256": "fbaeb6a94c31341705a4cc2eb55620e91036ff47e5db59e9618d6171aafa1982",
+      "familySha256": "557fd5c8e0945f1cdd159695003778175f086305f2e7112b2429979f4979e085",
+      "keySite": 843352
+    },
+    {
+      "name": "func_000bbd50",
+      "start": 769360,
+      "size": 48,
+      "retailSha256": "0e5d40e094a3b906486091986af2b2549ba585a742eea7ca44414c3999c61a46",
+      "familySha256": "096332a632aa8a8c86616894feac4fdba1be5f6703222759de28e675c24a0b2e"
+    },
+    {
+      "name": "func_000bf248",
+      "start": 782920,
+      "size": 528,
+      "retailSha256": "852d00c511422c5168b11ec4e50c0bd709fad83f6632816c605ec972a1f69498",
+      "familySha256": "dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298"
+    },
+    {
+      "name": "func_000c37ec",
+      "start": 800748,
+      "size": 276,
+      "retailSha256": "8602902fd9c683339d85f80f7bbc619d038c54beb9bc286f157b1904ced19a00",
+      "familySha256": "1b75e382befe62241aacf2185640fc9fd51bea4b9d2a66283d0e954e0a12baed"
+    },
+    {
+      "name": "func_000c3900",
+      "start": 801024,
+      "size": 1196,
+      "retailSha256": "f92207bf1faff20279adf85ffb6d5f2594445e0f0584c22b7873aab6c6cf49b5",
+      "familySha256": "94d94e45b7102a9299794b617b2d3c3042e2d24f9ff02677681c597d50575955"
+    },
+    {
+      "name": "func_000d0150",
+      "start": 852304,
+      "size": 568,
+      "retailSha256": "1224b99d57c28d2f29adb60e54caea6460e101844afb41123a90e571201d6884",
+      "familySha256": "f69b6ed704705f34dfcdcbbb820488dea832b40bcaf9a4c1d3d07e5146ed1068"
+    }
+  ]
+}

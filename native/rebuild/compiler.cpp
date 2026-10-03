@@ -2,9 +2,11 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QRegularExpression>
+#include <algorithm>
 
 namespace lordly {
 static QByteArray readFile(const QString &path) {
@@ -104,6 +106,106 @@ QByteArray Compiler::compileData(const QByteArray &bytes, const QString &directo
             throw Error("Unexpected nonzero compiler alignment bytes");
     return output.first(bytes.size());
 }
+QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &directory,
+                                   const QString &name, quint32 address) const {
+    QDir dir(directory);
+    if (!dir.mkpath("."))
+        throw Error("Cannot create assembly build directory");
+    auto input = dir.absoluteFilePath(name + ".s"), object = dir.absoluteFilePath(name + ".o");
+    auto script = dir.absoluteFilePath(name + ".ld"), elf = dir.absoluteFilePath(name + ".elf");
+    auto binary = dir.absoluteFilePath(name + ".bin");
+    atomicWrite(input, ".set noat\n.set noreorder\n.section .owner,\"ax\"\n.balign 4\n" + source);
+    run("mips-kmc-elf-as.exe", {"-G", "0", "-mips3", "-mabi=32", "-EB", "-o", object, input},
+        directory);
+    atomicWrite(script, QString("FAMILY_LOOKUP = 0x801CF2F0; CHECK_CHANGE = 0x801D2358;\nSECTIONS "
+                                "{ .owner 0x%1 : { *(.owner) } }\n")
+                            .arg(address, 0, 16)
+                            .toLatin1());
+    run("mips-kmc-elf-ld.exe", {"-EB", "-T", script, "-o", elf, object}, directory);
+    QStringList extract = {"-O", "binary"};
+    for (auto section : {".text", ".data", ".bss", ".reginfo", ".mdebug", ".pdr", ".comment"})
+        extract << "--remove-section=" + QString::fromLatin1(section);
+    extract << elf << binary;
+    run("mips-kmc-elf-objcopy.exe", extract, directory);
+    return readFile(binary);
+}
+static void rebuildPromotion(const Project &p, const Compiler &compiler, const QString &directory,
+                             BuildResult &result) {
+    if (!p.promotion() || !p.promotion()->modified())
+        return;
+    const auto &promotion = *p.promotion();
+    bool family = promotion.expanded || promotion.families != promotion.originalFamilies ||
+                  encodeLzss(promotion.gates).size() > promotion.retailResource.capacity;
+    if (family) {
+        const auto &bytes = p.rom().bytes();
+        if (!promotion.expanded) {
+            auto free = bytes.mid(0x27d0000, 65536);
+            if (free.size() != 65536 ||
+                std::any_of(free.begin(), free.end(), [](char c) { return quint8(c) != 255; }))
+                throw Error("Promotion rebuild allocation is occupied");
+        }
+        const auto legacy = bytes.mid(0x27b0800, 1024);
+        if (std::any_of(legacy.begin(), legacy.end(), [](char c) { return quint8(c) != 255; }))
+            throw Error("Legacy promotion allocation needs migration before this export");
+        auto compiled =
+            compiler.compileData(promotion.decodedFamilies(), directory, "class_families");
+        result.image.replace(0x27d0000, 65536, promotion.familyContainer(compiled));
+        const auto owners = promotionOwners()["owners"].toArray();
+        const QMap<int, QByteArray> replacements = {{0xc38c0, "bne $v1, $v0, .+32"},
+                                                    {0xc3a88, "bne $v1, $v0, .+32"},
+                                                    {0xcce00, "move $v0, $v1"},
+                                                    {0xd0328, "addiu $v1, $v1, -1"},
+                                                    {0xd0334, "srl $v0, $v0, 16"}};
+        for (auto v : owners) {
+            auto owner = v.toObject();
+            auto start = owner["start"].toInt(), size = owner["size"].toInt();
+            auto original = bytes.mid(start, size);
+            auto hash = QString::fromLatin1(sha256(original));
+            if (hash != owner["retailSha256"].toString() &&
+                hash != owner["familySha256"].toString())
+                throw Error("Promotion source owner was modified: " + owner["name"].toString());
+            QByteArray source;
+            if (start == 0xbbd50)
+                source = readFile(":/game/promotion/family-lookup.s");
+            else if (start == 0xbf248)
+                source = readFile(":/game/promotion/family-menu.s");
+            else
+                for (int offset = 0; offset < size; offset += 4) {
+                    auto site = start + offset;
+                    if (replacements.contains(site))
+                        source += replacements[site];
+                    else if (owner.contains("keySite") && site == owner["keySite"].toInt())
+                        source += "lui $a0, 0x0223";
+                    else if (owner.contains("keySite") && site == owner["keySite"].toInt() + 4)
+                        source += "ori $a0, $a0, 0xbd80";
+                    else
+                        source += ".word 0x" + QByteArray::number(u32(original, offset), 16);
+                    source += '\n';
+                }
+            auto built = compiler.assembleOwner(source, directory, owner["name"].toString(),
+                                                quint32(start) + 0x801135a0u);
+            if (built.size() != size ||
+                sha256(built) != owner["familySha256"].toString().toLatin1())
+                throw Error("Compiled promotion owner differs from validated source: " +
+                            owner["name"].toString());
+            result.image.replace(start, size, built);
+        }
+        result.report << "Compiled expanded promotion data and rebuilt nine complete runtime "
+                         "owners within their original extents";
+    } else if (promotion.gates != promotion.originalGates) {
+        auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");
+        auto container = promotion.retailResource.container(compiled);
+        result.image.replace(promotion.retailResource.romOffset, container.size(), container);
+        result.report << "Compiled promotion requirements into the retail resource";
+    }
+    if (promotion.masks != promotion.originalMasks) {
+        auto data = p.rom().bytes().mid(0xdbd2c, 162);
+        for (int i = 0; i < 81; ++i)
+            data[i * 2 + 1] = promotion.masks[i];
+        auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
+        result.image.replace(0xdbd2c, compiled.size(), compiled);
+    }
+}
 BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &directory) {
     Compiler compiler(toolsRoot);
     compiler.authenticate();
@@ -141,7 +243,9 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
         result.image.replace(bank.resource.romOffset, container.size(), container);
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
+    rebuildPromotion(p, compiler, directory, result);
     if (p.rom().revision() == 0 &&
+        !(p.promotion() && (p.promotion()->expanded || p.promotion()->modified())) &&
         p.manifest().value("records").toObject().value("classes").toObject().size() > 0) {
         auto source = readFile(":/game/accepted/func_000bbd50.c");
         auto function = compiler.compile(source, directory, "func_000bbd50", 0x801cf2f0, ".text");
@@ -155,6 +259,11 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.promotion()) {
+        reopened.loadPromotion();
+        if (reopened.promotion()->json() != p.promotion()->json())
+            throw Error("Exported promotion data differs from the project");
+    }
     if (!p.textBanks().isEmpty()) {
         reopened.loadTexts();
         for (auto bank = p.textBanks().begin(); bank != p.textBanks().end(); ++bank)

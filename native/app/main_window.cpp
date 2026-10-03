@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/promotion_editor.h"
 #include "app/text_workspace.h"
 #include "rebuild/compiler.h"
 #include <QAction>
@@ -126,6 +127,8 @@ void MainWindow::loadRom(const QString &path) {
         try {
             auto project = Project::fromRom(Rom::open(path), catalog);
             project.loadTexts();
+            if (project.rom().revision() == 0)
+                project.loadPromotion();
             return Result{std::move(project), {}};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
@@ -205,7 +208,17 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
                 model->setData(model->index(*selected, n + 2), value, Qt::EditRole);
         });
     }
-    auto refresh = [this, table, selected, spins] {
+    PromotionEditor *promotion = nullptr;
+    if (table == Table::Classes) {
+        promotion = new PromotionEditor(project_.get(), undo_, [this] { updateStatus(); });
+        auto scroll = new QScrollArea;
+        scroll->setWidgetResizable(true);
+        scroll->setWidget(promotion);
+        inspector->addTab(scroll, "Promotion");
+    }
+    auto refresh = [this, table, selected, spins, promotion] {
+        if (promotion)
+            promotion->selectClass(*selected);
         for (int n = 0; n < spins->size(); ++n) {
             auto spin = (*spins)[n];
             QSignalBlocker block(spin);
@@ -244,6 +257,8 @@ void MainWindow::openProject() {
         auto object = Project::readProject(path);
         auto next = Project::fromRom(project_->rom(), catalog_);
         next.loadTexts();
+        if (next.rom().revision() == 0)
+            next.loadPromotion();
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);
         else

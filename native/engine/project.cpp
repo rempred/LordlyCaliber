@@ -182,11 +182,21 @@ int Project::changedRecords() const {
         for (const auto &entry : bank.entries)
             if (entry.bytes != entry.original)
                 ++count;
+    if (promotion_ && promotion_->modified())
+        ++count;
     return count;
 }
 void Project::loadTexts() {
     if (texts_.isEmpty())
         texts_ = TextBank::load(rom_);
+}
+void Project::loadPromotion() {
+    if (!promotion_)
+        promotion_ = Promotion::load(rom_);
+}
+void Project::setPromotion(const QJsonObject &value) {
+    loadPromotion();
+    promotion_->apply(value);
 }
 void Project::setText(const QString &kind, int id, const QString &text) {
     loadTexts();
@@ -226,6 +236,10 @@ QJsonObject Project::manifest() const {
             descriptions[bank.key()] = rows;
     }
     result["descriptions"] = descriptions;
+    if (promotion_ && promotion_->modified())
+        result["promotion"] = promotion_->json();
+    else
+        result.remove("promotion");
     if (!legacy_.isEmpty())
         result["legacyImport"] = legacy_;
     return result;
@@ -287,6 +301,13 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
+    if (candidate.promotion_)
+        candidate.promotion_ = Promotion::load(rom_);
+    if (object.contains("promotion")) {
+        if (!object["promotion"].isObject())
+            throw Error("Invalid saved promotion data");
+        candidate.setPromotion(object["promotion"].toObject());
+    }
     *this = std::move(candidate);
 }
 void Project::importLegacy(const QJsonObject &object) {
@@ -377,6 +398,35 @@ void Project::importLegacy(const QJsonObject &object) {
         }
     }
     candidate.importWarnings_.clear();
+    if (patch.contains("statGates")) {
+        if (!patch["statGates"].isObject())
+            throw Error("Invalid imported stat gates");
+        const auto gates = patch["statGates"].toObject();
+        if (!gates.isEmpty()) {
+            candidate.loadPromotion();
+            const QStringList keys = {"str", "vit", "int", "men", "agi", "dex", "alnMin", "alnMax"};
+            for (auto row = gates.begin(); row != gates.end(); ++row) {
+                bool ok = false;
+                auto id = row.key().toInt(&ok);
+                if (!ok || !row.value().isObject())
+                    throw Error("Invalid imported stat gate row");
+                const auto values = row.value().toObject();
+                for (auto field = values.begin(); field != values.end(); ++field) {
+                    auto v = field.value().toDouble(-1);
+                    if (!std::isfinite(v) || v != std::floor(v) || v < 0 || v > 255)
+                        throw Error("Invalid imported stat gate value");
+                    candidate.promotion_->setGate(id, keys.indexOf(field.key()), int(v));
+                }
+            }
+        }
+    }
+    if (patch.contains("classFamilies") && !patch["classFamilies"].isNull()) {
+        if (!patch["classFamilies"].isObject())
+            throw Error("Invalid imported class families");
+        candidate.loadPromotion();
+        candidate.promotion_->families =
+            Promotion::validateFamilies(patch["classFamilies"].toObject());
+    }
     auto pending = candidate.pendingLegacySections();
     if (!pending.isEmpty())
         candidate.importWarnings_ = {
@@ -406,7 +456,8 @@ QStringList Project::pendingLegacySections() const {
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it)
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
-            it.key() != "descriptions" && changed(it.value()))
+            it.key() != "descriptions" && it.key() != "statGates" && it.key() != "classFamilies" &&
+            changed(it.value()))
             pending << it.key();
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {

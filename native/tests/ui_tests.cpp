@@ -1,8 +1,16 @@
 #include "app/main_window.h"
+#include "app/promotion_editor.h"
 #include "app/record_model.h"
+#include "app/text_workspace.h"
 #include <QApplication>
+#include <QComboBox>
 #include <QDir>
 #include <QFontDatabase>
+#include <QJsonArray>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSpinBox>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -56,6 +64,34 @@ class UiTests : public QObject {
             QTest::qWait(100);
             QVERIFY(window.grab().save(screenshot));
         }
+    }
+    void promotionControlsAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadPromotion();
+        const auto original = project.promotion()->json();
+        QUndoStack undo;
+        PromotionEditor editor(&project, &undo, [] {});
+        editor.selectClass(5);
+        auto gate = editor.findChild<QSpinBox *>("promotionGate0");
+        gate->setValue(90);
+        QCOMPARE(u8(project.promotion()->gates, 40), quint8(90));
+        undo.undo();
+        QCOMPARE(project.promotion()->json(), original);
+        undo.redo();
+        QCOMPARE(gate->value(), 90);
+        editor.findChild<QLineEdit *>("newFamilyName")->setText("Order of Dawn");
+        editor.findChild<QComboBox *>("familyTemplate")->setCurrentIndex(0);
+        editor.findChild<QPushButton *>("createFamily")->click();
+        QCOMPARE(project.promotion()->families["assignments"].toArray()[5].toInt(), 16);
+        undo.undo();
+        QCOMPARE(project.promotion()->families, project.promotion()->originalFamilies);
+        undo.redo();
+        QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 16);
+        editor.selectClass(100);
+        QVERIFY(!gate->isEnabled());
     }
 };
 QTEST_MAIN(UiTests)

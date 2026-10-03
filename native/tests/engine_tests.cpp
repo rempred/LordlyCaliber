@@ -269,6 +269,62 @@ class EngineTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void promotionFamiliesExport() {
+        auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            auto p = Project::fromRom(Rom::open(path));
+            p.loadPromotion();
+            auto model = *p.promotion();
+            // Documented retail Knight requirements provide an independent framing check.
+            QCOMPARE(u8(model.gates, 5 * 8), quint8(72));
+            QCOMPARE(u8(model.gates, 5 * 8 + 1), quint8(67));
+            QCOMPARE(u8(model.gates, 5 * 8 + 6), quint8(40));
+            auto family = model.addFamily("Order of Dawn", 1);
+            QCOMPARE(family, 16);
+            model.assign(2, family);
+            model.assign(5, family);
+            model.setGate(5, 0, 90);
+            model.setMask(5, 0xa5);
+            QVERIFY_THROWS_EXCEPTION(Error, model.addFamily("order of dawn", 1));
+            QVERIFY_THROWS_EXCEPTION(Error, model.assign(0, 16));
+            QVERIFY_THROWS_EXCEPTION(Error, model.assign(5, 65534));
+            p.setPromotion(model.json());
+            QTemporaryDir projectDir;
+            p.saveFolder(projectDir.path());
+            auto restored = Project::fromRom(p.rom());
+            restored.applyManifest(Project::readProject(projectDir.path()));
+            QCOMPARE(restored.promotion()->json(), model.json());
+            QTemporaryDir build;
+            auto result = rebuild(p, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
+            auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir candidate(candidates + "/native-promotion-XXXXXX");
+            QVERIFY(candidate.isValid());
+            auto output = candidate.filePath(QFileInfo(path).fileName());
+            exportRom(p, result, output);
+            auto reopened = Project::fromRom(Rom::open(output));
+            reopened.loadPromotion();
+            QCOMPARE(reopened.promotion()->json(), model.json());
+            QVERIFY(reopened.promotion()->expanded);
+            QCOMPARE(Rom::open(path).bytes(), p.rom().bytes());
+            QTemporaryDir repeatBuild;
+            auto repeat =
+                rebuild(reopened, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), repeatBuild.path());
+            QCOMPARE(repeat.image, result.image);
+            auto occupied = p.rom().bytes();
+            occupied[0x27d0000] = 0;
+            auto conflict = Project::fromRom(Rom::fromBytes(occupied));
+            conflict.setPromotion(model.json());
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     rebuild(conflict, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"),
+                                             repeatBuild.path()));
+            QVERIFY(QFileInfo::exists(build.filePath("class_families.compiler.s")));
+            QVERIFY(QFileInfo::exists(build.filePath("func_000bf248.s")));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
 };
 QTEST_GUILESS_MAIN(EngineTests)
 #include "engine_tests.moc"

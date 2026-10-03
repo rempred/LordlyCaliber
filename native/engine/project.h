@@ -1,10 +1,12 @@
 #pragma once
+#include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/text.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
 #include <map>
+#include <optional>
 
 namespace lordly {
 enum class Table { Classes, Items };
@@ -63,6 +65,11 @@ class Project {
     void setText(const QString &kind, int id, const QString &text);
     void replaceTextBytes(const QString &kind, int id, const QByteArray &bytes);
     QByteArray rebuildRecords() const;
+    void loadPromotion();
+    const std::optional<Promotion> &promotion() const {
+        return promotion_;
+    }
+    void setPromotion(const QJsonObject &value);
 
   private:
     Rom rom_;
@@ -70,6 +77,7 @@ class Project {
     std::map<Table, QVector<Record>> tables_;
     QStringList importWarnings_;
     QMap<QString, TextBank> texts_;
+    std::optional<Promotion> promotion_;
 };
 void atomicWrite(const QString &path, const QByteArray &data);
 } // namespace lordly

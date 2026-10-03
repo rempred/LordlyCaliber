@@ -11,6 +11,8 @@ class Compiler {
     QByteArray compileData(const QByteArray &bytes, const QString &directory,
                            const QString &name) const;
     void authenticate() const;
+    QByteArray assembleOwner(const QByteArray &source, const QString &directory,
+                             const QString &name, quint32 address) const;
 
   private:
     void run(const QString &tool, const QStringList &args, const QString &directory) const;
