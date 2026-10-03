@@ -36,7 +36,8 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
     if (cursor > 0x7fff)
         throw Error("Class menu buffers exceed the Army owner addressing range");
     result.dataSymbols = {{"lc_class_records", classes.records},
-                          {"lc_named_class_map", classes.aliases}};
+                          {"lc_named_class_map", classes.aliases},
+                          {"lc_discovery_flags", classes.discovery}};
     const QMap<QString, quint32> overrides = {
         {"LC_CLASS_COUNT", quint32(count)},
         {"LC_RECORD_COUNT", quint32(count)},
@@ -62,9 +63,14 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
                                          QRegularExpression::MultilineOption);
         if (header.count(pattern) != 1)
             throw Error("Class menu source configuration is missing or duplicates " + it.key());
-        header.replace(pattern, "#define " + it.key() + " " + QString::number(it.value()) + "U");
+        const auto value = it.key() == "LC_DISCOVERY_ADDRESS"
+                               ? QString("((unsigned int)lc_discovery_flags)")
+                               : QString::number(it.value()) + "U";
+        header.replace(pattern, "#define " + it.key() + " " + value);
     }
-    result.cHeader = header.toLatin1();
+    // Keep the bitmap address visible to ELF relocation records, so later
+    // name/data growth can move it without relying on guessed instruction sites.
+    result.cHeader = "extern unsigned char lc_discovery_flags[];\n" + header.toLatin1();
     const QMap<QString, quint32> assembly = {{"CLASS_COUNT", quint32(count)},
                                              {"FAMILY_OFFSET", quint32(promotion.familyOffset)},
                                              {"CLASS_LIST_OFFSET", result.list},

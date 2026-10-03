@@ -700,6 +700,13 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                                             .arg(code.functionExtent)
                                             .arg(size)));
                     QCOMPARE(code.fitOwner(size).size(), size);
+                    const QSet<QString> discoveryReaders = {
+                        "family-menu.c", "class-discovery.c", "equipment-class-menu.c",
+                        "class-categories.c", "category-class-counts.c"};
+                    if (discoveryReaders.contains(owner["cSource"].toString()))
+                        QVERIFY(std::any_of(
+                            code.addressReferences.begin(), code.addressReferences.end(),
+                            [](const auto &ref) { return ref.symbol == "lc_discovery_flags"; }));
                 }
             }
             if (count == 256) {
@@ -733,7 +740,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                         "LC_DISCOVERY_ADDRESS, LC_FAMILY_OFFSET, LC_MASK_RESOURCE_OFFSET, "
                         "LC_FLAGS_RESOURCE_OFFSET};\n",
                         work.path(), "menu_config", 0, ".data",
-                        {{"class_menu_config.h", layout.cHeader}});
+                        {{"class_menu_config.h", layout.cHeader}}, layout.dataSymbols);
                     QCOMPARE(configData.first(36),
                              QByteArray::fromHex("0000010000002528000027300000294000002b50802508000"
                                                  "000080000000c0000000d00"));
