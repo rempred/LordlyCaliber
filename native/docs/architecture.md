@@ -147,8 +147,13 @@ unaligned position in the packed payload; remaining bits start clear. Options
 and a cleared suspend record retain their original meaning. Invalid records and
 short buffers fail before any write. This record-level component is tested
 against the original codec and checksum instructions. SRAM and Controller Pak
-dispatch, migration of complete save images, and runtime callbacks are not yet
-installed, so it does not enable expanded public exports by itself.
+dispatch and runtime callbacks are not yet installed, so it does not enable
+expanded public exports by itself. Whole SRAM-image conversion now moves records
+in reverse order to avoid overwriting unread bytes, retains invalid records as
+invalid, and preserves options and unallocated tail bytes. A checksummed
+`LC05SRA1` marker occupies 16 bytes after the expanded suspend record, allowing
+repeat conversion to leave the image unchanged and damaged markers to be
+rejected before writes. Conversion alone performs no cartridge write.
 
 ## Migration baseline
 

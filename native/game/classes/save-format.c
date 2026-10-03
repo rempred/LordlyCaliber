@@ -82,3 +82,64 @@ int lc_save_expand_record(u8 *record, u32 capacity, u32 slot)
     if (cleared) put32(record, 0);
     return 1;
 }
+static u32 marker_crc(const u8 *data)
+{
+    u32 crc = ~0U, i, bit;
+    for (i = 0; i < 12; ++i) {
+        crc ^= data[i];
+        for (bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
+    }
+    return ~crc;
+}
+int lc_save_image_version(const u8 *image, u32 capacity)
+{
+    const u8 *marker, *record;
+    u32 i, slot;
+    if (!image || capacity < LC_SAVE_IMAGE_BYTES) return -1;
+    marker = image + LC_SAVE_IMAGE_MARKER;
+    if (get32(marker) == 0x4C433035U) {
+        if (get32(marker + 4) != 0x53524131U || get32(marker + 8) != 0x00010020U ||
+            get32(marker + 12) != marker_crc(marker)) return -1;
+        return 1;
+    }
+    /* A new record without its layout marker may be a partial write. Do not
+     * interpret it as legacy merely because the marker itself is damaged.
+     */
+    for (i = 0; i < 3; ++i) {
+        slot = i == 2 ? 15 : i;
+        record = image + lc_save_record_offset(slot, 1);
+        if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) return -1;
+        record = image + lc_save_record_offset(slot, 0);
+        if (get32(record + 4) == 0x4C433035U && get32(record + 8) == 0x4F473321U) return -1;
+    }
+    return 0;
+}
+int lc_save_expand_image(u8 *image, u32 capacity)
+{
+    int version = lc_save_image_version(image, capacity);
+    u32 n, slot, oldOffset, offset, oldSize, size, i;
+    u8 *record, *marker;
+    if (version < 0) return 0;
+    if (version == 1) return 1;
+    /* Move later records first so no unread legacy payload is overwritten. */
+    for (n = 3; n; --n) {
+        slot = n == 3 ? 15 : n - 1;
+        oldOffset = lc_save_record_offset(slot, 0); offset = lc_save_record_offset(slot, 1);
+        oldSize = lc_save_record_size(slot, 0); size = lc_save_record_size(slot, 1);
+        for (i = oldSize; i; --i) image[offset + i - 1] = image[oldOffset + i - 1];
+        record = image + offset;
+        if (!lc_save_expand_record(record, size, slot)) {
+            /* Retain a corrupt or empty record verbatim in its corresponding
+             * slot, inserting only the new allocation. Never reseal it as valid.
+             */
+            for (i = oldSize; i > LC_SAVE_NORMAL_BYTES; --i)
+                record[i - 1 + LC_SAVE_DISCOVERY_BYTES] = record[i - 1];
+            for (i = 0; i < LC_SAVE_DISCOVERY_BYTES; ++i) record[LC_SAVE_NORMAL_BYTES + i] = 0;
+        }
+    }
+    marker = image + LC_SAVE_IMAGE_MARKER;
+    put32(marker, 0x4C433035U); put32(marker + 4, 0x53524131U);
+    put32(marker + 8, 0x00010020U); put32(marker + 12, marker_crc(marker));
+    return 1;
+}
