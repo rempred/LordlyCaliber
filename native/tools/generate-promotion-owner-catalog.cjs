@@ -83,4 +83,15 @@ catalog.owners.push({
   requiresFamilyResource:false, onMaskEdit:true,
   symbols:{lc_army_owner:0x80196AF8}
 });
+catalog.owners.push({
+  name:'func_000bbdac', start:0xbbdac, size:784,
+  retailSha256:'59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3',
+  familySha256:'59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3',
+  cSource:'category-class-counts.c',
+  cSourceSha256:'dc2acf0669eecdb8517188318dbd35ca40cc31cd5abf279cec19e6852c183378',
+  cReferences:[{high:668,low:676,group:'classes',addend:141}],
+  requiresFamilyResource:false, onMaskEdit:true,
+  symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
+    lc_class_records:0x80187C14,lc_clear:0x80093380,lc_check_change:0x801D2358}
+});
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

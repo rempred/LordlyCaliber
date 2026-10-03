@@ -92,6 +92,44 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
         throw Error("Relocated class data or initialization code has changed outside its rebuild");
     return result;
 }
+QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &bytes,
+                                const QMap<QString, quint32> &bases,
+                                const QJsonObject &originalBases) {
+    for (const auto &value : promotionOwners()["owners"].toArray()) {
+        const auto source = value.toObject();
+        if (source["start"] != owner["start"] || source["size"] != owner["size"] ||
+            !source.contains("cReferences"))
+            continue;
+        auto normalized = bytes;
+        bool matches = bytes.size() == owner["size"].toInt();
+        const auto references = source["cReferences"].toArray();
+        for (const auto &entry : references) {
+            const auto ref = entry.toObject();
+            const auto group = ref["group"].toString();
+            const auto hi = ref["high"].toInt(), lo = ref["low"].toInt();
+            if (!bases.contains(group) || !originalBases.contains(group) || hi < 0 || lo < 0 ||
+                hi + 4 > bytes.size() || lo + 4 > bytes.size()) {
+                matches = false;
+                break;
+            }
+            const auto high = u32(bytes, hi), low = u32(bytes, lo);
+            const quint32 carry = low >> 26 == 13 ? 0 : 0x8000;
+            const auto address = bases[group] + quint32(ref["addend"].toInt());
+            const auto retail =
+                quint32(originalBases[group].toDouble()) + quint32(ref["addend"].toInt());
+            if (high >> 26 != 15 || (high & 65535) != (address + carry) >> 16 ||
+                (low & 65535) != (address & 65535)) {
+                matches = false;
+                break;
+            }
+            put32(normalized, hi, (high & 0xffff0000U) | ((retail + carry) >> 16));
+            put32(normalized, lo, (low & 0xffff0000U) | (retail & 65535));
+        }
+        if (matches && sha256(normalized) == source["cSourceSha256"].toString().toLatin1())
+            return references;
+    }
+    return owner["references"].toArray();
+}
 static QByteArray transformReferences(const ClassPlacement &placement, const QByteArray &bytes,
                                       qsizetype romStart, bool canonical) {
     QFile file(":/game/classes/relocations.json");
@@ -109,7 +147,11 @@ static QByteArray transformReferences(const ClassPlacement &placement, const QBy
             continue;
         if (owner["size"].toInt() != bytes.size())
             throw Error("Class reference owner extent has changed");
-        for (const auto entry : owner["references"].toArray()) {
+        QMap<QString, quint32> bases = current;
+        if (!canonical)
+            for (auto it = bases.begin(); it != bases.end(); ++it)
+                it.value() = quint32(original[it.key()].toDouble());
+        for (const auto entry : classOwnerReferences(owner, bytes, bases, original)) {
             const auto ref = entry.toObject();
             const auto group = ref["group"].toString();
             const auto hi = ref["high"].toInt(), lo = ref["low"].toInt();

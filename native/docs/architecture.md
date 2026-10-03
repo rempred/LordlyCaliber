@@ -76,6 +76,13 @@ purchase list; the Classes panel exposes that setting and preserves the three
 unknown upper bits. Flags persist in new project manifests; older manifests
 without them inherit the source ROM's flags. New class templates copy the flags.
 
+Category lists and roster counts now compile from maintained C alongside the
+family, discovery and equipment lists. Their source configuration supports
+larger arrays, but public exports retain the retail layout until all screen and
+save consumers are integrated. The relocation linker authenticates the complete
+normalized code before choosing a source-built owner's reference locations;
+recompiled instructions need not retain the original load/store positions.
+
 Compiled C modules expose their actual global function addresses through the
 linked ELF32/MIPS symbol table. Callers must use these entries, not assume source
 order or an entry at the allocation start. Module extraction rejects nonempty

@@ -1,9 +1,17 @@
 #pragma once
 #include "engine/rom.h"
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QMap>
 #include <QVector>
 #include <optional>
 
 namespace lordly {
+// Source-built owners may use different instruction locations for the same
+// class data. Select their references only after authenticating the full owner.
+QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &bytes,
+                                const QMap<QString, quint32> &bases,
+                                const QJsonObject &originalBases);
 struct ClassAsset {
     QByteArray record, appearance, name;
     quint8 namedAlias = 0;

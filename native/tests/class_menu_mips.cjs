@@ -201,6 +201,73 @@ const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/o
 assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
+const countsAddress=0x801CF34C;
+const countsSource=fs.readFileSync(path.join(native,'game/promotion/category-class-counts.c'),'utf8');
+const countsBindings='lc_army_owner = 0x80196AF8; lc_roster = 0x80193BF8; lc_named_class_map = 0x801EF3B8; lc_class_records = 0x80187C14; lc_clear = 0x80093380; lc_check_change = 0x801D2358;';
+const countsCode=compile('category_counts',config,countsSource,countsAddress,countsBindings);
+const countsConfig=config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256').replace('LC_MASK_RESOURCE_OFFSET -1','LC_MASK_RESOURCE_OFFSET 3072').replace('LC_DISCOVERY_ADDRESS 0x80196A76U','LC_DISCOVERY_ADDRESS 0x80308000U').replace('LC_CATEGORY_CLASSES_OFFSET 0x1BEE','LC_CATEGORY_CLASSES_OFFSET 0x2730').replace('LC_CATEGORY_CURRENT_OFFSET 0x1C2E','LC_CATEGORY_CURRENT_OFFSET 0x2940').replace('LC_CATEGORY_ELIGIBLE_OFFSET 0x1C6E','LC_CATEGORY_ELIGIBLE_OFFSET 0x2B50').replace('LC_CATEGORY_CAPACITY 32','LC_CATEGORY_CAPACITY 257');
+const countsWide=compile('category_counts_wide',countsConfig,countsSource,countsAddress,countsBindings.replace('0x801EF3B8','0x80308100').replace('0x80187C14','0x80310000'));
+assert(countsCode.length<=784,`counts owner ${countsCode.length}`);assert(countsWide.length<=784,`wide counts owner ${countsWide.length}`);
+const countsPadded=Buffer.alloc(784);countsCode.copy(countsPadded);
+const countsManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBBDAC);
+assert.equal(hash(countsPadded),countsManifest.cSourceSha256);
+for(const ref of countsManifest.cReferences) {
+  assert.equal(countsPadded.readUInt32BE(ref.high)>>>26,15);
+  assert.equal(countsPadded.readUInt32BE(ref.high)&65535,0x8018);
+  assert.equal(countsPadded.readUInt32BE(ref.low)&65535,0x7C59);
+}
+function countClasses(code,masks,discovery,roster,aliases,baseClasses,category,eligibleRule,initial=Buffer.alloc(0x3000)) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);cpu.set('a0',category);
+  const wide=masks.length===256, offsets=wide?[0x2730,0x2940,0x2B50]:[0x1BEE,0x1C2E,0x1C6E];
+  cpu.load(countsAddress,code);cpu.load(owner,initial);cpu.w32(0x80196AF8,owner);cpu.w32(owner+0x80,resource);
+  cpu.load(wide?0x80308000:0x80196A76,discovery);cpu.load(0x801EF370,Buffer.from([1,2,4,8,16,32,64,128]));
+  cpu.load(0x80193BF8,roster);cpu.load(wide?0x80308100:0x801EF3B8,aliases);
+  baseClasses.forEach((id,i)=>cpu.w8((wide?0x80310000:0x80187C14)+i*72+69,id));
+  masks.forEach((value,id)=>wide?cpu.w8(resource+3072+id,value):cpu.w16(0x801EF2CC+id*2,((id%11)<<8)|value));
+  if(!wide)cpu.w16(0x801EF36E,65535);
+  const before=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+initial.length)),calls=[];
+  const clobber=c=>{for(const r of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(r,0xCCCCCCCC);};
+  cpu.trap(0x80093380,c=>{c.load(c.get('a0'),Buffer.alloc(c.get('a1')));clobber(c);});
+  cpu.trap(checkAddress,c=>{
+    const actor=c.get('a0'),target=c.get('a1');assert(actor>=1&&actor<100);assert(target<256);
+    calls.push([actor,target]);const result=eligibleRule(actor,target);clobber(c);c.set('v0',result);
+  });
+  cpu.call(countsAddress,0x80000100,3000000);
+  const count=cpu.get('v0'),after=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+initial.length));
+  if(wide) {
+    assert(count<=256);
+    for(const offset of offsets)after.copy(before,offset,offset,offset+514);
+    assert.deepEqual(after,before,'counts wrote beyond declared arrays');
+  }
+  return {count,entries:Array.from({length:count+1},(_,i)=>cpu.r16(owner+offsets[0]+i*2)),current:Array.from({length:count},(_,i)=>cpu.r16(owner+offsets[1]+i*2)),eligible:Array.from({length:count},(_,i)=>cpu.r16(owner+offsets[2]+i*2)),calls,bytes:after};
+}
+let countsComparisons=0,countsOriginalHash;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xBBDAC,0xBC0BC);countsOriginalHash=hash(original);
+  const aliases=rom.subarray(0xDBE18,0xDBE18+165),baseClasses=Array.from({length:165},(_,i)=>rom[0x5DB14+i*72+69]);
+  for(let seed=0;seed<12;seed++)for(const fill of [0,0xA5,255])for(const category of [0,1,2,3,4,5,6,7,8,9,33,65535]) {
+    const roster=Buffer.alloc(99*56),masks=Array.from({length:81},(_,i)=>i<17?(i+seed)%9===8?3:1<<((i+seed)%8):0);
+    for(let i=0;i<12;i++){roster[i*56+17]=(i+seed)%3===0?90+i%2:i+1;roster[i*56+18]=(i+seed)%2?baseClasses[roster[i*56+17]]:i+1;}
+    const args=[masks,Buffer.alloc(11,fill),roster,aliases,baseClasses,category,(a,t)=>(a+t+seed)%3===0?0x101:0];
+    assert.deepEqual(countClasses(countsCode,...args),countClasses(original,...args),`counts ${seed}/${fill}/${category}`);countsComparisons++;
+  }
+}
+const countsMasks=Array(256).fill(1),countsRoster=Buffer.alloc(99*56),countsAliases=Buffer.alloc(256),countsBase=Array(256).fill(0);
+countsMasks[0]=0;
+for(const [actor,primary,secondary] of [[1,165,165],[2,200,200],[99,255,255]]){countsRoster[(actor-1)*56+17]=primary;countsRoster[(actor-1)*56+18]=secondary;}
+countsAliases[200]=201;countsBase[200]=200;
+const wideCounts=countClasses(countsWide,countsMasks,Buffer.alloc(32,255),countsRoster,countsAliases,countsBase,1,(a,t)=>a===99&&t===254?1:0,Buffer.alloc(0x3000,0xA6));
+assert.equal(wideCounts.count,255);assert.deepEqual(wideCounts.entries,[...Array.from({length:255},(_,i)=>i+1),0]);
+assert.deepEqual(wideCounts.current,Array.from({length:255},(_,i)=>[165,201,255].includes(i+1)?1:0));
+assert.deepEqual(wideCounts.eligible,Array.from({length:255},(_,i)=>[165,201,254,255].includes(i+1)?1:0));
+assert.equal(wideCounts.calls.length,3*254);
+const hiddenCounts=countClasses(countsWide,countsMasks,Buffer.alloc(32),countsRoster,countsAliases,countsBase,1,()=>0);
+assert.deepEqual(hiddenCounts.entries,[165,201,255,0]);assert.deepEqual(hiddenCounts.current,[1,1,1]);
+const emptyCounts=countClasses(countsWide,countsMasks,Buffer.alloc(32),Buffer.alloc(99*56),countsAliases,countsBase,1,()=>{throw Error('empty roster');});
+assert.deepEqual(emptyCounts.entries,[0]);assert.equal(emptyCounts.count,0);
+console.log(JSON.stringify({countsComparisons,countsBytes:countsCode.length,countsWideBytes:countsWide.length,countsOriginalHash,countsHash:hash(countsPadded)}));
 const categoriesAddress=0x801CF65C;
 const categoriesSource=fs.readFileSync(path.join(native,'game/promotion/class-categories.c'),'utf8');
 const categoriesCode=compile('class_categories',config,categoriesSource,categoriesAddress,'lc_army_owner = 0x80196AF8;');

@@ -171,6 +171,33 @@
       "symbols": {
         "lc_army_owner": 2149149432
       }
+    },
+    {
+      "name": "func_000bbdac",
+      "start": 769452,
+      "size": 784,
+      "retailSha256": "59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3",
+      "familySha256": "59604003e43aefac3d1ff4efc31de5d56902b3635fc8c7bda9f228406e4dfed3",
+      "cSource": "category-class-counts.c",
+      "cSourceSha256": "dc2acf0669eecdb8517188318dbd35ca40cc31cd5abf279cec19e6852c183378",
+      "cReferences": [
+        {
+          "high": 668,
+          "low": 676,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "requiresFamilyResource": false,
+      "onMaskEdit": true,
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_records": 2149088276,
+        "lc_clear": 2148086656,
+        "lc_check_change": 2149393240
+      }
     }
   ]
 }

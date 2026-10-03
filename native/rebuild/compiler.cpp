@@ -405,14 +405,17 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
         result.image.replace(0xdbd2c, compiled.size(), compiled);
         if (!family) {
+            const auto classPlacement = ClassPlacement::read(p.rom());
             for (const auto &value : promotionOwners()["owners"].toArray()) {
                 const auto owner = value.toObject();
                 const auto start = owner["start"].toInt(), size = owner["size"].toInt();
                 if (!(owner["onMaskEdit"].toBool() && promotion.masks != promotion.originalMasks) &&
                     !(owner["onFlagsEdit"].toBool() && promotion.flags != promotion.originalFlags))
                     continue;
-                const auto priorHash =
-                    QString::fromLatin1(sha256(p.rom().bytes().mid(start, size)));
+                auto prior = p.rom().bytes().mid(start, size);
+                if (classPlacement)
+                    prior = classPlacement->canonicalReferences(prior, start);
+                const auto priorHash = QString::fromLatin1(sha256(prior));
                 if (priorHash != owner["retailSha256"].toString() &&
                     priorHash != owner["cSourceSha256"].toString())
                     throw Error("Class-line reader was modified: " + owner["name"].toString());
@@ -425,9 +428,11 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     owner["name"].toString(), quint32(start) + 0x801135a0u,
                     {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
                     symbols);
-                const auto reader = module.fitOwner(size);
+                auto reader = module.fitOwner(size);
                 if (sha256(reader) != owner["cSourceSha256"].toString().toLatin1())
                     throw Error("Compiled class-line reader differs from validated source");
+                if (classPlacement)
+                    reader = classPlacement->placedReferences(reader, start);
                 result.image.replace(start, size, reader);
             }
             result.report << "Compiled class-line data and its affected C readers";

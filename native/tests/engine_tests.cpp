@@ -68,6 +68,18 @@ class EngineTests : public QObject {
             QCOMPARE(reopened.value(Table::Classes, 5, str), 432);
             reopened.loadPromotion();
             QCOMPARE(reopened.promotion()->json(), families.json());
+            const auto placement = ClassPlacement::read(reopened.rom());
+            QVERIFY(placement.has_value());
+            const auto countsCode = result.image.mid(0xbbdac, 784);
+            const auto canonicalCounts = placement->canonicalReferences(countsCode, 0xbbdac);
+            QCOMPARE(placement->placedReferences(canonicalCounts, 0xbbdac), countsCode);
+            QCOMPARE(u32(countsCode, 676) & 65535, (placement->layout.records + 69) & 65535);
+            auto alteredCode = countsCode;
+            alteredCode[0] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, placement->canonicalReferences(alteredCode, 0xbbdac));
+            alteredCode = countsCode;
+            alteredCode[679] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, placement->canonicalReferences(alteredCode, 0xbbdac));
             reopened.setClassNameBytes(5, "K");
             const auto smaller =
                 rebuild(reopened, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
@@ -709,7 +721,24 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bbd80.compiler.s")));
             QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bf5dc.compiler.s")));
             QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bc0bc.compiler.s")));
+            QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bbdac.compiler.s")));
             QVERIFY(maskResult.image.mid(0xbf5dc, 332) != p.rom().bytes().mid(0xbf5dc, 332));
+            // A compiled reader can precede relocation, or be rebuilt after it.
+            auto namedMask = Project::fromRom(Rom::fromBytes(maskResult.image));
+            namedMask.setClassNameBytes(5, "Steel Knight");
+            const auto maskAndName =
+                rebuild(namedMask, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), maskWork.path());
+            auto placedMask = Project::fromRom(Rom::fromBytes(maskAndName.image));
+            placedMask.loadPromotion();
+            auto nextMasks = *placedMask.promotion();
+            nextMasks.setMask(5, 3);
+            placedMask.setPromotion(nextMasks.json());
+            const auto updatedMask =
+                rebuild(placedMask, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), maskWork.path());
+            auto maskReopened = Project::fromRom(Rom::fromBytes(updatedMask.image));
+            maskReopened.loadPromotion();
+            QCOMPARE(maskReopened.promotion()->masks, nextMasks.masks);
+            QCOMPARE(maskReopened.classNameBytes(5), QByteArray("Steel Knight"));
             auto family = model.addFamily("Order of Dawn", 1);
             QCOMPARE(family, 16);
             model.assign(2, family);

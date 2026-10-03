@@ -93,7 +93,7 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
         auto canonical = rom.bytes().mid(start, size);
         if (canonical.size() != size)
             throw Error("Truncated class runtime owner");
-        for (const auto value : owner["references"].toArray()) {
+        for (const auto value : classOwnerReferences(owner, canonical, previousBases, original)) {
             const auto ref = value.toObject();
             const auto group = ref["group"].toString();
             const auto highSite = ref["high"].toInt(), lowSite = ref["low"].toInt();
