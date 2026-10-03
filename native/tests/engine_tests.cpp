@@ -51,6 +51,7 @@ class EngineTests : public QObject {
             QSKIP("Private ROM and compiler are needed for expanded menu installation checks");
         try {
             const auto rom = Rom::open(path);
+            auto priorRom = rom;
             auto classes = ClassData::loadRetail(rom);
             auto promotion = Promotion::load(rom);
             Compiler compiler(tools);
@@ -63,22 +64,20 @@ class EngineTests : public QObject {
                     promotion.appendClass(5);
                 }
                 const auto runtime = buildClassRuntime(classes, compiler, work.path(), 0x2800000);
-                auto image = linkClassRuntime(rom, runtime);
-                const auto menus = buildPromotionRuntime(Rom::fromBytes(image), runtime.data.layout,
-                                                         promotion, compiler, work.path());
+                if (count == 256)
+                    QVERIFY_THROWS_EXCEPTION(Error, linkClassRuntime(priorRom, runtime));
+                const auto menus = buildPromotionRuntime(priorRom, runtime.data.layout, promotion,
+                                                         compiler, work.path());
                 QCOMPARE(menus.owners.size(), expandedPromotionOwners().size());
                 const auto reopened = ExpandedPromotionResource::decode(menus.container);
                 QCOMPARE(reopened.data.bytes, promotion.buildExpandedData().bytes);
                 QCOMPARE(reopened.inventory.encode(), menus.inventory.encode());
-                for (auto it = menus.owners.begin(); it != menus.owners.end(); ++it)
-                    image.replace(it.key(), it.value().size(), it.value());
-                image.replace(ExpandedPromotionResource::romOffset, menus.container.size(),
-                              menus.container);
-                Rom::updateChecksum(image);
+                auto image = linkClassRuntime(priorRom, runtime, &menus);
                 const auto candidateRom = Rom::fromBytes(image);
                 menus.inventory.verify(candidateRom,
                                        ClassRuntimeInventory::dataBases(runtime.data.layout));
                 QCOMPARE(ClassData::load(candidateRom).entries().size(), count);
+                QCOMPARE(Promotion::load(candidateRom).json(), promotion.json());
                 const auto resource =
                     Resource::load(candidateRom, ExpandedPromotionResource::romOffset,
                                    ExpandedPromotionResource::slotSize);
@@ -91,6 +90,22 @@ class EngineTests : public QObject {
                     Error,
                     menus.inventory.verify(Rom::fromBytes(damaged),
                                            ClassRuntimeInventory::dataBases(runtime.data.layout)));
+                QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(damaged)));
+                damaged = image;
+                auto incomplete = menus.inventory;
+                incomplete.owners.removeLast();
+                damaged.replace(ExpandedPromotionResource::romOffset, menus.container.size(),
+                                ExpandedPromotionResource::encode(
+                                    promotion, promotion.buildExpandedData().bytes, incomplete));
+                QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(damaged)));
+                damaged = image;
+                auto emptyClassChanged = promotion;
+                emptyClassChanged.masks[0] ^= 1;
+                damaged.replace(ExpandedPromotionResource::romOffset, menus.container.size(),
+                                ExpandedPromotionResource::encode(
+                                    emptyClassChanged, emptyClassChanged.buildExpandedData().bytes,
+                                    menus.inventory));
+                QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(damaged)));
                 const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
                 QVERIFY(QDir().mkpath(candidates));
                 QTemporaryDir candidate(candidates + "/native-expanded-menu-XXXXXX");
@@ -114,7 +129,23 @@ class EngineTests : public QObject {
                 qInfo().noquote()
                     << "Expanded-menu candidate (remaining consumers/save still pending):"
                     << candidate.filePath("menu-layout.json");
+                priorRom = candidateRom;
             }
+            // Longer names move the discovery bitmap without changing the count.
+            auto named = classes.entries().last();
+            named.name = QByteArray(200, 'A');
+            classes.set(255, named);
+            const auto next = buildClassRuntime(classes, compiler, work.path(), 0x2800000);
+            const auto before = ClassPlacement::read(priorRom);
+            QVERIFY(next.data.layout.discovery != before->layout.discovery);
+            const auto renamed = Rom::fromBytes(linkClassRuntime(priorRom, next));
+            QCOMPARE(ClassData::load(renamed).entries()[255].name, named.name);
+            QCOMPARE(Promotion::load(renamed).json(), promotion.json());
+            // Fresh compilation and metadata relocation must agree byte-for-byte.
+            const auto recompiled =
+                buildPromotionRuntime(priorRom, next.data.layout, promotion, compiler, work.path());
+            for (auto it = recompiled.owners.begin(); it != recompiled.owners.end(); ++it)
+                QCOMPARE(renamed.bytes().mid(it.key(), it.value().size()), it.value());
             QCOMPARE(Rom::open(path).bytes(), rom.bytes());
         } catch (const std::exception &e) {
             QFAIL(e.what());

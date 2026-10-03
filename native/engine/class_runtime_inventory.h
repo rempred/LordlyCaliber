@@ -26,6 +26,7 @@ class ClassRuntimeInventory {
                                       const QMap<QString, quint32> &bases);
     QByteArray encode() const;
     static ClassRuntimeInventory decode(const QByteArray &bytes);
+    void requireComplete() const;
     QByteArray relocate(quint32 start, const QByteArray &code, const QMap<QString, quint32> &from,
                         const QMap<QString, quint32> &to) const;
     void verify(const Rom &rom, const QMap<QString, quint32> &bases) const;

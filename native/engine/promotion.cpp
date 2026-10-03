@@ -1,5 +1,6 @@
 #include "engine/promotion.h"
 #include "engine/class_data.h"
+#include "engine/expanded_promotion_resource.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -117,6 +118,23 @@ Promotion Promotion::load(const Rom &rom) {
     bool hasFamilyCode = false;
     bool hasDirectGateCode = false;
     const auto classPlacement = ClassPlacement::read(rom);
+    if (p.expanded && u32(descriptor, 4) == 2) {
+        if (!classPlacement || classPlacement->runtimeInventory.isEmpty())
+            throw Error("Expanded promotion menus require their relocated class table");
+        if (!filled(gateSlot, char(-1)))
+            throw Error("Conflicting legacy promotion allocation");
+        const auto expanded = ExpandedPromotionResource::decode(slot);
+        // The empty-class bytes are protected by the source retail tables.
+        p.originalGates = p.gates;
+        p.originalMasks = p.masks;
+        p.originalFlags = p.flags;
+        p.applyExpandedData(expanded.data.bytes, classPlacement->layout.count);
+        p.originalFamilies = p.families;
+        p.originalGates = p.gates;
+        p.originalMasks = p.masks;
+        p.originalFlags = p.flags;
+        return p;
+    }
     const auto owners = promotionOwners()["owners"].toArray();
     for (const auto &v : owners) {
         const auto owner = v.toObject();

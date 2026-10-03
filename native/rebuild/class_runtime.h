@@ -3,6 +3,7 @@
 #include "rebuild/compiler.h"
 
 namespace lordly {
+struct PromotionRuntimeBuild;
 struct ClassRuntimeBuild {
     ClassDataImage data;
     QByteArray compiledData;
@@ -19,5 +20,6 @@ struct ClassRuntimeBuild {
 // runtime references or produce a playable ROM on its own.
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
                                     const QString &directory, quint32 dataRomOffset);
-QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build);
+QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
+                            const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

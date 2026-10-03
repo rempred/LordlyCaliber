@@ -124,8 +124,12 @@ instruction ranges outside those functions, updates the category selection and
 drawing operands, and grows both Army allocation and clearing to the computed
 size. Actual linked data references form its inventory. Candidate checks execute
 selection, name, count and sprite-call paths at high IDs with old arrays poisoned.
-Public export remains guarded until reopening, remaining consumers and saves
-are integrated; these candidates are not a claim of a playable expanded ROM.
+Version 2 reopening verifies the complete inventory and restores promotion
+edits. Class and menu builds can be linked together so count changes remain
+consistent. Later name-only growth relocates the saved references and is checked
+against fresh compilation. Public export remains guarded until remaining
+consumers and saves are integrated; these candidates are not a claim of a
+playable expanded ROM.
 
 ## Migration baseline
 

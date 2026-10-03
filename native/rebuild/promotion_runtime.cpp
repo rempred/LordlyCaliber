@@ -21,6 +21,10 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
     result.layout = ClassMenuLayout::build(classes, data);
     result.inventory.classCount = classes.count;
     const auto placement = ClassPlacement::read(source);
+    const auto previous = placement && !placement->runtimeInventory.isEmpty()
+                              ? std::optional<ClassRuntimeInventory>(
+                                    ClassRuntimeInventory::decode(placement->runtimeInventory))
+                              : std::nullopt;
     const auto canonicalBases = ClassRuntimeInventory::canonicalBases();
     const auto nextBases = ClassRuntimeInventory::dataBases(classes);
     const auto classCatalog =
@@ -38,6 +42,10 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
         bool known = false;
         for (const auto key : {"retailSha256", "familySha256", "cSourceSha256", "directGateSha256"})
             known |= owner.contains(key) && hash == owner[key].toString().toLatin1();
+        if (previous)
+            for (const auto &record : previous->owners)
+                if (record.start == start)
+                    known |= hash == record.canonicalSha256;
         if (!known || original.size() != size)
             throw Error("Unrecognized expanded menu source owner: " + owner["name"].toString());
 
@@ -47,8 +55,14 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
             symbols[it.key()] = quint32(it.value().toDouble());
         symbols.insert(result.layout.dataSymbols);
         QVector<RuntimeDataReference> references;
+        if (previous)
+            for (const auto &record : previous->owners)
+                if (record.start == start)
+                    references = record.references;
         // Retained instructions use the authenticated original reference map.
         for (const auto &value : classCatalog["owners"].toArray()) {
+            if (previous)
+                break;
             const auto candidate = value.toObject();
             if (candidate["start"].toInt() != int(start))
                 continue;

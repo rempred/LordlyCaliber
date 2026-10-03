@@ -1,4 +1,5 @@
 #include "engine/class_data.h"
+#include "engine/expanded_promotion_resource.h"
 #include "engine/promotion.h"
 #include <QFile>
 #include <QJsonArray>
@@ -90,6 +91,17 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
         crc32(rom.bytes().mid(result.dataRomOffset, u32(header, 16))) != u32(header, 52) ||
         crc32(rom.bytes().mid(codeRomOffset, codeCapacity)) != u32(header, 56))
         throw Error("Relocated class data or initialization code has changed outside its rebuild");
+    const auto slot =
+        rom.bytes().mid(ExpandedPromotionResource::romOffset, ExpandedPromotionResource::slotSize);
+    if (slot.size() == ExpandedPromotionResource::slotSize &&
+        u32(slot, slot.size() - 64) == 0x4c43464d && u32(slot, slot.size() - 60) == 2) {
+        const auto expanded = ExpandedPromotionResource::decode(slot);
+        if (expanded.data.classCount != l.count)
+            throw Error("Expanded class records and menus have different counts");
+        expanded.inventory.requireComplete();
+        expanded.inventory.verify(rom, ClassRuntimeInventory::dataBases(l));
+        result.runtimeInventory = expanded.inventory.encode();
+    }
     return result;
 }
 QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &bytes,
@@ -132,6 +144,16 @@ QJsonArray classOwnerReferences(const QJsonObject &owner, const QByteArray &byte
 }
 static QByteArray transformReferences(const ClassPlacement &placement, const QByteArray &bytes,
                                       qsizetype romStart, bool canonical) {
+    if (!placement.runtimeInventory.isEmpty()) {
+        const auto inventory = ClassRuntimeInventory::decode(placement.runtimeInventory);
+        for (const auto &record : inventory.owners)
+            if (record.start == romStart) {
+                const auto current = ClassRuntimeInventory::dataBases(placement.layout);
+                const auto original = ClassRuntimeInventory::canonicalBases();
+                return inventory.relocate(record.start, bytes, canonical ? current : original,
+                                          canonical ? original : current);
+            }
+    }
     QFile file(":/game/classes/relocations.json");
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing class relocation catalog");

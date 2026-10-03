@@ -1,8 +1,11 @@
 #include "rebuild/class_runtime.h"
 #include "engine/promotion.h"
+#include "rebuild/promotion_runtime.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
+#include <algorithm>
 
 namespace lordly {
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
@@ -51,13 +54,24 @@ ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &co
                              directory, "class_placement");
     return result;
 }
-QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
+QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
+                            const PromotionRuntimeBuild *menus) {
     rom.requireSupported();
     if (rom.revision() != 0 || build.code.address != ClassPlacement::codeRamAddress ||
         build.compiledData != build.data.bytes ||
         build.descriptor != build.placement.descriptor(build.compiledData, build.code.bytes))
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
+    const auto inventory = prior && !prior->runtimeInventory.isEmpty()
+                               ? std::optional<ClassRuntimeInventory>(
+                                     ClassRuntimeInventory::decode(prior->runtimeInventory))
+                               : std::nullopt;
+    QSet<quint32> configuredOwners;
+    if (inventory)
+        for (const auto &owner : inventory->owners)
+            configuredOwners.insert(owner.start);
+    if (inventory && !menus && prior->layout.count != build.data.layout.count)
+        throw Error("Growing expanded classes also requires rebuilding their menu code");
     QFile file(":/game/classes/relocations.json");
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing class relocation catalog");
@@ -93,6 +107,11 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
         auto canonical = rom.bytes().mid(start, size);
         if (canonical.size() != size)
             throw Error("Truncated class runtime owner");
+        if (configuredOwners.contains(quint32(start))) {
+            if (!owner["calls"].toArray().isEmpty() || !owner["constants"].toArray().isEmpty())
+                throw Error("Configured menu overlaps class initialization instructions");
+            continue; // Already verified; relocated with its actual reference map below.
+        }
         for (const auto value : classOwnerReferences(owner, canonical, previousBases, original)) {
             const auto ref = value.toObject();
             const auto group = ref["group"].toString();
@@ -161,6 +180,16 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
         if (!recognized)
             throw Error("Unrecognized class runtime owner at z64 " + QString::number(start, 16));
     }
+    if (inventory) {
+        for (const auto &owner : inventory->owners) {
+            const auto code =
+                inventory->relocate(owner.start, rom.bytes().mid(owner.start, owner.size),
+                                    ClassRuntimeInventory::dataBases(prior->layout),
+                                    ClassRuntimeInventory::dataBases(build.data.layout));
+            for (quint32 offset = 0; offset < owner.size; offset += 4)
+                patch(owner.start + offset, u32(code, offset));
+        }
+    }
     const auto at = build.placement.dataRomOffset;
     const auto bytes = build.compiledData.size();
     const auto end = quint64(at) + bytes;
@@ -187,8 +216,36 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
     image.replace(ClassPlacement::codeRomOffset, paddedCode.size(), paddedCode);
     image.replace(ClassPlacement::descriptorRomOffset, build.descriptor.size(), build.descriptor);
     image.replace(at, bytes, build.compiledData);
+    if (menus) {
+        const auto resource = ExpandedPromotionResource::decode(menus->container);
+        resource.inventory.requireComplete();
+        if (resource.inventory.encode() != menus->inventory.encode() ||
+            resource.data.classCount != build.data.layout.count ||
+            menus->owners.size() != resource.inventory.owners.size())
+            throw Error("Class menu build disagrees with its resource or class count");
+        for (const auto &owner : resource.inventory.owners) {
+            if (!menus->owners.contains(owner.start) ||
+                menus->owners[owner.start].size() != owner.size)
+                throw Error("Class menu build is missing a complete owner");
+            image.replace(owner.start, owner.size, menus->owners[owner.start]);
+        }
+        const auto slot = rom.bytes().mid(ExpandedPromotionResource::romOffset,
+                                          ExpandedPromotionResource::slotSize);
+        const auto priorPromotion = Promotion::load(rom);
+        if (!priorPromotion.expanded &&
+            std::any_of(slot.begin(), slot.end(), [](char byte) { return quint8(byte) != 255; }))
+            throw Error("Expanded promotion allocation is occupied");
+        if (priorPromotion.directGates)
+            image.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
+        image.replace(ExpandedPromotionResource::romOffset, menus->container.size(),
+                      menus->container);
+        resource.inventory.verify(Rom::fromBytes(image),
+                                  ClassRuntimeInventory::dataBases(build.data.layout));
+    }
     Rom::updateChecksum(image);
     ClassData::load(Rom::fromBytes(image));
+    if (menus)
+        Promotion::load(Rom::fromBytes(image));
     return image;
 }
 } // namespace lordly

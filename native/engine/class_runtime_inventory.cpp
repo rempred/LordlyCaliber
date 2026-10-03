@@ -26,6 +26,21 @@ QMap<QString, quint32> ClassRuntimeInventory::dataBases(const ClassDataLayout &l
             {"aliases", layout.aliases},
             {"discovery", layout.discovery}};
 }
+void ClassRuntimeInventory::requireComplete() const {
+    encode();
+    const auto expected = expandedPromotionOwners();
+    if (owners.size() != expected.size())
+        throw Error("Expanded class runtime is missing required owners");
+    for (const auto &entry : expected) {
+        const auto owner = entry.toObject();
+        const bool present = std::any_of(owners.begin(), owners.end(), [&](const auto &record) {
+            return record.start == quint32(owner["start"].toInt()) &&
+                   record.size == quint32(owner["size"].toInt());
+        });
+        if (!present)
+            throw Error("Expanded class runtime is missing a required owner");
+    }
+}
 static void validateRecord(const RuntimeOwnerRecord &record) {
     bool known = false;
     for (const auto &entry : expandedPromotionOwners()) {

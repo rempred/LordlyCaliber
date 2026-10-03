@@ -31,6 +31,9 @@ struct ClassPlacement {
     quint32 bootEntry = 0, heapEntry = 0, secondaryEntry = 0;
     quint32 directory = 0;
     int directoryCapacity = 0;
+    // Validated V2 promotion metadata, loaded from its separate ROM container.
+    // Not part of the resident class descriptor or game RAM.
+    QByteArray runtimeInventory;
     static constexpr quint32 descriptorRomOffset = 0x5dc80, descriptorSize = 128;
     static constexpr quint32 codeRomOffset = 0x5db14, codeRamAddress = 0x80187c14;
     static constexpr quint32 codeCapacity = descriptorRomOffset - codeRomOffset;
