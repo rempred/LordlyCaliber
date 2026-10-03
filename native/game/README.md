@@ -66,6 +66,34 @@ Native checks also cover compilation, allocation, persistence and export/reopen.
 The implementation still covers the 81-entry manual-promotion roster; expanded
 class IDs require broader data, menu and discovery changes.
 
+`promotion/class-render-rows.c` replaces the two class-row construction loops
+inside the Army renderer at z64 `0xA4D5C..0xA4ED8` / RAM `0x801B82FC..0x801B8478`.
+The surrounding renderer remains authenticated source-ROM code. The 16-byte
+`class-render-entry.s` bridge and compiled C fit within the existing 380 bytes:
+324 bytes for the retail configuration, 356 for the expanded configuration.
+The C retains the two menu modes, zero terminator, row type, grid coordinates,
+and matrix calls. It refuses to exceed the 167 rows before the count field.
+Expanded lists submit at most 81 rows around the selected column, preserving
+their original coordinates for scrolling. This bounds row/matrix submissions;
+it does not yet prove live-game visual behavior or display-list peak capacity.
+
+`class-render-style.s` rebuilds the 76-byte class-specific style/name drawing
+block at z64 `0xA5668`. It retains the surrounding function's register contract.
+Its retail configuration reproduces the original bytes; the expanded version
+reads a halfword, separates bit 15 from the full-byte class ID, and retains the
+four selected/disabled styles. Other renderer row types keep their own formats.
+The exporter currently uses the retail configuration. Expanded configuration
+is covered by execution tests and awaits the other new-class consumers.
+
+The MIPS test compares 144 row-building cases with the original user-ROM code,
+checks 609 expanded-list/buffer-boundary cases, and checks 1,536 class/style/name
+combinations. Matrix/coordinate/name services are traps: this proves arguments,
+row data, flags and write bounds, not rasterized output. Public export/reopen
+checks cover this renderer alongside family and relocated-name edits. Assembly
+call targets are supplied as linker bindings; absolute local assignments in
+this historical assembler produced zero jump targets during integration and
+were rejected by the whole-owner hash check.
+
 `classes/class-runtime.c` supplies the compiled one-time class-data load, main
 heap reset and secondary-pool reset. `rebuild/class_runtime.*` combines it with
 the dynamic class-data builder, checks the cartridge/RAM bounds and returns the

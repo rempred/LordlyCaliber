@@ -213,7 +213,8 @@ QByteArray Compiler::compileData(const QByteArray &bytes, const QString &directo
     return output.first(bytes.size());
 }
 QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &directory,
-                                   const QString &name, quint32 address) const {
+                                   const QString &name, quint32 address,
+                                   const QMap<QString, quint32> &symbols) const {
     QDir dir(directory);
     if (!dir.mkpath("."))
         throw Error("Cannot create assembly build directory");
@@ -223,10 +224,18 @@ QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &dire
     atomicWrite(input, ".set noat\n.set noreorder\n.section .owner,\"ax\"\n.balign 4\n" + source);
     run("mips-kmc-elf-as.exe", {"-G", "0", "-mips3", "-mabi=32", "-EB", "-o", object, input},
         directory);
-    atomicWrite(script, QString("FAMILY_LOOKUP = 0x801CF2F0; CHECK_CHANGE = 0x801D2358;\nSECTIONS "
-                                "{ .owner 0x%1 : { *(.owner) } }\n")
-                            .arg(address, 0, 16)
-                            .toLatin1());
+    QByteArray bindings;
+    for (auto it = symbols.begin(); it != symbols.end(); ++it) {
+        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(it.key()).hasMatch())
+            throw Error("Invalid linked assembly symbol name");
+        bindings += QString("%1 = 0x%2;\n").arg(it.key()).arg(it.value(), 0, 16).toLatin1();
+    }
+    atomicWrite(script,
+                bindings +
+                    QString("FAMILY_LOOKUP = 0x801CF2F0; CHECK_CHANGE = 0x801D2358;\nSECTIONS "
+                            "{ .owner 0x%1 : { *(.owner) } }\n")
+                        .arg(address, 0, 16)
+                        .toLatin1());
     run("mips-kmc-elf-ld.exe", {"-EB", "-T", script, "-o", elf, object}, directory);
     QStringList extract = {"-O", "binary"};
     for (auto section : {".text", ".data", ".bss", ".reginfo", ".mdebug", ".pdr", ".comment"})
@@ -282,7 +291,49 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 throw Error("Promotion source owner was modified: " + owner["name"].toString());
             QByteArray source, built;
             auto expected = owner["familySha256"].toString().toLatin1();
-            if (owner.contains("cSource")) {
+            if (owner.contains("cFragment")) {
+                const auto blockStart = owner["fragmentStart"].toInt();
+                const auto blockEnd = owner["fragmentEnd"].toInt();
+                if (blockStart < start || blockEnd > start + size || blockEnd <= blockStart + 16)
+                    throw Error("Invalid promotion source fragment allocation");
+                const quint32 entryAddress = quint32(blockStart + 16) + 0x801135a0u;
+                QMap<QString, quint32> symbols;
+                const auto bindings = owner["symbols"].toObject();
+                for (auto it = bindings.begin(); it != bindings.end(); ++it)
+                    symbols.insert(it.key(), quint32(it.value().toDouble()));
+                auto fragment = compiler.compile(
+                    readFile(":/game/promotion/" + owner["cFragment"].toString()), directory,
+                    owner["name"].toString() + "_rows", entryAddress, ".text",
+                    {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
+                    symbols);
+                if (fragment.size() > blockEnd - blockStart - 16)
+                    throw Error("Compiled class renderer exceeds its existing allocation");
+                auto entry = compiler.assembleOwner(
+                    readFile(":/game/promotion/" + owner["fragmentEntry"].toString()), directory,
+                    owner["name"].toString() + "_entry", quint32(blockStart) + 0x801135a0u,
+                    {{"CLASS_RENDER_ROWS", entryAddress},
+                     {"CLASS_RENDER_CONTINUE", quint32(blockEnd) + 0x801135a0u}});
+                if (entry.size() != 16)
+                    throw Error("Unexpected class renderer entry size");
+                entry += fragment;
+                entry.append(QByteArray(blockEnd - blockStart - entry.size(), 0));
+                built = original;
+                built.replace(blockStart - start, entry.size(), entry);
+                const auto styleStart = owner["styleStart"].toInt();
+                const auto styleSize = owner["styleSize"].toInt();
+                if (styleStart < start || styleSize <= 0 || styleStart + styleSize > start + size)
+                    throw Error("Invalid class drawing source allocation");
+                const auto style = compiler.assembleOwner(
+                    "WIDE_CLASSES = 0\n" +
+                        readFile(":/game/promotion/" + owner["styleSource"].toString()),
+                    directory, owner["name"].toString() + "_style",
+                    quint32(styleStart) + 0x801135a0u,
+                    {{"CLASS_TEXT_STYLE", 0x8019b5c4u}, {"DRAW_CLASS_NAME", 0x801ba900u}});
+                if (style.size() != styleSize)
+                    throw Error("Unexpected class drawing source size");
+                built.replace(styleStart - start, styleSize, style);
+                expected = owner["cSourceSha256"].toString().toLatin1();
+            } else if (owner.contains("cSource")) {
                 QMap<QString, quint32> symbols;
                 const auto bindings = owner["symbols"].toObject();
                 for (auto it = bindings.begin(); it != bindings.end(); ++it)
@@ -321,9 +372,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 built = classPlacement->placedReferences(built, start);
             result.image.replace(start, size, built);
         }
-        result.report << QString(
-                             "Compiled promotion data, menu, selection and discovery C; rebuilt %1 "
-                             "complete runtime owners within their original extents")
+        result.report << QString("Compiled promotion data, menu, selection, discovery and "
+                                 "class-row C; rebuilt %1 "
+                                 "complete runtime owners within their original extents")
                              .arg(owners.size());
     } else if (promotion.gates != promotion.originalGates) {
         auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");

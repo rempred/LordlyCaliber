@@ -108,6 +108,26 @@
         "lc_named_class_map": 2149512120,
         "lc_class_eligible": 2149412512
       }
+    },
+    {
+      "name": "func_000a4a00",
+      "start": 674304,
+      "size": 10184,
+      "retailSha256": "a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2",
+      "familySha256": "a65a57c3b4641ef6f8c7e9190e55684039a16dd9f0595c39350b6660b36e31c2",
+      "cFragment": "class-render-rows.c",
+      "fragmentEntry": "class-render-entry.s",
+      "fragmentStart": 675164,
+      "fragmentEnd": 675544,
+      "styleSource": "class-render-style.s",
+      "styleStart": 677480,
+      "styleSize": 76,
+      "cSourceSha256": "49532166880bb6aff99023a64852baf01bd28d1073121df1f3fad637f5b94798",
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_class_coordinates": 2149346088,
+        "lc_class_matrix": 2148109344
+      }
     }
   ]
 }

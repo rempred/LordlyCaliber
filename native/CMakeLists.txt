@@ -10,6 +10,7 @@ add_library(lordly_engine STATIC engine/rom.cpp engine/resource.cpp engine/text.
 target_include_directories(lordly_engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(lordly_engine PUBLIC Qt6::Core)
 qt_add_resources(lordly_engine game_sources PREFIX "/" BASE . FILES rebuild/toolchain.json game/accepted/func_000bbd50.c game/promotion/owners.json game/promotion/family-lookup.s game/promotion/family-menu.c game/promotion/class-selection.c game/promotion/class-discovery.c game/promotion/class_menu_config.h game/classes/class-runtime.c game/classes/relocations.json)
+qt_add_resources(lordly_engine class_render_sources PREFIX "/" BASE . FILES game/promotion/class-render-rows.c game/promotion/class-render-entry.s game/promotion/class-render-style.s)
 if(MSVC)
   target_compile_options(lordly_engine PUBLIC /W4 /permissive- /utf-8 /fp:strict)
 endif()

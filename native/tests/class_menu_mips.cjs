@@ -38,6 +38,117 @@ function assembly(name, filename, address) {
   fs.writeFileSync(path.join(work, name+'.s'), '.set noat\n.set noreorder\n.section .owner,"ax"\n.balign 4\n' + fs.readFileSync(path.join(native, 'game/promotion', filename), 'utf8'));
   return extract(name, address, '.owner');
 }
+const renderBlock = 0x801B82FC, renderAddress = renderBlock + 16, renderEnd = 0x801B8478;
+const renderBindings = 'lc_army_owner = 0x80196AF8; lc_class_coordinates = 0x801C6B28; lc_class_matrix = 0x80098C20;';
+const renderSource = fs.readFileSync(path.join(native, 'game/promotion/class-render-rows.c'), 'utf8');
+const renderCode = compile('render_rows', config, renderSource, renderAddress, renderBindings);
+const renderExpanded = compile('render_rows_expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528'), renderSource, renderAddress, renderBindings);
+assert(renderCode.length <= renderEnd-renderAddress, 'retail render body extent');
+assert(renderExpanded.length <= renderEnd-renderAddress, 'expanded render body extent');
+fs.writeFileSync(path.join(work, 'render_entry.s'), '.set noat\n.set noreorder\n.section .owner,"ax"\n' + fs.readFileSync(path.join(native, 'game/promotion/class-render-entry.s'), 'utf8'));
+const renderEntry = extract('render_entry',renderBlock,'.owner',`CLASS_RENDER_ROWS = 0x${renderAddress.toString(16)}; CLASS_RENDER_CONTINUE = 0x${renderEnd.toString(16)};`);
+assert.equal(renderEntry.length, 16);
+function renderImage(code) {
+  const block=Buffer.alloc(renderEnd-renderBlock);
+  renderEntry.copy(block);code.copy(block,16);
+  return block;
+}
+const styleAddress=0x801B8C08,styleEnd=styleAddress+76;
+function compileStyle(wide) {
+  const name='render_style_'+wide;
+  fs.writeFileSync(path.join(work,name+'.s'),'.set noat\n.set noreorder\n.section .owner,"ax"\nWIDE_CLASSES = '+wide+'\n'+fs.readFileSync(path.join(native,'game/promotion/class-render-style.s'),'utf8'));
+  const code=extract(name,styleAddress,'.owner','CLASS_TEXT_STYLE = 0x8019B5C4; DRAW_CLASS_NAME = 0x801BA900;');
+  assert.equal(code.length,76);return code;
+}
+const styleRetail=compileStyle(0),styleExpanded=compileStyle(1);
+function renderStyle(code,id,disabled,selected,wide) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);
+  const data=0x80280000,row=data+0x32C;
+  cpu.load(styleAddress,code);cpu.load(data,Buffer.alloc(0x1000,0xA6));cpu.w32(0x80196AF8,data);
+  cpu.w16(data+0x5E8,selected);cpu.set('s0',row);cpu.set('t0',data);
+  if(wide)cpu.w16(row,id|(disabled?0x8000:0));else cpu.w8(row,id|(disabled?0x80:0));
+  const before=Buffer.from(cpu.ram.slice(cpu.phys(data),cpu.phys(data)+0x1000)),calls=[];
+  for(const [address,name] of [[0x8019B5C4,'style'],[0x801BA900,'name']])cpu.trap(address,c=>{
+    calls.push([name,c.get('a0')]);
+    for(const reg of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(reg,0xCCCCCCCC);
+  });
+  cpu.call(styleAddress,styleEnd);
+  const after=Buffer.from(cpu.ram.slice(cpu.phys(data),cpu.phys(data)+0x1000));before[0x5E4]=after[0x5E4];
+  assert.deepEqual(before,after,'style wrote outside its output field');
+  return calls;
+}
+let styleCases=0;
+for(const wide of [false,true])for(let id=0;id<(wide?256:128);id++)for(const disabled of [false,true])for(const selected of [id,(id+1)&255]) {
+  assert.deepEqual(renderStyle(wide?styleExpanded:styleRetail,id,disabled,selected,wide),[['style',id===selected?(disabled?5:0):(disabled?6:4)],['name',id]]);
+  styleCases++;
+}
+function renderRows(code, base, entries, flags, initialRows, selected, expanded=false) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);
+  const renderOwner=0x80280000, matrices=0x80300000, listOffset=expanded?0x2528:0x1C0E;
+  cpu.load(base,code);cpu.load(renderOwner,Buffer.alloc(0x2800,0xA6));
+  cpu.w32(0x80196AF8,renderOwner);cpu.w16(renderOwner+0x130,flags);
+  cpu.w16(renderOwner+0x1BFC,entries.length);cpu.w16(renderOwner+0x5EA,selected);
+  cpu.w32(renderOwner+0x5C8,initialRows);cpu.set('sp',0x80060000);cpu.set('s6',matrices);
+  entries.forEach((entry,i)=>cpu.w16(renderOwner+listOffset+i*2,entry));
+  cpu.w16(renderOwner+listOffset+entries.length*2,0);
+  const before=Buffer.from(cpu.ram.slice(cpu.phys(renderOwner),cpu.phys(renderOwner)+0x2800));
+  const calls=[];
+  const clobber=c=>{for(const reg of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(reg,0xCCCCCCCC);};
+  cpu.trap(0x801C6B28,c=>{
+    const index=c.get('a2');assert(index<entries.length);
+    calls.push(['coordinates',index]);
+    c.w32(c.get('a0'),0x40000000|index);c.w32(c.get('a1'),0x42000000|index);clobber(c);
+  });
+  cpu.trap(0x80098C20,c=>{
+    const address=c.get('a0');assert(address>=matrices+0x1B10&&address<matrices+0x1B10+167*64);
+    calls.push(['matrix',address,c.get('a1'),c.get('a2'),c.get('a3')]);clobber(c);
+  });
+  cpu.call(renderBlock,renderEnd);
+  assert.equal(cpu.get('s6'),matrices);assert.equal(cpu.get('sp'),0x80060000);
+  const after=Buffer.from(cpu.ram.slice(cpu.phys(renderOwner),cpu.phys(renderOwner)+0x2800));
+  after.copy(before,0x32C,0x32C,0x5CC);
+  assert.deepEqual(after,before,'render wrote outside rows/count');
+  return {rows:after.subarray(0x32C,0x5C8), count:cpu.r32(renderOwner+0x5C8),calls};
+}
+let renderComparisons=0,renderExpandedCases=0,renderOwnerHash;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xA4A00,0xA71C8);
+  assert.deepEqual(styleRetail,rom.subarray(0xA5668,0xA56B4),'retail class draw block');
+  const rebuilt=Buffer.from(original);renderImage(renderCode).copy(rebuilt,0x35C);
+  renderOwnerHash={original:hash(original),rebuilt:hash(rebuilt)};
+  const manifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xA4A00);
+  assert.equal(renderOwnerHash.original,manifest.retailSha256);
+  assert.equal(renderOwnerHash.rebuilt,manifest.cSourceSha256,'render export owner identity');
+  for(const count of [0,1,4,20,21,22,40,80,81])for(const flags of [0,0x100,0x200,0x300])for(const initialRows of [0,3])for(const terminated of [false,true]) {
+    const entries=Array.from({length:count},(_,i)=>(i+1)%81|(i%2?128:0));
+    if(terminated&&count)entries[count>>1]=0;
+    const args=[entries,flags,initialRows,0];
+    assert.deepEqual(renderRows(rebuilt,0x801B7FA0,...args),renderRows(original,0x801B7FA0,...args),JSON.stringify({count,flags,initialRows,terminated}));
+    renderComparisons++;
+  }
+}
+const expandedRender=renderImage(renderExpanded);
+for(const count of [1,21,81,82,165,256])for(let selected=0;selected<count;selected++) {
+  const entries=Array.from({length:count},(_,i)=>i|0x8000);
+  const result=renderRows(expandedRender,renderBlock,entries,0x200,0,selected,true);
+  const first=count<=81?0:Math.max(0,Math.floor((selected-40)/4)*4),end=Math.min(count,first+81);
+  assert.equal(result.count,end-first);assert(selected>=first&&selected<end);
+  const rows=Buffer.alloc(167*4,0xA6),calls=[];
+  for(let i=first;i<end;i++) {
+    rows.writeUInt16BE(entries[i],(i-first)*4);rows.writeUInt16BE(1,(i-first)*4+2);
+    calls.push(['coordinates',i],['matrix',0x80301B10+(i-first)*64,0x40000000|i,0x42000000|i,0]);
+  }
+  assert.deepEqual(result.rows,rows);assert.deepEqual(result.calls,calls);renderExpandedCases++;
+}
+for(const initialRows of [166,167,168]) {
+  const result=renderRows(expandedRender,renderBlock,[0x8080,0x80A5,0x80FF],0x200,initialRows,0,true);
+  assert.equal(result.count,Math.max(initialRows,167));
+  assert.equal(result.calls.length,initialRows===166?2:0);renderExpandedCases++;
+}
+console.log(JSON.stringify({renderComparisons,renderExpandedCases,styleCases,renderBytes:renderCode.length,renderExpandedBytes:renderExpanded.length,renderOwnerHash}));
 const previous = assembly('previous', 'family-menu.s', menuAddress);
 assert.equal(hash(previous), 'dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298');
 const lookup = assembly('lookup', 'family-lookup.s', lookupAddress);
