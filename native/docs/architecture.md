@@ -22,6 +22,17 @@ The application observes that data through Qt models and undoable commands.
 Long-running loading, compilation, decoding, and export run outside the UI
 thread. Rendering consumes snapshots; widget lifetime does not own game state.
 
+`engine/class_data.*` owns the relocatable class-data input and layout builder.
+It keeps raw 72-byte records, six-byte appearance entries, encoded names and
+named-character aliases. Appending clones a chosen record/appearance without
+inheriting a unique character alias. The builder deduplicates names, regenerates
+their pointers, preserves the preceding 72 bytes used by legacy index bases,
+and calculates aligned record/appearance/alias/name/discovery allocations within
+an explicit 4 MB RAM interval. Its 256-entry representation limit is not a claim
+that every game consumer already supports that many IDs. Project/UI integration,
+runtime reference updates, save handling and export placement remain separate
+unfinished work; the current exporter still uses the existing retail table.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

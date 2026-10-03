@@ -1,3 +1,4 @@
+#include "engine/class_data.h"
 #include "engine/project.h"
 #include "engine/resource.h"
 #include "rebuild/compiler.h"
@@ -17,6 +18,97 @@ static QByteArray syntheticRom() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void expandableClassData() {
+        auto bytes = syntheticRom();
+        bytes.replace(0x65dbc, 7, QByteArray("Knight\0", 7));
+        for (int i = 0; i < 72; ++i)
+            bytes[0x5dacc + i] = char(i ^ 0xa6);
+        for (int id = 0; id < 165; ++id) {
+            const auto record = 0x5db14 + id * 72;
+            for (int field = 0; field < 72; ++field)
+                bytes[record + field] = char(id * 13 + field);
+            put32(bytes, record, 0x8018febc);
+            for (int field = 0; field < 6; ++field)
+                bytes[0x64be0 + id * 6 + field] = char(id + field);
+        }
+        bytes[0xdbe18 + 90] = 24;
+        auto classes = ClassData::loadRetail(Rom::fromBytes(bytes));
+        QCOMPARE(classes.entries().size(), 165);
+        const auto retail = classes.build(0x80243db0);
+        QCOMPARE(retail.layout.records, quint32(0x80243df8));
+        QCOMPARE(retail.layout.appearances, quint32(0x80246c60));
+        QCOMPARE(retail.layout.aliases, quint32(0x80247040));
+        QCOMPARE(retail.layout.names, quint32(0x802470f0));
+        QCOMPARE(retail.layout.discovery, quint32(0x80247100));
+        QCOMPARE(retail.layout.end, quint32(0x80247120));
+        QCOMPARE(classes.append(90, "Sentinel"), 165);
+        QCOMPARE(classes.entries()[165].namedAlias, quint8(0));
+        QCOMPARE(classes.entries()[90].namedAlias, quint8(24));
+        for (int id = 166; id < 256; ++id)
+            QCOMPARE(classes.append(5, "Knight"), id);
+        const auto built = classes.build(0x80243db0);
+        const auto &layout = built.layout;
+        QCOMPARE(layout.count, 256);
+        QCOMPARE(built.bytes.first(72), bytes.mid(0x5dacc, 72));
+        QCOMPARE(built.bytes.mid(layout.discovery - layout.indexBase, 32), QByteArray(32, 0));
+        QVERIFY(layout.end <= 0x80400000);
+        for (int id = 0; id < 256; ++id) {
+            auto source = id < 165 ? id : id == 165 ? 90 : 5;
+            const auto record = 72 + id * 72;
+            QCOMPARE(built.bytes.mid(record + 4, 68), bytes.mid(0x5db14 + source * 72 + 4, 68));
+            QCOMPARE(built.bytes.mid(layout.appearances - layout.indexBase + id * 6, 6),
+                     bytes.mid(0x64be0 + source * 6, 6));
+            const auto pointer = u32(built.bytes, record);
+            QVERIFY(pointer >= layout.names && pointer < layout.discovery);
+            QVERIFY((pointer & 3) == 0);
+            const auto offset = pointer - layout.indexBase;
+            const auto end = built.bytes.indexOf(char(0), offset);
+            QCOMPARE(built.bytes.mid(offset, end - offset),
+                     QByteArray(id == 165 ? "Sentinel" : "Knight"));
+        }
+        // Equal names share storage, including a freshly appended class.
+        QCOMPARE(u32(built.bytes, 72), u32(built.bytes, 72 + 255 * 72));
+        QVERIFY_THROWS_EXCEPTION(Error, classes.append(5, "Overflow"));
+        QVERIFY_THROWS_EXCEPTION(Error, classes.build(0x80243db1));
+        QVERIFY_THROWS_EXCEPTION(Error, classes.build(0x80243db0, 0x802441b0));
+        QVERIFY_THROWS_EXCEPTION(Error, classes.build(0x803ff000, 0xffffffff));
+        auto bad = classes.entries()[5];
+        bad.name = QByteArray("Bad\0Name", 8);
+        QVERIFY_THROWS_EXCEPTION(Error, classes.set(5, bad));
+        QCOMPARE(classes.entries()[5].name, QByteArray("Knight"));
+        bad = classes.entries()[5];
+        bad.record.chop(1);
+        QVERIFY_THROWS_EXCEPTION(Error, classes.set(5, bad));
+        put32(bytes, 0x5db14, 0x80180000);
+        QVERIFY_THROWS_EXCEPTION(Error, ClassData::loadRetail(Rom::fromBytes(bytes)));
+    }
+    void retailClassDataCompilation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Set LORDLY_TEST_ROM and LORDLY_N64_TOOLCHAIN for the class-data build");
+        const auto rom = Rom::open(path);
+        auto classes = ClassData::loadRetail(rom);
+        const auto original = classes.entries();
+        QCOMPARE(original[5].name, QByteArray("Knight"));
+        QCOMPARE(original[164].name, QByteArray::fromHex("0e44656174681063426168616d75740f"));
+        QCOMPARE(classes.append(5, "Silver Knight"), 165);
+        const auto result = classes.build(0x80243db0);
+        QTemporaryDir work;
+        QVERIFY(work.isValid());
+        Compiler compiler(tools);
+        compiler.authenticate();
+        QCOMPARE(compiler.compileData(result.bytes, work.path(), "expanded_class_data"),
+                 result.bytes);
+        for (int id = 0; id < 165; ++id) {
+            const auto record = result.layout.records - result.layout.indexBase + id * 72;
+            QCOMPARE(result.bytes.mid(record + 4, 68), original[id].record.sliced(4));
+            const auto offset = u32(result.bytes, record) - result.layout.indexBase;
+            QCOMPARE(result.bytes.mid(offset, original[id].name.size()), original[id].name);
+            QCOMPARE(u8(result.bytes, offset + original[id].name.size()), quint8(0));
+        }
+        QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+    }
     void sourcePreprocessing() {
         auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
         if (tools.isEmpty())
