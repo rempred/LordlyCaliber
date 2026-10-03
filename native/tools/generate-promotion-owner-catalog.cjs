@@ -63,4 +63,14 @@ catalog.owners.push({
   cSource:'compatibility-mask.c',
   cSourceSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef'
 });
+catalog.owners.push({
+  name:'func_000bf5dc', start:0xbf5dc, size:332,
+  retailSha256:'5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6',
+  familySha256:'5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6',
+  cSource:'equipment-class-menu.c',
+  cSourceSha256:'596f62bbad0375119955a0524b6baabf613c67b05142728bc6aefd742e8d4ed1',
+  requiresFamilyResource:false,
+  symbols:{lc_army_owner:0x80196AF8,lc_goth:0x80196A6C,lc_equipment_summary:0x801D29F8,
+    lc_equipment_cost:0x801D2EE0,lc_equipment_full:0x801D2E2C}
+});
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

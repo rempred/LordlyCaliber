@@ -70,10 +70,11 @@ class IDs require broader data, menu and discovery changes.
 inside the Army renderer at z64 `0xA4D5C..0xA4ED8` / RAM `0x801B82FC..0x801B8478`.
 The surrounding renderer remains authenticated source-ROM code. The 16-byte
 `class-render-entry.s` bridge and compiled C fit within the existing 380 bytes:
-324 bytes for the retail configuration, 356 for the expanded configuration.
+324 bytes for the retail configuration, 340 for the expanded configuration.
 The C retains the two menu modes, zero terminator, row type, grid coordinates,
 and matrix calls. It refuses to exceed the 167 rows before the count field.
-Expanded lists submit at most 81 rows around the selected column, preserving
+In expanded mode both class-change and equipment screens use the full list,
+submitting at most 81 rows around the selected column, preserving
 their original coordinates for scrolling. This bounds row/matrix submissions;
 it does not yet prove live-game visual behavior or display-list peak capacity.
 
@@ -86,7 +87,7 @@ The exporter currently uses the retail configuration. Expanded configuration
 is covered by execution tests and awaits the other new-class consumers.
 
 The MIPS test compares 144 row-building cases with the original user-ROM code,
-checks 609 expanded-list/buffer-boundary cases, and checks 1,536 class/style/sprite
+checks 1,821 expanded-list/buffer-boundary cases, and checks 1,536 class/style/sprite
 combinations. Matrix/coordinate/sprite services are traps: this proves arguments,
 row data, flags and write bounds, not rasterized output. Public export/reopen
 checks cover this renderer alongside family and relocated-name edits. Assembly
@@ -110,6 +111,21 @@ Only zero linker padding beyond every function may be removed. The compiler
 test checks a `jr ra; nop` leaf: fitting its eight bytes succeeds, cutting the
 zero delay instruction fails, and nonzero trailing bytes fail. This prevents
 alignment padding from being confused with executable zero instructions.
+
+`promotion/equipment-class-menu.c` rebuilds the standard-equipment purchase list
+at Army RAM `0x801D2B7C` / z64 `0xBF5DC..0xBF728`. Its 308 bytes fit the original
+332-byte owner. It retains the summary call, discovered/listed-class filter,
+cost-before-Goth-read ordering, short-circuit capacity check, disabled marking,
+count and terminator. Its expanded configuration reads the retained class flags
+from the promotion resource and uses the larger list/disabled format. Tests
+compare 81 scenarios with original instructions, then check high IDs, an empty
+list and 255 nonempty class entries with guarded owner writes.
+
+This default equipment-list source needs no family resource. Its owner manifest
+records that distinction, allowing standalone equipment-list flag edits to
+compile the list reader without introducing an LCFM allocation. Family exports
+also compile it. Both paths check the original complete owner and expected C
+hash, and public export/reopen tests cover the standalone path.
 
 `classes/class-runtime.c` supplies the compiled one-time class-data load, main
 heap reset and secondary-pool reset. `rebuild/class_runtime.*` combines it with

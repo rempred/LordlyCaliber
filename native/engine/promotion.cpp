@@ -129,7 +129,8 @@ Promotion Promotion::load(const Rom &rom) {
             (owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString());
         bool direct =
             owner.contains("directGateSha256") && hash == owner["directGateSha256"].toString();
-        hasFamilyCode |= family && hash != owner["retailSha256"].toString();
+        hasFamilyCode |= family && hash != owner["retailSha256"].toString() &&
+                         owner.value("requiresFamilyResource").toBool(true);
         hasDirectGateCode |= direct;
         if (p.expanded && !family)
             throw Error("Family resource has incomplete or modified runtime owners");

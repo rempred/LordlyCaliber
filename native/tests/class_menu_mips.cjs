@@ -173,9 +173,9 @@ if(process.env.LORDLY_TEST_ROM) {
   }
 }
 const expandedRender=renderImage(renderExpanded);
-for(const count of [1,21,81,82,165,256])for(let selected=0;selected<count;selected++) {
+for(const mode of [0x100,0x200,0x300])for(const count of [1,21,81,82,165,256])for(let selected=0;selected<count;selected++) {
   const entries=Array.from({length:count},(_,i)=>i|0x8000);
-  const result=renderRows(expandedRender,renderBlock,entries,0x200,0,selected,true);
+  const result=renderRows(expandedRender,renderBlock,entries,mode,0,selected,true);
   const first=count<=81?0:Math.max(0,Math.floor((selected-40)/4)*4),end=Math.min(count,first+81);
   assert.equal(result.count,end-first);assert(selected>=first&&selected<end);
   const rows=Buffer.alloc(167*4,0xA6),calls=[];
@@ -201,6 +201,70 @@ const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/o
 assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
+const equipmentAddress=0x801D2B7C;
+const equipmentSource=fs.readFileSync(path.join(native,'game/promotion/equipment-class-menu.c'),'utf8');
+const equipmentBindings='lc_army_owner = 0x80196AF8; lc_goth = 0x80196A6C; lc_equipment_summary = 0x801D29F8; lc_equipment_cost = 0x801D2EE0; lc_equipment_full = 0x801D2E2C;';
+const equipmentCode=compile('equipment_class_menu',config,equipmentSource,equipmentAddress,equipmentBindings);
+const equipmentWide=compile('equipment_class_menu_wide',config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82','LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128','LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E','LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U','LC_DISCOVERY_ADDRESS 0x80308000U').replace('LC_FLAGS_RESOURCE_OFFSET -1','LC_FLAGS_RESOURCE_OFFSET 3328'),equipmentSource,equipmentAddress,equipmentBindings);
+assert(equipmentCode.length<=332);assert(equipmentWide.length<=332);
+const equipmentPadded=Buffer.alloc(332);equipmentCode.copy(equipmentPadded);
+const equipmentManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBF5DC);
+assert.equal(hash(equipmentPadded),equipmentManifest.cSourceSha256);
+function equipmentList(code,flags,discovery,money,cost,full) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);
+  const wide=flags.length===256,listOffset=wide?0x2528:0x1C0E;
+  cpu.load(equipmentAddress,code);cpu.load(owner,Buffer.alloc(0x2800,0xA6));
+  cpu.w32(0x80196AF8,owner);cpu.w32(owner+0x80,resource);cpu.w32(0x80196A6C,money);
+  cpu.load(wide?0x80308000:0x80196A76,discovery);
+  cpu.load(0x801EF370,Buffer.from([1,2,4,8,16,32,64,128]));
+  flags.forEach((value,id)=> {
+    if(wide)cpu.w8(resource+3328+id,value);
+    else cpu.w16(0x801EF2CC+id*2,((value|(id%11))<<8)|((id*13)&255));
+  });
+  if(!wide)cpu.w16(0x801EF36E,65535);
+  const before=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+0x2800));
+  const calls=[],clobber=c=>{for(const reg of ['v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(reg,0xCCCCCCCC);};
+  cpu.trap(0x801D29F8,c=>{calls.push(['summary']);clobber(c);});
+  cpu.trap(0x801D2EE0,c=>{
+    const id=c.get('a0');calls.push(['cost',id]);
+    const count=calls.filter(x=>x[0]==='cost').length-1;
+    assert.equal(c.r16(owner+listOffset+count*2),id,'row stored before cost callback');
+    clobber(c);c.set('v0',cost(id));
+  });
+  cpu.trap(0x801D2E2C,c=>{const id=c.get('a0');calls.push(['full',id]);clobber(c);c.set('v0',full(id));});
+  cpu.call(equipmentAddress);
+  const count=cpu.r16(owner+0x1BFC);assert(count<=flags.length);
+  assert.equal(cpu.r16(owner+listOffset+count*2),0);
+  const entries=Array.from({length:count},(_,i)=>cpu.r16(owner+listOffset+i*2));
+  const after=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+0x2800));
+  after.copy(before,0x1BFC,0x1BFC,0x1BFE);after.copy(before,listOffset,listOffset,listOffset+(count+1)*2);
+  assert.deepEqual(after,before,'equipment list wrote outside its allocation/count');
+  return {entries,calls};
+}
+let equipmentComparisons=0,equipmentOriginalHash;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xBF5DC,0xBF728);equipmentOriginalHash=hash(original);
+  for(const pattern of [0,0x80,0xF0])for(const found of [0,0xA5,255])for(const money of [0,100,0xFFFFFFFF])for(const capacity of [0,0x100,0x101]) {
+    const flags=Array.from({length:81},(_,i)=>pattern|(i%3===0?0:0x80));
+    const args=[flags,Buffer.alloc(11,found),money,id=>id%7===0?0xFFFFFFFF:id*7,id=>id%2?capacity:0];
+    assert.deepEqual(equipmentList(equipmentCode,...args),equipmentList(original,...args));equipmentComparisons++;
+  }
+}
+const equipmentFlags=Array.from({length:256},(_,i)=>i>=128?0xD0:0);
+const equipmentActual=equipmentList(equipmentWide,equipmentFlags,Buffer.alloc(32,255),200,id=>id,id=>id%3===0?0x101:0x100);
+const equipmentExpected={entries:[],calls:[['summary']]};
+for(let id=128;id<256;id++) {
+  equipmentExpected.entries.push(id|((id>200||id%3===0)?0x8000:0));
+  equipmentExpected.calls.push(['cost',id]);if(id<=200)equipmentExpected.calls.push(['full',id]);
+}
+assert.deepEqual(equipmentActual,equipmentExpected);
+assert.deepEqual(equipmentList(equipmentWide,Array(256).fill(0),Buffer.alloc(32,255),0,()=>{throw Error('empty list cost');},()=>{throw Error('empty list capacity');}),{entries:[],calls:[['summary']]});
+const fullEquipment=equipmentList(equipmentWide,[0,...Array(255).fill(0x80)],Buffer.alloc(32,255),0,()=>0,()=>0);
+assert.deepEqual(fullEquipment.entries,Array.from({length:255},(_,i)=>i+1));
+console.log(JSON.stringify({equipmentComparisons,equipmentBytes:equipmentCode.length,equipmentWideBytes:equipmentWide.length,equipmentOriginalHash,equipmentHash:hash(equipmentPadded)}));
 function machine(code, count, listOffset, selected, families, discovery, eligible) {
   const cpu = new Mips();
   cpu.ram = new Uint8Array(0x400000);

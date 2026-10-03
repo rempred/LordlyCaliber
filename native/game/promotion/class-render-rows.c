@@ -20,6 +20,13 @@ void lc_class_render_rows(u8 *matrices) {
     while (flags) {
         u32 index = 0;
         u32 count;
+#if LC_CLASS_COUNT > 81
+        /* Both modes render the same shared list. Expanded families can exceed
+         * the old class-change mode's 21 rows; draw the bounded window once.
+         */
+        count = *(u16 *)(owner + 0x1BFC);
+        flags = 0;
+#else
         if (flags & 0x100) {
             count = 21;
             flags &= ~0x100U;
@@ -27,6 +34,7 @@ void lc_class_render_rows(u8 *matrices) {
             count = *(u16 *)(owner + 0x1BFC);
             flags = 0;
         }
+#endif
         if (count > LC_CLASS_COUNT)
             break;
 #if LC_CLASS_COUNT > 81

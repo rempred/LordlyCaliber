@@ -137,6 +137,23 @@
       "familySha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef",
       "cSource": "compatibility-mask.c",
       "cSourceSha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef"
+    },
+    {
+      "name": "func_000bf5dc",
+      "start": 783836,
+      "size": 332,
+      "retailSha256": "5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6",
+      "familySha256": "5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6",
+      "cSource": "equipment-class-menu.c",
+      "cSourceSha256": "596f62bbad0375119955a0524b6baabf613c67b05142728bc6aefd742e8d4ed1",
+      "requiresFamilyResource": false,
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_goth": 2149149292,
+        "lc_equipment_summary": 2149394936,
+        "lc_equipment_cost": 2149396192,
+        "lc_equipment_full": 2149396012
+      }
     }
   ]
 }

@@ -405,17 +405,32 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
         result.image.replace(0xdbd2c, compiled.size(), compiled);
         if (!family) {
-            // A standalone mask edit still rebuilds its accepted C reader.
-            const auto module = compiler.compileModule(
-                readFile(":/game/promotion/compatibility-mask.c"), directory, "class_compatibility",
-                0x801cf320u,
-                {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}});
-            const auto reader = module.fitOwner(44);
-            if (reader != p.rom().bytes().mid(0xbbd80, 44))
-                throw Error("Source-built compatibility reader differs from the source ROM");
-            result.image.replace(0xbbd80, 44, reader);
-            result.report
-                << "Compiled class-line flags, compatibility masks and their accepted C lookup";
+            for (const auto &value : promotionOwners()["owners"].toArray()) {
+                const auto owner = value.toObject();
+                const auto start = owner["start"].toInt(), size = owner["size"].toInt();
+                if (start != 0xbbd80 &&
+                    !(start == 0xbf5dc && promotion.flags != promotion.originalFlags))
+                    continue;
+                const auto priorHash =
+                    QString::fromLatin1(sha256(p.rom().bytes().mid(start, size)));
+                if (priorHash != owner["retailSha256"].toString() &&
+                    priorHash != owner["cSourceSha256"].toString())
+                    throw Error("Class-line reader was modified: " + owner["name"].toString());
+                QMap<QString, quint32> symbols;
+                const auto bindings = owner["symbols"].toObject();
+                for (auto it = bindings.begin(); it != bindings.end(); ++it)
+                    symbols.insert(it.key(), quint32(it.value().toDouble()));
+                const auto module = compiler.compileModule(
+                    readFile(":/game/promotion/" + owner["cSource"].toString()), directory,
+                    owner["name"].toString(), quint32(start) + 0x801135a0u,
+                    {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
+                    symbols);
+                const auto reader = module.fitOwner(size);
+                if (sha256(reader) != owner["cSourceSha256"].toString().toLatin1())
+                    throw Error("Compiled class-line reader differs from validated source");
+                result.image.replace(start, size, reader);
+            }
+            result.report << "Compiled class-line data and its compatibility/list readers";
         }
     }
 }

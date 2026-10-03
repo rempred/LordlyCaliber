@@ -706,7 +706,9 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(u8(maskResult.image, 0xdbd2c + 5 * 2),
                      quint8(u8(p.rom().bytes(), 0xdbd2c + 5 * 2) ^ 0x80));
             QCOMPARE(maskResult.image.mid(0x27d0000, 65536), p.rom().bytes().mid(0x27d0000, 65536));
-            QVERIFY(QFileInfo::exists(maskWork.filePath("class_compatibility.compiler.s")));
+            QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bbd80.compiler.s")));
+            QVERIFY(QFileInfo::exists(maskWork.filePath("func_000bf5dc.compiler.s")));
+            QVERIFY(maskResult.image.mid(0xbf5dc, 332) != p.rom().bytes().mid(0xbf5dc, 332));
             auto family = model.addFamily("Order of Dawn", 1);
             QCOMPARE(family, 16);
             model.assign(2, family);
