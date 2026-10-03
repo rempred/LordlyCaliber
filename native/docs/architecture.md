@@ -107,6 +107,15 @@ against the actual linked operands. This supplies reference locations for
 configured runtime builds without assuming that every class count emits the
 same instruction layout.
 
+`engine/class_runtime_inventory.*` serializes configured owner hashes and data
+references in a bounded, checksummed metadata frame. It accepts only declared
+runtime owner extents, validates reference positions, and verifies complete code
+after normalizing its declared data addresses. Reapplying the references at new
+addresses is checked against independent compiler links. This metadata belongs
+in ROM outside the decompressed promotion resource; resource placement and the
+complete expanded installation are still pending. A partial inventory alone
+does not prove that every required game consumer has been installed.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

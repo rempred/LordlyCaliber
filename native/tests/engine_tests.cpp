@@ -1,4 +1,5 @@
 #include "engine/class_data.h"
+#include "engine/class_runtime_inventory.h"
 #include "engine/project.h"
 #include "engine/resource.h"
 #include "rebuild/class_menu_layout.h"
@@ -17,6 +18,26 @@ static QByteArray syntheticRom() {
     data.replace(0x3b, 2, "NO");
     data[0x3e] = 'E';
     return data;
+}
+static Promotion syntheticPromotion() {
+    Promotion base;
+    QJsonArray families, assignments;
+    for (int id = 0; id <= 10; ++id)
+        families << QJsonObject{
+            {"id", id}, {"name", id ? QString("Family %1").arg(id) : "None"}, {"behavior", id}};
+    for (int id = 0; id < 81; ++id) {
+        assignments << id % 11;
+        base.masks += char(id * 7);
+        base.flags += char((id * 16) & 0xf0);
+        for (int field = 0; field < 8; ++field)
+            base.gates += char(id * 3 + field);
+    }
+    base.families = {{"schemaVersion", 1}, {"families", families}, {"assignments", assignments}};
+    base.originalFamilies = base.families;
+    base.originalGates = base.gates;
+    base.originalMasks = base.masks;
+    base.originalFlags = base.flags;
+    return base;
 }
 class EngineTests : public QObject {
     Q_OBJECT
@@ -624,25 +645,8 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QFAIL(error.what());
         }
     }
-    void expandablePromotionData() {
-        Promotion base;
-        QJsonArray families, assignments;
-        for (int id = 0; id <= 10; ++id)
-            families << QJsonObject{
-                {"id", id}, {"name", id ? QString("Family %1").arg(id) : "None"}, {"behavior", id}};
-        for (int id = 0; id < 81; ++id) {
-            assignments << id % 11;
-            base.masks += char(id * 7);
-            base.flags += char((id * 16) & 0xf0);
-            for (int field = 0; field < 8; ++field)
-                base.gates += char(id * 3 + field);
-        }
-        base.families = {
-            {"schemaVersion", 1}, {"families", families}, {"assignments", assignments}};
-        base.originalFamilies = base.families;
-        base.originalGates = base.gates;
-        base.originalMasks = base.masks;
-        base.originalFlags = base.flags;
+    void classMenuSourceLayout() {
+        const auto base = syntheticPromotion();
         // Every supported class count gets independent, terminated buffers;
         // a mismatch with either runtime table must fail before compilation.
         for (int count = 165; count <= 256; ++count) {
@@ -651,17 +655,19 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             const auto payload = promotion.buildExpandedData();
             ClassDataLayout classes;
             classes.count = count;
+            classes.indexBase = 0x80243db0;
             classes.records = 0x80243df8;
+            classes.appearances = 0x8024a000;
             classes.aliases = 0x80250000;
             classes.discovery = 0x80250800;
             const auto layout = ClassMenuLayout::build(classes, payload);
             QCOMPARE(layout.capacity, count + 1);
             QCOMPARE(layout.list, quint32(0x2528));
-            const quint32 bytes = (count + 1) * 2;
-            QVERIFY(layout.list + bytes <= layout.categoryClasses);
-            QVERIFY(layout.categoryClasses + bytes <= layout.currentCounts);
-            QVERIFY(layout.currentCounts + bytes <= layout.eligibleCounts);
-            QVERIFY(layout.eligibleCounts + bytes <= layout.ownerBytes);
+            const quint32 arrayBytes = (count + 1) * 2;
+            QVERIFY(layout.list + arrayBytes <= layout.categoryClasses);
+            QVERIFY(layout.categoryClasses + arrayBytes <= layout.currentCounts);
+            QVERIFY(layout.currentCounts + arrayBytes <= layout.eligibleCounts);
+            QVERIFY(layout.eligibleCounts + arrayBytes <= layout.ownerBytes);
             QCOMPARE((layout.categoryClasses | layout.currentCounts | layout.eligibleCounts |
                       layout.ownerBytes) &
                          15,
@@ -688,10 +694,11 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                     for (auto it = bindings.begin(); it != bindings.end(); ++it)
                         if (!symbols.contains(it.key()))
                             symbols[it.key()] = quint32(it.value().toDouble());
-                    const auto code = compiler.compileModule(
-                        source.readAll(), work.path(), owner["name"].toString(),
-                        quint32(owner["start"].toInt()) + 0x801135a0U,
-                        {{"class_menu_config.h", layout.cHeader}}, symbols);
+                    const auto input = source.readAll();
+                    const auto code =
+                        compiler.compileModule(input, work.path(), owner["name"].toString(),
+                                               quint32(owner["start"].toInt()) + 0x801135a0U,
+                                               {{"class_menu_config.h", layout.cHeader}}, symbols);
                     const auto size = owner.value("cExtent").toInt(owner["size"].toInt());
                     QVERIFY2(code.functionExtent <= quint32(size),
                              qPrintable(QString("%1 with %2 classes needs %3 bytes, allocation %4")
@@ -700,6 +707,74 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                                             .arg(code.functionExtent)
                                             .arg(size)));
                     QCOMPARE(code.fitOwner(size).size(), size);
+                    if (owner["cSource"] == "category-class-counts.c") {
+                        QVector<RuntimeDataReference> references;
+                        for (const auto &ref : code.addressReferences) {
+                            if (ref.symbol == "lc_class_records")
+                                references.append(
+                                    {"classes", ref.highOffset, ref.lowOffset, ref.addend + 72});
+                            else if (ref.symbol == "lc_named_class_map")
+                                references.append(
+                                    {"aliases", ref.highOffset, ref.lowOffset, ref.addend});
+                            else if (ref.symbol == "lc_discovery_flags")
+                                references.append(
+                                    {"discovery", ref.highOffset, ref.lowOffset, ref.addend});
+                        }
+                        QVERIFY(references.size() >= 3);
+                        const quint32 start = owner["start"].toInt();
+                        const auto bytes = code.fitOwner(size);
+                        const auto bases = ClassRuntimeInventory::dataBases(classes);
+                        ClassRuntimeInventory inventory;
+                        inventory.classCount = count;
+                        inventory.owners.append(
+                            ClassRuntimeInventory::capture(start, bytes, references, bases));
+                        const auto saved = inventory.encode();
+                        const auto restored = ClassRuntimeInventory::decode(saved);
+                        QCOMPARE(restored.encode(), saved);
+                        auto moved = bases;
+                        moved["classes"] += 0x8440;
+                        moved["aliases"] += 0x8100;
+                        moved["discovery"] += 0x8040;
+                        auto nextSymbols = symbols;
+                        nextSymbols["lc_class_records"] = moved["classes"] + 72;
+                        nextSymbols["lc_named_class_map"] = moved["aliases"];
+                        nextSymbols["lc_discovery_flags"] = moved["discovery"];
+                        const auto recompiled =
+                            compiler
+                                .compileModule(input, work.path(), "moved_counts", code.address,
+                                               {{"class_menu_config.h", layout.cHeader}},
+                                               nextSymbols)
+                                .fitOwner(size);
+                        QCOMPARE(restored.relocate(start, bytes, bases, moved), recompiled);
+                        QCOMPARE(restored.relocate(start, recompiled, moved, bases), bytes);
+                        auto image = syntheticRom();
+                        image.replace(start, size, bytes);
+                        restored.verify(Rom::fromBytes(image), bases);
+                        ClassRuntimeInventory empty;
+                        empty.classCount = count;
+                        QVERIFY_THROWS_EXCEPTION(Error, empty.verify(Rom::fromBytes(image), bases));
+                        auto corrupt = bytes;
+                        corrupt[0] ^= 1;
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 restored.relocate(start, corrupt, bases, moved));
+                        corrupt = saved;
+                        corrupt[corrupt.size() - 1] ^= 1;
+                        QVERIFY_THROWS_EXCEPTION(Error, ClassRuntimeInventory::decode(corrupt));
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 ClassRuntimeInventory::decode(saved.first(23)));
+                        auto invalid = inventory;
+                        invalid.owners.append(invalid.owners.first());
+                        QVERIFY_THROWS_EXCEPTION(Error, invalid.encode());
+                        invalid = inventory;
+                        invalid.owners[0].start += 4;
+                        QVERIFY_THROWS_EXCEPTION(Error, invalid.encode());
+                        invalid = inventory;
+                        invalid.owners[0].references[0].low = size;
+                        QVERIFY_THROWS_EXCEPTION(Error, invalid.encode());
+                        moved["aliases"] = 0x80400000;
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 restored.relocate(start, bytes, bases, moved));
+                    }
                     const QSet<QString> discoveryReaders = {
                         "family-menu.c", "class-discovery.c", "equipment-class-menu.c",
                         "class-categories.c", "category-class-counts.c"};
@@ -747,6 +822,10 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                 }
             }
         }
+    }
+    void expandablePromotionData() {
+        auto base = syntheticPromotion();
+        const auto assignments = base.families["assignments"].toArray();
         auto legacy = base.json();
         legacy.remove("flags");
         auto legacyRestored = base;

@@ -10,6 +10,7 @@ ClassMenuLayout ClassMenuLayout::build(const ClassDataLayout &classes,
         return address >= 0x80000000U && address < 0x80400000U && length <= 0x80400000ULL - address;
     };
     if (count < 165 || count > 256 || count != promotion.classCount || (classes.records & 3) ||
+        quint64(classes.indexBase) + 72 != classes.records || !inRam(classes.indexBase, 72) ||
         !inRam(classes.records, count * 72) || !inRam(classes.aliases, count) ||
         !inRam(classes.discovery, 32) || classes.aliases < quint64(classes.records) + count * 72 ||
         classes.discovery < quint64(classes.aliases) + count ||
