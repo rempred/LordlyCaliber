@@ -1,5 +1,8 @@
 #include "rebuild/class_runtime.h"
+#include "engine/promotion.h"
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
 
 namespace lordly {
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
@@ -7,7 +10,7 @@ ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &co
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     result.dataRomOffset = dataRomOffset;
-    if ((dataRomOffset & 15) || dataRomOffset < 0x1000 ||
+    if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
         quint64(dataRomOffset) + result.data.bytes.size() > 0x4000000)
         throw Error("Class data needs an aligned allocation within the cartridge address range");
     result.compiledData = compiler.compileData(result.data.bytes, directory, "class_data");
@@ -30,12 +33,158 @@ ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &co
                                           {"lc_original_pool_add", 0x80070d20},
                                           {"lc_original_secondary_reset", 0x80070f14},
                                           {"lc_dma_read", 0x8009da50}});
-    if (quint64(result.code.address) + result.code.bytes.size() >
-            ClassRuntimeBuild::directoryAddress ||
+    if (result.code.bytes.size() > ClassPlacement::codeCapacity ||
         result.code.entries.size() != 3 || !result.code.entries.contains("lc_heap_reset") ||
         !result.code.entries.contains("lc_secondary_reset") ||
         !result.code.entries.contains("lc_boot_classes"))
         throw Error("Class initialization module exceeds or disagrees with its runtime layout");
+    result.placement.layout = result.data.layout;
+    result.placement.dataRomOffset = dataRomOffset;
+    result.placement.codeBytes = quint32(result.code.bytes.size());
+    result.placement.bootEntry = result.code.entries["lc_boot_classes"];
+    result.placement.heapEntry = result.code.entries["lc_heap_reset"];
+    result.placement.secondaryEntry = result.code.entries["lc_secondary_reset"];
+    result.placement.directory = ClassRuntimeBuild::directoryAddress;
+    result.placement.directoryCapacity = ClassRuntimeBuild::directoryCapacity;
+    result.descriptor =
+        compiler.compileData(result.placement.descriptor(result.compiledData, result.code.bytes),
+                             directory, "class_placement");
     return result;
+}
+QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
+    rom.requireSupported();
+    if (rom.revision() != 0 || build.code.address != ClassPlacement::codeRamAddress ||
+        build.compiledData != build.data.bytes ||
+        build.descriptor != build.placement.descriptor(build.compiledData, build.code.bytes))
+        throw Error("Class runtime build does not match its declared layout");
+    const auto prior = ClassPlacement::read(rom);
+    QFile file(":/game/classes/relocations.json");
+    if (!file.open(QIODevice::ReadOnly))
+        throw Error("Missing class relocation catalog");
+    const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+    const auto original = catalog["originalBases"].toObject();
+    const QMap<QString, quint32> nextBases = {{"classes", build.data.layout.indexBase},
+                                              {"appearances", build.data.layout.appearances},
+                                              {"directory", build.placement.directory}};
+    const QMap<QString, quint32> previousBases = {
+        {"classes", prior ? prior->layout.indexBase : quint32(original["classes"].toDouble())},
+        {"appearances",
+         prior ? prior->layout.appearances : quint32(original["appearances"].toDouble())},
+        {"directory", prior ? prior->directory : quint32(original["directory"].toDouble())}};
+    const QMap<QString, quint32> nextCalls = {
+        {"lc_boot_classes", build.placement.bootEntry},
+        {"lc_heap_reset", build.placement.heapEntry},
+        {"lc_secondary_reset", build.placement.secondaryEntry}};
+    QMap<QString, quint32> previousCalls;
+    if (prior)
+        previousCalls = {{"lc_boot_classes", prior->bootEntry},
+                         {"lc_heap_reset", prior->heapEntry},
+                         {"lc_secondary_reset", prior->secondaryEntry}};
+    QMap<qsizetype, quint32> patches;
+    auto patch = [&](qsizetype site, quint32 value) {
+        if (patches.contains(site) && patches[site] != value)
+            throw Error("Class relocation conflicts at z64 " + QString::number(site, 16));
+        patches[site] = value;
+    };
+    const auto promotion = promotionOwners()["owners"].toArray();
+    for (const auto entry : catalog["owners"].toArray()) {
+        const auto owner = entry.toObject();
+        const qsizetype start = owner["start"].toInt(), size = owner["size"].toInt();
+        auto canonical = rom.bytes().mid(start, size);
+        if (canonical.size() != size)
+            throw Error("Truncated class runtime owner");
+        for (const auto value : owner["references"].toArray()) {
+            const auto ref = value.toObject();
+            const auto group = ref["group"].toString();
+            const auto highSite = ref["high"].toInt(), lowSite = ref["low"].toInt();
+            const auto high = u32(rom.bytes(), start + highSite),
+                       low = u32(rom.bytes(), start + lowSite);
+            const bool signedLow = low >> 26 != 13;
+            const quint32 addend = ref["addend"].toInt();
+            auto highPart = [&](quint32 address) {
+                return (address + (signedLow ? 0x8000U : 0U)) >> 16;
+            };
+            auto highWord = [&](quint32 address) {
+                return (high & 0xffff0000U) | highPart(address);
+            };
+            auto lowWord = [&](quint32 address) { return (low & 0xffff0000U) | (address & 65535); };
+            const auto before = previousBases.value(group) + addend;
+            const auto after = nextBases.value(group) + addend;
+            const auto retail = quint32(original[group].toDouble()) + addend;
+            if (!nextBases.contains(group) || high >> 26 != 15 || high != highWord(before) ||
+                low != lowWord(before))
+                throw Error("Class reference disagrees with its declared prior placement");
+            put32(canonical, highSite, highWord(retail));
+            put32(canonical, lowSite, lowWord(retail));
+            patch(start + highSite, highWord(after));
+            patch(start + lowSite, lowWord(after));
+        }
+        for (const auto value : owner["calls"].toArray()) {
+            const auto call = value.toObject();
+            const auto at = call["offset"].toInt();
+            const auto symbol = call["symbol"].toString();
+            const auto word = u32(rom.bytes(), start + at);
+            const auto originalTarget = quint32(call["originalTarget"].toDouble());
+            const auto previousTarget = prior ? previousCalls.value(symbol) : originalTarget;
+            if (!nextCalls.contains(symbol) || (word >> 26 != 2 && word >> 26 != 3) ||
+                ((word & 0x3ffffffU) << 2) != (previousTarget & 0xfffffffU))
+                throw Error("Class initialization call was changed outside its rebuild");
+            put32(canonical, at, (word & 0xfc000000U) | ((originalTarget >> 2) & 0x3ffffffU));
+            patch(start + at, (word & 0xfc000000U) | ((nextCalls[symbol] >> 2) & 0x3ffffffU));
+        }
+        for (const auto value : owner["constants"].toArray()) {
+            const auto field = value.toObject();
+            const auto at = field["offset"].toInt();
+            const auto word = u32(rom.bytes(), start + at);
+            const bool capacity = field["field"] == "directoryCapacity";
+            const auto retail = capacity ? 4U : 0x6310U;
+            const auto previous =
+                prior ? (capacity ? quint32(prior->directoryCapacity)
+                                  : ((ClassPlacement::codeRamAddress + prior->codeBytes) & 65535))
+                      : retail;
+            const auto next =
+                capacity ? quint32(build.placement.directoryCapacity)
+                         : ((ClassPlacement::codeRamAddress + build.placement.codeBytes) & 65535);
+            if ((word & 65535) != previous)
+                throw Error("Class allocator/cache preparation disagrees with its prior layout");
+            put32(canonical, at, (word & 0xffff0000U) | retail);
+            patch(start + at, (word & 0xffff0000U) | next);
+        }
+        const auto hash = QString::fromLatin1(sha256(canonical));
+        bool recognized = hash == owner["retailSha256"].toString();
+        for (const auto item : promotion) {
+            const auto compatible = item.toObject();
+            if (compatible["start"].toInt() == start && compatible["size"].toInt() == size)
+                for (const auto kind : {"familySha256", "directGateSha256", "cSourceSha256"})
+                    recognized |= hash == compatible[kind].toString();
+        }
+        if (!recognized)
+            throw Error("Unrecognized class runtime owner at z64 " + QString::number(start, 16));
+    }
+    const auto at = build.placement.dataRomOffset;
+    const auto bytes = build.compiledData.size();
+    const auto end = quint64(at) + bytes;
+    if (at < quint64(rom.bytes().size()) &&
+        (!prior || at != prior->dataRomOffset ||
+         (bytes > prior->layout.end - prior->layout.indexBase &&
+          quint64(prior->dataRomOffset) + prior->layout.end - prior->layout.indexBase !=
+              quint64(rom.bytes().size()))))
+        throw Error("Expanded class allocation would overwrite unrelated ROM data");
+    auto image = rom.bytes();
+    if (prior)
+        image.replace(prior->dataRomOffset, prior->layout.end - prior->layout.indexBase,
+                      QByteArray(prior->layout.end - prior->layout.indexBase, char(-1)));
+    if (end > quint64(image.size()))
+        image.append(QByteArray(qsizetype(end) - image.size(), char(-1)));
+    for (auto it = patches.begin(); it != patches.end(); ++it)
+        put32(image, it.key(), it.value());
+    auto paddedCode = build.code.bytes;
+    paddedCode.append(QByteArray(ClassPlacement::codeCapacity - paddedCode.size(), 0));
+    image.replace(ClassPlacement::codeRomOffset, paddedCode.size(), paddedCode);
+    image.replace(ClassPlacement::descriptorRomOffset, build.descriptor.size(), build.descriptor);
+    image.replace(at, bytes, build.compiledData);
+    Rom::updateChecksum(image);
+    ClassData::load(Rom::fromBytes(image));
+    return image;
 }
 } // namespace lordly

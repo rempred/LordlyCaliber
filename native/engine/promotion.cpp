@@ -1,4 +1,5 @@
 #include "engine/promotion.h"
+#include "engine/class_data.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -113,11 +114,14 @@ Promotion Promotion::load(const Rom &rom) {
         throw Error("Conflicting promotion resource descriptors");
     bool hasFamilyCode = false;
     bool hasDirectGateCode = false;
+    const auto classPlacement = ClassPlacement::read(rom);
     const auto owners = promotionOwners()["owners"].toArray();
     for (const auto &v : owners) {
         const auto owner = v.toObject();
-        auto hash = QString::fromLatin1(
-            sha256(rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt())));
+        auto code = rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt());
+        if (classPlacement)
+            code = classPlacement->canonicalReferences(code, owner["start"].toInt());
+        auto hash = QString::fromLatin1(sha256(code));
         bool family =
             hash == owner["familySha256"].toString() ||
             (owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString());

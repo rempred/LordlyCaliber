@@ -7,6 +7,8 @@ struct ClassRuntimeBuild {
     ClassDataImage data;
     QByteArray compiledData;
     CompiledModule code;
+    ClassPlacement placement;
+    QByteArray descriptor;
     quint32 dataRomOffset = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
     static constexpr quint32 directoryAddress = 0x80187e00;
@@ -17,4 +19,5 @@ struct ClassRuntimeBuild {
 // runtime references or produce a playable ROM on its own.
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
                                     const QString &directory, quint32 dataRomOffset);
+QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build);
 } // namespace lordly

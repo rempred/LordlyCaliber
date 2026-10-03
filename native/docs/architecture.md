@@ -33,6 +33,22 @@ that every game consumer already supports that many IDs. Project/UI integration,
 runtime reference updates, save handling and export placement remain separate
 unfinished work; the current exporter still uses the existing retail table.
 
+The internal class linker now installs the compiled data/boot module, updates
+the cataloged address pairs and heap-reset calls, and extends instruction-cache
+preparation before the resident DMA. A versioned, checksummed descriptor records
+the ROM/RAM layout and linked entries. It can reopen, relink and grow its own
+allocation, refusing overlap with unrelated data. Function hashes are checked
+after reversing known prior address fixups, including compatible promotion
+owners. The public Project/UI export path has not enabled this linker yet.
+
+`native/tools/generate-class-relocations.py` generates addresses and owner hashes,
+not instruction bytes. Its 382 direct address pairs cover class data, appearance
+data and the allocator directory; ten calls cover initial load and later resets.
+The generator rejects mixed address uses, long pairs and relative branches into
+the middle of a pair. This does not prove an exhaustive census of all additional
+class-ID consumers. Full-game memory, remaining menus and save support are still
+required before enabling new classes for users.
+
 Compiled C modules expose their actual global function addresses through the
 linked ELF32/MIPS symbol table. Callers must use these entries, not assume source
 order or an entry at the allocation start. Module extraction rejects nonempty

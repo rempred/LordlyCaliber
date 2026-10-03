@@ -76,3 +76,12 @@ module. Boot instruction-cache preparation must cover the new code. The parent
 `check_class_boot.cjs` executes this maintained source with the original allocator
 in 4 MB, including one DMA, repeated resets and descriptor combinations. This
 does not establish full-game peak memory or a completed expanded-class export.
+
+The internal linker now installs those directory/call/cache changes and records
+`LC05CLAS` version 1 at z64 `0x5DC80` in the retired table region. The 128-byte
+descriptor stores the layout, code entries and checksums; the compiled code
+occupies z64 `0x5DB14` up to the descriptor. Class payloads use an explicit ROM
+allocation at or after the original cartridge end, bounded to 64 MiB. RAM remains
+within 4 MiB. Reopening validates the descriptor, code, payload and name pointers.
+This path is covered by engine tests and an actual linked-candidate integer MIPS
+check, but it is not exposed through the Project/UI export workflow yet.

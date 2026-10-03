@@ -119,6 +119,64 @@ class EngineTests : public QObject {
             QCOMPARE(result.bytes.mid(offset, original[id].name.size()), original[id].name);
             QCOMPARE(u8(result.bytes, offset + original[id].name.size()), quint8(0));
         }
+        const auto linked = linkClassRuntime(rom, runtime);
+        const auto relocated = Rom::fromBytes(linked);
+        const auto placement = ClassPlacement::read(relocated);
+        QVERIFY(placement.has_value());
+        QCOMPARE(placement->layout.count, 166);
+        QCOMPARE(placement->dataRomOffset, runtime.dataRomOffset);
+        QCOMPARE((u32(linked, 0x25a8) & 0x3ffffffU) << 2, runtime.placement.bootEntry & 0xfffffffU);
+        QCOMPARE(u32(linked, 0x1148), quint32(0x2c42000a));
+        QCOMPARE(u32(linked, 0x243c) & 65535,
+                 (ClassPlacement::codeRamAddress + runtime.placement.codeBytes) & 65535);
+        auto reopened = ClassData::load(relocated);
+        QCOMPARE(reopened.entries().size(), 166);
+        for (int id = 0; id < 166; ++id) {
+            QCOMPARE(reopened.entries()[id].record.sliced(4),
+                     classes.entries()[id].record.sliced(4));
+            QCOMPARE(reopened.entries()[id].appearance, classes.entries()[id].appearance);
+            QCOMPARE(reopened.entries()[id].name, classes.entries()[id].name);
+            QCOMPARE(reopened.entries()[id].namedAlias, classes.entries()[id].namedAlias);
+        }
+        auto corrupt = linked;
+        corrupt[ClassPlacement::descriptorRomOffset + 124] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(corrupt)));
+        corrupt = linked;
+        corrupt[runtime.dataRomOffset + 100] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(corrupt)));
+        corrupt = linked;
+        corrupt[ClassPlacement::codeRomOffset] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(corrupt)));
+        // A valid CRC is not sufficient: pointers must belong to the names allocation.
+        auto badData = runtime.compiledData;
+        put32(badData, 72, runtime.data.layout.discovery);
+        corrupt = linked;
+        corrupt.replace(runtime.dataRomOffset, badData.size(), badData);
+        corrupt.replace(ClassPlacement::descriptorRomOffset, ClassPlacement::descriptorSize,
+                        runtime.placement.descriptor(badData, runtime.code.bytes));
+        QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(corrupt)));
+        reopened.append(5, "Second new class");
+        const auto next = buildClassRuntime(reopened, compiler, work.path(), runtime.dataRomOffset);
+        QVERIFY(next.compiledData.size() > runtime.compiledData.size());
+        const auto relinked = linkClassRuntime(relocated, next);
+        QCOMPARE(ClassData::load(Rom::fromBytes(relinked)).entries().size(), 167);
+        QCOMPARE(ClassData::load(Rom::fromBytes(relinked)).entries()[166].name,
+                 QByteArray("Second new class"));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, linkClassRuntime(Rom::fromBytes(linked + QByteArray(16, char(-90))), next));
+        corrupt = linked;
+        put32(corrupt, 0x43100, u32(corrupt, 0x43100) ^ 1);
+        QVERIFY_THROWS_EXCEPTION(Error, linkClassRuntime(Rom::fromBytes(corrupt), next));
+        // Keep this owned candidate for instruction-level boot/reader checks.
+        const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+        QVERIFY(QDir().mkpath(candidates));
+        QTemporaryDir candidate(candidates + "/native-class-link-XXXXXX");
+        QVERIFY(candidate.isValid());
+        const auto output = candidate.filePath(QFileInfo(path).fileName());
+        atomicWrite(output, rom.serialize(linked));
+        candidate.setAutoRemove(false);
+        qInfo().noquote() << "Relocated-data candidate (remaining class consumers not expanded):"
+                          << output;
         QCOMPARE(Rom::open(path).bytes(), rom.bytes());
     }
     void sourcePreprocessing() {
@@ -482,6 +540,18 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                                              repeatBuild.path()));
             QVERIFY(QFileInfo::exists(build.filePath("class_families.compiler.s")));
             QVERIFY(QFileInfo::exists(build.filePath("func_000bf248.compiler.s")));
+            const auto familyRom = Rom::fromBytes(result.image);
+            const auto classes = ClassData::load(familyRom);
+            Compiler compiler(qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"));
+            compiler.authenticate();
+            const auto runtime = buildClassRuntime(classes, compiler, repeatBuild.path(),
+                                                   quint32(result.image.size()));
+            const auto combined = linkClassRuntime(familyRom, runtime);
+            QCOMPARE(Promotion::load(Rom::fromBytes(combined)).json(), model.json());
+            auto altered = combined;
+            // This is a relocated class operand in the shared eligibility owner.
+            put32(altered, 0xc3998, u32(altered, 0xc3998) ^ 1);
+            QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(altered)));
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }
