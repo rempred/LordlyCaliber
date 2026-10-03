@@ -29,6 +29,7 @@ struct ClassPlacement {
     static std::optional<ClassPlacement> read(const Rom &rom);
     QByteArray descriptor(const QByteArray &data, const QByteArray &code) const;
     QByteArray canonicalReferences(const QByteArray &owner, qsizetype romStart) const;
+    QByteArray placedReferences(const QByteArray &owner, qsizetype romStart) const;
 };
 // Authored class data is independent of ROM/RAM placement. Runtime references,
 // loader code, menu capacity and save migration are separate export owners.

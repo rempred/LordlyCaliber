@@ -174,6 +174,10 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build) {
     if (prior)
         image.replace(prior->dataRomOffset, prior->layout.end - prior->layout.indexBase,
                       QByteArray(prior->layout.end - prior->layout.indexBase, char(-1)));
+    if (prior && at == prior->dataRomOffset && end < quint64(image.size()) &&
+        quint64(prior->dataRomOffset) + prior->layout.end - prior->layout.indexBase ==
+            quint64(image.size()))
+        image.resize(qsizetype(end));
     if (end > quint64(image.size()))
         image.append(QByteArray(qsizetype(end) - image.size(), char(-1)));
     for (auto it = patches.begin(); it != patches.end(); ++it)

@@ -69,7 +69,8 @@ class IDs require broader data, menu and discovery changes.
 `classes/class-runtime.c` supplies the compiled one-time class-data load, main
 heap reset and secondary-pool reset. `rebuild/class_runtime.*` combines it with
 the dynamic class-data builder, checks the cartridge/RAM bounds and returns the
-actual linked entries. It is not yet installed by the public ROM exporter.
+actual linked entries. Name edits and exports from relocated sources install it
+through the public ROM exporter.
 The original class/appearance/name storage becomes additional allocator pools;
 the directory must be relocated and expanded to ten entries before using this
 module. Boot instruction-cache preparation must cover the new code. The parent
@@ -84,4 +85,6 @@ occupies z64 `0x5DB14` up to the descriptor. Class payloads use an explicit ROM
 allocation at or after the original cartridge end, bounded to 64 MiB. RAM remains
 within 4 MiB. Reopening validates the descriptor, code, payload and name pointers.
 This path is covered by engine tests and an actual linked-candidate integer MIPS
-check, but it is not exposed through the Project/UI export workflow yet.
+check. Project/UI exports now use it for class-name edits, including subsequent
+numeric and family edits, and validate reopening. Additional class IDs still
+require the remaining menu and save consumers before becoming a complete feature.

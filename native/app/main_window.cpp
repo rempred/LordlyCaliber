@@ -168,6 +168,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     grid->setSortingEnabled(true);
     grid->verticalHeader()->hide();
     auto model = new RecordModel(project_.get(), table, undo_, page);
+    connect(model, &RecordModel::editRejected, this, &MainWindow::report);
+    if (table == Table::Classes)
+        grid->setItemDelegateForColumn(1, new ClassNameDelegate(grid));
     auto proxy = new QSortFilterProxyModel(page);
     proxy->setSourceModel(model);
     proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
@@ -214,12 +217,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         inspector->addTab(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, editors, promotion] {
+    auto refresh = [this, table, selected, editors, promotion, model] {
         if (promotion)
             promotion->selectClass(*selected);
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];
-            editor->setEnabled(*selected >= 0);
+            editor->setEnabled(*selected >= 0 &&
+                               (model->flags(model->index(*selected, n + 2)) & Qt::ItemIsEditable));
+            editor->setChoices(project_->catalog());
             if (*selected >= 0)
                 editor->setValue(project_->value(table, *selected, n));
         }

@@ -12,7 +12,7 @@ class ValueEditor : public QWidget {
   public:
     ValueEditor(const Field &field, const QJsonObject &catalog, std::function<void(int)> edited,
                 QWidget *parent = nullptr)
-        : QWidget(parent) {
+        : QWidget(parent), choiceKey_(field.choices) {
         auto layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
         spin_ = new QSpinBox;
@@ -20,6 +20,7 @@ class ValueEditor : public QWidget {
         spin_->setKeyboardTracking(false);
         layout->addWidget(spin_);
         auto labels = catalog[field.choices].toObject();
+        labels_ = labels;
         if (!labels.isEmpty()) {
             choice_ = new QComboBox;
             choice_->setMinimumContentsLength(12);
@@ -49,6 +50,24 @@ class ValueEditor : public QWidget {
         spin_->setValue(value);
         syncChoice(value);
     }
+    void setChoices(const QJsonObject &catalog) {
+        const auto labels = catalog[choiceKey_].toObject();
+        if (!choice_ || labels == labels_)
+            return;
+        labels_ = labels;
+        QSignalBlocker block(choice_);
+        choice_->clear();
+        QMap<int, QString> sorted;
+        for (auto it = labels.begin(); it != labels.end(); ++it) {
+            bool ok = false;
+            const auto id = it.key().toInt(&ok);
+            if (ok && it.value().isString() && id >= spin_->minimum() && id <= spin_->maximum())
+                sorted[id] = it.value().toString();
+        }
+        for (auto it = sorted.begin(); it != sorted.end(); ++it)
+            choice_->addItem(it.value(), it.key());
+        syncChoice(spin_->value());
+    }
 
   private:
     void syncChoice(int value) {
@@ -64,5 +83,7 @@ class ValueEditor : public QWidget {
     }
     QSpinBox *spin_;
     QComboBox *choice_ = nullptr;
+    QString choiceKey_;
+    QJsonObject labels_;
 };
 } // namespace lordly

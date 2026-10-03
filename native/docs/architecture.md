@@ -29,9 +29,10 @@ inheriting a unique character alias. The builder deduplicates names, regenerates
 their pointers, preserves the preceding 72 bytes used by legacy index bases,
 and calculates aligned record/appearance/alias/name/discovery allocations within
 an explicit 4 MB RAM interval. Its 256-entry representation limit is not a claim
-that every game consumer already supports that many IDs. Project/UI integration,
-runtime reference updates, save handling and export placement remain separate
-unfinished work; the current exporter still uses the existing retail table.
+that every game consumer already supports that many IDs. Project/UI name edits
+and already-relocated source ROMs use this builder during export. Numeric-only
+edits to a retail source still compile into its existing table. New class
+creation needs the remaining consumer/menu/save work.
 
 The internal class linker now installs the compiled data/boot module, updates
 the cataloged address pairs and heap-reset calls, and extends instruction-cache
@@ -39,7 +40,8 @@ preparation before the resident DMA. A versioned, checksummed descriptor records
 the ROM/RAM layout and linked entries. It can reopen, relink and grow its own
 allocation, refusing overlap with unrelated data. Function hashes are checked
 after reversing known prior address fixups, including compatible promotion
-owners. The public Project/UI export path has not enabled this linker yet.
+owners. Project/UI exports use this linker for class-name edits and for later
+edits to those relocated ROMs. Managed name pointers are read-only fields.
 
 `native/tools/generate-class-relocations.py` generates addresses and owner hashes,
 not instruction bytes. Its 382 direct address pairs cover class data, appearance
@@ -48,6 +50,14 @@ The generator rejects mixed address uses, long pairs and relative branches into
 the middle of a pair. This does not prove an exhaustive census of all additional
 class-ID consumers. Full-game memory, remaining menus and save support are still
 required before enabling new classes for users.
+
+Class names use raw source bytes in project state and undo commands. Display
+decoding never rewrites an untouched name. Edited names support printable game
+characters and the two-line framing shared by all seven two-line retail names.
+Name edits persist in `classNames` inside the project manifest. The table's name
+editor uses Ctrl+Enter to commit, and dependent class selectors update with undo
+and redo. Growing an owned ROM allocation moves it when unrelated bytes follow;
+shrinking an allocation at the end removes only its owned trailing bytes.
 
 Compiled C modules expose their actual global function addresses through the
 linked ELF32/MIPS symbol table. Callers must use these entries, not assume source

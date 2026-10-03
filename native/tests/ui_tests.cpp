@@ -2,6 +2,7 @@
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
 #include "app/text_workspace.h"
+#include "app/value_editor.h"
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
@@ -44,6 +45,44 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void classNamesAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        RecordModel model(&project, Table::Classes, &undo);
+        const auto original = project.classNameBytes(164);
+        const Field choiceField{"class", "Class", "", 0, 1, false, "CLASS_NAMES"};
+        ValueEditor choice(choiceField, project.catalog(), [](int) {});
+        connect(&model, &RecordModel::edited, &choice,
+                [&] { choice.setChoices(project.catalog()); });
+        QTableView view;
+        view.setModel(&model);
+        view.setItemDelegateForColumn(1, new ClassNameDelegate(&view));
+        view.resize(600, 400);
+        view.show();
+        const auto index = model.index(164, 1);
+        view.scrollTo(index);
+        view.edit(index);
+        QTRY_VERIFY(view.findChild<QPlainTextEdit *>());
+        auto editor = view.findChild<QPlainTextEdit *>();
+        QCOMPARE(editor->toPlainText(), QString("Death\nBahamut"));
+        editor->setPlainText("Ancient\nBahamut");
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QTRY_COMPARE(project.record(Table::Classes, 164).name, QString("Ancient\nBahamut"));
+        auto combo = choice.findChild<QComboBox *>();
+        QCOMPARE(combo->itemText(combo->findData(164)), QString("Ancient\nBahamut"));
+        undo.undo();
+        QCOMPARE(project.classNameBytes(164), original);
+        QCOMPARE(combo->itemText(combo->findData(164)), QString("Death\nBahamut"));
+        undo.redo();
+        QCOMPARE(project.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
+        QSignalSpy rejected(&model, &RecordModel::editRejected);
+        QVERIFY(!model.setData(index, "", Qt::EditRole));
+        QCOMPARE(rejected.size(), 1);
+        QCOMPARE(project.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
     }
     void loadDesktopWorkspace() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

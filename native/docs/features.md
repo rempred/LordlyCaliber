@@ -9,7 +9,7 @@ preview behavior work; a visible tab alone does not count.
 | Area | Required capabilities | Native status |
 |---|---|---|
 | Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | In progress |
-| Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, descriptions, promotion requirements, compatibility masks and family creation/edit/export implemented for retail IDs; names, new IDs and dynamic placement remain |
+| Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, names/descriptions, promotion requirements, compatibility masks and family creation/edit/export implemented for retail IDs. Names use dynamic class-data relocation with source-built initialization; new-class creation still needs the remaining consumers, menus and save integration |
 | Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Fields and description editing/export implemented; integrated workflow polish remains |
 | Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Pending |
 | Consumables | Values/descriptions, supported behavior/effect editing, rebuild ownership | Pending |

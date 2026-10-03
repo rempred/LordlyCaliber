@@ -92,15 +92,16 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
         throw Error("Relocated class data or initialization code has changed outside its rebuild");
     return result;
 }
-QByteArray ClassPlacement::canonicalReferences(const QByteArray &bytes, qsizetype romStart) const {
+static QByteArray transformReferences(const ClassPlacement &placement, const QByteArray &bytes,
+                                      qsizetype romStart, bool canonical) {
     QFile file(":/game/classes/relocations.json");
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing class relocation catalog");
     const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
     const auto original = catalog["originalBases"].toObject();
-    const QMap<QString, quint32> current = {{"classes", layout.indexBase},
-                                            {"appearances", layout.appearances},
-                                            {"directory", directory}};
+    const QMap<QString, quint32> current = {{"classes", placement.layout.indexBase},
+                                            {"appearances", placement.layout.appearances},
+                                            {"directory", placement.directory}};
     auto result = bytes;
     for (const auto value : catalog["owners"].toArray()) {
         const auto owner = value.toObject();
@@ -113,18 +114,26 @@ QByteArray ClassPlacement::canonicalReferences(const QByteArray &bytes, qsizetyp
             const auto group = ref["group"].toString();
             const auto hi = ref["high"].toInt(), lo = ref["low"].toInt();
             const auto high = u32(bytes, hi), low = u32(bytes, lo);
-            const auto address = current.value(group) + quint32(ref["addend"].toInt());
+            const auto relocated = current.value(group) + quint32(ref["addend"].toInt());
             const auto retail =
                 quint32(original[group].toDouble()) + quint32(ref["addend"].toInt());
             const quint32 carry = low >> 26 == 13 ? 0 : 0x8000;
+            const auto address = canonical ? relocated : retail;
+            const auto target = canonical ? retail : relocated;
             if (!current.contains(group) || high >> 26 != 15 ||
                 (high & 65535) != (address + carry) >> 16 || (low & 65535) != (address & 65535))
                 throw Error("Class reference does not match its relocation descriptor");
-            put32(result, hi, (high & 0xffff0000U) | ((retail + carry) >> 16));
-            put32(result, lo, (low & 0xffff0000U) | (retail & 65535));
+            put32(result, hi, (high & 0xffff0000U) | ((target + carry) >> 16));
+            put32(result, lo, (low & 0xffff0000U) | (target & 65535));
         }
     }
     return result;
+}
+QByteArray ClassPlacement::canonicalReferences(const QByteArray &bytes, qsizetype start) const {
+    return transformReferences(*this, bytes, start, true);
+}
+QByteArray ClassPlacement::placedReferences(const QByteArray &bytes, qsizetype start) const {
+    return transformReferences(*this, bytes, start, false);
 }
 void ClassData::validate(const ClassAsset &asset) {
     if (asset.record.size() != recordSize || asset.appearance.size() != appearanceSize)

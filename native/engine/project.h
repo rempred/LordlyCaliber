@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/class_data.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/text.h"
@@ -70,6 +71,18 @@ class Project {
         return promotion_;
     }
     void setPromotion(const QJsonObject &value);
+    bool hasClassData() const {
+        return originalClasses_.has_value();
+    }
+    bool classNamesModified() const {
+        return !classNames_.isEmpty();
+    }
+    bool classNameModified(int row) const {
+        return classNames_.contains(row);
+    }
+    QByteArray classNameBytes(int row) const;
+    void setClassNameBytes(int row, const QByteArray &name);
+    ClassData classData() const;
 
   private:
     Rom rom_;
@@ -78,6 +91,9 @@ class Project {
     QStringList importWarnings_;
     QMap<QString, TextBank> texts_;
     std::optional<Promotion> promotion_;
+    std::optional<ClassData> originalClasses_;
+    QMap<int, QByteArray> classNames_;
 };
+QByteArray encodeClassName(const QString &name);
 void atomicWrite(const QString &path, const QByteArray &data);
 } // namespace lordly

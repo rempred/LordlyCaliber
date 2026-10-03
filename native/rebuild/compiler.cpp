@@ -1,4 +1,5 @@
 #include "rebuild/compiler.h"
+#include "rebuild/class_runtime.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -260,6 +261,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             compiler.compileData(promotion.decodedFamilies(), directory, "class_families");
         result.image.replace(0x27d0000, 65536, promotion.familyContainer(compiled));
         const auto owners = promotionOwners()["owners"].toArray();
+        const auto classPlacement = ClassPlacement::read(p.rom());
         const QMap<int, QByteArray> replacements = {{0xc38c0, "bne $v1, $v0, .+32"},
                                                     {0xc3a88, "bne $v1, $v0, .+32"},
                                                     {0xcce00, "move $v0, $v1"},
@@ -269,6 +271,8 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto owner = v.toObject();
             auto start = owner["start"].toInt(), size = owner["size"].toInt();
             auto original = bytes.mid(start, size);
+            if (classPlacement)
+                original = classPlacement->canonicalReferences(original, start);
             auto hash = QString::fromLatin1(sha256(original));
             if (hash != owner["retailSha256"].toString() &&
                 hash != owner["familySha256"].toString() &&
@@ -313,6 +317,8 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             if (built.size() != size || sha256(built) != expected)
                 throw Error("Compiled promotion owner differs from validated source: " +
                             owner["name"].toString());
+            if (classPlacement)
+                built = classPlacement->placedReferences(built, start);
             result.image.replace(start, size, built);
         }
         result.report << QString(
@@ -337,11 +343,15 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
+    const auto priorClassPlacement = ClassPlacement::read(p.rom());
+    const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified();
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
     for (auto table : {Table::Classes, Table::Items}) {
+        if (table == Table::Classes && relocateClasses)
+            continue;
         const auto &records = p.records(table);
         bool changed = false;
         for (const auto &r : records)
@@ -371,6 +381,24 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
     rebuildPromotion(p, compiler, directory, result);
+    if (relocateClasses) {
+        auto offset = priorClassPlacement ? priorClassPlacement->dataRomOffset
+                                          : quint32((result.image.size() + 15) & ~qsizetype(15));
+        const auto data = p.classData();
+        if (priorClassPlacement &&
+            data.build(0x80243db0).bytes.size() >
+                priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
+            quint64(priorClassPlacement->dataRomOffset) + priorClassPlacement->layout.end -
+                    priorClassPlacement->layout.indexBase !=
+                quint64(result.image.size()))
+            offset = quint32((result.image.size() + 15) & ~qsizetype(15));
+        const auto classes = buildClassRuntime(data, compiler, directory, offset);
+        result.image = linkClassRuntime(Rom::fromBytes(result.image), classes);
+        result.report << QString("Rebuilt %1 classes with relocated names, appearance data and "
+                                 "source-built initialization (%2 bytes of RAM)")
+                             .arg(classes.data.layout.count)
+                             .arg(classes.data.bytes.size());
+    }
     if (p.rom().revision() == 0 &&
         !(p.promotion() && (p.promotion()->expanded || p.promotion()->modified())) &&
         p.manifest().value("records").toObject().value("classes").toObject().size() > 0) {
@@ -399,7 +427,11 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
     }
     for (auto table : {Table::Classes, Table::Items})
         for (int row = 0; row < p.records(table).size(); ++row)
-            if (reopened.record(table, row).bytes != p.record(table, row).bytes)
+            if (table == Table::Classes && relocateClasses
+                    ? (reopened.record(table, row).bytes.sliced(4) !=
+                           p.record(table, row).bytes.sliced(4) ||
+                       reopened.classNameBytes(row) != p.classNameBytes(row))
+                    : reopened.record(table, row).bytes != p.record(table, row).bytes)
                 throw Error("Export reopen differs from the project");
     result.report
         << "Reopened every class and item record; CIC-6102 checksum updated when required";

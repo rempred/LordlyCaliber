@@ -112,6 +112,17 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     Project p;
     p.rom_ = std::move(rom);
     p.catalog_ = catalog;
+    const auto classPlacement = ClassPlacement::read(p.rom_);
+    if (classPlacement)
+        p.originalClasses_ = ClassData::load(p.rom_);
+    else if (p.rom_.revision() == 0) {
+        // Numeric records remain inspectable in ROM variants whose relocated
+        // strings need a separate owner. Such names are not offered for editing.
+        try {
+            p.originalClasses_ = ClassData::loadRetail(p.rom_);
+        } catch (const Error &) {
+        }
+    }
     for (auto table : {Table::Classes, Table::Items}) {
         auto &records = p.tables_[table];
         bool cls = table == Table::Classes;
@@ -119,6 +130,11 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         qsizetype base = cls ? 0x5dad8 + 72 - 12 : 0x62310 - 4;
         if (p.rom_.revision() == 1)
             base += 0x20;
+        if (cls && classPlacement) {
+            count = classPlacement->layout.count;
+            base = classPlacement->dataRomOffset + classPlacement->layout.records -
+                   classPlacement->layout.indexBase;
+        }
         auto names = catalog.value(cls ? "CLASS_NAMES" : "ITEM_NAMES").toObject();
         for (int id = 0; id < count; ++id) {
             Record r;
@@ -126,12 +142,18 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             r.romOffset = base + id * stride;
             r.name = names.value(QString::number(id))
                          .toString(QString("%1 %2").arg(cls ? "Class" : "Item").arg(id));
+            if (cls && p.originalClasses_)
+                r.name = decodeText(p.originalClasses_->entries()[id].name);
+            if (cls)
+                names[QString::number(id)] = r.name;
             r.original = p.rom_.bytes().mid(r.romOffset, stride);
             r.bytes = r.original;
             if (r.bytes.size() != stride)
                 throw Error("Truncated record table");
             records.push_back(std::move(r));
         }
+        if (cls)
+            p.catalog_["CLASS_NAMES"] = names;
     }
     return p;
 }
@@ -170,10 +192,13 @@ void Project::setValue(Table t, int row, int column, int value) {
 void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
     if (bytes.size() != record(t, row).bytes.size())
         throw Error("Record size changed unexpectedly");
+    if (t == Table::Classes && originalClasses_ &&
+        bytes.first(4) != record(t, row).original.first(4))
+        throw Error("Class name pointers are allocated during rebuild; edit the name instead");
     tables_.at(t)[row].bytes = bytes;
 }
 int Project::changedRecords() const {
-    int count = 0;
+    int count = int(classNames_.size());
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -185,6 +210,65 @@ int Project::changedRecords() const {
     if (promotion_ && promotion_->modified())
         ++count;
     return count;
+}
+QByteArray encodeClassName(const QString &name) {
+    if (name.trimmed().isEmpty())
+        throw Error("Enter a class name");
+    const auto lines = name.split('\n');
+    if (lines.size() > 2)
+        throw Error("Class names support at most two lines");
+    QVector<QByteArray> encoded;
+    for (const auto &line : lines) {
+        if (line.trimmed().isEmpty())
+            throw Error("Class name lines cannot be empty");
+        QByteArray bytes;
+        for (const auto character : line) {
+            if (character.unicode() < 32 || character.unicode() > 126)
+                throw Error("Use printable game characters in class names");
+            bytes.append(char(character.unicode()));
+        }
+        encoded.push_back(bytes);
+    }
+    // All seven two-line retail names use this native name framing.
+    return encoded.size() == 1 ? encoded[0]
+                               : QByteArray(1, 0x0e) + encoded[0] + QByteArray::fromHex("1063") +
+                                     encoded[1] + QByteArray(1, 0x0f);
+}
+QByteArray Project::classNameBytes(int row) const {
+    record(Table::Classes, row);
+    if (!originalClasses_)
+        throw Error("This ROM's class names need a supported source layout before editing");
+    return classNames_.value(row, originalClasses_->entries()[row].name);
+}
+void Project::setClassNameBytes(int row, const QByteArray &name) {
+    classNameBytes(row);
+    auto candidate = *originalClasses_;
+    auto entry = candidate.entries()[row];
+    entry.name = name;
+    candidate.set(row, entry);
+    if (name == originalClasses_->entries()[row].name)
+        classNames_.remove(row);
+    else
+        classNames_[row] = name;
+    tables_.at(Table::Classes)[row].name = decodeText(name);
+    auto names = catalog_["CLASS_NAMES"].toObject();
+    names[QString::number(row)] = tables_.at(Table::Classes)[row].name;
+    catalog_["CLASS_NAMES"] = names;
+}
+ClassData Project::classData() const {
+    if (!originalClasses_)
+        throw Error("Class data requires a supported source layout");
+    auto result = *originalClasses_;
+    const auto &records = tables_.at(Table::Classes);
+    if (records.size() != result.entries().size())
+        throw Error("Class record and asset counts disagree");
+    for (int id = 0; id < records.size(); ++id) {
+        auto entry = result.entries()[id];
+        entry.record = records[id].bytes;
+        entry.name = classNameBytes(id);
+        result.set(id, entry);
+    }
+    return result;
 }
 void Project::loadTexts() {
     if (texts_.isEmpty())
@@ -226,6 +310,13 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    QJsonObject names;
+    for (auto it = classNames_.begin(); it != classNames_.end(); ++it)
+        names[QString::number(it.key())] = QString::fromLatin1(it.value().toHex());
+    if (names.isEmpty())
+        result.remove("classNames");
+    else
+        result["classNames"] = names;
     QJsonObject descriptions;
     for (auto bank = texts_.begin(); bank != texts_.end(); ++bank) {
         QJsonObject rows;
@@ -252,6 +343,9 @@ void Project::applyManifest(const QJsonObject &object) {
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
     auto candidate = *this;
+    const auto renamed = candidate.classNames_.keys();
+    for (const auto id : renamed)
+        candidate.setClassNameBytes(id, candidate.originalClasses_->entries()[id].name);
     for (auto &[table, records] : candidate.tables_)
         for (auto &record : records)
             record.bytes = record.original;
@@ -278,6 +372,18 @@ void Project::applyManifest(const QJsonObject &object) {
                 throw Error("Invalid project record bytes");
             candidate.replaceBytes(table, id, bytes);
         }
+    }
+    if (object.contains("classNames") && !object["classNames"].isObject())
+        throw Error("Class names must be an object");
+    const auto names = object["classNames"].toObject();
+    for (auto it = names.begin(); it != names.end(); ++it) {
+        bool ok = false;
+        const auto id = it.key().toInt(&ok);
+        const auto text = it.value().toString().toLatin1();
+        const auto bytes = QByteArray::fromHex(text);
+        if (!ok || !it.value().isString() || text.toLower() != bytes.toHex())
+            throw Error("Invalid saved class name");
+        candidate.setClassNameBytes(id, bytes);
     }
     candidate.retained_ = object;
     for (auto &bank : candidate.texts_)

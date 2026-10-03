@@ -19,6 +19,85 @@ static QByteArray syntheticRom() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void classNameProjectExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            auto p = Project::fromRom(Rom::open(path));
+            QVERIFY(p.hasClassData());
+            QCOMPARE(encodeClassName("Death\nBahamut"), p.classNameBytes(164));
+            const auto knight = encodeClassName("Silver\nKnight");
+            p.setClassNameBytes(5, knight);
+            p.setClassNameBytes(164, encodeClassName("Ancient\nBahamut"));
+            int str = -1;
+            for (int n = 0; n < fields(Table::Classes).size(); ++n)
+                if (fields(Table::Classes)[n].key == "strBase")
+                    str = n;
+            QVERIFY(str >= 0);
+            p.setValue(Table::Classes, 5, str, 432);
+            p.loadPromotion();
+            auto families = *p.promotion();
+            const auto family = families.addFamily("Order of Silver", 1);
+            families.assign(5, family);
+            p.setPromotion(families.json());
+            QTemporaryDir folder, build;
+            QVERIFY(folder.isValid() && build.isValid());
+            p.saveFolder(folder.path());
+            auto restored = Project::fromRom(p.rom());
+            restored.applyManifest(Project::readProject(folder.path()));
+            QCOMPARE(restored.classNameBytes(5), knight);
+            QCOMPARE(restored.record(Table::Classes, 5).name, QString("Silver\nKnight"));
+            QCOMPARE(restored.catalog()["CLASS_NAMES"].toObject()["5"],
+                     QJsonValue("Silver\nKnight"));
+            auto invalid = restored.manifest();
+            invalid["classNames"] = QJsonObject{{"5", "410042"}};
+            QVERIFY_THROWS_EXCEPTION(Error, restored.applyManifest(invalid));
+            QCOMPARE(restored.classNameBytes(5), knight);
+            auto result =
+                rebuild(restored, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
+            const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QVERIFY(QDir().mkpath(candidates));
+            QTemporaryDir output(candidates + "/native-class-name-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto file = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, result, file);
+            auto reopened = Project::fromRom(Rom::open(file));
+            QCOMPARE(reopened.classNameBytes(5), knight);
+            QCOMPARE(reopened.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
+            QCOMPARE(reopened.value(Table::Classes, 5, str), 432);
+            reopened.loadPromotion();
+            QCOMPARE(reopened.promotion()->json(), families.json());
+            reopened.setClassNameBytes(5, "K");
+            const auto smaller =
+                rebuild(reopened, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
+            QVERIFY(smaller.image.size() < result.image.size());
+            // A later allocation must preserve unrelated bytes after the old payload.
+            const QByteArray marker(16, char(-90));
+            auto growing = Project::fromRom(Rom::fromBytes(smaller.image + marker));
+            growing.setClassNameBytes(5, encodeClassName("Knight of the Silver Dawn"));
+            growing.loadPromotion();
+            auto changedFamilies = *growing.promotion();
+            changedFamilies.setGate(5, 0, 91);
+            growing.setPromotion(changedFamilies.json());
+            const auto larger =
+                rebuild(growing, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
+            QCOMPARE(larger.image.mid(smaller.image.size(), marker.size()), marker);
+            auto finalProject = Project::fromRom(Rom::fromBytes(larger.image));
+            finalProject.loadPromotion();
+            QCOMPARE(finalProject.record(Table::Classes, 5).name,
+                     QString("Knight of the Silver Dawn"));
+            QCOMPARE(finalProject.promotion()->json(), changedFamilies.json());
+            QCOMPARE(
+                rebuild(finalProject, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path())
+                    .image,
+                larger.image);
+            QCOMPARE(Rom::open(path).bytes(), p.rom().bytes());
+            QVERIFY_THROWS_EXCEPTION(Error, encodeClassName("First\nSecond\nThird"));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void expandableClassData() {
         auto bytes = syntheticRom();
         bytes.replace(0x65dbc, 7, QByteArray("Knight\0", 7));
