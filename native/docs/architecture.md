@@ -138,6 +138,10 @@ Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
 Its special secondary-class rule remains limited to original IDs 42–164;
 new IDs use their authored compatibility and requirement tables.
+The Army action checks likewise apply their special-class restrictions only to
+original IDs 81–164. Both alias routes retain their original default-class
+selection; appended IDs take the ordinary-class path. The unrelated 128-entry
+squad-index bound remains unchanged.
 
 `game/classes/save-format.c` is shared source for desktop and game record
 conversion. It validates a legacy record, inserts 32 discovery bytes before

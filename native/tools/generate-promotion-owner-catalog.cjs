@@ -117,6 +117,19 @@ catalog.expandedOwners = [0x9b0f0, 0x9bc80, 0xbc984, 0xbedb8, 0xbf458, 0xc01dc].
 catalog.expandedOwners.push({name:'func_000ae3f0',start:0xae3f0,size:0x518,
   retailSha256:'b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3'});
 const expandedInstructions = [
+  [0xc01dc, [
+    // These action gates classify original 81..164 specially. Route both alias
+    // paths through one range check, retaining their delay-slot assignments.
+    [0xc02bc, 'bnel $v0, $zero, .+32'],
+    [0xc02dc, 'addiu $v0, $v1, -81'],
+    [0xc02e0, 'sltiu $v0, $v0, 84'],
+    [0xc02e4, 'xori $v0, $v0, 1'],
+    [0xc038c, 'bnel $v0, $zero, .+32'],
+    [0xc03ac, 'addiu $v0, $a0, -81'],
+    [0xc03b0, 'sltiu $v0, $v0, 84'],
+    [0xc03b4, 'xori $v0, $v0, 1'],
+    [0xc0624, 'addiu $v0, $v0, -81'],
+    [0xc0628, 'sltiu $v0, $v0, 84']]],
   [0xc3900, [[0xc3d00, 'sltiu $v0, $a0, CLASS_COUNT'],
     // Preserve the original secondary-ID restriction only for retail 42..164.
     // The following existing default-class load becomes the branch delay slot.

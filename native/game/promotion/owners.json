@@ -384,6 +384,48 @@
       "start": 786908,
       "size": 2132,
       "retailSha256": "79109c0e7d0b7de186d77c515aecceb91a8d66485e4ad43f4ceff98937abac5b",
+      "expandedInstructions": [
+        {
+          "offset": 224,
+          "assembly": "bnel $v0, $zero, .+32"
+        },
+        {
+          "offset": 256,
+          "assembly": "addiu $v0, $v1, -81"
+        },
+        {
+          "offset": 260,
+          "assembly": "sltiu $v0, $v0, 84"
+        },
+        {
+          "offset": 264,
+          "assembly": "xori $v0, $v0, 1"
+        },
+        {
+          "offset": 432,
+          "assembly": "bnel $v0, $zero, .+32"
+        },
+        {
+          "offset": 464,
+          "assembly": "addiu $v0, $a0, -81"
+        },
+        {
+          "offset": 468,
+          "assembly": "sltiu $v0, $v0, 84"
+        },
+        {
+          "offset": 472,
+          "assembly": "xori $v0, $v0, 1"
+        },
+        {
+          "offset": 1096,
+          "assembly": "addiu $v0, $v0, -81"
+        },
+        {
+          "offset": 1100,
+          "assembly": "sltiu $v0, $v0, 84"
+        }
+      ],
       "expandedDataReferences": [
         {
           "group": "aliases",

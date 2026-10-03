@@ -134,6 +134,27 @@ let sourceClassCases = 0;
         sourceClassCases++;
       }
 }
+let actionClassCases = 0;
+{
+  const m = cpu(), defaultClass = m.r8(layout.records + 5 * 72 + 69);
+  for (let primary = 0; primary < layout.count; ++primary) {
+    const ordinary = primary < 81 || primary >= 165;
+    for (const alias of [0, 24]) {
+      m.set('v1', primary); m.set('v0', alias); m.set('a0', 5);
+      m.call(ram(0xC02BC), ram(0xC02E8));
+      assert.equal(m.get('v0'), ordinary ? 1 : 0);
+      assert.equal(m.get('a0'), alias || defaultClass);
+      m.set('a0', primary); m.set('v0', alias); m.set('v1', 5);
+      m.call(ram(0xC038C), ram(0xC03B8));
+      assert.equal(m.get('v0'), ordinary ? 1 : 0);
+      assert.equal(m.get('v1'), alias || defaultClass);
+      actionClassCases += 2;
+    }
+    m.set('s5', owner); m.w8(owner + 17, primary);
+    m.call(ram(0xC0620), ram(0xC062C));
+    assert.equal(m.get('v0'), ordinary ? 0 : 1);actionClassCases++;
+  }
+}
 let equipmentCases = 0;
 for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
   for (const missing of [-1, 0, 1, 2, 3]) {
@@ -157,5 +178,5 @@ for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
     assert.equal(m.get('v0'), allowed && (!check || missing === -1) ? 1 : 0);
     equipmentCases++;
   }
-console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, sourceClassCases, equipmentCases, allocationBytes:layout.ownerBytes,
+console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, sourceClassCases, actionClassCases, equipmentCases, allocationBytes:layout.ownerBytes,
   scope:'executed selection/name/count/sprite-call spans; not raster output or full game'}));
