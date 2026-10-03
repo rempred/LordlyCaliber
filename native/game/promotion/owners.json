@@ -76,7 +76,30 @@
       "start": 852304,
       "size": 568,
       "retailSha256": "1224b99d57c28d2f29adb60e54caea6460e101844afb41123a90e571201d6884",
-      "familySha256": "f69b6ed704705f34dfcdcbbb820488dea832b40bcaf9a4c1d3d07e5146ed1068"
+      "familySha256": "f69b6ed704705f34dfcdcbbb820488dea832b40bcaf9a4c1d3d07e5146ed1068",
+      "cSource": "class-screen.c",
+      "cSourceSha256": "e0b97def94deb8b58d02286b96ce05b876c3f23e8c3c6d46ce96a1066f11644e",
+      "cExtent": 560,
+      "cReferences": [
+        {
+          "high": 208,
+          "low": 216,
+          "group": "classes",
+          "addend": 141
+        }
+      ],
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_records": 2149088276,
+        "lc_prepare_class": 2149460940,
+        "lc_prepare_actor": 2149426136,
+        "lc_family_menu": 2149394408,
+        "lc_equipment_summary": 2149394936,
+        "lc_equipment_entry": 2149378588,
+        "lc_family_lookup": 2149380848
+      }
     },
     {
       "name": "func_000c91a0",

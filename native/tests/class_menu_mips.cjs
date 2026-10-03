@@ -201,6 +201,58 @@ const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/o
 assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
+const screenAddress=0x801E36F0;
+const screenSource=fs.readFileSync(path.join(native,'game/promotion/class-screen.c'),'utf8');
+const screenBindings='lc_army_owner = 0x80196AF8; lc_roster = 0x80193BF8; lc_named_class_map = 0x801EF3B8; lc_class_records = 0x80187C14; lc_prepare_class = 0x801E2BCC; lc_prepare_actor = 0x801DA3D8; lc_family_menu = 0x801D27E8; lc_equipment_summary = 0x801D29F8; lc_equipment_entry = 0x801CEA1C; lc_family_lookup = 0x801CF2F0;';
+const screenCode=compile('class_screen',config,screenSource,screenAddress,screenBindings);
+const screenWide=compile('class_screen_wide',config.replace('LC_DISABLED_FLAG 128','LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E','LC_LIST_OFFSET 0x2528'),screenSource,screenAddress,screenBindings.replace('0x801EF3B8','0x80308100').replace('0x80187C14','0x80310000'));
+assert(screenCode.length<=560,`screen body ${screenCode.length}`);assert(screenWide.length<=560);
+const screenPadded=Buffer.alloc(568);screenCode.copy(screenPadded);
+// The last two instructions in this owner are the following function's entry.
+Buffer.from('3c0680198cc66af8','hex').copy(screenPadded,560);
+const screenManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xD0150);
+assert.equal(hash(screenPadded),screenManifest.cSourceSha256);
+assert.equal(screenManifest.cExtent,560);
+function screenSetup(code,{actor=1,primary=90,secondary=24,alias=25,base=24,previous=5,preserve=0,entries=[],behavior=1,wide=false,familySelected=secondary},packed=true) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);cpu.set('a0',preserve);
+  cpu.load(screenAddress,code);cpu.load(owner,Buffer.alloc(0x2900,0xA6));cpu.w32(0x80196AF8,owner);
+  cpu.w8(owner+0x18B,actor);cpu.w16(owner+0x5E8,previous);
+  if(actor>0&&actor<100) {
+    cpu.w8(0x80193BF8+(actor-1)*56+17,primary);cpu.w8(0x80193BF8+(actor-1)*56+18,secondary);
+  }
+  cpu.w8((wide?0x80308100:0x801EF3B8)+primary,alias);cpu.w8((wide?0x80310000:0x80187C14)+primary*72+69,base);
+  const calls=[],clobber=c=>{for(const r of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(r,0xCCCCCCCC);};
+  for(const [address,name,args] of [[0x801E2BCC,'prepare',4],[0x801DA3D8,'actor',1],[menuAddress,'menu',0],[0x801D29F8,'summary',0],[0x801CEA1C,'item',3],[lookupAddress,'family',1]])cpu.trap(address,c=>{
+    const values=Array.from({length:args},(_,i)=>c.get('a'+i));calls.push([name,...values]);clobber(c);
+    if(name==='menu') {
+      c.w16(owner+0x1BFC,entries.length);entries.forEach((id,i)=>c.w16(owner+(wide?0x2528:0x1C0E)+i*2,id));
+      c.w16(owner+0x5E8,familySelected);
+    }
+    if(name==='item')c.set('v0',0x1000+values[1]*32+values[2]);
+    if(name==='family'){c.set('v0',packed?(behavior<<16)|16:behavior);c.set('v1',behavior);}
+  });
+  cpu.call(screenAddress);
+  return {bytes:Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+0x2900)),calls,selected:cpu.r16(owner+0x5EA),classId:cpu.r16(owner+0x5E8),current:cpu.r8(owner+0x5EC),accepts:cpu.r8(owner+0x60C)};
+}
+let screenComparisons=0;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xD0150,0xD0388);
+  assert.deepEqual(screenPadded.subarray(560),original.subarray(560));
+  for(const actor of [0,1,2,99,100,255])for(const preserve of [0,1,256,257])for(const alias of [0,25])for(const base of [24,32])for(const behavior of [0,1,2,3,5,10]) {
+    const args={actor,preserve,alias,base,behavior,entries:[0x82,5,0x99,24]};
+    assert.deepEqual(screenSetup(screenCode,args),screenSetup(original,args,false),`screen ${JSON.stringify(args)}`);screenComparisons++;
+  }
+}
+for(const id of [127,128,165,254,255])for(const disabled of [0,0x8000])for(const preserve of [0,1]) {
+  const entries=Array.from({length:255},(_,i)=>(i+1)|disabled);
+  const result=screenSetup(screenWide,{wide:true,primary:id,secondary:id,alias:0,previous:id,entries,preserve,behavior:5});
+  assert.equal(result.selected,id-1);assert.equal(result.classId,id);assert.equal(result.current,id);assert.equal(result.accepts,1);
+}
+const emptyScreen=screenSetup(screenWide,{wide:true,entries:[],alias:0,secondary:165,previous:255,preserve:1});
+assert.equal(emptyScreen.selected,0);assert.equal(emptyScreen.classId,255);
+console.log(JSON.stringify({screenComparisons,screenBytes:screenCode.length,screenWideBytes:screenWide.length,screenHash:hash(screenPadded)}));
 const countsAddress=0x801CF34C;
 const countsSource=fs.readFileSync(path.join(native,'game/promotion/category-class-counts.c'),'utf8');
 const countsBindings='lc_army_owner = 0x80196AF8; lc_roster = 0x80193BF8; lc_named_class_map = 0x801EF3B8; lc_class_records = 0x80187C14; lc_clear = 0x80093380; lc_check_change = 0x801D2358;';

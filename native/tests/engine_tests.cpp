@@ -70,6 +70,11 @@ class EngineTests : public QObject {
             QCOMPARE(reopened.promotion()->json(), families.json());
             const auto placement = ClassPlacement::read(reopened.rom());
             QVERIFY(placement.has_value());
+            // The screen owner's last eight bytes begin the following routine.
+            QCOMPARE(result.image.mid(0xd0380, 8), p.rom().bytes().mid(0xd0380, 8));
+            const auto screenCode = result.image.mid(0xd0150, 568);
+            const auto canonicalScreen = placement->canonicalReferences(screenCode, 0xd0150);
+            QCOMPARE(placement->placedReferences(canonicalScreen, 0xd0150), screenCode);
             const auto countsCode = result.image.mid(0xbbdac, 784);
             const auto canonicalCounts = placement->canonicalReferences(countsCode, 0xbbdac);
             QCOMPARE(placement->placedReferences(canonicalCounts, 0xbbdac), countsCode);

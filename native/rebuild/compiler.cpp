@@ -289,9 +289,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         const auto classPlacement = ClassPlacement::read(p.rom());
         const QMap<int, QByteArray> replacements = {{0xc38c0, "bne $v1, $v0, .+32"},
                                                     {0xc3a88, "bne $v1, $v0, .+32"},
-                                                    {0xcce00, "move $v0, $v1"},
-                                                    {0xd0328, "addiu $v1, $v1, -1"},
-                                                    {0xd0334, "srl $v0, $v0, 16"}};
+                                                    {0xcce00, "move $v0, $v1"}};
         for (auto v : owners) {
             auto owner = v.toObject();
             auto start = owner["start"].toInt(), size = owner["size"].toInt();
@@ -359,7 +357,12 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     owner["name"].toString(), quint32(start) + 0x801135a0u,
                     {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
                     symbols);
-                built = module.fitOwner(size);
+                // Some accepted owners include the next routine's split entry.
+                // Keep that authenticated suffix outside the C allocation.
+                const auto extent = owner.value("cExtent").toInt(size);
+                if (extent <= 0 || extent > size || (extent & 3))
+                    throw Error("Invalid C function allocation within its runtime owner");
+                built = module.fitOwner(extent) + original.sliced(extent);
                 expected = owner["cSourceSha256"].toString().toLatin1();
             } else if (start == 0xbbd50)
                 source = readFile(":/game/promotion/family-lookup.s");

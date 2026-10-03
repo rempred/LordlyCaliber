@@ -94,4 +94,13 @@ catalog.owners.push({
   symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
     lc_class_records:0x80187C14,lc_clear:0x80093380,lc_check_change:0x801D2358}
 });
+Object.assign(catalog.owners.find(owner=>owner.start===0xd0150), {
+  cSource:'class-screen.c', cExtent:560,
+  cSourceSha256:'e0b97def94deb8b58d02286b96ce05b876c3f23e8c3c6d46ce96a1066f11644e',
+  cReferences:[{high:208,low:216,group:'classes',addend:141}],
+  symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
+    lc_class_records:0x80187C14,lc_prepare_class:0x801E2BCC,lc_prepare_actor:0x801DA3D8,
+    lc_family_menu:0x801D27E8,lc_equipment_summary:0x801D29F8,
+    lc_equipment_entry:0x801CEA1C,lc_family_lookup:0x801CF2F0}
+});
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');
