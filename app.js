@@ -563,10 +563,15 @@ window.OB64 = window.OB64 || {};
     var artTouchedIndex = -1;
     var cutscenePlan = null;
     var cutsceneResult = null;
+    var classPlan = null;
+    var classResult = null;
     var exportDirty = Object.assign({}, dirty);
     try {
       await paintRomExportProgress(exportProgress, 2, 'Preparing a detached ROM candidate');
       if (buildMode === 'patch') {
+        if (OB64.classFamilies && OB64.classFamilies.isActive(exportRom)) {
+          throw new Error('Family edits require Rebuild ROM. Select Rebuild ROM to export these changes.');
+        }
         OB64.nativeRebuild.patchSourceCheck(exportRom);
       } else {
         nativePlan = OB64.nativeRebuild.prepareExport(exportRom, {
@@ -601,19 +606,38 @@ window.OB64 = window.OB64 || {};
       }
       await paintRomExportProgress(exportProgress, 7, 'Checking feature compatibility');
       selectorPlan = OB64.combatAnimationOverrides.prepareExport(rom);
+      if (nativePlan) {
+        if (!OB64.nativeClasses) throw new Error('The Classes rebuild component is unavailable. Reload the editor.');
+        classPlan = OB64.nativeClasses.prepare(rom, candidateRom.z64, dirty);
+        statGatePlan = classPlan.promotion;
+      }
       var shopOverridesForRuntime = buildMode === 'patch' && OB64.runtimeOverrides
         ? OB64.runtimeOverrides.collectShopOverrides(rom)
         : [];
       var legacyShopDirty = buildMode === 'patch' && !!dirty.shops;
-      var scenarioRateOverridesForRuntime = OB64.runtimeOverrides
+      // Rebuild ROM runs every neutral runtime feature through the native
+      // Neutral module. Only Patch ROM feeds them to the shared runtime.
+      var legacyNeutralRuntime = buildMode === 'patch' && !!OB64.runtimeOverrides;
+      var neutralRuntimeLegacyDirty = buildMode === 'patch' && !!dirty.neutralRuntime;
+      var scenarioRateOverridesForRuntime = legacyNeutralRuntime
         ? OB64.runtimeOverrides.collectScenarioRateOverrides(rom)
         : [];
-      var weightedDropOverridesForRuntime = OB64.runtimeOverrides
+      var weightedDropOverridesForRuntime = legacyNeutralRuntime
         ? OB64.runtimeOverrides.collectWeightedDropOverrides(rom)
         : [];
-      var customNeutralSquadsForRuntime = OB64.runtimeOverrides
+      var customNeutralSquadsForRuntime = legacyNeutralRuntime
         ? OB64.runtimeOverrides.collectCustomNeutralSquads(rom)
         : [];
+      var nativeNeutralPlan = null;
+      if (buildMode === 'rebuild' && OB64.nativeNeutral && OB64.nativeNeutral.isActive(rom)) {
+        try {
+          nativeNeutralPlan = OB64.nativeNeutral.prepare(rom, candidateRom.z64);
+        } catch (neutralError) {
+          showErrorModal(buildInfo.label + ' blocked - neutral encounters', neutralError.message);
+          statusBar.textContent = buildInfo.label + ' blocked (neutral encounters)';
+          return;
+        }
+      }
 
       // Shop membership edits compile into the shared OBM2 runtime blob below.
       // Archive #751 remains the retail fallback for unchanged shop indices.
@@ -627,7 +651,16 @@ window.OB64 = window.OB64 || {};
         return;
       }
 
-      var squadOverridesForConflict = (OB64.squad && OB64.collectSquadOverrides)
+      // Rebuild ROM writes custom squads as real enemydat records through the
+      // Scenario archive composer. Only Patch ROM installs the squad override hook.
+      var nativeSquadPlan = buildMode === 'rebuild' && OB64.scenario
+        ? OB64.scenario.planNativeSquadLibrary(rom)
+        : null;
+      var nativeSquadsActive = !!(nativeSquadPlan &&
+        (nativeSquadPlan.remappedRows || nativeSquadPlan.blocked.length));
+      var squadRuntimeDirty = buildMode === 'patch' && !!dirty.squadOverrides;
+      var squadOverridesForConflict = (buildMode === 'patch' && OB64.squad &&
+          OB64.collectSquadOverrides)
         ? OB64.collectSquadOverrides(rom)
         : [];
       var currentStatRedirectRequests = OB64.statGateRelocation
@@ -637,7 +670,7 @@ window.OB64 = window.OB64 || {};
         ? OB64.sourceRedirect.scenarioRequests(rom.scenarioRelocations || [])
         : [];
       try {
-        if (dirty.statGates) {
+        if (dirty.statGates && !nativePlan) {
           if (!OB64.statGateRelocation) {
             throw new Error('The stat-gate relocation component is unavailable. Reload the editor and try again.');
           }
@@ -651,9 +684,10 @@ window.OB64 = window.OB64 || {};
         // Scenario planning writes only to the detached candidate. The shared
         // redirect hook stays untouched until stat and Scenario requests have
         // been merged and checked below.
-        if (dirty.scenario && OB64.scenario) {
+        if ((dirty.scenario || nativeSquadsActive) && OB64.scenario) {
           scenarioResult = OB64.scenario.exportScenarioArchives(candidateRom, {
             deferRedirect: true,
+            nativeSquads: nativeSquadPlan,
           });
           if (scenarioResult.blocked && scenarioResult.blocked.length) {
             showErrorModal(buildInfo.label + ' blocked - scenario edits',
@@ -672,7 +706,7 @@ window.OB64 = window.OB64 || {};
         var desiredScenarioRedirectRequests = scenarioResult
           ? scenarioResult.redirectRequests
           : currentScenarioRedirectRequests;
-        if (dirty.statGates || dirty.scenario || knownRedirectRequests.length) {
+        if (statGatePlan || dirty.statGates || dirty.scenario || nativeSquadsActive || knownRedirectRequests.length) {
           if (!OB64.sourceRedirect) {
             throw new Error('The shared PI-source redirect controller is unavailable. Reload the editor and try again.');
           }
@@ -689,7 +723,7 @@ window.OB64 = window.OB64 || {};
           relocationError.message;
         return;
       }
-      if (dirty.neutralRuntime && (!OB64.runtimeOverrides ||
+      if (neutralRuntimeLegacyDirty && (!OB64.runtimeOverrides ||
           (rom.layout && rom.layout.supportsNeutralRuntimeOverrides === false))) {
         showErrorModal(buildInfo.label + ' - neutral runtime unavailable',
           'This ROM revision can edit retail encounter tables, but its ' +
@@ -713,11 +747,11 @@ window.OB64 = window.OB64 || {};
       if (cutsceneOwner) sharedRegionOwners.push(cutsceneOwner);
       var selectorOwner = OB64.combatAnimationOverrides.collisionOwner(rom);
       if (selectorOwner) sharedRegionOwners.push(selectorOwner);
-      if (OB64.squad && (legacyShopDirty || dirty.squadOverrides || dirty.neutralRuntime ||
+      if (OB64.squad && (legacyShopDirty || squadRuntimeDirty || neutralRuntimeLegacyDirty ||
           squadOverridesForConflict.length || shopOverridesForRuntime.length ||
           scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
           customNeutralSquadsForRuntime.length)) {
-        var runtimeOwnerRegions = (shopOverridesForRuntime.length || legacyShopDirty || dirty.neutralRuntime ||
+        var runtimeOwnerRegions = (shopOverridesForRuntime.length || legacyShopDirty || neutralRuntimeLegacyDirty ||
             scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
             customNeutralSquadsForRuntime.length) && OB64.runtimeOverrides
           ? OB64.runtimeOverrides.patchRegions(rom)
@@ -731,6 +765,8 @@ window.OB64 = window.OB64 || {};
             : runtimeOwnerRegions
         });
       }
+      if (nativeNeutralPlan) sharedRegionOwners.push(nativeNeutralPlan.owner);
+      if (classPlan) sharedRegionOwners = sharedRegionOwners.concat(classPlan.owners);
       if (sourceRedirectPlan && OB64.sourceRedirect &&
           (sourceRedirectPlan.changed || sourceRedirectPlan.requests.length ||
             sourceRedirectPlan.currentEntries.length)) {
@@ -759,6 +795,11 @@ window.OB64 = window.OB64 || {};
         standardOwnerDirty.tools = false;
         standardOwnerDirty.consumableDescriptions = false;
         standardOwnerDirty.consumableEffects = false;
+        standardOwnerDirty.classDefs = false;
+        standardOwnerDirty.classDescriptions = false;
+        standardOwnerDirty.actionDescriptions = false;
+        standardOwnerDirty.statGates = false;
+        if (nativeSquadsActive) standardOwnerDirty.scenario = true;
       }
       effectOwners = OB64.consumableEffects.standardPatchOwners(
         candidateRom, standardOwnerDirty).concat(sharedRegionOwners);
@@ -832,7 +873,7 @@ window.OB64 = window.OB64 || {};
       }
 
       // Class definitions (direct z64 patch at 0x5DAD8)
-      if (dirty.classDefs) {
+      if (dirty.classDefs && !nativePlan) {
         OB64.serializeClassDefs(rom.classDefs, candidateRom.z64);
         touched.push('classes');
       }
@@ -866,11 +907,11 @@ window.OB64 = window.OB64 || {};
         );
         touched.push('consumable descriptions');
       }
-      if (dirty.classDescriptions) {
+      if (dirty.classDescriptions && !nativePlan) {
         OB64.serializeClassDescriptions(rom.classDescriptions, candidateRom.z64);
         touched.push('class descriptions');
       }
-      if (dirty.actionDescriptions) {
+      if (dirty.actionDescriptions && !nativePlan) {
         OB64.serializeActionDescriptions(rom.actionDescriptions, candidateRom.z64);
         touched.push('action descriptions');
       }
@@ -878,7 +919,7 @@ window.OB64 = window.OB64 || {};
       // Stat gates keep fitting streams in the retail slot and place only
       // oversized streams in the bounded ROM-tail owner. The shared redirect
       // is applied once after Scenario writes below.
-      if (dirty.statGates) {
+      if (dirty.statGates && !nativePlan) {
         var statGateResult = OB64.statGateRelocation.apply(
           statGatePlan,
           candidateRom.z64
@@ -937,7 +978,7 @@ window.OB64 = window.OB64 || {};
       // Squads loader, ROM-tail lane, and upper-RAM module. A Squads-only
       // export retains its already-proven byte path.
       var runtimeCrc = false;
-      if ((dirty.squadOverrides || legacyShopDirty || dirty.neutralRuntime) && OB64.squad) {
+      if ((squadRuntimeDirty || legacyShopDirty || neutralRuntimeLegacyDirty) && OB64.squad) {
         var ovs = squadOverridesForConflict;
         var hasSharedRuntime = shopOverridesForRuntime.length ||
           scenarioRateOverridesForRuntime.length || weightedDropOverridesForRuntime.length ||
@@ -962,8 +1003,8 @@ window.OB64 = window.OB64 || {};
             touched.push('weighted drop classes (' + weightedDropOverridesForRuntime.length + ')');
             touched.push('custom neutral squads (' + customNeutralSquadsForRuntime.length + ')');
           }
-          if (dirty.squadOverrides && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
-          if (dirty.squadOverrides) {
+          if (squadRuntimeDirty && ovs.length) touched.push('squad overrides (' + ovs.length + ')');
+          if (squadRuntimeDirty) {
             var sharedUnmapped = OB64.squadCountUnmapped(rom);
             if (sharedUnmapped) {
               showErrorModal(buildInfo.label + ' - Some overrides skipped',
@@ -1023,7 +1064,7 @@ window.OB64 = window.OB64 || {};
           runtimeCrc = sqw.crcWindow;
           if (legacyShopDirty) touched.push('runtime shops removed');
           if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
-          if (dirty.squadOverrides) touched.push('squad overrides (' + ovs.length + ')');
+          if (squadRuntimeDirty) touched.push('squad overrides (' + ovs.length + ')');
           var unmapped = OB64.squadCountUnmapped(rom);
           if (unmapped) {
             showErrorModal(buildInfo.label + ' - Some overrides skipped',
@@ -1038,7 +1079,7 @@ window.OB64 = window.OB64 || {};
           runtimeMode = 'restore';
           runtimeCrc = true;
           if (legacyShopDirty) touched.push('runtime shops removed');
-          if (dirty.squadOverrides) touched.push('squad overrides removed');
+          if (squadRuntimeDirty) touched.push('squad overrides removed');
           if (dirty.neutralRuntime) touched.push('neutral runtime overrides removed');
         }
       }
@@ -1101,6 +1142,19 @@ window.OB64 = window.OB64 || {};
         }
       }
 
+      var neutralCrc = false;
+      if (classPlan) {
+        classResult = OB64.nativeClasses.apply(candidateRom, classPlan);
+        OB64.nativeClasses.validateApplied(candidateRom, classPlan);
+        if (classResult.writes) touched.push('rebuilt Classes (' + classResult.owners.join(', ') + ')');
+      }
+      if (nativeNeutralPlan) {
+        OB64.nativeNeutral.apply(candidateRom, nativeNeutralPlan);
+        OB64.nativeNeutral.validateApplied(candidateRom, nativeNeutralPlan);
+        neutralCrc = nativeNeutralPlan.crc;
+        touched.push('native neutral encounters (' + nativeNeutralPlan.counts.rates + ' scenario rates, ' +
+          nativeNeutralPlan.counts.drops + ' weighted drops, ' + nativeNeutralPlan.counts.squads + ' Neutral Squads)');
+      }
       if (nativePlan) {
         nativeResult = OB64.nativeRebuild.applyPlan(
           nativePlan, candidateRom, runtimeWritePlan);
@@ -1122,8 +1176,9 @@ window.OB64 = window.OB64 || {};
       // consumables, Tools-tab features, and the shared runtime bootstrap do not.
       await paintRomExportProgress(exportProgress, 66, 'Finalizing the N64 boot checksum');
       var crcChanged = !!(dirty.items || dirty.classDefs || dirty.consumables ||
-        toolsCrc || runtimeCrc || scenarioCrc || effectWrites.length || selectorResult.crc ||
-        (artResult && artResult.crc) || (nativeResult && nativeResult.crc));
+        toolsCrc || runtimeCrc || scenarioCrc || neutralCrc || effectWrites.length || selectorResult.crc ||
+        (artResult && artResult.crc) || (nativeResult && nativeResult.crc) ||
+        (classResult && classResult.crc));
       if (crcChanged) {
         OB64.recalcN64CRC(candidateRom.z64);
       }
@@ -1160,6 +1215,7 @@ window.OB64 = window.OB64 || {};
         toolsResult: toolsResult,
         nativePlan: nativePlan,
         nativeResult: nativeResult,
+        classPlan: classPlan,
         selectorPlan: selectorPlan,
         effectTransaction: effectTransaction,
         artPlan: artPlan,
@@ -1397,6 +1453,7 @@ window.OB64 = window.OB64 || {};
       var classDescriptionsN = patch.summary.class_descriptions_modified || 0;
       var actionDescriptionsN = patch.summary.action_descriptions_modified || 0;
       var statGatesN = patch.summary.stat_gates_modified || 0;
+      var familiesN = patch.summary.class_families_modified || 0;
       var globalRateN = patch.summary.neutral_global_rate_modified || 0;
       var toolsN = patch.summary.tools_modified || 0;
       var nativeOwnersN = patch.summary.native_owners_selected || 0;
@@ -1419,7 +1476,7 @@ window.OB64 = window.OB64 || {};
           terrainRatesN + scenarioRatesN + customNeutralSquadsN +
           creatureDropsN + weightedDropRatesN + consumablesN +
           itemDescriptionsN + consumableDescriptionsN + classDescriptionsN +
-          actionDescriptionsN + statGatesN +
+          actionDescriptionsN + statGatesN + familiesN +
           globalRateN + toolsN + nativeOwnersN + squadsN + scenarioN + cutscenesN + consumableEffectsN + selectorOverridesN +
           avatarArtN + iconArtN + combatSpriteArtN + armySpriteArtN +
           separatedAnimationN +
@@ -1448,6 +1505,7 @@ window.OB64 = window.OB64 || {};
       if (classDescriptionsN) parts.push(classDescriptionsN + ' class description' + (classDescriptionsN === 1 ? '' : 's'));
       if (actionDescriptionsN) parts.push(actionDescriptionsN + ' action description' + (actionDescriptionsN === 1 ? '' : 's'));
       if (statGatesN) parts.push(statGatesN + ' stat gate' + (statGatesN === 1 ? '' : 's'));
+      if (familiesN) parts.push('class families');
       if (globalRateN) parts.push('global encounter roll');
       if (toolsN) parts.push(toolsN + ' tool' + (toolsN === 1 ? '' : 's'));
       if (nativeOwnersN) parts.push(nativeOwnersN + ' native owner' +
@@ -1510,6 +1568,7 @@ window.OB64 = window.OB64 || {};
           (result.applied.classDescriptions || 0) +
           (result.applied.actionDescriptions || 0) +
           (result.applied.statGates || 0) +
+          (result.applied.classFamilies || 0) +
           (result.applied.neutralGlobalRate || 0) +
           (result.applied.tools || 0) +
           (result.applied.squadOverrides || 0) +
@@ -1541,6 +1600,7 @@ window.OB64 = window.OB64 || {};
         if (result.applied.classDescriptions) loadedParts.push(result.applied.classDescriptions + ' class description' + (result.applied.classDescriptions === 1 ? '' : 's'));
         if (result.applied.actionDescriptions) loadedParts.push(result.applied.actionDescriptions + ' action description' + (result.applied.actionDescriptions === 1 ? '' : 's'));
         if (result.applied.statGates) loadedParts.push(result.applied.statGates + ' stat gate' + (result.applied.statGates === 1 ? '' : 's'));
+        if (result.applied.classFamilies) loadedParts.push('class families');
         if (result.applied.neutralGlobalRate) loadedParts.push('global encounter roll');
         if (result.applied.tools) loadedParts.push(result.applied.tools + ' tool' + (result.applied.tools === 1 ? '' : 's'));
         if (result.applied.squadOverrides) loadedParts.push(result.applied.squadOverrides + ' squad override' + (result.applied.squadOverrides === 1 ? '' : 's'));
@@ -1940,7 +2000,18 @@ window.OB64 = window.OB64 || {};
     panel.innerHTML = '';
     if (!rom) return;
 
-    var patch = OB64.patch.collectPatch(rom);
+    var patch;
+    try {
+      patch = OB64.patch.collectPatch(rom);
+    } catch (error) {
+      // A Project that cannot be collected (for example while Cutscene Studio is
+      // still reading new scenes from the ROM) has no changelog yet.
+      var notice = document.createElement('p');
+      notice.className = 'changelog-unavailable';
+      notice.textContent = error && error.message || String(error);
+      panel.appendChild(notice);
+      return;
+    }
     var report = OB64.changelog.build(rom, patch, {
       projectName: lastProjectFilename || ''
     });
@@ -4667,6 +4738,8 @@ window.OB64 = window.OB64 || {};
 
   function renderClasses(panel) {
     panel.innerHTML = '';
+    function familyChanged() { markChanged('classFamilies');renderClasses(panel); }
+    if (OB64.classFamiliesUI) OB64.classFamiliesUI.mount(rom, panel, familyChanged);
 
     var filter = makeFilterBar('Filter by class name, category, or ID...', function(q) {
       // Filter both table rows and cards
@@ -4867,7 +4940,7 @@ window.OB64 = window.OB64 || {};
       combat: [64, 300, 130, 90, 90, 90, 110, 110, 110, 110, 84, 190, 190, 190, 180],
       growth: [64, 300, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92, 76, 92,
         92, 92, 160, 100, 160, 100, 160, 200, 180],
-      gates: [64, 300, 84, 84, 84, 84, 84, 84, 96, 96, 180, 180, 180, 180],
+      gates: [64, 300, 220, 84, 84, 84, 84, 84, 84, 96, 96, 180, 180, 180, 180],
       raw: [64, 300, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88, 88]
     };
     function classColumnWidthOptions(columns, subview) {
@@ -5291,6 +5364,7 @@ window.OB64 = window.OB64 || {};
       } else if (activeSubview === 'gates') {
         cols = [
           { label: 'ID', cls: 'col-sticky' }, { label: 'Name', cls: 'col-sticky-name' },
+          { label: 'Family', title: 'Class-change family; create families in Class families above.' },
           // Stat-gate promotion thresholds — live in LZSS block at z64 0x3A960C
           // and edited through the existing stat-gate write path.
           { label: 'G-STR', title: 'Stat gate: STR threshold for promoting INTO this class (LZSS block)', cls: 'col-gate' },
@@ -5311,6 +5385,9 @@ window.OB64 = window.OB64 || {};
           // A missing entry means no stat gate is defined for the class.
           var gate = rom.statGates && rom.statGates.byClass[cid];
           var gateLabel = gate ? 'Stat gate: promote INTO ' + OB64.className(cid) : 'No stat gate defined for ' + OB64.className(cid);
+          var familyCell = document.createElement('td');
+          if (OB64.classFamiliesUI) familyCell.appendChild(OB64.classFamiliesUI.select(rom, cid, familyChanged));
+          tr.appendChild(familyCell);
           addStatGateCell(tr, gate, 'str', gateLabel);
           addStatGateCell(tr, gate, 'vit', gateLabel);
           addStatGateCell(tr, gate, 'int', gateLabel);
@@ -5871,6 +5948,11 @@ window.OB64 = window.OB64 || {};
           var promoSec = makeSection('Growth History / Promotion Gates', false);
           var promoGrid = document.createElement('div');
           promoGrid.className = 'stats-grid';
+          if (OB64.classFamiliesUI) {
+            var familyLabel = document.createElement('label');familyLabel.textContent = 'Family ';
+            familyLabel.appendChild(OB64.classFamiliesUI.select(rom, cid, familyChanged));
+            promoGrid.appendChild(familyLabel);
+          }
           function progressionClassTile(field, label, titleText) {
             var entry = document.createElement('div');
             entry.className = 'stat-entry editable';

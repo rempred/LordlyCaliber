@@ -1,9 +1,9 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
-vm.runInThisContext(fs.readFileSync(path.join(root,'editor/cutscene-njpg.js'),'utf8'));
+vm.runInThisContext(fs.readFileSync(path.join(rootEditor,'cutscene-njpg.js'),'utf8'));
 // Exercise the real private painter with a canvas sink, without changing product exports.
-vm.runInThisContext(fs.readFileSync(path.join(root,'editor/cutscene-ui.js'),'utf8').replace('OB64.cutsceneUI = {','OB64.cutsceneUI = { paintStageForTest:paintStage,'));
+vm.runInThisContext(fs.readFileSync(path.join(rootEditor,'cutscene-ui.js'),'utf8').replace('OB64.cutsceneUI = {','OB64.cutsceneUI = { paintStageForTest:paintStage,'));
 (async()=>{
  const v=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){z64[i]=v[i+1];z64[i+1]=v[i];}
  const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},ui=OB64.cutsceneUI,runtime=OB64.cutsceneRuntime,state=ui.initialize(rom),input=structuredClone(require('./fixtures/cutscene-room-input.json')),before=JSON.stringify(input),scene=state.catalog.getScene(input.assetId);

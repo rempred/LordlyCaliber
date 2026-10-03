@@ -1,7 +1,7 @@
 "use strict";
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=require('./project-paths.cjs').PARENT,REditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
-for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscene-njpg.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',file),'utf8'),{filename:file});
+for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscene-njpg.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,file),'utf8'),{filename:file});
 (async()=>{
  const raw=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}
  const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},ui=OB64.cutsceneUI.initialize(rom),runs=[];
@@ -15,7 +15,7 @@ for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscen
   const altered=structuredClone(p.program);altered.primitives.at(-1).rawWords[altered.primitives.at(-1).rawWords.length-1]=0xff000004;
   assert.equal(OB64.cutsceneRomStart.analyze(altered).code,'rom-start-room-group');assert(!OB64.cutsceneRomStart.supports({...scene,assetId:'rom-custom-lz:01F3EAD2'},altered));
   const noStage=structuredClone(p.program);noStage.primitives.shift();assert.equal(OB64.cutsceneRomStart.analyze(noStage).code,'rom-start-inherited-stage');
-  for(const value of [0xffffffff,0xfffffffe]){const q=structuredClone(p.program);q.primitives[0].rawWords[1]=value;assert.equal(OB64.cutsceneRomStart.analyze(q).code,'rom-start-derived-environment');}
+  {/* Preview contract: environment -1 asks the battle caller to choose terrain; a ROM-only preview uses sample environment 0 without rewriting the operand. */const q=structuredClone(p.program);q.primitives[0].rawWords[1]=0xffffffff;const sample=OB64.cutsceneRomStart.analyze(q);assert.deepStrictEqual([sample.supported,sample.environmentSelector,sample.previewEnvironmentDefault],[true,0,true]);assert.equal(q.primitives[0].rawWords[1],0xffffffff);}{const q=structuredClone(p.program);q.primitives[0].rawWords[1]=0xfffffffe;assert.equal(OB64.cutsceneRomStart.analyze(q).code,'rom-start-derived-environment');}
   const duplicate=structuredClone(p.program);duplicate.primitives.splice(1,0,structuredClone(duplicate.primitives[0]));assert.equal(OB64.cutsceneRomStart.analyze(duplicate).code,'rom-start-stage-sequence');
   const delayed=structuredClone(p.program);delayed.primitives.splice(1,0,delayed.primitives.shift());assert.equal(OB64.cutsceneRomStart.analyze(delayed).code,'rom-start-stage-sequence');
   const noTerminal=structuredClone(p.program);noTerminal.primitives.at(-1).rawWords.shift();assert.equal(OB64.cutsceneRomStart.analyze(noTerminal).code,'rom-start-stream');
@@ -38,7 +38,8 @@ for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscen
  const {scene,p,input,r}=runs[0],runtime=OB64.cutsceneRuntime;
  // Compare initial and late dialogue snapshots with the previous ordinary representation.
  const options={z64,diagnosticAssumptions:false,nativeLaunchInputs:input,maxTicks:2200},compact=runtime.compile(p.document,p.program,scene,ui.catalog,options);
- const plainSource=fs.readFileSync(path.join(R,'editor/cutscene-runtime.js'),'utf8').replace('if(sharedActorProfile||romOnlyStart){nextSnapshot.actors=compactRecords','if(false){nextSnapshot.actors=compactRecords').replace("if(sharedActorProfile||romOnlyStart)['actors','effects']","if(false)['actors','effects']").replace('dialogueEngine.snapshot(sharedActorProfile||romOnlyStart?256:undefined)','dialogueEngine.snapshot()');
+ const replaceOnce=(source,from,to)=>{assert.strictEqual(source.split(from).length-1,1,'ordinary-record control anchor must match the runtime exactly once: '+from);return source.replace(from,to);};
+ const plainSource=replaceOnce(replaceOnce(replaceOnce(fs.readFileSync(path.join(REditor,'cutscene-runtime.js'),'utf8'),'if(sharedActorProfile||romOnlyStart||compactStandalone){nextSnapshot.actors=compactRecords','if(false){nextSnapshot.actors=compactRecords'),"if(sharedActorProfile||romOnlyStart||compactStandalone)['actors','effects']","if(false)['actors','effects']"),'dialogueEngine.snapshot(sharedActorProfile?256:undefined)','dialogueEngine.snapshot()');
  vm.runInThisContext(plainSource);const plain=OB64.cutsceneRuntime.compile(p.document,p.program,scene,ui.catalog,options);OB64.cutsceneRuntime=runtime;
  function merge(rows){const out=[];for(const row of rows.slice().sort((a,b)=>a.address-b.address)){const last=out.at(-1);if(last&&last.address+last.hex.length/2===row.address)last.hex+=row.hex;else out.push({...row});}return out;}
  for(const i of [...Array.from({length:120},(_,i)=>i),500,1000,2163,2199]){const a=runtime.evaluate(compact,i),b=runtime.evaluate(plain,i);a.nativeExternal.dialogue.memory=merge(a.nativeExternal.dialogue.memory);b.nativeExternal.dialogue.memory=merge(b.nativeExternal.dialogue.memory);assert.deepStrictEqual(a,b,'snapshot equivalence '+i);}

@@ -384,7 +384,12 @@ window.OB64 = window.OB64 || {};
         var model = OB64.scenarioCodec.parseEset(extracted, {
           sourcePath: target.label || ('archive-' + target.archive),
         });
-        var validation = OB64.scenarioCodec.validateEset(model);
+        // Rebuild ROM targets carry the grown squad library size and preset flags.
+        var esetValidation = target.esetValidation || {};
+        var validation = OB64.scenarioCodec.validateEset(model, {
+          limits: esetValidation.limits,
+          flaggedSourceRows: esetValidation.flaggedSourceRows,
+        });
         if (validation.errors.length) {
           throw new Error(validation.errors.map(function(found) {
             return found.code || found.message || String(found);
@@ -1515,6 +1520,9 @@ window.OB64 = window.OB64 || {};
         if (buildMode === 'rebuild' && spec.dirty === 'consumableDescriptions') {
           return skipped('Rebuild ROM consumable descriptions use the authenticated unified native owner.');
         }
+        if (options.classPlan && ['classDefs', 'classDescriptions', 'actionDescriptions', 'statGates'].indexOf(spec.dirty) !== -1) {
+          return skipped('Complete Classes resources are checked by the source-owned rebuild and reopen test.');
+        }
         if (!reloadedRom) {
           return skipped('The ROM could not be reopened, so semantic readback was not attempted.');
         }
@@ -1566,6 +1574,22 @@ window.OB64 = window.OB64 || {};
         return skipped('Runtime shops did not change during this export.');
       }
       return validateShopOverrides(candidateRom, options.shopOverrides || []);
+    });
+
+    yield* runCheckStep(report, 'classes-rebuild-integrity', 'Classes rebuild and reopen', {
+      code: 'CLASSES_REBUILD_INTEGRITY', title: 'Classes rebuild did not verify',
+      message: 'The finished Classes resources or promotion loader references differ from the rebuild plan.',
+      suggestion: 'Keep the error report and recreate the export.',
+    }, function() {
+      if (!options.classPlan) {
+        if (buildMode === 'rebuild' &&
+            ['classDefs', 'classDescriptions', 'actionDescriptions', 'statGates', 'classFamilies'].some(function(key) { return dirty[key]; })) {
+          throw new Error('Changed Classes data is missing its rebuild plan.');
+        }
+        return skipped('No Classes rebuild plan was supplied.');
+      }
+      if (!OB64.nativeClasses) throw new Error('Classes rebuild validator is unavailable');
+      return OB64.nativeClasses.validateApplied(candidateRom, options.classPlan);
     });
 
     yield* runCheckStep(report, 'native-rebuild-integrity',

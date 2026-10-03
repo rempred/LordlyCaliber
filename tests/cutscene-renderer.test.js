@@ -348,6 +348,48 @@ for (const mode of [0, 2]) {
     [255, 255, 255, 255],
   'the flattened main Actor pass must remain opaque when its native pass bypasses opacity');
 }
+
+// The native layer driver (z64 0x002B04FC) draws each pass as background, then
+// that layer's scene-sprite records, then that channel's Actors. Layered
+// rendering must therefore put a layer-owned effect below the Actors of the
+// same channel and above the Actors of earlier channels; unordered rendering
+// keeps effects on top.
+const passRedEffect = {
+  width: 8, height: 8, anchorX: 4, anchorY: 4,
+  rgba: new Uint8ClampedArray(8 * 8 * 4).map((_, index) => index % 4 === 1 || index % 4 === 2 ? 0 : 255),
+};
+function layerPassRender(effectPass, ordered) {
+  const actor = {
+    id: 'actor:layer-pass', slot: 0, visible: true, transformChannel: 1,
+    x: 0, y: 0, z: 0, uniformScale: 1,
+    tint: { red: 255, green: 255, blue: 255 },
+    facing: 'native-0', poseFrame: 0, movementFrame: 0,
+  };
+  return R.renderFrame(backgroundDocument, { actors: [actor] }, {
+    projection: nativeProjection, _layerPass: ordered,
+    actorFrames: { 'actor:layer-pass': whiteSprite },
+    effectFrames: [{ image: passRedEffect, x: 160, y: 120, anchorX: 4, anchorY: 4,
+      scale: 1, rotationDegrees: 0, renderPassSelector: effectPass }],
+  });
+}
+const actorRegion = layerPassRender(1, true).hitRegions[0];
+assert(actorRegion && actorRegion.actorId === 'actor:layer-pass');
+const samplePoint = { x: Math.floor((actorRegion.left + actorRegion.right) / 2),
+  y: Math.floor((actorRegion.top + actorRegion.bottom) / 2) };
+assert.deepStrictEqual(renderedPixel(layerPassRender(2, true), samplePoint.x - 4, samplePoint.y),
+  [255, 0, 0, 255], 'the pass fixture effect must surround the Actor sample point');
+assert.deepStrictEqual(renderedPixel(layerPassRender(1, true), samplePoint.x, samplePoint.y),
+  [255, 255, 255, 255],
+  "a scene sprite in the Actor's own pass must draw before that Actor");
+assert.deepStrictEqual(renderedPixel(layerPassRender(2, true), samplePoint.x, samplePoint.y),
+  [255, 0, 0, 255],
+  'a scene sprite in a later pass must draw after Actors of earlier channels');
+assert.deepStrictEqual(renderedPixel(layerPassRender(0, true), samplePoint.x, samplePoint.y),
+  [255, 255, 255, 255],
+  'a scene sprite in an earlier pass must draw before later-channel Actors');
+assert.deepStrictEqual(renderedPixel(layerPassRender(1, false), samplePoint.x, samplePoint.y),
+  [255, 0, 0, 255],
+  'unordered previews keep the trailing effect draw above Actors');
 assert.strictEqual(renderPassActor(1, 0).hitRegions.length, 0,
   'render mode 1 must still respect zero opacity in its ordinary-only pass');
 assert.strictEqual(renderPassActor(3, 255).hitRegions.length, 0,

@@ -7,7 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');

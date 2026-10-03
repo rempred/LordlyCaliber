@@ -9,7 +9,7 @@ const EDITOR = path.resolve(__dirname, '..');
 const MASTER_NAME = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
 const MASTER = [
   process.env.OB64_MASTER_ROM,
-  path.resolve(EDITOR, '..', MASTER_NAME),
+  path.resolve(require('./project-paths.cjs').PARENT, MASTER_NAME),
   path.resolve(EDITOR, '..', '..', 'OgreBattlel64', MASTER_NAME),
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
 
@@ -625,8 +625,8 @@ projectSource.tools.desired['cf-army-counter'] = true;
 projectSource.tools.desired['character-card-luck'] = false;
 projectSource.tools.desired['squad-menu-alignment'] = true;
 const project = OB64.patch.collectPatch(projectSource);
-check('Project schema 35 records Rebuild ROM explicitly',
-  project.version === 35 && project.build_mode === 'rebuild' &&
+check('Project schema 36 records Rebuild ROM explicitly',
+  project.version === 36 && project.build_mode === 'rebuild' &&
   project.summary.build_mode === 'Rebuild ROM' &&
   project.rebuild_owners.experience_scale_percent === 137 &&
   project.rebuild_owners.chaos_frame_counter === true &&
@@ -639,6 +639,8 @@ check('Rebuild ROM Project stores all 35 real Shops and no legacy migrated tool 
     project.patches.shops, key)) &&
   OB64.nativeRebuild.migratedToolIds.every(id =>
     !Object.prototype.hasOwnProperty.call(project.patches.tools, id)));
+check('Rebuild ROM Project summary counts only the one edited Shop',
+  project.summary.shops_modified === 1, String(project.summary.shops_modified));
 const projectTarget = freshRom();
 const projectResult = OB64.patch.applyPatch(projectTarget, project, emptyDirty());
 check('Project load restores mode, every native tool choice, and Shop membership order',

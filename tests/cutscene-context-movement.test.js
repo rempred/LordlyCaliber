@@ -7,7 +7,7 @@ const crypto = require('crypto');
 
 
 // Adapted from the frozen R18B public compact-context acceptance probe.
-const root=path.resolve(__dirname,'../..'),editor=path.join(root,'editor');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,editor=rootEditor;
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');
 const loadedSources = [

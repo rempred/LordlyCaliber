@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 const REV0 = path.join(ROOT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 const REV1 = path.join(ROOT, 'Rev 1.1',
   'Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1).z64');

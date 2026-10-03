@@ -7,7 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 const MASTER = path.join(ROOT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 
 global.window = global;
@@ -129,11 +129,26 @@ function hashBytes(input) {
   const transientNeutralUpdate = transientMenuRuntime.trace.find(row =>
     row.kind === 'transient-render-entity-status' && row.slot === 0 &&
       row.preset === 3);
+  // The neutral status must follow the preset's own creation by exactly one
+  // update. The absolute tick is diagnostic playback time: path-ribbon activity
+  // queries (2fe703e) moved this creation from 1626 to 1628 without changing the
+  // native relationship, so the assertion is anchored to the creation command.
+  const transientMenuScene = catalog.getScene('rom-director:01F3F70E');
+  const transientMenuProgram = OB64.cutsceneCodec.projectSceneDocument(transientMenuScene,
+    await OB64.cutsceneCodec.loadSceneSource(z64, transientMenuScene, { hashBytes }),
+    catalog).program;
+  const transientCreationNode = transientMenuProgram.primitiveById['node:01F3F70E:w078E'];
+  assert.deepStrictEqual([transientCreationNode.opcode, transientCreationNode.rawWords[1] | 0,
+    transientCreationNode.rawWords[2] | 0], [0x62, 0, 3],
+  'w078E must create transient render-entity slot 0 with main-overlay preset 3');
+  const transientCreation = transientMenuRuntime.trace.find(row =>
+    row.kind === 'command' && row.nodeId === 'node:01F3F70E:w078E');
+  assert(transientCreation, 'the preset-3 creation command must execute');
   assert.deepStrictEqual([
     transientNeutralUpdate && transientNeutralUpdate.tick,
     transientNeutralUpdate && transientNeutralUpdate.status,
     transientNeutralUpdate && transientNeutralUpdate.source,
-  ], [1627, -1, 'native-main-menu-neutral'],
+  ], [transientCreation.tick + 1, -1, 'native-main-menu-neutral'],
   'main-overlay menu presets must replace their creation status on the next native update');
   const transientNeutralQuery = transientMenuRuntime.trace.find(row =>
     row.kind === 'branch-query' && row.nodeId === 'node:01F3F70E:w079F');
@@ -155,8 +170,11 @@ function hashBytes(input) {
   ], [1, true],
   'an explicit query result must drive the native branch without rewriting Director bytes');
 
+  // 2fe703e's path-ribbon activity queries moved this scene's w0437 query from
+  // tick 751 to 789 (same query result, destination and resume node), so the
+  // playback window must extend past it.
   const resynchronizedBranchRuntime = await compileScene(
-    'rom-director:01F440B2', { maxTicks: 760 });
+    'rom-director:01F440B2', { maxTicks: 820 });
   const sceneVignetteState = resynchronizedBranchRuntime.states.find(state =>
     state.sceneVignette &&
       state.sceneVignette.nodeId === 'node:01F440B2:w0073');
@@ -198,8 +216,8 @@ function hashBytes(input) {
     animatedSpriteOne.delay, animatedSpriteOne.positionX,
     animatedSpriteOne.positionY, animatedSpriteOne.payload.stageX,
     animatedSpriteOne.payload.stageY, animatedSpriteOne.rotationDegrees,
-  ], [56, 500, 20, 15, 0, 1, 6, 16, 42, 176, 162, 180],
-  'opcode 0x63 must use the native constructor, pose record, Y sign, and rotation route');
+  ], [56, 500, 20, 15, 0, 1, 6, 16, 42, 176, 78, 180],
+  'opcode 0x63 must use the native constructor, pose record, Y sign (stored y-up, Stage row 120 - y), and rotation route');
   const animatedSpriteDelayState = resynchronizedBranchRuntime.states[125];
   const delayedSpriteOne = animatedSpriteDelayState.effects.find(row => row.slot === 1);
   assert.strictEqual(delayedSpriteOne.delay, 4,

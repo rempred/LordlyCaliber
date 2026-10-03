@@ -1,7 +1,7 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-image-echo.json');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=require('./project-paths.cjs').PARENT,REditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-image-echo.json');
 global.window=global;global.OB64={};
-for(const f of ['cutscene-dialogue.js','cutscene-image-echo-data.js','cutscene-image-echo.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',f),'utf8'),{filename:f});
+for(const f of ['cutscene-dialogue.js','cutscene-image-echo-data.js','cutscene-image-echo.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,f),'utf8'),{filename:f});
 const v=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),rom=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){rom[i]=v[i+1];rom[i+1]=v[i];}
 const C=0x80380000;
 function presentation(w){return {slot:w[0],translateX:w[1],translateY:w[2],ignoredPayload:w[3],scaleXPercent:w[4],scaleYPercent:w[5],alphaCap:w[6],orientationFlags:w[7]};}
@@ -11,7 +11,7 @@ for(const r of fixture.draw){const actual=OB64.cutsceneImageEcho.draws({mode:r.m
 for(const at of [0x2b3798,0x2b2868,0x3ec90]){const bad=rom.slice();bad[at]^=1;assert.throws(()=>new OB64.cutsceneImageEcho(bad),e=>e.code==='image-echo-image');}
 const empty=new OB64.cutsceneImageEcho(rom);assert.throws(()=>empty.create([0,40,3],{}),e=>e.code==='image-echo-input');assert.throws(()=>empty.machine.get(0x80384100),e=>e.code==='dialogue-reached-memory');
 const row=fixture.vignette[0],e=new OB64.cutsceneImageEcho(rom);e.initialize(presentation(row.words),row.camera,row.width,row.height);for(const args of [[0,0,3],[2,40,3],[0,256,3]])assert.throws(()=>e.create(args,{translateX:0,translateY:0,uniformScale:1}),e=>e.code==='image-echo-input');e.create([0,40,3],{translateX:0,translateY:0,uniformScale:1});e.leases=new Set([0x80384000,0x80384040,0x80384080]);for(let i=0;i<4;i++)e.advance();assert.throws(()=>e.advance(),e=>e.code==='image-echo-exhaustion');
-for(const f of ['cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue-lifecycle.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',f),'utf8'),{filename:f});
+for(const f of ['cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue-lifecycle.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,f),'utf8'),{filename:f});
 const old=require('./fixtures/cutscene-dialogue-lifecycle.json'),control=fixture.nullActor,initial=structuredClone(old.secondPath.input.externalProducers.value.initialDialogue),engine=new OB64.cutsceneDialogue.Engine(initial,rom);for(let i=0;i<1008;i++)engine.machine.put(0x800e82c8+i,parseInt(control.poolBefore.slice(i*2,i*2+2),16),1);
 const created=engine.lifecycle.create(control.words,'known-null-slot',{absentActor:true});assert.equal(created.slot,1);assert.equal(Buffer.from(Array.from({length:168},(_,i)=>engine.machine.get(0x800e82c8+168+i,1))).toString('hex'),control.recordHex);
 assert.throws(()=>new OB64.cutsceneDialogue.Engine(initial,rom).lifecycle.create(control.words,'unknown',null),e=>e.code==='dialogue-constructor-placement');

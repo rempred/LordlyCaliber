@@ -1,10 +1,10 @@
 'use strict';
 const fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
-const root=path.resolve(__dirname,'../..');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 const bootstrap=fs.readFileSync(path.join(__dirname,'cutscene-framebuffer-integration.test.js'),'utf8').split('(async()=>')[0];
 new Function('require','__dirname',bootstrap)(require,__dirname);
 // Expose only the existing private edit-refresh entry inside this test process.
-const uiSource=fs.readFileSync(path.join(root,'editor/cutscene-ui.js'),'utf8');
+const uiSource=fs.readFileSync(path.join(rootEditor,'cutscene-ui.js'),'utf8');
 vm.runInThisContext(uiSource.replace('loadScene: loadScene,','loadScene: loadScene, testRefreshRuntime: refreshRuntime,'));
 (async()=>{
  const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));

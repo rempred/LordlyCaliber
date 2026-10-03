@@ -7,7 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 const MASTER = path.join(ROOT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 
 global.window = global;
@@ -112,7 +112,7 @@ function stateFor(catalog) {
   );
 
   const newer = JSON.parse(JSON.stringify(payload));
-  newer.schemaVersion = 2;
+  newer.schemaVersion = OB64.cutsceneProject.schemaVersion + 1;
   await assert.rejects(
     OB64.cutsceneProject.prepareImport(importRom, newer, { hashBytes }),
     /newer than this editor/

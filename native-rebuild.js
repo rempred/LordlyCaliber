@@ -1181,6 +1181,10 @@ window.OB64 = window.OB64 || {};
       shops: detectShops(bytes, rom),
       consumables: classifyConsumableOwner(bytes),
     };
+    if (OB64.nativeClasses && OB64.nativeClasses.hasNativePromotionReference(bytes)) {
+      var classGateState = OB64.statGateRelocation.inspect(bytes, rom && rom.layout);
+      owners['classes-promotion'] = {state: classGateState.state === 'owned' ? 'native' : 'foreign'};
+    }
     var states = Object.keys(owners).map(function(key) { return owners[key].state; });
     var exclusiveNativeOwners = Object.keys(owners).filter(function(key) {
       return owners[key].state === 'native' && !owners[key].legacyEquivalent;
@@ -1359,6 +1363,14 @@ window.OB64 = window.OB64 || {};
   }
 
   function nativeOwnerRegions(ownerId) {
+    if (OB64.nativeClasses && OB64.nativeClasses.owns(ownerId)) {
+      return OB64.nativeClasses.ownerRegions(ownerId);
+    }
+    // The native Neutral owner's layout comes from its own generated,
+    // source-built data rather than the frozen Phase 5A manifest.
+    if (OB64.nativeNeutral && ownerId === OB64.nativeNeutral.OWNER_ID) {
+      return OB64.nativeNeutral.ownerRegions();
+    }
     var data = verifyData();
     if (ownerId === data.experience.owner) {
       return ownerRecord(ownerId, ownerId, [{
@@ -1415,6 +1427,9 @@ window.OB64 = window.OB64 || {};
       }
       var isNativeLayout = owner.category === 'nativeRebuild' ||
         owner.category === 'nativeRebuildRestoration';
+      if (!isNativeLayout && OB64.nativeClasses && OB64.nativeClasses.rejectsLegacy(owner.id)) {
+        fail('legacy Classes producer "' + owner.id + '" cannot bypass the Classes rebuild');
+      }
       var stableId = isNativeLayout
         ? owner.id
         : (composition.productionOwnerIds[owner.id] ||
@@ -1432,7 +1447,9 @@ window.OB64 = window.OB64 || {};
       }
       var definition = definitions[stableId];
       if (isNativeLayout) {
-        if (composition.migratedOwners.indexOf(stableId) === -1) {
+        var isNativeNeutral = OB64.nativeNeutral && stableId === OB64.nativeNeutral.OWNER_ID;
+        var isNativeClasses = OB64.nativeClasses && OB64.nativeClasses.owns(stableId);
+        if (composition.migratedOwners.indexOf(stableId) === -1 && !isNativeNeutral && !isNativeClasses) {
           fail('native producer "' + stableId + '" is not in the accepted migration stack');
         }
         if (resolved[stableId]) {
@@ -1993,7 +2010,7 @@ window.OB64 = window.OB64 || {};
         if (key === 'consumables' && owner.patchCompatible &&
             !owner.provenance.trusted && !owner.provenance.mismatch) return false;
         return owner.state === 'mixed' ||
-          (key === 'consumables' && owner.state === 'foreign');
+          ((key === 'consumables' || key === 'classes-promotion') && owner.state === 'foreign');
       });
     if (classification.hasExclusiveNative || hasPartialNative) {
       throw new Error('Patch ROM cannot export from a Rebuild ROM or mixed native source. ' +

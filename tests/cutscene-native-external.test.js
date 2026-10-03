@@ -1,10 +1,10 @@
 'use strict';
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const root=path.resolve(__dirname,'../..');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 global.window=global;vm.runInThisContext('var OB64 = window.OB64 = {};');
 for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js',
  'cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-runtime.js','cutscene-preview.js']) {
- vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
+ vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file),'utf8'),{filename:file});
 }
 const native=OB64.cutsceneRuntime.nativeExternal, actorNative=OB64.cutsceneRuntime.nativeActor;
 const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-native-external.json'),'utf8'));

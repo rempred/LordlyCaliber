@@ -18,7 +18,7 @@ for (const file of ['data.js', 'parsers.js', 'art.js', 'sprite-library.js', 'ani
   vm.runInThisContext(fs.readFileSync(path.join(EDITOR, file), 'utf8'), { filename: file });
 }
 const A = OB64.art, S = OB64.animationSequences, M = OB64.animationArt, U = OB64.animationUI;
-const master = fs.readFileSync(path.join(EDITOR, '..', 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
+const master = fs.readFileSync(path.join(require('./project-paths.cjs').PARENT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
 assert.strictEqual(crypto.createHash('sha256').update(master).digest('hex').toUpperCase(),
   '6CA0A1AFE224831E202857AD64EF26BD429A034A4EA48404BB09621641A07B12');
 const z64 = new Uint8Array(master);

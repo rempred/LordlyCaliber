@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const root=path.resolve(__dirname,'../..'),editor=path.join(root,'editor');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,editor=rootEditor;
 new Function('require','__dirname',fs.readFileSync(path.join(editor,'tests/cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,path.join(editor,'tests'));
 for(const file of ['cutscene-njpg.js','cutscene-dialogue-draw.js','cutscene-captured-scheduler-data.js','cutscene-captured-continuous-data.js','cutscene-captured-scheduler.js'])vm.runInThisContext(fs.readFileSync(path.join(editor,file),'utf8'),{filename:file});
 (async()=>{

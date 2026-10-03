@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-shared-storage.json');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-shared-storage.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
-for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-runtime.js','cutscene-preview.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
+for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-runtime.js','cutscene-preview.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file),'utf8'),{filename:file});
 const drain=g=>{let r;do{r=g.next();}while(!r.done);return r.value;};
 const ref=fixture.nativeStorage,Machine=OB64.cutsceneDialogue.Machine,Storage=OB64.cutsceneDialogue.PayloadStorage;
 const m=new Machine({},[{address:ref.arena.address,bytes:new Uint8Array(ref.arena.byteLength).fill(ref.arena.initialByte),writable:true},

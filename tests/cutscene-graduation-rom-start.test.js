@@ -1,7 +1,7 @@
 "use strict";
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),crypto=require('crypto'),R=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),crypto=require('crypto'),R=require('./project-paths.cjs').PARENT,REditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
-for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscene-njpg.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',file),'utf8'),{filename:file});
+for(const file of ['cutscene-rom-start-data.js','cutscene-rom-start.js','cutscene-njpg.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,file),'utf8'),{filename:file});
 (async()=>{
  const v=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){z64[i]=v[i+1];z64[i+1]=v[i];}
  const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},ui=OB64.cutsceneUI.initialize(rom),scene=ui.catalog.getScene('rom-custom-lz:01F3EAD2');

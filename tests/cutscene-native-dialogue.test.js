@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm');
-const root=path.resolve(__dirname,'../..');global.window=global;
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;global.window=global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');
-for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-runtime.js','cutscene-preview.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
+for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-runtime.js','cutscene-preview.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file),'utf8'),{filename:file});
 const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);
 for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}
 const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-native-dialogue.json'),'utf8'));
@@ -65,7 +65,9 @@ const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/cutscene-
  e.events.push({...service,tick:1,ownerId:'created-text',service:'initialize',helpers:[{address:0x8007938c,args:[27506610,0,4294967292,0],result:0x80600000,writes:[],preservesOtherRegisters:true}]});
  for(let tick=2;tick<=18;tick++)e.events.push({tick,phase:'before-director',kind:'dialogue',service:'opening',ownerId:'resource-pool',eligible:true,helpers:[]},{...service,tick,phase:'after-director',ownerId:'created-text'});
  const created=OB64.cutsceneRuntime.compile(document,createdProgram.ir.program,createdProgram.selected,catalog,{z64,maxTicks:20,diagnosticAssumptions:false,nativeLaunchInputs:createLaunch});assert(created.terminated,JSON.stringify({outcome:created.outcome,missing:created.missingInputs,query:created.unresolvedQuery,trace:created.trace.slice(-4)}));assert(created.states.length>8);assert(created.states.at(-1).dialogue[0].payload.nativeDialogue.outputHex.startsWith('414243'));
- const releaseProgram=program([...createWords,0,0x80000000,0x10,0,2,0,5,0,0,0x80000000,0x10,0,1,0,0x80000001]),releaseLaunch=structuredClone(createLaunch),re=releaseLaunch.externalProducers.value,releaseTick=created.states.length+8;
+ // Retail handshakes own a barrier before each bridge; without one a failing
+// second condition makes the native scanner restart the stream (see cutscene-scanner-restart).
+const releaseProgram=program([...createWords,0,0x80000002,0x80000000,0x10,0,2,0,5,0,0,0x80000002,0x80000000,0x10,0,1,0,0x80000001]),releaseLaunch=structuredClone(createLaunch),re=releaseLaunch.externalProducers.value,releaseTick=created.states.length+8;
  re.throughTick=releaseTick+1;re.dialogueCreates[0].nodeId=releaseProgram.ir.program.primitives[0].id;re.events=re.events.filter(row=>row.tick===1);
  for(let tick=2;tick<=releaseTick;tick++){
    re.events.push({tick,phase:'before-director',kind:'dialogue',service:'opening',ownerId:'resource-pool',eligible:true,helpers:[]},

@@ -6,7 +6,7 @@ const vm = require('vm');
 const assert = require('assert');
 const editor = path.resolve(process.env.OB64_EDITOR_ROOT || path.join(__dirname, '..'));
 const masterName = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
-const master = [process.env.OB64_MASTER_ROM, path.join(editor, '..', masterName),
+const master = [process.env.OB64_MASTER_ROM, path.join(require('./project-paths.cjs').PARENT, masterName),
   path.join(editor, '../../OgreBattlel64', masterName)].filter(Boolean).find(file => fs.existsSync(file));
 if (!master) throw new Error('Set OB64_MASTER_ROM to the US Rev 0 ROM.');
 
@@ -15,7 +15,8 @@ vm.runInThisContext('var OB64 = window.OB64 = {};');
 for (const file of [
   'data.js', 'parsers.js', 'repack.js', 'art.js', 'animation-corpus-data.js', 'animation-art.js',
   'cutscene-data.js', 'cutscene-model.js', 'cutscene-catalog.js', 'cutscene-director.js',
-  'cutscene-codec.js', 'cutscene-authoring.js', 'cutscene-dialogue-data.js',
+  'cutscene-codec.js', 'cutscene-authored.js', 'cutscene-event-rows-data.js', 'cutscene-events.js',
+  'cutscene-authoring.js', 'cutscene-dialogue-data.js',
   'cutscene-dialogue-lifecycle-data.js', 'cutscene-dialogue.js', 'cutscene-dialogue-lifecycle.js',
   'cutscene-resource-scheduler-data.js', 'cutscene-resource-scheduler.js',
   'cutscene-director-launch-data.js', 'cutscene-director-launch.js', 'cutscene-rom-start-data.js',
@@ -131,10 +132,14 @@ async function exported(rom) {
   addedDialogue = OB64.cutsceneUI.selectedDocument(dialogueState).tracks
     .flatMap(track => track.clips).find(clip => clip.id === addedDialogue.id);
   assert.equal(addedDialogue.payload.text, 'A new line from the editor.');
-  const dialoguePreview = OB64.cutscenePreview.evaluateAtFrame(
-    OB64.cutsceneUI.selectedDocument(dialogueState), addedDialogue.startFrame);
-  assert(dialoguePreview.dialogue.some(row => row.id === addedDialogue.id),
-    'the new box appears in the editable preview');
+  // Scene 6 previews through ROM startup once its relocated stream resolves,
+  // so the box is a native runtime dialogue row keyed by its compiled command;
+  // it opens within a few updates of the card's start and shows the new text.
+  const dialogueDocument = OB64.cutsceneUI.selectedDocument(dialogueState);
+  const shownAt = [0, 1, 2, 3, 4].map(offset => addedDialogue.startFrame + offset).find(frame =>
+    OB64.cutscenePreview.evaluateAtFrame(dialogueDocument, frame).dialogue.some(row =>
+      /A new line from the editor\./.test(JSON.stringify(row.payload || {}))));
+  assert(shownAt !== undefined, 'the new box appears in the editable preview');
   const dialogueProject = JSON.parse(JSON.stringify(
     OB64.cutsceneProject.collect(dialogueState)));
   const importedDialogueRom = freshRom(z64.slice());

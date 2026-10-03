@@ -1,7 +1,7 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-native-actor-drawing.json');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-native-actor-drawing.json');
 global.window=global;global.OB64={};
-for(const file of ['cutscene-model.js','cutscene-preview.js','cutscene-renderer.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js','cutscene-framebuffer.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
+for(const file of ['cutscene-model.js','cutscene-preview.js','cutscene-renderer.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js','cutscene-framebuffer.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file),'utf8'),{filename:file});
 const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),rom=new Uint8Array(raw.length);
 for(let i=0;i<raw.length;i+=2){rom[i]=raw[i+1];rom[i+1]=raw[i];}
 const f32=word=>{const b=new DataView(new ArrayBuffer(4));b.setUint32(0,word);return b.getFloat32(0);};

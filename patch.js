@@ -68,7 +68,7 @@ window.OB64 = window.OB64 || {};
 
 (function() {
   var PATCH_FORMAT = 'ob64-patch';
-  var PATCH_VERSION = 35;
+  var PATCH_VERSION = 36;
 
   function projectBuildMode(patch) {
     var value = patch && Object.prototype.hasOwnProperty.call(patch, 'build_mode')
@@ -363,6 +363,9 @@ window.OB64 = window.OB64 || {};
         };
       }
     }
+    // Rebuild Projects store the complete native Shop table, so the summary
+    // counts only the shops that differ from the loaded ROM.
+    var shopsChanged = Object.keys(shopsOut).length;
     if (rebuildOwners) {
       shopsOut = {};
       if (rebuildOwners.shop_memberships) {
@@ -518,6 +521,8 @@ window.OB64 = window.OB64 || {};
       ? OB64.spriteLibrary.collectProjectPayload(rom)
       : { schemaVersion: 1, assets: [] };
     var spriteLibraryChanges = spriteLibraryOut.assets.length;
+    var familyOut = OB64.classFamilies ? OB64.classFamilies.collect(rom) : null;
+    if (familyOut && buildMode !== 'rebuild') throw new PatchFormatError('Family edits require Rebuild ROM.');
 
     return {
       format: PATCH_FORMAT,
@@ -539,7 +544,7 @@ window.OB64 = window.OB64 || {};
             Number(rebuildOwners.squad_menu_alignment) +
             Number(rebuildOwners.shop_memberships))
           : 0,
-        shops_modified:        Object.keys(shopsOut).length,
+        shops_modified:        shopsChanged,
         item_prices_modified:  Object.keys(pricesOut).length,
         item_stats_modified:   Object.keys(itemsOut).length,
         class_defs_modified:   Object.keys(classDefsOut).length,
@@ -556,11 +561,14 @@ window.OB64 = window.OB64 || {};
         class_descriptions_modified: Object.keys(descriptionsOut.classes).length,
         action_descriptions_modified: Object.keys(descriptionsOut.actions).length,
         stat_gates_modified:    Object.keys(statGatesOut).length,
+        class_families_modified: familyOut ? 1 : 0,
         neutral_global_rate_modified: globalRateOut ? 1 : 0,
         tools_modified:         Object.keys(toolsOut).length,
         squad_overrides_modified: Object.keys(squadOverridesOut).length,
         scenario_modified: scenarioOut ? scenarioPatchCount(scenarioOut) : 0,
-        cutscenes_modified: cutscenesOut ? cutscenesOut.scenes.length : 0,
+        cutscenes_modified: cutscenesOut ? cutscenesOut.scenes.length +
+          (cutscenesOut.authoredScenes || []).length +
+          (cutscenesOut.eventBindings ? Math.max(1, cutscenesOut.eventBindings.length) : 0) : 0,
         consumable_effect_models_modified: Object.keys(consumableEffectsOut).length,
         combat_animation_overrides_modified: combatAnimationOverrideChanges,
         avatar_art_modified: avatarArtChanges,
@@ -580,6 +588,7 @@ window.OB64 = window.OB64 || {};
         consumables:  consumablesOut,
         descriptions: descriptionsOut,
         statGates:    statGatesOut,
+        classFamilies: familyOut,
         neutral_global_rate: globalRateOut,
         tools:        toolsOut,
         squadOverrides: squadOverridesOut,
@@ -613,6 +622,15 @@ window.OB64 = window.OB64 || {};
     var buildMode = projectBuildMode(patch);
 
     var p = patch.patches || {};
+    var hasFamilies = Object.prototype.hasOwnProperty.call(p, 'classFamilies');
+    var preparedFamilies = null;
+    if (hasFamilies && p.classFamilies !== null) {
+      if (patch.version < 36 || buildMode !== 'rebuild' || !OB64.classFamilies || !rom.layout || rom.layout.id !== 'us-rev0') {
+        throw new PatchFormatError('Class families require Project version 36 and US Rev 0 Rebuild ROM.');
+      }
+      try { preparedFamilies = OB64.classFamilies.validate(p.classFamilies); }
+      catch (familyError) { throw new PatchFormatError(familyError.message); }
+    }
     var rebuildOwnerState = validateRebuildOwnerProject(rom, patch, buildMode, p);
     preparedImports = preparedImports || {};
     var preparedDescriptions = null;
@@ -858,6 +876,7 @@ window.OB64 = window.OB64 || {};
     var classDescriptionsApplied = 0;
     var actionDescriptionsApplied = 0;
     var statGatesApplied = 0;
+    var classFamiliesApplied = 0;
     var neutralGlobalRateApplied = 0;
     var neutralSliceRatesApplied = 0;
     var neutralScenarioRatesApplied = 0;
@@ -1023,6 +1042,12 @@ window.OB64 = window.OB64 || {};
 
     statGatesApplied = applyStatGatesPatch(rom, p.statGates, warnings);
     if (statGatesApplied > 0) dirtyFlags.statGates = true;
+    if (hasFamilies && OB64.classFamilies && rom.layout.id === 'us-rev0') {
+      var nextFamilies = preparedFamilies || OB64.classFamilies.retail(rom);
+      classFamiliesApplied = JSON.stringify(OB64.classFamilies.ensure(rom)) !== JSON.stringify(nextFamilies) ? 1 : 0;
+      rom.classFamilies = nextFamilies;
+      if (classFamiliesApplied) dirtyFlags.classFamilies = true;
+    }
 
     // Neutral global encounter roll.
     var globalPatch = p.neutral_global_rate || null;
@@ -1194,6 +1219,7 @@ window.OB64 = window.OB64 || {};
         classDescriptions: classDescriptionsApplied,
         actionDescriptions: actionDescriptionsApplied,
         statGates: statGatesApplied,
+        classFamilies: classFamiliesApplied,
         neutralGlobalRate: neutralGlobalRateApplied,
         neutralSliceRates: neutralSliceRatesApplied,
         neutralScenarioRates: neutralScenarioRatesApplied,

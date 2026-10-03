@@ -8,7 +8,7 @@ const editor = path.resolve(process.env.OB64_EDITOR_ROOT || path.join(__dirname,
 new Function('require', '__dirname', fs.readFileSync(path.join(__dirname,
   'cutscene-authoring-workflow.test.js'), 'utf8').split('const raw =')[0])(require, __dirname);
 const name = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
-const master = [process.env.OB64_MASTER_ROM, path.join(editor, '..', name),
+const master = [process.env.OB64_MASTER_ROM, path.join(require('./project-paths.cjs').PARENT, name),
   path.join(editor, '../../OgreBattlel64', name)].filter(Boolean).find(file => fs.existsSync(file));
 
 function saveFrame(file, frame) {
@@ -36,7 +36,9 @@ function saveFrame(file, frame) {
     ['rom-director:01F66DE4', 8, 2, 'modeled-termination', 1100],
     ['rom-director:01F4DBBE', 8, 5, 'modeled-termination', 650],
     ['rom-director:01F40860', 8, 2, 'modeled-handoff', 650],
-    ['rom-director:01F3F074', 8, 1, 'modeled-handoff', 650],
+    // Two Actors: the bound current-unit leader plus the encountered unit's
+    // speaker (class 141), inferred from the dialogue portrait since 2026-09-26.
+    ['rom-director:01F3F074', 8, 2, 'modeled-handoff', 650],
     ['rom-custom-lz:01FAA4DA', 6, 0, 'modeled-termination', 350],
     ['rom-director:01F93B88', 1, 2, 'modeled-termination', 350],
     ['rom-director:01F93F60', 1, 2, 'modeled-termination', 350],

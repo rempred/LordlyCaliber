@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 const ROM_PATHS = {
   'us-rev0': path.join(
     ROOT,

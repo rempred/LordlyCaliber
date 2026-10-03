@@ -1712,6 +1712,96 @@ window.OB64 = window.OB64 || {};
     });
   }
 
+  // Cross-checks the semantic Director grammar (from the 153-command corpus
+  // product) against the parser model generated from the accepted byte-exact C
+  // dispatcher (cutscene-director-parser-model.js). Every opcode, static width,
+  // and query-record class must agree; the model's guard facts are then attached
+  // to each grammar definition as `parser` for the codec and UI.
+  function crossCheckDirectorGrammar(grammar, model) {
+    if (!model) {
+      return { status: 'not-loaded', matched: 0, source: null, directorModeGuarded: [] };
+    }
+    object(model, 'Director parser model');
+    object(model.source, 'Director parser model source');
+    nonEmptyString(model.source.sha256, 'Director parser model source sha256');
+    if (!Array.isArray(model.entries) || !model.entries.length) {
+      fail('Director parser model has no entries.');
+    }
+    var byOpcode = {};
+    model.entries.forEach(function(entry) {
+      integer(entry.opcodeU32, 'Director parser model opcode');
+      if (entry.widthKind === 'conditional') {
+        fail('Director parser model opcode ' + entry.opcode + ' has a path-dependent width.');
+      }
+      byOpcode[String(entry.opcodeU32 >>> 0)] = entry;
+    });
+    var mismatches = [];
+    var seenModel = {};
+    var guarded = [];
+    grammar.forEach(function(definition) {
+      var key = String(definition.opcodeU32 >>> 0);
+      var entry = byOpcode[key];
+      var label = definition.name + ' (0x' + (definition.opcodeU32 >>> 0).toString(16).toUpperCase() + ')';
+      if (!entry) {
+        mismatches.push(label + ' is not dispatched by the accepted C parser.');
+        return;
+      }
+      seenModel[key] = true;
+      var agrees;
+      if (definition.widthKind === 'query') {
+        agrees = entry.widthKind === 'query' &&
+          entry.queryRecordKind === definition.queryRecordKind &&
+          entry.staticWordSpan === definition.sourceWordSpan;
+      } else if (definition.widthKind === 'fixed') {
+        agrees = (entry.widthKind === 'fixed' || entry.widthKind === 'returning') &&
+          entry.staticWordSpan === definition.sourceWordSpan && !definition.queryRecordKind;
+      } else if (definition.widthKind === 'cursor-replacing') {
+        agrees = entry.widthKind === 'cursor-replacing' &&
+          entry.staticWordSpan === definition.sourceWordSpan;
+      } else if (definition.widthKind === 'terminal-with-trailer') {
+        agrees = entry.widthKind === 'terminal-with-trailer' && entry.executedOperandWords === 0 &&
+          definition.sourceWordSpan === 2;
+      } else {
+        agrees = false;
+      }
+      if (!agrees) {
+        mismatches.push(label + ': grammar ' + definition.widthKind + '/' +
+          definition.sourceWordSpan + '/' + (definition.queryRecordKind || '-') +
+          ' vs parser ' + entry.widthKind + '/' + entry.staticWordSpan + '/' +
+          (entry.queryRecordKind || '-') + '.');
+        return;
+      }
+      definition.parser = {
+        widthKind: entry.widthKind,
+        executedOperandWords: entry.executedOperandWords,
+        operandWordsRead: entry.operandWordsRead.slice(),
+        fallsThroughTo: entry.fallsThroughTo,
+        returnsFromParser: entry.returnsFromParser === true,
+        entersResyncMode: entry.entersResyncMode === true,
+        directorModeRequirement: Number.isInteger(entry.directorModeRequirement)
+          ? entry.directorModeRequirement : null,
+        guards: entry.guards.map(function(guard) { return Object.assign({}, guard); }),
+        callees: entry.callees.slice()
+      };
+      if (definition.parser.directorModeRequirement !== null) guarded.push(definition.opcodeU32);
+    });
+    model.entries.forEach(function(entry) {
+      if (!seenModel[String(entry.opcodeU32 >>> 0)]) {
+        mismatches.push('Accepted C parser dispatches ' + entry.opcode +
+          ' but the Director grammar has no definition for it.');
+      }
+    });
+    if (mismatches.length) {
+      fail('Director grammar disagrees with the accepted C parser: ' + mismatches.join(' '));
+    }
+    return {
+      status: 'verified',
+      matched: grammar.length,
+      source: Object.assign({}, model.source),
+      directorModeGuarded: guarded.sort(function(a, b) { return a - b; })
+    };
+  }
+
   function validateBackgroundSelectorTable(table, seen) {
     object(table, 'background selector table');
     unique(table.tableId, seen, 'background selector tableId');
@@ -2316,6 +2406,8 @@ window.OB64 = window.OB64 || {};
     data.directorGrammar.forEach(function(definition) {
       validateDirectorGrammar(definition, directorGrammarOpcodes);
     });
+    data.directorParserModel = crossCheckDirectorGrammar(data.directorGrammar,
+      (options && options.directorParserModel) || OB64.cutsceneDirectorParserModel || null);
     data.directorEvents.forEach(function(event) { validateDirectorEvent(event, directorEventIds); });
     var continuationSelectors = {};
     data.directorContinuationStreams.forEach(function(stream, index) {
@@ -2657,11 +2749,34 @@ window.OB64 = window.OB64 || {};
     return String(value || '').trim().toLowerCase();
   }
 
+  // Launch provenance (event-directory row → scenario / world-map node) comes
+  // from the generated cutscene-provenance-data.js when it is loaded.
+  function sceneProvenance(scene) {
+    var data = OB64.cutsceneProvenance;
+    var launches = data && data.scenes && scene && data.scenes[scene.assetId];
+    if (!Array.isArray(launches) || !launches.length) return [];
+    return launches.map(function(launch) {
+      var row = data.rows && Number.isInteger(launch.row) ? data.rows[launch.row] : null;
+      return {
+        row: Number.isInteger(launch.row) ? launch.row : null,
+        missionOrScenario: launch.missionOrScenario || (row && row.missionOrScenario) || null,
+        worldMapNode: launch.worldMapNode || (row && row.worldMapNode) || null,
+        chapter: row && row.chapter != null ? row.chapter : null,
+        role: row && row.role || null,
+        confidence: launch.confidence || (row && row.confidence) || null
+      };
+    });
+  }
+
   function sceneSearchText(scene) {
+    var provenance = sceneProvenance(scene).map(function(launch) {
+      return [launch.missionOrScenario, launch.worldMapNode, launch.role,
+        Number.isInteger(launch.row) ? 'event row ' + launch.row : null].filter(Boolean).join(' ');
+    });
     return [
       displayName(scene), scene.technicalName, scene.canonicalScene,
       scene.directorKey, scene.assetId
-    ].concat(scene.aliases || [], scene.aliasNames || []).join(' ').toLowerCase();
+    ].concat(scene.aliases || [], scene.aliasNames || [], provenance).join(' ').toLowerCase();
   }
 
   function imageSearchText(asset) {
@@ -2791,6 +2906,7 @@ window.OB64 = window.OB64 || {};
       registeredAudioRequests: registeredAudioRequests,
       directorEvents: directorEvents,
       directorContinuationStreams: directorContinuationStreams,
+      directorParserModel: data.directorParserModel,
       backgroundSelectorTables: backgroundSelectorTables,
       parentEventExternalRequests: parentEventExternalRequests,
       parentEventTranslationWrites: parentEventTranslationWrites,
@@ -2800,6 +2916,39 @@ window.OB64 = window.OB64 || {};
       modeTwoStagePlacementProfiles: modeTwoStagePlacementProfiles,
       sceneResourcePaths: sceneResourcePaths,
       getScene: function(identity) { return identities[identity] || null; },
+      // An authored scene is an editor-owned Director stream with its own
+      // selector row. It is indexed by its authored identities only.
+      unregisterAuthoredScene: function(scene) {
+        if (!scene || !scene.authored || identities[scene.sceneId] !== scene) fail('That is not a registered authored scene.');
+        delete identities[scene.sceneId];
+        delete identities[scene.assetId];
+        [scenes, directorScenes].forEach(function(list) {
+          var index = list.indexOf(scene);
+          if (index >= 0) list.splice(index, 1);
+        });
+        return scene;
+      },
+      registerAuthoredScene: function(scene, options) {
+        if (!scene || !scene.authored || typeof scene.authored.authoredId !== 'string' ||
+            scene.engine !== 'director' || scene.sceneId !== 'scene:authored:' + scene.authored.authoredId ||
+            scene.assetId !== 'authored:' + scene.authored.authoredId || scene.storageId !== scene.assetId) {
+          fail('An authored scene needs its own authored identity.');
+        }
+        [scene.sceneId, scene.assetId].forEach(function(identity) {
+          var holder = identities[identity];
+          if (holder && holder !== scene && !(options && options.replace && holder.authored &&
+              holder.authored.authoredId === scene.authored.authoredId)) {
+            fail('Scene identity ' + identity + ' already belongs to another scene.');
+          }
+        });
+        identities[scene.sceneId] = scene;
+        identities[scene.assetId] = scene;
+        if (scenes.indexOf(scene) < 0) { scenes.push(scene); directorScenes.push(scene); }
+        return scene;
+      },
+      authoredScenes: function() {
+        return directorScenes.filter(function(scene) { return !!scene.authored; });
+      },
       getPartialDirectorResource: function(resourceId) {
         return partialDirectorById[resourceId] || null;
       },
@@ -2914,6 +3063,15 @@ window.OB64 = window.OB64 || {};
           if (filters.parseStatus && scene.parseStatus !== filters.parseStatus) return false;
           if (filters.capability && scene.previewCapability !== filters.capability &&
               scene.exportCapability !== filters.capability) return false;
+          if (filters.provenanceRow !== undefined && filters.provenanceRow !== null &&
+              filters.provenanceRow !== '') {
+            var launches = sceneProvenance(scene);
+            if (filters.provenanceRow === 'shared') {
+              if (!launches.length || launches.some(function(launch) { return launch.missionOrScenario; })) return false;
+            } else if (!launches.some(function(launch) { return launch.row === Number(filters.provenanceRow); })) {
+              return false;
+            }
+          }
           return !text || sceneSearchText(scene).indexOf(text) !== -1;
         });
       },
@@ -3095,6 +3253,8 @@ window.OB64 = window.OB64 || {};
     schemaVersion: SCHEMA_VERSION,
     CatalogError: CatalogError,
     validateData: validateData,
+    crossCheckDirectorGrammar: crossCheckDirectorGrammar,
+    sceneProvenance: sceneProvenance,
     createCatalog: createCatalog,
     createSceneDocument: createSceneDocument,
     displayName: displayName

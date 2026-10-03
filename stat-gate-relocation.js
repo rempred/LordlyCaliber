@@ -247,7 +247,8 @@ window.OB64 = window.OB64 || {};
     var redirectCount = readU32(z64, DESCRIPTOR_OFFSET + 24);
     var expectedDescriptorCrc = readU32(z64, DESCRIPTOR_OFFSET + 28);
 
-    if (version !== DESCRIPTOR_VERSION || revision !== profile.revision ||
+    var directNative = version === 2 && revision === 0;
+    if ((!directNative && version !== DESCRIPTOR_VERSION) || revision !== profile.revision ||
         flags !== 1 || reserved !== 0) {
       return descriptorForeign('The OBSG descriptor version, revision, flags, or reserved byte is invalid.', {
         version: version,
@@ -269,7 +270,7 @@ window.OB64 = window.OB64 || {};
     }
     var payloadBytes = storedBytes + 4;
     var containerBytes = storedBytes + 8;
-    var expectedRedirectCount = payloadBytes > 0x200 ? 3 : 2;
+    var expectedRedirectCount = directNative ? 0 : (payloadBytes > 0x200 ? 3 : 2);
     if (payloadBytes > MAX_PAYLOAD_BYTES ||
         containerBytes > MAX_CONTAINER_BYTES ||
         redirectCount !== expectedRedirectCount) {
@@ -352,8 +353,12 @@ window.OB64 = window.OB64 || {};
       });
     }
 
-    var requests = redirectRequests(profile, payloadBytes);
-    if (!skipRedirectValidation) {
+    var requests = directNative ? [] : redirectRequests(profile, payloadBytes);
+    if (directNative) {
+      if (!OB64.nativeClasses || OB64.nativeClasses.promotionLoaderState(z64) !== 'relocated') {
+        return descriptorForeign('Native promotion resource lacks its complete rebuilt loader references.');
+      }
+    } else if (!skipRedirectValidation) {
       if (!OB64.sourceRedirect || !OB64.sourceRedirect.validateSubset) {
         return descriptorForeign('The shared PI-source redirect controller is unavailable.');
       }
@@ -377,6 +382,7 @@ window.OB64 = window.OB64 || {};
       decoded: decoded.output,
       decodedCrc32: actualDecodedCrc,
       redirectCount: redirectCount,
+      directNative: directNative,
       requests: requests,
       descriptorBytes: z64.slice(
         DESCRIPTOR_OFFSET,
@@ -404,6 +410,9 @@ window.OB64 = window.OB64 || {};
     } catch (error2) {
       return descriptorForeign(error2.message);
     }
+    if (OB64.classFamilies && OB64.classFamilies.hasEvidence(z64)) {
+      return OB64.classFamilies.statState(z64, profile, original);
+    }
     var descriptor = parseDescriptor(z64, profile);
     if (descriptor.state === 'foreign') {
       descriptor.profile = profile;
@@ -429,12 +438,18 @@ window.OB64 = window.OB64 || {};
     }
 
     if (!descriptor.active) {
+      if (OB64.nativeClasses && OB64.nativeClasses.hasNativePromotionReference(z64)) {
+        return Object.assign(descriptorForeign('Rebuilt promotion loaders reference a missing native resource.'),
+          {profile:profile,original:original});
+      }
+    }
+    if (!descriptor.active || descriptor.directNative) {
       for (var i = 0; i < controller.entries.length; i++) {
         if (requestUsesStatSource(controller.entries[i], profile)) {
           return {
             state: 'foreign',
             active: false,
-            reason: 'The shared redirect table contains a stat-gate source without an owned OBSG descriptor.',
+            reason: 'The shared redirect table contains a stat-gate source without an owned redirect-based OBSG descriptor.',
             details: { request: controller.entries[i] },
             profile: profile,
             original: original,
@@ -487,13 +502,14 @@ window.OB64 = window.OB64 || {};
     }
     var original = state.original;
     var active = state.state === 'owned';
+    var ownerStart = state.familyOwnerStart || OWNER_START;
     return {
       byClass: byClass,
       raw: decoded.slice(),
       meta: {
         payloadSize: state.payloadBytes || (RETAIL_STREAM_BYTES + 4),
         decompSize: TABLE_BYTES,
-        compDataOff: active ? OWNER_START + 8 : original.streamOffset,
+        compDataOff: active ? ownerStart + 8 : original.streamOffset,
         compDataSize: active
           ? state.logicalStreamBytes
           : RETAIL_STREAM_BYTES,
@@ -501,8 +517,8 @@ window.OB64 = window.OB64 || {};
         originalCompDataOff: original.streamOffset,
         originalCompDataSize: RETAIL_STREAM_BYTES,
         originalContainerBytes: original.containerBytes.slice(),
-        resolvedHeaderOff: active ? OWNER_START : original.headerOffset,
-        resolvedCompDataOff: active ? OWNER_START + 8 : original.streamOffset,
+        resolvedHeaderOff: active ? ownerStart : original.headerOffset,
+        resolvedCompDataOff: active ? ownerStart + 8 : original.streamOffset,
         logicalStreamBytes: state.logicalStreamBytes ||
           original.logicalStreamBytes,
         relocation: {
@@ -511,9 +527,9 @@ window.OB64 = window.OB64 || {};
           error: '',
           profileId: state.profile.id,
           revision: state.profile.revision,
-          ownerStart: OWNER_START,
-          ownerSize: OWNER_SIZE,
-          descriptorOffset: DESCRIPTOR_OFFSET,
+          ownerStart: ownerStart,
+          ownerSize: state.familyOwnerSize || OWNER_SIZE,
+          descriptorOffset: state.familyOwnerSize ? ownerStart + state.familyOwnerSize - 64 : DESCRIPTOR_OFFSET,
           requests: active ? state.requests.slice() : [],
         },
       },
@@ -589,10 +605,10 @@ window.OB64 = window.OB64 || {};
     return decoded;
   }
 
-  function buildDescriptor(profile, logicalBytes, storedBytes, decoded) {
+  function buildDescriptor(profile, logicalBytes, storedBytes, decoded, directNative) {
     var descriptor = new Uint8Array(DESCRIPTOR_SIZE);
     descriptor.set(DESCRIPTOR_MAGIC, 0);
-    descriptor[4] = DESCRIPTOR_VERSION;
+    descriptor[4] = directNative ? 2 : DESCRIPTOR_VERSION;
     descriptor[5] = profile.revision;
     descriptor[6] = 1;
     descriptor[7] = 0;
@@ -601,12 +617,12 @@ window.OB64 = window.OB64 || {};
     writeU32(descriptor, 16, TABLE_BYTES);
     writeU32(descriptor, 20, crc32(decoded));
     var payloadBytes = storedBytes + 4;
-    writeU32(descriptor, 24, payloadBytes > 0x200 ? 3 : 2);
+    writeU32(descriptor, 24, directNative ? 0 : (payloadBytes > 0x200 ? 3 : 2));
     writeU32(descriptor, 28, crc32(descriptor, 0, 28));
     return descriptor;
   }
 
-  function buildRelocatedOwner(profile, compressed, decoded) {
+  function buildRelocatedOwner(profile, compressed, decoded, directNative) {
     var logicalBytes = compressed.length;
     var storedBytes = (logicalBytes + 1) & ~1;
     var payloadBytes = storedBytes + 4;
@@ -621,7 +637,8 @@ window.OB64 = window.OB64 || {};
       profile,
       logicalBytes,
       storedBytes,
-      decoded
+      decoded,
+      directNative
     );
     owner.set(descriptor, DESCRIPTOR_OFFSET - OWNER_START);
     return {
@@ -631,7 +648,7 @@ window.OB64 = window.OB64 || {};
       storedStreamBytes: storedBytes,
       payloadBytes: payloadBytes,
       containerBytes: containerBytes,
-      requests: redirectRequests(profile, payloadBytes),
+      requests: directNative ? [] : redirectRequests(profile, payloadBytes),
     };
   }
 
@@ -668,7 +685,7 @@ window.OB64 = window.OB64 || {};
       ? 'in-place'
       : 'relocated';
     var relocated = mode === 'relocated'
-      ? buildRelocatedOwner(current.profile, compressed, decoded)
+      ? buildRelocatedOwner(current.profile, compressed, decoded, !!options.directNative)
       : null;
     return {
       mode: mode,

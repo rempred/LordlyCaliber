@@ -1,10 +1,10 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');
-const root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-chair-snapshot.json');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-chair-snapshot.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
 const sourceHashes={};
 for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-runtime.js','cutscene-assets.js','cutscene-sprites.js']){
- const source=fs.readFileSync(file==='cutscene-runtime.js'&&process.argv[2]?process.argv[2]:path.join(root,'editor',file),'utf8');
+ const source=fs.readFileSync(file==='cutscene-runtime.js'&&process.argv[2]?process.argv[2]:path.join(rootEditor,file),'utf8');
  sourceHashes[file]=crypto.createHash('sha256').update(source).digest('hex');vm.runInThisContext(source,{filename:file});
 }
 (async()=>{

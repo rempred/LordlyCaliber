@@ -42,7 +42,7 @@ function control(root, key) { return all(root).find(item => item.attrs['data-cut
 function button(root, label) { return all(root).find(item => item.tag === 'button' && item.textContent === label); }
 
 (async () => {
-  const raw = fs.readFileSync(path.join(editor, '..', 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
+  const raw = fs.readFileSync(path.join(require('./project-paths.cjs').PARENT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
   const z64 = Uint8Array.from(raw, (_, index) => raw[index ^ 1]);
   const rom = { z64, layout: { id: 'us-rev0' } };
   const state = OB64.cutsceneUI.initialize(rom);
@@ -67,7 +67,8 @@ function button(root, label) { return all(root).find(item => item.tag === 'butto
   const view = state.views[scene.sceneId];
   assert.equal(byClass(root, 'cutscene-stage-panel').length, 1);
   assert.equal(byClass(root, 'cutscene-creator-sequence').length, 1);
-  for (const hidden of ['cutscene-browser', 'cutscene-inspector', 'cutscene-sequence', 'cutscene-view-controls']) {
+  assert.equal(byClass(root, 'cutscene-browser').length, 1, 'the scene browser is a persistent left bar (2026-09-27)');
+  for (const hidden of ['cutscene-inspector', 'cutscene-sequence', 'cutscene-view-controls']) {
     assert.equal(byClass(root, hidden).length, 0, hidden + ' must be absent from the default workspace');
   }
   assert.equal(byClass(root, 'cutscene-creator-action-controls').length, 0);
@@ -123,10 +124,11 @@ function button(root, label) { return all(root).find(item => item.tag === 'butto
   OB64.cutsceneUI.testTransport(state, { frame: movement.startFrame, durationFrames: 2000 });
   assert(state.ui.creatorCards.find(row => row.clip.id === movement.id).element.classList.contains('at-playhead'));
 
-  button(root, 'Choose scene').fire('click'); root = render();
-  assert.equal(byClass(root, 'cutscene-browser').length, 1);
-  button(root, 'Close').fire('click'); root = render();
+  assert.equal(byClass(root, 'cutscene-browser').length, 1, 'the scene browser is a persistent left bar');
+  button(root, 'Hide scenes').fire('click'); root = render();
   assert.equal(byClass(root, 'cutscene-browser').length, 0);
+  button(root, 'Show scenes').fire('click'); root = render();
+  assert.equal(byClass(root, 'cutscene-browser').length, 1);
   button(root, 'Advanced').fire('click'); root = render();
   assert.equal(byClass(root, 'cutscene-view-controls').length, 1);
   assert.equal(byClass(root, 'cutscene-sequence').length, 1);

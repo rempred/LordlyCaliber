@@ -4,12 +4,12 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const root = path.resolve(__dirname, '../..');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 global.window = global;
 global.OB64 = {};
 for (const file of ['data.js', 'art.js', 'cutscene-model.js', 'cutscene-codec.js',
   'cutscene-runtime.js', 'cutscene-preview.js', 'cutscene-renderer.js']) {
-  vm.runInThisContext(fs.readFileSync(path.join(root, 'editor', file), 'utf8'), { filename: file });
+  vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file), 'utf8'), { filename: file });
 }
 const raw = fs.readFileSync(path.join(root, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
 const rom = new Uint8Array(raw.length);

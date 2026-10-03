@@ -1,5 +1,5 @@
 'use strict';
-const fs=require('fs'),path=require('path'),assert=require('assert'),root=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
 (async()=>{
  const v=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(v.length);
@@ -14,7 +14,7 @@ new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene
   rows.push({label:c.label,historyGate:Buffer.from(ds.payloadHex,'hex')[0x4f],rectangles:result.commands.length});
  };
  for(const history of [false,true]){
-  const input=structuredClone(require('../../docs/reviews/cutscene-room-background-drawing-20260917/playback-input.json'));
+  const input=structuredClone(require(path.join(root,'docs/reviews/cutscene-room-background-drawing-20260917/playback-input.json')));
   if(history){const changes=input.externalProducers.value.resourceSchedule.controller.changes;
    changes.push({pass:335,actionMask:0,directionMask:2048,historyMask:16,dummyMask:0},{pass:340,actionMask:0,directionMask:0,historyMask:0,dummyMask:0});changes.sort((a,b)=>a.pass-b.pass);}
   const catalog=OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData),scene=catalog.getScene(input.assetId),source=await OB64.cutsceneCodec.loadSceneSource(z64,scene),p=OB64.cutsceneCodec.projectSceneDocument(scene,source,catalog);

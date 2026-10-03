@@ -1,6 +1,6 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=path.resolve(__dirname,'../..');
-global.window=global;global.OB64={};for(const file of ['parsers.js','art.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',file),'utf8'),{filename:file});
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
+global.window=global;global.OB64={};for(const file of ['parsers.js','art.js','cutscene-dialogue-draw.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,file),'utf8'),{filename:file});
 const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}
 const drawer=new OB64.cutsceneDialogueDraw(z64),fixture=require('./fixtures/cutscene-active-dialogue-drawing.json');let rectangles=0,peakTextureBytes=0;
 for(const native of fixture.cases){

@@ -9,7 +9,7 @@ new Function('require', '__dirname', fs.readFileSync(path.join(__dirname,
 (async () => {
   const name = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
   const editor = path.join(__dirname, '..');
-  const master = [process.env.OB64_MASTER_ROM, path.join(editor, '..', name),
+  const master = [process.env.OB64_MASTER_ROM, path.join(require('./project-paths.cjs').PARENT, name),
     path.join(editor, '..', '..', 'OgreBattlel64', name)]
     .filter(Boolean).find(file => fs.existsSync(file));
   assert(master, 'the US Rev 0 master ROM is required');

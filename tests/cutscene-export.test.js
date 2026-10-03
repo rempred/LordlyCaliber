@@ -7,7 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 const MASTER = path.join(ROOT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 
 global.window = global;
@@ -89,9 +89,13 @@ function hashBytes(input) {
   };
   const blockedRom = { z64: z64.slice(), layout: { id: 'us-rev0' }, cutsceneStudio: blockedState };
   const blockedCandidate = { z64: blockedRom.z64.slice(), layout: blockedRom.layout };
+  // This class-5 room owns its single scene-group command, so its background
+  // is natively selectable; a hand-made background that is not one complete
+  // table row is still refused.
+  assert.strictEqual(baseline.background.projection.nativeEditable, true);
   await assert.rejects(
     OB64.cutsceneExport.prepare(blockedRom, blockedCandidate, { hashBytes }),
-    error => error.code === 'preview-only-background'
+    error => error.code === 'background-group-shape'
   );
   assert(OB64.cutsceneCodec.equalBytes(blockedCandidate.z64, z64));
 

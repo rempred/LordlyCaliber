@@ -208,4 +208,27 @@ assert(experienceScale.lines.includes('XP size-weight scale: 125%.'));
 assert(experienceScale.lines.includes(
   'Effective weights: Size 0 100%, Size 1 / default 125%, Size 2 187.5%.'));
 
+// Rebuild ROM Projects keep the migrated Tools in rebuild_owners.
+const rebuildReport = OB64.changelog.build(rom, {
+  build_mode: 'rebuild',
+  rebuild_owners: {
+    schema: 1,
+    experience_scale_percent: 128,
+    chaos_frame_counter: true,
+    character_card_luck: true,
+    squad_menu_alignment: false,
+    shop_memberships: true,
+  },
+  summary: { native_owners_selected: 4 },
+  patches: { tools: {} },
+});
+const rebuildTools = rebuildReport.sections.find(row =>
+  row.title === 'Optional Tools and Quality-of-Life Features');
+assert(rebuildTools, 'Rebuild tool selections must appear in the changelog');
+assert.deepStrictEqual(rebuildTools.entries.map(row => row.title).sort(),
+  ['Chaos Frame Counter', 'Character Card Luck', 'Experience Size Weight Scale']);
+assert(rebuildTools.entries.find(row => row.title === 'Experience Size Weight Scale')
+  .lines.includes('XP size-weight scale: 128%.'));
+assert(rebuildTools.entries.find(row => row.title === 'Chaos Frame Counter').lines.includes('Enabled.'));
+
 console.log('PASS changelog groups combat sprites and reports custom neutral behavior');

@@ -5,7 +5,7 @@
 const path = require('path');
 
 const EDITOR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(EDITOR, '..');
+const ROOT = require('./project-paths.cjs').PARENT;
 
 require('./source-redirect-test-preload.cjs');
 require(path.join(ROOT, 'scripts', 'ob64_scenario_export_lifecycle_test.js'));

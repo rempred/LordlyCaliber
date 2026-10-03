@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
 const editor = path.resolve(__dirname, '..');
-const root = path.dirname(editor);
+const root = require('./project-paths.cjs').PARENT;
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');

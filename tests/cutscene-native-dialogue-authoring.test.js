@@ -4,7 +4,7 @@ const path = require('path');
 const vm = require('vm');
 
 const editor = path.resolve(__dirname, '..');
-const master = process.env.OB64_MASTER_ROM || path.join(editor, '..',
+const master = process.env.OB64_MASTER_ROM || path.join(require('./project-paths.cjs').PARENT,
   'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');

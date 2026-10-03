@@ -7,7 +7,7 @@ window.OB64=window.OB64||{};
  function resource(rom,key){const p=key+0x594280,v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);if(p<0||p+4>rom.length)fail('Resource key exceeds the loaded ROM.');const n=v.getUint32(p);if(!n||n>65536||p+4+n>rom.length)fail('Resource extent exceeds the preview bound.');return rom.slice(p+4,p+4+n);}
  // func_00283E14 maps terminal class 1 to route -3. func_002827EC then
  // installs scene mode two and callback 0x802260F0. These are separate values.
- function analyze(program){
+ function analyze(program,options){
   const reject=(code,reason)=>({supported:false,code,reason});
   if(!program||!Array.isArray(program.primitives)||!program.primitives.length)return reject('rom-start-stream','ROM startup requires a decoded Director stream.');
   if(program.primitives.some(n=>!Array.isArray(n.rawWords)||!n.rawWords.length||n.opcode!==n.rawWords[0]||n.rawWords.some(w=>!Number.isInteger(w)||w<0||w>0xffffffff)))return reject('rom-start-stream','ROM startup requires complete unsigned Director words.');
@@ -16,7 +16,10 @@ window.OB64=window.OB64||{};
   const terminal=program.primitives.at(-1);
   if(terminal.opcode!==0x80000001||terminal.rawWords.length!==2||program.primitives.filter(n=>n.opcode===0x80000001).length!==1)return reject('rom-start-trailer','ROM startup requires one final terminal command and resource class.');
   const terminalClass=last&255;
-  if(program.primitives.every(n=>[0,1,2,0x0e,0x7d,0x80000000,0x80000001,0x80000002].includes(n.opcode)))return {supported:false,code:'rom-control-resource',resourceKind:'control-resource',reason:'This Director resource only waits and releases its scheduler slot. It has no standalone scene imagery or dialogue.'};
+  // An original scene the editor wiped is legitimately control-only until
+  // content is added; it keeps its own startup contract below. Retail
+  // control-only resources stay classified as control resources.
+  if(!(options&&options.explicitlyWiped)&&program.primitives.every(n=>[0,1,2,0x0e,0x7d,0x80000000,0x80000001,0x80000002].includes(n.opcode)))return {supported:false,code:'rom-control-resource',resourceKind:'control-resource',reason:'This Director resource only waits and releases its scheduler slot. It has no standalone scene imagery or dialogue.'};
   // Early interface streams use the same Director language. The preview supplies
   // the common empty root and models their visible interface operations separately.
   if(terminalClass===6){
@@ -62,7 +65,7 @@ window.OB64=window.OB64||{};
   // An isolated world preview uses map kind zero.
   return {supported:true,terminalClass,sceneMode:2,environmentSelector,previewEnvironmentDefault,mapKind:terminalClass===8?0:24,previewParty:terminalClass===8||program.primitives.some(n=>[0x45,0xab,0xa6,0x3f,0xa4].includes(n.opcode))};
  }
- function supports(scene,program){return !!scene&&analyze(program).supported;}
+ function supports(scene,program){return !!scene&&analyze(program,{explicitlyWiped:!!scene.wiped}).supported;}
  function qualify(rom){
   // Source-derived caller and name-binding rules must match the current ROM.
   for(const row of O.cutsceneRomStartData.contracts){if(hex(rom.subarray(row.rom,row.rom+row.hex.length/2))!==row.hex)fail('ROM startup caller or dialogue rules differ from the qualified ROM: '+row.name+'.','rom-start-code');}
@@ -70,7 +73,7 @@ window.OB64=window.OB64||{};
  function input(rom,scene,program){
 
   if(!scene||!program)return null;
-  const contract=analyze(program);if(!contract.supported)fail(contract.reason,contract.code);
+  const contract=analyze(program,{explicitlyWiped:!!(scene&&scene.wiped)});if(!contract.supported)fail(contract.reason,contract.code);
   qualify(rom);
   const environmentSelector=contract.environmentSelector;
   const directory=resource(rom,0x019a8804),dv=new DataView(directory.buffer),key=parseInt(scene.directorKey,16);let selector=-1;
@@ -103,12 +106,41 @@ window.OB64=window.OB64||{};
    launch.previewClasses=classes.slice(0,5);
    const binding=program.primitives.findIndex(n=>n.opcode===0xa6),reset=program.primitives.findIndex(n=>n.opcode===0x96);
    launch.previewDeployed=binding>=0&&(reset<0||binding<reset);
+   // Encountered unit. Slots the stream lets speak without placing or binding
+   // them come from the caller's second roster unit (event property FD), a live
+   // gameplay value the event script never writes. Until that unit is resolved,
+   // infer its members from the dialogue portraits those slots own.
+   if(program.primitives.some(n=>[0x45,0xab].includes(n.opcode))){
+    const bound=new Set();for(const n of program.primitives)if([0x14,0x92,0x95,0xa6].includes(n.opcode)&&(n.rawWords[1]|0)>=0)bound.add(n.rawWords[1]|0);
+    const speakers=new Map();for(const n of program.primitives)if(n.opcode===0xbf){const slot=n.rawWords[4]|0,cls=n.rawWords[11]|0;if(slot>=0&&slot<28&&!bound.has(slot)&&cls>0&&cls<165&&!speakers.has(slot))speakers.set(slot,cls);}
+    // Slots that 0xA6 binds to a member of the deployed unit read unit 30 after
+    // the roster rebuild, i.e. the encountered unit itself. A box such a slot
+    // owns names that member's class directly (01F40650: member 0 is a Wizard).
+    // Only scenes whose Stage rebuild (0x96 before any binder) creates unit 30 from
+    // the encountered unit take this path; a stream that runs its own 0x96 before
+    // binding keeps the earlier deployed-record modelling.
+    const byMember=new Map();
+    if(launch.previewDeployed)for(const n of program.primitives){if(n.opcode!==0xa6)continue;const slot=n.rawWords[1]|0,member=n.rawWords[2]|0;if(member<0||member>=5||byMember.has(member))continue;
+     const box=program.primitives.find(b=>b.opcode===0xbf&&(b.rawWords[4]|0)===slot&&(b.rawWords[11]|0)>0&&(b.rawWords[11]|0)<165);if(box)byMember.set(member,box.rawWords[11]|0);}
+    const unbound=[...speakers.entries()].sort((a,b)=>a[0]-b[0]).map(e=>e[1]);
+    for(let member=0;member<5&&unbound.length;member++)if(!byMember.has(member))byMember.set(member,unbound.shift());
+    // Members the stream walks through 0xA6 without naming a class take the
+     // sample party's class at that position, as the party copy did before.
+     const walked=launch.previewDeployed?program.primitives.filter(n=>n.opcode===0xa6).map(n=>n.rawWords[2]|0).filter(m=>m>=0&&m<5):[];
+     if(byMember.size){const count=Math.max(...byMember.keys(),...walked)+1;const members=[];for(let member=0;member<count;member++)members.push(byMember.has(member)?byMember.get(member):(launch.previewClasses[member]||2));
+     // A stream that indexes deployed members through 0xA6 walks the full
+     // roster, so the E6 leader-only bit (which also hides the current unit's
+     // other members) is left clear there; encounters inferred only from
+     // unbound speakers keep the leader-only modelling.
+     const walksMembers=[...byMember.keys()].some(member=>program.primitives.some(n=>n.opcode===0xa6&&(n.rawWords[2]|0)===member));
+     launch.previewEncounter={classes:members,leaderOnly:!walksMembers&&members.length===1,evidence:'dialogue-portrait-class'};}
+   }
   }
   if(contract.sceneMode===0||contract.previewParty||contract.preservedStage)launch.previewArmyName='Preview Army';
   const result={schema:'ob64-cutscene-launch-inputs.v1',assetId:scene.assetId,invocationId:'rom-start',sourceIdentity:contract.preservedStage?'Loaded ROM Stage; declared level-one Hero and Fighter preview unit, environment 0':'Loaded ROM startup; isolated preview pool and empty playthrough roster',evidenceGrade:'Candidate',schedulerBranch:{status:'known',value:'normal'},externalProducers:{status:'known',value:{throughTick:29999,events:[],menuCreates:[],colorCreates:[],poseCalls:[],initialColor:null,initialDialogue:{memory:memory.map(r=>({address:r.address,hex:hex(r.bytes),writable:true})),owners:[{ownerId:'rom-director',payloadHex:null},null,null,null,null,null],payloadStorage:{kind:'preview-arena-v1',address:0x80380000,byteLength:8192},lifecycle:{kind:'shared-dialogue-v1',computeAlignment:true,archiveArena:{address:0x80350000,byteLength:8192}}},resourceSchedule:{kind:'resident-resource-pass-v1',directorSlot:0,directorCallback:0x80226190,directorBinding:'rom-mode-two-v1',pageAdvancePolicy:'automatic',controller:{throughPass:29999,changes:[{pass:0,actionMask:0,directionMask:0,historyMask:0,dummyMask:0}]},helperOutcomes:[]},directorLaunch:launch}}};
   if(contract.sceneMode===0){const e=result.externalProducers.value;e.resourceSchedule.directorCallback=0x80225abc;delete e.resourceSchedule.directorBinding;e.initialRequests={A:-1,B:-1};e.imageEcho={kind:'native-image-echo-v1'};e.sharedActor={kind:'native-ordinary-actor-v1',worldScale:Math.fround(.1)};e.framebuffer={kind:'product-framebuffer-v1',capturePolicy:'constructor-current-state',backgroundPolicy:'require'};e.mapMenu={kind:'native-map-menu-v1',initialEntitiesEmpty:true,displayMode:0,controllerSource:'declared-action-mask',optionController:'declared-action-direction-v1',previewAdvancePolicy:'automatic-last-option'};}
   result.externalProducers.value.resourceSchedule.dialogueChoicePolicy='first';
-  if(contract.previewParty||contract.preservedStage)result.sourceIdentity='Loaded ROM scene; sample level-one unit with class IDs '+launch.previewClasses.join(', ')+'.';
+  if(contract.previewParty||contract.preservedStage)result.sourceIdentity='Loaded ROM scene; sample level-one unit with class IDs '+launch.previewClasses.join(', ')+(launch.previewEncounter?'; encountered unit inferred from dialogue portrait class IDs '+launch.previewEncounter.classes.join(', '):'')+'.';
   return result;
  }
  function installCode(code,regions,rom){qualify(rom);const v=new DataView(rom.buffer,rom.byteOffset,rom.byteLength);for(const [a,p,w]of O.cutsceneRomStartData.words){if(v.getUint32(p)!==w)fail('Mode-two initialization code differs from the qualified ROM.');code[a]=w;}for(const r of O.cutsceneRomStartData.constants)regions.push({address:r.address,bytes:rom.slice(r.rom,r.rom+r.length),writable:false});}

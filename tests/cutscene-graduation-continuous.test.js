@@ -1,7 +1,7 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=require('./project-paths.cjs').PARENT,REditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-actor-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
-for(const file of ['cutscene-njpg.js','cutscene-dialogue-draw.js','cutscene-captured-continuous-data.js','cutscene-captured-scheduler-data.js','cutscene-captured-scheduler.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',file),'utf8'),{filename:file});
+for(const file of ['cutscene-njpg.js','cutscene-dialogue-draw.js','cutscene-captured-continuous-data.js','cutscene-captured-scheduler-data.js','cutscene-captured-scheduler.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,file),'utf8'),{filename:file});
 const fixture=require('./fixtures/cutscene-graduation-continuous.json'),observed=require('./fixtures/cutscene-graduation-native.json'),clone=x=>JSON.parse(JSON.stringify(x));
 (async()=>{
  const raw=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}

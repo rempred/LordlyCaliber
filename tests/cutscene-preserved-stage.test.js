@@ -1,7 +1,7 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-shared-rom-start.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
-for(const f of ['cutscene-preserved-stage-data.js','cutscene-preserved-stage.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',f),'utf8'),{filename:f});
+for(const f of ['cutscene-preserved-stage-data.js','cutscene-preserved-stage.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,f),'utf8'),{filename:f});
 (async()=>{
  const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}
  const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},ui=OB64.cutsceneUI.initialize(rom),runs=[],owned=[];

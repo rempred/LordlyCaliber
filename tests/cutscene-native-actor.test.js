@@ -6,14 +6,14 @@ const vm = require('vm');
 const crypto = require('crypto');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const sourceHashes = {};
-const root = path.resolve(__dirname, '../..');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = {};');
 for (const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js',
   'cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js',
   'cutscene-codec.js','cutscene-runtime.js','cutscene-preview.js','cutscene-assets.js',
   'cutscene-renderer.js','cutscene-project.js','cutscene-export.js','cutscene-ui.js']) {
-  const source=fs.readFileSync(path.join(root,'editor',file),'utf8');
+  const source=fs.readFileSync(path.join(rootEditor,file),'utf8');
   sourceHashes[file]=hash(source);
   vm.runInThisContext(source,{filename:file});
 }

@@ -7,7 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const PARENT = path.resolve(EDITOR, '..');
+const PARENT = require('./project-paths.cjs').PARENT;
 const MASTER = path.join(PARENT,
   'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 const MASTER_SHA256 =

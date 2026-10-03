@@ -331,8 +331,17 @@ window.OB64 = window.OB64 || {};
     Object.keys(extraCounts).forEach(function(id) {
       if (extraCounts[id] > 1) issue(errors, 'section3-extra-id-duplicate', 'Section 3 extra id appears more than once', { extraId: Number(id), count: extraCounts[id] });
     });
+    // Rebuild ROM presets the bit-7 flag that func_001960A8 sets at runtime for a
+    // few retail rows. The caller names those rows; the builder masks the flag off.
+    var flaggedSourceRows = {};
+    (options.flaggedSourceRows || []).forEach(function(index) { flaggedSourceRows[index] = true; });
     model.section1.forEach(function(row) {
-      if (row.sourceId > limits.sourceIdMax) issue(errors, 'source-id-cap', 'sourceId exceeds conservative limit', { row: row.row, sourceId: row.sourceId, limit: limits.sourceIdMax });
+      var sourceId = row.sourceId;
+      if (flaggedSourceRows[row.row]) {
+        if (!(sourceId & 0x80)) issue(errors, 'source-flag-missing', 'Flagged Section 1 row lacks the bit-7 source flag', { row: row.row, sourceId: sourceId });
+        sourceId &= 0x7F;
+      }
+      if (sourceId > limits.sourceIdMax) issue(errors, 'source-id-cap', 'sourceId exceeds conservative limit', { row: row.row, sourceId: row.sourceId, limit: limits.sourceIdMax });
       if (row.edatOneBased < 1 || row.edatOneBased > limits.enemydatRecords) {
         issue(errors, 'section1-edat-range', 'Section 1 edatOneBased must reference an enemydat record', { row: row.row, edatOneBased: row.edatOneBased, min: 1, max: limits.enemydatRecords });
       }

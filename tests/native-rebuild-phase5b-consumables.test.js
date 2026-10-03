@@ -10,7 +10,7 @@ const EDITOR = path.resolve(__dirname, '..');
 const MASTER_NAME = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
 const MASTER = [
   process.env.OB64_MASTER_ROM,
-  path.resolve(EDITOR, '..', MASTER_NAME),
+  path.resolve(require('./project-paths.cjs').PARENT, MASTER_NAME),
   path.resolve(EDITOR, '..', '..', 'OgreBattlel64', MASTER_NAME),
 ].filter(Boolean).find(candidate => fs.existsSync(candidate));
 const INPUT_ROOT = [

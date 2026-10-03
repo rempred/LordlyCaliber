@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const E=path.resolve(__dirname,'..'),R=path.resolve(E,'..');
+const E=path.resolve(__dirname,'..'),R=require('./project-paths.cjs').PARENT;
 new Function('require','__dirname',fs.readFileSync(path.join(E,'tests/cutscene-framebuffer-integration.test.js'),'utf8').split('(async()=>')[0])(require,path.join(E,'tests'));
 for(const f of ['cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js','cutscene-map-menu-data.js','cutscene-map-menu.js'])vm.runInThisContext(fs.readFileSync(path.join(E,f),'utf8'),{filename:f});
 (async()=>{

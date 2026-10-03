@@ -296,9 +296,12 @@ check('header exposes the ROM compatibility report',
 const appSource = fs.readFileSync(path.join(EDITOR, 'app.js'), 'utf8');
 check('export controller uses cooperative validation progress',
   appSource.includes('validateAsync'));
-check('export controller delegates detached candidate creation and adoption',
+// Both build modes rebuild from the unchanged edit model, so the downloaded
+// candidate is recorded but never adopted into the loaded ROM.
+check('export controller delegates detached candidate creation without adoption',
   appSource.includes('OB64.romExportCandidate.create(exportRom)') &&
-    appSource.includes('OB64.romExportCandidate.adopt(exportRom, candidateRom'));
+    !appSource.includes('OB64.romExportCandidate.adopt(') &&
+    appSource.includes('OB64.nativeRebuild.markExport(exportRom'));
 check('export controller defers Scenario redirect writes for shared planning',
   /exportScenarioArchives\(candidateRom,\s*\{\s*deferRedirect:\s*true/.test(
     appSource

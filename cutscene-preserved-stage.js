@@ -20,7 +20,7 @@ function add(a,n,bytes){need(ownedRegions.reduce((sum,r)=>sum+r.bytes.length,0)+
 // Explicit preview choices: isolated resource registries and clear launch flags.
 add(0x80196aed,1);add(0x801976d8,0x20);add(0x80197b60,2);add(0x80197b18,8);add(0x801ce8bc,0x1dc4,rom.slice(0x211d4c,0x213b10));add(0x801d0680,0x1c0);add(0x80197774,4);
 m.put(0x80196aed,environmentSelector,1);
-add(0x801971f0,775);add(0x80193bc0,5600);add(0x80195560,5200);add(0x80190f80,0x16c);add(0x800c47d0,4);m.put(0x800c47d0,1);
+add(0x801971f0,800);add(0x80193bc0,5600);add(0x80195560,5200);add(0x80190f80,0x16c);add(0x800c47d0,4);m.put(0x800c47d0,1);
 add(0x80187c20,165*72,rom.slice(0x5db20,0x5db20+165*72));
 add(0x8018c400,256*32,rom.slice(0x62300,0x64300));
 add(0x8018f557,3,Uint8Array.of(input.world.red,input.world.green,input.world.blue));add(0x801936a7,1,Uint8Array.of(input.world.scenarioByte));add(0x8020a2d4,4);add(0x80220000,0x2000);
@@ -84,12 +84,24 @@ const alignedStep=m.step.bind(m);m.step=function(pc){const w=this.code[pc],op=w>
  m.step=function(pc){if(pc===0x801afe18){reached=true;throw boundary;}return nativeStep(pc);};
  const party=input.previewClasses||[81,2];need(party.length>0&&party.length<=5,'Preview unit supports up to five members.');
  for(const [index,primary]of party.entries()){const member=index+1,formation=[4,1,3,5,7][index],p=0x80193bc0+member*56;need(Number.isInteger(primary)&&primary>0&&primary<165,'Preview member class exceeds the ROM table.');m.put(p+0x11,primary,1);m.put(p+0x12,rom[0x5db20+primary*72+57]||primary,1);run(0x8016f11c,[p,1],100000);if(index===0)m.put(p+0x33,m.get(p+0x33,1)|2,1);const name=primary>=81&&primary<=83?'Magnus':O.className?O.className(primary):'Member '+member;for(let i=0;i<16;i++)m.put(p+i,i<name.length?name.charCodeAt(i):0,1);m.put(0x801971f0+member+1,member,1);m.put(0x801971f0+member+6,formation,1);}
+ // Encountered unit. On contact the game copies the met squad into deployed unit
+ // 30 and points event property FD at it (live capture 2026-09-26: FD=30, FE=6,
+ // FC=0x86, E6=0, rows 0-4 the met squad, rows 5-7 the current unit). A nonzero
+ // battle terrain byte makes the native roster builder walk it before the
+ // current unit; E6 bit 0x8000 limits it to its leader when members are unknown.
+ const encounter=input.previewEncounter;
+ if(encounter){
+  need(Array.isArray(encounter.classes)&&encounter.classes.length>0&&encounter.classes.length<=5,'Preview encounter unit supports up to five members.');
+  for(const [index,primary]of encounter.classes.entries()){const member=6+index,formation=[4,1,3,5,7][index],p=0x80193bc0+member*56;need(Number.isInteger(primary)&&primary>0&&primary<165,'Preview encounter class exceeds the ROM table.');m.put(p+0x11,primary,1);m.put(p+0x12,rom[0x5db20+primary*72+57]||primary,1);run(0x8016f11c,[p,1],100000);if(index===0)m.put(p+0x33,m.get(p+0x33,1)|2,1);const full=O.className?O.className(primary):'Member '+member,short=(full.match(/\(([^)]+)\)/)||[])[1]||full,name=short.slice(0,15);for(let i=0;i<16;i++)m.put(p+i,i<name.length?name.charCodeAt(i):0,1);write(0x80195560+member*52,read(p,52));m.put(0x801971f0+30*25+2+index,member,1);m.put(0x801971f0+30*25+7+index,formation,1);}
+  m.put(0x801976e8,30,1);m.put(0x801976d9,1,1);if(encounter.leaderOnly)m.put(0x80197b60,m.get(0x80197b60,2)|0x8000,2);
+ }
  try{run(0x801afc0c,[],200000);}catch(e){if(e!==boundary)throw e;}finally{m.step=nativeStep;}
  need(reached,'Native preview Stage construction did not reach the shared-owner boundary before the battle callback.');
  run(0x801c58f0,[]);
  // Unit 30 supplies the deployed members used by opcode 0x96 and 0xA6.
- // They are declared preview characters, built from current ROM class data.
- for(let i=0;i<party.length;i++){const member=i+1;write(0x80195560+member*52,read(0x80193bc0+member*56,52));m.put(0x801971f0+30*25+2+i,member,1);m.put(0x801971f0+30*25+7+i,[4,1,3,5,7][i],1);}
+ // Without a known encountered unit they are declared preview characters
+ // copied from the sample party, built from current ROM class data.
+ if(!encounter)for(let i=0;i<party.length;i++){const member=i+1;write(0x80195560+member*52,read(0x80193bc0+member*56,52));m.put(0x801971f0+30*25+2+i,member,1);m.put(0x801971f0+30*25+7+i,[4,1,3,5,7][i],1);}
  if(input.previewDeployed)run(0x8023d7a8,[]);
  function run(pc,args,limit){need(active,'The preview Stage has been released.');const g=m.run(pc,args,[],limit||200000);try{while(!g.next().done){}}catch(error){if(error.code==='dialogue-unqualified-helper')error.message+=' Native Stage helper 0x'+m.lastUnhandledHelper.toString(16)+'.';throw error;}}
  const service=m.serviceHelper;this.service=function(pc,target){const before=m;m=target;try{return service(pc);}finally{m=before;}};

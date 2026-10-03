@@ -6,8 +6,8 @@ const vm = require('vm');
 const crypto = require('crypto');
 // RF-R18-F1/F2 fixtures adapted from the frozen R18 public-runtime acceptance probes.
 
-const root = path.resolve(__dirname, '../..');
-const editor = path.join(root, 'editor');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
+const editor = rootEditor;
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 global.window = global;

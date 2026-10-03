@@ -1,8 +1,8 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-resource-scheduling.json');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-resource-scheduling.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
-for(const f of ['data.js','parsers.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue.js','cutscene-dialogue-lifecycle.js','cutscene-resource-scheduler-data.js','cutscene-resource-scheduler.js','cutscene-runtime.js','cutscene-preview.js','cutscene-renderer.js'])vm.runInThisContext(fs.readFileSync(path.join(root,'editor',f),'utf8'),{filename:f});
+for(const f of ['data.js','parsers.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-dialogue-data.js','cutscene-dialogue-lifecycle-data.js','cutscene-dialogue.js','cutscene-dialogue-lifecycle.js','cutscene-resource-scheduler-data.js','cutscene-resource-scheduler.js','cutscene-runtime.js','cutscene-preview.js','cutscene-renderer.js'])vm.runInThisContext(fs.readFileSync(path.join(rootEditor,f),'utf8'),{filename:f});
 const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),rom=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){rom[i]=raw[i+1];rom[i+1]=raw[i];}
 const drain=g=>{let r;do{r=g.next();}while(!r.done);return r.value;},clone=structuredClone;
 // Compare the shared circular initializer with separately executed native manager controls.

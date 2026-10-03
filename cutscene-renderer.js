@@ -51,8 +51,34 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  // Bresenham steps one pixel at a time, so a movement path whose projected
+  // endpoint lies millions of pixels off the frame used to cost billions of
+  // steps (one opening blocked the page for minutes). Segments far longer than
+  // the frame are clipped to it first; ordinary segments keep their exact
+  // pixel sequence.
+  var LINE_STEP_LIMIT = 4096;
+  function clipSegment(x0, y0, x1, y1, left, top, right, bottom) {
+    var t0 = 0, t1 = 1, dx = x1 - x0, dy = y1 - y0;
+    var edges = [[-dx, x0 - left], [dx, right - x0], [-dy, y0 - top], [dy, bottom - y0]];
+    for (var index = 0; index < 4; index++) {
+      var p = edges[index][0], q = edges[index][1];
+      if (p === 0) { if (q < 0) return null; continue; }
+      var t = q / p;
+      if (p < 0) { if (t > t1) return null; if (t > t0) t0 = t; }
+      else { if (t < t0) return null; if (t < t1) t1 = t; }
+    }
+    return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy];
+  }
+
   function line(output, x0, y0, x1, y1, color) {
+    if (!Number.isFinite(x0) || !Number.isFinite(y0) || !Number.isFinite(x1) || !Number.isFinite(y1)) return;
     x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+    if (Math.abs(x1 - x0) + Math.abs(y1 - y0) > LINE_STEP_LIMIT) {
+      var clipped = clipSegment(x0, y0, x1, y1, -1, -1, output.width, output.height);
+      if (!clipped) return;
+      x0 = Math.round(clipped[0]); y0 = Math.round(clipped[1]);
+      x1 = Math.round(clipped[2]); y1 = Math.round(clipped[3]);
+    }
     var dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     var dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     var error = dx + dy;
@@ -919,6 +945,27 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  // Animated scene-sprite records (opcodes 0x46/0x63) are placed in screen
+  // space, but the native table renderer draws them under their scene-transform
+  // channel, so a mode-zero pan moves them with the stage. Mirror the Actor
+  // path: centre the placement, apply the channel, and project once.
+  function modeZeroEffectGeometry(effect, actorProjection) {
+    if (!effect || effect.renderPipeline !== 'mode-zero-scene-record' ||
+        !effect.sceneTransform || !nativePerspectiveProjection(actorProjection)) return null;
+    var centeredPoint = {
+      x: (Number.isFinite(effect.x) ? effect.x : WIDTH / 2) - WIDTH / 2,
+      y: HEIGHT / 2 - (Number.isFinite(effect.y) ? effect.y : HEIGHT / 2),
+      z: 0
+    };
+    var channel = effect.sceneTransform;
+    var scenePoint = transformModeZeroStagePoint(centeredPoint, channel, actorProjection);
+    var finalProjection = Object.assign({}, actorProjection, { modelScale: 1 });
+    var screenPoint = projectPointFloat(scenePoint, finalProjection);
+    if (!Number.isFinite(screenPoint.x) || !Number.isFinite(screenPoint.y)) return null;
+    var channelScale = Number.isFinite(channel.uniformScale) ? channel.uniformScale : 1;
+    return { screenPoint: screenPoint, scale: channelScale };
+  }
+
   function unpackDrawingMatrix(hex) {
     if(typeof hex!=='string'||!/^[0-9a-f]{128}$/i.test(hex))fail('Native Actor drawing requires a packed matrix.');
     var bytes=Uint8Array.from(hex.match(/../g),function(v){return parseInt(v,16);}),view=new DataView(bytes.buffer);
@@ -1426,19 +1473,51 @@ window.OB64 = window.OB64 || {};
           ? projectionDepth(entry.placement, projection) : null
       });
     });
+    // The native layer driver (z64 0x002B04FC) draws each pass as background,
+    // then the scene-sprite table records of that layer, then the Actors of
+    // that transform channel. Layer-owned sprite records therefore join the
+    // ordered queue; other effects keep the trailing post-Actor draw.
+    var queuedEffects = [];
+    if (orderedLayers) (options.effectFrames || []).forEach(function(effect, index) {
+      if (!Number.isInteger(effect.renderPassSelector)) return;
+      queuedEffects.push(effect);
+      renderQueue.push({ kind: 'effect', entry: effect, layer: effect.renderPassSelector,
+        order: index });
+    });
+    function passRank(entry) {
+      return entry.kind === 'background' || entry.kind === 'vignette' ? 0 :
+        entry.kind === 'effect' ? 1 : 2;
+    }
     if (nativePerspectiveProjection(projection)) {
       renderQueue.sort(function(left, right) {
         if (orderedLayers) {
           var layerDifference = (left.layer || 0) - (right.layer || 0);
           if (layerDifference) return layerDifference;
-          var leftBackground = left.kind === 'background' || left.kind === 'vignette';
-          var rightBackground = right.kind === 'background' || right.kind === 'vignette';
-          if (leftBackground !== rightBackground) return leftBackground ? -1 : 1;
+          var rankDifference = passRank(left) - passRank(right);
+          if (rankDifference) return rankDifference;
         }
         var leftDepth = Number.isFinite(left.depth) ? left.depth : 0;
         var rightDepth = Number.isFinite(right.depth) ? right.depth : 0;
         return rightDepth - leftDepth || left.order - right.order;
       });
+    }
+    function drawEffectFrame(effect) {
+      var image = effect.image;
+      if (!image || !image.rgba) return;
+      var scale = Number.isFinite(effect.scale) ? clamp(effect.scale, 0.05, 16) : 1;
+      var geometry = modeZeroEffectGeometry(effect, projection);
+      if (geometry) scale = clamp(scale * geometry.scale, 0.05, 16);
+      var width = Math.max(1, Math.round(image.width * scale * camera.scaleX));
+      var height = Math.max(1, Math.round(image.height * scale * camera.scaleY));
+      var centerX = geometry ? geometry.screenPoint.x : (Number.isFinite(effect.x) ? effect.x : WIDTH / 2);
+      var centerY = geometry ? geometry.screenPoint.y : (Number.isFinite(effect.y) ? effect.y : HEIGHT / 2);
+      var center = transformStagePoint({ x: centerX, y: centerY }, camera);
+      var anchorX = Number.isFinite(effect.anchorX)
+        ? effect.anchorX * scale * camera.scaleX : width / 2;
+      var anchorY = Number.isFinite(effect.anchorY)
+        ? effect.anchorY * scale * camera.scaleY : height / 2;
+      blitScaledRotated(output, image, center.x, center.y, width, height,
+        anchorX, anchorY, effect.rotationDegrees);
     }
     renderQueue.forEach(function(renderEntry) {
       if (renderEntry.kind === 'background') {
@@ -1448,6 +1527,10 @@ window.OB64 = window.OB64 || {};
       }
       if (renderEntry.kind === 'vignette') {
         renderedSceneVignette = drawCurrentVignette();
+        return;
+      }
+      if (renderEntry.kind === 'effect') {
+        drawEffectFrame(renderEntry.entry);
         return;
       }
       if (renderEntry.kind === 'stage-prop') {
@@ -1502,20 +1585,7 @@ window.OB64 = window.OB64 || {};
     });
     renderOrthographicStageProps(output, scenePropFrames, 'near', backgroundCamera);
     (options.effectFrames || []).forEach(function(effect) {
-      var image = effect.image;
-      if (!image || !image.rgba) return;
-      var scale = Number.isFinite(effect.scale) ? clamp(effect.scale, 0.05, 16) : 1;
-      var width = Math.max(1, Math.round(image.width * scale * camera.scaleX));
-      var height = Math.max(1, Math.round(image.height * scale * camera.scaleY));
-      var centerX = Number.isFinite(effect.x) ? effect.x : WIDTH / 2;
-      var centerY = Number.isFinite(effect.y) ? effect.y : HEIGHT / 2;
-      var center = transformStagePoint({ x: centerX, y: centerY }, camera);
-      var anchorX = Number.isFinite(effect.anchorX)
-        ? effect.anchorX * scale * camera.scaleX : width / 2;
-      var anchorY = Number.isFinite(effect.anchorY)
-        ? effect.anchorY * scale * camera.scaleY : height / 2;
-      blitScaledRotated(output, image, center.x, center.y, width, height,
-        anchorX, anchorY, effect.rotationDegrees);
+      if (queuedEffects.indexOf(effect) < 0) drawEffectFrame(effect);
     });
     if (!orderedVignette) renderedSceneVignette = drawCurrentVignette();
     renderBackgrounds(output, backgrounds, backgroundProjection, projection,
@@ -1593,6 +1663,7 @@ window.OB64 = window.OB64 || {};
     untransformStagePoint: untransformStagePoint,
     movementPaths: movementPaths,
     renderFrame: renderFrame,
+    modeZeroEffectGeometry: modeZeroEffectGeometry,
     drawIris:drawIris,
     hitTest: hitTest,
     paintCanvas: paintCanvas,

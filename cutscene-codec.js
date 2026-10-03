@@ -333,6 +333,11 @@ window.OB64 = window.OB64 || {};
   function dynamicDirectorDefinitions(scene, decodedBytes) {
     var source = scene && scene.source;
     if (!source || source.dynamicGrammar !== true) return source && source.nodes || [];
+    // A loaded retail scene keeps its tiled nodes and authoring policies.
+    if (source.runtimeTiled === true && Array.isArray(source.nodes) && source.nodes.length &&
+        source.decodedLength === decodedBytes.length) {
+      return source.nodes;
+    }
     var grammar = OB64.cutsceneData && OB64.cutsceneData.directorGrammar;
     if (!Array.isArray(grammar) || !grammar.length) {
       fail('The retail Director grammar is not loaded.', 'module-order');
@@ -399,18 +404,155 @@ window.OB64 = window.OB64 || {};
     return definitions;
   }
 
+  var AUTHORING_POLICIES = {
+    0x14: 'typed-place', 0x03: 'typed-state', 0x07: 'typed-move',
+    0x2C: 'typed-projection-transform', 0x48: 'typed-actor-opacity'
+  };
+
+  // Typed edit policies and safe insertion points for retail-grammar streams.
+  // Authored commands may only enter a stream in front of a composite (a bare
+  // command, a complete registered wait, a query envelope, or a dialogue
+  // handshake), never between the arm, gate, and reset of one, and never in
+  // front of the stream's first setup command.
+  function applyAuthoringPolicies(scene, definitions, decodedBytes) {
+    definitions.forEach(function(definition) {
+      definition.editPolicy = AUTHORING_POLICIES[definition.opcodeU32] || 'preserve-native';
+      definition.insertBefore = false;
+    });
+    var probe = Object.assign({}, scene, { source: Object.assign({}, scene.source, {
+      nodes: definitions, dynamicGrammar: false, decodedLength: decodedBytes.length,
+      decodedWordCount: decodedBytes.length / 4, registeredWaits: [],
+      reparsedForAuthoring: true
+    }) });
+    var program = createIr(probe, decodedBytes, definitions).program;
+    // Barriers, bridges, and labels are scan targets for failed conditions and
+    // cursor jumps, so nothing is inserted in front of them.
+    definitions.forEach(function(definition, index) {
+      var composite = program.compositeById[program.compositeByNodeId[definition.id]];
+      definition.insertBefore = index > 0 && !!composite &&
+        composite.nodeIds[0] === definition.id &&
+        (definition.nodeType === 'command' ||
+          definition.name === 'registered_counter_arm' || definition.name === 'handoff_marker' ||
+          definition.opcodeU32 === 0x80000001);
+    });
+    // An authored scene keeps its class-5 setup (scene group and both cameras,
+    // words 0..17) ahead of every Actor, and it accepts new commands in front of
+    // its native exit (0x7D), which a barrier and a bridge follow.
+    // In new and wiped scenes, a jump that ends a choice branch (0x59 directly
+    // followed by a label) accepts commands in front of it: they run in that
+    // branch before it rejoins.
+    if (scene && (scene.authored || scene.wiped)) {
+      definitions.forEach(function(definition, index) {
+        var next = definitions[index + 1];
+        if (definition.opcodeU32 === 0x59 && definition.wordCount === 2 && next && next.opcodeU32 === 0x80000005) {
+          definition.insertBefore = true;
+          definition.choiceBranchEnd = true;
+        }
+      });
+    }
+    if (scene && scene.authored) {
+      definitions.forEach(function(definition) {
+        // A native 0x1B fade in a new scene is a typed Fade card (retail
+        // scenes keep their display-only projection).
+        if (definition.opcodeU32 === 0x1B && definition.wordCount === 7) definition.editPolicy = 'typed-fade';
+        if (definition.startWord < 18) {
+          definition.insertBefore = false;
+          definition.insertionWithheld = 'authored-setup';
+        } else if (definition.opcodeU32 === 0x7D) {
+          definition.insertBefore = true;
+        }
+      });
+    }
+    // A wiped retail scene keeps its leading records (and camera pair) ahead of
+    // everything, and takes new commands in front of its parsed exit (7D or 39).
+    if (scene && scene.wiped) {
+      definitions.forEach(function(definition) {
+        if (definition.opcodeU32 === 0x1B && definition.wordCount === 7) definition.editPolicy = 'typed-fade';
+        if (definition.startWord < scene.wiped.setupWordCount) {
+          definition.insertBefore = false;
+          definition.insertionWithheld = 'wiped-setup';
+        } else if (definition.startWord === scene.wiped.exitStartWord &&
+            (definition.opcodeU32 === 0x7D || definition.opcodeU32 === 0x39)) {
+          definition.insertBefore = true;
+        }
+      });
+    }
+    return withholdBeforeFirstCondition(definitions);
+  }
+
+  // A failing native condition scans forward to the next bridge and needs a
+  // barrier in between; with none, the scanner returns -1 and the parser
+  // restarts the stream from word 0 in the same call (scanner z64 0x2862FC,
+  // caller 0x286174; live capture 2026-09-26, opening ceremony: an inserted
+  // dialogue handshake followed by the retail barrier-less first wait re-ran the
+  // block and re-created its window until the dialogue pool ran out). A stream's
+  // first condition, a segment's first condition, and the terminator have no
+  // barrier ahead of the next bridge, so nothing is inserted in front of them.
+  function withholdBeforeFirstCondition(definitions) {
+    definitions.forEach(function(definition, index) {
+      if (!definition.insertBefore) return;
+      var barrier = false;
+      var bridge = -1;
+      for (var cursor = index; cursor < definitions.length; cursor++) {
+        var opcode = definitions[cursor].opcodeU32;
+        if (opcode === 0x80000002) barrier = true;
+        if (opcode === 0x80000000) { bridge = cursor; break; }
+      }
+      if (bridge < 0 || !barrier) {
+        definition.insertBefore = false;
+        definition.insertionWithheld = bridge < 0 ? 'no-bridge-ahead' : 'next-condition-barrier-less';
+      }
+    });
+    return definitions;
+  }
+
   // Reparse edited streams with the same complete retail grammar. Source identity
   // stays on the native entry; physical offsets and typed boundaries are current.
   function sceneForBytes(scene, decodedBytes) {
     var next = Object.assign({}, scene, {source:Object.assign({},scene.source,{
       dynamicGrammar:true,decodedLength:decodedBytes.length,decodedWordCount:decodedBytes.length/4,
-      runtimeNodeCount:null, registeredWaits:[], corpusRegisteredWaitCount:0, reparsedForAuthoring:true
+      runtimeNodeCount:null, registeredWaits:[], corpusRegisteredWaitCount:0, reparsedForAuthoring:true,
+      runtimeTiled:false, nodes:[]
     })});
-    var defs=dynamicDirectorDefinitions(next,decodedBytes);
-    var policies={20:'typed-place',3:'typed-state',7:'typed-move',44:'typed-projection-transform',72:'typed-actor-opacity'};
-    defs.forEach(function(d){d.editPolicy=policies[d.opcodeU32]||'preserve-native';d.insertBefore=d.opcodeU32===0x80000001;});
+    var defs=applyAuthoringPolicies(next,dynamicDirectorDefinitions(next,decodedBytes),decodedBytes);
     next.source.nodes=defs;next.source.dynamicGrammar=false;
     return next;
+  }
+
+  // Authored scenes have no retail payload. The editor supplies their decoded
+  // stream (a validated scaffold, or an arena record on reopen), and it is tiled
+  // exactly as loadSceneSource tiles a scene adapted by sceneForBytes.
+  function authoredSceneSource(scene, decodedInput, options) {
+    options = options || {};
+    var decoded;
+    try {
+      decoded = bytes(decodedInput, 'Authored Director stream');
+      if (!scene || !(scene.authored || scene.wiped) || !decoded.length || decoded.length % 4 || decoded.length > 65536) {
+        fail('An authored Director stream must be a nonempty whole-word stream of at most 64 KiB.', 'authored-source');
+      }
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    return hashWith(decoded, options.hashBytes).then(function(hash) {
+      var nodeDefinitions = dynamicDirectorDefinitions(scene, decoded);
+      if (!scene.source.firstConditionWithheld) {
+        withholdBeforeFirstCondition(nodeDefinitions);
+        scene.source = Object.assign({}, scene.source, { firstConditionWithheld: true });
+      }
+      return {
+        scene: scene,
+        // The loaded ROM, when given, lets native dialogue windows project as
+        // editable lines (their text lives in the ROM's shared archives).
+        rom: options.rom || null,
+        payload: null,
+        authored: !!scene.authored,
+        wiped: !!scene.wiped,
+        decodedBytes: decoded,
+        decodedSha256: hash,
+        consumedEncodedBytes: 0,
+        nodeDefinitions: nodeDefinitions
+      };
+    });
   }
 
   function loadSceneSource(z64Input, scene, options) {
@@ -422,7 +564,7 @@ window.OB64 = window.OB64 || {};
       if(offsets.some(function(at){return readU32(z64,at)!==key;}))fail('Scene aliases point to different resources.','selector-owner-preimage');
       if(key!==directorKey(scene.directorKey)){
         var descriptor=0x27af000,count=readU32(z64,descriptor+8),owned=false;
-        if(readU32(z64,descriptor)!==0x4f424353||readU32(z64,descriptor+4)!==1||count>144)fail('Scene relocation has no supported ownership descriptor.','selector-owner-preimage');
+        if(readU32(z64,descriptor)!==0x4f424353||[1,2].indexOf(readU32(z64,descriptor+4))<0||count>144)fail('Scene relocation has no supported ownership descriptor.','selector-owner-preimage');
         for(var r=0;r<count;r++){var at=descriptor+0x40+r*28;if(readU32(z64,at)===directorKey(scene.directorKey)&&readU32(z64,at+4)===key&&readU32(z64,at+8)===key+0x594280)owned=true;}
         var entry=key+0x594280,size=readU32(z64,entry);
         if(!owned||entry<0x2780000||entry+4+size>descriptor||size<1)fail('Scene relocation exceeds its owned arena.','source-range');
@@ -474,6 +616,19 @@ window.OB64 = window.OB64 || {};
           expectedSha256: expectedHash, actualSha256: hash
         });
       }
+      var nodeDefinitions = dynamicDirectorDefinitions(scene, decoded.bytes);
+      if (source.dynamicGrammar !== true && !source.firstConditionWithheld) {
+        withholdBeforeFirstCondition(nodeDefinitions);
+        scene.source = source = Object.assign({}, source, { firstConditionWithheld: true });
+      }
+      if (source.dynamicGrammar === true) {
+        // Retail-grammar scenes adopt their tiled nodes with authoring policies so
+        // every Director scene exposes typed edits and safe insertion points.
+        applyAuthoringPolicies(scene, nodeDefinitions, decoded.bytes);
+        scene.source = source = Object.assign({}, source, {
+          nodes: nodeDefinitions, runtimeTiled: true, reparsedForAuthoring: true
+        });
+      }
       return {
         scene: scene,
         rom: z64,
@@ -481,7 +636,7 @@ window.OB64 = window.OB64 || {};
         decodedBytes: decoded.bytes,
         decodedSha256: hash,
         consumedEncodedBytes: decoded.consumed,
-        nodeDefinitions: dynamicDirectorDefinitions(scene, decoded.bytes)
+        nodeDefinitions: nodeDefinitions
       };
     });
   }
@@ -731,6 +886,7 @@ window.OB64 = window.OB64 || {};
         endWord: node.definition.endWord,
         editPolicy: node.definition.editPolicy,
         insertBefore: node.definition.insertBefore === true,
+        insertionWithheld: node.definition.insertionWithheld || null,
         semanticName: node.definition.name,
         semanticSummary: node.definition.semanticSummary,
         confidence: node.definition.confidence,
@@ -767,7 +923,11 @@ window.OB64 = window.OB64 || {};
     return 'cutscene-pose:' + act.bank + ':' + act.key + ':' + act.facing;
   }
 
-  function backgroundGroupLayers(entry, catalog, capability) {
+  var ENVIRONMENT_TABLE_ID = 'background-table:mode2-environment:80';
+
+  // One ordered layer list per selectable table row. Projection, the picker
+  // and export validation all build layers here, so they cannot drift.
+  function backgroundGroupLayers(entry, catalog, capability, sourceKind) {
     if (!entry || !Array.isArray(entry.archiveAssetIds)) return [];
     var members = Array.isArray(entry.members) && entry.members.length === entry.archiveAssetIds.length
       ? entry.members : entry.archiveAssetIds.map(function(assetId, index) {
@@ -776,7 +936,7 @@ window.OB64 = window.OB64 || {};
     return members.map(function(member, index) {
       var assetId = member.assetId;
       var asset = catalog && catalog.getImageAsset ? catalog.getImageAsset(assetId) : null;
-      var role = index === 0 ? 'environment-base' : 'ordered-layer';
+      var role = member.role || (index === 0 ? 'environment-base' : 'ordered-layer');
       return {
         id: role === 'environment-base' ? 'background:base' : 'background:layer:' + index,
         assetId: assetId,
@@ -786,7 +946,7 @@ window.OB64 = window.OB64 || {};
         role: role,
         capability: capability,
         source: {
-          sourceKind: 'native-scene-group',
+          sourceKind: sourceKind || 'native-scene-group',
           selector: entry.selector,
           groupResourceKey: entry.groupResourceKey,
           traversalOrdinal: member.ordinal,
@@ -794,6 +954,76 @@ window.OB64 = window.OB64 || {};
         }
       };
     });
+  }
+
+  // Mode-two environment rows as selectable groups. The launch pre-scan copies
+  // the Director operand into the environment selector, and the initializer
+  // copies it again into the foreground selector, so one operand picks both.
+  function environmentBackgroundGroups(catalog) {
+    var table = catalog && catalog.getBackgroundSelectorTable
+      ? catalog.getBackgroundSelectorTable(ENVIRONMENT_TABLE_ID) : null;
+    if (!table) return [];
+    return table.entries.filter(function(entry) {
+      return Array.isArray(entry.stageLayers) && entry.stageLayers.length;
+    }).map(function(entry) {
+      // The same selector picks the foreground (occlusion) pieces, drawn over
+      // the Actors; the catalog places them at depth 2 + index.
+      var front = catalog.getBackgroundSelectorEntry('background-table:mode2-overlay:80', entry.selector);
+      var members = entry.stageLayers.map(function(layer, index) {
+        return { ordinal: index, assetId: layer.assetId, role: layer.role || null };
+      }).concat((front && front.archiveAssetIds || []).map(function(assetId, index) {
+        return { ordinal: 2 + index, assetId: assetId, role: 'foreground-mask' };
+      }));
+      return {
+        selector: entry.selector,
+        groupResourceKey: entry.resourceKey,
+        archiveAssetIds: members.map(function(member) { return member.assetId; }),
+        members: members,
+        associationStatus: entry.associationStatus
+      };
+    });
+  }
+
+  function terminalClassOf(ir) {
+    var last = ir && ir.nodes.length ? ir.nodes[ir.nodes.length - 1].rawWords : null;
+    var word = last && last.length ? unsigned(last[last.length - 1]) : 0;
+    return (word >>> 24) === 0xFF ? word & 0xFF : null;
+  }
+
+  // Classes 1 and 8 build a fresh mode-two Stage from the launch pre-scan of
+  // the first command. Classes 2 and 7 keep their caller's Stage, and a
+  // missing or derived (-1) operand inherits or derives it, so none of those
+  // routes can take a selection.
+  function environmentRouteEditable(scene, node, act, ir) {
+    var mode = scene.launchProfile && scene.launchProfile.directorMode;
+    var start = node.startWord != null ? node.startWord : node.definition && node.definition.startWord;
+    var request = scene.launchProfile && scene.launchProfile.background.requests.find(function(candidate) {
+      return candidate.wordStart === start;
+    });
+    var commands = ir.nodes.filter(function(candidate) {
+      return unsigned(candidate.rawWords[0]) === 0x80000006;
+    });
+    var terminalClass = terminalClassOf(ir);
+    return scene.engine === 'director' && unsigned(node.rawWords[0]) === 0x80000006 && node.rawWords.length === 2 &&
+      !!mode && mode.value === 2 && (terminalClass === 1 || terminalClass === 8) &&
+      start === 0 && commands.length === 1 && act.selector >= 0 && act.selector < 80 &&
+      !!request && request.selectorTableId === ENVIRONMENT_TABLE_ID &&
+      Number.isInteger(request.commandOperand) && request.commandOperand >= 0;
+  }
+
+  // Classes 4 and 5 start a fresh room from one initial scene-group command
+  // (the first or second record, after an optional 0x80000007), the same
+  // contract ROM startup applies. func_00067FA8 preloads that group's first
+  // member before the Director runs, and the parser materializes the rest.
+  function sceneGroupRouteEditable(scene, node, act, ir) {
+    var mode = scene.launchProfile && scene.launchProfile.directorMode;
+    var commands = ir.nodes.filter(function(candidate) {
+      return unsigned(candidate.rawWords[0]) === 0x80000006;
+    });
+    var terminalClass = terminalClassOf(ir);
+    return scene.engine === 'director' && unsigned(node.rawWords[0]) === 0x80000006 && node.rawWords.length === 2 &&
+      !!mode && mode.value === 0 && (terminalClass === 4 || terminalClass === 5) &&
+      commands.length === 1 && ir.nodes.indexOf(node) <= 1 && act.selector >= 0 && act.selector <= 30;
   }
 
   function registeredCounterTiming(ir) {
@@ -913,7 +1143,66 @@ window.OB64 = window.OB64 || {};
     });
   }
 
-  function projectSceneDocument(scene, source, catalog) {
+  // ROM-only reopen of a new or wiped scene: recognize the exact choice
+  // pattern the editor generates and restore its structure. The window's
+  // dialogue card becomes a native choice (nativeChoice) and native cards in
+  // each branch are tagged with their option (nativeChoiceBranch).
+  function recoverChoices(document, ir) {
+    var nodes = ir.nodes;
+    var clipsByNode = {};
+    document.tracks.forEach(function(track) {
+      track.clips.forEach(function(clip) {
+        var nodeId = clip.source && clip.source.nodeId;
+        if (nodeId) (clipsByNode[nodeId] = clipsByNode[nodeId] || []).push(clip);
+      });
+    });
+    function wordsOf(node) { return node ? node.rawWords.map(unsigned) : []; }
+    function matches(node, expected) {
+      var actual = wordsOf(node);
+      return actual.length === expected.length && expected.every(function(value, index) {
+        return value === null || actual[index] === value;
+      });
+    }
+    for (var index = 0; index < nodes.length; index++) {
+      var windowWords = wordsOf(nodes[index]);
+      if (windowWords[0] !== 0xBF || windowWords.length !== 14) continue;
+      var windowId = windowWords[1];
+      var head = [[0], [0x80000002], [0x80000000], [0x56], [0x25, 0, 1, 3], [0x05, windowId], [0x59, null],
+        [0x80000002], [0x25, 0, 255, 3], [0x05, windowId], [0x59, null], [0x80000002], [0x80000000]];
+      if (!head.every(function(expected, offset) { return matches(nodes[index + 1 + offset], expected); })) continue;
+      var labelA = wordsOf(nodes[index + 7])[1], labelB = wordsOf(nodes[index + 11])[1];
+      var cursor = index + 1 + head.length;
+      if (!matches(nodes[cursor], [0x80000005, labelA]) || !matches(nodes[cursor + 1], [0x10, 0, 1, windowId])) continue;
+      var startA = cursor + 2;
+      cursor = startA;
+      while (cursor < nodes.length && !(wordsOf(nodes[cursor])[0] === 0x59 && matches(nodes[cursor + 1], [0x80000005, labelB]))) cursor++;
+      if (cursor >= nodes.length || !matches(nodes[cursor + 2], [0x10, 0, 1, windowId])) continue;
+      var endA = cursor, labelJoin = wordsOf(nodes[endA])[1];
+      var startB = endA + 3;
+      cursor = startB;
+      while (cursor < nodes.length && !(matches(nodes[cursor], [0x59, labelJoin]) && matches(nodes[cursor + 1], [0x80000005, labelJoin]))) cursor++;
+      if (cursor >= nodes.length) continue;
+      var endB = cursor;
+      var choiceClip = (clipsByNode[nodes[index].id] || []).find(function(clip) { return clip.kind === 'dialogue'; });
+      if (!choiceClip) continue;
+      choiceClip.payload.nativeChoice = { windowId: windowId, labels: [labelA, labelB, labelJoin],
+        branchEndNodeIds: [nodes[endA].id, nodes[endB].id] };
+      [[startA, endA, 1], [startB, endB, 2]].forEach(function(range) {
+        for (var at = range[0]; at < range[1]; at++) {
+          (clipsByNode[nodes[at].id] || []).forEach(function(clip) {
+            if (clip !== choiceClip) clip.payload.nativeChoiceBranch = { choiceClipId: choiceClip.id, option: range[2] };
+          });
+        }
+      });
+      index = endB + 1;
+    }
+  }
+
+  // options.legacyBackground reproduces the projection from before background
+  // selection (no environment or route-derived scene-group ownership), so a
+  // Project saved then can be recognised as unchanged on import.
+  function projectSceneDocument(scene, source, catalog, options) {
+    var legacyBackground = !!(options && options.legacyBackground);
     var M = OB64.cutsceneModel;
     if (!M || !OB64.cutsceneCatalog) fail('Cutscene model and catalog modules are required.', 'module-order');
     var ir = createIr(scene, source.decodedBytes || source, source.nodeDefinitions);
@@ -965,7 +1254,15 @@ window.OB64 = window.OB64 || {};
       var counterRole = counterTiming[node.id] || null;
       if(node.rawWords[0]===0xbf && node.rawWords.length===14 && source.rom && OB64.cutsceneAuthoring){
         var dw=node.rawWords, archive=catalog.getSerifuArchiveForPresentationSelector(dw[2]);
-        if(archive){
+        // A 0x0888xxNN entry word is a launch translation-table operand: the
+        // caller substitutes the real line before the Director parses it, so it
+        // is not an entry of this archive. Keep it symbolic and byte-preserved.
+        var translatedEntry=launchTranslationIndex(dw[3]);
+        if(archive&&translatedEntry!==null){
+          track=trackFor(document,'dialogue',null,'Native dialogue');
+          clip=addClip(track,node,'dialogue',cursorFrame,90,{nativeDialogueEditable:false,sourceSystem:'serifu-launch-translated',presentationArchiveSelector:dw[2],presentationEntrySelector:null,launchTranslationIndex:translatedEntry,dialogueArchiveId:archive.archiveId,rawText:'',originalRawText:'',text:'(Line chosen by the game at launch: translation entry '+translatedEntry+')',speaker:'Launch-chosen line',nativeWords:dw.slice(),dialogueStatus:'launch translation-table operand; the caller supplies the line, so the preview cannot show its text'},M.capabilities.PREVIEW_ONLY);
+          projected.push(clip.id);
+        }else if(archive){
           var de=OB64.cutsceneAuthoring.dialogueEntry(source.rom,dw[2],dw[3]);
           track=trackFor(document,'dialogue',null,'Native dialogue');
           clip=addClip(track,node,'dialogue',cursorFrame,90,{nativeDialogueEditable:true,sourceSystem:'serifu-native',presentationArchiveSelector:dw[2],presentationEntrySelector:dw[3],dialogueArchiveId:archive.archiveId,dialogueEntryId:archive.entries[dw[3]]?archive.entries[dw[3]].entryId:archive.archiveId+':entry:'+dw[3],rawText:de.rawText,originalRawText:de.rawText,text:de.rawText,speaker:'Native dialogue',nativeWords:dw.slice()},M.capabilities.NATIVE);
@@ -1016,10 +1313,20 @@ window.OB64 = window.OB64 || {};
           ? JSON.parse(JSON.stringify(backgroundObservation.stageProjection)) : null;
         var launchDirectorMode = scene.launchProfile &&
           scene.launchProfile.directorMode || null;
-        var nativeBackgroundEditable = scene.engine === 'director' &&
+        // Both routes need the catalog tables to offer complete rows.
+        var environmentEditable = !legacyBackground && !!catalog && environmentRouteEditable(scene, node, act, ir);
+        if (environmentEditable) {
+          backgroundTable = catalog.getBackgroundSelectorTable(ENVIRONMENT_TABLE_ID);
+          backgroundEntry = environmentBackgroundGroups(catalog).find(function(group) {
+            return group.selector === act.selector;
+          }) || null;
+        }
+        var nativeBackgroundEditable = !environmentEditable && (scene.engine === 'director' &&
           node.definition.editPolicy === 'typed-background-group' &&
-          launchDirectorMode && launchDirectorMode.value === 0;
-        var nativeGroups = nativeBackgroundEditable && backgroundTable
+          launchDirectorMode && launchDirectorMode.value === 0 ||
+          !legacyBackground && !!catalog && sceneGroupRouteEditable(scene, node, act, ir));
+        var nativeGroups = environmentEditable ? environmentBackgroundGroups(catalog) :
+          nativeBackgroundEditable && backgroundTable
           ? backgroundTable.entries.filter(function(entry) {
             return Array.isArray(entry.archiveAssetIds) && entry.archiveAssetIds.length;
           }).map(function(entry) {
@@ -1038,16 +1345,16 @@ window.OB64 = window.OB64 || {};
         document.background.projection = Object.assign({}, calibratedStageProjection || {}, {
           mode: calibratedStageProjection && calibratedStageProjection.mode ||
             (document.background.assetId ? 'stage-fit' : 'unresolved'),
-          route: nativeBackgroundEditable ? 'native-scene-group' :
+          route: environmentEditable ? 'native-environment' : nativeBackgroundEditable ? 'native-scene-group' :
             (backgroundObservation && backgroundObservation.directorMode === 2
               ? 'mode-2-runtime-selector' : 'conditional-scene-group'),
           sourceNodeId: node.id,
-          selectorTableId: act.selectorTableId,
+          selectorTableId: environmentEditable ? ENVIRONMENT_TABLE_ID : act.selectorTableId,
           sourceSelector: act.selector,
-          selectedSelector: nativeBackgroundEditable ? act.selector : null,
-          selectedGroupResourceKey: nativeBackgroundEditable && backgroundEntry
+          selectedSelector: nativeBackgroundEditable || environmentEditable ? act.selector : null,
+          selectedGroupResourceKey: (nativeBackgroundEditable || environmentEditable) && backgroundEntry
             ? backgroundEntry.groupResourceKey : null,
-          nativeEditable: nativeBackgroundEditable,
+          nativeEditable: nativeBackgroundEditable || environmentEditable,
           nativeGroups: nativeGroups,
           modeStatus: backgroundObservation && Number.isInteger(backgroundObservation.directorMode)
             ? 'runtime-observed Director mode ' + backgroundObservation.directorMode
@@ -1055,11 +1362,12 @@ window.OB64 = window.OB64 || {};
               'runtime Director mode unresolved for this asset'),
           previewOverride: false
         });
-        if (nativeBackgroundEditable && backgroundEntry) {
+        if ((nativeBackgroundEditable || environmentEditable) && backgroundEntry) {
           document.background.assetId = backgroundEntry.archiveAssetIds[0] || null;
           document.background.capability = M.capabilities.NATIVE;
           document.background.layers = backgroundGroupLayers(
-            backgroundEntry, catalog, M.capabilities.NATIVE);
+            backgroundEntry, catalog, M.capabilities.NATIVE,
+            environmentEditable ? 'native-environment' : 'native-scene-group');
           document.background.projection.mode = document.background.layers.length
             ? 'stage-fit' : 'unresolved';
         }
@@ -1368,7 +1676,8 @@ window.OB64 = window.OB64 || {};
           nativeModelX: act.modelX,
           nativeModelY: act.modelY,
           stageX: 160 + act.modelX,
-          stageY: 120 + act.modelY,
+          // modelY is the y-up value the record stores; Stage rows run downward.
+          stageY: 120 - act.modelY,
           scale: act.scale,
           coordinateStatus: 'center-origin Stage preview; native model translation is exact but final viewport calibration remains unresolved',
           selectorStatus: effectSelectorResolved
@@ -1394,6 +1703,12 @@ window.OB64 = window.OB64 || {};
           semantics: 'free 0x50-byte effect record and clear its slot pointer'
         }, M.capabilities.NATIVE);
         projected.push(clip.id);
+      } else if (act && act.type === 'native-effect' && act.opcode === '0x1B' &&
+          node.definition.editPolicy === 'typed-fade' && act.operands.length === 6) {
+        track = trackFor(document, 'effect', null, 'Scene fades');
+        clip = addClip(track, node, 'fade', cursorFrame, Math.max(1, act.operands[0]), nativeFadePayload(act.operands),
+          M.capabilities.NATIVE);
+        projected.push(clip.id);
       } else if (act && act.type === 'native-effect') {
         track = trackFor(document, 'effect', null, 'Native Director effects');
         clip = addClip(track, node, 'effect', cursorFrame, 0, {
@@ -1417,6 +1732,7 @@ window.OB64 = window.OB64 || {};
     });
 
     applyReviewedTimelineOverlay(document, scene);
+    if (scene.authored || scene.wiped) recoverChoices(document, ir);
 
     var sceneEnd = Math.max(1, cursorFrame + 1);
     Object.keys(poseClipsByActor).forEach(function(actorId) {
@@ -1532,8 +1848,10 @@ window.OB64 = window.OB64 || {};
     var stageKey = axis === 'x' ? 'stageX' : 'stageY';
     var nativeKey = axis === 'x' ? 'nativeModelX' : 'nativeModelY';
     var stageCenter = axis === 'x' ? 160 : 120;
-    return Number.isFinite(payload[stageKey])
-      ? payload[stageKey] - stageCenter : payload[nativeKey];
+    if (!Number.isFinite(payload[stageKey])) return payload[nativeKey];
+    // Stage X grows rightward like the model; Stage Y runs downward while the
+    // stored model value is y-up.
+    return axis === 'x' ? payload[stageKey] - stageCenter : stageCenter - payload[stageKey];
   }
 
   function clipMatchesNativeSpriteEffect(clip, act) {
@@ -1696,19 +2014,97 @@ window.OB64 = window.OB64 || {};
       preserved(8, variant, rawOperands && rawOperands[8] & 0xFF)];
   }
 
-  function compileAuthoredNativeSpriteEffect(clip) {
+  function compileAuthoredNativeSpriteEffect(clip, waitUnit) {
     var slot = integer(clip.payload.nativeEffectSlot, 'Effect slot', 0, 29);
     var ticks = integer(clip.durationFrames, 'Effect lifetime', 1, 0x7FFFFFFF);
     return compileNativeSpriteEffect(clip, null).concat(
-      [1, 0, 0x80000002, 0x80000000, 0x0E, 0, ticks, 2],
+      waitUnit ? waitUnit(ticks) : [1, 0, 0x80000002, 0x80000000, 0x0E, 0, ticks, 2],
       [0x66, slot]);
   }
 
-  function compileAuthoredDialogue(clip, ir) {
+  // Registered-counter spans: from an arm to its reset, gates compare the one
+  // shared counter against absolute targets. A wait inserted inside a span must
+  // not re-arm or reset that counter, or later gates never pass. Instead it
+  // becomes a bare gate at the running target, and later gates shift by the
+  // same amount. Outside a span a wait is the complete arm/gate/reset unit.
+  var COUNTER_QUERIES = ['registered_counter_query', 'a_button_skippable_registered_wait_query'];
+
+  function counterSpanContext(ir) {
+    var context = {};
+    var armed = false;
+    var spanId = null;
+    var lastTarget = 0;
+    var compareOp = 0;
+    ir.nodes.forEach(function(node) {
+      var name = node.definition.name;
+      if (name === 'registered_counter_arm') {
+        armed = true; spanId = node.id; lastTarget = 0; compareOp = 0;
+        context[node.id] = { armed: false, spanId: null };
+        return;
+      }
+      context[node.id] = { armed: armed, spanId: spanId, lastTarget: lastTarget, compareOp: compareOp };
+      if (armed && COUNTER_QUERIES.indexOf(name) !== -1 && node.rawWords.length >= 3) {
+        compareOp = signed(node.rawWords[1]);
+        lastTarget = signed(node.rawWords[2]);
+      }
+      if (name === 'registered_counter_reset') { armed = false; spanId = null; }
+    });
+    return context;
+  }
+
+  // Full-screen color overlay fade (opcode 0x1B): duration in Director updates,
+  // overlay RGB, starting alpha (-1 keeps the current overlay alpha), target alpha.
+  // Authored card kinds whose native command starts an asynchronous job and
+  // hands over at once.
+  var ASYNC_CARD_KINDS = ['movement', 'camera', 'fade'];
+  // Updates a job needs beyond its duration before its last change is visible.
+  // Measured in the native runtime model: a Move reaches its target and a
+  // projection transition completes within their duration; a 0x1B fade applies
+  // its final alpha one update after its duration.
+  function completionExtraUpdates(kind) { return kind === 'fade' ? 1 : 0; }
+
+  // Card payload for a native 0x1B [duration, red, green, blue, startAlpha,
+  // targetAlpha]; startAlpha -1 continues from the current overlay.
+  function nativeFadePayload(operands) {
+    var start = operands[4] === -1 ? null : operands[4];
+    var direction = 'custom';
+    if (operands[1] === 0 && operands[2] === 0 && operands[3] === 0) {
+      if (operands[5] === 255 && start === null) direction = 'to-black';
+      else if (operands[5] === 0 && start === 255) direction = 'from-black';
+    } else if (operands[1] === 255 && operands[2] === 255 && operands[3] === 255) {
+      if (operands[5] === 255 && start === null) direction = 'to-white';
+      else if (operands[5] === 0 && start === 255) direction = 'from-white';
+    }
+    return { direction: direction, red: operands[1], green: operands[2], blue: operands[3],
+      startAlpha: start, targetAlpha: operands[5], nativeOpcode: '0x1B',
+      timingStatus: 'native fade update count' };
+  }
+
+  function compileFade(clip) {
     var payload = clip.payload || {};
-    if (payload.nativeDialogueAuthored !== true ||
-        payload.sourceSystem !== 'serifu-authored-native') {
-      fail('This dialogue clip has no native Director command adapter.', 'dialogue-source');
+    var start = payload.startAlpha == null ? -1
+      : integer(payload.startAlpha, 'Fade starting alpha', 0, 255);
+    return [0x1B, integer(clip.durationFrames, 'Fade duration', 1, 0xFFFF),
+      integer(payload.red, 'Fade red', 0, 255),
+      integer(payload.green, 'Fade green', 0, 255),
+      integer(payload.blue, 'Fade blue', 0, 255),
+      start, integer(payload.targetAlpha, 'Fade target alpha', 0, 255)];
+  }
+
+  // A dialogue window that needs no template in the scene: fixed placement
+  // (mode 1) at X 7, Y 160, width 192, pointer edge 1, transparent portrait
+  // (class 0), on presentation archive selector 5 (retail archive 163).
+  // Verified in native-mode preview by Astra (messages 282 and 305).
+  // Words 1..4 and 11 are filled per line.
+  var DIALOGUE_WINDOW_RECIPES = Object.freeze({
+    'fixed-placement': Object.freeze([0xBF, 0, 5, 0, 0, 7, 160, 192, 1, 0, 1, 0, 0, 1])
+  });
+
+  function dialogueWindowTemplate(payload, ir) {
+    if (payload.nativeWindow != null) {
+      var recipe = DIALOGUE_WINDOW_RECIPES[payload.nativeWindow];
+      if (!recipe) fail('New dialogue names an unknown window recipe.', 'dialogue-template');
+      return { rawWords: recipe.slice() };
     }
     var template = ir.nodes.find(function(node) {
       return node.id === payload.nativeTemplateNodeId;
@@ -1717,6 +2113,16 @@ window.OB64 = window.OB64 || {};
         unsigned(template.rawWords[0]) !== 0xBF) {
       fail('New dialogue lost its native window template.', 'dialogue-template');
     }
+    return template;
+  }
+
+  function compileAuthoredDialogue(clip, ir, waitUnit) {
+    var payload = clip.payload || {};
+    if (payload.nativeDialogueAuthored !== true ||
+        payload.sourceSystem !== 'serifu-authored-native') {
+      fail('This dialogue clip has no native Director command adapter.', 'dialogue-source');
+    }
+    var template = dialogueWindowTemplate(payload, ir);
     var windowId = integer(payload.windowId, 'Dialogue window ID', 0, 255);
     var selector = integer(payload.presentationArchiveSelector,
       'Dialogue archive selector', 0, 502);
@@ -1731,7 +2137,19 @@ window.OB64 = window.OB64 || {};
     words[1] = windowId;
     words[2] = selector;
     words[3] = entry;
-    var result = delay ? [1, 0, 0x80000002, 0x80000000, 0x0E, 0, delay, 2] : [];
+    // Bind the box to its speaking Actor. Operand 10 is a class ID into the
+    // portrait route table; -1 resolves the owner Actor's own portrait and 0
+    // (class None) draws a transparent portrait area.
+    if (payload.ownerSlot != null) {
+      words[4] = integer(payload.ownerSlot, 'Dialogue owner Actor slot', 0, 27);
+    }
+    if (payload.portrait === 'actor') words[11] = 0xFFFFFFFF;
+    else if (payload.portrait === 'none') words[11] = 0;
+    else if (payload.portrait != null) {
+      words[11] = integer(payload.portrait, 'Dialogue portrait class', 0, 255);
+    }
+    var result = delay ? (waitUnit ? waitUnit(delay)
+      : [1, 0, 0x80000002, 0x80000000, 0x0E, 0, delay, 2]) : [];
     return result.concat(words, [0, 0x80000002, 0x80000000, 0x10, 0, 2, windowId,
       0x06, windowId, 0x05, windowId]);
   }
@@ -1763,8 +2181,11 @@ window.OB64 = window.OB64 || {};
 
   function compileBackgroundGroup(background, rawWords) {
     var projection = background && background.projection || {};
-    var selector = integer(projection.selectedSelector,
-      'Scene background group', 0, 30);
+    // Class 4/5 loaders index the 31-row group table without a bounds check,
+    // so a selector outside 0..30 (including -1) must never be written.
+    var selector = projection.route === 'native-environment'
+      ? integer(projection.selectedSelector, 'Scene environment', 0, 79)
+      : integer(projection.selectedSelector, 'Scene background group', 0, 30);
     return [unsigned(rawWords[0]), selector];
   }
 
@@ -1778,6 +2199,11 @@ window.OB64 = window.OB64 || {};
         'audio-block-request');
     }
     return [unsigned(rawWords[0]), signed(rawWords[1]), signed(rawWords[2]), requestValue];
+  }
+
+  function authoredSequence(clip) {
+    var value = clip.source && clip.source.sequence;
+    return Number.isInteger(value) ? value : Number.MAX_SAFE_INTEGER;
   }
 
   function allClips(document) {
@@ -1800,6 +2226,18 @@ window.OB64 = window.OB64 || {};
     }
     var ir = createIr(scene, source.decodedBytes || source, source.nodeDefinitions);
     var counterTiming = registeredCounterTiming(ir);
+    var counterSpans = counterSpanContext(ir);
+    var spanShift = {};
+    function waitUnitBefore(nodeId) {
+      var span = counterSpans[nodeId];
+      return function(ticks) {
+        ticks = integer(ticks, 'Hold duration', 1, 0x7FFFFFFF);
+        if (!span || !span.armed) return [1, 0, 0x80000002, 0x80000000, 0x0E, 0, ticks, 2];
+        var shifted = (spanShift[span.spanId] || 0) + ticks;
+        spanShift[span.spanId] = shifted;
+        return [0, 0x80000002, 0x80000000, 0x0E, span.compareOp, span.lastTarget + shifted];
+      };
+    }
     var nativeByNode = {};
     document.native.commands.forEach(function(command) {
       if (command.source && command.source.nodeId) nativeByNode[command.source.nodeId] = command;
@@ -1818,6 +2256,9 @@ window.OB64 = window.OB64 || {};
     });
     var changes = [];
     var outputWords = [];
+    // Output word index of every retained native node, so callers can find a
+    // card's command in the reparsed stream and its runtime tick.
+    var nodeStartWords = {};
 
     function appendAuthoredBefore(nodeId) {
       document.actors.filter(function(actor) {
@@ -1827,28 +2268,95 @@ window.OB64 = window.OB64 || {};
         return left.slot - right.slot || left.id.localeCompare(right.id);
       }).forEach(function(actor) {
         var words = compilePlace(actor, null);
-        outputWords.push.apply(outputWords, words);
         changes.push({ operation: 'insert', actorId: actor.id, beforeNodeId: nodeId,
-          kind: 'place' });
+          kind: 'place', startWord: outputWords.length });
+        outputWords.push.apply(outputWords, words);
+        // Per-slot presentation that the scene applies to its own cast
+        // (0x1C transform channel, 0x1D uniform scale), for Actors added later.
+        var presentation = actor.source.presentation;
+        if (presentation && Number.isInteger(presentation.transformChannel)) {
+          outputWords.push(0x1C, integer(actor.slot, 'Actor slot', 0, 27),
+            integer(presentation.transformChannel, 'Transform channel', 0, 19));
+        }
+        if (presentation && Number.isInteger(presentation.uniformScalePercent)) {
+          outputWords.push(0x1D, integer(actor.slot, 'Actor slot', 0, 27),
+            integer(presentation.uniformScalePercent, 'Actor scale', 1, 400));
+        }
       });
-      clipRows.filter(function(row) {
+      var orderedRows = clipRows.filter(function(row) {
         return !row.clip.source.nodeId && row.clip.source.insertBeforeNodeId === nodeId;
       }).sort(function(left, right) {
-        return left.clip.startFrame - right.clip.startFrame || left.clip.id.localeCompare(right.clip.id);
-      }).forEach(function(row) {
+        // Start order, then the explicit sequence assigned by card reordering,
+        // then the id so unsequenced documents keep their historical order.
+        return left.clip.startFrame - right.clip.startFrame ||
+          authoredSequence(left.clip) - authoredSequence(right.clip) ||
+          left.clip.id.localeCompare(right.clip.id);
+      });
+      // Cards tagged to a choice branch are compiled inside that choice.
+      var branchOf = {};
+      orderedRows.forEach(function(row) {
+        var tag = row.clip.payload && row.clip.payload.choiceBranch;
+        if (!tag) return;
+        var owner = orderedRows.find(function(candidate) { return candidate.clip.id === tag.choiceClipId; });
+        if (!owner || !(owner.clip.payload && owner.clip.payload.choice) || orderedRows.indexOf(owner) > orderedRows.indexOf(row) ||
+            (tag.option !== 1 && tag.option !== 2)) {
+          fail('A choice branch action must follow its choice at the same place.', 'choice-branch', { clipId: row.clip.id });
+        }
+        branchOf[row.clip.id] = tag;
+      });
+      orderedRows.forEach(function(row) {
+        if (branchOf[row.clip.id]) return;
+        if (row.clip.payload && row.clip.payload.choice) {
+          emitChoice(row, orderedRows.filter(function(candidate) {
+            return branchOf[candidate.clip.id] && branchOf[candidate.clip.id].choiceClipId === row.clip.id;
+          }));
+          return;
+        }
+        changes.push({ operation: 'insert', clipId: row.clip.id, beforeNodeId: nodeId,
+          kind: row.clip.kind, startWord: outputWords.length });
+        outputWords.push.apply(outputWords, rowWords(row));
+      });
+
+      // A native A/B choice (Astra messages 293 and 305): the window, then two
+      // control-byte queries that close it and jump to a labeled branch, each
+      // branch waiting for the window's release, and one join label.
+      function emitChoice(row, branchRows) {
+        var windowId = integer(row.clip.payload.windowId, 'Dialogue window ID', 0, 255);
+        var open = compileAuthoredDialogue(row.clip, ir, waitUnitBefore(nodeId));
+        open = open.slice(0, open.length - 11);
+        var labelA = nextLabel(), labelB = nextLabel(), labelJoin = nextLabel();
+        changes.push({ operation: 'insert', clipId: row.clip.id, beforeNodeId: nodeId,
+          kind: row.clip.kind, startWord: outputWords.length });
+        outputWords.push.apply(outputWords, open.concat([0, 0x80000002, 0x80000000, 0x56,
+          0x25, 0, 1, 3, 0x05, windowId, 0x59, labelA, 0x80000002,
+          0x25, 0, 255, 3, 0x05, windowId, 0x59, labelB, 0x80000002, 0x80000000]));
+        [[1, labelA], [2, labelB]].forEach(function(branch) {
+          outputWords.push(0x80000005, branch[1], 0x10, 0, 1, windowId);
+          branchRows.filter(function(candidate) { return branchOf[candidate.clip.id].option === branch[0]; }).forEach(function(inner) {
+            changes.push({ operation: 'insert', clipId: inner.clip.id, beforeNodeId: nodeId,
+              kind: inner.clip.kind, startWord: outputWords.length, choiceBranch: branch[0] });
+            outputWords.push.apply(outputWords, rowWords(inner));
+          });
+          outputWords.push(0x59, labelJoin);
+        });
+        outputWords.push(0x80000005, labelJoin);
+      }
+
+      function rowWords(row) {
         var words;
         var authoredActor = row.track.actorId == null ? null :
           document.actors.find(function(actor) { return actor.id === row.track.actorId; });
         var authoredSlot = authoredActor ? authoredActor.slot : null;
+        var waitUnit = waitUnitBefore(nodeId);
         if (row.clip.kind === 'pose') words = compileState(row.clip, authoredSlot);
         else if (row.clip.kind === 'movement') words = compileMove(row.clip, authoredSlot);
-        else if (row.clip.kind === 'wait') words = [1, 0, 0x80000002, 0x80000000, 0x0E, 0,
-          integer(row.clip.durationFrames, 'Hold duration', 1, 0x7FFFFFFF), 2];
-        else if (row.clip.kind === 'dialogue') words = compileAuthoredDialogue(row.clip, ir);
+        else if (row.clip.kind === 'wait') words = waitUnit(row.clip.durationFrames);
+        else if (row.clip.kind === 'dialogue') words = compileAuthoredDialogue(row.clip, ir, waitUnit);
         else if (row.clip.kind === 'camera') words = compileCamera(row.clip, null);
+        else if (row.clip.kind === 'fade') words = compileFade(row.clip);
         else if (row.clip.kind === 'effect' &&
             row.clip.payload.sourceSystem === 'cutscene-sprite-native') {
-          words = compileAuthoredNativeSpriteEffect(row.clip);
+          words = compileAuthoredNativeSpriteEffect(row.clip, waitUnit);
         }
         else if (row.clip.kind === 'opacity') words = compileActorByte(
           0x48, row.clip, authoredSlot, 'opacityByte', 'Actor opacity', null);
@@ -1856,13 +2364,39 @@ window.OB64 = window.OB64 || {};
         else if (row.clip.kind === 'exit') words = [0x13,
           integer(authoredSlot, 'Actor slot', 0, 255)];
         else fail('This authored clip has no native Director command adapter.', 'unsupported-clip');
-        outputWords.push.apply(outputWords, words);
-        changes.push({ operation: 'insert', clipId: row.clip.id, beforeNodeId: nodeId, kind: row.clip.kind });
-      });
+        // Move, Camera pan and Fade start and return at once. With "wait until
+        // it finishes" the next action starts only after their duration.
+        if (row.clip.payload && row.clip.payload.waitForCompletion === true &&
+            ASYNC_CARD_KINDS.indexOf(row.clip.kind) >= 0) {
+          if (row.clip.kind === 'movement' && Number.isInteger(authoredSlot)) {
+            // The retail form (1,037 uses): marker, barrier, bridge, then the
+            // 0x11 movement query until this slot's motion countdown is zero.
+            // It waits for arrival however far the Actor actually walks.
+            words = words.concat([0, 0x80000002, 0x80000000, 0x11, 0, 0, authoredSlot]);
+          } else {
+            words = words.concat(waitUnit(row.clip.durationFrames + completionExtraUpdates(row.clip.kind)));
+          }
+        }
+        return words;
+      }
+    }
+
+    // Choice labels are unique in the stream: start at 0x7000 and skip every
+    // label ID the source already uses.
+    var usedLabels = {};
+    ir.nodes.forEach(function(node) {
+      if (unsigned(node.rawWords[0]) === 0x80000005 && node.rawWords.length > 1) usedLabels[unsigned(node.rawWords[1])] = true;
+    });
+    var labelCursor = 0x7000;
+    function nextLabel() {
+      while (usedLabels[labelCursor]) labelCursor++;
+      usedLabels[labelCursor] = true;
+      return labelCursor++;
     }
 
     ir.nodes.forEach(function(node) {
       appendAuthoredBefore(node.id);
+      nodeStartWords[node.id] = outputWords.length;
       var act = decodeNode(node);
       var command = nativeByNode[node.id];
       if (!command) fail('SceneDocument lost a preserved native source boundary.', 'native-boundary');
@@ -1888,10 +2422,15 @@ window.OB64 = window.OB64 || {};
         }
       } else if (act && act.type === 'background-group') {
         var backgroundProjection = document.background.projection || {};
-        if (node.definition.editPolicy === 'typed-background-group') {
+        var ownsBackground = node.definition.editPolicy === 'typed-background-group' ||
+          (backgroundProjection.route === 'native-environment' || backgroundProjection.route === 'native-scene-group') &&
+          backgroundProjection.sourceNodeId === node.id;
+        if (ownsBackground) {
+          var routeTableId = backgroundProjection.route === 'native-environment'
+            ? ENVIRONMENT_TABLE_ID : act.selectorTableId;
           if (backgroundProjection.nativeEditable !== true ||
               backgroundProjection.sourceNodeId !== node.id ||
-              backgroundProjection.selectorTableId !== act.selectorTableId) {
+              backgroundProjection.selectorTableId !== routeTableId) {
             fail('The native background route lost its source ownership.',
               'background-source-boundary', { nodeId: node.id });
           }
@@ -1934,6 +2473,18 @@ window.OB64 = window.OB64 || {};
                 'immutable-node', { nodeId: node.id });
             }
             compiled = compileState(pose.clip, poseSlot);
+          }
+        }
+      } else if (act && act.type === 'native-effect' && node.definition.editPolicy === 'typed-fade') {
+        var nativeFade = rows.find(function(row) { return row.clip.kind === 'fade'; });
+        if (!nativeFade) deleted = true;
+        else {
+          if (nativeFade.clip.startFrame !== nativeFade.clip.source.originalStartFrame) {
+            fail('A native fade keeps its place; add a new Fade to fade elsewhere.', 'compile-timing');
+          }
+          var fadeWords = compileFade(nativeFade.clip);
+          if (fadeWords.some(function(value, index) { return (value >>> 0) !== (node.rawWords[index] >>> 0); })) {
+            compiled = fadeWords;
           }
         }
       } else if (act && act.type === 'move') {
@@ -2068,6 +2619,14 @@ window.OB64 = window.OB64 || {};
         changes.push({ operation: 'delete', nodeId: node.id, kind: act.type });
         return;
       }
+      var span = counterSpans[node.id];
+      if (span && span.armed && spanShift[span.spanId] &&
+          COUNTER_QUERIES.indexOf(node.definition.name) !== -1 && compiled.length >= 3) {
+        compiled = compiled.slice();
+        compiled[2] = integer(signed(compiled[2]) + spanShift[span.spanId],
+          'Shifted counter target', 0, 0x7FFFFFFF);
+        changes.push({ operation: 'retime', nodeId: node.id, shift: spanShift[span.spanId] });
+      }
       outputWords.push.apply(outputWords, compiled);
       if (compiled.length !== node.rawWords.length || compiled.some(function(word, index) {
         return unsigned(word) !== unsigned(node.rawWords[index]);
@@ -2080,15 +2639,20 @@ window.OB64 = window.OB64 || {};
       decodedBytes: decodedBytes,
       originalDecodedBytes: ir.originalDecodedBytes,
       noOp: equalBytes(decodedBytes, ir.originalDecodedBytes),
-      changes: changes
+      changes: changes,
+      nodeStartWords: nodeStartWords
     };
   }
 
   function planFixedCapacityExport(z64Input, scene, document, options) {
     var z64 = bytes(z64Input, 'Normalized ROM');
     options = options || {};
-    return loadSceneSource(z64, scene, options).then(function(source) {
+    return (options.preloadedSource ? Promise.resolve(options.preloadedSource) :
+      loadSceneSource(z64, scene, options)).then(function(source) {
       var compiled = compileSceneDocument(scene, source, document);
+      // A replacement source (a wiped scene) differs from the ROM even when
+      // its document has no further edits, so it is always written.
+      if (options.forceWrite && compiled.noOp) compiled = Object.assign({}, compiled, { noOp: false });
       var sourceInfo = scene.source;
       if (sourceInfo.crcWindowOverlap) {
         fail('This Cutscene payload overlaps the cartridge checksum window.', 'crc-window');
@@ -2157,14 +2721,20 @@ window.OB64 = window.OB64 || {};
       return Promise.reject(new CutsceneCodecError(
         'Cutscene relocation allocation is invalid.', 'relocation-allocation'));
     }
-    return loadSceneSource(z64, scene, options).then(function(source) {
+    // Arena compaction plans on a detached base whose old arena bytes are
+    // cleared, so an owned relocation supplies the source it already verified.
+    return (options.preloadedSource ? Promise.resolve(options.preloadedSource) :
+      loadSceneSource(z64, scene, options)).then(function(source) {
       var compiled = compileSceneDocument(scene, source, document);
+      if (options.forceWrite && compiled.noOp) compiled = Object.assign({}, compiled, { noOp: false });
       var encoded = compiled.noOp ? source.payload :
         (options.encoder || encodeCustomLzOptimal)(compiled.decodedBytes);
       if (!(encoded instanceof Uint8Array)) {
         fail('Cutscene encoder returned invalid bytes.', 'custom-lz-encode');
       }
-      if (encoded.length <= scene.source.storedPayloadLength) {
+      // A resource that already lives in the editor arena is rebuilt at its
+      // compacted position even when it now fits the size it had there.
+      if (encoded.length <= scene.source.storedPayloadLength && !options.relocateOwned) {
         fail('Cutscene relocation is reserved for payloads that exceed their source slot.',
           'relocation-not-required');
       }
@@ -2274,7 +2844,12 @@ window.OB64 = window.OB64 || {};
     loadSceneSource: loadSceneSource,
     createIr: createIr,
     sceneForBytes: sceneForBytes,
+    authoredSceneSource: authoredSceneSource,
+    completionExtraUpdates: completionExtraUpdates,
+    dialogueWindowRecipes: DIALOGUE_WINDOW_RECIPES,
+    hashBytes: function(input, hashBytes) { return hashWith(input, hashBytes); },
     decodeNode: decodeNode,
+    backgroundGroupLayers: backgroundGroupLayers,
     projectSceneDocument: projectSceneDocument,
     compileSceneDocument: compileSceneDocument,
     planFixedCapacityExport: planFixedCapacityExport,

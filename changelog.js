@@ -203,7 +203,8 @@ window.OB64 = window.OB64 || {};
           return consumableName(rom, id);
         }));
       }
-      entries.push({ title: shopName(rom, index), lines: lines });
+      // Rebuild Projects list every shop; report only the changed ones.
+      if (lines.length) entries.push({ title: shopName(rom, index), lines: lines });
     });
     addSection(sections, 'Shops', entries);
   }
@@ -598,20 +599,45 @@ window.OB64 = window.OB64 || {};
     addSection(sections, 'Class-Change Requirements', entries);
   }
 
-  function buildToolSection(patches, sections) {
+  // Rebuild ROM Projects keep the migrated Tools in rebuild_owners rather than
+  // patches.tools. Rebuild starts from retail, so only non-retail values are changes.
+  var REBUILD_OWNER_TOOLS = [
+    { field: 'chaos_frame_counter', id: 'cf-army-counter', name: 'Chaos Frame Counter' },
+    { field: 'character_card_luck', id: 'character-card-luck', name: 'Character Card Luck' },
+    { field: 'squad_menu_alignment', id: 'squad-menu-alignment', name: 'Squad Menu Alignment' },
+  ];
+
+  function rebuildOwnerToolSettings(patch) {
+    var owners = patch && patch.rebuild_owners;
+    var settings = {};
+    if (!owners || typeof owners !== 'object') return settings;
+    if (Number.isInteger(owners.experience_scale_percent) && owners.experience_scale_percent !== 100) {
+      settings['experience-size-scale'] = { schema: 1, percent: owners.experience_scale_percent };
+    }
+    REBUILD_OWNER_TOOLS.forEach(function(tool) {
+      if (owners[tool.field] === true) settings[tool.id] = true;
+    });
+    return settings;
+  }
+
+  function buildToolSection(patches, sections, patch) {
     var entries = [];
+    var tools = Object.assign({}, patches.tools || {}, rebuildOwnerToolSettings(patch));
     var features = OB64.tools && OB64.tools.features ? OB64.tools.features() : (OB64.TOOLS_FEATURES || []);
     function featureById(id) {
       for (var i = 0; i < features.length; i++) if (features[i].id === id) return features[i];
+      for (var j = 0; j < REBUILD_OWNER_TOOLS.length; j++) {
+        if (REBUILD_OWNER_TOOLS[j].id === id) return { id: id, name: REBUILD_OWNER_TOOLS[j].name };
+      }
       return null;
     }
     function formatPercent(value) {
       var rounded = Math.round(Number(value) * 1000) / 1000;
       return String(rounded) + '%';
     }
-    Object.keys(patches.tools || {}).sort().forEach(function(id) {
+    Object.keys(tools).sort().forEach(function(id) {
       var feature = featureById(id);
-      var setting = patches.tools[id];
+      var setting = tools[id];
       var lines;
       if (feature && OB64.tools && OB64.tools.isParameterized(feature) &&
           setting && typeof setting === 'object' && setting.schema === 1) {
@@ -838,33 +864,55 @@ window.OB64 = window.OB64 || {};
     var project = patches.cutscenes;
     if (!project || !Array.isArray(project.scenes)) return;
     var entries = project.scenes.map(function(row) {
-      var document = row.document || {};
-      var identity = document.identity || {};
-      var actors = Array.isArray(document.actors) ? document.actors : [];
-      var tracks = Array.isArray(document.tracks) ? document.tracks : [];
-      var clips = [];
-      tracks.forEach(function(track) {
-        (track.clips || []).forEach(function(clip) { clips.push(clip); });
+      return cutsceneEntry(row.document || {}, row.sceneId, null);
+    }).concat((project.authoredScenes || []).map(function(row) {
+      return cutsceneEntry(row.document || {}, row.name,
+        'New scene on Director selector row ' + row.selectorRow + '.');
+    }));
+    if (Array.isArray(project.eventBindings)) {
+      var names = {};
+      (project.authoredScenes || []).forEach(function(row) { names[row.authoredId] = row.name; });
+      entries.push({
+        title: 'Event launch sites',
+        lines: project.eventBindings.length ? project.eventBindings.map(function(binding) {
+          var target = binding.target || {};
+          var label = target.kind === 'authored'
+            ? 'new scene ' + (names[target.authoredId] || target.authoredId)
+            : (target.sceneId || 'scene') + ' (selector row ' + target.selectorRow + ')';
+          return binding.launchSiteId + ' launches ' + label + '.';
+        }) : ['Every event launch site launches its retail scene.']
       });
-      var nativeClips = clips.filter(function(clip) { return clip.capability === 'native'; }).length;
-      var previewClips = clips.length - nativeClips;
-      var lines = [
-        actors.length + ' actor' + (actors.length === 1 ? '' : 's') + ' and ' +
-          clips.length + ' Storyboard card' + (clips.length === 1 ? '' : 's') + '.',
-        nativeClips + ' Native card' + (nativeClips === 1 ? '' : 's') +
-          (previewClips ? '; ' + previewClips + ' Preview-only or Needs-research card' +
-            (previewClips === 1 ? '' : 's') : '') + '.'
-      ];
-      if (document.background && document.background.assetId) {
-        lines.push('Stage background: ' + document.background.assetId +
-          ' (' + document.background.capability + ').');
-      }
-      return {
-        title: identity.friendlyName || identity.technicalName || row.sceneId,
-        lines: lines
-      };
-    });
+    }
     addSection(sections, 'Cutscenes', entries);
+  }
+
+  function cutsceneEntry(document, fallbackTitle, firstLine) {
+    var identity = document.identity || {};
+    var actors = Array.isArray(document.actors) ? document.actors : [];
+    var tracks = Array.isArray(document.tracks) ? document.tracks : [];
+    var clips = [];
+    tracks.forEach(function(track) {
+      (track.clips || []).forEach(function(clip) { clips.push(clip); });
+    });
+    var nativeClips = clips.filter(function(clip) { return clip.capability === 'native'; }).length;
+    var previewClips = clips.length - nativeClips;
+    var lines = [
+      actors.length + ' actor' + (actors.length === 1 ? '' : 's') + ' and ' +
+        clips.length + ' Storyboard card' + (clips.length === 1 ? '' : 's') + '.',
+      nativeClips + ' Native card' + (nativeClips === 1 ? '' : 's') +
+        (previewClips ? '; ' + previewClips + ' Preview-only or Needs-research card' +
+          (previewClips === 1 ? '' : 's') : '') + '.'
+    ];
+    if (document.background && document.background.assetId) {
+      lines.push('Stage background: ' + document.background.assetId +
+        ' (' + document.background.capability + ').');
+    }
+    if (firstLine) lines.unshift(firstLine);
+    return {
+      title: fallbackTitle && firstLine ? fallbackTitle
+        : identity.friendlyName || identity.technicalName || fallbackTitle,
+      lines: lines
+    };
   }
 
   function isEmptyValue(value) {
@@ -1141,7 +1189,7 @@ window.OB64 = window.OB64 || {};
     buildDescriptionSection(rom, patches, sections);
     buildConsumableEffectSection(rom, patches, sections);
     buildStatGateSection(rom, patches, sections);
-    buildToolSection(patches, sections);
+    buildToolSection(patches, sections, patch);
     buildSquadSection(patches, sections);
     buildScenarioSection(rom, patches, sections);
     buildCutsceneSection(patches, sections);

@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 const editor = path.resolve(process.env.OB64_EDITOR_ROOT || path.join(__dirname, '..'));
 const masterName = 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64';
-const master = [process.env.OB64_MASTER_ROM, path.join(editor, '..', masterName),
+const master = [process.env.OB64_MASTER_ROM, path.join(require('./project-paths.cjs').PARENT, masterName),
   path.join(editor, '../../OgreBattlel64', masterName)].filter(Boolean).find(file => fs.existsSync(file));
 if (!master) throw new Error('Set OB64_MASTER_ROM to the US Rev 0 ROM.');
 global.window = global;

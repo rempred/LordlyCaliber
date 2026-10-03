@@ -1,12 +1,13 @@
 'use strict';
-const fs=require('fs'),path=require('path'),assert=require('assert'),root=path.resolve(__dirname,'../..');
+const fs=require('fs'),path=require('path'),assert=require('assert'),root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR;
 new Function('require','__dirname',fs.readFileSync(path.join(__dirname,'cutscene-room-integration.test.js'),'utf8').split('\n(async()=>')[0])(require,__dirname);
 (async()=>{
  const v=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){z64[i]=v[i+1];z64[i+1]=v[i];}
  const rom={z64,archives:OB64.findArchives(z64),layout:{id:'us-rev0'}},ui=OB64.cutsceneUI,runtime=OB64.cutsceneRuntime,state=ui.initialize(rom),input=structuredClone(require('./fixtures/cutscene-room-input.json')),before=JSON.stringify(input),scene=state.catalog.getScene(input.assetId);
  state.selectedSceneId=scene.sceneId;ui.setNativeLaunchInputs(state,scene,input);await ui.loadScene(rom,state,scene);
  const run=state.runtimeByAssetId[scene.assetId],document=ui.selectedDocument(state);
- assert.equal(run.states.length,3392);assert.equal(run.outcome,'modeled-termination');assert.equal(run.unresolvedQuery,null);assert.equal(JSON.stringify(input),before);assert.equal(run.retainedStateBytes,117173782);assert.equal(run.trace.find(t=>t.kind==='map-menu-memory').bytes,130578);
+ // Retained-state storage estimate (not VM heap). 121,924,628 includes the per-frame sprite channel fields (transformChannel/sceneTransform/renderPipeline) that mode-zero scene-sprite payloads carry since 2026-09-27; removing only those fields measures 118,031,768. Since 2026-09-28 the room's background projection also carries its selectable native scene groups (+36,322 bytes).
+ assert.equal(run.states.length,3392);assert.equal(run.outcome,'modeled-termination');assert.equal(run.unresolvedQuery,null);assert.equal(JSON.stringify(input),before);assert.equal(run.retainedStateBytes,121960950);assert(run.retainedStateBytes<=128*1024*1024,'the opening route must stay inside the unchanged 128 MiB retained-state budget');assert.equal(run.trace.find(t=>t.kind==='map-menu-memory').bytes,130578);
  function element(){return {className:'',style:{},children:[],classList:{toggle(){}},set innerHTML(v){this.children=[];},appendChild(c){this.children.push(c);},setAttribute(){}};}
  global.document={createElement:element};let painted;
  state.ui={stageOverlay:element(),canvas:{style:{},getContext(){return {createImageData(w,h){return {data:new Uint8ClampedArray(w*h*4)};},putImageData(i){painted=i.data.slice();}};}}};

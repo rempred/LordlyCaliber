@@ -36,6 +36,24 @@ window.OB64 = window.OB64 || {};
     // embedding omits the generated registry.
     return 0x027F0000;
   }
+  // Rebuild ROM enemy-squad library. Resource key 0x021AE74C (built by four code
+  // sites) names a 4-byte link descriptor whose payload is the key of the real
+  // enemydat.bin envelope. Rebuild writes a grown envelope into the top of the
+  // native resource arena and repoints only that link word.
+  var ENEMYDAT = {
+    RESOURCE_KEY_BASE: 0x00594280,
+    DESCRIPTOR_ENTRY: 0x027429CC,
+    LINK_WORD: 0x027429D0,
+    RETAIL_LINK_KEY: 0x021AE754,
+    RETAIL_ENVELOPE_ENTRY: 0x027429D4,
+    RETAIL_RECORD_COUNT: 556,
+    RECORD_SIZE: 35,
+    ARENA_START: 0x0275E000,
+    ARENA_END: 0x02780000,
+  };
+  // func_001960A8 sets bit 7 of the deployment source byte for these exact
+  // (runtime key, one-based EDAT id) pairs before building the squad.
+  var FLAGGED_DEPLOYMENTS = { '4:517': true, '21:470': true, '27:350': true, '42:372': true };
   // Site-snap radius in SCREEN pixels (converted to image px per current zoom at each use).
   // A fixed image-pixel radius shrinks with zoom-to-fit (~14 screen px), making it easy to
   // miss a town and silently write near-town coordinate bytes instead of the site selector.
@@ -7914,8 +7932,241 @@ window.OB64 = window.OB64 || {};
     }
   }
 
+  // Rebuild ROM: resolve every deployment row's effective squad into a real
+  // enemydat record. An unchanged squad keeps its retail record. Each distinct
+  // custom squad becomes one appended record, so no runtime override remains.
+  function planNativeSquadLibrary(rom) {
+    var state = ensureState(rom);
+    var blocked = [];
+    var records = [];
+    var idByHex = {};
+    var rowRemap = {};
+    var remappedRows = 0;
+    var processed = {};
+    function hexOf(record) {
+      return Array.prototype.map.call(record, function(b) {
+        return ('0' + (b & 0xFF).toString(16)).slice(-2);
+      }).join('');
+    }
+    var consumed = {};
+    function hasOverride(keys, edatId) {
+      var found = false;
+      keys.forEach(function(key) {
+        if (rom.squadOverrides && rom.squadOverrides[key + ':' + edatId]) {
+          consumed[key + ':' + edatId] = true;
+          found = true;
+        }
+      });
+      return found;
+    }
+    function originalRowBySource(key, row) {
+      var original = state.originalModels[key];
+      if (!original) return null;
+      var matches = original.section1.filter(function(candidate) {
+        return candidate.sourceId === row.sourceId;
+      });
+      return matches.length === 1 ? matches[0] : null;
+    }
+    Object.keys(state.models).map(Number).sort(function(a, b) { return a - b; }).forEach(function(key) {
+      var resourcePath = resourcePathForKey(rom, key) || ('runtime-key:' + key);
+      if (processed[resourcePath]) return;
+      processed[resourcePath] = true;
+      var aliases = resourceAliasKeys(rom, key).filter(function(aliasKey) {
+        return !!state.models[aliasKey];
+      });
+      if (aliases.indexOf(key) === -1) aliases.unshift(key);
+      state.models[key].section1.forEach(function(row, index) {
+        var modelId = rowEdatId(row);
+        if (modelId == null || modelId < 0) return;
+        var effective = aliases.map(function(aliasKey) {
+          return effectiveRecordForRow(rom, aliasKey, index);
+        });
+        if (effective.some(function(record) { return !record || record.length !== 35; })) {
+          blocked.push('Scenario key ' + key + ' row ' + index + ' has no complete effective squad record.');
+          return;
+        }
+        var record = effective[0];
+        if (!effective.every(function(other) { return bytesEqual(other, record); })) {
+          blocked.push('Scenario keys ' + aliases.join(', ') + ' share one deployment resource. ' +
+            'Rebuild ROM cannot give row ' + index + ' a different squad in each of them.');
+          return;
+        }
+        var originalRow = originalRowBySource(key, row);
+        var originalId = originalRow ? rowEdatId(originalRow) : null;
+        var finalId;
+        if (!hasOverride(aliases, modelId)) {
+          finalId = modelId;
+        } else if (originalId != null && bytesEqual(record, stockRecordBytes(originalId))) {
+          finalId = originalId;
+        } else {
+          var hex = hexOf(record);
+          if (!Object.prototype.hasOwnProperty.call(idByHex, hex)) {
+            idByHex[hex] = ENEMYDAT.RETAIL_RECORD_COUNT + records.length;
+            records.push(cloneRecord(record));
+          }
+          finalId = idByHex[hex];
+        }
+        if (finalId + 1 > 0xFFFF) {
+          blocked.push('The custom squad library exceeds the one-based u16 deployment field.');
+          return;
+        }
+        // func_001960A8 sets bit 7 for four retail (key, template) pairs: the
+        // allied computer-controlled squads (Yumil, Ankiseth, Europea, Carth).
+        // The flag belongs to the deployment, so any row that no longer names its
+        // retail template gets it preset, whatever squad it now deploys.
+        var flagged = originalId != null && finalId !== originalId && aliases.map(function(aliasKey) {
+          return !!FLAGGED_DEPLOYMENTS[aliasKey + ':' + (originalId + 1)];
+        });
+        if (flagged && flagged.some(Boolean) && !flagged.every(Boolean)) {
+          blocked.push('Scenario keys ' + aliases.join(', ') + ' disagree on the retail deployment flag for row ' + index + '.');
+          return;
+        }
+        var setFlag = !!(flagged && flagged[0]);
+        if (finalId === modelId && !setFlag) return;
+        if (!rowRemap[resourcePath]) rowRemap[resourcePath] = {};
+        rowRemap[resourcePath][index] = { edatId: finalId, setFlag: setFlag };
+        remappedRows++;
+      });
+    });
+    // Patch ROM's hook substitutes any squad built in the scenario whose bytes
+    // match. Rebuild ROM changes deployment rows only, so an override that no
+    // row selects would silently vanish.
+    Object.keys(rom.squadOverrides || {}).sort().forEach(function(overrideKey) {
+      var parts = overrideKey.split(':');
+      if (parts.length !== 2 || consumed[overrideKey]) return;
+      var edatId = Number(parts[1]);
+      if (bytesEqual(rom.squadOverrides[overrideKey], stockRecordBytes(edatId))) return;
+      blocked.push('The custom squad for Scenario key ' + parts[0] + ', template ' + (edatId + 1) +
+        ', is not selected by any deployment row. Rebuild ROM can only change deployed squads; ' +
+        'remove this edit or export with Patch ROM.');
+    });
+    return { records: records, rowRemap: rowRemap, remappedRows: remappedRows, blocked: blocked };
+  }
+
+  function nativeSquadModel(model, remap) {
+    if (!remap) return model;
+    var copy = Object.assign({}, model, {
+      header: model.header.slice ? model.header.slice() : model.header,
+      section1: model.section1.map(function(row) {
+        return Object.assign({}, row, { bytes: row.bytes.slice() });
+      }),
+      section2: model.section2.map(function(row) {
+        return Object.assign({}, row, { bytes: row.bytes.slice() });
+      }),
+      section3: model.section3.map(function(row) {
+        return Object.assign({}, row, { bytes: row.bytes.slice() });
+      }),
+    });
+    Object.keys(remap).forEach(function(index) {
+      var row = copy.section1[Number(index)];
+      writeRowEdat(row, remap[index].edatId);
+      if (remap[index].setFlag) row.bytes[0] |= 0x80;
+    });
+    return copy;
+  }
+
+  // The finished-ROM validator re-parses each rebuilt ESET. Rows may name the
+  // appended custom records, and preset rows carry the retail bit-7 flag.
+  function nativeEsetValidation(nativeSquads, remap) {
+    if (!nativeSquads) return null;
+    return {
+      limits: { enemydatRecords: ENEMYDAT.RETAIL_RECORD_COUNT + nativeSquads.records.length },
+      flaggedSourceRows: Object.keys(remap || {}).filter(function(index) {
+        return remap[index].setFlag;
+      }).map(Number).sort(function(a, b) { return a - b; }),
+    };
+  }
+
+  function readU32BE(bytes, offset) {
+    return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) |
+      (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+  }
+
+  function writeU32BE(bytes, offset, value) {
+    bytes[offset] = (value >>> 24) & 0xFF;
+    bytes[offset + 1] = (value >>> 16) & 0xFF;
+    bytes[offset + 2] = (value >>> 8) & 0xFF;
+    bytes[offset + 3] = value & 0xFF;
+  }
+
+  function readEnemydatEnvelope(z64, entry) {
+    var stored = readU32BE(z64, entry);
+    var archive = z64.subarray(entry + 4, entry + 4 + stored);
+    var headerSize = archive[0] | (archive[1] << 8);
+    var compSize = (archive[7] | (archive[8] << 8) | (archive[9] << 16) | (archive[10] << 24)) >>> 0;
+    var uncompSize = (archive[11] | (archive[12] << 8) | (archive[13] << 16) | (archive[14] << 24)) >>> 0;
+    if (archive[20] !== 2 || String.fromCharCode.apply(null, archive.subarray(2, 7)) !== '-lh5-' ||
+        headerSize + compSize + 1 !== stored || archive[stored - 1] !== 0) {
+      throw new Error('The enemydat envelope at z64 0x' + entry.toString(16).toUpperCase() +
+        ' is not one terminated level-2 LH5 archive.');
+    }
+    return {
+      header: archive.slice(0, headerSize),
+      payload: OB64.lh5Decompress(archive.subarray(headerSize, headerSize + compSize), uncompSize),
+    };
+  }
+
+  // Builds the grown enemydat envelope and the link-word write. The retail
+  // records stay byte-identical; custom records are appended in plan order.
+  function buildNativeEnemydat(z64, records) {
+    if (readU32BE(z64, ENEMYDAT.DESCRIPTOR_ENTRY) !== 4 ||
+        readU32BE(z64, ENEMYDAT.LINK_WORD) !== ENEMYDAT.RETAIL_LINK_KEY) {
+      throw new Error('The enemydat link descriptor is not retail. Rebuild ROM exports start from a clean US Rev 0 ROM.');
+    }
+    var retail = readEnemydatEnvelope(z64, ENEMYDAT.RETAIL_ENVELOPE_ENTRY);
+    var retailBytes = ENEMYDAT.RETAIL_RECORD_COUNT * ENEMYDAT.RECORD_SIZE;
+    if (retail.payload.length !== retailBytes) {
+      throw new Error('The retail enemydat library does not contain 556 squad records.');
+    }
+    var payload = new Uint8Array(retailBytes + records.length * ENEMYDAT.RECORD_SIZE);
+    payload.set(retail.payload, 0);
+    records.forEach(function(record, index) {
+      payload.set(record, retailBytes + index * ENEMYDAT.RECORD_SIZE);
+    });
+    var compressed = OB64.lh5Compress(payload);
+    if (!OB64.scenarioCodec.equalBytes(OB64.lh5Decompress(compressed, payload.length), payload)) {
+      throw new Error('The enemydat library failed LH5 round-trip verification.');
+    }
+    var member = OB64.buildLHAArchiveFromTemplate(compressed, payload, retail.header);
+    var stored = member.length + 1;
+    var envelope = new Uint8Array(4 + stored + (stored & 1));
+    writeU32BE(envelope, 0, stored);
+    envelope.set(member, 4);
+    var entry = (ENEMYDAT.ARENA_END - envelope.length) & ~0xF;
+    if (entry < ENEMYDAT.ARENA_START) {
+      throw new Error('The enemydat library needs ' + envelope.length +
+        ' bytes and does not fit the native resource arena.');
+    }
+    var key = entry - ENEMYDAT.RESOURCE_KEY_BASE;
+    var link = new Uint8Array(4);
+    writeU32BE(link, 0, key);
+    return {
+      payload: payload,
+      customCount: records.length,
+      envelope: envelope,
+      entry: entry,
+      key: key,
+      link: link,
+      regions: [
+        { kind: 'rom', start: entry, size: envelope.length, label: 'enemydat squad library envelope' },
+        { kind: 'rom', start: ENEMYDAT.LINK_WORD, size: 4, label: 'enemydat library link' },
+      ],
+    };
+  }
+
+  function verifyNativeEnemydat(z64, library) {
+    if (readU32BE(z64, ENEMYDAT.LINK_WORD) !== library.key) {
+      throw new Error('The enemydat link does not name the written squad library.');
+    }
+    var loaded = readEnemydatEnvelope(z64, library.key + ENEMYDAT.RESOURCE_KEY_BASE);
+    if (!OB64.scenarioCodec.equalBytes(loaded.payload, library.payload)) {
+      throw new Error('The written enemydat library does not decode to the planned records.');
+    }
+  }
+
   function exportScenarioArchives(rom, options) {
     options = options || {};
+    var nativeSquads = options.nativeSquads || null;
     var deferRedirect = !!options.deferRedirect;
     var priorRelocations = (rom.scenarioRelocations || []).slice();
     var state = ensureState(rom);
@@ -7952,6 +8203,9 @@ window.OB64 = window.OB64 || {};
     // deployed its replacement comp, in the same run). The row splices with its mission
     // ESET below; the comp rides the squad-override blob lane in app.js. Only donor
     // content collisions still block (the resolver matches on record content).
+    if (nativeSquads) blocked = blocked.concat(nativeSquads.blocked);
+    // Overrides are keyed by template, so a donor row and its added copy share
+    // one custom squad in both build modes.
     if (stubs.addedSquads.length || state.squadLevelCopies.length) {
       var collisions = addedSquadCollisions(rom);
       if (collisions.length) {
@@ -8030,9 +8284,11 @@ window.OB64 = window.OB64 || {};
           validation.errors.map(function(e) { return e.code; }).join(', '));
         return;
       }
+      var remap = nativeSquads && nativeSquads.rowRemap[resourcePath];
+      var esetValidation = nativeEsetValidation(nativeSquads, remap);
       var raw;
       try {
-        raw = modelBytes(model);
+        raw = modelBytes(nativeSquadModel(model, remap));
       } catch (e) {
         blocked.push('Scenario key ' + runtimeKey + ' serialize failed: ' + e.message);
         return;
@@ -8077,6 +8333,7 @@ window.OB64 = window.OB64 || {};
             contentKind: 'eset',
             runtimeKey: runtimeKey,
             expectedRaw: raw,
+            esetValidation: esetValidation,
           });
         } catch (fixedBuildError) {
           blocked.push('Scenario key ' + runtimeKey + ' fixed-slot LHA rebuild failed: ' + fixedBuildError.message);
@@ -8102,6 +8359,7 @@ window.OB64 = window.OB64 || {};
         contentKind: 'eset',
         runtimeKey: runtimeKey,
         expectedRaw: raw,
+        esetValidation: esetValidation,
       });
       if (state.slotOwnedArchives[archive]) restoreSlots.push({ archive: archive, label: 'scenario key ' + runtimeKey + ' fixed slot restored before relocation' });
     });
@@ -8211,6 +8469,14 @@ window.OB64 = window.OB64 || {};
       };
     });
     var redirectRequests = scenarioRedirectRequests(publicRelocations);
+    var nativeSquadLibrary = null;
+    if (nativeSquads && nativeSquads.records.length && !blocked.length) {
+      try {
+        nativeSquadLibrary = buildNativeEnemydat(rom.z64, nativeSquads.records);
+      } catch (libraryError) {
+        blocked.push(libraryError.message);
+      }
+    }
     var directRedirectPlan = null;
     if (!blocked.length && !deferRedirect) {
       var currentStatRequests = OB64.statGateRelocation &&
@@ -8271,6 +8537,7 @@ window.OB64 = window.OB64 || {};
         slotSize: archiveSlotSize(w.archiveDir),
         slotEnd: w.archiveDir.offset + archiveSlotSize(w.archiveDir),
         expectedRaw: w.expectedRaw,
+        esetValidation: w.esetValidation || null,
       });
     });
 
@@ -8290,9 +8557,19 @@ window.OB64 = window.OB64 || {};
         memberSize: w.archive.length,
         terminatorOffset: w.moved.tailArchiveOffset + w.archive.length,
         expectedRaw: w.expectedRaw,
+        esetValidation: w.esetValidation || null,
       });
     });
     state.relocationOwnedWindows = newOwnedWindows;
+    if (nativeSquadLibrary) {
+      rom.z64.set(nativeSquadLibrary.envelope, nativeSquadLibrary.entry);
+      rom.z64.set(nativeSquadLibrary.link, ENEMYDAT.LINK_WORD);
+      verifyNativeEnemydat(rom.z64, nativeSquadLibrary);
+      // The export ledger reads these regions from this detached candidate state.
+      state.nativeSquadLibrary = { regions: nativeSquadLibrary.regions };
+      touched.push('enemy squad library (' + nativeSquadLibrary.customCount + ' custom squad' +
+        (nativeSquadLibrary.customCount === 1 ? '' : 's') + ')');
+    }
     var directRedirectResult = { crc: false };
     if (directRedirectPlan) {
       directRedirectResult = OB64.sourceRedirect.apply(
@@ -8311,6 +8588,12 @@ window.OB64 = window.OB64 || {};
       redirectRequests: redirectRequests,
       crc: !!directRedirectResult.crc,
       validationTargets: validationTargets,
+      nativeSquadLibrary: nativeSquadLibrary && {
+        entry: nativeSquadLibrary.entry,
+        key: nativeSquadLibrary.key,
+        customCount: nativeSquadLibrary.customCount,
+        regions: nativeSquadLibrary.regions,
+      },
     };
   }
 
@@ -8400,6 +8683,7 @@ window.OB64 = window.OB64 || {};
     applyPreparedProject: applyPreparedProject,
     loadProject: loadProject,
     exportScenarioArchives: exportScenarioArchives,
+    planNativeSquadLibrary: planNativeSquadLibrary,
     validateRelocationRedirect: validateRelocationRedirect,
     redirectRequests: scenarioRedirectRequests,
     patchRegions: publicRelocationRegions,

@@ -5451,6 +5451,9 @@
         label: 'scenario archive #' + key + ' fixed slot'
       };
     }).filter(Boolean);
+    if (state.nativeSquadLibrary) {
+      archiveRegions = archiveRegions.concat(state.nativeSquadLibrary.regions);
+    }
     var owners = [];
     if (archiveRegions.length) {
       owners.push({

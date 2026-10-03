@@ -1,10 +1,10 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');
-const root=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-chair-resume.json');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-chair-resume.json');
 global.window=global;vm.runInThisContext('var OB64=window.OB64={};');
 const sources={};
 for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-runtime.js','cutscene-assets.js','cutscene-sprites.js']){
- const code=fs.readFileSync(path.join(root,'editor',file),'utf8');sources[file]=crypto.createHash('sha256').update(code).digest('hex');vm.runInThisContext(code,{filename:file});
+ const code=fs.readFileSync(path.join(rootEditor,file),'utf8');sources[file]=crypto.createHash('sha256').update(code).digest('hex');vm.runInThisContext(code,{filename:file});
 }
 (async()=>{
  const raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),z64=new Uint8Array(raw.length);

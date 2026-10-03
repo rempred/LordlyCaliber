@@ -8323,14 +8323,40 @@ td.attack-list {
 
 .cutscene-stage-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 4px 10px;
   padding: 6px 9px;
+  min-height: 4.4em;
   color: var(--ob-ink-soft);
   font-size: var(--ob-text-xs);
 }
 
-.cutscene-stage-frame { font-family: var(--ob-mono); font-weight: 700; }
+.cutscene-stage-frame { font-family: var(--ob-mono); font-weight: 700; white-space: nowrap; }
+/* Cue text changes every tick; keep it a fixed two-line block so the Stage
+   footer never changes height during playback. */
+.cutscene-stage-cues {
+  flex-basis: 100%;
+  height: 2.6em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--ob-ink-soft);
+  font-size: var(--ob-text-xs);
+  overflow-wrap: anywhere;
+}
+.cutscene-row-provenance { display: block; color: var(--ob-wax-red); font-size: var(--ob-text-xs); }
+.cutscene-creator-provenance {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--ob-wax-gold);
+  background: rgba(255, 255, 255, .35);
+  color: var(--ob-wax-red);
+  font: 700 var(--ob-text-base) var(--ob-display);
+}
 .cutscene-stage-details { max-width: min(70%, 520px); text-align: right; }
 .cutscene-stage-details .cutscene-stage-calibration { display: block; margin-top: 5px; }
 .cutscene-stage-details p { margin: 4px 0; }
@@ -8810,9 +8836,12 @@ td.attack-list {
 
 /* Cutscene creator: Stage and action cards; technical tools live in a drawer. */
 .cutscene-studio.cutscene-creator {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr) minmax(300px, 360px);
   align-items: start;
 }
+.cutscene-creator > .cutscene-browser { order: 1; }
+.cutscene-creator.cutscene-creator-no-browser { grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); }
+.cutscene-browser-filter { width: 100%; margin: 6px 0; font-size: var(--ob-text-xs); }
 .cutscene-creator-toolbar {
   grid-column: 1 / -1;
   order: 0;
@@ -8855,6 +8884,12 @@ td.attack-list {
 .cutscene-creator-action { border: 1px solid var(--ob-parchment-edge); background: #fff8e6; min-width: 0; }
 .cutscene-creator-action.selected { border-color: var(--ob-wax-red); }
 .cutscene-creator-action.at-playhead { box-shadow: inset 3px 0 var(--ob-wax-gold); }
+.cutscene-creator-action.movable { cursor: grab; }
+.cutscene-creator-action.dragging { opacity: 0.5; cursor: grabbing; }
+.cutscene-creator-action.drop-before { box-shadow: 0 -3px 0 var(--ob-wax-red); }
+.cutscene-creator-action.drop-after { box-shadow: 0 3px 0 var(--ob-wax-red); }
+.cutscene-creator-action-grip { color: var(--ob-ink-soft); letter-spacing: -2px; cursor: grab; user-select: none; }
+.cutscene-creator-action-order { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
 .cutscene-creator-action-heading {
   display: flex;
   align-items: center;
@@ -9261,3 +9296,56 @@ td.attack-list {
 @media (max-width: 760px) {
   .animation-alignment-previews { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* New (authored) scenes: create control, row badge and toolbar identity line. */
+.cutscene-new-scene { width: 100%; margin: 0 0 0.5em; }
+.cutscene-new-badge {
+  display: inline-block; padding: 0 0.45em; border-radius: 3px;
+  background: #3f6d3a; color: #f1ead6; font-size: 0.78em; letter-spacing: 0.02em;
+}
+.cutscene-authored-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; }
+.cutscene-authored-identity .field { margin: 0; }
+
+/* Event launch drawer: sites that launch the scene, and site assignment. */
+.cutscene-launch-panel { display: flex; flex-direction: column; gap: 0.75em; max-width: 60em; }
+.cutscene-launch-panel h4 { margin: 0 0 0.35em; }
+.cutscene-launch-row {
+  display: grid; grid-template-columns: minmax(12em, auto) 1fr auto auto; align-items: center;
+  gap: 0.35em 0.75em; padding: 0.3em 0; border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+.cutscene-launch-site { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cutscene-launch-context { min-width: 0; overflow-wrap: anywhere; opacity: 0.85; }
+.cutscene-launch-shared {
+  padding: 0 0.45em; border-radius: 3px; background: #7a5a1c; color: #f5ecd6; font-size: 0.78em; white-space: nowrap;
+}
+.cutscene-launch-assign .cutscene-search { width: 100%; margin-bottom: 0.4em; }
+@media (max-width: 640px) {
+  .cutscene-launch-row { grid-template-columns: 1fr auto; }
+  .cutscene-launch-context { grid-column: 1 / -1; }
+}
+
+/* Background drawer: the scene's own background command as a thumbnail grid. */
+.cutscene-background-panel { display: flex; flex-direction: column; gap: 0.75em; max-width: 60em; }
+.cutscene-background-current { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.8em; }
+.cutscene-background-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5em, 1fr)); gap: 0.5em; }
+.cutscene-background-choice {
+  display: flex; flex-direction: column; align-items: center; gap: 0.25em; padding: 0.3em;
+  border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 4px; background: rgba(0, 0, 0, 0.15); cursor: pointer;
+}
+.cutscene-background-choice[aria-pressed="true"] { outline: 2px solid var(--ob-gold); outline-offset: 1px; }
+.cutscene-background-thumb { width: 100%; max-width: 96px; aspect-ratio: 4 / 3; background: #000; image-rendering: pixelated; }
+.cutscene-background-caption { font-size: 0.8em; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Card timing from the native run, the wait-until-done option, and the
+   end-of-scene warning for actions the native exit would cut short. */
+.cutscene-creator-action-timing { margin: 0.15em 0 0.25em 2.2em; font-size: 0.85em; opacity: 0.8; }
+.cutscene-creator-wait-toggle { display: flex; align-items: center; gap: 0.35em; margin: 0.35em 0; }
+.cutscene-creator-exit-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; margin-bottom: 0.5em; }
+
+/* Wipe: toolbar control, inline confirmation and wiped-scene identity. */
+.cutscene-wipe-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.8em; }
+.cutscene-wipe-confirm-text { flex: 1 1 24em; min-width: 0; }
+
+/* Choice cards: preview option switch. */
+.cutscene-choice-preview { display: flex; align-items: center; gap: 0.4em; margin: 0.4em 0; }
+.cutscene-choice-preview [aria-pressed="true"] { outline: 2px solid currentColor; }

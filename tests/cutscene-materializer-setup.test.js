@@ -1,10 +1,10 @@
 'use strict';
 const assert=require('assert'),fs=require('fs'),path=require('path'),vm=require('vm'),crypto=require('crypto');
-const root=path.resolve(__dirname,'../..'),hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+const root=require('./project-paths.cjs').PARENT,rootEditor=require('./project-paths.cjs').EDITOR,hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 global.window=global;vm.runInThisContext('var OB64 = window.OB64 = {};');
 const sourceHashes={};
 for(const file of ['data.js','art.js','animation-corpus-data.js','animation-art.js','cutscene-data.js','cutscene-model.js','cutscene-catalog.js','cutscene-director.js','cutscene-codec.js','cutscene-runtime.js']) {
- const text=fs.readFileSync(path.join(root,'editor',file),'utf8');sourceHashes[file]=hash(text);vm.runInThisContext(text,{filename:file});
+ const text=fs.readFileSync(path.join(rootEditor,file),'utf8');sourceHashes[file]=hash(text);vm.runInThisContext(text,{filename:file});
 }
 const catalog=OB64.cutsceneCatalog.createCatalog(OB64.cutsceneData),raw=fs.readFileSync(path.join(root,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64'));
 const z64=new Uint8Array(raw.length);for(let i=0;i<raw.length;i+=2){z64[i]=raw[i+1];z64[i+1]=raw[i];}

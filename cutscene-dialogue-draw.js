@@ -30,7 +30,10 @@ Draw.prototype.frame=function(root,group,member){
 };
 Draw.prototype.portrait=function(identity,variant){
  const v=new DataView(this.z64.buffer,this.z64.byteOffset,this.z64.byteLength),token=v.getUint16(0x64be0+(identity&255)*6+(variant?2:0));
- if(!token)fail('portrait route is empty');
+ // An empty class route (identity 0 = class None) makes the native loader at
+ // z64 0xEAD04 zero-fill a 0x780-byte buffer and use it as both texels and
+ // palette, so the portrait area renders fully transparent.
+ if(!token){const clear=O.art.rgba5551(0),palette=[];for(let i=0;i<80;i++)palette.push(clear);return {width:40,height:48,stride:40,indices:new Uint8Array(1920),palette,kind:'portrait',bits:8,empty:true};}
  const desc=O.art.readResource(this.z64,0x1dfb6ea).stored,dv=new DataView(desc.buffer,desc.byteOffset,desc.byteLength),b=O.art.readCompressedResource(this.z64,dv.getUint32((token>>>3)*4)).decoded;
  const at=1920+(token&7)*160;if(at+160>b.length)fail('portrait palette is unavailable');
  const p=new DataView(b.buffer,b.byteOffset,b.byteLength),palette=[];for(let i=0;i<80;i++)palette.push(O.art.rgba5551(p.getUint16(at+i*2)));

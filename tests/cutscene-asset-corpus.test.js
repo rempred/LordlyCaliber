@@ -7,8 +7,8 @@ const path = require('path');
 const vm = require('vm');
 
 const EDITOR = path.resolve(__dirname, '..');
-const EXTRACTED = path.resolve(EDITOR, '..', 'ob64_all');
-const MASTER = path.resolve(EDITOR, '..', 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
+const EXTRACTED = path.resolve(require('./project-paths.cjs').PARENT, 'ob64_all');
+const MASTER = path.resolve(require('./project-paths.cjs').PARENT, 'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64');
 
 global.window = global;
 vm.runInThisContext('var OB64 = window.OB64 = window.OB64 || {};');

@@ -1,6 +1,6 @@
 'use strict';
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=path.resolve(__dirname,'../..'),fixture=require('./fixtures/cutscene-shared-actor.json');global.window=global;global.OB64={};
-for(const f of ['cutscene-model.js','cutscene-runtime.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-resource-scheduler-data.js','cutscene-resource-scheduler.js','cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js'])vm.runInThisContext(fs.readFileSync(path.join(R,'editor',f),'utf8'),{filename:f});
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),R=require('./project-paths.cjs').PARENT,REditor=require('./project-paths.cjs').EDITOR,fixture=require('./fixtures/cutscene-shared-actor.json');global.window=global;global.OB64={};
+for(const f of ['cutscene-model.js','cutscene-runtime.js','cutscene-dialogue-data.js','cutscene-dialogue.js','cutscene-resource-scheduler-data.js','cutscene-resource-scheduler.js','cutscene-image-echo-data.js','cutscene-image-echo.js','cutscene-shared-actor-data.js','cutscene-shared-actor.js'])vm.runInThisContext(fs.readFileSync(path.join(REditor,f),'utf8'),{filename:f});
 const v=fs.readFileSync(path.join(R,'Ogre Battle 64 - Person of Lordly Caliber (U) [!].v64')),rom=new Uint8Array(v.length);for(let i=0;i<v.length;i+=2){rom[i]=v[i+1];rom[i+1]=v[i];}
 function camera(a){return {evidenceStatus:'declared-native-test',fovYDegrees:a[0],aspect:a[1],near:a[2],far:a[3],eye:{x:a[5],y:a[6],z:a[7]},target:{x:a[8],y:a[9],z:a[10]},up:{x:a[11],y:a[12],z:a[13]}};}
 let requests=0;

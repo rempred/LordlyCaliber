@@ -38,7 +38,7 @@ window.OB64 = window.OB64 || {};
     dialogue: ['dialogue'],
     audio: ['audio'],
     camera: ['camera'],
-    effect: ['effect'],
+    effect: ['effect', 'fade'],
     flow: ['wait', 'branch', 'marker', 'end', 'effect-remove', 'control-overlap']
   });
 

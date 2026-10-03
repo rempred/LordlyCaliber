@@ -742,28 +742,40 @@ window.OB64 = window.OB64 || {};
     };
   }
 
+  // Emit the complete resource before any candidate-ROM mutation. Both export
+  // products share the text codec; Rebuild owns this resource as one section.
+  function buildSlot(block) {
+    var spec = SPECS[block.kind];
+    var prepared = prepareBlock(block);
+    var bytes = new Uint8Array(spec.slotSize);
+    OB64.writeU32BE(bytes, 0, spec.capacity + 4);
+    OB64.writeU32BE(bytes, 4, prepared.decompressed.length);
+    bytes.fill(0x03, 8, 8 + spec.capacity);
+    bytes.set(prepared.compressed, 8);
+    return { bytes: bytes, decoded: prepared.decompressed,
+      compressedSize: prepared.compressed.length, compressedCapacity: spec.capacity };
+  }
+
   function serializeBlock(block, z64) {
     if (!(z64 instanceof Uint8Array)) throw new TypeError('Description export requires a ROM byte array.');
     var spec = SPECS[block.kind];
-    var prepared = prepareBlock(block);
+    var prepared = buildSlot(block);
     var headerOffset = block.meta.headerOffset != null
       ? block.meta.headerOffset : OB64.LZSS_GAP_START + spec.gapOffset;
     if (headerOffset < 0 || headerOffset + spec.slotSize > z64.length) {
       throw new Error(spec.label + ' slot lies outside the export image.');
     }
-    OB64.writeU32BE(z64, headerOffset, spec.capacity + 4);
-    OB64.writeU32BE(z64, headerOffset + 4, prepared.decompressed.length);
-    z64.fill(0x03, headerOffset + 8, headerOffset + 8 + spec.capacity);
-    z64.set(prepared.compressed, headerOffset + 8);
-    var verification = OB64.lzssDecode(z64, headerOffset + 8, prepared.decompressed.length);
-    if (!equalBytes(verification.output, prepared.decompressed)) {
+    // Preserve the alignment byte outside the declared compressed capacity.
+    z64.set(prepared.bytes.subarray(0, 8 + spec.capacity), headerOffset);
+    var verification = OB64.lzssDecode(z64, headerOffset + 8, prepared.decoded.length);
+    if (!equalBytes(verification.output, prepared.decoded)) {
       throw new Error(spec.label + ' did not read back from the finished slot.');
     }
     return {
       headerOffset: headerOffset,
       slotSize: spec.slotSize,
-      decompSize: prepared.decompressed.length,
-      compressedSize: prepared.compressed.length,
+      decompSize: prepared.decoded.length,
+      compressedSize: prepared.compressedSize,
       compressedCapacity: spec.capacity
     };
   }
@@ -884,6 +896,7 @@ window.OB64 = window.OB64 || {};
     parseAll: parseAll,
     parseBlock: parseBlock,
     serializeBlock: serializeBlock,
+    buildSlot: buildSlot,
     serializeRecords: serializeRecords,
     replaceText: replaceText,
     withText: withText,
