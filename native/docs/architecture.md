@@ -59,7 +59,7 @@ editor uses Ctrl+Enter to commit, and dependent class selectors update with undo
 and redo. Growing an owned ROM allocation moves it when unrelated bytes follow;
 shrinking an allocation at the end removes only its owned trailing bytes.
 
-The promotion model also supports 165–256 class IDs. Growing from the original
+The promotion model also supports 165â€“256 class IDs. Growing from the original
 81 manual entries preserves existing values and gives the remaining retail IDs
 no manual family by default. Appending a new ID copies a chosen template's
 requirements, family and compatibility mask. Schema 2 catalogs persist the
@@ -136,10 +136,10 @@ eligibility, equipment summaries and confirmation paths. Those indexed reads
 move to the expanded alias array while C readers use linked symbol references.
 Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
-Its special secondary-class rule remains limited to original IDs 42–164;
+Its special secondary-class rule remains limited to original IDs 42â€“164;
 new IDs use their authored compatibility and requirement tables.
 The Army action checks likewise apply their special-class restrictions only to
-original IDs 81–164. Both alias routes retain their original default-class
+original IDs 81â€“164. Both alias routes retain their original default-class
 selection; appended IDs take the ordinary-class path. The unrelated 128-entry
 squad-index bound remains unchanged.
 
@@ -214,3 +214,12 @@ Ship required notices and dependency sources/instructions with the distribution.
 Every newly justified test is explained to Joe before implementation: behavior,
 failure risk, inputs, execution, and independent expected result. Report the
 actual invocation, outcome, and limitations after it runs.
+
+Class description resources can now grow beyond the original compressed slot.
+The exporter compiles authored entries, allocates a bounded cartridge resource,
+and updates both resident readers: the bank-key table and shared-help expansion
+code. A checksummed LC05TEXT descriptor occupies the beginning of the former
+resource; the rest of that slot remains untouched. Reopening validates the entire
+resource and both full owners, accounting for independent class-data relocation.
+Later growth moves around unrelated allocations. Shared help entries retain their
+indices and raw bytes. New-class description index routing remains separate.

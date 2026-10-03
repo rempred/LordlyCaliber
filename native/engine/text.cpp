@@ -1,4 +1,5 @@
 #include "engine/text.h"
+#include "engine/class_text.h"
 #include <QRegularExpression>
 
 namespace lordly {
@@ -103,12 +104,20 @@ QMap<QString, TextBank> TextBank::load(const Rom &rom) {
         {"items", "Item descriptions", 0x34fa4e, 9702, 9710, 278, true},
         {"consumables", "Consumable descriptions", 0x352b88, 2055, 2064, 50, true}};
     QMap<QString, TextBank> result;
+    const auto classText = rom.revision() == 0 ? ClassTextPlacement::read(rom) : std::nullopt;
     auto gap = rom.revision() == 0 ? 0x20248c2 : 0x2024516;
     for (const auto &spec : specs) {
         TextBank bank;
         bank.spec = spec;
-        bank.resource = Resource::load(rom, gap + spec.relativeOffset, spec.allocation);
-        bank.resource.capacity = spec.capacity;
+        if (spec.id == "classes" && classText) {
+            bank.resource = Resource::load(rom, classText->offset, classText->allocation);
+            bank.spec.count = int(classText->count);
+            bank.spec.capacity = int(classText->allocation) - 8;
+            bank.spec.allocation = int(classText->allocation);
+        } else {
+            bank.resource = Resource::load(rom, gap + spec.relativeOffset, spec.allocation);
+            bank.resource.capacity = spec.capacity;
+        }
         qsizetype start = 0;
         while (start < bank.resource.decoded.size()) {
             auto end = bank.resource.decoded.indexOf("\r\n", start);
@@ -118,7 +127,7 @@ QMap<QString, TextBank> TextBank::load(const Rom &rom) {
             bank.entries.push_back({bytes, bytes});
             start = end + 2;
         }
-        if (bank.entries.size() != spec.count)
+        if (bank.entries.size() != bank.spec.count)
             throw Error(spec.label + " has an unexpected record count");
         result[spec.id] = std::move(bank);
     }

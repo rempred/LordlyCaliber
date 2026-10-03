@@ -1,5 +1,6 @@
 #include "engine/class_data.h"
 #include "engine/class_runtime_inventory.h"
+#include "engine/class_text.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
@@ -783,6 +784,85 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(u32(result.image, p.textBanks()["classes"].resource.romOffset), quint32(6403));
             QCOMPARE(Rom::open(path).bytes(), p.rom().bytes());
             QVERIFY(QFileInfo::exists(build.filePath("descriptions_classes.compiler.s")));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void growingClassDescriptions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadTexts();
+            const auto original = project.textBanks();
+            quint32 random = 0x18462476;
+            const QByteArray alphabet(
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+            auto edit = [&](Project &p, int width) {
+                for (int id = 1; id < 165; ++id) {
+                    QString text;
+                    for (int line = 0; line < 3; ++line) {
+                        if (line)
+                            text += '\n';
+                        for (int col = 0; col < width; ++col) {
+                            random = random * 1664525U + 1013904223U;
+                            text += QChar(alphabet[(random >> 16) % alphabet.size()]);
+                        }
+                    }
+                    p.setText("classes", id, text);
+                }
+            };
+            edit(project, 32);
+            QVERIFY(encodeLzss(project.textBanks()["classes"].serialized()).size() > 6399);
+            project.setClassNameBytes(1, encodeClassName("Description owner"));
+            QTemporaryDir build;
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            auto result = rebuild(project, tools, build.path());
+            const auto first = ClassTextPlacement::read(Rom::fromBytes(result.image));
+            QVERIFY(first.has_value());
+            QCOMPARE(u32(result.image, 0x66d60), first->offset - ClassTextPlacement::keyBase);
+            QCOMPARE(((u32(result.image, 0x56404) & 65535) << 16) |
+                         (u32(result.image, 0x56408) & 65535),
+                     first->offset - ClassTextPlacement::keyBase);
+            auto reopened = Project::fromRom(Rom::fromBytes(result.image));
+            reopened.loadTexts();
+            for (auto it = original.begin(); it != original.end(); ++it)
+                for (int id = 0; id < it->entries.size(); ++id)
+                    if (it.key() != "classes" || id == 0 || id >= 165)
+                        QCOMPARE(reopened.textBanks()[it.key()].entries[id].bytes,
+                                 it->entries[id].bytes);
+            QCOMPARE(reopened.textBanks()["classes"].serialized(),
+                     project.textBanks()["classes"].serialized());
+            // Class data follows the first text allocation. Growing text must
+            // move past it, retain it, and allow the next class relink.
+            const auto classes = ClassPlacement::read(reopened.rom());
+            QVERIFY(classes.has_value());
+            edit(reopened, 64);
+            reopened.setClassNameBytes(1, encodeClassName("Description owner with a longer name"));
+            auto grown = rebuild(reopened, tools, build.path());
+            const auto second = ClassTextPlacement::read(Rom::fromBytes(grown.image));
+            QVERIFY(second.has_value());
+            QVERIFY(second->offset >= result.image.size());
+            auto again = Project::fromRom(Rom::fromBytes(grown.image));
+            again.loadTexts();
+            QCOMPARE(again.textBanks()["classes"].serialized(),
+                     reopened.textBanks()["classes"].serialized());
+            QCOMPARE(again.classNameBytes(1), reopened.classNameBytes(1));
+            for (const auto at : {quint32(0x66d60), quint32(0x56404), second->offset + 12,
+                                  ClassTextPlacement::descriptorOffset + 12}) {
+                auto damaged = grown.image;
+                put8(damaged, at, u8(damaged, at) ^ 1);
+                QVERIFY_THROWS_EXCEPTION(Error, TextBank::load(Rom::fromBytes(damaged)));
+            }
+            auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir output(candidates + "/native-growing-text-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            exportRom(reopened, grown, output.filePath(QFileInfo(path).fileName()));
+            qInfo().noquote() << "Growing description candidate:" << output.path();
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }

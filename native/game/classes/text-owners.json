@@ -1,0 +1,19 @@
+{
+  "generator": "native/tools/generate-class-text-catalog.cjs",
+  "input": "US Rev 0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "start": 351016,
+      "size": 2444,
+      "high": 2268,
+      "low": 2272,
+      "retailSha256": "a04c60ee7ff8633a05d0ca172a7802be8fd3f134a65bc1796d3e2f0e94260f10"
+    },
+    {
+      "start": 421196,
+      "size": 84,
+      "word": 20,
+      "retailSha256": "0c9671e8cfe5d9e1454dc7c87ec849ff7f1262b7107795835264338678735937"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 #include "rebuild/compiler.h"
+#include "engine/class_text.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/elf_references.h"
 #include <QDir>
@@ -499,8 +500,15 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
             continue;
         auto compiled =
             compiler.compileData(bank.serialized(), directory, "descriptions_" + bank.spec.id);
-        auto container = bank.resource.container(compiled);
-        result.image.replace(bank.resource.romOffset, container.size(), container);
+        if (bank.spec.id == "classes" && p.rom().revision() == 0 &&
+            (ClassTextPlacement::read(p.rom()) ||
+             encodeLzss(compiled).size() > bank.resource.capacity)) {
+            result.image =
+                linkClassText(Rom::fromBytes(result.image), compiled, int(bank.entries.size()));
+        } else {
+            auto container = bank.resource.container(compiled);
+            result.image.replace(bank.resource.romOffset, container.size(), container);
+        }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
     rebuildPromotion(p, compiler, directory, result);
