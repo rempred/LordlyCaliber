@@ -109,7 +109,7 @@ Object.assign(catalog.owners.find(owner=>owner.start===0xd0150), {
 // Expanded builds retain these owners and assemble only their established
 // array/allocation operands. Other screens reuse the old union storage.
 const classOwners = JSON.parse(fs.readFileSync(path.join(root, 'native/game/classes/relocations.json'))).owners;
-catalog.expandedOwners = [0x9b0f0, 0x9bc80].map(start => {
+catalog.expandedOwners = [0x9b0f0, 0x9bc80, 0xbc984, 0xbedb8, 0xbf458, 0xc01dc].map(start => {
   const owner = classOwners.find(entry => entry.start === start);
   return {name:'func_'+start.toString(16).padStart(8,'0'), start, size:owner.size,
     retailSha256:owner.retailSha256};
@@ -117,6 +117,7 @@ catalog.expandedOwners = [0x9b0f0, 0x9bc80].map(start => {
 catalog.expandedOwners.push({name:'func_000ae3f0',start:0xae3f0,size:0x518,
   retailSha256:'b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3'});
 const expandedInstructions = [
+  [0xc3900, [[0xc3d00, 'sltiu $v0, $a0, CLASS_COUNT']]],
   [0xae3f0, [[0xae3f4, 'addiu $a0, $zero, ARMY_OWNER_BYTES'],
     [0xae41c, 'addiu $a1, $zero, ARMY_OWNER_BYTES']]],
   [0x9b0f0, [[0x9b650, 'lbu $v0, CATEGORY_CLASSES_OFFSET+1($v0)'],
@@ -135,5 +136,15 @@ const expandedInstructions = [
 for (const [start, instructions] of expandedInstructions) {
   const owner = [...catalog.owners, ...catalog.expandedOwners].find(entry=>entry.start===start);
   owner.expandedInstructions = instructions.map(([site, assembly])=>({offset:site-start, assembly}));
+}
+// Three-instruction indexed reads verified in the original Army code. Sources
+// that are replaced by C get their alias references from the linked ELF instead.
+for (const [start, sites] of [
+  [0xbc984, [0xbc9b0]], [0xbedb8, [0xbee30]], [0xbf458, [0xbf498]],
+  [0xc01dc, [0xc02ac, 0xc037c, 0xc0884, 0xc0968]],
+  [0xc3900, [0xc396c]], [0xcddf0, [0xce7b8, 0xcefa4]]
+]) {
+  const owner = [...catalog.owners, ...catalog.expandedOwners].find(entry=>entry.start===start);
+  owner.expandedDataReferences = sites.map(site=>({group:'aliases',high:site-start,low:site+8-start,addend:0}));
 }
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

@@ -59,6 +59,12 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
             for (const auto &record : previous->owners)
                 if (record.start == start)
                     references = record.references;
+        if (!previous)
+            for (const auto &v : owner["expandedDataReferences"].toArray()) {
+                const auto ref = v.toObject();
+                references.append({ref["group"].toString(), quint32(ref["high"].toInt()),
+                                   quint32(ref["low"].toInt()), ref["addend"].toInt()});
+            }
         // Retained instructions use the authenticated original reference map.
         for (const auto &value : classCatalog["owners"].toArray()) {
             if (previous)

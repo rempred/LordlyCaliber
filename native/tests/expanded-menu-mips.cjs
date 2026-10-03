@@ -99,5 +99,47 @@ for (const index of [0, 31, 80, layout.count - 2]) {
     assert.equal(m.r16(owner + 0x5E8), id); cases++;
   }
 }
-console.log(JSON.stringify({classes:layout.count, categoryCases:cases, allocationBytes:layout.ownerBytes,
+let aliasCases = 0;
+for (const entry of [...catalog.owners, ...catalog.expandedOwners]) {
+  for (const reference of entry.expandedDataReferences || []) {
+    // Execute each original indexed lookup with values chosen independently of
+    // its instruction encoding. The old map deliberately contains a different alias.
+    for (const id of [0, 5, 90, layout.count - 1]) for (const value of [0, 24]) {
+      const m = cpu(), begin = entry.start + reference.high;
+      const high = rom.readUInt32BE(begin), add = rom.readUInt32BE(begin + 4), low = rom.readUInt32BE(begin + 8);
+      assert.equal(high >>> 26, 15); assert.equal(low >>> 26, 36);
+      assert.equal(add & 63, 33); // original indexed ADDU
+      const base = (high >>> 16) & 31, rs = (add >>> 21) & 31, rt = (add >>> 16) & 31;
+      assert(rs === base || rt === base);
+      m.r[rs === base ? rt : rs] = id;
+      m.w8(0x801EF3B8 + id, value ^ 0x7F); m.w8(layout.aliases + id, value);
+      m.call(ram(begin), ram(begin + 12));
+      assert.equal(m.r[(low >>> 16) & 31], value); aliasCases++;
+    }
+  }
+}
+let equipmentCases = 0;
+for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
+  for (const missing of [-1, 0, 1, 2, 3]) {
+    const m = cpu(), getters = [], lookups = [];
+    m.w8(stack + 0x17, id); m.set('s0', allowed ? 1 : 0);
+    for (let i = 0; i < 4; ++i) {
+      const address = 0x80050000 + i * 16;
+      m.w32(0x801EF288 + i * 4, address);
+      m.trap(address, c => {
+        getters.push([c.get('a0'), c.get('a1')]); clobber(c); c.set('v0', 100 + i);
+      });
+      m.w8(0x80196B03 + i * 4, i === missing ? 0 : 1);
+    }
+    m.trap(0x8016B6FC, c => {
+      const item = c.get('a0'); lookups.push(item); clobber(c); c.set('v0', item - 100);
+    });
+    m.call(ram(0xC3CE4), ram(0xC3D7C));
+    const check = allowed && id >= 2;
+    assert.deepEqual(getters, check ? Array.from({length:4}, () => [id,id]) : []);
+    assert.deepEqual(lookups, check ? [100,101,102,103] : []);
+    assert.equal(m.get('v0'), allowed && (!check || missing === -1) ? 1 : 0);
+    equipmentCases++;
+  }
+console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, equipmentCases, allocationBytes:layout.ownerBytes,
   scope:'executed selection/name/count/sprite-call spans; not raster output or full game'}));

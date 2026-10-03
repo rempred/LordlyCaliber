@@ -131,6 +131,12 @@ against fresh compilation. Public export remains guarded until remaining
 consumers and saves are integrated; these candidates are not a claim of a
 playable expanded ROM.
 
+The expanded inventory also owns the original alias readers used by class
+eligibility, equipment summaries and confirmation paths. Those indexed reads
+move to the expanded alias array while C readers use linked symbol references.
+Discovery's required-equipment loop uses the configured class count, preserving
+its four slot checks for newly added IDs.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.
