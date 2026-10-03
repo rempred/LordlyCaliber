@@ -382,6 +382,23 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             if (built.isEmpty())
                 built = compiler.assembleOwner(source, directory, owner["name"].toString(),
                                                quint32(start) + 0x801135a0u);
+            qsizetype fragmentEnd = 0;
+            for (const auto &value : owner["assemblyFragments"].toArray()) {
+                const auto fragment = value.toObject();
+                const auto offset = fragment["offset"].toInt(-1);
+                const auto length = fragment["size"].toInt();
+                if (offset < fragmentEnd || length <= 0 || offset + length > built.size() ||
+                    ((offset | length) & 3))
+                    throw Error("Invalid or overlapping maintained assembly fragment");
+                const auto code = compiler.assembleOwner(
+                    readFile(":/game/promotion/" + fragment["source"].toString()), directory,
+                    owner["name"].toString() + "_fragment_" + QString::number(offset),
+                    quint32(start + offset) + 0x801135a0u);
+                if (code.size() != length)
+                    throw Error("Assembly fragment exceeds its instruction allocation");
+                built.replace(offset, length, code);
+                fragmentEnd = offset + length;
+            }
             if (built.size() != size || sha256(built) != expected)
                 throw Error("Compiled promotion owner differs from validated source: " +
                             owner["name"].toString());

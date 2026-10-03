@@ -30,7 +30,14 @@
       "retailSha256": "87e97278985be7a289969d5165af97d48ae926cec3bd839b28195494e59b5890",
       "familySha256": "a9f643b48205651a122fd9d50b5601426aab5a97a2c9c18b4f7c94fc06666aa9",
       "directGateSha256": "440cf77a8735cf2f35c60fae1311132d90e6011eaee096bf7c02236e5d712257",
-      "keySite": 840900
+      "keySite": 840900,
+      "assemblyFragments": [
+        {
+          "offset": 592,
+          "size": 8,
+          "source": "equipment-first-class.s"
+        }
+      ]
     },
     {
       "name": "func_000cddf0",

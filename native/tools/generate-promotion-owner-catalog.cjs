@@ -94,6 +94,9 @@ catalog.owners.push({
   symbols:{lc_army_owner:0x80196AF8,lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,
     lc_class_records:0x80187C14,lc_clear:0x80093380,lc_check_change:0x801D2358}
 });
+catalog.owners.find(owner=>owner.start===0xcd3e8).assemblyFragments = [
+  {offset:0xcd638-0xcd3e8,size:8,source:'equipment-first-class.s'}
+];
 Object.assign(catalog.owners.find(owner=>owner.start===0xd0150), {
   cSource:'class-screen.c', cExtent:560,
   cSourceSha256:'e0b97def94deb8b58d02286b96ce05b876c3f23e8c3c6d46ce96a1066f11644e',

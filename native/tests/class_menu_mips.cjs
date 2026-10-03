@@ -201,6 +201,48 @@ const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/o
 assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
+const firstClassAddress=0x801E0BD8;
+const firstClassSource=fs.readFileSync(path.join(native,'game/promotion/equipment-first-class.s'),'utf8');
+const firstClassRetail=assembly('equipment_first_class','equipment-first-class.s',firstClassAddress);
+fs.writeFileSync(path.join(work,'equipment_first_class_wide.s'),'.set noat\n.set noreorder\n.section .owner,"ax"\nCLASS_LIST_OFFSET = 0x2528\nCLASS_ID_MASK = 255\n'+firstClassSource);
+const firstClassWide=extract('equipment_first_class_wide',firstClassAddress,'.owner');
+assert.equal(firstClassRetail.length,8);assert.equal(firstClassWide.length,8);
+let firstClassCases=0;
+for(const wide of [false,true]) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.load(firstClassAddress,wide?firstClassWide:firstClassRetail);
+  cpu.w16(owner+(wide?0x1C0E:0x2528),0x5A5A);
+  for(let id=0;id<(wide?256:128);id++)for(const disabled of [0,wide?0x8000:0x80]) {
+    cpu.w16(owner+(wide?0x2528:0x1C0E),id|disabled);cpu.set('v0',owner);cpu.set('a0',0xCCCCCCCC);
+    cpu.call(firstClassAddress,firstClassAddress+8);assert.equal(cpu.get('a0'),id);assert.equal(cpu.get('v0'),owner);firstClassCases++;
+  }
+}
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  assert.deepEqual(firstClassRetail,rom.subarray(0xCD638,0xCD640));
+}
+console.log(JSON.stringify({firstClassCases}));
+const lookupSource=fs.readFileSync(path.join(native,'game/promotion/family-lookup.s'),'utf8');
+const lookupCode=lookup;
+fs.writeFileSync(path.join(work,'family_lookup_wide.s'),'.set noat\n.set noreorder\n.section .owner,"ax"\nCLASS_COUNT = 256\nFAMILY_OFFSET = 2048\n'+lookupSource);
+const lookupWide=extract('family_lookup_wide',lookupAddress,'.owner');
+assert.equal(lookupCode.length,48);assert.equal(lookupWide.length,48);
+const lookupPadded=Buffer.alloc(48);lookupCode.copy(lookupPadded);
+function familyLookup(code,id,wide) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('a0',id);cpu.set('sp',0x80060000);
+  cpu.load(lookupAddress,code);cpu.w32(0x80196AF8,owner);cpu.w32(owner+0x80,resource);
+  for(let n=0;n<(wide?256:81);n++)cpu.w32(resource+(wide?2048:648)+n*4,(((n%11)<<16)|((n*97)%65535))>>>0);
+  cpu.w8=cpu.w16=cpu.w32=()=>{throw Error('family lookup changed RAM');};cpu.call(lookupAddress);
+  return [cpu.get('v0'),cpu.get('v1')];
+}
+const lookupManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBBD50);
+assert.equal(hash(lookupCode),lookupManifest.familySha256,'default lookup remains byte-identical');
+let lookupCases=0;
+for(let id=0;id<256;id++)for(const high of [0,256,0xFFFF0000]) {
+  assert.deepEqual(familyLookup(lookupCode,(id+high)>>>0,false),id<81?[(((id%11)<<16)|((id*97)%65535))>>>0,id%11]:[0,0]);
+  assert.deepEqual(familyLookup(lookupWide,(id+high)>>>0,true),[(((id%11)<<16)|((id*97)%65535))>>>0,id%11]);lookupCases+=2;
+}
+console.log(JSON.stringify({lookupCases,lookupBytes:lookupCode.length,lookupWideBytes:lookupWide.length,lookupHash:hash(lookupPadded)}));
 const screenAddress=0x801E36F0;
 const screenSource=fs.readFileSync(path.join(native,'game/promotion/class-screen.c'),'utf8');
 const screenBindings='lc_army_owner = 0x80196AF8; lc_roster = 0x80193BF8; lc_named_class_map = 0x801EF3B8; lc_class_records = 0x80187C14; lc_prepare_class = 0x801E2BCC; lc_prepare_actor = 0x801DA3D8; lc_family_menu = 0x801D27E8; lc_equipment_summary = 0x801D29F8; lc_equipment_entry = 0x801CEA1C; lc_family_lookup = 0x801CF2F0;';
