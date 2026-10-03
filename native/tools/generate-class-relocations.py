@@ -91,10 +91,10 @@ for row in rows:
                                             originalTarget=target))
 
 # Explicitly reviewed allocator capacity and instruction-cache preparation.
-for pos, field in [(0x1148, 'directoryCapacity'), (0x243C, 'codeCacheEndLow')]:
+for pos, field in [(0x1148, 'directoryCapacity'), (0x2438, 'codeCacheEndHigh'), (0x243C, 'codeCacheEndLow')]:
     row = next(row for row in rows if row['romStart'] <= pos < row['romEndExclusive'])
     owner(row).setdefault('constants', []).append(dict(offset=pos-row['romStart'], field=field))
-assert word(0x1148) == 0x2C420004 and word(0x243C) == 0x24A56310
+assert word(0x1148) == 0x2C420004 and word(0x2438) == 0x3C058018 and word(0x243C) == 0x24A56310
 
 result = dict(generator='native/tools/generate-class-relocations.py',
               inputRomSha256=digest,

@@ -10,6 +10,19 @@ extern SaveByte lc_discovery_flags[], lc_legacy_discovery[];
 void *lc_native_save_alloc(SaveWord size);
 void lc_native_sram_io(SaveWord offset, void *data, SaveWord size, SaveWord write);
 void lc_native_main_save(SaveByte *data);
+void lc_native_save_free(void *data);
+void lc_native_save_cleanup(SaveWord commit);
+void lc_native_options_init(SaveByte *data);
+void lc_native_options_load(SaveByte *data);
+void lc_native_options_save(SaveByte *data);
+typedef void (*SaveCallback)(SaveByte *data);
+typedef struct SaveCallbacks {
+    SaveCallback init, load, save;
+    SaveWord offset;
+    SaveCallback quick_load, quick_save;
+    SaveWord quick_offset;
+} SaveCallbacks;
+extern SaveCallbacks lc_save_callbacks[13];
 
 static void copy_save_bytes(SaveByte *to, const SaveByte *from, SaveWord size)
 {
@@ -75,11 +88,15 @@ void lc_save_sign(SaveWord slot, SaveByte *record)
 {
     lc_save_record_seal(record, lc_save_record_size(slot, 1), slot, 1);
 }
-void lc_discovery_init(void)
+void lc_discovery_init(SaveByte *record)
 {
     SaveWord i;
     for (i = 0; i < LC_SAVE_DISCOVERY_BYTES; ++i) lc_discovery_flags[i] = 0;
-    for (i = 0; i < 11; ++i) lc_legacy_discovery[i] = 0;
+    /* Runs after the original initializer, which establishes the game's initial
+     * state and serializes it. Retain its first eleven discovery bytes.
+     */
+    copy_save_bytes(lc_discovery_flags, lc_legacy_discovery, 11);
+    copy_save_bytes(record, lc_discovery_flags, LC_SAVE_DISCOVERY_BYTES);
 }
 void lc_discovery_load(const SaveByte *record)
 {
@@ -94,4 +111,148 @@ void lc_save_main_payload(SaveByte *record)
 {
     copy_save_bytes(lc_legacy_discovery, lc_discovery_flags, 11);
     lc_native_main_save(record);
+}
+
+static SaveWord save_word(const SaveByte *p)
+{
+    return ((SaveWord)p[0] << 24) | ((SaveWord)p[1] << 16) | ((SaveWord)p[2] << 8) | p[3];
+}
+static void save_put_word(SaveByte *p, SaveWord value)
+{
+    p[0] = (SaveByte)(value >> 24); p[1] = (SaveByte)(value >> 16);
+    p[2] = (SaveByte)(value >> 8); p[3] = (SaveByte)value;
+}
+static void clear_save_bytes(SaveByte *p, SaveWord size)
+{
+    while (size--) *p++ = 0;
+}
+static void dispatch_save_callbacks(SaveByte *record, SaveWord operation, SaveWord quick)
+{
+    SaveWord i;
+    SaveCallbacks *row;
+    SaveCallback callback;
+    for (i = 0; i < 13; ++i) {
+        row = lc_save_callbacks + i;
+        callback = quick ? (operation == 1 ? row->quick_load : row->quick_save) :
+                   (operation == 0 ? row->init : operation == 1 ? row->load : row->save);
+        if (callback) callback(record + (quick ? LC_SAVE_EXPANDED_NORMAL_BYTES + row->quick_offset :
+                                                12 + row->offset));
+    }
+}
+/* Original boot initialization treats an image as new only when none of its
+ * four signatures is recognized. Check signatures separately from checksums so
+ * a damaged slot is repaired individually without erasing its valid neighbors.
+ */
+int lc_save_headers_missing(void)
+{
+    SaveByte *cache = save_cache(), *record;
+    SaveWord i, slot, a, b;
+    if (!cache) return 0; /* Damaged layout: all mutation remains blocked. */
+    for (i = 0; i < 4; ++i) {
+        slot = i < 2 ? i : i == 2 ? 15 : 14;
+        record = cache + lc_save_record_offset(slot, 1);
+        a = save_word(record + 4); b = save_word(record + 8);
+        if ((a == 0x4C433035U && b == 0x4F473321U) ||
+            (a == 0x51756573U && b == 0x744F4733U)) return 0;
+    }
+    return 1;
+}
+void lc_save_initialize_slot(SaveWord slot)
+{
+    SaveWord size = lc_save_record_size(slot, 1);
+    SaveByte *record, *cache;
+    if (!size || !(cache = save_cache())) return;
+    if (slot == 15) {
+        /* Clearing suspend changes only its twelve-byte header, as before. */
+        record = cache + lc_save_record_offset(slot, 1);
+        save_put_word(record, 0);
+        save_put_word(record + 4, 0x4C433035U); save_put_word(record + 8, 0x4F473321U);
+        lc_save_dirty = 1;
+        return;
+    }
+    record = (SaveByte *)lc_native_save_alloc(size);
+    if (!record) return;
+    clear_save_bytes(record, size);
+    if (slot == 14) lc_native_options_init(record + 12);
+    else dispatch_save_callbacks(record, 0, 0);
+    lc_save_sign(slot, record);
+    write_save_record(slot, record);
+    lc_native_save_free(record);
+}
+int lc_save_check_slot(SaveWord slot)
+{
+    SaveWord size = lc_save_record_size(slot, 1);
+    SaveByte *cache = save_cache();
+    int valid;
+    if (!cache || !size) return 0;
+    valid = lc_save_record_valid(cache + lc_save_record_offset(slot, 1), size, slot, 1);
+    if (!valid) lc_save_initialize_slot(slot);
+    return valid;
+}
+static void save_game_slot(SaveWord slot)
+{
+    SaveWord size = lc_save_record_size(slot, 1), counter = 0;
+    SaveByte *record, *cache;
+    if (!size || !(cache = save_cache())) return;
+    if (slot < 2) {
+        /* The counter comes from the prior record, never recycled heap bytes. */
+        if (lc_save_record_valid(cache + lc_save_record_offset(slot, 1), size, slot, 1))
+            counter = save_word(cache + lc_save_record_offset(slot, 1) + 12);
+        ++counter;
+        if (!counter) counter = ~0U;
+    }
+    record = (SaveByte *)lc_native_save_alloc(size);
+    if (!record) return;
+    clear_save_bytes(record, size);
+    if (slot == 14) lc_native_options_save(record + 12);
+    else {
+        save_put_word(record + 12, counter);
+        dispatch_save_callbacks(record, 2, 0);
+        if (slot == 15) dispatch_save_callbacks(record, 2, 1);
+    }
+    lc_save_sign(slot, record);
+    write_save_record(slot, record);
+    lc_native_save_free(record);
+}
+static void load_game_slot(SaveWord slot)
+{
+    SaveWord size = lc_save_record_size(slot, 1);
+    SaveByte *record;
+    if (!size) return;
+    record = (SaveByte *)lc_native_save_alloc(size);
+    if (!record) return;
+    if (read_save_record(slot, record)) {
+        if (slot == 14) lc_native_options_load(record + 12);
+        else if (slot != 15 || save_word(record)) {
+            dispatch_save_callbacks(record, 1, 0);
+            if (slot == 15) dispatch_save_callbacks(record, 1, 1);
+        }
+    }
+    lc_native_save_free(record);
+}
+void lc_save_suspend(void) { save_game_slot(15); }
+void lc_load_suspend(void) { load_game_slot(15); }
+void lc_save_game(SaveWord slot)
+{
+    save_game_slot(slot);
+    lc_native_save_cleanup(0x37081383U);
+}
+void lc_load_game(SaveWord slot)
+{
+    load_game_slot(slot);
+    lc_native_save_cleanup(0x37081383U);
+}
+SaveByte *lc_save_summary(SaveWord slot)
+{
+    SaveByte *cache, *record, *summary = 0;
+    SaveWord size = lc_save_record_size(slot, 1);
+    if ((slot < 2 || slot == 15) && (cache = save_cache())) {
+        record = cache + lc_save_record_offset(slot, 1);
+        if (lc_save_record_valid(record, size, slot, 1) && save_word(record + (slot == 15 ? 0 : 12))) {
+            summary = (SaveByte *)lc_native_save_alloc(26);
+            if (summary) copy_save_bytes(summary, record + 12 + lc_save_callbacks[0].offset, 26);
+        }
+    }
+    lc_native_save_cleanup(0x37081383U);
+    return summary;
 }

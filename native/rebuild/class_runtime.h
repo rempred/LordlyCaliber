@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/class_data.h"
 #include "rebuild/compiler.h"
+#include "rebuild/save_runtime.h"
 
 namespace lordly {
 struct PromotionRuntimeBuild;
@@ -10,6 +11,7 @@ struct ClassRuntimeBuild {
     CompiledModule code;
     ClassPlacement placement;
     QByteArray descriptor;
+    std::optional<SaveRuntimeBuild> saves;
     quint32 dataRomOffset = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
     static constexpr quint32 directoryAddress = 0x80187e00;
@@ -19,7 +21,8 @@ struct ClassRuntimeBuild {
 // Compile the data and its initialization/reset functions. This does not install
 // runtime references or produce a playable ROM on its own.
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
-                                    const QString &directory, quint32 dataRomOffset);
+                                    const QString &directory, quint32 dataRomOffset,
+                                    bool expandedSaves = false);
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

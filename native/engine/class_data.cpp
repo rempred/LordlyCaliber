@@ -11,6 +11,7 @@ static constexpr int retailCount = 165, recordSize = 72, appearanceSize = 6;
 static constexpr quint32 nameRamStart = 0x8018febc, nameRamEnd = 0x80190378;
 static constexpr qsizetype nameRomStart = 0x65dbc;
 static void validatePlacement(const ClassPlacement &p) {
+    p.saves.validate();
     const auto &l = p.layout;
     if (l.count < 165 || l.count > 256 || l.indexBase != 0x80243db0 ||
         l.records != l.indexBase + 72 || l.appearances % 16 || l.aliases % 16 || l.names % 16 ||
@@ -39,7 +40,7 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     paddedCode.append(QByteArray(codeCapacity - code.size(), 0));
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05CLAS");
-    put32(header, 8, 1);
+    put32(header, 8, saves.installed() ? 2 : 1);
     put32(header, 12, dataRomOffset);
     put32(header, 16, quint32(data.size()));
     put32(header, 20, layout.count);
@@ -58,6 +59,9 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     put32(header, 72, directory);
     put32(header, 76, directoryCapacity);
     put32(header, 80, codeBytes);
+    put32(header, 84, saves.codeBytes);
+    put32(header, 88, saves.codeChecksum);
+    put32(header, 92, saves.ownerChecksum);
     put32(header, 124, crc32(header.first(124)));
     return header;
 }
@@ -65,8 +69,11 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     const auto header = rom.bytes().mid(descriptorRomOffset, descriptorSize);
     if (!header.startsWith("LC05CLAS"))
         return std::nullopt;
-    if (rom.revision() != 0 || header.size() != descriptorSize || u32(header, 8) != 1 ||
-        u32(header, 124) != crc32(header.first(124)) || header.mid(84, 40) != QByteArray(40, 0))
+    const auto version = u32(header, 8);
+    if (rom.revision() != 0 || header.size() != descriptorSize || (version != 1 && version != 2) ||
+        u32(header, 124) != crc32(header.first(124)) || header.mid(96, 28) != QByteArray(28, 0) ||
+        (version == 1 && header.mid(84, 12) != QByteArray(12, 0)) ||
+        (version == 2 && !u32(header, 84)))
         throw Error("Unrecognized or damaged relocated class descriptor");
     ClassPlacement result;
     auto &l = result.layout;
@@ -85,7 +92,9 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     result.directory = u32(header, 72);
     result.directoryCapacity = int(u32(header, 76));
     result.codeBytes = u32(header, 80);
+    result.saves = {u32(header, 84), u32(header, 88), u32(header, 92)};
     validatePlacement(result);
+    result.saves.verify(rom.bytes());
     if (u32(header, 16) != l.end - l.indexBase ||
         quint64(result.dataRomOffset) + u32(header, 16) > quint64(rom.bytes().size()) ||
         crc32(rom.bytes().mid(result.dataRomOffset, u32(header, 16))) != u32(header, 52) ||

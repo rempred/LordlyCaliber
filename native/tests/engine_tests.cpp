@@ -74,6 +74,16 @@ class EngineTests : public QObject {
                 QCOMPARE(reopened.inventory.encode(), menus.inventory.encode());
                 auto image = linkClassRuntime(priorRom, runtime, &menus);
                 const auto candidateRom = Rom::fromBytes(image);
+                const auto placed = ClassPlacement::read(candidateRom);
+                QVERIFY(placed->saves.installed());
+                placed->saves.verify(image);
+                QCOMPARE(image.mid(SavePlacement::romAddress, placed->saves.codeBytes),
+                         runtime.saves->code.bytes);
+                for (const auto site : {SavePlacement::romAddress, 0x4c5cU, 0x38670U}) {
+                    auto changedSave = image;
+                    changedSave[site] ^= 1;
+                    QVERIFY_THROWS_EXCEPTION(Error, ClassPlacement::read(Rom::fromBytes(changedSave)));
+                }
                 menus.inventory.verify(candidateRom,
                                        ClassRuntimeInventory::dataBases(runtime.data.layout));
                 QCOMPARE(ClassData::load(candidateRom).entries().size(), count);
@@ -127,7 +137,7 @@ class EngineTests : public QObject {
                         .toJson());
                 candidate.setAutoRemove(false);
                 qInfo().noquote()
-                    << "Expanded-menu candidate (remaining consumers/save still pending):"
+                    << "Expanded-menu candidate (Controller Pak and remaining consumers pending):"
                     << candidate.filePath("menu-layout.json");
                 priorRom = candidateRom;
             }

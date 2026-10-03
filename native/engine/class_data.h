@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/save_runtime.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
@@ -31,6 +32,11 @@ struct ClassPlacement {
     quint32 bootEntry = 0, heapEntry = 0, secondaryEntry = 0;
     quint32 directory = 0;
     int directoryCapacity = 0;
+    SavePlacement saves;
+    quint32 instructionEnd() const {
+        return saves.installed() ? SavePlacement::ramAddress + saves.codeBytes
+                                 : codeRamAddress + codeBytes;
+    }
     // Validated V2 promotion metadata, loaded from its separate ROM container.
     // Not part of the resident class descriptor or game RAM.
     QByteArray runtimeInventory;

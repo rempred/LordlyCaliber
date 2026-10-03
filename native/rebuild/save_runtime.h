@@ -1,0 +1,13 @@
+#pragma once
+#include "engine/save_runtime.h"
+#include "rebuild/compiler.h"
+namespace lordly {
+struct SaveRuntimeBuild {
+    CompiledModule code;
+    SavePlacement placement;
+};
+SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
+                                  const QString &directory);
+SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
+                                 const SavePlacement &prior);
+} // namespace lordly

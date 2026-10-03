@@ -9,9 +9,16 @@
 
 namespace lordly {
 ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
-                                    const QString &directory, quint32 dataRomOffset) {
+                                    const QString &directory, quint32 dataRomOffset,
+                                    bool expandedSaves) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
+    if (expandedSaves || result.data.layout.count > 165) {
+        result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory);
+        result.placement.saves = result.saves->placement;
+    }
+    const auto reclaimStart =
+        result.saves ? result.saves->placement.endAddress() : ClassRuntimeBuild::reclaimedStart;
     result.dataRomOffset = dataRomOffset;
     if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
         quint64(dataRomOffset) + result.data.bytes.size() > 0x4000000)
@@ -20,16 +27,15 @@ ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &co
     QFile source(":/game/classes/class-runtime.c");
     if (!source.open(QIODevice::ReadOnly))
         throw Error("Missing maintained class initialization source");
-    const auto header =
-        QString("#define LC_RESERVED_BYTES %1\n"
-                "#define LC_RECLAIM_START %2U\n"
-                "#define LC_RECLAIM_SIZE %3\n"
-                "#define LC_ROM_DATA %4U\n")
-            .arg(result.data.bytes.size())
-            .arg(ClassRuntimeBuild::reclaimedStart)
-            .arg(ClassRuntimeBuild::reclaimedEnd - ClassRuntimeBuild::reclaimedStart)
-            .arg(dataRomOffset)
-            .toLatin1();
+    const auto header = QString("#define LC_RESERVED_BYTES %1\n"
+                                "#define LC_RECLAIM_START %2U\n"
+                                "#define LC_RECLAIM_SIZE %3\n"
+                                "#define LC_ROM_DATA %4U\n")
+                            .arg(result.data.bytes.size())
+                            .arg(reclaimStart)
+                            .arg(ClassRuntimeBuild::reclaimedEnd - reclaimStart)
+                            .arg(dataRomOffset)
+                            .toLatin1();
     result.code = compiler.compileModule(source.readAll(), directory, "class_runtime", 0x80187c14,
                                          {{"class_runtime_config.h", header}},
                                          {{"lc_original_heap_init", 0x80070c60},
@@ -62,6 +68,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         build.descriptor != build.placement.descriptor(build.compiledData, build.code.bytes))
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
+    if (prior && prior->saves.installed() && !build.saves)
+        throw Error("Rebuilding this class allocation also requires its expanded save runtime");
     const auto inventory = prior && !prior->runtimeInventory.isEmpty()
                                ? std::optional<ClassRuntimeInventory>(
                                      ClassRuntimeInventory::decode(prior->runtimeInventory))
@@ -156,14 +164,16 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             const auto at = field["offset"].toInt();
             const auto word = u32(rom.bytes(), start + at);
             const bool capacity = field["field"] == "directoryCapacity";
-            const auto retail = capacity ? 4U : 0x6310U;
-            const auto previous =
-                prior ? (capacity ? quint32(prior->directoryCapacity)
-                                  : ((ClassPlacement::codeRamAddress + prior->codeBytes) & 65535))
-                      : retail;
-            const auto next =
-                capacity ? quint32(build.placement.directoryCapacity)
-                         : ((ClassPlacement::codeRamAddress + build.placement.codeBytes) & 65535);
+            const bool high = field["field"] == "codeCacheEndHigh";
+            const auto half = [high](quint32 address) {
+                return high ? (address + 0x8000U) >> 16 : address & 65535U;
+            };
+            const auto retail = capacity ? 4U : half(0x80186310U);
+            const auto previous = prior ? (capacity ? quint32(prior->directoryCapacity)
+                                                    : half(prior->instructionEnd()))
+                                        : retail;
+            const auto next = capacity ? quint32(build.placement.directoryCapacity)
+                                       : half(build.placement.instructionEnd());
             if ((word & 65535) != previous)
                 throw Error("Class allocator/cache preparation disagrees with its prior layout");
             put32(canonical, at, (word & 0xffff0000U) | retail);
@@ -214,7 +224,12 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     auto paddedCode = build.code.bytes;
     paddedCode.append(QByteArray(ClassPlacement::codeCapacity - paddedCode.size(), 0));
     image.replace(ClassPlacement::codeRomOffset, paddedCode.size(), paddedCode);
-    image.replace(ClassPlacement::descriptorRomOffset, build.descriptor.size(), build.descriptor);
+    auto placement = build.placement;
+    if (build.saves)
+        placement.saves =
+            installSaveRuntime(image, *build.saves, prior ? prior->saves : SavePlacement{});
+    const auto descriptor = placement.descriptor(build.compiledData, build.code.bytes);
+    image.replace(ClassPlacement::descriptorRomOffset, descriptor.size(), descriptor);
     image.replace(at, bytes, build.compiledData);
     if (menus) {
         const auto resource = ExpandedPromotionResource::decode(menus->container);

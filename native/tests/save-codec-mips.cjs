@@ -96,6 +96,8 @@ fs.writeFileSync(path.join(work,'save-format.ld'),
   'lc_save_cache = 0x800A83B8; lc_save_dirty = 0x800A83BC; lc_discovery_flags = 0x80250000;\n'+
   'lc_legacy_discovery = 0x80196A76; lc_native_save_alloc = 0x80070F30;\n'+
   'lc_native_sram_io = 0x8008A0F0; lc_native_main_save = 0x8016CF64;\n'+
+  'lc_native_save_free = 0x800712C4; lc_native_save_cleanup = 0x80074BF0; lc_save_callbacks = 0x800A824C;\n'+
+  'lc_native_options_init = 0x8016CD90; lc_native_options_load = 0x8016CDCC; lc_native_options_save = 0x8016CDF4;\n'+
   'SECTIONS { .text 0x80200000 : { *(.text) } }\n');
 run('mips-kmc-elf-ld.exe',['-EB','-T','save-format.ld','-o','save-format.elf','save-format.o']);
 run('mips-kmc-elf-objcopy.exe',['-O','binary',...['.data','.bss','.reginfo','.pdr','.mdebug','.comment'].map(x=>'--remove-section='+x),'save-format.elf','save-format.bin']);
@@ -108,7 +110,7 @@ for (let i=0;i<sectionCount;++i) {
   const names=sections+elf.readUInt32BE(h+24)*40,strings=elf.readUInt32BE(names+16);
   for(let s=start;s<end;s+=16) if((elf[s+12]&15)===2) {
     const text=strings+elf.readUInt32BE(s),name=elf.toString('ascii',text,elf.indexOf(0,text));
-    if(name.startsWith('lc_save_') || name.startsWith('lc_discovery_')) entries[name]=elf.readUInt32BE(s+4);
+    if(name.startsWith('lc_save_') || name.startsWith('lc_load_') || name.startsWith('lc_discovery_')) entries[name]=elf.readUInt32BE(s+4);
   }
 }
 const code=fs.readFileSync(path.join(work,'save-format.bin'));
@@ -266,8 +268,122 @@ assert.deepEqual(read(output,32),flags);assert.equal(m.r8(output+32),0xA6);
 m.load(0x80196A76,Buffer.alloc(11));let mainCalls=0;
 m.trap(0x8016CF64,c=>{assert.equal(c.get('a0'),output);assert.deepEqual(read(0x80196A76,11),flags.subarray(0,11));mainCalls++;});
 call('lc_save_main_payload',output);assert.equal(mainCalls,1);
-call('lc_discovery_init');assert.deepEqual(read(0x80250000,32),Buffer.alloc(32));
-assert.deepEqual(read(0x80196A76,11),Buffer.alloc(11));
+call('lc_discovery_init',output);
+const initialFlags=Buffer.alloc(32);flags.copy(initialFlags,0,0,11);
+assert.deepEqual(read(0x80250000,32),initialFlags);
+assert.deepEqual(read(output,32),initialFlags);
+assert.deepEqual(read(0x80196A76,11),flags.subarray(0,11));
 for(const address of [0x8024FFFF,0x80250020,0x80196A75,0x80196A81])assert.equal(m.r8(address),0xA6);
 console.log(JSON.stringify({runtimeCacheReads:3,explicitSaveFlushes:1,highDiscoveryBitReloaded:true,
   scope:'source-built cache/callbacks and original flush with simulated SRAM; ROM installation still pending'}));
+
+// Execute the complete new dispatch with independent callback payloads, guarded
+// allocations and the original cleanup/flush. This detects old record strides,
+// overlap with suspend-only data, stale discovery bits and invalid-slot writes.
+let runtimeFlags=0x80250000;
+if(process.argv[3]) {
+  const candidate=fs.readFileSync(process.argv[3]);
+  if(candidate.readUInt32BE(0)===0x37804012)candidate.swap16();
+  const header=candidate.subarray(0x5DC80,0x5DD00);
+  assert.equal(header.toString('ascii',0,8),'LC05CLAS');assert.equal(header.readUInt32BE(8),2);
+  runtimeFlags=header.readUInt32BE(44);
+  const codeEnd=0x80187F00+header.readUInt32BE(84),pools=[],heaps=[],cacheRanges=[];
+  m.load(0x80070C00,candidate.subarray(0x1000,0x3A000));
+  m.trap(0x800900C0,c=>cacheRanges.push([c.get('a0'),c.get('a1')]));
+  m.trap(0x8009DA50,c=>c.load(c.get('a1'),candidate.subarray(c.get('a0'),c.get('a0')+c.get('a2'))));
+  m.call(0x80071FF4,0x80072078);
+  assert.equal(cacheRanges.length,1);assert.equal(cacheRanges[0][0]+cacheRanges[0][1],codeEnd);
+  m.trap(0x80070C60,c=>heaps.push([c.get('a0'),c.get('a1')]));
+  m.trap(0x80070D20,c=>pools.push([c.get('a0'),c.get('a1')]));
+  m.trap(0x80070F14,()=>{});
+  call(header.readUInt32BE(60),0x80243DB0,0x1BC250);
+  assert.deepEqual(heaps,[[header.readUInt32BE(48),0x80400000-header.readUInt32BE(48)]]);
+  const reclaimed=(codeEnd+15)&~15;
+  assert.deepEqual(pools,[[reclaimed>>>0,0x8018AA70-(reclaimed>>>0)],[0x8018ECE0,0x3D0],[0x8018FEC0,0x4B0]]);
+  for(const entry of ['heap','secondary']) {
+    pools.length=0;
+    call(header.readUInt32BE(entry==='heap'?64:68),0x80243DB0,0x1BC250);
+    assert.equal(pools[0][0],reclaimed>>>0);
+  }
+  const catalog=JSON.parse(fs.readFileSync(path.join(native,'game/classes/save-owners.json')));
+  for(const owner of catalog.owners)entries[owner.symbol]=0x8006FC00+owner.start;
+  const table=0x800A824C;
+  entries.lc_save_main_payload=m.r32(table+28+8);
+  entries.lc_discovery_init=m.r32(table+4*28);
+  entries.lc_discovery_load=m.r32(table+4*28+4);
+  entries.lc_discovery_save=m.r32(table+4*28+8);
+  console.log(JSON.stringify({installedSaveCodeBytes:header.readUInt32BE(84),
+    sourceBuiltBootAndHeapResets:true,instructionCacheEnd:codeEnd.toString(16),scope:'actual candidate instructions in isolated 4 MiB RAM'}));
+}
+const live=new Map(),recordBuffer=0x80370000,summaryBuffer=0x8037F000;
+m.trap(0x80070F30,c=>{
+  const size=c.get('a0'),address=size===0x8000?cache:size===26?summaryBuffer:size===16?flushWork:recordBuffer;
+  assert([16,26,0x1870,0x4B08,0x8000].includes(size));assert(!live.has(address));
+  live.set(address,size);c.load(address-16,Buffer.alloc(size+32,0xA6));c.set('v0',address);
+});
+m.trap(0x800712C4,c=>{
+  const address=c.get('a0'),size=live.get(address);assert(size);
+  assert.deepEqual(read(address-16,16),Buffer.alloc(16,0xA6));
+  assert.deepEqual(read(address+size,16),Buffer.alloc(16,0xA6));live.delete(address);
+});
+const table=0x800A824C; m.load(table,Buffer.alloc(13*28));
+const callbackLog=[],mainPayload=Buffer.from({length:6180},(_,i)=>(i*17+3)&255),
+  quickPayload=Buffer.from({length:0x3298},(_,i)=>(i*31+5)&255),summaryPayload=Buffer.alloc(26,0x47);
+let loadedMain,loadedQuick,loadedOptions;
+function callback(address,fn){m.trap(address,c=>fn(c.get('a0')));return address;}
+function row(index,init,load,save,offset,quickLoad=0,quickSave=0,quickOffset=0){
+  [init,load,save,offset,quickLoad,quickSave,quickOffset].forEach((v,i)=>m.w32(table+index*28+i*4,v));
+}
+row(0,callback(0x80000200,p=>m.load(p,Buffer.alloc(26))),callback(0x80000204,()=>{}),
+  callback(0x80000208,p=>m.load(p,summaryPayload)),4);
+row(1,callback(0x80000210,p=>{m.load(p,Buffer.alloc(6180));m.load(0x80196A76,Buffer.alloc(11));}),
+  callback(0x80000214,p=>{loadedMain=read(p,6180);callbackLog.push('main');}),entries.lc_save_main_payload,0x1E,
+  callback(0x80000218,p=>{loadedQuick=read(p,0x3298);callbackLog.push('quick');}),
+  callback(0x8000021C,p=>m.load(p,quickPayload)));
+row(4,entries.lc_discovery_init,entries.lc_discovery_load,entries.lc_discovery_save,0x1844);
+m.trap(0x8016CF64,c=>{
+  assert.deepEqual(read(0x80196A76,11),read(runtimeFlags,11));c.load(c.get('a0'),mainPayload);
+});
+callback(0x8016CD90,p=>m.load(p,Buffer.from([1,2,3,4])));
+callback(0x8016CDF4,p=>m.load(p,Buffer.from([5,6,7,8])));
+callback(0x8016CDCC,p=>{loadedOptions=read(p,4);});
+cartridge.fill(0xFF);m.w32(0x800A83B8,0);m.w8(0x800A83BC,0);
+assert.equal(call('lc_save_headers_missing'),1);
+for(const slot of [0,1,14,15]) call('lc_save_initialize_slot',slot);
+call(0x80074BF0,0x37081383);assert.equal(live.size,0);
+assert.equal(call('lc_save_headers_missing'),0);
+for(const slot of [0,1,14,15])assert.equal(call('lc_save_check_slot',slot),1);
+call(0x80074BF0,0x37081383);assert.equal(live.size,0);
+for(const slot of [0,1,15]) {
+  m.load(runtimeFlags,flags);call('lc_save_game',slot);assert.equal(live.size,0);
+  const offset=slot===15?0x30F0:16+slot*0x1870;
+  assert.deepEqual(cartridge.subarray(offset+0x1850,offset+0x1870),flags);
+  m.load(runtimeFlags,Buffer.alloc(32));callbackLog.length=0;loadedQuick=null;
+  call('lc_load_game',slot);assert.equal(live.size,0);
+  assert.deepEqual(loadedMain,mainPayload);assert.deepEqual(read(runtimeFlags,32),flags);
+  assert.deepEqual(callbackLog,slot===15?['main','quick']:['main']);
+  if(slot===15)assert.deepEqual(loadedQuick,quickPayload);
+  const summary=call('lc_save_summary',slot);assert.equal(summary,summaryBuffer);
+  assert.deepEqual(read(summary,26),summaryPayload);call(0x800712C4,summary);assert.equal(live.size,0);
+}
+assert.equal(cartridge.readUInt32BE(16+12),1);assert.equal(cartridge.readUInt32BE(0x1880+12),1);
+call('lc_save_game',1);assert.equal(cartridge.readUInt32BE(0x1880+12),2);
+call('lc_save_game',14);call('lc_load_game',14);assert.deepEqual(loadedOptions,Buffer.from([5,6,7,8]));
+const beforeClear=Buffer.from(cartridge);call('lc_save_initialize_slot',15);call(0x80074BF0,0x37081383);
+assert.equal(cartridge.readUInt32BE(0x30F0),0);
+assert.deepEqual(cartridge.subarray(0x30FC),beforeClear.subarray(0x30FC),'clear suspend preserves payload');
+callbackLog.length=0;call('lc_load_game',15);assert.deepEqual(callbackLog,[]);
+assert.equal(call('lc_save_summary',15),0);
+const beforeRepair=Buffer.from(cartridge);cartridge[0x1880+0x300]^=1;
+assert.equal(call('lc_save_check_slot',1),0);call(0x80074BF0,0x37081383);
+assert.deepEqual(cartridge.subarray(0,0x1880),beforeRepair.subarray(0,0x1880));
+assert.deepEqual(cartridge.subarray(0x30F0),beforeRepair.subarray(0x30F0));
+assert.equal(call('lc_save_check_slot',1),1);call(0x80074BF0,0x37081383);
+cartridge[0x7C07]^=1;const damaged=Buffer.from(cartridge),writesBefore=io.filter(x=>x[1]).length;
+assert.equal(call('lc_save_headers_missing'),0);
+for(const slot of [0,1,14,15]){assert.equal(call('lc_save_check_slot',slot),0);call('lc_save_initialize_slot',slot);}
+call('lc_save_game',0);call('lc_load_game',0);
+assert.deepEqual(cartridge,damaged);assert.equal(io.filter(x=>x[1]).length,writesBefore);assert.equal(live.size,0);
+console.log(JSON.stringify({dispatchRoundTrips:4,normalCounters:[1,2],suspendClear:true,
+  isolatedSlotRepair:true,damagedLayoutWrites:0,allocationGuards:true,
+  scope:'source-built dispatch with synthetic callback data and simulated SRAM; no full-game boot proof'}));

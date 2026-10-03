@@ -155,6 +155,24 @@ invalid, and preserves options and unallocated tail bytes. A checksummed
 repeat conversion to leave the image unchanged and damaged markers to be
 rejected before writes. Conversion alone performs no cartridge write.
 
+Expanded class builds now compile and install the complete SRAM dispatch from
+`save-runtime.c`. Normal, suspend and options records share the format definitions;
+the existing game callbacks and device flush remain the services below them.
+Reads normalize only the cache, explicit writes mark it dirty, and a damaged
+layout marker blocks mutation. Individual bad records can be initialized without
+erasing valid neighbors. Save counters come from the prior valid record, removing
+the original dependency on recycled allocation contents.
+
+The module occupies a measured prefix of the former class table at resident RAM
+`0x80187F00` (z64 `0x5DE00`). Every heap reset reclaims only the remainder. Cache
+preparation covers the module, including signed low-half address carry. Version 2
+of the class descriptor records its size and integrity checks for code, entry
+dispatch and the callback directory; version 1 remains readable. Rebuilds compile
+the save module again when class names move the discovery allocation. Isolated
+instruction checks execute the exported boot/reset and save dispatch with guarded
+allocations and synthetic SRAM. Controller Pak integration and full-game validation
+remain outstanding; public new-class export is still guarded.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

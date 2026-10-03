@@ -363,6 +363,10 @@
       ],
       "constants": [
         {
+          "offset": 392,
+          "field": "codeCacheEndHigh"
+        },
+        {
           "offset": 396,
           "field": "codeCacheEndLow"
         }

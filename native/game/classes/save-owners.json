@@ -1,0 +1,107 @@
+{
+  "generator": "native/tools/generate-save-runtime-catalog.cjs",
+  "input": "US Rev 0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "start": 19548,
+      "size": 356,
+      "symbol": "lc_save_game",
+      "retailSha256": "16cd1ce4dc63295903c3c47f5f3427ad1b9514e67006a85d40153bdaaca09797"
+    },
+    {
+      "start": 19904,
+      "size": 276,
+      "symbol": "lc_load_game",
+      "retailSha256": "879a1c7c7d4de2285b724c24441f44f7a947abc374a066f18e4f900f7b95a450"
+    },
+    {
+      "start": 20180,
+      "size": 284,
+      "symbol": "lc_save_summary",
+      "retailSha256": "e4c01b1b10cf244e83cce12bb716fcacdb4317b124b1a7af7a314b69d477d2b7"
+    },
+    {
+      "start": 20720,
+      "size": 176,
+      "symbol": "lc_save_copy",
+      "retailSha256": "7e65c30ea6826b90ee4560338a6ca17af4f15efac9fb60ac87b8daa093ae72bd"
+    },
+    {
+      "start": 20896,
+      "size": 508,
+      "symbol": "lc_save_headers_missing",
+      "retailSha256": "1544773ef7b4744c8d0d09ba348a6b6467e13f3082166954b58f61c385fb66ee"
+    },
+    {
+      "start": 21404,
+      "size": 416,
+      "symbol": "lc_save_initialize_slot",
+      "retailSha256": "20b1024484a4f2634bd7fc64dc6edca14448531418c70eef446b863345e89c66"
+    },
+    {
+      "start": 21820,
+      "size": 232,
+      "symbol": "lc_save_suspend",
+      "retailSha256": "f42099ebd711df15d99502f936dab484b7245b1eb397f6c3035d03f0d70a23e2"
+    },
+    {
+      "start": 22052,
+      "size": 316,
+      "symbol": "lc_load_suspend",
+      "retailSha256": "2dc17a6b659c45e9c7a88274c8177cd4cfc807c5e9e3fa493007bd5f967e358f"
+    },
+    {
+      "start": 22368,
+      "size": 188,
+      "symbol": "lc_save_check_slot",
+      "retailSha256": "0a01217430e91f22e0a34cca891b101bccb02d1228215df488b1303c9fbb5931"
+    },
+    {
+      "start": 22556,
+      "size": 348,
+      "symbol": "lc_save_read_normal",
+      "retailSha256": "07e219a5952f50ba5f9dd4541f30f4205782e4a53e7827036743bdc32bb2dd5b"
+    },
+    {
+      "start": 22904,
+      "size": 272,
+      "symbol": "lc_save_read_suspend",
+      "retailSha256": "0c8e7f4e43b623d09c09fbb5823829f7b7f1a0d8387775b219e6d2ad3ae65677"
+    },
+    {
+      "start": 23176,
+      "size": 260,
+      "symbol": "lc_save_read_options",
+      "retailSha256": "552c59577d8342c4b76819668287f898ada052ce8bb0399e7068636b6a1655be"
+    },
+    {
+      "start": 23436,
+      "size": 204,
+      "symbol": "lc_save_write_normal",
+      "retailSha256": "8bf0b89eb5ea87bc68a5d9ea9f749d1df80a4292f110906ef152560603b74254"
+    },
+    {
+      "start": 23640,
+      "size": 164,
+      "symbol": "lc_save_write_suspend",
+      "retailSha256": "f89f96b855ae4a5126e23f8fb3863452f043e864a154c4e5f1f540dc7ec34485"
+    },
+    {
+      "start": 23804,
+      "size": 160,
+      "symbol": "lc_save_write_options",
+      "retailSha256": "04c3687c8fbf42a910fa5c061274b50e882bc11c75fc7c32a7c911e28ba2c4e3"
+    },
+    {
+      "start": 23964,
+      "size": 232,
+      "symbol": "lc_save_sign",
+      "retailSha256": "babc1944b5b73300b8a585d238c0b5d70d3b2b7172fa6a9c6a2b16debe173ff8"
+    }
+  ],
+  "callbacks": {
+    "start": 230988,
+    "size": 364,
+    "retailSha256": "2ffdad51bc4a06896055d54584f95407f054689a26feaa18fd681a1314205aab"
+  }
+}
