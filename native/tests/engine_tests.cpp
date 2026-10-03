@@ -1,6 +1,7 @@
 #include "engine/class_data.h"
 #include "engine/project.h"
 #include "engine/resource.h"
+#include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -98,8 +99,19 @@ class EngineTests : public QObject {
         QVERIFY(work.isValid());
         Compiler compiler(tools);
         compiler.authenticate();
-        QCOMPARE(compiler.compileData(result.bytes, work.path(), "expanded_class_data"),
-                 result.bytes);
+        const auto runtime = buildClassRuntime(classes, compiler, work.path(), 0x2800000);
+        QCOMPARE(runtime.compiledData, result.bytes);
+        QCOMPARE(runtime.data.layout.end, result.layout.end);
+        QCOMPARE(runtime.dataRomOffset, quint32(0x2800000));
+        QCOMPARE(runtime.code.entries.size(), 3);
+        QVERIFY(runtime.code.entries.contains("lc_boot_classes"));
+        QVERIFY(runtime.code.entries.contains("lc_heap_reset"));
+        QVERIFY(runtime.code.entries.contains("lc_secondary_reset"));
+        QVERIFY(runtime.code.address + runtime.code.bytes.size() <= runtime.directoryAddress);
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 buildClassRuntime(classes, compiler, work.path(), 0x2800001));
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 buildClassRuntime(classes, compiler, work.path(), 0x3fffff0));
         for (int id = 0; id < 165; ++id) {
             const auto record = result.layout.records - result.layout.indexBase + id * 72;
             QCOMPARE(result.bytes.mid(record + 4, 68), original[id].record.sliced(4));

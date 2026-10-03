@@ -65,3 +65,14 @@ preserves the original behavior of checking the remaining actors after a match.
 Native checks also cover compilation, allocation, persistence and export/reopen.
 The implementation still covers the 81-entry manual-promotion roster; expanded
 class IDs require broader data, menu and discovery changes.
+
+`classes/class-runtime.c` supplies the compiled one-time class-data load, main
+heap reset and secondary-pool reset. `rebuild/class_runtime.*` combines it with
+the dynamic class-data builder, checks the cartridge/RAM bounds and returns the
+actual linked entries. It is not yet installed by the public ROM exporter.
+The original class/appearance/name storage becomes additional allocator pools;
+the directory must be relocated and expanded to ten entries before using this
+module. Boot instruction-cache preparation must cover the new code. The parent
+`check_class_boot.cjs` executes this maintained source with the original allocator
+in 4 MB, including one DMA, repeated resets and descriptor combinations. This
+does not establish full-game peak memory or a completed expanded-class export.
