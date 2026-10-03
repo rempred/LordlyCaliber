@@ -7,6 +7,7 @@
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
 #include "rebuild/elf_references.h"
+#include "rebuild/promotion_runtime.h"
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -43,6 +44,82 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void expandedMenuBuild() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler are needed for expanded menu installation checks");
+        try {
+            const auto rom = Rom::open(path);
+            auto classes = ClassData::loadRetail(rom);
+            auto promotion = Promotion::load(rom);
+            Compiler compiler(tools);
+            compiler.authenticate();
+            QTemporaryDir work;
+            QVERIFY(work.isValid());
+            for (int count : {166, 256}) {
+                while (classes.entries().size() < count) {
+                    classes.append(5, "Silver Knight");
+                    promotion.appendClass(5);
+                }
+                const auto runtime = buildClassRuntime(classes, compiler, work.path(), 0x2800000);
+                auto image = linkClassRuntime(rom, runtime);
+                const auto menus = buildPromotionRuntime(Rom::fromBytes(image), runtime.data.layout,
+                                                         promotion, compiler, work.path());
+                QCOMPARE(menus.owners.size(), expandedPromotionOwners().size());
+                const auto reopened = ExpandedPromotionResource::decode(menus.container);
+                QCOMPARE(reopened.data.bytes, promotion.buildExpandedData().bytes);
+                QCOMPARE(reopened.inventory.encode(), menus.inventory.encode());
+                for (auto it = menus.owners.begin(); it != menus.owners.end(); ++it)
+                    image.replace(it.key(), it.value().size(), it.value());
+                image.replace(ExpandedPromotionResource::romOffset, menus.container.size(),
+                              menus.container);
+                Rom::updateChecksum(image);
+                const auto candidateRom = Rom::fromBytes(image);
+                menus.inventory.verify(candidateRom,
+                                       ClassRuntimeInventory::dataBases(runtime.data.layout));
+                QCOMPARE(ClassData::load(candidateRom).entries().size(), count);
+                const auto resource =
+                    Resource::load(candidateRom, ExpandedPromotionResource::romOffset,
+                                   ExpandedPromotionResource::slotSize);
+                QCOMPARE(resource.decoded, promotion.buildExpandedData().bytes);
+                // The trailing entry of the next routine is outside class-screen C.
+                QCOMPARE(image.mid(0xd0380, 8), rom.bytes().mid(0xd0380, 8));
+                auto damaged = image;
+                damaged[0xae3f4] ^= 1;
+                QVERIFY_THROWS_EXCEPTION(
+                    Error,
+                    menus.inventory.verify(Rom::fromBytes(damaged),
+                                           ClassRuntimeInventory::dataBases(runtime.data.layout)));
+                const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+                QVERIFY(QDir().mkpath(candidates));
+                QTemporaryDir candidate(candidates + "/native-expanded-menu-XXXXXX");
+                QVERIFY(candidate.isValid());
+                const auto output = candidate.filePath(QFileInfo(path).fileName());
+                atomicWrite(output, rom.serialize(image));
+                atomicWrite(
+                    candidate.filePath("menu-layout.json"),
+                    QJsonDocument(QJsonObject{{"rom", output},
+                                              {"count", count},
+                                              {"ownerBytes", int(menus.layout.ownerBytes)},
+                                              {"list", int(menus.layout.list)},
+                                              {"ids", int(menus.layout.categoryClasses)},
+                                              {"current", int(menus.layout.currentCounts)},
+                                              {"eligible", int(menus.layout.eligibleCounts)},
+                                              {"records", double(runtime.data.layout.records)},
+                                              {"aliases", double(runtime.data.layout.aliases)},
+                                              {"discovery", double(runtime.data.layout.discovery)}})
+                        .toJson());
+                candidate.setAutoRemove(false);
+                qInfo().noquote()
+                    << "Expanded-menu candidate (remaining consumers/save still pending):"
+                    << candidate.filePath("menu-layout.json");
+            }
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void classNameProjectExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

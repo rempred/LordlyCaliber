@@ -7,6 +7,13 @@
 #include <cmath>
 
 namespace lordly {
+QJsonArray expandedPromotionOwners() {
+    const auto catalog = promotionOwners();
+    auto result = catalog["owners"].toArray();
+    for (const auto &owner : catalog["expandedOwners"].toArray())
+        result.append(owner);
+    return result;
+}
 QMap<QString, quint32> ClassRuntimeInventory::canonicalBases() {
     return {{"classes", 0x80187bcc},
             {"appearances", 0x8018ece0},
@@ -21,7 +28,7 @@ QMap<QString, quint32> ClassRuntimeInventory::dataBases(const ClassDataLayout &l
 }
 static void validateRecord(const RuntimeOwnerRecord &record) {
     bool known = false;
-    for (const auto &entry : promotionOwners()["owners"].toArray()) {
+    for (const auto &entry : expandedPromotionOwners()) {
         const auto owner = entry.toObject();
         known |= record.start == quint32(owner["start"].toInt()) &&
                  record.size == quint32(owner["size"].toInt());

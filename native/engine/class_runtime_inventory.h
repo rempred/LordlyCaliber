@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 
 namespace lordly {
+QJsonArray expandedPromotionOwners();
 struct RuntimeDataReference {
     QString group;
     quint32 high = 0, low = 0;

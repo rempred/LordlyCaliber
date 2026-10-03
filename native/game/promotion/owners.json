@@ -21,7 +21,29 @@
       "retailSha256": "5655541f674226b742455c549229a3d75f0388335a4715cb3fe8e1431544b1d9",
       "familySha256": "5dabd8a9f8d5b4be75a710270dd0bf60b32de973edde8ee5ff994d77f3fe0b8d",
       "directGateSha256": "75625cd11cbe9e0767d5f387cde3da33d5e1b095979d54209959a765724533ca",
-      "keySite": 837772
+      "keySite": 837772,
+      "expandedInstructions": [
+        {
+          "offset": 320,
+          "assembly": "lhu $a0, CATEGORY_CLASSES_OFFSET($a1)"
+        },
+        {
+          "offset": 964,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 1284,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 2296,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v0)"
+        },
+        {
+          "offset": 2760,
+          "assembly": "lhu $v0, CATEGORY_CLASSES_OFFSET($v1)"
+        }
+      ]
     },
     {
       "name": "func_000cd3e8",
@@ -228,6 +250,68 @@
         "lc_clear": 2148086656,
         "lc_check_change": 2149393240
       }
+    }
+  ],
+  "expandedOwners": [
+    {
+      "name": "func_0009b0f0",
+      "start": 635120,
+      "size": 2960,
+      "retailSha256": "270ba4127ad08dd04c21837b9883d90bf2736fb3ac0399cc09acb5178d187923",
+      "expandedInstructions": [
+        {
+          "offset": 1376,
+          "assembly": "lbu $v0, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 2120,
+          "assembly": "lhu $a2, CATEGORY_CURRENT_OFFSET($v0)"
+        },
+        {
+          "offset": 2176,
+          "assembly": "lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)"
+        }
+      ]
+    },
+    {
+      "name": "func_0009bc80",
+      "start": 638080,
+      "size": 3212,
+      "retailSha256": "454e9d8cbccc9cee2e56458fb715e98aab28b0d7d4c85bf14c26de1ed91ba9f2",
+      "expandedInstructions": [
+        {
+          "offset": 680,
+          "assembly": "lbu $v1, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 1996,
+          "assembly": "lbu $s3, CATEGORY_CLASSES_OFFSET+1($v0)"
+        },
+        {
+          "offset": 2076,
+          "assembly": "lhu $a2, CATEGORY_CURRENT_OFFSET($v0)"
+        },
+        {
+          "offset": 2128,
+          "assembly": "lhu $a2, CATEGORY_ELIGIBLE_OFFSET($v0)"
+        }
+      ]
+    },
+    {
+      "name": "func_000ae3f0",
+      "start": 713712,
+      "size": 1304,
+      "retailSha256": "b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3",
+      "expandedInstructions": [
+        {
+          "offset": 4,
+          "assembly": "addiu $a0, $zero, ARMY_OWNER_BYTES"
+        },
+        {
+          "offset": 44,
+          "assembly": "addiu $a1, $zero, ARMY_OWNER_BYTES"
+        }
+      ]
     }
   ]
 }

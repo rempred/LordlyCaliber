@@ -118,6 +118,15 @@ with separate bounds and checksums. The ordinary resource decoder sees only
 game tables. Complete expanded installation is still pending. A partial inventory alone
 does not prove that every required game consumer has been installed.
 
+`rebuild/promotion_runtime.*` now assembles the expanded menu installation as
+an internal build component. It compiles configured C, preserves authenticated
+instruction ranges outside those functions, updates the category selection and
+drawing operands, and grows both Army allocation and clearing to the computed
+size. Actual linked data references form its inventory. Candidate checks execute
+selection, name, count and sprite-call paths at high IDs with old arrays poisoned.
+Public export remains guarded until reopening, remaining consumers and saves
+are integrated; these candidates are not a claim of a playable expanded ROM.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.
