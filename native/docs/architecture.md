@@ -1,0 +1,43 @@
+# Native Lordly Caliber
+
+The product targets Windows and integrated graphics. C++ owns the engine and
+Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,
+browser APIs, JavaScript, or an external Decomp checkout. The browser Editor is
+a feature and format reference, not the implementation architecture.
+
+Projects are folders containing a manifest, authored data, and assets. Sharing
+archives omit the user's ROM and temporary build output. Original bytes and
+unrecognized imported project fields remain available until an edit replaces
+them. Builds occur on a copy and never overwrite the source ROM.
+
+The PC application and the N64 export compiler are distinct toolchains. User
+export compiles maintained game sources and generated edited data with the
+authenticated KMC/GNU toolchain. Game executable bytes are not prebuilt into
+the shipped application. The native runtime adapts appropriate recovered C to
+explicit memory, arithmetic, scheduling, and resource services. Full-console
+emulation and full-game playback are outside this increment.
+
+The engine exposes editable domain data and deterministic execution state.
+The application observes that data through Qt models and undoable commands.
+Long-running loading, compilation, decoding, and export run outside the UI
+thread. Rendering consumes snapshots; widget lifetime does not own game state.
+
+## Migration baseline
+
+Branch: `codex/lordly-0.5-native`.
+
+`559b231` preserves 161 changed/new files from the Rebuild Editor worktree.
+`ec90801` merges current `origin/main` Companion changes. Both source checkouts
+remain untouched. Existing generated-file CRLF/whitespace is retained in the
+baseline; new code uses consistent line endings.
+
+## Dependency policy
+
+Verify current official releases and supported Windows combinations before
+pinning. Record the version, source, verification date, and any older-version
+reason. Use Qt shared libraries so application and library remain separable.
+Ship required notices and dependency sources/instructions with the distribution.
+
+Every newly justified test is explained to Joe before implementation: behavior,
+failure risk, inputs, execution, and independent expected result. Report the
+actual invocation, outcome, and limitations after it runs.
