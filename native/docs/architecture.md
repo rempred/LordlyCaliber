@@ -136,6 +136,19 @@ eligibility, equipment summaries and confirmation paths. Those indexed reads
 move to the expanded alias array while C readers use linked symbol references.
 Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
+Its special secondary-class rule remains limited to original IDs 42–164;
+new IDs use their authored compatibility and requirement tables.
+
+`game/classes/save-format.c` is shared source for desktop and game record
+conversion. It validates a legacy record, inserts 32 discovery bytes before
+the suspend-only payload, and writes a distinct signature with the original
+checksum algorithm. The eleven legacy discovery bytes come from their actual
+unaligned position in the packed payload; remaining bits start clear. Options
+and a cleared suspend record retain their original meaning. Invalid records and
+short buffers fail before any write. This record-level component is tested
+against the original codec and checksum instructions. SRAM and Controller Pak
+dispatch, migration of complete save images, and runtime callbacks are not yet
+installed, so it does not enable expanded public exports by itself.
 
 ## Migration baseline
 
