@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/decompals/mips-binutils-2.6.git",
+    "commit": "54514ded39ceb32165a125ddba04ca5b551773a2",
+    "releaseTag": "v0.3",
+    "releaseArchive": "binutils-2.6-linux.tar.gz",
+    "releaseArchiveSha256": "5A612CD28344E5B410C3344EC5DCFB92D9D03947756F190CD12404055B4A624D",
+    "releaseAssemblerSha256": "AE891FB014E2F959E278BC51AE2FD47256B36955F752BBE4A38790EA4381139D"
+  },
+  "buildScript": {
+    "path": "tools/build_gnu_binutils_2_6.js",
+    "sha256": "406EC91524FD862BAB743DC680DB18024EA719F56D25DEA9A79BBFA11439F1F3"
+  },
+  "buildHost": {
+    "kind": "MSYS2 x86_64",
+    "baseRelease": "2026-06-11",
+    "baseArchive": "msys2-base-x86_64-20260611.tar.xz",
+    "baseArchiveSha256": "A2D047E8EE213C3C6A49A8DE427EB1069DF12207C0422FF1B3CBB5C905C34221",
+    "packages": [
+      { "name": "binutils", "version": "2.47-1", "archiveSha256": "B7DDACA6E8B63774CDB1F5AC2720963CD76F8F62CA7E2667B1B0F008ED7ECBA2" },
+      { "name": "bison", "version": "3.8.2-5", "archiveSha256": "7439CA784A9909E0730A513D3AFF15852C3B292AC85053FA2DD7A2A19C1CE04C" },
+      { "name": "diffutils", "version": "3.12-1", "archiveSha256": "7902C8CE3D4DD69A0F5E98DC9D5C83C17B23314BA486169DB57EF6E2835CE3B6" },
+      { "name": "flex", "version": "2.6.4-4", "archiveSha256": "D70FBF25D0DEA3CB8AE42670B79A8BA65A48DAA140137367B5EBAF37EB48DF26" },
+      { "name": "gcc", "version": "15.3.0-1", "archiveSha256": "F8E7E4BF21BB8F690058384FD6EE27BB3567EDAD49077E691D1F12F0A42119F1" },
+      { "name": "gcc-libs", "version": "15.3.0-1", "archiveSha256": "0D99A122C453C05AE21BA3DCEA910F2E0D93D38AE067C677A112A315B0F3CEC5" },
+      { "name": "gperf", "version": "3.3-1", "archiveSha256": "E30B01280EA80CBE0DE099BA9C94389FAA1F6CB51BEE9F35F16883BF0EE384E3" },
+      { "name": "isl", "version": "0.27-1", "archiveSha256": "CDD0A4CE0BF0D9E3F3EFF2B770B8143E09E126A614DE8B55BB5D30FC596B92D1" },
+      { "name": "m4", "version": "1.4.21-1", "archiveSha256": "B561E8871C7599502D9FAE7196EE965B3FED3D7AF09154EB8D2F5E4D9E5E5106" },
+      { "name": "make", "version": "4.4.1-3", "archiveSha256": "AF0BDBA17F06FE037F0194069ADAA31A8FE45F1A11381501896AEA1FAE37BD5D" },
+      { "name": "mpc", "version": "1.4.1-1", "archiveSha256": "0F5073EC2E8BE265854EE3C7CB1079B5E8E02264D53E659D8414988C6C182F16" },
+      { "name": "msys2-runtime", "version": "3.6.10-2", "archiveSha256": "60F418696C4B683843596E45838F9E52C3391FF3FDFD550EE32A0655D949CF53" },
+      { "name": "msys2-runtime-devel", "version": "3.6.10-2", "archiveSha256": "C0583F82FE63319EFE19EF3B5FF45AB0F8114A7F4E70ECC888F850127FCFCFE1" },
+      { "name": "msys2-w32api-headers", "version": "14.0.0.r0.g9b3dd0125-1", "archiveSha256": "FCADF735FB214D33C64E145F82490C8693AEB6CB6A20EE8479E9F408AA832613" },
+      { "name": "msys2-w32api-runtime", "version": "14.0.0.r0.g9b3dd0125-1", "archiveSha256": "A9C5C922F5191F7E73333EA2D5392811282387986B9CB7F94A7C9156F717D4B3" },
+      { "name": "patch", "version": "2.7.6-3", "archiveSha256": "DD75CA0F715DD9C71A43AF6A0FF3D068FAEEE1D768E02282D319671201CD5D45" },
+      { "name": "windows-default-manifest", "version": "6.4-2", "archiveSha256": "865A33D80D4E88F9AEE66A755C51FA4BB0D4241063FCF72E6D0738B7C90B6A33" }
+    ]
+  },
+  "buildPatch": {
+    "path": "tools/toolchain/gnu-binutils-2.6-msys2-host.patch",
+    "sha256": "A85BFAF00589DBFF883E3EC33FFBE51267AF7D125EABA109A9ECAB65AFC86D71",
+    "scope": "Build-host compatibility only: modern stdarg, Flex buffer API, and Cygwin sys_siglist declaration."
+  },
+  "structuralLinkerPatch": {
+    "path": "tools/toolchain/gnu-binutils-2.6-ob64-load-segments.patch",
+    "sha256": "CB1B310B38F6B45A44E690BA1B7A00A7528E7886BC4BAC7E74CAC69E2A84D997",
+    "scope": "Opt-in GNU 2.6 BFD support for exact section-to-PT_LOAD LMA recovery, one PT_LOAD per non-empty allocated output section, and dynamically sized program-header storage."
+  },
+  "binaryLmaPatch": {
+    "path": "tools/toolchain/gnu-binutils-2.6-ob64-binary-lma.patch",
+    "sha256": "3CFB1E09F41E3335BDE2BE1CDC38ACF06DF6D49E8F81D103CC1F0D70DDC277CF",
+    "scope": "Opt-in GNU 2.6 binary-backend extraction by LMA so fixed ROM loads and overlapping runtime overlays retain distinct file positions."
+  },
+  "hi16PairingPatch": {
+    "path": "tools/toolchain/gnu-binutils-2.6-ob64-hi16-pairing.patch",
+    "sha256": "3C1F6F51AAC2268ADDF4E2B6B2BD3AC5BD39313F2ACE5D0A623A7CC995A9E480",
+    "scope": "Opt-in GNU 2.6 MIPS BFD pairing of a HI16 with the next forward LO16 for the same symbol when KMC GCC emits an intervening relocation."
+  },
+  "configure": {
+    "target": "mips-kmc-elf",
+    "host": "i386-pc-linux",
+    "build": "i386-pc-linux",
+    "flags": ["--disable-gprof", "--disable-gdb", "--disable-werror"],
+    "cflags": "-std=gnu89 -O2 -static -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -Wno-error",
+    "elfBfdCflags": "-std=gnu89 -O2 -static -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -Wno-error -DOB64_ONE_SECTION_PER_LOAD -DOB64_EXACT_SECTION_LOAD_MAPPING",
+    "binaryBfdCflags": "-std=gnu89 -O2 -static -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -Wno-error -DOB64_BINARY_USES_LMA",
+    "mipsElfBfdCflags": "-std=gnu89 -O2 -static -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -Wno-error -DOB64_SYMBOL_MATCHED_HI16_LO16"
+  },
+  "versions": {
+    "assembler": "GNU assembler version 2.6 (mips-kmc-elf), using BFD version 2.6",
+    "linker": "ld version 2.6 (with BFD 2.6)",
+    "objcopy": "GNU objcopy version 2.6",
+    "objdump": "GNU objdump version 2.6"
+  },
+  "outputs": {
+    "bin/mips-kmc-elf-as.exe": { "bytes": 559236, "sha256": "0831D410AD140F2D2225382273219ACB418EF6EC1E986A3309F034D2A8350A5C" },
+    "bin/mips-kmc-elf-ld.exe": { "bytes": 458490, "sha256": "48944635BC840256BC2FBA86D2701A4CA59B2424B924AC8B9F4853D4E1DA609F" },
+    "bin/mips-kmc-elf-nm.exe": { "bytes": 322802, "sha256": "47BF09DC0E559C7D0D8B9E145977715D03FC06E8F3294D76AED3597CD5AF45CF" },
+    "bin/mips-kmc-elf-objcopy.exe": { "bytes": 304282, "sha256": "9C3C821BE67C96AF204CC9B49FA1E285506E6E986B853AB898DFF48DC8B6F1AE" },
+    "bin/mips-kmc-elf-objdump.exe": { "bytes": 340623, "sha256": "5F5B5822691BFAD87E628BCE4C781459902E4124AB7ED6604CA2DB62075D9816" },
+    "bin/mips-kmc-elf-size.exe": { "bytes": 290591, "sha256": "C79E77F51D0B3EC30B694A448CB85C30C864CA5FF3D3E0174B73334384251A12" },
+    "bin/mips-kmc-elf-strings.exe": { "bytes": 288949, "sha256": "D95DA29B12432F5CBD62DFE7FAE204C675C47235667A6CBD3C6C2A08E061B6DB" },
+    "bin/mips-kmc-elf-strip.exe": { "bytes": 304282, "sha256": "D1C7AA9E8B28EECB7942C58250246BA0AB0ECC071AF2655D5BEC703800730564" },
+    "bin/msys-2.0.dll": { "bytes": 3367041, "sha256": "D9BB385834F1A235009F0962B7BDA7E1832FB12E53D832F1DC389C3144E03D44" }
+  },
+  "assemblerEquivalence": {
+    "moveProbeObjectSha256": "493E0D0CE79954A6BE0E60F85C85224D75FE067773FDCADD3E7259DDB227FF83",
+    "p3066SectionProbeObjectSha256": "27FC53BED43B38EC19F92883F2636D4DAE5103AED98F73C363CC6E8141ADEADE",
+    "nativeAndReleaseObjectsByteIdentical": true
+  }
+}

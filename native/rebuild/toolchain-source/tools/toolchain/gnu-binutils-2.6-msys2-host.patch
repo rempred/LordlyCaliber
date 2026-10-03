@@ -1,0 +1,144 @@
+diff --git a/ld/ldlex.l b/ld/ldlex.l
+index c1107c0..5cd8030 100644
+--- a/ld/ldlex.l
++++ b/ld/ldlex.l
+@@ -504,7 +504,7 @@ yy_input (buf, result, max_size)
+      int max_size;
+ {
+   *result = 0; 
+-  if (yy_current_buffer->yy_input_file)
++  if (YY_CURRENT_BUFFER->yy_input_file)
+     {
+       if (yyin)
+ 	{
+diff --git a/ld/ldmisc.c b/ld/ldmisc.c
+index f4ded27..e1f8860 100644
+--- a/ld/ldmisc.c
++++ b/ld/ldmisc.c
+@@ -22,17 +22,7 @@ the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307
+ #include "bfd.h"
+ #include "sysdep.h"
+ #include <demangle.h>
+-/* this collection of routines wants to use the Unix style varargs
+-   use special abbreviated portion of varargs.h */
+-#ifdef WINDOWS_NT
+-/* Since macro __STDC__ is defined, the compiler will raise and error if
+-   VARARGS.H from mstools\h is included.  Since we only need a portion of
+-   this header file, it has been incorporated into local header file
+-   xvarargs.h */
+-#include "xvarargs.h"
+-#else
+-#include <varargs.h>
+-#endif
++#include <stdarg.h>
+ 
+ #include "ld.h"
+ #include "ldmisc.h"
+@@ -45,7 +35,7 @@ the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307
+ 
+ 
+ /* VARARGS*/
+-static void finfo ();
++static void finfo (FILE *, char *, ...);
+ static const char *demangle PARAMS ((const char *string,
+ 				     int remove_underscore));
+ 
+@@ -368,26 +358,20 @@ vfinfo(fp, fmt, arg)
+ /* (You would think this should be called just "info", but then you would
+    hosed by LynxOS, which defines that name in its libc.) */
+ 
+-void info_msg(va_alist)
+-     va_dcl
++void info_msg(char *fmt, ...)
+ {
+-  char *fmt;
+   va_list arg;
+-  va_start(arg);
+-  fmt = va_arg(arg, char *);
++  va_start(arg, fmt);
+   vfinfo(stdout, fmt, arg);
+   va_end(arg);
+ }
+ 
+ /* ('e' for error.) Format info message and print on stderr. */
+ 
+-void einfo(va_alist)
+-     va_dcl
++void einfo(char *fmt, ...)
+ {
+-  char *fmt;
+   va_list arg;
+-  va_start(arg);
+-  fmt = va_arg(arg, char *);
++  va_start(arg, fmt);
+   vfinfo(stderr, fmt, arg);
+   va_end(arg);
+ }
+@@ -413,28 +397,20 @@ buystring (x)
+ 
+ /* ('m' for map) Format info message and print on map. */
+ 
+-void minfo(va_alist)
+-     va_dcl
++void minfo(char *fmt, ...)
+ {
+-  char *fmt;
+   va_list arg;
+-  va_start(arg);
+-  fmt = va_arg(arg, char *);
++  va_start(arg, fmt);
+   vfinfo(config.map_file, fmt, arg);
+   va_end(arg);
+ }
+ 
+ 
+ static void
+-finfo (va_alist)
+-     va_dcl
++finfo (FILE *file, char *fmt, ...)
+ {
+-  char *fmt;
+-  FILE *file;
+   va_list arg;
+-  va_start (arg);
+-  file = va_arg (arg, FILE *);
+-  fmt = va_arg (arg, char *);
++  va_start (arg, fmt);
+   vfinfo (file, fmt, arg);
+   va_end (arg);
+ }
+diff --git a/ld/ldmisc.h b/ld/ldmisc.h
+index 25d4726..2af47f8 100644
+--- a/ld/ldmisc.h
++++ b/ld/ldmisc.h
+@@ -21,11 +21,11 @@
+ #define LDMISC_H
+ 
+ /* VARARGS*/
+-extern void einfo ();
++extern void einfo (char *, ...);
+ /* VARARGS*/
+-extern void minfo ();
++extern void minfo (char *, ...);
+ /* VARARGS*/
+-extern void info_msg ();
++extern void info_msg (char *, ...);
+ extern void info_assert PARAMS ((char *, unsigned int));
+ extern void yyerror PARAMS ((const char *));
+ extern PTR xmalloc PARAMS ((size_t));
+diff --git a/libiberty/strsignal.c b/libiberty/strsignal.c
+index c4dd63c..e112757 100644
+--- a/libiberty/strsignal.c
++++ b/libiberty/strsignal.c
+@@ -236,7 +236,11 @@ static const char **sys_siglist;
+ #else
+ 
+ static int sys_nsig = NSIG;
++#ifdef __CYGWIN__
++extern const char *sys_siglist[];
++#else
+ extern const char * const sys_siglist[];
++#endif
+ 
+ #endif
+ 

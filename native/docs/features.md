@@ -20,7 +20,7 @@ preview behavior work; a visible tab alone does not count.
 | Sprite workspace | Reusable assets, pixel tools, layers, transparency, undo, PNG/JPEG imports and exports | Pending |
 | Save editor | Supported save formats/slots, characters/stats/equipment/inventories/Goth/Chaos Frame, valid save export | Pending |
 | Tools | Experience weight, Chaos Frame, luck, alignment, attack stream split | Pending |
-| Delivery | Reproducible current dependencies, portable Windows ZIP, notices, clean-machine validation | In progress |
+| Delivery | Reproducible current dependencies, portable Windows ZIP, notices, clean-machine validation | Bootstrap, package and isolated-environment checks implemented; clean-machine validation remains |
 
 ## Additional native capabilities
 

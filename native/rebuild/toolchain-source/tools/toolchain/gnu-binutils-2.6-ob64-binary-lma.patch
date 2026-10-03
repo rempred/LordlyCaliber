@@ -1,0 +1,37 @@
+diff --git a/bfd/binary.c b/bfd/binary.c
+index 09ee91e..9db3229 100644
+--- a/bfd/binary.c
++++ b/bfd/binary.c
+@@ -271,16 +271,29 @@ binary_set_section_contents (abfd, sec, data, offset, size)
+       bfd_vma low;
+       asection *s;
+ 
+-      /* The lowest section VMA sets the virtual address of the start
+-         of the file.  We use the set the file position of all the
+-         sections.  */
++      /* The lowest section address sets the start of the file.  OB64
++	 needs binary extraction in load-address order because its overlay
++	 VMAs deliberately overlap while their LMAs cover the retail ROM.  */
++#ifdef OB64_BINARY_USES_LMA
++      low = abfd->sections->lma;
++#else
+       low = abfd->sections->vma;
++#endif
+       for (s = abfd->sections->next; s != NULL; s = s->next)
++#ifdef OB64_BINARY_USES_LMA
++	if (s->lma < low)
++	  low = s->lma;
++#else
+ 	if (s->vma < low)
+ 	  low = s->vma;
++#endif
+ 
+       for (s = abfd->sections; s != NULL; s = s->next)
++#ifdef OB64_BINARY_USES_LMA
++	s->filepos = s->lma - low;
++#else
+ 	s->filepos = s->vma - low;
++#endif
+ 
+       abfd->output_has_begun = true;
+     }
