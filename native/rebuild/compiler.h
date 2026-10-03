@@ -3,11 +3,17 @@
 #include <functional>
 
 namespace lordly {
+struct CompiledAddressReference {
+    QString symbol;
+    quint32 highOffset = 0, lowOffset = 0;
+    qint32 addend = 0;
+};
 struct CompiledModule {
     QByteArray bytes;
     quint32 address = 0;
     QMap<QString, quint32> entries;
     quint32 functionExtent = 0;
+    QVector<CompiledAddressReference> addressReferences;
     QByteArray fitOwner(qsizetype size) const;
 };
 class Compiler {

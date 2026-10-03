@@ -99,6 +99,14 @@ order or an entry at the allocation start. Module extraction rejects nonempty
 runtime data/BSS sections until they have their own allocation. Supplied headers
 are isolated from stale build-directory files and host include paths.
 
+Compiled modules also expose bound data-address references derived from ELF
+HI16/LO16 relocation records. Function symbols establish the displacement between
+object and linked text, including any linker alignment. Each reference records
+its symbol, signed addend and linked instruction positions, and is checked
+against the actual linked operands. This supplies reference locations for
+configured runtime builds without assuming that every class count emits the
+same instruction layout.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

@@ -4,6 +4,7 @@
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
+#include "rebuild/elf_references.h"
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -331,6 +332,34 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         QCOMPARE(leaf.fitOwner(20), QByteArray::fromHex("03e0000800000000") + QByteArray(12, 0));
         // The zero delay instruction belongs to the function, unlike zero link padding.
         QVERIFY_THROWS_EXCEPTION(Error, leaf.fitOwner(4));
+        // Deliberately unaligned output-section start forces linker padding;
+        // +69 crosses a signed low-half boundary, and -57 checks negative addends.
+        const QMap<QString, quint32> bindings = {{"records", 0x80307ff0}, {"other", 0x80301230}};
+        const auto references = compiler.compileModule(
+            "extern unsigned char records[], other[];\n"
+            "unsigned int first(unsigned int id) { return records[id * 72 + 69]; }\n"
+            "unsigned int second(unsigned int id) { return records[id * 72 - 57] + other[id]; }\n",
+            work.path(), "references", 0x80100004, {}, bindings);
+        QVERIFY(references.entries["first"] > references.address);
+        QSet<QString> observed;
+        for (const auto &ref : references.addressReferences) {
+            QVERIFY(ref.highOffset < references.functionExtent);
+            QVERIFY(ref.lowOffset < references.functionExtent);
+            const auto high = u32(references.bytes, ref.highOffset);
+            const auto low = u32(references.bytes, ref.lowOffset);
+            const quint32 target = ((high & 65535) << 16) + quint32(qint16(low & 65535));
+            QCOMPARE(target, bindings[ref.symbol] + quint32(ref.addend));
+            observed.insert(ref.symbol + ":" + QString::number(ref.addend));
+        }
+        QCOMPARE(observed, QSet<QString>({"records:69", "records:-57", "other:0"}));
+        QFile objectFile(work.filePath("references.o"));
+        QVERIFY(objectFile.open(QIODevice::ReadOnly));
+        const auto object = objectFile.readAll();
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 readMipsAddressReferences(object.first(24), references, bindings));
+        auto altered = references;
+        altered.bytes[altered.addressReferences.first().lowOffset + 3] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, readMipsAddressReferences(object, altered, bindings));
         auto dirtyPadding = leaf;
         dirtyPadding.bytes.append(char(1));
         QVERIFY_THROWS_EXCEPTION(Error, dirtyPadding.fitOwner(8));

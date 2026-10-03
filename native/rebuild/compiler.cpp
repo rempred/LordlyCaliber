@@ -1,5 +1,6 @@
 #include "rebuild/compiler.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/elf_references.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -194,6 +195,8 @@ CompiledModule Compiler::compileModule(const QByteArray &source, const QString &
     }
     if (result.entries.isEmpty())
         throw Error("Compiled module has no exported functions");
+    result.addressReferences =
+        readMipsAddressReferences(readFile(QDir(directory).filePath(name + ".o")), result, symbols);
     return result;
 }
 QByteArray CompiledModule::fitOwner(qsizetype size) const {
