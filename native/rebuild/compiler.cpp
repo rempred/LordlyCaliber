@@ -344,7 +344,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                         readFile(":/game/promotion/" + owner["styleSource"].toString()),
                     directory, owner["name"].toString() + "_style",
                     quint32(styleStart) + 0x801135a0u,
-                    {{"CLASS_TEXT_STYLE", 0x8019b5c4u}, {"DRAW_CLASS_NAME", 0x801ba900u}});
+                    {{"CLASS_DRAW_STYLE", 0x8019b5c4u}, {"DRAW_CLASS_SPRITE", 0x801ba900u}});
                 if (style.size() != styleSize)
                     throw Error("Unexpected class drawing source size");
                 built.replace(styleStart - start, styleSize, style);
@@ -396,10 +396,12 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         result.image.replace(promotion.retailResource.romOffset, container.size(), container);
         result.report << "Compiled promotion requirements into the retail resource";
     }
-    if (promotion.masks != promotion.originalMasks) {
+    if (promotion.masks != promotion.originalMasks || promotion.flags != promotion.originalFlags) {
         auto data = p.rom().bytes().mid(0xdbd2c, 162);
-        for (int i = 0; i < 81; ++i)
+        for (int i = 0; i < 81; ++i) {
             data[i * 2 + 1] = promotion.masks[i];
+            data[i * 2] = char((quint8(data[i * 2]) & 15) | quint8(promotion.flags[i]));
+        }
         auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
         result.image.replace(0xdbd2c, compiled.size(), compiled);
         if (!family) {
@@ -412,7 +414,8 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             if (reader != p.rom().bytes().mid(0xbbd80, 44))
                 throw Error("Source-built compatibility reader differs from the source ROM");
             result.image.replace(0xbbd80, 44, reader);
-            result.report << "Compiled compatibility masks and their accepted C lookup";
+            result.report
+                << "Compiled class-line flags, compatibility masks and their accepted C lookup";
         }
     }
 }

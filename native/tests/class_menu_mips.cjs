@@ -99,7 +99,7 @@ const styleAddress=0x801B8C08,styleEnd=styleAddress+76;
 function compileStyle(wide) {
   const name='render_style_'+wide;
   fs.writeFileSync(path.join(work,name+'.s'),'.set noat\n.set noreorder\n.section .owner,"ax"\nWIDE_CLASSES = '+wide+'\n'+fs.readFileSync(path.join(native,'game/promotion/class-render-style.s'),'utf8'));
-  const code=extract(name,styleAddress,'.owner','CLASS_TEXT_STYLE = 0x8019B5C4; DRAW_CLASS_NAME = 0x801BA900;');
+  const code=extract(name,styleAddress,'.owner','CLASS_DRAW_STYLE = 0x8019B5C4; DRAW_CLASS_SPRITE = 0x801BA900;');
   assert.equal(code.length,76);return code;
 }
 const styleRetail=compileStyle(0),styleExpanded=compileStyle(1);
@@ -110,7 +110,7 @@ function renderStyle(code,id,disabled,selected,wide) {
   cpu.w16(data+0x5E8,selected);cpu.set('s0',row);cpu.set('t0',data);
   if(wide)cpu.w16(row,id|(disabled?0x8000:0));else cpu.w8(row,id|(disabled?0x80:0));
   const before=Buffer.from(cpu.ram.slice(cpu.phys(data),cpu.phys(data)+0x1000)),calls=[];
-  for(const [address,name] of [[0x8019B5C4,'style'],[0x801BA900,'name']])cpu.trap(address,c=>{
+  for(const [address,name] of [[0x8019B5C4,'style'],[0x801BA900,'sprite']])cpu.trap(address,c=>{
     calls.push([name,c.get('a0')]);
     for(const reg of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(reg,0xCCCCCCCC);
   });
@@ -121,7 +121,7 @@ function renderStyle(code,id,disabled,selected,wide) {
 }
 let styleCases=0;
 for(const wide of [false,true])for(let id=0;id<(wide?256:128);id++)for(const disabled of [false,true])for(const selected of [id,(id+1)&255]) {
-  assert.deepEqual(renderStyle(wide?styleExpanded:styleRetail,id,disabled,selected,wide),[['style',id===selected?(disabled?5:0):(disabled?6:4)],['name',id]]);
+  assert.deepEqual(renderStyle(wide?styleExpanded:styleRetail,id,disabled,selected,wide),[['style',id===selected?(disabled?5:0):(disabled?6:4)],['sprite',id]]);
   styleCases++;
 }
 function renderRows(code, base, entries, flags, initialRows, selected, expanded=false) {

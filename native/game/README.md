@@ -77,7 +77,7 @@ Expanded lists submit at most 81 rows around the selected column, preserving
 their original coordinates for scrolling. This bounds row/matrix submissions;
 it does not yet prove live-game visual behavior or display-list peak capacity.
 
-`class-render-style.s` rebuilds the 76-byte class-specific style/name drawing
+`class-render-style.s` rebuilds the 76-byte class-specific style/sprite drawing
 block at z64 `0xA5668`. It retains the surrounding function's register contract.
 Its retail configuration reproduces the original bytes; the expanded version
 reads a halfword, separates bit 15 from the full-byte class ID, and retains the
@@ -86,8 +86,8 @@ The exporter currently uses the retail configuration. Expanded configuration
 is covered by execution tests and awaits the other new-class consumers.
 
 The MIPS test compares 144 row-building cases with the original user-ROM code,
-checks 609 expanded-list/buffer-boundary cases, and checks 1,536 class/style/name
-combinations. Matrix/coordinate/name services are traps: this proves arguments,
+checks 609 expanded-list/buffer-boundary cases, and checks 1,536 class/style/sprite
+combinations. Matrix/coordinate/sprite services are traps: this proves arguments,
 row data, flags and write bounds, not rasterized output. Public export/reopen
 checks cover this renderer alongside family and relocated-name edits. Assembly
 call targets are supplied as linker bindings; absolute local assignments in

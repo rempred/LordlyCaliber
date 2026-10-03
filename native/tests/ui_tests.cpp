@@ -4,6 +4,7 @@
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QFontDatabase>
@@ -114,6 +115,17 @@ class UiTests : public QObject {
         QUndoStack undo;
         PromotionEditor editor(&project, &undo, [] {});
         editor.selectClass(5);
+        auto equipment = editor.findChild<QCheckBox *>("standardEquipmentList");
+        QVERIFY(equipment);
+        const auto originalFlags = u8(project.promotion()->flags, 5);
+        equipment->setChecked(!(originalFlags & 0x80));
+        QCOMPARE(u8(project.promotion()->flags, 5), quint8(originalFlags ^ 0x80));
+        undo.undo();
+        QCOMPARE(project.promotion()->json(), original);
+        QCOMPARE(equipment->isChecked(), bool(originalFlags & 0x80));
+        undo.redo();
+        QCOMPARE(u8(project.promotion()->flags, 5), quint8(originalFlags ^ 0x80));
+        undo.undo();
         auto gate = editor.findChild<QSpinBox *>("promotionGate0");
         gate->setValue(90);
         QCOMPARE(u8(project.promotion()->gates, 40), quint8(90));
@@ -131,6 +143,7 @@ class UiTests : public QObject {
         QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 16);
         editor.selectClass(100);
         QVERIFY(!gate->isEnabled());
+        QVERIFY(!equipment->isEnabled());
     }
 };
 QTEST_MAIN(UiTests)

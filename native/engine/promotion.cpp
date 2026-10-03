@@ -97,6 +97,7 @@ Promotion Promotion::load(const Rom &rom) {
     for (int i = 0; i < 81; ++i) {
         assignments << (u8(rom.bytes(), 0xdbd2c + i * 2) & 15);
         p.masks += char(u8(rom.bytes(), 0xdbd2d + i * 2));
+        p.flags += char(u8(rom.bytes(), 0xdbd2c + i * 2) & 0xf0);
     }
     p.families = {{"schemaVersion", 1}, {"families", list}, {"assignments", assignments}};
     const auto slot = rom.bytes().mid(familyStart, familySize);
@@ -182,6 +183,7 @@ Promotion Promotion::load(const Rom &rom) {
     p.originalFamilies = p.families;
     p.originalGates = p.gates;
     p.originalMasks = p.masks;
+    p.originalFlags = p.flags;
     return p;
 }
 void Promotion::setGate(int id, int field, int value) {
@@ -193,6 +195,11 @@ void Promotion::setMask(int id, int value) {
     if (id < 1 || id >= classCount() || value < 0 || value > 255)
         throw Error("Invalid compatibility mask");
     masks[id] = char(value);
+}
+void Promotion::setEquipmentSetListed(int id, bool listed) {
+    if (id < 1 || id >= classCount())
+        throw Error("Invalid class for the standard-equipment list");
+    flags[id] = char((quint8(flags[id]) & 0x70) | (listed ? 0x80 : 0));
 }
 void Promotion::assign(int id, int familyId) {
     if (id < 1 || id >= classCount())
@@ -222,7 +229,7 @@ int Promotion::addFamily(const QString &name, int templateId) {
 }
 int Promotion::classCount() const {
     const auto count = families["assignments"].toArray().size();
-    if (count != masks.size() || gates.size() != count * 8 ||
+    if (count != masks.size() || count != flags.size() || gates.size() != count * 8 ||
         !((families["schemaVersion"] == 1 && count == 81) ||
           (families["schemaVersion"] == 2 && count >= 165 && count <= 256)))
         throw Error("Promotion tables disagree on their class count");
@@ -243,6 +250,7 @@ void Promotion::growToClassCount(int count) {
     // acquire no manual-promotion family merely because the table grows.
     gates.append(QByteArray((count - previous) * 8, 0));
     masks.append(QByteArray(count - previous, 0));
+    flags.append(QByteArray(count - previous, 0));
     families = catalog;
 }
 int Promotion::appendClass(int templateId) {
@@ -255,6 +263,7 @@ int Promotion::appendClass(int templateId) {
     candidate.growToClassCount(id + 1);
     candidate.gates.replace(id * 8, 8, candidate.gates.mid(templateId * 8, 8));
     candidate.masks[id] = candidate.masks[templateId];
+    candidate.flags[id] = candidate.flags[templateId];
     auto assignments = candidate.families["assignments"].toArray();
     assignments[id] = assignments[templateId];
     candidate.families["assignments"] = assignments;
@@ -266,7 +275,7 @@ PromotionData Promotion::buildExpandedData() const {
     if (count < 165)
         throw Error("The retail promotion model uses its existing resource layout");
     const auto catalog = validateFamilies(families);
-    PromotionData result{count, count * 8, count * 12, (count * 13 + 3) & ~3, gates};
+    PromotionData result{count, count * 8, count * 12, count * 13, (count * 14 + 3) & ~3, gates};
     QMap<int, int> behaviors;
     for (const auto &value : catalog["families"].toArray()) {
         const auto row = value.toObject();
@@ -280,6 +289,10 @@ PromotionData Promotion::buildExpandedData() const {
               quint32(behaviors[family] * 65536 + family));
     }
     result.bytes += masks;
+    for (auto value : flags)
+        if (quint8(value) & 15)
+            throw Error("Class-line flags must not contain legacy family bits");
+    result.bytes += flags;
     result.bytes.append(QByteArray(result.catalogOffset - result.bytes.size(), 0));
     const auto json = QJsonDocument(catalog).toJson(QJsonDocument::Compact);
     result.bytes.resize(result.catalogOffset + 8);
@@ -293,10 +306,10 @@ PromotionData Promotion::buildExpandedData() const {
 void Promotion::applyExpandedData(const QByteArray &bytes, int count) {
     if (count < 165 || count > 256 || bytes.size() > 65536)
         throw Error("Invalid expanded promotion record count or size");
-    const auto catalogOffset = (count * 13 + 3) & ~3;
+    const auto catalogOffset = (count * 14 + 3) & ~3;
     if (bytes.size() < catalogOffset + 8 || u32(bytes, catalogOffset) != magic ||
         u32(bytes, catalogOffset + 4) != quint32(bytes.size() - catalogOffset - 8) ||
-        !filled(bytes.mid(count * 13, catalogOffset - count * 13), 0))
+        !filled(bytes.mid(count * 14, catalogOffset - count * 14), 0))
         throw Error("Invalid expanded promotion catalog framing");
     const auto catalog =
         validateFamilies(QJsonDocument::fromJson(bytes.mid(catalogOffset + 8)).object());
@@ -305,7 +318,8 @@ void Promotion::applyExpandedData(const QByteArray &bytes, int count) {
     auto candidate = *this;
     candidate.apply({{"families", catalog},
                      {"gates", QString::fromLatin1(bytes.first(count * 8).toHex())},
-                     {"masks", QString::fromLatin1(bytes.mid(count * 12, count).toHex())}});
+                     {"masks", QString::fromLatin1(bytes.mid(count * 12, count).toHex())},
+                     {"flags", QString::fromLatin1(bytes.mid(count * 13, count).toHex())}});
     if (candidate.buildExpandedData().bytes.first(catalogOffset) != bytes.first(catalogOffset))
         throw Error("Expanded promotion catalog and runtime family words disagree");
     *this = std::move(candidate);
@@ -313,24 +327,34 @@ void Promotion::applyExpandedData(const QByteArray &bytes, int count) {
 QJsonObject Promotion::json() const {
     return {{"families", families},
             {"gates", QString::fromLatin1(gates.toHex())},
-            {"masks", QString::fromLatin1(masks.toHex())}};
+            {"masks", QString::fromLatin1(masks.toHex())},
+            {"flags", QString::fromLatin1(flags.toHex())}};
 }
 void Promotion::apply(const QJsonObject &value) {
     auto f = validateFamilies(value["families"].toObject());
     auto g = QByteArray::fromHex(value["gates"].toString().toLatin1());
     auto m = QByteArray::fromHex(value["masks"].toString().toLatin1());
     const auto count = f["assignments"].toArray().size();
+    auto bits = value.contains("flags") ? QByteArray::fromHex(value["flags"].toString().toLatin1())
+                                        : originalFlags;
     if (g.size() != count * 8 || m.size() != count ||
         value["gates"].toString().toLatin1().toLower() != g.toHex() ||
-        value["masks"].toString().toLatin1().toLower() != m.toHex() || value.size() != 3 ||
-        g.first(8) != originalGates.first(8) || m.first(1) != originalMasks.first(1))
+        value["masks"].toString().toLatin1().toLower() != m.toHex() ||
+        value.size() != (value.contains("flags") ? 4 : 3) || bits.size() != count ||
+        (value.contains("flags") &&
+         value["flags"].toString().toLatin1().toLower() != bits.toHex()) ||
+        std::any_of(bits.begin(), bits.end(), [](char v) { return quint8(v) & 15; }) ||
+        g.first(8) != originalGates.first(8) || m.first(1) != originalMasks.first(1) ||
+        bits.first(1) != originalFlags.first(1))
         throw Error("Invalid saved promotion data");
     families = f;
     gates = g;
     masks = m;
+    flags = bits;
 }
 bool Promotion::modified() const {
-    return families != originalFamilies || gates != originalGates || masks != originalMasks;
+    return families != originalFamilies || gates != originalGates || masks != originalMasks ||
+           flags != originalFlags;
 }
 QByteArray Promotion::decodedFamilies() const {
     if (classCount() != 81)

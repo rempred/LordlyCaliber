@@ -1,4 +1,5 @@
 #include "app/promotion_editor.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QJsonArray>
@@ -63,11 +64,20 @@ PromotionEditor::PromotionEditor(Project *project, QUndoStack *undo, std::functi
     mask_->setPrefix("0x");
     mask_->setKeyboardTracking(false);
     mask_->setObjectName("compatibilityMask");
-    mask_->setToolTip("Advanced category bits used by recruitment, discovery and class-change "
+    mask_->setToolTip("Advanced category bits used by roster grouping, discovery and class-change "
                       "compatibility. A shared bit does not by itself permit promotion.");
     form->addRow("Compatibility mask", mask_);
     connect(mask_, &QSpinBox::valueChanged, this, [this](int v) {
         edit("Edit compatibility mask", [=, this](Promotion &p) { p.setMask(id_, v); });
+    });
+    equipmentSets_ = new QCheckBox("Available after discovery");
+    equipmentSets_->setObjectName("standardEquipmentList");
+    equipmentSets_->setToolTip("Include this class's standard equipment set in the Army purchase "
+                               "list. Normal Goth and inventory checks apply.");
+    form->addRow("Standard equipment set", equipmentSets_);
+    connect(equipmentSets_, &QCheckBox::toggled, this, [this](bool listed) {
+        edit("Edit standard-equipment availability",
+             [=, this](Promotion &p) { p.setEquipmentSetListed(id_, listed); });
     });
     connect(families_, &QComboBox::currentIndexChanged, this, [this] {
         edit("Assign class family",
@@ -112,6 +122,7 @@ void PromotionEditor::refresh() {
     const bool editable = available && id_ >= 1 && id_ < 81;
     families_->setEnabled(editable);
     mask_->setEnabled(editable);
+    equipmentSets_->setEnabled(editable);
     name_->setEnabled(editable);
     templates_->setEnabled(editable);
     findChild<QPushButton *>("createFamily")->setEnabled(editable);
@@ -141,6 +152,7 @@ void PromotionEditor::refresh() {
             for (int n = 0; n < gates_.size(); ++n)
                 gates_[n]->setValue(u8(p.gates, id_ * 8 + n));
             mask_->setValue(u8(p.masks, id_));
+            equipmentSets_->setChecked((u8(p.flags, id_) & 0x80) != 0);
         }
     }
     refreshing_ = false;

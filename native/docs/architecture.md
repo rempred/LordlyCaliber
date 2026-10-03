@@ -64,11 +64,17 @@ The promotion model also supports 165–256 class IDs. Growing from the original
 no manual family by default. Appending a new ID copies a chosen template's
 requirements, family and compatibility mask. Schema 2 catalogs persist the
 larger assignment list. Its expanded payload contains eight requirement bytes,
-four packed family bytes and one mask byte per class, followed by aligned family
+four packed family bytes, one mask byte and one class-line flag byte per class, followed by aligned family
 metadata. Readback validates framing and agreement between metadata and runtime
 family words. The public exporter still refuses this expanded model until the
 remaining game consumers and versioned ROM descriptor are integrated; it cannot
 fall through to a retail-size write.
+
+The class-line flag byte preserves the original high nibble separately from
+family membership. Its known bit controls inclusion in the standard-equipment
+purchase list; the Classes panel exposes that setting and preserves the three
+unknown upper bits. Flags persist in new project manifests; older manifests
+without them inherit the source ROM's flags. New class templates copy the flags.
 
 Compiled C modules expose their actual global function addresses through the
 linked ELF32/MIPS symbol table. Callers must use these entries, not assume source

@@ -7,6 +7,7 @@ class QSpinBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QCheckBox;
 namespace lordly {
 class PromotionEditor : public QWidget {
   public:
@@ -24,6 +25,7 @@ class PromotionEditor : public QWidget {
     bool refreshing_ = false;
     QVector<QSpinBox *> gates_;
     QSpinBox *mask_;
+    QCheckBox *equipmentSets_;
     QComboBox *families_, *templates_;
     QLineEdit *name_;
     QLabel *notice_;

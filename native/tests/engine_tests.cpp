@@ -586,6 +586,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         for (int id = 0; id < 81; ++id) {
             assignments << id % 11;
             base.masks += char(id * 7);
+            base.flags += char((id * 16) & 0xf0);
             for (int field = 0; field < 8; ++field)
                 base.gates += char(id * 3 + field);
         }
@@ -594,34 +595,46 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         base.originalFamilies = base.families;
         base.originalGates = base.gates;
         base.originalMasks = base.masks;
+        base.originalFlags = base.flags;
+        auto legacy = base.json();
+        legacy.remove("flags");
+        auto legacyRestored = base;
+        legacyRestored.apply(legacy);
+        QCOMPARE(legacyRestored.flags, base.flags);
         auto model = base;
         QCOMPARE(model.appendClass(5), 165);
         QCOMPARE(model.classCount(), 166);
         QCOMPARE(model.gates.first(648), base.gates);
         QCOMPARE(model.masks.first(81), base.masks);
+        QCOMPARE(model.flags.first(81), base.flags);
         QCOMPARE(model.gates.mid(81 * 8, 84 * 8), QByteArray(84 * 8, 0));
         QCOMPARE(model.masks.mid(81, 84), QByteArray(84, 0));
+        QCOMPARE(model.flags.mid(81, 84), QByteArray(84, 0));
         for (int id = 81; id < 165; ++id)
             QCOMPARE(model.families["assignments"].toArray()[id].toInt(), 0);
         QCOMPARE(model.gates.mid(165 * 8, 8), base.gates.mid(5 * 8, 8));
         QCOMPARE(model.masks[165], base.masks[5]);
+        QCOMPARE(model.flags[165], base.flags[5]);
         QCOMPARE(model.families["assignments"].toArray()[165], assignments[5]);
         const auto family = model.addFamily("New order", 1);
         model.assign(165, family);
         model.setGate(165, 0, 177);
         model.setMask(165, 0xa5);
+        model.setEquipmentSetListed(165, true);
+        QCOMPARE(u8(model.flags, 165), quint8(0xd0)); // Preserve unknown bits 4 and 6.
         const auto data = model.buildExpandedData();
         QCOMPARE(data.classCount, 166);
         QCOMPARE(data.familyOffset, 1328);
         QCOMPARE(data.maskOffset, 1992);
-        QCOMPARE(data.catalogOffset, 2160);
+        QCOMPARE(data.flagsOffset, 2158);
+        QCOMPARE(data.catalogOffset, 2324);
         QCOMPARE(u8(data.bytes, 1320), quint8(177));
         QCOMPARE(u32(data.bytes, 1328 + 165 * 4), quint32(0x10010));
         QCOMPARE(u8(data.bytes, 1992 + 165), quint8(0xa5));
-        QCOMPARE(data.bytes.mid(2158, 2), QByteArray(2, 0));
-        QCOMPARE(u32(data.bytes, 2160), quint32(0x4c43464d));
-        QCOMPARE(u32(data.bytes, 2164), quint32(data.bytes.size() - 2168));
-        QCOMPARE(QJsonDocument::fromJson(data.bytes.mid(2168)).object(), model.families);
+        QCOMPARE(u8(data.bytes, 2158 + 165), quint8(0xd0));
+        QCOMPARE(u32(data.bytes, 2324), quint32(0x4c43464d));
+        QCOMPARE(u32(data.bytes, 2328), quint32(data.bytes.size() - 2332));
+        QCOMPARE(QJsonDocument::fromJson(data.bytes.mid(2332)).object(), model.families);
         auto restored = base;
         restored.apply(model.json());
         QCOMPARE(restored.json(), model.json());
@@ -634,9 +647,16 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         corrupt = data.bytes;
         corrupt[2159] = 1;
         QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(corrupt, 166));
-        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(data.bytes.first(2167), 166));
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(data.bytes.first(2331), 166));
         QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(data.bytes, 167));
         QCOMPARE(restored.json(), model.json());
+        auto padded = base;
+        padded.growToClassCount(165);
+        const auto paddedData = padded.buildExpandedData();
+        QCOMPARE(paddedData.bytes.mid(2310, 2), QByteArray(2, 0));
+        corrupt = paddedData.bytes;
+        corrupt[2311] = 1;
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(corrupt, 165));
         const auto before = model.json();
         QVERIFY_THROWS_EXCEPTION(Error, model.appendClass(166));
         QVERIFY_THROWS_EXCEPTION(Error, model.growToClassCount(164));
@@ -646,10 +666,12 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         const auto full = model.buildExpandedData();
         QCOMPARE(full.familyOffset, 2048);
         QCOMPARE(full.maskOffset, 3072);
-        QCOMPARE(full.catalogOffset, 3328);
+        QCOMPARE(full.flagsOffset, 3328);
+        QCOMPARE(full.catalogOffset, 3584);
         QCOMPARE(u8(full.bytes, 255 * 8), quint8(177));
         QCOMPARE(u32(full.bytes, 2048 + 255 * 4), quint32(0x10010));
         QCOMPARE(u8(full.bytes, 3072 + 255), quint8(0xa5));
+        QCOMPARE(u8(full.bytes, 3328 + 255), quint8(0xd0));
         restored.applyExpandedData(full.bytes, 256);
         QCOMPARE(restored.json(), model.json());
         const auto atLimit = model.json();
@@ -673,12 +695,16 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             auto maskOnly = p;
             auto maskModel = model;
             maskModel.setMask(5, 0xa5);
+            const auto knightFlags = u8(maskModel.flags, 5);
+            maskModel.setEquipmentSetListed(5, !(knightFlags & 0x80));
             maskOnly.setPromotion(maskModel.json());
             QTemporaryDir maskWork;
             const auto maskResult =
                 rebuild(maskOnly, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), maskWork.path());
             QCOMPARE(Promotion::load(Rom::fromBytes(maskResult.image)).json(), maskModel.json());
             QCOMPARE(maskResult.image.mid(0xbbd80, 44), p.rom().bytes().mid(0xbbd80, 44));
+            QCOMPARE(u8(maskResult.image, 0xdbd2c + 5 * 2),
+                     quint8(u8(p.rom().bytes(), 0xdbd2c + 5 * 2) ^ 0x80));
             QCOMPARE(maskResult.image.mid(0x27d0000, 65536), p.rom().bytes().mid(0x27d0000, 65536));
             QVERIFY(QFileInfo::exists(maskWork.filePath("class_compatibility.compiler.s")));
             auto family = model.addFamily("Order of Dawn", 1);
@@ -687,6 +713,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             model.assign(5, family);
             model.setGate(5, 0, 90);
             model.setMask(5, 0xa5);
+            model.setEquipmentSetListed(5, !(u8(model.flags, 5) & 0x80));
             QVERIFY_THROWS_EXCEPTION(Error, model.addFamily("order of dawn", 1));
             QVERIFY_THROWS_EXCEPTION(Error, model.assign(0, 16));
             QVERIFY_THROWS_EXCEPTION(Error, model.assign(5, 65534));

@@ -28,14 +28,14 @@ class_style_ready:
 sb $v0, 0x5e4($t0)
 lui $v0, 0x8019
 lw $v0, 0x6af8($v0)
-jal CLASS_TEXT_STYLE
+jal CLASS_DRAW_STYLE
 lbu $a0, 0x5e4($v0)
 .if WIDE_CLASSES
 lhu $a0, 0($s0)
 .else
 lbu $a0, 0($s0)
 .endif
-jal DRAW_CLASS_NAME
+jal DRAW_CLASS_SPRITE
 .if WIDE_CLASSES
 andi $a0, $a0, 255
 .else

@@ -7,21 +7,22 @@ quint32 crc32(const QByteArray &bytes);
 QJsonObject promotionOwners();
 struct PromotionData {
     int classCount = 0;
-    qsizetype familyOffset = 0, maskOffset = 0, catalogOffset = 0;
+    qsizetype familyOffset = 0, maskOffset = 0, flagsOffset = 0, catalogOffset = 0;
     QByteArray bytes;
 };
 class Promotion {
   public:
     static Promotion load(const Rom &rom);
     QJsonObject families;
-    QByteArray gates, masks;
+    QByteArray gates, masks, flags;
     QJsonObject originalFamilies;
-    QByteArray originalGates, originalMasks;
+    QByteArray originalGates, originalMasks, originalFlags;
     Resource retailResource;
     bool expanded = false;
     bool directGates = false;
     void setGate(int classId, int field, int value);
     void setMask(int classId, int value);
+    void setEquipmentSetListed(int classId, bool listed);
     void assign(int classId, int familyId);
     int addFamily(const QString &name, int templateId);
     int classCount() const;
