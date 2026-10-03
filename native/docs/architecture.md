@@ -112,8 +112,10 @@ references in a bounded, checksummed metadata frame. It accepts only declared
 runtime owner extents, validates reference positions, and verifies complete code
 after normalizing its declared data addresses. Reapplying the references at new
 addresses is checked against independent compiler links. This metadata belongs
-in ROM outside the decompressed promotion resource; resource placement and the
-complete expanded installation are still pending. A partial inventory alone
+in ROM outside the decompressed promotion resource. The version 2 promotion
+container now stores and validates that inventory after its compressed stream,
+with separate bounds and checksums. The ordinary resource decoder sees only
+game tables. Complete expanded installation is still pending. A partial inventory alone
 does not prove that every required game consumer has been installed.
 
 ## Migration baseline

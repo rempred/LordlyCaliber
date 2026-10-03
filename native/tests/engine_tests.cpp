@@ -1,5 +1,6 @@
 #include "engine/class_data.h"
 #include "engine/class_runtime_inventory.h"
+#include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
 #include "rebuild/class_menu_layout.h"
@@ -750,6 +751,50 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                         auto image = syntheticRom();
                         image.replace(start, size, bytes);
                         restored.verify(Rom::fromBytes(image), bases);
+                        const auto tableBytes =
+                            compiler.compileData(payload.bytes, work.path(), "expanded_tables");
+                        const auto slot =
+                            ExpandedPromotionResource::encode(promotion, tableBytes, restored);
+                        const auto reopened = ExpandedPromotionResource::decode(slot);
+                        QCOMPARE(reopened.data.bytes, tableBytes);
+                        QCOMPARE(reopened.inventory.encode(), saved);
+                        image.replace(ExpandedPromotionResource::romOffset, slot.size(), slot);
+                        const auto ordinary = Resource::load(Rom::fromBytes(image),
+                                                             ExpandedPromotionResource::romOffset,
+                                                             ExpandedPromotionResource::slotSize);
+                        QCOMPARE(ordinary.decoded,
+                                 tableBytes); // Metadata isn't decoded into game data.
+                        auto damagedSlot = slot;
+                        damagedSlot[8] ^= 1;
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 ExpandedPromotionResource::decode(damagedSlot));
+                        constexpr int footerAt = ExpandedPromotionResource::slotSize - 64;
+                        const auto metadataAt = u32(slot, footerAt + 40);
+                        damagedSlot = slot;
+                        damagedSlot[metadataAt + 24] ^= 1;
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 ExpandedPromotionResource::decode(damagedSlot));
+                        damagedSlot = slot;
+                        damagedSlot[footerAt - 1] = 0;
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 ExpandedPromotionResource::decode(damagedSlot));
+                        // Recompute footer CRC so this checks geometry, not only checksum
+                        // rejection.
+                        for (const auto pair :
+                             {QPair<int, quint32>{40, 16}, {44, 0xfffffff0}, {24, 0}}) {
+                            damagedSlot = slot;
+                            put32(damagedSlot, footerAt + pair.first, pair.second);
+                            put32(damagedSlot, footerAt + 60, crc32(damagedSlot.mid(footerAt, 60)));
+                            QVERIFY_THROWS_EXCEPTION(
+                                Error, ExpandedPromotionResource::decode(damagedSlot));
+                        }
+                        auto wrongInventory = restored;
+                        wrongInventory.classCount = count == 256 ? 255 : 256;
+                        QVERIFY_THROWS_EXCEPTION(Error, ExpandedPromotionResource::encode(
+                                                            promotion, tableBytes, wrongInventory));
+                        QVERIFY_THROWS_EXCEPTION(Error,
+                                                 ExpandedPromotionResource::encode(
+                                                     promotion, tableBytes.first(100), restored));
                         ClassRuntimeInventory empty;
                         empty.classCount = count;
                         QVERIFY_THROWS_EXCEPTION(Error, empty.verify(Rom::fromBytes(image), bases));
