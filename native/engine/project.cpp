@@ -43,7 +43,7 @@ const QVector<Field> &fields(Table table) {
         const QStringList rows = {"Front", "Middle", "Rear"};
         for (int i = 0; i < rows.size(); ++i) {
             add("attack" + QString::number(i), rows[i] + " action", "Attacks", 55 + i * 2, 1,
-                "ACTION_TEMPLATE_LABELS");
+                "ACTION_NAMES");
             add("attackCount" + QString::number(i), rows[i] + " count", "Attacks", 56 + i * 2);
         }
         add("physAtk", "Physical attack", "Combat", 61);

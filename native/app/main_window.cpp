@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
 #include "app/text_workspace.h"
+#include "app/value_editor.h"
 #include "rebuild/compiler.h"
 #include <QAction>
 #include <QCloseEvent>
@@ -183,7 +184,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
-    auto spins = std::make_shared<QVector<QSpinBox *>>();
+    auto editors = std::make_shared<QVector<ValueEditor *>>();
     QMap<QString, QFormLayout *> groups;
     for (int n = 0; n < fields(table).size(); ++n) {
         const auto &f = fields(table)[n];
@@ -197,16 +198,13 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             inspector->addTab(scroll, f.group);
             groups[f.group] = form;
         }
-        auto spin = new QSpinBox;
-        spin->setRange(f.minimum(), f.maximum());
-        spin->setKeyboardTracking(false);
-        spin->setEnabled(false);
-        spins->push_back(spin);
-        groups[f.group]->addRow(f.label, spin);
-        connect(spin, &QSpinBox::valueChanged, page, [model, selected, n](int value) {
+        auto editor = new ValueEditor(f, project_->catalog(), [model, selected, n](int value) {
             if (*selected >= 0)
                 model->setData(model->index(*selected, n + 2), value, Qt::EditRole);
         });
+        editor->setEnabled(false);
+        editors->push_back(editor);
+        groups[f.group]->addRow(f.label, editor);
     }
     PromotionEditor *promotion = nullptr;
     if (table == Table::Classes) {
@@ -216,15 +214,14 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         inspector->addTab(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, spins, promotion] {
+    auto refresh = [this, table, selected, editors, promotion] {
         if (promotion)
             promotion->selectClass(*selected);
-        for (int n = 0; n < spins->size(); ++n) {
-            auto spin = (*spins)[n];
-            QSignalBlocker block(spin);
-            spin->setEnabled(*selected >= 0);
+        for (int n = 0; n < editors->size(); ++n) {
+            auto editor = (*editors)[n];
+            editor->setEnabled(*selected >= 0);
             if (*selected >= 0)
-                spin->setValue(project_->value(table, *selected, n));
+                editor->setValue(project_->value(table, *selected, n));
         }
     };
     connect(grid->selectionModel(), &QItemSelectionModel::currentRowChanged, page,
@@ -237,6 +234,17 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         refresh();
         updateStatus();
     });
+    auto columns = new QComboBox;
+    columns->addItem("All fields", "");
+    for (auto group = groups.begin(); group != groups.end(); ++group)
+        columns->addItem(group.key() + " columns", group.key());
+    layout->insertWidget(1, columns);
+    connect(columns, &QComboBox::currentIndexChanged, page, [=] {
+        auto group = columns->currentData().toString();
+        for (int i = 0; i < fields(table).size(); ++i)
+            grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
+    });
+    columns->setCurrentIndex(columns->findData("Stats"));
     workspaces_->addTab(page, title);
     grid->selectRow(1);
 }

@@ -32,11 +32,14 @@ int main(int argc, char **argv) {
         const auto sourcePath = QFileInfo(parser.value("rom")).canonicalFilePath();
         auto samePath = [](const QString &a, const QString &b) {
             QFileInfo first(a), second(b);
-            return first.absoluteFilePath().compare(second.absoluteFilePath(), Qt::CaseInsensitive) == 0 ||
-                   (!first.canonicalFilePath().isEmpty() && first.canonicalFilePath() == second.canonicalFilePath());
+            return first.absoluteFilePath().compare(second.absoluteFilePath(),
+                                                    Qt::CaseInsensitive) == 0 ||
+                   (!first.canonicalFilePath().isEmpty() &&
+                    first.canonicalFilePath() == second.canonicalFilePath());
         };
-        if (parser.isSet("report") && (samePath(parser.value("report"), sourcePath) ||
-            (parser.isSet("output") && samePath(parser.value("report"), parser.value("output")))))
+        if (parser.isSet("report") &&
+            (samePath(parser.value("report"), sourcePath) ||
+             (parser.isSet("output") && samePath(parser.value("report"), parser.value("output")))))
             throw lordly::Error("Choose a report path separate from the source and exported ROM");
         QFile catalog(":/catalog.json");
         if (!catalog.open(QIODevice::ReadOnly))

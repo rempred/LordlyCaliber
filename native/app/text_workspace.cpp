@@ -122,7 +122,7 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
         const auto &bank = project->textBanks()[selected->bank];
         QString namesKey = selected->bank == "classes"   ? "CLASS_NAMES"
                            : selected->bank == "items"   ? "ITEM_NAMES"
-                           : selected->bank == "actions" ? "ACTION_TEMPLATE_LABELS"
+                           : selected->bank == "actions" ? "ACTION_NAMES"
                                                          : "";
         auto names = project->catalog().value(namesKey).toObject();
         for (int i = 0; i < bank.entries.size(); ++i) {

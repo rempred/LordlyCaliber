@@ -127,7 +127,7 @@ class EngineTests : public QObject {
             auto reopened = Project::fromRom(Rom::open(output));
             QCOMPARE(reopened.value(Table::Classes, 5, 4), (prior + 1) & 255);
             QCOMPARE(Rom::open(path).bytes(), source.bytes());
-            QVERIFY_THROWS_EXCEPTION(Error, exportRom(project, result, path));
+            QVERIFY_THROWS_EXCEPTION(Error, exportRom(reopened, result, output));
             QVERIFY(QFileInfo::exists(build.filePath("classes_records.c")));
             QVERIFY(QFileInfo::exists(build.filePath("func_000bbd50.compiler.s")));
         } catch (const std::exception &error) {
