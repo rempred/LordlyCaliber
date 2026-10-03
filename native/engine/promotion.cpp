@@ -118,11 +118,12 @@ Promotion Promotion::load(const Rom &rom) {
         const auto owner = v.toObject();
         auto hash = QString::fromLatin1(
             sha256(rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt())));
-        bool family = hash == owner["familySha256"].toString() ||
-                      (owner.contains("cMenuSha256") && hash == owner["cMenuSha256"].toString());
+        bool family =
+            hash == owner["familySha256"].toString() ||
+            (owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString());
         bool direct =
             owner.contains("directGateSha256") && hash == owner["directGateSha256"].toString();
-        hasFamilyCode |= family;
+        hasFamilyCode |= family && hash != owner["retailSha256"].toString();
         hasDirectGateCode |= direct;
         if (p.expanded && !family)
             throw Error("Family resource has incomplete or modified runtime owners");

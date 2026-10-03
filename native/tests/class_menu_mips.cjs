@@ -20,19 +20,19 @@ const run = (exe, args) => cp.execFileSync(path.join(tools, exe), args, {cwd: wo
 const menuAddress = 0x801D27E8, lookupAddress = 0x801CF2F0, checkAddress = 0x801D2358;
 const source = fs.readFileSync(path.join(native, 'game/promotion/family-menu.c'), 'utf8');
 const config = fs.readFileSync(path.join(native, 'game/promotion/class_menu_config.h'), 'utf8');
-function extract(name, address, section = '.text') {
-  fs.writeFileSync(path.join(work, name + '.ld'), `FAMILY_LOOKUP = 0x${lookupAddress.toString(16)}; CHECK_CHANGE = 0x${checkAddress.toString(16)};\nSECTIONS { ${section} 0x${address.toString(16)} : { *(${section}) } }\n`);
+function extract(name, address, section = '.text', bindings = '') {
+  fs.writeFileSync(path.join(work, name + '.ld'), `${bindings}\nFAMILY_LOOKUP = 0x${lookupAddress.toString(16)}; CHECK_CHANGE = 0x${checkAddress.toString(16)};\nSECTIONS { ${section} 0x${address.toString(16)} : { *(${section}) } }\n`);
   run('mips-kmc-elf-as.exe', ['-G', '0', '-mips3', '-mabi=32', '-force-n64align', '-EB', '-o', name+'.o', name+'.s']);
   run('mips-kmc-elf-ld.exe', ['-EB', '-m', 'elf32bmip', '-T', name+'.ld', '-o', name+'.elf', name+'.o']);
   run('mips-kmc-elf-objcopy.exe', ['-O', 'binary', ...['.text','.data','.bss','.rdata','.reginfo','.pdr','.mdebug','.comment','.lit4','.lit8'].filter(x=>x!==section).map(x=>'--remove-section='+x), name+'.elf', name+'.bin']);
   return fs.readFileSync(path.join(work, name+'.bin'));
 }
-function compile(name, configuration) {
+function compile(name, configuration, code = source, address = menuAddress, bindings = '') {
   fs.writeFileSync(path.join(work, 'class_menu_config.h'), configuration);
-  fs.writeFileSync(path.join(work, name+'.c'), source);
+  fs.writeFileSync(path.join(work, name+'.c'), code);
   run('cpp.exe', ['-P', '-undef', '-nostdinc', '-D__mips=3', '-D__mips__', '-D_MIPSEB', '-D__MIPSEB__', name+'.c', name+'.i']);
   run('cc1.exe', ['-quiet','-O2','-meb','-mips3','-mgp32','-mfp32','-G','0','-fno-PIC','-mno-abicalls','-fno-builtin','-funsigned-char',name+'.i','-o',name+'.s']);
-  return extract(name, menuAddress);
+  return extract(name, address, '.text', bindings);
 }
 function assembly(name, filename, address) {
   fs.writeFileSync(path.join(work, name+'.s'), '.set noat\n.set noreorder\n.section .owner,"ax"\n.balign 4\n' + fs.readFileSync(path.join(native, 'game/promotion', filename), 'utf8'));
@@ -45,7 +45,7 @@ const compiled = compile('menu', config);
 assert(compiled.length <= 528, `C menu exceeds the existing function extent (${compiled.length})`);
 const padded = Buffer.alloc(528); compiled.copy(padded);
 const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/owners.json'))).owners.find(x => x.start === 0xbf248);
-assert.equal(hash(padded), menuOwner.cMenuSha256, 'export owner identity');
+assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
 function machine(code, count, listOffset, selected, families, discovery, eligible) {
@@ -110,4 +110,56 @@ assert.deepEqual(partial.entries, [1,127,0x8080,165,0x80FE,255]);
 // All 256 IDs can be members; one extra halfword is reserved for termination.
 families[0] = (5<<16)|16;
 assert.equal(machine(expanded, 256, 0x2528, 255, families, Buffer.alloc(32,255), () => 1).entries.length, 256);
-console.log(JSON.stringify({comparisons, expandedCases:3, compiledBytes:compiled.length, ownerSha256:hash(padded), work}, null, 2));
+const selectionAddress = 0x801DC740;
+const selectionSource = fs.readFileSync(path.join(native, 'game/promotion/class-selection.c'), 'utf8');
+const selectionBindings = 'lc_army_owner = 0x80196AF8; lc_input_buttons = 0x800E8100; lc_repeat_buttons = 0x800E8700; lc_menu_sound = 0x801D8A60; lc_menu_update = 0x801CFC24; lc_menu_equipment = 0x801D2B7C;';
+const selection = compile('selection', config, selectionSource, selectionAddress, selectionBindings);
+assert(selection.length <= 388, 'selection owner extent');
+const selectionPadded = Buffer.alloc(388); selection.copy(selectionPadded);
+const selectionOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/owners.json'))).owners.find(x=>x.start===0xc91a0);
+assert.equal(hash(selectionPadded), selectionOwner.cSourceSha256, 'selection export owner identity');
+const selectionExpanded = compile('selection_expanded', config.replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528'), selectionSource, selectionAddress, selectionBindings);
+function select(code, entries, selected, buttons, repeat, flags, listOffset) {
+  const cpu = new Mips(); cpu.ram = new Uint8Array(0x400000);
+  cpu.load(selectionAddress, code); cpu.set('sp', 0x80060000);
+  cpu.w32(0x80196AF8, owner);
+  cpu.w16(owner+0x5EA, selected); cpu.w16(owner+0x5E8, 23);
+  cpu.w16(owner+0x1BFC, entries.length); cpu.w16(owner+0x130, flags);
+  cpu.w16(0x800E8100, buttons); cpu.w16(0x800E8700, repeat);
+  entries.forEach((entry, i) => cpu.w16(owner+listOffset+i*2, entry));
+  const calls = [];
+  for (const [address, name] of [[0x801D8A60,'sound'],[0x801CFC24,'update'],[0x801D2B7C,'equipment']]) {
+    cpu.trap(address, c => {
+      if (name === 'sound') assert.equal(c.get('a0'), 1);
+      calls.push(name);
+      for (const reg of ['v0','v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9']) c.set(reg, 0xCCCCCCCC);
+    });
+  }
+  cpu.call(selectionAddress);
+  return {result:cpu.get('v0'), selected:cpu.r16(owner+0x5EA), classId:cpu.r16(owner+0x5E8), calls};
+}
+let selectionComparisons = 0;
+if (process.env.LORDLY_TEST_ROM) {
+  const rom = fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if (rom.readUInt32BE(0) === 0x37804012) rom.swap16();
+  assert.equal(hash(rom), '571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original = rom.subarray(0xC91A0,0xC9324);
+  for (const count of [1,2,3,4,5,8,17,81]) {
+    const entries = Array.from({length:count}, (_,i) => ((i*17)%81) | (i%2 ? 128 : 0));
+    for (let selected=0; selected<count; selected++)
+      for (const [buttons,repeat] of [[0,0],[0,0x800],[0,0x400],[0,0x200],[0,0x100],[0,0xF00],[0x1000,0xF00],[0x8000,0xF00],[0x4000,0xF00],[0xD000,0xF00]])
+        for (const flags of [0,0x200]) {
+          const args = [entries,selected,buttons,repeat,flags,0x1C0E];
+          assert.deepEqual(select(selection,...args), select(original,...args), JSON.stringify({count,selected,buttons,repeat,flags}));
+          selectionComparisons++;
+        }
+  }
+}
+const wideEntries = Array.from({length:256}, (_,i) => i | (i%2 ? 0x8000 : 0));
+for (const [start, repeat, target] of [[126,0x400,127],[129,0x800,128],[161,0x100,165],[250,0x100,254],[251,0x100,255],[255,0x400,255]]) {
+  const result = select(selectionExpanded,wideEntries,start,0,repeat,0,0x2528);
+  assert.equal(result.selected,target);
+  assert.equal(result.classId,start===target ? 23 : target);
+}
+assert.deepEqual(select(selectionExpanded,[],0,0,0x400,0,0x2528), {result:0,selected:0,classId:23,calls:[]});
+console.log(JSON.stringify({comparisons, expandedCases:3, compiledBytes:compiled.length, ownerSha256:hash(padded), selectionComparisons, selectionExpandedCases:7, selectionBytes:selection.length, selectionSha256:hash(selectionPadded), work}, null, 2));

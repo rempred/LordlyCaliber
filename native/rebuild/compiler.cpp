@@ -56,7 +56,8 @@ void Compiler::run(const QString &tool, const QStringList &args, const QString &
 }
 QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address, const QString &section,
-                             const QMap<QString, QByteArray> &headers) const {
+                             const QMap<QString, QByteArray> &headers,
+                             const QMap<QString, quint32> &symbols) const {
     if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(name).hasMatch())
         throw Error("Invalid source unit name");
     if (section != ".text" && section != ".data")
@@ -95,9 +96,16 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
     run("mips-kmc-elf-as.exe",
         {"-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly},
         directory);
-    atomicWrite(
-        script,
-        QString("SECTIONS { %1 0x%2 : { *(%1) } }\n").arg(section).arg(address, 0, 16).toLatin1());
+    QByteArray bindings;
+    for (auto it = symbols.begin(); it != symbols.end(); ++it) {
+        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(it.key()).hasMatch())
+            throw Error("Invalid linked symbol name");
+        bindings += QString("%1 = 0x%2;\n").arg(it.key()).arg(it.value(), 0, 16).toLatin1();
+    }
+    atomicWrite(script, bindings + QString("SECTIONS { %1 0x%2 : { *(%1) } }\n")
+                                       .arg(section)
+                                       .arg(address, 0, 16)
+                                       .toLatin1());
     run("mips-kmc-elf-ld.exe", {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object},
         directory);
     QStringList extract = {"-O", "binary"};
@@ -191,21 +199,26 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto hash = QString::fromLatin1(sha256(original));
             if (hash != owner["retailSha256"].toString() &&
                 hash != owner["familySha256"].toString() &&
-                !(owner.contains("cMenuSha256") && hash == owner["cMenuSha256"].toString()) &&
+                !(owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString()) &&
                 !(promotion.directGates && owner.contains("directGateSha256") &&
                   hash == owner["directGateSha256"].toString()))
                 throw Error("Promotion source owner was modified: " + owner["name"].toString());
             QByteArray source, built;
             auto expected = owner["familySha256"].toString().toLatin1();
-            if (start == 0xbf248) {
+            if (owner.contains("cSource")) {
+                QMap<QString, quint32> symbols;
+                const auto bindings = owner["symbols"].toObject();
+                for (auto it = bindings.begin(); it != bindings.end(); ++it)
+                    symbols.insert(it.key(), quint32(it.value().toDouble()));
                 built = compiler.compile(
-                    readFile(":/game/promotion/family-menu.c"), directory, owner["name"].toString(),
-                    quint32(start) + 0x801135a0u, ".text",
-                    {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}});
+                    readFile(":/game/promotion/" + owner["cSource"].toString()), directory,
+                    owner["name"].toString(), quint32(start) + 0x801135a0u, ".text",
+                    {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
+                    symbols);
                 if (built.size() > size)
-                    throw Error("Compiled class menu exceeds its function allocation");
+                    throw Error("Compiled promotion source exceeds its function allocation");
                 built.append(QByteArray(size - built.size(), 0));
-                expected = owner["cMenuSha256"].toString().toLatin1();
+                expected = owner["cSourceSha256"].toString().toLatin1();
             } else if (start == 0xbbd50)
                 source = readFile(":/game/promotion/family-lookup.s");
             else
@@ -229,8 +242,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                             owner["name"].toString());
             result.image.replace(start, size, built);
         }
-        result.report << "Compiled expanded promotion data and class-menu C; rebuilt nine complete "
-                         "runtime owners within their original extents";
+        result.report << QString("Compiled promotion data, menu and selection C; rebuilt %1 "
+                                 "complete runtime owners within their original extents")
+                             .arg(owners.size());
     } else if (promotion.gates != promotion.originalGates) {
         auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");
         auto container = promotion.retailResource.container(compiled);

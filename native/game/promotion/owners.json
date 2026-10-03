@@ -54,7 +54,8 @@
       "size": 528,
       "retailSha256": "852d00c511422c5168b11ec4e50c0bd709fad83f6632816c605ec972a1f69498",
       "familySha256": "dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298",
-      "cMenuSha256": "ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42"
+      "cSource": "family-menu.c",
+      "cSourceSha256": "ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42"
     },
     {
       "name": "func_000c37ec",
@@ -76,6 +77,23 @@
       "size": 568,
       "retailSha256": "1224b99d57c28d2f29adb60e54caea6460e101844afb41123a90e571201d6884",
       "familySha256": "f69b6ed704705f34dfcdcbbb820488dea832b40bcaf9a4c1d3d07e5146ed1068"
+    },
+    {
+      "name": "func_000c91a0",
+      "start": 823712,
+      "size": 388,
+      "retailSha256": "0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a",
+      "familySha256": "0ba40366cf40546ea2004f3e0bb90ee5c881e49bde239da2313ddbabed84277a",
+      "cSource": "class-selection.c",
+      "cSourceSha256": "95b1d89159f2d4832d25984e27595cf6b508d8edc12df2c89033f5aaaa89ca0a",
+      "symbols": {
+        "lc_army_owner": 2149149432,
+        "lc_input_buttons": 2148434176,
+        "lc_repeat_buttons": 2148435712,
+        "lc_menu_sound": 2149419616,
+        "lc_menu_update": 2149383204,
+        "lc_menu_equipment": 2149395324
+      }
     }
   ]
 }

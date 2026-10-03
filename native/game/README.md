@@ -23,6 +23,13 @@ changing the count alone does not complete expanded-class support. The prior
 The accepted Decomp `func_000bf248.c` is hybrid C/assembly, not pure C, and was
 used as a semantic reference rather than copied as this implementation.
 
+`promotion/class-selection.c` replaces the complete 388-byte class selection
+input routine with maintained C (384 compiled bytes including alignment). It
+preserves four-row navigation, button precedence and refresh calls, and guards
+an empty list against an out-of-bounds read. Its named game services and globals
+are linked through the explicit Army addresses in `owners.json`. The original
+accepted `func_000c91a0.c` is hybrid C/assembly and is the semantic reference.
+
 `promotion/family-lookup.s` retains the special two-register return convention
 used by existing callers. It is assembled and linked during user export.
 Seven companion owners preserve authenticated input-ROM
@@ -38,6 +45,10 @@ retail menu cases. `native/tests/class_menu_mips.cjs` executes 1,089 cases compa
 the compiled C with the previous menu assembly, plus explicit 256-ID list cases.
 Those expanded cases use a synthetic larger owner buffer and relocated discovery
 storage; they do not validate the unchanged game's consumers or save format.
+With `LORDLY_TEST_ROM` supplied, the same test compares selection against the
+user's original routine in 2,420 cases. Seven explicit expanded/empty-list cases
+verify full-byte IDs and navigation bounds. These checks execute integer MIPS
+with service traps; they are not rendered game playback.
 Native checks also cover compilation, allocation, persistence and export/reopen.
 The implementation still covers the 81-entry manual-promotion roster; expanded
 class IDs require broader data, menu and discovery changes.
