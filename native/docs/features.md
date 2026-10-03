@@ -22,6 +22,12 @@ preview behavior work; a visible tab alone does not count.
 | Tools | Experience weight, Chaos Frame, luck, alignment, attack stream split | Pending |
 | Delivery | Reproducible current dependencies, portable Windows ZIP, notices, clean-machine validation | Bootstrap, package and isolated-environment checks implemented; clean-machine validation remains |
 
+Promotion compatibility: native loading recognizes and validates the earlier
+direct-loader OBSG-v2 export, reads its actual requirements, and migrates an
+edited table to the source-built family resource. Unchanged exports retain the
+existing bytes. OBSG-v1 shared-DMA redirects remain unsupported and are explicitly
+rejected by the promotion loader; it does not silently show retail requirements.
+
 ## Additional native capabilities
 
 Dockable workspaces, searchable model-based tables, independent engine API,

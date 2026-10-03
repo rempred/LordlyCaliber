@@ -14,6 +14,7 @@ class Promotion {
     QByteArray originalGates, originalMasks;
     Resource retailResource;
     bool expanded = false;
+    bool directGates = false;
     void setGate(int classId, int field, int value);
     void setMask(int classId, int value);
     void assign(int classId, int familyId);

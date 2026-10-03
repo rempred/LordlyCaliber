@@ -134,7 +134,8 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
     if (!p.promotion() || !p.promotion()->modified())
         return;
     const auto &promotion = *p.promotion();
-    bool family = promotion.expanded || promotion.families != promotion.originalFamilies ||
+    bool family = promotion.expanded || promotion.directGates ||
+                  promotion.families != promotion.originalFamilies ||
                   encodeLzss(promotion.gates).size() > promotion.retailResource.capacity;
     if (family) {
         const auto &bytes = p.rom().bytes();
@@ -145,8 +146,11 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 throw Error("Promotion rebuild allocation is occupied");
         }
         const auto legacy = bytes.mid(0x27b0800, 1024);
-        if (std::any_of(legacy.begin(), legacy.end(), [](char c) { return quint8(c) != 255; }))
+        if (!promotion.directGates &&
+            std::any_of(legacy.begin(), legacy.end(), [](char c) { return quint8(c) != 255; }))
             throw Error("Legacy promotion allocation needs migration before this export");
+        if (promotion.directGates)
+            result.image.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
         auto compiled =
             compiler.compileData(promotion.decodedFamilies(), directory, "class_families");
         result.image.replace(0x27d0000, 65536, promotion.familyContainer(compiled));
@@ -162,7 +166,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto original = bytes.mid(start, size);
             auto hash = QString::fromLatin1(sha256(original));
             if (hash != owner["retailSha256"].toString() &&
-                hash != owner["familySha256"].toString())
+                hash != owner["familySha256"].toString() &&
+                !(promotion.directGates && owner.contains("directGateSha256") &&
+                  hash == owner["directGateSha256"].toString()))
                 throw Error("Promotion source owner was modified: " + owner["name"].toString());
             QByteArray source;
             if (start == 0xbbd50)

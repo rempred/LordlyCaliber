@@ -18,6 +18,7 @@ const catalog = {
   owners: data.families.owners.map(owner => ({
     name: path.basename(owner.source, '.s'), start: owner.start, size: owner.size,
     retailSha256: sha(owner.retailHex), familySha256: sha(owner.familyHex),
+    directGateSha256: data.promotion.loaders.find(loader => loader.start === owner.start)?.relocatedSha256.toLowerCase(),
     keySite: data.promotion.loaders.find(loader => loader.start === owner.start)?.keySite
   }))
 };

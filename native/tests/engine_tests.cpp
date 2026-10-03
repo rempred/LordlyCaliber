@@ -325,6 +325,93 @@ class EngineTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void relocatedPromotionMigration() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM not supplied");
+            const auto retail = Rom::open(path);
+            auto image = retail.bytes();
+            auto gates = Promotion::load(retail).gates;
+            quint32 seed = 0x2468ace1;
+            for (int i = 8; i < gates.size(); ++i) {
+                seed = seed * 1664525u + 1013904223u;
+                gates[i] = char(seed >> 24);
+            }
+            gates[40] = char(123); // Independently chosen Knight STR requirement.
+            const auto stream = encodeLzss(gates);
+            QVERIFY(stream.size() > 376);
+            QVERIFY(stream.size() <= 659);
+            const auto stored = (stream.size() + 1) & ~qsizetype(1);
+            QByteArray slot(1024, char(-1)), descriptor(64, 0);
+            put32(slot, 0, stored + 4);
+            put32(slot, 4, 648);
+            slot.replace(8, stored, QByteArray(stored, 3));
+            slot.replace(8, stream.size(), stream);
+            put32(descriptor, 0, 0x4f425347);
+            put32(descriptor, 4, 0x02000100);
+            put32(descriptor, 8, stream.size());
+            put32(descriptor, 12, stored);
+            put32(descriptor, 16, 648);
+            put32(descriptor, 20, crc32(gates));
+            put32(descriptor, 28, crc32(descriptor.first(28)));
+            slot.replace(960, 64, descriptor);
+            image.replace(0x27b0800, 1024, slot);
+            int firstKeySite = -1;
+            for (auto v : promotionOwners()["owners"].toArray()) {
+                const auto owner = v.toObject();
+                if (!owner.contains("keySite"))
+                    continue;
+                const auto site = owner["keySite"].toInt();
+                if (firstKeySite < 0)
+                    firstKeySite = site;
+                // Existing OBSG-v2 loader contract: ROM entry minus 0x594280.
+                const quint32 key = 0x27b0800 - 0x594280;
+                put32(image, site, 0x3c040000 | (key >> 16));
+                put32(image, site + 4, 0x34840000 | (key & 65535));
+            }
+            auto p = Project::fromRom(Rom::fromBytes(image));
+            p.loadPromotion();
+            QVERIFY(p.promotion()->directGates);
+            QCOMPARE(p.promotion()->gates, gates);
+            QCOMPARE(u8(p.promotion()->gates, 40), quint8(123));
+            QTemporaryDir work;
+            // Merely opening/rebuilding preserves the user's existing export.
+            QCOMPARE(rebuild(p, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), work.path()).image,
+                     image);
+            auto model = *p.promotion();
+            model.setGate(5, 0, 124);
+            p.setPromotion(model.json());
+            const auto result =
+                rebuild(p, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), work.path());
+            QCOMPARE(result.image.mid(0x27b0800, 1024), QByteArray(1024, char(-1)));
+            const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir candidate(candidates + "/native-promotion-migration-XXXXXX");
+            QVERIFY(candidate.isValid());
+            const auto output = candidate.filePath(QFileInfo(path).fileName());
+            exportRom(p, result, output);
+            auto reopened = Promotion::load(Rom::open(output));
+            QVERIFY(reopened.expanded);
+            QVERIFY(!reopened.directGates);
+            QCOMPARE(reopened.json(), model.json());
+            QCOMPARE(u8(reopened.gates, 40), quint8(124));
+            auto corrupt = image;
+            corrupt[0x27b0800 + 960 + 20] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(corrupt)));
+            corrupt = image;
+            corrupt.replace(firstKeySite, 8, retail.bytes().mid(firstKeySite, 8));
+            QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(corrupt)));
+            corrupt = image;
+            corrupt.replace(0x27b0800, 1024, QByteArray(1024, char(-1)));
+            QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(corrupt)));
+            corrupt = image;
+            corrupt[0x27b0800 + 960 + 4] = 1;
+            QVERIFY_THROWS_EXCEPTION(Error, Promotion::load(Rom::fromBytes(corrupt)));
+            QCOMPARE(Rom::open(path).bytes(), retail.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
 };
 QTEST_GUILESS_MAIN(EngineTests)
 #include "engine_tests.moc"

@@ -100,19 +100,55 @@ Promotion Promotion::load(const Rom &rom) {
     const auto slot = rom.bytes().mid(familyStart, familySize);
     const auto descriptor = slot.last(64);
     p.expanded = u32(descriptor, 0) == magic;
+    const auto gateSlot = rom.bytes().mid(0x27b0800, 1024);
+    const auto gateDescriptor = gateSlot.last(64);
+    const bool gateDescriptorPresent = u32(gateDescriptor, 0) == 0x4f425347;
+    if (gateDescriptorPresent && u8(gateDescriptor, 4) == 1)
+        throw Error("This ROM uses legacy shared-DMA promotion redirects. Migrate it through "
+                    "the browser Rebuild exporter before editing native promotion data");
+    p.directGates = gateDescriptorPresent && u8(gateDescriptor, 4) == 2;
+    if (gateDescriptorPresent && !p.directGates)
+        throw Error("Unsupported promotion relocation descriptor version");
+    if (p.expanded && p.directGates)
+        throw Error("Conflicting promotion resource descriptors");
     bool hasFamilyCode = false;
+    bool hasDirectGateCode = false;
     const auto owners = promotionOwners()["owners"].toArray();
     for (const auto &v : owners) {
         const auto owner = v.toObject();
         auto hash = QString::fromLatin1(
             sha256(rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt())));
         bool family = hash == owner["familySha256"].toString();
+        bool direct =
+            owner.contains("directGateSha256") && hash == owner["directGateSha256"].toString();
         hasFamilyCode |= family;
+        hasDirectGateCode |= direct;
         if (p.expanded && !family)
             throw Error("Family resource has incomplete or modified runtime owners");
+        if (!p.expanded && owner.contains("keySite") &&
+            hash != owner[p.directGates ? "directGateSha256" : "retailSha256"].toString())
+            throw Error("Promotion requirements have incomplete or modified resource loaders");
     }
     if (hasFamilyCode && !p.expanded)
         throw Error("Family runtime is missing its resource descriptor");
+    if (hasDirectGateCode && !p.directGates)
+        throw Error("Relocated promotion runtime is missing its resource descriptor");
+    if (p.directGates) {
+        auto logical = u32(gateDescriptor, 8), stored = u32(gateDescriptor, 12);
+        if (u32(gateDescriptor, 4) != 0x02000100 || logical <= 376 || logical > 659 ||
+            stored != ((logical + 1u) & ~1u) || u32(gateDescriptor, 16) != 648 ||
+            u32(gateDescriptor, 24) != 0 ||
+            crc32(gateDescriptor.first(28)) != u32(gateDescriptor, 28) ||
+            !filled(gateDescriptor.mid(32), 0) || u32(gateSlot, 0) != stored + 4 ||
+            u32(gateSlot, 4) != 648 || !filled(gateSlot.mid(8 + logical, stored - logical), 3) ||
+            !filled(gateSlot.mid(8 + stored, 960 - 8 - stored), char(-1)))
+            throw Error("Invalid relocated promotion descriptor or allocation");
+        qsizetype consumed = 0;
+        auto decoded = decodeLzss(gateSlot.mid(8, logical), 648, &consumed);
+        if (consumed != logical || crc32(decoded) != u32(gateDescriptor, 20))
+            throw Error("Relocated promotion requirements failed their integrity check");
+        p.gates = decoded;
+    }
     if (p.expanded) {
         auto logical = u32(descriptor, 8), size = u32(descriptor, 12),
              stored = (logical + 1u) & ~1u;
