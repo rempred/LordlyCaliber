@@ -201,6 +201,54 @@ const menuOwner = JSON.parse(fs.readFileSync(path.join(native, 'game/promotion/o
 assert.equal(hash(padded), menuOwner.cSourceSha256, 'export owner identity');
 const expanded = compile('expanded', config.replace('LC_CLASS_COUNT 81', 'LC_CLASS_COUNT 256').replace('LC_LIST_CAPACITY 82', 'LC_LIST_CAPACITY 257').replace('LC_DISABLED_FLAG 128', 'LC_DISABLED_FLAG 32768').replace('LC_LIST_OFFSET 0x1C0E', 'LC_LIST_OFFSET 0x2528').replace('LC_DISCOVERY_ADDRESS 0x80196A76U', 'LC_DISCOVERY_ADDRESS 0x80308000U'));
 const owner = 0x80260000, resource = 0x80300000;
+const categoriesAddress=0x801CF65C;
+const categoriesSource=fs.readFileSync(path.join(native,'game/promotion/class-categories.c'),'utf8');
+const categoriesCode=compile('class_categories',config,categoriesSource,categoriesAddress,'lc_army_owner = 0x80196AF8;');
+const categoriesWide=compile('class_categories_wide',config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256').replace('LC_MASK_RESOURCE_OFFSET -1','LC_MASK_RESOURCE_OFFSET 3072').replace('LC_DISCOVERY_ADDRESS 0x80196A76U','LC_DISCOVERY_ADDRESS 0x80308000U'),categoriesSource,categoriesAddress,'lc_army_owner = 0x80196AF8;');
+assert(categoriesCode.length<=412);assert(categoriesWide.length<=412);
+const categoriesPadded=Buffer.alloc(412);categoriesCode.copy(categoriesPadded);
+const categoryManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBC0BC);
+assert.equal(hash(categoriesPadded),categoryManifest.cSourceSha256);
+function categoryList(code,masks,discovery) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);
+  cpu.load(categoriesAddress,code);cpu.load(owner,Buffer.alloc(0x2800,0xA6));
+  cpu.w32(0x80196AF8,owner);cpu.w32(owner+0x80,resource);
+  const wide=masks.length===256;
+  cpu.load(wide?0x80308000:0x80196A76,discovery);cpu.load(0x801EF370,Buffer.from([1,2,4,8,16,32,64,128]));
+  masks.forEach((value,id)=>{
+    if(wide)cpu.w8(resource+3072+id,value);else cpu.w16(0x801EF2CC+id*2,((id%11)<<8)|value);
+  });
+  if(!wide)cpu.w16(0x801EF36E,65535);
+  const before=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+0x2800));
+  cpu.trap(0x80093380,c=>c.load(c.get('a0'),Buffer.alloc(c.get('a1'))));
+  cpu.call(categoriesAddress);
+  const count=cpu.get('v0');assert(count<=8);
+  const after=Buffer.from(cpu.ram.slice(cpu.phys(owner),cpu.phys(owner)+0x2800));
+  after.copy(before,0x1E00,0x1E00,0x1E00+count+1);
+  assert.deepEqual(after,before,'category list changed unrelated owner data');
+  return {count,categories:[...after.subarray(0x1E00,0x1E00+count+1)]};
+}
+let categoryComparisons=0,categoryOriginalHash;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xBC0BC,0xBC258);categoryOriginalHash=hash(original);
+  for(let mask=0;mask<256;mask++)for(const found of [0,1,0xA5,255]) {
+    const args=[Array(81).fill(mask),Buffer.alloc(11,found)];
+    assert.deepEqual(categoryList(categoriesCode,...args),categoryList(original,...args),`category mask=${mask}, discovery=${found}`);categoryComparisons++;
+  }
+  for(let seed=0;seed<32;seed++) {
+    const args=[Array.from({length:81},(_,i)=>(i*23+seed*7)&255),Buffer.alloc(11,seed*17&255)];
+    assert.deepEqual(categoryList(categoriesCode,...args),categoryList(original,...args));categoryComparisons++;
+  }
+}
+const categoryMasks=Array(256).fill(0);categoryMasks[165]=128;categoryMasks[249]=3;categoryMasks[255]=64;
+assert.deepEqual(categoryList(categoriesWide,categoryMasks,Buffer.alloc(32,255)),{count:4,categories:[1,2,7,8,9]});
+assert.deepEqual(categoryList(categoriesWide,categoryMasks,Buffer.alloc(32)),{count:0,categories:[9]});
+categoryMasks[249]=5;
+assert.deepEqual(categoryList(categoriesWide,categoryMasks,Buffer.alloc(32,255)),{count:3,categories:[1,7,8,9]});
+console.log(JSON.stringify({categoryComparisons,categoriesBytes:categoriesCode.length,categoriesWideBytes:categoriesWide.length,categoryOriginalHash,categoriesHash:hash(categoriesPadded)}));
 const equipmentAddress=0x801D2B7C;
 const equipmentSource=fs.readFileSync(path.join(native,'game/promotion/equipment-class-menu.c'),'utf8');
 const equipmentBindings='lc_army_owner = 0x80196AF8; lc_goth = 0x80196A6C; lc_equipment_summary = 0x801D29F8; lc_equipment_cost = 0x801D2EE0; lc_equipment_full = 0x801D2E2C;';

@@ -58,6 +58,7 @@ catalog.owners.push({
 });
 catalog.owners.push({
   name:'func_000bbd80', start:0xbbd80, size:44,
+  requiresFamilyResource:false, onMaskEdit:true,
   retailSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
   familySha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
   cSource:'compatibility-mask.c',
@@ -69,8 +70,17 @@ catalog.owners.push({
   familySha256:'5dc1d784f93d857fd73877b9a9908d8766ce6e15a863ddaf1fb886dfbdc5cbd6',
   cSource:'equipment-class-menu.c',
   cSourceSha256:'596f62bbad0375119955a0524b6baabf613c67b05142728bc6aefd742e8d4ed1',
-  requiresFamilyResource:false,
+  requiresFamilyResource:false, onFlagsEdit:true,
   symbols:{lc_army_owner:0x80196AF8,lc_goth:0x80196A6C,lc_equipment_summary:0x801D29F8,
     lc_equipment_cost:0x801D2EE0,lc_equipment_full:0x801D2E2C}
+});
+catalog.owners.push({
+  name:'func_000bc0bc', start:0xbc0bc, size:412,
+  retailSha256:'b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0',
+  familySha256:'b797279fc0a015a591c5a75a3eaa843c7d3554e94a72241b47f3ff079e7f72f0',
+  cSource:'class-categories.c',
+  cSourceSha256:'d70c4e823eb4dffe9067061244528dcb01d67c8653f321f232b390e35338196f',
+  requiresFamilyResource:false, onMaskEdit:true,
+  symbols:{lc_army_owner:0x80196AF8}
 });
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

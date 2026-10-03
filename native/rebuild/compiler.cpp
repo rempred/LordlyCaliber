@@ -408,8 +408,8 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             for (const auto &value : promotionOwners()["owners"].toArray()) {
                 const auto owner = value.toObject();
                 const auto start = owner["start"].toInt(), size = owner["size"].toInt();
-                if (start != 0xbbd80 &&
-                    !(start == 0xbf5dc && promotion.flags != promotion.originalFlags))
+                if (!(owner["onMaskEdit"].toBool() && promotion.masks != promotion.originalMasks) &&
+                    !(owner["onFlagsEdit"].toBool() && promotion.flags != promotion.originalFlags))
                     continue;
                 const auto priorHash =
                     QString::fromLatin1(sha256(p.rom().bytes().mid(start, size)));
@@ -430,7 +430,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                     throw Error("Compiled class-line reader differs from validated source");
                 result.image.replace(start, size, reader);
             }
-            result.report << "Compiled class-line data and its compatibility/list readers";
+            result.report << "Compiled class-line data and its affected C readers";
         }
     }
 }
