@@ -19,7 +19,17 @@ PATH. Copy the included `gcc-host/sys/file.h` shim into the source's `sys/`
 directory; the backend includes it but does not use declarations from it.
 Run `nmake cc1.exe` with the CFLAGS/LDFLAGS above. The binary pin records the
 accepted host build; a different host compiler can change its executable hash.
-Only that compiler executable is distributed, not libgcc or an SDK.
+The C preprocessor is built from the same source archive in a separate clean
+directory, using the same configuration, shim and flags, plus `/DHAVE_STRERROR`.
+That define selects the modern C runtime's `strerror` instead of the obsolete
+`sys_errlist` declaration. Run `nmake cccp.exe` with the above CFLAGS/LDFLAGS and
+`LIBS="obstack.obj alloca.obj kernel32.lib"`; modern MSVC supplies its static CRT
+through object directives, replacing the makefile's obsolete `libc.lib` name.
+Copy `cccp.exe` as `cpp.exe` beside `cc1.exe`. The pinned preprocessor was built
+with MSVC 14.44.35228 for x86 and depends only on `KERNEL32.dll`.
+No compiler source patches were needed. These two executables are distributed,
+not libgcc or a platform SDK. Export disables host include directories and host
+platform macros and supplies the target's MIPS/big-endian defines explicitly.
 
 Qt source versions and binary/source archive checksums are in the adjacent
 `dependency-sources.json` and top-level `dependencies.json`. Qt was supplied

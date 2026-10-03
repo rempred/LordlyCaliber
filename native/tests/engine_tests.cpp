@@ -17,6 +17,33 @@ static QByteArray syntheticRom() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void sourcePreprocessing() {
+        auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (tools.isEmpty())
+            QSKIP("Set LORDLY_N64_TOOLCHAIN to exercise the bundled compiler");
+        Compiler compiler(tools);
+        compiler.authenticate();
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QByteArray source = R"C(
+/* A maintained source may contain comments, includes and macros. */
+#include "contract.h"
+#if defined(_WIN32) || defined(i386) || defined(__i386__)
+#error Host target macros leaked into the N64 compilation
+#endif
+#if __mips != 3 || !defined(_MIPSEB)
+#error Missing N64 target definitions
+#endif
+unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/* kept */") };
+)C";
+        auto built = compiler.compile(source, dir.path(), "preprocessing", 0, ".data",
+                                      {{"contract.h", "#define LC_TWICE(x) ((x) * 2)\n"}});
+        QCOMPARE(built.first(4), QByteArray::fromHex("2a04040b"));
+        for (auto byte : built.sliced(4))
+            QCOMPARE(byte, char(0));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, compiler.compile("#include <missing.h>\n", dir.path(), "missing", 0, ".data"));
+    }
     void byteOrders() {
         const auto expected = QByteArray::fromHex("8037124011223344") + QByteArray(56, 0);
         const auto swapped = QByteArray::fromHex("3780401222114433") + QByteArray(56, 0);
@@ -320,7 +347,7 @@ class EngineTests : public QObject {
                                      rebuild(conflict, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"),
                                              repeatBuild.path()));
             QVERIFY(QFileInfo::exists(build.filePath("class_families.compiler.s")));
-            QVERIFY(QFileInfo::exists(build.filePath("func_000bf248.s")));
+            QVERIFY(QFileInfo::exists(build.filePath("func_000bf248.compiler.s")));
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

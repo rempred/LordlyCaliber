@@ -1,6 +1,6 @@
 {
   "generator": "native/tools/generate-promotion-owner-catalog.cjs",
-  "input": "native-classes-data.js (validated Rebuild baseline 559b231)",
+  "input": "native-classes-data.js (validated Rebuild baseline 559b231); C menu verified by native/tests/class_menu_mips.cjs",
   "romStart": 41746432,
   "romSize": 65536,
   "resourceKey": 35896704,
@@ -53,7 +53,8 @@
       "start": 782920,
       "size": 528,
       "retailSha256": "852d00c511422c5168b11ec4e50c0bd709fad83f6632816c605ec972a1f69498",
-      "familySha256": "dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298"
+      "familySha256": "dd8d2826376f6c4831f249a6e3e0f6f211c0b9f24fdda393188dae6f8686b298",
+      "cMenuSha256": "ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42"
     },
     {
       "name": "func_000c37ec",

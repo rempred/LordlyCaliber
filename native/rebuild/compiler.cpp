@@ -5,7 +5,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QTemporaryDir>
 #include <algorithm>
 
 namespace lordly {
@@ -36,6 +38,11 @@ void Compiler::run(const QString &tool, const QStringList &args, const QString &
     QProcess p;
     p.setWorkingDirectory(directory);
     p.setProcessChannelMode(QProcess::MergedChannels);
+    auto environment = QProcessEnvironment::systemEnvironment();
+    for (const auto &key : {"C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
+                            "DEPENDENCIES_OUTPUT", "SUNPRO_DEPENDENCIES"})
+        environment.remove(QString::fromLatin1(key));
+    p.setProcessEnvironment(environment);
     p.start(QDir(root_).filePath(tool), args);
     if (!p.waitForStarted(10000))
         throw Error("Cannot start " + tool + ": " + p.errorString());
@@ -48,7 +55,8 @@ void Compiler::run(const QString &tool, const QStringList &args, const QString &
         throw Error(tool + " failed:\n" + QString::fromLocal8Bit(p.readAll()));
 }
 QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
-                             const QString &name, quint32 address, const QString &section) const {
+                             const QString &name, quint32 address, const QString &section,
+                             const QMap<QString, QByteArray> &headers) const {
     if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(name).hasMatch())
         throw Error("Invalid source unit name");
     if (section != ".text" && section != ".data")
@@ -57,16 +65,32 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
         throw Error("Cannot create build directory");
     QDir dir(directory);
     auto input = dir.absoluteFilePath(name + ".c");
+    auto preprocessed = dir.absoluteFilePath(name + ".i");
     auto assembly = dir.absoluteFilePath(name + ".compiler.s");
     auto object = dir.absoluteFilePath(name + ".o");
     auto script = dir.absoluteFilePath(name + ".ld");
     auto elf = dir.absoluteFilePath(name + ".elf");
     auto binary = dir.absoluteFilePath(name + ".bin");
     atomicWrite(input, source);
+    QTemporaryDir headerDirectory(dir.absoluteFilePath(name + "_headers_XXXXXX"));
+    if (!headerDirectory.isValid())
+        throw Error("Cannot create source header directory");
+    QDir includes(headerDirectory.path());
+    for (auto it = headers.begin(); it != headers.end(); ++it) {
+        if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*\\.h$").match(it.key()).hasMatch())
+            throw Error("Invalid source header name");
+        atomicWrite(includes.absoluteFilePath(it.key()), it.value());
+    }
+    // The executable runs on Windows; its input describes the N64 target.
+    // Suppress host include paths and host predefined platform macros.
+    run("cpp.exe",
+        {"-P", "-undef", "-nostdinc", "-D__mips=3", "-D__mips__", "-D_MIPSEB", "-D__MIPSEB__", "-I",
+         includes.absolutePath(), input, preprocessed},
+        directory);
     QStringList flags = {
-        "-quiet", "-O2", "-meb",     "-mips3",        "-mgp32",       "-mfp32",
-        "-G",     "0",   "-fno-PIC", "-mno-abicalls", "-fno-builtin", "-funsigned-char",
-        input,    "-o",  assembly};
+        "-quiet",     "-O2", "-meb",     "-mips3",        "-mgp32",       "-mfp32",
+        "-G",         "0",   "-fno-PIC", "-mno-abicalls", "-fno-builtin", "-funsigned-char",
+        preprocessed, "-o",  assembly};
     run("cc1.exe", flags, directory);
     run("mips-kmc-elf-as.exe",
         {"-G", "0", "-mips3", "-mabi=32", "-force-n64align", "-EB", "-o", object, assembly},
@@ -167,14 +191,23 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto hash = QString::fromLatin1(sha256(original));
             if (hash != owner["retailSha256"].toString() &&
                 hash != owner["familySha256"].toString() &&
+                !(owner.contains("cMenuSha256") && hash == owner["cMenuSha256"].toString()) &&
                 !(promotion.directGates && owner.contains("directGateSha256") &&
                   hash == owner["directGateSha256"].toString()))
                 throw Error("Promotion source owner was modified: " + owner["name"].toString());
-            QByteArray source;
-            if (start == 0xbbd50)
+            QByteArray source, built;
+            auto expected = owner["familySha256"].toString().toLatin1();
+            if (start == 0xbf248) {
+                built = compiler.compile(
+                    readFile(":/game/promotion/family-menu.c"), directory, owner["name"].toString(),
+                    quint32(start) + 0x801135a0u, ".text",
+                    {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}});
+                if (built.size() > size)
+                    throw Error("Compiled class menu exceeds its function allocation");
+                built.append(QByteArray(size - built.size(), 0));
+                expected = owner["cMenuSha256"].toString().toLatin1();
+            } else if (start == 0xbbd50)
                 source = readFile(":/game/promotion/family-lookup.s");
-            else if (start == 0xbf248)
-                source = readFile(":/game/promotion/family-menu.s");
             else
                 for (int offset = 0; offset < size; offset += 4) {
                     auto site = start + offset;
@@ -188,16 +221,16 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                         source += ".word 0x" + QByteArray::number(u32(original, offset), 16);
                     source += '\n';
                 }
-            auto built = compiler.assembleOwner(source, directory, owner["name"].toString(),
-                                                quint32(start) + 0x801135a0u);
-            if (built.size() != size ||
-                sha256(built) != owner["familySha256"].toString().toLatin1())
+            if (built.isEmpty())
+                built = compiler.assembleOwner(source, directory, owner["name"].toString(),
+                                               quint32(start) + 0x801135a0u);
+            if (built.size() != size || sha256(built) != expected)
                 throw Error("Compiled promotion owner differs from validated source: " +
                             owner["name"].toString());
             result.image.replace(start, size, built);
         }
-        result.report << "Compiled expanded promotion data and rebuilt nine complete runtime "
-                         "owners within their original extents";
+        result.report << "Compiled expanded promotion data and class-menu C; rebuilt nine complete "
+                         "runtime owners within their original extents";
     } else if (promotion.gates != promotion.originalGates) {
         auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");
         auto container = promotion.retailResource.container(compiled);

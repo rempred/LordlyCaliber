@@ -11,13 +11,16 @@ const data = sandbox.window.OB64.NATIVE_CLASSES_DATA.payload;
 const sha = hex => crypto.createHash('sha256').update(Buffer.from(hex, 'hex')).digest('hex');
 const catalog = {
   generator: 'native/tools/generate-promotion-owner-catalog.cjs',
-  input: 'native-classes-data.js (validated Rebuild baseline 559b231)',
+  input: 'native-classes-data.js (validated Rebuild baseline 559b231); C menu verified by native/tests/class_menu_mips.cjs',
   romStart: data.families.romStart,
   romSize: data.families.romSize,
   resourceKey: data.families.resourceKey,
   owners: data.families.owners.map(owner => ({
     name: path.basename(owner.source, '.s'), start: owner.start, size: owner.size,
     retailSha256: sha(owner.retailHex), familySha256: sha(owner.familyHex),
+    // Padded complete owner from the pinned compiler. The MIPS comparison test
+    // independently checks this hash against the maintained C and configuration.
+    cMenuSha256: owner.start === 0xbf248 ? 'ec2b6c857dcbc793d9f5187c2b8f1ac06280c391ace34a3c786e6b8dc0417f42' : undefined,
     directGateSha256: data.promotion.loaders.find(loader => loader.start === owner.start)?.relocatedSha256.toLowerCase(),
     keySite: data.promotion.loaders.find(loader => loader.start === owner.start)?.keySite
   }))

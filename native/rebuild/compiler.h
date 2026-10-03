@@ -7,7 +7,8 @@ class Compiler {
   public:
     explicit Compiler(QString toolsRoot);
     QByteArray compile(const QByteArray &source, const QString &directory, const QString &name,
-                       quint32 address, const QString &section) const;
+                       quint32 address, const QString &section,
+                       const QMap<QString, QByteArray> &headers = {}) const;
     QByteArray compileData(const QByteArray &bytes, const QString &directory,
                            const QString &name) const;
     void authenticate() const;

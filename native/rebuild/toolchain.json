@@ -1,6 +1,7 @@
 {
   "id": "ob64-kmc-2.7.2-gnu-2.6",
   "tools": {
+    "cpp.exe": "0d3a47b5e5127805506e95450f50c15bfb723f5a69a43e39acdf526e91602e11",
     "cc1.exe": "f3f1c99a322f5b3d8c108c2a44af1d6d084dd27575c5d60bf0f0d33fff34b1c6",
     "mips-kmc-elf-as.exe": "0831d410ad140f2d2225382273219acb418ef6ec1e986a3309f034d2a8350a5c",
     "mips-kmc-elf-ld.exe": "48944635bc840256bc2fba86d2701a4ca59b2424b924ac8b9f4853d4e1da609f",
