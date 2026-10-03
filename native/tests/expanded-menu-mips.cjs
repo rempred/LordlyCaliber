@@ -118,6 +118,22 @@ for (const entry of [...catalog.owners, ...catalog.expandedOwners]) {
     }
   }
 }
+// The retail special-ID rule must not classify appended ordinary IDs by their
+// number alone. Every original ID keeps its old result and default-class rule.
+let sourceClassCases = 0;
+{
+  const m = cpu();
+  for (let secondary = 0; secondary < layout.count; ++secondary)
+    for (const defaultClass of [0, 5, 41, 42, 90, 164, 165, 255])
+      for (const eligible of [0, 1]) {
+        m.set('fp', secondary); m.set('s0', eligible); m.w8(stack + 0x1F, defaultClass);
+        m.call(ram(0xC3ABC), ram(0xC3AEC));
+        const ordinary = secondary < 42 || secondary >= 165;
+        assert.equal(m.get('s0'), eligible && (ordinary || (defaultClass > 0 && defaultClass < 42)) ? 1 : 0,
+          `secondary=${secondary}, default=${defaultClass}, eligible=${eligible}`);
+        sourceClassCases++;
+      }
+}
 let equipmentCases = 0;
 for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
   for (const missing of [-1, 0, 1, 2, 3]) {
@@ -141,5 +157,5 @@ for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
     assert.equal(m.get('v0'), allowed && (!check || missing === -1) ? 1 : 0);
     equipmentCases++;
   }
-console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, equipmentCases, allocationBytes:layout.ownerBytes,
+console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, sourceClassCases, equipmentCases, allocationBytes:layout.ownerBytes,
   scope:'executed selection/name/count/sprite-call spans; not raster output or full game'}));

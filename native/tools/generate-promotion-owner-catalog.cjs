@@ -117,7 +117,12 @@ catalog.expandedOwners = [0x9b0f0, 0x9bc80, 0xbc984, 0xbedb8, 0xbf458, 0xc01dc].
 catalog.expandedOwners.push({name:'func_000ae3f0',start:0xae3f0,size:0x518,
   retailSha256:'b18b30e646573e3ab93dd181fb9c4cc0f2265db7483b8698f073ac2c4fc677b3'});
 const expandedInstructions = [
-  [0xc3900, [[0xc3d00, 'sltiu $v0, $a0, CLASS_COUNT']]],
+  [0xc3900, [[0xc3d00, 'sltiu $v0, $a0, CLASS_COUNT'],
+    // Preserve the original secondary-ID restriction only for retail 42..164.
+    // The following existing default-class load becomes the branch delay slot.
+    [0xc3abc, 'addiu $v0, $s8, -42'],
+    [0xc3ac0, 'sltiu $v0, $v0, 123'],
+    [0xc3ac4, 'beq $v0, $zero, .+40']]],
   [0xae3f0, [[0xae3f4, 'addiu $a0, $zero, ARMY_OWNER_BYTES'],
     [0xae41c, 'addiu $a1, $zero, ARMY_OWNER_BYTES']]],
   [0x9b0f0, [[0x9b650, 'lbu $v0, CATEGORY_CLASSES_OFFSET+1($v0)'],

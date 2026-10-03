@@ -117,6 +117,18 @@
         {
           "offset": 1024,
           "assembly": "sltiu $v0, $a0, CLASS_COUNT"
+        },
+        {
+          "offset": 444,
+          "assembly": "addiu $v0, $s8, -42"
+        },
+        {
+          "offset": 448,
+          "assembly": "sltiu $v0, $v0, 123"
+        },
+        {
+          "offset": 452,
+          "assembly": "beq $v0, $zero, .+40"
         }
       ],
       "expandedDataReferences": [
