@@ -56,4 +56,11 @@ catalog.owners.push({
   cSourceSha256:'49532166880bb6aff99023a64852baf01bd28d1073121df1f3fad637f5b94798',
   symbols:{lc_army_owner:0x80196AF8,lc_class_coordinates:0x801C6B28,lc_class_matrix:0x80098C20}
 });
+catalog.owners.push({
+  name:'func_000bbd80', start:0xbbd80, size:44,
+  retailSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
+  familySha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef',
+  cSource:'compatibility-mask.c',
+  cSourceSha256:'d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef'
+});
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');

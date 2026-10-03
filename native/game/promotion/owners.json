@@ -128,6 +128,15 @@
         "lc_class_coordinates": 2149346088,
         "lc_class_matrix": 2148109344
       }
+    },
+    {
+      "name": "func_000bbd80",
+      "start": 769408,
+      "size": 44,
+      "retailSha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef",
+      "familySha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef",
+      "cSource": "compatibility-mask.c",
+      "cSourceSha256": "d3afceb458105688a1c504d15d83489fb7e5b33dfed380ff8b17106f5a51f2ef"
     }
   ]
 }

@@ -94,6 +94,23 @@ call targets are supplied as linker bindings; absolute local assignments in
 this historical assembler produced zero jump targets during integration and
 were rejected by the whole-owner hash check.
 
+`promotion/compatibility-mask.c` adapts the accepted pure-C
+`src/lib/func_000bbd80.c` at Decomp commit `96b75a67b71bf6f5e938dbef34e355c48f039865`.
+The retail configuration reproduces its entire 44-byte Army owner at
+RAM `0x801CF320` / z64 `0xBBD80`. Family exports and standalone mask edits compile
+this reader along with edited data. The expanded configuration reads one mask
+per class from the loaded promotion resource, preserving low-byte input wrapping
+and the configured count bound. Its 256-ID form fits the same function extent.
+The developer MIPS suite checks 2,048 retail/expanded lookup cases and unchanged
+RAM; private-ROM comparison proves the retail byte match. Expanded runtime
+integration still requires the dynamic promotion resource and other consumers.
+
+Compiled function fitting uses ELF symbol extents, including local functions.
+Only zero linker padding beyond every function may be removed. The compiler
+test checks a `jr ra; nop` leaf: fitting its eight bytes succeeds, cutting the
+zero delay instruction fails, and nonzero trailing bytes fail. This prevents
+alignment padding from being confused with executable zero instructions.
+
 `classes/class-runtime.c` supplies the compiled one-time class-data load, main
 heap reset and secondary-pool reset. `rebuild/class_runtime.*` combines it with
 the dynamic class-data builder, checks the cartridge/RAM bounds and returns the

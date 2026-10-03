@@ -7,6 +7,8 @@ struct CompiledModule {
     QByteArray bytes;
     quint32 address = 0;
     QMap<QString, quint32> entries;
+    quint32 functionExtent = 0;
+    QByteArray fitOwner(qsizetype size) const;
 };
 class Compiler {
   public:

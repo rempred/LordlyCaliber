@@ -176,22 +176,35 @@ CompiledModule Compiler::compileModule(const QByteArray &source, const QString &
         if (u32(header, 36) != 16 || table.size() % 16)
             throw Error("Invalid ELF32 symbol table");
         for (qsizetype offset = 0; offset < table.size(); offset += 16) {
-            // Only global function definitions within this module are exported.
-            if (u8(table, offset + 12) != 0x12)
+            const auto info = u8(table, offset + 12);
+            if ((info & 15) != 2)
                 continue;
             const auto symbolName = QString::fromLatin1(string(labels, u32(table, offset)));
             const auto value = u32(table, offset + 4), size = u32(table, offset + 8);
             if (u16(table, offset + 14) != textIndex || value < address ||
-                quint64(value) >= quint64(address) + result.bytes.size() || (value & 3) ||
+                quint64(value) >= quint64(address) + result.bytes.size() || (value & 3) || !size ||
                 size > quint64(address) + result.bytes.size() - value || symbolName.isEmpty() ||
                 result.entries.contains(symbolName))
                 throw Error("Invalid exported module function: " + symbolName);
-            result.entries[symbolName] = value;
+            result.functionExtent = std::max(result.functionExtent, value - address + size);
+            // Local functions constrain the extent but are not public entries.
+            if ((info >> 4) == 1)
+                result.entries[symbolName] = value;
         }
     }
     if (result.entries.isEmpty())
         throw Error("Compiled module has no exported functions");
     return result;
+}
+QByteArray CompiledModule::fitOwner(qsizetype size) const {
+    if (size < 0 || size < functionExtent || !functionExtent)
+        throw Error("Compiled function exceeds its owner allocation");
+    for (qsizetype offset = size; offset < bytes.size(); ++offset)
+        if (bytes[offset] != 0)
+            throw Error("Nonzero compiled bytes outside the function owner");
+    auto fitted = bytes.first(std::min(size, bytes.size()));
+    fitted.append(QByteArray(size - fitted.size(), 0));
+    return fitted;
 }
 QByteArray Compiler::compileData(const QByteArray &bytes, const QString &directory,
                                  const QString &name) const {
@@ -338,14 +351,12 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 const auto bindings = owner["symbols"].toObject();
                 for (auto it = bindings.begin(); it != bindings.end(); ++it)
                     symbols.insert(it.key(), quint32(it.value().toDouble()));
-                built = compiler.compile(
+                const auto module = compiler.compileModule(
                     readFile(":/game/promotion/" + owner["cSource"].toString()), directory,
-                    owner["name"].toString(), quint32(start) + 0x801135a0u, ".text",
+                    owner["name"].toString(), quint32(start) + 0x801135a0u,
                     {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}},
                     symbols);
-                if (built.size() > size)
-                    throw Error("Compiled promotion source exceeds its function allocation");
-                built.append(QByteArray(size - built.size(), 0));
+                built = module.fitOwner(size);
                 expected = owner["cSourceSha256"].toString().toLatin1();
             } else if (start == 0xbbd50)
                 source = readFile(":/game/promotion/family-lookup.s");
@@ -388,6 +399,18 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             data[i * 2 + 1] = promotion.masks[i];
         auto compiled = compiler.compileData(data, directory, "promotion_compatibility");
         result.image.replace(0xdbd2c, compiled.size(), compiled);
+        if (!family) {
+            // A standalone mask edit still rebuilds its accepted C reader.
+            const auto module = compiler.compileModule(
+                readFile(":/game/promotion/compatibility-mask.c"), directory, "class_compatibility",
+                0x801cf320u,
+                {{"class_menu_config.h", readFile(":/game/promotion/class_menu_config.h")}});
+            const auto reader = module.fitOwner(44);
+            if (reader != p.rom().bytes().mid(0xbbd80, 44))
+                throw Error("Source-built compatibility reader differs from the source ROM");
+            result.image.replace(0xbbd80, 44, reader);
+            result.report << "Compiled compatibility masks and their accepted C lookup";
+        }
     }
 }
 BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &directory) {

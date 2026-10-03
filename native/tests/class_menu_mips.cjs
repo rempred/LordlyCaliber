@@ -38,6 +38,48 @@ function assembly(name, filename, address) {
   fs.writeFileSync(path.join(work, name+'.s'), '.set noat\n.set noreorder\n.section .owner,"ax"\n.balign 4\n' + fs.readFileSync(path.join(native, 'game/promotion', filename), 'utf8'));
   return extract(name, address, '.owner');
 }
+const maskAddress=0x801CF320;
+const maskSource=fs.readFileSync(path.join(native,'game/promotion/compatibility-mask.c'),'utf8');
+function fitMask(name,bytes) {
+  const elf=fs.readFileSync(path.join(work,name+'.elf')),sections=elf.readUInt32BE(32),count=elf.readUInt16BE(48);
+  let definitions=0;
+  for(let i=0;i<count;i++) {
+    const h=sections+i*40;if(elf.readUInt32BE(h+4)!==2)continue;
+    const at=elf.readUInt32BE(h+16),end=at+elf.readUInt32BE(h+20);
+    for(let s=at;s<end;s+=16)if((elf[s+12]&15)===2) {
+      const begin=elf.readUInt32BE(s+4),size=elf.readUInt32BE(s+8);
+      assert(begin>=maskAddress&&size>0&&begin+size<=maskAddress+44,'entire function including delay slot fits');definitions++;
+    }
+  }
+  assert(definitions>0);assert(bytes.subarray(44).every(x=>x===0),'only linker alignment is removed');
+  const result=Buffer.alloc(44);bytes.copy(result,0,0,44);return result;
+}
+const maskCode=fitMask('compatibility_mask',compile('compatibility_mask',config,maskSource,maskAddress));
+const maskWide=fitMask('compatibility_mask_wide',compile('compatibility_mask_wide',config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256').replace('LC_MASK_RESOURCE_OFFSET -1','LC_MASK_RESOURCE_OFFSET 3072'),maskSource,maskAddress));
+assert(maskCode.length<=44);assert(maskWide.length<=44);
+const maskPadded=Buffer.alloc(44);maskCode.copy(maskPadded);
+const maskManifest=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xBBD80);
+assert.equal(hash(maskPadded),maskManifest.cSourceSha256);
+function maskLookup(code,count,id) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);cpu.set('a0',id);
+  cpu.load(maskAddress,code);cpu.w32(0x80196AF8,0x80280000);cpu.w32(0x80280080,0x80300000);
+  for(let i=0;i<count;i++)cpu.w8(count===81?0x801EF2CD+i*2:0x80300C00+i,(i*73+19)&255);
+  // All table input and unrelated RAM must be unchanged after the pure lookup.
+  cpu.w8=cpu.w16=cpu.w32=()=>{throw Error('lookup changed RAM');};cpu.call(maskAddress);
+  return cpu.get('v0');
+}
+let maskCases=0;
+for(let id=0;id<256;id++)for(const highBits of [0,256,0x7FFF0000,0xFFFF0000]) {
+  assert.equal(maskLookup(maskCode,81,(id+highBits)>>>0),id<81?(id*73+19)&255:0);
+  assert.equal(maskLookup(maskWide,256,(id+highBits)>>>0),(id*73+19)&255);maskCases+=2;
+}
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  assert.deepEqual(maskPadded,rom.subarray(0xBBD80,0xBBDAC),'accepted C compatibility getter');
+}
+console.log(JSON.stringify({maskCases,maskBytes:maskCode.length,maskWideBytes:maskWide.length,maskSha256:hash(maskPadded)}));
 const renderBlock = 0x801B82FC, renderAddress = renderBlock + 16, renderEnd = 0x801B8478;
 const renderBindings = 'lc_army_owner = 0x80196AF8; lc_class_coordinates = 0x801C6B28; lc_class_matrix = 0x80098C20;';
 const renderSource = fs.readFileSync(path.join(native, 'game/promotion/class-render-rows.c'), 'utf8');

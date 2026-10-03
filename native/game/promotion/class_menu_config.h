@@ -15,3 +15,6 @@
 #define LC_CHECK_CHANGE 0x801D2358U
 /* Four-byte draw records precede the count at owner+0x5C8. */
 #define LC_DRAW_ROW_CAPACITY 167
+#define LC_MASK_RESOURCE_OFFSET -1
+#define LC_MASK_ADDRESS 0x801EF2CDU
+#define LC_MASK_STRIDE 2

@@ -306,6 +306,16 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
                  QByteArray::fromHex("03e0000824820007"));
         QCOMPARE(module.bytes.mid(module.entries["second"] - module.address, 8),
                  QByteArray::fromHex("03e000083882005a"));
+        const auto leaf = compiler.compileModule("void nothing(void) {}\n", work.path(),
+                                                 "alignment_leaf", 0x80100000);
+        QCOMPARE(leaf.functionExtent, quint32(8));
+        QCOMPARE(leaf.fitOwner(8), QByteArray::fromHex("03e0000800000000"));
+        QCOMPARE(leaf.fitOwner(20), QByteArray::fromHex("03e0000800000000") + QByteArray(12, 0));
+        // The zero delay instruction belongs to the function, unlike zero link padding.
+        QVERIFY_THROWS_EXCEPTION(Error, leaf.fitOwner(4));
+        auto dirtyPadding = leaf;
+        dirtyPadding.bytes.append(char(1));
+        QVERIFY_THROWS_EXCEPTION(Error, dirtyPadding.fitOwner(8));
         QVERIFY_THROWS_EXCEPTION(
             Error, compiler.compileModule("volatile unsigned int state = 4;\nunsigned int "
                                           "use_state(void) { return state; }\n",
@@ -579,6 +589,17 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(u8(model.gates, 5 * 8), quint8(72));
             QCOMPARE(u8(model.gates, 5 * 8 + 1), quint8(67));
             QCOMPARE(u8(model.gates, 5 * 8 + 6), quint8(40));
+            auto maskOnly = p;
+            auto maskModel = model;
+            maskModel.setMask(5, 0xa5);
+            maskOnly.setPromotion(maskModel.json());
+            QTemporaryDir maskWork;
+            const auto maskResult =
+                rebuild(maskOnly, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), maskWork.path());
+            QCOMPARE(Promotion::load(Rom::fromBytes(maskResult.image)).json(), maskModel.json());
+            QCOMPARE(maskResult.image.mid(0xbbd80, 44), p.rom().bytes().mid(0xbbd80, 44));
+            QCOMPARE(maskResult.image.mid(0x27d0000, 65536), p.rom().bytes().mid(0x27d0000, 65536));
+            QVERIFY(QFileInfo::exists(maskWork.filePath("class_compatibility.compiler.s")));
             auto family = model.addFamily("Order of Dawn", 1);
             QCOMPARE(family, 16);
             model.assign(2, family);
