@@ -1,7 +1,8 @@
 param(
     [string]$ToolsRoot = "$env:USERPROFILE\.codex\lordly-native-toolchain",
     [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
-    [switch]$Test
+    [switch]$Test,
+    [string]$RomPath = ''
 )
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
@@ -24,6 +25,12 @@ if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
 if ($Test) {
     $env:PATH = "$qtRoot\bin;$env:PATH"
+    $env:LORDLY_TEST_ROM = $RomPath
+    $env:LORDLY_N64_TOOLCHAIN = Join-Path $sourceRoot '.local\n64-toolchain'
+    $env:LORDLY_TEST_SCREENSHOT = Join-Path $buildRoot 'workspace.png'
     & (Join-Path (Split-Path $cmake) 'ctest.exe') --test-dir $buildRoot --output-on-failure
-    if ($LASTEXITCODE -ne 0) { throw 'Native tests failed.' }
+    $testExit = $LASTEXITCODE
+    Get-Content -LiteralPath (Join-Path $buildRoot 'engine-test-report.txt')
+    Get-Content -LiteralPath (Join-Path $buildRoot 'ui-test-report.txt') -ErrorAction SilentlyContinue
+    if ($testExit -ne 0) { throw 'Native tests failed.' }
 }
