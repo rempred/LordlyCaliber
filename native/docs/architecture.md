@@ -59,7 +59,7 @@ editor uses Ctrl+Enter to commit, and dependent class selectors update with undo
 and redo. Growing an owned ROM allocation moves it when unrelated bytes follow;
 shrinking an allocation at the end removes only its owned trailing bytes.
 
-The promotion model also supports 165â€“256 class IDs. Growing from the original
+The promotion model also supports 165Ã¢â‚¬â€œ256 class IDs. Growing from the original
 81 manual entries preserves existing values and gives the remaining retail IDs
 no manual family by default. Appending a new ID copies a chosen template's
 requirements, family and compatibility mask. Schema 2 catalogs persist the
@@ -136,10 +136,10 @@ eligibility, equipment summaries and confirmation paths. Those indexed reads
 move to the expanded alias array while C readers use linked symbol references.
 Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
-Its special secondary-class rule remains limited to original IDs 42â€“164;
+Its special secondary-class rule remains limited to original IDs 42Ã¢â‚¬â€œ164;
 new IDs use their authored compatibility and requirement tables.
 The Army action checks likewise apply their special-class restrictions only to
-original IDs 81â€“164. Both alias routes retain their original default-class
+original IDs 81Ã¢â‚¬â€œ164. Both alias routes retain their original default-class
 selection; appended IDs take the ordinary-class path. The unrelated 128-entry
 squad-index bound remains unchanged.
 
@@ -223,3 +223,12 @@ resource; the rest of that slot remains untouched. Reopening validates the entir
 resource and both full owners, accounting for independent class-data relocation.
 Later growth moves around unrelated allocations. Shared help entries retain their
 indices and raw bytes. New-class description index routing remains separate.
+
+The Project model now appends classes atomically with their cloned appearance,
+raw record, name, description and promotion state. New named-character aliases
+start at zero. New description entries start at index225, after all225 retained
+retail entries; classID165 maps to225. Project manifests persist the baseline
+assets and subsequent edits separately. Added records have no original ROM
+offset. Folder/archive reload and whole-operation undo cover all91 available
+new IDs. The Classes workspace offers creation from the selected template; the
+public export guard remains until runtime index routing is installed.

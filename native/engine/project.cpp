@@ -136,6 +136,15 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
                    classPlacement->layout.indexBase;
         }
         auto names = catalog.value(cls ? "CLASS_NAMES" : "ITEM_NAMES").toObject();
+        if (cls)
+            for (auto it = names.begin(); it != names.end();) {
+                bool valid = false;
+                const auto id = it.key().toInt(&valid);
+                if (valid && id >= count)
+                    it = names.erase(it);
+                else
+                    ++it;
+            }
         for (int id = 0; id < count; ++id) {
             Record r;
             r.id = id;
@@ -198,7 +207,7 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
     tables_.at(t)[row].bytes = bytes;
 }
 int Project::changedRecords() const {
-    int count = int(classNames_.size());
+    int count = int(classNames_.size() + addedClasses_.size());
     for (const auto &[table, records] : tables_)
         for (const auto &r : records)
             if (r.original != r.bytes)
@@ -234,19 +243,24 @@ QByteArray encodeClassName(const QString &name) {
                                : QByteArray(1, 0x0e) + encoded[0] + QByteArray::fromHex("1063") +
                                      encoded[1] + QByteArray(1, 0x0f);
 }
-QByteArray Project::classNameBytes(int row) const {
+const ClassAsset &Project::classAsset(int row) const {
     record(Table::Classes, row);
     if (!originalClasses_)
         throw Error("This ROM's class names need a supported source layout before editing");
-    return classNames_.value(row, originalClasses_->entries()[row].name);
+    const auto originalCount = originalClasses_->entries().size();
+    return row < originalCount ? originalClasses_->entries()[row]
+                               : addedClasses_[row - originalCount];
+}
+QByteArray Project::classNameBytes(int row) const {
+    return classNames_.value(row, classAsset(row).name);
 }
 void Project::setClassNameBytes(int row, const QByteArray &name) {
     classNameBytes(row);
-    auto candidate = *originalClasses_;
+    auto candidate = classData();
     auto entry = candidate.entries()[row];
     entry.name = name;
     candidate.set(row, entry);
-    if (name == originalClasses_->entries()[row].name)
+    if (name == classAsset(row).name)
         classNames_.remove(row);
     else
         classNames_[row] = name;
@@ -259,6 +273,10 @@ ClassData Project::classData() const {
     if (!originalClasses_)
         throw Error("Class data requires a supported source layout");
     auto result = *originalClasses_;
+    for (const auto &asset : addedClasses_) {
+        const auto id = result.append(0, asset.name);
+        result.set(id, asset);
+    }
     const auto &records = tables_.at(Table::Classes);
     if (records.size() != result.entries().size())
         throw Error("Class record and asset counts disagree");
@@ -269,6 +287,51 @@ ClassData Project::classData() const {
         result.set(id, entry);
     }
     return result;
+}
+int Project::classDescriptionIndex(int classId) {
+    if (classId < 0 || classId > 255)
+        throw Error("Class ID is outside its byte-sized representation");
+    return classId < 165 ? classId : classId + 60;
+}
+int Project::appendClassAsset(const ClassAsset &asset, const QByteArray &description,
+                              int promotionTemplate) {
+    auto classes = classData();
+    const auto id = classes.append(0, asset.name);
+    classes.set(id, asset);
+    if (asset.namedAlias || description.contains("\r\n"))
+        throw Error(
+            "New classes cannot inherit a named-character alias or a description delimiter");
+    loadTexts();
+    loadPromotion();
+    auto &bank = texts_["classes"];
+    if (bank.entries.size() != classDescriptionIndex(id) ||
+        (promotion_->classCount() != 81 && promotion_->classCount() != id))
+        throw Error("Class, description and promotion counts disagree");
+    if (promotion_->appendClass(promotionTemplate) != id)
+        throw Error("Promotion append produced a different class ID");
+    addedClasses_.push_back(asset);
+    bank.entries.push_back({description, description});
+    auto &rows = tables_.at(Table::Classes);
+    rows.push_back({id, decodeText(asset.name), asset.record, asset.record, -1});
+    auto names = catalog_["CLASS_NAMES"].toObject();
+    names[QString::number(id)] = rows.last().name;
+    catalog_["CLASS_NAMES"] = names;
+    return id;
+}
+int Project::appendClass(int templateId, const QString &name) {
+    if (templateId < 1 || templateId >= records(Table::Classes).size())
+        throw Error("Choose an existing nonempty class as the template");
+    auto candidate = *this;
+    candidate.loadTexts();
+    auto classes = candidate.classData();
+    const auto id = classes.append(templateId, encodeClassName(name));
+    const auto sourceText = classDescriptionIndex(templateId);
+    const auto &bank = candidate.texts_["classes"];
+    if (sourceText >= bank.entries.size())
+        throw Error("The template class description is missing");
+    candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
+    *this = std::move(candidate);
+    return id;
 }
 void Project::loadTexts() {
     if (texts_.isEmpty())
@@ -310,6 +373,22 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    QJsonArray additions;
+    for (int i = 0; i < addedClasses_.size(); ++i) {
+        const auto &asset = addedClasses_[i];
+        const auto id = int(originalClasses_->entries().size()) + i;
+        additions << QJsonObject{
+            {"record", QString::fromLatin1(asset.record.toHex())},
+            {"appearance", QString::fromLatin1(asset.appearance.toHex())},
+            {"name", QString::fromLatin1(asset.name.toHex())},
+            {"description",
+             QString::fromLatin1(
+                 texts_["classes"].entries[classDescriptionIndex(id)].original.toHex())}};
+    }
+    if (additions.isEmpty())
+        result.remove("addedClasses");
+    else
+        result["addedClasses"] = additions;
     QJsonObject names;
     for (auto it = classNames_.begin(); it != classNames_.end(); ++it)
         names[QString::number(it.key())] = QString::fromLatin1(it.value().toHex());
@@ -342,13 +421,27 @@ void Project::applyManifest(const QJsonObject &object) {
         throw Error("Project requires a different source ROM");
     if (!object.value("records").isObject())
         throw Error("Project records must be an object");
-    auto candidate = *this;
-    const auto renamed = candidate.classNames_.keys();
-    for (const auto id : renamed)
-        candidate.setClassNameBytes(id, candidate.originalClasses_->entries()[id].name);
-    for (auto &[table, records] : candidate.tables_)
-        for (auto &record : records)
-            record.bytes = record.original;
+    auto candidate = Project::fromRom(rom_, catalog_);
+    if (!texts_.isEmpty())
+        candidate.loadTexts();
+    if (promotion_)
+        candidate.loadPromotion();
+    if (object.contains("addedClasses") && !object["addedClasses"].isArray())
+        throw Error("Added classes must be an array");
+    for (const auto &value : object["addedClasses"].toArray()) {
+        if (!value.isObject())
+            throw Error("Invalid added class");
+        const auto row = value.toObject();
+        auto raw = [&](const QString &field) {
+            const auto hex = row[field].toString().toLatin1();
+            const auto bytes = QByteArray::fromHex(hex);
+            if (!row[field].isString() || bytes.toHex() != hex.toLower())
+                throw Error("Invalid added class " + field);
+            return bytes;
+        };
+        candidate.appendClassAsset({raw("record"), raw("appearance"), raw("name"), 0},
+                                   raw("description"), 0);
+    }
     auto edits = object.value("records").toObject();
     for (auto it = edits.begin(); it != edits.end(); ++it) {
         Table table;
@@ -407,13 +500,17 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
-    if (candidate.promotion_)
+    if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
         if (!object["promotion"].isObject())
             throw Error("Invalid saved promotion data");
         candidate.setPromotion(object["promotion"].toObject());
     }
+    if (!candidate.addedClasses_.isEmpty() &&
+        (!object.contains("promotion") ||
+         candidate.promotion_->classCount() != candidate.records(Table::Classes).size()))
+        throw Error("Added classes require matching promotion data");
     *this = std::move(candidate);
 }
 void Project::importLegacy(const QJsonObject &object) {

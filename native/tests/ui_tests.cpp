@@ -85,6 +85,41 @@ class UiTests : public QObject {
         QCOMPARE(rejected.size(), 1);
         QCOMPARE(project.classNameBytes(164), encodeClassName("Ancient\nBahamut"));
     }
+    void addClassUndoRedo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadTexts();
+        project.loadPromotion();
+        QUndoStack undo;
+        RecordModel model(&project, Table::Classes, &undo);
+        const auto before = project.manifest();
+        auto descriptions = std::unique_ptr<QWidget>(createTextWorkspace(&project, &undo, [] {}));
+        descriptions->findChild<QComboBox *>()->setCurrentIndex(1); // classes follows actions
+        QCOMPARE(model.appendClass(5, "New fighter"), 165);
+        QCOMPARE(model.rowCount(), 166);
+        const auto added = project.manifest();
+        QVERIFY(model.setData(model.index(165, 1), "Renamed fighter", Qt::EditRole));
+        undo.undo();
+        QCOMPARE(project.manifest(), added);
+        undo.undo();
+        QCOMPARE(model.rowCount(), 165);
+        QCOMPARE(project.manifest(), before);
+        QCOMPARE(project.textBanks()["classes"].entries.size(), 225);
+        QCOMPARE(project.promotion()->classCount(), 81);
+        undo.redo();
+        QCOMPARE(model.rowCount(), 166);
+        QCOMPARE(project.manifest(), added);
+        QCOMPARE(project.textBanks()["classes"].entries.size(), 226);
+        undo.redo();
+        QCOMPARE(project.record(Table::Classes, 165).name, QString("Renamed fighter"));
+        QSignalSpy rejected(&model, &RecordModel::editRejected);
+        const auto current = project.manifest();
+        QCOMPARE(model.appendClass(0, "Invalid"), -1);
+        QCOMPARE(rejected.size(), 1);
+        QCOMPARE(project.manifest(), current);
+    }
     void loadDesktopWorkspace() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

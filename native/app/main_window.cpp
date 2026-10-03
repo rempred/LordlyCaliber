@@ -14,11 +14,13 @@
 #include <QFormLayout>
 #include <QFutureWatcher>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
@@ -187,6 +189,30 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
+    QPushButton *addClass = nullptr;
+    if (table == Table::Classes && project_->hasClassData()) {
+        addClass = new QPushButton("Add class from selected…");
+        addClass->setObjectName("addClass");
+        layout->insertWidget(1, addClass, 0, Qt::AlignLeft);
+        connect(
+            addClass, &QPushButton::clicked, page, [this, selected, model, proxy, grid, search] {
+                if (*selected < 1)
+                    return;
+                bool accepted = false;
+                const auto name = QInputDialog::getText(
+                    this, "Add class", "New class name", QLineEdit::Normal,
+                    QString(project_->record(Table::Classes, *selected).name).replace('\n', ' ') +
+                        " copy",
+                    &accepted);
+                if (!accepted)
+                    return;
+                const auto id = model->appendClass(*selected, name);
+                if (id >= 0) {
+                    search->clear();
+                    grid->setCurrentIndex(proxy->mapFromSource(model->index(id, 1)));
+                }
+            });
+    }
     auto editors = std::make_shared<QVector<ValueEditor *>>();
     QMap<QString, QFormLayout *> groups;
     for (int n = 0; n < fields(table).size(); ++n) {
@@ -217,7 +243,11 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         inspector->addTab(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, editors, promotion, model] {
+    auto refresh = [this, table, selected, editors, promotion, model, addClass] {
+        if (*selected >= model->rowCount())
+            *selected = -1;
+        if (addClass)
+            addClass->setEnabled(*selected >= 1 && model->rowCount() < 256);
         if (promotion)
             promotion->selectClass(*selected);
         for (int n = 0; n < editors->size(); ++n) {

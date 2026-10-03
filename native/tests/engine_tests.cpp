@@ -788,6 +788,78 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QFAIL(error.what());
         }
     }
+    void addedClassProjects() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadTexts();
+            project.loadPromotion();
+            const auto baseline = project.manifest();
+            auto templateBytes = project.record(Table::Classes, 5).bytes;
+            templateBytes[71] = char(u8(templateBytes, 71) ^ 0x40);
+            project.replaceBytes(Table::Classes, 5, templateBytes);
+            project.setText("classes", 5, "New template description");
+            auto promotion = *project.promotion();
+            promotion.setGate(5, 0, 123);
+            const auto family = promotion.addFamily("New family", 1);
+            promotion.assign(5, family);
+            promotion.setMask(5, 0x5a);
+            project.setPromotion(promotion.json());
+            const auto templateAsset = project.classData().entries()[5];
+            QCOMPARE(project.appendClass(5, "Authored class"), 165);
+            QCOMPARE(project.record(Table::Classes, 165).romOffset, qsizetype(-1));
+            QCOMPARE(project.record(Table::Classes, 165).bytes, templateBytes);
+            const auto addedAsset = project.classData().entries()[165];
+            QCOMPARE(addedAsset.appearance, templateAsset.appearance);
+            QCOMPARE(addedAsset.namedAlias, quint8(0));
+            QCOMPARE(project.textBanks()["classes"].entries[225].bytes,
+                     project.textBanks()["classes"].entries[5].bytes);
+            QCOMPARE(project.promotion()->gates.mid(165 * 8, 8), promotion.gates.mid(40, 8));
+            QCOMPARE(u8(project.promotion()->masks, 165), quint8(0x5a));
+            QCOMPARE(project.promotion()->families["assignments"].toArray()[165].toInt(), family);
+            project.setText("classes", 225, "Edited added description");
+            project.setClassNameBytes(165, encodeClassName("Edited added class"));
+            for (int id = 166; id <= 255; ++id)
+                QCOMPARE(project.appendClass(165, QString("Added class %1").arg(id)), id);
+            const auto authored = project.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, project.appendClass(5, "Too many"));
+            QCOMPARE(project.manifest(), authored);
+            QTemporaryDir folder, archive;
+            project.saveFolder(folder.path());
+            project.saveArchive(archive.filePath("added.lcproject"));
+            for (const auto &location : {folder.path(), archive.filePath("added.lcproject")}) {
+                auto reopened = Project::fromRom(project.rom());
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.manifest(), authored);
+                QCOMPARE(reopened.classData().build(0x80243db0).bytes,
+                         project.classData().build(0x80243db0).bytes);
+                QCOMPARE(reopened.textBanks()["classes"].serialized(),
+                         project.textBanks()["classes"].serialized());
+                QCOMPARE(reopened.promotion()->json(), project.promotion()->json());
+                reopened.applyManifest(baseline);
+                QCOMPARE(reopened.records(Table::Classes).size(), 165);
+                QCOMPARE(reopened.textBanks()["classes"].entries.size(), 225);
+                QCOMPARE(reopened.promotion()->classCount(), 81);
+                QCOMPARE(reopened.changedRecords(), 0);
+                QVERIFY(!reopened.catalog()["CLASS_NAMES"].toObject().contains("165"));
+            }
+            auto damaged = authored;
+            damaged.remove("promotion");
+            QVERIFY_THROWS_EXCEPTION(Error, project.applyManifest(damaged));
+            QCOMPARE(project.manifest(), authored);
+            auto rows = damaged["addedClasses"].toArray();
+            auto row = rows[0].toObject();
+            row["appearance"] = "00";
+            rows[0] = row;
+            damaged["addedClasses"] = rows;
+            QVERIFY_THROWS_EXCEPTION(Error, project.applyManifest(damaged));
+            QCOMPARE(project.manifest(), authored);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void growingClassDescriptions() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

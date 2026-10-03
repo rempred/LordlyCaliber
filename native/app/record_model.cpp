@@ -39,6 +39,22 @@ class EditClassName final : public QUndoCommand {
     int row_;
     QByteArray before_, after_;
 };
+class AddClass final : public QUndoCommand {
+  public:
+    AddClass(RecordModel *model, Project before, Project after)
+        : QUndoCommand("Add class"), model_(model), before_(std::move(before)),
+          after_(std::move(after)) {}
+    void undo() override {
+        model_->applyProject(before_);
+    }
+    void redo() override {
+        model_->applyProject(after_);
+    }
+
+  private:
+    RecordModel *model_;
+    Project before_, after_;
+};
 RecordModel::RecordModel(Project *p, Table t, QUndoStack *u, QObject *parent)
     : QAbstractTableModel(parent), project_(p), table_(t), undo_(u) {}
 int RecordModel::rowCount(const QModelIndex &p) const {
@@ -136,6 +152,25 @@ void RecordModel::applyName(int row, const QByteArray &value) {
     project_->setClassNameBytes(row, value);
     // Growth/class references elsewhere in the grid display these names too.
     emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
+    emit edited();
+}
+int RecordModel::appendClass(int templateId, const QString &name) {
+    try {
+        if (table_ != Table::Classes)
+            throw Error("New classes require the Classes workspace");
+        auto after = *project_;
+        const auto id = after.appendClass(templateId, name);
+        undo_->push(new AddClass(this, *project_, std::move(after)));
+        return id;
+    } catch (const Error &error) {
+        emit editRejected(QString::fromUtf8(error.what()));
+        return -1;
+    }
+}
+void RecordModel::applyProject(const Project &project) {
+    beginResetModel();
+    *project_ = project;
+    endResetModel();
     emit edited();
 }
 QWidget *ClassNameDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &,

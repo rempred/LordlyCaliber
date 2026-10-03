@@ -115,6 +115,7 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
         refresh();
     });
     auto selectBank = [=] {
+        const auto previous = selected->bank == banks->currentData().toString() ? selected->row : 1;
         selected->row = -1;
         selected->bank = banks->currentData().toString();
         QSignalBlocker block(entries);
@@ -126,16 +127,25 @@ QWidget *createTextWorkspace(Project *project, QUndoStack *undo, std::function<v
                                                          : "";
         auto names = project->catalog().value(namesKey).toObject();
         for (int i = 0; i < bank.entries.size(); ++i) {
-            auto name = names.value(QString::number(i)).toString();
+            const auto classId = i < 165 ? i : i >= 225 ? i - 60 : -1;
+            const auto nameId = selected->bank == "classes" ? classId : i;
+            auto name = nameId >= 0 ? names.value(QString::number(nameId)).toString() : QString();
             if (name.isEmpty())
                 name = bank.text(i).section('\n', 0, 0).left(75);
-            entries->addItem(QString("%1 · %2").arg(i).arg(name));
+            const auto labelId = selected->bank == "classes" && classId >= 0
+                                     ? QString("Class %1").arg(classId)
+                                     : QString::number(i);
+            entries->addItem(QString("%1 · %2").arg(labelId, name));
         }
         block.unblock();
-        entries->setCurrentRow(bank.entries.size() > 1 ? 1 : 0);
+        entries->setCurrentRow(qBound(0, previous, int(bank.entries.size()) - 1));
         search->clear();
     };
     QObject::connect(banks, &QComboBox::currentIndexChanged, page, [=] { selectBank(); });
+    QObject::connect(undo, &QUndoStack::indexChanged, page, [=] {
+        if (!selected->editing)
+            selectBank();
+    });
     QObject::connect(search, &QLineEdit::textChanged, page, [=](const QString &query) {
         for (int i = 0; i < entries->count(); ++i)
             entries->item(i)->setHidden(

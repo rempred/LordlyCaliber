@@ -75,14 +75,17 @@ class Project {
         return originalClasses_.has_value();
     }
     bool classNamesModified() const {
-        return !classNames_.isEmpty();
+        return !classNames_.isEmpty() || !addedClasses_.isEmpty();
     }
     bool classNameModified(int row) const {
-        return classNames_.contains(row);
+        return classNames_.contains(row) ||
+               (originalClasses_ && row >= originalClasses_->entries().size());
     }
     QByteArray classNameBytes(int row) const;
     void setClassNameBytes(int row, const QByteArray &name);
     ClassData classData() const;
+    int appendClass(int templateId, const QString &name);
+    static int classDescriptionIndex(int classId);
 
   private:
     Rom rom_;
@@ -93,6 +96,10 @@ class Project {
     std::optional<Promotion> promotion_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
+    QVector<ClassAsset> addedClasses_;
+    const ClassAsset &classAsset(int row) const;
+    int appendClassAsset(const ClassAsset &asset, const QByteArray &description,
+                         int promotionTemplate);
 };
 QByteArray encodeClassName(const QString &name);
 void atomicWrite(const QString &path, const QByteArray &data);

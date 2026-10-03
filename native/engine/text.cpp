@@ -139,7 +139,7 @@ QString TextBank::text(int id) const {
     auto result = decodeText(entries[id].bytes);
     if (spec.id == "classes") {
         result.replace("{REF:", "{HELP:");
-        if (id >= 1 && id <= 164) {
+        if ((id >= 1 && id <= 164) || id >= 225) {
             auto suffix = result.indexOf("{HELP:");
             if (suffix >= 0)
                 result = result.left(suffix);
@@ -189,6 +189,8 @@ QByteArray TextBank::serialized() const {
     return out;
 }
 bool TextBank::modified() const {
+    if (entries.size() != spec.count)
+        return true;
     for (const auto &entry : entries)
         if (entry.original != entry.bytes)
             return true;

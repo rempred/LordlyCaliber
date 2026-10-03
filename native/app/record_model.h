@@ -17,6 +17,8 @@ class RecordModel : public QAbstractTableModel {
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
     void apply(int row, int field, int value);
     void applyName(int row, const QByteArray &value);
+    int appendClass(int templateId, const QString &name);
+    void applyProject(const Project &project);
   signals:
     void edited();
     void editRejected(const QString &message);
