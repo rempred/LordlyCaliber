@@ -33,6 +33,12 @@ that every game consumer already supports that many IDs. Project/UI integration,
 runtime reference updates, save handling and export placement remain separate
 unfinished work; the current exporter still uses the existing retail table.
 
+Compiled C modules expose their actual global function addresses through the
+linked ELF32/MIPS symbol table. Callers must use these entries, not assume source
+order or an entry at the allocation start. Module extraction rejects nonempty
+runtime data/BSS sections until they have their own allocation. Supplied headers
+are isolated from stale build-directory files and host include paths.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

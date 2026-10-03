@@ -85,8 +85,8 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
     // The executable runs on Windows; its input describes the N64 target.
     // Suppress host include paths and host predefined platform macros.
     run("cpp.exe",
-        {"-P", "-undef", "-nostdinc", "-D__mips=3", "-D__mips__", "-D_MIPSEB", "-D__MIPSEB__", "-I",
-         includes.absolutePath(), input, preprocessed},
+        {"-P", "-undef", "-nostdinc", "-D__mips=3", "-D__mips__", "-D_MIPSEB", "-D__MIPSEB__",
+         "-I-", "-I", includes.absolutePath(), input, preprocessed},
         directory);
     QStringList flags = {
         "-quiet",     "-O2", "-meb",     "-mips3",        "-mgp32",       "-mfp32",
@@ -118,6 +118,79 @@ QByteArray Compiler::compile(const QByteArray &source, const QString &directory,
     extract << elf << binary;
     run("mips-kmc-elf-objcopy.exe", extract, directory);
     return readFile(binary);
+}
+CompiledModule Compiler::compileModule(const QByteArray &source, const QString &directory,
+                                       const QString &name, quint32 address,
+                                       const QMap<QString, QByteArray> &headers,
+                                       const QMap<QString, quint32> &symbols) const {
+    CompiledModule result{
+        compile(source, directory, name, address, ".text", headers, symbols), address, {}};
+    const auto elf = readFile(QDir(directory).filePath(name + ".elf"));
+    auto range = [&](quint64 offset, quint64 length) {
+        if (offset > quint64(elf.size()) || length > quint64(elf.size()) - offset)
+            throw Error("Linked module contains a section outside its ELF file");
+        return elf.mid(qsizetype(offset), qsizetype(length));
+    };
+    if (range(0, 7) != QByteArray::fromHex("7f454c46010201") || u16(elf, 16) != 2 ||
+        u16(elf, 18) != 8 || u32(elf, 20) != 1 || u16(elf, 40) != 52 || u16(elf, 46) != 40)
+        throw Error("Expected a linked ELF32 big-endian MIPS module");
+    const quint32 sectionOffset = u32(elf, 32);
+    const auto count = u16(elf, 48), nameIndex = u16(elf, 50);
+    range(sectionOffset, quint64(count) * 40);
+    auto section = [&](quint32 index) {
+        if (index >= count)
+            throw Error("Linked module has an invalid section index");
+        return range(quint64(sectionOffset) + index * 40, 40);
+    };
+    auto contents = [&](const QByteArray &header) {
+        return range(u32(header, 16), u32(header, 20));
+    };
+    auto string = [](const QByteArray &table, quint32 offset) {
+        const auto end = table.indexOf(char(0), offset);
+        if (offset >= quint32(table.size()) || end < 0)
+            throw Error("Linked module contains an invalid string offset");
+        return table.mid(offset, end - offset);
+    };
+    const auto names = contents(section(nameIndex));
+    int textIndex = -1;
+    for (int index = 0; index < count; ++index) {
+        const auto header = section(index);
+        const auto label = string(names, u32(header, 0));
+        if (label == ".text") {
+            if (textIndex >= 0 || u32(header, 12) != address || contents(header) != result.bytes)
+                throw Error("Linked text does not match the extracted module");
+            textIndex = index;
+        } else if ((u32(header, 8) & 2) && u32(header, 20) && label != ".reginfo")
+            throw Error("Code module requires a separate runtime data allocation: " +
+                        QString::fromLatin1(label));
+    }
+    if (textIndex < 0 || result.bytes.isEmpty() ||
+        quint64(address) + result.bytes.size() > 0x100000000ULL)
+        throw Error("Missing or invalid linked text allocation");
+    for (int index = 0; index < count; ++index) {
+        const auto header = section(index);
+        if (u32(header, 4) != 2)
+            continue;
+        const auto table = contents(header), labels = contents(section(u32(header, 24)));
+        if (u32(header, 36) != 16 || table.size() % 16)
+            throw Error("Invalid ELF32 symbol table");
+        for (qsizetype offset = 0; offset < table.size(); offset += 16) {
+            // Only global function definitions within this module are exported.
+            if (u8(table, offset + 12) != 0x12)
+                continue;
+            const auto symbolName = QString::fromLatin1(string(labels, u32(table, offset)));
+            const auto value = u32(table, offset + 4), size = u32(table, offset + 8);
+            if (u16(table, offset + 14) != textIndex || value < address ||
+                quint64(value) >= quint64(address) + result.bytes.size() || (value & 3) ||
+                size > quint64(address) + result.bytes.size() - value || symbolName.isEmpty() ||
+                result.entries.contains(symbolName))
+                throw Error("Invalid exported module function: " + symbolName);
+            result.entries[symbolName] = value;
+        }
+    }
+    if (result.entries.isEmpty())
+        throw Error("Compiled module has no exported functions");
+    return result;
 }
 QByteArray Compiler::compileData(const QByteArray &bytes, const QString &directory,
                                  const QString &name) const {

@@ -3,6 +3,11 @@
 #include <functional>
 
 namespace lordly {
+struct CompiledModule {
+    QByteArray bytes;
+    quint32 address = 0;
+    QMap<QString, quint32> entries;
+};
 class Compiler {
   public:
     explicit Compiler(QString toolsRoot);
@@ -12,6 +17,10 @@ class Compiler {
                        const QMap<QString, quint32> &symbols = {}) const;
     QByteArray compileData(const QByteArray &bytes, const QString &directory,
                            const QString &name) const;
+    CompiledModule compileModule(const QByteArray &source, const QString &directory,
+                                 const QString &name, quint32 address,
+                                 const QMap<QString, QByteArray> &headers = {},
+                                 const QMap<QString, quint32> &symbols = {}) const;
     void authenticate() const;
     QByteArray assembleOwner(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address) const;

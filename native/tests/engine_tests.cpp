@@ -117,6 +117,7 @@ class EngineTests : public QObject {
         compiler.authenticate();
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
+        atomicWrite(dir.filePath("contract.h"), "#error Stale build header was included\n");
         const QByteArray source = R"C(
 /* A maintained source may contain comments, includes and macros. */
 #include "contract.h"
@@ -135,6 +136,35 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(byte, char(0));
         QVERIFY_THROWS_EXCEPTION(
             Error, compiler.compile("#include <missing.h>\n", dir.path(), "missing", 0, ".data"));
+    }
+    void linkedModuleEntries() {
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (tools.isEmpty())
+            QSKIP("Set LORDLY_N64_TOOLCHAIN to exercise linked C modules");
+        QTemporaryDir work;
+        QVERIFY(work.isValid());
+        Compiler compiler(tools);
+        compiler.authenticate();
+        const auto module =
+            compiler.compileModule("unsigned int first(unsigned int x) { return x + 7; }\n"
+                                   "unsigned int second(unsigned int x) { return x ^ 90; }\n",
+                                   work.path(), "entries", 0x80187c14);
+        QCOMPARE(module.entries.size(), 2);
+        QVERIFY(module.entries.contains("first") && module.entries.contains("second"));
+        QVERIFY(module.entries["first"] != module.entries["second"]);
+        // Independent MIPS expectations: jr ra; addiu v0,a0,7 / xori v0,a0,90.
+        QCOMPARE(module.bytes.mid(module.entries["first"] - module.address, 8),
+                 QByteArray::fromHex("03e0000824820007"));
+        QCOMPARE(module.bytes.mid(module.entries["second"] - module.address, 8),
+                 QByteArray::fromHex("03e000083882005a"));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, compiler.compileModule("volatile unsigned int state = 4;\nunsigned int "
+                                          "use_state(void) { return state; }\n",
+                                          work.path(), "requires_data", 0x80187c14));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, compiler.compileModule(
+                       "unsigned int state;\nunsigned int use_state(void) { return state; }\n",
+                       work.path(), "requires_bss", 0x80187c14));
     }
     void byteOrders() {
         const auto expected = QByteArray::fromHex("8037124011223344") + QByteArray(56, 0);
