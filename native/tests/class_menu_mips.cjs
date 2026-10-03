@@ -162,4 +162,68 @@ for (const [start, repeat, target] of [[126,0x400,127],[129,0x800,128],[161,0x10
   assert.equal(result.classId,start===target ? 23 : target);
 }
 assert.deepEqual(select(selectionExpanded,[],0,0,0x400,0,0x2528), {result:0,selected:0,classId:23,calls:[]});
-console.log(JSON.stringify({comparisons, expandedCases:3, compiledBytes:compiled.length, ownerSha256:hash(padded), selectionComparisons, selectionExpandedCases:7, selectionBytes:selection.length, selectionSha256:hash(selectionPadded), work}, null, 2));
+const discoveryAddress=0x801D734C, eligibilityAddress=0x801D6EA0;
+const discoverySource=fs.readFileSync(path.join(native,'game/promotion/class-discovery.c'),'utf8');
+const discoveryBindings='lc_roster = 0x80193BF8; lc_named_class_map = 0x801EF3B8; lc_class_eligible = 0x801D6EA0;';
+const discoveryCode=compile('discovery',config,discoverySource,discoveryAddress,discoveryBindings);
+assert(discoveryCode.length<=420,'discovery owner extent');
+const discoveryPadded=Buffer.alloc(420);discoveryCode.copy(discoveryPadded);
+const discoveryOwner=JSON.parse(fs.readFileSync(path.join(native,'game/promotion/owners.json'))).owners.find(x=>x.start===0xc3dac);
+assert.equal(hash(discoveryPadded),discoveryOwner.cSourceSha256,'discovery export owner identity');
+const discoveryExpanded=compile('discovery_expanded',config.replace('LC_CLASS_COUNT 81','LC_CLASS_COUNT 256').replace('LC_RECORD_COUNT 165','LC_RECORD_COUNT 256').replace('LC_DISCOVERY_SCAN_COUNT 82','LC_DISCOVERY_SCAN_COUNT 256').replace('LC_DISCOVERY_ADDRESS 0x80196A76U','LC_DISCOVERY_ADDRESS 0x80308000U'),discoverySource,discoveryAddress,discoveryBindings);
+function discover(code, count, roster, aliases, initial, eligible) {
+  const cpu=new Mips();cpu.ram=new Uint8Array(0x400000);cpu.set('sp',0x80060000);
+  cpu.load(discoveryAddress,code);cpu.load(0x80193BF8,roster);
+  cpu.load(0x801EF3B8,aliases);cpu.load(0x801EF3B0,Buffer.from([1,2,4,8,16,32,64,128]));
+  // Original class discovery uses this sentinel to end the eligible-class walk.
+  cpu.load(0x801EF2CC,Buffer.alloc(164));cpu.w16(0x801EF2CC+162,65535);
+  const flags=count===81?0x80196A76:0x80308000;
+  cpu.load(flags-8,Buffer.alloc(initial.length+16,0xA6));cpu.load(flags,initial);
+  const calls=[];
+  cpu.trap(eligibilityAddress,c=> {
+    const actor=c.get('a0'),target=c.get('a1');
+    assert(actor>=1 && actor<99);assert(target<=count);
+    assert(target<256);calls.push([actor,target]);
+    const answer=eligible(actor,target);
+    for(const reg of ['v1','a0','a1','a2','a3','t0','t1','t2','t3','t4','t5','t6','t7','t8','t9'])c.set(reg,0xCCCCCCCC);
+    c.set('v0',answer);
+  });
+  cpu.call(discoveryAddress,0x80000100,3000000);
+  assert.deepEqual(Buffer.from(cpu.ram.slice(cpu.phys(flags-8),cpu.phys(flags))),Buffer.alloc(8,0xA6));
+  assert.deepEqual(Buffer.from(cpu.ram.slice(cpu.phys(flags+initial.length),cpu.phys(flags+initial.length+8))),Buffer.alloc(8,0xA6));
+  assert.deepEqual(Buffer.from(cpu.ram.slice(cpu.phys(0x80193BF8),cpu.phys(0x80193BF8)+roster.length)),roster);
+  return {flags:Buffer.from(cpu.ram.slice(cpu.phys(flags),cpu.phys(flags)+initial.length)),calls};
+}
+let discoveryComparisons=0;
+if(process.env.LORDLY_TEST_ROM) {
+  const rom=fs.readFileSync(process.env.LORDLY_TEST_ROM);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  assert.equal(hash(rom),'571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a');
+  const original=rom.subarray(0xC3DAC,0xC3F50);
+  assert.equal(hash(original),discoveryOwner.retailSha256,'original discovery owner identity');
+  const aliases=rom.subarray(0xDBE18,0xDBE18+165);
+  for(let seed=0;seed<16;seed++)for(const fill of [0,0xA5,255])for(const rule of [0,1,2]) {
+    const roster=Buffer.alloc(99*56);
+    for(let actor=0;actor<99;actor++) {
+      roster[actor*56+17]=(actor*13+seed*17)%165;
+      roster[actor*56+18]=(actor*19+seed*7)%165;
+    }
+    const eligible=(actor,target)=>rule===0?0:rule===1?(actor===(target*7)%98+1?1:0):(target%3===0?0x101:0);
+    const args=[81,roster,aliases,Buffer.alloc(11,fill),eligible];
+    const actual=discover(discoveryCode,...args),expected=discover(original,...args);
+    assert.deepEqual(actual.flags,expected.flags,JSON.stringify({seed,fill,rule}));
+    assert.equal(JSON.stringify(actual.calls),JSON.stringify(expected.calls),`discovery callback order: ${seed}/${fill}/${rule}`);
+    discoveryComparisons++;
+  }
+}
+const roster=Buffer.alloc(99*56),aliases=Buffer.alloc(256),initialFlags=Buffer.alloc(32);
+for(const [actor,primary,secondary] of [[1,165,165],[2,200,200],[99,255,255]]) {
+  roster[(actor-1)*56+17]=primary;roster[(actor-1)*56+18]=secondary;
+}
+aliases[200]=201;
+const discovered=discover(discoveryExpanded,256,roster,aliases,initialFlags,(actor,target)=>actor===98&&target===254?1:0);
+const expectedFlags=Buffer.alloc(32);for(const id of [165,201,254,255])expectedFlags[id>>3]|=1<<(id&7);
+assert.deepEqual(discovered.flags,expectedFlags);
+assert(discovered.calls.every(([actor,target])=>actor<99&&target<256));
+assert.deepEqual(discover(discoveryExpanded,256,Buffer.alloc(99*56),aliases,Buffer.alloc(32,255),()=>{throw Error('already discovered');}).calls,[]);
+console.log(JSON.stringify({comparisons, expandedCases:3, compiledBytes:compiled.length, ownerSha256:hash(padded), selectionComparisons, selectionExpandedCases:7, selectionBytes:selection.length, selectionSha256:hash(selectionPadded), discoveryComparisons, discoveryExpandedCases:2, discoveryBytes:discoveryCode.length, discoverySha256:hash(discoveryPadded), work}, null, 2));

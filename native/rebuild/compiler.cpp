@@ -242,8 +242,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                             owner["name"].toString());
             result.image.replace(start, size, built);
         }
-        result.report << QString("Compiled promotion data, menu and selection C; rebuilt %1 "
-                                 "complete runtime owners within their original extents")
+        result.report << QString(
+                             "Compiled promotion data, menu, selection and discovery C; rebuilt %1 "
+                             "complete runtime owners within their original extents")
                              .arg(owners.size());
     } else if (promotion.gates != promotion.originalGates) {
         auto compiled = compiler.compileData(promotion.gates, directory, "promotion_gates");

@@ -94,6 +94,20 @@
         "lc_menu_update": 2149383204,
         "lc_menu_equipment": 2149395324
       }
+    },
+    {
+      "name": "func_000c3dac",
+      "start": 802220,
+      "size": 420,
+      "retailSha256": "9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb",
+      "familySha256": "9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb",
+      "cSource": "class-discovery.c",
+      "cSourceSha256": "3dfdb788788a84869c42d87793d972af83cf05648095dc94389d9daff6acedf1",
+      "symbols": {
+        "lc_roster": 2149137400,
+        "lc_named_class_map": 2149512120,
+        "lc_class_eligible": 2149412512
+      }
     }
   ]
 }

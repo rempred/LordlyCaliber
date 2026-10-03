@@ -38,4 +38,12 @@ catalog.owners.push({
     lc_repeat_buttons:0x800E8700, lc_menu_sound:0x801D8A60,
     lc_menu_update:0x801CFC24, lc_menu_equipment:0x801D2B7C}
 });
+catalog.owners.push({
+  name:'func_000c3dac', start:0xc3dac, size:0x1a4,
+  retailSha256:'9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb',
+  familySha256:'9b5699e4d982c6bd35760915925d9c575bc9d22cb4a3cdbbb8f8264fd30417cb',
+  cSource:'class-discovery.c',
+  cSourceSha256:'3dfdb788788a84869c42d87793d972af83cf05648095dc94389d9daff6acedf1',
+  symbols:{lc_roster:0x80193BF8,lc_named_class_map:0x801EF3B8,lc_class_eligible:0x801D6EA0}
+});
 fs.writeFileSync(path.join(root, 'native/game/promotion/owners.json'), JSON.stringify(catalog, null, 2) + '\n');
