@@ -5,6 +5,11 @@
 namespace lordly {
 quint32 crc32(const QByteArray &bytes);
 QJsonObject promotionOwners();
+struct PromotionData {
+    int classCount = 0;
+    qsizetype familyOffset = 0, maskOffset = 0, catalogOffset = 0;
+    QByteArray bytes;
+};
 class Promotion {
   public:
     static Promotion load(const Rom &rom);
@@ -19,6 +24,11 @@ class Promotion {
     void setMask(int classId, int value);
     void assign(int classId, int familyId);
     int addFamily(const QString &name, int templateId);
+    int classCount() const;
+    void growToClassCount(int count);
+    int appendClass(int templateId);
+    PromotionData buildExpandedData() const;
+    void applyExpandedData(const QByteArray &bytes, int count);
     static QJsonObject validateFamilies(const QJsonObject &value);
     void apply(const QJsonObject &value);
     QJsonObject json() const;

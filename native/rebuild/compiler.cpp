@@ -262,6 +262,9 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
     if (!p.promotion() || !p.promotion()->modified())
         return;
     const auto &promotion = *p.promotion();
+    if (promotion.classCount() != 81)
+        throw Error(
+            "Expanded promotion data needs the remaining class-menu and save runtime integration");
     bool family = promotion.expanded || promotion.directGates ||
                   promotion.families != promotion.originalFamilies ||
                   encodeLzss(promotion.gates).size() > promotion.retailResource.capacity;

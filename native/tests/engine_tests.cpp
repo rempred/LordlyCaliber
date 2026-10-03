@@ -577,6 +577,87 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QFAIL(error.what());
         }
     }
+    void expandablePromotionData() {
+        Promotion base;
+        QJsonArray families, assignments;
+        for (int id = 0; id <= 10; ++id)
+            families << QJsonObject{
+                {"id", id}, {"name", id ? QString("Family %1").arg(id) : "None"}, {"behavior", id}};
+        for (int id = 0; id < 81; ++id) {
+            assignments << id % 11;
+            base.masks += char(id * 7);
+            for (int field = 0; field < 8; ++field)
+                base.gates += char(id * 3 + field);
+        }
+        base.families = {
+            {"schemaVersion", 1}, {"families", families}, {"assignments", assignments}};
+        base.originalFamilies = base.families;
+        base.originalGates = base.gates;
+        base.originalMasks = base.masks;
+        auto model = base;
+        QCOMPARE(model.appendClass(5), 165);
+        QCOMPARE(model.classCount(), 166);
+        QCOMPARE(model.gates.first(648), base.gates);
+        QCOMPARE(model.masks.first(81), base.masks);
+        QCOMPARE(model.gates.mid(81 * 8, 84 * 8), QByteArray(84 * 8, 0));
+        QCOMPARE(model.masks.mid(81, 84), QByteArray(84, 0));
+        for (int id = 81; id < 165; ++id)
+            QCOMPARE(model.families["assignments"].toArray()[id].toInt(), 0);
+        QCOMPARE(model.gates.mid(165 * 8, 8), base.gates.mid(5 * 8, 8));
+        QCOMPARE(model.masks[165], base.masks[5]);
+        QCOMPARE(model.families["assignments"].toArray()[165], assignments[5]);
+        const auto family = model.addFamily("New order", 1);
+        model.assign(165, family);
+        model.setGate(165, 0, 177);
+        model.setMask(165, 0xa5);
+        const auto data = model.buildExpandedData();
+        QCOMPARE(data.classCount, 166);
+        QCOMPARE(data.familyOffset, 1328);
+        QCOMPARE(data.maskOffset, 1992);
+        QCOMPARE(data.catalogOffset, 2160);
+        QCOMPARE(u8(data.bytes, 1320), quint8(177));
+        QCOMPARE(u32(data.bytes, 1328 + 165 * 4), quint32(0x10010));
+        QCOMPARE(u8(data.bytes, 1992 + 165), quint8(0xa5));
+        QCOMPARE(data.bytes.mid(2158, 2), QByteArray(2, 0));
+        QCOMPARE(u32(data.bytes, 2160), quint32(0x4c43464d));
+        QCOMPARE(u32(data.bytes, 2164), quint32(data.bytes.size() - 2168));
+        QCOMPARE(QJsonDocument::fromJson(data.bytes.mid(2168)).object(), model.families);
+        auto restored = base;
+        restored.apply(model.json());
+        QCOMPARE(restored.json(), model.json());
+        restored = base;
+        restored.applyExpandedData(data.bytes, 166);
+        QCOMPARE(restored.json(), model.json());
+        auto corrupt = data.bytes;
+        corrupt[1328 + 165 * 4] ^= 1;
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(corrupt, 166));
+        corrupt = data.bytes;
+        corrupt[2159] = 1;
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(corrupt, 166));
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(data.bytes.first(2167), 166));
+        QVERIFY_THROWS_EXCEPTION(Error, restored.applyExpandedData(data.bytes, 167));
+        QCOMPARE(restored.json(), model.json());
+        const auto before = model.json();
+        QVERIFY_THROWS_EXCEPTION(Error, model.appendClass(166));
+        QVERIFY_THROWS_EXCEPTION(Error, model.growToClassCount(164));
+        QCOMPARE(model.json(), before);
+        while (model.classCount() < 256)
+            model.appendClass(165);
+        const auto full = model.buildExpandedData();
+        QCOMPARE(full.familyOffset, 2048);
+        QCOMPARE(full.maskOffset, 3072);
+        QCOMPARE(full.catalogOffset, 3328);
+        QCOMPARE(u8(full.bytes, 255 * 8), quint8(177));
+        QCOMPARE(u32(full.bytes, 2048 + 255 * 4), quint32(0x10010));
+        QCOMPARE(u8(full.bytes, 3072 + 255), quint8(0xa5));
+        restored.applyExpandedData(full.bytes, 256);
+        QCOMPARE(restored.json(), model.json());
+        const auto atLimit = model.json();
+        QVERIFY_THROWS_EXCEPTION(Error, model.appendClass(165));
+        QCOMPARE(model.json(), atLimit);
+        model.masks.chop(1);
+        QVERIFY_THROWS_EXCEPTION(Error, model.buildExpandedData());
+    }
     void promotionFamiliesExport() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -35,9 +35,10 @@ static int integer(const QJsonValue &v, int minimum, int maximum) {
     return int(d);
 }
 QJsonObject Promotion::validateFamilies(const QJsonObject &value) {
-    if (value["schemaVersion"] != 1 || !value["families"].isArray() ||
-        !value["assignments"].isArray() || value["assignments"].toArray().size() != 81 ||
-        value.size() != 3)
+    const auto version = value["schemaVersion"];
+    const auto count = value["assignments"].toArray().size();
+    if (!((version == 1 && count == 81) || (version == 2 && count >= 165 && count <= 256)) ||
+        !value["families"].isArray() || !value["assignments"].isArray() || value.size() != 3)
         throw Error("Invalid class family catalog");
     QSet<int> ids;
     QSet<QString> names;
@@ -184,17 +185,17 @@ Promotion Promotion::load(const Rom &rom) {
     return p;
 }
 void Promotion::setGate(int id, int field, int value) {
-    if (id < 1 || id >= 81 || field < 0 || field >= 8 || value < 0 || value > 255)
+    if (id < 1 || id >= classCount() || field < 0 || field >= 8 || value < 0 || value > 255)
         throw Error("Promotion gate outside its supported range");
     gates[id * 8 + field] = char(value);
 }
 void Promotion::setMask(int id, int value) {
-    if (id < 1 || id >= 81 || value < 0 || value > 255)
+    if (id < 1 || id >= classCount() || value < 0 || value > 255)
         throw Error("Invalid compatibility mask");
     masks[id] = char(value);
 }
 void Promotion::assign(int id, int familyId) {
-    if (id < 1 || id >= 81)
+    if (id < 1 || id >= classCount())
         throw Error("This class has no promotion entry yet");
     auto candidate = families;
     auto assignments = candidate["assignments"].toArray();
@@ -219,6 +220,96 @@ int Promotion::addFamily(const QString &name, int templateId) {
     families = validateFamilies(candidate);
     return next;
 }
+int Promotion::classCount() const {
+    const auto count = families["assignments"].toArray().size();
+    if (count != masks.size() || gates.size() != count * 8 ||
+        !((families["schemaVersion"] == 1 && count == 81) ||
+          (families["schemaVersion"] == 2 && count >= 165 && count <= 256)))
+        throw Error("Promotion tables disagree on their class count");
+    return int(count);
+}
+void Promotion::growToClassCount(int count) {
+    const auto previous = classCount();
+    if (count < 165 || count > 256 || count < previous)
+        throw Error("Expanded promotion tables require 165–256 class IDs and cannot shrink");
+    auto assignments = families["assignments"].toArray();
+    while (assignments.size() < count)
+        assignments.append(0);
+    auto catalog = families;
+    catalog["schemaVersion"] = 2;
+    catalog["assignments"] = assignments;
+    catalog = validateFamilies(catalog);
+    // Commit together only after validation. Existing named/special classes
+    // acquire no manual-promotion family merely because the table grows.
+    gates.append(QByteArray((count - previous) * 8, 0));
+    masks.append(QByteArray(count - previous, 0));
+    families = catalog;
+}
+int Promotion::appendClass(int templateId) {
+    auto candidate = *this;
+    if (candidate.classCount() == 81)
+        candidate.growToClassCount(165);
+    const auto id = candidate.classCount();
+    if (templateId < 0 || templateId >= id || id == 256)
+        throw Error("Invalid class template or no byte-sized class IDs remain");
+    candidate.growToClassCount(id + 1);
+    candidate.gates.replace(id * 8, 8, candidate.gates.mid(templateId * 8, 8));
+    candidate.masks[id] = candidate.masks[templateId];
+    auto assignments = candidate.families["assignments"].toArray();
+    assignments[id] = assignments[templateId];
+    candidate.families["assignments"] = assignments;
+    *this = std::move(candidate);
+    return id;
+}
+PromotionData Promotion::buildExpandedData() const {
+    const auto count = classCount();
+    if (count < 165)
+        throw Error("The retail promotion model uses its existing resource layout");
+    const auto catalog = validateFamilies(families);
+    PromotionData result{count, count * 8, count * 12, (count * 13 + 3) & ~3, gates};
+    QMap<int, int> behaviors;
+    for (const auto &value : catalog["families"].toArray()) {
+        const auto row = value.toObject();
+        behaviors[row["id"].toInt()] = row["behavior"].toInt();
+    }
+    result.bytes.resize(result.maskOffset);
+    const auto assignments = catalog["assignments"].toArray();
+    for (int id = 0; id < count; ++id) {
+        const auto family = assignments[id].toInt();
+        put32(result.bytes, result.familyOffset + id * 4,
+              quint32(behaviors[family] * 65536 + family));
+    }
+    result.bytes += masks;
+    result.bytes.append(QByteArray(result.catalogOffset - result.bytes.size(), 0));
+    const auto json = QJsonDocument(catalog).toJson(QJsonDocument::Compact);
+    result.bytes.resize(result.catalogOffset + 8);
+    put32(result.bytes, result.catalogOffset, magic);
+    put32(result.bytes, result.catalogOffset + 4, json.size());
+    result.bytes += json;
+    if (result.bytes.size() > 65536)
+        throw Error("Expanded promotion data exceeds the game's resource limit");
+    return result;
+}
+void Promotion::applyExpandedData(const QByteArray &bytes, int count) {
+    if (count < 165 || count > 256 || bytes.size() > 65536)
+        throw Error("Invalid expanded promotion record count or size");
+    const auto catalogOffset = (count * 13 + 3) & ~3;
+    if (bytes.size() < catalogOffset + 8 || u32(bytes, catalogOffset) != magic ||
+        u32(bytes, catalogOffset + 4) != quint32(bytes.size() - catalogOffset - 8) ||
+        !filled(bytes.mid(count * 13, catalogOffset - count * 13), 0))
+        throw Error("Invalid expanded promotion catalog framing");
+    const auto catalog =
+        validateFamilies(QJsonDocument::fromJson(bytes.mid(catalogOffset + 8)).object());
+    if (catalog["schemaVersion"] != 2 || catalog["assignments"].toArray().size() != count)
+        throw Error("Expanded promotion catalog has a different record count");
+    auto candidate = *this;
+    candidate.apply({{"families", catalog},
+                     {"gates", QString::fromLatin1(bytes.first(count * 8).toHex())},
+                     {"masks", QString::fromLatin1(bytes.mid(count * 12, count).toHex())}});
+    if (candidate.buildExpandedData().bytes.first(catalogOffset) != bytes.first(catalogOffset))
+        throw Error("Expanded promotion catalog and runtime family words disagree");
+    *this = std::move(candidate);
+}
 QJsonObject Promotion::json() const {
     return {{"families", families},
             {"gates", QString::fromLatin1(gates.toHex())},
@@ -228,7 +319,8 @@ void Promotion::apply(const QJsonObject &value) {
     auto f = validateFamilies(value["families"].toObject());
     auto g = QByteArray::fromHex(value["gates"].toString().toLatin1());
     auto m = QByteArray::fromHex(value["masks"].toString().toLatin1());
-    if (g.size() != 648 || m.size() != 81 ||
+    const auto count = f["assignments"].toArray().size();
+    if (g.size() != count * 8 || m.size() != count ||
         value["gates"].toString().toLatin1().toLower() != g.toHex() ||
         value["masks"].toString().toLatin1().toLower() != m.toHex() || value.size() != 3 ||
         g.first(8) != originalGates.first(8) || m.first(1) != originalMasks.first(1))
@@ -241,6 +333,8 @@ bool Promotion::modified() const {
     return families != originalFamilies || gates != originalGates || masks != originalMasks;
 }
 QByteArray Promotion::decodedFamilies() const {
+    if (classCount() != 81)
+        throw Error("Expanded promotion tables require the expanded runtime layout");
     auto out = gates;
     QMap<int, int> behaviors;
     for (auto f : families["families"].toArray())
@@ -260,6 +354,8 @@ QByteArray Promotion::decodedFamilies() const {
     return out;
 }
 QByteArray Promotion::familyContainer(const QByteArray &compiled) const {
+    if (classCount() != 81)
+        throw Error("Expanded promotion data requires a versioned runtime descriptor");
     auto stream = encodeLzss(compiled);
     auto stored = (stream.size() + 1) & ~qsizetype(1);
     if (stored + 8 > familySize - 64)
