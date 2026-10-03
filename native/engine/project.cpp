@@ -178,7 +178,28 @@ int Project::changedRecords() const {
         for (const auto &r : records)
             if (r.original != r.bytes)
                 ++count;
+    for (const auto &bank : texts_)
+        for (const auto &entry : bank.entries)
+            if (entry.bytes != entry.original)
+                ++count;
     return count;
+}
+void Project::loadTexts() {
+    if (texts_.isEmpty())
+        texts_ = TextBank::load(rom_);
+}
+void Project::setText(const QString &kind, int id, const QString &text) {
+    loadTexts();
+    if (!texts_.contains(kind))
+        throw Error("Unknown description bank");
+    texts_[kind].setText(id, text);
+}
+void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &bytes) {
+    loadTexts();
+    if (!texts_.contains(kind) || id < 0 || id >= texts_[kind].entries.size() ||
+        bytes.contains("\r\n"))
+        throw Error("Invalid description record");
+    texts_[kind].entries[id].bytes = bytes;
 }
 QJsonObject Project::manifest() const {
     auto result = retained_;
@@ -195,6 +216,16 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    QJsonObject descriptions;
+    for (auto bank = texts_.begin(); bank != texts_.end(); ++bank) {
+        QJsonObject rows;
+        for (int i = 0; i < bank->entries.size(); ++i)
+            if (bank->entries[i].bytes != bank->entries[i].original)
+                rows[QString::number(i)] = QString::fromLatin1(bank->entries[i].bytes.toHex());
+        if (!rows.isEmpty())
+            descriptions[bank.key()] = rows;
+    }
+    result["descriptions"] = descriptions;
     if (!legacy_.isEmpty())
         result["legacyImport"] = legacy_;
     return result;
@@ -235,6 +266,26 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.retained_ = object;
+    for (auto &bank : candidate.texts_)
+        for (auto &entry : bank.entries)
+            entry.bytes = entry.original;
+    if (object.contains("descriptions") && !object["descriptions"].isObject())
+        throw Error("Project descriptions must be an object");
+    const auto descriptions = object.value("descriptions").toObject();
+    for (auto bank = descriptions.begin(); bank != descriptions.end(); ++bank) {
+        if (!bank.value().isObject())
+            throw Error("Description bank must be an object");
+        const auto rows = bank.value().toObject();
+        for (auto row = rows.begin(); row != rows.end(); ++row) {
+            bool ok = false;
+            int id = row.key().toInt(&ok);
+            auto hex = row.value().toString().toLatin1();
+            auto bytes = QByteArray::fromHex(hex);
+            if (!ok || !row.value().isString() || bytes.toHex() != hex.toLower())
+                throw Error("Invalid saved description bytes");
+            candidate.replaceTextBytes(bank.key(), id, bytes);
+        }
+    }
     candidate.legacy_ = object.value("legacyImport").toObject();
     *this = std::move(candidate);
 }
@@ -256,7 +307,7 @@ void Project::importLegacy(const QJsonObject &object) {
         for (auto it = rows.begin(); it != rows.end(); ++it) {
             bool ok = false;
             auto id = it.key().toInt(&ok);
-            if (!ok)
+            if (!ok || !it.value().isObject())
                 throw Error("Invalid imported record ID");
             auto bytes = candidate.record(table, id).bytes;
             auto entry = it.value().toObject();
@@ -281,6 +332,8 @@ void Project::importLegacy(const QJsonObject &object) {
             if (table == Table::Classes && entry.contains("record_index") &&
                 entry["record_index"].toInt() != id + 1)
                 throw Error("Imported class record index disagrees with class ID");
+            if (entry.contains("bytes") && !entry["bytes"].isObject())
+                throw Error("Imported class bytes must be an object");
             auto changes = entry.value("bytes").toObject();
             for (auto v = changes.begin(); v != changes.end(); ++v) {
                 int offset = v.key().toInt(&ok);
@@ -294,6 +347,8 @@ void Project::importLegacy(const QJsonObject &object) {
             candidate.replaceBytes(table, id, bytes);
         }
     }
+    if (patch.contains("item_prices") && !patch["item_prices"].isObject())
+        throw Error("Imported item prices must be an object");
     const auto prices = patch.value("item_prices").toObject();
     for (auto it = prices.begin(); it != prices.end(); ++it) {
         bool ok = false;
@@ -306,6 +361,21 @@ void Project::importLegacy(const QJsonObject &object) {
         candidate.replaceBytes(Table::Items, id, bytes);
     }
     candidate.legacy_ = object;
+    if (patch.contains("descriptions") && !patch["descriptions"].isObject())
+        throw Error("Imported descriptions must be an object");
+    const auto descriptions = patch.value("descriptions").toObject();
+    for (auto bank = descriptions.begin(); bank != descriptions.end(); ++bank) {
+        if (!bank.value().isObject())
+            throw Error("Imported description bank must be an object");
+        const auto rows = bank.value().toObject();
+        for (auto row = rows.begin(); row != rows.end(); ++row) {
+            bool ok = false;
+            int id = row.key().toInt(&ok);
+            if (!ok || !row.value().isString())
+                throw Error("Invalid imported description");
+            candidate.setText(bank.key(), id, row.value().toString());
+        }
+    }
     candidate.importWarnings_.clear();
     auto pending = candidate.pendingLegacySections();
     if (!pending.isEmpty())
@@ -336,7 +406,7 @@ QStringList Project::pendingLegacySections() const {
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it)
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
-            changed(it.value()))
+            it.key() != "descriptions" && changed(it.value()))
             pending << it.key();
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {

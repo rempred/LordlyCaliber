@@ -3,6 +3,7 @@
 namespace lordly {
 struct Resource {
     qsizetype romOffset = 0;
+    qsizetype capacity = 0;
     QByteArray originalSlot, original, decoded;
     static Resource load(const Rom &rom, qsizetype offset, qsizetype allocation);
     QByteArray container(const QByteArray &compiled) const;

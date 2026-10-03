@@ -23,6 +23,7 @@ class MainWindow : public QMainWindow {
     void saveProject(bool archive);
     void buildRom();
     void updateStatus();
+    bool invalidEdits() const;
     void report(const QString &text);
     QJsonObject catalog_;
     std::unique_ptr<Project> project_;

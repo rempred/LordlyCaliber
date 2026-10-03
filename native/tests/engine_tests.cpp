@@ -195,6 +195,80 @@ class EngineTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void textEncodingAndReferences() {
+        QCOMPARE(encodeText("First\nSecond", false),
+                 QByteArray::fromHex("466972737481975365636f6e64"));
+        QCOMPARE(encodeText("A\nB\nC", true), QByteArray::fromHex("0e411030420f81970e431030200f"));
+        QCOMPARE(decodeText(QByteArray::fromHex("41819632383030819742876a")),
+                 QString("A{REF:2800}\nB{CTRL:876A}"));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeText("{BYTE:0D}{BYTE:0A}", false));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeText("{REF:9999}", false));
+        QVERIFY_THROWS_EXCEPTION(Error, encodeText("1\n2\n3\n4\n5", false));
+        TextBank bank;
+        bank.spec.id = "classes";
+        auto original = QByteArray("Knight") + QByteArray::fromHex("8197819632383030");
+        bank.entries = {{QByteArray(), QByteArray()}, {original, original}};
+        QCOMPARE(bank.text(1), QString("Knight"));
+        bank.setText(1, "Armored fighter");
+        QCOMPARE(bank.entries[1].bytes,
+                 QByteArray("Armored fighter") + QByteArray::fromHex("8197819632383030"));
+        QCOMPARE(bank.entries[1].original, original);
+    }
+    void retailDescriptionExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            auto p = Project::fromRom(Rom::open(path));
+            p.loadTexts();
+            auto originalBanks = p.textBanks();
+            int editedId = -1;
+            for (int id = 1; id <= 164; ++id)
+                if (originalBanks["classes"].entries[id].bytes.contains(
+                        QByteArray::fromHex("8196"))) {
+                    editedId = id;
+                    break;
+                }
+            QVERIFY(editedId > 0);
+            auto original = originalBanks["classes"].entries[editedId].bytes;
+            auto ref = original.indexOf(QByteArray::fromHex("8196"));
+            QVERIFY(ref >= 0);
+            auto suffix = original.mid(
+                ref >= 2 && original.mid(ref - 2, 2) == QByteArray::fromHex("8197") ? ref - 2
+                                                                                    : ref);
+            p.setText("classes", editedId, "Armored fighter");
+            QCOMPARE(p.textBanks()["classes"].entries[editedId].bytes,
+                     QByteArray("Armored fighter") + suffix);
+            QTemporaryDir projectDir;
+            p.saveFolder(projectDir.path());
+            auto restored = Project::fromRom(p.rom());
+            restored.applyManifest(Project::readProject(projectDir.path()));
+            QCOMPARE(restored.textBanks()["classes"].serialized(),
+                     p.textBanks()["classes"].serialized());
+            QTemporaryDir build;
+            auto result = rebuild(p, qEnvironmentVariable("LORDLY_N64_TOOLCHAIN"), build.path());
+            auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir outputDir(candidates + "/native-text-XXXXXX");
+            QVERIFY(outputDir.isValid());
+            auto output = outputDir.filePath(QFileInfo(path).fileName());
+            exportRom(p, result, output);
+            auto reopened = Project::fromRom(Rom::open(output));
+            reopened.loadTexts();
+            for (auto bank = originalBanks.begin(); bank != originalBanks.end(); ++bank) {
+                for (int i = 0; i < bank->entries.size(); ++i) {
+                    auto expected = bank.key() == "classes" && i == editedId
+                                        ? QByteArray("Armored fighter") + suffix
+                                        : bank->entries[i].bytes;
+                    QCOMPARE(reopened.textBanks()[bank.key()].entries[i].bytes, expected);
+                }
+            }
+            QCOMPARE(u32(result.image, p.textBanks()["classes"].resource.romOffset), quint32(6403));
+            QCOMPARE(Rom::open(path).bytes(), p.rom().bytes());
+            QVERIFY(QFileInfo::exists(build.filePath("descriptions_classes.compiler.s")));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
 };
 QTEST_GUILESS_MAIN(EngineTests)
 #include "engine_tests.moc"

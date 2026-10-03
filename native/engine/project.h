@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/text.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -55,6 +56,12 @@ class Project {
         return importWarnings_;
     }
     QStringList pendingLegacySections() const;
+    void loadTexts();
+    const QMap<QString, TextBank> &textBanks() const {
+        return texts_;
+    }
+    void setText(const QString &kind, int id, const QString &text);
+    void replaceTextBytes(const QString &kind, int id, const QByteArray &bytes);
     QByteArray rebuildRecords() const;
 
   private:
@@ -62,6 +69,7 @@ class Project {
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;
     QStringList importWarnings_;
+    QMap<QString, TextBank> texts_;
 };
 void atomicWrite(const QString &path, const QByteArray &data);
 } // namespace lordly

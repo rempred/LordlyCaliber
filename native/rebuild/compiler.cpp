@@ -132,6 +132,15 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
                              .arg(tableKey(table))
                              .arg(compiled.size());
     }
+    for (const auto &bank : p.textBanks()) {
+        if (!bank.modified())
+            continue;
+        auto compiled =
+            compiler.compileData(bank.serialized(), directory, "descriptions_" + bank.spec.id);
+        auto container = bank.resource.container(compiled);
+        result.image.replace(bank.resource.romOffset, container.size(), container);
+        result.report << "Rebuilt " + bank.spec.label + " from edited C data";
+    }
     if (p.rom().revision() == 0 &&
         p.manifest().value("records").toObject().value("classes").toObject().size() > 0) {
         auto source = readFile(":/game/accepted/func_000bbd50.c");
@@ -146,6 +155,12 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (!p.textBanks().isEmpty()) {
+        reopened.loadTexts();
+        for (auto bank = p.textBanks().begin(); bank != p.textBanks().end(); ++bank)
+            if (reopened.textBanks().value(bank.key()).serialized() != bank->serialized())
+                throw Error("Exported descriptions differ from project");
+    }
     for (auto table : {Table::Classes, Table::Items})
         for (int row = 0; row < p.records(table).size(); ++row)
             if (reopened.record(table, row).bytes != p.record(table, row).bytes)

@@ -9,8 +9,8 @@ preview behavior work; a visible tab alone does not count.
 | Area | Required capabilities | Native status |
 |---|---|---|
 | Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | In progress |
-| Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Pending |
-| Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Pending |
+| Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields and description editing/export implemented; promotion, names, new IDs and dynamic placement remain |
+| Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Fields and description editing/export implemented; integrated workflow polish remains |
 | Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Pending |
 | Consumables | Values/descriptions, supported behavior/effect editing, rebuild ownership | Pending |
 | Encounters | Pools, terrain/scenario/global rates, custom squads, persuasion/retreat/rewards/card text | Pending |

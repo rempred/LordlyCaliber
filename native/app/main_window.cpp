@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/text_workspace.h"
 #include "rebuild/compiler.h"
 #include <QAction>
 #include <QCloseEvent>
@@ -81,7 +82,7 @@ MainWindow::MainWindow(QWidget *parent)
     updateStatus();
 }
 bool MainWindow::confirmDiscard() {
-    if (undo_->isClean())
+    if (undo_->isClean() && !invalidEdits())
         return true;
     return QMessageBox::question(this, "Unsaved edits", "Discard unsaved edits?",
                                  QMessageBox::Discard | QMessageBox::Cancel,
@@ -123,7 +124,9 @@ void MainWindow::loadRom(const QString &path) {
     });
     watcher->setFuture(QtConcurrent::run([path, catalog = catalog_] {
         try {
-            return Result{Project::fromRom(Rom::open(path), catalog), {}};
+            auto project = Project::fromRom(Rom::open(path), catalog);
+            project.loadTexts();
+            return Result{std::move(project), {}};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
         }
@@ -139,6 +142,9 @@ void MainWindow::installProject(Project project) {
     project_ = std::make_unique<Project>(std::move(project));
     addRecordWorkspace(Table::Classes, "Classes");
     addRecordWorkspace(Table::Items, "Items");
+    if (!project_->textBanks().isEmpty())
+        workspaces_->addTab(createTextWorkspace(project_.get(), undo_, [this] { updateStatus(); }),
+                            "Descriptions");
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {
@@ -237,6 +243,7 @@ void MainWindow::openProject() {
     try {
         auto object = Project::readProject(path);
         auto next = Project::fromRom(project_->rom(), catalog_);
+        next.loadTexts();
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);
         else
@@ -254,6 +261,10 @@ void MainWindow::saveProject(bool archive) {
         return;
     if (!project_) {
         report("Open a ROM first.");
+        return;
+    }
+    if (invalidEdits()) {
+        report("Correct the highlighted description before saving.");
         return;
     }
     auto path = archive ? QFileDialog::getSaveFileName(this, "Save sharing archive", {},
@@ -275,6 +286,10 @@ void MainWindow::saveProject(bool archive) {
 void MainWindow::buildRom() {
     if (loading_ || !project_)
         return;
+    if (invalidEdits()) {
+        report("Correct the highlighted description before building.");
+        return;
+    }
     auto path = QFileDialog::getSaveFileName(this, "Export rebuilt ROM",
                                              "Ogre Battle 64-edited." + project_->rom().extension(),
                                              "N64 ROM (*.v64 *.z64 *.n64)");
@@ -324,8 +339,14 @@ void MainWindow::updateStatus() {
                                      .arg(project_->rom().revision())
                                      .arg(project_->changedRecords())
                                : "  No ROM loaded");
-    setWindowModified(!undo_->isClean());
+    setWindowModified(!undo_->isClean() || invalidEdits());
     setWindowTitle(QString("Lordly Caliber[*] · %1")
                        .arg(project_ ? project_->rom().title() : "Native Editor"));
+}
+bool MainWindow::invalidEdits() const {
+    for (int i = 0; i < workspaces_->count(); ++i)
+        if (workspaces_->widget(i)->property("invalidEdits").toBool())
+            return true;
+    return false;
 }
 } // namespace lordly
