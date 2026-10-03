@@ -98,6 +98,7 @@ fs.writeFileSync(path.join(work,'save-format.ld'),
   'lc_native_sram_io = 0x8008A0F0; lc_native_main_save = 0x8016CF64;\n'+
   'lc_native_save_free = 0x800712C4; lc_native_save_cleanup = 0x80074BF0; lc_save_callbacks = 0x800A824C;\n'+
   'lc_native_options_init = 0x8016CD90; lc_native_options_load = 0x8016CDCC; lc_native_options_save = 0x8016CDF4;\n'+
+  'lc_native_clear = 0x80093380;\n'+
   'SECTIONS { .text 0x80200000 : { *(.text) } }\n');
 run('mips-kmc-elf-ld.exe',['-EB','-T','save-format.ld','-o','save-format.elf','save-format.o']);
 run('mips-kmc-elf-objcopy.exe',['-O','binary',...['.data','.bss','.reginfo','.pdr','.mdebug','.comment'].map(x=>'--remove-section='+x),'save-format.elf','save-format.bin']);
@@ -306,6 +307,18 @@ if(process.argv[3]) {
     assert.equal(pools[0][0],reclaimed>>>0);
   }
   const catalog=JSON.parse(fs.readFileSync(path.join(native,'game/classes/save-owners.json')));
+  if(header.readUInt32BE(96)>=3) {
+    m.load(0x80196A57,Buffer.alloc(0x96,0xA6));
+    m.load(runtimeFlags-1,Buffer.alloc(34,0xA6));m.load(runtimeFlags,Buffer.alloc(32,0xFF));
+    m.trap(0x80093380,c=>{
+      assert.equal(c.get('a0'),0x80196A58);assert.equal(c.get('a1'),0x94);
+      c.load(c.get('a0'),Buffer.alloc(c.get('a1')));
+    });
+    m.set('a0',0x80196A58);m.call(0x80184EA8,0x80184EB0);
+    assert.deepEqual(read(0x80196A58,0x94),Buffer.alloc(0x94));
+    assert.deepEqual(read(runtimeFlags,32),Buffer.alloc(32));
+    for(const at of [0x80196A57,0x80196AEC,runtimeFlags-1,runtimeFlags+32])assert.equal(m.r8(at),0xA6);
+  }
   for(const owner of catalog.owners)entries[owner.symbol]=0x8006FC00+owner.start;
   if(header.readUInt32BE(96)>=2)for(const owner of catalog.pakOwners) {
     m.load(owner.delta+owner.start,candidate.subarray(owner.start,owner.start+owner.size));

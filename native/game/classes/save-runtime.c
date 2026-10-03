@@ -15,6 +15,7 @@ void lc_native_save_cleanup(SaveWord commit);
 void lc_native_options_init(SaveByte *data);
 void lc_native_options_load(SaveByte *data);
 void lc_native_options_save(SaveByte *data);
+void lc_native_clear(void *data, SaveWord size);
 typedef void (*SaveCallback)(SaveByte *data);
 typedef struct SaveCallbacks {
     SaveCallback init, load, save;
@@ -111,6 +112,12 @@ void lc_save_main_payload(SaveByte *record)
 {
     copy_save_bytes(lc_legacy_discovery, lc_discovery_flags, 11);
     lc_native_main_save(record);
+}
+void lc_clear_game_state(void *data, SaveWord size)
+{
+    SaveWord i;
+    lc_native_clear(data, size);
+    for (i = 0; i < LC_SAVE_DISCOVERY_BYTES; ++i) lc_discovery_flags[i] = 0;
 }
 
 static SaveWord save_word(const SaveByte *p)

@@ -185,6 +185,12 @@ by full-function direct signatures in the parent runtime atlas, inputs 0499 and
 0503, with delta 0x80129520. Candidate instruction tests check helper arguments
 and both continuation branches, separately from the synthetic device data tests.
 
+Save installation version 3 also extends the existing new-game state-clear call
+to clear the relocated discovery bitmap. The original 0x94-byte state clear and
+neighboring state remain intact. It owns only that call inside the authenticated
+resident initializer, and checks execute the exported call with all discovery
+bits initially set and both allocations guarded.
+
 ## Migration baseline
 
 Branch: `codex/lordly-0.5-native`.

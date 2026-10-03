@@ -146,7 +146,10 @@ class EngineTests : public QObject {
                     // Previous save installation metadata omitted the Pak owners.
                     // Reopening and upgrading it must authenticate both sets.
                     auto older = image;
-                    for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
+                    auto previousOwners = saveRuntimeCatalog()["pakOwners"].toArray();
+                    for (const auto value : saveRuntimeCatalog()["lifecycleOwners"].toArray())
+                        previousOwners.append(value);
+                    for (const auto value : previousOwners) {
                         const auto row = value.toObject();
                         older.replace(row["start"].toInt(), row["size"].toInt(),
                                       rom.bytes().mid(row["start"].toInt(), row["size"].toInt()));

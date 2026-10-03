@@ -129,5 +129,15 @@
       "delta": 2148701472,
       "retailSha256": "49c488363e39ba477f69f10b4f15f74e2ca0a739eccfccbdb78a514fdb2c939d"
     }
+  ],
+  "lifecycleOwners": [
+    {
+      "start": 371824,
+      "size": 896,
+      "call": 372136,
+      "symbol": "lc_clear_game_state",
+      "original": 2148086656,
+      "retailSha256": "39aa5f19b1e8653b32c483740bcbfe4572a197f2fffb2dcf9a847eec17c090de"
+    }
   ]
 }

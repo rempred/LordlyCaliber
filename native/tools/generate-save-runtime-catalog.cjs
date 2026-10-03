@@ -27,6 +27,9 @@ const pakOwners=[
   {start:0x74F90,size:0x370,fragment:0x75028,fragmentSize:0xF0,source:'pak-export.s',
    symbol:'lc_pak_export',resume:0x75118,reject:0x752D0}
 ].map(row=>({...row,delta:0x80129520,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
+const lifecycleOwners=[{start:0x5AC70,size:0x380,call:0x5ADA8,symbol:'lc_clear_game_state',original:0x80093380}]
+  .map(row=>({...row,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
+for(const row of lifecycleOwners)if(rom.readUInt32BE(row.call)!==(0x0C000000|((row.original>>>2)&0x3FFFFFF)))throw Error('Unexpected new-game clear call');
 fs.writeFileSync(path.join(__dirname,'../game/classes/save-owners.json'),JSON.stringify({
-  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks,pakOwners
+  generator:'native/tools/generate-save-runtime-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,callbacks,pakOwners,lifecycleOwners
 },null,2)+'\n');

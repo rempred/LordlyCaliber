@@ -26,10 +26,11 @@ SaveRuntimeBuild buildSaveRuntime(quint32 discovery, const Compiler &compiler,
                                           {"lc_save_callbacks", 0x800a824c},
                                           {"lc_native_options_init", 0x8016cd90},
                                           {"lc_native_options_load", 0x8016cdcc},
-                                          {"lc_native_options_save", 0x8016cdf4}});
+                                          {"lc_native_options_save", 0x8016cdf4},
+                                          {"lc_native_clear", 0x80093380}});
     result.placement.codeBytes = quint32(result.code.bytes.size());
     result.placement.codeChecksum = crc32(result.code.bytes);
-    result.placement.version = 2;
+    result.placement.version = 3;
     result.placement.validate();
     for (const auto value : saveRuntimeCatalog()["pakOwners"].toArray()) {
         const auto row = value.toObject();
@@ -76,6 +77,13 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
                 row["retailSha256"].toString().toLatin1())
                 throw Error("Unrecognized Controller Pak runtime owner");
         }
+    if (prior.version < 3)
+        for (const auto value : catalog["lifecycleOwners"].toArray()) {
+            const auto row = value.toObject();
+            if (sha256(rom.mid(row["start"].toInt(), row["size"].toInt())) !=
+                row["retailSha256"].toString().toLatin1())
+                throw Error("Unrecognized new-game reset owner");
+        }
     auto entry = [&](const QString &name) {
         if (!build.code.entries.contains(name))
             throw Error("Missing save entry " + name);
@@ -102,6 +110,11 @@ SavePlacement installSaveRuntime(QByteArray &rom, const SaveRuntimeBuild &build,
         if (!build.pakFragments.contains(start) || build.pakFragments[start].size() != size)
             throw Error("Missing Controller Pak rebuild fragment");
         rom.replace(start, size, build.pakFragments[start]);
+    }
+    for (const auto value : catalog["lifecycleOwners"].toArray()) {
+        const auto row = value.toObject();
+        put32(rom, row["call"].toInt(),
+              0x0c000000U | ((entry(row["symbol"].toString()) >> 2) & 0x3ffffffU));
     }
     next.ownerChecksum = saveRuntimeOwnerChecksum(rom, next.version);
     next.verify(rom);
