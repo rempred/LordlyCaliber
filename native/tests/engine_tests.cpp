@@ -8,6 +8,7 @@
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
+#include "engine/scenario_resources.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
@@ -53,6 +54,118 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioResources() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for scenario resource routing");
+        try {
+            const auto rom = Rom::open(path);
+            const auto before = sha256(rom.bytes());
+            const auto resources = ScenarioResources::load(rom);
+            QCOMPARE(resources.members().size(), 63);
+            QCOMPARE(resources.enemyData().size(), 556 * 35);
+            QCOMPARE(resources.selector(10), resources.selector(22));
+            QCOMPARE(resources.members()[resources.selector(42)].name, "eset4_06a.bin");
+            QCOMPARE(resources.rebuild(rom, resources.enemyData(), {}), rom.bytes());
+            QMap<int, QByteArray> edits;
+            for (const auto key : {6, 10, 22}) {
+                auto eset = Eset::decode(resources.scenario(rom, key));
+                eset.setBaseLevel(key == 10 ? 7 : key == 22 ? 8 : 9);
+                if (key == 6) {
+                    put16(eset.deployments[0], 1, 557);
+                    for (int i = 0; i < 8192; ++i)
+                        eset.tail += char((i * 7919) ^ (i >> 5));
+                }
+                edits[key] = eset.encode();
+            }
+            const auto enemies = resources.enemyData() + resources.enemyData().first(35);
+            auto image = resources.rebuild(rom, enemies, edits);
+            Rom::updateChecksum(image);
+            const auto reopened = Rom::fromBytes(image);
+            const auto built = ScenarioResources::load(reopened);
+            QVERIFY(built.placement());
+            QCOMPARE(built.members().size(), 66);
+            QCOMPARE(built.enemyData(), enemies);
+            QVERIFY(built.selector(10) != built.selector(22));
+            for (int key = 0; key < 65; ++key)
+                QCOMPARE(built.scenario(reopened, key),
+                         edits.contains(key) ? edits[key] : resources.scenario(rom, key));
+            for (int i = 0; i < 63; ++i) {
+                const auto &a = resources.members()[i], &b = built.members()[i];
+                QCOMPARE(reopened.bytes().mid(b.offset, b.headerSize + b.storedSize),
+                         rom.bytes().mid(a.offset, a.headerSize + a.storedSize));
+            }
+            QCOMPARE(built.rebuild(reopened, enemies, {}), image);
+            auto indexed = image;
+            indexed[ScenarioResources::selectorTable + 10 * 9 + 8] = 0;
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioResources::load(Rom::fromBytes(indexed)));
+            auto corrupted = image;
+            corrupted[built.placement()->offset + 80] ^= char(1);
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioResources::load(Rom::fromBytes(corrupted)));
+            auto collision = rom.bytes();
+            collision[ScenarioResources::descriptorOffset] = 'X';
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     resources.rebuild(Rom::fromBytes(collision), enemies, edits));
+            QVERIFY_THROWS_EXCEPTION(Error, resources.rebuild(rom, enemies, {{54, edits[10]}}));
+            QVERIFY_THROWS_EXCEPTION(Error, resources.rebuild(rom, enemies + char(0), edits));
+            auto redirected = rom.bytes();
+            put32(redirected, 0x1a380, 0x08000000);
+            QVERIFY_THROWS_EXCEPTION(Error, ScenarioResources::load(Rom::fromBytes(redirected)));
+            // Repeated changes compact appended ordinals; original alias keys stay untouched.
+            auto again = Eset::decode(edits[10]);
+            again.setBaseLevel(12);
+            const auto secondImage = built.rebuild(reopened, enemies, {{10, again.encode()}});
+            const auto secondRom = Rom::fromBytes(secondImage);
+            const auto second = ScenarioResources::load(secondRom);
+            QCOMPARE(second.members().size(), 66);
+            QCOMPARE(second.scenario(secondRom, 22), edits[22]);
+            const auto restoredImage = second.rebuild(secondRom, resources.enemyData(),
+                                                      {{6, resources.scenario(rom, 6)},
+                                                       {10, resources.scenario(rom, 10)},
+                                                       {22, resources.scenario(rom, 22)}});
+            const auto restoredRom = Rom::fromBytes(restoredImage);
+            const auto restored = ScenarioResources::load(restoredRom);
+            QCOMPARE(restored.members().size(), 63);
+            QCOMPARE(restored.selector(10), resources.selector(10));
+            // Growth behind unrelated allocations must relocate without consuming their bytes.
+            auto foreign = image + QByteArray(4096, 'Z');
+            const auto foreignRom = Rom::fromBytes(foreign);
+            auto enlarged = Eset::decode(edits[6]);
+            for (int i = 0; i < 20000; ++i)
+                enlarged.tail += char((i * 3253) ^ (i >> 2));
+            const auto grownImage = built.rebuild(foreignRom, enemies, {{6, enlarged.encode()}});
+            const auto grownRom = Rom::fromBytes(grownImage);
+            const auto grown = ScenarioResources::load(grownRom);
+            QVERIFY(grown.placement()->offset >= foreign.size());
+            QCOMPARE(grownImage.mid(image.size(), 4096), QByteArray(4096, 'Z'));
+            QCOMPARE(grownImage.mid(built.placement()->offset, built.placement()->allocation),
+                     QByteArray(built.placement()->allocation, char(-1)));
+            QCOMPARE(sha256(rom.bytes()), before);
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-scenario-resources-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            atomicWrite(candidate, rom.serialize(image));
+            QJsonArray rows;
+            for (int key = 0; key < 65; ++key)
+                rows << QJsonObject{
+                    {"key", key},
+                    {"originalIndex", resources.selector(key)},
+                    {"index", built.selector(key)},
+                    {"name", built.members()[built.selector(key)].name},
+                    {"data", QString::fromLatin1(built.scenario(reopened, key).toHex())}};
+            const QJsonObject fixture{{"rom", candidate},
+                                      {"sourceRom", path},
+                                      {"rows", rows},
+                                      {"enemyData", QString::fromLatin1(enemies.toHex())}};
+            atomicWrite(output.filePath("scenarios.json"), QJsonDocument(fixture).toJson());
+            atomicWrite(QCoreApplication::applicationDirPath() + "/scenario-resources.json",
+                        QJsonDocument(fixture).toJson());
+            output.setAutoRemove(false);
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void customSquadProjectExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

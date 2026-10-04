@@ -7,8 +7,19 @@ agree on repeated data, window boundaries, multiple blocks, and rebuilt squad
 and scenario archives. The ESET codec preserves unnamed fields and trailing data
 while regenerating section offsets and the final deployment's shared node framing.
 All 63 retail ESET files round-trip byte-for-byte; edited framing also passes the
-browser codec. This is the foundation for scenario editing; scenario export and
-resource routing are not yet connected to the native application.
+browser codec. `ScenarioResources` now rebuilds complete ESET and enemy-library
+resource envelopes. The original scenario table at z64 0x654A0 uses nine-byte
+rows; byte eight selects an ESET member. Its 65 entries match the existing
+runtime catalog (including key zero). Edited scenarios get separate appended
+members; subsequent rebuilds compact them while preserving the original 63.
+The original resource links select relocated collections, without a code hook
+or fixed DMA windows. LC05SCEN at z64 0x27C4400 authenticates the owned allocation,
+selectors and baseline directory. Growth preserves later allocations. The engine
+checks original readers and rejects unrecognized archive redirects. Original
+MIPS dispatcher, framing and LH5 code load all 65 selected resources plus the
+grown enemy library in guarded 4 MiB test memory. Allocation and lower transfer
+services are simulated; full-game loading and peak heap use remain unverified.
+The editable scenario model and desktop workflow are the next integration step.
 
 The class linker can reserve a maintained resident extension after expanded
 save code, or at the beginning of reclaimed class storage when saves are not
