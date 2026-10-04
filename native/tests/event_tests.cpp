@@ -67,6 +67,109 @@ class EventTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void exportedSceneRemoval() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto scenes = ScenePrograms::load(rom);
+            const auto source = scenes.scenes().first();
+            const auto caller = scenes.createScene("Caller", source, false);
+            const auto target = scenes.createScene("Target", source, false);
+            const auto targetSelector = scenes.resource(target).selectors.first();
+            const auto callerSelector = scenes.resource(caller).selectors.first();
+            QByteArray transfer(16, 0);
+            put32(transfer, 0, 0x80000003);
+            put32(transfer, 4, targetSelector);
+            put32(transfer, 8, 0x80000001);
+            put32(transfer, 12,
+                  u32(scenes.program(caller).source, scenes.program(caller).source.size() - 4));
+            scenes.replace(caller, transfer);
+            const QString launch = "event-director:1:b0032";
+            auto project = Project::fromRom(rom);
+            project.setScenePrograms(scenes.json());
+            project.loadSceneEvents();
+            auto events = *project.sceneEvents();
+            events.bind(launch, targetSelector, scenes);
+            project.setSceneEvents(events.json());
+            QTemporaryDir work;
+            const auto built = rebuild(project, tools, work.path());
+            const QByteArray foreign(64, 'Y');
+            const auto loadedRom = Rom::fromBytes(built.image + foreign);
+            auto loaded = Project::fromRom(loadedRom);
+            loaded.loadSceneEvents();
+            auto next = *loaded.scenePrograms();
+            const auto before = next.json();
+            QVERIFY_THROWS_EXCEPTION(Error, next.removeScene(target));
+            QCOMPARE(next.json(), before);
+            auto unsafe = next.authoredPlan();
+            unsafe.erase(
+                std::remove_if(unsafe.begin(), unsafe.end(),
+                               [&](const auto &row) { return row.id == target.authoredId; }),
+                unsafe.end());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneProgramResources::rebuild(loadedRom, {}, unsafe));
+            auto forged = before;
+            auto rows = forged["authored"].toArray();
+            for (int i = rows.size() - 1; i >= 0; --i)
+                if (rows[i].toObject()["id"] == target.authoredId)
+                    rows.removeAt(i);
+            forged["authored"] = rows;
+            QVERIFY_THROWS_EXCEPTION(Error, next.apply(forged));
+            next.removeCommand(caller, 0);
+            loaded.setScenePrograms(next.json());
+            next.removeScene(target);
+            QVERIFY_THROWS_EXCEPTION(Error, loaded.setScenePrograms(next.json()));
+            auto restoredEvents = *loaded.sceneEvents();
+            restoredEvents.restore(launch);
+            loaded.setSceneEvents(restoredEvents.json());
+            loaded.setScenePrograms(next.json());
+            QVERIFY(!loaded.scenePrograms()->scenes().contains(target));
+            QVERIFY_THROWS_EXCEPTION(Error, loaded.scenePrograms()->program(target));
+            loaded.saveFolder(work.filePath("deleted-project"));
+            auto saved = Project::fromRom(loadedRom);
+            saved.loadSceneEvents();
+            saved.applyManifest(Project::readProject(work.filePath("deleted-project")));
+            QCOMPARE(saved.scenePrograms()->json(), loaded.scenePrograms()->json());
+            QCOMPARE(saved.sceneEvents()->json(), loaded.sceneEvents()->json());
+            const auto removed = rebuild(saved, tools, work.path());
+            QCOMPARE(removed.image.mid(built.image.size(), foreign.size()), foreign);
+            QCOMPARE(u32(removed.image, 0x1f3ca88 + targetSelector * 4), quint32(0));
+            const auto reopened = ScenePrograms::load(Rom::fromBytes(removed.image));
+            QVERIFY(reopened.availableSelectors().contains(targetSelector));
+            QVERIFY(!reopened.authoredScenes().contains(target.authoredId));
+            QCOMPARE(reopened.program(caller).source, next.program(caller).source);
+            next.removeScene(caller);
+            saved.setScenePrograms(next.json());
+            const auto empty = rebuild(saved, tools, work.path());
+            QVERIFY(!SceneProgramResources::placement(Rom::fromBytes(empty.image)));
+            QCOMPARE(u32(empty.image, 0x1f3ca88 + callerSelector * 4), quint32(0));
+            QCOMPARE(empty.image.last(foreign.size()), foreign);
+            auto tail = Project::fromRom(Rom::fromBytes(built.image));
+            tail.loadSceneEvents();
+            auto tailEvents = *tail.sceneEvents();
+            tailEvents.restore(launch);
+            tail.setSceneEvents(tailEvents.json());
+            auto tailScenes = *tail.scenePrograms();
+            tailScenes.removeScene(caller);
+            tailScenes.removeScene(target);
+            tail.setScenePrograms(tailScenes.json());
+            const auto pristine = rebuild(tail, tools, work.path());
+            QCOMPARE(pristine.image, rom.bytes());
+            QDir parent(QFileInfo(path).absolutePath());
+            QVERIFY(parent.mkpath("Test ROMs"));
+            QTemporaryDir output(parent.filePath("Test ROMs/scene-delete-native-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(saved, empty, candidate);
+            QVERIFY(ScenePrograms::load(Rom::open(candidate)).authoredScenes().isEmpty());
+            qInfo().noquote() << "Scene deletion export candidate:" << candidate;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void bindingProjectAndExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

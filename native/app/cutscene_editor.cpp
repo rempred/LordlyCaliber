@@ -96,7 +96,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         auto actions = new QHBoxLayout;
         renameScene_ = new QPushButton("Rename");
         renameScene_->setObjectName("sceneRename");
-        removeScene_ = new QPushButton("Remove new scene");
+        removeScene_ = new QPushButton("Remove authored scene");
         removeScene_->setObjectName("sceneRemove");
         actions->addWidget(renameScene_);
         actions->addWidget(removeScene_);
@@ -440,8 +440,8 @@ void CutsceneEditor::removeScene() {
         return;
     try {
         auto next = *project_->scenePrograms();
-        next.removeNewScene(selectedScene());
-        pushSceneProgramChange(project_, undo_, "Remove new scene", next);
+        next.removeScene(selectedScene());
+        pushSceneProgramChange(project_, undo_, "Remove authored scene", next);
     } catch (const std::exception &e) {
         QMessageBox::warning(this, "Scene removal", QString::fromUtf8(e.what()));
     }
@@ -459,7 +459,7 @@ void CutsceneEditor::selectScene() {
         newScene_->setEnabled(true);
         duplicateScene_->setEnabled(true);
         renameScene_->setEnabled(authored);
-        removeScene_->setEnabled(authored && scene.key == 0);
+        removeScene_->setEnabled(authored);
     }
     const int selectedCommand = commands_->currentRow();
     const QSignalBlocker commandsBlock(commands_);

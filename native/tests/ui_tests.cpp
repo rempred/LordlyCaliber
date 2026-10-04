@@ -267,7 +267,7 @@ class UiTests : public QObject {
         undo.redo();
         QCOMPARE(project.sceneEvents()->target(site), selector);
         auto removed = *project.scenePrograms();
-        removed.removeNewScene(added);
+        removed.removeScene(added);
         QVERIFY_THROWS_EXCEPTION(Error, project.setScenePrograms(removed.json()));
         const auto historyCount = undo.count();
         QVERIFY_THROWS_EXCEPTION(
@@ -291,6 +291,43 @@ class UiTests : public QObject {
         QVERIFY(!table->isRowHidden(row));
         QTest::qWait(30);
         QVERIFY(editor.grab().save("native-scene-events.png"));
+    }
+    void exportedSceneRemovalControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto programs = ScenePrograms::load(rom);
+        const auto authored =
+            programs.createScene("Remove after reopening", programs.scenes().first(), false);
+        const auto image = SceneProgramResources::rebuild(rom, {}, programs.authoredPlan());
+        auto project = Project::fromRom(Rom::fromBytes(image));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        editor.resize(1300, 950);
+        editor.show();
+        auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+        auto remove = editor.findChild<QPushButton *>("sceneRemove");
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1499, 10000);
+        int selected = -1;
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->data(Qt::UserRole + 1).toString() == authored.authoredId)
+                selected = i;
+        QVERIFY(selected >= 0);
+        list->setCurrentRow(selected);
+        QVERIFY(remove->isEnabled());
+        remove->click();
+        QCOMPARE(list->count(), 1498);
+        QVERIFY(project.scenePrograms()->authoredScenes().isEmpty());
+        QCOMPARE(project.scenePrograms()->changedPrograms(), 1);
+        undo.undo();
+        QCOMPARE(list->count(), 1499);
+        QCOMPARE(project.scenePrograms()->program(authored).source,
+                 programs.program(authored).source);
+        QVERIFY(!project.scenePrograms()->modified());
+        undo.redo();
+        QCOMPARE(list->count(), 1498);
+        QVERIFY(project.scenePrograms()->modified());
     }
     void authoredSceneCreationControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

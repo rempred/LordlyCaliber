@@ -215,6 +215,9 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
                                 : prior  ? prior->authored
                                          : QVector<AuthoredSceneBuild>{};
     QJsonArray manifest;
+    QMap<quint32, quint32> restored;
+    QSet<int> removedSelectors;
+    QSet<quint32> removedKeys;
     QSet<QString> identities;
     QSet<int> selectors;
     if (prior && authored) {
@@ -222,9 +225,16 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
             bool retained = false;
             for (const auto &next : authoredScenes)
                 retained |= next.id == old.id && next.selector == old.selector;
-            if (!retained)
-                throw Error(
-                    "Removing an exported scene requires resolving its event references first");
+            if (!retained) {
+                const auto owner = 0x1f3ca88U + quint32(old.selector) * 4;
+                const auto key = sources.selectors()[old.selector];
+                if (compiled.contains(key))
+                    throw Error("A removed scene still has a compiled replacement");
+                removedSelectors.insert(old.selector);
+                removedKeys.insert(key);
+                members.remove(owner);
+                restored[owner] = 0;
+            }
         }
     }
     for (const auto &scene : authoredScenes) {
@@ -267,7 +277,36 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         members[owner] = {envelope, {owner}};
         manifest << QJsonObject{{"id", scene.id}, {"name", scene.name}, {"selector", selector}};
     }
-    QMap<quint32, quint32> restored;
+    if (!removedSelectors.isEmpty()) {
+        auto check = [&](const DirectorProgram &program) {
+            for (const auto &command : program.commands)
+                if (command.opcode == 0x80000003 &&
+                    removedSelectors.contains(int(command.operands[0])))
+                    throw Error(QString("A rebuilt scene still launches removed selector %1")
+                                    .arg(command.operands[0]));
+        };
+        for (const auto *table : {&sources.entries(), &sources.continuations()})
+            for (const auto &source : *table) {
+                if (removedKeys.contains(source.key))
+                    continue;
+                bool owned = false;
+                for (const auto &scene : authoredScenes)
+                    if (sources.selectors()[scene.selector] == source.key) {
+                        owned = true;
+                        check(DirectorProgram::decode(scene.program));
+                    }
+                if (!owned)
+                    check(compiled.contains(source.key)
+                              ? DirectorProgram::decode(compiled[source.key])
+                              : source.program);
+            }
+        for (const auto &scene : authoredScenes)
+            check(DirectorProgram::decode(scene.program));
+        const auto launchBindings = events ? events->bindings : SceneEvents::load(rom).bindings();
+        for (auto it = launchBindings.cbegin(); it != launchBindings.cend(); ++it)
+            if (removedSelectors.contains(it.value()))
+                throw Error("An event still launches a removed scene");
+    }
     const auto eventBindings = events  ? events->bindings
                                : prior ? prior->eventBindings
                                        : QMap<QString, int>{};
@@ -276,7 +315,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     for (auto it = eventBindings.cbegin(); it != eventBindings.cend(); ++it) {
         const auto &site = SceneEvents::site(it.key());
         if (it.value() < 0 || it.value() >= sources.selectors().size() ||
-            it.value() == site.selector ||
+            it.value() == site.selector || removedSelectors.contains(it.value()) ||
             (!sources.selectors()[it.value()] && !selectors.contains(it.value())))
             throw Error("Event binding targets an absent scene selector");
         eventRows.insert(site.row);

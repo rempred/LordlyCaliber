@@ -49,7 +49,7 @@ class ScenePrograms {
     bool canCreateBlank(SceneId source) const;
     SceneId createScene(const QString &name, SceneId source, bool blank);
     void renameScene(SceneId, const QString &name);
-    void removeNewScene(SceneId);
+    void removeScene(SceneId);
     SceneId canonical(SceneId) const;
     const QMap<QString, AuthoredScene> &authoredScenes() const {
         return authored_;
@@ -70,6 +70,7 @@ class ScenePrograms {
   private:
     explicit ScenePrograms(Directors original) : original_(std::move(original)) {}
     int authoredChanges() const;
+    void validateRemovedSelectors(const QSet<int> &) const;
     QMap<QString, AuthoredScene> authored_, originalAuthored_;
     Directors original_;
     QMap<quint32, QByteArray> changes_;

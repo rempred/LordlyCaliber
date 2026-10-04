@@ -146,7 +146,7 @@ class DirectorTests : public QObject {
             const auto before = scenes.json();
             QVERIFY_THROWS_EXCEPTION(Error, scenes.apply(invalid));
             QCOMPARE(scenes.json(), before);
-            scenes.removeNewScene(copy);
+            scenes.removeScene(copy);
             QCOMPARE(scenes.changedPrograms(), 1);
             scenes.apply(before);
             const auto built = rebuild(project, tools, work.filePath("compile"));
@@ -174,7 +174,8 @@ class DirectorTests : public QObject {
                      QString("Renamed after reopening"));
             QCOMPARE(reopened.program(blank).commands[2].operands[0], quint32(5678));
             QCOMPARE(reopened.program(copy).source, original);
-            QVERIFY_THROWS_EXCEPTION(Error, loaded.removeNewScene(blank));
+            loaded.removeScene(blank);
+            QVERIFY(!loaded.authoredScenes().contains(blank.authoredId));
             auto collision = scenes.authoredPlan();
             collision[0].selector = 0;
             QVERIFY_THROWS_EXCEPTION(Error, SceneProgramResources::rebuild(rom, {}, collision));

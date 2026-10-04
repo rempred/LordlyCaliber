@@ -24,6 +24,10 @@ SceneId ScenePrograms::canonical(SceneId id) const {
         for (const auto &scene : authored_)
             if (scene.baseline.key == id.nativeKey)
                 return SceneId::authored(scene.id);
+    if (id.authoredId.isEmpty() && id.nativeKey)
+        for (const auto &scene : originalAuthored_)
+            if (scene.baseline.key == id.nativeKey)
+                return SceneId::authored(scene.id);
     return id;
 }
 const DirectorResource &ScenePrograms::resource(SceneId id) const {
@@ -157,15 +161,35 @@ void ScenePrograms::renameScene(SceneId id, const QString &name) {
         throw Error("Enter a scene name of 1 to 120 characters");
     authored_[id.authoredId].name = name.trimmed();
 }
-void ScenePrograms::removeNewScene(SceneId id) {
+void ScenePrograms::validateRemovedSelectors(const QSet<int> &removed) const {
+    if (removed.isEmpty())
+        return;
+    auto remaining = scenes();
+    for (const auto &entry : original_.continuations())
+        if (!remaining.contains(SceneId(entry.key)))
+            remaining << SceneId(entry.key);
+    for (const auto &id : remaining)
+        for (const auto &command : program(id).commands)
+            if (command.opcode == 0x80000003 && removed.contains(int(command.operands[0])))
+                throw Error(QString("Scene %1, word %2 still launches removed selector %3")
+                                .arg(id.label())
+                                .arg(command.word)
+                                .arg(command.operands[0]));
+}
+void ScenePrograms::removeScene(SceneId id) {
     id = canonical(id);
-    resource(id);
-    if (id.authoredId.isEmpty() || originalAuthored_.contains(id.authoredId))
-        throw Error("Only scenes added in this project can be removed before export");
-    authored_.remove(id.authoredId);
+    const auto source = resource(id);
+    if (id.authoredId.isEmpty())
+        throw Error("Only authored scenes can be removed");
+    auto next = *this;
+    next.authored_.remove(id.authoredId);
+    next.validateRemovedSelectors({source.selectors.first()});
+    *this = std::move(next);
 }
 int ScenePrograms::authoredChanges() const {
     int count = 0;
+    for (const auto &scene : originalAuthored_)
+        count += !authored_.contains(scene.id);
     for (const auto &scene : authored_) {
         const auto found = originalAuthored_.constFind(scene.id);
         count += found == originalAuthored_.cend() || found->name != scene.name ||
@@ -185,6 +209,11 @@ void ScenePrograms::validateReferences(const Rom &rom, const Dialogues *dialogue
         if (index >= quint32(keys.size()) || !keys[int(index)])
             throw Error("Reference selects an absent scene resource");
     };
+    QSet<int> removed;
+    for (const auto &scene : originalAuthored_)
+        if (!authored_.contains(scene.id))
+            removed.insert(scene.selector);
+    validateRemovedSelectors(removed);
     std::optional<Dialogues> fallback;
     QVector<SceneId> editedIds;
     for (auto it = changes_.cbegin(); it != changes_.cend(); ++it)
@@ -351,8 +380,7 @@ void ScenePrograms::apply(const QJsonObject &value) {
         }
         for (const auto &scene : originalAuthored_)
             if (!identities.contains(scene.id))
-                throw Error(
-                    "An exported scene cannot be dropped without resolving its event references");
+                next.authored_.remove(scene.id);
     }
     const auto programs = value["programs"].toObject();
     for (auto it = programs.cbegin(); it != programs.cend(); ++it) {
@@ -364,6 +392,14 @@ void ScenePrograms::apply(const QJsonObject &value) {
             throw Error("Invalid saved scene program bytes");
         next.replace(key, bytes);
     }
+    QSet<int> removed;
+    for (const auto &scene : authored_)
+        if (!next.authored_.contains(scene.id))
+            removed.insert(scene.selector);
+    for (const auto &scene : originalAuthored_)
+        if (!next.authored_.contains(scene.id))
+            removed.insert(scene.selector);
+    next.validateRemovedSelectors(removed);
     *this = std::move(next);
 }
 } // namespace lordly

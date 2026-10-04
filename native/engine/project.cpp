@@ -584,6 +584,11 @@ void Project::setScenePrograms(const QJsonObject &value) {
     loadScenePrograms();
     auto next = *scenePrograms_;
     next.apply(value);
+    bool removed = false;
+    for (const auto &scene : scenePrograms_->authoredScenes())
+        removed |= !next.authoredScenes().contains(scene.id);
+    if (removed && !sceneEvents_)
+        sceneEvents_ = SceneEvents::load(rom_);
     if (sceneEvents_)
         sceneEvents_->validate(next);
     scenePrograms_ = std::move(next);
@@ -631,8 +636,6 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadDialogues();
     if (scenePrograms_)
         candidate.loadScenePrograms();
-    if (sceneEvents_)
-        candidate.loadSceneEvents();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -755,13 +758,17 @@ void Project::applyManifest(const QJsonObject &object) {
     if (object.contains("scenePrograms")) {
         if (!object["scenePrograms"].isObject())
             throw Error("Invalid saved scene programs");
-        candidate.setScenePrograms(object["scenePrograms"].toObject());
+        candidate.loadScenePrograms();
+        candidate.scenePrograms_->apply(object["scenePrograms"].toObject());
     }
     if (object.contains("sceneEvents")) {
         if (!object["sceneEvents"].isObject())
             throw Error("Invalid saved scene event bindings");
         candidate.setSceneEvents(object["sceneEvents"].toObject());
-    }
+    } else if (sceneEvents_ || object.contains("scenePrograms"))
+        candidate.loadSceneEvents();
+    if (candidate.sceneEvents_)
+        candidate.sceneEvents_->validate(*candidate.scenePrograms_);
     if (object.contains("dialogues")) {
         if (!object["dialogues"].isObject())
             throw Error("Invalid saved dialogue edits");

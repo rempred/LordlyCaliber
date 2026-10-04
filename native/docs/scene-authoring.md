@@ -42,15 +42,14 @@ insert/remove, restore, navigation blocking and actual background resource
 selection after a group edit (427 ms focused; 2,183 ms with source-navigation and
 main-window dialogue guard regressions). The command-page screenshot was inspected.
 These checks establish editor/rebuild behavior, not full-scene gameplay.
-Exported-scene deletion, full browser scene conversion and final scene
-playback remain active work. The dynamic scene at z64 payload 0x01FA8BF4 has no local camera command, so
+Full browser scene conversion and final scene playback remain active work. The dynamic scene at z64 payload 0x01FA8BF4 has no local camera command, so
 camera editing coverage uses a class-five stream that defines its own camera.
 
 
 ## New scenes
 
 The UI creates blank class-five scenes from a selected current-ROM setup template,
-duplicates complete scenes, renames them and removes project additions with undo.
+duplicates complete scenes, renames them and removes authored scenes with undo.
 A blank scene retains the template's group, both cameras and native exit sequence;
 it does not manufacture actor or army context. Users edit its subsequent commands.
 Typed SceneId values distinguish native resource keys from authored UUIDs. No
@@ -69,8 +68,8 @@ offset/length. Version-one allocations remain readable and migrate on rebuild.
 The manifest is covered by the payload CRC, and every authored scene exclusively
 owns its recorded selector. Programs compile during export; both native and new
 resources receive decoded readback. Retail names survive relocation through their
-stable catalog selectors. Removal of an already-exported scene remains unavailable
-until its event and scene references can be resolved as one transaction.
+stable catalog selectors. Exported authored scenes can also be removed once their
+static scene transfers and event launches have been retargeted or restored.
 
 Creation/clone/rename, save/reopen, export/reopen, ownership collision and subsequent
 edit checks passed with existing export/reference checks (9,114 ms). The explicit
@@ -116,3 +115,28 @@ assignment, restore, filtering, invalid target, scene rename and undo checks pas
 with scene-editing regressions (1,294 ms). Final target validation/export and
 undo-history guard checks pass (3,357 ms and 332 ms). The rendered event page was
 inspected. These checks do not constitute in-game launch or frame validation.
+
+## Removing authored scenes
+
+Removal checks all remaining primary and continuation programs for static
+0x80000003 transfers, as well as event bindings. A failed operation reports the
+remaining reference and leaves the model and undo history intact. Retail scene
+identities are preserved; removal applies only to authored UUIDs. Deleted native
+keys retain their original UUID mapping inside the project so they cannot reappear
+as unnamed retail scenes. Saved manifests record the remaining authored set.
+
+Project loading applies scene changes and event changes together before validating
+the resulting references. Export independently checks the compiled scene set,
+clears each removed selector, drops its owned member and repacks the retained
+members. Released selectors become available when the exported ROM is reopened.
+Deleting the last owned members clears the descriptor and frees only that owned
+allocation; foreign data prevents tail truncation and is preserved.
+
+The linked-scene test verifies static/event reference rejection, malformed saved
+removal rejection, combined unbind/delete persistence, selector release, compiled
+export/reopen, foreign bytes and exact return to the source ROM when the allocation
+is the tail. It passed with binding export regressions (8,433 ms); the final focused
+run passed in 7,918 ms. Desktop removal of an exported scene, undo/redo, event
+assignment and scene-creation regressions passed in 1,385 ms. Existing authored
+export checks passed in 6,855 ms. Dynamic runtime substitutions remain contextual;
+these checks do not establish full-scene game playback.

@@ -49,8 +49,8 @@ void pushSceneProgramChange(Project *project, QUndoStack *undo, const QString &l
                             const ScenePrograms &next, const QString &merge) {
     if (next.json() == project->scenePrograms()->json())
         return;
-    if (project->sceneEvents())
-        project->sceneEvents()->validate(next);
+    auto validation = *project;
+    validation.setScenePrograms(next.json());
     undo->push(
         new SceneCommand(project, label, project->scenePrograms()->json(), next.json(), merge));
 }
