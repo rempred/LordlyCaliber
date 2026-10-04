@@ -39,6 +39,15 @@ struct InitializedDialogue {
     quint32 cursor;
     unsigned warnings;
 };
+struct DialogueTextEnvironment {
+    DialogueFontMetrics metrics;
+    QHash<int, QByteArray> substitutions;
+    QByteArray longNameSuffix;
+};
+// Prefix, native measurements and accepted-source geometry in their native order.
+InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
+                                             const QByteArray &source,
+                                             const DialogueTextEnvironment &environment);
 // Measurements come from the separate native width/line grammars, not QString
 // length. Payload text/cursor pointers are source-relative offsets on the host.
 InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,

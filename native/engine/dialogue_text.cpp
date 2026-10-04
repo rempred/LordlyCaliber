@@ -515,9 +515,11 @@ void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray
     state = std::move(nextState);
     cursor = nextCursor;
 }
-InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
-                                             const QByteArray &source, quint16 measuredWidth,
-                                             quint16 measuredLines) {
+namespace {
+using Measurements = std::pair<quint16, quint16>;
+InitializedDialogue
+initializeWindow(const QByteArray &window, qint32 resourceSlot, const QByteArray &source,
+                 const std::function<Measurements(const QByteArray &)> &measure) {
     if (window.size() != 168 || source.indexOf('\0') < 0)
         throw Error("Dialogue initialization requires a complete window and terminated source");
     InitializedDialogue result{window, QByteArray(1144, 0), 0, 0};
@@ -537,6 +539,7 @@ InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 re
     put8(state, 0x49, 255);
     parseDialoguePrefix(record, state, source, result.cursor);
     put32(state, 8, result.cursor);
+    const auto [measuredWidth, measuredLines] = measure(state);
     LordlyDialogueLayout geometry{};
     geometry.columns = u16(state, 0x1a);
     geometry.rows = u16(state, 0x1e);
@@ -577,5 +580,34 @@ InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 re
     put8(state, 0x3d, geometry.portraitSide);
     put8(state, 0x4a, geometry.portraitVariant);
     return result;
+}
+} // namespace
+InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
+                                             const QByteArray &source, quint16 measuredWidth,
+                                             quint16 measuredLines) {
+    return initializeWindow(window, resourceSlot, source, [=](const QByteArray &) {
+        return Measurements{measuredWidth, measuredLines};
+    });
+}
+InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
+                                             const QByteArray &source,
+                                             const DialogueTextEnvironment &environment) {
+    return initializeWindow(window, resourceSlot, source, [&](const QByteArray &state) {
+        quint16 width = 0, lines = 0;
+        const auto style = u8(state, 0x47);
+        auto columns = u16(state, 0x1a);
+        if (style != 1) {
+            if (!columns) {
+                width = measureDialogueWidth(source, columns, environment.substitutions,
+                                             environment.longNameSuffix, environment.metrics);
+                columns = width / 7U + 1;
+            }
+            // The native line query runs before columns are clamped to 36.
+            if (style != 0 && !u16(state, 0x1e))
+                lines = countDialogueLines(source, columns, environment.substitutions,
+                                           environment.longNameSuffix);
+        }
+        return Measurements{width, lines};
+    });
 }
 } // namespace lordly

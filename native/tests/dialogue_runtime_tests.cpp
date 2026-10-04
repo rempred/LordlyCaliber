@@ -21,6 +21,57 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void completeInitializationAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-initialize-mips.cjs"),
+                                 path, work.filePath("windows.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("windows.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        DialogueTextEnvironment environment;
+        const auto entries = root["substitutions"].toArray();
+        for (int i = 0; i < entries.size(); ++i)
+            environment.substitutions[i] = QByteArray::fromHex(entries[i].toString().toLatin1());
+        environment.longNameSuffix = QByteArray::fromHex(root["suffix"].toString().toLatin1());
+        environment.metrics = {QByteArray::fromHex(root["normal"].toString().toLatin1()),
+                               QByteArray::fromHex(root["alternate"].toString().toLatin1())};
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 4644);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            const auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            InitializedDialogue result;
+            try {
+                result = initializeDialogueWindow(initial, c["slot"].toInt(), source, environment);
+            } catch (const std::exception &e) {
+                QFAIL(qPrintable(c["id"].toString() + ": " + e.what()));
+            }
+            QVERIFY2(result.window.toHex() == c["window"].toString().toLatin1(),
+                     qPrintable(c["id"].toString() + " window"));
+            QVERIFY2(result.state.toHex() == c["state"].toString().toLatin1(),
+                     qPrintable(c["id"].toString() + " payload"));
+            QCOMPARE(result.warnings, quint32(c["warnings"].toInt()));
+            QCOMPARE(result.cursor, u32(result.state, 8));
+        }
+        // Fixed dimensions bypass unavailable measurements, just as native code does.
+        const auto fixed = initializeDialogueWindow(
+            QByteArray(168, 0), 0, QByteArray("@*Body\0", 7), DialogueTextEnvironment{});
+        QCOMPARE(u16(fixed.state, 0x1a), 36);
+        QCOMPARE(u16(fixed.state, 0x1e), 3);
+        QVERIFY_THROWS_EXCEPTION(Error, initializeDialogueWindow(QByteArray(168, 0), 0,
+                                                                 QByteArray("Body\0", 5),
+                                                                 DialogueTextEnvironment{}));
+    }
     void dialogueWidthsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

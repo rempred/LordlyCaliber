@@ -1,5 +1,15 @@
 # Dialogue runtime
 
+The initializer now composes prefix parsing, both measurements and accepted-source
+geometry. All 4,644 complete 168-byte window/1,144-byte payload comparisons pass
+(1,700 ms), including every retail source. Only archive resolution, zero-fill and
+diagnostic output are controlled; the original measurement/prefix/string helpers
+run. Synthetic metric/name context is explicit. Fixed dimensions skip unavailable
+measurements. Automatic line counts use computed columns before the native clamp.
+The first reference setup had the wrong initializer payload location and omitted
+the line routine; correcting both resolved those fixture failures. Scheduling,
+text execution and drawing still require integration.
+
 Dialogue pixel measurement reconstructs ROM E98BC..E9EB0 at RAM 8019CB3C.
 All 6,169 comparisons pass, including every retail entry, minimum/column/fixed-font
 limits, page breaks and every style/side/control/portrait branch for `@i`/`@p`.
