@@ -1,5 +1,16 @@
 # Native Lordly Caliber
 
+Sprite draw preparation follows the original pool's layer and special-animation
+filters, slot order, signed integer-to-float translation, rotation-180 identity and
+signed scale percentage. All 44 pass/transform cases match original calls to the
+matrix helpers. Primitive RGBA matches 120 original display-list writes, including
+signed global RGB and byte narrowing. The transition's first current-color byte
+scales all three global RGB channels; per-layer alpha is multiplied by incoming
+alpha/255. Matrix constructors, frame drawing and texture metadata are controlled
+in these checks. Final geometry, frame-child selection and PC rasterization remain
+to connect. The display-list pointer is RAM 800E9BA0 (the signed load displacement
+matters); an initial fixture used 800F9BA0 and was corrected before passing.
+
 SceneSprites owns the thirty animated 2D records. Commands 46/63 create or replace,
 64 restarts, 65 queries the current program opcode, and 66 releases one/all slots.
 Full records, replacement, narrow constructor slots, full-word query/release slots,

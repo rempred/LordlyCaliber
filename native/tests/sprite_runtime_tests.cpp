@@ -7,10 +7,88 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <bit>
 using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void drawPlanAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("sprite-draw-mips.cjs"),
+             path, work.filePath("draw.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("draw.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data = QJsonDocument::fromJson(file.readAll()).object();
+        SceneSprites sprites(Rom::open(path));
+        for (const auto &r : data["records"].toArray()) {
+            const auto row = r.toObject();
+            sprites.supplyRecord(row["slot"].toInt(),
+                                 QByteArray::fromHex(row["record"].toString().toLatin1()));
+        }
+        const auto cases = data["cases"].toArray();
+        QCOMPARE(cases.size(), 44);
+        for (const auto &r : cases) {
+            const auto row = r.toObject();
+            const auto expected = row["draws"].toArray();
+            const auto draws = sprites.draws(row["pass"].toInt(), quint8(row["special"].toInt()));
+            QCOMPARE(draws.size(), expected.size());
+            for (int i = 0; i < draws.size(); ++i) {
+                const auto &draw = draws[i];
+                const auto e = expected[i].toObject();
+                QCOMPARE(draw.slot, e["slot"].toInt());
+                QCOMPARE(draw.pass, e["pass"].toInt());
+                float rotation = 0, scale = 1;
+                for (const auto &t : e["transforms"].toArray()) {
+                    const auto transform = t.toObject();
+                    const auto bits = transform["bits"].toArray();
+                    if (transform["kind"] == "translation") {
+                        QCOMPARE(std::bit_cast<quint32>(draw.x), quint32(bits[0].toInteger()));
+                        QCOMPARE(std::bit_cast<quint32>(draw.y), quint32(bits[1].toInteger()));
+                        QCOMPARE(bits[2].toInteger(), 0);
+                    } else if (transform["kind"] == "rotation")
+                        rotation = std::bit_cast<float>(quint32(bits[0].toInteger()));
+                    else {
+                        QCOMPARE(bits[0], bits[1]);
+                        QCOMPARE(bits[0], bits[2]);
+                        scale = std::bit_cast<float>(quint32(bits[0].toInteger()));
+                    }
+                }
+                QCOMPARE(draw.rotation, rotation);
+                QCOMPARE(draw.scale, scale);
+            }
+        }
+        auto record = sprites.sprite(0)->record();
+        put8(record, 0, 153);
+        sprites.supplyRecord(0, record);
+        const auto colors = data["colors"].toArray();
+        QCOMPARE(colors.size(), 120);
+        for (const auto &r : colors) {
+            const auto row = r.toObject();
+            const auto rgb = row["global"].toArray();
+            QByteArray transition;
+            if (!row["current"].isNull()) {
+                transition = QByteArray(80, 0);
+                put8(transition, 4, quint8(row["current"].toInt()));
+                put8(transition, 5, 17);
+                put8(transition, 6, 39);
+            }
+            const auto color = sprites.primitiveColor(
+                0, 0, quint8(row["alpha"].toInt()),
+                {qint16(rgb[0].toInt()), qint16(rgb[1].toInt()), qint16(rgb[2].toInt())},
+                transition);
+            const quint32 packed = (quint32(color[0]) << 24) | (quint32(color[1]) << 16) |
+                                   (quint32(color[2]) << 8) | color[3];
+            QCOMPARE(packed, quint32(row["rgba"].toInteger()));
+        }
+    }
     void lifecycleAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

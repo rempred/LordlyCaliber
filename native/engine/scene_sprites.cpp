@@ -162,4 +162,47 @@ bool SceneSprites::advancePoses(int instructionBudget) {
     nextPoseSlot_ = 0;
     return true;
 }
+QVector<SceneSpriteDraw> SceneSprites::draws(qint32 renderPass, quint8 special) const {
+    const int pass = half(quint32(renderPass));
+    QVector<SceneSpriteDraw> result;
+    for (int slot = 0; slot < 30; ++slot) {
+        if (!sprites_[slot])
+            continue;
+        const auto record = sprites_[slot]->record();
+        if (u8(record, 0x4a) != pass)
+            continue;
+        const auto animation = u16(record, 0x44);
+        const bool specialAnimation = animation == 800 || animation == 801;
+        if (specialAnimation != (special != 0))
+            continue;
+        const int rotation = half(u16(record, 0x40));
+        const int scale = half(u16(record, 0x48));
+        const auto &pose = sprites_[slot]->sprite();
+        result << SceneSpriteDraw{slot,
+                                  quint8(pass),
+                                  float(pose.x),
+                                  float(pose.y),
+                                  rotation == 180 ? 0.f : float(rotation + 180),
+                                  float(scale) / 100.f};
+    }
+    return result;
+}
+std::array<quint8, 4> SceneSprites::primitiveColor(int slot, int layer, quint8 alpha,
+                                                   const std::array<qint16, 3> &globalRgb,
+                                                   const QByteArray &colorTransition) const {
+    const auto current = sprite(slot);
+    if (!current || layer < 0 || layer >= 16)
+        throw Error("Sprite layer has no native color byte");
+    if (!colorTransition.isEmpty() && colorTransition.size() != 80)
+        throw Error("Scene color transition must contain 80 bytes");
+    std::array<quint8, 4> result;
+    for (int i = 0; i < 3; ++i)
+        // The original reads the transition's first current-color byte for
+        // all three channels, multiplying the separate global signed RGB.
+        result[i] = colorTransition.isEmpty()
+                        ? quint8(globalRgb[i])
+                        : quint8(int(u8(colorTransition, 4)) * globalRgb[i] / 255);
+    result[3] = quint8(int(alpha) * current->sprite().color[layer] / 255);
+    return result;
+}
 } // namespace lordly

@@ -4,6 +4,11 @@
 #include <functional>
 #include <optional>
 namespace lordly {
+struct SceneSpriteDraw {
+    int slot = 0;
+    quint8 pass = 0;
+    float x = 0, y = 0, rotation = 0, scale = 1;
+};
 class SceneSprites {
   public:
     // The path owner resolves sampled/resource headings and owns the native
@@ -17,6 +22,12 @@ class SceneSprites {
     void setRotationSource(Rotation source) {
         rotation_ = std::move(source);
     }
+    // Native pool order and transform arguments, independent of PC rasterization.
+    QVector<SceneSpriteDraw> draws(qint32 renderPass, quint8 special) const;
+    // ROM 29F7A0..29F924 primitive RGBA, before texture blending.
+    std::array<quint8, 4> primitiveColor(int slot, int layer, quint8 alpha,
+                                         const std::array<qint16, 3> &globalRgb,
+                                         const QByteArray &colorTransition = {}) const;
 
   private:
     static void checkSlot(int slot);
