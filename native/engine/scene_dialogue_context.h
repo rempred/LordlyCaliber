@@ -3,6 +3,7 @@
 #include <QVector>
 #include <array>
 namespace lordly {
+struct DialogueTextEnvironment;
 struct DialogueNameOverride {
     quint8 selector;
     QByteArray text; // Complete NUL-terminated native string.
@@ -28,6 +29,7 @@ class SceneDialogueContext {
     void prepare(int mode, const QByteArray &actor, const QByteArray &bodyRow = {});
     const Reference &reference(int index) const;
     QByteArray name(int index) const;
+    void supplyTextSources(DialogueTextEnvironment &environment) const;
     const QByteArray &ownerWorkspace() const {
         return owner_;
     }

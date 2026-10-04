@@ -1,5 +1,12 @@
 # Dialogue runtime
 
+Roster context now publishes stable source identities and complete current backing
+records to text execution, including both retained 64-byte name workspaces. All
+480 original shared-name sequences / 960 snapshots pass through these bindings
+(1,818 ms). The comparison checks original returned pointers, complete workspaces
+and preservation of unrelated sources; string helpers and registration remain
+controlled. This connects name storage, not the resource dispatcher or drawing.
+
 Insertion sources now separate binding identity from mutable backing bytes.
 An active insertion retains its selected source when a global name is rebound,
 while later writes to that same storage are visible on the next reveal call.

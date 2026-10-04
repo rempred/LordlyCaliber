@@ -1,4 +1,5 @@
 #include "engine/scene_dialogue_context.h"
+#include "engine/dialogue_text.h"
 namespace lordly {
 namespace {
 QByteArray stringAt(const QByteArray &bytes, qsizetype offset, qsizetype extent) {
@@ -49,6 +50,41 @@ QByteArray SceneDialogueContext::name(int index) const {
         return stringAt(group_, 0, 64);
     }
     throw Error("Unknown dialogue name reference");
+}
+void SceneDialogueContext::supplyTextSources(DialogueTextEnvironment &environment) const {
+    // Qualified native addresses are stable identities here, never PC pointers.
+    // Keep every roster source available even after a name is rebound elsewhere.
+    for (int i = 0; i < 100; ++i) {
+        environment.storage[0x80193bc0ULL + i * 56] = inputs_.army.mid(i * 56, 56);
+        environment.storage[0x80195560ULL + i * 52] = inputs_.guests.mid(i * 52, 52);
+    }
+    environment.storage[0x8022ac00] = owner_;
+    environment.storage[0x8022ac40] = group_;
+    environment.storage[0x80196a58] = inputs_.fixedName;
+    for (int i = 0; i < 4; ++i) {
+        const auto ref = names_[i];
+        quint64 identity = 0;
+        switch (ref.kind) {
+        case Kind::Absent:
+            break;
+        case Kind::Army:
+            identity = 0x80193bc0ULL + ref.index * 56;
+            break;
+        case Kind::Guest:
+            identity = 0x80195560ULL + ref.index * 52;
+            break;
+        case Kind::OwnerWorkspace:
+            identity = 0x8022ac00;
+            break;
+        case Kind::GroupWorkspace:
+            identity = 0x8022ac40;
+            break;
+        case Kind::Fixed:
+            identity = 0x80196a58;
+            break;
+        }
+        environment.references[48 + i] = identity;
+    }
 }
 SceneDialogueContext::Reference SceneDialogueContext::find(int source) const {
     for (int i = 0; i < 100; ++i)

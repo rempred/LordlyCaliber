@@ -775,30 +775,24 @@ class DialogueRuntimeTests : public QObject {
             QCOMPARE(context.ownerWorkspace().toHex(), expected["owner"].toString().toLatin1());
             QCOMPARE(context.groupWorkspace().toHex(), expected["group"].toString().toLatin1());
             QCOMPARE(context.textParameter(), expected["textParameter"].toInt());
+            DialogueTextEnvironment environment;
+            environment.storage[0x12345678] = "unrelated";
+            environment.references[90] = 0x12345678;
+            context.supplyTextSources(environment);
+            QCOMPARE(environment.substitution(90), QByteArray("unrelated"));
+            QCOMPARE(environment.storage[0x8022ac00].toHex(),
+                     expected["owner"].toString().toLatin1());
+            QCOMPARE(environment.storage[0x8022ac40].toHex(),
+                     expected["group"].toString().toLatin1());
             const auto refs = expected["references"].toArray();
             for (int i = 0; i < 4; ++i) {
-                const auto ref = context.reference(i);
-                quint32 address = 0;
-                switch (ref.kind) {
-                case SceneDialogueContext::Kind::Absent:
-                    break;
-                case SceneDialogueContext::Kind::Army:
-                    address = 0x80193bc0 + ref.index * 56;
-                    break;
-                case SceneDialogueContext::Kind::Guest:
-                    address = 0x80195560 + ref.index * 52;
-                    break;
-                case SceneDialogueContext::Kind::OwnerWorkspace:
-                    address = 0x8022ac00;
-                    break;
-                case SceneDialogueContext::Kind::GroupWorkspace:
-                    address = 0x8022ac40;
-                    break;
-                case SceneDialogueContext::Kind::Fixed:
-                    address = 0x80196a58;
-                    break;
+                QCOMPARE(environment.references[48 + i], quint64(refs[i].toDouble()));
+                if (!environment.references[48 + i])
+                    QVERIFY(environment.substitution(48 + i).isNull());
+                else {
+                    const auto text = environment.substitution(48 + i);
+                    QCOMPARE(text.left(text.indexOf('\0')), context.name(i));
                 }
-                QCOMPARE(address, quint32(refs[i].toDouble()));
             }
         };
         for (const auto &value : cases) {
