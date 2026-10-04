@@ -213,6 +213,45 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x1e) {
+        QSet<int> occupied;
+        for (int slot = 0; slot < 28; ++slot)
+            if (actors_[slot])
+                occupied.insert(slot);
+        materials_.startTint(args, occupied);
+        return true;
+    }
+    if (opcode == 0x1f) {
+        if (args.size() != 3)
+            throw Error("Actor tint query is truncated");
+        value = materials_.active(qint32(args[2]));
+        return true;
+    }
+    if (opcode == 0x28) {
+        materials_.startMaterial(args);
+        return true;
+    }
+    if (opcode == 0x29) {
+        if (args.size() != 1)
+            throw Error("Actor material release is truncated");
+        materials_.releaseMaterial(qint32(args[0]));
+        return true;
+    }
+    if (opcode == 0xa7) {
+        if (args.size() != 1)
+            throw Error("Actor tint cleanup is truncated");
+        if (args[0] == 0xffffffffU)
+            throw Error("Native all-actor tint cleanup crosses into adjacent scene tables; use "
+                        "individual slots");
+        const int first = qint16(args[0]), end = qint16(args[0] + 1U);
+        if (first >= end)
+            return true;
+        checkSlot(first);
+        materials_.releaseTint(first);
+        if (actors_[first])
+            actors_[first]->setTint(255, 255, 255);
+        return true;
+    }
     if (opcode == 0x3f) {
         if (args.size() != 1)
             throw Error("Actor entrance command is truncated");
@@ -366,6 +405,15 @@ bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &val
         return true;
     }
     return false;
+}
+QByteArray SceneActors::renderMaterials(int slot) {
+    checkSlot(slot);
+    if (!actors_[slot])
+        throw Error("Material rendering requires an occupied actor slot");
+    auto record = actors_[slot]->record();
+    const auto commands = materials_.render(record);
+    actors_[slot]->setTint(u8(record, 0x142), u8(record, 0x143), u8(record, 0x144));
+    return commands;
 }
 void SceneActors::advancePlanar() {
     auto next = actors_;

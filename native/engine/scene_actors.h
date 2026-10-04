@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/actor_height.h"
 #include "engine/actor_instance.h"
+#include "engine/actor_materials.h"
 #include "engine/actor_motion.h"
 #include "engine/actor_turn.h"
 #include <QHash>
@@ -65,6 +66,10 @@ class SceneActors {
     void selectBody(const LordlyActorBodySelection &selection);
     void vacate(int slot);
     bool service(quint32 opcode, const QVector<quint32> &operands, int &value);
+    const ActorMaterials &materials() const {
+        return materials_;
+    }
+    QByteArray renderMaterials(int slot);
     // Components of the normal scheduler. The caller must retain the game's
     // other services/order, including terrain and proximity, before advancing.
     void advancePlanar();
@@ -92,6 +97,7 @@ class SceneActors {
     bool presentationMemberUnavailable(const QByteArray &row) const;
     std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial);
     Rom rom_;
+    ActorMaterials materials_;
     int mode_;
     quint8 presentation_;
     ActorInstance::Height height_;

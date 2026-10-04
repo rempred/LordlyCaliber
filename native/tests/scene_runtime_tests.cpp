@@ -14,6 +14,106 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorMaterialsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("actor-material-mips.cjs"), path,
+                                     work.filePath("materials.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile input(work.filePath("materials.json"));
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto results =
+                QJsonDocument::fromJson(input.readAll()).object()["results"].toArray();
+            QCOMPARE(results.size(), 200);
+            const auto rom = Rom::open(path);
+            for (const auto value : results) {
+                const auto row = value.toObject();
+                SceneActors actors(rom, 2, 0);
+                for (const auto entry : row["initial"].toArray()) {
+                    const auto item = entry.toObject();
+                    actors.supplyActor(item["slot"].toInt(),
+                                       QByteArray::fromHex(item["record"].toString().toLatin1()));
+                }
+                const auto operations = row["operations"].toArray(),
+                           states = row["states"].toArray();
+                for (int i = 0; i < operations.size(); ++i) {
+                    const auto op = operations[i].toObject(), state = states[i].toObject();
+                    QByteArray commands;
+                    if (op.contains("draw")) {
+                        for (const auto slot : op["draw"].toArray())
+                            commands += actors.renderMaterials(slot.toInt());
+                    } else {
+                        QVector<quint32> args;
+                        for (const auto arg : op["args"].toArray())
+                            args << quint32(arg.toInteger());
+                        int result = 0;
+                        QVERIFY(actors.service(quint32(op["op"].toInt()), args, result));
+                    }
+                    QCOMPARE(commands,
+                             QByteArray::fromHex(state["commands"].toString().toLatin1()));
+                    for (const auto entry : state["actors"].toArray()) {
+                        const auto item = entry.toObject();
+                        QCOMPARE(actors.actor(item["slot"].toInt())->record(),
+                                 QByteArray::fromHex(item["record"].toString().toLatin1()));
+                    }
+                    QMap<int, QByteArray> tints, materials;
+                    for (const auto entry : state["tints"].toArray()) {
+                        const auto item = entry.toObject();
+                        tints[item["slot"].toInt()] =
+                            QByteArray::fromHex(item["record"].toString().toLatin1());
+                    }
+                    for (const auto entry : state["materials"].toArray()) {
+                        const auto item = entry.toObject();
+                        materials[item["slot"].toInt()] =
+                            QByteArray::fromHex(item["record"].toString().toLatin1());
+                    }
+                    for (int slot = 0; slot < 28; ++slot) {
+                        QCOMPARE(actors.materials().tint(slot), tints.value(slot));
+                        QCOMPARE(actors.materials().material(slot), materials.value(slot));
+                        int result = -1;
+                        QVERIFY(actors.service(0x1f, {0, 0, quint32(slot)}, result));
+                        QCOMPARE(bool(result), state["active"].toArray().contains(slot));
+                    }
+                }
+            }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void actorMaterialOwnership() {
+        ActorMaterials materials;
+        materials.startTint({3, 1, 2, 3, 4, 5, 6, 10, 1}, {});
+        const auto prior = materials.tint(3);
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 materials.startTint({0xffffffffU, 9, 8, 7, 6, 5, 4, 2, 0}, {0}));
+        QCOMPARE(materials.tint(3), prior);
+        QVERIFY(materials.tint(0).isEmpty());
+        QVERIFY_THROWS_EXCEPTION(Error, materials.startMaterial({28, 1, 2, 3, 4, 5, 6, 0}));
+        QVERIFY_THROWS_EXCEPTION(Error, materials.releaseMaterial(65536));
+        QVERIFY_THROWS_EXCEPTION(Error, materials.active(-1));
+        auto invalid = prior;
+        put16(invalid, 8, 0);
+        put16(invalid, 10, 65535);
+        materials.supplyTint(3, invalid);
+        QByteArray actor(336, char(0xa7));
+        put32(actor, 0xe4, 3);
+        const auto actorBefore = actor;
+        QVERIFY_THROWS_EXCEPTION(Error, materials.render(actor));
+        QCOMPARE(actor, actorBefore);
+        QCOMPARE(materials.tint(3), invalid);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            return;
+        SceneActors actors(Rom::open(path), 2, 0);
+        int result = 0;
+        QVERIFY_THROWS_EXCEPTION(Error, actors.service(0xa7, {0xffffffffU}, result));
+        QVERIFY_THROWS_EXCEPTION(Error, actors.renderMaterials(0));
+    }
     void poseAudioSurvivesBudget() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

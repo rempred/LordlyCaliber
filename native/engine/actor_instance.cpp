@@ -104,6 +104,11 @@ void ActorInstance::setSlot(int slot) {
 void ActorInstance::setOpacity(quint8 value) {
     put8(record_, 0x13c, value);
 }
+void ActorInstance::setTint(quint8 red, quint8 green, quint8 blue) {
+    put8(record_, 0x142, red);
+    put8(record_, 0x143, green);
+    put8(record_, 0x144, blue);
+}
 void ActorInstance::setUniformScale(float value) {
     if (!std::isfinite(value))
         throw Error("Actor scale must be finite");

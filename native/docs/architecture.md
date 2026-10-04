@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+Actor tint and material execution now use a maintained portable C reconstruction
+of ROM 29B78C..29BEF4, referenced to Decomp assembly at 62cc7ef4. SceneActors
+owns the slot records and handles commands 1E, 1F, 28, 29 and A7. Rendering advances
+tint once per eligible draw, then applies the material override. Skipped draws do
+not advance progress. Completion retains the record; material release retains
+Actor RGB, while single-slot tint cleanup restores white even without a tint.
+Full-word all-tint creation and signed-halfword slot narrowing follow the original
+code. Unsafe all-cleanup crossing into adjacent tables and dangling empty-slot
+all-tint replacement reject without changing state.
+
+`scene_runtime_tests actorMaterialsAgainstMips actorMaterialOwnership` passes
+(1,277 ms): 200 original-instruction sequences and 3,600 complete snapshots agree
+on 12-byte tint/seven-byte material records, Actor bytes, queries and ordered
+display-list material commands. Only allocation/free are controlled. Tests cover
+duration narrowing, skipped Actor draws, both combiner routes, masking, replacement,
+empty slots and cleanup. Invalid arithmetic and selectors preserve state. Existing
+composed playback/suspension and pose-sweep checks pass (204 ms). These functions
+are PC reconstructions, not accepted matching C. They establish material behavior
+at an eligible draw; final Actor eligibility, geometry and scene composition still
+need integration.
+
 Dialogue window records now use the shared UI pool with atomic creation and
 continuous actor tracking. All 560 original-instruction pool/tracking comparisons
 pass. Current-ROM Serifu loading preserves 4,569 exact entries across 348 archives;
