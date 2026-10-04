@@ -10,6 +10,7 @@ struct DirectorOpcode {
     int words = 0;
     QString name, description;
     QStringList operands;
+    int queryWords = 0, requiredMode = -1;
 };
 struct DirectorCommand {
     int word = 0;

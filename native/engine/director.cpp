@@ -29,6 +29,9 @@ const QMap<quint32, DirectorOpcode> &Directors::grammar() {
             entry.words = row["words"].toInt();
             entry.name = row["name"].toString();
             entry.description = row["description"].toString();
+            const auto query = row["query"].toString();
+            entry.queryWords = query == "Q3" ? 3 : query == "Q4" ? 4 : 0;
+            entry.requiredMode = row["mode"].toInt(-1);
             for (const auto &v : row["operands"].toArray())
                 entry.operands << v.toString();
             if (entry.words < 1 || entry.words > 32 || entry.operands.size() != entry.words - 1 ||

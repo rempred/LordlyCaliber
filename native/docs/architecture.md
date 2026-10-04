@@ -1,5 +1,23 @@
 # Native Lordly Caliber
 
+The PC engine also compiles `game/director/dispatch_core.c`, a bounded control
+adaptation of the recovered dispatcher. It preserves barrier cursor commits,
+local handoff state, signed query scans, labels and registered-counter arithmetic.
+A query disabled by the current mode leaves its operand words executable, as the
+original does; it is not skipped using the structural grammar width. Host budget
+or missing-service suspension retains local state without pretending to finish a
+native tick. Domain operations use explicit callbacks; stream transfers currently
+return a distinct boundary for the upcoming resource/session layer.
+
+Thirty-two control cases agree with the original MIPS dispatcher and helpers in
+4 MiB test memory: return result, committed cursor, counter, tracked-object state
+and query-producer calls. Code placement is read from overlay descriptor 14
+(ROM 0x281860..0x286BD0); the dispatcher executes at RAM 0x802282B8. The external
+query producer is a controlled double. FPR save/restore is modeled as opaque pairs;
+these cases do not test floating-point actor/camera services. Separate checks cover
+missing services, truncated input, execution-budget suspension and transfer
+boundaries. This is control-flow verification, not full scene playback.
+
 The Cutscenes workspace now searches 1,498 Director resources and 366 image
 assets, displays current-ROM command words and background requests, and previews
 signed background layers or individual raw frames/palette banks. Image decoding

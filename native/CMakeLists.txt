@@ -15,6 +15,7 @@ target_sources(lordly_engine PRIVATE engine/scene_images.cpp engine/raw_image.cp
 qt_add_resources(lordly_engine scene_images PREFIX "/" BASE . FILES game/director/images.json)
 target_sources(lordly_engine PRIVATE engine/director.cpp)
 target_sources(lordly_engine PRIVATE game/director/control_flow.c)
+target_sources(lordly_engine PRIVATE game/director/dispatch_core.c)
 qt_add_resources(lordly_engine director_grammar PREFIX "/" BASE . FILES game/director/grammar.json)
 target_sources(lordly_engine PRIVATE engine/eset.cpp engine/scenario_resources.cpp engine/scenarios.cpp)
 target_sources(lordly_engine PRIVATE engine/scenario_routes.cpp)
