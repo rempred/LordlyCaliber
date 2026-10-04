@@ -22,7 +22,7 @@ function cpu(){
   m.w32(0x80219f20,temp);m.set('sp',0x80060000);
   return m;
 }
-let producers=0,splitters=0,readers=0;
+let producers=0,splitters=0,readers=0,categories=0,guards=0;
 for(const id of [...Array(36).keys(),36,255,0xffffffff]){
   const m=cpu(), expected=fixture.shops.records[id<36?id:0];
   const saved=['s0','s1','s2','s3','s4','s5','s6','s7'];
@@ -58,6 +58,33 @@ for(const id of [...Array(36).keys(),36,255,0xffffffff]){
   m.call(ram(0x197954),ram(0x19795c));
   assert.equal(m.get('v0'),expected.consumables[0]||0);
   splitters++;
+  if(rom.readUInt32BE(0x27c4008)>=2){
+    const menus=0x80310000;
+    const expectedCategories=counts.map((n,i)=>n?i:-1).filter(i=>i>=0).concat(6);
+    m.call(ram(0x197914),ram(0x197984));
+    assert.equal(m.r8(0x8021a122)+1,expectedCategories.length);
+    expectedCategories.forEach((v,i)=>assert.equal(m.r8(0x8021a11a+i),v));
+    m.load(menus-16,Buffer.alloc(102,0xa6));
+    m.trap(0x80070f30,c=>{
+      assert.equal(c.get('a0'),expectedCategories.length*10);
+      clobber(c);c.set('v0',menus);
+    });
+    m.call(ram(0x19798c),ram(0x197a2c));
+    assert.equal(m.r32(0x80219f40),menus);
+    assert.equal(m.r8(menus-1),0xa6);assert.equal(m.r8(menus+expectedCategories.length*10),0xa6);
+    expectedCategories.forEach((kind,category)=>{
+      const count=kind===6?expected.consumables.length:counts[kind];
+      assert.equal(m.r16(menus+category*10+6),(count-1)&65535);
+      for(const selection of [-1,0,count-1,count])for(const buttons of [0,0x8000]){
+        m.w16(menus+category*10,selection);m.set('s0',category);
+        m.set('v0',0xffff);m.set('a0',buttons);
+        const allowed=!!buttons&&selection>=0&&selection<count;
+        m.call(ram(0x197d6c),ram(allowed?0x197d7c:0x197f18));
+        guards++;
+      }
+    });
+    categories++;
+  }
   if(id!==1&&id!==35)continue;
   for(let index=0;index<expected.consumables.length;index++){
     for(const [begin,end,input,output] of [
@@ -72,4 +99,4 @@ for(const id of [...Array(36).keys(),36,255,0xffffffff]){
     }
   }
 }
-console.log(JSON.stringify({producers,splitters,readers,ramBytes:0x400000,result:'PASS'}));
+console.log(JSON.stringify({producers,splitters,readers,categories,guards,ramBytes:0x400000,result:'PASS'}));

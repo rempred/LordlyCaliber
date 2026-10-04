@@ -11,7 +11,7 @@ preview behavior work; a visible tab alone does not count.
 | Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | In progress |
 | Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, names/descriptions, promotion, compatibility, equipment-list availability, families and class creation through ID 255 now persist, undo and export through coordinated source rebuilds. Dynamic allocations and reopened-ROM growth verified; full-game validation and remaining feature audit pending |
 | Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Fields and description editing/export implemented; integrated workflow polish remains |
-| Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Native archive loading, validated membership model and project persistence implemented; runtime export and UI in progress |
+| Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Search, add/remove/reorder, copy/restore, undo, project persistence/import and source-built export implemented. Supports 50 equipment/30 consumables in the original RAM arrays. Export/reopen and instruction checks pass, including empty stock; full-game validation remains |
 | Consumables | Values/descriptions, supported behavior/effect editing, rebuild ownership | Pending |
 | Encounters | Pools, terrain/scenario/global rates, custom squads, persuasion/retreat/rewards/card text | Pending |
 | Scenarios | Enemy squads/formations/equipment, placements/routes, triggers/treasure/towns, added squads | Pending |

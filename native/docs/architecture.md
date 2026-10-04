@@ -265,6 +265,26 @@ Shops now has a native membership model:36 slots with immutable empty slot0,
 original stock separately and validates the existing50/30 rebuild capacities,
 uniqueness and record ordering before mutation. Native project folders and
 archives persist edits. Town labels use actual names, excluding objective
-records; archive group numbers are not presented as mission numbers. Runtime
-installation and the Shops UI are still pending; export rejects changed shops
-until their runtime builder is connected.
+records; archive group numbers are not presented as mission numbers. The Shops
+workspace searches towns/items and supports add/remove/reorder, copying stock,
+restoration and undo. Browser projects migrate partial shop edits while retaining
+their original import data. Explicit native state prevents restored stock from
+being overwritten by an archived import when a project reopens.
+
+Shop export compiles generated stock data and maintained MIPS sources during
+export. Thirty consumable halfwords fit the original60-byte array, while the50
+equipment words remain unchanged. All15 width/stride/read changes are covered by
+full-owner hashes, normalizing the overlapping class references independently.
+The producer DMAs one176-byte row into its existing512-byte temporary allocation;
+no persistent data table or code module needs additional game RAM. The original
+cleanup remains responsible for releasing resources. A64-byte LC05SHOP descriptor
+at z64 27C4000 records the appended6336-byte data allocation and checksums.
+Unknown existing shop patches are rejected before exposing retail stock.
+
+Descriptor version2 retains the final consumable category even when empty. Its
+88-byte selection guard fits the producer's otherwise-unused space and prevents
+confirmation for empty or out-of-range selections. Version1 builds reopen and
+upgrade on export. Tests execute exported producer/splitter/reader/category and
+confirmation paths with guarded4 MiB RAM, including empty shops and maximum
+stock; the normal export also composes with added classes and reopens every row.
+Full-game rendering, navigation and peak memory remain outside those proofs.

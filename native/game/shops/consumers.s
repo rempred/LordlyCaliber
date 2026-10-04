@@ -19,3 +19,8 @@
     lhu $s0, -0x5f28($s0)      /* 19955c: detail ID */
     sll $v0, $v0, 1           /* 19a330: use index */
     lhu $s1, -0x5f28($s1)      /* 19a33c: use ID */
+    nop                       /* 19795c: keep the final consumable category */
+    jal lc_shop_selection_guard /* 197d6c */
+    and $a0, $v0, $a0          /* 197d70: pressed-button mask in delay slot */
+    beq $v0, $zero, .+420      /* 197d74: cancel/navigation at197f18 */
+    nop                       /* unused assembler padding */

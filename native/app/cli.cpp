@@ -48,8 +48,10 @@ int main(int argc, char **argv) {
             lordly::Project::fromRom(lordly::Rom::open(parser.value("rom")),
                                      QJsonDocument::fromJson(catalog.readAll()).object());
         project.loadTexts();
-        if (project.rom().revision() == 0)
+        if (project.rom().revision() == 0) {
             project.loadPromotion();
+            project.loadShops();
+        }
         if (parser.isSet("project")) {
             const auto manifest = lordly::Project::readProject(parser.value("project"));
             if (manifest["format"].toString() == "ob64-patch")
@@ -61,6 +63,7 @@ int main(int argc, char **argv) {
                            {"revision", project.rom().revision()},
                            {"classes", project.records(lordly::Table::Classes).size()},
                            {"items", project.records(lordly::Table::Items).size()},
+                           {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
                            {"changedEntries", project.changedRecords()},
                            {"pendingImportedSections",
                             QJsonArray::fromStringList(project.pendingLegacySections())}};

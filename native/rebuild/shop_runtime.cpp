@@ -14,7 +14,7 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
                         const QString &directory) {
     const auto prior = ShopPlacement::read(rom);
     if (!prior) {
-        verifyShopRuntime(rom, false);
+        verifyShopRuntime(rom, 0);
         if (rom.bytes().mid(ShopPlacement::descriptorOffset, ShopPlacement::descriptorSize) !=
             QByteArray(ShopPlacement::descriptorSize, char(-1)))
             throw Error("Shop descriptor allocation is occupied by another patch");
@@ -42,7 +42,9 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
                                            ShopPlacement::producerOffset + ShopPlacement::slabDelta,
                                            {{"lc_shop_rows", offset}, {"lc_dma_read", 0x8009da50}});
     const auto consumers =
-        compiler.assembleOwner(source("consumers.s"), directory, "shop_consumers", 0x80000000);
+        compiler.assembleOwner(source("consumers.s"), directory, "shop_consumers", 0x80000000,
+                               {{"lc_shop_selection_guard",
+                                 ShopPlacement::producerOffset + ShopPlacement::slabDelta + 72}});
     const auto patches = shopRuntimeCatalog()["patches"].toArray();
     auto fit = [](QByteArray bytes, qsizetype length) {
         if (bytes.size() < length || bytes.mid(length) != QByteArray(bytes.size() - length, 0))
@@ -65,7 +67,7 @@ QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &comp
     }
     QByteArray descriptor(ShopPlacement::descriptorSize, 0);
     descriptor.replace(0, 8, "LC05SHOP");
-    put32(descriptor, 8, 1);
+    put32(descriptor, 8, 2);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, ShopPlacement::dataSize);
     put32(descriptor, 20, ShopPlacement::rowCount);

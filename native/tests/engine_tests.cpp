@@ -124,6 +124,7 @@ class EngineTests : public QObject {
                 const auto result = rebuild(project, tools, build.path());
                 const auto placed = ShopPlacement::read(Rom::fromBytes(result.image));
                 QVERIFY(placed);
+                QCOMPARE(placed->version, 2);
                 QCOMPARE(placed->offset % 16, 0U);
                 auto checksum = result.image;
                 Rom::updateChecksum(checksum);
@@ -155,6 +156,10 @@ class EngineTests : public QObject {
                     auto stock = shops.stock(35);
                     std::reverse(stock.consumables.begin(), stock.consumables.end());
                     shops.setStock(35, stock);
+                    shops.setStock(33, {});
+                    stock = shops.stock(34);
+                    stock.consumables.clear();
+                    shops.setStock(34, stock);
                     reopened.setShops(shops.json());
                 }
                 project = std::move(reopened);

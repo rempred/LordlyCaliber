@@ -12,6 +12,8 @@ const patches=[
   [0x198cdc,'index'],[0x198ce8,'offset'],[0x198f58,'index'],[0x198f60,'load'],
   [0x199550,'index'],[0x19955c,'offset'],[0x19a330,'index'],[0x19a33c,'load']
 ].map(([site,kind])=>({site,kind,original:rom.readUInt32BE(site)}));
+for(const [site,kind] of [[0x19795c,'nop'],[0x197d6c,'guardCall'],[0x197d70,'guardArgs'],[0x197d74,'guardBranch']])
+  patches.push({site,kind,version:2,original:rom.readUInt32BE(site)});
 const owners=[[0x1977e0,0x1989c4],[0x1989c4,0x1994b4],[0x1994b4,0x19a1ac],
   [0x19a294,0x19aa04],[0x19be40,0x19bff0]].map(([start,end])=>{
   const bytes=Buffer.from(rom.subarray(start,end));

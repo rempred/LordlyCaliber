@@ -1,5 +1,6 @@
 #include "rebuild/compiler.h"
 #include "engine/class_text.h"
+#include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
@@ -470,6 +471,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
+    const auto priorShopPlacement = ShopPlacement::read(p.rom());
+    if (priorShopPlacement && priorShopPlacement->version < 2)
+        p.loadShops();
     const bool expandedClasses =
         p.records(Table::Classes).size() > 165 ||
         (p.promotion() && p.promotion()->classCount() != 81) ||
@@ -526,7 +530,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
-    if (p.shops() && p.shops()->modified()) {
+    if (p.shops() &&
+        (p.shops()->modified() || (priorShopPlacement && priorShopPlacement->version < 2))) {
         result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
         result.report << "Compiled shop stock, producer and halfword readers; retained original "
                          "RAM allocations";

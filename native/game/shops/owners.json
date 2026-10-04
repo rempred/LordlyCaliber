@@ -108,6 +108,30 @@
       "site": 1680188,
       "kind": "load",
       "original": 2385617112
+    },
+    {
+      "site": 1669468,
+      "kind": "nop",
+      "version": 2,
+      "original": 272629765
+    },
+    {
+      "site": 1670508,
+      "kind": "guardCall",
+      "version": 2,
+      "original": 4460580
+    },
+    {
+      "site": 1670512,
+      "kind": "guardArgs",
+      "version": 2,
+      "original": 272629865
+    },
+    {
+      "site": 1670516,
+      "kind": "guardBranch",
+      "version": 2,
+      "original": 0
     }
   ]
 }
