@@ -48,6 +48,179 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void creatureRewardsWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadEncounters();
+            const auto original = project.encounters()->json();
+            const auto rewards = project.encounters()->rewards();
+            // Independent search follows halfword keys, first match, and the zero-key fallback.
+            for (int id = 0; id < 256; ++id) {
+                int row = 0;
+                while (u16(rom.bytes(), 0x142258 + row * 8) &&
+                       u16(rom.bytes(), 0x142258 + row * 8) != id)
+                    ++row;
+                for (int s = 0; s < 3; ++s)
+                    QCOMPARE(rewards.row(id).outcomes[s],
+                             int(u16(rom.bytes(), 0x14225a + row * 8 + s * 2)));
+            }
+            auto special = rom.bytes();
+            put16(special, 0x142258,
+                  0x100 | u8(special, 0x142259));          // Nonzero pad is part of the key.
+            put16(special, 0x142258 + 35 * 8 + 2, 0x8001); // Zero key need not mean zero outcomes.
+            const auto specialRewards = CreatureRewards::load(Rom::fromBytes(special));
+            QCOMPARE(specialRewards.row(255).outcomes[0], 0x8001);
+            QCOMPARE(specialRewards.row(u8(special, 0x142259)).outcomes[0], 0x8001);
+            QTemporaryDir build, folder;
+            Compiler compiler(tools);
+            compiler.authenticate();
+            QFile source(":/game/encounters/rewards.s");
+            QVERIFY(source.open(QIODevice::ReadOnly));
+            QCOMPARE(
+                compiler.assembleOwner(CreatureRewards::definitions(0, false) + source.readAll(),
+                                       build.path(), "reward_retail", CreatureRewards::ownerAddress,
+                                       CreatureRewards::services(), true),
+                rom.bytes().mid(0x101ddc, 4388));
+            QCOMPARE(rebuild(project, tools, build.path()).image, rom.bytes());
+            auto model = *project.encounters();
+            for (int id = 0; id < 256; ++id) {
+                CreatureReward row{{(id % 277 + 1) | 0x8000, id % 44 + 1, 0},
+                                   {id % 7, (id * 3) % 11, (id * 5) % 13}};
+                if (id % 5 == 0)
+                    row.weights = {65535, 65535, 65535};
+                if (id % 5 == 1)
+                    row.weights = {0, 0, 1};
+                if (id % 5 == 2)
+                    row.weights = {0, 1, 0};
+                if (id % 5 == 3)
+                    row.weights = {1, 0, 0};
+                if (id % 5 == 4)
+                    row.weights = {1, 2, 3};
+                model.setReward(id, row);
+            }
+            project.setEncounters(model.json());
+            const auto before = project.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     model.setReward(1, CreatureReward{{1, 2, 3}, {0, 0, 0}}));
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     model.setReward(1, CreatureReward{{45, 2, 3}, {1, 1, 1}}));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setReward(256, CreatureReward{}));
+            QCOMPARE(model.json(), project.encounters()->json());
+            auto bad = model.json(), rewardJson = bad["rewards"].toObject();
+            auto rows = rewardJson["rows"].toArray();
+            rows[255] = QJsonObject{};
+            rewardJson["rows"] = rows;
+            bad["rewards"] = rewardJson;
+            QVERIFY_THROWS_EXCEPTION(Error, project.setEncounters(bad));
+            QCOMPARE(project.manifest(), before);
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("rewards.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("rewards.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.encounters()->json(), project.encounters()->json());
+            }
+            const auto result = rebuild(project, tools, build.path());
+            const auto offset = CreatureRewards::placement(Rom::fromBytes(result.image));
+            QVERIFY(offset);
+            QCOMPARE(*offset, quint32(rom.bytes().size()));
+            QCOMPARE(result.image.size(), rom.bytes().size() + 4096);
+            QCOMPARE(result.image.mid(0x142258, 296), rom.bytes().mid(0x142258, 296));
+            auto restoredBytes = result.image.first(rom.bytes().size());
+            restoredBytes.replace(0x101ddc, 4388, rom.bytes().mid(0x101ddc, 4388));
+            restoredBytes.replace(0x27c4100, 64, rom.bytes().mid(0x27c4100, 64));
+            restoredBytes.replace(0x10, 8, rom.bytes().mid(0x10, 8));
+            QCOMPARE(restoredBytes, rom.bytes()); // Entire original image outside the owned ranges.
+            auto checksum = result.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, result.image);
+            QTemporaryDir output(
+                QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-rewards-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, target);
+            auto reopened = Project::fromRom(Rom::open(target));
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->json(), model.json());
+            atomicWrite(output.filePath("rewards.json"),
+                        QJsonDocument(QJsonObject{{"rom", target},
+                                                  {"rewards", model.rewards().json()},
+                                                  {"sourceRom", path},
+                                                  {"dataOffset", double(*offset)}})
+                            .toJson());
+            qInfo().noquote() << "Creature rewards candidate:" << output.filePath("rewards.json");
+            auto changed = *reopened.encounters();
+            changed.setReward(255, CreatureReward{{0x8115, 44, 0}, {65535, 0, 1}});
+            reopened.setEncounters(changed.json());
+            const auto next = rebuild(reopened, tools, build.path());
+            QCOMPARE(next.image.size(), result.image.size());
+            QCOMPARE(CreatureRewards::placement(Rom::fromBytes(next.image)), offset);
+            QCOMPARE(CreatureRewards::load(Rom::fromBytes(next.image)).row(255).json(),
+                     changed.rewards().row(255).json());
+            QCOMPARE(reopened.appendClass(1, "Reward tester"), 165);
+            auto expanded = *reopened.encounters();
+            expanded.setPair(45, 9, 165, 0, 166);
+            reopened.setEncounters(expanded.json());
+            const auto grown = rebuild(reopened, tools, build.path());
+            auto grownProject = Project::fromRom(Rom::fromBytes(grown.image));
+            grownProject.loadEncounters();
+            QCOMPARE(grownProject.records(Table::Classes).size(), 166);
+            QCOMPARE(grownProject.encounters()->rewards().row(165).json(),
+                     model.rewards().row(165).json());
+            const int firstClass = u8(rom.bytes(), 0x142259);
+            const QJsonObject legacy{
+                {"format", "ob64-patch"},
+                {"version", 36},
+                {"patches",
+                 QJsonObject{{"creatureDrops",
+                              QJsonObject{{"0", QJsonObject{{"record_index", 0},
+                                                            {"classId", firstClass},
+                                                            {"padByte", 0},
+                                                            {"slots", QJsonArray{0x8115, 44, 0}},
+                                                            {"weights", QJsonArray{0, 65535, 1}},
+                                                            {"weights_modified", true}}}}}}}};
+            auto imported = Project::fromRom(rom);
+            imported.importLegacy(legacy);
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            const CreatureReward importedReward{{0x8115, 44, 0}, {0, 65535, 1}};
+            QCOMPARE(imported.encounters()->rewards().row(firstClass).json(),
+                     importedReward.json());
+            auto merged = Project::fromRom(Rom::fromBytes(result.image));
+            merged.importLegacy(legacy);
+            QCOMPARE(merged.encounters()->rewards().row(firstClass).json(), importedReward.json());
+            QCOMPARE(merged.encounters()->rewards().row(255).json(),
+                     model.rewards().row(255).json());
+            imported.setEncounters(original);
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(imported.manifest());
+            QCOMPARE(restored.encounters()->json(), original);
+            auto oldNative = imported.manifest();
+            auto oldEncounters = oldNative["encounters"].toObject();
+            oldEncounters.remove("rewards");
+            oldNative["encounters"] = oldEncounters;
+            restored.applyManifest(oldNative);
+            QCOMPARE(restored.encounters()->rewards().row(firstClass).weights[1], 65535);
+            for (const auto at : {0x101e00, 0x102488, 0x27c4100 + 28, int(*offset) + 10}) {
+                auto corrupt = result.image;
+                corrupt[at] ^= 1;
+                QVERIFY_THROWS_EXCEPTION(Error, CreatureRewards::load(Rom::fromBytes(corrupt)));
+            }
+            auto occupied = rom.bytes();
+            occupied[0x27c4100] = 'X';
+            auto blocked = Project::fromRom(Rom::fromBytes(occupied));
+            blocked.loadEncounters();
+            blocked.setEncounters(model.json());
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(blocked, tools, build.path()));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void encounterRateSourceExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

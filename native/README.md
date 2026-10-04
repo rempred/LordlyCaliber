@@ -34,8 +34,12 @@ Encounters exposes all45 pools, their shared scenario references, and32 terrain
 rates/slots. Pools can use added classes, be copied, or restored. Global rates
 provide independent normal/alternate rolls, including zero and full chance for
 that check; terrain and unit checks still follow. Their dispatcher rebuild fits
-its original code allocation. Scenario overrides, custom neutral squads and
-encounter battle/reward editing are still being migrated.
+its original code allocation. Class rewards provide three weighted outcomes per
+class, including added classes, with copy/restore and undo. Choose equipment,
+consumables, or None; zero weights exclude an outcome. Their selector rebuild
+also fits its original function and uses temporary stack space for one ROM row.
+Scenario overrides, custom neutral squads and other encounter battle controls
+are still being migrated.
 
 For scripting:
 

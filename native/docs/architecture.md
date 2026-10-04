@@ -366,3 +366,50 @@ or prove the RNG's full-period distribution. Tests execute576 original RNG steps
 and108 state-flag/RNG boundary cases across the original and five native builds.
 Whole-image export checks retain all bytes outside the dispatcher, and project
 and UI tests cover legacy imports, restoration, linking, invalid values and undo.
+
+Creature rewards retain the original296-byte table at z640x142258 and derive
+effective class outcomes using the game's first matching halfword key. A zero
+key terminates the search; unlisted classes select that row's three outcomes,
+even if those outcomes are nonzero. The pad byte is the key's high byte. This
+preserves behavior that an all-zero-row sentinel test would miss. Partial browser
+imports update only affected effective classes, preserving unrelated native
+rewards. Canonical native state prevents retained imports from undoing restoration.
+
+The rebuilt table covers all256 byte-sized IDs in4,096 ROM bytes. Each16-byte row
+contains three big-endian reward halfwords, three unsigned weight halfwords and
+four reserved zero bytes. Weight totals must be positive; zero-weight outcomes
+are unreachable. Reward zero with positive weight is a no-reward outcome.
+Equipment uses bit15 with IDs1..277; consumables use IDs1..44. The original
+inventory's40 consumable entries are capacity slots, not a maximum item ID.
+
+The maintained mission-mode owner is accepted ASM func_00101DDC.s; accepted C
+is not available for it. The generation check compiles all1,097 instructions to
+the exact4,388 original bytes. Overlay descriptor7 proves z64101DDC maps to
+RAM801AD69C; nominal ASM comments are not used for placement. Native mode
+replaces only the120-byte class-reward selector at z6410245C..1024D4. It calls
+the existing synchronous DMA wrapper for one row, calls the existing RNG once,
+and selects a reward by cumulative weights. All other instruction positions stay
+unchanged, including the normal mission-drop path and later reward eligibility.
+
+The row occupies frame offsets0x20..0x2F inside the original0x50-byte stack
+frame. This region is otherwise unused, remains at least8-byte aligned, and
+does not share cache lines with saved registers starting at0x38 for either o32
+stack alignment. The existing DMA wrapper uses its own temporary0x40-byte frame.
+No added persistent RAM, module loader or tail-code hook is needed. PI transfer,
+cache hardware and full-battle behavior still require game-level validation.
+
+A64-byte LC05REWD descriptor at z6427C4100 authenticates the appended16-aligned
+data allocation, full rebuilt owner and header with CRC32. The data range is
+bounded by0x2800000..0x4000000 and reused on subsequent exports. Two address
+halves are normalized for the maintained owner hash; the overlay descriptor and
+DMA wrapper are also authenticated. Unrecognized existing selection code fails
+before exposing misleading retail settings. Data and code compile at user export.
+
+Validation covers no-op byte identity, independent retail lookup expectations,
+folder/archive round trips, canonical restoration, partial browser imports into
+an already rebuilt ROM, full-image conservation, checksums, allocation reuse,
+tampering, collisions and composition with added classes. Desktop checks exercise
+the controls and undo. Instruction checks execute2,560 retail and2,978 native
+cases across all256 IDs, zero/max weights and both stack alignments, including
+the original DMA wrapper and guarded caller state in4 MiB modeled RAM. The lower
+PI transfer and RNG call are controlled services in the reward selection check.

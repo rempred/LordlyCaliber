@@ -23,6 +23,12 @@ class EncounterEditor : public QWidget {
     void changeTerrain(int terrain);
     void showGlobalRatio();
     void applyGlobalRate(bool restore);
+    QWidget *createRewardsPage();
+    void refreshRewardClasses();
+    void showReward();
+    void showRewardOdds();
+    void applyReward(bool restore);
+    void filterRewards();
     void commit(const Encounters &next, const QString &label);
     int selected() const;
     Project *project_;
@@ -37,5 +43,13 @@ class EncounterEditor : public QWidget {
     QDoubleSpinBox *divisor_, *normalPass_, *alternatePass_;
     QCheckBox *linkedRates_;
     QLabel *globalRatio_ = nullptr, *globalNotice_ = nullptr;
+    QListWidget *rewardClasses_ = nullptr;
+    QLineEdit *rewardSearch_ = nullptr;
+    QComboBox *rewardCopyFrom_ = nullptr;
+    QVector<QComboBox *> rewardItems_;
+    QVector<QSpinBox *> rewardWeights_;
+    QVector<QLabel *> rewardOdds_;
+    QLabel *rewardNotice_ = nullptr;
+    QWidget *rewardDetails_ = nullptr;
 };
 } // namespace lordly

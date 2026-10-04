@@ -2,6 +2,7 @@
 #include "engine/class_text.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/creature_rewards.h"
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/shop_runtime.h"
@@ -534,6 +535,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
     if (p.encounters() && p.encounters()->modified()) {
+        if (p.encounters()->rewards().modified()) {
+            result.image = rebuildCreatureRewards(Rom::fromBytes(result.image),
+                                                  p.encounters()->rewards(), compiler, directory);
+            result.report << "Compiled weighted creature rewards for every byte-sized class ID; "
+                             "selection stays inside its original function and stack frame";
+        }
         Encounters::verifyReader(p.rom());
         auto write = [&](const QByteArray &bytes, int offset, const QString &name) {
             const auto built = compiler.compileData(bytes, directory, name);

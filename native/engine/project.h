@@ -113,6 +113,7 @@ class Project {
     void importLegacyConsumableEffects(const QJsonObject &object);
     void importLegacyEncounters(const QJsonObject &object);
     void importLegacyGlobalRate(const QJsonObject &object);
+    void importLegacyRewards(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;

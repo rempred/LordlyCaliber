@@ -201,6 +201,7 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     connect(applyGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(false); });
     connect(restoreGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(true); });
     tabs->addTab(globalPage, "Global rates");
+    tabs->addTab(createRewardsPage(), "Class rewards");
     for (int id = 1; id <= Encounters::poolCount; ++id) {
         auto item = new QListWidgetItem(project_->encounters()->label(id), pools_);
         item->setData(Qt::UserRole, id);
@@ -284,6 +285,7 @@ void EncounterEditor::refresh() {
     alternatePass_->setEnabled(!linkedRates_->isChecked());
     showGlobalRatio();
     globalNotice_->clear();
+    refreshRewardClasses();
 }
 void EncounterEditor::showGlobalRatio() {
     // Construction sets ranges before the remaining controls exist.

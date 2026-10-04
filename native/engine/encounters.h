@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/creature_rewards.h"
 #include "engine/encounter_rate.h"
 #include "engine/rom.h"
 #include <QJsonObject>
@@ -29,6 +30,15 @@ class Encounters {
     void importLegacyGlobalRate(const QJsonObject &value) {
         globalRate_.importLegacy(value);
     }
+    const CreatureRewards &rewards() const {
+        return rewards_;
+    }
+    void setReward(int id, const CreatureReward &value) {
+        rewards_.setRow(id, value);
+    }
+    void importLegacyRewards(const QJsonObject &value) {
+        rewards_.importLegacy(value);
+    }
     const QByteArray &poolBytes() const {
         return pools_;
     }
@@ -51,5 +61,6 @@ class Encounters {
     QVector<QVector<int>> keys_;
     QMap<int, QString> names_;
     EncounterRate globalRate_;
+    CreatureRewards rewards_;
 };
 } // namespace lordly

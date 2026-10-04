@@ -15,13 +15,14 @@
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
-#include <QTableView>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
@@ -54,6 +55,64 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void creatureRewardEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadEncounters();
+        project.appendClass(1, "New reward class");
+        QUndoStack undo;
+        EncounterEditor editor(&project, &undo, [] {});
+        editor.resize(1250, 760);
+        editor.show();
+        auto classes = editor.findChild<QListWidget *>("rewardClasses");
+        QCOMPARE(classes->count(), 165);
+        editor.findChild<QLineEdit *>("rewardSearch")->setText("New reward class");
+        QCOMPARE(classes->currentItem()->data(Qt::UserRole).toInt(), 165);
+        auto item = editor.findChild<QComboBox *>("rewardItem_0");
+        auto first = editor.findChild<QSpinBox *>("rewardWeight_0");
+        auto second = editor.findChild<QSpinBox *>("rewardWeight_1");
+        auto third = editor.findChild<QSpinBox *>("rewardWeight_2");
+        auto apply = editor.findChild<QPushButton *>("rewardApply");
+        const auto original = project.encounters()->json();
+        item->setCurrentIndex(item->findData(0x8115));
+        first->setValue(65535);
+        second->setValue(0);
+        third->setValue(1);
+        apply->click();
+        QCOMPARE(project.encounters()->rewards().row(165).outcomes[0], 0x8115);
+        QCOMPARE(project.encounters()->rewards().row(165).weights[0], 65535);
+        undo.undo();
+        QCOMPARE(project.encounters()->json(), original);
+        undo.redo();
+        QCOMPARE(first->value(), 65535);
+        const auto before = project.manifest();
+        first->setValue(0);
+        third->setValue(0);
+        apply->click();
+        QCOMPARE(project.manifest(), before);
+        QVERIFY(!editor.findChild<QLabel *>("rewardNotice")->text().isEmpty());
+        editor.findChild<QPushButton *>("rewardRestore")->click();
+        QCOMPARE(project.encounters()->json(), original);
+        auto copy = editor.findChild<QComboBox *>("rewardCopySource");
+        copy->setCurrentIndex(copy->findData(0x30));
+        editor.findChild<QPushButton *>("rewardCopy")->click();
+        QCOMPARE(project.encounters()->rewards().row(165).json(),
+                 project.encounters()->rewards().row(0x30).json());
+        editor.findChild<QPushButton *>("rewardClear")->click();
+        QCOMPARE(project.encounters()->rewards().row(165).json(), CreatureReward{}.json());
+        undo.undo();
+        editor.findChild<QTabWidget *>()->setCurrentWidget(
+            editor.findChild<QWidget *>("creatureRewardsPage"));
+        QVERIFY(editor.grab().save("native/build/Release/creature-rewards.png"));
+        editor.findChild<QLineEdit *>("rewardSearch")->setText("No class with this name");
+        QVERIFY(!classes->currentItem());
+        QVERIFY(!apply->isEnabled());
+        editor.findChild<QLineEdit *>("rewardSearch")->clear();
+        QVERIFY(classes->currentItem());
+        QVERIFY(apply->isEnabled());
     }
     void encounterGlobalRateEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

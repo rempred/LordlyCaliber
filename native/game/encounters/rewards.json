@@ -1,0 +1,50 @@
+{
+  "generator": "native/tools/generate-reward-source.cjs",
+  "input": "Accepted Decomp ASM func_00101DDC.s; US Rev0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "start": 1056220,
+  "size": 4388,
+  "address": 2149242524,
+  "retailSha256": "c5acea948826a375733e5b80ff794d86b3b45e070262aac196278054e06049f2",
+  "nativeMaskedSha256": "07168c567d988164a231293eef88b9046c0cb73dacb53a3a7a0627b0a65d298f",
+  "calls": {
+    "service_8009da50": 2148129360,
+    "service_8020ce00": 2149633536,
+    "service_80186190": 2149081488,
+    "service_800ea6b0": 2148443824,
+    "service_80172394": 2149000084,
+    "service_801dcc48": 2149436488,
+    "service_801d5238": 2149405240,
+    "service_801d5910": 2149406992,
+    "service_80093380": 2148086656,
+    "service_801bf4e8": 2149315816,
+    "service_80070f30": 2147946288,
+    "service_801b0d58": 2149256536,
+    "service_801c4d14": 2149338388,
+    "service_801d935c": 2149421916,
+    "service_801da0a8": 2149425320,
+    "service_801b2d2c": 2149264684,
+    "service_80092a60": 2148084320,
+    "service_801d92d0": 2149421776,
+    "service_801dd2b0": 2149438128,
+    "service_801de440": 2149442624,
+    "service_801dc720": 2149435168,
+    "service_801dc054": 2149433428,
+    "service_80186210": 2149081616,
+    "service_801dadf0": 2149428720,
+    "service_8009dd38": 2148130104,
+    "service_8007938c": 2147980172,
+    "service_8020e9a4": 2149640612,
+    "service_80093060": 2148085856,
+    "service_801ad5a0": 2149242272
+  },
+  "dma": {
+    "start": 187984,
+    "size": 164,
+    "sha256": "79ddc6b13a2f99f11cf43c28a4de9889b58544b131d4883f437aa7b3f885396d"
+  },
+  "overlay": {
+    "start": 231640,
+    "size": 40,
+    "sha256": "45171bd5fe26dcefc5aa6b58302107c3cc362b5fe5da0e4e9fabd095bf3bf4f2"
+  }
+}
