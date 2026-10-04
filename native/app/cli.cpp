@@ -1,3 +1,4 @@
+#include "engine/director.h"
 #include "engine/project.h"
 #include "rebuild/compiler.h"
 #include <QCommandLineParser>
@@ -24,6 +25,8 @@ int main(int argc, char **argv) {
          {{"p", "project"}, "Project manifest, folder or archive to apply.", "path"},
          {{"o", "output"}, "Export destination. Omit to inspect only.", "path"},
          {"report", "Write inspection/build results as JSON.", "path"},
+         {"directors", "Inspect the ROM's Director resource directory."},
+         {"scene", "Inspect commands at a Director z64 payload offset (hex).", "offset"},
          {"tools", "N64 compiler directory. Defaults to the portable bundle.", "path"}});
     parser.process(app);
     if (!parser.isSet("rom"))
@@ -74,6 +77,49 @@ int main(int argc, char **argv) {
             {"changedEntries", project.changedRecords()},
             {"pendingImportedSections",
              QJsonArray::fromStringList(project.pendingLegacySections())}};
+        if (parser.isSet("directors") || parser.isSet("scene")) {
+            const auto directors = lordly::Directors::load(project.rom());
+            QJsonObject classes;
+            int commandCount = 0;
+            for (const auto &r : directors.entries()) {
+                const auto key = QString::number(r.program.resourceClass());
+                classes[key] = classes[key].toInt() + 1;
+                commandCount += int(r.program.commands.size());
+            }
+            report["directors"] = QJsonObject{{"selectors", directors.selectors().size()},
+                                              {"streams", directors.entries().size()},
+                                              {"commands", commandCount},
+                                              {"resourceClasses", classes}};
+            if (parser.isSet("scene")) {
+                bool valid = false;
+                const auto offset = parser.value("scene").toUInt(&valid, 16);
+                if (!valid || offset < 0x594284)
+                    throw lordly::Error("Enter a Director z64 payload offset in hexadecimal");
+                const auto scene = directors.entries().constFind(offset - 0x594284);
+                if (scene == directors.entries().end())
+                    throw lordly::Error("No Director stream has that z64 payload offset");
+                QJsonArray commands, selectors;
+                for (int selector : scene->selectors)
+                    selectors.append(selector);
+                for (const auto &command : scene->program.commands) {
+                    const auto definition = lordly::Directors::grammar().value(command.opcode);
+                    QJsonArray operands;
+                    for (int i = 0; i < command.operands.size(); ++i)
+                        operands.append(QJsonObject{{"role", definition.operands.value(i)},
+                                                    {"value", qint64(command.operands[i])}});
+                    commands.append(QJsonObject{{"word", command.word},
+                                                {"opcode", qint64(command.opcode)},
+                                                {"name", definition.name},
+                                                {"operands", operands}});
+                }
+                report["scene"] = QJsonObject{{"name", scene->name},
+                                              {"z64PayloadOffset", qint64(offset)},
+                                              {"resourceKey", qint64(scene->key)},
+                                              {"selectors", selectors},
+                                              {"resourceClass", scene->program.resourceClass()},
+                                              {"commands", commands}};
+            }
+        }
         if (parser.isSet("output")) {
             auto root = parser.value("tools");
             if (root.isEmpty())

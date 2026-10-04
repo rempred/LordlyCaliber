@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+The native Director reader follows the selector directory at z64 0x1F3CA84,
+deduplicates resource keys, decodes the current ROM's custom-LZ envelopes and
+preserves every command and operand word. All 1,498 retail streams behind 1,693
+selector slots agree with the earlier independent decoded hashes; 193,771
+commands round-trip without changes. The 154-command grammar is regenerated
+from the maintained recovered dispatcher C, checked against semantic operand
+descriptions from the browser feature reference. No user Decomp checkout or
+JavaScript runtime is required. `LordlyCaliber-cli --scene 01FA8BF4` inspects the
+282 commands at that z64 payload address (selector 1066, resource class 1).
+
+Recovered sources `game/director/func_00284288.c` and `func_002861C8.c` come from
+Decomp commit `8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8`. Their original 32-bit
+pointer casts are retained for source provenance. `control_flow.c` adapts the
+condition scanner to bounded arrays and is compiled into the PC engine. Raw
+word scanning, signed comparisons, nesting and native result -1 are preserved;
+bounded host exhaustion is a separate error and leaves caller state intact.
+Hand-specified comparison, nested-bridge, operand-marker and malformed-input
+cases pass. This is not a whole-dispatcher execution or full scene playback
+claim. The original dispatcher is currently the structural grammar source;
+its service calls, render paths and timing still require PC adaptation.
+
 The engine decodes native `64` image containers into RGBA bytes without Widgets
 or browser dependencies. RGBA5551, RGBA32, CI4, CI8, I4 and I8 preserve the game's
 padded storage rows while producing only the visible pixels. Dimensions, payload
