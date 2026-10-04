@@ -11,7 +11,11 @@ and window/control queries, and follows Actor anchors in the post-Director stage
 Missing projection suspends that stage without replaying Director commands when
 it resumes. The composition check passes (96 ms), comparing normal execution with
 one-command/one-stage budgets; existing scene composition still passes (93 ms).
-BF creation remains external until its shared name-context effects are connected.
+BF creation now prepares shared name context when current roster/group records
+are supplied. Missing context or projection retains the command and all prior
+window/context bytes; the recovery check passes (93 ms). Ordinary automatic
+portrait lookup retains the unresolved boundary described below; explicit
+portraits, known absent actors and linked army row portraits are supported.
 The first composition fixture incorrectly ended with a padding word; replacing it
 with the native terminal-hold word fixed the fixture.
 
@@ -40,6 +44,25 @@ helpers are controlled. An independent browser LH5 decoder agrees on all 348
 populated archives / 4,569 byte-exact entries from 503 selectors. Malformed
 directory/envelope/checksum and missing-context/exhaustion rollback checks pass.
 No emulator, text layout or full-scene rendering claim follows from these checks.
+
+`SceneDialogueContext` implements shared speaker references, 64-byte owner/group
+name workspaces and the shared text parameter. Guest records precede army records
+for fallback speaker lookup. Owner names append every matching override; group
+names append only the first. Non-mode-two creation preserves the previous owner
+reference, and absent names do not clear retained workspaces. Native pointer
+identities are represented by typed host references.
+
+All 480 original shared-name sequences / 960 reference/workspace snapshots pass,
+including duplicate overrides, full-word owner comparisons, missing actors,
+mode changes and absent group names (1,590 ms including the composition check).
+String copy/append, allocation, registration and projection are controlled. Bounds
+and overflow failures preserve the previous context. The initial reference load
+omitted the text-parameter reset's delay-slot store; its corrected full range passes.
+
+Source mapping: descriptor 14 maps ROM 283808/283B6C/283C8C to RAM
+80227838/80227B9C/80227CBC. The initial reset adapts accepted `func_0004e434.c`
+at Decomp 50aed758; the qualified cold-boot slab maps ROM 4E434..4E448 to
+RAM 80178534. These mappings differ from the Actor slab.
 
 The desktop Cutscenes workspace includes a read-only Dialogue source page with
 archive/entry selection and search across exact control-bearing source. Double-click

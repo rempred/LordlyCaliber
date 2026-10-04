@@ -19,6 +19,170 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void creationResumesWithCurrentContext() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto bytes = Rom::open(path).bytes();
+        const QVector<quint32> words{0xbf, 3,   0, 0,           0,           0,
+                                     10,   192, 1, 1,           1,           0xffffffffU,
+                                     1,    0,   0, 0x80000000U, 0x1a,        0x1007b,
+                                     6,    3,   0, 0x80000000U, 0x80000001U, 0xff000001U};
+        QByteArray raw(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(raw, i * 4, words[i]);
+        const auto packed = encodeLzss(raw);
+        constexpr int at = 0x2700000;
+        put32(bytes, at, quint32(packed.size() + 4));
+        put32(bytes, at + 4, quint32(raw.size()));
+        bytes.replace(at + 8, packed.size(), packed);
+        put32(bytes, 0x1f3ca84, 4);
+        put32(bytes, 0x1f3ca88, at - 0x594280);
+        const auto rom = Rom::fromBytes(bytes);
+        ScenePlayback playback(rom, Directors::load(rom), 0, {}, SceneCameras::freshModeTwo(rom));
+        SceneResources pool({8, 0xffff, 13});
+        SceneDialogue windows(0);
+        windows.setControl(0, 42);
+        const auto before = poolBytes(pool);
+        playback.supplyDialogue(pool, windows);
+        auto emptyDomains = [](LordlySceneService) { return true; };
+        QCOMPARE(playback.advance(emptyDomains), ScenePlayback::Suspended);
+        QCOMPARE(playback.pendingService(), std::optional{LORDLY_SCENE_DIRECTOR});
+        QVERIFY(playback.reason().contains("roster"));
+        QCOMPARE(poolBytes(playback.dialogue()->resources), before);
+        DialogueNameInputs inputs;
+        inputs.army = QByteArray(5600, 0);
+        inputs.guests = QByteArray(5200, 0);
+        inputs.groups = QByteArray(25, 0);
+        inputs.fixedName = QByteArray("Joe\0", 4);
+        inputs.defaultTextParameter = 65530;
+        inputs.army.replace(0, 6, "Player");
+        put8(inputs.army, 0x11, 81);
+        playback.dialogue()->context = SceneDialogueContext(inputs);
+        playback.dialogue()->context->setTextParameter(7);
+        QCOMPARE(playback.advance(emptyDomains), ScenePlayback::Suspended);
+        QVERIFY(playback.reason().contains("projection"));
+        QCOMPARE(poolBytes(playback.dialogue()->resources), before);
+        QCOMPARE(playback.dialogue()->context->textParameter(), 7);
+        QCOMPARE(playback.dialogue()->windows.control(0), 42);
+        playback.dialogue()->project = [](int) -> std::optional<QPointF> { return std::nullopt; };
+        QCOMPARE(playback.advance(emptyDomains), ScenePlayback::Advanced);
+        QCOMPARE(playback.completedUpdates(), 1U);
+        QCOMPARE(playback.dialogue()->context->textParameter(), 65530);
+        QCOMPARE(playback.dialogue()->context->name(0), QByteArray("Player"));
+        QCOMPARE(playback.dialogue()->context->name(1), QByteArray("Player"));
+        QCOMPARE(playback.dialogue()->context->name(2), QByteArray("Joe"));
+        QCOMPARE(playback.dialogue()->windows.control(0), 0);
+        QCOMPARE(u16(playback.dialogue()->resources.record(0), 0x92), 1);
+        QVERIFY(!playback.dialogue()->resources.active(1)); // One creation after two suspensions.
+        QCOMPARE(playback.advance(emptyDomains), ScenePlayback::Advanced);
+        QCOMPARE(playback.dialogue()->context->textParameter(), 123);
+        QVERIFY(u8(playback.dialogue()->resources.record(0), 0x8a) & 2);
+    }
+    void sharedNamesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-context-mips.cjs"),
+                                 path, work.filePath("names.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("names.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        const auto cases = root["results"].toArray(), patterns = root["patterns"].toArray();
+        QCOMPARE(cases.size(), 480);
+        auto inputsFor = [&](int index) {
+            const auto p = patterns[index].toObject();
+            DialogueNameInputs inputs;
+            inputs.army = QByteArray::fromHex(p["army"].toString().toLatin1());
+            inputs.guests = QByteArray::fromHex(p["guests"].toString().toLatin1());
+            inputs.groups = QByteArray::fromHex(p["groups"].toString().toLatin1());
+            inputs.fixedName = p["fixed"].toString().toLatin1();
+            inputs.currentGroup = quint8(p["currentGroup"].toInt());
+            inputs.defaultTextParameter = quint16(p["defaultTextParameter"].toInt());
+            for (const auto &v : p["overrides"].toArray()) {
+                const auto o = v.toObject();
+                inputs.overrides << DialogueNameOverride{quint8(o["selector"].toInt()),
+                                                         o["text"].toString().toLatin1()};
+            }
+            return inputs;
+        };
+        auto compare = [&](const SceneDialogueContext &context, const QJsonObject &expected) {
+            QCOMPARE(context.ownerWorkspace().toHex(), expected["owner"].toString().toLatin1());
+            QCOMPARE(context.groupWorkspace().toHex(), expected["group"].toString().toLatin1());
+            QCOMPARE(context.textParameter(), expected["textParameter"].toInt());
+            const auto refs = expected["references"].toArray();
+            for (int i = 0; i < 4; ++i) {
+                const auto ref = context.reference(i);
+                quint32 address = 0;
+                switch (ref.kind) {
+                case SceneDialogueContext::Kind::Absent:
+                    break;
+                case SceneDialogueContext::Kind::Army:
+                    address = 0x80193bc0 + ref.index * 56;
+                    break;
+                case SceneDialogueContext::Kind::Guest:
+                    address = 0x80195560 + ref.index * 52;
+                    break;
+                case SceneDialogueContext::Kind::OwnerWorkspace:
+                    address = 0x8022ac00;
+                    break;
+                case SceneDialogueContext::Kind::GroupWorkspace:
+                    address = 0x8022ac40;
+                    break;
+                case SceneDialogueContext::Kind::Fixed:
+                    address = 0x80196a58;
+                    break;
+                }
+                QCOMPARE(address, quint32(refs[i].toDouble()));
+            }
+        };
+        for (const auto &value : cases) {
+            const auto c = value.toObject();
+            SceneDialogueContext context(inputsFor(c["pattern"].toInt()));
+            QByteArray actor(336, 0), row(248, 0);
+            put8(row, 0xf6, 5);
+            put32(row, 0x48, 84);
+            context.prepare(2, actor, row);
+            compare(context, c["first"].toObject());
+            if (QTest::currentTestFailed())
+                return;
+            QCOMPARE(context.name(1), QByteArray("Army5-one-two"));
+            QCOMPARE(context.name(2), QByteArray("Fixed"));
+            context.setTextParameter(123);
+            context.prepare(c["mode"].toInt(),
+                            QByteArray::fromHex(c["actor"].toString().toLatin1()),
+                            QByteArray::fromHex(c["row"].toString().toLatin1()));
+            compare(context, c["second"].toObject());
+            if (QTest::currentTestFailed())
+                return;
+        }
+        auto inputs = inputsFor(1);
+        SceneDialogueContext valid(inputs);
+        QByteArray actor(336, 0), row(248, 0);
+        put32(row, 0x48, 84);
+        put8(row, 0xf6, 5);
+        valid.prepare(2, actor, row);
+        const auto owner = valid.ownerWorkspace(), group = valid.groupWorkspace();
+        valid.setTextParameter(0x1007b);
+        put8(row, 0xf6, 200);
+        QVERIFY_THROWS_EXCEPTION(Error, valid.prepare(2, actor, row));
+        QCOMPARE(valid.ownerWorkspace(), owner);
+        QCOMPARE(valid.groupWorkspace(), group);
+        QCOMPARE(valid.textParameter(), 123);
+        QCOMPARE(valid.name(1), QByteArray("Army5-one-two"));
+        inputs.overrides[1].text = QByteArray(64, 'A') + '\0';
+        SceneDialogueContext tooLong(inputs);
+        put8(row, 0xf6, 5);
+        QVERIFY_THROWS_EXCEPTION(Error, tooLong.prepare(2, actor, row));
+        QCOMPARE(tooLong.ownerWorkspace(), QByteArray(64, 0));
+        QCOMPARE(tooLong.reference(0).kind, SceneDialogueContext::Kind::Absent);
+    }
     void playbackTracksWindowsAcrossSuspension() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

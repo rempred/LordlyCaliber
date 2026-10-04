@@ -23,6 +23,43 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
     if (dialogue_) {
         auto &state = *dialogue_;
         switch (opcode) {
+        case 0xbf: {
+            if (args.size() != 13)
+                throw Error("Dialogue creation command is truncated");
+            if (!state.context)
+                throw Error("Dialogue creation requires current roster and text context");
+            auto next = state;
+            const auto &actor = actors_.actor(qint32(args[3]));
+            const auto record = actor ? actor->record() : QByteArray{};
+            QByteArray row;
+            if (schedule_.mode == 2 && actor && u8(record, 0x147) < 20)
+                row = actors_.bodyRow(u8(record, 0x147));
+            next.context->prepare(schedule_.mode, record, row);
+            auto portrait = next.portrait;
+            if (!portrait)
+                portrait = [this](int slot) -> qint32 {
+                    const auto &owner = actors_.actor(slot);
+                    if (!owner)
+                        return -1;
+                    const auto bytes = owner->record();
+                    const auto identity = u8(bytes, 0x147);
+                    if (identity == 255)
+                        throw Error("Automatic ordinary-actor portraits require a qualified "
+                                    "current lookup table");
+                    const auto value = u32(actors_.bodyRow(identity), 0x48);
+                    return value ? qint16(value) : -1;
+                };
+            next.windows.create(args, next.resources, next.project, portrait);
+            state = std::move(next);
+            return true;
+        }
+        case 0x1a:
+            if (!state.context)
+                throw Error("Dialogue text parameter requires current shared context");
+            if (args.size() != 1)
+                throw Error("Dialogue text parameter command is truncated");
+            state.context->setTextParameter(args[0]);
+            return true;
         case 5:
         case 6:
             if (args.size() != 1)

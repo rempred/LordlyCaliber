@@ -3,6 +3,7 @@
 #include "engine/scene_actors.h"
 #include "engine/scene_camera.h"
 #include "engine/scene_dialogue.h"
+#include "engine/scene_dialogue_context.h"
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
@@ -19,6 +20,8 @@ struct SceneDialogueState {
     SceneResources resources;
     SceneDialogue windows;
     SceneDialogue::Project project;
+    std::optional<SceneDialogueContext> context;
+    SceneDialogue::Portrait portrait;
 };
 // One normal/alternate Actor-scene scheduler invocation, not a video frame.
 // Rendering and the fade's independent permanent-scheduler slot remain separate.
