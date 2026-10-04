@@ -28,9 +28,21 @@ int main(int argc, char **argv) {
          {"directors", "Inspect the ROM's Director resource directory."},
          {"scene", "Inspect commands at a Director z64 payload offset (hex).", "offset"},
          {"tools", "N64 compiler directory. Defaults to the portable bundle.", "path"}});
-    parser.process(app);
-    if (!parser.isSet("rom"))
-        parser.showHelp(2);
+    // Qt's automatic help/error exit may open a Windows dialog when the
+    // executable is run with redirected handles. This entry point is a CLI.
+    if (!parser.parse(app.arguments())) {
+        QTextStream(stderr) << parser.errorText() << '\n';
+        return 2;
+    }
+    const bool help = parser.isSet("help") || parser.isSet("help-all");
+    if (help || (!parser.isSet("rom") && !parser.isSet("version"))) {
+        QTextStream(stdout) << parser.helpText();
+        return help ? 0 : 2;
+    }
+    if (parser.isSet("version")) {
+        QTextStream(stdout) << app.applicationName() << ' ' << app.applicationVersion() << '\n';
+        return 0;
+    }
     try {
         const auto sourcePath = QFileInfo(parser.value("rom")).canonicalFilePath();
         auto samePath = [](const QString &a, const QString &b) {
