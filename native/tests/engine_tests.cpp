@@ -48,6 +48,159 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void residentCustomAllocation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and authenticated compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto classes = ClassData::load(rom);
+            QTemporaryDir build;
+            Compiler compiler(tools);
+            compiler.authenticate();
+            QFile sourceFile(":/game/encounters/custom.c"),
+                headerFile(":/game/encounters/custom.h");
+            QVERIFY(sourceFile.open(QIODevice::ReadOnly));
+            QVERIFY(headerFile.open(QIODevice::ReadOnly));
+            const auto source = sourceFile.readAll(), header = headerFile.readAll();
+            CompiledModule custom;
+            quint32 state = 0;
+            bool fillAllocation = false;
+            auto resident = [&](quint32 begin, quint32 capacity) {
+                QMap<QString, quint32> symbols{{"lc_custom_state", begin + capacity - 144},
+                                               {"lc_custom_index", 0x2900000},
+                                               {"lc_staged_scenario", 0x8018f481},
+                                               {"lc_character_records", 0x80195560},
+                                               {"lc_dma_read", 0x8009da50},
+                                               {"lc_random", 0x80092a60},
+                                               {"lc_character_create", 0x801d0840}};
+                custom = compiler.compileModule(source, build.path(), "custom_resident", begin,
+                                                {{"custom.h", header}}, symbols);
+                const auto aligned =
+                    fillAllocation ? capacity - 144 : (quint32(custom.bytes.size()) + 15U) & ~15U;
+                state = begin + aligned;
+                symbols["lc_custom_state"] = state;
+                custom = compiler.compileModule(source, build.path(), "custom_resident", begin,
+                                                {{"custom.h", header}}, symbols);
+                if (custom.bytes.size() > aligned)
+                    throw Error("Relinking custom state changed the reserved code size");
+                return custom.bytes + QByteArray(aligned + 144 - custom.bytes.size(), 0);
+            };
+            const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QVERIFY(QDir().mkpath(candidates));
+            QTemporaryDir candidate(candidates + "/native-resident-XXXXXX");
+            QVERIFY(candidate.isValid());
+            QJsonArray probes;
+            auto previous = rom;
+            for (int mode = 0; mode < 3; ++mode) {
+                const bool saves = mode != 0;
+                fillAllocation = mode == 2;
+                const auto runtime =
+                    buildClassRuntime(classes, compiler, build.path(), 0x2800000, saves, resident);
+                const auto linked = linkClassRuntime(previous, runtime);
+                const auto reopened = Rom::fromBytes(linked);
+                const auto placement = ClassPlacement::read(reopened);
+                QVERIFY(placement.has_value());
+                QCOMPARE(u32(linked, ClassPlacement::descriptorRomOffset + 8), 4U);
+                QCOMPARE(placement->residentAddress,
+                         saves ? placement->saves.endAddress() : ClassPlacement::residentBegin);
+                QCOMPARE(placement->residentBytes, quint32(runtime.resident.size()));
+                QCOMPARE(placement->residentChecksum, crc32(runtime.resident));
+                QCOMPARE(ClassData::load(reopened).build(0x80243db0).bytes, runtime.compiledData);
+                QCOMPARE(linked.mid(placement->residentAddress - ClassPlacement::residentDelta,
+                                    placement->residentBytes),
+                         runtime.resident);
+                const auto cacheEnd = quint32(((u32(linked, 0x2438) & 65535) << 16) +
+                                              qint16(u32(linked, 0x243c) & 65535));
+                QCOMPARE(cacheEnd, state + 144);
+                auto corrupt = linked;
+                corrupt[placement->residentAddress - ClassPlacement::residentDelta] ^= 1;
+                QVERIFY_THROWS_EXCEPTION(Error, ClassData::load(Rom::fromBytes(corrupt)));
+                auto removed = buildClassRuntime(classes, compiler, build.path(), 0x2800000, saves);
+                QVERIFY_THROWS_EXCEPTION(Error, linkClassRuntime(reopened, removed));
+                removed.removeResident = true;
+                const auto without = linkClassRuntime(reopened, removed);
+                QCOMPARE(ClassPlacement::read(Rom::fromBytes(without))->residentBytes, 0U);
+                QCOMPARE(without.mid(placement->residentAddress - ClassPlacement::residentDelta,
+                                     placement->residentBytes),
+                         QByteArray(runtime.resident.size(), 0));
+                auto crc = linked;
+                Rom::updateChecksum(crc);
+                QCOMPARE(crc, linked);
+                const auto directory = candidate.filePath(fillAllocation ? "full-allocation"
+                                                          : saves        ? "with-saves"
+                                                                         : "without-saves");
+                QVERIFY(QDir().mkpath(directory));
+                const auto output = QDir(directory).filePath(QFileInfo(path).fileName());
+                atomicWrite(output, rom.serialize(linked));
+                QJsonObject entries;
+                for (auto it = custom.entries.begin(); it != custom.entries.end(); ++it)
+                    entries[it.key()] = double(it.value());
+                probes << QJsonObject{{"rom", output},
+                                      {"state", double(state)},
+                                      {"entries", entries},
+                                      {"expandedSaves", saves}};
+                previous = reopened;
+            }
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     buildClassRuntime(classes, compiler, build.path(), 0x2800000,
+                                                       false, [](quint32, quint32 bytes) {
+                                                           return QByteArray(bytes + 16, 0);
+                                                       }));
+            QVERIFY_THROWS_EXCEPTION(
+                Error, buildClassRuntime(classes, compiler, build.path(), 0x2800000, false,
+                                         [](quint32, quint32) { return QByteArray(17, 0); }));
+            const auto fixture = candidate.filePath("resident.json");
+            atomicWrite(fixture, QJsonDocument(probes).toJson());
+            candidate.setAutoRemove(false);
+            qInfo().noquote() << "Resident allocation probes (no custom caller installation):"
+                              << fixture;
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void customEncounterSource() {
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (tools.isEmpty())
+            QSKIP("Authenticated compiler required");
+        try {
+            QFile source(":/game/encounters/custom.c"), header(":/game/encounters/custom.h");
+            QVERIFY(source.open(QIODevice::ReadOnly));
+            QVERIFY(header.open(QIODevice::ReadOnly));
+            QTemporaryDir build;
+            Compiler compiler(tools);
+            compiler.authenticate();
+            const QMap<QString, quint32> symbols{
+                {"lc_custom_state", 0x8018a9e0},    {"lc_custom_index", 0x2800000},
+                {"lc_staged_scenario", 0x8018f481}, {"lc_character_records", 0x80195560},
+                {"lc_dma_read", 0x8009da50},        {"lc_random", 0x80092a60},
+                {"lc_character_create", 0x801d0840}};
+            const auto module =
+                compiler.compileModule(source.readAll(), build.path(), "custom_core", 0x801897d0,
+                                       {{"custom.h", header.readAll()}}, symbols);
+            QVERIFY(module.address + module.bytes.size() <= symbols["lc_custom_state"]);
+            QCOMPARE(module.entries.size(), 4);
+            QJsonObject entries, bindings;
+            for (auto it = module.entries.begin(); it != module.entries.end(); ++it)
+                entries[it.key()] = double(it.value());
+            for (auto it = symbols.begin(); it != symbols.end(); ++it)
+                bindings[it.key()] = double(it.value());
+            const QString fixture = "native/build/Release/custom-source.json";
+            atomicWrite(
+                fixture,
+                QJsonDocument(QJsonObject{{"address", double(module.address)},
+                                          {"code", QString::fromLatin1(module.bytes.toHex())},
+                                          {"entries", entries},
+                                          {"symbols", bindings}})
+                    .toJson());
+            qInfo().noquote() << "Custom encounter core:" << module.bytes.size() << "bytes; fixture"
+                              << fixture;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void scenarioRatesWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

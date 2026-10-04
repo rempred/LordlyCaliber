@@ -13,6 +13,15 @@ static constexpr quint32 nameRamStart = 0x8018febc, nameRamEnd = 0x80190378;
 static constexpr qsizetype nameRomStart = 0x65dbc;
 static void validatePlacement(const ClassPlacement &p) {
     p.saves.validate();
+    if (p.residentBytes) {
+        const auto first =
+            p.saves.installed() ? p.saves.endAddress() : ClassPlacement::residentBegin;
+        if (p.residentAddress != first || p.residentAddress % 16 || p.residentBytes % 16 ||
+            quint64(p.residentAddress) + p.residentBytes > ClassPlacement::residentEnd)
+            throw Error("Resident extension overlaps saves or exceeds reclaimed class storage");
+    } else if (p.residentAddress || p.residentChecksum) {
+        throw Error("Empty resident extension has placement metadata");
+    }
     const auto &l = p.layout;
     if (l.count < 165 || l.count > 256 || l.indexBase != 0x80243db0 ||
         l.records != l.indexBase + 72 || l.appearances % 16 || l.aliases % 16 || l.names % 16 ||
@@ -46,7 +55,7 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     paddedCode.append(QByteArray(codeCapacity - code.size(), 0));
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05CLAS");
-    put32(header, 8, descriptionEntry ? 3 : saves.installed() ? 2 : 1);
+    put32(header, 8, residentBytes ? 4 : descriptionEntry ? 3 : saves.installed() ? 2 : 1);
     put32(header, 12, dataRomOffset);
     put32(header, 16, quint32(data.size()));
     put32(header, 20, layout.count);
@@ -70,6 +79,9 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     put32(header, 92, saves.ownerChecksum);
     put32(header, 96, saves.version >= 2 ? saves.version : 0);
     put32(header, 100, descriptionEntry);
+    put32(header, 104, residentAddress);
+    put32(header, 108, residentBytes);
+    put32(header, 112, residentChecksum);
     put32(header, 124, crc32(header.first(124)));
     return header;
 }
@@ -78,11 +90,14 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     if (!header.startsWith("LC05CLAS"))
         return std::nullopt;
     const auto version = u32(header, 8);
-    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 3 ||
-        u32(header, 124) != crc32(header.first(124)) || header.mid(104, 20) != QByteArray(20, 0) ||
-        (version < 3 && u32(header, 100)) || (version == 3 && !u32(header, 100)) ||
+    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 4 ||
+        u32(header, 124) != crc32(header.first(124)) || header.mid(116, 8) != QByteArray(8, 0) ||
+        (version < 4 && header.mid(104, 12) != QByteArray(12, 0)) ||
+        (version == 4 && !u32(header, 108)) || (version < 3 && u32(header, 100)) ||
+        (version == 3 && !u32(header, 100)) ||
         (version == 1 && header.mid(84, 16) != QByteArray(16, 0)) ||
-        (version >= 2 && !u32(header, 84)))
+        ((version == 2 || version == 3) && !u32(header, 84)) ||
+        (version == 4 && !u32(header, 84) && header.mid(84, 16) != QByteArray(16, 0)))
         throw Error("Unrecognized or damaged relocated class descriptor");
     ClassPlacement result;
     auto &l = result.layout;
@@ -103,8 +118,15 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     result.directoryCapacity = int(u32(header, 76));
     result.codeBytes = u32(header, 80);
     result.saves = {u32(header, 84), u32(header, 88), u32(header, 92)};
-    result.saves.version = version >= 2 ? (u32(header, 96) ? u32(header, 96) : 1) : 0;
+    result.saves.version = result.saves.installed() ? (u32(header, 96) ? u32(header, 96) : 1) : 0;
+    result.residentAddress = u32(header, 104);
+    result.residentBytes = u32(header, 108);
+    result.residentChecksum = u32(header, 112);
     validatePlacement(result);
+    if (result.residentBytes &&
+        crc32(rom.bytes().mid(result.residentAddress - residentDelta, result.residentBytes)) !=
+            result.residentChecksum)
+        throw Error("Resident extension differs from its declared allocation");
     result.saves.verify(rom.bytes());
     if (result.descriptionEntry)
         verifyClassDescriptionRouting(rom.bytes(), result.descriptionEntry);

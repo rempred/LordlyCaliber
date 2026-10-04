@@ -34,7 +34,13 @@ struct ClassPlacement {
     quint32 directory = 0;
     int directoryCapacity = 0;
     SavePlacement saves;
+    quint32 residentAddress = 0, residentBytes = 0, residentChecksum = 0;
+    static constexpr quint32 residentBegin = 0x80187f00, residentEnd = 0x8018aa70;
+    // Proven permanent DMA segment ROM40E80..66E10 -> RAM8016AF80..80190F10.
+    static constexpr quint32 residentDelta = 0x8012a100;
     quint32 instructionEnd() const {
+        if (residentBytes)
+            return residentAddress + residentBytes;
         return saves.installed() ? SavePlacement::ramAddress + saves.codeBytes
                                  : codeRamAddress + codeBytes;
     }

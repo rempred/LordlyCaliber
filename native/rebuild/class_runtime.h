@@ -12,6 +12,8 @@ struct ClassRuntimeBuild {
     ClassPlacement placement;
     QByteArray descriptor;
     std::optional<SaveRuntimeBuild> saves;
+    QByteArray resident;
+    bool removeResident = false;
     quint32 dataRomOffset = 0;
     static constexpr quint32 codeRomOffset = 0x5db14;
     static constexpr quint32 directoryAddress = 0x80187e00;
@@ -20,9 +22,10 @@ struct ClassRuntimeBuild {
 };
 // Compile the data and its initialization/reset functions. This does not install
 // runtime references or produce a playable ROM on its own.
-ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
-                                    const QString &directory, quint32 dataRomOffset,
-                                    bool expandedSaves = false);
+ClassRuntimeBuild
+buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
+                  quint32 dataRomOffset, bool expandedSaves = false,
+                  const std::function<QByteArray(quint32, quint32)> &residentBuilder = {});
 QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
                             const PromotionRuntimeBuild *menus = nullptr);
 } // namespace lordly

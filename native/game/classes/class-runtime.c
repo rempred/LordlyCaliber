@@ -11,7 +11,9 @@ void lc_dma_read(u32, void *, u32);
 
 static void add_reclaimed_storage(void)
 {
+#if LC_RECLAIM_SIZE != 0
     lc_original_pool_add(LC_RECLAIM_START, LC_RECLAIM_SIZE);
+#endif
     lc_original_pool_add(0x8018ECE0U, 0x3D0);
     lc_original_pool_add(0x8018FEC0U, 0x4B0);
 }

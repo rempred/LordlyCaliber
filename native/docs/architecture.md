@@ -1,5 +1,16 @@
 # Native Lordly Caliber
 
+The class linker can reserve a maintained resident extension after expanded
+save code, or at the beginning of reclaimed class storage when saves are not
+expanded. Descriptor version 4 records its address, size and CRC. The allocator
+returns only the remaining suffix to the heap; an exact-capacity allocation
+omits that pool. The original permanent DMA loads the extension and existing
+instruction-cache preparation covers it. Rebuilds must supply the extension
+again or explicitly remove it. Allocation, relocation when adding saves, bounds,
+reopening, and boot/reset instruction checks are covered in guarded 4 MB memory.
+The current custom encounter C core uses this allocation in internal probes;
+its product editing and caller installation are still in progress.
+
 The product targets Windows and integrated graphics. C++ owns the engine and
 Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,
 browser APIs, JavaScript, or an external Decomp checkout. The browser Editor is

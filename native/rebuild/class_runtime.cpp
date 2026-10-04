@@ -10,17 +10,31 @@
 #include <algorithm>
 
 namespace lordly {
-ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &compiler,
-                                    const QString &directory, quint32 dataRomOffset,
-                                    bool expandedSaves) {
+ClassRuntimeBuild
+buildClassRuntime(const ClassData &classes, const Compiler &compiler, const QString &directory,
+                  quint32 dataRomOffset, bool expandedSaves,
+                  const std::function<QByteArray(quint32, quint32)> &residentBuilder) {
     ClassRuntimeBuild result;
     result.data = classes.build(0x80243db0);
     if (expandedSaves || result.data.layout.count > 165) {
         result.saves = buildSaveRuntime(result.data.layout.discovery, compiler, directory);
         result.placement.saves = result.saves->placement;
     }
-    const auto reclaimStart =
+    auto reclaimStart =
         result.saves ? result.saves->placement.endAddress() : ClassRuntimeBuild::reclaimedStart;
+    if (residentBuilder) {
+        if (reclaimStart > ClassRuntimeBuild::reclaimedEnd)
+            throw Error("Expanded saves leave no resident extension allocation");
+        result.resident =
+            residentBuilder(reclaimStart, ClassRuntimeBuild::reclaimedEnd - reclaimStart);
+        if (result.resident.isEmpty() || result.resident.size() % 16 ||
+            quint64(reclaimStart) + result.resident.size() > ClassRuntimeBuild::reclaimedEnd)
+            throw Error("Resident extension exceeds its reclaimed class allocation");
+        result.placement.residentAddress = reclaimStart;
+        result.placement.residentBytes = quint32(result.resident.size());
+        result.placement.residentChecksum = crc32(result.resident);
+        reclaimStart += result.placement.residentBytes;
+    }
     result.dataRomOffset = dataRomOffset;
     if ((dataRomOffset & 15) || dataRomOffset < 0x2800000 ||
         quint64(dataRomOffset) + result.data.bytes.size() > 0x4000000)
@@ -80,6 +94,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     rom.requireSupported();
     if (rom.revision() != 0 || build.code.address != ClassPlacement::codeRamAddress ||
         build.compiledData != build.data.bytes ||
+        build.resident.size() != build.placement.residentBytes ||
+        (!build.resident.isEmpty() && crc32(build.resident) != build.placement.residentChecksum) ||
         build.descriptor != build.placement.descriptor(build.compiledData, build.code.bytes))
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
@@ -87,6 +103,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     const auto shopPlacement = ShopPlacement::read(rom);
     if (prior && prior->saves.installed() && !build.saves)
         throw Error("Rebuilding this class allocation also requires its expanded save runtime");
+    if (prior && prior->residentBytes && build.resident.isEmpty() && !build.removeResident)
+        throw Error("Rebuilding classes also requires preserving their resident extension");
     if (prior && prior->descriptionEntry && !build.placement.descriptionEntry)
         throw Error("Rebuilding this class allocation requires its description routing");
     const auto inventory = prior && !prior->runtimeInventory.isEmpty()
@@ -233,6 +251,9 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
               quint64(rom.bytes().size()))))
         throw Error("Expanded class allocation would overwrite unrelated ROM data");
     auto image = rom.bytes();
+    if (prior && prior->residentBytes)
+        image.replace(prior->residentAddress - ClassPlacement::residentDelta, prior->residentBytes,
+                      QByteArray(prior->residentBytes, 0));
     if (prior)
         image.replace(prior->dataRomOffset, prior->layout.end - prior->layout.indexBase,
                       QByteArray(prior->layout.end - prior->layout.indexBase, char(-1)));
@@ -251,6 +272,9 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     if (build.saves)
         placement.saves =
             installSaveRuntime(image, *build.saves, prior ? prior->saves : SavePlacement{});
+    if (!build.resident.isEmpty())
+        image.replace(placement.residentAddress - ClassPlacement::residentDelta,
+                      build.resident.size(), build.resident);
     if (placement.descriptionEntry)
         installClassDescriptionRouting(image, prior ? prior->descriptionEntry : 0,
                                        placement.descriptionEntry);
