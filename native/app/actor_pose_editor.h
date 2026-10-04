@@ -1,7 +1,10 @@
 #pragma once
 #include "engine/actor_pose.h"
+#include "engine/sprite_pose.h"
 #include <QWidget>
 #include <optional>
+#include <variant>
+class QCheckBox;
 class QComboBox;
 class QSpinBox;
 class QLabel;
@@ -25,9 +28,13 @@ class ActorPoseEditor : public QWidget {
     void step();
     void draw();
     void stop();
+    int advancePose();
+    bool suspendedPose() const;
+    QString poseError() const;
     Rom rom_;
     std::optional<ActorArt> art_;
-    std::optional<ActorPosePlayer> player_;
+    std::optional<std::variant<ActorPosePlayer, SpritePosePlayer>> player_;
+    QCheckBox *sepia_;
     QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
     QSpinBox *variant_, *position_, *speed_;
     QPushButton *play_;

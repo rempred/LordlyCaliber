@@ -1,4 +1,5 @@
 #include "engine/sprite_object.h"
+#include "game/images/sepia.h"
 namespace lordly {
 namespace {
 int stride(int format, int width) {
@@ -123,7 +124,8 @@ SpriteLanes SpriteObject::materialize(int child) const {
     qsizetype retained = 0;
     return materialize(child, visiting, cache, retained);
 }
-SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette) const {
+SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette,
+                                bool sepia) const {
     const int child = requestedChild < 0 || requestedChild >= children_.size() ? 0 : requestedChild;
     const auto lanes = materialize(child);
     if (lanes.color.isEmpty())
@@ -136,11 +138,15 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
         for (int x = 0; x < width_; ++x) {
             const int out = (y * width_ + x) * 4, at = y * colorStride_;
             if (colorFormat_ == 3) {
+                const quint32 color = sepia ? lordly_sepia_rgba32(u32(lanes.color, at + x * 4))
+                                            : u32(lanes.color, at + x * 4);
                 for (int c = 0; c < 4; ++c)
-                    put8(image.rgba, out + c, u8(lanes.color, at + x * 4 + c));
+                    put8(image.rgba, out + c, quint8(color >> (24 - c * 8)));
             } else {
-                const auto word = colorFormat_ == 1 ? u16(palette, u8(lanes.color, at + x) * 2)
-                                                    : u16(lanes.color, at + x * 2);
+                auto word = colorFormat_ == 1 ? u16(palette, u8(lanes.color, at + x) * 2)
+                                              : u16(lanes.color, at + x * 2);
+                if (sepia)
+                    word = lordly_sepia_rgba16(word);
                 put8(image.rgba, out, quint8((((word >> 11) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 1, quint8((((word >> 6) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 2, quint8((((word >> 1) & 31) * 255 + 15) / 31));

@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+The pose inspector now selects ordinary actors, class bodies or the independent
+2D sprite sequencer, with stepping, seeking, per-layer opacity and optional sepia.
+Layer origins receive their metadata scale before pose translation, matching the
+native matrix order. The UI check uses a retail opcode-12 program to distinguish
+2D no-op behavior from Actor movement, verifies backward seeking and displayed
+sepia pixels, then switches back to Actor playback. The existing actor/body UI
+check also passes. A visible sepia soldier sample was rendered and inspected.
+Full-scene camera, lighting, focus/cache history and audio remain separate.
+
+Sepia arithmetic compiles a portable adaptation of accepted func_00203030.c at
+Decomp 497181d8. Explicit byte extraction replaces its big-endian struct alias.
+All 65,536 RGBA16 values, 4,096 RGBA32 colors and padded-row samples match original
+instructions, with no game services replaced. Sprite decoding applies the 16-bit
+conversion before channel expansion (including indexed palettes), preserving
+separate alpha lanes. The delta/fallback regression passes. ROM 2A2718 confirms
+the variant participates both in cache identity and in child selection, with
+out-of-range children clamped to zero; older prose describing identical content
+across all variants was incomplete.
+
 Sprite draw preparation follows the original pool's layer and special-animation
 filters, slot order, signed integer-to-float translation, rotation-180 identity and
 signed scale percentage. All 44 pass/transform cases match original calls to the

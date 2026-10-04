@@ -199,13 +199,13 @@ QVector<ActorLayer> ActorArt::layers(int token) const {
     }
     return result;
 }
-QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant) const {
+QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant, bool sepia) const {
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     for (const auto &layer : layers(token)) {
         const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
         const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
-        auto pixels = sprite.frame(variant, palette);
+        auto pixels = sprite.frame(variant, palette, sepia);
         const auto &image = pixels.image;
         if (layer.width > image.width || layer.height > image.height)
             throw Error("Actor frame dimensions exceed stored sprite pixels");

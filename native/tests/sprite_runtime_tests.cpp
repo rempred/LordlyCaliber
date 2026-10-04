@@ -1,5 +1,6 @@
 #include "engine/scene_sprites.h"
 #include "engine/sprite_pose.h"
+#include "game/images/sepia.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -12,6 +13,70 @@ using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void sepiaAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("sepia-mips.cjs"), path,
+             work.filePath("sepia.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("sepia.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 4);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            auto input = QByteArray::fromHex(row["input"].toString().toLatin1());
+            const auto expected = QByteArray::fromHex(row["output"].toString().toLatin1());
+            const int width = row["width"].toInt(), height = row["height"].toInt(),
+                      format = row["format"].toInt(), stride = row["stride"].toInt();
+            auto actual = input;
+            for (int y = 0; y < height; ++y)
+                for (int x = 0; x < width; ++x) {
+                    const int p = 8 + y * stride + x * (format == 3 ? 4 : 2);
+                    if (format == 3)
+                        put32(actual, p, lordly_sepia_rgba32(u32(actual, p)));
+                    else
+                        put16(actual, p, lordly_sepia_rgba16(u16(actual, p)));
+                }
+            QCOMPARE(actual, expected);
+            // Construct a single direct sprite child using those same pixels;
+            // this verifies that sepia runs before 16-bit expansion and retains alpha.
+            QByteArray sprite(16, 0);
+            put16(sprite, 0, 0x5554);
+            put8(sprite, 2, 1);
+            put8(sprite, 3, format == 3 ? 2 : 0);
+            put16(sprite, 4, quint16(width));
+            put16(sprite, 6, quint16(height));
+            put16(sprite, 8, 0x5554);
+            put8(sprite, 11, 1);
+            put16(sprite, 12, quint16(width));
+            put16(sprite, 14, quint16(height));
+            sprite += input.mid(8);
+            const auto frame = SpriteObject::decode(sprite).frame(0, {}, true);
+            for (int y = 0; y < height; ++y)
+                for (int x = 0; x < width; ++x) {
+                    const int p = 8 + y * stride + x * (format == 3 ? 4 : 2),
+                              out = (y * width + x) * 4;
+                    if (format == 3)
+                        QCOMPARE(u32(frame.image.rgba, out), u32(expected, p));
+                    else {
+                        const auto word = u16(expected, p);
+                        QCOMPARE(u8(frame.image.rgba, out), ((word >> 11) * 255 + 15) / 31);
+                        QCOMPARE(u8(frame.image.rgba, out + 1),
+                                 (((word >> 6) & 31) * 255 + 15) / 31);
+                        QCOMPARE(u8(frame.image.rgba, out + 2),
+                                 (((word >> 1) & 31) * 255 + 15) / 31);
+                        QCOMPARE(u8(frame.image.rgba, out + 3), word & 1 ? 255 : 0);
+                    }
+                }
+        }
+    }
     void drawPlanAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

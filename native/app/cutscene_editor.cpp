@@ -150,7 +150,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent
     commands_->setColumnWidth(1, 210);
     commands_->setColumnWidth(2, 270);
     pages->addTab(commands_, "Source commands");
-    pages->addTab(new ActorPoseEditor(rom_), "Actor poses");
+    pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
     detailLayout->addWidget(pages, 1);
     split->addWidget(details);
     split->setSizes({310, 1000});

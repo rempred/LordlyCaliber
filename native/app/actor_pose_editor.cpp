@@ -1,6 +1,7 @@
 #include "app/actor_pose_editor.h"
 #include "engine/class_data.h"
 #include "engine/text.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
@@ -17,6 +18,41 @@
 #include <QWheelEvent>
 namespace lordly {
 namespace {
+struct PreviewPose {
+    int state, cursor, delay, frame;
+    double x, y, z;
+    QByteArray material;
+    qsizetype audio;
+};
+PreviewPose preview(const std::variant<ActorPosePlayer, SpritePosePlayer> &player) {
+    return std::visit(
+        [](const auto &runtime) -> PreviewPose {
+            if constexpr (std::is_same_v<std::decay_t<decltype(runtime)>, SpritePosePlayer>) {
+                const auto &a = runtime.sprite();
+                return {a.state,
+                        a.cursor,
+                        a.delay,
+                        a.frame,
+                        double(a.x),
+                        double(a.y),
+                        0,
+                        QByteArray(reinterpret_cast<const char *>(a.color), 16),
+                        runtime.audioRequests().size()};
+            } else {
+                const auto &a = runtime.actor();
+                return {a.state,
+                        a.cursor,
+                        a.delay,
+                        a.frame,
+                        a.position.x,
+                        a.position.y,
+                        a.position.z,
+                        QByteArray(reinterpret_cast<const char *>(a.material), 16),
+                        runtime.audioRequests().size()};
+            }
+        },
+        player);
+}
 class PoseView : public QGraphicsView {
   public:
     using QGraphicsView::QGraphicsView;
@@ -34,15 +70,15 @@ class PoseView : public QGraphicsView {
 ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(parent), rom_(rom) {
     auto layout = new QVBoxLayout(this);
     auto note = new QLabel(
-        "Actor pose preview. Playback speed is adjustable; scene timing and cameras are separate. "
-        "Audio requests are recorded without sound. Material values are listed; their drawing "
-        "effects are not applied yet. Class-body inspection uses no linked equipment actors.");
+        "Pose inspection with per-layer opacity and optional sepia. Playback speed is adjustable; "
+        "full-scene timing, cameras and lighting are separate. Sound requests are recorded without "
+        "audio output. Class-body inspection uses no linked equipment actors.");
     note->setWordWrap(true);
     layout->addWidget(note);
     auto selectors = new QHBoxLayout;
     kinds_ = new QComboBox;
     kinds_->setObjectName("actorSourceKind");
-    kinds_->addItems({"Cutscene actors", "Class bodies"});
+    kinds_->addItems({"Cutscene actors", "Class bodies", "2D scene sprites"});
     owners_ = new QComboBox;
     owners_->setObjectName("actorOwner");
     flags_ = new QComboBox;
@@ -58,6 +94,10 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     variant_ = new QSpinBox;
     variant_->setObjectName("actorVariant");
     variant_->setRange(0, 255);
+    sepia_ = new QCheckBox("Sepia");
+    sepia_->setObjectName("actorSepia");
+    sepia_->setToolTip(
+        "Inspect the game's sepia image conversion. Scene focus and cache history are separate.");
     selectors->addWidget(kinds_);
     selectors->addWidget(banks_);
     selectors->addWidget(new QLabel("Owner class"));
@@ -70,6 +110,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     poseSelectors->addWidget(poses_, 1);
     poseSelectors->addWidget(new QLabel("Image variant"));
     poseSelectors->addWidget(variant_);
+    poseSelectors->addWidget(sepia_);
     layout->addLayout(poseSelectors);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
@@ -156,6 +197,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     connect(flags_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
     connect(poses_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::restart);
     connect(variant_, &QSpinBox::valueChanged, this, &ActorPoseEditor::restart);
+    connect(sepia_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
     connect(fit, &QPushButton::clicked, this,
             [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
     connect(actual, &QPushButton::clicked, this, [this] { view_->resetTransform(); });
@@ -255,9 +297,15 @@ void ActorPoseEditor::restart() {
     stop();
     if (!art_ || poses_->currentIndex() < 0)
         return;
-    player_.emplace(rom_, *art_, poses_->currentData().toInt(), variant_->value());
-    if (art_->isBody())
-        player_->setLinkedObjectKnownAbsent(true);
+    if (kinds_->currentIndex() == 2)
+        player_.emplace(std::in_place_type<SpritePosePlayer>, rom_, *art_,
+                        poses_->currentData().toInt(), variant_->value());
+    else {
+        player_.emplace(std::in_place_type<ActorPosePlayer>, rom_, *art_,
+                        poses_->currentData().toInt(), variant_->value());
+        if (art_->isBody())
+            std::get<ActorPosePlayer>(*player_).setLinkedObjectKnownAbsent(true);
+    }
     step_ = 0;
     {
         QSignalBlocker block(position_);
@@ -269,13 +317,13 @@ void ActorPoseEditor::seek(int target) {
     stop();
     if (!art_)
         return;
-    if (!player_ || target < step_ || player_->suspended())
+    if (!player_ || target < step_ || suspendedPose())
         restart();
     while (step_ < target) {
-        const auto result = player_->advance();
+        const auto result = advancePose();
         if (result != LORDLY_POSE_OK) {
             draw();
-            status_->setText(player_->error());
+            status_->setText(poseError());
             return;
         }
         ++step_;
@@ -291,10 +339,10 @@ void ActorPoseEditor::step() {
         stop();
         return;
     }
-    if (player_->advance() != LORDLY_POSE_OK) {
+    if (advancePose() != LORDLY_POSE_OK) {
         stop();
         draw();
-        status_->setText(player_->error());
+        status_->setText(poseError());
         return;
     }
     ++step_;
@@ -313,8 +361,8 @@ void ActorPoseEditor::draw() {
     if (!player_)
         return;
     try {
-        const auto &a = player_->actor();
-        const auto frame = art_->frame(rom_, a.frame, variant_->value());
+        const auto a = preview(*player_);
+        const auto frame = art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked());
         QRectF bounds;
         int fallbacks = 0;
         for (int i = 0; i < frame.size(); ++i) {
@@ -325,8 +373,11 @@ void ActorPoseEditor::draw() {
                                           r.width, r.height, r.width * 4, QImage::Format_RGBA8888));
             auto item = canvas_->addPixmap(pixmap);
             const auto &m = layer.metadata;
-            item->setPos(m.origin.x() + a.position.x, m.origin.y() - a.position.y);
+            item->setPos(m.origin.x() * m.scaleX / 1024. + a.x,
+                         m.origin.y() * m.scaleY / 1024. - a.y);
             item->setTransform(QTransform::fromScale(m.scaleX / 1024., m.scaleY / 1024.));
+            if (i < 16)
+                item->setOpacity(u8(a.material, i) / 255.);
             item->setZValue(i);
             item->setFlag(QGraphicsItem::ItemIsSelectable);
             items_ << item;
@@ -349,7 +400,7 @@ void ActorPoseEditor::draw() {
                     .arg(layer.pixels.requestedChild)
                     .arg(layer.pixels.child)
                     .arg(fallback ? " (fallback)" : "")
-                    .arg(i < 16 ? QString::number(a.material[i]) : QString("unmapped")));
+                    .arg(i < 16 ? QString::number(u8(a.material, i)) : QString("unmapped")));
         }
         canvas_->setSceneRect(bounds.isEmpty() ? QRectF(-32, -32, 64, 64)
                                                : bounds.adjusted(-8, -8, 8, 8));
@@ -365,18 +416,29 @@ void ActorPoseEditor::draw() {
                 .arg(a.cursor)
                 .arg(a.delay)
                 .arg(a.frame)
-                .arg(a.position.x)
-                .arg(a.position.y)
-                .arg(a.position.z)
+                .arg(a.x)
+                .arg(a.y)
+                .arg(a.z)
                 .arg(frame.size())
                 .arg(fallbacks)
-                .arg(player_->audioRequests().size()));
+                .arg(a.audio));
         setProperty("frameToken", a.frame);
         setProperty("poseCursor", a.cursor);
         setProperty("poseDelay", a.delay);
+        setProperty("poseX", a.x);
+        setProperty("poseY", a.y);
     } catch (const Error &e) {
         stop();
         status_->setText(QString::fromUtf8(e.what()));
     }
+}
+int ActorPoseEditor::advancePose() {
+    return std::visit([](auto &runtime) { return runtime.advance(); }, *player_);
+}
+bool ActorPoseEditor::suspendedPose() const {
+    return std::visit([](const auto &runtime) { return runtime.suspended(); }, *player_);
+}
+QString ActorPoseEditor::poseError() const {
+    return std::visit([](const auto &runtime) { return runtime.error(); }, *player_);
 }
 } // namespace lordly

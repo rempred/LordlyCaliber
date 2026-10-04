@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QFontDatabase>
 #include <QGraphicsItem>
+#include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QJsonArray>
@@ -150,6 +151,68 @@ class UiTests : public QObject {
         QCOMPARE(poses->count(), alternate.poses().size());
         kind->setCurrentIndex(0);
         QCOMPARE(banks->count(), 68);
+    }
+    void spritePosePreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        ActorPoseEditor editor(rom);
+        editor.resize(1250, 900);
+        editor.show();
+        auto kind = editor.findChild<QComboBox *>("actorSourceKind"),
+             banks = editor.findChild<QComboBox *>("actorBank"),
+             poses = editor.findChild<QComboBox *>("actorPose");
+        auto position = editor.findChild<QSpinBox *>("actorPosition");
+        auto next = editor.findChild<QPushButton *>("actorStep");
+        auto sepia = editor.findChild<QCheckBox *>("actorSepia");
+        auto view = editor.findChild<QGraphicsView *>("actorCanvas");
+        QVERIFY(kind && banks && poses && position && next && sepia && view);
+        // This retail program contains opcode 12. It moves a 3D actor but is
+        // deliberately a no-op in the 2D sprite sequencer.
+        kind->setCurrentIndex(2);
+        banks->setCurrentIndex(banks->findData(3));
+        poses->setCurrentIndex(poses->findData(59));
+        const auto art = ActorArt::load(rom, 3);
+        SpritePosePlayer reference(rom, art, 59);
+        for (int i = 1; i <= 16; ++i) {
+            QCOMPARE(reference.advance(), LORDLY_POSE_OK);
+            next->click();
+            QCOMPARE(position->value(), i);
+            QCOMPARE(editor.property("frameToken").toInt(), reference.sprite().frame);
+            QCOMPARE(editor.property("poseCursor").toInt(), reference.sprite().cursor);
+            QCOMPARE(editor.property("poseX").toDouble(), reference.sprite().x);
+            QCOMPARE(editor.property("poseY").toDouble(), reference.sprite().y);
+        }
+        const auto cursor = editor.property("poseCursor");
+        position->setValue(0);
+        position->setValue(16);
+        QCOMPARE(editor.property("poseCursor"), cursor);
+        sepia->setChecked(true);
+        const auto frame = art.frame(rom, reference.sprite().frame, 0, true);
+        QCOMPARE(view->scene()->items().size(), frame.size());
+        for (auto raw : view->scene()->items()) {
+            auto item = qgraphicsitem_cast<QGraphicsPixmapItem *>(raw);
+            QVERIFY(item);
+            const int layer = int(item->zValue());
+            const auto &expected = frame[layer];
+            const auto &r = expected.pixels.image;
+            const QImage expectedImage(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width,
+                                       r.height, r.width * 4, QImage::Format_RGBA8888);
+            // QPixmap can premultiply alpha; compare the same Qt display format.
+            QCOMPARE(item->pixmap().toImage(), QPixmap::fromImage(expectedImage).toImage());
+            QCOMPARE(item->opacity(), reference.sprite().color[layer] / 255.);
+        }
+        banks->setCurrentIndex(banks->findData(30));
+        poses->setCurrentIndex(poses->findData(12));
+        position->setValue(3);
+        QTest::qWait(25);
+        QVERIFY(editor.grab().save("native-scene-sprite-preview.png"));
+        kind->setCurrentIndex(0);
+        QCOMPARE(position->value(), 0);
+        sepia->setChecked(false);
+        next->click();
+        QCOMPARE(position->value(), 1);
     }
     void cutsceneCatalogSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
