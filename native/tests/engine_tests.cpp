@@ -46,6 +46,83 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void shopMembershipProjects() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadShops();
+            auto shops = *project.shops();
+            QVERIFY(shops.stock(0).equipment.isEmpty());
+            QVERIFY(shops.stock(0).consumables.isEmpty());
+            QCOMPARE(shops.stock(2).equipment.size(), 7);
+            QCOMPARE(shops.stock(2).consumables, QVector<quint16>({1, 2, 3, 4, 5, 6, 8}));
+            QVERIFY(shops.locations(2).contains("Jadd"));
+            QVERIFY(!shops.locations(2).contains("Tacikent"));
+            QCOMPARE(shops.json()["records"].toArray().size(), 36);
+            const auto original = shops.json();
+            ShopStock full;
+            for (int id = 50; id > 0; --id)
+                full.equipment << quint16(id);
+            for (int id = 30; id > 0; --id)
+                full.consumables << quint16(id);
+            shops.setStock(2, full);
+            QCOMPARE(shops.changedShops(), 1);
+            const auto edited = shops.json();
+            auto invalid = full;
+            invalid.equipment << 51;
+            QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(2, invalid));
+            invalid = full;
+            invalid.consumables << 31;
+            QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(2, invalid));
+            for (const auto id : {0, 278, 0x8001}) {
+                invalid = full;
+                invalid.equipment[0] = quint16(id);
+                QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(2, invalid));
+            }
+            invalid = full;
+            invalid.equipment[0] = invalid.equipment[1];
+            QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(2, invalid));
+            invalid = full;
+            invalid.consumables[0] = 45;
+            QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(2, invalid));
+            QVERIFY_THROWS_EXCEPTION(Error, shops.setStock(0, full));
+            QCOMPARE(shops.json(), edited);
+            project.setShops(edited);
+            QCOMPARE(project.changedRecords(), 1);
+            const auto manifest = project.manifest();
+            QTemporaryDir folder;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("shops.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("shops.lcproject")}) {
+                auto reopened = Project::fromRom(project.rom());
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.shops()->json(), edited);
+                QCOMPARE(reopened.shops()->stock(2).equipment, full.equipment);
+                QCOMPARE(reopened.shops()->stock(2).consumables, full.consumables);
+                for (int id = 1; id < 36; ++id)
+                    if (id != 2)
+                        QCOMPARE(reopened.shops()->json()["records"].toArray()[id],
+                                 original["records"].toArray()[id]);
+            }
+            auto malformed = edited;
+            auto records = malformed["records"].toArray();
+            auto row = records[2].toObject();
+            row["equipment"] = QJsonArray{1.5};
+            records[2] = row;
+            malformed["records"] = records;
+            auto badManifest = manifest;
+            badManifest["shops"] = malformed;
+            QVERIFY_THROWS_EXCEPTION(Error, project.applyManifest(badManifest));
+            QCOMPARE(project.manifest(), manifest);
+            project.setShops(original);
+            QVERIFY(!project.manifest().contains("shops"));
+            QCOMPARE(project.changedRecords(), 0);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void lhaArchives() {
         QCOMPARE(lhaCrc16("123456789"), quint16(0xbb3d));
         // One literal A, represented with the format's single-symbol trees.

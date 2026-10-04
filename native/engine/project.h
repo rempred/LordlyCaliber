@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
+#include "engine/shops.h"
 #include "engine/text.h"
 #include <QJsonObject>
 #include <QStringList>
@@ -71,6 +72,11 @@ class Project {
         return promotion_;
     }
     void setPromotion(const QJsonObject &value);
+    void loadShops();
+    const std::optional<Shops> &shops() const {
+        return shops_;
+    }
+    void setShops(const QJsonObject &value);
     bool hasClassData() const {
         return originalClasses_.has_value();
     }
@@ -94,6 +100,7 @@ class Project {
     QStringList importWarnings_;
     QMap<QString, TextBank> texts_;
     std::optional<Promotion> promotion_;
+    std::optional<Shops> shops_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;

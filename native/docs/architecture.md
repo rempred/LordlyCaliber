@@ -59,7 +59,7 @@ editor uses Ctrl+Enter to commit, and dependent class selectors update with undo
 and redo. Growing an owned ROM allocation moves it when unrelated bytes follow;
 shrinking an allocation at the end removes only its owned trailing bytes.
 
-The promotion model also supports 165ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“256 class IDs. Growing from the original
+The promotion model also supports 165ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ256 class IDs. Growing from the original
 81 manual entries preserves existing values and gives the remaining retail IDs
 no manual family by default. Appending a new ID copies a chosen template's
 requirements, family and compatibility mask. Schema 2 catalogs persist the
@@ -135,10 +135,10 @@ eligibility, equipment summaries and confirmation paths. Those indexed reads
 move to the expanded alias array while C readers use linked symbol references.
 Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
-Its special secondary-class rule remains limited to original IDs 42ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“164;
+Its special secondary-class rule remains limited to original IDs 42ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ164;
 new IDs use their authored compatibility and requirement tables.
 The Army action checks likewise apply their special-class restrictions only to
-original IDs 81ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“164. Both alias routes retain their original default-class
+original IDs 81ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ164. Both alias routes retain their original default-class
 selection; appended IDs take the ordinary-class path. The unrelated 128-entry
 squad-index bound remains unchanged.
 
@@ -259,3 +259,12 @@ Huffman trees and an 8 KiB dictionary. LHA member lookup uses filenames and
 validates decoded size and the stored CRC16, avoiding dependence on a shifted
 archive index. Shop and town archives pass their independent stored checksums;
 malformed trees, short input and altered member data fail.
+
+Shops now has a native membership model:36 slots with immutable empty slot0,
+35 real shops, ordered equipment IDs1..277 and consumable IDs1..44. It retains
+original stock separately and validates the existing50/30 rebuild capacities,
+uniqueness and record ordering before mutation. Native project folders and
+archives persist edits. Town labels use actual names, excluding objective
+records; archive group numbers are not presented as mission numbers. Runtime
+installation and the Shops UI are still pending; export rejects changed shops
+until their runtime builder is connected.

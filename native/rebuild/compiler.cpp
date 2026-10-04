@@ -268,8 +268,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         return;
     const auto &promotion = *p.promotion();
     if (promotion.classCount() != 81)
-        throw Error(
-            "Expanded promotion data must use the coordinated class runtime builder");
+        throw Error("Expanded promotion data must use the coordinated class runtime builder");
     bool family = promotion.expanded || promotion.directGates ||
                   promotion.families != promotion.originalFamilies ||
                   encodeLzss(promotion.gates).size() > promotion.retailResource.capacity;
@@ -486,6 +485,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         priorClassPlacement.has_value() || p.classNamesModified() || expandedClasses;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
+    if (p.shops() && p.shops()->modified())
+        throw Error("Shop export requires its native runtime builder");
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
     for (auto table : {Table::Classes, Table::Items}) {

@@ -218,6 +218,8 @@ int Project::changedRecords() const {
                 ++count;
     if (promotion_ && promotion_->modified())
         ++count;
+    if (shops_)
+        count += shops_->changedShops();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -341,6 +343,14 @@ void Project::loadPromotion() {
     if (!promotion_)
         promotion_ = Promotion::load(rom_);
 }
+void Project::loadShops() {
+    if (!shops_)
+        shops_ = Shops::load(rom_);
+}
+void Project::setShops(const QJsonObject &value) {
+    loadShops();
+    shops_->apply(value);
+}
 void Project::setPromotion(const QJsonObject &value) {
     loadPromotion();
     promotion_->apply(value);
@@ -412,6 +422,10 @@ QJsonObject Project::manifest() const {
         result.remove("promotion");
     if (!legacy_.isEmpty())
         result["legacyImport"] = legacy_;
+    if (shops_ && shops_->modified())
+        result["shops"] = shops_->json();
+    else
+        result.remove("shops");
     return result;
 }
 void Project::applyManifest(const QJsonObject &object) {
@@ -426,6 +440,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadTexts();
     if (promotion_)
         candidate.loadPromotion();
+    if (shops_)
+        candidate.loadShops();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -500,6 +516,11 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
+    if (object.contains("shops")) {
+        if (!object["shops"].isObject())
+            throw Error("Invalid saved shops");
+        candidate.setShops(object["shops"].toObject());
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
