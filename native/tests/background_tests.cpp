@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/background_image.h"
+#include "engine/scene_images.h"
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -10,6 +11,55 @@ using namespace lordly;
 class BackgroundTests : public QObject {
     Q_OBJECT
   private slots:
+    void rawPaletteBanks() {
+        const QJsonObject layout{
+            {"width", 2},        {"height", 1},           {"pixelFormat", "ci4"},
+            {"paletteCount", 2}, {"paletteBankCount", 2}, {"dataOffset", 8}};
+        const auto bytes = QByteArray::fromHex("f801003f07c1ffff01");
+        const auto image = decodeRawImage(bytes, layout);
+        QCOMPARE(image.frames.size(), 2);
+        QCOMPARE(image.frames[0].rgba, QByteArray::fromHex("ff0000ff0000ffff"));
+        QCOMPARE(image.frames[1].rgba, QByteArray::fromHex("00ff00ffffffffff"));
+        QCOMPARE(image.composite.width, 4);
+        QVERIFY_THROWS_EXCEPTION(Error, decodeRawImage(bytes.first(8), layout));
+        auto bad = bytes;
+        put8(bad, 8, 0x21);
+        QVERIFY_THROWS_EXCEPTION(Error, decodeRawImage(bad, layout));
+        auto invalid = layout;
+        invalid["paletteBankCount"] = 1000000;
+        QVERIFY_THROWS_EXCEPTION(Error, decodeRawImage(bytes, invalid));
+        invalid = layout;
+        invalid["rowStride"] = 2147483647;
+        QVERIFY_THROWS_EXCEPTION(Error, decodeRawImage(bytes, invalid));
+    }
+    void currentRomSelectors() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private source ROM required");
+        const auto rom = Rom::open(path);
+        QCOMPARE(SceneImages::environment(rom, 34), QStringList{"mode2-environment:000D62F6"});
+        QCOMPARE(SceneImages::environment(rom, 57), QStringList{"mode2-environment:00236B58"});
+        QVERIFY(SceneImages::foreground(rom, 34).isEmpty());
+        QCOMPARE(SceneImages::foreground(rom, 57), QStringList{"archive:49"});
+        QCOMPARE(SceneImages::group(rom, 0).size(), 5);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneImages::environment(rom, 80));
+        auto changed = rom.bytes();
+        put32(changed, 0x594288 + 34 * 4, u32(changed, 0x594288 + 57 * 4));
+        QCOMPARE(SceneImages::environment(Rom::fromBytes(changed), 34),
+                 QStringList{"mode2-environment:00236B58"});
+        const auto directors = Directors::load(rom);
+        const auto &scene = directors.entries()[0x1a14970];
+        const auto bg = SceneImages::backgrounds(rom, scene);
+        QCOMPARE(bg.mode, 2);
+        QCOMPARE(bg.requests.size(), 1);
+        QCOMPARE(bg.requests[0].selector, 34);
+        QCOMPARE(bg.requests[0].images, SceneImages::environment(rom, 34));
+        auto edited = scene;
+        edited.program.commands[0].operands[0] = 57;
+        QCOMPARE(SceneImages::backgrounds(rom, edited).mode, -1);
+        const auto override = SceneImages::backgrounds(rom, edited, 2);
+        QCOMPARE(override.requests[0].images, SceneImages::environment(rom, 57));
+    }
     void signedLayersAndAlpha() {
         QByteArray bytes = QByteArray::fromHex("4235000200070009");
         auto layer = [](int x, int width, quint16 color, quint8 alpha) {
@@ -88,13 +138,39 @@ class BackgroundTests : public QObject {
         QVERIFY2(generator.exitCode() == 0, errors.constData());
         QFile file(work.filePath("backgrounds.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
-        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
-        QCOMPARE(rows.size(), 289);
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        const auto rows = fixture["rows"].toArray();
+        QCOMPARE(rows.size(), 367);
         const auto rom = Rom::open(path);
+        for (const auto &v : fixture["selectors"].toArray()) {
+            const auto table = v.toObject();
+            const auto id = table["id"].toString();
+            for (const auto &e : table["entries"].toArray()) {
+                const auto entry = e.toObject();
+                const int selector = entry["selector"].toInt();
+                QStringList expected;
+                for (const auto &i : entry["images"].toArray())
+                    expected << i.toString();
+                const auto actual =
+                    id.contains("mode2-environment") ? SceneImages::environment(rom, selector)
+                    : id.contains("mode2-overlay")   ? SceneImages::foreground(rom, selector)
+                                                     : SceneImages::group(rom, selector);
+                QCOMPARE(actual, expected);
+            }
+        }
         int exact = 0, rounded = 0;
         qsizetype roundedChannels = 0;
         for (const auto &v : rows) {
             const auto r = v.toObject(), source = r["source"].toObject();
+            if (r["compound"].toBool()) {
+                const auto full = SceneImages::decode(rom, r["id"].toString());
+                QCOMPARE(full.composite.width, r["width"].toInt());
+                QCOMPARE(full.composite.height, r["height"].toInt());
+                QCOMPARE(full.origin, QPoint(r["originX"].toInt(), r["originY"].toInt()));
+                QCOMPARE(full.layers.size(), 6);
+                QCOMPARE(sha256(full.composite.rgba), r["sha256"].toString().toLatin1());
+                continue;
+            }
             const int offset = source["offset"].toInt();
             const auto kind = source["kind"].toString();
             QByteArray data;
@@ -125,8 +201,12 @@ class BackgroundTests : public QObject {
                     QCOMPARE(bg.layers[i].image.width, l["width"].toInt());
                     QCOMPARE(bg.layers[i].image.height, l["height"].toInt());
                 }
-            } else
+            } else if (container == "raw")
+                image = decodeRawImage(data, r["layout"].toObject()).composite;
+            else
                 image = decodeHuffImage(data, container == "embedded-njpg");
+            const auto catalogImage = SceneImages::decode(rom, r["id"].toString(), false);
+            QCOMPARE(catalogImage.composite.rgba, image.rgba);
             QCOMPARE(image.width, r["width"].toInt());
             QCOMPARE(image.height, r["height"].toInt());
             if (!r["pixels"].isNull()) {
@@ -145,7 +225,8 @@ class BackgroundTests : public QObject {
                                     QString(" maximum channel difference %1").arg(maximum)));
                 ++rounded;
             } else {
-                QCOMPARE(sha256(image.rgba), r["sha256"].toString().toLatin1());
+                QVERIFY2(sha256(image.rgba) == r["sha256"].toString().toLatin1(),
+                         qPrintable(r["id"].toString()));
                 ++exact;
             }
             if (r["id"].toString() == "mode2-environment:00236B58") {

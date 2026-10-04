@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+The Cutscenes workspace now searches 1,498 Director resources and 366 image
+assets, displays current-ROM command words and background requests, and previews
+signed background layers or individual raw frames/palette banks. Image decoding
+runs outside the UI thread with one active decoder and a replaceable pending
+selection; stale completion cannot overwrite a newer selection. Zoom/pan,
+layer visibility and frame selection change only the preview. The scene bounds
+exclude Qt selection outlines. Source commands are currently read-only.
+
+`SceneImages` reads environment, foreground and scene-group selectors from the
+current ROM. All 191 rows match the independent catalog, and a redirected table
+entry selects the changed image. Group 10's format-5 wrapper selects an embedded
+archive after its B5 header/record; it is not an ordinary archive key. Its six
+members are assembled using coordinates read from the current ROM records.
+Raw CI4/CI8/I4/I8/RGBA5551 layouts preserve frames and palette banks. All 366
+individual images plus the compound assembly agree with the earlier decoder:
+323 non-HUFF exact hashes and 43 HUFF previews with no channel differences in
+this corpus. Preview equivalence is not original RSP/rendering equivalence.
+Scene-mode references are used only while the current stream hash matches;
+otherwise the preview requires an explicit mode, except class-owned group
+preload. Foreground selection remains an independent launch input. This is an
+image/command workspace, not yet actor playback or a cutscene exporter.
+
 The background decoder also reads K palettes, signed B5 layer records and HUFF
 entropy streams in native C++. HUFF uses the native coefficient layout and scale
 with a floating-point IDCT; original RSP fixed-point rounding remains approximate.
@@ -11,7 +33,7 @@ non-HUFF images match the independent browser decoder exactly, and all 43 HUFF
 previews also match exactly in the checked corpus. This comparison establishes
 compatibility with the prior preview, not pixel equivalence to the original RSP.
 The decoded Graduation hall has been rendered and visually inspected. External
-B5 members and raw-image layouts are the next catalog integration step.
+B5 members and raw-image layouts are now integrated through SceneImages.
 
 The native Director reader follows the selector directory at z64 0x1F3CA84,
 deduplicates resource keys, decodes the current ROM's custom-LZ envelopes and

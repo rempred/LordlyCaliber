@@ -7,7 +7,6 @@ const b=fs.readFileSync(process.argv[2]);if(b.readUInt32BE(0)===0x37804012)b.swa
 const out=process.argv[3],rows=[],types={},hash=v=>crypto.createHash('sha256').update(v).digest('hex');
 const archives=OB64.findArchives(b);
 for(const asset of OB64.cutsceneData.imageAssets){
- if(!['64','bg2','K','embedded-njpg','section-c-njpg'].includes(asset.container))continue;
  let bytes,source;
  if(asset.sourceKind==='lha-archive'){
   const a=archives[asset.archiveIndex];bytes=Buffer.from(OB64.extractArchive(b,a));source={kind:'lha',offset:a.offset};
@@ -21,10 +20,19 @@ for(const asset of OB64.cutsceneData.imageAssets){
  assert(parsed.renderable);
  const huff=asset.container.endsWith('njpg')||parsed.records?.some(r=>r.embeddedContainer);
  const name=`pixels-${rows.length}.rgba`;if(huff)fs.writeFileSync(path.join(out,name),Buffer.from(parsed.rgba));
- rows.push({id:asset.assetId,container:asset.container,source,width:parsed.width,height:parsed.height,
+ rows.push({id:asset.assetId,container:asset.container,layout:asset.layout,source,width:parsed.width,height:parsed.height,
   originX:parsed.originX||0,originY:parsed.originY||0,sha256:hash(parsed.rgba),pixels:huff?name:null,
   layers:(parsed.records||[]).map(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))});
  types[asset.container]=(types[asset.container]||0)+1;
 }
-fs.writeFileSync(path.join(out,'backgrounds.json'),JSON.stringify({rows,types}));
+const compoundAsset=OB64.cutsceneData.imageAssets.find(a=>a.compound);
+const compound=OB64.cutsceneAssets.composeCompoundImageAsset(compoundAsset,compoundAsset.compound.members.map(m=>{
+ const a=OB64.cutsceneData.imageAssets.find(a=>a.assetId===m.assetId);
+ return {assetId:a.assetId,image:OB64.cutsceneAssets.parseImageAsset(OB64.extractArchive(b,archives[a.archiveIndex]),a)};
+}));
+rows.push({id:compoundAsset.assetId,compound:true,width:compound.width,height:compound.height,
+ originX:compound.originX,originY:compound.originY,sha256:hash(compound.rgba)});
+const selectors=OB64.cutsceneData.backgroundSelectorTables.map(t=>({id:t.tableId,
+ entries:t.entries.map(e=>({selector:e.selector,images:e.archiveAssetIds}))}));
+fs.writeFileSync(path.join(out,'backgrounds.json'),JSON.stringify({rows,types,selectors}));
 console.log(`Independent background references: ${rows.length}; ${JSON.stringify(types)}`);

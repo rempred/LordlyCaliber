@@ -1,4 +1,5 @@
 #include "app/consumable_editor.h"
+#include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
@@ -15,6 +16,9 @@
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFontDatabase>
+#include <QGraphicsItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
@@ -58,6 +62,85 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void cutsceneCatalogSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto before = sha256(rom.bytes());
+        CutsceneEditor editor(rom);
+        editor.resize(1450, 950);
+        editor.show();
+        auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+        auto assets = editor.findChild<QListWidget *>("cutsceneAssets");
+        auto tabs = editor.findChild<QTabWidget *>("cutsceneCatalogTabs");
+        auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
+        auto requests = editor.findChild<QComboBox *>("cutsceneRequests");
+        auto frames = editor.findChild<QComboBox *>("cutsceneFrames");
+        auto layers = editor.findChild<QListWidget *>("cutsceneLayers");
+        auto view = editor.findChild<QGraphicsView *>("cutsceneCanvas");
+        QVERIFY(scenes && assets && tabs && commands && requests && frames && layers && view);
+        QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1498, 10000);
+        QCOMPARE(assets->count(), 366);
+        auto selectScene = [&](quint32 key) {
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole).toUInt() == key) {
+                    scenes->setCurrentRow(i);
+                    return true;
+                }
+            return false;
+        };
+        auto selectAsset = [&](const QString &id) {
+            for (int i = 0; i < assets->count(); ++i)
+                if (assets->item(i)->data(Qt::UserRole).toString() == id) {
+                    assets->setCurrentRow(i);
+                    return true;
+                }
+            return false;
+        };
+        QVERIFY(selectScene(0x1a14970));
+        QCOMPARE(commands->rowCount(), 282);
+        QVERIFY(requests->currentText().contains("selector 34"));
+        QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
+                                  "mode2-environment:000D62F6", 10000);
+        QVERIFY(selectScene(0x19aa852)); // Selector 2, Graduation Ceremony.
+        QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
+                                  "mode2-environment:00236B58", 10000);
+        QCOMPARE(view->scene()->sceneRect().size(), QSizeF(495, 383));
+        QVERIFY(editor.grab().save("cutscene-graduation.png"));
+        tabs->setCurrentIndex(1);
+        QVERIFY(selectAsset("archive:102"));
+        QVERIFY(selectAsset("archive:636"));
+        QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(), "archive:636",
+                                  10000);
+        QCOMPARE(frames->count(), 12);
+        frames->setCurrentIndex(2);
+        QCOMPARE(view->scene()->sceneRect().size(), QSizeF(256, 48));
+        // Allow the earlier, more expensive compound decode to finish. It must not replace this
+        // selection.
+        QTest::qWait(200);
+        QCOMPARE(editor.property("displayedImage").toString(), "archive:636");
+        QVERIFY(selectAsset("archive:102"));
+        QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(), "archive:102",
+                                  10000);
+        QCOMPARE(layers->count(), 6);
+        QCOMPARE(view->scene()->sceneRect(), QRectF(-360, -320, 607, 511));
+        layers->setCurrentRow(2);
+        QCOMPARE(view->scene()->selectedItems().size(), 1);
+        auto chosen = view->scene()->selectedItems().first();
+        layers->item(2)->setCheckState(Qt::Unchecked);
+        QVERIFY(!chosen->isVisible());
+        layers->item(2)->setCheckState(Qt::Checked);
+        QVERIFY(chosen->isVisible());
+        QVERIFY(editor.grab().save("cutscene-compound.png"));
+        auto search = editor.findChild<QLineEdit *>("cutsceneAssetsSearch");
+        search->setText("congra");
+        int visible = 0;
+        for (int i = 0; i < assets->count(); ++i)
+            visible += !assets->item(i)->isHidden();
+        QCOMPARE(visible, 1);
+        QCOMPARE(sha256(rom.bytes()), before);
     }
     void scenarioMapEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
