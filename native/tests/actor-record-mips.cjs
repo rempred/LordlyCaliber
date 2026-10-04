@@ -24,6 +24,7 @@ function run(kind,name,args,options={}){
  const initial=Buffer.alloc(336,0xa7);
  initial.writeInt32BE(30,0xe8);initial.writeInt16BE(1,0x138);initial[0x13f]=2;initial[0x146]=1;
  initial.writeInt16BE(12,0x134);
+ initial[0x13d]=0; // A valid ordinary decoder; other unrelated bytes stay poisoned.
  initial.writeFloatBE(10,0x11c);initial.writeFloatBE(20,0x120);initial.writeFloatBE(30,0x124);
  m.load(actor-16,Buffer.alloc(368,0xa7));m.load(actor,initial);m.w8(0x8018fc19,mode);m.w32(0x801ce8fc,presentation);
  m.w32(scene+24+Math.max(0,slot)*4,options.allocate?0:actor);m.set('sp',sp);

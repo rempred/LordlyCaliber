@@ -13,6 +13,15 @@ typedef struct {
 } LordlyActorSelection;
 typedef int (*LordlyActorResolve)(void *, int32_t bank, int32_t animation, int32_t facing, int *state);
 typedef int (*LordlyActorHeight)(void *, int mode, float x, float z, float *height);
+typedef struct {
+    int32_t slot, source, owner, state, flag_b, flag_a;
+    uint8_t keep_ground, keep_identity, presentation;
+} LordlyActorBodySelection;
+/* Body initializer's record boundary (ROM 2A9364). Linked classification is
+ * 0 ordinary, 1 primary, 2 secondary. Caller owns row allocation, appearance
+ * resource preparation, immediate pose and propagation to linked secondaries. */
+int lordly_actor_body_select(LordlyActorRecord *, const LordlyActorBodySelection *,
+    int classification, int *advance);
 enum { LORDLY_ACTOR_OK, LORDLY_ACTOR_INVALID, LORDLY_ACTOR_RESOURCE, LORDLY_ACTOR_TERRAIN };
 void lordly_actor_read_pose(const LordlyActorRecord *, LordlyActorPose *);
 void lordly_actor_write_pose(LordlyActorRecord *, const LordlyActorPose *);

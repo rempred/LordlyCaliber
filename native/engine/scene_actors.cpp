@@ -1,4 +1,7 @@
 #include "engine/scene_actors.h"
+#include "engine/class_data.h"
+#include "game/director/actor_body.h"
+#include <cstring>
 namespace lordly {
 namespace {
 float coordinate(quint32 word) {
@@ -36,7 +39,127 @@ void SceneActors::supplyBindingInputs(ActorBindingInputs inputs) {
     for (const auto &row : inputs.rows)
         if (row.size() != 248)
             throw Error("Actor binding requires twenty complete 248-byte caller rows");
+    for (int i = 0; i < 20; ++i)
+        bodyRows_[i] = inputs.rows[i];
     binding_ = std::move(inputs);
+}
+void SceneActors::supplyBodyRows(const QVector<QByteArray> &rows) {
+    if (rows.size() > 28)
+        throw Error("Body context exceeds 28 actor identities");
+    for (const auto &row : rows)
+        if (row.size() != 248)
+            throw Error("Body context requires complete 248-byte rows");
+    for (int i = 0; i < 28; ++i)
+        bodyRows_[i] = i < rows.size() ? rows[i] : QByteArray{};
+}
+const QByteArray &SceneActors::bodyRow(int identity) const {
+    if (identity < 0 || identity >= 28 || bodyRows_[identity].size() != 248)
+        throw Error("Body command requires its caller appearance row");
+    return bodyRows_[identity];
+}
+int SceneActors::classification(const QByteArray &record) const {
+    const int identity = u8(record, 0x147);
+    if (identity == 255)
+        return 0;
+    const auto &row = bodyRow(identity);
+    return lordly_body_classification(reinterpret_cast<const uint8_t *>(row.constData()),
+                                      u8(record, 0x149));
+}
+void SceneActors::configureLinkedPose(ActorInstance &actor) const {
+    if (!actor.pose().actor().decoder_mode)
+        return;
+    const auto record = actor.record();
+    const auto &row = bodyRow(u8(record, 0x147));
+    const int member = u8(record, 0x149);
+    if (member >= 2)
+        throw Error("Body pose linked-object selector exceeds its pair");
+    actor.pose().setLinkedObjectKnownAbsent(u32(row, member * 4) == 0);
+}
+void SceneActors::selectBody(const LordlyActorBodySelection &selection) {
+    auto next = *this;
+    next.registrations_.clear();
+    next.selectBodyInternal(selection);
+    *this = std::move(next);
+}
+void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
+    if (s.slot == -1)
+        return;
+    checkSlot(s.slot);
+    if (!actors_[s.slot])
+        return;
+    if (actors_[s.slot]->pose().suspended())
+        throw Error("Finish the actor's pose invocation before changing its body");
+    auto record = actors_[s.slot]->record();
+    LordlyActorRecord raw;
+    std::memcpy(raw.bytes, record.constData(), sizeof(raw.bytes));
+    int advance = 0;
+    if (lordly_actor_body_select(&raw, &s, classification(record), &advance) != LORDLY_ACTOR_OK)
+        throw Error("Invalid body selection");
+    if (!advance)
+        return;
+    const int flagB = s.flag_b == -1 ? qint16(u16(record, 0x13a)) : s.flag_b;
+    if (flagB < 0 || flagB > 1)
+        throw Error("Body registration flag exceeds 0..1");
+    record = QByteArray(reinterpret_cast<const char *>(raw.bytes), sizeof(raw.bytes));
+    int identity = u8(record, 0x147);
+    if (!s.keep_identity && identity == 255) {
+        std::array<bool, 28> used{};
+        for (const auto &a : actors_)
+            if (a) {
+                const int id = u8(a->record(), 0x147);
+                if (id < 28)
+                    used[id] = true;
+            }
+        identity = 0;
+        while (identity < 28 && used[identity])
+            ++identity;
+        if (identity == 28)
+            throw Error("No free body appearance identity");
+        bodyRow(identity); // Validate before replacing appearance fields.
+        put8(record, 0x147, quint8(identity));
+        put8(record, 0x148, 1);
+        const auto classes = ClassData::load(rom_);
+        QByteArray records;
+        for (const auto &entry : classes.entries())
+            records += entry.record;
+        uint16_t appearance[4];
+        if (lordly_body_appearance(reinterpret_cast<const uint8_t *>(records.constData()),
+                                   int(classes.entries().size()), qint32(u32(record, 0xe8)),
+                                   qint32(u32(record, 0xec)), appearance))
+            throw Error("Body appearance class exceeds the current class table");
+        for (int i = 0; i < 4; ++i)
+            put16(bodyRows_[identity], 0x36 + i * 2, appearance[i]);
+    }
+    const auto &row = bodyRow(identity);
+    uint16_t appearance[4], equipment;
+    for (int i = 0; i < 4; ++i)
+        appearance[i] = u16(row, 0x36 + i * 2);
+    const auto items = rom_.bytes().mid(0x62300, 278 * 32);
+    if (items.size() != 278 * 32 ||
+        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, appearance,
+                              &equipment))
+        throw Error("Body appearance item exceeds the current item table");
+    ActorInstance replacement(rom_, record);
+    configureLinkedPose(replacement);
+    const auto &p = replacement.pose().actor();
+    registrations_ << BodyRegistration{s.slot,   p.bank,
+                                       p.owner,  p.variant,
+                                       p.flag_b, lordly_body_equipment_variant(p.bank, equipment)};
+    if (replacement.pose().advance() != LORDLY_POSE_OK)
+        throw Error(replacement.pose().error());
+    actors_[s.slot] = std::move(replacement);
+    if (classification(actors_[s.slot]->record()) == 1) {
+        for (int i = 0; i < 28; ++i) {
+            if (!actors_[i])
+                continue;
+            const auto candidate = actors_[i]->record();
+            if (u8(candidate, 0x147) == identity && classification(candidate) == 2) {
+                auto linked = s;
+                linked.slot = i;
+                selectBodyInternal(linked);
+            }
+        }
+    }
 }
 void SceneActors::vacate(int slot) {
     checkSlot(slot);
@@ -50,7 +173,7 @@ void SceneActors::bindMember(int destination, int member) {
         throw Error("Unit-member binding requires the current unit and complete caller rows");
     int ordinal = -1;
     for (int i = 0; i < 20; ++i) {
-        const auto &row = binding_->rows[i];
+        const auto &row = bodyRow(i);
         if ((u32(row, 0x40) & 0x100) && u8(row, 0xf6) == binding_->unitMembers[member] &&
             u32(row, 0x48)) {
             ordinal = i;
@@ -70,6 +193,14 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x2a) {
+        if (args.size() != 6)
+            throw Error("Body selection command is truncated");
+        if (mode_ == 2)
+            selectBody({qint32(args[0]), qint32(args[1]), qint32(args[5]), qint32(args[2]),
+                        qint32(args[3]), qint32(args[4]), 0, 0, presentation_});
+        return true;
+    }
     if (opcode == 0xa6 && args.size() == 2) {
         bindMember(qint32(args[0]), qint32(args[1]));
         return true;
@@ -156,8 +287,11 @@ void SceneActors::advancePlanar() {
 void SceneActors::advancePoses() {
     auto next = actors_;
     for (auto &actor : next)
-        if (actor && actor->pose().advance() != LORDLY_POSE_OK)
-            throw Error(actor->pose().error());
+        if (actor) {
+            configureLinkedPose(*actor);
+            if (actor->pose().advance() != LORDLY_POSE_OK)
+                throw Error(actor->pose().error());
+        }
     actors_ = std::move(next);
 }
 } // namespace lordly

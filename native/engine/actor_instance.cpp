@@ -53,7 +53,12 @@ ActorPosePlayer player(const Rom &rom, const QByteArray &record) {
     const auto r = raw(record);
     LordlyActorPose fields{};
     lordly_actor_read_pose(&r, &fields);
-    ActorPosePlayer result(rom, ActorArt::load(rom, fields.bank), fields.state, fields.variant);
+    auto art = fields.decoder_mode ? ActorArt::loadBody(rom, fields.bank, fields.owner,
+                                                        fields.variant, fields.flag_b)
+                                   : ActorArt::load(rom, fields.bank);
+    // Special body classes clamp the state at their next native invocation.
+    // Use a valid constructor state, then restore every native field below.
+    ActorPosePlayer result(rom, std::move(art), 0, fields.variant);
     result.actor() = fields;
     return result;
 }
@@ -90,7 +95,8 @@ QByteArray ActorInstance::record() const {
     return bytes(result);
 }
 void ActorInstance::setSlot(int slot) {
-    if (slot < 0 || slot >= 28) throw Error("Actor slot is outside 0..27");
+    if (slot < 0 || slot >= 28)
+        throw Error("Actor slot is outside 0..27");
     put32(record_, 0xe4, quint32(slot));
 }
 } // namespace lordly

@@ -3,7 +3,7 @@
 #include "game/director/actor_record.h"
 #include <functional>
 namespace lordly {
-// A lossless native record with explicit host ownership and ordinary pose binding.
+// A lossless native record with explicit host ownership and current-ROM pose binding.
 class ActorInstance {
   public:
     using Height = std::function<float(int mode, float x, float z)>;

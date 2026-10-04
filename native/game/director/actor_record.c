@@ -34,6 +34,38 @@ void lordly_actor_write_pose(LordlyActorRecord *r, const LordlyActorPose *p) {
     memcpy(r->bytes, p->material, 16); memcpy(r->bytes + 16, p->material_delta, 16);
 }
 static int finite_position(LordlyActorPosition p) { return isfinite(p.x) && isfinite(p.y) && isfinite(p.z); }
+int lordly_actor_body_select(LordlyActorRecord *record, const LordlyActorBodySelection *s,
+    int classification, int *advance) {
+    LordlyActorRecord next;
+    int32_t source, owner, state, flag_b;
+    if (!s || !advance || classification < 0 || classification > 2) return LORDLY_ACTOR_INVALID;
+    *advance = 0;
+    if (s->slot == -1 || !record) return LORDLY_ACTOR_OK;
+    if (s->slot < 0 || s->slot >= 28) return LORDLY_ACTOR_INVALID;
+    source = s->source == -1 ? signed_word(word(record, 0xe8)) : s->source;
+    owner = s->owner == -1 ? signed_word(word(record, 0xec)) : s->owner;
+    state = s->state == -1 ? half(record, 0x138) : s->state;
+    flag_b = s->flag_b == -1 ? half(record, 0x13a) : s->flag_b;
+    if (classification == 2) {
+        if (state >= 50) return LORDLY_ACTOR_OK;
+        state += 50;
+    }
+    next = *record;
+    put_word(&next, 0xe4, (uint8_t)s->slot);
+    if (source != -1) put_word(&next, 0xe8, (uint32_t)source);
+    if (owner != -1) put_word(&next, 0xec, (uint32_t)owner);
+    if (state != -1) put_half(&next, 0x138, state);
+    next.bytes[0x13d] = 1; put_half(&next, 0x134, state);
+    put_word(&next, 0xf0, 0xffffffffU); put_word(&next, 0xf4, 0); put_word(&next, 0xf8, 0);
+    put_word(&next, 0x128, 0); put_word(&next, 0x12c, 0); put_real(&next, 0x130, 1.f);
+    put_word(&next, 0xe0, 0x8022f2ccU); put_half(&next, 0x13a, flag_b);
+    next.bytes[0x13c] = s->presentation;
+    if (!s->keep_ground) next.bytes[0x145] = 1;
+    if (s->flag_a != -1) next.bytes[0x146] = (uint8_t)s->flag_a;
+    memset(next.bytes, 255, 16); memset(next.bytes + 16, 0, 16);
+    *record = next; *advance = 1;
+    return LORDLY_ACTOR_OK;
+}
 int lordly_actor_select(LordlyActorRecord *record, const LordlyActorSelection *s,
     LordlyActorResolve resolve, void *context, int *advance) {
     LordlyActorRecord next;

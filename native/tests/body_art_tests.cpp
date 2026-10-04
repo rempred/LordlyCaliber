@@ -1,6 +1,8 @@
 #include "engine/actor_art.h"
 #include "engine/actor_pose.h"
 #include "engine/class_data.h"
+#include "engine/scene_actors.h"
+#include "game/director/actor_body.h"
 #include "game/director/actor_state.h"
 #include <QDir>
 #include <QFile>
@@ -27,6 +29,115 @@ class BodyArtTests : public QObject {
         return QJsonDocument::fromJson(file.readAll()).object();
     }
   private slots:
+    void bodyInitializationAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto cases = fixture("actor-body-mips.cjs", path)["results"].toArray();
+        QCOMPARE(cases.size(), 675);
+        const auto rom = Rom::open(path);
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            SceneActors scene(rom, 2, 0x3c);
+            QVector<QByteArray> caller;
+            for (const auto &v : row["rows"].toArray())
+                caller << QByteArray::fromHex(v.toString().toLatin1());
+            scene.supplyBodyRows(caller);
+            for (const auto &v : row["initial"].toArray()) {
+                const auto a = v.toObject();
+                scene.supplyActor(a["slot"].toInt(),
+                                  QByteArray::fromHex(a["record"].toString().toLatin1()));
+            }
+            const auto a = row["args"].toArray();
+            // Compare the C record transformation at the original pre-pose
+            // boundary too. Appearance identity assignment belongs to the
+            // host scene; the complete post-pose comparison below includes it.
+            for (const auto &v : row["before"].toArray()) {
+                const auto expected = v.toObject();
+                const int slot = expected["slot"].toInt();
+                const auto initial = scene.actor(slot)->record();
+                LordlyActorRecord raw;
+                std::memcpy(raw.bytes, initial.constData(), sizeof(raw.bytes));
+                const int id = u8(initial, 0x147);
+                const int kind =
+                    id == 255 ? 0
+                              : lordly_body_classification(
+                                    reinterpret_cast<const uint8_t *>(caller[id].constData()),
+                                    u8(initial, 0x149));
+                const LordlyActorBodySelection selection{
+                    slot,         a[1].toInt(), a[2].toInt(),         a[3].toInt(),
+                    a[4].toInt(), a[5].toInt(), quint8(a[6].toInt()), quint8(a[7].toInt()),
+                    0x3c};
+                int advance = 0;
+                QCOMPARE(lordly_actor_body_select(&raw, &selection, kind, &advance),
+                         LORDLY_ACTOR_OK);
+                QCOMPARE(advance, 1);
+                auto bytes = QByteArray::fromHex(expected["record"].toString().toLatin1());
+                bytes[0x147] = initial[0x147];
+                bytes[0x148] = initial[0x148];
+                QCOMPARE(QByteArray(reinterpret_cast<const char *>(raw.bytes), sizeof(raw.bytes)),
+                         bytes);
+            }
+            try {
+                scene.selectBody({a[0].toInt(), a[1].toInt(), a[2].toInt(), a[3].toInt(),
+                                  a[4].toInt(), a[5].toInt(), quint8(a[6].toInt()),
+                                  quint8(a[7].toInt()), 0x3c});
+            } catch (const Error &e) {
+                QFAIL(qPrintable(row["name"].toString() + ": " + QString::fromUtf8(e.what())));
+            }
+            for (const auto &v : row["after"].toArray()) {
+                const auto expected = v.toObject();
+                const auto actual = scene.actor(expected["slot"].toInt())->record().toHex();
+                QVERIFY2(actual == expected["record"].toString().toLatin1(),
+                         qPrintable(row["name"].toString()));
+            }
+            QJsonArray actualRows, registrations;
+            for (int i = 0; i < 28; ++i)
+                actualRows << QString::fromLatin1(scene.bodyRow(i).toHex());
+            for (const auto &r : scene.bodyRegistrations())
+                registrations << QJsonArray{r.source, r.owner, r.flagA, r.flagB, r.equipment};
+            QCOMPARE(actualRows, row["afterRows"].toArray());
+            QCOMPARE(registrations, row["registrations"].toArray());
+        }
+    }
+    void bodyCommandContextAndAtomicity() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        SceneActors scene(rom, 2, 7);
+        int value = 123;
+        QVERIFY(scene.service(0x14, {6, 3, 0, 0, 120000, 0, 25000, 2, 0}, value));
+        const auto before = scene.actor(6)->record();
+        scene.supplyMotion(6, {1, 0, 2, 12, 0, 0, 1});
+        QVERIFY_THROWS_EXCEPTION(Error, scene.service(0x2a, {6, 32, 10, 1, 0, 32}, value));
+        QCOMPARE(scene.actor(6)->record(), before);
+        QCOMPARE(scene.motion(6).remaining, 12);
+        scene.supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+        QVERIFY(scene.service(0x2a, {6, 32, 10, 1, 0, 32}, value));
+        const auto changed = scene.actor(6)->record();
+        QCOMPARE(u8(changed, 0x13d), 1);
+        QCOMPARE(u32(changed, 0xe8), 32U);
+        QCOMPARE(u32(changed, 0xec), 32U);
+        QCOMPARE(u8(changed, 0x147), 0);
+        QCOMPARE(u8(changed, 0x148), 1);
+        QCOMPARE(u8(changed, 0x13c), 7);
+        QCOMPARE(u8(changed, 0x141), 2);
+        QCOMPARE(u32(changed, 0x11c), u32(before, 0x11c));
+        QCOMPARE(scene.motion(6).remaining, 12);
+        QCOMPARE(scene.actor(6)->pose().art().sourceClass(), 32);
+        const auto row = scene.bodyRow(0);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.service(0x2a, {6, 0, 10, 1, 0, 0}, value));
+        QCOMPARE(scene.actor(6)->record(), changed);
+        QCOMPARE(scene.bodyRow(0), row);
+        scene.advancePoses();
+        scene.advancePlanar();
+        QCOMPARE(scene.actor(6)->pose().actor().position.x, 121.f);
+        QCOMPARE(scene.motion(6).remaining, 11);
+        SceneActors otherMode(rom, 0, 0);
+        QVERIFY(otherMode.service(0x2a, {999, 999, 999, 999, 999, 999}, value));
+        QCOMPARE(value, 123);
+    }
     void alternatePosesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
