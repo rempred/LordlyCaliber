@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+The independent 2D SpritePosePlayer reconstructs ROM 29E7E0..29EAB0 with signed
+integer X/Y, the native cursor/delay rules and lossless 80-byte records. Unlike
+Actor poses, opcode 12 does nothing and the second material block is not added
+into the first. Positional sound selection reads stored Y. All 54,600 retail
+invocations and 440 constructed boundary invocations match complete records,
+return values and sound requests from the original instructions. Every comparison
+also passes with one-command budgets; malformed field writes and unavailable
+sound services preserve the current continuation. The original resource registry
+and audio consumer are controlled, so this does not establish final sound output.
+
 Actor pose sweeps retain their current slot and instruction continuation across
 budget limits or unavailable context. Earlier actors are not replayed on resume;
 ScenePlayback retains the sweep's entry guard and reports a pose budget distinctly.
