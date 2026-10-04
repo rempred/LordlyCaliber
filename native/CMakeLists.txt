@@ -28,7 +28,7 @@ target_sources(lordly_engine PRIVATE game/director/sprite_pose.c engine/sprite_p
 target_sources(lordly_engine PRIVATE engine/scene_sprites.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_resource_dispatch.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_dialogue_runtime.cpp)
-target_sources(lordly_engine PRIVATE engine/dialogue_draw.cpp)
+target_sources(lordly_engine PRIVATE engine/dialogue_draw.cpp game/director/dialogue_draw_plan.c)
 target_sources(lordly_engine PRIVATE game/director/actor_record.c)
 target_sources(lordly_engine PRIVATE game/director/actor_body.c)
 target_sources(lordly_engine PRIVATE game/director/scene_projection.c engine/scene_projection.cpp)

@@ -1,5 +1,15 @@
 # Dialogue runtime
 
+The complete drawing control path now compiles a portable adaptation of accepted
+Decomp 8012b84a func_000E6D90.c. It decodes explicit big-endian fields and emits
+rendering services through a sink instead of using global native pointers. All
+192 original-instruction traces match service order, arguments, text-format
+selection and inline display words across styles, prompt/choice/history paths,
+mirroring and alpha values. Unsafe history rows reject before emitting services.
+Rendering helpers are controlled; this checks the orchestration, not their pixels.
+The ordinary 93-rectangle regression also passes (224 ms combined). Connecting
+the complete plan to the host artwork/raster backend remains the next step.
+
 The ordinary opaque compositor now emits typed texture rectangles using current-ROM
 frame, portrait and 2-bit glyph resources, and paints a bounded RGBA target without
 Widgets. All 93 rectangles from six existing native display-command fixtures agree

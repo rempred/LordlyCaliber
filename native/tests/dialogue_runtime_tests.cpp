@@ -5,13 +5,14 @@
 #include "engine/scene_dialogue.h"
 #include "engine/scene_dialogue_runtime.h"
 #include "engine/scene_playback.h"
+#include "game/director/dialogue_draw_plan.h"
 #include "game/director/text_metrics.h"
 #include <QDir>
 #include <QFile>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QImage>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -25,6 +26,57 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void sourceDrawingPlanAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-draw-plan-mips.cjs"),
+                                 path, work.filePath("draw.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("draw.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 192);
+        auto sink = [](void *context, LordlyDialogueDrawService service, const int32_t *args,
+                       int count) {
+            auto &trace = *static_cast<QJsonArray *>(context);
+            QJsonArray arguments;
+            for (int i = 0; i < count; ++i)
+                arguments.append(args[i]);
+            trace.append(QJsonObject{{"service", int(service)}, {"args", arguments}});
+        };
+        for (const auto &value : cases) {
+            const auto c = value.toObject();
+            const auto window = QByteArray::fromHex(c["window"].toString().toLatin1());
+            auto payload = QByteArray::fromHex(c["payload"].toString().toLatin1());
+            QJsonArray trace;
+            QCOMPARE(lordly_dialogue_draw_plan(
+                         reinterpret_cast<const uint8_t *>(window.constData()),
+                         reinterpret_cast<const uint8_t *>(payload.constData()), sink, &trace),
+                     0);
+            QVERIFY2(trace == c["trace"].toArray(),
+                     qPrintable(
+                         c["id"].toString() + "\nactual " +
+                         QString::fromUtf8(QJsonDocument(trace).toJson(QJsonDocument::Compact)) +
+                         "\nexpected " +
+                         QString::fromUtf8(
+                             QJsonDocument(c["trace"].toArray()).toJson(QJsonDocument::Compact))));
+            put8(payload, 0x4f, 1);
+            put8(payload, 0x54, 95);
+            put16(payload, 0x1e, 3);
+            trace = {};
+            QCOMPARE(lordly_dialogue_draw_plan(
+                         reinterpret_cast<const uint8_t *>(window.constData()),
+                         reinterpret_cast<const uint8_t *>(payload.constData()), sink, &trace),
+                     -1);
+            QVERIFY(trace.isEmpty());
+        }
+    }
     void ordinaryDrawingCommands() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -68,7 +120,8 @@ class DialogueRuntimeTests : public QObject {
                 DialogueDrawing::paint(image, commands);
                 QVERIFY(image.rgba != QByteArray(320 * 240 * 4, 0));
                 if (c["sample"].toInt() == 89) {
-                    const QImage rendered(reinterpret_cast<const uchar *>(image.rgba.constData()), 320, 240, QImage::Format_RGBA8888);
+                    const QImage rendered(reinterpret_cast<const uchar *>(image.rgba.constData()),
+                                          320, 240, QImage::Format_RGBA8888);
                     QVERIFY(rendered.save("native-dialogue-render.png"));
                 }
                 put8(payload, 0x47, 1);
