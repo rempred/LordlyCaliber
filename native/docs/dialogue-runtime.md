@@ -1,5 +1,17 @@
 # Dialogue runtime
 
+Timed text reveal reconstructs ROM E87F8..E93A4 at RAM 8019BA78 with its line
+helper at E93A4. All 5,037 sequences / 10,592 complete snapshots pass (1,222 ms):
+all retail entries plus explicit controls, six speed boundaries and repeated
+invocations. Output bytes, full records, typed insertion cursors, eight shared
+controls, sound requests and child-window requests agree. Original segment and
+choice helpers run; sound, child allocation, zero-fill and formatted append are
+controlled. The accepted eacfc helper is a U16 identity. The centering format is
+`{X%03d}`. Malformed text, missing names and exhausted budgets roll back all output
+and requests. The 768-byte output and 96-entry line table are bounded on PC.
+This is one reveal invocation; surrounding input/scroll/window callbacks remain
+to connect. Sound requests are not yet audible output.
+
 Choice scanning reconstructs ROM EA684..EA8EC at RAM 8019D904/8019DA58.
 All 4,616 original choice counts and 55,392 marker seeks pass (11,719 ms), with
 no controlled helpers. Retail sources and constructed operand/two-byte cases

@@ -1,4 +1,5 @@
 #include "engine/dialogue_archive.h"
+#include "engine/dialogue_player.h"
 #include "engine/dialogue_text.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_playback.h"
@@ -21,6 +22,91 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void textRevealAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-reveal-mips.cjs"),
+                                 path, work.filePath("reveal.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        qInfo().noquote() << reference.readAllStandardOutput();
+        QFile file(work.filePath("reveal.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        DialogueTextEnvironment environment;
+        const auto entries = root["substitutions"].toArray();
+        for (int i = 0; i < entries.size(); ++i)
+            environment.substitutions[i] =
+                entries[i].isNull() ? QByteArray{}
+                                    : QByteArray::fromHex(entries[i].toString().toLatin1());
+        environment.longNameSuffix = QByteArray::fromHex(root["suffix"].toString().toLatin1());
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QVERIFY(cases.size() > 4569);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            DialogueTextFrame frame{QByteArray::fromHex(c["window"].toString().toLatin1()),
+                                    QByteArray::fromHex(c["state"].toString().toLatin1())};
+            const auto controls = QByteArray::fromHex(c["controls"].toString().toLatin1());
+            for (int i = 0; i < 8; ++i)
+                frame.controls[i] = quint8(controls[i]);
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            for (const auto &s : c["snapshots"].toArray()) {
+                const auto expected = s.toObject();
+                quint8 result = 0;
+                try {
+                    result =
+                        revealDialogueText(frame, source, environment, quint16(c["speed"].toInt()));
+                } catch (const std::exception &e) {
+                    QFAIL(qPrintable(c["id"].toString() + ": " + e.what()));
+                }
+                QVERIFY2(frame.window.toHex() == expected["window"].toString().toLatin1(),
+                         qPrintable(c["id"].toString() + " window"));
+                QVERIFY2(frame.state.toHex() == expected["state"].toString().toLatin1(),
+                         qPrintable(c["id"].toString() + " payload speed " +
+                                    QString::number(c["speed"].toInt())));
+                QCOMPARE(result, expected["result"].toInt());
+                QCOMPARE(frame.glyphSounds, expected["sounds"].toInt());
+                const auto expectedControls =
+                    QByteArray::fromHex(expected["controls"].toString().toLatin1());
+                for (int i = 0; i < 8; ++i)
+                    QCOMPARE(frame.controls[i], quint8(expectedControls[i]));
+                QCOMPARE(frame.insertion.has_value(), !expected["insertion"].isNull());
+                if (frame.insertion) {
+                    const auto insertion = expected["insertion"].toObject();
+                    QCOMPARE(frame.insertion->key, insertion["key"].toInt());
+                    QCOMPARE(frame.insertion->cursor, quint32(insertion["cursor"].toInt()));
+                }
+                const auto children = expected["children"].toArray();
+                QCOMPARE(frame.children.size(), children.size());
+                for (int i = 0; i < children.size(); ++i) {
+                    const auto child = children[i].toObject();
+                    QCOMPARE(frame.children[i].x, child["x"].toInt());
+                    QCOMPARE(frame.children[i].y, child["y"].toInt());
+                    QCOMPARE(frame.children[i].entry, child["entry"].toInt());
+                }
+            }
+        }
+        DialogueTextFrame frame{QByteArray(168, 0), QByteArray(1144, 0)};
+        const auto before = frame;
+        QVERIFY_THROWS_EXCEPTION(Error, revealDialogueText(frame, QByteArray("@%0\0", 4), {}, 512));
+        QCOMPARE(frame.window, before.window);
+        QCOMPARE(frame.state, before.state);
+        QVERIFY_THROWS_EXCEPTION(
+            Error, revealDialogueText(frame, QByteArray("{unterminated\0", 14), {}, 512));
+        QCOMPARE(frame.state, before.state);
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 revealDialogueText(frame, QByteArray("@m@m@m\0", 7), {}, 512, 3));
+        QCOMPARE(frame.window, before.window);
+        QCOMPARE(frame.state, before.state);
+        QVERIFY(frame.children.isEmpty());
+        QCOMPARE(frame.glyphSounds, 0);
+    }
     void choiceScanningAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
