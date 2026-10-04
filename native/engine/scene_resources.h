@@ -17,6 +17,7 @@ class SceneResources {
     void supplyRecord(int slot, const QByteArray &record);
     bool active(int slot) const;
     void rebuildPriority(SceneResourceQueue &queue);
+    void advanceOpening(const SceneResourceQueue &queue);
     int registerResource(quint16 flags, quint32 initializer, qint32 x, qint32 y, qint32 right,
                          qint32 bottom, qint32 priority);
     int registerWindow(quint32 initializer, qint32 x, qint32 y, qint32 kind, qint32 style);

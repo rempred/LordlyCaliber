@@ -30,6 +30,14 @@ bool SceneResources::active(int slot) const {
 void SceneResources::rebuildPriority(SceneResourceQueue &queue) {
     lordly_ui_priority(&pool_, &queue);
 }
+void SceneResources::advanceOpening(const SceneResourceQueue &queue) {
+    auto next = pool_;
+    const auto result = lordly_ui_opening(&next, &queue);
+    if (result)
+        throw Error(result == -2 ? "Scene resource opening divides by zero speed"
+                                 : "Scene resource queue exceeds the six-slot pool");
+    pool_ = next;
+}
 int SceneResources::registerResource(quint16 flags, quint32 initializer, qint32 x, qint32 y,
                                      qint32 right, qint32 bottom, qint32 priority) {
     const int slot = lordly_ui_register(&pool_, flags, initializer, quint16(x), quint16(y),

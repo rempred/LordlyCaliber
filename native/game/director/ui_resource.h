@@ -19,6 +19,8 @@ typedef struct {
 /* ROM859C..86EC: stable descending unsigned priority, then nonzero renumbering.
  * Unused queue entries remain intact, including when the active count is zero. */
 void lordly_ui_priority(LordlyUiPool *, LordlyUiQueue *);
+/* ROM79EC..7FF8. Caller stages the pool; -1 invalid queue, -2 zero speed. */
+int lordly_ui_opening(LordlyUiPool *, const LordlyUiQueue *);
 /* ROM735C..745C: preserves all bytes except the nine registration fields.
  * Native exhaustion loops forever; the host returns -1 without writes. */
 int lordly_ui_register(LordlyUiPool *, uint16_t flags, uint32_t initializer, uint16_t x, uint16_t y,

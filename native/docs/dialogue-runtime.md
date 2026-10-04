@@ -1,5 +1,11 @@
 # Dialogue runtime
 
+The opening queue compiles ROM 79EC..7FF8 at RAM 800775EC. All 512 sequences /
+6,144 complete pool snapshots pass (300 ms), with no controlled helpers. This
+preserves direction flags, signed extents, clipping, stored fractional byte lanes
+and skipped-axis accumulators carried across records within a pass. Invalid queue
+entries and late zero-speed failures roll back the whole host pool.
+
 Shared-resource priority rebuilding now compiles ROM 859C..86EC at RAM 8007819C.
 It stably sorts active slots by unsigned descending priority, then renumbers
 nonzero priorities while retaining zero values and unused queue cells. All 384

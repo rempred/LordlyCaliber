@@ -11,6 +11,62 @@ using namespace lordly;
 class ResourceRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void openingAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("ui-opening-mips.cjs"),
+             path, work.filePath("opening.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("opening.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 512);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            SceneResources pool({0, 0, 0xffff});
+            SceneResourceQueue queue{};
+            queue.count = quint16(c["count"].toInt());
+            const auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+            for (int i = 0; i < 6; ++i) {
+                pool.supplyRecord(i, initial.mid(i * 168, 168));
+                queue.entries[i] = quint16(c["order"].toArray()[i].toInt());
+            }
+            int update = 0;
+            for (const auto &expected : c["snapshots"].toArray()) {
+                pool.advanceOpening(queue);
+                QByteArray actual;
+                for (int i = 0; i < 6; ++i)
+                    actual += pool.record(i);
+                QVERIFY2(actual.toHex() == expected.toString().toLatin1(),
+                         qPrintable(c["id"].toString() + " update " + QString::number(update++)));
+            }
+        }
+        SceneResources pool({0, 0, 0xffff});
+        SceneResourceQueue queue{2, {0, 1, 2, 3, 4, 5}};
+        auto record = QByteArray(168, 0);
+        put16(record, 0, 0xe800);
+        put8(record, 4, 8);
+        put16(record, 0x28, 100);
+        put16(record, 0x2a, 61);
+        pool.supplyRecord(0, record);
+        put8(record, 4, 0);
+        pool.supplyRecord(1, record);
+        const auto first = pool.record(0);
+        QVERIFY_THROWS_EXCEPTION(Error, pool.advanceOpening(queue));
+        QCOMPARE(pool.record(0), first);
+        QCOMPARE(pool.record(1), record);
+        queue.count = 7;
+        QVERIFY_THROWS_EXCEPTION(Error, pool.advanceOpening(queue));
+        queue.count = 1;
+        queue.entries[0] = 6;
+        QVERIFY_THROWS_EXCEPTION(Error, pool.advanceOpening(queue));
+    }
     void priorityAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
