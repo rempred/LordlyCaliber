@@ -1,3 +1,4 @@
+#include "engine/archive.h"
 #include "engine/class_data.h"
 #include "engine/class_runtime_inventory.h"
 #include "engine/class_text.h"
@@ -45,6 +46,59 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void lhaArchives() {
+        QCOMPARE(lhaCrc16("123456789"), quint16(0xbb3d));
+        // One literal A, represented with the format's single-symbol trees.
+        QString bits;
+        auto add = [&](quint32 value, int width) {
+            for (int i = width - 1; i >= 0; --i)
+                bits += (value & (1U << i)) ? '1' : '0';
+        };
+        add(1, 16);
+        add(0, 5);
+        add(0, 5);
+        add(0, 9);
+        add(65, 9);
+        add(0, 4);
+        add(0, 4);
+        QByteArray stream((bits.size() + 7) / 8, 0);
+        for (qsizetype i = 0; i < bits.size(); ++i)
+            if (bits[i] == '1')
+                stream[i / 8] = char(quint8(stream[i / 8]) | (1 << (7 - i % 8)));
+        QCOMPARE(decodeLh5(stream, 1), QByteArray("A"));
+        for (qsizetype count = 0; count < stream.size(); ++count)
+            QVERIFY_THROWS_EXCEPTION(Error, decodeLh5(stream.first(count), 1));
+        QVERIFY_THROWS_EXCEPTION(Error, decodeLh5(QByteArray(32, 0), 1));
+        auto invalidTree = stream;
+        put8(invalidTree, 2, 0xf8); // Pre-tree length31 exceeds alphabet19.
+        QVERIFY_THROWS_EXCEPTION(Error, decodeLh5(invalidTree, 1));
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied for archive CRC checks");
+        try {
+            const auto rom = Rom::open(path);
+            const auto shops = LhaMember::find(rom, "shopcsv.bin");
+            const auto towns = LhaMember::find(rom, "ktenmain.bin");
+            QCOMPARE(shops.decodedSize, qsizetype(1098));
+            QCOMPARE(towns.decodedSize, qsizetype(8848));
+            const auto shopData = shops.decode(rom), townData = towns.decode(rom);
+            QCOMPARE(lhaCrc16(shopData), quint16(0xa531));
+            QCOMPARE(lhaCrc16(townData), quint16(0x1889));
+            QCOMPARE(u16(shopData, 0), quint16(512));
+            QCOMPARE(u16(shopData, 2), quint16(512)); // Empty slot0, not a duplicate of shop1.
+            QCOMPARE(u16(shopData, 4), quint16(528));
+            auto damaged = rom.bytes();
+            damaged[shops.offset + 21] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, shops.decode(Rom::fromBytes(damaged)));
+            damaged = rom.bytes();
+            damaged[shops.offset + shops.headerSize + 40] ^= 0x40;
+            QVERIFY_THROWS_EXCEPTION(Error, shops.decode(Rom::fromBytes(damaged)));
+            damaged = rom.bytes().first(shops.offset + shops.headerSize + shops.storedSize - 1);
+            QVERIFY_THROWS_EXCEPTION(Error, LhaMember::read(damaged, shops.offset));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void expandedMenuBuild() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -390,8 +444,8 @@ class EngineTests : public QObject {
         QCOMPARE((u32(linked, 0x25a8) & 0x3ffffffU) << 2, runtime.placement.bootEntry & 0xfffffffU);
         QCOMPARE(u32(linked, 0x1148), quint32(0x2c42000a));
         QVERIFY(runtime.saves.has_value());
-        const auto cacheEnd = quint32(((u32(linked, 0x2438) & 65535) << 16) +
-                                     qint16(u32(linked, 0x243c) & 65535));
+        const auto cacheEnd =
+            quint32(((u32(linked, 0x2438) & 65535) << 16) + qint16(u32(linked, 0x243c) & 65535));
         QCOMPARE(cacheEnd, quint32(0x80187f00U + runtime.saves->code.bytes.size()));
         auto reopened = ClassData::load(relocated);
         QCOMPARE(reopened.entries().size(), 166);
