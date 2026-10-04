@@ -1,4 +1,5 @@
 #include "engine/dialogue_archive.h"
+#include "engine/dialogue_text.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_playback.h"
 #include <QDir>
@@ -19,6 +20,86 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void initializationGeometryAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-layout-mips.cjs"),
+                                 path, work.filePath("layout.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("layout.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 1152);
+        int index = 0;
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            const auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            const auto result =
+                initializeDialogueWindow(initial, c["slot"].toInt(), source,
+                                         quint16(c["width"].toInt()), quint16(c["lines"].toInt()));
+            QVERIFY2(result.window.toHex() == c["window"].toString().toLatin1(),
+                     qPrintable(QString("Window %1").arg(index)));
+            QVERIFY2(result.state.toHex() == c["state"].toString().toLatin1(),
+                     qPrintable(QString("Payload %1").arg(index)));
+            QCOMPARE(result.warnings, quint32(c["warnings"].toInt()));
+            QCOMPARE(result.cursor, u32(result.state, 8));
+            ++index;
+        }
+        QVERIFY_THROWS_EXCEPTION(
+            Error, initializeDialogueWindow(QByteArray(168, 0), 0, "No terminator", 0, 0));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, initializeDialogueWindow(QByteArray(167, 0), 0, QByteArray(1, 0), 0, 0));
+    }
+    void leadingControlsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-prefix-mips.cjs"),
+                                 path, work.filePath("prefix.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("prefix.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 4625);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            auto window = QByteArray::fromHex(c["initialWindow"].toString().toLatin1());
+            auto state = QByteArray::fromHex(c["initialState"].toString().toLatin1());
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            quint32 cursor = 0;
+            parseDialoguePrefix(window, state, source, cursor);
+            QVERIFY2(window.toHex() == c["window"].toString().toLatin1(),
+                     qPrintable(c["id"].toString()));
+            QVERIFY2(state.toHex() == c["state"].toString().toLatin1(),
+                     qPrintable(c["id"].toString()));
+            QCOMPARE(cursor, quint32(c["cursor"].toInt()));
+        }
+        QByteArray window(168, 0), state(1144, 0);
+        quint32 cursor = 0;
+        QVERIFY_THROWS_EXCEPTION(Error, parseDialoguePrefix(window, state, "@x@f0", cursor));
+        QCOMPARE(window, QByteArray(168, 0));
+        QCOMPARE(state, QByteArray(1144, 0));
+        QCOMPARE(cursor, 0U);
+        parseDialoguePrefix(window, state, QByteArray("@x@nBody\0", 9), cursor);
+        QCOMPARE(cursor, 2U);
+        QCOMPARE(u8(window, 0x8a), 0x80);
+        parseDialoguePrefix(window, state, QByteArray("@x@nBody\0", 9), cursor);
+        QCOMPARE(cursor, 2U); // The body grammar owns @n, not the prefix parser.
+    }
     void creationResumesWithCurrentContext() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

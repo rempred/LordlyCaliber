@@ -1,5 +1,27 @@
 # Dialogue runtime
 
+Leading-control parsing now compiles maintained C reconstructed from ROM
+EA930..EACC0, loaded at RAM 8019DBB0. All 4,569 retail entries plus 56 boundary
+cases match complete window/payload records and cursor offsets (419 ms), with
+no controlled game helpers. Unknown/body controls stop before consumption; byte
+and halfword numeric narrowing is retained. Truncated input fails atomically.
+
+Geometry compiles a portable adaptation of accepted `func_000E5968.c` at Decomp
+8012b84a. Fixed-width host fields replace target globals; statement expressions
+become ordinary C and diagnostic prints become warning bits. Window headers and
+1,144-byte payload initialization preserve the native fields, callbacks as identity
+values, clipping/pointer arithmetic, dimensions and opening distance. Text pointers
+are source-relative offsets on PC.
+
+All 1,152 complete initialized window/payload comparisons match original ROM
+E5968..E659C at RAM 80198BE8. The original prefix parser executes; archive-pointer
+resolution, zero-fill, width/line measurements and diagnostics are controlled.
+The combined prefix/geometry checks passed in 601 ms, then the geometry check
+passed again in 159 ms after making the intended narrowing casts explicit.
+The clean build has no new compiler warnings. Width/line/body grammars, scheduled
+initialization and final text rendering remain to connect; text length is not used
+as a substitute for native measurements.
+
 `SceneDialogue` owns the 28 six-byte Actor/window tracking records and eight
 control bytes. `SceneResources` owns the shared six 168-byte UI records. Creation
 and placement stage copies so unavailable projection, portrait context or storage
