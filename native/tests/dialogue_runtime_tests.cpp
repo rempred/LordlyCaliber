@@ -1,4 +1,5 @@
 #include "engine/dialogue_archive.h"
+#include "engine/dialogue_draw.h"
 #include "engine/dialogue_player.h"
 #include "engine/dialogue_text.h"
 #include "engine/scene_dialogue.h"
@@ -10,6 +11,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QImage>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -23,6 +25,60 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void ordinaryDrawingCommands() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            DialogueDrawing drawing(Rom::open(path));
+            QFile fixtures(
+                QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath())
+                    .filePath("../../tests/fixtures/cutscene-active-dialogue-drawing.json"));
+            QVERIFY(fixtures.open(QIODevice::ReadOnly));
+            const auto cases =
+                QJsonDocument::fromJson(fixtures.readAll()).object()["cases"].toArray();
+            QCOMPARE(cases.size(), 6);
+            int rectangles = 0;
+            for (const auto &value : cases) {
+                const auto c = value.toObject();
+                auto record = QByteArray::fromHex(c["recordHex"].toString().toLatin1());
+                auto payload = QByteArray::fromHex(c["payloadHex"].toString().toLatin1());
+                const auto commands = drawing.compose(record, payload);
+                const auto expected = c["commands"].toArray();
+                QCOMPARE(commands.size(), expected.size());
+                for (int i = 0; i < commands.size(); ++i) {
+                    const auto &actual = commands[i];
+                    const auto reference = expected[i].toObject();
+                    for (int j = 0; j < 4; ++j) {
+                        QCOMPARE(actual.bounds[j], reference["bounds"].toArray()[j].toInt());
+                        QCOMPARE(actual.scissor[j], reference["scissor"].toArray()[j].toInt());
+                    }
+                    for (int j = 0; j < 2; ++j) {
+                        QCOMPARE(actual.uv[j], reference["uv"].toArray()[j].toDouble());
+                        QCOMPARE(actual.step[j], reference["step"].toArray()[j].toDouble());
+                    }
+                    QCOMPARE(actual.texture.indices.toHex(),
+                             reference["indicesHex"].toString().toLatin1());
+                    const auto palette = reference["palette"].toArray();
+                    for (int j = 0; j < actual.texture.palette.size(); ++j)
+                        QCOMPARE(int(actual.texture.palette[j]), palette[j].toInt());
+                    ++rectangles;
+                }
+                RasterImage image{320, 240, QByteArray(320 * 240 * 4, 0)};
+                DialogueDrawing::paint(image, commands);
+                QVERIFY(image.rgba != QByteArray(320 * 240 * 4, 0));
+                if (c["sample"].toInt() == 89) {
+                    const QImage rendered(reinterpret_cast<const uchar *>(image.rgba.constData()), 320, 240, QImage::Format_RGBA8888);
+                    QVERIFY(rendered.save("native-dialogue-render.png"));
+                }
+                put8(payload, 0x47, 1);
+                QVERIFY_THROWS_EXCEPTION(Error, drawing.compose(record, payload));
+            }
+            QCOMPARE(rectangles, 93);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void composedResourceLifecycle() {
         try {
             SceneResources pool({1, -1, 0xffff});

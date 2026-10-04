@@ -26,7 +26,7 @@ DialogueInspector::DialogueInspector(const Rom &rom, QWidget *parent) : QWidget(
     column->setContentsMargins(0, 0, 0, 0);
     auto search = new QLineEdit;
     search->setObjectName("dialogueSearch");
-    search->setPlaceholderText("Search entries or control sequencesâ€¦");
+    search->setPlaceholderText("Search entries or control sequences…");
     search->setClearButtonEnabled(true);
     entries_ = new QListWidget;
     entries_->setObjectName("dialogueEntries");
@@ -101,7 +101,7 @@ void DialogueInspector::loadArchive() {
         for (int i = 0; i < archive.entryCount(); ++i) {
             const auto text = QString::fromLatin1(archive.entry(i));
             auto item =
-                new QListWidgetItem(QString("%1  Â·  %2").arg(i).arg(text.left(80)), entries_);
+                new QListWidgetItem(QString("%1  ·  %2").arg(i).arg(text.left(80)), entries_);
             item->setData(Qt::UserRole, text);
             item->setToolTip(text);
         }
@@ -124,7 +124,7 @@ void DialogueInspector::showEntry() {
     const auto bytes = archive_->entry(entry);
     source_->setPlainText(QString::fromLatin1(bytes));
     setProperty("entryIndex", entry);
-    status_->setText(QString("%1 Â· archive %2 Â· entry %3 of %4 Â· %5 source bytes")
+    status_->setText(QString("%1 · %2 · entry %3 of %4 · %5 source bytes")
                          .arg(archive_->name())
                          .arg(archives_->currentText())
                          .arg(entry)

@@ -1,5 +1,16 @@
 # Dialogue runtime
 
+The ordinary opaque compositor now emits typed texture rectangles using current-ROM
+frame, portrait and 2-bit glyph resources, and paints a bounded RGBA target without
+Widgets. All 93 rectangles from six existing native display-command fixtures agree
+in bounds, UVs, steps, scissor, texels and consumed palette colors (111 ms). The
+rendered sample was inspected. Opening states may contain collapsed zero-pixel
+rectangles; their native extent-minus-one step calculation is retained. Initial
+rejection of those rectangles was corrected. The scope remains ordinary opaque
+presentation; transparency, other styles/prompts/encodings and final N64 filtering
+are not established by this check. Maintained Decomp src/lib/func_000E6D90.c is now
+available for the remaining drawing paths; read it before broader reconstruction.
+
 SceneDialogueRuntime connects initialization, heap-style payload restoration and
 saving, full window updates, shared controls, child registration, sound requests
 and release status to the generic dispatcher. Host payload handles are identities;
