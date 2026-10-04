@@ -5,6 +5,7 @@
 #include "rebuild/creature_rewards.h"
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
+#include "rebuild/scenario_rates.h"
 #include "rebuild/shop_runtime.h"
 #include <QDir>
 #include <QFile>
@@ -551,7 +552,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         write(p.encounters()->poolBytes(), Encounters::poolOffset, "encounter_pools");
         write(p.encounters()->rateBytes(), Encounters::rateOffset, "encounter_terrain_rates");
         write(p.encounters()->slotBytes(), Encounters::slotOffset, "encounter_terrain_slots");
-        if (p.encounters()->globalRate().modified()) {
+        if (p.encounters()->scenarioRates().modified() ||
+            (p.encounters()->globalRate().modified() && ScenarioRates::placement(p.rom()))) {
+            result.image =
+                rebuildScenarioRates(Rom::fromBytes(result.image), p.encounters()->scenarioRates(),
+                                     p.encounters()->globalRate(), compiler, directory);
+            result.report << "Rebuilt independent scenario rates and inherited global values "
+                             "inside the original dispatcher";
+        } else if (p.encounters()->globalRate().modified()) {
             const auto &rate = p.encounters()->globalRate();
             const auto code = compiler.assembleOwner(
                 rate.assemblyDefinitions() + readFile(":/game/encounters/dispatcher.s"), directory,

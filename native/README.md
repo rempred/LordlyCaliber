@@ -38,8 +38,10 @@ its original code allocation. Class rewards provide three weighted outcomes per
 class, including added classes, with copy/restore and undo. Choose equipment,
 consumables, or None; zero weights exclude an outcome. Their selector rebuild
 also fits its original function and uses temporary stack space for one ROM row.
-Scenario overrides, custom neutral squads and other encounter battle controls
-are still being migrated.
+Scenario rates provide independent overrides for Area Investigation and missions,
+or inherit the corresponding global setting. Shared creature pools do not force
+shared rates. Removing every override restores the global-only dispatcher.
+Custom neutral squads and other encounter battle controls are still being migrated.
 
 For scripting:
 

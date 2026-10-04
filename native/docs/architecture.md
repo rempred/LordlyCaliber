@@ -413,3 +413,42 @@ the controls and undo. Instruction checks execute2,560 retail and2,978 native
 cases across all256 IDs, zero/max weights and both stack alignments, including
 the original DMA wrapper and guarded caller state in4 MiB modeled RAM. The lower
 PI transfer and RNG call are controlled services in the reward selection check.
+
+Scenario rates use two independent optional overrides for each byte-sized runtime
+key. A branch either inherits the global divisor/count or stores its own unsigned
+32-bit divisor/count, including zero and full pass counts. Area Investigation is
+the state-flag17-set branch; the mission branch is flag clear. The workspace keeps
+the two branches separate, with undo, restoration and explicit inheritance.
+Older browser inherit/override/disabled records import by direct scenario key;
+the former shared-slice field does not redirect an override to another key.
+
+Export materializes256 sixteen-byte effective rows in ROM, followed by256 flag
+bytes recording which branches are explicit. Inherited values must match the
+global settings stored in the64-byte LC05RATE descriptor at z6427C4200. The
+appended4,352-byte data allocation is16-aligned, bounded to the cartridge range,
+checksummed and reused. Global edits rebuild inherited rows while preserving
+explicit overrides. Removing the final override rebuilds the global-only source,
+clears the authenticated descriptor and frees its data: truncate only when that
+owned range is at the end, otherwise fill just the owned range with0xFF.
+
+The dispatcher has a third maintained source mode, still1,084 bytes at its
+original placement. At z6413C1E8..13C230 it loads the staged key, DMAs one row into
+frame offsets0x20..0x2F, queries state flag17, and loads the selected divisor/count.
+These temporary bytes are overwritten by the original permutation initialization.
+The remaining roll instructions occupy z6413C270..13C290, formerly unreachable
+division checks. The candidate count starts30, decrements once per rejected
+candidate and loops only while nonzero; its divisor is therefore1..30. The RNG
+returns a nonnegative30-bit value, so zero and signed-overflow exceptions cannot
+occur. The candidate draw now jumps over the helper with an unsigned division in
+its delay slot, retaining the original remainder instruction at13C290. The global
+helper's final jump shares that harmless remainder delay instruction; the next
+candidate draw overwrites s4 before use. No other instruction positions move.
+
+Source generation still byte-matches retail and retains the prior global-only
+source hash. Scenario loading authenticates its full normalized owner, descriptor7,
+DMA wrapper, effective rows, flags and global values. Checks cover project and
+browser round trips, restoration, independent inheritance, global re-export,
+removal with later allocations intact, corruption/collisions and composition with
+added classes and weighted rewards. Executed instructions pass13,750 gate cases,
+300 original/rebuilt candidate draws and930 removal cases for counts1..30 in
+guarded4 MiB RAM. This does not establish PI/cache hardware or full-game timing.

@@ -2,6 +2,7 @@
 #include "engine/creature_rewards.h"
 #include "engine/encounter_rate.h"
 #include "engine/rom.h"
+#include "engine/scenario_rates.h"
 #include <QJsonObject>
 #include <QMap>
 #include <QStringList>
@@ -19,6 +20,9 @@ class Encounters {
     int lookup(int terrain) const;
     QVector<int> scenarioKeys(int pool) const;
     QString label(int pool) const;
+    QString scenarioLabel(int key) const {
+        return names_.value(key, QString("Scenario key %1").arg(key));
+    }
     void setPair(int pool, int slot, int first, int second, int classCount);
     void setTerrain(int terrain, int rate, int lookup);
     const EncounterRate &globalRate() const {
@@ -38,6 +42,15 @@ class Encounters {
     }
     void importLegacyRewards(const QJsonObject &value) {
         rewards_.importLegacy(value);
+    }
+    const ScenarioRates &scenarioRates() const {
+        return scenarioRates_;
+    }
+    void setScenarioBranch(int key, bool normal, const std::optional<ScenarioRoll> &value) {
+        scenarioRates_.setBranch(key, normal, value);
+    }
+    void importLegacyScenarioRates(const QJsonObject &value) {
+        scenarioRates_.importLegacy(value);
     }
     const QByteArray &poolBytes() const {
         return pools_;
@@ -62,5 +75,6 @@ class Encounters {
     QMap<int, QString> names_;
     EncounterRate globalRate_;
     CreatureRewards rewards_;
+    ScenarioRates scenarioRates_;
 };
 } // namespace lordly

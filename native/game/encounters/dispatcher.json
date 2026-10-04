@@ -6,6 +6,7 @@
   "address": 2149480736,
   "retailSha256": "dbaa9242f9dd566468fa8f5fd4492e93a69be37dd59f80931e28d81835c5d8cd",
   "nativeMaskedSha256": "9f031ac738f0f7147e50ba7cf5e647826b585ace904e1c797dec520e930a4eba",
+  "scenarioMaskedSha256": "42645e2a1cdeb81f00b1cd987f3a2c3fab08b5fe441aec5795ade738ee385f09",
   "fields": [
     {
       "offset": 392,
@@ -39,6 +40,7 @@
     }
   ],
   "calls": {
+    "service_8009da50": 2148129360,
     "service_801dc054": 2149433428,
     "service_801b8d44": 2149289284,
     "service_80186210": 2149081616,
@@ -47,6 +49,16 @@
     "service_801d935c": 2149421916,
     "service_801d92d0": 2149421776,
     "service_801dcd90": 2149436816
+  },
+  "dma": {
+    "start": 187984,
+    "size": 164,
+    "sha256": "79ddc6b13a2f99f11cf43c28a4de9889b58544b131d4883f437aa7b3f885396d"
+  },
+  "overlay": {
+    "start": 231640,
+    "size": 40,
+    "sha256": "45171bd5fe26dcefc5aa6b58302107c3cc362b5fe5da0e4e9fabd095bf3bf4f2"
   },
   "random": {
     "start": 142944,

@@ -1,4 +1,5 @@
 #include "engine/encounter_rate.h"
+#include "engine/scenario_rates.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -56,6 +57,12 @@ EncounterRate EncounterRate::load(const Rom &rom) {
     if (sha256(rom.bytes().mid(random["start"].toInt(), random["size"].toInt())) !=
         random["sha256"].toString().toLatin1())
         throw Error("Encounter random-number generator differs from the supported implementation");
+    if (const auto scenario = ScenarioRates::placement(rom)) {
+        EncounterRate result;
+        result.apply(scenario->global);
+        result.original_ = result.json();
+        return result;
+    }
     const auto source = rom.bytes().mid(romOffset, codeSize);
     auto masked = source;
     QJsonObject values{{"divisor", 0}, {"normalPassCount", 0}, {"alternatePassCount", 0}};
@@ -102,7 +109,8 @@ EncounterRate EncounterRate::load(const Rom &rom) {
     return result;
 }
 QByteArray EncounterRate::assemblyDefinitions(bool native) const {
-    QByteArray result = QByteArray(".equ LC_NATIVE_GATE,") + (native ? "1\n" : "0\n");
+    QByteArray result =
+        QByteArray(".equ LC_SCENARIO_RATES,0\n.equ LC_NATIVE_GATE,") + (native ? "1\n" : "0\n");
     for (const auto &pair : QList<QPair<QString, quint32>>{
              {"DIVISOR", divisor_}, {"NORMAL", normal_}, {"ALTERNATE", alternate_}}) {
         result += QString(".equ LC_%1_HI, %2\n.equ LC_%1_LO, %3\n")

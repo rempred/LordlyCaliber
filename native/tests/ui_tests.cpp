@@ -56,6 +56,61 @@ class UiTests : public QObject {
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
     }
+    void scenarioRateEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadEncounters();
+        QUndoStack undo;
+        EncounterEditor editor(&project, &undo, [] {});
+        editor.resize(1350, 760);
+        editor.show();
+        auto keys = editor.findChild<QListWidget *>("scenarioRateKeys");
+        keys->setCurrentRow(65);
+        auto normal = editor.findChild<QComboBox *>("scenarioMode_1");
+        auto alternate = editor.findChild<QComboBox *>("scenarioMode_0");
+        auto divisor = editor.findChild<QDoubleSpinBox *>("scenarioDivisor_1");
+        auto pass = editor.findChild<QDoubleSpinBox *>("scenarioPass_1");
+        auto apply = editor.findChild<QPushButton *>("scenarioApply");
+        const auto original = project.encounters()->json();
+        normal->setCurrentIndex(1);
+        divisor->setValue(4294967295.0);
+        pass->setValue(2147483648.0);
+        alternate->setCurrentIndex(2);
+        apply->click();
+        QCOMPARE(project.encounters()->scenarioRates().branch(65, true)->passCount,
+                 quint32(0x80000000));
+        QCOMPARE(project.encounters()->scenarioRates().branch(65, false)->passCount, quint32(0));
+        undo.undo();
+        QCOMPARE(project.encounters()->json(), original);
+        undo.redo();
+        const auto before = project.manifest();
+        divisor->setValue(1);
+        apply->click();
+        QCOMPARE(project.manifest(), before);
+        QVERIFY(!editor.findChild<QLabel *>("scenarioNotice")->text().isEmpty());
+        editor.findChild<QPushButton *>("scenarioRestore")->click();
+        QCOMPARE(project.encounters()->json(), original);
+        auto globalNormal = editor.findChild<QDoubleSpinBox *>("encounterNormalPass");
+        globalNormal->setValue(777);
+        editor.findChild<QPushButton *>("encounterApplyGlobal")->click();
+        QCOMPARE(pass->value(), 777.0);
+        QVERIFY(!pass->isEnabled());
+        normal->setCurrentIndex(1);
+        pass->setValue(100);
+        apply->click();
+        editor.findChild<QPushButton *>("scenarioInherit")->click();
+        QVERIFY(!project.encounters()->scenarioRates().branch(65, true));
+        undo.undo();
+        QCOMPARE(project.encounters()->scenarioRates().branch(65, true)->passCount, quint32(100));
+        editor.findChild<QTabWidget *>()->setCurrentWidget(
+            editor.findChild<QWidget *>("scenarioRatesPage"));
+        QVERIFY(editor.grab().save("native/build/Release/scenario-rates.png"));
+        editor.findChild<QLineEdit *>("scenarioRateSearch")->setText("No matching scenario");
+        QVERIFY(!keys->currentItem());
+        QVERIFY(!apply->isEnabled());
+    }
     void creatureRewardEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

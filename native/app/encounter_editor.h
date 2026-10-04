@@ -29,6 +29,12 @@ class EncounterEditor : public QWidget {
     void showRewardOdds();
     void applyReward(bool restore);
     void filterRewards();
+    QWidget *createScenarioPage();
+    void refreshScenarios();
+    void filterScenarios();
+    void showScenario();
+    void showScenarioOdds();
+    void applyScenario(bool restore);
     void commit(const Encounters &next, const QString &label);
     int selected() const;
     Project *project_;
@@ -51,5 +57,12 @@ class EncounterEditor : public QWidget {
     QVector<QLabel *> rewardOdds_;
     QLabel *rewardNotice_ = nullptr;
     QWidget *rewardDetails_ = nullptr;
+    QListWidget *scenarios_ = nullptr;
+    QLineEdit *scenarioSearch_ = nullptr;
+    QWidget *scenarioDetails_ = nullptr;
+    QVector<QComboBox *> scenarioModes_;
+    QVector<QDoubleSpinBox *> scenarioDivisors_, scenarioPasses_;
+    QVector<QLabel *> scenarioOdds_;
+    QLabel *scenarioNotice_ = nullptr;
 };
 } // namespace lordly

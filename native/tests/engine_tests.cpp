@@ -48,6 +48,175 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioRatesWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadEncounters();
+            const auto original = project.encounters()->json();
+            QVERIFY(!project.encounters()->scenarioRates().hasOverrides());
+            auto model = *project.encounters();
+            model.setGlobalRate(
+                {{"divisor", 1000000}, {"normalPassCount", 20000}, {"alternatePassCount", 50}});
+            model.setScenarioBranch(59, true, ScenarioRoll{0xffffffff, 0x80000000});
+            model.setScenarioBranch(59, false, ScenarioRoll{1, 0});
+            model.setScenarioBranch(64, false, ScenarioRoll{65536, 65536});
+            model.setScenarioBranch(65, true, ScenarioRoll{3, 1});
+            model.setScenarioBranch(66, false, ScenarioRoll{7, 2});
+            model.setScenarioBranch(255, true, ScenarioRoll{0xffffffff, 0xffffffff});
+            project.setEncounters(model.json());
+            const auto before = project.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, model.setScenarioBranch(1, true, ScenarioRoll{0, 0}));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setScenarioBranch(1, true, ScenarioRoll{5, 6}));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setScenarioBranch(256, true, ScenarioRoll{5, 1}));
+            QCOMPARE(model.json(), project.encounters()->json());
+            auto bad = model.json();
+            bad["scenarioRates"] = QJsonObject{
+                {"version", 1},
+                {"rows",
+                 QJsonObject{
+                     {"65", QJsonObject{{"normal", QJsonObject{{"mode", "override"},
+                                                               {"divisor", 1},
+                                                               {"passCount", true}}},
+                                        {"alternate", QJsonObject{{"mode", "inherit"}}}}}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, project.setEncounters(bad));
+            QCOMPARE(project.manifest(), before);
+            QTemporaryDir folder, build;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("rates.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("rates.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.encounters()->json(), model.json());
+            }
+            const auto result = rebuild(project, tools, build.path());
+            const auto placement = ScenarioRates::placement(Rom::fromBytes(result.image));
+            QVERIFY(placement);
+            QCOMPARE(placement->offset, quint32(rom.bytes().size()));
+            QCOMPARE(result.image.size(), rom.bytes().size() + 4352);
+            auto conserved = result.image.first(rom.bytes().size());
+            conserved.replace(0x13c060, 1084, rom.bytes().mid(0x13c060, 1084));
+            conserved.replace(0x27c4200, 64, rom.bytes().mid(0x27c4200, 64));
+            conserved.replace(0x10, 8, rom.bytes().mid(0x10, 8));
+            QCOMPARE(conserved, rom.bytes());
+            auto checksummed = result.image;
+            Rom::updateChecksum(checksummed);
+            QCOMPARE(checksummed, result.image);
+            QTemporaryDir output(QDir(QFileInfo(path).absolutePath())
+                                     .filePath("Test ROMs/native-scenario-rates-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, target);
+            auto reopened = Project::fromRom(Rom::open(target));
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->json(), model.json());
+            atomicWrite(output.filePath("scenario-rates.json"),
+                        QJsonDocument(QJsonObject{{"rom", target},
+                                                  {"sourceRom", path},
+                                                  {"dataOffset", double(placement->offset)},
+                                                  {"global", model.globalRate().json()},
+                                                  {"rates", model.scenarioRates().json()}})
+                            .toJson());
+            qInfo().noquote() << "Scenario-rate candidate:"
+                              << output.filePath("scenario-rates.json");
+            auto changed = *reopened.encounters();
+            changed.setGlobalRate(
+                {{"divisor", 72000}, {"normalPassCount", 1000}, {"alternatePassCount", 0}});
+            reopened.setEncounters(changed.json());
+            const auto updated = rebuild(reopened, tools, build.path());
+            const auto nextPlacement = ScenarioRates::placement(Rom::fromBytes(updated.image));
+            QVERIFY(nextPlacement);
+            QCOMPARE(nextPlacement->offset, placement->offset);
+            QCOMPARE(updated.image.size(), result.image.size());
+            QCOMPARE(u32(updated.image, placement->offset + 16 + 12),
+                     quint32(1000)); // Unlisted key1 inherits normal.
+            QCOMPARE(u32(updated.image, placement->offset + 65 * 16 + 12),
+                     quint32(1)); // Explicit key65 keeps its count.
+            for (int key = 0; key < 256; ++key)
+                for (bool normal : {false, true})
+                    changed.setScenarioBranch(key, normal, std::nullopt);
+            reopened.setEncounters(changed.json());
+            const auto removed = rebuild(reopened, tools, build.path());
+            QVERIFY(!ScenarioRates::placement(Rom::fromBytes(removed.image)));
+            QCOMPARE(removed.image.size(), rom.bytes().size());
+            QCOMPARE(EncounterRate::load(Rom::fromBytes(removed.image)).json(),
+                     changed.globalRate().json());
+            // Removing an allocation beneath another owner's data must not truncate that data.
+            auto trailingImage = result.image + QByteArray(32, char(0x5a));
+            auto trailing = Project::fromRom(Rom::fromBytes(trailingImage));
+            trailing.loadEncounters();
+            auto cleared = *trailing.encounters();
+            for (int key = 0; key < 256; ++key)
+                for (bool normal : {false, true})
+                    cleared.setScenarioBranch(key, normal, std::nullopt);
+            trailing.setEncounters(cleared.json());
+            const auto trailingResult = rebuild(trailing, tools, build.path());
+            QCOMPARE(trailingResult.image.size(), trailingImage.size());
+            QCOMPARE(trailingResult.image.last(32), QByteArray(32, char(0x5a)));
+            QCOMPARE(trailingResult.image.mid(placement->offset, 4352), QByteArray(4352, char(-1)));
+            const QJsonObject legacy{
+                {"format", "ob64-patch"},
+                {"version", 36},
+                {"patches",
+                 QJsonObject{
+                     {"neutral_encounters",
+                      QJsonObject{
+                          {"scenario_rates",
+                           QJsonObject{
+                               {"59", QJsonObject{
+                                          {"slice", 41},
+                                          {"normal", QJsonObject{{"mode", "override"},
+                                                                 {"divisor", 65536},
+                                                                 {"pass_count", 65536}}},
+                                          {"alternate", QJsonObject{{"mode", "disabled"}}}}}}}}}}}};
+            auto imported = Project::fromRom(rom);
+            imported.importLegacy(legacy);
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            QCOMPARE(imported.encounters()->scenarioRates().branch(59, true)->passCount,
+                     quint32(65536));
+            QCOMPARE(imported.encounters()->scenarioRates().branch(59, false)->passCount,
+                     quint32(0));
+            imported.setEncounters(original);
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(imported.manifest());
+            QCOMPARE(restored.encounters()->json(), original);
+            auto oldNative = imported.manifest();
+            auto oldEncounters = oldNative["encounters"].toObject();
+            oldEncounters.remove("scenarioRates");
+            oldNative["encounters"] = oldEncounters;
+            restored.applyManifest(oldNative);
+            QCOMPARE(restored.encounters()->scenarioRates().branch(59, true)->passCount,
+                     quint32(65536));
+            for (int at : {0x13c270, 0x27c4200 + 36, int(placement->offset) + 4096, 0x388d8}) {
+                auto corrupt = result.image;
+                corrupt[at] ^= 4;
+                QVERIFY_THROWS_EXCEPTION(Error, EncounterRate::load(Rom::fromBytes(corrupt)));
+            }
+            auto occupied = rom.bytes();
+            occupied[0x27c4200] = 'X';
+            auto collision = Project::fromRom(Rom::fromBytes(occupied));
+            collision.loadEncounters();
+            collision.setEncounters(model.json());
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(collision, tools, build.path()));
+            QCOMPARE(project.appendClass(1, "Scenario tester"), 165);
+            auto combined = *project.encounters();
+            combined.setPair(45, 9, 165, 0, 166);
+            combined.setReward(165, CreatureReward{{0x8115, 44, 0}, {2, 1, 1}});
+            project.setEncounters(combined.json());
+            const auto composed = rebuild(project, tools, build.path());
+            auto composedProject = Project::fromRom(Rom::fromBytes(composed.image));
+            composedProject.loadEncounters();
+            QCOMPARE(composedProject.records(Table::Classes).size(), 166);
+            QCOMPARE(composedProject.encounters()->json(), combined.json());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void creatureRewardsWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

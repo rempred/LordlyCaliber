@@ -28,6 +28,7 @@ Encounters Encounters::load(const Rom &rom, int classCount) {
     Encounters result;
     result.globalRate_ = EncounterRate::load(rom);
     result.rewards_ = CreatureRewards::load(rom);
+    result.scenarioRates_ = ScenarioRates::load(rom);
     result.pools_ = rom.bytes().mid(poolOffset, poolCount * slotCount * 2);
     result.rates_ = rom.bytes().mid(rateOffset, terrainCount);
     result.slots_ = rom.bytes().mid(slotOffset, terrainCount);
@@ -107,10 +108,11 @@ void Encounters::setTerrain(int terrain, int value, int slot) {
 }
 bool Encounters::modified() const {
     return pools_ != originalPools_ || rates_ != originalRates_ || slots_ != originalSlots_ ||
-           globalRate_.modified() || rewards_.modified();
+           globalRate_.modified() || rewards_.modified() || scenarioRates_.modified();
 }
 int Encounters::changedRows() const {
-    int count = (globalRate_.modified() ? 1 : 0) + rewards_.changedRows();
+    int count =
+        (globalRate_.modified() ? 1 : 0) + rewards_.changedRows() + scenarioRates_.changedRows();
     for (int p = 0; p < poolCount; ++p)
         if (pools_.mid(p * 20, 20) != originalPools_.mid(p * 20, 20))
             ++count;
@@ -136,7 +138,8 @@ QJsonObject Encounters::json() const {
             {"terrainRates", rates},
             {"terrainSlots", slotValues},
             {"globalRate", globalRate_.json()},
-            {"rewards", rewards_.json()}};
+            {"rewards", rewards_.json()},
+            {"scenarioRates", scenarioRates_.json()}};
 }
 void Encounters::apply(const QJsonObject &object, int classCount) {
     if (object["version"] != 1 || !object["pools"].isArray() ||
@@ -146,6 +149,11 @@ void Encounters::apply(const QJsonObject &object, int classCount) {
         object["terrainSlots"].toArray().size() != terrainCount)
         throw Error("Encounter project requires 45 pools and 32 terrain entries");
     auto next = *this;
+    if (object.contains("scenarioRates")) {
+        if (!object["scenarioRates"].isObject())
+            throw Error("Invalid saved scenario rates");
+        next.scenarioRates_.apply(object["scenarioRates"].toObject());
+    }
     if (object.contains("rewards")) {
         if (!object["rewards"].isObject())
             throw Error("Invalid saved creature rewards");

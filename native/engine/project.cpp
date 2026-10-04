@@ -646,6 +646,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.importLegacyGlobalRate(candidate.legacy_);
     if (!object["encounters"].toObject().contains("rewards"))
         candidate.importLegacyRewards(candidate.legacy_);
+    if (!object["encounters"].toObject().contains("scenarioRates"))
+        candidate.importLegacyScenarioRates(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -683,6 +685,18 @@ void Project::importLegacyRewards(const QJsonObject &object) {
         return;
     loadEncounters();
     encounters_->importLegacyRewards(value.toObject());
+}
+void Project::importLegacyScenarioRates(const QJsonObject &object) {
+    const QJsonValue value =
+        object["patches"].toObject()["neutral_encounters"].toObject()["scenario_rates"];
+    if (value.isUndefined() || value.isNull())
+        return;
+    if (!value.isObject())
+        throw Error("Invalid imported scenario rates");
+    if (value.toObject().isEmpty())
+        return;
+    loadEncounters();
+    encounters_->importLegacyScenarioRates(value.toObject());
 }
 void Project::importLegacyEncounters(const QJsonObject &object) {
     const auto patches = object["patches"].toObject();
@@ -857,6 +871,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyEncounters(object);
     candidate.importLegacyGlobalRate(object);
     candidate.importLegacyRewards(object);
+    candidate.importLegacyScenarioRates(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -939,7 +954,7 @@ QStringList Project::pendingLegacySections() const {
             const auto parts = it.value().toObject();
             for (auto part = parts.begin(); part != parts.end(); ++part)
                 if (part.key() != "scenario_slices" && part.key() != "terrain_rates" &&
-                    changed(part.value()))
+                    part.key() != "scenario_rates" && changed(part.value()))
                     pending << "neutral_encounters." + part.key();
             continue;
         }
