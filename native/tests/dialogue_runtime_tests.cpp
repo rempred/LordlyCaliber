@@ -21,6 +21,52 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void segmentScanningAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-segment-mips.cjs"),
+                                 path, work.filePath("segments.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("segments.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        QHash<int, QByteArray> substitutions;
+        const auto entries = root["substitutions"].toArray();
+        for (int i = 0; i < entries.size(); ++i)
+            substitutions[i] = entries[i].isNull()
+                                   ? QByteArray{}
+                                   : QByteArray::fromHex(entries[i].toString().toLatin1());
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 23070);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            const auto source = c["source"].isNull()
+                                    ? QByteArray{}
+                                    : QByteArray::fromHex(c["source"].toString().toLatin1());
+            const auto result =
+                scanDialogueSegment(source, quint16(c["columns"].toInt()), substitutions);
+            QVERIFY2(result.count == c["count"].toInt(),
+                     qPrintable(c["id"].toString() + " count, columns " +
+                                QString::number(c["columns"].toInt())));
+            QCOMPARE(result.cursor, quint32(c["cursor"].toInt()));
+            QCOMPARE(result.stop, c["stop"].toInt());
+            QCOMPARE(result.published, c["published"].toBool());
+        }
+        QVERIFY_THROWS_EXCEPTION(Error, scanDialogueSegment(QByteArray("@%0\0", 4), 36, {}));
+        substitutions[48] = QByteArray("@%0\0", 4);
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 scanDialogueSegment(QByteArray("@%0\0", 4), 36, substitutions));
+        QVERIFY_THROWS_EXCEPTION(Error, scanDialogueSegment(QByteArray("{T05\0", 5), 36, {}));
+        QVERIFY_THROWS_EXCEPTION(Error, scanDialogueSegment(QByteArray("@w\0", 3), 36, {}));
+        QVERIFY_THROWS_EXCEPTION(Error, scanDialogueSegment(QByteArray("ABC\0", 4), 36, {}, 2));
+    }
     void glyphWidthsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

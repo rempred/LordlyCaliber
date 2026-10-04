@@ -2,7 +2,116 @@
 #include "game/director/dialogue_layout.h"
 #include "game/director/dialogue_prefix.h"
 #include "game/director/text_metrics.h"
+#include <algorithm>
+#include <functional>
 namespace lordly {
+DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
+                                        const QHash<int, QByteArray> &substitutions, int budget) {
+    if (budget < 1)
+        throw Error("Dialogue segment budget must be positive");
+    std::function<DialogueSegmentScan(const QByteArray &, int)> scan;
+    auto spend = [&] {
+        if (--budget < 0)
+            throw Error("Dialogue segment scan exceeded its budget");
+    };
+    auto lookup = [&](int index) -> const QByteArray & {
+        const auto found = substitutions.constFind(index);
+        if (found == substitutions.constEnd())
+            throw Error(QString("Dialogue substitution byte %1 is unavailable").arg(index));
+        return found.value();
+    };
+    scan = [&](const QByteArray &text, int depth) -> DialogueSegmentScan {
+        if (text.isNull())
+            return {};
+        if (depth >= 64)
+            throw Error("Dialogue substitution nesting exceeds its limit");
+        quint32 at = 0, count = 0;
+        auto read = [&]() {
+            spend();
+            return u8(text, at++);
+        };
+        auto skip = [&](quint32 bytes) {
+            if (bytes > quint64(text.size()) || at > quint64(text.size()) - bytes)
+                throw Error("Dialogue segment control exceeds its source");
+            at += bytes;
+        };
+        quint8 stop = read();
+        while (stop) {
+            if (lordly_text_lead_byte(stop)) {
+                skip(1);
+                ++count;
+            } else if (stop == '{') {
+                while (read() != '}') {
+                }
+                ++count;
+            } else if (stop == '@') {
+                stop = read();
+                if (!stop || stop == 'n' || stop == 'c' || stop == '/')
+                    break;
+                switch (stop) {
+                case '%':
+                    count += scan(lookup(read()), depth + 1).count;
+                    break;
+                case '&': {
+                    const auto length = quint8(scan(lookup(read()), depth + 1).count);
+                    const int maximum = int(read()) - 48;
+                    count += quint32(std::min(int(length), maximum));
+                    break;
+                }
+                case '!': {
+                    const auto length = scan(lookup(read()), depth + 1).count;
+                    constexpr int limited[] = {0, 1, 1, 2, 3};
+                    count += length < 5 ? limited[length] : 4;
+                    break;
+                }
+                case 'z': {
+                    const auto &name = lookup(read());
+                    if (name.isNull())
+                        break;
+                    quint32 pos = 0, characters = 0;
+                    while (true) {
+                        spend();
+                        const auto c = u8(name, pos);
+                        if (!c)
+                            break;
+                        pos += lordly_text_lead_byte(c) ? 2 : 1;
+                        ++characters;
+                    }
+                    if (quint16(characters) >= 2)
+                        ++count;
+                    break;
+                }
+                case ':':
+                    if (scan(lookup(read()), depth + 1).count >= 6)
+                        ++count;
+                    break;
+                case '<':
+                case 'F':
+                case 'T':
+                case 'e':
+                case 'f':
+                case 't':
+                    skip(3);
+                    break;
+                case 'l':
+                    skip(1);
+                    break;
+                case 'w':
+                    skip(4);
+                    break;
+                default:
+                    break;
+                }
+            } else
+                ++count;
+            if (quint16(count) >= columns)
+                break;
+            stop = read();
+        }
+        return {quint16(count), at - (stop == 0 ? 1U : 0U), stop, true};
+    };
+    return scan(source, 0);
+}
 quint8 DialogueFontMetrics::glyphWidth(quint32 character, bool other) const {
     quint8 width = 0;
     if (lordly_text_glyph_width(

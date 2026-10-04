@@ -1,5 +1,14 @@
 # Dialogue runtime
 
+The bounded segment scanner reconstructs ROM E9EB0..EA184 at RAM 8019D130.
+All 23,070 original-instruction comparisons pass (938 ms): 4,569 retail sources
+and 45 boundary sources at five column limits, comparing count, cursor, stopping
+byte and publication. Substitution pointers are explicit synthetic context;
+the original classifier and recursive scanner execute without controlled helpers.
+Missing substitutions, cycles, malformed controls and exhausted budgets reject.
+A known null string preserves the native publication distinction. This grammar
+counts segments; line wrapping and pixel width remain separate operations.
+
 Glyph-width and lead-byte classification compile maintained C from resident ROM
 4F2E4..4F3C8 and 51450..5148C (RAM 801793E4 and 8017B550). All 4,608 original
 comparisons pass with no helper substitutions (121 ms), covering both tables,

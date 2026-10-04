@@ -1,11 +1,23 @@
 #pragma once
 #include "engine/rom.h"
+#include <QHash>
 namespace lordly {
 struct DialogueFontMetrics {
     QByteArray normal, alternate;
     qint16 fixedIndex = -1;
     quint8 glyphWidth(quint32 character, bool other = false) const;
 };
+struct DialogueSegmentScan {
+    quint16 count = 0;
+    quint32 cursor = 0;
+    quint8 stop = 0;
+    bool published = false; // A known null string leaves the native cursor globals untouched.
+};
+// Substitution keys are raw operand bytes, not parsed decimal numbers. A missing
+// key is unavailable context; a null QByteArray is a known null native pointer.
+DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
+                                        const QHash<int, QByteArray> &substitutions,
+                                        int budget = 100000);
 // Text coordinates are archive-relative byte offsets, never host/native pointers.
 // The leading-control grammar is distinct from the body and metric grammars.
 void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray &source,
