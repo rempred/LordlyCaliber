@@ -41,6 +41,13 @@ populated archives / 4,569 byte-exact entries from 503 selectors. Malformed
 directory/envelope/checksum and missing-context/exhaustion rollback checks pass.
 No emulator, text layout or full-scene rendering claim follows from these checks.
 
+The desktop Cutscenes workspace includes a read-only Dialogue source page with
+archive/entry selection and search across exact control-bearing source. Double-click
+a BF source command to open its narrowed archive/entry. Missing targets clear stale
+text. Both focused UI checks pass offscreen (1,456 ms), including the existing image
+catalog path, and the rendered source view was inspected. This page is an inspector;
+dialogue editing/export and native text layout are still unfinished.
+
 Portrait follow-up: ROM 29FF74 calls the raw loader at RAM 8009DBB8 for key
 01A8E7AE. That resource's 332 bytes begin with 00000152 and appear compressed;
 the raw halfword lookup exceeds its allocation for many ordinary banks. The raw

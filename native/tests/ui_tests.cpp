@@ -1,6 +1,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
+#include "app/dialogue_inspector.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
@@ -214,6 +215,46 @@ class UiTests : public QObject {
         next->click();
         QCOMPARE(position->value(), 1);
     }
+    void dialogueSourceSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        DialogueInspector inspector(rom);
+        inspector.resize(1100, 650);
+        inspector.show();
+        const auto archives = inspector.findChild<QComboBox *>("dialogueArchives");
+        const auto entries = inspector.findChild<QListWidget *>("dialogueEntries");
+        const auto source = inspector.findChild<QPlainTextEdit *>("dialogueSource");
+        const auto search = inspector.findChild<QLineEdit *>("dialogueSearch");
+        const auto status = inspector.findChild<QLabel *>("dialogueStatus");
+        QVERIFY(archives && entries && source && search && status);
+        QCOMPARE(archives->count(), 348);
+        QCOMPARE(entries->count(), 7);
+        QCOMPARE(inspector.property("archiveSelector").toInt(), 0);
+        QCOMPARE(source->toPlainText(),
+                 QString("@-@x@l3@r@S0@A@n@n@={T05}You're leaving tomorrow?@s@c"));
+        QVERIFY(source->isReadOnly());
+        search->setText("You're leaving tomorrow");
+        QVERIFY(!entries->item(0)->isHidden());
+        QVERIFY(entries->item(1)->isHidden());
+        inspector.selectEntry(1, 0);
+        QCOMPARE(inspector.property("archiveSelector").toInt(), 1);
+        QCOMPARE(inspector.property("entryIndex").toInt(), 0);
+        QVERIFY(search->text().isEmpty());
+        QVERIFY(source->toPlainText().startsWith("Archbishop Odiron@n"));
+        QVERIFY(inspector.grab().save("native-dialogue-source.png"));
+        inspector.selectEntry(9, 0);
+        QCOMPARE(inspector.property("archiveSelector").toInt(), -1);
+        QVERIFY(source->toPlainText().isEmpty());
+        QVERIFY(status->text().contains("not present"));
+        inspector.selectEntry(0, 99);
+        QCOMPARE(inspector.property("entryIndex").toInt(), -1);
+        QVERIFY(source->toPlainText().isEmpty());
+        inspector.selectEntry(0, 1);
+        QCOMPARE(inspector.property("entryIndex").toInt(), 1);
+        QCOMPARE(source->toPlainText().toLatin1(), DialogueArchive::load(rom, 0).entry(1));
+    }
     void cutsceneCatalogSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -256,6 +297,25 @@ class UiTests : public QObject {
         QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
                                   "mode2-environment:000D62F6", 10000);
         QVERIFY(selectScene(0x19aa852)); // Selector 2, Graduation Ceremony.
+        const auto dialogue = editor.findChild<DialogueInspector *>();
+        const auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
+        QVERIFY(dialogue && pages);
+        const auto catalog = Directors::load(rom);
+        const auto program = catalog.entries()[0x19aa852].program;
+        bool foundDialogue = false;
+        for (int i = 0; i < program.commands.size(); ++i) {
+            const auto &cmd = program.commands[i];
+            if (cmd.opcode != 0xbf)
+                continue;
+            commands->cellDoubleClicked(i, 1);
+            QCOMPARE(pages->currentWidget(), dialogue);
+            QCOMPARE(dialogue->property("archiveSelector").toInt(), int(quint16(cmd.operands[1])));
+            QCOMPARE(dialogue->property("entryIndex").toInt(), int(quint16(cmd.operands[2])));
+            foundDialogue = true;
+            break;
+        }
+        QVERIFY(foundDialogue);
+        pages->setCurrentIndex(0);
         QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
                                   "mode2-environment:00236B58", 10000);
         QCOMPARE(view->scene()->sceneRect().size(), QSizeF(495, 383));

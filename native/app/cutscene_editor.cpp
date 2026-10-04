@@ -1,5 +1,6 @@
 #include "app/cutscene_editor.h"
 #include "app/actor_pose_editor.h"
+#include "app/dialogue_inspector.h"
 #include <QComboBox>
 #include <QFutureWatcher>
 #include <QGraphicsPixmapItem>
@@ -151,6 +152,23 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent
     commands_->setColumnWidth(2, 270);
     pages->addTab(commands_, "Source commands");
     pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
+    auto dialogue = new DialogueInspector(rom_);
+    pages->addTab(dialogue, "Dialogue source");
+    commands_->setToolTip("Double-click a dialogue command to inspect its archive entry.");
+    connect(commands_, &QTableWidget::cellDoubleClicked, this,
+            [this, pages, dialogue](int row, int) {
+                if (!directors_ || !scenes_->currentItem())
+                    return;
+                const auto key = scenes_->currentItem()->data(Qt::UserRole).toUInt();
+                const auto &program = directors_->entries()[key].program;
+                if (row < 0 || row >= program.commands.size())
+                    return;
+                const auto &command = program.commands[row];
+                if (command.opcode != 0xbf || command.operands.size() != 13)
+                    return;
+                dialogue->selectEntry(quint16(command.operands[1]), quint16(command.operands[2]));
+                pages->setCurrentWidget(dialogue);
+            });
     detailLayout->addWidget(pages, 1);
     split->addWidget(details);
     split->setSizes({310, 1000});
