@@ -4,7 +4,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ScenePlaybackStart start, SceneCameras cameras,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
-      actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
+      rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
       cameras_(std::move(cameras)) {
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
@@ -20,6 +20,15 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (schedule_.mode == 0 && (opcode == 8 || opcode == 0xd)) {
+        if (opcode == 8) {
+            if (args.size() != 3)
+                throw Error("Scene transform command is truncated");
+            transforms_.start(rom_, qint32(args[0]), qint32(args[1]), qint32(args[2]));
+        } else
+            value = transforms_.done();
+        return true;
+    }
     if (dialogue_) {
         auto &state = *dialogue_;
         switch (opcode) {
@@ -110,6 +119,9 @@ bool ScenePlayback::update(LordlySceneService service) {
         return true;
     case LORDLY_SCENE_MODE_ZERO_3:
         actors_.advanceDivider();
+        return true;
+    case LORDLY_SCENE_MODE_ZERO_1:
+        transforms_.advance();
         return true;
     case LORDLY_SCENE_RESOURCE_CACHE:
         // Recovered func_002071F4 (5ae68e14) only ages/releases native allocation

@@ -8,6 +8,7 @@
 #include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
 #include "engine/scene_sprites.h"
+#include "engine/scene_transforms.h"
 #include "game/director/scene_schedule.h"
 namespace lordly {
 struct ScenePlaybackStart {
@@ -104,6 +105,12 @@ class ScenePlayback {
     const SceneEffects &effects() const {
         return effects_;
     }
+    SceneTransforms &transforms() {
+        return transforms_;
+    }
+    const SceneTransforms &transforms() const {
+        return transforms_;
+    }
     // The six UI resources are shared beyond one scene. Their current state
     // must be supplied by the UI-resource owner, rather than reset on launch.
     void supplyDialogue(SceneResources resources, SceneDialogue windows,
@@ -123,12 +130,14 @@ class ScenePlayback {
     bool update(LordlySceneService);
     bool command(quint32, const QVector<quint32> &, int &);
     DirectorSession director_;
+    Rom rom_;
     SceneActors actors_;
     SceneSprites sprites_;
     SceneProjection projection_;
     SceneCameras cameras_;
     SceneFade fade_;
     SceneEffects effects_;
+    SceneTransforms transforms_;
     std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};
     bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;

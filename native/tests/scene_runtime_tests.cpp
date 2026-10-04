@@ -14,6 +14,199 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneTransformsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("scene-transform-mips.cjs"), path,
+                                     work.filePath("transforms.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile input(work.filePath("transforms.json"));
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto oracle = QJsonDocument::fromJson(input.readAll()).object();
+            const auto rom = Rom::open(path);
+            QMap<int, SceneTransformAsset> assets;
+            for (const auto entry : oracle["assets"].toArray()) {
+                const auto item = entry.toObject();
+                const int selector = item["selector"].toInt();
+                if (item["decoded"].isNull()) {
+                    QVERIFY_THROWS_EXCEPTION(Error, SceneTransformAsset::load(rom, selector));
+                    continue;
+                }
+                const auto asset = SceneTransformAsset::load(rom, selector);
+                QCOMPARE(asset.key, quint32(item["key"].toInteger()));
+                QCOMPARE(asset.decoded, QByteArray::fromHex(item["decoded"].toString().toLatin1()));
+                assets[selector] = asset;
+            }
+            QCOMPARE(oracle["assets"].toArray().size(), 62);
+            QCOMPARE(assets.size(), 61);
+            QCOMPARE(oracle["rejected"].toArray().size(), 3);
+            for (const auto entry : oracle["rejected"].toArray()) {
+                const auto row = entry.toObject();
+                SceneTransforms state;
+                QVERIFY_THROWS_EXCEPTION(
+                    Error, state.start(assets[row["selector"].toInt()], row["group"].toInt(), 3));
+                QVERIFY(state.done());
+            }
+            auto records = [](const SceneTransforms &state) {
+                QByteArray bytes;
+                for (int channel = 0; channel < 20; ++channel)
+                    bytes += state.channel(channel);
+                return bytes;
+            };
+            QCOMPARE(records(SceneTransforms{}),
+                     QByteArray::fromHex(oracle["identity"].toString().toLatin1()));
+            int snapshots = 0;
+            const auto results = oracle["results"].toArray();
+            for (const auto value : results) {
+                const auto row = value.toObject();
+                const auto asset = row["changed"].isNull()
+                                       ? assets[row["selector"].toInt()]
+                                       : SceneTransformAsset::parse(QByteArray::fromHex(
+                                             row["changed"].toString().toLatin1()));
+                SceneTransforms state;
+                state.start(asset, row["group"].toInt(), row["duration"].toInt());
+                const auto expected = row["states"].toArray();
+                for (int i = 0; i < expected.size(); ++i) {
+                    if (i)
+                        state.advance();
+                    const auto snapshot = expected[i].toObject();
+                    QCOMPARE(records(state),
+                             QByteArray::fromHex(snapshot["channels"].toString().toLatin1()));
+                    QCOMPARE(state.done(), snapshot["done"].toBool());
+                    QCOMPARE(state.remaining(), quint32(snapshot["remaining"].toInteger()));
+                    QCOMPARE(state.nextKeyframe(), snapshot["next"].toInt());
+                    QCOMPARE(state.deltas(),
+                             QByteArray::fromHex(snapshot["deltas"].toString().toLatin1()));
+                    ++snapshots;
+                }
+            }
+            qInfo() << "Transform comparison:" << assets.size() << "resources," << results.size()
+                    << "sequences," << snapshots << "snapshots";
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void sceneTransformInvalidInputsAreAtomic() {
+        QByteArray bytes(8 + 960 + 16, 0);
+        put32(bytes, 0, 2);
+        put32(bytes, 4, 1);
+        put32(bytes, 488, 12345);
+        put32(bytes, 976, 1);
+        put32(bytes, 980, 0xffffffffU);
+        const auto asset = SceneTransformAsset::parse(bytes);
+        SceneTransforms state;
+        state.start(asset, 0, 3);
+        state.advance();
+        const auto before = state.channel(0), deltas = state.deltas();
+        const auto remaining = state.remaining();
+        QVERIFY_THROWS_EXCEPTION(Error, state.start(asset, 0, 0));
+        QCOMPARE(state.channel(0), before);
+        QCOMPARE(state.deltas(), deltas);
+        QCOMPARE(state.remaining(), remaining);
+        QVERIFY_THROWS_EXCEPTION(Error, state.start(asset, 1, 1));
+        auto malformed = bytes;
+        put32(malformed, 976, 2);
+        QVERIFY_THROWS_EXCEPTION(Error, state.start(SceneTransformAsset::parse(malformed), 0, 3));
+        QVERIFY_THROWS_EXCEPTION(Error, SceneTransformAsset::parse(bytes.first(bytes.size() - 4)));
+        auto overflow = bytes;
+        put32(overflow, 488, 0x80000000U);
+        QVERIFY_THROWS_EXCEPTION(Error, state.start(SceneTransformAsset::parse(overflow), 0, -1));
+        QCOMPARE(state.channel(0), before);
+        QCOMPARE(state.deltas(), deltas);
+        QCOMPARE(state.remaining(), remaining);
+        auto oversized = asset;
+        oversized.groups[0] = QVector<int>(21, 0);
+        QVERIFY_THROWS_EXCEPTION(Error, state.start(oversized, 0, 1));
+        QCOMPARE(state.channel(0), before);
+        QVERIFY_THROWS_EXCEPTION(Error, state.supplyChannel(20, QByteArray(88, 0)));
+        auto invalid = before;
+        put32(invalid, 64, 0x7f800000);
+        QVERIFY_THROWS_EXCEPTION(Error, state.supplyChannel(0, invalid));
+        QCOMPARE(state.channel(0), before);
+    }
+    void sceneTransformPlaybackTiming() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto bytes = Rom::open(path).bytes();
+        int allocation = 0x2700000;
+        auto resource = [&](const QByteArray &raw) {
+            const auto packed = encodeLzss(raw);
+            const auto key = quint32(allocation - 0x594280);
+            put32(bytes, allocation, quint32(packed.size() + 4));
+            put32(bytes, allocation + 4, quint32(raw.size()));
+            bytes.replace(allocation + 8, packed.size(), packed);
+            allocation += (int(packed.size()) + 9) & ~1;
+            return key;
+        };
+        QByteArray transform(8 + 960 + 16, 0);
+        put32(transform, 0, 2);
+        put32(transform, 4, 1);
+        put32(transform, 8 + 0xa0, 2000);
+        put32(transform, 488 + 0xa0, 8000);
+        put32(transform, 976, 1);
+        put32(transform, 980, 0xffffffffU);
+        put32(bytes, 0x594280 + 0x19a63ec + 4, resource(transform));
+        const QVector<quint32> words{8,    0, 0,           3,          0,           0x80000000U,
+                                     0xd,  0, 1,           0,          0x80000002U, 0x80000000U,
+                                     0x7d, 0, 0x80000001U, 0xff000001U};
+        QByteArray script(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(script, i * 4, words[i]);
+        put32(bytes, 0x1f3ca84, 4);
+        put32(bytes, 0x1f3ca88, resource(script));
+        const auto rom = Rom::fromBytes(bytes);
+        const auto directors = Directors::load(rom);
+        auto create = [&] {
+            ScenePlaybackStart start;
+            start.mode = 0;
+            return ScenePlayback(rom, directors, 0, start, SceneCameras::freshModeTwo(rom));
+        };
+        // This scene contains no other scheduled domain objects.
+        auto emptyDomains = [](LordlySceneService) { return true; };
+        auto baseline = create(), resumed = create();
+        const float positions[] = {2, 4, 6, 8, 8};
+        bool retry = false;
+        auto delayedDomains = [&](LordlySceneService) {
+            retry = !retry;
+            return !retry;
+        };
+        for (int tick = 0; tick < 5; ++tick) {
+            const auto expected = tick == 4 ? ScenePlayback::Released : ScenePlayback::Advanced;
+            const auto result = baseline.advance(emptyDomains);
+            QVERIFY2(result == expected, qPrintable(baseline.reason()));
+            QCOMPARE(std::bit_cast<float>(u32(baseline.transforms().channel(0), 0x40)),
+                     positions[tick]);
+            QCOMPARE(baseline.transforms().remaining(), quint32(qMax(3 - tick, 0)));
+            QCOMPARE(baseline.transforms().done(), tick >= 3);
+            ScenePlayback::Result continued;
+            int attempts = 0;
+            do {
+                continued = resumed.advance(delayedDomains, {}, 1, 1);
+                QVERIFY2(++attempts < 200, qPrintable(resumed.reason()));
+            } while (continued == ScenePlayback::Suspended || continued == ScenePlayback::Budget);
+            QCOMPARE(continued, expected);
+            QCOMPARE(resumed.transforms().channel(0), baseline.transforms().channel(0));
+            QCOMPARE(resumed.transforms().remaining(), baseline.transforms().remaining());
+            QCOMPARE(resumed.director().state().resume_cursor,
+                     baseline.director().state().resume_cursor);
+        }
+        auto alternate = create();
+        QCOMPARE(alternate.advance(emptyDomains), ScenePlayback::Advanced);
+        alternate.setAlternate(1);
+        const auto held = alternate.transforms().channel(0);
+        QCOMPARE(alternate.advance(), ScenePlayback::Advanced);
+        QCOMPARE(alternate.transforms().channel(0), held);
+        QCOMPARE(alternate.transforms().remaining(), 3U);
+        alternate.setAlternate(0);
+        QCOMPARE(alternate.advance(emptyDomains), ScenePlayback::Advanced);
+        QCOMPARE(std::bit_cast<float>(u32(alternate.transforms().channel(0), 0x40)), 4.f);
+    }
     void actorDividerAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

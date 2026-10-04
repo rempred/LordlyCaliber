@@ -1,12 +1,31 @@
 # Native Lordly Caliber
 
+Scene-transform command 08 and query 0D now execute in mode zero. The current-ROM
+resource directory supplies 20 channels with six fixed-thousandths fields per
+keyframe. Maintained portable C preserves integer delta division before float
+conversion, 32-bit countdowns, endpoint snaps and immediate single-frame completion.
+The query adapts accepted func_002B1014.c; the other routines reconstruct original
+assembly at Decomp 62cc7ef4. Sequence entries are frame/continuation pairs, with
+FFFFFFFF terminating a group. Slot 36 is absent. Resource 33 retains three invalid
+groups alongside valid groups; starting those invalid groups rejects atomically.
+
+`scene_runtime_tests sceneTransformsAgainstMips sceneTransformInvalidInputsAreAtomic`
+passes (1,047 ms): 61 resources, 523 sequences and 2,033 full channel/job snapshots
+match original constructor, updater and query instructions. Allocation/free,
+zero-fill and resource I/O are controlled. Invalid frames, division, oversized
+sequences and nonfinite supplied fields leave prior state unchanged. The composed
+`sceneTransformPlaybackTiming` test checks immediate start, before-Director updates,
+completion waiting, alternate suspension and budget/retry resumption. It and divider/
+playback regressions pass (444 ms). Transform fields are integrated; rebuilding their
+packed matrices and connecting them to final scene drawing remain next.
+
 Actor layer assignment now handles 1C, the mode-zero automatic divider 5F/75,
 and the stored default-channel byte 7C. The divider uses maintained portable C
 reconstructed from ROM 2AF470..2AF6C0 in the mode-zero overlay, preserving signed
 coordinate narrowing, single-precision arithmetic, axis and zero-intercept cases,
 low-byte channel writes and reused record padding. Release retains Actor channels.
-ScenePlayback runs classification in MODE_ZERO_3 before movement. Transform arrays,
-default-channel placement consumers and final layer rendering remain to connect.
+ScenePlayback runs classification in MODE_ZERO_3 before movement. Transform animation is connected; default-channel placement consumers and final
+layer rendering remain to connect.
 
 `scene_runtime_tests actorDividerAgainstMips actorDividerPrecedesMovement` passes
 (1,496 ms): 72 original-instruction sequences/1,440 complete snapshots match divider
