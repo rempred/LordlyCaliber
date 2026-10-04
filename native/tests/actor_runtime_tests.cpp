@@ -3,6 +3,7 @@
 #include "engine/actor_pose.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_camera.h"
+#include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
 #include <QDir>
 #include <QFile>
@@ -17,6 +18,74 @@ using namespace lordly;
 class ActorRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void fadeLifecycleAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("scene-fade-mips.cjs"),
+             path, work.filePath("fades.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("fades.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 220);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            SceneFade fade(QByteArray::fromHex(row["initial"].toString().toLatin1()),
+                           row["initialActive"].toBool());
+            const auto operations = row["operations"].toArray(), states = row["states"].toArray();
+            int registrations = 0, frees = 0;
+            for (int i = 0; i < operations.size(); ++i) {
+                const auto operation = operations[i].toObject();
+                const auto kind = operation["kind"].toString();
+                bool release = false;
+                if (kind == "start") {
+                    const auto a = operation["args"].toArray();
+                    registrations += fade.start(a[0].toInt(), a[1].toInt(), a[2].toInt(),
+                                                a[3].toInt(), a[4].toInt(), a[5].toInt())
+                                         ? 1
+                                         : 0;
+                } else if (kind == "update")
+                    release = fade.advance();
+                else if (kind == "mark")
+                    fade.markRelease();
+                else {
+                    const bool before = fade.present();
+                    fade.cleanup();
+                    frees += before && !fade.present() ? 1 : 0;
+                }
+                const auto expected = states[i].toObject();
+                QCOMPARE(fade.record().toHex(), expected["record"].toString().toLatin1());
+                QCOMPARE(fade.remaining(), expected["query"].toInt());
+                QCOMPARE(fade.slotActive(), expected["active"].toBool());
+                QCOMPARE(release, expected["release"].toBool());
+                QCOMPARE(registrations, expected["registrations"].toInt());
+                QCOMPARE(frees, expected["frees"].toInt());
+            }
+        }
+        SceneFade fade;
+        int value = 0;
+        QVERIFY(fade.service(0x1b, {3, 50, 100, 150, 255, 0}, value));
+        QCOMPARE(fade.rgba(), (std::array<quint8, 4>{50, 100, 150, 255}));
+        QVERIFY(!fade.advance());
+        QCOMPARE(fade.rgba()[3], 170);
+        QVERIFY(fade.service(0x7f, {0, 0}, value));
+        QCOMPARE(value, 2);
+        QVERIFY(fade.service(0x7e, {}, value));
+        QVERIFY(fade.advance());
+        QVERIFY(fade.present());
+        fade.cleanup();
+        QVERIFY(!fade.present());
+        auto malformed = QByteArray::fromHex("0002000000000002090a0bff");
+        SceneFade invalid(malformed, true);
+        QVERIFY_THROWS_EXCEPTION(Error, invalid.advance());
+        QCOMPARE(invalid.record(), malformed);
+    }
     void actorPresentationAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+SceneFade owns the full-screen overlay independently of Director state. Its
+12-byte record, scheduled-slot activity, retarget handshake, signed countdown,
+integer alpha interpolation, inherited alpha and explicit cleanup follow the
+original constructor/update/query/release paths. A completed timed fade remains
+visible until separately released. All 220 original-instruction sequences match
+3,960 complete record/query/lifecycle snapshots; allocation, slot registration
+and freeing are controlled services. RGB/alpha output and atomic rejection of an
+inconsistent zero-divisor record also pass. Callback order relative to the rest
+of the scene remains the composition layer's responsibility.
+
 SceneActors also executes uniform scale (0x1D) and opacity (0x48) without
 reconstructing actors or resetting their pose invocation. It retains the native
 all-slot sentinel, signed-halfword range narrowing and empty-slot behavior.
