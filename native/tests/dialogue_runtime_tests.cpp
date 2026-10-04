@@ -2,6 +2,7 @@
 #include "engine/dialogue_player.h"
 #include "engine/dialogue_text.h"
 #include "engine/scene_dialogue.h"
+#include "engine/scene_dialogue_runtime.h"
 #include "engine/scene_playback.h"
 #include "game/director/text_metrics.h"
 #include <QDir>
@@ -22,6 +23,100 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void composedResourceLifecycle() {
+        try {
+            SceneResources pool({1, -1, 0xffff});
+            SceneDialogue dialogue(0);
+            SceneDialogueRuntime runtime;
+            SceneResourceDispatcher dispatch(SceneResourcePassState{});
+            DialogueTextEnvironment environment;
+            environment.metrics.normal = QByteArray(256, 6);
+            environment.metrics.alternate = QByteArray(256, 6);
+            environment.longNameSuffix = QByteArray("\0", 1);
+            const QByteArray shake = QByteArray::fromHex("00050301fdfa80");
+            auto source = [](const QByteArray &) {
+                return QByteArray("@v020@y003First@aSecond@sTail\0", 30);
+            };
+            for (int i = 0; i < 2; ++i)
+                QCOMPARE(dialogue.create({quint32(i), 0, 0, quint32(i), 20, quint32(20 + i * 70), 0,
+                                          0, 0, 0, 0, 0, 1},
+                                         pool),
+                         i);
+            auto step = [&](quint16 pressed, bool interrupted = false) {
+                auto &pass = dispatch.state();
+                if (pass.queue.count) {
+                    pool.advanceOpening(pass.queue);
+                    for (int q = 0; q < pass.queue.count; ++q) {
+                        const int slot = pass.queue.entries[q];
+                        if (pool.advanceClosing(slot)) {
+                            QByteArray scratch(168, 0);
+                            if (!runtime.service(
+                                    pool, scratch, pass,
+                                    {SceneResourceDispatcher::Service::Release, slot, 0}, dialogue,
+                                    environment, {512, pressed, 0, 0}, shake, source))
+                                throw Error("Missing closing service");
+                        }
+                    }
+                    pool.rebuildPriority(pass.queue);
+                }
+                runtime.clearSounds();
+                bool pause = interrupted;
+                auto handler = [&](SceneResources &next, QByteArray &scratch,
+                                   SceneResourcePassState &s,
+                                   const SceneResourceDispatcher::Call &call) {
+                    if (pause) {
+                        pause = false;
+                        return false;
+                    }
+                    pause = interrupted;
+                    return runtime.service(next, scratch, s, call, dialogue, environment,
+                                           {512, pressed, 0, 0}, shake, source);
+                };
+                int attempts = 0;
+                while (dispatch.advance(pool, handler, interrupted ? 1 : 1000) !=
+                       SceneResourceDispatcher::Complete)
+                    if (++attempts > 2000)
+                        throw Error("Dialogue composition did not finish");
+            };
+            int frames = 0;
+            for (; frames < 100; ++frames) {
+                step(0, true);
+                if (runtime.window(0, pool) && runtime.window(1, pool) &&
+                    u8(runtime.window(0, pool)->frame.state, 0x3c) == 3 &&
+                    u8(runtime.window(1, pool)->frame.state, 0x3c) == 3)
+                    break;
+            }
+            QVERIFY(frames < 100);
+            QCOMPARE(dispatch.state().queue.entries[0], quint16(0));
+            QVERIFY(runtime.window(0, pool)->frame.state.mid(0x178, 5) == "First");
+            QVERIFY(runtime.window(1, pool)->frame.state.mid(0x178, 5) == "First");
+            const auto lower = runtime.window(1, pool)->frame.state;
+            step(0x8000, true);
+            QCOMPARE(u8(runtime.window(0, pool)->frame.state, 0x3c), quint8(2));
+            QCOMPARE(runtime.window(1, pool)->frame.state, lower);
+            for (frames = 0; frames < 100 && dialogue.query(0, pool) != 2; ++frames)
+                step(0);
+            QVERIFY(frames < 100);
+            QCOMPARE(dialogue.query(1, pool), 0);
+            dialogue.resume(0, pool);
+            for (frames = 0; frames < 100 && pool.active(0); ++frames)
+                step(0, true);
+            QVERIFY(frames < 100);
+            QVERIFY(!runtime.window(0, pool));
+            QCOMPARE(dialogue.query(0, pool), 1);
+            QVERIFY(pool.active(1));
+            QCOMPARE(dispatch.state().queue.entries[0], quint16(1));
+            step(0x8000);
+            QCOMPARE(u8(runtime.window(1, pool)->frame.state, 0x3c), quint8(2));
+            // Reusing the released slot initializes independent text and payload state.
+            QCOMPARE(dialogue.create({2, 0, 0, 2, 30, 40, 0, 0, 0, 0, 0, 0, 1}, pool), 0);
+            step(0);
+            QVERIFY(runtime.window(0, pool));
+            QCOMPARE(u16(runtime.window(0, pool)->frame.state, 0x34), quint16(0));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void insertionStorageAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -928,20 +1023,38 @@ class DialogueRuntimeTests : public QObject {
         QFile file(work.filePath("archives.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
-        QCOMPARE(cases.size(), 348);
+        QCOMPARE(cases.size(), 349);
         QCOMPARE(DialogueArchive::directory(rom).size(), 503);
-        int entries = 0;
+        int entries = 0, alternateEntries = 0;
+        QCOMPARE(DialogueArchive::directory(rom, DialogueArchive::Table::Alternate).size(), 1);
         for (const auto &v : cases) {
             const auto c = v.toObject();
-            const auto archive = DialogueArchive::load(rom, c["selector"].toInt());
+            const bool alternate = c["root"].toInt() == 0x21b8ba4;
+            const auto table =
+                alternate ? DialogueArchive::Table::Alternate : DialogueArchive::Table::Primary;
+            const auto archive = DialogueArchive::load(rom, c["selector"].toInt(), table);
             QCOMPARE(archive.bytes().toHex(), c["bytes"].toString().toLatin1());
             const auto expected = c["entries"].toArray();
             QCOMPARE(archive.entryCount(), expected.size());
             for (int i = 0; i < expected.size(); ++i)
                 QCOMPARE(archive.entry(i).toHex(), expected[i].toString().toLatin1());
-            entries += archive.entryCount();
+            QByteArray window(168, 0);
+            put16(window, 0x88, (alternate ? 0x8000 : 0) | (archive.entryCount() - 1));
+            put16(window, 0x96, c["selector"].toInt());
+            QCOMPARE(DialogueArchive::windowSource(rom, window),
+                     archive.entry(archive.entryCount() - 1) + char(0));
+            if (alternate)
+                alternateEntries += archive.entryCount();
+            else
+                entries += archive.entryCount();
         }
         QCOMPARE(entries, 4569);
+        QVERIFY(alternateEntries > 0);
+        QByteArray unsupported(168, 0);
+        put16(unsupported, 0x88, 0x4000);
+        QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::windowSource(rom, unsupported));
+        put16(unsupported, 0x88, 0xc000);
+        QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::windowSource(rom, unsupported));
         QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::load(rom, -1));
         QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::load(rom, 503));
         QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::load(rom, 9)); // Empty selector.

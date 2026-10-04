@@ -1,10 +1,10 @@
 #include "engine/dialogue_archive.h"
 namespace lordly {
-QVector<quint32> DialogueArchive::directory(const Rom &rom) {
+QVector<quint32> DialogueArchive::directory(const Rom &rom, Table table) {
     rom.requireSupported();
     if (rom.revision())
         throw Error("Dialogue archives currently require US revision zero");
-    constexpr qsizetype at = 0x1a3b7b2 + 0x594280;
+    const qsizetype at = (table == Table::Primary ? 0x1a3b7b2 : 0x21b8ba4) + 0x594280;
     const auto size = u32(rom.bytes(), at);
     if (!size || size % 4 || size > 65536 || quint64(at) + 4 + size > quint64(rom.bytes().size()))
         throw Error("Dialogue archive directory exceeds its ROM allocation");
@@ -13,8 +13,8 @@ QVector<quint32> DialogueArchive::directory(const Rom &rom) {
         keys << u32(rom.bytes(), at + 4 + i);
     return keys;
 }
-DialogueArchive DialogueArchive::load(const Rom &rom, int selector) {
-    const auto keys = directory(rom);
+DialogueArchive DialogueArchive::load(const Rom &rom, int selector, Table table) {
+    const auto keys = directory(rom, table);
     if (selector < 0 || selector >= keys.size())
         throw Error("Dialogue archive selector exceeds its directory");
     const auto key = keys[selector];
@@ -31,6 +31,15 @@ DialogueArchive DialogueArchive::load(const Rom &rom, int selector) {
     auto result = fromDecoded(member.decode(rom));
     result.name_ = member.name;
     return result;
+}
+QByteArray DialogueArchive::windowSource(const Rom &rom, const QByteArray &window) {
+    if (window.size() != 168)
+        throw Error("Dialogue source lookup requires a complete window record");
+    const auto kind = u8(window, 0x88) & 0xc0;
+    if (kind != 0 && kind != 0x80)
+        throw Error("Dialogue window selects an unresolved archive table group");
+    const auto table = kind == 0 ? Table::Primary : Table::Alternate;
+    return load(rom, u16(window, 0x96), table).entry(u16(window, 0x88) & 0x3fff) + char(0);
 }
 DialogueArchive DialogueArchive::fromDecoded(QByteArray bytes) {
     const auto first = u32(bytes, 0);

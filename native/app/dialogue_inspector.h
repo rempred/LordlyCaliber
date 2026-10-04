@@ -11,6 +11,7 @@ class DialogueInspector : public QWidget {
     Q_OBJECT
   public:
     explicit DialogueInspector(const Rom &rom, QWidget *parent = nullptr);
+    // entry includes the native archive-table bits in its upper two bits.
     void selectEntry(int selector, int entry);
 
   private:

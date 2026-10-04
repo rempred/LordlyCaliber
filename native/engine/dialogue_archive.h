@@ -6,8 +6,10 @@ namespace lordly {
 // object does not interpret body, measurement or window-lifecycle grammars.
 class DialogueArchive {
   public:
-    static QVector<quint32> directory(const Rom &rom);
-    static DialogueArchive load(const Rom &rom, int selector);
+    enum class Table { Primary, Alternate };
+    static QVector<quint32> directory(const Rom &rom, Table table = Table::Primary);
+    static DialogueArchive load(const Rom &rom, int selector, Table table = Table::Primary);
+    static QByteArray windowSource(const Rom &rom, const QByteArray &window);
     static DialogueArchive fromDecoded(QByteArray bytes);
     int entryCount() const {
         return int(offsets_.size());

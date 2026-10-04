@@ -229,7 +229,7 @@ class UiTests : public QObject {
         const auto search = inspector.findChild<QLineEdit *>("dialogueSearch");
         const auto status = inspector.findChild<QLabel *>("dialogueStatus");
         QVERIFY(archives && entries && source && search && status);
-        QCOMPARE(archives->count(), 348);
+        QCOMPARE(archives->count(), 349);
         QCOMPARE(entries->count(), 7);
         QCOMPARE(inspector.property("archiveSelector").toInt(), 0);
         QCOMPARE(source->toPlainText(),
@@ -253,6 +253,19 @@ class UiTests : public QObject {
         QVERIFY(source->toPlainText().isEmpty());
         inspector.selectEntry(0, 1);
         QCOMPARE(inspector.property("entryIndex").toInt(), 1);
+        QCOMPARE(source->toPlainText().toLatin1(), DialogueArchive::load(rom, 0).entry(1));
+        inspector.selectEntry(0, 0x8000);
+        QCOMPARE(inspector.property("archiveTable").toInt(), 1);
+        QCOMPARE(inspector.property("archiveSelector").toInt(), 0);
+        QCOMPARE(inspector.property("entryIndex").toInt(), 0);
+        QCOMPARE(source->toPlainText().toLatin1(),
+                 DialogueArchive::load(rom, 0, DialogueArchive::Table::Alternate).entry(0));
+        inspector.selectEntry(0, 0x4000);
+        QVERIFY(source->toPlainText().isEmpty());
+        QCOMPARE(inspector.property("archiveTable").toInt(), -1);
+        QVERIFY(status->text().contains("unresolved"));
+        inspector.selectEntry(0, 1);
+        QCOMPARE(inspector.property("archiveTable").toInt(), 0);
         QCOMPARE(source->toPlainText().toLatin1(), DialogueArchive::load(rom, 0).entry(1));
     }
     void cutsceneCatalogSelection() {
@@ -418,7 +431,7 @@ class UiTests : public QObject {
                 const auto label = objects->item(i)->text();
                 if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
                     waypointItem = i;
-                if (label.startsWith("Treasure 1 ·"))
+                if (label.startsWith("Treasure 1 Â·"))
                     treasureItem = i;
                 if (label == townName)
                     siteItem = i;
@@ -712,7 +725,7 @@ class UiTests : public QObject {
         spin("scenarioLevel_0")->setValue(127);
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), after);
-        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("1–99"));
+        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("1â€“99"));
         spin("scenarioLevel_0")->setValue(0);
         button("scenarioAddSquad")->click();
         QCOMPARE(project.scenarios()->scenario(10).squads.size(),

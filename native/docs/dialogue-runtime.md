@@ -1,5 +1,24 @@
 # Dialogue runtime
 
+SceneDialogueRuntime connects initialization, heap-style payload restoration and
+saving, full window updates, shared controls, child registration, sound requests
+and release status to the generic dispatcher. Host payload handles are identities;
+Qt owns source/frame storage. A two-window composition test passes (1 ms): both
+reveal text, only the priority head accepts input, script resume finishes/ closes
+the first window, input moves to the next, and slot reuse starts with fresh text.
+This includes pauses before every service and one-stage dispatcher budgets. The
+initial test string omitted its NUL; the corrected fixture passes without changing
+engine validation. This is component composition, not a full retail-scene render.
+
+Both original dialogue archive roots now load from the current ROM. The alternate
+root 021B8BA4 contains one archive; together all 349 populated archives agree with
+the independent browser LH5 decoder. Window source resolution uses record +96's
+selector and +88's table bits / 14-bit entry, appending its required terminator.
+Groups 40/C0 remain explicitly unresolved. Archive and composition checks pass
+(298 ms). The Dialogue page exposes the alternate archive and navigates encoded
+entries correctly; source-selection and cutscene-navigation UI checks pass
+offscreen (1,468 ms). Expected offscreen font/platform warnings remain.
+
 The resumable resource dispatcher reconstructs ROM 69D8..6EE8 and the flagged
 cleanup traversal. It preserves circular initialization, ascending updates,
 priority-based input selection, scratch-record publication, immediate release,
