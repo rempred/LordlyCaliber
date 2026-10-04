@@ -47,7 +47,7 @@ target_sources(lordly_engine PRIVATE engine/actor_materials.cpp game/director/ac
 target_sources(lordly_engine PRIVATE engine/actor_divider.cpp game/director/actor_divider.c)
 target_sources(lordly_engine PRIVATE engine/scene_transforms.cpp game/director/scene_transform.c)
 target_sources(lordly_engine PRIVATE game/director/scene_matrix.c)
-target_sources(lordly_engine PRIVATE engine/actor_main_matrix.cpp game/director/actor_main_matrix.c)
+target_sources(lordly_engine PRIVATE engine/actor_matrices.cpp game/director/actor_matrices.c)
 target_sources(lordly_engine PRIVATE engine/scene_actor_drawing.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_resources.cpp game/director/ui_resource.c)
 target_sources(lordly_engine PRIVATE engine/scene_dialogue.cpp engine/dialogue_archive.cpp engine/scene_dialogue_context.cpp)

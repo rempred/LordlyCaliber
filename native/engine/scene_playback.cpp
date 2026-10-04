@@ -244,11 +244,11 @@ void ScenePlayback::advanceFade() {
     if (fade_.advance())
         fade_.cleanup();
 }
-void ScenePlayback::prepareModeZeroMainDrawing(int channelCount) {
+void ScenePlayback::prepareModeZeroDrawing(int channelCount) {
     auto transforms = transforms_;
     auto actors = actors_;
     transforms.prepareMatrices(rom_, cameras_.actor(), channelCount);
-    actors.prepareModeZeroMainMatrices(cameras_.registered(), transforms);
+    actors.prepareModeZeroMatrices(cameras_.registered(), transforms);
     transforms_ = std::move(transforms);
     actors_ = std::move(actors);
 }

@@ -1,4 +1,4 @@
-#include "engine/actor_main_matrix.h"
+#include "engine/actor_matrices.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_playback.h"
@@ -29,7 +29,7 @@ class SceneRuntimeTests : public QObject {
         QFile file(work.filePath("actors.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
-        QCOMPARE(rows.size(), 108);
+        QCOMPARE(rows.size(), 468);
         const auto rom = Rom::open(path);
         qint64 maximum = 0;
         for (const auto value : rows) {
@@ -42,9 +42,10 @@ class SceneRuntimeTests : public QObject {
             put32(changedRom, 0x2a8b70, quint32(aspect >> 32));
             put32(changedRom, 0x2a8b74, quint32(aspect));
             const auto result =
-                ActorMainMatrix::prepare(Rom::fromBytes(changedRom), bytes("actor"),
-                                         bytes("channel"), SceneCamera(bytes("camera"), 0.1f));
-            const auto expected = bytes("result").mid(0xa0, 64);
+                ActorMatrices::prepare(Rom::fromBytes(changedRom), bytes("actor"), bytes("channel"),
+                                       SceneCamera(bytes("camera"), 0.1f));
+            const auto expected = bytes("result").mid(0xa0, 64),
+                       expectedShadow = bytes("result").mid(0x20, 64);
             const auto prepass = row["prepass"].toObject();
             const auto position = QByteArray::fromHex(prepass["position"].toString().toLatin1()),
                        scale = QByteArray::fromHex(prepass["scale"].toString().toLatin1());
@@ -55,9 +56,10 @@ class SceneRuntimeTests : public QObject {
             auto fixed = [](const QByteArray &b, int i) {
                 return qint32(quint32(u16(b, i * 2)) << 16 | u16(b, 32 + i * 2));
             };
-            for (int i = 0; i < 16; ++i) {
+            for (int i = 0; i < 32; ++i) {
                 const qint64 difference =
-                    qAbs(qint64(fixed(result.matrix, i)) - fixed(expected, i));
+                    qAbs(qint64(fixed(i < 16 ? result.matrix : result.shadow, i % 16)) -
+                         fixed(i < 16 ? expected : expectedShadow, i % 16));
                 maximum = qMax(maximum, difference);
                 QVERIFY2(difference <= 4,
                          qPrintable(QString("Actor matrix field %1 differs by %2 units")
@@ -65,7 +67,8 @@ class SceneRuntimeTests : public QObject {
                                         .arg(difference)));
             }
         }
-        qInfo() << "108 original Actor main matrices; maximum fixed-point difference:" << maximum;
+        qInfo() << "468 original Actor main/shadow matrices; maximum fixed-point difference:"
+                << maximum;
     }
     void actorMainDrawingIsAtomic() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -90,27 +93,39 @@ class SceneRuntimeTests : public QObject {
         auto bad = record;
         put8(bad, 0x13e, 20);
         scene.actors().supplyActor(27, bad);
-        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(20));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroDrawing(20));
         QCOMPARE(scene.actors().actor(0)->record(), before);
         QCOMPARE(scene.transforms().channel(0), channel);
         QCOMPARE(scene.completedUpdates(), 0U);
+        put8(bad, 0x13e, 0);
+        put32(bad, 0x130, std::bit_cast<quint32>(std::numeric_limits<float>::quiet_NaN()));
+        scene.actors().supplyActor(27, bad);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroDrawing(20));
+        QCOMPARE(scene.actors().actor(0)->record(), before);
+        QCOMPARE(scene.transforms().channel(0), channel);
+        bad = before;
+        put8(bad, 0x13f, 10);
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 ActorMatrices::prepare(rom, bad, channel, cameras.registered()));
         scene.actors().supplyActor(27, record);
-        scene.prepareModeZeroMainDrawing(20);
-        const auto drawing = ActorMainMatrix::prepare(rom, before, scene.transforms().channel(0),
-                                                      cameras.registered());
+        scene.prepareModeZeroDrawing(20);
+        const auto drawing = ActorMatrices::prepare(rom, before, scene.transforms().channel(0),
+                                                    cameras.registered());
         auto expected = before;
         expected.replace(0xa0, 64, drawing.matrix);
+        expected.replace(0x20, 64, drawing.shadow);
+        expected.replace(0x60, 64, drawing.shadow);
         put32(expected, 0xfc, std::bit_cast<quint32>(float(drawing.position.x())));
         put32(expected, 0x100, std::bit_cast<quint32>(float(drawing.position.y())));
         QCOMPARE(scene.actors().actor(0)->record(), expected);
         QCOMPARE(scene.actors().actor(27)->record(), expected);
         QCOMPARE(scene.completedUpdates(), 0U);
         const auto prepared = scene.transforms().channel(0);
-        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(21));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroDrawing(21));
         QCOMPARE(scene.transforms().channel(0), prepared);
         QCOMPARE(scene.actors().actor(0)->record(), expected);
         scene.setMode(2);
-        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(20));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroDrawing(20));
         QCOMPARE(scene.transforms().channel(0), prepared);
         QCOMPARE(scene.actors().actor(0)->record(), expected);
     }
@@ -621,7 +636,7 @@ class SceneRuntimeTests : public QObject {
         put16(invalid, 8, 0);
         put16(invalid, 10, 65535);
         materials.supplyTint(3, invalid);
-        QByteArray actor(336, char(0xa7));
+        QByteArray actor(336, char(-89));
         put32(actor, 0xe4, 3);
         const auto actorBefore = actor;
         QVERIFY_THROWS_EXCEPTION(Error, materials.render(actor));

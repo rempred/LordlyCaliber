@@ -1,26 +1,31 @@
 # Native Lordly Caliber
 
-## Mode-zero Actor main matrices
+## Mode-zero Actor matrices
 
-The portable C main-matrix path reconstructs ROM 2AE654 and 2AEB48 through
-2AED04, before shadow construction, using original assembly at Decomp 62cc7ef4.
-It preserves packed intermediate quantization, the registered-camera prepass,
-separate origin/size-probe projection constants, channel counterrotation and the
-Actor camera's prepared channels. Host trigonometry replaces target libm; this is
-not accepted matching C. Current-ROM constants are read from qualified placements.
+Portable C reconstructs the complete ROM 2AE654 prepass and 2AEB48..2AEFB8
+main/shadow construction using original assembly at Decomp 62cc7ef4. It retains
+packed intermediate quantization, registered-camera projection, independent
+origin/size-probe constants, channel counterrotation and Actor-camera channels.
+Host trigonometry replaces target libm; this is not accepted matching C.
+Current-ROM constants use qualified resident and overlay placements.
 
-ScenePlayback render preparation is separate from updates. It prepares channels
-and all present Actors in temporary copies, committing only after every matrix
-and channel reference validates. Only Actor A0..DF and FC..103 are written; other
-record fields and completed-update counts remain unchanged. Shadow construction,
-draw eligibility and final composition remain separate work.
+Shadows use the ten-entry facing table, camera bearing, repeated float angle
+wrapping and side-dependent rotation. Flag145 bit2 selects shadow height128;
+bit4 adds Actor height120. Otherwise shadows use the ordinary main geometry.
+The two native shadow matrix records are identical. Malformed facing, nonfinite
+values, packing overflow and nonterminating angle wrapping reject safely.
 
-The original-instruction comparison executes 108 camera/position/rotation/scale
-cases, including an independently changed size-probe aspect constant. Every
-packed component matches exactly in the tested cases. Atomicity checks put an
-invalid channel in slot27 and verify no earlier Actor or channel changed; invalid
-mode/count also reject without mutation. These checks pass with playback timing,
-composition and material regressions. They do not establish displayed game frames.
+ScenePlayback render preparation is separate from updates. Channels and all
+present Actors commit together after validation. Only Actor20..DF andFC..103
+change. Other fields and update counts remain intact. Draw eligibility and final
+composition remain separate work.
+
+The instruction reference now executes the entire original matrix function,
+with balanced stack and only host trig/memory-copy services controlled. All468
+camera/position/rotation/scale/facing/height-mode cases match both matrices exactly.
+Independent size-probe aspect constants are included. Late-slot channel and
+shadow validation failures preserve prior Actor/channel state. These checks do
+not establish displayed game frames or target libm/RSP pixel equivalence.
 
 
 Scene transform inspection now has a desktop preview with resource, sequence,

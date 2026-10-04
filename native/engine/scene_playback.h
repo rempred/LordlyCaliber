@@ -38,9 +38,9 @@ class ScenePlayback {
     Result advance(const Update &supplemental = {}, const DirectorSession::Service &commands = {},
                    int instructionBudget = 10000, int stageBudget = 64);
     void advanceFade();
-    // Render preparation is separate from update cadence. This prepares ordinary
-    // main sprites; shadow construction and final draw ordering remain separate.
-    void prepareModeZeroMainDrawing(int channelCount);
+    // Render preparation is separate from update cadence. This prepares main
+    // and shadow matrices; final draw ordering remains separate.
+    void prepareModeZeroDrawing(int channelCount);
     void setMode(int mode);
     const LordlySceneSchedule &schedule() const {
         return schedule_;

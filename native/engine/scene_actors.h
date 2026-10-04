@@ -79,7 +79,7 @@ class SceneActors {
         divider_ = std::move(divider);
     }
     void advanceDivider();
-    void prepareModeZeroMainMatrices(const SceneCamera &, const SceneTransforms &);
+    void prepareModeZeroMatrices(const SceneCamera &, const SceneTransforms &);
     quint8 defaultChannel() const {
         return defaultChannel_;
     }

@@ -1,8 +1,8 @@
-/* Portable reconstruction of mode-zero prepass ROM 2AE654 and the main-pass
- * portion of 2AEB48 ending at 2AED04. Original reference: Decomp 62cc7ef4.
+/* Portable reconstruction of mode-zero prepass ROM 2AE654 and complete
+ * matrix construction at 2AEB48..2AEFB8. Original reference: Decomp 62cc7ef4.
  * Also reconstructs CPU projection 29CBDC/2A1484 and look-at 20D40..210C0.
  * Host trigonometry replaces libm. This is not accepted matching C. */
-#include "actor_main_matrix.h"
+#include "actor_matrices.h"
 #include "scene_matrix.h"
 #include <math.h>
 #include <string.h>
@@ -88,12 +88,13 @@ static int project(float out[2], const float sample[3], const float model[16], c
     }
     return isfinite(out[0]) && isfinite(out[1]);
 }
-int lordly_actor_main_matrix(LordlyActorMainMatrix *out, const uint8_t actor[336],
-                             const uint8_t channel[88], const float camera[14], float world_scale,
-                             const LordlyActorMatrixConstants *c) {
-    LordlyActorMainMatrix result;
+int lordly_actor_matrices(LordlyActorMatrices *out, const uint8_t actor[336],
+                          const uint8_t channel[88], const float camera[14], float world_scale,
+                          const LordlyActorMatrixConstants *c) {
+    LordlyActorMatrices result;
     float view[16], basis[16], model[16], temporary[16], reference[2];
     float angle, tilt, yaw, dx, dy, dz;
+    float inverse[16], actor_scale[16], stage[16], shadow[16];
     int i;
     for (i = 0; i < 14; ++i)
         if (!isfinite(camera[i]))
@@ -131,6 +132,7 @@ int lordly_actor_main_matrix(LordlyActorMainMatrix *out, const uint8_t actor[336
                         real(actor + 0x108) * result.scale[1], real(actor + 0x10c));
     if (!quantize(model))
         return 0;
+    memcpy(actor_scale, model, sizeof(model));
     lordly_matrix_translate(temporary, 0.f, real(actor + 0x120), 0.f);
     if (!quantize(temporary) || !concatenate(model, model, temporary))
         return 0;
@@ -145,14 +147,63 @@ int lordly_actor_main_matrix(LordlyActorMainMatrix *out, const uint8_t actor[336
             temporary[j * 4 + i] = value;
         }
     }
-    if (!quantize(temporary) || !concatenate(model, model, temporary))
+    if (!quantize(temporary))
+        return 0;
+    memcpy(inverse, temporary, sizeof(inverse));
+    if (!concatenate(model, model, temporary))
         return 0;
     lordly_matrix_translate(temporary, result.position[0] - 160.f, result.position[1] - 120.f, 0.f);
     if (!quantize(temporary) || !concatenate(model, model, temporary))
         return 0;
+    memcpy(stage, temporary, sizeof(stage));
     lordly_matrix_unpack(temporary, channel);
     lordly_matrix_multiply(model, model, temporary);
     if (!lordly_matrix_pack(result.matrix, model))
+        return 0;
+    if (actor[0x13f] >= 10 || !isfinite(real(actor + 0x12c)))
+        return 0;
+    angle = atan2f(camera[7] - camera[10], camera[5] - camera[8]) * 180.f;
+    angle = (float)((double)angle / c->shadow_pi);
+    angle = ((float)c->facing[actor[0x13f]] + real(actor + 0x12c)) + angle;
+    if (!isfinite(angle))
+        return 0;
+    // Retain repeated single-precision wrapping; reject nonterminating input.
+    for (i = 0; i < 65536 && (angle < 0.f || angle >= 360.f); ++i)
+        angle = angle < 0.f ? angle + 360.f : angle - 360.f;
+    if (angle < 0.f || angle >= 360.f)
+        return 0;
+    lordly_matrix_scale(shadow, 1.f, real(actor + 0x130), 1.f);
+    if (!quantize(shadow))
+        return 0;
+    lordly_matrix_rotation(temporary, angle > 0.f && angle <= 180.f ? 90.f : -90.f, 0.f, 0.f,
+                           c->axis_radians);
+    if (!quantize(temporary) || !concatenate(shadow, shadow, temporary))
+        return 0;
+    yaw = -real(actor + 0x12c);
+    if (!(angle > 0.f && angle <= 180.f))
+        yaw = (float)((double)yaw + c->half_turn);
+    lordly_matrix_rotation(temporary, 0.f, yaw, 0.f, c->axis_radians);
+    if (!quantize(temporary) || !concatenate(shadow, shadow, temporary))
+        return 0;
+    view[12] = view[13] = view[14] = 0.f;
+    if (!quantize(view) || !concatenate(shadow, shadow, view))
+        return 0;
+    if (actor[0x145] & 2) {
+        float height = real(actor + 0x128);
+        if (actor[0x145] & 4)
+            height += real(actor + 0x120);
+        lordly_matrix_translate(temporary, 0.f, height, 0.f);
+        if (!quantize(temporary) || !concatenate(model, actor_scale, temporary) ||
+            !concatenate(model, model, inverse) || !concatenate(model, model, stage))
+            return 0;
+        lordly_matrix_unpack(temporary, channel);
+        if (!concatenate(model, model, temporary))
+            return 0;
+    } else {
+        lordly_matrix_unpack(model, result.matrix);
+    }
+    lordly_matrix_multiply(shadow, shadow, model);
+    if (!lordly_matrix_pack(result.shadow, shadow))
         return 0;
     *out = result;
     return 1;
