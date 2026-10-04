@@ -1,5 +1,43 @@
 # Native Lordly Caliber
 
+## Actor material pixels
+
+The projected renderer now consumes the native tint/material command stream.
+ColorCombiner decodes RGB and alpha muxes for one/two cycles, including the
+second-cycle texture-name swap. ActorRenderState retains environment color and
+command order, validates unsupported inputs atomically, and preserves the
+single-texture callback's combiner override across following layers. Callers
+provide inherited environment state; convenience inspector calls use explicit
+transparent black. Native driver resets and world environment gradients remain
+part of the scene composition owner.
+
+SpriteFrame retains color alpha separately from the transparency mask. Both
+lanes crop/flip together and count toward the bounded frame cache. The original
+RGBA16-plus-intensity expansion (ROM204A70) and callback (29EE18..29F4C0) bind
+mask to tile0 and color to tile1. The halfword2 in the expanded header describes
+RGBA16 format, not a texture count. RGBA32 Actor expansion is rejected until its
+native copying/layout behavior is implemented; ordinary sprite inspection still
+retains its existing RGBA32 decode.
+
+The pose inspector exposes color multiply, tint blend and both material routes,
+with Actor/environment RGB controls. A material may make an Actor almost
+transparent when it selects zero color-alpha despite a visible separate mask;
+the inputs are deliberately kept distinct. Qt coverage/blending/sampling and
+floating combiner intermediates remain approximations of RDP output.
+
+Checks after build88427: scene_runtime_tests colorCombinerPrograms
+actorMaterialPixelsAndState actorLayerProjectionAndComposition
+actorRendererUsesBodyVariant passed104ms; sprite_tests
+separateTextureAlphaAndOrientation deltaVariantsAndFallback
+actorBanksPosesAndFrames passed3276ms (5696 frames/16768 layers unchanged);
+ui_tests projectedActorPreview cutsceneCatalogSelection passed1785ms.
+Literal RGBA expectations distinguish the textures and native presets; malformed
+command rollback and inherited state are checked. Cropping/flipping uses distinct
+alpha bytes; UI changes and backward seeks restore identical output. Rendered
+controls were inspected. These are desktop composition checks, not game-frame
+or RDP hardware comparisons.
+
+
 ## World Actor matrices
 
 ActorWorldMatrices reconstructs ROM2A9AD0 and its camera-basis owner2AA1EC,
@@ -46,7 +84,7 @@ sentinel and the distinct main/shadow opacity rules. The class-size choice adapt
 accepted func_00043d1c.c (43d43ddd); size2 uses the current-ROM 1.1 multiplier.
 Body images use the resolved body-handle variant, separately from body flags.
 Decoded frames share a bounded64 MiB cache. Qt performs clipping, sampling and
-blending; custom RDP material combiners and linked equipment remain separate.
+blending; linked equipment remains separate. Material color programs are now modeled as described above.
 
 The Pose inspector now offers reference-camera placement, scale, facing and
 shadow controls, with layer selection/visibility and repeatable backward seeks.

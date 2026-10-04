@@ -14,6 +14,29 @@ using namespace lordly;
 class SpriteTests : public QObject {
     Q_OBJECT
   private slots:
+    void separateTextureAlphaAndOrientation() {
+        // Two direct RGBA16 pixels have alpha0/1, independently of mask8/15.
+        const auto bytes = QByteArray::fromHex(
+            "55540101000200015554000300020001f800003f000000008f00000000000000");
+        const auto frame = SpriteObject::decode(bytes).frame(0);
+        QCOMPARE(frame.image.rgba, QByteArray::fromHex("ff0000880000ffff"));
+        QCOMPARE(frame.colorAlpha, QByteArray::fromHex("00ff"));
+        QVERIFY(frame.dualTexture);
+        const auto flipped = frame.oriented(2, 1, true, false);
+        QCOMPARE(flipped.image.rgba, QByteArray::fromHex("0000ffffff000088"));
+        QCOMPARE(flipped.colorAlpha, QByteArray::fromHex("ff00"));
+        auto padded = frame;
+        padded.image = {3, 2, QByteArray::fromHex(
+            "ff0000880000ffff12345600abcdef002233440099887700")};
+        padded.colorAlpha = QByteArray::fromHex("00ff11aa55ee");
+        const auto cropped = padded.oriented(2, 2, true, true);
+        QCOMPARE(cropped.image.rgba, QByteArray::fromHex("22334400abcdef000000ffffff000088"));
+        QCOMPARE(cropped.colorAlpha, QByteArray::fromHex("55aaff00"));
+        QVERIFY_THROWS_EXCEPTION(Error, padded.oriented(1, 2, false, false));
+        padded.colorAlpha.clear();
+        QVERIFY_THROWS_EXCEPTION(Error, padded.oriented(2, 2, false, false));
+        QCOMPARE(frame.colorAlpha, QByteArray::fromHex("00ff"));
+    }
     void animationResolverAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

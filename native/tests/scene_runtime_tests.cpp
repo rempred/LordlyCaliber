@@ -1,5 +1,6 @@
 #include "engine/actor_matrices.h"
 #include "engine/actor_renderer.h"
+#include "engine/color_combiner.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_draw_queue.h"
@@ -19,6 +20,78 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void colorCombinerPrograms() {
+        const CombineInputs inputs{{10, 20, 30, 160}, {200, 100, 50, 240},
+                                   {128, 64, 255, 128}, {0, 0, 0, 1}, {255, 255, 255, 255}};
+        // Independently reduced native formulas. Default: color*primitive,
+        // alpha-mask*primitive-alpha+environment-alpha. Tint instead blends
+        // toward white. The custom programs sample the other texture in cycle2.
+        QCOMPARE(ColorCombiner(0xfc62fe03, 0x2f0d73fd, true).evaluate(inputs),
+                 (RenderColor{100, 25, 50, 81}));
+        QCOMPARE(ColorCombiner(0xfc62fec3, 0x200d723d, true).evaluate(inputs),
+                 (RenderColor{227, 138, 255, 81}));
+        QCOMPARE(ColorCombiner(0xfc629603, 0x2f2d7bfd, true).evaluate(inputs),
+                 (RenderColor{100, 25, 50, 121}));
+        QCOMPARE(ColorCombiner(0xfc2296c3, 0xf22ffa3d, true).evaluate(inputs),
+                 (RenderColor{122, 58, 225, 121}));
+        QCOMPARE(ColorCombiner(0xfcff97ff, 0xff2fffff, false).evaluate(inputs),
+                 (RenderColor{0, 0, 0, 80}));
+        auto changed = inputs;
+        changed.environment = {40, 80, 120, 1};
+        QCOMPARE(ColorCombiner(0xfc2296c3, 0xf22ffa3d, true).evaluate(changed),
+                 (RenderColor{154, 90, 248, 121}));
+        changed.environment = {255, 255, 255, 255};
+        QCOMPARE(ColorCombiner(0xfc2296c3, 0xf22ffa3d, true).evaluate(changed),
+                 (RenderColor{255, 158, 255, 255}));
+        QVERIFY_THROWS_EXCEPTION(Error, ColorCombiner(0xfb62fe03, 0x2f0d73fd, true));
+        QVERIFY_THROWS_EXCEPTION(Error,
+            ColorCombiner(0xfc72fe03, 0x2f0d73fd, true).evaluate(inputs));
+    }
+    void actorMaterialPixelsAndState() {
+        QByteArray bank(56, 0), record(336, 0);
+        const float cameraValues[]{90, 4.f / 3, 1, 1000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(cameraValues[i]));
+        for (int i = 0; i < 4; ++i)
+            put16(record, 0xa0 + i * 10, 1);
+        put8(record, 0, 128);
+        put8(record, 0x142, 128);
+        put8(record, 0x143, 64);
+        put8(record, 0x144, 255);
+        ActorFrameLayer frame;
+        frame.metadata = {0, {0, 0}, 2, 2, 0, 1024, 1024};
+        frame.pixels.image = {2, 2, QByteArray::fromHex("c86432a0c86432a0c86432a0c86432a0")};
+        frame.pixels.colorAlpha = QByteArray(4, char(255));
+        frame.pixels.dualTexture = true;
+        auto state = ActorRenderState::main({0, 0, 0, 1});
+        auto render = [&] {
+            return ActorRenderer::projectLayer(frame, record, 0, false, SceneCamera(bank, 1.f),
+                {255, 255, 255}, 1., 0, 255, &state).image.pixelColor(0, 0);
+        };
+        QCOMPARE(render(), QColor(100, 25, 50, 81));
+        state.apply(QByteArray::fromHex("fc62fec3200d723d"));
+        QCOMPARE(render(), QColor(227, 138, 255, 81));
+        ActorMaterials materials;
+        materials.supplyMaterial(0, QByteArray::fromHex("010000008040ff"));
+        state.apply(materials.render(record));
+        QCOMPARE(render(), QColor(100, 25, 50, 129));
+        materials.supplyMaterial(0, QByteArray::fromHex("002850788040ff"));
+        state.apply(materials.render(record));
+        QCOMPARE(render(), QColor(79, 55, 118, 129));
+        // Malformed trailing commands cannot leave an earlier environment change.
+        QVERIFY_THROWS_EXCEPTION(Error, state.apply(QByteArray::fromHex(
+            "fb000000ffffffffde00000000000000")));
+        QCOMPARE(render(), QColor(79, 55, 118, 129));
+        QVERIFY_THROWS_EXCEPTION(Error, state.apply(QByteArray(7, 0)));
+        // Original single-texture callback overrides a custom combiner, and
+        // a following dual-texture layer does not reset that inherited command.
+        frame.pixels.dualTexture = false;
+        QCOMPARE(render(), QColor(104, 37, 146, 81));
+        frame.pixels.dualTexture = true;
+        QCOMPARE(render(), QColor(87, 47, 204, 81));
+        frame.pixels.colorAlpha.clear();
+        QVERIFY_THROWS_EXCEPTION(Error, render());
+    }
     void sceneWorldPassesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -322,6 +395,8 @@ class SceneRuntimeTests : public QObject {
         ActorFrameLayer frame;
         frame.metadata = {0, {-8, -16}, 16, 16, 0, 1024, 1024};
         frame.pixels.image = {16, 16, QByteArray(16 * 16 * 4, 0)};
+        frame.pixels.colorAlpha = QByteArray(16 * 16, char(255));
+        frame.pixels.dualTexture = true;
         for (int i = 0; i < 16 * 16; ++i) {
             put8(frame.pixels.image.rgba, i * 4, 200);
             put8(frame.pixels.image.rgba, i * 4 + 1, 100);

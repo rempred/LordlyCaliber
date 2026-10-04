@@ -38,6 +38,29 @@ QByteArray combine(const QByteArray &base, const QByteArray &delta, int format) 
     return result;
 }
 } // namespace
+SpriteFrame SpriteFrame::oriented(int width, int height, bool flipX, bool flipY) const {
+    if (width < 1 || height < 1 || width > image.width || height > image.height ||
+        qint64(image.width) * image.height * 4 != image.rgba.size() ||
+        colorAlpha.size() != qint64(image.width) * image.height)
+        throw Error("Actor frame dimensions exceed stored sprite pixels");
+    if (width != image.width || height != image.height)
+        for (int y = 0; y < image.height; ++y)
+            for (int x = 0; x < image.width; ++x)
+                if ((x >= width || y >= height) && u8(image.rgba, (y * image.width + x) * 4 + 3))
+                    throw Error("Actor frame metadata would crop visible sprite pixels");
+    auto result = *this;
+    result.image = {width, height, QByteArray(width * height * 4, 0)};
+    result.colorAlpha = QByteArray(width * height, 0);
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            const int sx = flipX ? width - 1 - x : x, sy = flipY ? height - 1 - y : y;
+            put8(result.colorAlpha, y * width + x, u8(colorAlpha, sy * image.width + sx));
+            for (int c = 0; c < 4; ++c)
+                put8(result.image.rgba, (y * width + x) * 4 + c,
+                     u8(image.rgba, (sy * image.width + sx) * 4 + c));
+        }
+    return result;
+}
 SpriteObject SpriteObject::decode(QByteArray bytes) {
     if (bytes.size() < 8 || u16(bytes, 0) != 0x5554 || bytes.size() > 64 * 1024 * 1024)
         throw Error("Invalid native sprite container");
@@ -134,6 +157,7 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
     if (colorFormat_ == 1 && palette.size() != 512)
         throw Error("Indexed sprite requires a complete palette");
     RasterImage image{width_, height_, QByteArray(width_ * height_ * 4, 0)};
+    QByteArray colorAlpha(width_ * height_, 0);
     for (int y = 0; y < height_; ++y)
         for (int x = 0; x < width_; ++x) {
             const int out = (y * width_ + x) * 4, at = y * colorStride_;
@@ -152,12 +176,14 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
                 put8(image.rgba, out + 2, quint8((((word >> 1) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 3, word & 1 ? 255 : 0);
             }
+            put8(colorAlpha, y * width_ + x, u8(image.rgba, out + 3));
             if (!lanes.alpha.isEmpty()) {
                 const auto packed = u8(lanes.alpha, y * alphaStride_ + (alphaFormat_ ? x : x / 2));
                 put8(image.rgba, out + 3,
                      alphaFormat_ ? packed : quint8((x & 1 ? packed & 15 : packed >> 4) * 17));
             }
         }
-    return {std::move(image), requestedChild, child};
+    return {std::move(image),      requestedChild,         child,
+            std::move(colorAlpha), !lanes.alpha.isEmpty(), colorFormat_};
 }
 } // namespace lordly

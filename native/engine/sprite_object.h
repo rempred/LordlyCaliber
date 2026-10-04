@@ -13,6 +13,12 @@ struct SpriteChild {
 struct SpriteFrame {
     RasterImage image;
     int requestedChild = 0, child = 0;
+    // Original color alpha survives the separate transparency lane. The Actor
+    // callback binds transparency to tile0 and RGBA16 color to tile1.
+    QByteArray colorAlpha;
+    bool dualTexture = false;
+    int sourceColorFormat = 2;
+    SpriteFrame oriented(int width, int height, bool flipX, bool flipY) const;
 };
 // Native 0x5554 sprite containers retain their source headers and padded lanes.
 // Child deltas are materialized independently from palette/display conversion.

@@ -206,28 +206,9 @@ QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant,
         const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
         const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
         auto pixels = sprite.frame(variant, palette, sepia);
-        const auto &image = pixels.image;
-        if (layer.width > image.width || layer.height > image.height)
-            throw Error("Actor frame dimensions exceed stored sprite pixels");
-        if (layer.width != image.width || layer.height != image.height)
-            for (int y = 0; y < image.height; ++y)
-                for (int x = 0; x < image.width; ++x)
-                    if ((x >= layer.width || y >= layer.height) &&
-                        u8(image.rgba, (y * image.width + x) * 4 + 3))
-                        throw Error("Actor frame metadata would crop visible sprite pixels");
-        RasterImage oriented{layer.width, layer.height,
-                             QByteArray(layer.width * layer.height * 4, 0)};
-        if ((retained += oriented.rgba.size()) > 64 * 1024 * 1024)
+        pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);
+        if ((retained += pixels.image.rgba.size() + pixels.colorAlpha.size()) > 64 * 1024 * 1024)
             throw Error("Actor frame exceeds the pixel budget");
-        for (int y = 0; y < layer.height; ++y)
-            for (int x = 0; x < layer.width; ++x) {
-                const int sx = layer.flags & 1 ? layer.width - 1 - x : x,
-                          sy = layer.flags & 2 ? layer.height - 1 - y : y;
-                for (int c = 0; c < 4; ++c)
-                    put8(oriented.rgba, (y * layer.width + x) * 4 + c,
-                         u8(image.rgba, (sy * image.width + sx) * 4 + c));
-            }
-        pixels.image = std::move(oriented);
         result << ActorFrameLayer{layer, std::move(pixels)};
     }
     return result;

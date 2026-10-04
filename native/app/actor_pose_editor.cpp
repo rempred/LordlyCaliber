@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include "engine/actor_materials.h"
 #include "engine/class_data.h"
 #include "engine/scene_transforms.h"
 #include "engine/text.h"
@@ -192,10 +193,31 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     shadows_->setObjectName("actorPlacementShadow");
     cameraRow->addWidget(shadows_);
     placementLayout->addLayout(cameraRow);
+    auto colorRow = new QHBoxLayout;
+    materialMode_ = new QComboBox;
+    materialMode_->setObjectName("actorMaterialMode");
+    materialMode_->addItems({"Color multiply", "Tint blend", "Material 0", "Material 1"});
+    colorRow->addWidget(new QLabel("Preview material"));
+    colorRow->addWidget(materialMode_);
+    for (int group = 0; group < 2; ++group) {
+        colorRow->addWidget(new QLabel(group ? "Environment RGB" : "Actor RGB"));
+        for (int c = 0; c < 3; ++c) {
+            auto value = new QSpinBox;
+            value->setObjectName(QString(group ? "actorEnvironment%1" : "actorColor%1").arg(c));
+            value->setRange(0, 255);
+            value->setValue(group ? 0 : 255);
+            (group ? environmentRgb_ : actorRgb_)[c] = value;
+            colorRow->addWidget(value);
+            connect(value, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
+        }
+    }
+    connect(materialMode_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::draw);
+    placementLayout->addLayout(colorRow);
     auto placementNote = new QLabel(
         "Reference camera and preview position. World view uses two reference lights and flat "
-        "terrain. Native main/shadow matrices; Qt image sampling. Scene lighting, custom material "
-        "combiners and linked equipment are separate.");
+        "terrain. Material previews use the game’s texture inputs and color formulas; Qt sampling "
+        "and blending approximate the N64 output. Scene lighting and linked equipment are "
+        "separate.");
     placementNote->setWordWrap(true);
     placementLayout->addWidget(placementNote);
     layout->addWidget(placementControls_);
@@ -209,8 +231,8 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     connect(facing_, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
     connect(shadows_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
     connect(placementMode_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        previewCameras_[previousPlacementMode_] =
-            {cameraYaw_->value(), cameraHeight_->value(), cameraDistance_->value()};
+        previewCameras_[previousPlacementMode_] = {cameraYaw_->value(), cameraHeight_->value(),
+                                                   cameraDistance_->value()};
         previousPlacementMode_ = index;
         const QSignalBlocker yawBlock(cameraYaw_), heightBlock(cameraHeight_),
             distanceBlock(cameraDistance_);
@@ -599,7 +621,7 @@ void ActorPoseEditor::drawProjected() {
     QByteArray record(reinterpret_cast<const char *>(raw.bytes), 336);
     for (int i = 0; i < 3; ++i) {
         put32(record, 0x104 + i * 4, std::bit_cast<quint32>(float(size_->value())));
-        put8(record, 0x142 + i, 255);
+        put8(record, 0x142 + i, quint8(actorRgb_[i]->value()));
     }
     put8(record, 0x13c, 255);
     put8(record, 0x13f, quint8(facing_->value()));
@@ -638,8 +660,27 @@ void ActorPoseEditor::drawProjected() {
         for (int i = 0; i < (world ? 2 : 1); ++i)
             projected += renderer_.projectRecord(*art_, record, true, actorCamera, {255, 255, 255},
                                                  sepia_->isChecked(), i, world ? 96 : 255);
+    auto materialState = ActorRenderState::main({0, 0, 0, 0});
+    ActorMaterials material;
+    const int mode = materialMode_->currentIndex();
+    if (mode == 1) {
+        QByteArray tint(12, 0);
+        for (int i = 0; i < 3; ++i)
+            put8(tint, 3 + i, quint8(actorRgb_[i]->value()));
+        put16(tint, 6, 1);
+        material.supplyTint(0, tint);
+    } else if (mode >= 2) {
+        QByteArray entry(7, 0);
+        put8(entry, 0, quint8(mode - 2));
+        for (int i = 0; i < 3; ++i) {
+            put8(entry, 1 + i, quint8(environmentRgb_[i]->value()));
+            put8(entry, 4 + i, quint8(actorRgb_[i]->value()));
+        }
+        material.supplyMaterial(0, entry);
+    }
+    materialState.apply(material.render(record));
     projected += renderer_.projectRecord(*art_, record, false, actorCamera, {255, 255, 255},
-                                         sepia_->isChecked());
+                                         sepia_->isChecked(), 0, 255, &materialState);
     QImage combined(320, 240, QImage::Format_RGBA8888);
     combined.fill(Qt::transparent);
     ActorRenderer::paint(combined, projected);

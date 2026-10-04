@@ -9,7 +9,8 @@ namespace lordly {
 ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const QByteArray &actor,
                                              int layer, bool shadow, const SceneCamera &camera,
                                              const std::array<qint16, 3> &globalRgb,
-                                             double bodyMultiplier, int shadowIndex, quint8 alpha) {
+                                             double bodyMultiplier, int shadowIndex, quint8 alpha,
+                                             ActorRenderState *state) {
     if (actor.size() != 336)
         throw Error("Actor rendering requires a complete record");
     if (shadowIndex < 0 || shadowIndex > 1)
@@ -46,30 +47,50 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
     result.image = QImage(m.width, m.height, QImage::Format_RGBA8888);
     if (result.image.isNull())
         throw Error("Unable to allocate an Actor layer image");
+    if (frame.pixels.sourceColorFormat == 3)
+        throw Error("Actor RGBA32 source expansion requires its native layout conversion");
+    if (frame.pixels.dualTexture && frame.pixels.colorAlpha.size() != m.width * m.height)
+        throw Error("Actor color texture has no matching alpha lane");
+    auto next = state    ? *state
+                : shadow ? ActorRenderState::shadow({0, 0, 0, 0})
+                         : ActorRenderState::main({0, 0, 0, 0});
+    next.bindTexture(frame.pixels.dualTexture);
+    const auto combiner = next.combiner();
+    CombineInputs inputs;
+    inputs.primitive = result.primitive;
+    inputs.environment = next.environment();
+    inputs.shade = {255, 255, 255, 255};
     for (int y = 0; y < m.height; ++y) {
         auto destination = result.image.scanLine(y);
         const auto source = reinterpret_cast<const quint8 *>(r.rgba.constData()) + y * m.width * 4;
         for (int x = 0; x < m.width; ++x) {
-            for (int c = 0; c < 3; ++c)
-                destination[x * 4 + c] =
-                    shadow ? 0 : quint8(int(source[x * 4 + c]) * result.primitive[c] / 255);
-            destination[x * 4 + 3] = quint8(int(source[x * 4 + 3]) * result.primitive[3] / 255);
+            for (int c = 0; c < 4; ++c)
+                inputs.texel0[c] = inputs.texel1[c] = source[x * 4 + c];
+            if (frame.pixels.dualTexture) {
+                inputs.texel0.fill(source[x * 4 + 3]);
+                inputs.texel1[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
+            }
+            const auto color = combiner.evaluate(inputs);
+            for (int c = 0; c < 4; ++c)
+                destination[x * 4 + c] = color[c];
         }
     }
+    if (state)
+        *state = next;
     return result;
 }
 QVector<ActorRasterLayer> ActorRenderer::project(const ActorInstance &actor, bool shadow,
                                                  const SceneCamera &camera,
                                                  const std::array<qint16, 3> &globalRgb, bool sepia,
-                                                 int shadowIndex, quint8 alpha) {
+                                                 int shadowIndex, quint8 alpha,
+                                                 ActorRenderState *state) {
     return projectRecord(actor.pose().art(), actor.record(), shadow, camera, globalRgb, sepia,
-                         shadowIndex, alpha);
+                         shadowIndex, alpha, state);
 }
-QVector<ActorRasterLayer> ActorRenderer::projectRecord(const ActorArt &art,
-                                                       const QByteArray &record, bool shadow,
-                                                       const SceneCamera &camera,
-                                                       const std::array<qint16, 3> &globalRgb,
-                                                       bool sepia, int shadowIndex, quint8 alpha) {
+QVector<ActorRasterLayer>
+ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool shadow,
+                             const SceneCamera &camera, const std::array<qint16, 3> &globalRgb,
+                             bool sepia, int shadowIndex, quint8 alpha, ActorRenderState *state) {
     if (record.size() != 336)
         throw Error("Actor rendering requires a complete record");
     const auto token = qint32(u32(record, 0xf8));
@@ -86,7 +107,7 @@ QVector<ActorRasterLayer> ActorRenderer::projectRecord(const ActorArt &art,
             std::make_unique<QVector<ActorFrameLayer>>(art.frame(rom_, token, variant, sepia));
         qsizetype bytes = 0;
         for (const auto &layer : *frame)
-            bytes += layer.pixels.image.rgba.size() + 128;
+            bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;
         const int cost = int(qMax<qsizetype>(1, (bytes + 1023) / 1024));
         if (cost > frames_.maxCost())
             throw Error("Actor frame exceeds the rendering cache budget");
@@ -109,10 +130,15 @@ QVector<ActorRasterLayer> ActorRenderer::projectRecord(const ActorArt &art,
             multiplier = std::bit_cast<double>(quint64(u32(rom_.bytes(), 0x2a8b30)) << 32 |
                                                u32(rom_.bytes(), 0x2a8b34));
     }
+    auto next = state    ? *state
+                : shadow ? ActorRenderState::shadow({0, 0, 0, 0})
+                         : ActorRenderState::main({0, 0, 0, 0});
     QVector<ActorRasterLayer> result;
     for (int i = 0; i < cached->size(); ++i)
         result.append(projectLayer((*cached)[i], record, i, shadow, camera, globalRgb, multiplier,
-                                   shadowIndex, alpha));
+                                   shadowIndex, alpha, &next));
+    if (state)
+        *state = next;
     return result;
 }
 void ActorRenderer::paint(QImage &destination, const QVector<ActorRasterLayer> &layers) {

@@ -39,7 +39,8 @@ class ActorPoseEditor : public QWidget {
     Rom rom_;
     ActorRenderer renderer_;
     QCheckBox *projected_, *shadows_;
-    QComboBox *placementMode_;
+    QComboBox *placementMode_, *materialMode_;
+    std::array<QSpinBox *, 3> actorRgb_, environmentRgb_;
     QWidget *placementControls_;
     std::array<QDoubleSpinBox *, 3> placement_;
     QDoubleSpinBox *size_, *cameraYaw_, *cameraHeight_, *cameraDistance_;
