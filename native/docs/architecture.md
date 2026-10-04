@@ -28,8 +28,19 @@ re-export and removal. The desktop page provides searchable squads and classes,
 per-member settings, a clickable formation grid with large-member clearance,
 persuasion/retreat/reward controls, and undoable create/copy/restore/remove.
 Qt checks exercise those controls and atomic rejection of invalid edits. Rendered
-pages have been inspected. Insufficient actor capacity still needs a safe policy
-before the original materializer can be reached; full battles are not yet proven.
+pages have been inspected. Selection now declines an authored squad before
+staging its encounter when there are too few free transient characters or no
+free source record in slots 30..49. This avoids the original allocator's unchecked
+fallback to player source 29. Character allocation uses slots 1..98, matching
+the transient reset at z64 0x45F30; slot 99 is outside that reset and IDs 100+
+have a different reference meaning. The original save/load routines cover 100
+52-byte scratch records, not 120. Earlier instruction fixtures incorrectly
+allowed records 118/119; corrected fixtures guard that boundary. Installed
+dispatcher tests verify no spawn or record writes on capacity rejection.
+The materializer also preflights every member before construction. The interval
+between selection and materialization assumes the original modal transition
+does not allocate other scratch characters; injected changes during that
+interval and full battles are not yet proven.
 
 The product targets Windows and integrated graphics. C++ owns the engine and
 Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,

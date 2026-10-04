@@ -52,13 +52,13 @@ for(const f of fixtures) {
   reset(active);m.set('s1',source);m.set('s2',10);m.set('s3',cl);m.w32(state,active);
   m.w8(p+1,2);m.w8(p+8,165);m.w8(p+9,255);m.w8(p+10,8);m.w16(p+12,277);
   m.w8(p+16,255);m.w8(p+17,127);m.w8(p+18,6);m.w16(p+22,1);
-  m.load(S.lc_character_records,Buffer.alloc(120*52,1));for(const id of [1,119])m.w8(S.lc_character_records+id*52+17,0);
+  m.load(S.lc_character_records,Buffer.alloc(100*52,1));for(const id of [1,98])m.w8(S.lc_character_records+id*52+17,0);
   m.load(source,Buffer.alloc(25));const calls=[];
   m.trap(S.lc_character_create,c=>{calls.push([c.get('a0'),c.get('a1'),c.get('a2'),c.get('a3'),c.r32(c.get('sp')+16)]);c.w8(c.get('a0')+17,1);clobber(c);});
   call('lc_materializer_site',active?S.lc_materializer_epilogue:cl===1?S.lc_materializer_class_one:S.lc_materializer_generic);
   if(active) {
-   assert.deepEqual(calls,[[S.lc_character_records+52,165,9,277,0],[S.lc_character_records+119*52,255,137,0,1]]);
-   assert.equal(m.r8(source+2),1);assert.equal(m.r8(source+3),119);assert.equal(m.r8(source+7),8);assert.equal(m.r8(source+8),6);
+   assert.deepEqual(calls,[[S.lc_character_records+52,165,9,277,0],[S.lc_character_records+98*52,255,137,0,1]]);
+   assert.equal(m.r8(source+2),1);assert.equal(m.r8(source+3),98);assert.equal(m.r8(source+7),8);assert.equal(m.r8(source+8),6);
   } else {assert.deepEqual(calls,[]);assert.equal(m.get('v0'),1);assert.equal(m.get('a0'),0);}
  }
  const actor=0x80260000,leader=0x80260200;

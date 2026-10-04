@@ -5,7 +5,7 @@
  * materializer, card, battle controls and final reward; no library is resident. */
 u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
 {
-    u32 start, slot, source, key;
+    u32 start, slot, source, key, id, available;
     LcCustomState *state = &lc_custom_state;
     state->pending = 0;
     state->active = 0;
@@ -23,6 +23,16 @@ u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
         state->profile.member_count > 5 || state->profile.runtime_key != key ||
         state->profile.terrain_slot != slot || state->profile.member[0].class_id < 2)
         return retail_class;
+    /* Refuse this encounter before the dispatcher stages its transition. Never
+     * fall back to a single creature when an authored squad does not fit. The
+     * original source allocator otherwise overwrites unchecked player slot 29. */
+    available = 0;
+    for (id = 1; id < LC_CUSTOM_CHARACTER_END && available < state->profile.member_count; ++id)
+        if (!lc_character_records[id * 52 + 17]) ++available;
+    if (available < state->profile.member_count) return 0;
+    for (id = 30; id < 50; ++id)
+        if (!(lc_source_records[id * 25 + 1] & 1)) break;
+    if (id == 50) return 0;
     state->pending = 1;
     state->active = 1;
     return state->profile.member[0].class_id;
@@ -30,7 +40,7 @@ u32 lc_custom_select(u32 retail_class, u32 pool, u32 pair_address)
 
 /* Return1 after constructing the complete squad;0 requests the original path.
  * Preflight every slot before any character constructor runs. Game record0 is
- * reserved; records1..119 have stride52 and occupancy byte17. */
+ * reserved; the transient pool1..98 has stride52 and occupancy byte17. */
 u32 lc_custom_materialize(u8 *source, u32 base_level)
 {
     LcCustomState *state = &lc_custom_state;
@@ -45,7 +55,7 @@ u32 lc_custom_materialize(u8 *source, u32 base_level)
         return 0;
     }
     available = 0;
-    for (id = 1; id < 120 && available < count; ++id)
+    for (id = 1; id < LC_CUSTOM_CHARACTER_END && available < count; ++id)
         if (!lc_character_records[id * 52 + 17]) free_id[available++] = id;
     if (available < count) {
         state->active = 0;

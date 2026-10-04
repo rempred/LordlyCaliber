@@ -601,6 +601,7 @@ class EngineTests : public QObject {
                                                  {"lc_custom_index", 0x2800000},
                                                  {"lc_staged_scenario", 0x8018f481},
                                                  {"lc_character_records", 0x80195560},
+                                                 {"lc_source_records", 0x801971f0},
                                                  {"lc_dma_read", 0x8009da50},
                                                  {"lc_random", 0x80092a60},
                                                  {"lc_character_create", 0x801d0840},
@@ -620,7 +621,7 @@ class EngineTests : public QObject {
                 entries[it.key()] = double(it.value());
             for (auto it = symbols.begin(); it != symbols.end(); ++it)
                 bindings[it.key()] = double(it.value());
-            const QString fixture = "native/build/Release/custom-source.json";
+            const QString fixture = QCoreApplication::applicationDirPath() + "/custom-source.json";
             atomicWrite(
                 fixture,
                 QJsonDocument(QJsonObject{{"address", double(module.address)},
@@ -1227,9 +1228,9 @@ class EngineTests : public QObject {
             neutral["custom_squads"] = QJsonObject{{"example", true}};
             patches["neutral_encounters"] = neutral;
             unsupported["patches"] = patches;
-            imported.importLegacy(unsupported);
-            QVERIFY(imported.pendingLegacySections().contains("neutral_encounters.custom_squads"));
-            QVERIFY_THROWS_EXCEPTION(Error, rebuild(imported, tools, build.path()));
+            const auto beforeInvalidImport = imported.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, imported.importLegacy(unsupported));
+            QCOMPARE(imported.manifest(), beforeInvalidImport);
             auto tampered = source.bytes();
             put32(tampered, 0x13c414, 0);
             QVERIFY_THROWS_EXCEPTION(Error, Encounters::load(Rom::fromBytes(tampered), 165));

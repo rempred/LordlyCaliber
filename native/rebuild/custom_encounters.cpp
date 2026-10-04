@@ -134,6 +134,7 @@ QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const 
 QMap<QString, quint32> customEncounterServices() {
     return {{"lc_staged_scenario", 0x8018f481},
             {"lc_character_records", 0x80195560},
+            {"lc_source_records", 0x801971f0},
             {"lc_dma_read", 0x8009da50},
             {"lc_random", 0x80092a60},
             {"lc_character_create", 0x801d0840},

@@ -54,8 +54,9 @@ for(const bad of ['absent','disabled','short','long','key','slot','class']){
  assert.equal(m.r32(state+4),0);assert.equal(call('lc_custom_message'),0);assert.equal(dma,bad==='absent'?1:2);guard();selections++;
 }
 for(const available of [0,1,2,3,4,5])for(const base of [0,1,10,99,250,255]){
- const p=spec(),free=[1,3,50,118,119].slice(0,available);reset(p);m.w32(state,1);m.w32(state+4,1);
- const original=Buffer.alloc(120*52,0xaa);for(let id=0;id<120;id++)original[id*52+17]=free.includes(id)?0:1;
+ const p=spec(),free=[1,3,50,97,98].slice(0,available);reset(p);m.w32(state,1);m.w32(state+4,1);
+ const original=Buffer.alloc(100*52,0xaa);for(let id=0;id<100;id++)original[id*52+17]=free.includes(id)?0:1;
+ original[99*52+17]=0; // Never allocate the slot omitted by the original transient reset.
  m.load(characters,original);m.load(source-8,Buffer.alloc(41,0x55));const before=Buffer.from(m.ram.slice(m.phys(source-8),m.phys(source+33)));
  const calls=[];
  m.trap(S.lc_character_create,c=>{

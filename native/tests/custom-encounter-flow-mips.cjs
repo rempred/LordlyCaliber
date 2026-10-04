@@ -30,15 +30,15 @@ for(const f of fixtures) for(const alignment of [0,8]) for(const result of ['vic
   assert.deepEqual(Buffer.from(m.ram.slice(m.phys(state+16),m.phys(state+144))),rom.subarray(profile,profile+128));
   const source=0x801971f0+49*25,owner=owners.find(o=>o.name==='materializer');
   m.load(owner.address,rom.subarray(owner.start,owner.start+owner.size));
-  m.load(S.lc_character_records,Buffer.alloc(120*52,1));for(const id of [1,119])m.w8(S.lc_character_records+id*52+17,0);
+  m.load(S.lc_character_records,Buffer.alloc(100*52,1));for(const id of [1,98])m.w8(S.lc_character_records+id*52+17,0);
   m.load(source,Buffer.alloc(25));m.w8(source,0x81);m.set('s1',source);m.set('s2',10);m.set('s3',5);
   const created=[];m.trap(S.lc_character_create,c=>{
    created.push([c.get('a0'),c.get('a1'),c.get('a2'),c.get('a3'),c.r32(c.get('sp')+16)]);
    c.w8(c.get('a0')+17,1);clobber(c);
   });
   m.call(owner.address+owner.sites[0].offset,S.lc_materializer_epilogue);
-  assert.deepEqual(created,[[S.lc_character_records+52,5,10,277,0],[S.lc_character_records+119*52,71,9,0,0]]);
-  assert.equal(m.r8(source),0x81);assert.equal(m.r8(source+2),1);assert.equal(m.r8(source+3),119);
+  assert.deepEqual(created,[[S.lc_character_records+52,5,10,277,0],[S.lc_character_records+98*52,71,9,0,0]]);
+  assert.equal(m.r8(source),0x81);assert.equal(m.r8(source+2),1);assert.equal(m.r8(source+3),98);
   assert.equal(m.r8(source+7),8);assert.equal(m.r8(source+8),6);assert.equal(m.r32(state),0);
   if(result==='persuaded') {
    const owner=owners.find(o=>o.name==='persuasion');m.load(owner.address,rom.subarray(owner.start,owner.start+owner.size));
