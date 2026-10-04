@@ -22,5 +22,11 @@ for(const mode of [0,1,2,255])for(const alternate of [0,1,255])for(const timer o
 for(const mode of [0,2])for(const address of calls)for(const target of [0,1,2])results.push(run(mode,0,40,{address,mode:target,alternate:1,counter:0}));
 // Alternate scheduling is decided at entry, even if its callback clears the flag.
 results.push(run(2,1,40,{address:0x80227694,mode:0,alternate:0,counter:0}));
-fs.writeFileSync(process.argv[3],JSON.stringify({results}));
+const descriptor=0x387c0+14*40,vram=rom.readUInt32BE(descriptor),start=rom.readUInt32BE(descriptor+8),end=rom.readUInt32BE(descriptor+12);
+const counterMachine=new Mips();counterMachine.ram=new Uint8Array(0x400000);
+counterMachine.load(vram,rom.subarray(start,end));counterMachine.set('sp',sp);
+const counterCases=[0,1,2,0xffffffe,0xfffffff,0x10000000,0x7fffffff,0x80000000,0xfffffffe,0xffffffff].map(before=>{
+ counterMachine.w32(0x8022a990,before);counterMachine.call((vram+0x283664-start)>>>0);return {before,after:counterMachine.r32(0x8022a990)};
+});
+fs.writeFileSync(process.argv[3],JSON.stringify({results,counterCases}));
 console.log(`Original scheduler: ${results.length} callback-order cases. Domain callbacks are controlled; branches and delayed-counter arithmetic execute original instructions.`);

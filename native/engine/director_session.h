@@ -42,6 +42,8 @@ class DirectorSession {
     void setCounter(quint32 value) {
         state_.counter = value;
     }
+    void advanceCounter();
+    void setMode(int mode);
     void setBarrierState(quint8 value) {
         state_.barrier_state = value;
     }

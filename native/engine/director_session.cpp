@@ -1,6 +1,16 @@
 #include "engine/director_session.h"
 #include "game/director/stream_words.h"
 namespace lordly {
+void DirectorSession::advanceCounter() {
+    // ROM 283664: unsigned (counter - 1) <= 0x0FFFFFFD. Zero stays unarmed.
+    if (state_.counter - 1U <= 0x0ffffffdU)
+        ++state_.counter;
+}
+void DirectorSession::setMode(int mode) {
+    if (mode < 0 || mode > 2)
+        throw Error("Director mode is outside 0..2");
+    state_.mode = mode;
+}
 void DirectorLaunchTranslations::set(int index, quint16 value) {
     if (index < 0 || index >= 256)
         throw Error("Launch translation index is outside 0..255");

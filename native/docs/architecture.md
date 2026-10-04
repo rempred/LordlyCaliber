@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+ScenePlayback now composes the resumable scheduler, DirectorSession, actor
+height/pose updates, projection, camera commands and fade commands. It preserves
+partial Director and pose-sweep continuations across host budgets and unavailable
+services. The registered counter follows ROM 283664's bounded unsigned increment;
+ten original-instruction edge cases pass. Alternate scheduling freezes normal
+updates, and a scene-release request finishes the current scheduler invocation
+before preventing another one. Fade updates remain an explicit independent call.
+
+A scripted integration check verifies creation, height cadence, projection delay,
+registered waits, alternate entry/exit, release and identical complete actor records
+under repeated suspension with one-instruction/one-service budgets. Its absent
+supplemental pools are explicitly acknowledged. Full movement/terrain/proximity,
+animated sprites after the actor sweep and other domain stages remain supplemental
+services; missing ones suspend with their identity. This is an integrated execution
+boundary, not a complete retail-scene player or a new UI preview yet.
+
 Director action mode guards now consume their full width without invoking a
 service when disabled. Query mode guards retain their separate word-wise behavior.
 Command 0x7D marks the fade through its service, then returns a distinct scene-slot

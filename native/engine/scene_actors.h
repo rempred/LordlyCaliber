@@ -15,6 +15,7 @@ struct BodyRegistration {
 class SceneActors {
   public:
     SceneActors(const Rom &rom, int mode, quint8 presentation, ActorInstance::Height height = {});
+    void setMode(int mode);
     const std::optional<ActorInstance> &actor(int slot) const;
     const LordlyActorMotion &motion(int slot) const;
     void supplyActor(int slot, const QByteArray &record);

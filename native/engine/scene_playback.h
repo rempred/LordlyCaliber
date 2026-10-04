@@ -1,0 +1,104 @@
+#pragma once
+#include "engine/director_session.h"
+#include "engine/scene_actors.h"
+#include "engine/scene_camera.h"
+#include "engine/scene_fade.h"
+#include "engine/scene_projection.h"
+#include "game/director/scene_schedule.h"
+namespace lordly {
+struct ScenePlaybackStart {
+    int mode = 2;
+    quint8 presentation = 0, alternate = 0, delayedCounter = 0;
+    DirectorLaunchTranslations translations;
+};
+// One normal/alternate Actor-scene scheduler invocation, not a video frame.
+// Rendering and the fade's independent permanent-scheduler slot remain separate.
+class ScenePlayback {
+  public:
+    enum Result { Advanced, Suspended, Budget, Released };
+    using Update = std::function<bool(LordlySceneService)>;
+    ScenePlayback(const Rom &, Directors, int selector, ScenePlaybackStart, SceneCameras cameras,
+                  ActorInstance::Height height = {});
+    // Internal stages: counter, height, actor poses, projection and Director.
+    // POSES in the supplemental callback means only the subsequent 30-sprite
+    // sweep. MOVEMENT means the full movement/terrain/proximity service, not
+    // just planar integration. Missing callbacks suspend, including empty pools
+    // whose absence has not been established by the owner of that domain.
+    Result advance(const Update &supplemental = {}, const DirectorSession::Service &commands = {},
+                   int instructionBudget = 10000, int stageBudget = 64);
+    void advanceFade();
+    void setMode(int mode);
+    const LordlySceneSchedule &schedule() const {
+        return schedule_;
+    }
+    void setAlternate(quint8 value) {
+        schedule_.alternate = value;
+    }
+    void setDelayedCounter(quint8 value) {
+        schedule_.delayed_counter = value;
+    }
+    quint64 completedUpdates() const {
+        return completed_;
+    }
+    bool released() const {
+        return released_;
+    }
+    int directorResult() const {
+        return directorResult_;
+    }
+    const QString &reason() const {
+        return reason_;
+    }
+    std::optional<LordlySceneService> pendingService() const {
+        return pending_;
+    }
+    DirectorSession &director() {
+        return director_;
+    }
+    const DirectorSession &director() const {
+        return director_;
+    }
+    SceneActors &actors() {
+        return actors_;
+    }
+    const SceneActors &actors() const {
+        return actors_;
+    }
+    SceneProjection &projection() {
+        return projection_;
+    }
+    const SceneProjection &projection() const {
+        return projection_;
+    }
+    SceneCameras &cameras() {
+        return cameras_;
+    }
+    const SceneCameras &cameras() const {
+        return cameras_;
+    }
+    SceneFade &fade() {
+        return fade_;
+    }
+    const SceneFade &fade() const {
+        return fade_;
+    }
+
+  private:
+    static int invoke(void *, LordlySceneService);
+    bool update(LordlySceneService);
+    bool command(quint32, const QVector<quint32> &, int &);
+    DirectorSession director_;
+    SceneActors actors_;
+    SceneProjection projection_;
+    SceneCameras cameras_;
+    SceneFade fade_;
+    LordlySceneSchedule schedule_{};
+    bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;
+    quint64 completed_ = 0;
+    int directorResult_ = LORDLY_DIRECTOR_YIELD, instructionBudget_ = 10000;
+    std::optional<LordlySceneService> pending_;
+    QString reason_;
+    const Update *supplemental_ = nullptr;
+    const DirectorSession::Service *commands_ = nullptr;
+};
+} // namespace lordly

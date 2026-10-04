@@ -21,6 +21,11 @@ void SceneActors::checkSlot(int slot) {
     if (slot < 0 || slot >= 28)
         throw Error("Actor slot is outside 0..27");
 }
+void SceneActors::setMode(int mode) {
+    if (mode < 0 || mode > 2)
+        throw Error("Actor scene mode is outside 0..2");
+    mode_ = mode;
+}
 const std::optional<ActorInstance> &SceneActors::actor(int slot) const {
     checkSlot(slot);
     return actors_[slot];
