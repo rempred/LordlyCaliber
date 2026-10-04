@@ -1,5 +1,12 @@
 # Native Lordly Caliber
 
+Dialogue window records now use the shared UI pool with atomic creation and
+continuous actor tracking. All 560 original-instruction pool/tracking comparisons
+pass. Current-ROM Serifu loading preserves 4,569 exact entries across 348 archives;
+malformed resources reject. Text execution, name context, queue scheduling and
+rendering still require integration. See [dialogue-runtime.md](dialogue-runtime.md)
+for ownership, source mapping and the unresolved ordinary portrait lookup.
+
 SceneResources owns the shared six 168-byte UI records independently of any
 particular callback. Maintained C reconstructs ordinary registration (ROM735C)
 and clipped window registration (ROMFA48). It preserves untouched record bytes,
