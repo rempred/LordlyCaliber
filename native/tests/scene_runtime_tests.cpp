@@ -14,6 +14,113 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorDividerAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("actor-divider-mips.cjs"), path,
+                                     work.filePath("divider.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile input(work.filePath("divider.json"));
+            QVERIFY(input.open(QIODevice::ReadOnly));
+            const auto rows =
+                QJsonDocument::fromJson(input.readAll()).object()["results"].toArray();
+            QCOMPARE(rows.size(), 72);
+            const auto rom = Rom::open(path);
+            for (const auto value : rows) {
+                const auto row = value.toObject();
+                SceneActors actors(rom, 0, 0);
+                ActorDivider divider;
+                divider.supply(QByteArray::fromHex(row["initialDivider"].toString().toLatin1()));
+                actors.supplyDivider(divider);
+                for (const auto entry : row["initial"].toArray()) {
+                    const auto item = entry.toObject();
+                    actors.supplyActor(item["slot"].toInt(),
+                                       QByteArray::fromHex(item["record"].toString().toLatin1()));
+                }
+                const auto operations = row["operations"].toArray(),
+                           states = row["states"].toArray();
+                for (int i = 0; i < operations.size(); ++i) {
+                    const auto op = operations[i].toObject(), state = states[i].toObject();
+                    if (op.contains("positions")) {
+                        for (const auto p : op["positions"].toArray()) {
+                            const auto item = p.toObject();
+                            const int slot = item["slot"].toInt();
+                            auto record = actors.actor(slot)->record();
+                            put32(record, 0x11c,
+                                  std::bit_cast<quint32>(float(item["x"].toDouble())));
+                            put32(record, 0x124,
+                                  std::bit_cast<quint32>(float(item["z"].toDouble())));
+                            actors.supplyActor(slot, record);
+                        }
+                        actors.advanceDivider();
+                    } else {
+                        QVector<quint32> args;
+                        for (const auto arg : op["args"].toArray())
+                            args << quint32(arg.toInteger());
+                        int ignored = 0;
+                        QVERIFY(actors.service(quint32(op["op"].toInt()), args, ignored));
+                    }
+                    QCOMPARE(actors.divider().record(),
+                             QByteArray::fromHex(state["divider"].toString().toLatin1()));
+                    for (const auto entry : state["actors"].toArray()) {
+                        const auto item = entry.toObject();
+                        QCOMPARE(actors.actor(item["slot"].toInt())->record(),
+                                 QByteArray::fromHex(item["record"].toString().toLatin1()));
+                    }
+                }
+            }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void actorDividerPrecedesMovement() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto resources = Directors::load(rom);
+        int selector = 0;
+        while (!resources.selectors()[selector])
+            ++selector;
+        ScenePlaybackStart start;
+        start.mode = 0;
+        ScenePlayback scene(rom, std::move(resources), selector, start,
+                            SceneCameras::freshModeTwo(rom));
+        QByteArray record(336, 0);
+        put32(record, 0xe8, 30);
+        put32(record, 0x11c, std::bit_cast<quint32>(-1.f));
+        scene.actors().supplyActor(0, record);
+        int ignored = 0;
+        QVERIFY(scene.actors().service(0x5f, {0, 0, 10, 0, 3, 1}, ignored));
+        LordlyActorMotion motion{};
+        motion.present = 1;
+        motion.remaining = 2;
+        motion.vx = 2;
+        scene.actors().supplyMotion(0, motion);
+        auto emptyOtherDomains = [](LordlySceneService) { return true; };
+        int attempts = 0;
+        while (scene.schedule().phase != 12) {
+            QCOMPARE(scene.advance(emptyOtherDomains, {}, 100, 1), ScenePlayback::Budget);
+            QVERIFY(++attempts < 20);
+        }
+        QCOMPARE(u8(scene.actors().actor(0)->record(), 0x13e), quint8(1));
+        QCOMPARE(scene.actors().actor(0)->pose().actor().position.x, -1.f);
+        QCOMPARE(scene.advance(emptyOtherDomains, {}, 100, 1), ScenePlayback::Budget);
+        QCOMPARE(scene.actors().actor(0)->pose().actor().position.x, 1.f);
+        QCOMPARE(u8(scene.actors().actor(0)->record(), 0x13e), quint8(1));
+        scene.actors().advanceDivider();
+        QCOMPARE(u8(scene.actors().actor(0)->record(), 0x13e), quint8(3));
+        QVERIFY(scene.actors().service(0x75, {}, ignored));
+        QCOMPARE(u8(scene.actors().actor(0)->record(), 0x13e), quint8(3));
+        const auto before = scene.actors().actor(0)->record();
+        QVERIFY_THROWS_EXCEPTION(Error, scene.actors().service(0x1c, {28, 1}, ignored));
+        QCOMPARE(scene.actors().actor(0)->record(), before);
+    }
     void actorMaterialsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

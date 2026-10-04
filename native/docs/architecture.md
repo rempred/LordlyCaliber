@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+Actor layer assignment now handles 1C, the mode-zero automatic divider 5F/75,
+and the stored default-channel byte 7C. The divider uses maintained portable C
+reconstructed from ROM 2AF470..2AF6C0 in the mode-zero overlay, preserving signed
+coordinate narrowing, single-precision arithmetic, axis and zero-intercept cases,
+low-byte channel writes and reused record padding. Release retains Actor channels.
+ScenePlayback runs classification in MODE_ZERO_3 before movement. Transform arrays,
+default-channel placement consumers and final layer rendering remain to connect.
+
+`scene_runtime_tests actorDividerAgainstMips actorDividerPrecedesMovement` passes
+(1,496 ms): 72 original-instruction sequences/1,440 complete snapshots match divider
+and Actor records with allocation/free controlled. A composed mode-zero check stops
+before and after movement to verify classification uses the prior position. Other
+empty domain callbacks are explicitly supplied in that check. Invalid Actor slot
+assignment leaves its record unchanged. Material, composed playback and pose-sweep
+regressions pass (1,053 ms). No original displayed-frame comparison is claimed.
+
 Actor tint and material execution now use a maintained portable C reconstruction
 of ROM 29B78C..29BEF4, referenced to Decomp assembly at 62cc7ef4. SceneActors
 owns the slot records and handles commands 1E, 1F, 28, 29 and A7. Rendering advances

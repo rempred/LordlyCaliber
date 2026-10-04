@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/actor_divider.h"
 #include "engine/actor_height.h"
 #include "engine/actor_instance.h"
 #include "engine/actor_materials.h"
@@ -70,6 +71,16 @@ class SceneActors {
         return materials_;
     }
     QByteArray renderMaterials(int slot);
+    const ActorDivider &divider() const {
+        return divider_;
+    }
+    void supplyDivider(ActorDivider divider) {
+        divider_ = std::move(divider);
+    }
+    void advanceDivider();
+    quint8 defaultChannel() const {
+        return defaultChannel_;
+    }
     // Components of the normal scheduler. The caller must retain the game's
     // other services/order, including terrain and proximity, before advancing.
     void advancePlanar();
@@ -98,6 +109,8 @@ class SceneActors {
     std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial);
     Rom rom_;
     ActorMaterials materials_;
+    ActorDivider divider_;
+    quint8 defaultChannel_ = 0;
     int mode_;
     quint8 presentation_;
     ActorInstance::Height height_;

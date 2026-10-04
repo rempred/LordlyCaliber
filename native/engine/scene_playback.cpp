@@ -108,6 +108,9 @@ bool ScenePlayback::update(LordlySceneService service) {
         // In the mode-two image ROM 2AB53C calls 2AB558, an empty 28-iteration
         // loop with no scene reads/writes. It is not the mode-zero divider.
         return true;
+    case LORDLY_SCENE_MODE_ZERO_3:
+        actors_.advanceDivider();
+        return true;
     case LORDLY_SCENE_RESOURCE_CACHE:
         // Recovered func_002071F4 (5ae68e14) only ages/releases native allocation
         // handles. ActorArt/ActorPosePlayer own those decoded resources on PC;

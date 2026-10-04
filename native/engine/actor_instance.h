@@ -15,6 +15,7 @@ class ActorInstance {
     void setSlot(int slot);
     void setOpacity(quint8 value);
     void setTint(quint8 red, quint8 green, quint8 blue);
+    void setChannel(quint8 channel);
     void setUniformScale(float value);
     void addHeight(float step);
     ActorPosePlayer &pose() {

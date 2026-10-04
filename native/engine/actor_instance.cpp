@@ -109,6 +109,9 @@ void ActorInstance::setTint(quint8 red, quint8 green, quint8 blue) {
     put8(record_, 0x143, green);
     put8(record_, 0x144, blue);
 }
+void ActorInstance::setChannel(quint8 channel) {
+    put8(record_, 0x13e, channel);
+}
 void ActorInstance::setUniformScale(float value) {
     if (!std::isfinite(value))
         throw Error("Actor scale must be finite");

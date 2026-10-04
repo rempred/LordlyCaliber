@@ -213,6 +213,40 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x1c) {
+        if (args.size() != 2)
+            throw Error("Actor channel assignment is truncated");
+        if (mode_ != 0)
+            return true;
+        const bool all = args[0] == 0xffffffffU;
+        const int first = all ? 0 : qint16(args[0]), end = all ? 28 : qint16(args[0] + 1U);
+        if (first >= end)
+            return true;
+        checkSlot(first);
+        checkSlot(end - 1);
+        for (int slot = first; slot < end; ++slot)
+            if (actors_[slot])
+                actors_[slot]->setChannel(quint8(args[1]));
+        return true;
+    }
+    if (opcode == 0x7c) {
+        if (args.size() != 1)
+            throw Error("Default scene channel command is truncated");
+        defaultChannel_ = quint8(args[0]);
+        return true;
+    }
+    if (opcode == 0x5f || opcode == 0x75) {
+        if (mode_ != 0)
+            return false; // These live addresses belong to the mode-zero overlay.
+        if (opcode == 0x5f)
+            divider_.start(args);
+        else {
+            if (!args.isEmpty())
+                throw Error("Divider release has no operands");
+            divider_.release();
+        }
+        return true;
+    }
     if (opcode == 0x1e) {
         QSet<int> occupied;
         for (int slot = 0; slot < 28; ++slot)
@@ -414,6 +448,17 @@ QByteArray SceneActors::renderMaterials(int slot) {
     const auto commands = materials_.render(record);
     actors_[slot]->setTint(u8(record, 0x142), u8(record, 0x143), u8(record, 0x144));
     return commands;
+}
+void SceneActors::advanceDivider() {
+    auto next = actors_;
+    for (auto &actor : next) {
+        if (!actor)
+            continue;
+        const auto position = actor->pose().actor().position;
+        if (const auto channel = divider_.channel(position.x, position.z))
+            actor->setChannel(*channel);
+    }
+    actors_ = std::move(next);
 }
 void SceneActors::advancePlanar() {
     auto next = actors_;
