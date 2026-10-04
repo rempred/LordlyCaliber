@@ -145,12 +145,20 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     layout->addLayout(controls);
     projected_ = new QCheckBox("Projected placement");
     projected_->setObjectName("actorProjected");
-    projected_->setToolTip("Inspect native mode-zero Actor matrices with a reference camera. Scene "
+    projected_->setToolTip("Inspect native Actor matrices with a reference camera. Scene "
                            "commands and terrain are not executed here.");
     layout->addWidget(projected_);
     placementControls_ = new QWidget;
     auto placementLayout = new QVBoxLayout(placementControls_);
     placementLayout->setContentsMargins(0, 0, 0, 0);
+    auto pathRow = new QHBoxLayout;
+    pathRow->addWidget(new QLabel("Placement path"));
+    placementMode_ = new QComboBox;
+    placementMode_->setObjectName("actorPlacementMode");
+    placementMode_->addItems({"Layered scene", "World scene"});
+    pathRow->addWidget(placementMode_);
+    pathRow->addStretch();
+    placementLayout->addLayout(pathRow);
     auto placementRow = new QHBoxLayout;
     auto number = [this](QHBoxLayout *row, const QString &label, const QString &name, double low,
                          double high, double value) {
@@ -185,8 +193,9 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     cameraRow->addWidget(shadows_);
     placementLayout->addLayout(cameraRow);
     auto placementNote = new QLabel(
-        "Reference camera and preview position only. Native main/shadow matrices; Qt image "
-        "sampling. No scene lighting, custom material combiners or linked equipment.");
+        "Reference camera and preview position. World view uses two reference lights and flat "
+        "terrain. Native main/shadow matrices; Qt image sampling. Scene lighting, custom material "
+        "combiners and linked equipment are separate.");
     placementNote->setWordWrap(true);
     placementLayout->addWidget(placementNote);
     layout->addWidget(placementControls_);
@@ -199,6 +208,17 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     });
     connect(facing_, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
     connect(shadows_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
+    connect(placementMode_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        previewCameras_[previousPlacementMode_] =
+            {cameraYaw_->value(), cameraHeight_->value(), cameraDistance_->value()};
+        previousPlacementMode_ = index;
+        const QSignalBlocker yawBlock(cameraYaw_), heightBlock(cameraHeight_),
+            distanceBlock(cameraDistance_);
+        cameraYaw_->setValue(previewCameras_[index][0]);
+        cameraHeight_->setValue(previewCameras_[index][1]);
+        cameraDistance_->setValue(previewCameras_[index][2]);
+        draw();
+    });
     auto split = new QSplitter;
     canvas_ = new QGraphicsScene(this);
     view_ = new PoseView(canvas_);
@@ -317,7 +337,8 @@ void ActorPoseEditor::selectCommand(const DirectorProgram &program, int command)
         }
         size_->setValue(1.);
         const bool modeZero = program.resourceClass() == 4 || program.resourceClass() == 5;
-        projected_->setChecked(modeZero);
+        placementMode_->setCurrentIndex(modeZero ? 0 : 1);
+        projected_->setChecked(true);
         restart();
         {
             const QSignalBlocker block(facing_);
@@ -328,9 +349,8 @@ void ActorPoseEditor::selectCommand(const DirectorProgram &program, int command)
             status_->text() +
             QString(" Actor creation at word %1. %2")
                 .arg(program.commands[command].word)
-                .arg(modeZero ? "Command coordinates use the reference camera above; scene cameras "
-                                "and terrain are separate."
-                              : "Pose inspection only; this scene's placement path is separate."));
+                .arg("Command coordinates use the reference camera above; scene cameras, lighting "
+                     "and terrain are separate."));
         setProperty("inspectedActorCommand", command);
     } catch (const std::exception &e) {
         player_.reset();
@@ -595,17 +615,29 @@ void ActorPoseEditor::drawProjected() {
     const auto registered =
         camera(45, float(std::sin(angle) * cameraDistance_->value()), float(cameraHeight_->value()),
                float(std::cos(angle) * cameraDistance_->value()));
-    const auto actorCamera = camera(90, 0, 0, 120);
-    SceneTransforms channels;
-    channels.prepareMatrices(rom_, actorCamera, 1);
-    const auto matrices = ActorMatrices::prepare(rom_, record, channels.channel(0), registered);
-    record.replace(0x20, 64, matrices.shadow);
-    record.replace(0x60, 64, matrices.shadow);
-    record.replace(0xa0, 64, matrices.matrix);
+    const bool world = placementMode_->currentIndex() == 1;
+    const auto actorCamera = world ? registered : camera(90, 0, 0, 120);
+    if (world) {
+        const LordlyActorLighting lighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
+        put8(record, 0x145, 1); // Explicit flat reference terrain for this inspector.
+        const auto matrices =
+            ActorWorldMatrices::prepare(rom_, record, actorCamera, 0, 0, lighting);
+        for (int i = 0; i < 2; ++i)
+            record.replace(0x20 + i * 64, 64, matrices.shadows[i]);
+        record.replace(0xa0, 64, matrices.matrix);
+    } else {
+        SceneTransforms channels;
+        channels.prepareMatrices(rom_, actorCamera, 1);
+        const auto matrices = ActorMatrices::prepare(rom_, record, channels.channel(0), registered);
+        record.replace(0x20, 64, matrices.shadow);
+        record.replace(0x60, 64, matrices.shadow);
+        record.replace(0xa0, 64, matrices.matrix);
+    }
     QVector<ActorRasterLayer> projected;
     if (shadows_->isChecked())
-        projected += renderer_.projectRecord(*art_, record, true, actorCamera, {255, 255, 255},
-                                             sepia_->isChecked());
+        for (int i = 0; i < (world ? 2 : 1); ++i)
+            projected += renderer_.projectRecord(*art_, record, true, actorCamera, {255, 255, 255},
+                                                 sepia_->isChecked(), i, world ? 96 : 255);
     projected += renderer_.projectRecord(*art_, record, false, actorCamera, {255, 255, 255},
                                          sepia_->isChecked());
     QImage combined(320, 240, QImage::Format_RGBA8888);
@@ -620,7 +652,9 @@ void ActorPoseEditor::drawProjected() {
         item->setZValue(items_.size());
         items_ << item;
         auto row = new QListWidgetItem(
-            QString("%1 %2").arg(layer.shadow ? "Shadow layer" : "Layer").arg(layer.layer),
+            QString("%1 %2")
+                .arg(layer.shadow ? QString("Shadow %1 layer").arg(layer.shadowIndex + 1) : "Layer")
+                .arg(layer.layer),
             layers_);
         row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
         row->setCheckState(Qt::Checked);

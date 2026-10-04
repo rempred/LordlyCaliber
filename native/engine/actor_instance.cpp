@@ -123,6 +123,14 @@ void ActorInstance::setDrawing(const ActorMatrices &drawing) {
     put32(record_, 0xfc, std::bit_cast<quint32>(x));
     put32(record_, 0x100, std::bit_cast<quint32>(y));
 }
+void ActorInstance::setDrawing(const ActorWorldMatrices &drawing) {
+    if (drawing.matrix.size() != 64 || drawing.shadows[0].size() != 64 ||
+        drawing.shadows[1].size() != 64)
+        throw Error("Invalid Actor world drawing state");
+    record_.replace(0xa0, 64, drawing.matrix);
+    for (int i = 0; i < 2; ++i)
+        record_.replace(0x20 + i * 64, 64, drawing.shadows[i]);
+}
 void ActorInstance::setUniformScale(float value) {
     if (!std::isfinite(value))
         throw Error("Actor scale must be finite");

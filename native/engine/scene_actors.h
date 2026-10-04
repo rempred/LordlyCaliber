@@ -81,6 +81,7 @@ class SceneActors {
     }
     void advanceDivider();
     void prepareModeZeroMatrices(const SceneCamera &, const SceneTransforms &);
+    void prepareModeTwoMatrices(const SceneCamera &, const LordlyActorLighting &);
     std::array<QByteArray, 28> actorRecords() const;
     quint8 defaultChannel() const {
         return defaultChannel_;

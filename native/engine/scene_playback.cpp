@@ -257,4 +257,7 @@ SceneDrawQueue ScenePlayback::drawQueue(const QVector<QByteArray> &objects,
     return SceneDrawQueue::build(actors_.actorRecords(), objects,
                                  schedule_.mode ? cameras_.actor() : cameras_.registered(), layout);
 }
+void ScenePlayback::prepareModeTwoDrawing(const LordlyActorLighting &lighting) {
+    actors_.prepareModeTwoMatrices(cameras_.actor(), lighting);
+}
 } // namespace lordly

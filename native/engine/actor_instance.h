@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/actor_matrices.h"
 #include "engine/actor_pose.h"
+#include "engine/actor_world_matrices.h"
 #include "game/director/actor_record.h"
 #include <functional>
 namespace lordly {
@@ -18,6 +19,7 @@ class ActorInstance {
     void setTint(quint8 red, quint8 green, quint8 blue);
     void setChannel(quint8 channel);
     void setDrawing(const ActorMatrices &);
+    void setDrawing(const ActorWorldMatrices &);
     void setUniformScale(float value);
     void addHeight(float step);
     ActorPosePlayer &pose() {

@@ -1,5 +1,42 @@
 # Native Lordly Caliber
 
+## World Actor matrices
+
+ActorWorldMatrices reconstructs ROM2A9AD0 and its camera-basis owner2AA1EC,
+with point-light helpers29D158/29D1B8. Main and two shadow matrices retain
+single-precision multiplication order before final packing. Unlike mode zero,
+world preparation leaves the stored screen anchor untouched. Depth attachments
+use the Actor's own slot identity; terrain queries narrow X/Z to signed16.
+SceneActors commits the entire prepared pool atomically and requires explicit
+lighting and any needed terrain service. The caller's separate equipment-relative
+placement prepass remains outside this matrix owner.
+
+Shadow height follows terrain, absolute-height, additive-height and ordinary
+height flags. Default angles/scales with a zero-height point light select two
+planar lights; other inputs select explicit projection or the point-light path.
+The latter preserves the game's asymmetric height rounding, equal-height branch
+and scale clamp. Renderer passes now select either shadow matrix and supply its
+independent opacity. The inspector offers world placement using two labeled
+reference lights and flat terrain, with separate camera settings for each path.
+The native camera-basis convention can visibly tilt sprites at arbitrary angles;
+the world reference starts at65 degrees instead of a straight-on view.
+
+The retained opening-ceremony state independently matches the complete matrix
+and camera functions at RAM8023A370/8023AA8C, the64-byte constants at8023EC10,
+point-light constants at80239220 and rounding threshold at800AE400. These use
+their separate qualified ROM ranges; the mode-zero saved image is not a valid
+reference for the mode-two slab.
+
+actorWorldMatricesAgainstMips compares732 cases/2196 complete packed matrices
+exactly against original instruction execution, controlling only trigonometry
+and terrain. Atomic preparation, native coordinate narrowing, depth identity,
+unrelated-field preservation, missing terrain and invalid mode checks pass.
+The first atomic-check fixture mistakenly supplied eight bytes for a four-byte
+depth attachment; correcting the fixture produced a passing check. Projection
+checks independently cover the second shadow's displacement and opacity.
+These establish the matrix owner and reference preview, not full scene playback,
+target-libm/RSP/RDP equivalence or game-level export validation.
+
 ## Actor layer rendering and placement inspection
 
 ActorRenderer projects decoded ordinary and class-body layers using the packed
@@ -14,8 +51,8 @@ blending; custom RDP material combiners and linked equipment remain separate.
 The Pose inspector now offers reference-camera placement, scale, facing and
 shadow controls, with layer selection/visibility and repeatable backward seeks.
 Double-clicking an Actor creation command selects its bank, animation, variant,
-coordinates and facing. Mode-zero commands enable projected placement; other
-scene modes open pose inspection. This does not execute scene cameras or terrain.
+coordinates and facing. Commands select the layered or world reference view.
+This does not execute scene cameras or terrain.
 
 scene_runtime_tests actorPrimitiveColorsAgainstMips actorLayerProjectionAndComposition
 actorRendererUsesBodyVariant passes (196ms).216 primitive-color cases execute the

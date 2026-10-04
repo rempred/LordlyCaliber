@@ -215,6 +215,24 @@ class UiTests : public QObject {
         layers->item(0)->setCheckState(Qt::Checked);
         QTest::qWait(25);
         QVERIFY(editor.grab().save("projected-actor-preview.png"));
+        auto placementMode = editor.findChild<QComboBox *>("actorPlacementMode");
+        QVERIFY(placementMode);
+        placementMode->setCurrentIndex(1);
+        const auto world = image();
+        QVERIFY(!world.isNull());
+        QVERIFY(center(world) >= 0);
+        QVERIFY(world != first);
+        QCOMPARE(layers->count(), withShadow * 3 / 2);
+        x->setValue(30);
+        QVERIFY(center(image()) > center(world) + 10);
+        x->setValue(0);
+        QCOMPARE(image(), world);
+        position->setValue(8);
+        position->setValue(1);
+        QCOMPARE(image(), world);
+        QVERIFY(editor.grab().save("world-actor-preview.png"));
+        placementMode->setCurrentIndex(0);
+        QCOMPARE(image(), first);
         projected->setChecked(false);
         QVERIFY(layers->count() > 0);
     }

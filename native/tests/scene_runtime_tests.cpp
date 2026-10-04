@@ -19,6 +19,98 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorWorldMatricesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("actor-world-matrix-mips.cjs"), path,
+                                 work.filePath("world.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("world.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 732);
+        const auto rom = Rom::open(path);
+        int index = 0;
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            auto bytes = [&](const QString &key) {
+                return QByteArray::fromHex(row[key].toString().toLatin1());
+            };
+            LordlyActorLighting lighting{};
+            for (int i = 0; i < 3; ++i) {
+                lighting.point[i] = float(row["point"].toArray()[i].toDouble());
+                for (int j = 0; j < 2; ++j)
+                    lighting.planar[j][i] =
+                        float(row["planar"].toArray()[j].toArray()[i].toDouble());
+            }
+            const auto matrices = ActorWorldMatrices::prepare(
+                rom, bytes("actor"), SceneCamera(bytes("camera"), 0.1f),
+                qint16(row["depth"].toInt()), float(row["terrain"].toDouble()), lighting);
+            const auto expected = bytes("result");
+            for (int i = 0; i < 3; ++i) {
+                const auto actual = i < 2 ? matrices.shadows[i] : matrices.matrix;
+                QVERIFY2(actual == expected.mid(0x20 + i * 64, 64),
+                         qPrintable(QString("World matrix case %1 matrix %2 differs").arg(index).arg(i)));
+            }
+            ++index;
+        }
+        qInfo() << "732 original world Actor cases: all 2196 packed matrices match exactly";
+    }
+    void actorWorldDrawingIsAtomic() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto camera = SceneCameras::freshModeTwo(rom).actor();
+        const LordlyActorLighting lighting{{0, 0, 0}, {{20, -40, 50}, {-30, 80, 75}}};
+        QByteArray record(336, 0);
+        put32(record, 0xe4, 4);
+        put32(record, 0xe8, 30);
+        for (int i = 0; i < 3; ++i)
+            put32(record, 0x104 + i * 4, std::bit_cast<quint32>(1.f));
+        put32(record, 0x130, std::bit_cast<quint32>(1.f));
+        put32(record, 0x11c, std::bit_cast<quint32>(65537.75f));
+        put32(record, 0x124, std::bit_cast<quint32>(-65538.5f));
+        put8(record, 0x145, 1);
+        int calls = 0;
+        SceneActors actors(rom, 2, 0, [&](int mode, float x, float z) {
+            if (mode != 2 || x != 1 || z != -2)
+                throw Error("Terrain shadow coordinates were not narrowed to signed16");
+            ++calls;
+            return -12.f;
+        });
+        actors.supplyActor(0, record);
+        auto bad = record;
+        put32(bad, 0x130, std::bit_cast<quint32>(std::numeric_limits<float>::quiet_NaN()));
+        actors.supplyActor(27, bad);
+        const auto before = actors.actorRecords();
+        QVERIFY_THROWS_EXCEPTION(Error, actors.prepareModeTwoMatrices(camera, lighting));
+        QCOMPARE(actors.actorRecords(), before);
+        actors.vacate(27);
+        QByteArray depth(4, 0);
+        put16(depth, 0, quint16(-20));
+        actors.supplyDepthAttachment(4, depth);
+        actors.prepareModeTwoMatrices(camera, lighting);
+        QVERIFY(calls >= 2);
+        const auto after = actors.actor(0)->record();
+        QCOMPARE(after.first(0x20), before[0].first(0x20));
+        QCOMPARE(after.mid(0xe0), before[0].mid(0xe0));
+        const auto expected = ActorWorldMatrices::prepare(rom, before[0], camera, -20, -12, lighting);
+        QCOMPARE(after.mid(0xa0, 64), expected.matrix);
+        QCOMPARE(after.mid(0x20, 64), expected.shadows[0]);
+        QCOMPARE(after.mid(0x60, 64), expected.shadows[1]);
+        SceneActors missing(rom, 2, 0);
+        missing.supplyActor(0, record);
+        QVERIFY_THROWS_EXCEPTION(Error, missing.prepareModeTwoMatrices(camera, lighting));
+        QCOMPARE(missing.actor(0)->record(), before[0]);
+        actors.setMode(0);
+        QVERIFY_THROWS_EXCEPTION(Error, actors.prepareModeTwoMatrices(camera, lighting));
+        QCOMPARE(actors.actor(0)->record(), after);
+    }
     void sceneDrawQueueAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -195,6 +287,17 @@ class SceneRuntimeTests : public QObject {
             QVERIFY(QLineF(main.plane.clip[i], expected[i]).length() < 0.0001);
         QCOMPARE(main.image.pixelColor(0, 0), QColor(100, 100, 12, 128));
         QCOMPARE(shadow.image.pixelColor(0, 0), QColor(0, 0, 0, 32));
+        actor.replace(0x60, 64, actor.mid(0x20, 64));
+        put16(actor, 0x60 + 24, 20);
+        const auto secondShadow = ActorRenderer::projectLayer(
+            frame, actor, 0, true, camera, {255, 255, 255}, 1., 1, 128);
+        QCOMPARE(secondShadow.shadowIndex, 1);
+        QCOMPARE(secondShadow.image.pixelColor(0, 0), QColor(0, 0, 0, 16));
+        QCOMPARE(secondShadow.plane.clip.size(), 4);
+        for (int i = 0; i < 4; ++i)
+            QVERIFY(QLineF(secondShadow.plane.clip[i], expected[i] + QPointF(20, 0)).length() < 0.0001);
+        QVERIFY_THROWS_EXCEPTION(Error, ActorRenderer::projectLayer(
+            frame, actor, 0, true, camera, {255, 255, 255}, 1., 2));
         QImage composed(320, 240, QImage::Format_RGBA8888);
         composed.fill(Qt::transparent);
         ActorRenderer::paint(composed, {main});

@@ -9,15 +9,18 @@ namespace lordly {
 ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const QByteArray &actor,
                                              int layer, bool shadow, const SceneCamera &camera,
                                              const std::array<qint16, 3> &globalRgb,
-                                             double bodyMultiplier) {
+                                             double bodyMultiplier, int shadowIndex, quint8 alpha) {
     if (actor.size() != 336)
         throw Error("Actor rendering requires a complete record");
+    if (shadowIndex < 0 || shadowIndex > 1)
+        throw Error("Actor shadow matrix index is outside 0..1");
     ActorRasterLayer result;
     result.slot = qint32(u32(actor, 0xe4));
     result.layer = layer;
     result.shadow = shadow;
+    result.shadowIndex = shadowIndex;
     if (!lordly_actor_primitive(result.primitive.data(),
-                                reinterpret_cast<const uint8_t *>(actor.constData()), layer, 255,
+                                reinterpret_cast<const uint8_t *>(actor.constData()), layer, alpha,
                                 shadow, globalRgb.data()))
         throw Error("Actor layer is outside its 16 native opacity bytes");
     const auto &m = frame.metadata;
@@ -37,9 +40,9 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
     const double left = qint16(m.origin.x()), right = qint16(m.origin.x() + m.width - 1),
                  top = qint16(-m.origin.y()), bottom = qint16(-m.origin.y() - m.height + 1);
     result.plane = camera.projectPackedPlane(
-        actor.mid(shadow ? 0x20 : 0xa0, 64), {left * scale[0], top * scale[5], 0},
-        {(right - left) * scale[0] / m.width, 0, 0}, {0, (bottom - top) * scale[5] / m.height, 0},
-        QSizeF(m.width, m.height));
+        actor.mid(shadow ? 0x20 + shadowIndex * 64 : 0xa0, 64),
+        {left * scale[0], top * scale[5], 0}, {(right - left) * scale[0] / m.width, 0, 0},
+        {0, (bottom - top) * scale[5] / m.height, 0}, QSizeF(m.width, m.height));
     result.image = QImage(m.width, m.height, QImage::Format_RGBA8888);
     if (result.image.isNull())
         throw Error("Unable to allocate an Actor layer image");
@@ -57,15 +60,16 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
 }
 QVector<ActorRasterLayer> ActorRenderer::project(const ActorInstance &actor, bool shadow,
                                                  const SceneCamera &camera,
-                                                 const std::array<qint16, 3> &globalRgb,
-                                                 bool sepia) {
-    return projectRecord(actor.pose().art(), actor.record(), shadow, camera, globalRgb, sepia);
+                                                 const std::array<qint16, 3> &globalRgb, bool sepia,
+                                                 int shadowIndex, quint8 alpha) {
+    return projectRecord(actor.pose().art(), actor.record(), shadow, camera, globalRgb, sepia,
+                         shadowIndex, alpha);
 }
 QVector<ActorRasterLayer> ActorRenderer::projectRecord(const ActorArt &art,
                                                        const QByteArray &record, bool shadow,
                                                        const SceneCamera &camera,
                                                        const std::array<qint16, 3> &globalRgb,
-                                                       bool sepia) {
+                                                       bool sepia, int shadowIndex, quint8 alpha) {
     if (record.size() != 336)
         throw Error("Actor rendering requires a complete record");
     const auto token = qint32(u32(record, 0xf8));
@@ -107,7 +111,8 @@ QVector<ActorRasterLayer> ActorRenderer::projectRecord(const ActorArt &art,
     }
     QVector<ActorRasterLayer> result;
     for (int i = 0; i < cached->size(); ++i)
-        result.append(projectLayer((*cached)[i], record, i, shadow, camera, globalRgb, multiplier));
+        result.append(projectLayer((*cached)[i], record, i, shadow, camera, globalRgb, multiplier,
+                                   shadowIndex, alpha));
     return result;
 }
 void ActorRenderer::paint(QImage &destination, const QVector<ActorRasterLayer> &layers) {

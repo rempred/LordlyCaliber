@@ -49,6 +49,7 @@ target_sources(lordly_engine PRIVATE engine/scene_transforms.cpp game/director/s
 target_sources(lordly_engine PRIVATE game/director/scene_matrix.c)
 target_sources(lordly_engine PRIVATE engine/actor_matrices.cpp game/director/actor_matrices.c game/director/actor_render.c engine/actor_renderer.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_actor_drawing.cpp)
+target_sources(lordly_engine PRIVATE engine/actor_world_matrices.cpp game/director/actor_world_matrix.c)
 
 target_sources(lordly_engine PRIVATE engine/scene_draw_queue.cpp game/director/scene_draw_queue.c)
 target_sources(lordly_engine PRIVATE engine/scene_resources.cpp game/director/ui_resource.c)
