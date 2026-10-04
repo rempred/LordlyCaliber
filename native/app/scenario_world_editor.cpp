@@ -315,6 +315,10 @@ void ScenarioWorldEditor::fillItems() {
     for (const auto &r : project_->records(table == 1 ? Table::Items : Table::Consumables))
         item_->addItem(QString("%1 · %2").arg(r.id).arg(r.name), r.id);
 }
+void ScenarioWorldEditor::selectObject(bool treasure, int row) {
+    (treasure ? treasures_ : sites_)->setCurrentRow(row);
+    findChild<QTabWidget *>("worldPages")->setCurrentIndex(treasure ? 1 : 0);
+}
 void ScenarioWorldEditor::showTreasure() {
     if (loading_)
         return;

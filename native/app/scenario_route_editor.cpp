@@ -269,6 +269,10 @@ void ScenarioRouteEditor::refresh(int key) {
     showCondition();
     showGroup();
 }
+void ScenarioRouteEditor::selectNode(int row) {
+    nodes_->setCurrentRow(row);
+    findChild<QTabWidget *>("scenarioRouteTabs")->setCurrentIndex(0);
+}
 void ScenarioRouteEditor::showNode() {
     if (loading_)
         return;

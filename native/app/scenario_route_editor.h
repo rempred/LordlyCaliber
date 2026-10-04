@@ -14,6 +14,7 @@ class ScenarioRouteEditor : public QWidget {
                         std::function<void(const Scenarios &, const QString &)> commit,
                         QWidget *parent = nullptr);
     void refresh(int key);
+    void selectNode(int row);
 
   private:
     void showNode();

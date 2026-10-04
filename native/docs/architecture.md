@@ -6,9 +6,18 @@ padded storage rows while producing only the visible pixels. Dimensions, payload
 and palette bounds are checked. A manually specified CI4 fixture checks padding
 and colors; an independent browser decoder agrees on dimensions and pixel hashes
 for all 104 supported image members in the source ROM. A decoded `s_map04.n64`
-map image has been rendered and inspected. This supplies image decoding for map
-and later asset work; scenario-to-image selection and marker projection are not
-yet implemented in the native map page.
+map image has been rendered and inspected. The scenario map reads compact native
+resource collections for world bounds and one-based placement points, and follows
+the game's image selector to a named map archive. All 64 post-load bounds agree
+exactly with existing independent captures. The desktop workspace draws initial
+squads, waypoints, sites and treasure on the coordinate grid, shows route links,
+supports zoom/pan and overlapping-object selection, and opens the corresponding
+field editor. Squad/waypoint/treasure movement uses the existing model and undo
+commands, including coordinate-mode conversion and its nonzero-Z sentinel.
+Persistence, compiled export, checksum and reopening are checked from UI edits.
+The ROM terrain image remains a separate reference until its projection onto the
+grid is verified. Special placement differences and dynamic group behavior are
+explicit limits; this is an initial-placement editor, not live mission execution.
 
 The native archive writer produces LH5 streams with an 8 KiB match window and
 bounded block sizes. Rebuilding a member preserves its original header metadata
@@ -68,7 +77,8 @@ shop/squad/world exports. The desktop controls preserve untouched original data.
 See [world-resources.md](world-resources.md) for evidence and limitations. Browser
 site/treasure imports now retain their original shared-resource behavior, validate
 resource identities and preserve explicit intent. Independent browser-exported
-payloads match native import, persistence and compiled export. Map presentation
+payloads match native import, persistence and compiled export. The coordinate map
+workspace is implemented; terrain registration, dynamic special-scenario placement
 and full-game validation remain unfinished.
 
 Carrying capacity is class body byte B59, at offset 71 in the full 72-byte native

@@ -14,6 +14,7 @@ class QPushButton;
 namespace lordly {
 class ScenarioRouteEditor;
 class ScenarioWorldEditor;
+class ScenarioMapEditor;
 class ScenarioEditor : public QWidget {
   public:
     ScenarioEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
@@ -46,6 +47,7 @@ class ScenarioEditor : public QWidget {
     QPushButton *remove_;
     ScenarioRouteEditor *routes_ = nullptr;
     ScenarioWorldEditor *world_ = nullptr;
+    ScenarioMapEditor *map_ = nullptr;
     int editingKey_ = -1, editingRow_ = -1;
     bool loading_ = true;
 };

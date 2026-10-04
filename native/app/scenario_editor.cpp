@@ -1,4 +1,5 @@
 #include "app/scenario_editor.h"
+#include "app/scenario_map_editor.h"
 #include "app/scenario_route_editor.h"
 #include "app/scenario_world_editor.h"
 #include <QCheckBox>
@@ -103,6 +104,22 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     pages->addTab(routes_, "Routes and conditions");
     world_ = new ScenarioWorldEditor(project_, undo_, changed_);
     pages->addTab(world_, "Sites and treasure");
+    map_ = new ScenarioMapEditor(
+        project_, undo_,
+        [this](const Scenarios &next, const QString &label) { commit(next, label); },
+        [this, pages](MapObject kind, int row) {
+            if (kind == MapObject::Squad) {
+                squads_->setCurrentRow(row);
+                pages->setCurrentIndex(0);
+            } else if (kind == MapObject::Waypoint) {
+                routes_->selectNode(row);
+                pages->setCurrentIndex(1);
+            } else {
+                world_->selectObject(kind == MapObject::Treasure, row);
+                pages->setCurrentIndex(2);
+            }
+        });
+    pages->addTab(map_, "Map");
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);
@@ -368,6 +385,7 @@ void ScenarioEditor::showScenario() {
     showSquad();
     routes_->refresh(key());
     world_->refresh(key());
+    map_->refresh(key());
 }
 void ScenarioEditor::showSquad() {
     if (loading_)

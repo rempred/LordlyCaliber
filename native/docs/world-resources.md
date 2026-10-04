@@ -78,3 +78,49 @@ retaining shared collection flags. Clearing imported edits persists without revi
 the retained browser project. The independent browser fixture authors and exports
 three payloads for native comparison, then native compile/export/reopen checks the
 same data. Map presentation remains unfinished.
+# Scenario map coordinates and image selection
+
+`engine/scenario_map.*` reads the original nine-byte scenario table at z64
+0x654A0. Byte +4 selects a bounds member from the resource envelope at z64
+0x262610C (key 0x02091E8C); byte +7 selects placement data from z64 0x2626786
+(key 0x02092506). Original loader setups at z64 0xEBF2C..EBF70 and
+0xEC118..EC158 establish these selections. Both envelopes contain 41 compact
+members and a zero terminator. Each member is mode 0x80 (stored) or 0x85 (LH5),
+then stored and decoded LE32 lengths and payload. They are not named LHA headers.
+
+Each bounds payload is 32 bytes. Its four BE floats at +0x10..+0x1C supply the
+gameplay rectangle; the original copy at z64 0x1031E8..0x103238 uses those fields.
+Do not equate the preceding rectangle with the calculated RAM 0x801F0DB8 fields:
+the latter also use a per-scenario byte table and a special key-39 path. All 64
+loaded rectangles agree byte-for-byte with `wiki/bounds-postmap-recapture.json`
+in the parent research repository, including compressed records.
+
+Placement payloads have a 28-byte header, BE32 count at +24, and pairs of BE
+float X/Z values from +28. One-based ESET selectors address these pairs. The
+site initializer and picker at z64 0x127830 and 0x108500 also consume this table.
+Runtime site counts and player-dependent positions have special cases; they
+must not be inferred from the payload count alone.
+
+The image caller at z64 0x2B50D0..0x2B50F0 reads signed scenario byte +3, subtracts
+four and selects key 0x018BD022. Its directory at z64 0x1E512A2 contains 41 keys,
+including empty entries. Nonzero keys point to single named LHA image envelopes.
+57 runtime keys select an image; internal non-map selectors and empty directory
+entries have none. The desktop renders this image beside the coordinate map.
+Image-to-world registration has not been established, so no terrain overlay is
+presented as an accurate placement surface.
+
+Independent checks compare 522 browser site references: 492 match the original
+ROM points; 30 differ in keys 10, 22, 51, 54 and 64. The preview identifies those
+special scenarios. Of 436 byte-coordinate deployment references, 422 match;
+eight group-adjusted positions in keys 20/21 and six alternate-overlay placeholders
+in key 54 are explicitly distinguished from initial byte positions. The map uses
+initial placements, not dynamically moved units. Projection is
+`min + (max-min) * byte / 256`; reverse conversion rounds to a byte and clamps
+to 0..255, or Z 1..255 where zero means a placement selector.
+
+Checks: `map_tests` exercises all 65,536 coordinate pairs, malformed resources,
+all 64 bounds, site/reference differences and selected images. `ui_tests
+scenarioMapEditing` moves a squad, waypoint and treasure through controls and a
+mouse drag, checks undo/redo and field navigation, saves/reopens the project,
+compiles/export/reopens a candidate ROM, checks checksum and unchanged source.
+This does not establish full-game mission behavior or terrain registration.

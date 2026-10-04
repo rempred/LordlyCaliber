@@ -15,6 +15,7 @@ class ScenarioWorldEditor : public QWidget {
     ScenarioWorldEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                         QWidget *parent = nullptr);
     void refresh(int key);
+    void selectObject(bool treasure, int row);
 
   private:
     void showSite();

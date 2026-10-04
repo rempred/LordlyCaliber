@@ -7,6 +7,7 @@
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
+#include "rebuild/compiler.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -57,6 +58,140 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void scenarioMapEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            // Add a real waypoint so all three editable map object kinds are exercised.
+            auto scenarios = *project.scenarios();
+            const int waypoint = scenarios.addNode(1, 1, project.classData());
+            project.setScenarios(scenarios.json());
+            QUndoStack undo;
+            ScenarioEditor editor(&project, &undo, [] {});
+            editor.resize(1450, 950);
+            editor.show();
+            auto pages = editor.findChild<QTabWidget *>("scenarioPages");
+            pages->setCurrentIndex(3);
+            QTest::qWait(20);
+            auto objects = editor.findChild<QListWidget *>("mapObjects");
+            auto apply = editor.findChild<QPushButton *>("mapApply");
+            auto fields = editor.findChild<QPushButton *>("mapEditFields");
+            auto x = editor.findChild<QSpinBox *>("mapX"), z = editor.findChild<QSpinBox *>("mapZ");
+            auto canvas = editor.findChild<QWidget *>("scenarioMapCanvas");
+            QVERIFY(objects && apply && fields && x && z && canvas);
+            QVERIFY(objects->count() > project.scenarios()->scenario(1).squads.size());
+            const auto original = project.scenarios()->json(),
+                       originalWorld = project.world()->json();
+            objects->setCurrentRow(0);
+            fields->click();
+            QCOMPARE(pages->currentIndex(), 0);
+            QCOMPARE(editor.findChild<QListWidget *>("scenarioSquads")->currentRow(), 0);
+            pages->setCurrentIndex(3);
+            objects->setCurrentRow(0);
+            x->setValue(128);
+            z->setValue(128);
+            apply->click();
+            const auto centered = project.scenarios()->json();
+            QCOMPARE(u8(project.scenarios()->scenario(1).layout.deployments[0], 3), quint8(128));
+            QCOMPARE(u8(project.scenarios()->scenario(1).layout.deployments[0], 4), quint8(128));
+            undo.undo();
+            QCOMPARE(project.scenarios()->json(), original);
+            undo.redo();
+            QCOMPARE(project.scenarios()->json(), centered);
+            const QPoint center(canvas->width() / 2, canvas->height() / 2);
+            const int shift = (std::min(canvas->width(), canvas->height()) - 72) / 4;
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, center);
+            QTest::mouseMove(canvas, center + QPoint(shift, -shift), 20);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier,
+                                center + QPoint(shift, -shift));
+            const auto moved = project.scenarios()->scenario(1).layout.deployments[0];
+            QVERIFY(std::abs(int(u8(moved, 3)) - 192) <= 1);
+            QVERIFY(std::abs(int(u8(moved, 4)) - 64) <= 1);
+            undo.undo();
+            QCOMPARE(project.scenarios()->json(), centered);
+            undo.redo();
+            int waypointItem = -1, treasureItem = -1, siteItem = -1;
+            const int nodeId = u8(project.scenarios()->scenario(1).layout.nodes[waypoint], 0);
+            const auto townName =
+                project.world()->townName(u16(project.world()->scenario(1).sites, 1));
+            for (int i = 0; i < objects->count(); ++i) {
+                const auto label = objects->item(i)->text();
+                if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
+                    waypointItem = i;
+                if (label.startsWith("Treasure 1 ·"))
+                    treasureItem = i;
+                if (label == townName)
+                    siteItem = i;
+            }
+            QVERIFY(waypointItem >= 0 && treasureItem >= 0 && siteItem >= 0);
+            objects->setCurrentRow(waypointItem);
+            x->setValue(55);
+            z->setValue(66);
+            apply->click();
+            fields->click();
+            QCOMPARE(pages->currentIndex(), 1);
+            QCOMPARE(editor.findChild<QListWidget *>("scenarioNodes")->currentRow(), waypoint);
+            pages->setCurrentIndex(3);
+            objects->setCurrentRow(treasureItem);
+            x->setValue(255);
+            z->setValue(0);
+            apply->click();
+            auto treasure =
+                ScenarioWorld::treasureRecord(project.world()->scenario(1).treasures, 0);
+            QCOMPARE(u8(treasure, 1), quint8(255));
+            QCOMPARE(u8(treasure, 2), quint8(0));
+            undo.undo();
+            QCOMPARE(project.world()->json(), originalWorld);
+            undo.redo();
+            fields->click();
+            QCOMPARE(pages->currentIndex(), 2);
+            QCOMPARE(editor.findChild<QTabWidget *>("worldPages")->currentIndex(), 1);
+            QCOMPARE(editor.findChild<QListWidget *>("worldTreasures")->currentRow(), 0);
+            pages->setCurrentIndex(3);
+            objects->setCurrentRow(siteItem);
+            QVERIFY(!apply->isEnabled());
+            fields->click();
+            QCOMPARE(editor.findChild<QTabWidget *>("worldPages")->currentIndex(), 0);
+            pages->setCurrentIndex(3);
+            objects->setCurrentRow(0);
+            QVERIFY(editor.grab().save("scenario-map.png"));
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenarios()->json(), project.scenarios()->json());
+            QCOMPARE(restored.world()->json(), project.world()->json());
+            const auto result = rebuild(restored, tools, work.path());
+            const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QVERIFY(QDir().mkpath(root));
+            QTemporaryDir output(QDir(root).filePath("native-map-edit-XXXXXX"));
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, result, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios();
+            reopened.loadWorld();
+            QCOMPARE(reopened.scenarios()->scenario(1).layout.deployments[0].mid(3, 2),
+                     moved.mid(3, 2));
+            QCOMPARE(reopened.scenarios()->scenario(1).layout.nodes[waypoint].mid(4, 2),
+                     QByteArray::fromHex("3742"));
+            QCOMPARE(ScenarioWorld::treasureRecord(reopened.world()->scenario(1).treasures, 0),
+                     treasure);
+            auto checksum = result.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, result.image);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Map edit export:" << candidate;
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
     }
     void scenarioWorldEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
