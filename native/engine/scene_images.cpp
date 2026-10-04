@@ -143,13 +143,19 @@ QStringList SceneImages::foreground(const Rom &rom, int selector) {
     return knownKey(selectedKey(rom, 0x2938c8, selector), true);
 }
 QStringList SceneImages::group(const Rom &rom, int selector) {
+    QStringList result;
+    for (const auto &member : groupMembers(rom, selector))
+        result += member.images;
+    return result;
+}
+QVector<SceneGroupMember> SceneImages::groupMembers(const Rom &rom, int selector) {
     const auto key = selectedKey(rom, 0x16b3d18, selector);
     if (!key)
         return {};
     const auto members = resource(rom, key);
     if (members.size() % 4 || members.size() > 1024 * 4)
         throw Error("Invalid scene resource group");
-    QStringList result;
+    QVector<SceneGroupMember> result;
     for (int i = 0; i < members.size(); i += 4) {
         const auto memberKey = u32(members, i);
         auto images = knownKey(memberKey, false);
@@ -164,7 +170,7 @@ QStringList SceneImages::group(const Rom &rom, int selector) {
                     throw Error("Compound scene resource has inconsistent member identities");
             }
         }
-        result << images; // Groups also own non-image resources.
+        result << SceneGroupMember{memberKey, images};
     }
     return result;
 }

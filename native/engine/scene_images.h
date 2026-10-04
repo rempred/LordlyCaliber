@@ -17,6 +17,10 @@ struct SceneImage {
     QJsonObject layout;
     QStringList members;
 };
+struct SceneGroupMember {
+    quint32 key = 0;
+    QStringList images;
+};
 struct SceneBackgroundRequest {
     int word = 0, selector = -1;
     QStringList images;
@@ -35,6 +39,8 @@ class SceneImages {
     static QStringList environment(const Rom &rom, int selector);
     static QStringList foreground(const Rom &rom, int selector);
     static QStringList group(const Rom &rom, int selector);
+    // Includes empty and non-image members at their original channel ordinals.
+    static QVector<SceneGroupMember> groupMembers(const Rom &rom, int selector);
     static SceneBackgrounds backgrounds(const Rom &rom, const DirectorResource &scene,
                                         int modeOverride = -1);
 };

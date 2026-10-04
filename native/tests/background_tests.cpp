@@ -1,16 +1,147 @@
 #include "engine/archive.h"
 #include "engine/background_image.h"
+#include "engine/scene_background_renderer.h"
 #include "engine/scene_images.h"
+#include "engine/scene_transforms.h"
+#include <QDir>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <bit>
 using namespace lordly;
 class BackgroundTests : public QObject {
     Q_OBJECT
   private slots:
+    void groupCoverageAndFixedOrigin() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("background-64-mips.cjs"),
+                                 path, work.filePath("vertices.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("vertices.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 4);
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            int left = 32767, right = -32768, top = -32768, bottom = 32767;
+            for (const auto &v : row["points"].toArray()) {
+                const auto xyz = v.toArray();
+                QCOMPARE(xyz[2].toInt(), 0);
+                left = qMin(left, xyz[0].toInt());
+                right = qMax(right, xyz[0].toInt());
+                top = qMax(top, xyz[1].toInt());
+                bottom = qMin(bottom, xyz[1].toInt());
+            }
+            QCOMPARE(left, -160);
+            QCOMPARE(top, 120);
+            QCOMPARE(right, -160 + row["width"].toInt());
+            QCOMPARE(bottom, 120 - row["height"].toInt());
+        }
+        int populated = 0, empty = 0, ordinary = 0;
+        for (int selector = 0; selector < 31; ++selector) {
+            const auto group = SceneBackgroundRenderer::group(rom, selector);
+            const auto members = SceneImages::groupMembers(rom, selector);
+            QCOMPARE(group.channelCount(), members.size());
+            bool hasImages = false;
+            for (int c = 0; c < group.channelCount(); ++c) {
+                const auto &channel = group.channel(c);
+                QCOMPARE(channel.records.isEmpty(), members[c].key == 0);
+                hasImages |= !channel.records.isEmpty();
+                if (!channel.imageId.isEmpty() &&
+                    SceneImages::catalog()[channel.imageId].container == "64") {
+                    QCOMPARE(channel.records.size(), 1);
+                    QCOMPARE(channel.records[0].origin, QPoint(-160, -120));
+                    ++ordinary;
+                }
+            }
+            hasImages ? ++populated : ++empty;
+        }
+        QCOMPARE(populated, 23);
+        QCOMPARE(empty, 8);
+        QCOMPARE(ordinary, 5);
+    }
+    void layeredRoomGeometry() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto references = qEnvironmentVariable("LORDLY_REFERENCE_DATA");
+        if (path.isEmpty() || references.isEmpty())
+            QSKIP("Private ROM and native room observations required");
+        const auto rom = Rom::open(path);
+        const auto members = SceneImages::groupMembers(rom, 2);
+        QCOMPARE(members.size(), 7);
+        QCOMPARE(members[2].key, 0U);
+        QCOMPARE(members[3].images, QStringList{"scene-resource:016C90D4"});
+        const auto background = SceneBackgroundRenderer::group(rom, 2);
+        QCOMPARE(background.channelCount(), 7);
+        QVERIFY(background.channel(2).records.isEmpty());
+        QVERIFY_THROWS_EXCEPTION(Error, background.channel(7));
+        QCOMPARE(SceneBackgroundRenderer::group(rom, 23).channelCount(), 1);
+        QFile capture(
+            QDir(references)
+                .filePath("docs/reviews/cutscene-room-background-drawing-20260917/native.json"));
+        QVERIFY(capture.open(QIODevice::ReadOnly));
+        const auto observations = QJsonDocument::fromJson(capture.readAll()).array();
+        QByteArray bank(56, 0);
+        const float values[]{90, 4.f / 3, 1, 20000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+        const SceneCamera camera(bank, 1);
+        int checked = 0;
+        for (const auto &value : observations) {
+            const auto row = value.toObject();
+            const int channel = row["layer"].toInt();
+            if (channel == 2)
+                continue; // Runtime framebuffer, not a ROM image.
+            QVector<QPoint> vertices;
+            QByteArray parent;
+            for (const auto &command : row["commands"].toArray()) {
+                const auto c = command.toObject();
+                if (parent.isEmpty() && c.contains("matrixHex"))
+                    parent = QByteArray::fromHex(c["matrixHex"].toString().toLatin1());
+                for (const auto &vertex : c["vertices"].toArray()) {
+                    const auto xyz = vertex.toObject()["xyz"].toArray();
+                    QCOMPARE(xyz[2].toInt(), 0);
+                    vertices << QPoint(xyz[0].toInt(), xyz[1].toInt());
+                }
+            }
+            QVERIFY(!vertices.isEmpty());
+            SceneTransforms transforms;
+            transforms.supplyChannel(
+                channel, QByteArray::fromHex(row["transformHex"].toString().toLatin1()));
+            QCOMPARE(transforms.layerMatrix(channel), parent);
+            const auto rendered = background.project(channel, camera, parent);
+            QCOMPARE(rendered.size(), background.channel(channel).records.size());
+            for (int i = 0; i < rendered.size(); ++i) {
+                const auto &r = background.channel(channel).records[i];
+                const auto &m = rendered[i].plane.mapping;
+                const QTransform mapping(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+                for (const auto uv :
+                     {QPoint(0, 0), QPoint(r.image.width(), 0),
+                      QPoint(r.image.width(), r.image.height()), QPoint(0, r.image.height())}) {
+                    const auto vertex = QPoint(r.origin.x() + uv.x(), -r.origin.y() - uv.y());
+                    QVERIFY2(vertices.contains(vertex),
+                             qPrintable(QString("Missing native vertex %1,%2")
+                                            .arg(vertex.x())
+                                            .arg(vertex.y())));
+                    const auto nativePoint = camera.projectPackedPoint(
+                        parent, {double(vertex.x()), double(vertex.y()), 0});
+                    QVERIFY(QLineF(mapping.map(QPointF(uv)), nativePoint.screen).length() < .001);
+                }
+            }
+            ++checked;
+        }
+        QCOMPARE(checked, 7);
+    }
     void rawPaletteBanks() {
         const QJsonObject layout{
             {"width", 2},        {"height", 1},           {"pixelFormat", "ci4"},

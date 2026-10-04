@@ -104,11 +104,10 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         selector_ = resource.selectors.first();
         mode_ = mode;
         context_->setText(
-            "Reference stage: flat terrain, empty external jobs and no army roster. "
-            "Scripts control Actors and cameras; backdrop images are fitted as references. "
-            "Layered scenes include 2D sprites. Scene lighting starts with two reference lights. "
-            "Equipment, world/special sprite placement, audio and "
-            "native background placement are separate. Unsupported commands pause playback.");
+            "Reference launch: flat terrain and no army roster. Missing services pause playback.\n"
+            "Layered backgrounds and sprites use native placement. World backgrounds are fitted "
+            "references.\n"
+            "Equipment, world/special sprites and audio remain unfinished.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -162,8 +161,14 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     const int selector = qint32(args[0]);
     if (selector < 0)
         throw Error("This environment selector requires gameplay launch context");
-    const auto images =
-        mode_ ? SceneImages::environment(rom_, selector) : SceneImages::group(rom_, selector);
+    if (mode_ == 0) {
+        auto backgrounds = SceneBackgroundRenderer::group(rom_, selector);
+        next.backdropName = backgrounds.description();
+        next.backgrounds = std::move(backgrounds);
+        next.backdrop = {};
+        return true;
+    }
+    const auto images = SceneImages::environment(rom_, selector);
     if (images.isEmpty())
         throw Error("This scene resource has no supported reference backdrop");
     const auto decoded = SceneImages::decode(rom_, images.first());
@@ -189,7 +194,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
     if (mode_ == 0)
-        drawing.prepareModeZeroDrawing(20);
+        drawing.prepareModeZeroDrawing(next.backgrounds ? next.backgrounds->channelCount() : 20);
     else
         drawing.prepareModeTwoDrawing(*drawing.lighting());
     {
@@ -202,10 +207,20 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                               next.backdrop);
         }
         if (mode_ == 0) {
-            for (int channel = 0; channel < 20; ++channel) {
-                const auto sprites = spriteRenderer_.project(
-                    drawing.sprites(), channel, 0, drawing.cameras().actor(),
-                    drawing.transforms().layerMatrix(channel), {255, 255, 255});
+            const int count = next.backgrounds ? next.backgrounds->channelCount() : 20;
+            for (int channel = 0; channel < count; ++channel) {
+                const auto parent = drawing.transforms().layerMatrix(channel);
+                if (next.backgrounds) {
+                    QImage background(320, 240, QImage::Format_RGBA8888);
+                    background.fill(Qt::transparent);
+                    ActorRenderer::paint(
+                        background,
+                        next.backgrounds->project(channel, drawing.cameras().actor(), parent));
+                    painter.drawImage(0, 0, background);
+                }
+                const auto sprites =
+                    spriteRenderer_.project(drawing.sprites(), channel, 0,
+                                            drawing.cameras().actor(), parent, {255, 255, 255});
                 if (!sprites.isEmpty()) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);

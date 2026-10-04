@@ -155,6 +155,45 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void sceneRoomComposition() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Room composition", source.key, false);
+        ScenePreview preview(rom);
+        preview.resize(1100, 700);
+        preview.show();
+        auto run = [&](QVector<quint32> words) {
+            words << 0 << 0x80000000U << 0 << 0x80000000U << 0x80000001U
+                  << (0xff000000U | quint32(source.program.resourceClass()));
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            scenes.replace(id, bytes);
+            preview.selectScene(scenes, id, 0);
+            preview.findChild<QPushButton *>("sceneStep")->click();
+            return preview.renderedFrame();
+        };
+        const QVector<quint32> room{0x80000006U, 2};
+        const QVector<quint32> actor{0x14, 0, 30, 1, 2, 0, quint32(-40000), 0, 0, 0};
+        const auto background = run(room);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(preview.findChild<QLabel *>("scenePlaybackStatus")->text()));
+        const auto actorFrame = run(actor);
+        auto expected = background.copy();
+        { QPainter painter(&expected); painter.drawImage(0, 0, actorFrame); }
+        const auto front = run(room + actor + QVector<quint32>{0x1c, 0, 6});
+        QCOMPARE(front, expected);
+        const auto behind = run(room + actor);
+        QVERIFY(behind != front);
+        QVERIFY(behind != background);
+        QVERIFY(preview.grab().save("scene-room-composition.png"));
+        const auto empty = run({0x80000006U, 23});
+        QVERIFY(!preview.property("sceneStopped").toBool());
+        QVERIFY(empty != background);
+        for (int y = 0; y < empty.height(); ++y) for (int x = 0; x < empty.width(); ++x)
+            QCOMPARE(empty.pixelColor(x, y).alpha(), 0);
+    }
     void sceneSpriteComposition() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/scene_actor_renderer.h"
+#include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_programs.h"
 #include "engine/sprite_renderer.h"
@@ -32,6 +33,7 @@ class ScenePreview : public QWidget {
         QImage frame, backdrop;
         QString reason, backdropName;
         bool stopped = false;
+        std::optional<SceneBackgroundRenderer> backgrounds;
     };
     void restart();
     void seek(int tick);

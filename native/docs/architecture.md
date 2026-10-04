@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Layered background placement
+
+SceneImages::groupMembers retains every original table ordinal, including zero
+entries. SceneBackgroundRenderer owns up to20 immutable channels and64MiB of
+decoded images. B5 records retain signed origins and separate record images;
+ordinary64 images use the dispatcher's fixed(-160,-120) origin regardless of
+dimensions. Background quads span full width/height, unlike Actor vertices.
+Packed channel transforms apply before camera projection. Each channel draws
+its background, then scene sprites, then its Actor passes. Empty groups clear
+old images; unsupported non-image owners reject explicitly. Cached QImages and
+Qt shared snapshots avoid re-decoding or copying pixels on every update.
+
+`layeredRoomGeometry` reuses qualified retained original-instruction observations
+from the parent room study: six populated channels plus a changed transform.
+Every decoded record corner occurs in the native vertices, packed parent
+matrices agree, and projected corners agree within.001 pixels. Together with
+current-ROM selector checks it passed258ms after build2714. The room overlap/
+channel-change, sprite overlap and playback/seek UI checks passed643ms. The
+rendered room was inspected, including the Actor behind its table.
+
+`groupCoverageAndFixedOrigin` passed727ms after build27657: all31 groups load
+with original ordinals (23 populated,8 empty); five ordinary64 members retain
+the fixed origin. Four original image-dispatch/vertex-builder runs cover images
+64x48,320x240,415x303 and128x1; only bzero is host-supplied. Dispatch/vertex code
+is ROM1FAC5C/1FA714, loaded at RAM801B77CC/801B7284. The dispatcher's first64
+bytes also match uniquely in the retained opening RAM image. These checks do
+not establish native RDP blending, runtime framebuffer/effect ownership, world
+background placement, launch initialization or full-scene equivalence. B5 mask
+planes retain the decoder's alpha approximation; current preview colors are
+neutral until their scene color-transition owner is connected.
+
 ## Layered scene sprites
 
 SpriteRenderer retains native pool selection, packed translation, Z rotation and
@@ -37,9 +68,9 @@ preview has a10000-update bound and stops when an owner is unavailable.
 
 The current stage explicitly supplies reference cameras, flat terrain, two lights,
 neutral world environment, empty external jobs and no army roster. Script camera,
-Actor and material changes execute normally. Environment loads display a fitted
-reference backdrop, with multiple image membership disclosed. Native background
-placement, equipment and audio remain separate. Layered scene sprites draw in
+Actor and material changes execute normally. Mode-zero groups retain native
+ordinals and image geometry; world environments still show fitted reference
+backdrops. World background placement, equipment and audio remain separate. Layered scene sprites draw in
 native channel order; world/special sprites pause pending registered projection. Dynamic selectors/roster requirements
 and unknown commands report their missing context. This is not complete native
 launch reconstruction or full game playback.
