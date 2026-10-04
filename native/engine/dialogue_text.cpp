@@ -25,6 +25,60 @@ void trackDialoguePointer(const QByteArray &window, QByteArray &state) {
                             reinterpret_cast<uint8_t *>(state.data()));
 }
 namespace {
+std::pair<int, quint32> scanChoices(const QByteArray &source, quint32 at,
+                                    std::optional<quint8> marker, int budget) {
+    if (budget < 1)
+        throw Error("Dialogue choice scanning requires a positive budget");
+    auto read = [&](quint32 cursor) {
+        if (--budget < 0)
+            throw Error("Dialogue choice scanning exceeded its budget");
+        return u8(source, cursor);
+    };
+    auto skip = [&](quint32 count) {
+        if (count > quint64(source.size()) || at > quint64(source.size()) - count)
+            throw Error("Dialogue choice control exceeds its source");
+        at += count;
+    };
+    int maximum = 0;
+    while (const auto c = read(at)) {
+        ++at;
+        if (lordly_text_lead_byte(c))
+            skip(1);
+        else if (c == '@') {
+            const auto control = read(at++);
+            switch (control) {
+            case '<':
+            case 'F':
+            case 'T':
+            case 'e':
+            case 'f':
+            case 't':
+                skip(3);
+                break;
+            case 'w':
+                skip(4);
+                break;
+            case '&':
+                skip(2);
+                break;
+            case '!':
+            case '%':
+            case ':':
+            case 'l':
+            case 'z':
+                skip(1);
+                break;
+            default:
+                break;
+            }
+            if (marker ? control == *marker : control == '#')
+                break;
+            if (!marker && control >= '1' && control <= '9')
+                maximum = std::max(maximum, control - '0');
+        }
+    }
+    return {maximum, at};
+}
 quint16 measureText(const QByteArray &source, const DialogueFontMetrics &metrics, int &budget) {
     if (source.isNull() || budget < 1)
         throw Error("Native text measurement requires text and a positive budget");
@@ -232,6 +286,12 @@ DialogueSegmentScan scanSegment(const QByteArray &source, quint16 columns,
     return scan(source, 0);
 }
 } // namespace
+int countDialogueChoices(const QByteArray &source, quint32 cursor, int budget) {
+    return scanChoices(source, cursor, {}, budget).first;
+}
+void seekDialogueChoice(const QByteArray &source, quint32 &cursor, quint32 marker, int budget) {
+    cursor = scanChoices(source, cursor, quint8(marker), budget).second;
+}
 quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &metrics,
                           int budget) {
     return measureText(source, metrics, budget);

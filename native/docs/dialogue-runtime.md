@@ -1,5 +1,12 @@
 # Dialogue runtime
 
+Choice scanning reconstructs ROM EA684..EA8EC at RAM 8019D904/8019DA58.
+All 4,616 original choice counts and 55,392 marker seeks pass (11,719 ms), with
+no controlled helpers. Retail sources and constructed operand/two-byte cases
+exercise the distinct skip grammar. Counts stop at `@#`; seeks narrow the marker
+to a byte and publish the cursor after the matched control and its operands.
+Malformed controls and budget exhaustion preserve the caller's cursor.
+
 Window motion, bounds placement and pointer tracking compile maintained C from
 ROM EA184..EA628 at RAM 8019D404. All 270 sequences / 2,160 complete window and
 payload snapshots pass (186 ms), with no controlled helpers. Checks include

@@ -47,6 +47,9 @@ struct DialogueTextEnvironment {
 void advanceDialoguePosition(QByteArray &state);
 void positionDialogueBounds(QByteArray &window, QByteArray &state);
 void trackDialoguePointer(const QByteArray &window, QByteArray &state);
+int countDialogueChoices(const QByteArray &source, quint32 cursor, int budget = 100000);
+void seekDialogueChoice(const QByteArray &source, quint32 &cursor, quint32 marker,
+                        int budget = 100000);
 // Prefix, native measurements and accepted-source geometry in their native order.
 InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
                                              const QByteArray &source,

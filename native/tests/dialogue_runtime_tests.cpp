@@ -21,6 +21,42 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void choiceScanningAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-choices-mips.cjs"),
+                                 path, work.filePath("choices.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("choices.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 4616);
+        const quint32 markers[] = {35, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 102};
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            QCOMPARE(countDialogueChoices(source, 0), c["count"].toInt());
+            const auto cursors = c["cursors"].toArray();
+            for (int i = 0; i < 12; ++i) {
+                quint32 cursor = 0;
+                seekDialogueChoice(source, cursor, markers[i] | 0x100);
+                QVERIFY2(cursor == quint32(cursors[i].toInt()),
+                         qPrintable(c["id"].toString() + " marker " + QString::number(markers[i])));
+            }
+        }
+        quint32 cursor = 1;
+        QVERIFY_THROWS_EXCEPTION(Error, seekDialogueChoice(QByteArray("X@w\0", 4), cursor, '#'));
+        QCOMPARE(cursor, 1U);
+        QVERIFY_THROWS_EXCEPTION(Error, countDialogueChoices(QByteArray("ABC\0", 4), 0, 2));
+    }
     void windowMotionAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
