@@ -28,5 +28,11 @@
     "url": "https://repo.msys2.org/msys/sources/msys2-runtime-3.6.10-2.src.tar.zst",
     "sha256": "5bf784a32271863f58e91711abad1ecd710d694648ce5b71b8dc52a9099b9b5f",
     "bytes": 128685694
+  },
+  {
+    "file": "qtdeclarative-6.12.0.tar.xz",
+    "url": "https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtdeclarative-everywhere-src-6.12.0.tar.xz",
+    "sha256": "311f3a2603e1973bb59baef9dfa740a376de713157d4782ee043681e889c9260",
+    "bytes": 39221652
   }
 ]

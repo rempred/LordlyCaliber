@@ -1,9 +1,10 @@
 # Third-party components
 
 This portable build uses dynamically linked Qt 6.12.0 Core, Gui, Widgets,
-Concurrent and SVG libraries. The open-source Qt libraries are provided under
+Concurrent, Qml, Network and SVG libraries. Qml supplies the JavaScript engine
+used only for importing legacy scene documents; the desktop UI uses Widgets. The open-source Qt libraries are provided under
 LGPL-3.0; applicable license texts are in `licenses/qtbase-6` and
-`licenses/qtsvg-6`. Their complete corresponding source archives, including
+`licenses/qtsvg-6` and `licenses/qtdeclarative-6`. Their complete corresponding source archives, including
 third-party copyright notices, are in `dependency-sources/`. Qt remains
 replaceable as separate DLLs. No additional restriction is imposed on modifying
 these libraries or reverse engineering for debugging such modifications.

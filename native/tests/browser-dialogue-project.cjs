@@ -47,5 +47,5 @@ for (const name of ['parsers.js', 'repack.js', 'cutscene-data.js', 'cutscene-mod
     const at = data.readUInt32BE(i * 4), end = data.indexOf(0, at);
     expected.push(data.subarray(at, end).toString('hex'));
   }
-  fs.writeFileSync(process.argv[3], JSON.stringify({project, selector, first, expected}));
+  fs.writeFileSync(process.argv[3], JSON.stringify({project, selector, first, expected, originalProgram: Buffer.from(source.decodedBytes).toString("hex"), expectedProgram: Buffer.from(OB64.cutsceneCodec.compileSceneDocument(scene, source, document).decodedBytes).toString("hex")}));
 })().catch(e => {console.error(e); process.exitCode = 1;});

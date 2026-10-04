@@ -3,6 +3,7 @@
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
+#include "engine/scene_import.h"
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -101,12 +102,16 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         actions->addWidget(renameScene_);
         actions->addWidget(removeScene_);
         static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(actions);
-        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_})
+        wipeScene_ = new QPushButton("Clear scene content");
+        wipeScene_->setObjectName("sceneWipe");
+        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addWidget(wipeScene_);
+        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
             button->setEnabled(false);
         connect(newScene_, &QPushButton::clicked, this, [this] { createScene(true); });
         connect(duplicateScene_, &QPushButton::clicked, this, [this] { createScene(false); });
         connect(renameScene_, &QPushButton::clicked, this, &CutsceneEditor::renameScene);
         connect(removeScene_, &QPushButton::clicked, this, &CutsceneEditor::removeScene);
+        connect(wipeScene_, &QPushButton::clicked, this, &CutsceneEditor::wipeScene);
     }
     assets_ = addList("Images", "cutsceneAssets");
     split->addWidget(catalogTabs_);
@@ -204,7 +209,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             if (valid)
                 reloadScenes();
             else
-                for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_})
+                for (auto button :
+                     {newScene_, duplicateScene_, renameScene_, removeScene_, wipeScene_})
                     button->setEnabled(false);
         });
     } else
@@ -435,6 +441,17 @@ void CutsceneEditor::renameScene() {
         QMessageBox::warning(this, "Scene name", QString::fromUtf8(e.what()));
     }
 }
+void CutsceneEditor::wipeScene() {
+    if (!project_)
+        return;
+    try {
+        auto next = *project_->scenePrograms();
+        next.replace(selectedScene(), wipeSceneProgram(next.program(selectedScene())).source);
+        pushSceneProgramChange(project_, undo_, "Clear scene content", next);
+    } catch (const std::exception &e) {
+        QMessageBox::warning(this, "Scene content", QString::fromUtf8(e.what()));
+    }
+}
 void CutsceneEditor::removeScene() {
     if (!project_)
         return;
@@ -460,6 +477,15 @@ void CutsceneEditor::selectScene() {
         duplicateScene_->setEnabled(true);
         renameScene_->setEnabled(authored);
         removeScene_->setEnabled(authored);
+        try {
+            const auto wiped = wipeSceneProgram(scene.program);
+            wipeScene_->setEnabled(wiped.source != scene.program.source);
+            wipeScene_->setToolTip("Remove scene actions while retaining its background setup, "
+                                   "initial cameras and exit. This can be undone.");
+        } catch (const std::exception &e) {
+            wipeScene_->setEnabled(false);
+            wipeScene_->setToolTip(QString::fromUtf8(e.what()));
+        }
     }
     const int selectedCommand = commands_->currentRow();
     const QSignalBlocker commandsBlock(commands_);

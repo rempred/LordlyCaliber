@@ -13,6 +13,7 @@
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
+#include "engine/scene_import.h"
 #include "rebuild/compiler.h"
 #include <QAction>
 #include <QApplication>
@@ -291,6 +292,80 @@ class UiTests : public QObject {
         QVERIFY(!table->isRowHidden(row));
         QTest::qWait(30);
         QVERIFY(editor.grab().save("native-scene-events.png"));
+    }
+    void sceneDraftSurvivesEventUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1498, 10000);
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->data(Qt::UserRole).toUInt() == 0x019aa5b6) {
+                list->setCurrentRow(i);
+                break;
+            }
+        editor.findChild<QTableWidget *>("cutsceneCommands")->setCurrentCell(0, 0);
+        auto form = editor.findChild<SceneCommandEditor *>();
+        auto field = form->findChild<QLineEdit *>("sceneOperand0");
+        QVERIFY(field);
+        field->setText("unfinished");
+        QVERIFY(form->property("invalidEdits").toBool());
+        auto target = editor.findChild<QComboBox *>("sceneEventTarget");
+        target->setCurrentIndex(target->currentIndex() == 0 ? 1 : 0);
+        editor.findChild<QPushButton *>("sceneEventAssign")->click();
+        QCOMPARE(field->text(), QString("unfinished"));
+        QVERIFY(form->property("invalidEdits").toBool());
+        QVERIFY(undo.canUndo());
+        undo.undo();
+        QCOMPARE(field->text(), QString("unfinished"));
+        QVERIFY(form->property("invalidEdits").toBool());
+        QVERIFY(!editor.findChild<QPushButton *>("sceneWipe")->isEnabled());
+        form->findChild<QPushButton *>("sceneCommandDiscard")->click();
+        QVERIFY(!form->property("invalidEdits").toBool());
+    }
+    void wipeSceneControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        editor.resize(1300, 950);
+        editor.show();
+        auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+        auto wipe = editor.findChild<QPushButton *>("sceneWipe");
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1498, 10000);
+        QVERIFY(wipe);
+        const quint32 key = 0x019aa5b6;
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->data(Qt::UserRole).toUInt() == key) {
+                list->setCurrentRow(i);
+                break;
+            }
+        QCOMPARE(list->currentItem()->data(Qt::UserRole).toUInt(), key);
+        const auto before = project.scenePrograms()->program(key);
+        const auto expected = wipeSceneProgram(before).source;
+        QVERIFY(wipe->isEnabled());
+        wipe->click();
+        QCOMPARE(project.scenePrograms()->program(key).source, expected);
+        QVERIFY(!wipe->isEnabled());
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->program(key).source, before.source);
+        QVERIFY(wipe->isEnabled());
+        auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
+        commands->setCurrentCell(0, 0);
+        auto field =
+            editor.findChild<SceneCommandEditor *>()->findChild<QLineEdit *>("sceneOperand0");
+        QVERIFY(field);
+        field->setText("invalid");
+        QVERIFY(!wipe->isEnabled());
+        field->setText(QString::number(before.commands[0].operands[0]));
+        QVERIFY(wipe->isEnabled());
+        undo.redo();
+        QCOMPARE(project.scenePrograms()->program(key).source, expected);
     }
     void exportedSceneRemovalControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

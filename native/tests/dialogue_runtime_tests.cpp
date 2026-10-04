@@ -50,8 +50,7 @@ class DialogueRuntimeTests : public QObject {
         auto rom = Rom::open(path);
         auto project = Project::fromRom(rom);
         project.importLegacy(browser);
-        QVERIFY(
-            project.pendingLegacySections().contains("cutscenes")); // Other scene edits retained.
+        QVERIFY(!project.pendingLegacySections().contains("cutscenes"));
         QCOMPARE(project.dialogues()->entryCount(Dialogues::Table::Primary, selector),
                  expected.size());
         for (int i = 0; i < expected.size(); ++i)

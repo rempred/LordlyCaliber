@@ -28,7 +28,7 @@ $qtRoot = Join-Path $ToolsRoot 'Qt\6.12.0\msvc2022_64'
 $priorPath = $env:PATH
 try {
     $env:PATH = "$qtRoot\bin;$env:PATH"
-    & (Join-Path $qtRoot 'bin\windeployqt.exe') --release --no-compiler-runtime --no-translations --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --skip-plugin-types generic,networkinformation,tls --dir $Destination (Join-Path $Destination 'LordlyCaliber.exe')
+    & (Join-Path $qtRoot 'bin\windeployqt.exe') --release --no-compiler-runtime --no-translations --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --no-quick-import --skip-plugin-types generic,networkinformation,tls,qmltooling --dir $Destination (Join-Path $Destination 'LordlyCaliber.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed.' }
 } finally { $env:PATH = $priorPath }
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'

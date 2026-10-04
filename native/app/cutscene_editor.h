@@ -31,6 +31,7 @@ class CutsceneEditor : public QWidget {
     void createScene(bool blank);
     void renameScene();
     void removeScene();
+    void wipeScene();
     void selectRequest();
     void selectImage(const QString &id);
     void showImage();
@@ -40,7 +41,7 @@ class CutsceneEditor : public QWidget {
     std::optional<ScenePrograms> readOnlyPrograms_;
     QString sceneCatalogSignature_;
     QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
-                *removeScene_ = nullptr;
+                *removeScene_ = nullptr, *wipeScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;

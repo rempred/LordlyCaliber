@@ -148,9 +148,11 @@ class Project {
     void importLegacyCustomSquads(const QJsonObject &object);
     void importLegacyScenarios(const QJsonObject &object);
     void importLegacyDialogues(const QJsonObject &);
+    void importLegacyScenes(const QJsonObject &);
     void importLegacyWorld(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
+    bool legacyScenesImported_ = false;
     std::map<Table, QVector<Record>> tables_;
     QStringList importWarnings_;
     QMap<QString, TextBank> texts_;

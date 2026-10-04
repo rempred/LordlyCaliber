@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/scene_import.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -566,14 +567,18 @@ QJsonObject Project::manifest() const {
         result["dialogues"] = dialogues_->json();
     else
         result.remove("dialogues");
-    if (scenePrograms_ && scenePrograms_->modified())
+    if (scenePrograms_ && (scenePrograms_->modified() || legacyScenesImported_))
         result["scenePrograms"] = scenePrograms_->json();
     else
         result.remove("scenePrograms");
-    if (sceneEvents_ && sceneEvents_->modified())
+    if (sceneEvents_ && (sceneEvents_->modified() || legacyScenesImported_))
         result["sceneEvents"] = sceneEvents_->json();
     else
         result.remove("sceneEvents");
+    if (legacyScenesImported_)
+        result["legacySceneImportVersion"] = 1;
+    else
+        result.remove("legacySceneImportVersion");
     return result;
 }
 void Project::loadScenePrograms() {
@@ -775,6 +780,13 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setDialogues(object["dialogues"].toObject());
     } else
         candidate.importLegacyDialogues(candidate.legacy_);
+    if (object.contains("legacySceneImportVersion")) {
+        if (object["legacySceneImportVersion"] != 1 || !object["scenePrograms"].isObject() ||
+            !object["sceneEvents"].isObject() || !object["dialogues"].isObject())
+            throw Error("Incomplete saved native conversion of browser scenes");
+        candidate.legacyScenesImported_ = true;
+    } else
+        candidate.importLegacyScenes(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -855,6 +867,18 @@ void Project::importLegacyScenarios(const QJsonObject &object) {
         return;
     loadScenarios();
     scenarios_->importBrowser(rom_, scenario, squads.isEmpty() ? oldSquads : squads, classData());
+}
+void Project::importLegacyScenes(const QJsonObject &object) {
+    const auto value = object["patches"].toObject()["cutscenes"];
+    if (value.isUndefined() || value.isNull())
+        return;
+    if (!value.isObject())
+        throw Error("Invalid imported scene project");
+    loadSceneEvents();
+    auto imported = importBrowserScenes(rom_, *scenePrograms_, *sceneEvents_, value.toObject());
+    scenePrograms_ = std::move(imported.programs);
+    sceneEvents_ = std::move(imported.events);
+    legacyScenesImported_ = true;
 }
 void Project::importLegacyDialogues(const QJsonObject &object) {
     const auto value = object["patches"].toObject()["cutscenes"];
@@ -1064,6 +1088,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyScenarios(object);
     candidate.importLegacyWorld(object);
     candidate.importLegacyDialogues(object);
+    candidate.importLegacyScenes(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -1138,6 +1163,8 @@ QStringList Project::pendingLegacySections() const {
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (it.key() == "cutscenes" && legacyScenesImported_)
+            continue;
         if (scenarios_ && (it.key() == "squadOverrides" || it.key() == "squad_overrides"))
             continue;
         if (scenarios_ && it.key() == "scenario") {

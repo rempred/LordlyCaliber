@@ -71,10 +71,10 @@ int main(int argc, char **argv) {
         }
         if (parser.isSet("project")) {
             const auto manifest = lordly::Project::readProject(parser.value("project"));
-            if (manifest["format"].toString() == "ob64-patch")
-                project.importLegacy(manifest);
-            else
+            if (manifest["format"].toString() == "LordlyCaliberProject")
                 project.applyManifest(manifest);
+            else
+                project.importLegacy(manifest);
         }
         QJsonObject report{
             {"title", project.rom().title()},

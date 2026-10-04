@@ -106,7 +106,8 @@ SceneCommandEditor::SceneCommandEditor(Project *project, QUndoStack *undo,
     layout->addLayout(actions);
     connect(undo_, &QUndoStack::indexChanged, this, [this] {
         if (!editing_) {
-            refresh();
+            if (!property("invalidEdits").toBool())
+                refresh();
             emit programChanged();
         }
         if (changed_)
