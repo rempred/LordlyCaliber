@@ -22,5 +22,6 @@ const names={};for(const scene of data.scenes){
 }
 fs.writeFileSync(path.join(root,'native/game/director/grammar.json'),JSON.stringify({
  generator:'native/tools/generate-director-grammar.cjs',source:'native/game/director/func_00284288.c',
- sourceSha256:model.source.sha256,sourceCommit:'8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8',rows,names},null,2)+'\n');
+ sourceSha256:model.source.sha256,sourceCommit:'8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8',rows,names,
+ continuations:data.directorContinuationStreams.map(s=>({selector:s.selector,key:s.resourceKey,decodedSha256:s.decodedSha256}))},null,2)+'\n');
 console.log(`Generated ${rows.length} C-checked opcode descriptions and ${Object.keys(names).length} scene labels.`);

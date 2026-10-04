@@ -1,13 +1,29 @@
 # Native Lordly Caliber
 
+`DirectorSession` now owns the single saved parent stream used by the recovered
+loader. Nested continuations replace the active child; return restores the first
+parent's saved cursor. Replacement scenes clear the saved slot and resume at zero.
+The engine reads all five continuation resources through the current ROM directory
+at key 0x0189099E; their decoded hashes and lossless encoding match the independent
+catalog. Copied loader source `func_00283FA8.c` is from accepted Decomp commit
+`7f47ce6556babae08277f3997c9f647fa3f96149`. Its translation loop is adapted into
+compiled `stream_words.c`: every tagged word is replaced by a supplied 16-bit launch
+value. Missing inputs remain explicit, and the host rejects them before changing
+any stream words or replacing the current stream. A supplied zero is valid.
+Synthetic resource-directory checks cover nested continuation ownership, return,
+replacement, missing context and suspension at one-instruction budgets. These
+session checks follow the recovered loader contract; they are not yet a full
+original-loader instruction comparison or scene playback check. Domain services
+and update-tick ordering still belong to the next execution layer.
+
 The PC engine also compiles `game/director/dispatch_core.c`, a bounded control
 adaptation of the recovered dispatcher. It preserves barrier cursor commits,
 local handoff state, signed query scans, labels and registered-counter arithmetic.
 A query disabled by the current mode leaves its operand words executable, as the
 original does; it is not skipped using the structural grammar width. Host budget
 or missing-service suspension retains local state without pretending to finish a
-native tick. Domain operations use explicit callbacks; stream transfers currently
-return a distinct boundary for the upcoming resource/session layer.
+native tick. Domain operations use explicit callbacks; stream transfers
+return a distinct boundary handled by DirectorSession.
 
 Thirty-two control cases agree with the original MIPS dispatcher and helpers in
 4 MiB test memory: return result, committed cursor, counter, tracked-object state

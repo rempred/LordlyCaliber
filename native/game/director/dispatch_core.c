@@ -11,6 +11,7 @@ int lordly_director_dispatch(LordlyDirectorDispatch *s, const LordlyDirectorWord
     int dispatched;
     if (!s || !words || !lookup || count < 1 || budget < 1 ||
         (s->mode != 0 && s->mode != 1 && s->mode != 2)) return LORDLY_DIRECTOR_INVALID;
+    s->executed = 0;
     if (!s->active) {
         s->cursor = s->resume_cursor;
         s->nesting = 0;
@@ -23,6 +24,7 @@ int lordly_director_dispatch(LordlyDirectorDispatch *s, const LordlyDirectorWord
         LordlyDirectorDefinition def;
         LordlyDirectorWord command;
         int value = -100, next, depth, status;
+        ++s->executed;
         if (s->cursor < 0 || s->cursor >= count) return LORDLY_DIRECTOR_INVALID;
         command = words[s->cursor];
         if (!lookup(context, command, &def) || def.words < 1 || def.words > 32 ||

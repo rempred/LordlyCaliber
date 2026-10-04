@@ -40,9 +40,17 @@ class Directors {
     const QVector<quint32> &selectors() const {
         return selectors_;
     }
+    const QMap<quint32, DirectorResource> &continuations() const {
+        return continuations_;
+    }
+    const QVector<quint32> &continuationSelectors() const {
+        return continuationSelectors_;
+    }
 
   private:
     QMap<quint32, DirectorResource> resources_;
     QVector<quint32> selectors_;
+    QMap<quint32, DirectorResource> continuations_;
+    QVector<quint32> continuationSelectors_;
 };
 } // namespace lordly

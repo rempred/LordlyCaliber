@@ -138,6 +138,33 @@ Directors Directors::load(const Rom &rom) {
         }
         result.resources_[key].selectors << i;
     }
+    constexpr quint32 continuationTable = base + 0x0189099e;
+    const auto continuationSize = u32(bytes, continuationTable);
+    if (!continuationSize || continuationSize % 4 || continuationSize > 254 * 4 ||
+        quint64(continuationTable) + 4 + continuationSize > quint64(bytes.size()))
+        throw Error("Invalid Director continuation directory");
+    for (int i = 0; i < int(continuationSize / 4); ++i) {
+        const auto key = u32(bytes, continuationTable + 4 + i * 4);
+        result.continuationSelectors_ << key;
+        if (!key)
+            continue;
+        if (!result.continuations_.contains(key)) {
+            if (key >= 0x10000000 || key % 2)
+                throw Error("Invalid continuation resource key");
+            const auto at = base + key, stored = u32(bytes, at), decoded = u32(bytes, at + 4);
+            if (stored < 4 || stored > 0x1000000 || !decoded || decoded > 0x1000000 ||
+                quint64(at) + 4 + stored > quint64(bytes.size()) ||
+                (retained += decoded) > 128 * 1024 * 1024)
+                throw Error("Continuation exceeds its resource envelope or memory budget");
+            auto program =
+                DirectorProgram::decode(decodeLzss(bytes.mid(at + 8, stored - 4), decoded));
+            if (program.commands.last().opcode != 0x80000001)
+                throw Error("Continuation lacks a terminal command");
+            result.continuations_.insert(
+                key, {key, at, {}, QString("Continuation %1").arg(i), std::move(program)});
+        }
+        result.continuations_[key].selectors << i;
+    }
     return result;
 }
 } // namespace lordly

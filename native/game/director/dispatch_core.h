@@ -13,6 +13,7 @@ typedef struct {
     int resume_cursor; /* D_8022A950, committed only by native control operations. */
     int cursor, nesting, state_scan_mode, handoff, stream_selector, active;
     int mode;
+    int executed; /* Work consumed by the most recent bounded dispatch call. */
     LordlyDirectorWord counter; /* D_8022A990, unsigned wrap preserved. */
     unsigned short controller;
     unsigned char barrier_state; /* Optional tracked object byte +0x840; 2 redirects to label 12345. */

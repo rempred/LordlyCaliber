@@ -7886,5 +7886,32 @@
       "name": "Director resource 01FCF946",
       "decodedSha256": "CBEC8AA98C1ACB3CA4CE4D822C6885DC3E49C2E502279A6DA4166FEBBDFAB43C"
     }
-  }
+  },
+  "continuations": [
+    {
+      "selector": 0,
+      "key": 25758134,
+      "decodedSha256": "80A008F0381A751B2E09EACA46FE349E7543798D75B1C34D76F7BCF2234AFCB1"
+    },
+    {
+      "selector": 1,
+      "key": 25758228,
+      "decodedSha256": "19EF27239AD9C1E299047819EBBFB6A4EEA3D7CA8528CCF54DEE365E0829E157"
+    },
+    {
+      "selector": 2,
+      "key": 25758290,
+      "decodedSha256": "08D25F2F03A4E51BA76097413037F85C1B2BF0BAA5A4E36D063096DB85CA7727"
+    },
+    {
+      "selector": 3,
+      "key": 25758346,
+      "decodedSha256": "6A160D5F1F9D46AC0034FFC74427374301A9D63177C33C31D559C4DBE4BA8BDC"
+    },
+    {
+      "selector": 4,
+      "key": 25758412,
+      "decodedSha256": "1BED19C12B0D58C9E3CCBA59E65F7D0C7EF6107A424987A10A98BCEC9DAEAA1E"
+    }
+  ]
 }
