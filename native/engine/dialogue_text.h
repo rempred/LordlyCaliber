@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/rom.h"
 #include <QHash>
+#include <optional>
 namespace lordly {
 struct DialogueFontMetrics {
     QByteArray normal, alternate;
@@ -43,6 +44,14 @@ struct DialogueTextEnvironment {
     DialogueFontMetrics metrics;
     QHash<int, QByteArray> substitutions;
     QByteArray longNameSuffix;
+    // Literal values above are immutable source objects. These optional bindings
+    // model native pointer identity separately from mutable backing storage.
+    QHash<int, quint64> references;
+    QHash<quint64, QByteArray> storage;
+    std::optional<quint64> suffixReference;
+    QByteArray source(quint64 identity) const;
+    QByteArray substitution(int key) const;
+    QHash<int, QByteArray> resolvedSubstitutions() const;
 };
 void advanceDialoguePosition(QByteArray &state);
 void positionDialogueBounds(QByteArray &window, QByteArray &state);

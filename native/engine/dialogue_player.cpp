@@ -32,13 +32,11 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
         const int a = int(next()) - 48, b = int(next()) - 48, c = int(next()) - 48;
         return quint16(a * 100 + b * 10 + c);
     };
-    auto lookup = [&](int key) -> const QByteArray & {
-        if (key == -1)
-            return environment.longNameSuffix;
-        const auto found = environment.substitutions.constFind(key);
-        if (found == environment.substitutions.constEnd())
-            throw Error(QString("Dialogue substitution byte %1 is unavailable").arg(key));
-        return found.value();
+    auto lookup = [&](int key) { return environment.substitution(key); };
+    auto insertionSource = [&] {
+        const auto &insertion = *nextFrame.insertion;
+        return insertion.sourceIdentity ? environment.source(*insertion.sourceIdentity)
+                                        : insertion.literal;
     };
     auto clearInsertion = [&] {
         nextFrame.insertion.reset();
@@ -49,7 +47,14 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
         if (text.isNull() || !limit)
             clearInsertion();
         else {
-            nextFrame.insertion = DialogueInsertion{key, cursor};
+            std::optional<quint64> identity;
+            if (key == -1)
+                identity = environment.suffixReference;
+            else if (const auto found = environment.references.constFind(key);
+                     found != environment.references.constEnd())
+                identity = found.value();
+            nextFrame.insertion =
+                DialogueInsertion{key, cursor, identity, identity ? QByteArray{} : text};
             put32(state, 0xc, 1);
         }
         put8(state, 0x4c, limit);
@@ -87,12 +92,11 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
     put16(state, 0x10, u16(state, 0x10) + speed);
     while (u16(state, 0x10) > 256) {
         spend();
-        if (nextFrame.insertion &&
-            !read(lookup(nextFrame.insertion->key), nextFrame.insertion->cursor))
+        if (nextFrame.insertion && !read(insertionSource(), nextFrame.insertion->cursor))
             clearInsertion();
         if (nextFrame.insertion) {
             auto &insertion = *nextFrame.insertion;
-            const auto &text = lookup(insertion.key);
+            const auto text = insertionSource();
             const auto c = read(text, insertion.cursor++);
             line(1);
             append(c);
@@ -255,9 +259,10 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
                 }
                 case '!': {
                     const auto key = next();
-                    const auto count = scanDialogueSegment(lookup(key), u16(state, 0x1a),
-                                                           environment.substitutions, budget)
-                                           .count;
+                    const auto count =
+                        scanDialogueSegment(lookup(key), u16(state, 0x1a),
+                                            environment.resolvedSubstitutions(), budget)
+                            .count;
                     constexpr quint8 limits[] = {0, 1, 1, 2, 3};
                     insert(key, count < 5 ? limits[count] : 4);
                     noCost();
@@ -285,7 +290,7 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
                 }
                 case ':':
                     if (scanDialogueSegment(lookup(next()), u16(state, 0x1a),
-                                            environment.substitutions, budget)
+                                            environment.resolvedSubstitutions(), budget)
                             .count >= 6)
                         insert(-1, 99);
                     noCost();
@@ -304,7 +309,7 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
                 case '=': {
                     const auto count =
                         scanDialogueSegment(source.mid(u32(state, 8)), u16(state, 0x1a),
-                                            environment.substitutions, budget)
+                                            environment.resolvedSubstitutions(), budget)
                             .count;
                     const int spacing = std::max((int(u16(state, 0x1a)) - count) * 7 / 2, 0);
                     const auto token =

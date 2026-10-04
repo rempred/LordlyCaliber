@@ -7,6 +7,8 @@ namespace lordly {
 struct DialogueInsertion {
     int key; // Raw substitution byte, or -1 for the long-name suffix.
     quint32 cursor = 0;
+    std::optional<quint64> sourceIdentity;
+    QByteArray literal;
     bool operator==(const DialogueInsertion &) const = default;
 };
 struct DialogueChildRequest {

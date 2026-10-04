@@ -1,5 +1,14 @@
 # Dialogue runtime
 
+Insertion sources now separate binding identity from mutable backing bytes.
+An active insertion retains its selected source when a global name is rebound,
+while later writes to that same storage are visible on the next reveal call.
+Literal sources retain their selected value. Six original-code invocations
+distinguish rebinding from mutation and pass; missing retained storage rejects
+without partial writes. Reveal, full window updates and complete initialization
+regressions also pass (3,508 ms combined). This corrects the earlier key-only
+continuation model before connection to changing roster/name context.
+
 Recursive resource release reconstructs ROM 8388..84D4 at RAM 80077F88. All 384
 complete pool/callback/handle-order comparisons pass (119 ms), including callback
 changes that affect later child discovery. The cascade bit is record byte3 bit8;

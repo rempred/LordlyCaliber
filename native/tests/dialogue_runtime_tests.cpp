@@ -22,6 +22,58 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void insertionStorageAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-source-bindings-mips.cjs"),
+                                 path, work.filePath("bindings.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("bindings.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        DialogueTextFrame frame{QByteArray::fromHex(root["window"].toString().toLatin1()),
+                                QByteArray::fromHex(root["state"].toString().toLatin1())};
+        const auto source = QByteArray::fromHex(root["source"].toString().toLatin1());
+        DialogueTextEnvironment environment;
+        environment.storage[1] = QByteArray("ABC\0", 4);
+        environment.storage[2] = QByteArray("XYZ\0", 4);
+        environment.references[48] = 1;
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 6);
+        for (int update = 0; update < cases.size(); ++update) {
+            if (update == 1)
+                environment.references[48] = 2;
+            if (update == 2)
+                environment.storage[1] = QByteArray("PQR\0", 4);
+            const auto expected = cases[update].toObject();
+            const auto result =
+                revealDialogueText(frame, source, environment, quint16(expected["speed"].toInt()));
+            QCOMPARE(frame.state.toHex(), expected["state"].toString().toLatin1());
+            QCOMPARE(frame.window.toHex(), expected["window"].toString().toLatin1());
+            QCOMPARE(result, expected["result"].toInt());
+            QCOMPARE(frame.sounds.size(), expected["sounds"].toInt());
+            QCOMPARE(frame.insertion.has_value(), !expected["insertion"].isNull());
+            if (frame.insertion) {
+                const auto insertion = expected["insertion"].toObject();
+                QVERIFY(frame.insertion->sourceIdentity.has_value());
+                QCOMPARE(*frame.insertion->sourceIdentity, quint64(insertion["identity"].toInt()));
+                QCOMPARE(frame.insertion->cursor, quint32(insertion["cursor"].toInt()));
+            }
+            if (update == 0) {
+                const auto before = frame.state;
+                auto missing = environment;
+                missing.storage.remove(1);
+                QVERIFY_THROWS_EXCEPTION(Error, revealDialogueText(frame, source, missing, 256));
+                QCOMPARE(frame.state, before);
+            }
+        }
+    }
     void windowUpdatesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

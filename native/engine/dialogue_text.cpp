@@ -7,6 +7,37 @@
 #include <functional>
 #include <optional>
 namespace lordly {
+QByteArray DialogueTextEnvironment::source(quint64 identity) const {
+    if (!identity)
+        return {};
+    const auto found = storage.constFind(identity);
+    if (found == storage.constEnd())
+        throw Error("Dialogue source storage is unavailable");
+    return found.value();
+}
+QByteArray DialogueTextEnvironment::substitution(int key) const {
+    if (key == -1)
+        return suffixReference ? source(*suffixReference) : longNameSuffix;
+    const auto reference = references.constFind(key);
+    if (reference != references.constEnd())
+        return source(reference.value());
+    const auto found = substitutions.constFind(key);
+    if (found == substitutions.constEnd())
+        throw Error(QString("Dialogue substitution byte %1 is unavailable").arg(key));
+    return found.value();
+}
+QHash<int, QByteArray> DialogueTextEnvironment::resolvedSubstitutions() const {
+    auto result = substitutions;
+    for (auto it = references.constBegin(); it != references.constEnd(); ++it) {
+        if (!it.value())
+            result[it.key()] = QByteArray{};
+        else if (const auto found = storage.constFind(it.value()); found != storage.constEnd())
+            result[it.key()] = found.value();
+        else
+            result.remove(it.key()); // Unreached unavailable bindings need not block measurement.
+    }
+    return result;
+}
 void advanceDialoguePosition(QByteArray &state) {
     if (state.size() != 1144)
         throw Error("Dialogue movement requires a complete payload");
@@ -676,14 +707,14 @@ InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 re
         auto columns = u16(state, 0x1a);
         if (style != 1) {
             if (!columns) {
-                width = measureDialogueWidth(source, columns, environment.substitutions,
-                                             environment.longNameSuffix, environment.metrics);
+                width = measureDialogueWidth(source, columns, environment.resolvedSubstitutions(),
+                                             environment.substitution(-1), environment.metrics);
                 columns = width / 7U + 1;
             }
             // The native line query runs before columns are clamped to 36.
             if (style != 0 && !u16(state, 0x1e))
-                lines = countDialogueLines(source, columns, environment.substitutions,
-                                           environment.longNameSuffix);
+                lines = countDialogueLines(source, columns, environment.resolvedSubstitutions(),
+                                           environment.substitution(-1));
         }
         return Measurements{width, lines};
     });
