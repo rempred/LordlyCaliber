@@ -9,6 +9,7 @@
 #include "app/record_model.h"
 #include "app/scenario_editor.h"
 #include "app/scene_command_editor.h"
+#include "app/scene_event_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
@@ -220,6 +221,76 @@ class UiTests : public QObject {
         sepia->setChecked(false);
         next->click();
         QCOMPARE(position->value(), 1);
+    }
+    void sceneEventBindingControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadSceneEvents();
+        auto scenes = *project.scenePrograms();
+        const auto added = scenes.createScene("A new journey", scenes.scenes().first(), false);
+        scenes.renameScene(added, "Journey renamed");
+        project.setScenePrograms(scenes.json());
+        QUndoStack undo;
+        int changed = 0;
+        SceneEventEditor editor(&project, &undo, [&] { ++changed; });
+        editor.resize(1100, 750);
+        editor.show();
+        auto table = editor.findChild<QTableWidget *>("sceneEventSites");
+        auto target = editor.findChild<QComboBox *>("sceneEventTarget");
+        auto assign = editor.findChild<QPushButton *>("sceneEventAssign");
+        auto restore = editor.findChild<QPushButton *>("sceneEventRestore");
+        auto search = editor.findChild<QLineEdit *>("sceneEventSearch");
+        QVERIFY(table && target && assign && restore && search);
+        QCOMPARE(table->rowCount(), 1998);
+        const QString site = "event-director:1:b0032";
+        int row = -1;
+        for (int i = 0; i < table->rowCount(); ++i)
+            if (table->item(i, 0)->text() == site)
+                row = i;
+        QVERIFY(row >= 0);
+        table->setCurrentCell(row, 0);
+        QVERIFY(editor.findChild<QLabel *>("sceneEventStatus")->text().contains("Shared"));
+        const auto selector = scenes.resource(added).selectors.first();
+        const auto index = target->findData(selector);
+        QVERIFY(index >= 0);
+        QVERIFY(target->itemText(index).contains("Journey renamed"));
+        target->setCurrentIndex(index);
+        assign->click();
+        QCOMPARE(changed, 1);
+        QCOMPARE(project.sceneEvents()->target(site), selector);
+        QVERIFY(table->item(row, 2)->text().contains("Journey renamed"));
+        QVERIFY(restore->isEnabled());
+        undo.undo();
+        QCOMPARE(project.sceneEvents()->target(site), 1);
+        undo.redo();
+        QCOMPARE(project.sceneEvents()->target(site), selector);
+        auto removed = *project.scenePrograms();
+        removed.removeNewScene(added);
+        QVERIFY_THROWS_EXCEPTION(Error, project.setScenePrograms(removed.json()));
+        const auto historyCount = undo.count();
+        QVERIFY_THROWS_EXCEPTION(
+            Error, pushSceneProgramChange(&project, &undo, "Remove bound scene", removed));
+        QCOMPARE(undo.count(), historyCount);
+        target->setEditText("not a scene");
+        assign->click();
+        QCOMPARE(project.sceneEvents()->target(site), selector);
+        QCOMPARE(changed, 1);
+        search->setText(site);
+        QVERIFY(!table->isRowHidden(row));
+        int visible = 0;
+        for (int i = 0; i < table->rowCount(); ++i)
+            visible += !table->isRowHidden(i);
+        QCOMPARE(visible, 1);
+        restore->click();
+        QCOMPARE(project.sceneEvents()->target(site), 1);
+        QVERIFY(!restore->isEnabled());
+        undo.undo();
+        QCOMPARE(project.sceneEvents()->target(site), selector);
+        QVERIFY(!table->isRowHidden(row));
+        QTest::qWait(30);
+        QVERIFY(editor.grab().save("native-scene-events.png"));
     }
     void authoredSceneCreationControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

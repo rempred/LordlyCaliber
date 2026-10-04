@@ -270,6 +270,8 @@ int Project::changedRecords() const {
         count += dialogues_->changedEntries();
     if (scenePrograms_)
         count += scenePrograms_->changedPrograms();
+    if (sceneEvents_)
+        count += sceneEvents_->changedSites();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -568,6 +570,10 @@ QJsonObject Project::manifest() const {
         result["scenePrograms"] = scenePrograms_->json();
     else
         result.remove("scenePrograms");
+    if (sceneEvents_ && sceneEvents_->modified())
+        result["sceneEvents"] = sceneEvents_->json();
+    else
+        result.remove("sceneEvents");
     return result;
 }
 void Project::loadScenePrograms() {
@@ -576,7 +582,20 @@ void Project::loadScenePrograms() {
 }
 void Project::setScenePrograms(const QJsonObject &value) {
     loadScenePrograms();
-    scenePrograms_->apply(value);
+    auto next = *scenePrograms_;
+    next.apply(value);
+    if (sceneEvents_)
+        sceneEvents_->validate(next);
+    scenePrograms_ = std::move(next);
+}
+void Project::loadSceneEvents() {
+    loadScenePrograms();
+    if (!sceneEvents_)
+        sceneEvents_ = SceneEvents::load(rom_);
+}
+void Project::setSceneEvents(const QJsonObject &value) {
+    loadSceneEvents();
+    sceneEvents_->apply(value, *scenePrograms_);
 }
 void Project::loadDialogues() {
     if (!dialogues_)
@@ -612,6 +631,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadDialogues();
     if (scenePrograms_)
         candidate.loadScenePrograms();
+    if (sceneEvents_)
+        candidate.loadSceneEvents();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -735,6 +756,11 @@ void Project::applyManifest(const QJsonObject &object) {
         if (!object["scenePrograms"].isObject())
             throw Error("Invalid saved scene programs");
         candidate.setScenePrograms(object["scenePrograms"].toObject());
+    }
+    if (object.contains("sceneEvents")) {
+        if (!object["sceneEvents"].isObject())
+            throw Error("Invalid saved scene event bindings");
+        candidate.setSceneEvents(object["sceneEvents"].toObject());
     }
     if (object.contains("dialogues")) {
         if (!object["dialogues"].isObject())

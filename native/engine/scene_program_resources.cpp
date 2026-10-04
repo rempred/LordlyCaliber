@@ -1,5 +1,6 @@
 #include "engine/scene_program_resources.h"
 #include "engine/promotion.h"
+#include "engine/scene_events.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -40,7 +41,7 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
     if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
-        (u32(header, 8) != 1 && u32(header, 8) != 2) ||
+        (u32(header, 8) < 1 || u32(header, 8) > 3) ||
         header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
             QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
         u32(header, 92) != crc32(header.first(92)))
@@ -83,19 +84,25 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
         previous = owner;
     }
     quint32 metadataEnd = referenceCursor;
-    if (u32(header, 8) == 2) {
+    if (u32(header, 8) >= 2) {
         const auto offset = u32(header, 28), size = u32(header, 32);
         if (offset != referenceCursor || !size || size > 1024 * 1024 ||
             quint64(offset) + size > quint64(data.size()))
             throw Error("Authored scene metadata exceeds its allocation");
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(data.mid(offset, size), &error);
-        if (error.error != QJsonParseError::NoError || !document.isArray())
+        if (error.error != QJsonParseError::NoError ||
+            (u32(header, 8) == 2 ? !document.isArray() : !document.isObject()))
             throw Error("Authored scene metadata is invalid");
         QSet<QString> identities;
         QSet<int> selectors;
         const auto tableBytes = u32(rom.bytes(), 0x1f3ca84);
-        for (const auto value : document.array()) {
+        const auto manifest = document.object();
+        if (u32(header, 8) == 3 && (manifest.size() != 2 || !manifest["authored"].isArray() ||
+                                    !manifest["eventBindings"].isObject()))
+            throw Error("Invalid scene allocation metadata");
+        for (const auto value :
+             u32(header, 8) == 2 ? document.array() : manifest["authored"].toArray()) {
             const auto entry = value.toObject();
             const auto id = entry["id"].toString(), name = entry["name"].toString();
             const auto selector = entry["selector"].toInt(-1);
@@ -119,6 +126,29 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
                 throw Error("Authored scene lacks its resource class");
             result.authored << AuthoredSceneBuild{id, name, selector, decoded};
         }
+        const auto bindings = manifest["eventBindings"].toObject();
+        for (auto it = bindings.cbegin(); it != bindings.cend(); ++it) {
+            const auto &site = SceneEvents::site(it.key());
+            const auto target = it.value().toInt(-1);
+            if (target < 0 || target > 65535 || it.value().toDouble() != target ||
+                target == site.selector || quint32(target) >= tableBytes / 4 ||
+                !u32(rom.bytes(), 0x1f3ca88 + target * 4))
+                throw Error("Invalid event target in scene allocation");
+            result.eventBindings[it.key()] = target;
+            result.eventRows.insert(site.row);
+        }
+        for (const auto eventRow : result.eventRows) {
+            const auto owner = SceneEvents::directory + 4 + quint32(eventRow) * 4;
+            if (!result.members.contains(owner) ||
+                result.members[owner].references != QVector<quint32>{owner})
+                throw Error("Event row does not exclusively own its resource link");
+            const auto &member = result.members[owner];
+            const auto decoded = decodeLzss(data.mid(member.offset + 8, member.size - 8),
+                                            u32(data, member.offset + 4));
+            if (decoded != SceneEvents::bindRow(SceneEvents::retailRow(rom, eventRow), eventRow,
+                                                result.eventBindings))
+                throw Error("Event bindings differ from the rebuilt program");
+        }
         metadataEnd += size;
     }
     quint32 cursor = align(metadataEnd);
@@ -139,9 +169,10 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
 }
 QByteArray
 SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &compiled,
-                               const std::optional<QVector<AuthoredSceneBuild>> &authored) {
+                               const std::optional<QVector<AuthoredSceneBuild>> &authored,
+                               const SceneEventBuild *events) {
     const auto prior = placement(rom);
-    if (compiled.isEmpty() && (!authored || (!prior && authored->isEmpty())))
+    if (compiled.isEmpty() && (!authored || (!prior && authored->isEmpty())) && !events)
         return rom.bytes();
     struct Member {
         QByteArray bytes;
@@ -236,7 +267,73 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         members[owner] = {envelope, {owner}};
         manifest << QJsonObject{{"id", scene.id}, {"name", scene.name}, {"selector", selector}};
     }
-    const auto metadata = QJsonDocument(manifest).toJson(QJsonDocument::Compact);
+    QMap<quint32, quint32> restored;
+    const auto eventBindings = events  ? events->bindings
+                               : prior ? prior->eventBindings
+                                       : QMap<QString, int>{};
+    QSet<int> eventRows;
+    QJsonObject bindingMetadata;
+    for (auto it = eventBindings.cbegin(); it != eventBindings.cend(); ++it) {
+        const auto &site = SceneEvents::site(it.key());
+        if (it.value() < 0 || it.value() >= sources.selectors().size() ||
+            it.value() == site.selector ||
+            (!sources.selectors()[it.value()] && !selectors.contains(it.value())))
+            throw Error("Event binding targets an absent scene selector");
+        eventRows.insert(site.row);
+        bindingMetadata[it.key()] = it.value();
+    }
+    if (events) {
+        QSet<int> supplied;
+        for (auto it = events->rows.cbegin(); it != events->rows.cend(); ++it)
+            supplied.insert(it.key());
+        if (supplied != eventRows)
+            throw Error("Event binding plan has missing or unowned rows");
+        // Restore any recognized old binding, including a browser-owned row. Its allocation remains
+        // untouched.
+        const auto oldEvents = SceneEvents::load(rom);
+        for (auto it = oldEvents.bindings().cbegin(); it != oldEvents.bindings().cend(); ++it) {
+            const auto row = SceneEvents::site(it.key()).row;
+            if (!eventRows.contains(row)) {
+                const auto owner = SceneEvents::directory + 4 + quint32(row) * 4;
+                members.remove(owner);
+                restored[owner] = SceneEvents::retailKey(row);
+            }
+        }
+        for (auto it = events->rows.cbegin(); it != events->rows.cend(); ++it) {
+            const auto original = SceneEvents::retailRow(rom, it.key());
+            if (it.value() != SceneEvents::bindRow(original, it.key(), eventBindings))
+                throw Error("Compiled event program differs from its binding plan");
+            const auto owner = SceneEvents::directory + 4 + quint32(it.key()) * 4;
+            const auto key = u32(rom.bytes(), owner), at = base + key, size = u32(rom.bytes(), at);
+            qsizetype consumed = 0;
+            decodeLzss(rom.bytes().mid(at + 8, size - 4), u32(rom.bytes(), at + 4), &consumed);
+            const auto trailing = rom.bytes().mid(at + 8 + consumed, size - 4 - consumed);
+            const auto packed = encodeLzss(it.value());
+            QByteArray envelope(8, 0);
+            put32(envelope, 0, quint32(4 + packed.size() + trailing.size()));
+            put32(envelope, 4, quint32(it.value().size()));
+            envelope += packed;
+            envelope += trailing;
+            members[owner] = {envelope, {owner}};
+        }
+    }
+    if (members.isEmpty()) {
+        auto image = rom.bytes();
+        for (auto it = restored.cbegin(); it != restored.cend(); ++it)
+            put32(image, it.key(), it.value());
+        if (prior) {
+            if (quint64(prior->offset) + prior->allocation == quint64(image.size()))
+                image.resize(prior->offset);
+            else
+                image.replace(prior->offset, prior->allocation,
+                              QByteArray(prior->allocation, char(-1)));
+        }
+        image.replace(descriptorOffset, descriptorSize, QByteArray(descriptorSize, char(-1)));
+        return image;
+    }
+    const auto metadata =
+        QJsonDocument(QJsonObject{{"authored", manifest}, {"eventBindings", bindingMetadata}})
+            .toJson(QJsonDocument::Compact);
     quint32 refsSize = 0;
     for (const auto &member : members)
         refsSize += quint32(member.references.size() * 4);
@@ -274,6 +371,8 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     if (quint64(image.size()) < quint64(offset) + allocation)
         image += QByteArray(offset + allocation - image.size(), char(-1));
     image.replace(offset, allocation, payload);
+    for (auto it = restored.cbegin(); it != restored.cend(); ++it)
+        put32(image, it.key(), it.value());
     row = 0;
     for (const auto &member : members) {
         for (const auto word : member.references)
@@ -282,7 +381,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     }
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, 2);
+    put32(header, 8, 3);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));

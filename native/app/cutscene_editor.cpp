@@ -2,6 +2,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
+#include "app/scene_event_editor.h"
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -226,6 +227,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 dialogue->selectEntry(quint16(command.operands[1]), quint16(command.operands[2]));
                 pages->setCurrentWidget(dialogue);
             });
+    if (project_)
+        pages->addTab(new SceneEventEditor(project_, undo_, changed), "Event launches");
     detailLayout->addWidget(pages, 1);
     split->addWidget(details);
     split->setSizes({310, 1000});

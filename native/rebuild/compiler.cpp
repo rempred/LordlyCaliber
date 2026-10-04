@@ -737,7 +737,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(plan.treasures.size())
                              .arg(plan.sites.size());
     }
-    if (p.scenePrograms() && p.scenePrograms()->modified()) {
+    if ((p.scenePrograms() && p.scenePrograms()->modified()) ||
+        (p.sceneEvents() && p.sceneEvents()->modified())) {
         p.scenePrograms()->validateReferences(Rom::fromBytes(result.image),
                                               p.dialogues() ? &*p.dialogues() : nullptr);
         auto plan = p.scenePrograms()->plan();
@@ -747,7 +748,16 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         auto authored = p.scenePrograms()->authoredPlan();
         for (auto &scene : authored)
             scene.program = compiler.compileData(scene.program, directory, "scene_" + scene.id);
-        result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored);
+        const auto events = p.sceneEvents() ? *p.sceneEvents() : SceneEvents::load(p.rom());
+        events.validate(*p.scenePrograms());
+        auto eventPlan = events.plan();
+        for (auto it = eventPlan.rows.begin(); it != eventPlan.rows.end(); ++it)
+            it.value() =
+                compiler.compileData(it.value(), directory, QString("event_%1").arg(it.key()));
+        result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored,
+                                                      &eventPlan);
+        result.report
+            << QString("Compiled and rebuilt %1 event launch rows").arg(eventPlan.rows.size());
         result.report
             << QString("Compiled and rebuilt %1 scene programs through original resource links")
                    .arg(plan.size());
