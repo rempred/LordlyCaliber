@@ -19,7 +19,28 @@ checks original readers and rejects unrecognized archive redirects. Original
 MIPS dispatcher, framing and LH5 code load all 65 selected resources plus the
 grown enemy library in guarded 4 MiB test memory. Allocation and lower transfer
 services are simulated; full-game loading and peak heap use remain unverified.
-The editable scenario model and desktop workflow are the next integration step.
+The scenario model stores a local 35-byte squad record for each deployment. Its
+project representation omits allocated EDAT IDs; export deduplicates or appends
+records while retaining the complete loaded enemy library. Separate ESET members
+allow independent edits to scenario keys that originally shared a resource.
+The original automatic-alliance cases become explicit deployment flags when
+records move. The desktop page edits cohorts, formation, equipment, base levels,
+placement, initial orders, supplies and drops, and supports adding/removing authored
+squads with undo. Formations and carrying capacity are checked when their inputs
+change, including class-size and capacity edits in the Classes page. Unrelated
+original values remain intact. Folder/archive persistence and compiled export
+reopening cover added classes and relocated templates. Applying untouched UI
+controls to every loaded deployment preserves project data. The route page also
+edits direct orders, waypoints, dormant gates, condition predicates and squad
+groups. Sequential node/condition IDs and known incoming references are checked;
+renumbering rejects ambiguous overlaps and extended forms. New rows cannot
+silently resolve an existing dangling reference. Original condition IDs can be
+consumed by mission scripts, so their predicates can change but only added
+conditions can be deleted. Unknown payload bytes survive untouched controls;
+unclassified extended gate bytes remain visible and preserved. Route tests cover
+reference rejection/remaps, limits, persistence and resource rebuild/reopening.
+Full-game allied behavior, browser scenario import and map/site/treasure work
+remain unfinished.
 
 The class linker can reserve a maintained resident extension after expanded
 save code, or at the beginning of reclaimed class storage when saves are not

@@ -476,6 +476,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
+    for (const auto &r : p.records(Table::Classes))
+        if (r.original.size() == r.bytes.size() &&
+            (r.original[4] != r.bytes[4] || r.original[59] != r.bytes[59])) {
+            p.loadScenarios();
+            break;
+        }
+    if (p.scenarios())
+        p.scenarios()->validateForExport(p.classData());
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
     const auto priorShopPlacement = ShopPlacement::read(p.rom());
     const auto priorCustom = CustomPlacement::read(p.rom());
@@ -693,9 +701,29 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Compiled accepted class-family C at Army RAM 0x801CF2F0; verified its "
                          "complete 48-byte owner";
     }
+    if (p.scenarios() && p.scenarios()->modified()) {
+        auto plan = p.scenarios()->plan(p.classData());
+        const auto resources = ScenarioResources::load(Rom::fromBytes(result.image));
+        // The user-authored library and each scenario compile during this export.
+        if (plan.enemies != resources.enemyData())
+            plan.enemies = compiler.compileData(plan.enemies, directory, "scenario_squads");
+        for (auto it = plan.esets.begin(); it != plan.esets.end(); ++it)
+            it.value() =
+                compiler.compileData(it.value(), directory, QString("scenario_%1").arg(it.key()));
+        result.image = resources.rebuild(Rom::fromBytes(result.image), plan.enemies, plan.esets);
+        result.report << QString("Rebuilt %1 scenarios and %2 squad templates through original "
+                                 "resource links; shared scenarios retain independent edits")
+                             .arg(plan.esets.size())
+                             .arg(plan.enemies.size() / 35);
+    }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.scenarios()) {
+        reopened.loadScenarios();
+        if (reopened.scenarios()->json() != p.scenarios()->json())
+            throw Error("Exported scenarios differ from the project");
+    }
     if (p.encounters()) {
         reopened.loadEncounters();
         if (reopened.encounters()->json() != p.encounters()->json())

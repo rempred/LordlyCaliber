@@ -260,6 +260,8 @@ int Project::changedRecords() const {
         ++count;
     if (encounters_)
         count += encounters_->changedRows();
+    if (scenarios_)
+        count += scenarios_->changedScenarios();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -403,6 +405,14 @@ void Project::setEncounters(const QJsonObject &value) {
     loadEncounters();
     encounters_->apply(value, int(records(Table::Classes).size()));
 }
+void Project::loadScenarios() {
+    if (!scenarios_)
+        scenarios_ = Scenarios::load(rom_);
+}
+void Project::setScenarios(const QJsonObject &value) {
+    loadScenarios();
+    scenarios_->apply(value, classData());
+}
 void Project::setConsumableEffects(const QJsonObject &value) {
     loadConsumableEffects();
     consumableEffects_->apply(value);
@@ -523,6 +533,10 @@ QJsonObject Project::manifest() const {
         result["encounters"] = encounters_->json();
     else
         result.remove("encounters");
+    if (scenarios_ && scenarios_->modified())
+        result["scenarios"] = scenarios_->json();
+    else
+        result.remove("scenarios");
     return result;
 }
 void Project::applyManifest(const QJsonObject &object) {
@@ -543,6 +557,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadConsumableEffects();
     if (encounters_)
         candidate.loadEncounters();
+    if (scenarios_)
+        candidate.loadScenarios();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -650,6 +666,11 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.importLegacyScenarioRates(candidate.legacy_);
     if (!object["encounters"].toObject().contains("customSquads"))
         candidate.importLegacyCustomSquads(candidate.legacy_);
+    if (object.contains("scenarios")) {
+        if (!object["scenarios"].isObject())
+            throw Error("Invalid saved scenarios");
+        candidate.setScenarios(object["scenarios"].toObject());
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {

@@ -54,6 +54,265 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void scenarioRoutes() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for route authoring");
+        try {
+            const auto rom = Rom::open(path);
+            const auto classes = ClassData::load(rom);
+            auto model = Scenarios::load(rom);
+            const auto original = model.json();
+            QCOMPARE(model.addCondition(10, 9, classes), 0);
+            QCOMPARE(model.addNode(10, 1, classes), 1);
+            QCOMPARE(model.addNode(10, 0, classes), 2);
+            auto node = model.scenario(10).layout.nodes[1];
+            node[4] = 120;
+            put8(node, 5, 160);
+            node[10] = 1;
+            node[17] = 6;
+            model.setNode(10, 1, node, classes);
+            auto deployment = model.scenario(10).layout.deployments[0];
+            deployment[6] = 5;
+            model.setDeployment(10, 0, deployment, classes);
+            const auto authored = model.json();
+            QVERIFY_THROWS_EXCEPTION(Error, model.removeNode(10, 1, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, model.removeNode(10, 2, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, model.removeCondition(10, 0, classes));
+            QCOMPARE(model.json(), authored);
+            auto invalid = node;
+            invalid[17] = 19;
+            QVERIFY_THROWS_EXCEPTION(Error, model.setNode(10, 1, invalid, classes));
+            invalid = node;
+            invalid[10] = 16;
+            QVERIFY_THROWS_EXCEPTION(Error, model.setNode(10, 1, invalid, classes));
+            auto condition = model.scenario(10).layout.conditions[0];
+            condition[6] = 31;
+            QVERIFY_THROWS_EXCEPTION(Error, model.setCondition(10, 0, condition, classes));
+            QCOMPARE(model.json(), authored);
+            node[10] = 0;
+            node[17] = 1;
+            model.setNode(10, 1, node, classes);
+            model.removeCondition(10, 0, classes);
+            QVERIFY(!model.scenario(10).layout.conditionsPresent);
+            model.removeNode(10, 2, classes);
+            deployment[6] = 1;
+            model.setDeployment(10, 0, deployment, classes);
+            model.removeNode(10, 1, classes);
+            model.restore(10);
+            QCOMPARE(model.json(), original);
+            // Renumbering an unreferenced middle node updates later initial orders.
+            model.addNode(10, 0, classes);
+            model.addNode(10, 0, classes);
+            deployment = model.scenario(10).layout.deployments[0];
+            deployment[6] = 6;
+            model.setDeployment(10, 0, deployment, classes);
+            model.removeNode(10, 1, classes);
+            QCOMPARE(u8(model.scenario(10).layout.nodes[1], 0), 5);
+            QCOMPARE(u8(model.scenario(10).layout.deployments[0], 6), 5);
+            // A deleted added condition renumbers references to surviving added conditions.
+            model.addCondition(10, 9, classes);
+            model.addCondition(10, 9, classes);
+            node = model.scenario(10).layout.nodes[1];
+            node[10] = 2;
+            model.setNode(10, 1, node, classes);
+            model.removeCondition(10, 0, classes);
+            QCOMPARE(u8(model.scenario(10).layout.nodes[1], 10), 1);
+            model.setRouteGroup(10, 1, 7, 5, classes);
+            model.setRouteGroup(10, 2, 7, 5, classes);
+            QCOMPARE(model.scenario(10).layout.deployments[0].right(2),
+                     QByteArray::fromHex("0705"));
+            const auto valid = model.json();
+            QVERIFY_THROWS_EXCEPTION(Error, model.setRouteGroup(10, 0, 1, 5, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setRouteGroup(10, 1, 1, 255, classes));
+            QCOMPARE(model.json(), valid);
+            auto restored = Scenarios::load(rom);
+            restored.apply(valid, classes);
+            QCOMPARE(restored.json(), valid);
+            const auto plan = model.plan(classes);
+            const auto built =
+                Rom::fromBytes(ScenarioResources::load(rom).rebuild(rom, plan.enemies, plan.esets));
+            QCOMPARE(Scenarios::load(built).json(), valid);
+            model.restore(10);
+            while (model.scenario(10).layout.nodes.size() < 16)
+                model.addNode(10, 0, classes);
+            while (model.scenario(10).layout.conditions.size() < 16)
+                model.addCondition(10, 9, classes);
+            const auto full = model.json();
+            QVERIFY_THROWS_EXCEPTION(Error, model.addNode(10, 0, classes));
+            QVERIFY_THROWS_EXCEPTION(Error, model.addCondition(10, 9, classes));
+            QCOMPARE(model.json(), full);
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
+    void scenarioAuthoring() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for scenario authoring");
+        try {
+            const auto rom = Rom::open(path);
+            const auto resources = ScenarioResources::load(rom);
+            const auto classes = ClassData::load(rom);
+            auto model = Scenarios::load(rom);
+            QCOMPARE(model.entries().size(), 63);
+            const auto original = model.json();
+            model.apply(original, classes);
+            QCOMPARE(model.json(), original);
+            QVERIFY(!model.modified());
+            QVERIFY(model.plan(classes).esets.isEmpty());
+            QCOMPARE(model.plan(classes).enemies, resources.enemyData());
+            auto changedClasses = classes;
+            auto asset = classes.entries()[u8(model.scenario(10).squads[0], 0)];
+            asset.record[59] = 11;
+            changedClasses.set(u8(model.scenario(10).squads[0], 0), asset);
+            QVERIFY_THROWS_EXCEPTION(Error, model.validateForExport(changedClasses));
+            changedClasses = classes;
+            asset = classes.entries()[u8(model.scenario(10).squads[0], 0)];
+            asset.record[4] = 3;
+            changedClasses.set(u8(model.scenario(10).squads[0], 0), asset);
+            QVERIFY_THROWS_EXCEPTION(Error, model.validateForExport(changedClasses));
+            changedClasses = classes;
+            asset = classes.entries()[5];
+            asset.record[10] ^= char(1);
+            changedClasses.set(5, asset);
+            model.validateForExport(changedClasses);
+            // Keys 10 and 22 select the same original ESET; local edits split them.
+            QCOMPARE(model.scenario(10).json(), model.scenario(22).json());
+            auto record = model.scenario(10).squads[0];
+            put16(record, 2, 277);
+            model.setSquad(10, 0, record, classes);
+            QCOMPARE(model.scenario(22).json(), model.original(22).json());
+            QCOMPARE(model.changedScenarios(), 1);
+            auto plan = model.plan(classes);
+            QCOMPARE(plan.enemies.first(resources.enemyData().size()), resources.enemyData());
+            QCOMPARE(plan.enemies.size(), resources.enemyData().size() + 35);
+            QCOMPARE(Eset::decode(plan.esets[10]).deployments[0].mid(1, 2),
+                     QByteArray::fromHex("022d")); // Appended one-based ID 557.
+            const auto before = model.json();
+            auto invalid = record;
+            put16(invalid, 2, 278);
+            QVERIFY_THROWS_EXCEPTION(Error, model.setSquad(10, 0, invalid, classes));
+            QCOMPARE(model.json(), before);
+            QVERIFY_THROWS_EXCEPTION(Error, model.setBaseLevel(10, 0, classes));
+            QCOMPARE(model.json(), before);
+            invalid = record;
+            invalid[8] = char(127);
+            invalid[13] = invalid[6];
+            QVERIFY_THROWS_EXCEPTION(Error, model.setSquad(10, 0, invalid, classes));
+            QCOMPARE(model.json(), before);
+            int ambiguous = -1;
+            for (int i = 0; i < model.scenario(25).squads.size(); ++i)
+                if ((u8(model.scenario(25).layout.deployments[i], 0) & 127) == 40)
+                    ambiguous = i;
+            QVERIFY(ambiguous >= 0);
+            invalid = model.scenario(25).squads[ambiguous];
+            invalid[8] ^= char(1);
+            QVERIFY_THROWS_EXCEPTION(Error, model.setSquad(25, ambiguous, invalid, classes));
+            QCOMPARE(model.json(), before);
+            // A simple authored squad gives add/remove and supply checks an explicit formation.
+            record = QByteArray(35, 0);
+            record[0] = 5;
+            record[6] = 9;
+            auto deployment = model.scenario(10).layout.deployments[0];
+            deployment.replace(13, 3, QByteArray(3, 0));
+            model.setDeployment(10, 0, deployment, classes);
+            model.setSquad(10, 0, record, classes);
+            const auto beforeAdd = model.json();
+            const int row = model.addSquad(10, 0, classes);
+            QCOMPARE(model.scenario(10).layout.deployments[row - 1].right(2), QByteArray(2, 0));
+            QCOMPARE(model.scenario(10).squads[row], record);
+            model.removeSquad(10, row, classes);
+            QCOMPARE(model.json(), beforeAdd);
+            QVERIFY_THROWS_EXCEPTION(Error, model.removeSquad(10, 0, classes));
+            deployment = model.scenario(10).layout.deployments[0];
+            deployment[13] = 3;
+            deployment[14] = 3;
+            deployment[15] = 2;
+            QVERIFY_THROWS_EXCEPTION(Error, model.setDeployment(10, 0, deployment, classes));
+            QCOMPARE(model.json(), beforeAdd);
+            auto saved = Scenarios::load(rom);
+            saved.apply(model.json(), classes);
+            QCOMPARE(saved.json(), model.json());
+            model.restore(10);
+            QCOMPARE(model.json(), original);
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
+    void scenarioProjectExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and authenticated compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenarios();
+            auto unsafe = project;
+            const int leader = u8(project.scenarios()->scenario(10).squads[0], 0);
+            auto unsafeClass = unsafe.record(Table::Classes, leader).bytes;
+            unsafeClass[59] = 11;
+            unsafe.replaceBytes(Table::Classes, leader, unsafeClass);
+            QTemporaryDir rejectedWork;
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(unsafe, tools, rejectedWork.path()));
+            QCOMPARE(project.scenarios()->json(), unsafe.scenarios()->json());
+            QCOMPARE(project.appendClass(5, "Scenario class"), 165);
+            auto model = *project.scenarios();
+            auto deploymentInput = model.scenario(10).layout.deployments[0];
+            deploymentInput.replace(13, 3, QByteArray(3, 0));
+            model.setDeployment(10, 0, deploymentInput, project.classData());
+            QByteArray record(35, 0);
+            put8(record, 0, 165);
+            record[6] = 9;
+            put16(record, 2, 277);
+            model.setSquad(10, 0, record, project.classData());
+            model.setBaseLevel(22, 12, project.classData());
+            // Editing an automatically allied row must retain its effective flag after remap.
+            int ally = -1;
+            for (int i = 0; i < model.scenario(4).squads.size(); ++i)
+                if (u8(model.scenario(4).layout.deployments[i], 0) & 128)
+                    ally = i;
+            QVERIFY(ally >= 0);
+            auto allyRecord = model.scenario(4).squads[ally];
+            put16(allyRecord, 2, 277);
+            model.setSquad(4, ally, allyRecord, project.classData());
+            project.setScenarios(model.json());
+            QTemporaryDir folder, work;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("scenarios.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("scenarios.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.scenarios()->json(), model.json());
+            }
+            const auto result = rebuild(project, tools, work.path());
+            const auto built = Rom::fromBytes(result.image);
+            const auto resources = ScenarioResources::load(built);
+            QCOMPARE(resources.enemyData().first(556 * 35),
+                     ScenarioResources::load(rom).enemyData());
+            const auto deployment = Eset::decode(resources.scenario(built, 4)).deployments[ally];
+            QVERIFY(u8(deployment, 0) & 128);
+            QVERIFY(u16(deployment, 1) > 556);
+            QVERIFY(resources.selector(10) != resources.selector(22));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-scenario-project-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios();
+            QCOMPARE(reopened.scenarios()->json(), model.json());
+            QCOMPARE(reopened.records(Table::Classes).size(), 166);
+            const auto repeated = rebuild(reopened, tools, work.path());
+            QCOMPARE(repeated.image, result.image);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Scenario project export:" << candidate;
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void scenarioResources() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
