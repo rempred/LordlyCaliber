@@ -12,6 +12,7 @@
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -28,6 +29,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -35,6 +37,7 @@
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QtTest>
 using namespace lordly;
 class UiTests : public QObject {
@@ -215,6 +218,118 @@ class UiTests : public QObject {
         sepia->setChecked(false);
         next->click();
         QCOMPARE(position->value(), 1);
+    }
+    void dialogueEditingUndoAndNewEntry() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        int notifications = 0;
+        DialogueInspector editor(&project, &undo, [&] { ++notifications; });
+        editor.resize(1200, 850);
+        editor.show();
+        auto source = editor.findChild<QPlainTextEdit *>("dialogueSource");
+        auto entries = editor.findChild<QListWidget *>("dialogueEntries");
+        auto archives = editor.findChild<QComboBox *>("dialogueArchives");
+        auto add = editor.findChild<QPushButton *>("dialogueAdd");
+        auto restore = editor.findChild<QPushButton *>("dialogueRestore");
+        auto discard = editor.findChild<QPushButton *>("dialogueDiscard");
+        auto preview = editor.findChild<DialoguePreview *>();
+        QVERIFY(source && entries && archives && add && restore && discard && preview);
+        QVERIFY(!source->isReadOnly());
+        const auto original = project.dialogues()->entry(Dialogues::Table::Primary, 0, 0);
+        const QByteArray text = "@-@x@l3@r@S0@A@n@n@=Edited dialogue@s@c";
+        source->setPlainText(QString::fromLatin1(text));
+        QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 0, 0), text);
+        QVERIFY(notifications > 0);
+        undo.undo();
+        QCOMPARE(source->toPlainText().toLatin1(), original);
+        undo.redo();
+        QCOMPARE(source->toPlainText().toLatin1(), text);
+        source->setPlainText(QString::fromLatin1(text) + QString::fromUtf8("\xe2\x98\x83"));
+        QVERIFY(editor.property("invalidEdits").toBool());
+        QVERIFY(!entries->isEnabled() && !archives->isEnabled() && !add->isEnabled());
+        QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 0, 0), text);
+        editor.selectEntry(1, 0);
+        QCOMPARE(editor.property("archiveSelector").toInt(), 0);
+        discard->click();
+        QVERIFY(!editor.property("invalidEdits").toBool());
+        QCOMPARE(source->toPlainText().toLatin1(), text);
+        source->setPlainText("Bytes " + QString(QChar(92)) + "x81" + QString(2, QChar(92)));
+        QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 0, 0),
+                 QByteArray("Bytes ") + char(-127) + char(92));
+        editor.selectEntry(0, 1);
+        editor.selectEntry(0, 0);
+        QCOMPARE(source->toPlainText(),
+                 "Bytes " + QString(QChar(92)) + "x81" + QString(2, QChar(92)));
+        restore->click();
+        QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 0, 0), original);
+        const auto originalCount = entries->count();
+        add->click();
+        QCOMPARE(entries->count(), originalCount + 1);
+        QCOMPARE(entries->currentRow(), originalCount);
+        QVERIFY(!restore->isEnabled());
+        source->setPlainText(QString::fromLatin1(text));
+        QTRY_COMPARE_WITH_TIMEOUT(preview->property("updateCount").toULongLong(), qulonglong(1),
+                                  1000);
+        auto step = preview->findChild<QPushButton *>("dialogueStep");
+        auto status = preview->findChild<QLabel *>("dialoguePlaybackStatus");
+        for (int i = 0; i < 200 && preview->property("dialogueState").toInt() != 4; ++i) {
+            step->click();
+            QVERIFY2(!status->text().contains("unavailable"), qPrintable(status->text()));
+        }
+        QCOMPARE(preview->property("dialogueState").toInt(), 4);
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        project.saveFolder(folder.path());
+        auto reopened = Project::fromRom(project.rom());
+        reopened.applyManifest(Project::readProject(folder.path()));
+        QCOMPARE(reopened.dialogues()->json(), project.dialogues()->json());
+        undo.undo(); // Added text.
+        undo.undo(); // Added entry.
+        QCOMPARE(entries->count(), originalCount);
+        undo.redo();
+        undo.redo();
+        editor.selectEntry(0, originalCount);
+        QCOMPARE(source->toPlainText().toLatin1(), text);
+        editor.findChild<QTabWidget *>("dialogueDetailPages")->setCurrentWidget(preview);
+        QVERIFY(editor.grab().save("native-dialogue-editing.png"));
+    }
+    void dialogueInvalidInputBlocksSave() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        MainWindow window;
+        window.show();
+        window.loadRom(path);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<DialogueInspector *>(), 10000);
+        auto editor = window.findChild<DialogueInspector *>();
+        auto source = editor->findChild<QPlainTextEdit *>("dialogueSource");
+        QVERIFY(source && !source->isReadOnly());
+        source->setPlainText(QString(QChar(92)) + "x00");
+        QVERIFY(editor->property("invalidEdits").toBool());
+        QVERIFY(window.isWindowModified());
+        int checked = 0;
+        for (auto action : window.findChildren<QAction *>()) {
+            if (!action->text().startsWith("Save project") &&
+                !action->text().startsWith("Save sharing") &&
+                !action->text().startsWith("Build and"))
+                continue;
+            QString message;
+            QTimer::singleShot(0, &window, [&] {
+                if (auto box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+                    message = box->text();
+                    box->accept();
+                }
+            });
+            action->trigger();
+            QVERIFY2(message.startsWith("Correct invalid text input"), qPrintable(message));
+            ++checked;
+        }
+        QCOMPARE(checked, 3);
+        editor->findChild<QPushButton *>("dialogueDiscard")->click();
+        QVERIFY(!window.isWindowModified());
     }
     void dialoguePlaybackControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

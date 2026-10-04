@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/class_data.h"
 #include "engine/consumable_effects.h"
+#include "engine/dialogues.h"
 #include "engine/encounters.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
@@ -96,6 +97,11 @@ class Project {
         return world_;
     }
     void setWorld(const QJsonObject &value);
+    void loadDialogues();
+    const std::optional<Dialogues> &dialogues() const {
+        return dialogues_;
+    }
+    void setDialogues(const QJsonObject &value);
     void loadConsumableEffects();
     const std::optional<ConsumableEffects> &consumableEffects() const {
         return consumableEffects_;
@@ -141,6 +147,7 @@ class Project {
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;
+    std::optional<Dialogues> dialogues_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;

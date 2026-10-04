@@ -174,7 +174,9 @@ void MainWindow::installProject(Project project) {
         workspaces_->addTab(createTextWorkspace(project_.get(), undo_, [this] { updateStatus(); }),
                             "Descriptions");
     if (project_->rom().revision() == 0)
-        workspaces_->addTab(new CutsceneEditor(project_->rom()), "Cutscenes");
+        workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
+                                               [this] { updateStatus(); }),
+                            "Cutscenes");
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {
@@ -375,7 +377,7 @@ void MainWindow::saveProject(bool archive) {
         return;
     }
     if (invalidEdits()) {
-        report("Correct the highlighted description before saving.");
+        report("Correct invalid text input before saving.");
         return;
     }
     auto path = archive ? QFileDialog::getSaveFileName(this, "Save sharing archive", {},
@@ -398,7 +400,7 @@ void MainWindow::buildRom() {
     if (loading_ || !project_)
         return;
     if (invalidEdits()) {
-        report("Correct the highlighted description before building.");
+        report("Correct invalid text input before building.");
         return;
     }
     auto path = QFileDialog::getSaveFileName(this, "Export rebuilt ROM",
@@ -455,8 +457,8 @@ void MainWindow::updateStatus() {
                        .arg(project_ ? project_->rom().title() : "Native Editor"));
 }
 bool MainWindow::invalidEdits() const {
-    for (int i = 0; i < workspaces_->count(); ++i)
-        if (workspaces_->widget(i)->property("invalidEdits").toBool())
+    for (auto widget : workspaces_->findChildren<QWidget *>())
+        if (widget->property("invalidEdits").toBool())
             return true;
     return false;
 }

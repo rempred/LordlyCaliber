@@ -1,12 +1,15 @@
 #include "engine/dialogue_archive.h"
 #include "engine/dialogue_draw.h"
 #include "engine/dialogue_player.h"
+#include "engine/dialogue_resources.h"
 #include "engine/dialogue_text.h"
+#include "engine/project.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_dialogue_runtime.h"
 #include "engine/scene_playback.h"
 #include "game/director/dialogue_draw_plan.h"
 #include "game/director/text_metrics.h"
+#include "rebuild/compiler.h"
 #include <QDir>
 #include <QFile>
 #include <QImage>
@@ -1193,6 +1196,198 @@ class DialogueRuntimeTests : public QObject {
         const auto last = at + 4 + member.headerSize + member.storedSize - 4;
         put8(malformed, last, u8(malformed, last) ^ 0x80);
         QVERIFY_THROWS_EXCEPTION(Error, DialogueArchive::load(Rom::fromBytes(malformed), 0));
+    }
+    void dialogueResourceGrowthAndExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and authenticated compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadDialogues();
+            auto dialogue = *project.dialogues();
+            using D = DialogueArchive::Table;
+            dialogue.setEntry(D::Primary, 0, 0, "Edited dialogue@a");
+            const int added = dialogue.appendEntry(D::Primary, 0, "Added entry@s");
+            dialogue.setEntry(D::Alternate, 0, 0, "Alternate edit");
+            project.setDialogues(dialogue.json());
+            QTemporaryDir work;
+            const auto build = rebuild(project, tools, work.path());
+            const auto first = Rom::fromBytes(build.image);
+            const auto placement = DialogueResources::placement(first);
+            QVERIFY(placement);
+            QCOMPARE(placement->offset, quint32(0x2800000));
+            QCOMPARE(placement->members.size(), 2);
+            QCOMPARE(DialogueArchive::load(first, 0).entry(added), QByteArray("Added entry@s"));
+            QCOMPARE(DialogueArchive::load(first, 0, D::Alternate).entry(0),
+                     QByteArray("Alternate edit"));
+            auto checksum = build.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, build.image);
+            auto same = DialogueResources::rebuild(first, dialogue.plan());
+            QCOMPARE(same, build.image);
+            QByteArray longText;
+            quint32 random = 1234567;
+            for (int i = 0; i < 20000; ++i) {
+                random = random * 1664525U + 1013904223U;
+                longText += char('A' + (random >> 24) % 26);
+            }
+            const auto larger = DialogueArchive::load(first, 0).rebuild({{0, longText}});
+            const auto grown = Rom::fromBytes(DialogueResources::rebuild(first, {{0, larger}}));
+            const auto expanded = DialogueResources::placement(grown);
+            QVERIFY(expanded);
+            QCOMPARE(expanded->offset, placement->offset);
+            QVERIFY(expanded->allocation > placement->allocation);
+            QCOMPARE(DialogueArchive::load(grown, 0).entry(0), longText);
+            QCOMPARE(DialogueArchive::load(grown, 0, D::Alternate).entry(0),
+                     QByteArray("Alternate edit"));
+            const auto foreign = QByteArray("Unrelated following allocation").repeated(16);
+            const auto occupied = Rom::fromBytes(build.image + foreign);
+            const auto moved = DialogueResources::rebuild(occupied, {{0, larger}});
+            const auto relocated = DialogueResources::placement(Rom::fromBytes(moved));
+            QVERIFY(relocated);
+            QVERIFY(relocated->offset >= quint32(occupied.bytes().size()));
+            QCOMPARE(moved.mid(build.image.size(), foreign.size()), foreign);
+            QCOMPARE(moved.mid(placement->offset, placement->allocation),
+                     QByteArray(placement->allocation, char(-1)));
+            auto corrupt = build.image;
+            put8(corrupt, placement->offset + placement->allocation - 1, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, DialogueResources::placement(Rom::fromBytes(corrupt)));
+            corrupt = rom.bytes();
+            put8(corrupt, DialogueResources::descriptorOffset, 'X');
+            QVERIFY_THROWS_EXCEPTION(
+                Error, DialogueResources::rebuild(Rom::fromBytes(corrupt), dialogue.plan()));
+            const auto parent = QFileInfo(path).absoluteDir();
+            QVERIFY(QDir().mkpath(parent.filePath("Test ROMs")));
+            QTemporaryDir candidate(parent.filePath("Test ROMs/dialogue-native-XXXXXX"));
+            QVERIFY(candidate.isValid());
+            candidate.setAutoRemove(false);
+            const auto output = candidate.filePath(QFileInfo(path).fileName());
+            exportRom(project, build, output);
+            const auto exported = Rom::open(output);
+            QCOMPARE(exported.bytes(), build.image);
+            QCOMPARE(DialogueArchive::load(exported, 0).entry(added), QByteArray("Added entry@s"));
+            qInfo().noquote() << "Dialogue export candidate:" << output;
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void dialogueProjectRoundTrip() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadDialogues();
+            auto edits = *project.dialogues();
+            using D = DialogueArchive::Table;
+            const auto before = edits.entry(D::Primary, 0, 0);
+            edits.setEntry(D::Primary, 0, 0, "Changed@aDialogue@s");
+            const int added = edits.appendEntry(D::Primary, 0, "New@nEntry");
+            edits.setEntry(D::Alternate, 0, 0, "Alternate@T002");
+            QCOMPARE(edits.changedEntries(), 3);
+            project.setDialogues(edits.json());
+            QCOMPARE(project.changedRecords(), 3);
+            QTemporaryDir folder;
+            project.saveFolder(folder.path());
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(Project::readProject(folder.filePath("project.json")));
+            QVERIFY(reopened.dialogues());
+            QCOMPARE(reopened.dialogues()->json(), edits.json());
+            QCOMPARE(reopened.dialogues()->entry(D::Primary, 0, added), QByteArray("New@nEntry"));
+            const auto planned = edits.plan();
+            QCOMPARE(DialogueArchive::fromDecoded(planned[0]).entry(0),
+                     QByteArray("Changed@aDialogue@s"));
+            QCOMPARE(DialogueArchive::fromDecoded(planned[0x10000]).entry(0),
+                     QByteArray("Alternate@T002"));
+            const auto saved = edits.json();
+            auto bad = saved;
+            auto archives = bad["archives"].toObject();
+            auto archive = archives["0"].toObject();
+            auto entries = archive["entries"].toObject();
+            entries["0"] = "not-hex";
+            archive["entries"] = entries;
+            archives["0"] = archive;
+            bad["archives"] = archives;
+            QVERIFY_THROWS_EXCEPTION(Error, edits.apply(bad));
+            QCOMPARE(edits.json(), saved);
+            QVERIFY_THROWS_EXCEPTION(Error, edits.appendEntry(D::Primary, 9, "empty selector"));
+            edits.restoreEntry(D::Primary, 0, 0);
+            QCOMPARE(edits.entry(D::Primary, 0, 0), before);
+            QCOMPARE(edits.changedEntries(), 2);
+            reopened.setDialogues(edits.json());
+            QCOMPARE(reopened.changedRecords(), 2);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void rebuildEveryRetailDialogueArchive() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            int archives = 0;
+            for (const auto table :
+                 {DialogueArchive::Table::Primary, DialogueArchive::Table::Alternate}) {
+                const auto keys = DialogueArchive::directory(rom, table);
+                for (int selector = 0; selector < keys.size(); ++selector) {
+                    if (!keys[selector])
+                        continue;
+                    const auto archive = DialogueArchive::load(rom, selector, table);
+                    const auto first = archive.entry(0) + " Added@a";
+                    const auto result = archive.rebuild({{0, first}}, {"New@sEntry"});
+                    const auto reopened = DialogueArchive::fromDecoded(result);
+                    QCOMPARE(reopened.entryCount(), archive.entryCount() + 1);
+                    QCOMPARE(reopened.entry(0), first);
+                    for (int i = 1; i < archive.entryCount(); ++i)
+                        QCOMPARE(reopened.entry(i), archive.entry(i));
+                    QCOMPARE(reopened.entry(archive.entryCount()), QByteArray("New@sEntry"));
+                    const int originalStart = (archive.entryCount() + 1) * 4 + first.size() + 1;
+                    QCOMPARE(result.mid(originalStart,
+                                        archive.bytes().size() - archive.entryCount() * 4),
+                             archive.bytes().mid(archive.entryCount() * 4));
+                    ++archives;
+                }
+            }
+            QCOMPARE(archives, 349);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void editedArchivePreservesUnknownBytes() {
+        QByteArray original(16, 0);
+        put32(original, 0, 16);
+        put32(original, 4, 16);
+        put32(original, 8, 18);
+        put32(original, 12, 22);
+        original += QByteArray("Alpha\0Beta\0", 11);
+        original += QByteArray::fromHex("91ff02007e"); // Retained unreferenced native bytes.
+        const auto archive = DialogueArchive::fromDecoded(original);
+        QCOMPARE(archive.rebuild({}), original);
+        QCOMPARE(archive.rebuild({{0, "Alpha"}}), original);
+        const auto rebuilt =
+            archive.rebuild({{0, "Longer@aDialogue"}, {3, ""}}, {"New@sEntry", "New@sEntry"});
+        const auto reopened = DialogueArchive::fromDecoded(rebuilt);
+        QCOMPARE(reopened.entryCount(), 6);
+        QCOMPARE(reopened.entry(0), QByteArray("Longer@aDialogue"));
+        QCOMPARE(reopened.entry(1), QByteArray("Alpha"));
+        QCOMPARE(reopened.entry(2), QByteArray("pha"));
+        QCOMPARE(reopened.entry(3), QByteArray(""));
+        QCOMPARE(reopened.entry(4), QByteArray("New@sEntry"));
+        QCOMPARE(reopened.entry(5), QByteArray("New@sEntry"));
+        const quint32 retainedAt = 24 + quint32(QByteArray("Longer@aDialogue").size()) + 1;
+        QCOMPARE(rebuilt.mid(retainedAt, original.size() - 16), original.mid(16));
+        QCOMPARE(u32(rebuilt, 0), quint32(24)); // First offset is also the directory extent.
+        QCOMPARE(u32(rebuilt, 4), retainedAt);
+        QCOMPARE(u32(rebuilt, 8), retainedAt + 2);
+        QVERIFY(u32(rebuilt, 0) != u32(rebuilt, 4));
+        QVERIFY_THROWS_EXCEPTION(Error, archive.rebuild({{-1, "bad"}}));
+        QVERIFY_THROWS_EXCEPTION(Error, archive.rebuild({{4, "bad"}}));
+        QVERIFY_THROWS_EXCEPTION(Error, archive.rebuild({{0, QByteArray("A\0B", 3)}}));
+        QVERIFY_THROWS_EXCEPTION(Error, archive.rebuild({}, QVector<QByteArray>(16381)));
+        QCOMPARE(archive.bytes(), original);
     }
     void archivePointersPreserveAliases() {
         QByteArray bytes(12, 0);

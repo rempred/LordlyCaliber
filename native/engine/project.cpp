@@ -266,6 +266,8 @@ int Project::changedRecords() const {
         count += scenarios_->changedScenarios();
     if (world_)
         count += world_->changedEntries();
+    if (dialogues_)
+        count += dialogues_->changedEntries();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -556,7 +558,19 @@ QJsonObject Project::manifest() const {
         result["world"] = world_->json();
     else
         result.remove("world");
+    if (dialogues_ && dialogues_->modified())
+        result["dialogues"] = dialogues_->json();
+    else
+        result.remove("dialogues");
     return result;
+}
+void Project::loadDialogues() {
+    if (!dialogues_)
+        dialogues_ = Dialogues::load(rom_);
+}
+void Project::setDialogues(const QJsonObject &value) {
+    loadDialogues();
+    dialogues_->apply(value);
 }
 void Project::applyManifest(const QJsonObject &object) {
     if (object.value("format") != "LordlyCaliberProject" || object.value("version").toInt() != 1)
@@ -580,6 +594,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadScenarios();
     if (world_)
         candidate.loadWorld();
+    if (dialogues_)
+        candidate.loadDialogues();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -699,6 +715,11 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setWorld(object["world"].toObject());
     } else
         candidate.importLegacyWorld(candidate.legacy_);
+    if (object.contains("dialogues")) {
+        if (!object["dialogues"].isObject())
+            throw Error("Invalid saved dialogue edits");
+        candidate.setDialogues(object["dialogues"].toObject());
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {

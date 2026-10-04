@@ -115,12 +115,14 @@ void DialoguePreview::clear() {
         history_->setChecked(false);
     }
     archive_ = -1;
+    dialogues_.reset();
     canvas_->clear();
     status_->setText("Select a dialogue entry.");
     setProperty("updateCount", 0);
     setProperty("dialogueState", -1);
 }
-void DialoguePreview::selectEntry(int archive, quint16 entry) {
+void DialoguePreview::selectEntry(int archive, quint16 entry, std::optional<Dialogues> dialogues) {
+    dialogues_ = std::move(dialogues);
     archive_ = archive;
     entry_ = entry;
     restart();
@@ -161,7 +163,7 @@ void DialoguePreview::restart() {
         for (int i = 0; i < 4; ++i)
             environment.substitutions[48 + i] = text(names_[i]->text());
         environment.longNameSuffix = text(suffix_->text());
-        session_.emplace(rom_, archive_, entry_, std::move(environment));
+        session_.emplace(rom_, archive_, entry_, std::move(environment), dialogues_);
         play_->setEnabled(true);
         if (!drawing_)
             drawing_.emplace(rom_);

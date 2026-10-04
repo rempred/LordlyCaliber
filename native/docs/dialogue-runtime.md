@@ -1,5 +1,33 @@
 # Dialogue runtime
 
+## Editing and export
+
+Both archive tables support exact source editing, new entries, restore and project
+undo. Byte escapes preserve nonprintable data; invalid input blocks navigation,
+save and export. Playback snapshots the edited model, including appended entries.
+The native project stores original-entry edits and appended bytes separately.
+
+The rebuild keeps every original payload byte, alias and unreferenced byte, while
+expanding the pointer directory and redirecting changed strings. The first pointer
+also defines the directory extent, so an edited first entry is placed immediately
+after that directory. Entries use fourteen-bit indexes (maximum 16,384).
+
+Export compiles edited archive data with the bundled N64 toolchain, rebuilds LHA
+members while retaining header metadata and trailing envelope data, and updates
+the existing game resource links. No dialogue runtime hook is needed. Owned ROM
+space is recorded by the 96-byte LC05DLOG descriptor at z64 0x27C4600; its allocation
+and directory links are checked before reuse. Growth appends after other owners.
+The descriptor and payload have CRC32 checks; LHA CRC and CIC checksum paths apply.
+
+Checks: all 349 archives retain untouched entries/payload bytes when entry zero is
+edited and one entry is added; model save/reopen also passes (693 ms). Public
+compile/export/reopen, idempotent reuse, growth, foreign-data preservation and
+corruption rejection pass (1,101 ms). UI editing/new-entry playback/undo/save plus
+source/playback/catalog regressions pass (2,632 ms). All three main-window save and
+export actions reject invalid dialogue input (466 ms). These checks do not establish
+a full game load; unsupported source control/encoding behavior remains explicit.
+Browser scene-project import is the next integration point.
+
 The Dialogue page now includes standalone native playback: step, play/pause,
 restart, confirm/cancel, choice navigation, history and script resume. The user
 selects resource passes per second and supplies explicit preview substitutions.
@@ -11,7 +39,7 @@ pass (1,844 ms initial combined UI run). Visual inspection caught the standalone
 portrait override: -1 means mirrored portrait one. Zero correctly preserves any
 source portrait and otherwise leaves it absent. The corrected view was inspected;
 latest focused playback check passes (315 ms). Expected offscreen font/platform
-warnings remain. Editing, persistence and ROM export are next.
+warnings remain. Editing, persistence and ROM export are implemented below.
 
 The artwork backend now consumes the compiled C drawing plan directly, including
 style-one/two layout, all prompt positions, selection/history markers and opacity.

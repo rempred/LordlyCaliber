@@ -62,4 +62,61 @@ QByteArray DialogueArchive::entry(int index) const {
     const auto offset = offsets_[index];
     return bytes_.mid(offset, bytes_.indexOf('\0', offset) - offset);
 }
+QByteArray DialogueArchive::rebuild(const QMap<int, QByteArray> &edits,
+                                    const QVector<QByteArray> &added) const {
+    const qsizetype count = offsets_.size() + added.size();
+    if (count > 16384)
+        throw Error("Dialogue entries exceed the native fourteen-bit index");
+    auto validate = [](const QByteArray &text) {
+        if (text.contains(char(0)))
+            throw Error("Dialogue text contains an embedded terminator");
+        if (text.size() > 1024 * 1024)
+            throw Error("Dialogue entry exceeds the source budget");
+    };
+    bool changed = !added.isEmpty();
+    for (auto it = edits.cbegin(); it != edits.cend(); ++it) {
+        validate(it.value());
+        changed |= entry(it.key()) != it.value(); // Also validates the original index.
+    }
+    for (const auto &text : added)
+        validate(text);
+    if (!changed)
+        return bytes_;
+    // Entry zero's offset also encodes the directory extent. If it changes,
+    // place its new string directly after the expanded directory; retain the old
+    // payload after it so unchanged aliases still point to their original text.
+    const bool firstChanged = edits.contains(0) && edits[0] != entry(0);
+    const QByteArray first = firstChanged ? edits[0] + char(0) : QByteArray();
+    const quint32 delta = quint32(added.size() * 4 + first.size());
+    QByteArray result(count * 4, 0);
+    result += first;
+    result += bytes_.mid(offsets_.size() * 4);
+    if (result.size() > 16 * 1024 * 1024)
+        throw Error("Rebuilt dialogue archive exceeds its resource budget");
+    for (int i = 0; i < offsets_.size(); ++i)
+        put32(result, i * 4, offsets_[i] + delta);
+    QMap<QByteArray, quint32> appended;
+    if (firstChanged) {
+        put32(result, 0, quint32(count * 4));
+        appended[edits[0]] = quint32(count * 4);
+    }
+    auto append = [&](int index, const QByteArray &text) {
+        if (!appended.contains(text)) {
+            if (result.size() + text.size() + 1 > 16 * 1024 * 1024)
+                throw Error("Rebuilt dialogue archive exceeds its resource budget");
+            appended[text] = quint32(result.size());
+            result += text;
+            result += char(0);
+        }
+        put32(result, index * 4, appended[text]);
+    };
+    for (auto it = edits.cbegin(); it != edits.cend(); ++it)
+        if (entry(it.key()) != it.value())
+            append(it.key(), it.value());
+    for (int i = 0; i < added.size(); ++i)
+        append(int(offsets_.size()) + i, added[i]);
+    // Reuse the reader's bounds and termination validation on the whole result.
+    fromDecoded(result);
+    return result;
+}
 } // namespace lordly

@@ -42,7 +42,9 @@ QPixmap pixmap(const RasterImage &r) {
                                      r.height, r.width * 4, QImage::Format_RGBA8888));
 }
 } // namespace
-CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent), rom_(rom) {
+CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project, QUndoStack *undo,
+                               std::function<void()> changed)
+    : QWidget(parent), rom_(rom) {
     auto layout = new QVBoxLayout(this);
     auto note =
         new QLabel("Scene backgrounds and source commands. Actor playback, camera execution "
@@ -152,8 +154,9 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent
     commands_->setColumnWidth(2, 270);
     pages->addTab(commands_, "Source commands");
     pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
-    auto dialogue = new DialogueInspector(rom_);
-    pages->addTab(dialogue, "Dialogue source");
+    auto dialogue = project ? new DialogueInspector(project, undo, std::move(changed))
+                            : new DialogueInspector(rom_);
+    pages->addTab(dialogue, "Dialogue");
     commands_->setToolTip("Double-click a dialogue command to inspect its archive entry.");
     connect(commands_, &QTableWidget::cellDoubleClicked, this,
             [this, pages, dialogue](int row, int) {

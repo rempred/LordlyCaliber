@@ -1,8 +1,9 @@
 #include "engine/dialogue_session.h"
 namespace lordly {
 DialogueSession::DialogueSession(Rom rom, int archive, quint16 entry,
-                                 DialogueTextEnvironment environment)
-    : rom_(std::move(rom)), environment_(std::move(environment)) {
+                                 DialogueTextEnvironment environment,
+                                 std::optional<Dialogues> dialogues)
+    : rom_(std::move(rom)), dialogues_(std::move(dialogues)), environment_(std::move(environment)) {
     if (archive < 0 || archive > 65535)
         throw Error("Dialogue archive selector exceeds its native field");
     // This is a standalone window centered on a 320x240 preview, without an Actor.
@@ -14,14 +15,22 @@ DialogueSession::DialogueSession(Rom rom, int archive, quint16 entry,
     put16(record, 0x8c, 160);
     put16(record, 0x94, 120);
     put16(record, 0x92, 0); // No override: retain the source portrait, initially absent.
-    DialogueArchive::windowSource(rom_, record); // Reject absent targets before publishing.
+    source(record);         // Reject absent targets before publishing.
     resources_.supplyRecord(slot, record);
+}
+QByteArray DialogueSession::source(const QByteArray &record) const {
+    if (!dialogues_)
+        return DialogueArchive::windowSource(rom_, record);
+    const auto group = u16(record, 0x88) & 0xc000;
+    if (group != 0 && group != 0x8000)
+        throw Error("Dialogue window selects an unresolved archive table group");
+    return dialogues_->entry(group ? Dialogues::Table::Alternate : Dialogues::Table::Primary,
+                             u16(record, 0x96), u16(record, 0x88) & 0x3fff) +
+           char(0);
 }
 void DialogueSession::advance(DialogueInput input) {
     auto next = *this;
-    auto source = [&](const QByteArray &record) {
-        return DialogueArchive::windowSource(rom_, record);
-    };
+    auto source = [&](const QByteArray &record) { return next.source(record); };
     const auto shake = rom_.bytes().mid(0xeaf24, 7);
     auto &pass = next.dispatcher_.state();
     next.runtime_.clearSounds();

@@ -12,7 +12,7 @@ class DialoguePreview : public QWidget {
     Q_OBJECT
   public:
     explicit DialoguePreview(const Rom &, QWidget *parent = nullptr);
-    void selectEntry(int archive, quint16 entry);
+    void selectEntry(int archive, quint16 entry, std::optional<Dialogues> dialogues = {});
     void clear();
 
   private:
@@ -21,6 +21,7 @@ class DialoguePreview : public QWidget {
     void refresh();
     void fail(const std::exception &);
     Rom rom_;
+    std::optional<Dialogues> dialogues_;
     int archive_ = -1;
     quint16 entry_ = 0;
     std::optional<DialogueSession> session_;

@@ -1,7 +1,9 @@
 #pragma once
 #include "engine/scene_images.h"
 #include <QWidget>
+#include <functional>
 #include <optional>
+class QUndoStack;
 class QComboBox;
 class QLabel;
 class QListWidget;
@@ -11,10 +13,12 @@ class QGraphicsScene;
 class QGraphicsPixmapItem;
 class QTabWidget;
 namespace lordly {
+class Project;
 class CutsceneEditor : public QWidget {
     Q_OBJECT
   public:
-    explicit CutsceneEditor(const Rom &rom, QWidget *parent = nullptr);
+    explicit CutsceneEditor(const Rom &rom, QWidget *parent = nullptr, Project *project = nullptr,
+                            QUndoStack *undo = nullptr, std::function<void()> changed = {});
 
   private:
     void selectScene();

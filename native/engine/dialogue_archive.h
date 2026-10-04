@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/archive.h"
+#include <QMap>
 #include <QVector>
 namespace lordly {
 // Current-ROM Serifu archives. Entries retain their native control bytes; this
@@ -15,6 +16,10 @@ class DialogueArchive {
         return int(offsets_.size());
     }
     QByteArray entry(int index) const;
+    // Rebuild the pointer table while preserving every original payload byte.
+    // Inputs exclude their terminator. A changed alias receives its own string.
+    QByteArray rebuild(const QMap<int, QByteArray> &edits,
+                       const QVector<QByteArray> &added = {}) const;
     const QByteArray &bytes() const {
         return bytes_;
     }
