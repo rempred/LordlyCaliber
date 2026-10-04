@@ -1,0 +1,96 @@
+#include "engine/actor_instance.h"
+#include <cstring>
+namespace lordly {
+namespace {
+LordlyActorRecord raw(const QByteArray &record) {
+    if (record.size() != LORDLY_ACTOR_RECORD_BYTES)
+        throw Error("Actor record must contain 336 bytes");
+    LordlyActorRecord result;
+    std::memcpy(result.bytes, record.constData(), sizeof(result.bytes));
+    return result;
+}
+QByteArray bytes(const LordlyActorRecord &record) {
+    return {reinterpret_cast<const char *>(record.bytes), sizeof(record.bytes)};
+}
+struct Context {
+    Rom rom;
+    ActorInstance::Height height;
+    QMap<int, ActorArt> art;
+    QString error;
+};
+int resolve(void *context, int32_t bank, int32_t animation, int32_t facing, int *state) {
+    auto &c = *static_cast<Context *>(context);
+    try {
+        if (!c.art.contains(bank))
+            c.art.insert(bank, ActorArt::load(c.rom, bank));
+        *state = c.art[bank].resolve(animation, facing);
+        return 1;
+    } catch (const Error &e) {
+        c.error = QString::fromUtf8(e.what());
+        return 0;
+    }
+}
+int height(void *context, int mode, float x, float z, float *result) {
+    auto &c = *static_cast<Context *>(context);
+    try {
+        if (!c.height) {
+            c.error = "Actor placement requires the scene terrain height";
+            return 0;
+        }
+        *result = c.height(mode, x, z);
+        return 1;
+    } catch (const std::exception &e) {
+        c.error = QString::fromUtf8(e.what());
+        return 0;
+    }
+}
+void require(int result, const Context &context) {
+    if (result != LORDLY_ACTOR_OK)
+        throw Error(context.error.isEmpty() ? "Invalid actor construction or State request"
+                                            : context.error);
+}
+ActorPosePlayer player(const Rom &rom, const QByteArray &record) {
+    const auto r = raw(record);
+    LordlyActorPose fields{};
+    lordly_actor_read_pose(&r, &fields);
+    ActorPosePlayer result(rom, ActorArt::load(rom, fields.bank), fields.state, fields.variant);
+    result.actor() = fields;
+    return result;
+}
+} // namespace
+ActorInstance::ActorInstance(const Rom &rom, const QByteArray &record)
+    : rom_(rom), record_(record), pose_(player(rom, record)) {}
+ActorInstance ActorInstance::create(const Rom &rom, const LordlyActorSelection &selection, int mode,
+                                    const Height &terrain) {
+    Context context{rom, terrain, {}, {}};
+    LordlyActorRecord record{};
+    require(lordly_actor_construct(&record, &selection, mode, resolve, height, &context), context);
+    ActorInstance result(rom, bytes(record));
+    if (result.pose_.advance() != LORDLY_POSE_OK)
+        throw Error(result.pose_.error());
+    return result;
+}
+void ActorInstance::select(const LordlyActorSelection &selection) {
+    if (pose_.suspended())
+        throw Error("Finish the actor's current pose invocation before changing State");
+    Context context{rom_, {}, {}, {}};
+    auto next = raw(record());
+    int advance = 0;
+    require(lordly_actor_select(&next, &selection, resolve, &context, &advance), context);
+    if (!advance)
+        return;
+    ActorInstance replacement(rom_, bytes(next));
+    if (replacement.pose_.advance() != LORDLY_POSE_OK)
+        throw Error(replacement.pose_.error());
+    *this = std::move(replacement);
+}
+QByteArray ActorInstance::record() const {
+    auto result = raw(record_);
+    lordly_actor_write_pose(&result, &pose_.actor());
+    return bytes(result);
+}
+void ActorInstance::setSlot(int slot) {
+    if (slot < 0 || slot >= 28) throw Error("Actor slot is outside 0..27");
+    put32(record_, 0xe4, quint32(slot));
+}
+} // namespace lordly

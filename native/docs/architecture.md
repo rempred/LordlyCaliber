@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+`ActorInstance` now preserves the complete 336-byte native record while exposing
+its typed pose state. The State adapter compiles recovered `func_002A08C0.c`
+(Decomp `9955a5cdcf73a35e4ccf57ab9bb3b6d85dab40b3`). Direct construction follows
+accepted `func_0029D790.c` (`ef3343c31854d42e3093a3ac0c2c6a23b3d9f921`) and a
+portable reconstruction of its ordinary initializer at ROM 0x29DC0C. Both execute
+the required immediate pose. State retains inherited fields, material deltas and
+unknown bytes; its native X/Y coordinate predicate intentionally ignores Z alone.
+Terrain calls remain explicit. All 82 tested record cases match original bytes
+before and after the immediate pose, with controlled allocation/zero-fill/terrain
+services and the pose resources supplied through their registry boundary.
+
+`SceneActors` owns 28 actor slots separately from their motion objects and supplies
+State, creation, Move, pose/countdown query and current-unit-member binding services
+to the Director. Binding requires complete caller rows and unit-member inputs.
+It updates both actors' native slot fields while motion stays with each slot.
+Eight binding cases match original pointer/record results with no helper doubles;
+composition checks cover empty slots, swaps, temporary vacancy, resumed motion,
+queries and atomic rejection. Planar and pose advancement are explicit scheduler
+components, not complete scene ticks: terrain, proximity, secondary actors and
+other normal-scheduler services still require integration.
+
+
 The Cutscenes workspace now includes a native actor-pose preview. It reads the
 current bank directory and animation vocabulary, supports pose/variant selection,
 stepping, deterministic seeking, adjustable preview speed, zoom and layer inspection.

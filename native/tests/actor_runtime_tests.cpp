@@ -1,5 +1,7 @@
+#include "engine/actor_instance.h"
 #include "engine/actor_motion.h"
 #include "engine/actor_pose.h"
+#include "engine/scene_actors.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -13,6 +15,166 @@ using namespace lordly;
 class ActorRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void bindingAndSlotMotion() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("actor-binding-mips.cjs"),
+                                 path, work.filePath("bindings.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        const auto errors = reference.readAllStandardError();
+        QVERIFY2(reference.exitCode() == 0, errors.constData());
+        QFile file(work.filePath("bindings.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(rows.size(), 8);
+        const auto rom = Rom::open(path);
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            SceneActors scene(rom, 0, 0);
+            ActorBindingInputs inputs;
+            for (int i = 0; i < 20; ++i)
+                inputs.rows[i] =
+                    QByteArray::fromHex(row["rows"].toArray()[i].toString().toLatin1());
+            for (int i = 0; i < 5; ++i)
+                inputs.unitMembers[i] = quint8(row["members"].toArray()[i].toInt());
+            scene.supplyBindingInputs(inputs);
+            for (const auto &a : row["initial"].toArray()) {
+                const auto r = a.toObject();
+                scene.supplyActor(r["slot"].toInt(),
+                                  QByteArray::fromHex(r["record"].toString().toLatin1()));
+            }
+            const int from = row["from"].toInt(), destination = row["destination"].toInt() & 255;
+            scene.supplyMotion(from, {2, 0, 0, 3, 0, 0, 1});
+            scene.supplyMotion(destination, {5, 0, 0, 4, 0, 0, 1});
+            int result = 0;
+            QVERIFY(scene.service(0xa6, {quint32(row["destination"].toInt()), 0}, result));
+            QJsonArray actual;
+            for (int i = 0; i < 28; ++i)
+                if (scene.actor(i))
+                    actual << QJsonObject{
+                        {"slot", i},
+                        {"record", QString::fromLatin1(scene.actor(i)->record().toHex())}};
+            QCOMPARE(actual, row["slots"].toArray());
+            QCOMPARE(scene.motion(from).vx, 2.f);
+            QCOMPARE(scene.motion(destination).vx, 5.f);
+            scene.advancePlanar();
+            if (scene.actor(from))
+                QCOMPARE(scene.actor(from)->pose().actor().position.x, 2.f);
+            if (scene.actor(destination)) {
+                QCOMPARE(scene.actor(destination)->pose().actor().position.x, 5.f);
+                const auto saved = scene.actor(destination)->record();
+                scene.vacate(destination);
+                scene.advancePlanar();
+                QCOMPARE(scene.motion(destination).remaining, 3);
+                scene.supplyActor(destination, saved);
+                scene.advancePlanar();
+                QCOMPARE(scene.actor(destination)->pose().actor().position.x, 10.f);
+                QCOMPARE(scene.motion(destination).remaining, 2);
+            }
+        }
+        SceneActors scene(rom, 0, 17);
+        int value = 123;
+        QVERIFY(scene.service(0x14, {4, 30, 1, 2, 0, 0, 0, 0, 0}, value));
+        QCOMPARE(u8(scene.actor(4)->record(), 0x13c), 17);
+        QVERIFY(scene.service(7, {4, quint32(-1000), quint32(-1000), 4000, 0, 4, 0}, value));
+        QVERIFY(scene.service(0x11, {0, 0, 4}, value));
+        QCOMPARE(value, 4);
+        scene.advancePlanar();
+        scene.advancePoses();
+        QCOMPARE(scene.actor(4)->pose().actor().position.x, 1.f);
+        QVERIFY(scene.service(0x11, {0, 0, 4}, value));
+        QCOMPARE(value, 3);
+        const auto before = scene.actor(4)->record();
+        QVERIFY_THROWS_EXCEPTION(Error, scene.service(3, {0, 30, 1, 2, 0, 0, 0, 0}, value));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.service(0xa6, {1, 0}, value));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.supplyActor(4, QByteArray(1, 0)));
+        QCOMPARE(scene.actor(4)->record(), before);
+        QVERIFY(scene.service(7, {0, 0, 0, 0, 0, 0, 0}, value));
+        QVERIFY(!scene.motion(0).present);
+        QVERIFY(!scene.service(0xdead, {}, value));
+    }
+    void recordsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-record-mips.cjs"),
+             path, work.filePath("records.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        const auto errors = reference.readAllStandardError();
+        QVERIFY2(reference.exitCode() == 0, errors.constData());
+        QFile file(work.filePath("records.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QCOMPARE(rows.size(), 82);
+        struct Context {
+            Rom rom;
+            QMap<int, ActorArt> banks;
+            QJsonArray terrain;
+        } context{Rom::open(path), {}, {}};
+        auto resolve = [](void *opaque, int32_t bank, int32_t animation, int32_t facing,
+                          int *state) -> int {
+            auto &c = *static_cast<Context *>(opaque);
+            if (!c.banks.contains(bank))
+                c.banks.insert(bank, ActorArt::load(c.rom, bank));
+            *state = c.banks[bank].resolve(animation, facing);
+            return 1;
+        };
+        auto height = [](void *opaque, int mode, float x, float z, float *result) -> int {
+            static_cast<Context *>(opaque)->terrain << QJsonArray{mode, x, z};
+            *result = 7.25f;
+            return 1;
+        };
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            const auto args = row["args"].toArray();
+            const bool construct = row["kind"].toString() == "construct";
+            LordlyActorSelection selection{
+                args[0].toInt(),
+                args[1].toInt(),
+                args[2].toInt(),
+                args[3].toInt(),
+                args[construct ? 8 : 7].toInt(),
+                {float(args[4].toDouble()), float(args[5].toDouble()), float(args[6].toDouble())},
+                uint8_t(construct ? args[7].toInt() : 0),
+                uint8_t(row["presentation"].toInt())};
+            const auto initial = QByteArray::fromHex(row["initial"].toString().toLatin1());
+            LordlyActorRecord record;
+            std::memcpy(record.bytes, initial.constData(), sizeof(record.bytes));
+            int advance = construct ? 1 : 0;
+            context.terrain = {};
+            const auto result =
+                construct ? lordly_actor_construct(&record, &selection, row["mode"].toInt(),
+                                                   resolve, height, &context)
+                          : lordly_actor_select(&record, &selection, resolve, &context, &advance);
+            QVERIFY2(result == LORDLY_ACTOR_OK, qPrintable(row["name"].toString()));
+            const QByteArray actual(reinterpret_cast<const char *>(record.bytes),
+                                    sizeof(record.bytes));
+            QCOMPARE(actual.toHex(), row["expected"].toString().toLatin1());
+            QCOMPARE(advance, row["calls"].toInt());
+            QCOMPARE(context.terrain, row["terrain"].toArray());
+            LordlyActorPose decoded{};
+            lordly_actor_read_pose(&record, &decoded);
+            lordly_actor_write_pose(&record, &decoded);
+            QCOMPARE(QByteArray(reinterpret_cast<const char *>(record.bytes), sizeof(record.bytes)),
+                     actual);
+            ActorInstance instance =
+                construct ? ActorInstance::create(context.rom, selection, row["mode"].toInt(),
+                                                  [](int, float, float) { return 7.25f; })
+                          : ActorInstance(context.rom, initial);
+            if (!construct)
+                instance.select(selection);
+            QCOMPARE(instance.record().toHex(), row["fullExpected"].toString().toLatin1());
+        }
+    }
     void posesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
