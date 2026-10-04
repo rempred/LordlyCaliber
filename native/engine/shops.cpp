@@ -1,5 +1,6 @@
 #include "engine/shops.h"
 #include "engine/shop_runtime.h"
+#include "engine/world_resources.h"
 #include <QJsonArray>
 #include <QSet>
 #include <cmath>
@@ -28,7 +29,10 @@ Shops Shops::load(const Rom &rom) {
     if (!placement)
         verifyShopRuntime(rom, false);
     Shops result;
-    const auto data = LhaMember::find(rom, "shopcsv.bin").decode(rom);
+    const auto world =
+        rom.revision() == 0 ? std::optional(WorldResources::load(rom)) : std::nullopt;
+    const auto data =
+        world ? world->shopInventory(rom) : LhaMember::find(rom, "shopcsv.bin").decode(rom);
     if (data.size() < 512 || u16(data, 0) != 512 || u16(data, 2) != 512 ||
         u16(data, count * 2) != data.size())
         throw Error("Unrecognized shop archive layout");
@@ -76,7 +80,7 @@ Shops Shops::load(const Rom &rom) {
     }
     result.original_ = result.stock_;
     result.locations_.resize(count);
-    const auto towns = LhaMember::find(rom, "ktenmain.bin").decode(rom);
+    const auto towns = world ? world->towns(rom) : LhaMember::find(rom, "ktenmain.bin").decode(rom);
     if (towns.size() % 28)
         throw Error("Truncated town archive");
     for (qsizetype at = 0; at < towns.size(); at += 28) {

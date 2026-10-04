@@ -10,6 +10,7 @@
 #include "engine/resource.h"
 #include "engine/scenario_resources.h"
 #include "engine/shop_runtime.h"
+#include "engine/world_resources.h"
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
@@ -444,6 +445,127 @@ class EngineTests : public QObject {
             QCOMPARE(Rom::open(path).bytes(), rom.bytes());
             output.setAutoRemove(false);
             qInfo().noquote() << "Scenario project export:" << candidate;
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
+    void worldResources() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for world resource routing");
+        try {
+            const auto rom = Rom::open(path);
+            const auto resources = WorldResources::load(rom);
+            const auto originalShops = Shops::load(rom);
+            QCOMPARE(resources.treasureMembers().size(), 40);
+            QCOMPARE(resources.siteMembers().size(), 61);
+            QCOMPARE(resources.towns(rom).size(), 316 * 28);
+            QCOMPARE(resources.rebuild(rom, resources.towns(rom), {}, {}), rom.bytes());
+            QCOMPARE(resources.treasureSelector(52), resources.treasureSelector(53));
+            QCOMPARE(resources.siteSelector(52), resources.siteSelector(53));
+            auto treasure = resources.treasure(rom, 52), sites = resources.sites(rom, 52);
+            QVERIFY(u8(treasure, 0) > 0);
+            QVERIFY(u8(sites, 0) > 0);
+            put16(treasure, 5, 277); // First treasure retains its ID/coordinates/table.
+            put16(sites, 3, u16(sites, 3) == 0x2012 ? 4 : 0x2012);
+            auto towns = resources.towns(rom);
+            const int town = (u16(sites, 1) - 1) * 28;
+            put16(towns, town + 22, 4567);
+            towns.replace(town + 1, 20, QByteArray("Native Site") + QByteArray(9, 0));
+            auto image = resources.rebuild(rom, towns, {{52, treasure}}, {{52, sites}});
+            Rom::updateChecksum(image);
+            const auto reopened = Rom::fromBytes(image);
+            const auto built = WorldResources::load(reopened);
+            QVERIFY(built.placement());
+            QCOMPARE(built.treasureMembers().size(), 41);
+            QCOMPARE(built.siteMembers().size(), 62);
+            QCOMPARE(built.treasureSelector(52), 40);
+            QCOMPARE(built.siteSelector(52), 61);
+            QCOMPARE(built.towns(reopened), towns);
+            QCOMPARE(built.shopInventory(reopened), resources.shopInventory(rom));
+            const auto shops = Shops::load(reopened);
+            for (int id = 0; id < Shops::count; ++id)
+                QCOMPARE(shops.stock(id), originalShops.stock(id));
+            QCOMPARE(built.rebuild(reopened, towns, {}, {}), image);
+            QCOMPARE(image.mid(WorldResources::root + 8, 4),
+                     rom.bytes().mid(WorldResources::root + 8, 4));
+            QCOMPARE(image.mid(0x2744dcc, 0x3dd), rom.bytes().mid(0x2744dcc, 0x3dd));
+            for (int key = 0; key < 65; ++key) {
+                QCOMPARE(built.treasure(reopened, key),
+                         key == 52 ? treasure : resources.treasure(rom, key));
+                QCOMPARE(built.sites(reopened, key), key == 52 ? sites : resources.sites(rom, key));
+            }
+            // Unchanged compressed members and inactive SCINCSV tails survive exactly.
+            for (int i = 1; i < 61; ++i) {
+                const auto &a = resources.siteMembers()[i], &b = built.siteMembers()[i];
+                QCOMPARE(image.mid(b.offset, b.headerSize + b.storedSize),
+                         rom.bytes().mid(a.offset, a.headerSize + a.storedSize));
+            }
+            auto nextTreasure = treasure;
+            nextTreasure[2] ^= char(1);
+            const auto nextImage = built.rebuild(reopened, towns, {{52, nextTreasure}}, {});
+            const auto nextRom = Rom::fromBytes(nextImage);
+            const auto next = WorldResources::load(nextRom);
+            QCOMPARE(next.treasureMembers().size(), 41);
+            QCOMPARE(next.siteMembers().size(), 62);
+            const auto restoredRom = Rom::fromBytes(
+                next.rebuild(nextRom, resources.towns(rom), {{52, resources.treasure(rom, 52)}},
+                             {{52, resources.sites(rom, 52)}}));
+            const auto restored = WorldResources::load(restoredRom);
+            QCOMPARE(restored.treasureMembers().size(), 40);
+            QCOMPARE(restored.siteMembers().size(), 61);
+            auto corrupt = image;
+            corrupt[built.placement()->offset + 100] ^= char(1);
+            QVERIFY_THROWS_EXCEPTION(Error, WorldResources::load(Rom::fromBytes(corrupt)));
+            auto selector = image;
+            put8(selector, WorldResources::selectorTable + 52 * 12 + 5, 60);
+            QVERIFY_THROWS_EXCEPTION(Error, WorldResources::load(Rom::fromBytes(selector)));
+            auto redirected = rom.bytes();
+            put32(redirected, 0x1a380, 0x08000000);
+            QVERIFY_THROWS_EXCEPTION(Error, WorldResources::load(Rom::fromBytes(redirected)));
+            auto collision = rom.bytes();
+            collision[WorldResources::descriptorOffset] = 'X';
+            QVERIFY_THROWS_EXCEPTION(Error, WorldResources::load(Rom::fromBytes(collision))
+                                                .rebuild(Rom::fromBytes(collision), towns, {}, {}));
+            QVERIFY_THROWS_EXCEPTION(Error, resources.rebuild(rom, towns + char(0), {}, {}));
+            QVERIFY_THROWS_EXCEPTION(Error, resources.rebuild(rom, towns, {{0, treasure}}, {}));
+            QVERIFY_THROWS_EXCEPTION(Error, resources.rebuild(reopened, towns, {}, {}));
+            const auto foreignRom = Rom::fromBytes(image + QByteArray(4096, 'Z'));
+            auto enlarged = treasure;
+            for (int i = 0; i < 20000; ++i)
+                enlarged += char((i * 3253) ^ (i >> 2));
+            const auto grownRom =
+                Rom::fromBytes(built.rebuild(foreignRom, towns, {{52, enlarged}}, {}));
+            const auto grown = WorldResources::load(grownRom);
+            QVERIFY(grown.placement()->offset >= foreignRom.bytes().size());
+            QCOMPARE(grownRom.bytes().mid(image.size(), 4096), QByteArray(4096, 'Z'));
+            QCOMPARE(grownRom.bytes().mid(built.placement()->offset, built.placement()->allocation),
+                     QByteArray(built.placement()->allocation, char(-1)));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-world-resources-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            atomicWrite(candidate, rom.serialize(image));
+            QJsonArray rows;
+            for (int type = 0; type < 2; ++type) {
+                const auto &members = type ? built.siteMembers() : built.treasureMembers();
+                for (int i = 0; i < members.size(); ++i)
+                    rows << QJsonObject{
+                        {"slot", type ? 2 : 0},
+                        {"index", i},
+                        {"data", QString::fromLatin1(members[i].decode(reopened).toHex())}};
+            }
+            QJsonArray selectors;
+            for (int key = 0; key < 65; ++key)
+                selectors << QJsonObject{{"key", key},
+                                         {"treasure", built.treasureSelector(key)},
+                                         {"sites", built.siteSelector(key)}};
+            const QJsonObject fixture{
+                {"rom", candidate}, {"sourceRom", path}, {"rows", rows}, {"selectors", selectors}};
+            atomicWrite(QCoreApplication::applicationDirPath() + "/world-resources.json",
+                        QJsonDocument(fixture).toJson());
+            output.setAutoRemove(false);
         } catch (const Error &error) {
             QFAIL(error.what());
         }
