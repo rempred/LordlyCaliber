@@ -558,7 +558,7 @@ QJsonObject Project::manifest() const {
         result["world"] = world_->json();
     else
         result.remove("world");
-    if (dialogues_ && dialogues_->modified())
+    if (dialogues_ && (dialogues_->modified() || oldPatches["cutscenes"].isObject()))
         result["dialogues"] = dialogues_->json();
     else
         result.remove("dialogues");
@@ -719,7 +719,8 @@ void Project::applyManifest(const QJsonObject &object) {
         if (!object["dialogues"].isObject())
             throw Error("Invalid saved dialogue edits");
         candidate.setDialogues(object["dialogues"].toObject());
-    }
+    } else
+        candidate.importLegacyDialogues(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -800,6 +801,15 @@ void Project::importLegacyScenarios(const QJsonObject &object) {
         return;
     loadScenarios();
     scenarios_->importBrowser(rom_, scenario, squads.isEmpty() ? oldSquads : squads, classData());
+}
+void Project::importLegacyDialogues(const QJsonObject &object) {
+    const auto value = object["patches"].toObject()["cutscenes"];
+    if (value.isUndefined() || value.isNull())
+        return;
+    if (!value.isObject())
+        throw Error("Invalid imported cutscene project");
+    loadDialogues();
+    dialogues_->importBrowser(value.toObject());
 }
 void Project::importLegacyWorld(const QJsonObject &object) {
     const auto value = object["patches"].toObject()["scenario"];
@@ -907,6 +917,12 @@ void Project::importLegacyShops(const QJsonObject &object) {
     }
 }
 void Project::importLegacy(const QJsonObject &object) {
+    if (object["format"] == "ob64-cutscene-project") {
+        importLegacy(QJsonObject{{"format", "ob64-patch"},
+                                 {"version", 36},
+                                 {"patches", QJsonObject{{"cutscenes", object}}}});
+        return;
+    }
     if (object["format"] == "ob64-scenario-project") {
         importLegacy(QJsonObject{{"format", "ob64-patch"},
                                  {"version", 36},
@@ -993,6 +1009,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyCustomSquads(object);
     candidate.importLegacyScenarios(object);
     candidate.importLegacyWorld(object);
+    candidate.importLegacyDialogues(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");

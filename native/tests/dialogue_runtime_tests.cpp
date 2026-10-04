@@ -29,6 +29,95 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void importBrowserDialogueProject() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("browser-dialogue-project.cjs"),
+                                 path, work.filePath("project.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("project.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        const auto browser = fixture["project"].toObject();
+        const auto expected = fixture["expected"].toArray();
+        const auto selector = fixture["selector"].toInt(), first = fixture["first"].toInt();
+        auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        project.importLegacy(browser);
+        QVERIFY(
+            project.pendingLegacySections().contains("cutscenes")); // Other scene edits retained.
+        QCOMPARE(project.dialogues()->entryCount(Dialogues::Table::Primary, selector),
+                 expected.size());
+        for (int i = 0; i < expected.size(); ++i)
+            QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, selector, i).toHex(),
+                     expected[i].toString().toLatin1());
+        QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, selector, first),
+                 QByteArray("@c"));
+        project.saveFolder(work.filePath("saved"));
+        auto reopened = Project::fromRom(rom);
+        reopened.applyManifest(Project::readProject(work.filePath("saved")));
+        QCOMPARE(reopened.dialogues()->json(), project.dialogues()->json());
+        QCOMPARE(reopened.manifest()["legacyImport"], project.manifest()["legacyImport"]);
+        project.setDialogues(Dialogues::load(rom).json());
+        auto restored = Project::fromRom(rom);
+        restored.applyManifest(project.manifest());
+        QVERIFY(!restored.dialogues()->modified()); // Restore must not reimport old edits.
+        const auto before = reopened.manifest();
+        auto changeFirst = [](QJsonObject input, const QString &field, const QString &value,
+                              bool duplicate) {
+            auto scenes = input["scenes"].toArray();
+            auto scene = scenes[0].toObject();
+            auto document = scene["document"].toObject();
+            auto tracks = document["tracks"].toArray();
+            for (int t = 0; t < tracks.size(); ++t) {
+                auto track = tracks[t].toObject();
+                auto clips = track["clips"].toArray();
+                for (int c = 0; c < clips.size(); ++c) {
+                    auto clip = clips[c].toObject();
+                    auto payload = clip["payload"].toObject();
+                    if (!payload["nativeDialogueEditable"].toBool())
+                        continue;
+                    payload[field] = value;
+                    clip["payload"] = payload;
+                    if (duplicate)
+                        clips << clip;
+                    else
+                        clips[c] = clip;
+                    track["clips"] = clips;
+                    tracks[t] = track;
+                    document["tracks"] = tracks;
+                    scene["document"] = document;
+                    scenes[0] = scene;
+                    input["scenes"] = scenes;
+                    return input;
+                }
+            }
+            throw Error("Browser reference lacks editable dialogue");
+        };
+        QVERIFY_THROWS_EXCEPTION(Error, reopened.importLegacy(changeFirst(
+                                            browser, "originalRawText", "Stale source", false)));
+        QCOMPARE(reopened.manifest(), before);
+        QVERIFY_THROWS_EXCEPTION(Error, reopened.importLegacy(changeFirst(
+                                            browser, "rawText", "Conflicting shared text", true)));
+        QCOMPARE(reopened.manifest(), before);
+        // Model the browser's physical archive alias rule on a separate source image.
+        auto aliased = rom.bytes();
+        const auto keys = DialogueArchive::directory(rom);
+        int alias = selector == 0 ? 1 : 0;
+        put32(aliased, 0x594280 + 0x1a3b7b2 + 4 + alias * 4, keys[selector]);
+        auto shared = Dialogues::load(Rom::fromBytes(aliased));
+        shared.importBrowser(browser);
+        QCOMPARE(shared.entryCount(Dialogues::Table::Primary, alias), expected.size());
+        for (int i = 0; i < expected.size(); ++i)
+            QCOMPARE(shared.entry(Dialogues::Table::Primary, alias, i).toHex(),
+                     expected[i].toString().toLatin1());
+    }
     void sourceDrawingPlanAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

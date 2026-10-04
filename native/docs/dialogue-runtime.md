@@ -26,7 +26,12 @@ corruption rejection pass (1,101 ms). UI editing/new-entry playback/undo/save pl
 source/playback/catalog regressions pass (2,632 ms). All three main-window save and
 export actions reject invalid dialogue input (466 ms). These checks do not establish
 a full game load; unsupported source control/encoding behavior remains explicit.
-Browser scene-project import is the next integration point.
+Browser scene-project dialogue imports match the existing browser generator for
+edits, wrapped additions, choices, gaps and physical archive aliases. Conflicting
+edits and stale source text reject atomically; native restores survive save/reopen
+without reapplying old imported text. The import/roundtrip checks pass (5,392 ms).
+Other scene changes remain retained and block export until their rebuild path is
+implemented; importing the dialogue portion does not complete scene migration.
 
 The Dialogue page now includes standalone native playback: step, play/pause,
 restart, confirm/cancel, choice navigation, history and script resume. The user

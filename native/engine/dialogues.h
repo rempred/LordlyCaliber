@@ -14,6 +14,7 @@ class Dialogues {
     void restoreEntry(Table, int archive, int index);
     QJsonObject json() const;
     void apply(const QJsonObject &);
+    void importBrowser(const QJsonObject &cutscenes);
     int changedEntries() const;
     bool modified() const {
         return !changes_.isEmpty();

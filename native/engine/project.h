@@ -135,6 +135,7 @@ class Project {
     void importLegacyScenarioRates(const QJsonObject &object);
     void importLegacyCustomSquads(const QJsonObject &object);
     void importLegacyScenarios(const QJsonObject &object);
+    void importLegacyDialogues(const QJsonObject &);
     void importLegacyWorld(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
