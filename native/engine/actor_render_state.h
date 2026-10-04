@@ -9,6 +9,7 @@ class ActorRenderState {
     static ActorRenderState shadow(RenderColor environment);
     void apply(const QByteArray &commands);
     void bindTexture(bool dual);
+    void worldEnvironment(float x, float z, const std::array<quint8, 6> &gradient);
     ColorCombiner combiner() const {
         return ColorCombiner(high_, low_, twoCycles_);
     }

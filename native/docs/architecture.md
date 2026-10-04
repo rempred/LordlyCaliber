@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+## Composed Actor passes
+
+SceneActorRenderer now joins prepared matrices, native queue selection, tint/
+material updates and projected layers. Shadows do not advance tint; eligible main
+passes advance it once. Each main Actor resets the native preset, retaining the
+previous environment. World draws then apply ROM2ADF9C's position-dependent
+six-byte gradient, overriding material environment in the original order. Object
+geometry requires an explicit render callback. All Actor edits and the private
+frame commit together; a late missing object owner leaves the pool unchanged.
+Matrix/terrain preparation, equipment placement and full scene context remain
+separate. Rendering mutates tint progress and is not a side-effect-free redraw;
+UI seeking must retain update/draw snapshots.
+
+The complete520-byte world environment function matches saved opening-state
+RAM8023E83C and ROM2ADF9C. actorEnvironmentAgainstMips compares198 full original
+calls without controlled helpers, spanning six gradients and clamped positions.
+sceneActorCompositionAndRollback checks real bank30 art, hidden-main/visible-shadow
+selection, draw-driven tint progress, ordered object rendering, rollback, world
+environment override and two shadows. Both tests plus material/primitive regressions
+passed296ms after build15998. These establish the composed Actor pass, not scene
+background/equipment geometry, complete playback or RDP pixel equivalence.
+
 ## Actor material pixels
 
 The projected renderer now consumes the native tint/material command stream.
@@ -8,8 +30,8 @@ second-cycle texture-name swap. ActorRenderState retains environment color and
 command order, validates unsupported inputs atomically, and preserves the
 single-texture callback's combiner override across following layers. Callers
 provide inherited environment state; convenience inspector calls use explicit
-transparent black. Native driver resets and world environment gradients remain
-part of the scene composition owner.
+transparent black. Native driver resets and world environment gradients are handled by the
+scene composition owner described above.
 
 SpriteFrame retains color alpha separately from the transparency mask. Both
 lanes crop/flip together and count toward the bounded frame cache. The original

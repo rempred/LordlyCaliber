@@ -1,4 +1,5 @@
 #include "engine/actor_render_state.h"
+#include "game/director/actor_render.h"
 namespace lordly {
 ActorRenderState ActorRenderState::main(RenderColor environment) {
     ActorRenderState result;
@@ -49,5 +50,11 @@ void ActorRenderState::bindTexture(bool dual) {
         high_ = 0xfc62fe03;
         low_ = 0x1f0cf3fd;
     }
+}
+void ActorRenderState::worldEnvironment(float x, float z, const std::array<quint8, 6> &gradient) {
+    RenderColor next;
+    if (!lordly_actor_world_environment(next.data(), x, z, gradient.data()))
+        throw Error("Actor environment requires finite world coordinates");
+    environment_ = next;
 }
 } // namespace lordly

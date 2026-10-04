@@ -1,4 +1,32 @@
 #include "actor_render.h"
+#include <math.h>
+/* ROM2ADF9C: the world draw driver applies this environment after the Actor's
+ * own tint/material commands. The selected six-byte palette row is explicit. */
+int lordly_actor_world_environment(uint8_t rgba[4], float x, float z, const uint8_t gradient[6]) {
+    float position, remaining;
+    int i;
+    if (!isfinite(x) || !isfinite(z))
+        return 0;
+    position = x + 152.f;
+    position = position + z;
+    position = position + 38.f;
+    if (!isfinite(position))
+        return 0;
+    if (position < 0.f)
+        position = 0.f;
+    else if (position > 380.f)
+        position = 380.f;
+    remaining = 380.f - position;
+    for (i = 0; i < 3; ++i) {
+        float delta = (float)gradient[i + 3] - (float)gradient[i];
+        float color = remaining * delta;
+        color = color / 380.f;
+        color = color + (float)gradient[i];
+        rgba[i] = (uint8_t)(uint32_t)color;
+    }
+    rgba[3] = 1;
+    return 1;
+}
 /* Portable reconstruction of the primitive-color portion of ROM29EAFC..29EE18.
  * Original assembly Decomp62cc7ef4; not accepted matching C. */
 int lordly_actor_primitive(uint8_t rgba[4], const uint8_t actor[336], int layer, uint8_t alpha,

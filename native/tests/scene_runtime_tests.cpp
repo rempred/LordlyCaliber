@@ -3,6 +3,7 @@
 #include "engine/color_combiner.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_actor_renderer.h"
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
 #include "game/director/actor_render.h"
@@ -61,7 +62,7 @@ class SceneRuntimeTests : public QObject {
         ActorFrameLayer frame;
         frame.metadata = {0, {0, 0}, 2, 2, 0, 1024, 1024};
         frame.pixels.image = {2, 2, QByteArray::fromHex("c86432a0c86432a0c86432a0c86432a0")};
-        frame.pixels.colorAlpha = QByteArray(4, char(255));
+        frame.pixels.colorAlpha = QByteArray(4, char(-1));
         frame.pixels.dualTexture = true;
         auto state = ActorRenderState::main({0, 0, 0, 1});
         auto render = [&] {
@@ -91,6 +92,114 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(render(), QColor(87, 47, 204, 81));
         frame.pixels.colorAlpha.clear();
         QVERIFY_THROWS_EXCEPTION(Error, render());
+    }
+    void actorEnvironmentAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("actor-environment-mips.cjs"), path,
+                                 work.filePath("environment.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("environment.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 198);
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            std::array<quint8, 6> gradient;
+            for (int i = 0; i < 6; ++i)
+                gradient[i] = quint8(row["gradient"].toArray()[i].toInt());
+            auto state = ActorRenderState::main({3, 7, 11, 255});
+            state.worldEnvironment(float(row["x"].toDouble()), float(row["z"].toDouble()), gradient);
+            const auto color = state.environment();
+            QCOMPARE(quint32(color[0]) << 24 | quint32(color[1]) << 16 |
+                     quint32(color[2]) << 8 | color[3], quint32(row["color"].toDouble()));
+        }
+        auto state = ActorRenderState::main({3, 7, 11, 255});
+        QVERIFY_THROWS_EXCEPTION(Error, state.worldEnvironment(
+            std::numeric_limits<float>::quiet_NaN(), 0, {}));
+        QCOMPARE(state.environment(), (RenderColor{3, 7, 11, 255}));
+    }
+    void sceneActorCompositionAndRollback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QByteArray bank(56, 0), record(336, 0);
+        const float cameraValues[]{90, 4.f / 3, 1, 1000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(cameraValues[i]));
+        for (int at : {0x20, 0x60, 0xa0})
+            for (int i = 0; i < 4; ++i)
+                put16(record, at + i * 10, 1);
+        for (int i = 0; i < 16; ++i)
+            put8(record, i, 255);
+        for (int i = 0; i < 3; ++i)
+            put8(record, 0x142 + i, 255);
+        put8(record, 0x13c, 255);
+        put32(record, 0xe8, 30);
+        put32(record, 0xf8, 35);
+        SceneActors actors(rom, 0, 0);
+        actors.supplyActor(0, record);
+        put32(record, 0xe4, 1);
+        put8(record, 0x141, 1); // Shadow eligible, main hidden.
+        actors.supplyActor(1, record);
+        int unused = 0;
+        for (quint32 slot : {0U, 1U})
+            QVERIFY(actors.service(0x1e, {slot, 255, 255, 255, 255, 0, 0, 4, 1}, unused));
+        const auto before = actors.actorRecords();
+        const auto tint = actors.materials().tint(0);
+        QByteArray queueBytes(60, 0);
+        for (int i = 0; i < 2; ++i) {
+            put16(queueBytes, i * 20 + 16, 1);
+            put16(queueBytes, i * 20 + 18, quint16(i));
+        }
+        const auto queue = SceneDrawQueue::fromRecord(queueBytes);
+        const SceneActorRenderContext context{SceneCamera(bank, 1.f), {255, 255, 255}, {0, 0, 0, 0}};
+        SceneActorRenderer renderer(rom);
+        // The queued object follows the main Actor, so failure happens after a
+        // tentative tint update. Neither that update nor any record may escape.
+        QVERIFY_THROWS_EXCEPTION(Error, renderer.layered(actors, queue, 0, 0, context));
+        QCOMPARE(actors.actorRecords(), before);
+        QCOMPARE(actors.materials().tint(0), tint);
+        int calls = 0;
+        auto object = [&](int kind, int index, QImage &image, ActorRenderState &state) {
+            if (kind != 0 || index != 0 || state.environment() != RenderColor{255, 192, 192, 1})
+                throw Error("Incorrect material state at following scene object");
+            image.setPixelColor(0, 0, QColor(4, 8, 12));
+            ++calls;
+        };
+        const auto frame = renderer.layered(actors, queue, 0, 0, context, object);
+        QCOMPARE(calls, 1);
+        QCOMPARE(frame.image.pixelColor(0, 0), QColor(4, 8, 12));
+        QCOMPARE(u16(actors.materials().tint(0), 10), 1);
+        QCOMPARE(u16(actors.materials().tint(1), 10), 0);
+        QVERIFY(!frame.layers.isEmpty());
+        bool mainSeen = false, hiddenShadowSeen = false;
+        for (const auto &layer : frame.layers) {
+            if (layer.shadow) {
+                QVERIFY(!mainSeen);
+                QCOMPARE(layer.primitive[1], 255);
+                hiddenShadowSeen |= layer.slot == 1;
+            } else {
+                mainSeen = true;
+                QCOMPARE(layer.slot, 0);
+                QCOMPARE(layer.primitive[1], 192);
+            }
+        }
+        QVERIFY(mainSeen && hiddenShadowSeen);
+        actors.setMode(2);
+        const auto worldQueue = SceneDrawQueue::fromRecord(queueBytes.first(40));
+        const auto world = renderer.world(actors, worldQueue, {}, {96, 128},
+            {0, 0, 0, 100, 200, 40}, context);
+        QCOMPARE(world.environment, (RenderColor{50, 100, 20, 1}));
+        QCOMPARE(u16(actors.materials().tint(0), 10), 2);
+        QCOMPARE(u16(actors.materials().tint(1), 10), 0);
+        QVERIFY(world.layers.size() > frame.layers.size());
+        QVERIFY(world.image.save("composed-actors.png"));
     }
     void sceneWorldPassesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -395,7 +504,7 @@ class SceneRuntimeTests : public QObject {
         ActorFrameLayer frame;
         frame.metadata = {0, {-8, -16}, 16, 16, 0, 1024, 1024};
         frame.pixels.image = {16, 16, QByteArray(16 * 16 * 4, 0)};
-        frame.pixels.colorAlpha = QByteArray(16 * 16, char(255));
+        frame.pixels.colorAlpha = QByteArray(16 * 16, char(-1));
         frame.pixels.dualTexture = true;
         for (int i = 0; i < 16 * 16; ++i) {
             put8(frame.pixels.image.rgba, i * 4, 200);

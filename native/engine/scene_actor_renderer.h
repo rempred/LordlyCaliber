@@ -1,0 +1,38 @@
+#pragma once
+#include "engine/actor_renderer.h"
+#include "engine/scene_actors.h"
+namespace lordly {
+struct SceneActorRenderContext {
+    SceneCamera camera;
+    std::array<qint16, 3> globalRgb;
+    RenderColor environment;
+    bool sepia = false;
+};
+struct SceneActorFrame {
+    QImage image;
+    QVector<ActorRasterLayer> layers;
+    RenderColor environment;
+};
+// Composes already prepared matrices in the native pass order. Matrix/terrain
+// preparation, equipment placement and scene-object geometry have separate owners.
+class SceneActorRenderer {
+  public:
+    explicit SceneActorRenderer(Rom rom) : renderer_(std::move(rom)) {}
+    // Object callbacks paint into a private frame and retain their material state.
+    // They must not mutate external state; an error discards the frame and Actor edits.
+    using ObjectRender = std::function<void(int kind, int index, QImage &, ActorRenderState &)>;
+    SceneActorFrame layered(SceneActors &, const SceneDrawQueue &, quint8 objectChannel,
+                            quint8 channel, const SceneActorRenderContext &,
+                            const ObjectRender &objects = {});
+    SceneActorFrame world(SceneActors &, const SceneDrawQueue &, const QVector<QByteArray> &objects,
+                          const std::array<qint16, 2> &shadowAlpha,
+                          const std::array<quint8, 6> &gradient, const SceneActorRenderContext &,
+                          const ObjectRender &drawObject = {});
+
+  private:
+    SceneActorFrame draw(SceneActors &, const QVector<LordlySceneWorldDrawPass> &,
+                         const SceneActorRenderContext &, const ObjectRender &,
+                         const std::optional<std::array<quint8, 6>> &gradient);
+    ActorRenderer renderer_;
+};
+} // namespace lordly
