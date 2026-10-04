@@ -1,6 +1,7 @@
 #include "engine/director.h"
 #include "engine/director_session.h"
 #include "engine/project.h"
+#include "engine/promotion.h"
 #include "engine/scene_program_resources.h"
 #include "game/director/control_flow.h"
 #include "game/director/dispatch_core.h"
@@ -44,6 +45,157 @@ static int queryService(void *context, LordlyDirectorWord opcode, const LordlyDi
 class DirectorTests : public QObject {
     Q_OBJECT
   private slots:
+    void legacySceneAllocationUpgrade() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto directory = Directors::load(rom);
+            const auto source = directory.entries().first();
+            auto current =
+                SceneProgramResources::rebuild(rom, {{source.key, source.program.source}});
+            const auto placement = *SceneProgramResources::placement(Rom::fromBytes(current));
+            auto header = current.mid(SceneProgramResources::descriptorOffset, 96);
+            auto payload = current.mid(placement.offset, placement.allocation);
+            const auto referenceEnd = u32(header, 28), aligned = (referenceEnd + 15U) & ~15U;
+            const auto shift = placement.members.first().offset - aligned;
+            payload.remove(aligned, shift);
+            for (quint32 i = referenceEnd; i < aligned; ++i)
+                payload[i] = char(-1);
+            int row = 0;
+            for (const auto &member : placement.members) {
+                put32(payload, row * 20 + 4, member.offset - shift);
+                for (const auto word : member.references)
+                    put32(current, word, placement.offset + member.offset - shift - 0x594280);
+                ++row;
+            }
+            put32(header, 8, 1);
+            put32(header, 16, quint32(payload.size()));
+            put32(header, 24, crc32(payload));
+            put32(header, 28, 0);
+            put32(header, 32, 0);
+            put32(header, 92, crc32(header.first(92)));
+            current.resize(placement.offset);
+            current += payload;
+            current.replace(SceneProgramResources::descriptorOffset, 96, header);
+            auto old = Rom::fromBytes(current);
+            QVERIFY(SceneProgramResources::placement(old)->authored.isEmpty());
+            const auto read = ScenePrograms::load(old);
+            const auto key = read.original().selectors()[source.selectors.first()];
+            QCOMPARE(read.program(key).source, source.program.source);
+            const auto upgraded =
+                SceneProgramResources::rebuild(old, {{key, source.program.source}});
+            QCOMPARE(u32(upgraded, SceneProgramResources::descriptorOffset + 8), quint32(2));
+            const auto reopened = ScenePrograms::load(Rom::fromBytes(upgraded));
+            QCOMPARE(
+                reopened.program(reopened.original().selectors()[source.selectors.first()]).source,
+                source.program.source);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void authoredSceneIdentityAndExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 toolchain required");
+        try {
+            const auto rom = Rom::open(path);
+            auto scenes = ScenePrograms::load(rom);
+            const auto available = scenes.availableSelectors();
+            QVERIFY(!available.isEmpty());
+            quint32 templateKey = 0;
+            for (const auto &resource : scenes.original().entries()) {
+                const auto &bytes = resource.program.source;
+                if (resource.program.resourceClass() == 5 && bytes.size() >= 92 &&
+                    u32(bytes, 0) == 0x80000006 && u32(bytes, 8) == 0x36 &&
+                    u32(bytes, 40) == 0x35 &&
+                    bytes.last(20) ==
+                        QByteArray::fromHex("0000007d800000028000000080000001ff000005")) {
+                    templateKey = resource.key;
+                    break;
+                }
+            }
+            QVERIFY(templateKey);
+            const auto original = scenes.program(templateKey).source;
+            const auto blank = scenes.createScene("New journey", templateKey, true);
+            QVERIFY(blank.nativeKey == 0 && !blank.authoredId.isEmpty());
+            QCOMPARE(scenes.program(blank).source, original.first(72) + original.last(20));
+            QCOMPARE(scenes.resource(blank).selectors.first(), available.first());
+            const auto copy = scenes.createScene("Copied journey", templateKey, false);
+            QCOMPARE(scenes.program(copy).source, original);
+            QVERIFY(copy != blank);
+            scenes.setOperand(blank, 2, 0, 1234);
+            scenes.renameScene(blank, "Journey \u2014 revised");
+            scenes.validateReferences(rom);
+            QCOMPARE(scenes.changedPrograms(), 2);
+            auto project = Project::fromRom(rom);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto reopenedProject = Project::fromRom(rom);
+            reopenedProject.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopenedProject.scenePrograms()->json(), scenes.json());
+            auto invalid = scenes.json();
+            auto rows = invalid["authored"].toArray();
+            auto bad = rows[1].toObject();
+            bad["selector"] = rows[0].toObject()["selector"];
+            rows[1] = bad;
+            invalid["authored"] = rows;
+            const auto before = scenes.json();
+            QVERIFY_THROWS_EXCEPTION(Error, scenes.apply(invalid));
+            QCOMPARE(scenes.json(), before);
+            scenes.removeNewScene(copy);
+            QCOMPARE(scenes.changedPrograms(), 1);
+            scenes.apply(before);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            auto loadedRom = Rom::fromBytes(built.image);
+            const auto placement = SceneProgramResources::placement(loadedRom);
+            QCOMPARE(placement->authored.size(), 2);
+            auto loaded = ScenePrograms::load(loadedRom);
+            QVERIFY(!loaded.modified());
+            QCOMPARE(loaded.authoredScenes()[blank.authoredId].name,
+                     QString("Journey \u2014 revised"));
+            QCOMPARE(loaded.program(blank).source, scenes.program(blank).source);
+            QCOMPARE(loaded.program(copy).source, original);
+            const auto nativeKey =
+                loaded.original().selectors()[scenes.resource(blank).selectors.first()];
+            QCOMPARE(loaded.canonical(nativeKey), blank);
+            loaded.renameScene(blank, "Renamed after reopening");
+            loaded.setOperand(nativeKey, 2, 0,
+                              5678); // Native aliases resolve to the same owned scene.
+            QCOMPARE(loaded.program(blank).commands[2].operands[0], quint32(5678));
+            auto again = Project::fromRom(loadedRom);
+            again.setScenePrograms(loaded.json());
+            const auto second = rebuild(again, tools, work.filePath("recompile"));
+            const auto reopened = ScenePrograms::load(Rom::fromBytes(second.image));
+            QCOMPARE(reopened.authoredScenes()[blank.authoredId].name,
+                     QString("Renamed after reopening"));
+            QCOMPARE(reopened.program(blank).commands[2].operands[0], quint32(5678));
+            QCOMPARE(reopened.program(copy).source, original);
+            QVERIFY_THROWS_EXCEPTION(Error, loaded.removeNewScene(blank));
+            auto collision = scenes.authoredPlan();
+            collision[0].selector = 0;
+            QVERIFY_THROWS_EXCEPTION(Error, SceneProgramResources::rebuild(rom, {}, collision));
+            // Clearing an originally occupied row does not make it available for a new owner.
+            auto cleared = rom.bytes();
+            put32(cleared, 0x1f3ca88, 0);
+            QVERIFY(!ScenePrograms::load(Rom::fromBytes(cleared)).availableSelectors().contains(0));
+            QDir parent(QFileInfo(path).absolutePath());
+            QVERIFY(parent.mkpath("Test ROMs"));
+            QTemporaryDir output(parent.filePath("Test ROMs/authored-scene-native-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            const auto exported = ScenePrograms::load(Rom::open(candidate));
+            QCOMPARE(exported.program(blank).source, scenes.program(blank).source);
+            qInfo().noquote() << "Authored scene export candidate:" << candidate;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void changedSceneReferences() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -171,6 +323,7 @@ class DirectorTests : public QObject {
             const auto newKey = u32(built.image, member.references.first());
             const auto reopened = Directors::load(builtRom);
             QCOMPARE(reopened.entries()[newKey].program.source, expected);
+            QCOMPARE(reopened.entries()[newKey].name, edited.resource(key).name);
             for (auto selector : edited.resource(key).selectors)
                 QCOMPARE(reopened.selectors()[selector], newKey);
             auto checksum = built.image;

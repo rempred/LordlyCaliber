@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/rom.h"
 #include <QMap>
+#include <QSet>
 #include <QStringList>
 #include <QVector>
 
@@ -33,6 +34,7 @@ struct DirectorResource {
 class Directors {
   public:
     static const QMap<quint32, DirectorOpcode> &grammar();
+    static const QSet<int> &reservedSelectors();
     static Directors load(const Rom &rom);
     const QMap<quint32, DirectorResource> &entries() const {
         return resources_;

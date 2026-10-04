@@ -1,8 +1,33 @@
 #pragma once
 #include "engine/director.h"
+#include "engine/scene_program_resources.h"
 #include <QJsonObject>
 namespace lordly {
 class Dialogues;
+struct SceneId {
+    quint32 nativeKey = 0;
+    QString authoredId;
+    SceneId() = default;
+    SceneId(quint32 key) : nativeKey(key) {}
+    static SceneId authored(QString id) {
+        SceneId result;
+        result.authoredId = std::move(id);
+        return result;
+    }
+    explicit operator bool() const {
+        return nativeKey || !authoredId.isEmpty();
+    }
+    bool operator==(const SceneId &) const = default;
+    QString label() const {
+        return authoredId.isEmpty() ? QString::number(nativeKey, 16) : authoredId;
+    }
+};
+struct AuthoredScene {
+    QString id, name;
+    int selector = -1;
+    DirectorResource baseline;
+    DirectorProgram current;
+};
 // Edits are attached to physical resources: all existing selector aliases share
 // one program, as they do in the loaded ROM.
 class ScenePrograms {
@@ -11,28 +36,41 @@ class ScenePrograms {
     const Directors &original() const {
         return original_;
     }
-    const DirectorResource &resource(quint32 key) const;
-    DirectorProgram program(quint32 key) const;
-    void setOperand(quint32 key, int command, int operand, quint32 value);
-    void insertCommand(quint32 key, int before, quint32 opcode);
-    void removeCommand(quint32 key, int command);
-    void replace(quint32 key, const QByteArray &);
-    void restore(quint32 key);
+    const DirectorResource &resource(SceneId id) const;
+    DirectorProgram program(SceneId id) const;
+    void setOperand(SceneId id, int command, int operand, quint32 value);
+    void insertCommand(SceneId id, int before, quint32 opcode);
+    void removeCommand(SceneId id, int command);
+    void replace(SceneId id, const QByteArray &);
+    void restore(SceneId id);
     void validateReferences(const Rom &, const Dialogues *dialogues = nullptr) const;
+    QVector<SceneId> scenes() const;
+    QVector<int> availableSelectors() const;
+    bool canCreateBlank(SceneId source) const;
+    SceneId createScene(const QString &name, SceneId source, bool blank);
+    void renameScene(SceneId, const QString &name);
+    void removeNewScene(SceneId);
+    SceneId canonical(SceneId) const;
+    const QMap<QString, AuthoredScene> &authoredScenes() const {
+        return authored_;
+    }
+    QVector<AuthoredSceneBuild> authoredPlan() const;
     QJsonObject json() const;
     void apply(const QJsonObject &);
     const QMap<quint32, QByteArray> &plan() const {
         return changes_;
     }
     int changedPrograms() const {
-        return int(changes_.size());
+        return int(changes_.size()) + authoredChanges();
     }
     bool modified() const {
-        return !changes_.isEmpty();
+        return !changes_.isEmpty() || authoredChanges() != 0;
     }
 
   private:
     explicit ScenePrograms(Directors original) : original_(std::move(original)) {}
+    int authoredChanges() const;
+    QMap<QString, AuthoredScene> authored_, originalAuthored_;
     Directors original_;
     QMap<quint32, QByteArray> changes_;
 };

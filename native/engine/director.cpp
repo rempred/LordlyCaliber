@@ -45,6 +45,15 @@ const QMap<quint32, DirectorOpcode> &Directors::grammar() {
     }();
     return result;
 }
+const QSet<int> &Directors::reservedSelectors() {
+    static const QSet<int> result = [] {
+        QSet<int> rows;
+        for (const auto value : catalog()["claimedSelectors"].toArray())
+            rows.insert(value.toInt());
+        return rows;
+    }();
+    return result;
+}
 DirectorProgram DirectorProgram::decode(const QByteArray &bytes) {
     if (bytes.isEmpty() || bytes.size() % 4 || bytes.size() > 0x1000000)
         throw Error("Director stream must contain bounded, complete words");
@@ -133,7 +142,9 @@ Directors Directors::load(const Rom &rom) {
             const auto name = names[QString::number(key)].toObject();
             // A modified stream keeps its selector identity, but not a claimed
             // match to the recorded content. No saved payload is substituted.
-            resource.name = name["name"].toString(QString("Director %1").arg(i));
+            resource.name = name["name"].toString(
+                catalog()["selectorNames"].toObject()[QString::number(i)].toString(
+                    QString("Director %1").arg(i)));
             result.resources_.insert(key, std::move(resource));
         }
         result.resources_[key].selectors << i;

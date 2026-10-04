@@ -3,14 +3,21 @@
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QFutureWatcher>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -45,7 +52,7 @@ QPixmap pixmap(const RasterImage &r) {
 } // namespace
 CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project, QUndoStack *undo,
                                std::function<void()> changed)
-    : QWidget(parent), rom_(rom), project_(project) {
+    : QWidget(parent), rom_(rom), project_(project), undo_(undo) {
     auto layout = new QVBoxLayout(this);
     auto note = new QLabel(
         "Edit scene commands and dialogue, inspect background resources and actor poses. "
@@ -76,6 +83,30 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         return list;
     };
     scenes_ = addList("Scenes", "cutsceneScenes");
+    if (project_) {
+        auto buttons = new QHBoxLayout;
+        newScene_ = new QPushButton("New scene");
+        newScene_->setObjectName("sceneCreate");
+        duplicateScene_ = new QPushButton("Duplicate");
+        duplicateScene_->setObjectName("sceneDuplicate");
+        buttons->addWidget(newScene_);
+        buttons->addWidget(duplicateScene_);
+        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(buttons);
+        auto actions = new QHBoxLayout;
+        renameScene_ = new QPushButton("Rename");
+        renameScene_->setObjectName("sceneRename");
+        removeScene_ = new QPushButton("Remove new scene");
+        removeScene_->setObjectName("sceneRemove");
+        actions->addWidget(renameScene_);
+        actions->addWidget(removeScene_);
+        static_cast<QVBoxLayout *>(scenes_->parentWidget()->layout())->addLayout(actions);
+        for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_})
+            button->setEnabled(false);
+        connect(newScene_, &QPushButton::clicked, this, [this] { createScene(true); });
+        connect(duplicateScene_, &QPushButton::clicked, this, [this] { createScene(false); });
+        connect(renameScene_, &QPushButton::clicked, this, &CutsceneEditor::renameScene);
+        connect(removeScene_, &QPushButton::clicked, this, &CutsceneEditor::removeScene);
+    }
     assets_ = addList("Images", "cutsceneAssets");
     split->addWidget(catalogTabs_);
     auto details = new QWidget;
@@ -162,8 +193,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         pages->addTab(programPage, "Commands");
         connect(commands_, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
             if (scenes_->currentItem())
-                commandEditor_->selectCommand(scenes_->currentItem()->data(Qt::UserRole).toUInt(),
-                                              row);
+                commandEditor_->selectCommand(selectedScene(), row);
         });
         connect(commandEditor_, &SceneCommandEditor::programChanged, this, [this] {
             const bool valid = !commandEditor_->property("invalidEdits").toBool();
@@ -171,7 +201,10 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             scenes_->setEnabled(valid);
             mode_->setEnabled(valid);
             if (valid)
-                selectScene();
+                reloadScenes();
+            else
+                for (auto button : {newScene_, duplicateScene_, renameScene_, removeScene_})
+                    button->setEnabled(false);
         });
     } else
         pages->addTab(commands_, "Source commands");
@@ -184,9 +217,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             [this, pages, dialogue](int row, int) {
                 if (!directors_ || !scenes_->currentItem())
                     return;
-                const auto key = scenes_->currentItem()->data(Qt::UserRole).toUInt();
-                const auto program = project_ ? project_->scenePrograms()->program(key)
-                                              : directors_->entries()[key].program;
+                const auto program = programs().program(selectedScene());
                 if (row < 0 || row >= program.commands.size())
                     return;
                 const auto &command = program.commands[row];
@@ -241,7 +272,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         item->setToolTip(asset.container + " · resource " + hex(asset.key));
     }
     struct Result {
-        std::optional<Directors> value;
+        std::optional<ScenePrograms> value;
         QString error;
     };
     auto watcher = new QFutureWatcher<Result>(this);
@@ -252,33 +283,181 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             sceneStatus_->setText(result.error);
             return;
         }
-        directors_ = std::move(result.value);
-        for (const auto &scene : directors_->entries()) {
-            QStringList selectors;
-            for (int n : scene.selectors)
-                selectors << QString::number(n);
-            auto item = new QListWidgetItem(scene.name + "\n" + hex(scene.envelope + 4) +
-                                                " · selectors " + selectors.join(", "),
-                                            scenes_);
-            item->setData(Qt::UserRole, scene.key);
-        }
-        scenes_->setCurrentRow(0);
+        readOnlyPrograms_ = std::move(result.value);
+        directors_ = readOnlyPrograms_->original();
+        reloadScenes();
     });
-    watcher->setFuture(QtConcurrent::run([rom = rom_] {
+    const auto snapshot = project_ ? project_->scenePrograms() : std::optional<ScenePrograms>{};
+    watcher->setFuture(QtConcurrent::run([rom = rom_, snapshot] {
         try {
-            return Result{Directors::load(rom), {}};
+            return Result{snapshot ? *snapshot : ScenePrograms::load(rom), {}};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
         }
     }));
 }
+SceneId CutsceneEditor::selectedScene() const {
+    const auto item = scenes_->currentItem();
+    if (!item)
+        return {};
+    const auto authored = item->data(Qt::UserRole + 1).toString();
+    return authored.isEmpty() ? SceneId(item->data(Qt::UserRole).toUInt())
+                              : SceneId::authored(authored);
+}
+const ScenePrograms &CutsceneEditor::programs() const {
+    return project_ ? *project_->scenePrograms() : *readOnlyPrograms_;
+}
+void CutsceneEditor::reloadScenes(SceneId preferred) {
+    if (!readOnlyPrograms_ && (!project_ || !project_->scenePrograms()))
+        return;
+    if (!preferred)
+        preferred = selectedScene();
+    QJsonArray identities;
+    for (const auto &scene : programs().authoredScenes())
+        identities << QJsonObject{
+            {"id", scene.id}, {"name", scene.name}, {"selector", scene.selector}};
+    const auto signature =
+        QString::fromUtf8(QJsonDocument(identities).toJson(QJsonDocument::Compact));
+    const QSignalBlocker block(scenes_);
+    if (!scenes_->count() || sceneCatalogSignature_ != signature) {
+        scenes_->clear();
+        const auto search = findChild<QLineEdit *>("cutsceneScenesSearch");
+        for (const auto &id : programs().scenes()) {
+            const auto &resource = programs().resource(id);
+            QStringList selectors;
+            for (const auto row : resource.selectors)
+                selectors << QString::number(row);
+            const auto name = id.authoredId.isEmpty()
+                                  ? resource.name
+                                  : programs().authoredScenes()[id.authoredId].name;
+            auto item =
+                new QListWidgetItem(name + "\n" +
+                                        (id.authoredId.isEmpty() ? hex(resource.envelope + 4)
+                                                                 : QString("Authored scene")) +
+                                        " · selectors " + selectors.join(", "),
+                                    scenes_);
+            item->setData(Qt::UserRole, id.nativeKey);
+            item->setData(Qt::UserRole + 1, id.authoredId);
+            item->setHidden(search && !item->text().contains(search->text(), Qt::CaseInsensitive));
+        }
+        sceneCatalogSignature_ = signature;
+    }
+    int selected = 0;
+    for (int i = 0; i < scenes_->count(); ++i) {
+        const auto item = scenes_->item(i);
+        if (item->data(Qt::UserRole).toUInt() == preferred.nativeKey &&
+            item->data(Qt::UserRole + 1).toString() == preferred.authoredId) {
+            selected = i;
+            break;
+        }
+    }
+    scenes_->setCurrentRow(selected);
+    selectScene();
+}
+void CutsceneEditor::createScene(bool blank) {
+    if (!project_)
+        return;
+    try {
+        QDialog dialog(this);
+        dialog.setObjectName("sceneCreateDialog");
+        dialog.setWindowTitle(blank ? "New scene" : "Duplicate scene");
+        auto layout = new QFormLayout(&dialog);
+        auto name = new QLineEdit(blank ? "New scene" : "Copy of scene");
+        name->setObjectName("newSceneName");
+        name->setMaxLength(120);
+        layout->addRow("Name", name);
+        auto source = selectedScene();
+        QComboBox *templates = nullptr;
+        if (blank) {
+            templates = new QComboBox;
+            templates->setObjectName("newSceneTemplate");
+            for (const auto &id : programs().scenes()) {
+                if (!programs().canCreateBlank(id))
+                    continue;
+                const auto &scene = programs().resource(id);
+                const auto label = id.authoredId.isEmpty()
+                                       ? scene.name
+                                       : programs().authoredScenes()[id.authoredId].name;
+                templates->addItem(label, id.nativeKey);
+                templates->setItemData(templates->count() - 1, id.authoredId, Qt::UserRole + 1);
+                if (id == source)
+                    templates->setCurrentIndex(templates->count() - 1);
+            }
+            if (!templates->count())
+                throw Error("This ROM has no intact class-five setup template for a blank scene");
+            layout->addRow("Setup template", templates);
+        } else if (source) {
+            const auto &scene = programs().resource(source);
+            name->setText("Copy of " + (source.authoredId.isEmpty()
+                                            ? scene.name
+                                            : programs().authoredScenes()[source.authoredId].name));
+        } else
+            return;
+        auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        layout->addRow(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        if (templates) {
+            const auto uuid = templates->currentData(Qt::UserRole + 1).toString();
+            source = uuid.isEmpty() ? SceneId(templates->currentData().toUInt())
+                                    : SceneId::authored(uuid);
+        }
+        auto next = *project_->scenePrograms();
+        const auto created = next.createScene(name->text(), source, blank);
+        pushSceneProgramChange(project_, undo_, blank ? "Create scene" : "Duplicate scene", next);
+        findChild<QLineEdit *>("cutsceneScenesSearch")->clear();
+        reloadScenes(created);
+        scenes_->scrollToItem(scenes_->currentItem());
+    } catch (const std::exception &e) {
+        QMessageBox::warning(this, "Scene creation", QString::fromUtf8(e.what()));
+    }
+}
+void CutsceneEditor::renameScene() {
+    const auto id = selectedScene();
+    if (!project_ || id.authoredId.isEmpty())
+        return;
+    bool accepted = false;
+    const auto name =
+        QInputDialog::getText(this, "Rename scene", "Name", QLineEdit::Normal,
+                              programs().authoredScenes()[id.authoredId].name, &accepted);
+    if (!accepted)
+        return;
+    try {
+        auto next = *project_->scenePrograms();
+        next.renameScene(id, name);
+        pushSceneProgramChange(project_, undo_, "Rename scene", next);
+    } catch (const std::exception &e) {
+        QMessageBox::warning(this, "Scene name", QString::fromUtf8(e.what()));
+    }
+}
+void CutsceneEditor::removeScene() {
+    if (!project_)
+        return;
+    try {
+        auto next = *project_->scenePrograms();
+        next.removeNewScene(selectedScene());
+        pushSceneProgramChange(project_, undo_, "Remove new scene", next);
+    } catch (const std::exception &e) {
+        QMessageBox::warning(this, "Scene removal", QString::fromUtf8(e.what()));
+    }
+}
 void CutsceneEditor::selectScene() {
+    if (commandEditor_ && commandEditor_->property("invalidEdits").toBool())
+        return;
     if (!directors_ || !scenes_->currentItem() || catalogTabs_->currentIndex() != 0)
         return;
-    const auto key = scenes_->currentItem()->data(Qt::UserRole).toUInt();
-    auto scene = directors_->entries()[key];
-    if (project_)
-        scene.program = project_->scenePrograms()->program(key);
+    const auto key = selectedScene();
+    auto scene = programs().resource(key);
+    scene.program = programs().program(key);
+    if (project_) {
+        const bool authored = !key.authoredId.isEmpty();
+        newScene_->setEnabled(true);
+        duplicateScene_->setEnabled(true);
+        renameScene_->setEnabled(authored);
+        removeScene_->setEnabled(authored && scene.key == 0);
+    }
     const int selectedCommand = commands_->currentRow();
     const QSignalBlocker commandsBlock(commands_);
     try {

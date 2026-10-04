@@ -1,9 +1,11 @@
 #pragma once
 #include "engine/scene_images.h"
+#include "engine/scene_programs.h"
 #include <QWidget>
 #include <functional>
 #include <optional>
 class QUndoStack;
+class QPushButton;
 class QComboBox;
 class QLabel;
 class QListWidget;
@@ -23,11 +25,22 @@ class CutsceneEditor : public QWidget {
 
   private:
     void selectScene();
+    SceneId selectedScene() const;
+    const ScenePrograms &programs() const;
+    void reloadScenes(SceneId preferred = {});
+    void createScene(bool blank);
+    void renameScene();
+    void removeScene();
     void selectRequest();
     void selectImage(const QString &id);
     void showImage();
     Rom rom_;
     Project *project_ = nullptr;
+    QUndoStack *undo_ = nullptr;
+    std::optional<ScenePrograms> readOnlyPrograms_;
+    QString sceneCatalogSignature_;
+    QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
+                *removeScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;

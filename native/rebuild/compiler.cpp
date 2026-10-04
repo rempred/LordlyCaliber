@@ -744,7 +744,10 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         for (auto it = plan.begin(); it != plan.end(); ++it)
             it.value() =
                 compiler.compileData(it.value(), directory, QString("scene_%1").arg(it.key()));
-        result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan);
+        auto authored = p.scenePrograms()->authoredPlan();
+        for (auto &scene : authored)
+            scene.program = compiler.compileData(scene.program, directory, "scene_" + scene.id);
+        result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan, authored);
         result.report
             << QString("Compiled and rebuilt %1 scene programs through original resource links")
                    .arg(plan.size());

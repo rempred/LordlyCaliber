@@ -45,6 +45,13 @@ class SceneCommand final : public QUndoCommand {
     qint64 time_;
 };
 } // namespace
+void pushSceneProgramChange(Project *project, QUndoStack *undo, const QString &label,
+                            const ScenePrograms &next, const QString &merge) {
+    if (next.json() == project->scenePrograms()->json())
+        return;
+    undo->push(
+        new SceneCommand(project, label, project->scenePrograms()->json(), next.json(), merge));
+}
 SceneCommandEditor::SceneCommandEditor(Project *project, QUndoStack *undo,
                                        std::function<void()> changed, QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
@@ -138,7 +145,7 @@ SceneCommandEditor::SceneCommandEditor(Project *project, QUndoStack *undo,
     });
     refresh();
 }
-void SceneCommandEditor::selectCommand(quint32 key, int command) {
+void SceneCommandEditor::selectCommand(SceneId key, int command) {
     if (editing_ || property("invalidEdits").toBool())
         return;
     key_ = key;
@@ -151,7 +158,7 @@ void SceneCommandEditor::validity(bool valid) {
     insert_->setEnabled(valid && command_ >= 0);
     remove_->setEnabled(valid && command_ >= 0 &&
                         command_ + 1 < project_->scenePrograms()->program(key_).commands.size());
-    restore_->setEnabled(key_ != 0);
+    restore_->setEnabled(bool(key_));
     discard_->setEnabled(!valid);
 }
 void SceneCommandEditor::refresh() {
@@ -159,6 +166,9 @@ void SceneCommandEditor::refresh() {
         return;
     while (fields_->rowCount())
         fields_->removeRow(0);
+    if (!key_.authoredId.isEmpty() &&
+        !project_->scenePrograms()->authoredScenes().contains(key_.authoredId))
+        key_ = {};
     if (!key_) {
         command_ = -1;
         validity(true);
@@ -224,9 +234,7 @@ void SceneCommandEditor::refresh() {
                      "the project immediately.");
 }
 void SceneCommandEditor::publish(const QString &label, const ScenePrograms &next, bool merge) {
-    if (next.json() == project_->scenePrograms()->json())
-        return;
-    undo_->push(new SceneCommand(project_, label, project_->scenePrograms()->json(), next.json(),
-                                 merge ? QString("%1/%2").arg(key_).arg(command_) : QString()));
+    pushSceneProgramChange(project_, undo_, label, next,
+                           merge ? QString("%1/%2").arg(key_.label()).arg(command_) : QString());
 }
 } // namespace lordly

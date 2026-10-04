@@ -25,6 +25,7 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
@@ -220,6 +221,98 @@ class UiTests : public QObject {
         next->click();
         QCOMPARE(position->value(), 1);
     }
+    void authoredSceneCreationControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        editor.resize(1300, 950);
+        editor.show();
+        auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1498, 10000);
+        auto create = editor.findChild<QPushButton *>("sceneCreate");
+        auto duplicate = editor.findChild<QPushButton *>("sceneDuplicate");
+        auto rename = editor.findChild<QPushButton *>("sceneRename");
+        auto remove = editor.findChild<QPushButton *>("sceneRemove");
+        QVERIFY(create && duplicate && rename && remove);
+        QVERIFY(create->isEnabled());
+        bool sawDialog = false;
+        QTimer::singleShot(0, &editor, [&] {
+            if (auto dialog = editor.findChild<QDialog *>("sceneCreateDialog")) {
+                auto name = dialog->findChild<QLineEdit *>("newSceneName");
+                auto choices = dialog->findChild<QComboBox *>("newSceneTemplate");
+                sawDialog = name && choices && choices->count() > 0;
+                if (name)
+                    name->setText("A new adventure");
+                dialog->accept();
+            }
+        });
+        create->click();
+        QVERIFY(sawDialog);
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 1);
+        QCOMPARE(scenes->count(), 1499);
+        const auto first = project.scenePrograms()->authoredScenes().first();
+        QCOMPARE(scenes->currentItem()->data(Qt::UserRole + 1).toString(), first.id);
+        QVERIFY(scenes->currentItem()->text().contains("A new adventure"));
+        auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
+        commands->setCurrentCell(2, 0);
+        auto form = editor.findChild<SceneCommandEditor *>();
+        auto field = form->findChild<QLineEdit *>("sceneOperand0");
+        QVERIFY(field);
+        field->setText("2222");
+        QCOMPARE(
+            project.scenePrograms()->program(SceneId::authored(first.id)).commands[2].operands[0],
+            quint32(2222));
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->program(SceneId::authored(first.id)).source,
+                 first.current.source);
+        undo.redo();
+        QTimer::singleShot(0, &editor, [&] {
+            if (auto dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                dialog->setTextValue("Adventure renamed");
+                dialog->accept();
+            }
+        });
+        rename->click();
+        QCOMPARE(project.scenePrograms()->authoredScenes()[first.id].name,
+                 QString("Adventure renamed"));
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->authoredScenes()[first.id].name, first.name);
+        undo.redo();
+        sawDialog = false;
+        QTimer::singleShot(0, &editor, [&] {
+            if (auto dialog = editor.findChild<QDialog *>("sceneCreateDialog")) {
+                auto name = dialog->findChild<QLineEdit *>("newSceneName");
+                sawDialog = name != nullptr;
+                if (name)
+                    name->setText("Adventure copy");
+                dialog->accept();
+            }
+        });
+        duplicate->click();
+        QVERIFY(sawDialog);
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 2);
+        const auto secondId = scenes->currentItem()->data(Qt::UserRole + 1).toString();
+        QVERIFY(secondId != first.id);
+        QCOMPARE(project.scenePrograms()->program(SceneId::authored(secondId)).source,
+                 project.scenePrograms()->program(SceneId::authored(first.id)).source);
+        remove->click();
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 1);
+        QCOMPARE(scenes->count(), 1499);
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 2);
+        undo.redo();
+        QCOMPARE(project.scenePrograms()->authoredScenes().size(), 1);
+        for (int i = 0; i < scenes->count(); ++i)
+            if (scenes->item(i)->data(Qt::UserRole + 1).toString() == first.id) {
+                scenes->setCurrentRow(i);
+                break;
+            }
+        editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentIndex(1);
+        QVERIFY(editor.grab().save("native-new-scene.png"));
+    }
     void sceneCommandEditingAndPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -283,6 +376,11 @@ class UiTests : public QObject {
         field->setText("0x");
         QVERIFY(form->property("invalidEdits").toBool());
         QVERIFY(!commands->isEnabled() && !scenes->isEnabled());
+        auto catalogTabs = editor.findChild<QTabWidget *>("cutsceneCatalogTabs");
+        catalogTabs->setCurrentIndex(1);
+        catalogTabs->setCurrentIndex(0);
+        QVERIFY(!editor.findChild<QPushButton *>("sceneCreate")->isEnabled());
+        QVERIFY(!editor.findChild<QPushButton *>("sceneDuplicate")->isEnabled());
         form->findChild<QPushButton *>("sceneCommandDiscard")->click();
         QVERIFY(!form->property("invalidEdits").toBool());
         QVERIFY(commands->isEnabled() && scenes->isEnabled());

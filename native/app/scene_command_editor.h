@@ -8,12 +8,14 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 namespace lordly {
+void pushSceneProgramChange(Project *, QUndoStack *, const QString &label, const ScenePrograms &,
+                            const QString &merge = {});
 class SceneCommandEditor : public QWidget {
     Q_OBJECT
   public:
     SceneCommandEditor(Project *, QUndoStack *, std::function<void()> changed,
                        QWidget *parent = nullptr);
-    void selectCommand(quint32 key, int command);
+    void selectCommand(SceneId key, int command);
   signals:
     void programChanged();
 
@@ -24,7 +26,7 @@ class SceneCommandEditor : public QWidget {
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
-    quint32 key_ = 0;
+    SceneId key_;
     int command_ = -1;
     bool editing_ = false;
     QFormLayout *fields_;

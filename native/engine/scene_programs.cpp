@@ -1,37 +1,72 @@
 #include "engine/scene_programs.h"
 #include "engine/dialogues.h"
 #include "game/director/control_flow.h"
+#include <QJsonArray>
+#include <QRegularExpression>
+#include <QUuid>
 #include <optional>
 namespace lordly {
 ScenePrograms ScenePrograms::load(const Rom &rom) {
-    return ScenePrograms(Directors::load(rom));
+    ScenePrograms result(Directors::load(rom));
+    if (const auto placement = SceneProgramResources::placement(rom)) {
+        for (const auto &scene : placement->authored) {
+            const auto key = result.original_.selectors()[scene.selector];
+            const auto baseline = result.original_.entries()[key];
+            result.authored_[scene.id] = {scene.id, scene.name, scene.selector, baseline,
+                                          baseline.program};
+        }
+    }
+    result.originalAuthored_ = result.authored_;
+    return result;
 }
-const DirectorResource &ScenePrograms::resource(quint32 key) const {
-    const auto primary = original_.entries().constFind(key);
+SceneId ScenePrograms::canonical(SceneId id) const {
+    if (id.authoredId.isEmpty() && id.nativeKey)
+        for (const auto &scene : authored_)
+            if (scene.baseline.key == id.nativeKey)
+                return SceneId::authored(scene.id);
+    return id;
+}
+const DirectorResource &ScenePrograms::resource(SceneId id) const {
+    id = canonical(id);
+    if (!id.authoredId.isEmpty()) {
+        const auto found = authored_.constFind(id.authoredId);
+        if (found == authored_.cend())
+            throw Error("Authored scene is not present in this project");
+        return found->baseline;
+    }
+    const auto primary = original_.entries().constFind(id.nativeKey);
     if (primary != original_.entries().cend())
         return primary.value();
-    const auto continuation = original_.continuations().constFind(key);
+    const auto continuation = original_.continuations().constFind(id.nativeKey);
     if (continuation != original_.continuations().cend())
         return continuation.value();
     throw Error("Scene resource is not present in the loaded ROM");
 }
-DirectorProgram ScenePrograms::program(quint32 key) const {
-    const auto changed = changes_.constFind(key);
-    return changed == changes_.cend() ? resource(key).program
+DirectorProgram ScenePrograms::program(SceneId id) const {
+    id = canonical(id);
+    if (!id.authoredId.isEmpty()) {
+        resource(id);
+        return authored_[id.authoredId].current;
+    }
+    const auto changed = changes_.constFind(id.nativeKey);
+    return changed == changes_.cend() ? resource(id).program
                                       : DirectorProgram::decode(changed.value());
 }
-void ScenePrograms::replace(quint32 key, const QByteArray &bytes) {
-    const auto &source = resource(key).program;
+void ScenePrograms::replace(SceneId id, const QByteArray &bytes) {
+    id = canonical(id);
+    const auto &source = resource(id).program;
     const auto parsed = DirectorProgram::decode(bytes);
     if (parsed.commands.last().opcode != 0x80000001 ||
         parsed.resourceClass() != source.resourceClass())
         throw Error("Scene edits must retain their terminal command and resource class");
-    if (bytes == source.source)
-        changes_.remove(key);
+    if (!id.authoredId.isEmpty())
+        authored_[id.authoredId].current = parsed;
+    else if (bytes == source.source)
+        changes_.remove(id.nativeKey);
     else
-        changes_[key] = bytes;
+        changes_[id.nativeKey] = bytes;
 }
-void ScenePrograms::setOperand(quint32 key, int command, int operand, quint32 value) {
+void ScenePrograms::setOperand(SceneId key, int command, int operand, quint32 value) {
     auto next = program(key);
     if (command < 0 || command >= next.commands.size() || operand < 0 ||
         operand >= next.commands[command].operands.size())
@@ -39,7 +74,7 @@ void ScenePrograms::setOperand(quint32 key, int command, int operand, quint32 va
     next.commands[command].operands[operand] = value;
     replace(key, next.encode());
 }
-void ScenePrograms::insertCommand(quint32 key, int before, quint32 opcode) {
+void ScenePrograms::insertCommand(SceneId key, int before, quint32 opcode) {
     auto next = program(key);
     const auto definition = Directors::grammar().constFind(opcode);
     if (definition == Directors::grammar().cend() || opcode == 0x80000001 || before < 0 ||
@@ -48,16 +83,101 @@ void ScenePrograms::insertCommand(quint32 key, int before, quint32 opcode) {
     next.commands.insert(before, {0, opcode, QVector<quint32>(definition->words - 1, 0)});
     replace(key, next.encode());
 }
-void ScenePrograms::removeCommand(quint32 key, int command) {
+void ScenePrograms::removeCommand(SceneId key, int command) {
     auto next = program(key);
     if (command < 0 || command >= next.commands.size() - 1)
         throw Error("The terminal scene command cannot be removed");
     next.commands.removeAt(command);
     replace(key, next.encode());
 }
-void ScenePrograms::restore(quint32 key) {
-    resource(key);
-    changes_.remove(key);
+void ScenePrograms::restore(SceneId id) {
+    id = canonical(id);
+    const auto baseline = resource(id).program;
+    if (!id.authoredId.isEmpty())
+        authored_[id.authoredId].current = baseline;
+    else
+        changes_.remove(id.nativeKey);
+}
+QVector<SceneId> ScenePrograms::scenes() const {
+    QVector<SceneId> result;
+    for (const auto &scene : original_.entries())
+        if (canonical(scene.key).authoredId.isEmpty())
+            result << SceneId(scene.key);
+    for (const auto &scene : authored_)
+        result << SceneId::authored(scene.id);
+    return result;
+}
+QVector<int> ScenePrograms::availableSelectors() const {
+    QVector<int> result;
+    for (int i = 0; i < original_.selectors().size(); ++i) {
+        if (original_.selectors()[i] || Directors::reservedSelectors().contains(i))
+            continue;
+        bool claimed = false;
+        for (const auto &scene : authored_)
+            claimed |= scene.selector == i;
+        if (!claimed)
+            result << i;
+    }
+    return result;
+}
+bool ScenePrograms::canCreateBlank(SceneId source) const {
+    const auto initial = program(source);
+    const auto &bytes = initial.source;
+    return initial.resourceClass() == 5 && bytes.size() >= 92 && u32(bytes, 0) == 0x80000006 &&
+           u32(bytes, 8) == 0x36 && u32(bytes, 40) == 0x35 &&
+           bytes.last(20) == QByteArray::fromHex("0000007d800000028000000080000001ff000005");
+}
+SceneId ScenePrograms::createScene(const QString &name, SceneId source, bool blank) {
+    if (name.trimmed().isEmpty() || name.size() > 120)
+        throw Error("Enter a scene name of 1 to 120 characters");
+    const auto free = availableSelectors();
+    if (free.isEmpty())
+        throw Error("No unclaimed scene selectors remain");
+    auto initial = program(source);
+    if (blank) {
+        const auto &bytes = initial.source;
+        if (!canCreateBlank(source))
+            throw Error("This scene does not provide the class-five setup and exit needed for a "
+                        "blank scene");
+        initial = DirectorProgram::decode(bytes.first(72) + bytes.last(20));
+    }
+    if (initial.resourceClass() < 0)
+        throw Error("New scenes require a complete resource class");
+    const auto uuid = QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-');
+    DirectorResource baseline{0, 0, {free.first()}, name.trimmed(), initial};
+    authored_[uuid] = {uuid, name.trimmed(), free.first(), baseline, initial};
+    return SceneId::authored(uuid);
+}
+void ScenePrograms::renameScene(SceneId id, const QString &name) {
+    id = canonical(id);
+    resource(id);
+    if (id.authoredId.isEmpty())
+        throw Error("Only authored scenes have editable project names");
+    if (name.trimmed().isEmpty() || name.size() > 120)
+        throw Error("Enter a scene name of 1 to 120 characters");
+    authored_[id.authoredId].name = name.trimmed();
+}
+void ScenePrograms::removeNewScene(SceneId id) {
+    id = canonical(id);
+    resource(id);
+    if (id.authoredId.isEmpty() || originalAuthored_.contains(id.authoredId))
+        throw Error("Only scenes added in this project can be removed before export");
+    authored_.remove(id.authoredId);
+}
+int ScenePrograms::authoredChanges() const {
+    int count = 0;
+    for (const auto &scene : authored_) {
+        const auto found = originalAuthored_.constFind(scene.id);
+        count += found == originalAuthored_.cend() || found->name != scene.name ||
+                 found->current.source != scene.current.source;
+    }
+    return count;
+}
+QVector<AuthoredSceneBuild> ScenePrograms::authoredPlan() const {
+    QVector<AuthoredSceneBuild> result;
+    for (const auto &scene : authored_)
+        result << AuthoredSceneBuild{scene.id, scene.name, scene.selector, scene.current.source};
+    return result;
 }
 void ScenePrograms::validateReferences(const Rom &rom, const Dialogues *dialogues) const {
     const auto dynamic = [](quint32 word) { return (word & 0xffffff00U) == 0x08880000U; };
@@ -66,16 +186,23 @@ void ScenePrograms::validateReferences(const Rom &rom, const Dialogues *dialogue
             throw Error("Reference selects an absent scene resource");
     };
     std::optional<Dialogues> fallback;
-    for (auto it = changes_.cbegin(); it != changes_.cend(); ++it) {
-        const auto &original = resource(it.key()).program;
-        const auto edited = DirectorProgram::decode(it.value());
+    QVector<SceneId> editedIds;
+    for (auto it = changes_.cbegin(); it != changes_.cend(); ++it)
+        editedIds << SceneId(it.key());
+    for (const auto &scene : authored_)
+        editedIds << SceneId::authored(scene.id);
+    for (const auto &id : editedIds) {
+        const auto original = !id.authoredId.isEmpty() && !originalAuthored_.contains(id.authoredId)
+                                  ? DirectorProgram{}
+                                  : resource(id).program;
+        const auto edited = program(id);
         auto words = [](const QByteArray &bytes) {
             QVector<quint32> result;
             for (int at = 0; at < bytes.size(); at += 4)
                 result << u32(bytes, at);
             return result;
         };
-        const auto originalWords = words(original.source), editedWords = words(it.value());
+        const auto originalWords = words(original.source), editedWords = words(edited.source);
         auto sameReference = [&](const DirectorCommand &command, int first, int count) {
             for (const auto &prior : original.commands) {
                 if (prior.opcode != command.opcode)
@@ -92,8 +219,13 @@ void ScenePrograms::validateReferences(const Rom &rom, const Dialogues *dialogue
             const auto &args = command.operands;
             try {
                 if (command.opcode == 0x80000003 && !dynamic(args[0]) &&
-                    !sameReference(command, 0, 1))
-                    lookup(original_.selectors(), args[0]);
+                    !sameReference(command, 0, 1)) {
+                    bool added = false;
+                    for (const auto &scene : authored_)
+                        added |= quint32(scene.selector) == args[0];
+                    if (!added)
+                        lookup(original_.selectors(), args[0]);
+                }
                 if (command.opcode == 0x99 && !dynamic(args[0]) && !sameReference(command, 0, 1) &&
                     (args[0] & 255) < 254)
                     lookup(original_.continuationSelectors(), args[0] & 255);
@@ -152,7 +284,7 @@ void ScenePrograms::validateReferences(const Rom &rom, const Dialogues *dialogue
                 }
             } catch (const std::exception &error) {
                 throw Error(QString("Scene resource %1, word %2: %3")
-                                .arg(it.key(), 8, 16, QChar('0'))
+                                .arg(id.label())
                                 .arg(command.word)
                                 .arg(QString::fromUtf8(error.what())));
             }
@@ -163,13 +295,65 @@ QJsonObject ScenePrograms::json() const {
     QJsonObject entries;
     for (auto it = changes_.cbegin(); it != changes_.cend(); ++it)
         entries[QString::number(it.key())] = QString::fromLatin1(it.value().toHex());
-    return {{"version", 1}, {"programs", entries}};
+    QJsonArray authored;
+    for (const auto &scene : authored_)
+        authored << QJsonObject{
+            {"id", scene.id},
+            {"name", scene.name},
+            {"selector", scene.selector},
+            {"baseline", QString::fromLatin1(scene.baseline.program.source.toHex())},
+            {"program", QString::fromLatin1(scene.current.source.toHex())}};
+    return {{"version", 1}, {"programs", entries}, {"authored", authored}};
 }
 void ScenePrograms::apply(const QJsonObject &value) {
     if (value["version"] != 1 || !value["programs"].isObject())
         throw Error("Invalid saved scene programs");
     auto next = *this;
     next.changes_.clear();
+    next.authored_ = originalAuthored_;
+    if (value.contains("authored")) {
+        if (!value["authored"].isArray())
+            throw Error("Invalid saved authored scenes");
+        QSet<QString> identities;
+        auto bytes = [](const QJsonValue &value) {
+            const auto hex = value.toString().toLatin1(), result = QByteArray::fromHex(hex);
+            if (!value.isString() || result.toHex() != hex.toLower())
+                throw Error("Invalid saved authored scene bytes");
+            return result;
+        };
+        for (const auto item : value["authored"].toArray()) {
+            const auto object = item.toObject();
+            const auto uuid = object["id"].toString(), name = object["name"].toString();
+            const auto selector = object["selector"].toInt(-1);
+            if (!item.isObject() || object.size() != 5 ||
+                !QRegularExpression("^[0-9a-f]{32}$").match(uuid).hasMatch() ||
+                identities.contains(uuid) || name.trimmed().isEmpty() || name.size() > 120 ||
+                selector < 0 || object["selector"].toDouble() != selector)
+                throw Error("Invalid saved authored scene identity");
+            const auto baseline = DirectorProgram::decode(bytes(object["baseline"]));
+            const auto current = DirectorProgram::decode(bytes(object["program"]));
+            if (baseline.resourceClass() < 0 || current.resourceClass() != baseline.resourceClass())
+                throw Error("Saved authored scene changed its terminal class");
+            if (originalAuthored_.contains(uuid)) {
+                const auto &original = originalAuthored_[uuid];
+                if (selector != original.selector ||
+                    baseline.source != original.baseline.program.source)
+                    throw Error("Saved authored scene differs from its source ROM");
+                next.authored_[uuid].name = name;
+                next.authored_[uuid].current = current;
+            } else {
+                if (!next.availableSelectors().contains(selector))
+                    throw Error("Saved new scene selector is occupied or reserved");
+                next.authored_[uuid] = {
+                    uuid, name, selector, {0, 0, {selector}, name, baseline}, current};
+            }
+            identities.insert(uuid);
+        }
+        for (const auto &scene : originalAuthored_)
+            if (!identities.contains(scene.id))
+                throw Error(
+                    "An exported scene cannot be dropped without resolving its event references");
+    }
     const auto programs = value["programs"].toObject();
     for (auto it = programs.cbegin(); it != programs.cend(); ++it) {
         bool valid = false;

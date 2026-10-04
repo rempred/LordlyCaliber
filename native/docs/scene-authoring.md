@@ -41,7 +41,41 @@ The UI check exercises decimal/hex edits, undo/redo, multiple invalid fields,
 insert/remove, restore, navigation blocking and actual background resource
 selection after a group edit (427 ms focused; 2,183 ms with source-navigation and
 main-window dialogue guard regressions). The command-page screenshot was inspected.
-These checks establish editor/rebuild behavior, not full-scene gameplay. New scenes,
-event binding, full browser scene conversion and final scene playback remain active
-work. The dynamic scene at z64 payload 0x01FA8BF4 has no local camera command, so
+These checks establish editor/rebuild behavior, not full-scene gameplay. Event
+binding, exported-scene deletion, full browser scene conversion and final scene
+playback remain active work. The dynamic scene at z64 payload 0x01FA8BF4 has no local camera command, so
 camera editing coverage uses a class-five stream that defines its own camera.
+
+
+## New scenes
+
+The UI creates blank class-five scenes from a selected current-ROM setup template,
+duplicates complete scenes, renames them and removes project additions with undo.
+A blank scene retains the template's group, both cameras and native exit sequence;
+it does not manufacture actor or army context. Users edit its subsequent commands.
+Typed SceneId values distinguish native resource keys from authored UUIDs. No
+fabricated ROM key is assigned to a scene before it has an exported allocation.
+
+Each new scene takes an empty, unclaimed top-level selector. The generated retail
+catalog reserves 1,548 selectors; the vanilla directory has 145 available rows.
+Clearing a retail pointer in another tool does not make that row unclaimed. UUID,
+name, selector and source/current program survive project save and undo. Scene
+references may target additions in the same project. Native references to an
+exported authored resource resolve to that same authored identity on reopening.
+
+LC05SCPT version two adds an owned UTF-8 JSON identity manifest between the pointer
+lists and compressed members. Header words at offsets 28/32 identify its relative
+offset/length. Version-one allocations remain readable and migrate on rebuild.
+The manifest is covered by the payload CRC, and every authored scene exclusively
+owns its recorded selector. Programs compile during export; both native and new
+resources receive decoded readback. Retail names survive relocation through their
+stable catalog selectors. Removal of an already-exported scene remains unavailable
+until its event and scene references can be resolved as one transaction.
+
+Creation/clone/rename, save/reopen, export/reopen, ownership collision and subsequent
+edit checks passed with existing export/reference checks (9,114 ms). The explicit
+version-one migration and authored export checks passed together (3,739 ms). UI
+creation, duplication, rename, removal, command editing and undo passed with the
+catalog/command regressions (2,230 ms); the new-scene screenshot was inspected.
+Final checks for relocated retail names (2,736 ms) and tab-switch invalid-input
+protection (412 ms) pass. No in-game launch is claimed by these checks.

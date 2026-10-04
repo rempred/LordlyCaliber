@@ -24,8 +24,15 @@ const names={};for(const scene of data.scenes){
  const key=parseInt(scene.directorKey,16);if(!Number.isInteger(key))continue;
  names[key]={name:scene.friendlyName||scene.technicalName||scene.assetId,decodedSha256:scene.source.decodedSha256};
 }
+const selectorNames={};
+for(const scene of data.scenes){
+ const key=parseInt(scene.directorKey,16);
+ if(!names[key])continue;
+ for(const row of scene.source && scene.source.directorSelectorRows || [])selectorNames[row]=names[key].name;
+}
 fs.writeFileSync(path.join(root,'native/game/director/grammar.json'),JSON.stringify({
  generator:'native/tools/generate-director-grammar.cjs',source:'native/game/director/func_00284288.c',
- sourceSha256:model.source.sha256,sourceCommit:'8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8',rows,names,
+ sourceSha256:model.source.sha256,sourceCommit:'8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8',rows,names,selectorNames,
+ claimedSelectors:[...new Set(data.scenes.flatMap(s=>s.source && s.source.directorSelectorRows || []))].sort((a,b)=>a-b),
  continuations:data.directorContinuationStreams.map(s=>({selector:s.selector,key:s.resourceKey,decodedSha256:s.decodedSha256}))},null,2)+'\n');
 console.log(`Generated ${rows.length} C-checked opcode descriptions and ${Object.keys(names).length} scene labels.`);

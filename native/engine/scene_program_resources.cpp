@@ -1,5 +1,9 @@
 #include "engine/scene_program_resources.h"
 #include "engine/promotion.h"
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRegularExpression>
 #include <QSet>
 namespace lordly {
 namespace {
@@ -35,8 +39,11 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
-    if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" || u32(header, 8) != 1 ||
-        header.mid(28, 64) != QByteArray(64, 0) || u32(header, 92) != crc32(header.first(92)))
+    if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
+        (u32(header, 8) != 1 && u32(header, 8) != 2) ||
+        header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
+            QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
+        u32(header, 92) != crc32(header.first(92)))
         throw Error("Scene allocation descriptor is damaged or occupied");
     SceneProgramPlacement result{u32(header, 12), u32(header, 16), {}};
     const auto count = u32(header, 20);
@@ -75,7 +82,46 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
         referenceCursor += length * 4;
         previous = owner;
     }
-    quint32 cursor = align(referenceCursor);
+    quint32 metadataEnd = referenceCursor;
+    if (u32(header, 8) == 2) {
+        const auto offset = u32(header, 28), size = u32(header, 32);
+        if (offset != referenceCursor || !size || size > 1024 * 1024 ||
+            quint64(offset) + size > quint64(data.size()))
+            throw Error("Authored scene metadata exceeds its allocation");
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(data.mid(offset, size), &error);
+        if (error.error != QJsonParseError::NoError || !document.isArray())
+            throw Error("Authored scene metadata is invalid");
+        QSet<QString> identities;
+        QSet<int> selectors;
+        const auto tableBytes = u32(rom.bytes(), 0x1f3ca84);
+        for (const auto value : document.array()) {
+            const auto entry = value.toObject();
+            const auto id = entry["id"].toString(), name = entry["name"].toString();
+            const auto selector = entry["selector"].toInt(-1);
+            if (!value.isObject() || entry.size() != 3 ||
+                !QRegularExpression("^[0-9a-f]{32}$").match(id).hasMatch() ||
+                identities.contains(id) || name.trimmed().isEmpty() || name.size() > 120 ||
+                selector < 0 || entry["selector"].toDouble() != selector ||
+                quint32(selector) >= tableBytes / 4 || selectors.contains(selector) ||
+                Directors::reservedSelectors().contains(selector))
+                throw Error("Authored scene identity is invalid or duplicated");
+            const auto owner = 0x1f3ca88U + quint32(selector) * 4;
+            if (!result.members.contains(owner) ||
+                result.members[owner].references != QVector<quint32>{owner})
+                throw Error("Authored scene does not exclusively own its selector");
+            identities.insert(id);
+            selectors.insert(selector);
+            const auto &member = result.members[owner];
+            const auto decoded = decodeLzss(data.mid(member.offset + 8, member.size - 8),
+                                            u32(data, member.offset + 4));
+            if (DirectorProgram::decode(decoded).resourceClass() < 0)
+                throw Error("Authored scene lacks its resource class");
+            result.authored << AuthoredSceneBuild{id, name, selector, decoded};
+        }
+        metadataEnd += size;
+    }
+    quint32 cursor = align(metadataEnd);
     for (const auto &member : result.members) {
         if (member.offset != cursor)
             throw Error("Scene allocation members overlap metadata or one another");
@@ -91,10 +137,11 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     }
     return result;
 }
-QByteArray SceneProgramResources::rebuild(const Rom &rom,
-                                          const QMap<quint32, QByteArray> &compiled) {
+QByteArray
+SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &compiled,
+                               const std::optional<QVector<AuthoredSceneBuild>> &authored) {
     const auto prior = placement(rom);
-    if (compiled.isEmpty())
+    if (compiled.isEmpty() && (!authored || (!prior && authored->isEmpty())))
         return rom.bytes();
     struct Member {
         QByteArray bytes;
@@ -133,11 +180,70 @@ QByteArray SceneProgramResources::rebuild(const Rom &rom,
         envelope += trailing;
         members[links.first()] = {envelope, links};
     }
+    const auto authoredScenes = authored ? *authored
+                                : prior  ? prior->authored
+                                         : QVector<AuthoredSceneBuild>{};
+    QJsonArray manifest;
+    QSet<QString> identities;
+    QSet<int> selectors;
+    if (prior && authored) {
+        for (const auto &old : prior->authored) {
+            bool retained = false;
+            for (const auto &next : authoredScenes)
+                retained |= next.id == old.id && next.selector == old.selector;
+            if (!retained)
+                throw Error(
+                    "Removing an exported scene requires resolving its event references first");
+        }
+    }
+    for (const auto &scene : authoredScenes) {
+        const auto selector = scene.selector;
+        if (!QRegularExpression("^[0-9a-f]{32}$").match(scene.id).hasMatch() ||
+            identities.contains(scene.id) || scene.name.trimmed().isEmpty() ||
+            scene.name.size() > 120 || selector < 0 || selector >= sources.selectors().size() ||
+            selectors.contains(selector))
+            throw Error("Invalid authored scene identity or selector");
+        identities.insert(scene.id);
+        selectors.insert(selector);
+        const auto owner = 0x1f3ca88U + quint32(selector) * 4;
+        const auto currentKey = sources.selectors()[selector];
+        bool owned = false;
+        if (prior)
+            for (const auto &old : prior->authored)
+                owned |= old.id == scene.id && old.selector == selector;
+        if ((currentKey || Directors::reservedSelectors().contains(selector)) && !owned)
+            throw Error("The new scene selector is already occupied or reserved");
+        const auto programBytes =
+            !authored && compiled.contains(currentKey) ? compiled[currentKey] : scene.program;
+        const auto program = DirectorProgram::decode(programBytes);
+        if (program.resourceClass() < 0 ||
+            (owned &&
+             program.resourceClass() != sources.entries()[currentKey].program.resourceClass()))
+            throw Error("Authored scene requires its original terminal resource class");
+        QByteArray trailing;
+        if (owned) {
+            const auto &old = members[owner].bytes;
+            qsizetype consumed = 0;
+            decodeLzss(old.mid(8), u32(old, 4), &consumed);
+            trailing = old.mid(8 + consumed);
+        }
+        const auto packed = encodeLzss(programBytes);
+        QByteArray envelope(8, 0);
+        put32(envelope, 0, quint32(4 + packed.size() + trailing.size()));
+        put32(envelope, 4, quint32(programBytes.size()));
+        envelope += packed;
+        envelope += trailing;
+        members[owner] = {envelope, {owner}};
+        manifest << QJsonObject{{"id", scene.id}, {"name", scene.name}, {"selector", selector}};
+    }
+    const auto metadata = QJsonDocument(manifest).toJson(QJsonDocument::Compact);
     quint32 refsSize = 0;
     for (const auto &member : members)
         refsSize += quint32(member.references.size() * 4);
     quint32 refsCursor = quint32(members.size() * 20);
-    QByteArray payload(align(refsCursor + refsSize), char(-1));
+    const auto metadataOffset = refsCursor + refsSize;
+    QByteArray payload(align(metadataOffset + quint32(metadata.size())), char(-1));
+    payload.replace(metadataOffset, metadata.size(), metadata);
     int row = 0;
     for (auto it = members.cbegin(); it != members.cend(); ++it, ++row) {
         put32(payload, row * 20, it.key());
@@ -176,11 +282,13 @@ QByteArray SceneProgramResources::rebuild(const Rom &rom,
     }
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, 1);
+    put32(header, 8, 2);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));
     put32(header, 24, crc32(payload));
+    put32(header, 28, metadataOffset);
+    put32(header, 32, quint32(metadata.size()));
     put32(header, 92, crc32(header.first(92)));
     image.replace(descriptorOffset, descriptorSize, header);
     const auto reopened = Rom::fromBytes(image);
@@ -193,6 +301,14 @@ QByteArray SceneProgramResources::rebuild(const Rom &rom,
                                                             : check.continuations()[key].program;
         if (program.source != it.value())
             throw Error("Rebuilt scene failed decoded readback");
+    }
+    for (const auto &scene : authoredScenes) {
+        const auto oldKey = sources.selectors()[scene.selector];
+        const auto expected =
+            !authored && compiled.contains(oldKey) ? compiled[oldKey] : scene.program;
+        const auto key = check.selectors()[scene.selector];
+        if (check.entries()[key].program.source != expected)
+            throw Error("Authored scene failed decoded readback");
     }
     return image;
 }
