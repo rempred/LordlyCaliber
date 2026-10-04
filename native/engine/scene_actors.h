@@ -35,6 +35,12 @@ class SceneActors {
     // Components of the normal scheduler. The caller must retain the game's
     // other services/order, including terrain and proximity, before advancing.
     void advancePlanar();
+    void advanceMovement();
+    void supplySceneFlags(quint32 flags) {
+        sceneFlags_ = flags;
+    }
+    void supplyDepthAttachment(int slot, QByteArray record);
+    const QByteArray &depthAttachment(int slot) const;
     void advanceHeights();
     void advancePoses();
 
@@ -52,6 +58,8 @@ class SceneActors {
     std::array<std::optional<ActorInstance>, 28> actors_;
     std::array<LordlyActorMotion, 28> motions_{};
     std::array<ActorHeightJob, 28> heights_;
+    std::array<QByteArray, 28> depths_;
+    std::optional<quint32> sceneFlags_;
     std::optional<ActorBindingInputs> binding_;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;

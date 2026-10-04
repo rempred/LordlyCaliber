@@ -1,5 +1,19 @@
 # Native Lordly Caliber
 
+SceneActors now executes the complete movement updater reconstructed from ROM
+2A0EF0..2A135C, including terrain calls, slot-motion cleanup, nearby-actor depth
+attachments and their second-pass updates/releases. Mode-two proximity requires
+explicit current scene state flags; terrain requires a supplied height query.
+The two mode-two ground reads, including the paused/expired second read, retain
+their native order. Depth tests use truncated coordinate differences, a square
+20-unit neighborhood, integer radial bias and the original Z sign. Imported
+four-byte records preserve padding; fresh host allocations initialize it to zero.
+All 234 original-instruction sequences match 936 complete actor/motion/attachment
+snapshots and terrain-call lists. Terrain, allocation and freeing are controlled;
+missing flags/terrain reject without partial scene changes. ScenePlayback now
+owns this stage directly, and its pause/resume composition check still passes.
+This establishes the depth records, not their final render-matrix integration.
+
 ScenePlayback now composes the resumable scheduler, DirectorSession, actor
 height/pose updates, projection, camera commands and fade commands. It preserves
 partial Director and pose-sweep continuations across host budgets and unavailable
@@ -11,8 +25,7 @@ before preventing another one. Fade updates remain an explicit independent call.
 A scripted integration check verifies creation, height cadence, projection delay,
 registered waits, alternate entry/exit, release and identical complete actor records
 under repeated suspension with one-instruction/one-service budgets. Its absent
-supplemental pools are explicitly acknowledged. Full movement/terrain/proximity,
-animated sprites after the actor sweep and other domain stages remain supplemental
+supplemental pools are explicitly acknowledged. Animated sprites after the actor sweep and other domain stages remain supplemental
 services; missing ones suspend with their identity. This is an integrated execution
 boundary, not a complete retail-scene player or a new UI preview yet.
 

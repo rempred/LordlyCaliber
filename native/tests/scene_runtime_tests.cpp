@@ -9,10 +9,115 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <bit>
 using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void movementAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("scene-movement-mips.cjs"),
+                                 path, work.filePath("movement.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("movement.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 234);
+        const auto rom = Rom::open(path);
+        auto fromMotion = [](const QByteArray &b, bool present) {
+            return LordlyActorMotion{std::bit_cast<float>(u32(b, 0)),
+                                     std::bit_cast<float>(u32(b, 4)),
+                                     std::bit_cast<float>(u32(b, 8)),
+                                     u16(b, 12),
+                                     u8(b, 14),
+                                     u8(b, 15),
+                                     present ? 1 : 0};
+        };
+        auto motionBytes = [](const LordlyActorMotion &m) {
+            QByteArray b(16, 0);
+            put32(b, 0, std::bit_cast<quint32>(m.vx));
+            put32(b, 4, std::bit_cast<quint32>(m.vy));
+            put32(b, 8, std::bit_cast<quint32>(m.vz));
+            put16(b, 12, m.remaining);
+            put8(b, 14, m.pause);
+            put8(b, 15, m.retained);
+            return b;
+        };
+        for (const auto &v : cases) {
+            const auto row = v.toObject(), options = row["options"].toObject();
+            QJsonArray terrain;
+            SceneActors scene(rom, options["mode"].toInt(), 0, [&](int mode, float x, float z) {
+                terrain.append(QJsonArray{mode, x, z});
+                return 7.25f + float(terrain.size()) / 4;
+            });
+            scene.supplySceneFlags(quint32(options["stateFlags"].toInt()));
+            for (const auto &a : row["actors"].toArray()) {
+                const auto actor = a.toObject();
+                scene.supplyActor(actor["slot"].toInt(),
+                                  QByteArray::fromHex(actor["record"].toString().toLatin1()));
+            }
+            for (const auto &a : row["motions"].toArray()) {
+                const auto motion = a.toObject();
+                scene.supplyMotion(
+                    motion["slot"].toInt(),
+                    fromMotion(QByteArray::fromHex(motion["record"].toString().toLatin1()),
+                               motion["present"].toBool()));
+            }
+            for (const auto &a : row["depths"].toArray()) {
+                const auto depth = a.toObject();
+                scene.supplyDepthAttachment(
+                    depth["slot"].toInt(),
+                    QByteArray::fromHex(depth["record"].toString().toLatin1()));
+            }
+            for (const auto &s : row["states"].toArray()) {
+                scene.advanceMovement();
+                const auto state = s.toObject();
+                for (const auto &a : state["actors"].toArray()) {
+                    const auto actor = a.toObject();
+                    QCOMPARE(scene.actor(actor["slot"].toInt())->record().toHex(),
+                             actor["record"].toString().toLatin1());
+                }
+                for (const auto &a : state["motions"].toArray()) {
+                    const auto motion = a.toObject();
+                    const auto &actual = scene.motion(motion["slot"].toInt());
+                    QCOMPARE(motionBytes(actual).toHex(), motion["record"].toString().toLatin1());
+                    QCOMPARE(bool(actual.present), motion["present"].toBool());
+                }
+                QJsonArray depths;
+                for (int slot = 0; slot < 28; ++slot)
+                    if (!scene.depthAttachment(slot).isEmpty())
+                        depths.append(QJsonObject{
+                            {"slot", slot},
+                            {"record", QString::fromLatin1(scene.depthAttachment(slot).toHex())}});
+                QCOMPARE(depths, state["depths"].toArray());
+                QCOMPARE(terrain, state["terrain"].toArray());
+            }
+        }
+        const auto initial = QByteArray::fromHex(
+            cases[0].toObject()["actors"].toArray()[0].toObject()["record"].toString().toLatin1());
+        SceneActors missingFlags(rom, 2, 0);
+        missingFlags.supplyActor(0, initial);
+        missingFlags.supplyMotion(0, {1, 0, 2, 3, 0, 0, 1});
+        QVERIFY_THROWS_EXCEPTION(Error, missingFlags.advanceMovement());
+        QCOMPARE(missingFlags.actor(0)->record(), initial);
+        QCOMPARE(missingFlags.motion(0).remaining, 3);
+        missingFlags.supplySceneFlags(0);
+        auto ground = initial;
+        put8(ground, 0x145, 1);
+        missingFlags.supplyActor(27, ground);
+        missingFlags.supplyMotion(27, {1, 0, 2, 3, 0, 0, 1});
+        QVERIFY_THROWS_EXCEPTION(Error, missingFlags.advanceMovement());
+        QCOMPARE(missingFlags.actor(0)->record(), initial);
+        QCOMPARE(missingFlags.motion(0).remaining, 3);
+        QCOMPARE(missingFlags.actor(27)->record(), ground);
+    }
     void playbackCompositionAndSuspension() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

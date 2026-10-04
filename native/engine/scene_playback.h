@@ -10,6 +10,7 @@ struct ScenePlaybackStart {
     int mode = 2;
     quint8 presentation = 0, alternate = 0, delayedCounter = 0;
     DirectorLaunchTranslations translations;
+    std::optional<quint32> sceneFlags;
 };
 // One normal/alternate Actor-scene scheduler invocation, not a video frame.
 // Rendering and the fade's independent permanent-scheduler slot remain separate.
@@ -19,10 +20,9 @@ class ScenePlayback {
     using Update = std::function<bool(LordlySceneService)>;
     ScenePlayback(const Rom &, Directors, int selector, ScenePlaybackStart, SceneCameras cameras,
                   ActorInstance::Height height = {});
-    // Internal stages: counter, height, actor poses, projection and Director.
+    // Internal stages: counter, height, movement, actor poses, projection and Director.
     // POSES in the supplemental callback means only the subsequent 30-sprite
-    // sweep. MOVEMENT means the full movement/terrain/proximity service, not
-    // just planar integration. Missing callbacks suspend, including empty pools
+    // sweep. Missing callbacks suspend, including empty pools
     // whose absence has not been established by the owner of that domain.
     Result advance(const Update &supplemental = {}, const DirectorSession::Service &commands = {},
                    int instructionBudget = 10000, int stageBudget = 64);

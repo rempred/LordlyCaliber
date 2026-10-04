@@ -9,6 +9,8 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
+    if (start.sceneFlags)
+        actors_.supplySceneFlags(*start.sceneFlags);
 }
 void ScenePlayback::setMode(int mode) {
     if (mode < 0 || mode > 2)
@@ -39,6 +41,9 @@ bool ScenePlayback::update(LordlySceneService service) {
         return true;
     case LORDLY_SCENE_HEIGHT:
         actors_.advanceHeights();
+        return true;
+    case LORDLY_SCENE_MOVEMENT:
+        actors_.advanceMovement();
         return true;
     case LORDLY_SCENE_PROJECTION:
         projection_.advance();
