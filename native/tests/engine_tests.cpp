@@ -4,6 +4,7 @@
 #include "engine/class_text.h"
 #include "engine/consumable_effects.h"
 #include "engine/custom_squads.h"
+#include "engine/eset.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
@@ -1740,6 +1741,158 @@ class EngineTests : public QObject {
             project.setShops(original);
             QVERIFY(!project.manifest().contains("shops"));
             QCOMPARE(project.changedRecords(), 0);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void esetFraming() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            QJsonArray fixtures;
+            int found = 0;
+            qsizetype at = 0;
+            while ((at = rom.bytes().indexOf("-lh", at)) >= 0) {
+                const auto start = at - 2;
+                at += 3;
+                std::optional<LhaMember> member;
+                try {
+                    member = LhaMember::read(rom.bytes(), start);
+                } catch (const Error &) {
+                    continue;
+                }
+                if (!member->name.startsWith("eset") || !member->name.endsWith(".bin"))
+                    continue;
+                const auto raw = member->decode(rom);
+                auto eset = Eset::decode(raw);
+                QCOMPARE(eset.encode(), raw);
+                QCOMPARE(eset.baseLevel(), u8(raw, 8));
+                QVERIFY(eset.deployments.size() <= 20);
+                QVERIFY(eset.nodes.size() <= 16);
+                QVERIFY(eset.conditions.size() <= 16);
+                auto expected = raw;
+                eset.setBaseLevel(99);
+                expected[8] = 99;
+                QCOMPARE(eset.encode(), expected);
+                QVERIFY_THROWS_EXCEPTION(Error, eset.setBaseLevel(0));
+                QVERIFY_THROWS_EXCEPTION(Error, eset.setBaseLevel(100));
+                QCOMPARE(eset.encode(), expected);
+                const auto tail = QByteArray::fromHex("a500ff001122");
+                auto extra = Eset::decode(raw + tail);
+                QCOMPARE(extra.encode(), raw + tail);
+                extra.setBaseLevel(99);
+                QCOMPARE(extra.encode(), expected + tail);
+                auto broken = raw;
+                put16(broken, 4, u16(broken, 4) + 1);
+                QVERIFY_THROWS_EXCEPTION(Error, Eset::decode(broken));
+                QVERIFY_THROWS_EXCEPTION(Error, Eset::decode(raw.first(16)));
+                QVERIFY_THROWS_EXCEPTION(
+                    Error, Eset::decode(raw.first(raw.size() - eset.tail.size() - 1)));
+                // Counts change; the final deployment tail must become the new
+                // node count/first ID, not the former row's route bytes.
+                if (!eset.deployments.isEmpty()) {
+                    auto row = eset.deployments.last();
+                    row[0] = 49;
+                    eset.deployments.last()[16] = 0;
+                    eset.deployments.last()[17] = 0;
+                    eset.deployments << row;
+                    auto node = eset.nodes.last();
+                    node[0] = char(4 + eset.nodes.size());
+                    eset.nodes << node;
+                    const auto grown = Eset::decode(eset.encode());
+                    QCOMPARE(grown.deployments.size(), eset.deployments.size());
+                    QCOMPARE(grown.nodes.size(), eset.nodes.size());
+                    QCOMPARE(u8(grown.deployments.last(), 16), quint8(eset.nodes.size()));
+                    QCOMPARE(u8(grown.deployments.last(), 17), u8(eset.nodes.first(), 0));
+                    QCOMPARE(grown.conditions, eset.conditions);
+                    QCOMPARE(grown.deployments[grown.deployments.size() - 2].last(2),
+                             QByteArray(2, 0));
+                }
+                fixtures << QJsonObject{{"name", member->name},
+                                        {"raw", QString::fromLatin1(raw.toHex())},
+                                        {"edited", QString::fromLatin1(eset.encode().toHex())}};
+                ++found;
+            }
+            QCOMPARE(found, 63);
+            atomicWrite(QCoreApplication::applicationDirPath() + "/eset-framing.json",
+                        QJsonDocument(fixtures).toJson(QJsonDocument::Compact));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void lhaEncoding() {
+        try {
+            QVector<QByteArray> inputs{{}, "A", "AB", "AAA", QByteArray(70000, char(-1))};
+            QByteArray every;
+            for (int i = 0; i < 256; ++i)
+                every += char(i);
+            inputs << every << every.repeated(400);
+            quint32 random = 12345;
+            for (const int size : {8192, 8193, 65536, 100000}) {
+                QByteArray bytes(size, 0);
+                for (auto &value : bytes) {
+                    random = random * 1664525U + 1013904223U;
+                    value = char(random >> 24);
+                }
+                inputs << bytes;
+                if (size == 8192)
+                    inputs << bytes + bytes.first(256);
+            }
+            QJsonArray examples;
+            for (const auto &data : inputs) {
+                const auto packed = encodeLh5(data);
+                QCOMPARE(decodeLh5(packed, data.size()), data);
+                QCOMPARE(encodeLh5(data), packed);
+                if (!data.isEmpty())
+                    QVERIFY_THROWS_EXCEPTION(
+                        Error, decodeLh5(packed.first(packed.size() / 2), data.size()));
+                examples << QJsonObject{{"data", QString::fromLatin1(data.toHex())},
+                                        {"packed", QString::fromLatin1(packed.toHex())}};
+            }
+            QVERIFY(encodeLh5(every.repeated(400)).size() < 10000);
+            QVERIFY(encodeLh5(QByteArray(70000, char(-1))).size() < 2000);
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (!path.isEmpty()) {
+                const auto rom = Rom::open(path);
+                for (const auto &name : {"enemydat.bin", "eset0_01.bin", "eset4_06a.bin"}) {
+                    const auto member = LhaMember::find(rom, name);
+                    const auto original = member.decode(rom);
+                    auto data = original;
+                    data[8] ^= 1;
+                    data += every;
+                    const auto rebuilt = member.rebuild(rom, data);
+                    auto image = rom.bytes() + rebuilt;
+                    image.append(QByteArray((4 - image.size() % 4) % 4, char(-1)));
+                    const auto resultRom = Rom::fromBytes(image);
+                    const auto result = LhaMember::read(resultRom.bytes(), rom.bytes().size());
+                    QCOMPARE(result.name, member.name);
+                    QCOMPARE(result.decode(resultRom), data);
+                    QCOMPARE(result.headerSize, member.headerSize);
+                    auto preserved = rebuilt.first(member.headerSize);
+                    const auto header = rom.bytes().mid(member.offset, member.headerSize);
+                    preserved.replace(7, 8, header.mid(7, 8));
+                    preserved.replace(21, 2, header.mid(21, 2));
+                    for (qsizetype at = 24; at + 2 < header.size();) {
+                        const int size = u8(header, at) | (u8(header, at + 1) << 8);
+                        if (!size)
+                            break;
+                        if (u8(header, at + 2) == 0)
+                            preserved.replace(at + 3, 2, header.mid(at + 3, 2));
+                        at += size;
+                    }
+                    QCOMPARE(preserved, header);
+                    examples << QJsonObject{
+                        {"name", name},
+                        {"data", QString::fromLatin1(data.toHex())},
+                        {"packed", QString::fromLatin1(rebuilt.mid(member.headerSize).toHex())},
+                        {"header", QString::fromLatin1(rebuilt.first(member.headerSize).toHex())}};
+                    QCOMPARE(member.decode(rom), original);
+                }
+            }
+            atomicWrite(QCoreApplication::applicationDirPath() + "/lha-encoding.json",
+                        QJsonDocument(examples).toJson(QJsonDocument::Compact));
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }

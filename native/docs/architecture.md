@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+The native archive writer produces LH5 streams with an 8 KiB match window and
+bounded block sizes. Rebuilding a member preserves its original header metadata
+and updates lengths and CRCs. Native decoding and the independent browser decoder
+agree on repeated data, window boundaries, multiple blocks, and rebuilt squad
+and scenario archives. The ESET codec preserves unnamed fields and trailing data
+while regenerating section offsets and the final deployment's shared node framing.
+All 63 retail ESET files round-trip byte-for-byte; edited framing also passes the
+browser codec. This is the foundation for scenario editing; scenario export and
+resource routing are not yet connected to the native application.
+
 The class linker can reserve a maintained resident extension after expanded
 save code, or at the beginning of reclaimed class storage when saves are not
 expanded. Descriptor version 4 records its address, size and CRC. The allocator
