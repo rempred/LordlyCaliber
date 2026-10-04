@@ -8,6 +8,7 @@ context.window = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root, 'data.js'), 'utf8'), context);
 const catalog = {};
+catalog.CONSUMABLE_NAMES = context.OB64.SAVE.CONSUMABLE_NAMES;
 for (const [key, value] of Object.entries(context.OB64)) {
   if (typeof value !== 'function' && key !== 'SAVE' && key !== 'SAVERAM_MAIN_CODEC') catalog[key] = value;
 }

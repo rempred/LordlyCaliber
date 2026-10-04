@@ -47,6 +47,53 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void shopLegacyImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadShops();
+        const auto original = project.shops()->json();
+        QJsonObject legacy{
+            {"format", "ob64-patch"},
+            {"version", 9},
+            {"patches",
+             QJsonObject{
+                 {"shops", QJsonObject{{"2", QJsonObject{{"items", QJsonArray{277, 1}}}}}}}}};
+        project.importLegacy(legacy);
+        QCOMPARE(project.shops()->stock(2).equipment, QVector<quint16>({277, 1}));
+        QCOMPARE(project.shops()->stock(2).consumables, QVector<quint16>({1, 2, 3, 4, 5, 6, 8}));
+        QVERIFY(project.pendingLegacySections().isEmpty());
+        legacy["version"] = 36;
+        legacy["patches"] = QJsonObject{
+            {"shops", QJsonObject{{"2", QJsonObject{{"consumables", QJsonArray{44, 1}}}}}}};
+        legacy["rebuild_owners"] = QJsonObject{{"schema", "lordly-rebuild-owner-selection-v1"},
+                                               {"shop_memberships", true}};
+        project.importLegacy(legacy);
+        QCOMPARE(project.shops()->stock(2).equipment, QVector<quint16>({277, 1}));
+        QCOMPARE(project.shops()->stock(2).consumables, QVector<quint16>({44, 1}));
+        QVERIFY(project.pendingLegacySections().isEmpty());
+        const auto before = project.manifest();
+        for (auto values : {QJsonArray{1, 1}, QJsonArray{45}, QJsonArray{1.5}}) {
+            auto malformed = legacy;
+            malformed["patches"] =
+                QJsonObject{{"shops", QJsonObject{{"2", QJsonObject{{"consumables", values}}}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, project.importLegacy(malformed));
+            QCOMPARE(project.manifest(), before);
+        }
+        // A project retained before Shops support now imports its archived edit.
+        auto historical = Project::fromRom(project.rom()).manifest();
+        historical["legacyImport"] = legacy;
+        auto migrated = Project::fromRom(project.rom());
+        migrated.applyManifest(historical);
+        QCOMPARE(migrated.shops()->stock(2).consumables, QVector<quint16>({44, 1}));
+        // Restoring stock must not resurrect the archived import on reopening.
+        migrated.setShops(original);
+        auto reopened = Project::fromRom(project.rom());
+        reopened.applyManifest(migrated.manifest());
+        QCOMPARE(reopened.shops()->json(), original);
+        QVERIFY(reopened.pendingLegacySections().isEmpty());
+    }
     void shopRuntimeExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

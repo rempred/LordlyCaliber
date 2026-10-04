@@ -14,6 +14,7 @@ class Shops {
     static constexpr int count = 36, equipmentCapacity = 50, consumableCapacity = 30;
     static Shops load(const Rom &rom);
     const ShopStock &stock(int id) const;
+    const ShopStock &originalStock(int id) const;
     const QStringList &locations(int id) const;
     void setStock(int id, const ShopStock &stock);
     bool modified() const;

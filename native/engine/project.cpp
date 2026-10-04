@@ -422,7 +422,9 @@ QJsonObject Project::manifest() const {
         result.remove("promotion");
     if (!legacy_.isEmpty())
         result["legacyImport"] = legacy_;
-    if (shops_ && shops_->modified())
+    if (shops_ &&
+        (shops_->modified() || !legacy_["patches"].toObject()["shops"].toObject().isEmpty() ||
+         legacy_["rebuild_owners"].toObject()["shop_memberships"].toBool()))
         result["shops"] = shops_->json();
     else
         result.remove("shops");
@@ -520,6 +522,8 @@ void Project::applyManifest(const QJsonObject &object) {
         if (!object["shops"].isObject())
             throw Error("Invalid saved shops");
         candidate.setShops(object["shops"].toObject());
+    } else {
+        candidate.importLegacyShops(candidate.legacy_);
     }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
@@ -535,6 +539,39 @@ void Project::applyManifest(const QJsonObject &object) {
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
     *this = std::move(candidate);
+}
+void Project::importLegacyShops(const QJsonObject &object) {
+    const auto patch = object["patches"].toObject();
+    if (patch.contains("shops") && !patch["shops"].isObject())
+        throw Error("Imported shops must be an object");
+    const auto importedShops = patch["shops"].toObject();
+    if (!importedShops.isEmpty() ||
+        object["rebuild_owners"].toObject()["shop_memberships"].toBool()) {
+        loadShops();
+        auto next = shops_->json();
+        auto records = next["records"].toArray();
+        for (auto it = importedShops.begin(); it != importedShops.end(); ++it) {
+            bool ok = false;
+            const auto id = it.key().toInt(&ok);
+            if (!ok || QString::number(id) != it.key() || id < 0 || id >= Shops::count ||
+                !it.value().isObject())
+                throw Error("Invalid imported shop ID");
+            const auto entry = it.value().toObject();
+            if (entry.isEmpty())
+                throw Error("Imported shop needs equipment or consumable membership");
+            for (auto value = entry.begin(); value != entry.end(); ++value)
+                if (value.key() != "items" && value.key() != "consumables")
+                    throw Error("Unrecognized imported shop field: " + value.key());
+            auto row = records[id].toObject();
+            if (entry.contains("items"))
+                row["equipment"] = entry["items"];
+            if (entry.contains("consumables"))
+                row["consumables"] = entry["consumables"];
+            records[id] = row;
+        }
+        next["records"] = records;
+        setShops(next);
+    }
 }
 void Project::importLegacy(const QJsonObject &object) {
     if (object.value("format").toString() != "ob64-patch")
@@ -607,6 +644,7 @@ void Project::importLegacy(const QJsonObject &object) {
         put16(bytes, 8, quint16(value));
         candidate.replaceBytes(Table::Items, id, bytes);
     }
+    candidate.importLegacyShops(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -683,11 +721,13 @@ QStringList Project::pendingLegacySections() const {
     for (auto it = patches.begin(); it != patches.end(); ++it)
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
             it.key() != "descriptions" && it.key() != "statGates" && it.key() != "classFamilies" &&
-            changed(it.value()))
+            it.key() != "shops" && changed(it.value()))
             pending << it.key();
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {
         if (it.key() == "schema")
+            continue;
+        if (it.key() == "shop_memberships" && it.value().isBool() && shops_)
             continue;
         if (it.key() == "experience_scale_percent" && it.value().toInt() == 100)
             continue;

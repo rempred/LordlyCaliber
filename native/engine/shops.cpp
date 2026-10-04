@@ -103,6 +103,10 @@ const QStringList &Shops::locations(int id) const {
     stock(id);
     return locations_[id];
 }
+const ShopStock &Shops::originalStock(int id) const {
+    stock(id);
+    return original_[id];
+}
 void Shops::setStock(int id, const ShopStock &stock) {
     validate(id, stock);
     this->stock(id);

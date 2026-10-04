@@ -94,6 +94,7 @@ class Project {
     static int classDescriptionIndex(int classId);
 
   private:
+    void importLegacyShops(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;

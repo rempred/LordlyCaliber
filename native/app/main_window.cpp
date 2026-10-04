@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
+#include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
@@ -131,8 +132,10 @@ void MainWindow::loadRom(const QString &path) {
         try {
             auto project = Project::fromRom(Rom::open(path), catalog);
             project.loadTexts();
-            if (project.rom().revision() == 0)
+            if (project.rom().revision() == 0) {
                 project.loadPromotion();
+                project.loadShops();
+            }
             return Result{std::move(project), {}};
         } catch (const std::exception &e) {
             return Result{{}, QString::fromUtf8(e.what())};
@@ -149,6 +152,9 @@ void MainWindow::installProject(Project project) {
     project_ = std::make_unique<Project>(std::move(project));
     addRecordWorkspace(Table::Classes, "Classes");
     addRecordWorkspace(Table::Items, "Items");
+    if (project_->shops())
+        workspaces_->addTab(new ShopEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                            "Shops");
     if (!project_->textBanks().isEmpty())
         workspaces_->addTab(createTextWorkspace(project_.get(), undo_, [this] { updateStatus(); }),
                             "Descriptions");
@@ -317,8 +323,10 @@ void MainWindow::openProject() {
         auto object = Project::readProject(path);
         auto next = Project::fromRom(project_->rom(), catalog_);
         next.loadTexts();
-        if (next.rom().revision() == 0)
+        if (next.rom().revision() == 0) {
             next.loadPromotion();
+            next.loadShops();
+        }
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);
         else

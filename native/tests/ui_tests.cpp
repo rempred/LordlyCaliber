@@ -1,15 +1,19 @@
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
+#include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QFile>
 #include <QFontDatabase>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -46,6 +50,67 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void shopEditingAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        QFile catalog(":/catalog.json");
+        QVERIFY(catalog.open(QIODevice::ReadOnly));
+        auto project =
+            Project::fromRom(Rom::open(path), QJsonDocument::fromJson(catalog.readAll()).object());
+        project.loadShops();
+        const auto original = project.shops()->json();
+        QUndoStack undo;
+        ShopEditor editor(&project, &undo, [] {});
+        editor.resize(1250, 740);
+        editor.show();
+        auto shops = editor.findChild<QListWidget *>("shopList");
+        QCOMPARE(shops->count(), 35);
+        shops->setCurrentRow(1);
+        auto choice = editor.findChild<QComboBox *>("shopEquipmentChoice");
+        QVERIFY(choice->findData(277) >= 0);
+        choice->setCurrentIndex(choice->findData(277));
+        editor.findChild<QPushButton *>("shopEquipmentAdd")->click();
+        QCOMPARE(project.shops()->stock(2).equipment.last(), quint16(277));
+        QCOMPARE(choice->findData(277), -1);
+        auto inventory = editor.findChild<QListWidget *>("shopEquipmentList");
+        QCOMPARE(inventory->currentItem()->data(Qt::UserRole).toInt(), 277);
+        const auto added = project.shops()->json();
+        editor.findChild<QPushButton *>("shopEquipmentUp")->click();
+        QCOMPARE(
+            project.shops()->stock(2).equipment[project.shops()->stock(2).equipment.size() - 2],
+            quint16(277));
+        undo.undo();
+        QCOMPARE(project.shops()->json(), added);
+        editor.findChild<QPushButton *>("shopEquipmentRemove")->click();
+        QCOMPARE(project.shops()->json(), original);
+        undo.undo();
+        QCOMPARE(project.shops()->json(), added);
+        auto consumable = editor.findChild<QComboBox *>("shopConsumablesChoice");
+        consumable->setCurrentIndex(consumable->findData(44));
+        QVERIFY(!consumable->currentText().startsWith("Consumable "));
+        editor.findChild<QPushButton *>("shopConsumablesAdd")->click();
+        QCOMPARE(project.shops()->stock(2).consumables.last(), quint16(44));
+        auto search = editor.findChild<QLineEdit *>("shopSearch");
+        search->setText("Jadd");
+        QVERIFY(!shops->item(1)->isHidden());
+        QVERIFY(shops->item(34)->isHidden());
+        search->clear();
+        auto from = editor.findChild<QComboBox *>("shopCopySource");
+        from->setCurrentIndex(from->findData(3));
+        editor.findChild<QPushButton *>("shopCopy")->click();
+        QCOMPARE(project.shops()->stock(2), project.shops()->stock(3));
+        undo.undo();
+        QCOMPARE(project.shops()->stock(2).consumables.last(), quint16(44));
+        QVERIFY(editor.findChild<QPushButton *>("shopEquipmentDown")->isEnabled());
+        editor.findChild<QPushButton *>("shopRestore")->click();
+        QCOMPARE(project.shops()->json(), original);
+        undo.undo();
+        QCOMPARE(project.shops()->stock(2).consumables.last(), quint16(44));
+        QTest::qWait(50);
+        if (!qEnvironmentVariable("LORDLY_SHOP_SCREENSHOT").isEmpty())
+            QVERIFY(editor.grab().save(qEnvironmentVariable("LORDLY_SHOP_SCREENSHOT")));
     }
     void classNamesAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
