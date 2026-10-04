@@ -1,6 +1,20 @@
 /* Recovered flat-list lookup: the match POSITION is the physical pose state.
  * Unsigned arithmetic makes the target's 32-bit wrapping explicit on the PC. */
 #include "actor_state.h"
+int lordly_actor_body_handle(const unsigned short *table, int count, int source,
+    int owner, unsigned char source_family, int flag_a, int flag_b, unsigned short *handle)
+{
+    int base;
+    unsigned int index;
+    if (!table || !handle || source < 0 || owner < 0 || flag_a < 0 || flag_a > 1 || flag_b < 0 || flag_b > 1)
+        return 1;
+    base = source_family == owner ? source : owner;
+    if (base > 0x1fffffff) return 1;
+    index = (unsigned int)base * 4U + (unsigned int)flag_a * 2U + (unsigned int)flag_b;
+    if (count < 0 || index >= (unsigned int)count) return 1;
+    *handle = table[index];
+    return 0;
+}
 int lordly_actor_resolve_state(const short *table, int count, int bank, int animation,
                                int facing, int option, int *state)
 {

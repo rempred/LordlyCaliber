@@ -11,12 +11,24 @@ ActorPosePlayer::ActorPosePlayer(const Rom &rom, ActorArt art, int state, int va
     actor_.state = qint16(state);
     actor_.variant = quint8(variant);
     actor_.cursor = -1;
+    if (art_.isBody()) {
+        actor_.bank = art_.sourceClass();
+        actor_.owner = art_.ownerClass();
+        actor_.variant = quint8(art_.flagA());
+        actor_.flag_b = qint16(art_.flagB());
+        actor_.decoder_mode = 1;
+    }
     std::memset(actor_.material, 255, 16);
 }
 int ActorPosePlayer::lookup(void *context, const LordlyActorPose *actor, LordlyPoseRecord *record) {
     auto &self = *static_cast<ActorPosePlayer *>(context);
     try {
-        if (actor->decoder_mode || actor->bank != self.art_.bank())
+        if (self.art_.isBody()) {
+            if (!actor->decoder_mode || actor->bank != self.art_.sourceClass() ||
+                actor->owner != self.art_.ownerClass() || actor->variant != self.art_.flagA() ||
+                actor->flag_b != self.art_.flagB())
+                throw Error("This actor requires a different class body binding");
+        } else if (actor->decoder_mode || actor->bank != self.art_.bank())
             throw Error("This actor requires a different pose resource binding");
         const auto decoded = self.art_.poseRecord(actor->state, actor->cursor);
         record->opcode = quint8(decoded.opcode);
@@ -32,8 +44,11 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
                             const LordlyPoseRecord *record) {
     auto &self = *static_cast<ActorPosePlayer *>(context);
     try {
-        if (actor->decoder_mode)
-            throw Error("Alternate pose audio requires its linked actor");
+        if (actor->decoder_mode && (record->opcode == 18 || record->opcode == 20)) {
+            if (self.linkedObjectAbsent_)
+                return 1;
+            throw Error("Alternate pose audio requires its linked actor state");
+        }
         const int key = record->operands[0] * 256 + record->operands[1];
         qsizetype at = 0x212880 + key * 2;
         if (record->opcode == 18 || record->opcode == 20) {
@@ -71,6 +86,8 @@ int ActorPosePlayer::advance(int budget) {
     return result;
 }
 int ActorPosePlayer::query() const {
+    if (art_.isBody())
+        return ActorArt::load(rom_, actor_.bank).poseRecord(actor_.state, actor_.cursor).opcode;
     return art_.poseRecord(actor_.state, actor_.cursor).opcode;
 }
 } // namespace lordly

@@ -27,7 +27,29 @@ struct ActorFrameLayer {
 class ActorArt {
   public:
     static ActorArt load(const Rom &rom, int bank);
+    static ActorArt loadBody(const Rom &rom, int source, int owner, int flagA, int flagB);
     static int bankCount(const Rom &rom);
+    bool isBody() const {
+        return body_;
+    }
+    int sourceClass() const {
+        return sourceClass_;
+    }
+    int ownerClass() const {
+        return ownerClass_;
+    }
+    int flagA() const {
+        return flagA_;
+    }
+    int flagB() const {
+        return flagB_;
+    }
+    quint16 bodyHandle() const {
+        return bodyHandle_;
+    }
+    int bodyVariant() const {
+        return bodyHandle_ >> 12;
+    }
     int bank() const {
         return bank_;
     }
@@ -47,7 +69,11 @@ class ActorArt {
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant) const;
 
   private:
+    static ActorArt descriptor(const Rom &rom, quint32 key);
     int bank_ = 0;
+    bool body_ = false;
+    int sourceClass_ = 0, ownerClass_ = 0, flagA_ = 0, flagB_ = 0;
+    quint16 bodyHandle_ = 0;
     quint32 descriptorKey_ = 0;
     QVector<quint32> artKeys_;
     QByteArray metadata_, palettes_, paletteMap_;

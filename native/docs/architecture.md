@@ -1,5 +1,33 @@
 # Native Lordly Caliber
 
+Class-body art now follows the current ROM's handle resource (key 0x315736)
+and separate descriptor root (0x3B6CD0). The handle table extent comes from its
+header (retail offsets 0x24..0x584), not the entire resource's later tables.
+Compiled `lordly_actor_body_handle` adapts accepted `func_002015C8.c` from Decomp
+`497181d8a6ba4bc32c35a465fccd261abe2e0c69`: source class record byte 0x45 selects
+source versus owner; flags index the handle; its low 12 bits select the descriptor
+and its high nibble supplies the body image variant. ClassData supplies current
+records, including recognized relocated class tables. Shared descriptor parsing
+preserves metadata, programs, palettes and art as for ordinary cutscene banks.
+
+All 108,900 retail source/owner/flag combinations match the original resolver.
+The 660 same-source/owner routes include four absent class-zero handles. Across
+381 distinct descriptor/variant combinations, 17,541 programs, 16,201 frames and
+54,539 layers match the independent prior decoder. Alternate pose execution matches
+141,064 original MIPS invocations across 17,633 states, including special-class
+state clamping. Its resource registry and audio consumer are controlled; the linked
+object is explicitly absent. Unknown linked-object state still suspends effects
+18/20. The pose query remains an ordinary-bank lookup even for alternate actors.
+
+The actor preview exposes class source, owner and flag selection, uses the handle's
+image variant, and supports alternate pose stepping/seeking. It identifies its
+standalone context: no linked equipment actors, muted audio and material values
+without their rendering effects. UI switching/invalid-route checks pass and the
+General body preview was inspected. This does not yet implement the Director's
+complete body initializer, equipment substitutions, army cast construction or
+camera projection. Ordinary actor runtime and frame corpus regressions still pass.
+
+
 `ActorInstance` now preserves the complete 336-byte native record while exposing
 its typed pose state. The State adapter compiles recovered `func_002A08C0.c`
 (Decomp `9955a5cdcf73a35e4ccf57ab9bb3b6d85dab40b3`). Direct construction follows

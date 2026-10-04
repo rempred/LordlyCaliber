@@ -18,6 +18,7 @@ class ActorPoseEditor : public QWidget {
     explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
 
   private:
+    void loadSources();
     void loadBank();
     void restart();
     void seek(int step);
@@ -27,7 +28,7 @@ class ActorPoseEditor : public QWidget {
     Rom rom_;
     std::optional<ActorArt> art_;
     std::optional<ActorPosePlayer> player_;
-    QComboBox *banks_, *poses_;
+    QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
     QSpinBox *variant_, *position_, *speed_;
     QPushButton *play_;
     QLabel *status_, *selection_;

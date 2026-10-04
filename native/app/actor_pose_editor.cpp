@@ -1,4 +1,6 @@
 #include "app/actor_pose_editor.h"
+#include "engine/class_data.h"
+#include "engine/text.h"
 #include <QComboBox>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
@@ -34,25 +36,41 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     auto note = new QLabel(
         "Actor pose preview. Playback speed is adjustable; scene timing and cameras are separate. "
         "Audio requests are recorded without sound. Material values are listed; their drawing "
-        "effects are not applied yet.");
+        "effects are not applied yet. Class-body inspection uses no linked equipment actors.");
     note->setWordWrap(true);
     layout->addWidget(note);
     auto selectors = new QHBoxLayout;
+    kinds_ = new QComboBox;
+    kinds_->setObjectName("actorSourceKind");
+    kinds_->addItems({"Cutscene actors", "Class bodies"});
+    owners_ = new QComboBox;
+    owners_->setObjectName("actorOwner");
+    flags_ = new QComboBox;
+    flags_->setObjectName("actorBodyFlags");
+    flags_->addItems({"0 / 0", "0 / 1", "1 / 0", "1 / 1"});
     banks_ = new QComboBox;
     banks_->setObjectName("actorBank");
+    banks_->setMinimumContentsLength(20);
+    banks_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     poses_ = new QComboBox;
     poses_->setObjectName("actorPose");
     poses_->setMinimumContentsLength(28);
     variant_ = new QSpinBox;
     variant_->setObjectName("actorVariant");
     variant_->setRange(0, 255);
-    selectors->addWidget(new QLabel("Art source"));
+    selectors->addWidget(kinds_);
     selectors->addWidget(banks_);
-    selectors->addWidget(new QLabel("Pose"));
-    selectors->addWidget(poses_, 1);
-    selectors->addWidget(new QLabel("Variant"));
-    selectors->addWidget(variant_);
+    selectors->addWidget(new QLabel("Owner class"));
+    selectors->addWidget(owners_, 1);
+    selectors->addWidget(new QLabel("Body flags"));
+    selectors->addWidget(flags_);
     layout->addLayout(selectors);
+    auto poseSelectors = new QHBoxLayout;
+    poseSelectors->addWidget(new QLabel("Pose"));
+    poseSelectors->addWidget(poses_, 1);
+    poseSelectors->addWidget(new QLabel("Image variant"));
+    poseSelectors->addWidget(variant_);
+    layout->addLayout(poseSelectors);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setObjectName("actorPlay");
@@ -133,6 +151,9 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     connect(reset, &QPushButton::clicked, this, &ActorPoseEditor::restart);
     connect(position_, &QSpinBox::valueChanged, this, &ActorPoseEditor::seek);
     connect(banks_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
+    connect(kinds_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadSources);
+    connect(owners_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
+    connect(flags_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
     connect(poses_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::restart);
     connect(variant_, &QSpinBox::valueChanged, this, &ActorPoseEditor::restart);
     connect(fit, &QPushButton::clicked, this,
@@ -158,28 +179,58 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
                 break;
             }
     });
-    try {
-        QSignalBlocker block(banks_);
-        for (int i = 1; i <= ActorArt::bankCount(rom_); ++i)
-            banks_->addItem(QString("Bank %1").arg(i), i);
-    } catch (const Error &e) {
-        status_->setText(QString::fromUtf8(e.what()));
-    }
-    loadBank();
+    loadSources();
 }
 void ActorPoseEditor::stop() {
     play_->setChecked(false);
     timer_->stop();
+}
+void ActorPoseEditor::loadSources() {
+    stop();
+    const bool body = kinds_->currentIndex() == 1;
+    owners_->setEnabled(body);
+    flags_->setEnabled(body);
+    try {
+        QSignalBlocker banksBlock(banks_), ownerBlock(owners_);
+        banks_->clear();
+        owners_->clear();
+        owners_->addItem("Same as source", -1);
+        if (body) {
+            const auto classes = ClassData::load(rom_);
+            for (int i = 0; i < classes.entries().size(); ++i) {
+                const auto label =
+                    QString("%1 · %2").arg(i).arg(decodeText(classes.entries()[i].name));
+                banks_->addItem(label, i);
+                owners_->addItem(label, i);
+            }
+            banks_->setCurrentIndex(banks_->findData(1));
+        } else {
+            for (int i = 1; i <= ActorArt::bankCount(rom_); ++i)
+                banks_->addItem(QString("Bank %1").arg(i), i);
+        }
+    } catch (const Error &e) {
+        status_->setText(QString::fromUtf8(e.what()));
+        return;
+    }
+    loadBank();
 }
 void ActorPoseEditor::loadBank() {
     stop();
     art_.reset();
     player_.reset();
     try {
-        art_ = ActorArt::load(rom_, banks_->currentData().toInt());
+        const int source = banks_->currentData().toInt(), owner = owners_->currentData().toInt();
+        const bool body = kinds_->currentIndex() == 1;
+        art_ = body ? ActorArt::loadBody(rom_, source, owner < 0 ? source : owner,
+                                         flags_->currentIndex() >> 1, flags_->currentIndex() & 1)
+                    : ActorArt::load(rom_, source);
+        if (body) {
+            QSignalBlocker variantBlock(variant_);
+            variant_->setValue(art_->bodyVariant());
+        }
         QSignalBlocker block(poses_);
         poses_->clear();
-        for (const auto &s : art_->selections())
+        for (const auto &s : body ? QVector<ActorPoseSelection>{} : art_->selections())
             poses_->addItem(QString("Animation %1 · direction %2 · state %3")
                                 .arg(s.animation)
                                 .arg(s.facing)
@@ -187,12 +238,14 @@ void ActorPoseEditor::loadBank() {
                             s.state);
         for (int state = 0; state < art_->poses().size(); ++state)
             if (poses_->findData(state) < 0)
-                poses_->addItem(QString("State %1 · no animation key").arg(state), state);
+                poses_->addItem(body ? QString("State %1").arg(state)
+                                     : QString("State %1 · no animation key").arg(state),
+                                state);
         fit_ = true;
     } catch (const Error &e) {
         status_->setText(QString::fromUtf8(e.what()));
-        canvas_->clear();
         items_.clear();
+        canvas_->clear();
         layers_->clear();
         return;
     }
@@ -203,6 +256,8 @@ void ActorPoseEditor::restart() {
     if (!art_ || poses_->currentIndex() < 0)
         return;
     player_.emplace(rom_, *art_, poses_->currentData().toInt(), variant_->value());
+    if (art_->isBody())
+        player_->setLinkedObjectKnownAbsent(true);
     step_ = 0;
     {
         QSignalBlocker block(position_);
@@ -259,7 +314,7 @@ void ActorPoseEditor::draw() {
         return;
     try {
         const auto &a = player_->actor();
-        const auto frame = art_->frame(rom_, a.frame, a.variant);
+        const auto frame = art_->frame(rom_, a.frame, variant_->value());
         QRectF bounds;
         int fallbacks = 0;
         for (int i = 0; i < frame.size(); ++i) {

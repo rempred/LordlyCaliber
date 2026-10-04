@@ -1,4 +1,5 @@
 #include "engine/actor_art.h"
+#include "engine/class_data.h"
 #include "game/director/actor_state.h"
 #include <iterator>
 namespace lordly {
@@ -74,9 +75,50 @@ ActorArt ActorArt::load(const Rom &rom, int bank) {
     const auto directory = resource(rom, 0x0109f95e, false);
     if (directory.size() % 4 || bank < 1 || bank > directory.size() / 4)
         throw Error("Actor art bank is outside its current ROM directory");
-    ActorArt result;
+    auto result = descriptor(rom, u32(directory, (bank - 1) * 4));
     result.bank_ = bank;
-    result.descriptorKey_ = u32(directory, (bank - 1) * 4);
+    // Both the original shared initializer and the bank-local resolver use
+    // this vocabulary. It is allocated per scene but loaded from one ROM resource.
+    const auto states = resource(rom, 0x0109eeb0, true);
+    if (states.size() % 2)
+        throw Error("Actor state vocabulary is not halfword aligned");
+    for (int at = 0; at < states.size(); at += 2)
+        result.stateTable_ << qint16(u16(states, at));
+    return result;
+}
+ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, int flagB) {
+    const auto classes = ClassData::load(rom);
+    if (source < 0 || source >= classes.entries().size() || owner < 0 || flagA < 0 || flagA > 1 ||
+        flagB < 0 || flagB > 1)
+        throw Error("Invalid class body source, owner or flags");
+    // func_002015C8: byte at RAM index-base + 0x45, not modder body byte B45.
+    const auto handles = resource(rom, 0x315736, false);
+    const quint32 begin = u16(handles, 0), end = u16(handles, 2);
+    if (begin > end || end > quint32(handles.size()) || (end - begin) % 2)
+        throw Error("Class body route exceeds its current ROM handle table");
+    QVector<unsigned short> table;
+    for (quint32 at = begin; at < end; at += 2)
+        table << u16(handles, at);
+    unsigned short handle = 0;
+    if (lordly_actor_body_handle(table.constData(), int(table.size()), source, owner,
+                                 u8(classes.entries()[source].record, 0x45), flagA, flagB, &handle))
+        throw Error("Class body route exceeds its current ROM handle table");
+    const auto directory = resource(rom, 0x3b6cd0, false);
+    const int slot = (handle & 0xfff) - 1;
+    if (directory.size() % 4 || slot < 0 || slot >= directory.size() / 4)
+        throw Error("Class body handle selects an absent descriptor");
+    auto result = descriptor(rom, u32(directory, slot * 4));
+    result.body_ = true;
+    result.sourceClass_ = source;
+    result.ownerClass_ = owner;
+    result.flagA_ = flagA;
+    result.flagB_ = flagB;
+    result.bodyHandle_ = handle;
+    return result;
+}
+ActorArt ActorArt::descriptor(const Rom &rom, quint32 key) {
+    ActorArt result;
+    result.descriptorKey_ = key;
     const auto descriptor = resource(rom, result.descriptorKey_, false);
     if (descriptor.size() < 16 || descriptor.size() % 4 || descriptor.size() > 65540 * 4)
         throw Error("Invalid actor art descriptor");
@@ -93,13 +135,6 @@ ActorArt ActorArt::load(const Rom &rom, int bank) {
         quint64(map) + result.artKeys_.size() > quint64(config.size()))
         throw Error("Actor palette map does not match its art count");
     result.paletteMap_ = config.mid(map, result.artKeys_.size());
-    // Both the original shared initializer and the bank-local resolver use
-    // this vocabulary. It is allocated per scene but loaded from one ROM resource.
-    const auto states = resource(rom, 0x0109eeb0, true);
-    if (states.size() % 2)
-        throw Error("Actor state vocabulary is not halfword aligned");
-    for (int at = 0; at < states.size(); at += 2)
-        result.stateTable_ << qint16(u16(states, at));
     return result;
 }
 int ActorArt::resolve(int animation, int facing, int option) const {

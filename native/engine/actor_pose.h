@@ -32,6 +32,9 @@ class ActorPosePlayer {
         return invocation_.active != 0;
     }
     int query() const;
+    void setLinkedObjectKnownAbsent(bool absent) {
+        linkedObjectAbsent_ = absent;
+    }
 
   private:
     static int lookup(void *, const LordlyActorPose *, LordlyPoseRecord *);
@@ -42,5 +45,6 @@ class ActorPosePlayer {
     LordlyPoseInvocation invocation_{};
     QVector<PoseAudioRequest> audio_;
     QString error_;
+    bool linkedObjectAbsent_ = false;
 };
 } // namespace lordly

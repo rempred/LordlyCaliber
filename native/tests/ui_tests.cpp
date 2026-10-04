@@ -1,5 +1,5 @@
-#include "app/consumable_editor.h"
 #include "app/actor_pose_editor.h"
+#include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
@@ -66,36 +66,90 @@ class UiTests : public QObject {
     }
     void actorPosePreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
-        ActorPoseEditor editor(rom); editor.resize(1250, 900); editor.show();
-        auto banks = editor.findChild<QComboBox *>("actorBank"), poses = editor.findChild<QComboBox *>("actorPose");
-        auto position = editor.findChild<QSpinBox *>("actorPosition"), variant = editor.findChild<QSpinBox *>("actorVariant");
-        auto next = editor.findChild<QPushButton *>("actorStep"), reset = editor.findChild<QPushButton *>("actorRestart");
+        ActorPoseEditor editor(rom);
+        editor.resize(1250, 900);
+        editor.show();
+        auto banks = editor.findChild<QComboBox *>("actorBank"),
+             poses = editor.findChild<QComboBox *>("actorPose");
+        auto position = editor.findChild<QSpinBox *>("actorPosition"),
+             variant = editor.findChild<QSpinBox *>("actorVariant");
+        auto next = editor.findChild<QPushButton *>("actorStep"),
+             reset = editor.findChild<QPushButton *>("actorRestart");
         auto layers = editor.findChild<QListWidget *>("actorLayers");
         auto view = editor.findChild<QGraphicsView *>("actorCanvas");
         QVERIFY(banks && poses && position && variant && next && reset && layers && view);
         QCOMPARE(banks->count(), 68);
-        banks->setCurrentIndex(banks->findData(30)); poses->setCurrentIndex(poses->findData(12));
+        banks->setCurrentIndex(banks->findData(30));
+        poses->setCurrentIndex(poses->findData(12));
         ActorPosePlayer reference(rom, ActorArt::load(rom, 30), 12);
         for (int i = 1; i <= 24; ++i) {
-            QCOMPARE(reference.advance(), LORDLY_POSE_OK); next->click();
-            QCOMPARE(position->value(), i); QCOMPARE(editor.property("frameToken").toInt(), reference.actor().frame);
+            QCOMPARE(reference.advance(), LORDLY_POSE_OK);
+            next->click();
+            QCOMPARE(position->value(), i);
+            QCOMPARE(editor.property("frameToken").toInt(), reference.actor().frame);
             QCOMPARE(editor.property("poseCursor").toInt(), reference.actor().cursor);
             QCOMPARE(editor.property("poseDelay").toInt(), reference.actor().delay);
         }
         QVERIFY(layers->count() > 0);
         const auto finalFrame = editor.property("frameToken");
-        reset->click(); QCOMPARE(position->value(), 0); position->setValue(24); QCOMPARE(editor.property("frameToken"), finalFrame);
-        position->setValue(1); QCOMPARE(position->value(), 1);
-        variant->setValue(255); QCOMPARE(position->value(), 0); next->click();
+        reset->click();
+        QCOMPARE(position->value(), 0);
+        position->setValue(24);
+        QCOMPARE(editor.property("frameToken"), finalFrame);
+        position->setValue(1);
+        QCOMPARE(position->value(), 1);
+        variant->setValue(255);
+        QCOMPARE(position->value(), 0);
+        next->click();
         QVERIFY(layers->item(0)->toolTip().contains("fallback"));
-        layers->setCurrentRow(0); QCOMPARE(view->scene()->selectedItems().size(), 1);
+        layers->setCurrentRow(0);
+        QCOMPARE(view->scene()->selectedItems().size(), 1);
         auto selected = view->scene()->selectedItems().first();
-        layers->item(0)->setCheckState(Qt::Unchecked); QVERIFY(!selected->isVisible());
-        layers->item(0)->setCheckState(Qt::Checked); QVERIFY(selected->isVisible());
-        variant->setValue(0); position->setValue(3);
-        QTest::qWait(25); QVERIFY(editor.grab().save("native-actor-preview.png"));
+        layers->item(0)->setCheckState(Qt::Unchecked);
+        QVERIFY(!selected->isVisible());
+        layers->item(0)->setCheckState(Qt::Checked);
+        QVERIFY(selected->isVisible());
+        variant->setValue(0);
+        position->setValue(3);
+        QTest::qWait(25);
+        QVERIFY(editor.grab().save("native-actor-preview.png"));
+        auto kind = editor.findChild<QComboBox *>("actorSourceKind"),
+             owner = editor.findChild<QComboBox *>("actorOwner"),
+             flags = editor.findChild<QComboBox *>("actorBodyFlags");
+        QVERIFY(kind && owner && flags);
+        kind->setCurrentIndex(1);
+        banks->setCurrentIndex(banks->findData(83));
+        flags->setCurrentIndex(0);
+        poses->setCurrentIndex(poses->findData(0));
+        const auto body = ActorArt::loadBody(rom, 83, 83, 0, 0);
+        QCOMPARE(variant->value(), body.bodyVariant());
+        ActorPosePlayer bodyReference(rom, body, 0);
+        bodyReference.setLinkedObjectKnownAbsent(true);
+        for (int i = 0; i < 8; ++i) {
+            QCOMPARE(bodyReference.advance(), LORDLY_POSE_OK);
+            next->click();
+            QCOMPARE(editor.property("frameToken").toInt(), bodyReference.actor().frame);
+            QCOMPARE(editor.property("poseCursor").toInt(), bodyReference.actor().cursor);
+        }
+        QVERIFY(layers->count() > 0);
+        QTest::qWait(25);
+        QVERIFY(editor.grab().save("native-body-preview.png"));
+        layers->setCurrentRow(0);
+        banks->setCurrentIndex(banks->findData(0));
+        QCOMPARE(layers->count(), 0);
+        QCOMPARE(view->scene()->items().size(), 0);
+        QVERIFY(editor.findChild<QLabel *>("actorStatus")->text().contains("absent descriptor"));
+        banks->setCurrentIndex(banks->findData(83));
+        owner->setCurrentIndex(owner->findData(88));
+        flags->setCurrentIndex(1);
+        const auto alternate = ActorArt::loadBody(rom, 83, 88, 0, 1);
+        QCOMPARE(variant->value(), alternate.bodyVariant());
+        QCOMPARE(poses->count(), alternate.poses().size());
+        kind->setCurrentIndex(0);
+        QCOMPARE(banks->count(), 68);
     }
     void cutsceneCatalogSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
