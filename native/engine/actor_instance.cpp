@@ -110,4 +110,14 @@ void ActorInstance::setUniformScale(float value) {
     for (int i = 0; i < 3; ++i)
         put32(record_, 0x104 + i * 4, std::bit_cast<quint32>(value));
 }
+void ActorInstance::addHeight(float step) {
+    const float base = pose_.actor().position.y + step;
+    const bool secondary = !(u8(record_, 0x145) & 4);
+    const float height = secondary ? std::bit_cast<float>(u32(record_, 0x128)) + step : 0;
+    if (!std::isfinite(base) || (secondary && !std::isfinite(height)))
+        throw Error("Actor height movement produced a nonfinite coordinate");
+    pose_.actor().position.y = base;
+    if (secondary)
+        put32(record_, 0x128, std::bit_cast<quint32>(height));
+}
 } // namespace lordly

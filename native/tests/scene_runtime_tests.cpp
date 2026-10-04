@@ -1,4 +1,5 @@
 #include "engine/rom.h"
+#include "engine/scene_actors.h"
 #include "game/director/scene_schedule.h"
 #include <QDir>
 #include <QFile>
@@ -11,6 +12,67 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void heightAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-height-mips.cjs"),
+             path, work.filePath("height.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("height.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 247);
+        const auto rom = Rom::open(path);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            const int slot = row["slot"].toInt();
+            SceneActors scene(rom, 2, 0);
+            scene.supplyActor(slot, QByteArray::fromHex(row["initialActor"].toString().toLatin1()));
+            scene.supplyHeightJob(
+                slot, ActorHeightJob(QByteArray::fromHex(row["initial"].toString().toLatin1())));
+            if (row["args"].isArray()) {
+                QVector<quint32> args{quint32(slot)};
+                for (const auto &a : row["args"].toArray())
+                    args << quint32(a.toInt());
+                int ignored = 0;
+                QVERIFY(scene.service(0x7b, args, ignored));
+            }
+            const auto states = row["states"].toArray();
+            for (int step = 0; step < states.size(); ++step) {
+                if (step)
+                    scene.advanceHeights();
+                const auto expected = states[step].toObject();
+                QCOMPARE(scene.actor(slot)->record().toHex(),
+                         expected["actor"].toString().toLatin1());
+                QCOMPARE(scene.heightJob(slot).record().toHex(),
+                         expected["job"].toString().toLatin1());
+            }
+        }
+        // Failure in a later slot must not commit an earlier actor's update.
+        SceneActors scene(rom, 2, 0);
+        const auto initial =
+            QByteArray::fromHex(cases[0].toObject()["initialActor"].toString().toLatin1());
+        scene.supplyActor(0, initial);
+        int ignored = 0;
+        QVERIFY(scene.service(0x7b, {0, 1, 5, 4}, ignored));
+        QVERIFY(scene.service(0x7b, {27, 1, 5, 4}, ignored));
+        const auto job = scene.heightJob(0).record();
+        QVERIFY_THROWS_EXCEPTION(Error, scene.advanceHeights());
+        QCOMPARE(scene.actor(0)->record(), initial);
+        QCOMPARE(scene.heightJob(0).record(), job);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.service(0x7b, {0, 0xffffffffU, 100, 0}, ignored));
+        QCOMPARE(scene.heightJob(0).record(), job);
+        QVERIFY(scene.service(0x7b, {0, 0, 5, 4}, ignored));
+        const auto invalid = scene.heightJob(0).record();
+        QVERIFY_THROWS_EXCEPTION(Error, scene.advanceHeights());
+        QCOMPARE(scene.heightJob(0).record(), invalid);
+    }
     void schedulerAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/actor_height.h"
 #include "engine/actor_instance.h"
 #include "engine/actor_motion.h"
 #include <array>
@@ -18,6 +19,8 @@ class SceneActors {
     const LordlyActorMotion &motion(int slot) const;
     void supplyActor(int slot, const QByteArray &record);
     void supplyMotion(int slot, const LordlyActorMotion &motion);
+    const ActorHeightJob &heightJob(int slot) const;
+    void supplyHeightJob(int slot, ActorHeightJob job);
     void supplyBindingInputs(ActorBindingInputs inputs);
     // Explicit launch state: absent rows remain unknown, never silently zero-filled.
     void supplyBodyRows(const QVector<QByteArray> &rows);
@@ -31,6 +34,7 @@ class SceneActors {
     // Components of the normal scheduler. The caller must retain the game's
     // other services/order, including terrain and proximity, before advancing.
     void advancePlanar();
+    void advanceHeights();
     void advancePoses();
 
   private:
@@ -46,6 +50,7 @@ class SceneActors {
     LordlyMotionConstants constants_;
     std::array<std::optional<ActorInstance>, 28> actors_;
     std::array<LordlyActorMotion, 28> motions_{};
+    std::array<ActorHeightJob, 28> heights_;
     std::optional<ActorBindingInputs> binding_;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;

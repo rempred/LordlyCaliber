@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+Actor height jobs (0x7B) now retain their native 12-byte records and slot ownership.
+Periodic cadence, signed-halfword wrap, target-mode division, current-ROM tolerances,
+expiry-before-application and base/secondary-height flags follow ROM 29A59C..29A7C4.
+Target cancellation and job retargeting preserve the original behavior. Imported
+padding remains intact; new host allocations initialize unspecified padding to zero.
+All 247 original-instruction sequences match 3,705 full actor/job snapshots with
+allocation/free controlled. Zero-divisor, missing-actor and whole-scene rollback
+checks pass, along with existing actor-record and binding/motion checks. Updates
+are connected to SceneActors but still require the scene scheduler's height stage.
+
 The scene scheduler now has a resumable portable control adaptation of original
 ROM 2A0680..2A0804. Its reference C at Decomp b5ee7cb3 is HYBRID_C; the host
 implementation contains no assembly. Mode guards are evaluated at their original

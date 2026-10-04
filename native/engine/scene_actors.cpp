@@ -37,6 +37,14 @@ void SceneActors::supplyMotion(int slot, const LordlyActorMotion &motion) {
     checkSlot(slot);
     motions_[slot] = motion;
 }
+const ActorHeightJob &SceneActors::heightJob(int slot) const {
+    checkSlot(slot);
+    return heights_[slot];
+}
+void SceneActors::supplyHeightJob(int slot, ActorHeightJob job) {
+    checkSlot(slot);
+    heights_[slot] = std::move(job);
+}
 void SceneActors::supplyBindingInputs(ActorBindingInputs inputs) {
     for (const auto &row : inputs.rows)
         if (row.size() != 248)
@@ -200,6 +208,17 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x7b) {
+        if (args.size() != 4)
+            throw Error("Actor height command is truncated");
+        const int slot = qint32(args[0]);
+        checkSlot(slot);
+        heights_[slot].start(rom_, qint32(args[1]), qint32(args[2]), qint32(args[3]),
+                             actors_[slot]
+                                 ? std::optional<float>(actors_[slot]->pose().actor().position.y)
+                                 : std::nullopt);
+        return true;
+    }
     if (opcode == 0x1d || opcode == 0x48) {
         if (args.size() != 2)
             throw Error("Actor scale/opacity command is truncated");
@@ -320,6 +339,20 @@ void SceneActors::advancePlanar() {
     }
     actors_ = std::move(next);
     motions_ = motions;
+}
+void SceneActors::advanceHeights() {
+    auto next = actors_;
+    auto heights = heights_;
+    for (int i = 0; i < 28; ++i) {
+        const auto step = heights[i].advance();
+        if (!step)
+            continue;
+        if (!next[i])
+            throw Error("Actor height job requires an occupied slot when applying its step");
+        next[i]->addHeight(*step);
+    }
+    actors_ = std::move(next);
+    heights_ = std::move(heights);
 }
 void SceneActors::advancePoses() {
     auto next = actors_;
