@@ -37,6 +37,17 @@
     "service_80093060": 2148085856,
     "service_801ad5a0": 2149242272
   },
+  "customPrefix": {
+    "offset": 1664,
+    "size": 120,
+    "entry": "lc_custom_reward",
+    "words": [
+      0,
+      0,
+      71368729,
+      4233249
+    ]
+  },
   "dma": {
     "start": 187984,
     "size": 164,

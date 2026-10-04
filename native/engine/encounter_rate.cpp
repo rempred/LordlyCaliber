@@ -1,4 +1,5 @@
 #include "engine/encounter_rate.h"
+#include "engine/custom_runtime.h"
 #include "engine/scenario_rates.h"
 #include <QFile>
 #include <QJsonArray>
@@ -63,7 +64,9 @@ EncounterRate EncounterRate::load(const Rom &rom) {
         result.original_ = result.json();
         return result;
     }
-    const auto source = rom.bytes().mid(romOffset, codeSize);
+    auto source = rom.bytes().mid(romOffset, codeSize);
+    if (const auto custom = CustomPlacement::read(rom))
+        source = custom->canonicalReferences(source, romOffset);
     auto masked = source;
     QJsonObject values{{"divisor", 0}, {"normalPassCount", 0}, {"alternatePassCount", 0}};
     for (const auto &entry : spec["fields"].toArray()) {

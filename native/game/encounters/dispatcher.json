@@ -50,6 +50,14 @@
     "service_801d92d0": 2149421776,
     "service_801dcd90": 2149436816
   },
+  "selection": {
+    "offset": 948,
+    "entry": "lc_selection_site",
+    "original": [
+      339803981,
+      608305408
+    ]
+  },
   "dma": {
     "start": 187984,
     "size": 164,

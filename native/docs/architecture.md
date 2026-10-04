@@ -8,8 +8,16 @@ omits that pool. The original permanent DMA loads the extension and existing
 instruction-cache preparation covers it. Rebuilds must supply the extension
 again or explicitly remove it. Allocation, relocation when adding saves, bounds,
 reopening, and boot/reset instruction checks are covered in guarded 4 MB memory.
-The current custom encounter C core uses this allocation in internal probes;
-its product editing and caller installation are still in progress.
+The custom encounter C core and its register adapters now use this allocation
+in installed ROM probes. All twelve caller owners compile from maintained
+assembly, including the shared dispatcher and reward owner. The global/scenario
+rate and class-reward readers authenticate their code after reversing the
+declared custom call sites. LC05NEUT records the ROM profile index, packed
+profiles, resident allocation and linked entries. Install/reopen/removal,
+installed call-site execution and profile-to-reward instruction flows are
+checked in 4 MB memory. Original actor services and PI hardware are simulated;
+full-game behavior remains unverified. Product editing and export integration
+are still in progress.
 
 The product targets Windows and integrated graphics. C++ owns the engine and
 Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,

@@ -92,4 +92,45 @@ for(const weights of [[2,3,1],[0,0,1],[1,0,0],[0,1,0],[65535,65535,65535],[0,0,0
   assert.equal(call('lc_custom_reward'),0xffffffff);assert.equal(call('lc_custom_message'),0);guard();rewards++;
  }
 }
-console.log(`PASS custom encounter C core: ${selections} selections, ${materializations} materialization/capacity cases, ${rewards} weighted/persuasion reward cases; independent per-member equipment and byte-wrapped levels, guarded 4 MiB RAM. Caller installation, original constructor behavior and full battles are not covered yet.`);
+let persuasion=0,retreat=0;
+const target=0x80260000,leader=0x80260100,other=0x80260200;
+for(const active of [0,1])for(const enabled of [0,1])for(const later of ['none','ineligible','eligible','a','b','c','d']) {
+ for(const base of [0,1,37,100])for(const bonus of [0,5,99])for(const random of [0,36,37,99,100,0x3fffffff]) {
+  reset();m.w32(state+4,active);m.w8(profile+2,enabled);m.w8(profile+3,base);
+  m.w8(profile+48,5);m.w8(profile+49,bonus);m.w8(profile+50,5);m.w8(profile+51,99);
+  m.w8(leader+0x4b,5);let rolls=0;const queried=[],filtered=[];
+  m.trap(S.lc_actor_at_index,c=>{
+   const id=c.get('a0');assert(id>=3&&id<20);queried.push(id);clobber(c);c.set('v0',id===19&&later!=='none'?other:0);
+  });
+  for(const kind of ['a','b','c','d'])m.trap(S['lc_persuasion_filter_'+kind],c=>{
+   assert.equal(c.get('a0'),other);filtered.push(kind);clobber(c);c.set('v0',later===kind?1:0);
+  });
+  m.trap(S.lc_persuasion_eligible,c=>{
+   assert.equal(c.get('a0'),other);filtered.push('eligible');clobber(c);c.set('v0',later==='eligible'?1:0);
+  });
+  m.trap(S.lc_persuasion_random,c=>{rolls++;clobber(c);c.set('v0',random);});
+  const chance=Math.min(100,base+bonus),custom=active&&enabled;
+  const success=custom&&later!=='eligible'&&chance>0&&(chance===100||random%100<chance);
+  assert.equal(call('lc_custom_persuade',[target,2,leader]),custom?(success?0:2):0xffffffff);
+  assert.equal(m.r32(state+8),success?1:0);assert.equal(m.r32(state+12),custom?target:0);
+  assert.equal(rolls,custom&&later!=='eligible'&&chance>0&&chance<100?1:0);
+  assert.equal(queried.length,custom?17:0);
+  if(custom&&later!=='none') {
+   const sequence=['a','b','c','d','eligible'];
+   assert.deepEqual(filtered,sequence.slice(0,['a','b','c','d'].includes(later)?sequence.indexOf(later)+1:5));
+  } else assert.deepEqual(filtered,[]);
+  guard();persuasion++;
+ }
+}
+// Last actor and an absent player leader: no subsequent scan or class bonus.
+reset();m.w32(state+4,1);m.w8(profile+2,1);m.w8(profile+3,100);
+m.trap(S.lc_actor_at_index,()=>assert.fail('No actor after index19'));
+assert.equal(call('lc_custom_persuade',[target,19,0]),0);guard();persuasion++;
+for(const active of [0,1])for(const threshold of [0,1,25,50,99,100]) {
+ for(const maximum of [0,1,3,100,999,65535])for(const hp of [0,1,2,25,50,99,100,65535]) {
+  reset();m.w32(state+4,active);m.w8(profile+4,threshold);m.w16(target+0x20,hp);m.w16(target+0x22,maximum);
+  const expected=active?(threshold&&maximum&&Math.floor(hp*100/maximum)<=threshold?1:0):0xffffffff;
+  assert.equal(call('lc_custom_retreat',[target]),expected);guard();retreat++;
+ }
+}
+console.log(`PASS custom encounter C core: ${selections} selections, ${materializations} materialization/capacity, ${rewards} rewards, ${persuasion} persuasion/filter and ${retreat} HP-boundary cases; guarded 4 MiB RAM. Caller installation, original service behavior and full battles are not covered yet.`);

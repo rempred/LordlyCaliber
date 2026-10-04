@@ -5,6 +5,9 @@
  * All original function positions and other behavior remain intact. */
 .set noat
 .set noreorder
+.ifndef LC_CUSTOM_SQUADS
+.equ LC_CUSTOM_SQUADS,0
+.endif
 L_13c060:
     lui $v0, 0x8019
 L_13c064:
@@ -648,9 +651,17 @@ L_13c40c:
 L_13c410:
     lbu $v0, 0x0($v1)
 L_13c414:
+.if LC_CUSTOM_SQUADS
+    jal lc_selection_site
+.else
     bne $v0, $zero, L_13c14c
+.endif
 L_13c418:
+.if LC_CUSTOM_SQUADS
+    nop
+.else
     addiu $v0, $v0, 0x100
+.endif
 L_13c41c:
     addiu $v0, $zero, 0x1D
 L_13c420:

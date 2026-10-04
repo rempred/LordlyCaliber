@@ -25,6 +25,10 @@ function instruction(row,{start,end,ram,parameters=new Map(),calls={}}){
     text=`break ${(word>>>16)&1023}`;
   }else if(op===0&&((word&63)===26||(word&63)===27)){
     text=text.replace(/^(divu?) /,'$1 $zero, ');
+  }else if(op===17&&/^c\.0x/.test(text)){
+    const condition={2:'eq',12:'lt',14:'le'}[word&15];
+    if(!condition||![16,17].includes((word>>>21)&31))throw Error('Unsupported floating comparison');
+    text=text.replace(/^c\.0x[0-9a-f]+/i,'c.'+condition);
   }else if(text.startsWith('move ')){
     const reg=n=>'$'+registers[n];
     if(![33,37].includes(word&63))throw Error('Unknown move encoding');

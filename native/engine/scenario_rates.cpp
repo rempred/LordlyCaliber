@@ -1,4 +1,5 @@
 #include "engine/scenario_rates.h"
+#include "engine/custom_runtime.h"
 #include "engine/promotion.h"
 #include <cmath>
 namespace lordly {
@@ -135,6 +136,8 @@ std::optional<ScenarioRatePlacement> ScenarioRates::placement(const Rom &rom) {
         quint64(offset) + dataSize > quint64(rom.bytes().size()))
         throw Error("Scenario-rate allocation exceeds the cartridge range");
     auto code = rom.bytes().mid(EncounterRate::romOffset, EncounterRate::codeSize);
+    if (const auto custom = CustomPlacement::read(rom))
+        code = custom->canonicalReferences(code, EncounterRate::romOffset);
     const auto data = rom.bytes().mid(offset, dataSize);
     if (crc32(code) != u32(header, 32) || crc32(data) != u32(header, 28))
         throw Error("Scenario rates differ from their declared allocation");

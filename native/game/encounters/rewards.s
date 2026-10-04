@@ -5,6 +5,9 @@
  * Every byte-sized class has a ROM row; validated totals are nonzero. */
 .set noat
 .set noreorder
+.ifndef LC_CUSTOM_SQUADS
+.equ LC_CUSTOM_SQUADS,0
+.endif
 L_101ddc:
     addiu $sp, $sp, -0x50
 L_101de0:
@@ -839,181 +842,301 @@ L_102458:
     nop
 L_10245c:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    jal lc_custom_reward
+.else
     lui $a0, LC_REWARDS_HI
+.endif
 .else
     lui $v1, 0x801F
 .endif
 L_102460:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    nop
+.else
     ori $a0, $a0, LC_REWARDS_LO
+.endif
 .else
     addiu $v1, $v1, -0x24E8
 .endif
 L_102464:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    bgez $v0, L_1024cc
+.else
     sll $v0, $s4, 4
+.endif
 .else
     lhu $v0, 0x0($v1)
 .endif
 L_102468:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $s3, $v0, $zero
+.else
     addu $a0, $a0, $v0
+.endif
 .else
     beq $v0, $zero, L_102488
 .endif
 L_10246c:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lui $a0, LC_REWARDS_HI
+.else
     addiu $a1, $sp, 0x20
+.endif
 .else
     addu $s1, $zero, $zero
 .endif
 L_102470:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    ori $a0, $a0, LC_REWARDS_LO
+.else
     jal service_8009da50
+.endif
 .else
     lhu $v0, 0x0($v1)
 .endif
 L_102474:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    sll $v0, $s4, 4
+.else
     addiu $a2, $zero, 16
+.endif
 .else
     beq $v0, $s4, L_102488
 .endif
 L_102478:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $a0, $a0, $v0
+.else
     jal service_80092a60
+.endif
 .else
     addiu $v1, $v1, 0x8
 .endif
 L_10247c:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addiu $a1, $sp, 0x20
+.else
     nop
+.endif
 .else
     lhu $v0, 0x0($v1)
 .endif
 L_102480:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    jal service_8009da50
+.else
     lhu $t0, 0x26($sp)
+.endif
 .else
     bne $v0, $zero, L_102474
 .endif
 L_102484:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addiu $a2, $zero, 16
+.else
     lhu $t1, 0x28($sp)
+.endif
 .else
     addiu $s1, $s1, 0x1
 .endif
 L_102488:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    jal service_80092a60
+.else
     lhu $t2, 0x2a($sp)
+.endif
 .else
     jal service_80092a60
 .endif
 L_10248c:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    nop
+.else
     addu $t1, $t1, $t0
+.endif
 .else
     nop
 .endif
 L_102490:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lhu $t0, 0x26($sp)
+.else
     addu $t2, $t2, $t1
+.endif
 .else
     lui $v1, 0x5555
 .endif
 L_102494:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lhu $t1, 0x28($sp)
+.else
     divu $zero, $v0, $t2
+.endif
 .else
     ori $v1, $v1, 0x5556
 .endif
 L_102498:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lhu $t2, 0x2a($sp)
+.else
     mfhi $v0
+.endif
 .else
     mult $v0, $v1
 .endif
 L_10249c:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $t1, $t1, $t0
+.else
     sltu $v1, $v0, $t0
+.endif
 .else
     sra $a0, $v0, 31
 .endif
 L_1024a0:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $t2, $t2, $t1
+.else
     xori $v1, $v1, 1
+.endif
 .else
     mfhi $t0
 .endif
 L_1024a4:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    divu $zero, $v0, $t2
+.else
     sltu $v0, $v0, $t1
+.endif
 .else
     subu $a0, $t0, $a0
 .endif
 L_1024a8:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    mfhi $v0
+.else
     xori $v0, $v0, 1
+.endif
 .else
     sll $v1, $a0, 1
 .endif
 L_1024ac:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    sltu $v1, $v0, $t0
+.else
     addu $v0, $v0, $v1
+.endif
 .else
     addu $v1, $v1, $a0
 .endif
 L_1024b0:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    xori $v1, $v1, 1
+.else
     sll $v0, $v0, 1
+.endif
 .else
     subu $v0, $v0, $v1
 .endif
 L_1024b4:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    sltu $v0, $v0, $t1
+.else
     addu $v0, $sp, $v0
+.endif
 .else
     sll $v1, $s1, 2
 .endif
 L_1024b8:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    xori $v0, $v0, 1
+.else
     lhu $s3, 0x20($v0)
+.endif
 .else
     addu $v1, $v1, $v0
 .endif
 L_1024bc:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $v0, $v0, $v1
+.else
     lui $v0, 0x8019
+.endif
 .else
     lui $v0, 0x8019
 .endif
 L_1024c0:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    sll $v0, $v0, 1
+.else
     lbu $v0, 0x3670($v0)
+.endif
 .else
     lbu $v0, 0x3670($v0)
 .endif
 L_1024c4:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    addu $v0, $sp, $v0
+.else
     nop
+.endif
 .else
     sll $v1, $v1, 1
 .endif
 L_1024c8:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lhu $s3, 0x20($v0)
+.else
     nop
+.endif
 .else
     lui $s3, 0x801F
 .endif
 L_1024cc:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lui $v0, 0x8019
+.else
     nop
+.endif
 .else
     addu $s3, $s3, $v1
 .endif
 L_1024d0:
 .if LC_NATIVE_REWARDS
+.if LC_CUSTOM_SQUADS
+    lbu $v0, 0x3670($v0)
+.else
     nop
+.endif
 .else
     lhu $s3, -0x24E6($s3)
 .endif

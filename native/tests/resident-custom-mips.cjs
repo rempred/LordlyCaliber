@@ -16,7 +16,7 @@ for (const f of fixtures) {
   assert.equal(h.toString('ascii', 0, 8), 'LC05CLAS'); assert.equal(field(8), 4);
   const begin = field(104), end = begin + field(108), state = f.state;
   assert.equal(begin, f.expandedSaves ? ((0x80187f00 + field(84) + 15) & 0xfffffff0) >>> 0 : 0x80187f00);
-  assert.equal(end, state + 144); assert(end <= 0x8018aa70);
+  assert(end >= state + 144); assert(end <= 0x8018aa70);
   const m = new Mips(); m.ram = new Uint8Array(0x400000); m.ram.fill(0xa5);
   m.load(0x80071eb0, rom.subarray(0x22b0, 0x2798)); m.set('sp', 0x803ffe00);
   const cache = [], dma = [], heaps = [], pools = []; let secondary = 0;

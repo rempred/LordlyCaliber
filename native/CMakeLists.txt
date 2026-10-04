@@ -14,7 +14,15 @@ target_sources(lordly_engine PRIVATE engine/encounters.cpp engine/encounter_rate
 target_sources(lordly_engine PRIVATE engine/creature_rewards.cpp rebuild/creature_rewards.cpp)
 target_sources(lordly_engine PRIVATE engine/scenario_rates.cpp rebuild/scenario_rates.cpp)
 qt_add_resources(lordly_engine reward_sources PREFIX "/" BASE . FILES game/encounters/rewards.s game/encounters/rewards.json)
-qt_add_resources(lordly_engine custom_sources PREFIX "/" BASE . FILES game/encounters/custom.c game/encounters/custom.h)
+target_sources(lordly_engine PRIVATE engine/custom_runtime.cpp rebuild/custom_encounters.cpp)
+qt_add_resources(lordly_engine custom_sources PREFIX "/" BASE . FILES game/encounters/custom.c game/encounters/custom.h game/encounters/custom-sites.s)
+qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
+  game/encounters/custom-owners/catalog.json game/encounters/custom-owners/card_text.s
+  game/encounters/custom-owners/card_message.s game/encounters/custom-owners/materializer.s
+  game/encounters/custom-owners/persuasion.s game/encounters/custom-owners/retreat.s
+  game/encounters/custom-owners/recruit.s game/encounters/custom-owners/talk_results.s
+  game/encounters/custom-owners/action_budget.s game/encounters/custom-owners/menu_iterator.s
+  game/encounters/custom-owners/round.s)
 qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/encounters/dispatcher.s game/encounters/dispatcher.json)
 qt_add_resources(lordly_engine encounter_labels PREFIX "/" BASE . FILES game/encounters/labels.json)
 qt_add_resources(lordly_engine consumable_sources PREFIX "/" BASE . FILES game/consumables/effects.json game/consumables/effects.s)

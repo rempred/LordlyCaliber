@@ -98,3 +98,47 @@ const u8 *lc_custom_message(void)
 {
     return lc_custom_state.active ? lc_custom_state.profile.message : (const u8 *)0;
 }
+
+/* The original scan already selected the first eligible target. Only a later
+ * eligible actor prevents Talk here. Return -1 to keep the original behavior,
+ * 0 for joined, or 2 for failure without an automatic retreat. */
+s32 lc_custom_persuade(u8 *target, u32 index, const u8 *leader)
+{
+    LcCustomState *state = &lc_custom_state;
+    u32 chance, i;
+    u8 *actor;
+    if (!state->active || !state->profile.persuasion) return -1;
+    state->persuaded = 0;
+    state->talk_record = (u32)target;
+    for (i = index + 1; i < 20; ++i) {
+        actor = lc_actor_at_index(i);
+        if (actor && !lc_persuasion_filter_a(actor) && !lc_persuasion_filter_b(actor) &&
+            !lc_persuasion_filter_c(actor) && !lc_persuasion_filter_d(actor) &&
+            lc_persuasion_eligible(actor)) return 2;
+    }
+    chance = state->profile.chance;
+    if (leader) {
+        for (i = 0; i < 3; ++i) {
+            if (state->profile.bonus[i].class_id == leader[0x4b]) {
+                chance += state->profile.bonus[i].bonus;
+                break;
+            }
+        }
+    }
+    if (chance > 100) chance = 100;
+    if (!chance || (chance < 100 && lc_persuasion_random() % 100 >= chance)) return 2;
+    state->persuaded = 1;
+    return 0;
+}
+
+/* Preserve the game's integer HP-percentage boundary. Zero threshold or zero
+ * maximum HP never retreats. The caller handles the unchanged retail path. */
+s32 lc_custom_retreat(const u8 *actor)
+{
+    u32 hp, maximum, threshold;
+    if (!lc_custom_state.active) return -1;
+    threshold = lc_custom_state.profile.retreat_hp;
+    hp = *(const u16 *)(actor + 0x20);
+    maximum = *(const u16 *)(actor + 0x22);
+    return threshold && maximum && hp * 100 / maximum <= threshold;
+}

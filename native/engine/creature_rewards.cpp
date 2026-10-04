@@ -1,4 +1,5 @@
 #include "engine/creature_rewards.h"
+#include "engine/custom_runtime.h"
 #include "engine/promotion.h"
 #include <QFile>
 #include <QJsonArray>
@@ -69,6 +70,8 @@ std::optional<quint32> CreatureRewards::placement(const Rom &rom) {
             throw Error("Creature reward runtime dependency differs from its supported source");
     }
     auto code = rom.bytes().mid(ownerOffset, ownerSize);
+    if (const auto custom = CustomPlacement::read(rom))
+        code = custom->canonicalReferences(code, ownerOffset);
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     if (!header.startsWith("LC05REWD")) {
         if (sha256(code) != spec["retailSha256"].toString().toLatin1())

@@ -38,4 +38,11 @@ extern void lc_dma_read(u32 source, void *destination, u32 length);
 extern u32 lc_random(void);
 extern void lc_character_create(void *record, u32 class_id, u32 level,
                                 u32 equipment_a, u32 equipment_b);
+extern u8 *lc_actor_at_index(u32 index);
+extern s32 lc_persuasion_filter_a(const u8 *actor);
+extern s32 lc_persuasion_filter_b(const u8 *actor);
+extern s32 lc_persuasion_filter_c(const u8 *actor);
+extern s32 lc_persuasion_filter_d(const u8 *actor);
+extern s32 lc_persuasion_eligible(const u8 *actor);
+extern u32 lc_persuasion_random(void);
 #endif
