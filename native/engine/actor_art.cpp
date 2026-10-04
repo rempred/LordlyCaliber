@@ -1,0 +1,145 @@
+#include "engine/actor_art.h"
+#include <iterator>
+namespace lordly {
+namespace {
+QByteArray resource(const Rom &rom, quint32 key, bool compressed) {
+    if (!key || key % 2 || key >= 0x10000000)
+        throw Error("Invalid actor resource key");
+    const quint32 at = key + 0x594280, size = u32(rom.bytes(), at);
+    if (size > 16 * 1024 * 1024 || quint64(at) + 4 + size > quint64(rom.bytes().size()))
+        throw Error("Actor resource exceeds its ROM envelope");
+    if (!compressed)
+        return rom.bytes().mid(at + 4, size);
+    const auto decoded = u32(rom.bytes(), at + 4);
+    if (size < 4 || decoded > 16 * 1024 * 1024)
+        throw Error("Actor resource exceeds its decode budget");
+    qsizetype used = 0;
+    const auto data = decodeLzss(rom.bytes().mid(at + 8, size - 4), decoded, &used);
+    if (used != size - 4)
+        throw Error("Actor resource leaves unread compressed data");
+    return data;
+}
+QVector<PoseProgram> poseTable(const QByteArray &bytes) {
+    const auto first = u32(bytes, 0);
+    if (!first || first % 4 || first > quint32(bytes.size()) || first / 4 > 32768)
+        throw Error("Invalid actor pose directory extent");
+    const int count = int(first / 4);
+    QVector<quint32> offsets;
+    for (int i = 0; i < count; ++i) {
+        const auto offset = u32(bytes, i * 4);
+        if (offset < first || offset > quint32(bytes.size()) || (i && offset < offsets.last()))
+            throw Error("Invalid actor pose directory pointer");
+        offsets << offset;
+    }
+    offsets << quint32(bytes.size());
+    constexpr int widths[] = {1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4};
+    QVector<PoseProgram> result;
+    for (int i = 0; i < count; ++i) {
+        PoseProgram pose{bytes.mid(offsets[i], offsets[i + 1] - offsets[i]), {}};
+        if (!pose.source.isEmpty()) {
+            const int records = u8(pose.source, 0);
+            int cursor = 1;
+            for (int r = 0; r < records; ++r) {
+                const int opcode = u8(pose.source, cursor);
+                if (opcode >= int(std::size(widths)) ||
+                    cursor + widths[opcode] > pose.source.size())
+                    throw Error("Actor pose opcode exceeds its program");
+                pose.records << PoseRecord{opcode, pose.source.mid(cursor + 1, widths[opcode] - 1)};
+                cursor += widths[opcode];
+            }
+            if (cursor != pose.source.size())
+                throw Error("Actor pose has unaccounted bytes");
+        }
+        result << std::move(pose);
+    }
+    return result;
+}
+} // namespace
+ActorArt ActorArt::load(const Rom &rom, int bank) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Actor art currently requires US revision 0");
+    // The separate cutscene root has one-based bank IDs. Combat bodies use a
+    // different descriptor directory; do not reinterpret their class handles here.
+    const auto directory = resource(rom, 0x0109f95e, false);
+    if (directory.size() % 4 || bank < 1 || bank > directory.size() / 4)
+        throw Error("Actor art bank is outside its current ROM directory");
+    ActorArt result;
+    result.bank_ = bank;
+    result.descriptorKey_ = u32(directory, (bank - 1) * 4);
+    const auto descriptor = resource(rom, result.descriptorKey_, false);
+    if (descriptor.size() < 16 || descriptor.size() % 4 || descriptor.size() > 65540 * 4)
+        throw Error("Invalid actor art descriptor");
+    result.metadata_ = resource(rom, u32(descriptor, 0), true);
+    result.poses_ = poseTable(resource(rom, u32(descriptor, 4), true));
+    const auto config = resource(rom, u32(descriptor, 8), true);
+    result.palettes_ = resource(rom, u32(descriptor, 12), true);
+    if (result.palettes_.size() % 512)
+        throw Error("Actor palette banks are truncated");
+    for (int at = 16; at < descriptor.size(); at += 4)
+        result.artKeys_ << u32(descriptor, at);
+    const auto map = u32(config, 0x1c);
+    if (u32(config, 0) != result.artKeys_.size() ||
+        quint64(map) + result.artKeys_.size() > quint64(config.size()))
+        throw Error("Actor palette map does not match its art count");
+    result.paletteMap_ = config.mid(map, result.artKeys_.size());
+    return result;
+}
+QVector<ActorLayer> ActorArt::layers(int token) const {
+    if (token < 0 || token > 65535)
+        throw Error("Actor frame token is out of range");
+    const auto offset = u32(metadata_, token * 4);
+    const auto count = u16(metadata_, offset);
+    if (count > 4096 || quint64(offset) + 2 + count * 16 > quint64(metadata_.size()))
+        throw Error("Actor frame layers exceed their metadata resource");
+    QVector<ActorLayer> result;
+    for (int i = 0; i < count; ++i) {
+        const auto at = offset + 2 + i * 16;
+        ActorLayer layer{u16(metadata_, at),
+                         {qint16(u16(metadata_, at + 2)), qint16(u16(metadata_, at + 4))},
+                         u16(metadata_, at + 6),
+                         u16(metadata_, at + 8),
+                         u16(metadata_, at + 10),
+                         u16(metadata_, at + 12),
+                         u16(metadata_, at + 14)};
+        if (layer.art >= artKeys_.size() || !layer.width || !layer.height ||
+            quint64(layer.width) * layer.height > 4194304)
+            throw Error("Actor frame selects invalid art or dimensions");
+        result << layer;
+    }
+    return result;
+}
+QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant) const {
+    QVector<ActorFrameLayer> result;
+    qsizetype retained = 0;
+    for (const auto &layer : layers(token)) {
+        const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
+        const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
+        auto pixels = sprite.frame(variant, palette);
+        const auto &image = pixels.image;
+        if (layer.width > image.width || layer.height > image.height)
+            throw Error("Actor frame dimensions exceed stored sprite pixels");
+        if (layer.width != image.width || layer.height != image.height)
+            for (int y = 0; y < image.height; ++y)
+                for (int x = 0; x < image.width; ++x)
+                    if ((x >= layer.width || y >= layer.height) &&
+                        u8(image.rgba, (y * image.width + x) * 4 + 3))
+                        throw Error("Actor frame metadata would crop visible sprite pixels");
+        RasterImage oriented{layer.width, layer.height,
+                             QByteArray(layer.width * layer.height * 4, 0)};
+        if ((retained += oriented.rgba.size()) > 64 * 1024 * 1024)
+            throw Error("Actor frame exceeds the pixel budget");
+        for (int y = 0; y < layer.height; ++y)
+            for (int x = 0; x < layer.width; ++x) {
+                const int sx = layer.flags & 1 ? layer.width - 1 - x : x,
+                          sy = layer.flags & 2 ? layer.height - 1 - y : y;
+                for (int c = 0; c < 4; ++c)
+                    put8(oriented.rgba, (y * layer.width + x) * 4 + c,
+                         u8(image.rgba, (sy * image.width + sx) * 4 + c));
+            }
+        pixels.image = std::move(oriented);
+        result << ActorFrameLayer{layer, std::move(pixels)};
+    }
+    return result;
+}
+} // namespace lordly

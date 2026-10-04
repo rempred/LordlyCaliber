@@ -1,8 +1,11 @@
+#include "engine/actor_art.h"
 #include "engine/sprite_object.h"
 #include <QDir>
 #include <QFile>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QPainter>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -10,6 +13,115 @@ using namespace lordly;
 class SpriteTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorBanksPosesAndFrames() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-art-fixture.cjs"),
+             path, work.filePath("actors.json")});
+        QVERIFY(reference.waitForFinished(120000));
+        const auto errors = reference.readAllStandardError();
+        QVERIFY2(reference.exitCode() == 0, errors.constData());
+        QFile file(work.filePath("actors.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        const auto banks = fixture["banks"].toArray();
+        QCOMPARE(banks.size(), 68);
+        const auto rom = Rom::open(path);
+        int programCount = 0, frameCount = 0, layerCount = 0;
+        for (const auto &value : banks) {
+            const auto row = value.toObject();
+            const auto bank = ActorArt::load(rom, row["bank"].toInt());
+            QCOMPARE(bank.descriptorKey(), quint32(row["descriptorKey"].toInteger()));
+            const auto keys = row["artKeys"].toArray();
+            QCOMPARE(bank.artKeys().size(), keys.size());
+            for (int i = 0; i < keys.size(); ++i)
+                QCOMPARE(bank.artKeys()[i], quint32(keys[i].toInteger()));
+            const auto poses = row["poses"].toArray();
+            QCOMPARE(bank.poses().size(), poses.size());
+            for (int i = 0; i < poses.size(); ++i) {
+                const auto expected = poses[i].toObject();
+                const auto &pose = bank.poses()[i];
+                QCOMPARE(sha256(pose.source), expected["sha256"].toString().toLatin1());
+                const auto records = expected["records"].toArray();
+                QCOMPARE(pose.records.size(), records.size());
+                for (int j = 0; j < records.size(); ++j) {
+                    const auto record = records[j].toArray();
+                    QCOMPARE(pose.records[j].opcode, record[0].toInt());
+                    QCOMPARE(pose.records[j].operands.size(), record.size() - 1);
+                    for (int k = 1; k < record.size(); ++k)
+                        QCOMPARE(u8(pose.records[j].operands, k - 1), record[k].toInt());
+                }
+                ++programCount;
+            }
+            for (const auto &f : row["frames"].toArray()) {
+                const auto frame = f.toObject();
+                const auto actual = bank.frame(rom, frame["token"].toInt(), 0);
+                const auto expected = frame["layers"].toArray();
+                QCOMPARE(actual.size(), expected.size());
+                for (int i = 0; i < actual.size(); ++i) {
+                    const auto layer = expected[i].toObject();
+                    QCOMPARE(actual[i].metadata.origin,
+                             QPoint(layer["x"].toInt(), layer["y"].toInt()));
+                    QCOMPARE(actual[i].metadata.flags, layer["flags"].toInt());
+                    QCOMPARE(actual[i].metadata.scaleX / 1024., layer["scaleX"].toDouble());
+                    QCOMPARE(actual[i].metadata.scaleY / 1024., layer["scaleY"].toDouble());
+                    QCOMPARE(actual[i].pixels.image.width, layer["width"].toInt());
+                    QCOMPARE(actual[i].pixels.image.height, layer["height"].toInt());
+                    QCOMPARE(sha256(actual[i].pixels.image.rgba),
+                             layer["sha256"].toString().toLatin1());
+                    ++layerCount;
+                }
+                ++frameCount;
+            }
+        }
+        QCOMPARE(programCount, fixture["programs"].toInt());
+        QCOMPARE(frameCount, fixture["frames"].toInt());
+        QCOMPARE(layerCount, fixture["layers"].toInt());
+        auto changed = rom.bytes();
+        constexpr int root = 0x1633be2;
+        put32(changed, root, u32(changed, root + 4));
+        QCOMPARE(ActorArt::load(Rom::fromBytes(changed), 1).descriptorKey(),
+                 ActorArt::load(rom, 2).descriptorKey());
+        QVERIFY_THROWS_EXCEPTION(Error, ActorArt::load(rom, 0));
+        QVERIFY_THROWS_EXCEPTION(Error, ActorArt::load(rom, 69));
+        // Native rendering artifact for the documented Bank 30 / state 12 walk.
+        const auto magnus = ActorArt::load(rom, 30);
+        QVector<QVector<ActorFrameLayer>> walk;
+        QRect bounds;
+        for (const auto &record : magnus.poses()[12].records)
+            if (record.opcode == 1) {
+                auto layers = magnus.frame(rom, u8(record.operands, 0), 0);
+                for (const auto &layer : layers)
+                    bounds = bounds.united(QRect(
+                        layer.metadata.origin, QSize(layer.metadata.width, layer.metadata.height)));
+                walk << std::move(layers);
+            }
+        QCOMPARE(walk.size(), 6);
+        QImage contact((bounds.width() + 4) * int(walk.size()) * 4, bounds.height() * 4,
+                       QImage::Format_RGBA8888);
+        contact.fill(Qt::transparent);
+        {
+            QPainter painter(&contact);
+            painter.scale(4, 4);
+            for (int i = 0; i < walk.size(); ++i)
+                for (const auto &layer : walk[i]) {
+                    const auto &r = layer.pixels.image;
+                    QImage image(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width,
+                                 r.height, r.width * 4, QImage::Format_RGBA8888);
+                    painter.drawImage(layer.metadata.origin - bounds.topLeft() +
+                                          QPoint(i * (bounds.width() + 4), 0),
+                                      image);
+                }
+        }
+        QVERIFY(contact.save("native-actor-walk.png"));
+        qInfo() << programCount << "pose programs," << frameCount << "frames," << layerCount
+                << "layers matched";
+    }
     void deltaVariantsAndFallback() {
         QByteArray bytes = QByteArray::fromHex("5554020500020001");
         bytes += QByteArray::fromHex("55540003000200010100000000000000f800000000000000");

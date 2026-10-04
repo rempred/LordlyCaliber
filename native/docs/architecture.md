@@ -1,5 +1,17 @@
 # Native Lordly Caliber
 
+`ActorArt` follows the current ROM's one-based cutscene-bank directory at
+resource key 0x0109F95E, then reads the descriptor's metadata, pose, configuration,
+palette and art members. It preserves empty pose ranges and every counted bytecode
+record. Frame assembly preserves signed layer origins, scale fields, flips and
+variant fallback; metadata crops reject if they would remove visible pixels.
+The reader follows an edited directory entry rather than substituting catalogued
+keys. All 68 banks, 2,275 pose programs, 5,696 referenced frames and 16,768 layers
+match the independent parser/renderer's records, dimensions and pixel hashes.
+A native six-frame Bank-30/state-12 walk contact sheet has been inspected. Pose
+selection and execution, actor movement and camera projection remain separate
+unfinished connections; these are frame/resource checks, not scene playback.
+
 `SpriteObject` decodes native 0x5554 sprite containers, preserving original
 headers and padded color/alpha/palette lanes. Variant deltas support nibble,
 byte and halfword subtraction plus RGBA32 XOR; discriminator cycles and missing
