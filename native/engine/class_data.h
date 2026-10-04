@@ -59,6 +59,9 @@ struct ClassPlacement {
 // loader code, menu capacity and save migration are separate export owners.
 class ClassData {
   public:
+    // Native records include the twelve-byte header. Modder B59 names the
+    // final body byte, at full-record offset 71, not full-record offset 59.
+    static constexpr int unitSizeOffset = 4, itemCapacityOffset = 71;
     static ClassData load(const Rom &rom);
     static ClassData loadRetail(const Rom &rom);
     const QVector<ClassAsset> &entries() const {

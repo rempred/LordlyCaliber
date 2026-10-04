@@ -122,6 +122,7 @@ class Project {
     void importLegacyRewards(const QJsonObject &object);
     void importLegacyScenarioRates(const QJsonObject &object);
     void importLegacyCustomSquads(const QJsonObject &object);
+    void importLegacyScenarios(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;

@@ -19,6 +19,7 @@
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
 #include <QJsonArray>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -54,6 +55,140 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void browserScenarioImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            QTemporaryDir work;
+            const auto fixturePath = work.filePath("browser.json");
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("browser-scenario-fixture.cjs"),
+                                     path, fixturePath});
+            QVERIFY2(generator.waitForFinished(30000), qPrintable(generator.errorString()));
+            QCOMPARE(generator.exitCode(), 0);
+            QFile fixtureFile(fixturePath);
+            QVERIFY(fixtureFile.open(QIODevice::ReadOnly));
+            const auto fixture = QJsonDocument::fromJson(fixtureFile.readAll()).object();
+            const auto patch = fixture["patch"].toObject(),
+                       expected = fixture["expected"].toObject();
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            const auto classData = project.classData();
+            const auto classCapacities = fixture["classCapacities"].toArray();
+            QCOMPARE(classCapacities.size(), 165);
+            for (int id = 0; id < classCapacities.size(); ++id)
+                QCOMPARE(u8(classData.entries()[id].record, ClassData::itemCapacityOffset),
+                         classCapacities[id].toInt());
+            const auto capacities = fixture["capacities"].toObject();
+            QVERIFY(capacities.size() > 100);
+            for (auto it = capacities.begin(); it != capacities.end(); ++it)
+                QCOMPARE(Scenarios::carryingCapacity(QByteArray::fromHex(it.key().toLatin1()),
+                                                     classData),
+                         it.value().toInt());
+            project.importLegacy(patch);
+            QVERIFY(project.pendingLegacySections().isEmpty());
+            QCOMPARE(project.scenarios()->changedScenarios(), 7);
+            for (auto it = expected.begin(); it != expected.end(); ++it)
+                QCOMPARE(project.scenarios()->scenario(it.key().toInt()).json(),
+                         it.value().toObject());
+            const auto authored = project.scenarios()->json();
+            project.saveFolder(work.path());
+            project.saveArchive(work.filePath("import.lcproject"));
+            for (const auto &location : {work.path(), work.filePath("import.lcproject")}) {
+                auto reopened = Project::fromRom(rom);
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.scenarios()->json(), authored);
+                QVERIFY(reopened.pendingLegacySections().isEmpty());
+            }
+            const auto built = rebuild(project, tools, work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-scenario-import-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadScenarios();
+            QCOMPARE(reopened.scenarios()->json(), authored);
+            auto fresh = Project::fromRom(rom);
+            auto patches = patch["patches"].toObject();
+            auto scenario = patches["scenario"].toObject();
+            const auto sourceManifest = fresh.manifest();
+            auto invalid = scenario;
+            auto added = invalid["addedSquads"].toArray();
+            auto row = added[0].toObject();
+            row.remove("compRecHex");
+            added[0] = row;
+            invalid["addedSquads"] = added;
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), sourceManifest);
+            invalid = scenario;
+            auto layouts = invalid["modifiedEsets"].toObject();
+            auto layout = layouts["10"].toObject();
+            layout["sourceSha256"] = QString(64, '0');
+            layouts["10"] = layout;
+            invalid["modifiedEsets"] = layouts;
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), sourceManifest);
+            invalid = scenario;
+            layouts = invalid["modifiedEsets"].toObject();
+            layout = layouts["10"].toObject();
+            layout["unrecognizedEdit"] = 1;
+            layouts["10"] = layout;
+            invalid["modifiedEsets"] = layouts;
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), sourceManifest);
+            // Without explicit level intent, older projects preserve the source base.
+            auto implicit = scenario;
+            implicit["levelBaseEdits"] = QJsonArray{};
+            fresh.importLegacy(implicit);
+            QCOMPARE(fresh.scenarios()->scenario(10).layout.baseLevel(), 2);
+            // Historical physical paths canonicalize only under the matching source hash.
+            auto migrated = scenario;
+            layouts = migrated["modifiedEsets"].toObject();
+            for (const auto key : {"10", "22", "35", "62"}) {
+                layout = layouts[key].toObject();
+                layout["resourcePath"] = "historical/equal-payload-resource";
+                layout["filename"] = "historical.bin";
+                layouts[key] = layout;
+            }
+            migrated["modifiedEsets"] = layouts;
+            auto bases = migrated["levelBaseEdits"].toArray();
+            auto base = bases[0].toObject();
+            base["resourcePath"] = "historical/equal-payload-resource";
+            bases[0] = base;
+            migrated["levelBaseEdits"] = bases;
+            auto migratedProject = Project::fromRom(rom);
+            migratedProject.importLegacy(migrated);
+            QCOMPARE(migratedProject.scenarios()->scenario(10).layout.baseLevel(), 12);
+            QCOMPARE(migratedProject.scenarios()->scenario(22).layout.baseLevel(), 12);
+            // Clearing imported edits remains authoritative over retained browser content.
+            auto cleared = *project.scenarios();
+            const auto keys = cleared.entries().keys();
+            for (const auto key : keys)
+                cleared.restore(key);
+            project.setScenarios(cleared.json());
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(project.manifest());
+            QVERIFY(!restored.scenarios()->modified());
+            QCOMPARE(restored.manifest()["legacyImport"], project.manifest()["legacyImport"]);
+            // Unimplemented site/treasure sections remain pending instead of disappearing.
+            auto retained = scenario;
+            retained["modifiedTreasures"] = QJsonObject{{"750", QJsonObject{{"rawHex", "00"}}}};
+            auto pending = Project::fromRom(rom);
+            pending.importLegacy(retained);
+            QVERIFY(pending.pendingLegacySections().contains("scenario.modifiedTreasures"));
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(pending, tools, work.path()));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Browser scenario import export:" << candidate;
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void scenarioRoutes() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -164,7 +299,7 @@ class EngineTests : public QObject {
             QCOMPARE(model.plan(classes).enemies, resources.enemyData());
             auto changedClasses = classes;
             auto asset = classes.entries()[u8(model.scenario(10).squads[0], 0)];
-            asset.record[59] = 11;
+            asset.record[ClassData::itemCapacityOffset] = 11;
             changedClasses.set(u8(model.scenario(10).squads[0], 0), asset);
             QVERIFY_THROWS_EXCEPTION(Error, model.validateForExport(changedClasses));
             changedClasses = classes;
@@ -174,7 +309,7 @@ class EngineTests : public QObject {
             QVERIFY_THROWS_EXCEPTION(Error, model.validateForExport(changedClasses));
             changedClasses = classes;
             asset = classes.entries()[5];
-            asset.record[10] ^= char(1);
+            asset.record[59] ^= char(1); // Rear action, not carried-item capacity.
             changedClasses.set(5, asset);
             model.validateForExport(changedClasses);
             // Keys 10 and 22 select the same original ESET; local edits split them.
@@ -252,7 +387,7 @@ class EngineTests : public QObject {
             auto unsafe = project;
             const int leader = u8(project.scenarios()->scenario(10).squads[0], 0);
             auto unsafeClass = unsafe.record(Table::Classes, leader).bytes;
-            unsafeClass[59] = 11;
+            unsafeClass[ClassData::itemCapacityOffset] = 11;
             unsafe.replaceBytes(Table::Classes, leader, unsafeClass);
             QTemporaryDir rejectedWork;
             QVERIFY_THROWS_EXCEPTION(Error, rebuild(unsafe, tools, rejectedWork.path()));

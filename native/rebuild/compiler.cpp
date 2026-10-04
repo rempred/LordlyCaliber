@@ -478,7 +478,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     BuildResult result{p.rom().bytes(), {}};
     for (const auto &r : p.records(Table::Classes))
         if (r.original.size() == r.bytes.size() &&
-            (r.original[4] != r.bytes[4] || r.original[59] != r.bytes[59])) {
+            (r.original[ClassData::unitSizeOffset] != r.bytes[ClassData::unitSizeOffset] ||
+             r.original[ClassData::itemCapacityOffset] != r.bytes[ClassData::itemCapacityOffset])) {
             p.loadScenarios();
             break;
         }

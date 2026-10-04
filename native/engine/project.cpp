@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <cmath>
 #include <limits>
 
@@ -28,7 +29,7 @@ const QVector<Field> &fields(Table table) {
                        QString choices = {}) {
             f.push_back({key, label, group, offset, width, false, choices});
         };
-        add("unitSize", "Size", "Identity", 4, 1, "UNIT_SIZES");
+        add("unitSize", "Size", "Identity", ClassData::unitSizeOffset, 1, "UNIT_SIZES");
         add("sexOrVoice", "Body / voice", "Identity", 5, 1, "CLASS_SEX_VOICE");
         add("leadership", "Leadership", "Identity", 6, 1, "CLASS_LEADERSHIP");
         add("baseHp", "Base HP", "Stats", 8, 2);
@@ -65,7 +66,8 @@ const QVector<Field> &fields(Table table) {
         add("finalTransitionLevel", "Second transition level", "Growth", 68);
         add("classCopyMatch", "Class-copy match", "Growth", 69, 1, "CLASS_NAMES");
         add("element", "Default element", "Combat", 70, 1, "DEFAULT_ELEMENTS");
-        add("itemCapacity", "Carried-item contribution", "Equipment", 71);
+        add("itemCapacity", "Carried-item contribution", "Equipment",
+            ClassData::itemCapacityOffset);
         for (int byte = 0; byte < 72; ++byte) {
             bool covered = false;
             for (const auto &field : f)
@@ -533,7 +535,10 @@ QJsonObject Project::manifest() const {
         result["encounters"] = encounters_->json();
     else
         result.remove("encounters");
-    if (scenarios_ && scenarios_->modified())
+    const auto oldPatches = legacy_["patches"].toObject();
+    if (scenarios_ &&
+        (scenarios_->modified() || oldPatches["scenario"].isObject() ||
+         oldPatches["squadOverrides"].isObject() || oldPatches["squad_overrides"].isObject()))
         result["scenarios"] = scenarios_->json();
     else
         result.remove("scenarios");
@@ -670,7 +675,8 @@ void Project::applyManifest(const QJsonObject &object) {
         if (!object["scenarios"].isObject())
             throw Error("Invalid saved scenarios");
         candidate.setScenarios(object["scenarios"].toObject());
-    }
+    } else
+        candidate.importLegacyScenarios(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -732,6 +738,25 @@ void Project::importLegacyCustomSquads(const QJsonObject &object) {
         return;
     loadEncounters();
     encounters_->importLegacyCustomSquads(value.toObject(), int(records(Table::Classes).size()));
+}
+void Project::importLegacyScenarios(const QJsonObject &object) {
+    const auto patches = object["patches"].toObject();
+    auto part = [&](const QString &key) {
+        const auto value = patches[key];
+        if (value.isUndefined() || value.isNull())
+            return QJsonObject{};
+        if (!value.isObject())
+            throw Error("Invalid imported " + key);
+        return value.toObject();
+    };
+    const auto scenario = part("scenario"), squads = part("squadOverrides"),
+               oldSquads = part("squad_overrides");
+    if (!squads.isEmpty() && !oldSquads.isEmpty() && squads != oldSquads)
+        throw Error("Conflicting imported squad override sections");
+    if (scenario.isEmpty() && squads.isEmpty() && oldSquads.isEmpty())
+        return;
+    loadScenarios();
+    scenarios_->importBrowser(rom_, scenario, squads.isEmpty() ? oldSquads : squads, classData());
 }
 void Project::importLegacyEncounters(const QJsonObject &object) {
     const auto patches = object["patches"].toObject();
@@ -830,6 +855,12 @@ void Project::importLegacyShops(const QJsonObject &object) {
     }
 }
 void Project::importLegacy(const QJsonObject &object) {
+    if (object["format"] == "ob64-scenario-project") {
+        importLegacy(QJsonObject{{"format", "ob64-patch"},
+                                 {"version", 36},
+                                 {"patches", QJsonObject{{"scenario", object}}}});
+        return;
+    }
     if (object.value("format").toString() != "ob64-patch")
         throw Error("Unsupported browser project format");
     int version = object.value("version").toInt();
@@ -908,6 +939,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyRewards(object);
     candidate.importLegacyScenarioRates(object);
     candidate.importLegacyCustomSquads(object);
+    candidate.importLegacyScenarios(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -982,6 +1014,18 @@ QStringList Project::pendingLegacySections() const {
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (scenarios_ && (it.key() == "squadOverrides" || it.key() == "squad_overrides"))
+            continue;
+        if (scenarios_ && it.key() == "scenario") {
+            const QSet<QString> consumed{
+                "format",        "version",        "created_at",  "source",           "settings",
+                "modifiedEsets", "levelBaseEdits", "addedSquads", "squadLevelCopies", "layers"};
+            const auto parts = it.value().toObject();
+            for (auto part = parts.begin(); part != parts.end(); ++part)
+                if (!consumed.contains(part.key()) && changed(part.value()))
+                    pending << "scenario." + part.key();
+            continue;
+        }
         if (it.key() == "neutral_global_rate" && encounters_)
             continue;
         if (it.key() == "creatureDrops" && encounters_)

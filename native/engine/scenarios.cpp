@@ -39,7 +39,8 @@ Scenarios Scenarios::load(const Rom &rom) {
     const auto originalClasses = ClassData::load(rom);
     for (const auto &entry : originalClasses.entries())
         result.originalClassLimits_
-            << qMakePair(int(u8(entry.record, 4)), int(u8(entry.record, 59)));
+            << qMakePair(int(u8(entry.record, ClassData::unitSizeOffset)),
+                         int(u8(entry.record, ClassData::itemCapacityOffset)));
     QFile labels(":/game/encounters/labels.json");
     QJsonObject names;
     if (labels.open(QIODevice::ReadOnly))
@@ -120,7 +121,7 @@ static void formation(const QByteArray &record, const ClassData &classes) {
             const int id = u8(record, at);
             if (id < 1 || id >= classes.entries().size())
                 throw Error("Squad member refers to an unavailable class");
-            const int size = u8(classes.entries()[id].record, 4);
+            const int size = u8(classes.entries()[id].record, ClassData::unitSizeOffset);
             if (size > 2)
                 throw Error("Squad uses a class with an unknown unit size");
             cost += size == 2 ? 2 : 1;
@@ -136,7 +137,9 @@ static void formation(const QByteArray &record, const ClassData &classes) {
                     std::abs(a.first % 3 - b.first % 3) <= 1)
                     throw Error("A large squad member needs adjacent formation cells clear");
 }
-static int capacity(const QByteArray &record, const ClassData &classes) {
+int Scenarios::carryingCapacity(const QByteArray &record, const ClassData &classes) {
+    if (record.size() != 35)
+        throw Error("Squad template must contain 35 bytes");
     int result = 0;
     for (const int at : {0, 7, 16}) {
         const int first = at == 0 ? 6 : at + 6, last = at == 0 ? 6 : at + 8;
@@ -146,7 +149,7 @@ static int capacity(const QByteArray &record, const ClassData &classes) {
             const int id = u8(record, at);
             if (id < 1 || id >= classes.entries().size())
                 throw Error("Squad supplies refer to an unavailable class");
-            result += u8(classes.entries()[id].record, 59);
+            result += u8(classes.entries()[id].record, ClassData::itemCapacityOffset);
         }
     }
     return result;
@@ -185,10 +188,11 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
             if (id >= originalClassLimits_.size()) {
                 changedSize = changedCapacity = true;
             } else {
-                changedSize |=
-                    u8(classes.entries()[id].record, 4) != originalClassLimits_[id].first;
+                changedSize |= u8(classes.entries()[id].record, ClassData::unitSizeOffset) !=
+                               originalClassLimits_[id].first;
                 changedCapacity |=
-                    u8(classes.entries()[id].record, 59) != originalClassLimits_[id].second;
+                    u8(classes.entries()[id].record, ClassData::itemCapacityOffset) !=
+                    originalClassLimits_[id].second;
             }
         }
         if (changedComposition || changedSize)
@@ -208,7 +212,7 @@ void Scenarios::validate(const Scenario &s, const ClassData &classes) const {
                 "This deployment's B/C level join is unresolved; its base level remains editable");
         if (changedComposition || changedCapacity || beforeRow.isEmpty() ||
             row.mid(13, 3) != beforeRow.mid(13, 3)) {
-            const int cap = capacity(record, classes);
+            const int cap = carryingCapacity(record, classes);
             if (cap < 1 || cap > 10)
                 throw Error("Squad composition must carry between one and ten supplies");
             const std::array<int, 7> healing{0, 1, 2, 3, 2, 3, 2};
@@ -408,9 +412,10 @@ ScenarioPlan Scenarios::plan(const ClassData &classes) const {
 void Scenarios::validateForExport(const ClassData &classes) const {
     bool classLimitsChanged = classes.entries().size() != originalClassLimits_.size();
     for (int id = 0; id < std::min(classes.entries().size(), originalClassLimits_.size()); ++id)
-        classLimitsChanged |=
-            u8(classes.entries()[id].record, 4) != originalClassLimits_[id].first ||
-            u8(classes.entries()[id].record, 59) != originalClassLimits_[id].second;
+        classLimitsChanged |= u8(classes.entries()[id].record, ClassData::unitSizeOffset) !=
+                                  originalClassLimits_[id].first ||
+                              u8(classes.entries()[id].record, ClassData::itemCapacityOffset) !=
+                                  originalClassLimits_[id].second;
     for (const auto &s : rows_) {
         if (!classLimitsChanged && s.json() == original(s.key).json())
             continue;

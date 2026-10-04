@@ -39,8 +39,21 @@ consumed by mission scripts, so their predicates can change but only added
 conditions can be deleted. Unknown payload bytes survive untouched controls;
 unclassified extended gate bytes remain visible and preserved. Route tests cover
 reference rejection/remaps, limits, persistence and resource rebuild/reopening.
-Full-game allied behavior, browser scenario import and map/site/treasure work
-remain unfinished.
+Browser scenario projects (versions 1–4) and scenario sections in the main project
+now import explicit base-level intent, added squads, copied level records and
+ordinary squad overrides. Source hashes, ownership claims and aliases must agree;
+older resource paths can migrate under matching hashes. Native restore operations
+remain authoritative over retained browser state on reopening. Unimplemented
+site/treasure sections remain pending and block export. An independent fixture
+uses the browser's authoring and project writer, then checks native persistence,
+compiled export and reopening. Alternate-overlay key 54 remains unsupported.
+Full-game allied behavior and map/site/treasure work remain unfinished.
+
+Carrying capacity is class body byte B59, at offset 71 in the full 72-byte native
+record. The initial implementation in f49d509 mistakenly read full-record offset
+59 (rear action). The corrected reader and export change detection use the named
+ClassData offset. Independent browser decoding now agrees for all 165 class
+contributions and 360 distinct selected squad records, including authored data.
 
 The class linker can reserve a maintained resident extension after expanded
 save code, or at the beginning of reclaimed class storage when saves are not

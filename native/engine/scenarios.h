@@ -39,6 +39,8 @@ class Scenarios {
     void setRouteGroup(int key, int squadRow, int group, int pattern, const ClassData &classes);
     void restore(int key);
     void apply(const QJsonObject &value, const ClassData &classes);
+    void importBrowser(const Rom &rom, const QJsonObject &scenarioProject,
+                       const QJsonObject &overrides, const ClassData &classes);
     QJsonObject json() const;
     ScenarioPlan plan(const ClassData &classes) const;
     void validateForExport(const ClassData &classes) const;
@@ -47,6 +49,7 @@ class Scenarios {
         return changedScenarios() != 0;
     }
     static int memberCount(const QByteArray &record);
+    static int carryingCapacity(const QByteArray &record, const ClassData &classes);
     static bool automaticAlly(int key, int oneBasedTemplate);
 
   private:
