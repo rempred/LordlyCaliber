@@ -1,7 +1,9 @@
 #include "engine/dialogue_draw.h"
 #include "engine/archive.h"
+#include "game/director/dialogue_draw_plan.h"
 #include <algorithm>
 #include <cmath>
+#include <optional>
 namespace lordly {
 DialogueDrawing::DialogueDrawing(Rom rom) : rom_(std::move(rom)) {
     rom_.requireSupported();
@@ -37,13 +39,17 @@ QByteArray DialogueDrawing::member(quint32 key, int index) {
                (quint32(u8(bytes, offset + 2)) << 16) | (quint32(u8(bytes, offset + 3)) << 24);
     };
     for (int i = 0; i <= index; ++i) {
-        if (u8(bytes, at) != 0x85)
+        const auto method = u8(bytes, at);
+        if (method != 0x85 && method != 0x80)
             throw Error("Unsupported dialogue image archive member");
         const auto size = little(at + 1), decoded = little(at + 5);
         if (!size || decoded > 65536 || quint64(at) + 9 + size > quint64(bytes.size()))
             throw Error("Dialogue image archive exceeds its envelope");
         if (i == index) {
-            auto result = decodeLh5(bytes.mid(at + 9, size), decoded);
+            if (method == 0x80 && size != decoded)
+                throw Error("Uncompressed dialogue member has inconsistent sizes");
+            auto result = method == 0x80 ? bytes.mid(at + 9, size)
+                                         : decodeLh5(bytes.mid(at + 9, size), decoded);
             members_.insert(identity, result);
             return result;
         }
@@ -104,22 +110,18 @@ QVector<DialogueRectangle> DialogueDrawing::compose(const QByteArray &window,
                                                     const QByteArray &payload) {
     if (window.size() != 168 || payload.size() != 1144)
         throw Error("Dialogue drawing requires complete window and payload records");
-    auto byte = [&](int at) { return u8(payload, at); };
     auto half = [&](int at) { return u16(payload, at); };
     auto signedHalf = [&](int at) { return qint16(half(at)); };
-    if (byte(0x47) || byte(0x3d) > 1 || byte(0x50) || byte(0x42) > 1 || byte(0x56) != 255 ||
-        byte(0x49) != 255)
-        throw Error("Unsupported ordinary dialogue presentation state");
-    const bool frameless = u8(window, 0x91) & 4;
     const int left = qint16(u16(window, 6)), top = qint16(u16(window, 8)),
               right = qint16(u16(window, 10)), bottom = qint16(u16(window, 12)),
               width = signedHalf(0x20), height = signedHalf(0x22);
     if (width <= 0 || height <= 0)
         throw Error("Dialogue drawing has invalid original dimensions");
     const float fx = float(right - left + 1) / width, fy = float(bottom - top + 1) / height;
-    const std::array<int, 4> clip{std::max(0, left), std::max(0, top), std::min(319, right + 1),
-                                  std::min(239, bottom + 1)};
+    std::array<int, 4> clip{std::max(0, left), std::max(0, top), std::min(319, right + 1),
+                            std::min(239, bottom + 1)};
     QVector<DialogueRectangle> result;
+    quint8 opacity = 255;
     auto rectangle = [&](DialogueTexture texture, int x, int y, int x2, int y2, int s0, int t0,
                          int s1, int t1, std::array<int, 4> scissor) {
         std::array<int, 4> bounds{
@@ -145,31 +147,17 @@ QVector<DialogueRectangle> DialogueDrawing::compose(const QByteArray &window,
             uv[1] += std::trunc(-bounds[1] * dy * 32) / 32;
         bounds = {std::max(0, bounds[0]), std::max(0, bounds[1]), std::min(320, bounds[2]),
                   std::min(240, bounds[3])};
-        result << DialogueRectangle{std::move(texture), bounds, scissor, uv, {dx, dy}};
+        result << DialogueRectangle{std::move(texture), bounds, scissor, uv, {dx, dy}, opacity};
     };
-    auto tile = [&](int index, int x, int y, int x2, int y2) {
-        rectangle(frame(index), x, y, x2, y2, 0, 0, x2 - x, y2 - y, clip);
-    };
-    if (!frameless) {
-        tile(1, 8, 0, width - 12, 60);
-        tile(0, 0, 0, 7, 60);
-        tile(2, width - 11, 0, width - 1, 60);
-    }
-    const bool hasPortrait = signedHalf(0x14) >= 0;
-    const int portraitX = byte(0x3d) ? 7 * half(0x1a) + 16 : 8;
-    if (hasPortrait) {
-        const bool mirror = u8(window, 0x8a) & 32;
-        rectangle(portrait(signedHalf(0x14), byte(0x4a)), portraitX, 5, portraitX + 39, 52,
-                  mirror ? 39 : 0, 0, mirror ? 0 : 39, 47, clip);
-    }
-    if (!(u16(window, 0) & 0x1000) && byte(0x178)) {
-        const int start = byte(0x4f) ? half(0xb8 + byte(0x54) * 2) : half(0x36), count = half(0x34);
-        if (start > count || count > 768)
-            throw Error("Dialogue text exceeds its output buffer");
-        const auto text = payload.mid(0x178 + start, count - start), metrics = resource(0x218c450);
-        const int origin = left + (frameless ? 0 : hasPortrait && !byte(0x3d) ? 56 : 8);
-        int x = origin, y = top + (frameless ? 0 : 5), color = byte(0x4b) < 10 ? byte(0x4b) : 0,
-            spacing = 0, lineGap = 3;
+    auto drawText = [&](int start, int x, int y, int color, int verticalSpacing) {
+        if (verticalSpacing < '0' || verticalSpacing > '9')
+            throw Error("Invalid dialogue line spacing");
+        const int end = int(payload.indexOf(char(0), start));
+        if (start < 0x178 || start >= payload.size() || end < start)
+            throw Error("Dialogue text exceeds its terminated output buffer");
+        const auto text = payload.mid(start, end - start), metrics = resource(0x218c450);
+        const int origin = x;
+        int spacing = 0, lineGap = verticalSpacing - '0';
         auto drawGlyph = [&](int index) {
             if (index < 0 || index >= metrics.size())
                 throw Error("Dialogue glyph exceeds its metric table");
@@ -233,27 +221,90 @@ QVector<DialogueRectangle> DialogueDrawing::compose(const QByteArray &window,
             else
                 drawGlyph(c + 16);
         }
+    };
+    struct Event {
+        LordlyDialogueDrawService service;
+        QVector<int> args;
+    };
+    QVector<Event> events;
+    auto sink = [](void *context, LordlyDialogueDrawService service, const int32_t *args,
+                   int count) {
+        auto &out = *static_cast<QVector<Event> *>(context);
+        Event event{service, {}};
+        for (int i = 0; i < count; ++i)
+            event.args << args[i];
+        out << event;
+    };
+    if (lordly_dialogue_draw_plan(reinterpret_cast<const uint8_t *>(window.constData()),
+                                  reinterpret_cast<const uint8_t *>(payload.constData()), sink,
+                                  &events))
+        throw Error("Dialogue drawing references an invalid history or text row");
+    std::optional<DialogueTexture> texture;
+    int verticalSpacing = '3', color = 0, mode = 8;
+    for (const auto &event : events) {
+        const auto &a = event.args;
+        switch (event.service) {
+        case LORDLY_DDRAW_TRANSFORM:
+            break; // Transform is the explicit record-derived fx/fy above.
+        case LORDLY_DDRAW_RESET:
+            mode = 8;
+            opacity = 255;
+            break;
+        case LORDLY_DDRAW_STYLE:
+            mode = a[0];
+            opacity = 255;
+            break;
+        case LORDLY_DDRAW_RAW:
+            if (quint32(a[0]) == 0xfa000000 && mode == 2)
+                opacity = quint8(a[1]);
+            break; // Other words configure the native pipeline; frameless primitive is transparent.
+        case LORDLY_DDRAW_REPEAT_FRAME:
+        case LORDLY_DDRAW_FRAME:
+        case LORDLY_DDRAW_POINTER_ATLAS:
+        case LORDLY_DDRAW_SLICE:
+            if (a[0] != 0x2093576 || a[1] != 0)
+                throw Error("Unknown dialogue artwork directory");
+            texture = frame(a[2]);
+            if (event.service == LORDLY_DDRAW_SLICE) {
+                if (a[3] < 0 || a[4] <= 0 || quint64(a[3] + 1) * a[4] > quint64(texture->height))
+                    throw Error("Dialogue animated artwork slice is outside its image");
+                texture->indices =
+                    texture->indices.mid(a[3] * a[4] * texture->stride, a[4] * texture->stride);
+                texture->height = a[4];
+            }
+            break;
+        case LORDLY_DDRAW_PORTRAIT:
+            texture = portrait(a[0], a[1]);
+            break;
+        case LORDLY_DDRAW_RECTANGLE:
+        case LORDLY_DDRAW_TEXTURE_RECTANGLE:
+            if (!texture)
+                throw Error("Dialogue rectangle has no current texture");
+            if (a.last() != 0)
+                throw Error("Unsupported dialogue texture tile");
+            if (event.service == LORDLY_DDRAW_RECTANGLE)
+                rectangle(*texture, a[0], a[1], a[2], a[3], a[4], a[5], a[4] + a[2] - a[0],
+                          a[5] + a[3] - a[1], clip);
+            else
+                rectangle(*texture, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], clip);
+            break;
+        case LORDLY_DDRAW_TEXT_RESET:
+            break;
+        case LORDLY_DDRAW_TEXT_FORMAT:
+            verticalSpacing = a[0];
+            color = a[1] - '0';
+            break;
+        case LORDLY_DDRAW_TEXT:
+            drawText(a[0], a[1], a[2], color, verticalSpacing);
+            break;
+        case LORDLY_DDRAW_SCISSOR:
+            clip = {std::clamp(a[0], 0, 319), std::clamp(a[1], 0, 239), std::clamp(a[2], 0, 319),
+                    std::clamp(a[3], 0, 239)};
+            break;
+        case LORDLY_DDRAW_FINISH:
+            break;
+        }
     }
-    if (byte(0x42) == 1 && !byte(0x4f)) {
-        auto indicator = frame(4);
-        if (indicator.width != 16 || indicator.height != 64)
-            throw Error("Unsupported dialogue continuation artwork");
-        const int phase = byte(0x43) >> 6;
-        indicator.indices =
-            indicator.indices.mid(phase * indicator.stride * 16, indicator.stride * 16);
-        indicator.height = 16;
-        const int x = 7 * half(0x1a) + (frameless                    ? -16
-                                        : hasPortrait && !byte(0x3d) ? 40
-                                                                     : -8),
-                  y = frameless ? 33 : 38;
-        rectangle(std::move(indicator), x, y, x + 15, y + 15, 0, 0, 15, 15, clip);
-    }
-    if (byte(0x3a) > 1 || byte(0x3b) > 1)
-        throw Error("Unsupported dialogue pointer tile");
-    if (!frameless)
-        rectangle(frame(3), signedHalf(0x30), signedHalf(0x32), signedHalf(0x30) + 7,
-                  signedHalf(0x32) + 12, byte(0x3a) * 8, byte(0x3b) * 19, byte(0x3a) * 8 + 7,
-                  byte(0x3b) * 19 + 12, {0, 0, 319, 239});
     return result;
 }
 void DialogueDrawing::paint(RasterImage &image, const QVector<DialogueRectangle> &commands) {
@@ -285,10 +336,18 @@ void DialogueDrawing::paint(RasterImage &image, const QVector<DialogueRectangle>
                 if (!(p & 1))
                     continue;
                 const int at = (y * 320 + x) * 4;
-                put8(next, at, quint8((((p >> 11) & 31) * 255 + 15) / 31));
-                put8(next, at + 1, quint8((((p >> 6) & 31) * 255 + 15) / 31));
-                put8(next, at + 2, quint8((((p >> 1) & 31) * 255 + 15) / 31));
-                put8(next, at + 3, 255);
+                if (!c.opacity)
+                    continue;
+                for (int channel = 0; channel < 3; ++channel) {
+                    const int shift = 11 - channel * 5;
+                    const int source = (((p >> shift) & 31) * 255 + 15) / 31;
+                    put8(next, at + channel,
+                         quint8((source * c.opacity + u8(next, at + channel) * (255 - c.opacity) +
+                                 127) /
+                                255));
+                }
+                put8(next, at + 3,
+                     quint8(c.opacity + (u8(next, at + 3) * (255 - c.opacity) + 127) / 255));
             }
     }
     image.rgba = std::move(next);

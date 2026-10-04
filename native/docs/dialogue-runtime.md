@@ -1,5 +1,16 @@
 # Dialogue runtime
 
+The artwork backend now consumes the compiled C drawing plan directly, including
+style-one/two layout, all prompt positions, selection/history markers and opacity.
+All 192 original-trace states compose and paint; the 93 exact rectangle comparisons
+still pass (476 ms combined). Painting coverage checks safe asset/branch integration,
+not original framebuffer pixels. Alpha blending uses the PC preview's nearest
+sampler. Text reads its actual bounded terminator as the native draw helper does.
+The broader check found an uncompressed method-80 history-arrow member and an
+incorrect font interpretation: ROM EAF18 contains `{C0}{V3}`, so the parameter
+selects vertical spacing, not another font. Both are corrected. Non-ASCII native
+encodings and additional general text tags remain explicit unsupported boundaries.
+
 The complete drawing control path now compiles a portable adaptation of accepted
 Decomp 8012b84a func_000E6D90.c. It decodes explicit big-endian fields and emits
 rendering services through a sink instead of using global native pointers. All

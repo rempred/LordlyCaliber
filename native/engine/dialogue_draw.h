@@ -15,8 +15,9 @@ struct DialogueRectangle {
     DialogueTexture texture;
     std::array<int, 4> bounds, scissor;
     std::array<double, 2> uv, step;
+    quint8 opacity = 255;
 };
-// Ordinary opaque dialogue path. Unsupported presentation modes remain explicit.
+// Source-based dialogue composition. Unresolved font encodings remain explicit.
 // Artwork comes from the supplied ROM; no captured drawing answers are used.
 class DialogueDrawing {
   public:

@@ -42,6 +42,8 @@ class DialogueRuntimeTests : public QObject {
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
         QCOMPARE(cases.size(), 192);
+        DialogueDrawing drawing(Rom::open(path));
+        int painted = 0;
         auto sink = [](void *context, LordlyDialogueDrawService service, const int32_t *args,
                        int count) {
             auto &trace = *static_cast<QJsonArray *>(context);
@@ -66,6 +68,15 @@ class DialogueRuntimeTests : public QObject {
                          "\nexpected " +
                          QString::fromUtf8(
                              QJsonDocument(c["trace"].toArray()).toJson(QJsonDocument::Compact))));
+            {
+                try {
+                    RasterImage image{320, 240, QByteArray(320 * 240 * 4, 0)};
+                    DialogueDrawing::paint(image, drawing.compose(window, payload));
+                    ++painted;
+                } catch (const std::exception &error) {
+                    QFAIL(qPrintable(c["id"].toString() + " " + error.what()));
+                }
+            }
             put8(payload, 0x4f, 1);
             put8(payload, 0x54, 95);
             put16(payload, 0x1e, 3);
@@ -76,6 +87,7 @@ class DialogueRuntimeTests : public QObject {
                      -1);
             QVERIFY(trace.isEmpty());
         }
+        QCOMPARE(painted, 192);
     }
     void ordinaryDrawingCommands() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -125,6 +137,10 @@ class DialogueRuntimeTests : public QObject {
                     QVERIFY(rendered.save("native-dialogue-render.png"));
                 }
                 put8(payload, 0x47, 1);
+                QVERIFY(!drawing.compose(record, payload).isEmpty());
+                put8(payload, 0x4f, 1);
+                put8(payload, 0x54, 95);
+                put16(payload, 0x1e, 3);
                 QVERIFY_THROWS_EXCEPTION(Error, drawing.compose(record, payload));
             }
             QCOMPARE(rectangles, 93);
