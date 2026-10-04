@@ -1,5 +1,18 @@
 # Native Lordly Caliber
 
+The background decoder also reads K palettes, signed B5 layer records and HUFF
+entropy streams in native C++. HUFF uses the native coefficient layout and scale
+with a floating-point IDCT; original RSP fixed-point rounding remains approximate.
+B5 preserves layer origins and exposes separate records, while its composite uses
+record order and interprets the separate I8 plane as preview alpha. Those choices
+are reported as preview limitations. Bounds and memory budgets reject malformed
+images. Hand-specified alpha, palette and constant-HUFF fixtures pass; 246 retail
+non-HUFF images match the independent browser decoder exactly, and all 43 HUFF
+previews also match exactly in the checked corpus. This comparison establishes
+compatibility with the prior preview, not pixel equivalence to the original RSP.
+The decoded Graduation hall has been rendered and visually inspected. External
+B5 members and raw-image layouts are the next catalog integration step.
+
 The native Director reader follows the selector directory at z64 0x1F3CA84,
 deduplicates resource keys, decodes the current ROM's custom-LZ envelopes and
 preserves every command and operand word. All 1,498 retail streams behind 1,693
