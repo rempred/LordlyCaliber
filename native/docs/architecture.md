@@ -1,5 +1,15 @@
 # Native Lordly Caliber
 
+The engine decodes native `64` image containers into RGBA bytes without Widgets
+or browser dependencies. RGBA5551, RGBA32, CI4, CI8, I4 and I8 preserve the game's
+padded storage rows while producing only the visible pixels. Dimensions, payload
+and palette bounds are checked. A manually specified CI4 fixture checks padding
+and colors; an independent browser decoder agrees on dimensions and pixel hashes
+for all 104 supported image members in the source ROM. A decoded `s_map04.n64`
+map image has been rendered and inspected. This supplies image decoding for map
+and later asset work; scenario-to-image selection and marker projection are not
+yet implemented in the native map page.
+
 The native archive writer produces LH5 streams with an 8 KiB match window and
 bounded block sizes. Rebuilding a member preserves its original header metadata
 and updates lengths and CRCs. Native decoding and the independent browser decoder
