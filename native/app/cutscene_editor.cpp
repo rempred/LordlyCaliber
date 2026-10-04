@@ -1,6 +1,7 @@
 #include "app/cutscene_editor.h"
 #include "app/actor_pose_editor.h"
 #include "app/dialogue_inspector.h"
+#include "app/scene_command_editor.h"
 #include <QComboBox>
 #include <QFutureWatcher>
 #include <QGraphicsPixmapItem>
@@ -44,11 +45,11 @@ QPixmap pixmap(const RasterImage &r) {
 } // namespace
 CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project, QUndoStack *undo,
                                std::function<void()> changed)
-    : QWidget(parent), rom_(rom) {
+    : QWidget(parent), rom_(rom), project_(project) {
     auto layout = new QVBoxLayout(this);
-    auto note =
-        new QLabel("Scene backgrounds and source commands. Actor playback, camera execution "
-                   "and cutscene editing are being implemented.");
+    auto note = new QLabel(
+        "Edit scene commands and dialogue, inspect background resources and actor poses. "
+        "Full-scene playback is being integrated.");
     note->setWordWrap(true);
     layout->addWidget(note);
     auto split = new QSplitter;
@@ -152,10 +153,31 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     commands_->setColumnWidth(0, 60);
     commands_->setColumnWidth(1, 210);
     commands_->setColumnWidth(2, 270);
-    pages->addTab(commands_, "Source commands");
+    if (project_) {
+        auto programPage = new QSplitter(Qt::Vertical);
+        programPage->addWidget(commands_);
+        commandEditor_ = new SceneCommandEditor(project_, undo, changed);
+        programPage->addWidget(commandEditor_);
+        programPage->setSizes({350, 350});
+        pages->addTab(programPage, "Commands");
+        connect(commands_, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
+            if (scenes_->currentItem())
+                commandEditor_->selectCommand(scenes_->currentItem()->data(Qt::UserRole).toUInt(),
+                                              row);
+        });
+        connect(commandEditor_, &SceneCommandEditor::programChanged, this, [this] {
+            const bool valid = !commandEditor_->property("invalidEdits").toBool();
+            commands_->setEnabled(valid);
+            scenes_->setEnabled(valid);
+            mode_->setEnabled(valid);
+            if (valid)
+                selectScene();
+        });
+    } else
+        pages->addTab(commands_, "Source commands");
     pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
-    auto dialogue = project ? new DialogueInspector(project, undo, std::move(changed))
-                            : new DialogueInspector(rom_);
+    auto dialogue =
+        project ? new DialogueInspector(project, undo, changed) : new DialogueInspector(rom_);
     pages->addTab(dialogue, "Dialogue");
     commands_->setToolTip("Double-click a dialogue command to inspect its archive entry.");
     connect(commands_, &QTableWidget::cellDoubleClicked, this,
@@ -163,7 +185,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 if (!directors_ || !scenes_->currentItem())
                     return;
                 const auto key = scenes_->currentItem()->data(Qt::UserRole).toUInt();
-                const auto &program = directors_->entries()[key].program;
+                const auto program = project_ ? project_->scenePrograms()->program(key)
+                                              : directors_->entries()[key].program;
                 if (row < 0 || row >= program.commands.size())
                     return;
                 const auto &command = program.commands[row];
@@ -253,8 +276,18 @@ void CutsceneEditor::selectScene() {
     if (!directors_ || !scenes_->currentItem() || catalogTabs_->currentIndex() != 0)
         return;
     const auto key = scenes_->currentItem()->data(Qt::UserRole).toUInt();
-    const auto &scene = directors_->entries()[key];
-    backgrounds_ = SceneImages::backgrounds(rom_, scene, mode_->currentData().toInt());
+    auto scene = directors_->entries()[key];
+    if (project_)
+        scene.program = project_->scenePrograms()->program(key);
+    const int selectedCommand = commands_->currentRow();
+    const QSignalBlocker commandsBlock(commands_);
+    try {
+        backgrounds_ = SceneImages::backgrounds(rom_, scene, mode_->currentData().toInt());
+    } catch (const std::exception &e) {
+        backgrounds_ = {};
+        backgrounds_.modeEvidence =
+            QString("Preview unavailable: %1").arg(QString::fromUtf8(e.what()));
+    }
     commands_->setRowCount(scene.program.commands.size());
     for (int i = 0; i < scene.program.commands.size(); ++i) {
         const auto &cmd = scene.program.commands[i];
@@ -272,6 +305,10 @@ void CutsceneEditor::selectScene() {
         meaning->setToolTip(def.description);
         commands_->setItem(i, 3, meaning);
     }
+    commands_->setCurrentCell(qBound(0, selectedCommand, int(scene.program.commands.size()) - 1),
+                              0);
+    if (commandEditor_)
+        commandEditor_->selectCommand(key, commands_->currentRow());
     const QSignalBlocker block(requests_);
     requests_->clear();
     for (const auto &r : backgrounds_.requests)

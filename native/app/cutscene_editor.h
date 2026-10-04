@@ -14,6 +14,7 @@ class QGraphicsPixmapItem;
 class QTabWidget;
 namespace lordly {
 class Project;
+class SceneCommandEditor;
 class CutsceneEditor : public QWidget {
     Q_OBJECT
   public:
@@ -26,6 +27,8 @@ class CutsceneEditor : public QWidget {
     void selectImage(const QString &id);
     void showImage();
     Rom rom_;
+    Project *project_ = nullptr;
+    SceneCommandEditor *commandEditor_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;
     SceneBackgrounds backgrounds_;

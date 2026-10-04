@@ -8,6 +8,7 @@
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
 #include "app/scenario_editor.h"
+#include "app/scene_command_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
 #include "app/value_editor.h"
@@ -218,6 +219,106 @@ class UiTests : public QObject {
         sepia->setChecked(false);
         next->click();
         QCOMPARE(position->value(), 1);
+    }
+    void sceneCommandEditingAndPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo, [] {});
+        editor.resize(1300, 950);
+        editor.show();
+        auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+        auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
+        auto form = editor.findChild<SceneCommandEditor *>();
+        QVERIFY(scenes && commands && form);
+        QTRY_VERIFY_WITH_TIMEOUT(scenes->count() > 0, 10000);
+        quint32 key = 0;
+        int camera = -1, group = -1;
+        for (const auto &scene : project.scenePrograms()->original().entries()) {
+            if (scene.program.resourceClass() != 5)
+                continue;
+            for (int i = 0; i < scene.program.commands.size(); ++i) {
+                if (scene.program.commands[i].opcode == 0x35)
+                    camera = i;
+                if (scene.program.commands[i].opcode == 0x80000006)
+                    group = i;
+            }
+            if (camera >= 0 && group >= 0) {
+                key = scene.key;
+                break;
+            }
+            camera = group = -1;
+        }
+        QVERIFY(key != 0);
+        for (int i = 0; i < scenes->count(); ++i)
+            if (scenes->item(i)->data(Qt::UserRole).toUInt() == key) {
+                scenes->setCurrentRow(i);
+                break;
+            }
+        const auto original = project.scenePrograms()->program(key);
+        commands->setCurrentCell(camera, 0);
+        auto field = form->findChild<QLineEdit *>("sceneOperand0");
+        QVERIFY(field);
+        QCOMPARE(field->accessibleName(), QString("camera_target_x_milliunits"));
+        field->setText("-1200");
+        QCOMPARE(project.scenePrograms()->program(key).commands[camera].operands[0],
+                 quint32(qint32(-1200)));
+        QVERIFY(commands->item(camera, 2)->text().contains("FFFFFB50"));
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->program(key).source, original.source);
+        undo.redo();
+        field = form->findChild<QLineEdit *>("sceneOperand0");
+        QCOMPARE(field->text(), QString("-1200"));
+        field->setText("0x1234");
+        QCOMPARE(project.scenePrograms()->program(key).commands[camera].operands[0],
+                 quint32(0x1234));
+        field->setText("0x");
+        auto second = form->findChild<QLineEdit *>("sceneOperand1");
+        second->setText("4321");
+        QVERIFY(form->property("invalidEdits").toBool());
+        field->setText("0x1234");
+        QCOMPARE(project.scenePrograms()->program(key).commands[camera].operands[1], quint32(4321));
+        field->setText("0x");
+        QVERIFY(form->property("invalidEdits").toBool());
+        QVERIFY(!commands->isEnabled() && !scenes->isEnabled());
+        form->findChild<QPushButton *>("sceneCommandDiscard")->click();
+        QVERIFY(!form->property("invalidEdits").toBool());
+        QVERIFY(commands->isEnabled() && scenes->isEnabled());
+        const auto before = project.scenePrograms()->program(key).source;
+        auto kind = form->findChild<QComboBox *>("sceneCommandKind");
+        kind->setCurrentIndex(kind->findData(quint32(0x35)));
+        form->findChild<QPushButton *>("sceneCommandInsert")->click();
+        QCOMPARE(commands->rowCount(), original.commands.size() + 1);
+        form->findChild<QPushButton *>("sceneCommandRemove")->click();
+        QCOMPARE(project.scenePrograms()->program(key).source, before);
+        commands->setCurrentCell(group, 0);
+        field = form->findChild<QLineEdit *>("sceneOperand0");
+        field->setText("22");
+        auto editedScene = project.scenePrograms()->resource(key);
+        editedScene.program = project.scenePrograms()->program(key);
+        const auto expected = SceneImages::backgrounds(project.rom(), editedScene);
+        auto requests = editor.findChild<QComboBox *>("cutsceneRequests");
+        QVERIFY(requests);
+        QCOMPARE(requests->count(), expected.requests.size());
+        QVERIFY(requests->count() > 0);
+        QVERIFY(requests->itemText(0).contains("selector 22"));
+        QVERIFY(!expected.requests[0].images.isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
+                                  expected.requests[0].images[0], 10000);
+        form->findChild<QPushButton *>("sceneCommandRestore")->click();
+        QVERIFY(!project.scenePrograms()->modified());
+        undo.undo();
+        QCOMPARE(project.scenePrograms()->program(key).commands[group].operands[0], quint32(22));
+        // Navigation cannot discard an invalid operand.
+        commands->setCurrentCell(camera, 0);
+        field = form->findChild<QLineEdit *>("sceneOperand0");
+        field->setText("4294967296");
+        QVERIFY(form->property("invalidEdits").toBool());
+        form->findChild<QPushButton *>("sceneCommandDiscard")->click();
+        editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentIndex(1);
+        QVERIFY(editor.grab().save("native-scene-command-editing.png"));
     }
     void dialogueEditingUndoAndNewEntry() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

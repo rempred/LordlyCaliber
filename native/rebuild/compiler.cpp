@@ -1,6 +1,7 @@
 #include "rebuild/compiler.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
+#include "engine/scene_program_resources.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/creature_rewards.h"
@@ -735,6 +736,16 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                  "through original resource links")
                              .arg(plan.treasures.size())
                              .arg(plan.sites.size());
+    }
+    if (p.scenePrograms() && p.scenePrograms()->modified()) {
+        auto plan = p.scenePrograms()->plan();
+        for (auto it = plan.begin(); it != plan.end(); ++it)
+            it.value() =
+                compiler.compileData(it.value(), directory, QString("scene_%1").arg(it.key()));
+        result.image = SceneProgramResources::rebuild(Rom::fromBytes(result.image), plan);
+        result.report
+            << QString("Compiled and rebuilt %1 scene programs through original resource links")
+                   .arg(plan.size());
     }
     if (p.dialogues() && p.dialogues()->modified()) {
         auto plan = p.dialogues()->plan();

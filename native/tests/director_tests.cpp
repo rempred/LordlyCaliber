@@ -1,8 +1,11 @@
 #include "engine/director.h"
 #include "engine/director_session.h"
+#include "engine/project.h"
+#include "engine/scene_program_resources.h"
 #include "game/director/control_flow.h"
 #include "game/director/dispatch_core.h"
 #include "game/director/stream_words.h"
+#include "rebuild/compiler.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -41,6 +44,168 @@ static int queryService(void *context, LordlyDirectorWord opcode, const LordlyDi
 class DirectorTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneEditingAndDynamicExport() {
+        QString phase = "model editing";
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadScenePrograms();
+            auto edited = *project.scenePrograms();
+            for (const auto &scene : edited.original().entries())
+                QCOMPARE(edited.program(scene.key).encode(), scene.program.source);
+            quint32 key = 0;
+            int camera = -1;
+            for (const auto &scene : edited.original().entries()) {
+                if (scene.program.resourceClass() != 5)
+                    continue;
+                for (int i = 0; i < scene.program.commands.size(); ++i)
+                    if (scene.program.commands[i].opcode == 0x35 ||
+                        scene.program.commands[i].opcode == 0x36) {
+                        key = scene.key;
+                        camera = i;
+                        break;
+                    }
+                if (camera >= 0)
+                    break;
+            }
+            auto original = edited.program(key);
+            QVERIFY(camera >= 0);
+            auto expected = original.source;
+            const auto value = original.commands[camera].operands[0] + 1000U;
+            put32(expected, original.commands[camera].word * 4 + 4, value);
+            edited.setOperand(key, camera, 0, value);
+            QCOMPARE(edited.program(key).source, expected);
+            edited.insertCommand(key, camera, 0x35);
+            QCOMPARE(edited.program(key).commands.size(), original.commands.size() + 1);
+            edited.removeCommand(key, camera);
+            QCOMPARE(edited.program(key).source, expected);
+            const auto snapshot = edited.json();
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     edited.removeCommand(key, int(original.commands.size()) - 1));
+            QVERIFY_THROWS_EXCEPTION(
+                Error, edited.setOperand(key, int(original.commands.size()) - 1, 0, 0xff000002));
+            QVERIFY_THROWS_EXCEPTION(Error, edited.insertCommand(key, camera, 0x12345678));
+            QCOMPARE(edited.json(), snapshot);
+            edited.restore(key);
+            QVERIFY(!edited.modified());
+            edited.apply(snapshot);
+            project.setScenePrograms(edited.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto reopenedProject = Project::fromRom(rom);
+            reopenedProject.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopenedProject.scenePrograms()->json(), snapshot);
+            phase = "public rebuild";
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            auto builtRom = Rom::fromBytes(built.image);
+            const auto placement = SceneProgramResources::placement(builtRom);
+            QVERIFY(placement.has_value());
+            QCOMPARE(placement->offset, quint32(0x2800000));
+            QCOMPARE(placement->members.size(), 1);
+            const auto member = placement->members.first();
+            const auto newKey = u32(built.image, member.references.first());
+            const auto reopened = Directors::load(builtRom);
+            QCOMPARE(reopened.entries()[newKey].program.source, expected);
+            for (auto selector : edited.resource(key).selectors)
+                QCOMPARE(reopened.selectors()[selector], newKey);
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, built.image);
+            phase = "idempotent rebuild";
+            QCOMPARE(SceneProgramResources::rebuild(builtRom, {{newKey, expected}}), built.image);
+            const auto oldAt = key + 0x594280;
+            qsizetype oldConsumed = 0, newConsumed = 0;
+            decodeLzss(rom.bytes().mid(oldAt + 8, u32(rom.bytes(), oldAt) - 4),
+                       u32(rom.bytes(), oldAt + 4), &oldConsumed);
+            const auto newAt = newKey + 0x594280;
+            decodeLzss(built.image.mid(newAt + 8, u32(built.image, newAt) - 4),
+                       u32(built.image, newAt + 4), &newConsumed);
+            QCOMPARE(
+                built.image.mid(newAt + 8 + newConsumed, u32(built.image, newAt) - 4 - newConsumed),
+                rom.bytes().mid(oldAt + 8 + oldConsumed,
+                                u32(rom.bytes(), oldAt) - 4 - oldConsumed));
+            auto grownProgram = DirectorProgram::decode(expected);
+            const auto cameraTemplate = original.commands[camera];
+            quint32 random = 173;
+            for (int i = 0; i < 2000; ++i) {
+                auto command = cameraTemplate;
+                for (auto &operand : command.operands) {
+                    random = random * 1664525U + 1013904223U;
+                    operand = random;
+                }
+                grownProgram.commands.insert(grownProgram.commands.size() - 1, command);
+            }
+            const auto grown = grownProgram.encode();
+            phase = "tail growth";
+            const auto tail = SceneProgramResources::rebuild(builtRom, {{newKey, grown}});
+            const auto tailPlacement = SceneProgramResources::placement(Rom::fromBytes(tail));
+            QCOMPARE(tailPlacement->offset, placement->offset);
+            QVERIFY(tailPlacement->allocation > placement->allocation);
+            const QByteArray foreign = QByteArray("Foreign resource follows the scene allocation.")
+                                           .leftJustified(64, char(0x7e));
+            const auto separated = built.image + foreign;
+            phase = "foreign neighbor growth";
+            const auto relocated =
+                SceneProgramResources::rebuild(Rom::fromBytes(separated), {{newKey, grown}});
+            const auto moved = SceneProgramResources::placement(Rom::fromBytes(relocated));
+            QVERIFY(moved->offset >= separated.size());
+            QCOMPARE(relocated.mid(built.image.size(), foreign.size()), foreign);
+            QCOMPARE(relocated.mid(placement->offset, placement->allocation),
+                     QByteArray(placement->allocation, char(-1)));
+            auto damaged = built.image;
+            damaged[placement->offset + placement->allocation - 1] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     SceneProgramResources::placement(Rom::fromBytes(damaged)));
+            // An extra, unowned selector pointing inside owned storage must prevent reuse.
+            damaged = built.image;
+            put32(damaged, 0x1f3ca88 + 319 * 4, newKey);
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     SceneProgramResources::placement(Rom::fromBytes(damaged)));
+            // All physical aliases remain shared after a rebuild.
+            auto aliased = rom.bytes();
+            put32(aliased, 0x1f3ca88 + 319 * 4, key);
+            phase = "alias rebuild";
+            const auto aliasImage =
+                SceneProgramResources::rebuild(Rom::fromBytes(aliased), {{key, expected}});
+            const auto aliasDirectory = Directors::load(Rom::fromBytes(aliasImage));
+            QCOMPARE(aliasDirectory.selectors()[319],
+                     aliasDirectory.selectors()[edited.resource(key).selectors.first()]);
+            phase = "multiple resource preservation";
+            const auto continuation = edited.original().continuations().first();
+            const auto multiple = SceneProgramResources::rebuild(
+                rom, {{key, expected}, {continuation.key, continuation.program.source}});
+            const auto multipleRom = Rom::fromBytes(multiple);
+            QCOMPARE(SceneProgramResources::placement(multipleRom)->members.size(), 2);
+            const auto multipleDirectory = Directors::load(multipleRom);
+            const auto currentPrimary =
+                multipleDirectory.selectors()[edited.resource(key).selectors.first()];
+            const auto currentContinuation =
+                multipleDirectory.continuationSelectors()[continuation.selectors.first()];
+            const auto multipleGrown =
+                SceneProgramResources::rebuild(multipleRom, {{currentPrimary, grown}});
+            const auto afterGrowth = Directors::load(Rom::fromBytes(multipleGrown));
+            const auto retainedKey =
+                afterGrowth.continuationSelectors()[continuation.selectors.first()];
+            QCOMPARE(afterGrowth.continuations()[retainedKey].program.source,
+                     continuation.program.source);
+            QVERIFY(currentContinuation != 0);
+            QDir parent(QFileInfo(path).absolutePath());
+            QVERIFY(parent.mkpath("Test ROMs"));
+            QTemporaryDir output(parent.filePath("Test ROMs/scene-native-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            QCOMPARE(Rom::open(candidate).bytes(), built.image);
+            qInfo().noquote() << "Scene export candidate:" << candidate;
+        } catch (const std::exception &e) {
+            QFAIL(qPrintable(phase + ": " + e.what()));
+        }
+    }
     void launchTranslationsAreAtomic() {
         QVector<quint32> words;
         for (int i = 0; i < 256; ++i)

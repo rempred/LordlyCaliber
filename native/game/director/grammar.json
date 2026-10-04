@@ -37,14 +37,14 @@
       "name": "actor_state",
       "description": "Actor State selection. Resolves slot, Actor Art Source, Animation, Facing, coordinates, and options. Valid selectors replace State fields and start the pose sequencer.",
       "operands": [
-        "operand_0",
-        "operand_1",
-        "operand_2",
-        "operand_3",
-        "operand_4",
-        "operand_5",
-        "operand_6",
-        "operand_7"
+        "actor_slot",
+        "art_bank",
+        "animation_key",
+        "facing",
+        "x_milliunits",
+        "y_milliunits",
+        "z_milliunits",
+        "variant"
       ],
       "query": null,
       "mode": null
@@ -190,15 +190,15 @@
       "name": "actor_create",
       "description": "Creates or reuses a `0x150` Actor slot record, clears it, and initializes art source, animation, facing, coordinates, resolver, and option fields.",
       "operands": [
-        "operand_0",
-        "operand_1",
-        "operand_2",
-        "operand_3",
-        "operand_4",
-        "operand_5",
-        "operand_6",
-        "operand_7",
-        "operand_8"
+        "actor_slot",
+        "art_bank",
+        "animation_key",
+        "facing",
+        "x_milliunits",
+        "y_milliunits",
+        "z_milliunits",
+        "depth_flag",
+        "variant"
       ],
       "query": null,
       "mode": null

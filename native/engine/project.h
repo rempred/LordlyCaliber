@@ -7,6 +7,7 @@
 #include "engine/rom.h"
 #include "engine/scenario_world.h"
 #include "engine/scenarios.h"
+#include "engine/scene_programs.h"
 #include "engine/shops.h"
 #include "engine/text.h"
 #include <QJsonObject>
@@ -97,6 +98,11 @@ class Project {
         return world_;
     }
     void setWorld(const QJsonObject &value);
+    void loadScenePrograms();
+    const std::optional<ScenePrograms> &scenePrograms() const {
+        return scenePrograms_;
+    }
+    void setScenePrograms(const QJsonObject &);
     void loadDialogues();
     const std::optional<Dialogues> &dialogues() const {
         return dialogues_;
@@ -149,6 +155,7 @@ class Project {
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;
     std::optional<Dialogues> dialogues_;
+    std::optional<ScenePrograms> scenePrograms_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;

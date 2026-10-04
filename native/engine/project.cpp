@@ -268,6 +268,8 @@ int Project::changedRecords() const {
         count += world_->changedEntries();
     if (dialogues_)
         count += dialogues_->changedEntries();
+    if (scenePrograms_)
+        count += scenePrograms_->changedPrograms();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -562,7 +564,19 @@ QJsonObject Project::manifest() const {
         result["dialogues"] = dialogues_->json();
     else
         result.remove("dialogues");
+    if (scenePrograms_ && scenePrograms_->modified())
+        result["scenePrograms"] = scenePrograms_->json();
+    else
+        result.remove("scenePrograms");
     return result;
+}
+void Project::loadScenePrograms() {
+    if (!scenePrograms_)
+        scenePrograms_ = ScenePrograms::load(rom_);
+}
+void Project::setScenePrograms(const QJsonObject &value) {
+    loadScenePrograms();
+    scenePrograms_->apply(value);
 }
 void Project::loadDialogues() {
     if (!dialogues_)
@@ -596,6 +610,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadWorld();
     if (dialogues_)
         candidate.loadDialogues();
+    if (scenePrograms_)
+        candidate.loadScenePrograms();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -715,6 +731,11 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setWorld(object["world"].toObject());
     } else
         candidate.importLegacyWorld(candidate.legacy_);
+    if (object.contains("scenePrograms")) {
+        if (!object["scenePrograms"].isObject())
+            throw Error("Invalid saved scene programs");
+        candidate.setScenePrograms(object["scenePrograms"].toObject());
+    }
     if (object.contains("dialogues")) {
         if (!object["dialogues"].isObject())
             throw Error("Invalid saved dialogue edits");

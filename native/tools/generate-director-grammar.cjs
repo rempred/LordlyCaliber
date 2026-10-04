@@ -10,11 +10,15 @@ vm.runInContext(fs.readFileSync(path.join(root,'cutscene-data.js'),'utf8'),conte
 const data=context.window.OB64.cutsceneData,grammar=data.directorGrammar;
 const rows=model.entries.map(entry=>{
  const semantic=grammar.find(g=>g.opcodeU32===entry.opcodeU32);assert(semantic);
+ const actorOperands = entry.opcodeU32 === 0x14
+   ? ['actor_slot','art_bank','animation_key','facing','x_milliunits','y_milliunits','z_milliunits','depth_flag','variant']
+   : entry.opcodeU32 === 3
+   ? ['actor_slot','art_bank','animation_key','facing','x_milliunits','y_milliunits','z_milliunits','variant'] : null;
  const span=entry.widthKind==='terminal-with-trailer'?2:entry.staticWordSpan;
  assert.equal(span,semantic.sourceWordSpan);assert.equal(span-1,semantic.operandRoles.length);
  assert.equal(entry.queryRecordKind,semantic.queryRecordKind);
  return {opcode:entry.opcodeU32,words:span,name:semantic.name,description:semantic.semanticSummary,
-  operands:semantic.operandRoles,query:entry.queryRecordKind,mode:entry.directorModeRequirement};
+  operands:actorOperands || semantic.operandRoles,query:entry.queryRecordKind,mode:entry.directorModeRequirement};
 });
 const names={};for(const scene of data.scenes){
  const key=parseInt(scene.directorKey,16);if(!Number.isInteger(key))continue;
