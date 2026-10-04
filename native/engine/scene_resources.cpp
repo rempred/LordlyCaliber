@@ -27,6 +27,9 @@ void SceneResources::supplyRecord(int slot, const QByteArray &record) {
 bool SceneResources::active(int slot) const {
     return (u16(record(slot), 0) & 0x8000) != 0;
 }
+void SceneResources::rebuildPriority(SceneResourceQueue &queue) {
+    lordly_ui_priority(&pool_, &queue);
+}
 int SceneResources::registerResource(quint16 flags, quint32 initializer, qint32 x, qint32 y,
                                      qint32 right, qint32 bottom, qint32 priority) {
     const int slot = lordly_ui_register(&pool_, flags, initializer, quint16(x), quint16(y),

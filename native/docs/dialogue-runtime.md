@@ -1,5 +1,12 @@
 # Dialogue runtime
 
+Shared-resource priority rebuilding now compiles ROM 859C..86EC at RAM 8007819C.
+It stably sorts active slots by unsigned descending priority, then renumbers
+nonzero priorities while retaining zero values and unused queue cells. All 384
+complete queue/pool comparisons pass without controlled helpers; registration
+and exhaustion regressions also pass (249 ms combined). Opening/closing and the
+generic callback dispatcher remain to connect to the dialogue update owner.
+
 The dialogue update callback now composes scrolling, input/state transitions,
 reveal, shake, motion, pointer placement and bounds in their native order.
 It reconstructs ROM E659C..E6D90, EA628..EA684 and EACC0..EACFC with explicit
