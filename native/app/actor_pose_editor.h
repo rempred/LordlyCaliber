@@ -1,0 +1,42 @@
+#pragma once
+#include "engine/actor_pose.h"
+#include <QWidget>
+#include <optional>
+class QComboBox;
+class QSpinBox;
+class QLabel;
+class QPushButton;
+class QListWidget;
+class QGraphicsView;
+class QGraphicsScene;
+class QGraphicsPixmapItem;
+class QTimer;
+namespace lordly {
+class ActorPoseEditor : public QWidget {
+    Q_OBJECT
+  public:
+    explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
+
+  private:
+    void loadBank();
+    void restart();
+    void seek(int step);
+    void step();
+    void draw();
+    void stop();
+    Rom rom_;
+    std::optional<ActorArt> art_;
+    std::optional<ActorPosePlayer> player_;
+    QComboBox *banks_, *poses_;
+    QSpinBox *variant_, *position_, *speed_;
+    QPushButton *play_;
+    QLabel *status_, *selection_;
+    QListWidget *layers_;
+    QGraphicsView *view_;
+    QGraphicsScene *canvas_;
+    QTimer *timer_;
+    QVector<QGraphicsPixmapItem *> items_;
+    bool fit_ = true;
+    int step_ = 0;
+};
+} // namespace lordly

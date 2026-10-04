@@ -56,6 +56,15 @@ QVector<PoseProgram> poseTable(const QByteArray &bytes) {
     return result;
 }
 } // namespace
+int ActorArt::bankCount(const Rom &rom) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Actor art currently requires US revision 0");
+    const auto directory = resource(rom, 0x0109f95e, false);
+    if (directory.size() % 4 || directory.size() > 32768 * 4)
+        throw Error("Invalid actor bank directory size");
+    return int(directory.size() / 4);
+}
 ActorArt ActorArt::load(const Rom &rom, int bank) {
     rom.requireSupported();
     if (rom.revision())
@@ -101,6 +110,35 @@ int ActorArt::resolve(int animation, int facing, int option) const {
     if (state >= poses_.size())
         throw Error("Actor state vocabulary selects an absent pose program");
     return state;
+}
+QVector<ActorPoseSelection> ActorArt::selections() const {
+    if (bank_ < 1 || (bank_ - 1) * 2 >= stateTable_.size())
+        throw Error("Actor bank exceeds its state vocabulary");
+    const int start = stateTable_[(bank_ - 1) * 2];
+    QVector<ActorPoseSelection> result;
+    if (start < 0 || start >= stateTable_.size())
+        throw Error("Invalid actor state vocabulary pointer");
+    for (int i = start; i < stateTable_.size(); ++i) {
+        const int key = stateTable_[i];
+        if (key == -1)
+            return result;
+        if (key < 0 || i - start >= poses_.size())
+            throw Error("Invalid actor state vocabulary entry");
+        result << ActorPoseSelection{key / 10, key % 10, i - start};
+    }
+    throw Error("Unterminated actor state vocabulary");
+}
+PoseRecord ActorArt::poseRecord(int state, int cursor) const {
+    if (state < 0 || state >= poses_.size())
+        throw Error("Actor pose state is outside its directory");
+    // Equal directory offsets alias the following counted program. Preserve
+    // their empty physical slices in poses(), but follow the pointer at runtime.
+    while (state < poses_.size() && poses_[state].source.isEmpty())
+        ++state;
+    if (state >= poses_.size())
+        throw Error("Actor pose pointer is past its resource");
+    const auto &records = poses_[state].records;
+    return cursor < 0 || cursor >= records.size() ? PoseRecord{} : records[cursor];
 }
 QVector<ActorLayer> ActorArt::layers(int token) const {
     if (token < 0 || token > 65535)

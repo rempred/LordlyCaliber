@@ -1,4 +1,5 @@
 #include "engine/actor_motion.h"
+#include "engine/actor_pose.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -12,6 +13,137 @@ using namespace lordly;
 class ActorRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void posesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-pose-mips.cjs"),
+             path, work.filePath("poses.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        const auto errors = reference.readAllStandardError();
+        QVERIFY2(reference.exitCode() == 0, errors.constData());
+        QFile file(work.filePath("poses.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        const auto rows = fixture["rows"].toArray();
+        QCOMPARE(rows.size(), 2275);
+        QCOMPARE(fixture["unbound"].toInt(), 0);
+        const auto rom = Rom::open(path);
+        QMap<int, ActorArt> banks;
+        int count = 0;
+        for (const auto &value : rows) {
+            const auto row = value.toObject();
+            const int bank = row["bank"].toInt(), state = row["state"].toInt();
+            if (!banks.contains(bank))
+                banks.insert(bank, ActorArt::load(rom, bank));
+            ActorPosePlayer player(rom, banks[bank], state);
+            player.actor().position = {1.25f, -2.5f, 3.75f};
+            for (const auto &call : row["calls"].toArray()) {
+                const auto expected = call.toArray();
+                const auto name = QString("bank %1 state %2 invocation %3: %4")
+                                      .arg(bank)
+                                      .arg(state)
+                                      .arg(count)
+                                      .arg(player.error());
+                QVERIFY2(player.advance() == LORDLY_POSE_OK, qPrintable(name + player.error()));
+                const auto &a = player.actor();
+                QCOMPARE(a.cursor, expected[0].toInt());
+                QCOMPARE(a.delay, expected[1].toInt());
+                QCOMPARE(a.frame, expected[2].toInt());
+                QCOMPARE(a.state, expected[3].toInt());
+                QCOMPARE(a.previous_state, expected[4].toInt());
+                QCOMPARE(std::bit_cast<quint32>(a.position.x), quint32(expected[5].toInteger()));
+                QCOMPARE(std::bit_cast<quint32>(a.position.y), quint32(expected[6].toInteger()));
+                QCOMPARE(std::bit_cast<quint32>(a.position.z), quint32(expected[7].toInteger()));
+                QByteArray material(reinterpret_cast<const char *>(a.material), 16);
+                material.append(reinterpret_cast<const char *>(a.material_delta), 16);
+                QCOMPARE(material.toHex(), expected[8].toString().toLatin1());
+                QCOMPARE(player.result(), expected[9].toInt());
+                QJsonArray audio;
+                for (const auto &r : player.audioRequests())
+                    audio << QJsonArray{r.context, r.value};
+                QCOMPARE(audio, expected[10].toArray());
+                ++count;
+            }
+        }
+        QCOMPARE(count, 54600);
+    }
+    void poseSuspensionAndBounds() {
+        struct Input {
+            QVector<LordlyPoseRecord> records;
+            int sharedCalls = 0;
+            bool available = false;
+        };
+        Input input{
+            {{12, {1, 2, 3}}, {17, {0, 7}}, {13, {255, 200}}, {16, {255, 128}}, {1, {42, 3}}}};
+        auto lookup = [](void *context, const LordlyActorPose *actor,
+                         LordlyPoseRecord *record) -> int {
+            const auto &rows = static_cast<Input *>(context)->records;
+            *record = actor->cursor < 0 || actor->cursor >= rows.size() ? LordlyPoseRecord{}
+                                                                        : rows[actor->cursor];
+            return 1;
+        };
+        auto shared = [](void *context, const LordlyActorPose *, const LordlyPoseRecord *) -> int {
+            auto &i = *static_cast<Input *>(context);
+            if (!i.available)
+                return 0;
+            ++i.sharedCalls;
+            return 1;
+        };
+        LordlyActorPose a{};
+        a.cursor = -1;
+        LordlyPoseInvocation invocation{};
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 1, lookup, shared, &input),
+                 LORDLY_POSE_BUDGET);
+        QCOMPARE(a.cursor, 0);
+        QCOMPARE(a.position.x, 1.f);
+        QCOMPARE(a.delay, 0);
+        QCOMPARE(invocation.active, 1);
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 10, lookup, shared, &input),
+                 LORDLY_POSE_SHARED);
+        QCOMPARE(a.cursor, 0);
+        QCOMPARE(input.sharedCalls, 0);
+        input.available = true;
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 10, lookup, shared, &input),
+                 LORDLY_POSE_OK);
+        QCOMPARE(a.position.x, 1.f);
+        QCOMPARE(a.position.y, 2.f);
+        QCOMPARE(a.position.z, 3.f);
+        QCOMPARE(a.cursor, 4);
+        QCOMPARE(a.frame, 42);
+        QCOMPARE(a.delay, 1);
+        QCOMPARE(input.sharedCalls, 1);
+        for (const auto value : a.material)
+            QCOMPARE(value, 72);
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 0, lookup, shared, &input),
+                 LORDLY_POSE_OK);
+        QCOMPARE(a.delay, -1);
+        QCOMPARE(invocation.result, 1);
+        for (const auto value : a.material)
+            QCOMPARE(value, 0);
+        input.records = {{4, {0, 0, 0}}};
+        a.cursor = -1;
+        a.delay = 0;
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 100, lookup, shared, &input),
+                 LORDLY_POSE_BUDGET);
+        QCOMPARE(a.cursor, -1);
+        QCOMPARE(a.delay, 0);
+        QCOMPARE(invocation.active, 1);
+        input.records = {{13, {16, 77, 0}}};
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 10, lookup, shared, &input),
+                 LORDLY_POSE_INVALID);
+        QCOMPARE(a.cursor, -1);
+        QCOMPARE(a.material_delta[0], 128);
+        input.records = {{21, {0x34, 0x12, 2}}};
+        QCOMPARE(lordly_actor_advance_pose(&a, &invocation, 1, lookup, shared, &input),
+                 LORDLY_POSE_OK);
+        QCOMPARE(a.frame, 0x1234);
+        QCOMPARE(a.delay, 0);
+    }
     void movementAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -40,7 +172,9 @@ class ActorRuntimeTests : public QObject {
             const auto p = row["inputPositionBits"].toArray(), m = input["motion"].toArray(),
                        args = row["request"].toArray();
             const auto f = [](const QJsonValue &value) { return float(value.toDouble()); };
-            const auto fromBits = [](const QJsonValue &value) { return std::bit_cast<float>(quint32(value.toInteger())); };
+            const auto fromBits = [](const QJsonValue &value) {
+                return std::bit_cast<float>(quint32(value.toInteger()));
+            };
             LordlyActorPosition position{fromBits(p[0]), fromBits(p[1]), fromBits(p[2])};
             LordlyActorMotion motion{f(m[0]),
                                      f(m[1]),

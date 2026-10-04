@@ -1,4 +1,5 @@
 #include "app/cutscene_editor.h"
+#include "app/actor_pose_editor.h"
 #include <QComboBox>
 #include <QFutureWatcher>
 #include <QGraphicsPixmapItem>
@@ -96,6 +97,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent
     sceneStatus_->setWordWrap(true);
     detailLayout->addWidget(sceneStatus_);
     auto pages = new QTabWidget;
+    pages->setObjectName("cutsceneDetailPages");
     auto preview = new QWidget;
     auto previewLayout = new QVBoxLayout(preview);
     auto imageTools = new QHBoxLayout;
@@ -148,6 +150,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent) : QWidget(parent
     commands_->setColumnWidth(1, 210);
     commands_->setColumnWidth(2, 270);
     pages->addTab(commands_, "Source commands");
+    pages->addTab(new ActorPoseEditor(rom_), "Actor poses");
     detailLayout->addWidget(pages, 1);
     split->addWidget(details);
     split->setSizes({310, 1000});

@@ -11,6 +11,9 @@ struct PoseProgram {
     QByteArray source;
     QVector<PoseRecord> records;
 };
+struct ActorPoseSelection {
+    int animation = 0, facing = 0, state = 0;
+};
 struct ActorLayer {
     int art = 0;
     QPoint origin;
@@ -24,6 +27,7 @@ struct ActorFrameLayer {
 class ActorArt {
   public:
     static ActorArt load(const Rom &rom, int bank);
+    static int bankCount(const Rom &rom);
     int bank() const {
         return bank_;
     }
@@ -37,6 +41,8 @@ class ActorArt {
         return poses_;
     }
     int resolve(int animation, int facing, int option = 0) const;
+    PoseRecord poseRecord(int state, int cursor) const;
+    QVector<ActorPoseSelection> selections() const;
     QVector<ActorLayer> layers(int token) const;
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant) const;
 

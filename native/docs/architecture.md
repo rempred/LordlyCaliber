@@ -1,5 +1,27 @@
 # Native Lordly Caliber
 
+The Cutscenes workspace now includes a native actor-pose preview. It reads the
+current bank directory and animation vocabulary, supports pose/variant selection,
+stepping, deterministic seeking, adjustable preview speed, zoom and layer inspection.
+The native C pose sequencer preserves counted-record cursors, delays, loops, state
+changes, signed coordinate effects, clamped material updates and explicit suspension.
+It is a portable reconstruction of ROM 0x29E218..0x29E70C, not an accepted matching-C
+source. Equal pose offsets alias the following program at runtime; physical empty
+slices remain unchanged in the resource model. Ordinary audio requests use current
+ROM tables. The projector writes a separate vector; the native audio branch reads
+the original template input. Playback records these requests without producing sound.
+
+All 54,600 checked sequencer invocations (24 for each of 2,275 programs) match original
+MIPS execution in 4 MiB memory: frame, cursor, delay, current/previous state, float
+coordinate bits, material/delta bytes, return and audio requests. The original counted
+lookup also runs; resource registration, the output-only projector and audio consumer
+are controlled services. Budget/resume, unavailable service, material bounds and
+zero-delay-cycle checks pass. Three focused UI checks pass, including engine-aligned
+stepping/seeking and surrounding scene/desktop regressions. A rendered native actor
+preview was inspected. This is ordinary pose execution; complete scene scheduling,
+alternate body bindings, camera projection and material rendering remain unfinished.
+
+
 The native engine compiles a bounded adaptation of recovered `func_002A0B14.c`
 from Decomp commit `9955a5cdcf73a35e4ccf57ab9bb3b6d85dab40b3`.
 Motion is owned by a scene slot, independently of its occupant. Teleport and
