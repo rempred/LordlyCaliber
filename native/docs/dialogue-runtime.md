@@ -1,5 +1,14 @@
 # Dialogue runtime
 
+Recursive resource release reconstructs ROM 8388..84D4 at RAM 80077F88. All 384
+complete pool/callback/handle-order comparisons pass (119 ms), including callback
+changes that affect later child discovery. The cascade bit is record byte3 bit8;
+children compare signed record+A2 with the releasing slot. The supplied callback
+runs before ten optional handles and the unconditional payload-handle request,
+then the full record clears. Callback mutations, allocator release and zero-fill
+are controlled in the reference. Cycles and absent callbacks preserve the host
+pool. Callers must stage any callback-owned state beyond that pool themselves.
+
 Closing steps reconstruct ROM 7FF8..8380 at RAM 80077BF8. All 224 sequences /
 2,688 complete pool snapshots and ordered release requests pass (184 ms), with
 release controlled to record clearing. Signed margins, fractional shrinking,

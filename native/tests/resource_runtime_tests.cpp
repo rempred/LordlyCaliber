@@ -11,6 +11,70 @@ using namespace lordly;
 class ResourceRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void releaseAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("ui-release-mips.cjs"),
+             path, work.filePath("release.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("release.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 384);
+        for (const auto &value : cases) {
+            const auto c = value.toObject();
+            SceneResources pool({0, 0, 0xffff});
+            const auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+            for (int i = 0; i < 6; ++i)
+                pool.supplyRecord(i, initial.mid(i * 168, 168));
+            QJsonArray callbacks;
+            const auto handles = pool.release(
+                c["root"].toInt(), [&](SceneResources &next, int slot, quint32 address) {
+                    callbacks.append(QJsonObject{{"slot", slot}, {"address", double(address)}});
+                    if (c["mutate"].toBool() && slot == 1) {
+                        auto child = next.record(4);
+                        put16(child, 0xa2, 5);
+                        next.supplyRecord(4, child);
+                    }
+                    auto record = next.record(slot);
+                    put32(record, 0x38, 0x12340000 + slot);
+                    next.supplyRecord(slot, record);
+                });
+            QCOMPARE(callbacks, c["callbacks"].toArray());
+            QJsonArray freed;
+            for (const auto handle : handles)
+                freed.append(double(handle));
+            QCOMPARE(freed, c["freed"].toArray());
+            QByteArray actual;
+            for (int i = 0; i < 6; ++i)
+                actual += pool.record(i);
+            QCOMPARE(actual.toHex(), c["after"].toString().toLatin1());
+        }
+        SceneResources pool({0, 0, 0xffff});
+        auto record = QByteArray(168, 0);
+        put16(record, 0, 0x8000);
+        put8(record, 3, 8);
+        put16(record, 0xa2, 1);
+        pool.supplyRecord(0, record);
+        put16(record, 0xa2, 0);
+        pool.supplyRecord(1, record);
+        const auto first = pool.record(0), second = pool.record(1);
+        QVERIFY_THROWS_EXCEPTION(Error, pool.release(0));
+        QCOMPARE(pool.record(0), first);
+        QCOMPARE(pool.record(1), second);
+        put8(record, 3, 0);
+        put32(record, 0x1c, 0x801998a0);
+        pool.supplyRecord(1, record);
+        QVERIFY_THROWS_EXCEPTION(Error, pool.release(0));
+        QCOMPARE(pool.record(0), first);
+        QCOMPARE(pool.record(1), record);
+    }
     void closingAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

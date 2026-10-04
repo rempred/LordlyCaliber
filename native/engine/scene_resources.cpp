@@ -47,6 +47,44 @@ bool SceneResources::advanceClosing(int slot) {
     pool_.records[slot] = next;
     return result != 0;
 }
+QVector<quint32> SceneResources::release(int slot, const Release &callback) {
+    checkSlot(slot);
+    auto next = *this;
+    QVector<quint32> freed;
+    unsigned visiting = 0;
+    std::function<void(int)> releaseSlot = [&](int current) {
+        if (visiting & (1U << current))
+            throw Error("Scene resource parent links form a release cycle");
+        visiting |= 1U << current;
+        if (u8(next.record(current), 3) & 8) {
+            for (int child = 0; child < 6; ++child) {
+                if (child == current)
+                    continue;
+                const auto record = next.record(child);
+                if ((u16(record, 0) & 0x8000) && qint16(u16(record, 0xa2)) == current)
+                    releaseSlot(child);
+            }
+        }
+        const auto address = u32(next.record(current), 0x1c);
+        if (address) {
+            if (!callback)
+                throw Error(QString("Scene release callback %1 is unavailable")
+                                .arg(address, 8, 16, QLatin1Char('0')));
+            callback(next, current, address);
+        }
+        for (int i = 0; i < 10; ++i) {
+            const auto handle = u32(next.record(current), 0x38 + i * 4);
+            if (handle)
+                freed.push_back(handle);
+        }
+        freed.push_back(u32(next.record(current), 0x24)); // Native payload-free is unconditional.
+        next.supplyRecord(current, QByteArray(168, 0));
+        visiting &= ~(1U << current);
+    };
+    releaseSlot(slot);
+    *this = std::move(next);
+    return freed;
+}
 int SceneResources::registerResource(quint16 flags, quint32 initializer, qint32 x, qint32 y,
                                      qint32 right, qint32 bottom, qint32 priority) {
     const int slot = lordly_ui_register(&pool_, flags, initializer, quint16(x), quint16(y),
