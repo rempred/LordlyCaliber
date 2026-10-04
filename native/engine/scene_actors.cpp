@@ -73,7 +73,12 @@ void SceneActors::configureLinkedPose(ActorInstance &actor) const {
     const int member = u8(record, 0x149);
     if (member >= 2)
         throw Error("Body pose linked-object selector exceeds its pair");
-    actor.pose().setLinkedObjectKnownAbsent(u32(row, member * 4) == 0);
+    const auto object = u32(row, member * 4);
+    if (object)
+        actor.pose().setLinkedAudioContext(
+            {object, qint32(u32(row, 0x48)), qint32(u32(row, 0x4c))});
+    else
+        actor.pose().setLinkedObjectKnownAbsent(true);
 }
 void SceneActors::selectBody(const LordlyActorBodySelection &selection) {
     auto next = *this;

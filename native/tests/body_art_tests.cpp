@@ -15,12 +15,13 @@
 using namespace lordly;
 class BodyArtTests : public QObject {
     Q_OBJECT
-    QJsonObject fixture(const QString &name, const QString &path) {
+    QJsonObject fixture(const QString &name, const QString &path, const QStringList &extra = {}) {
         QTemporaryDir work;
         QProcess reference;
-        reference.start("node",
-                        {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath(name), path,
-                         work.filePath("reference.json")});
+        reference.start(
+            "node", QStringList{QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath(name),
+                                path, work.filePath("reference.json")} +
+                        extra);
         if (!reference.waitForFinished(60000) || reference.exitCode() != 0)
             throw Error(QString::fromUtf8(reference.readAllStandardError()));
         QFile file(work.filePath("reference.json"));
@@ -139,15 +140,24 @@ class BodyArtTests : public QObject {
         QCOMPARE(value, 123);
     }
     void alternatePosesAgainstMips() {
+        compareAlternate(false);
+    }
+    void linkedPoseRequestsAgainstMips() {
+        compareAlternate(true);
+    }
+
+  private:
+    void compareAlternate(bool linked) {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
             QSKIP("Private ROM required");
-        const auto data = fixture("body-pose-mips.cjs", path);
+        const auto data =
+            fixture("body-pose-mips.cjs", path, linked ? QStringList{"linked"} : QStringList{});
         const auto rows = data["rows"].toArray();
         QCOMPARE(rows.size(), 17633);
         const auto rom = Rom::open(path);
         QMap<int, ActorArt> banks;
-        int calls = 0;
+        int calls = 0, linkedRequests = 0;
         for (const auto &value : rows) {
             const auto row = value.toObject();
             const int source = row["source"].toInt(), flags = row["flags"].toInt(),
@@ -155,7 +165,10 @@ class BodyArtTests : public QObject {
             if (!banks.contains(id))
                 banks.insert(id, ActorArt::loadBody(rom, source, source, flags >> 1, flags & 1));
             ActorPosePlayer player(rom, banks[id], row["state"].toInt());
-            player.setLinkedObjectKnownAbsent(true);
+            if (linked)
+                player.setLinkedAudioContext({0x80350000, source, source});
+            else
+                player.setLinkedObjectKnownAbsent(true);
             player.actor().position = {1.25f, -2.5f, 3.75f};
             for (const auto &call : row["calls"].toArray()) {
                 const auto expected = call.toArray();
@@ -178,11 +191,23 @@ class BodyArtTests : public QObject {
                 for (const auto &r : player.audioRequests())
                     audio << QJsonArray{r.context, r.value};
                 QCOMPARE(audio, expected[10].toArray());
+                QJsonArray requests;
+                for (const auto &r : player.linkedAudioRequests()) {
+                    requests << QJsonArray{qint64(r.linked.objectAddress), r.linked.source,
+                                           r.linked.owner, r.key, r.opcode};
+                    ++linkedRequests;
+                }
+                QCOMPARE(requests, expected[11].toArray());
                 ++calls;
             }
         }
         QCOMPARE(calls, 141064);
+        if (linked)
+            QVERIFY(linkedRequests > 0);
+        else
+            QCOMPARE(linkedRequests, 0);
     }
+  private slots:
     void handlesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

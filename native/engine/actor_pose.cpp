@@ -3,6 +3,12 @@
 #include <cmath>
 #include <cstring>
 namespace lordly {
+void ActorPosePlayer::setLinkedAudioContext(LinkedPoseAudioContext context) {
+    if (!context.objectAddress)
+        throw Error("Linked sound context requires its object identity");
+    linkedAudioContext_ = context;
+    linkedObjectAbsent_ = false;
+}
 ActorPosePlayer::ActorPosePlayer(const Rom &rom, ActorArt art, int state, int variant)
     : rom_(rom), art_(std::move(art)) {
     if (state < 0 || state >= art_.poses().size() || variant < 0 || variant > 255)
@@ -47,6 +53,14 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
         if (actor->decoder_mode && (record->opcode == 18 || record->opcode == 20)) {
             if (self.linkedObjectAbsent_)
                 return 1;
+            if (self.linkedAudioContext_) {
+                if (self.linkedAudio_.size() >= 4096)
+                    throw Error("Linked pose sound request budget exceeded");
+                self.linkedAudio_ << LinkedPoseAudioRequest{
+                    *self.linkedAudioContext_,
+                    quint16(record->operands[0] * 256 + record->operands[1]), record->opcode};
+                return 1;
+            }
             throw Error("Alternate pose audio requires its linked actor state");
         }
         const int key = record->operands[0] * 256 + record->operands[1];
@@ -77,6 +91,7 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
 int ActorPosePlayer::advance(int budget) {
     error_.clear();
     audio_.clear();
+    linkedAudio_.clear();
     const int result =
         lordly_actor_advance_pose(&actor_, &invocation_, budget, lookup, shared, this);
     if (result == LORDLY_POSE_BUDGET)

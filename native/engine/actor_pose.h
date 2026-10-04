@@ -1,10 +1,22 @@
 #pragma once
 #include "engine/actor_art.h"
 #include "game/director/actor_pose.h"
+#include <optional>
 namespace lordly {
 struct PoseAudioRequest {
     int context = 0;
     quint16 value = 0;
+};
+// Native sound-service boundary. The consumer needs the linked object's
+// spatial/equipment state to resolve the final sound; pose execution does not.
+struct LinkedPoseAudioContext {
+    quint32 objectAddress = 0;
+    qint32 source = 0, owner = 0;
+};
+struct LinkedPoseAudioRequest {
+    LinkedPoseAudioContext linked;
+    quint16 key = 0;
+    quint8 opcode = 0;
 };
 class ActorPosePlayer {
   public:
@@ -22,6 +34,9 @@ class ActorPosePlayer {
     const QVector<PoseAudioRequest> &audioRequests() const {
         return audio_;
     }
+    const QVector<LinkedPoseAudioRequest> &linkedAudioRequests() const {
+        return linkedAudio_;
+    }
     QString error() const {
         return error_;
     }
@@ -34,7 +49,9 @@ class ActorPosePlayer {
     int query() const;
     void setLinkedObjectKnownAbsent(bool absent) {
         linkedObjectAbsent_ = absent;
+        linkedAudioContext_.reset();
     }
+    void setLinkedAudioContext(LinkedPoseAudioContext context);
 
   private:
     static int lookup(void *, const LordlyActorPose *, LordlyPoseRecord *);
@@ -44,6 +61,8 @@ class ActorPosePlayer {
     LordlyActorPose actor_{};
     LordlyPoseInvocation invocation_{};
     QVector<PoseAudioRequest> audio_;
+    QVector<LinkedPoseAudioRequest> linkedAudio_;
+    std::optional<LinkedPoseAudioContext> linkedAudioContext_;
     QString error_;
     bool linkedObjectAbsent_ = false;
 };
