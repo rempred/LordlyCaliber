@@ -46,7 +46,8 @@ class SceneActors {
     void advanceTurns();
     const ActorTurnJob &turnJob(int slot) const;
     void supplyTurnJob(int slot, ActorTurnJob job);
-    void advancePoses();
+    // A false result retains the current slot/invocation for a budget resume.
+    bool advancePoses(int instructionBudget = 256);
 
   private:
     static void checkSlot(int slot);
@@ -65,6 +66,7 @@ class SceneActors {
     std::array<ActorTurnJob, 28> turns_;
     std::array<QByteArray, 28> depths_;
     std::optional<quint32> sceneFlags_;
+    int nextPoseSlot_ = 0;
     std::optional<ActorBindingInputs> binding_;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;

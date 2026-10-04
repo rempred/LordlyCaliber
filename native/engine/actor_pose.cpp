@@ -90,8 +90,10 @@ int ActorPosePlayer::shared(void *context, const LordlyActorPose *actor,
 }
 int ActorPosePlayer::advance(int budget) {
     error_.clear();
-    audio_.clear();
-    linkedAudio_.clear();
+    if (!invocation_.active) {
+        audio_.clear();
+        linkedAudio_.clear();
+    }
     const int result =
         lordly_actor_advance_pose(&actor_, &invocation_, budget, lookup, shared, this);
     if (result == LORDLY_POSE_BUDGET)

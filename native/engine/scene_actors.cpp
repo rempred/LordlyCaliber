@@ -398,14 +398,21 @@ void SceneActors::advanceTurns() {
     actors_ = std::move(next);
     turns_ = std::move(turns);
 }
-void SceneActors::advancePoses() {
-    auto next = actors_;
-    for (auto &actor : next)
-        if (actor) {
-            configureLinkedPose(*actor);
-            if (actor->pose().advance() != LORDLY_POSE_OK)
-                throw Error(actor->pose().error());
-        }
-    actors_ = std::move(next);
+bool SceneActors::advancePoses(int instructionBudget) {
+    if (instructionBudget < 1)
+        throw Error("Actor pose budget must be positive");
+    for (; nextPoseSlot_ < 28; ++nextPoseSlot_) {
+        auto &actor = actors_[nextPoseSlot_];
+        if (!actor)
+            continue;
+        configureLinkedPose(*actor);
+        const int status = actor->pose().advance(instructionBudget);
+        if (status == LORDLY_POSE_BUDGET)
+            return false;
+        if (status != LORDLY_POSE_OK)
+            throw Error(actor->pose().error());
+    }
+    nextPoseSlot_ = 0;
+    return true;
 }
 } // namespace lordly

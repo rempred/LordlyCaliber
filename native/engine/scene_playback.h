@@ -102,6 +102,8 @@ class ScenePlayback {
     SceneEffects effects_;
     LordlySceneSchedule schedule_{};
     bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;
+    bool poseSweepStarted_ = false;
+    bool poseBudgetReached_ = false;
     quint64 completed_ = 0;
     int directorResult_ = LORDLY_DIRECTOR_YIELD, instructionBudget_ = 10000;
     std::optional<LordlySceneService> pending_;

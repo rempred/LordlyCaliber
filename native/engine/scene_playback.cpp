@@ -68,17 +68,25 @@ bool ScenePlayback::update(LordlySceneService service) {
         projection_.advance();
         return true;
     case LORDLY_SCENE_POSES:
-        if (!actorsAdvanced_) {
+        if (!poseSweepStarted_) {
             // The original sweep rechecks alternate at entry. A preceding
             // service can change it even during a normal scheduler invocation.
             if (schedule_.alternate)
                 return true;
-            actors_.advancePoses();
+            poseSweepStarted_ = true;
+        }
+        if (!actorsAdvanced_) {
+            if (!actors_.advancePoses(instructionBudget_)) {
+                poseBudgetReached_ = true;
+                reason_ = "Actor pose instruction budget reached";
+                return false;
+            }
             actorsAdvanced_ = true;
         }
         if (!supplemental_ || !*supplemental_ || !(*supplemental_)(service))
             return false;
         actorsAdvanced_ = false;
+        poseSweepStarted_ = false;
         return true;
     case LORDLY_SCENE_DIRECTOR:
         directorResult_ =
@@ -122,6 +130,7 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     if (released_)
         return Released;
     reason_.clear();
+    poseBudgetReached_ = false;
     pending_.reset();
     supplemental_ = &supplemental;
     commands_ = &commands;
@@ -136,7 +145,7 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     }
     if (status == LORDLY_SCENE_INVALID)
         throw Error("Scene scheduler continuation is invalid");
-    if (status == LORDLY_SCENE_BUDGET ||
+    if (status == LORDLY_SCENE_BUDGET || poseBudgetReached_ ||
         (pending_ == LORDLY_SCENE_DIRECTOR && directorResult_ == LORDLY_DIRECTOR_BUDGET)) {
         if (reason_.isEmpty())
             reason_ = "Scene update budget reached";

@@ -14,6 +14,67 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void poseAudioSurvivesBudget() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        for (int bank = 1; bank <= ActorArt::bankCount(rom); ++bank) {
+            const auto art = ActorArt::load(rom, bank);
+            for (int state = 0; state < art.poses().size(); ++state) {
+                const auto &program = art.poses()[state].records;
+                if (program.isEmpty() || program.first().opcode < 17 || program.first().opcode > 20)
+                    continue;
+                ActorPosePlayer uninterrupted(rom, art, state), resumed(rom, art, state);
+                QCOMPARE(uninterrupted.advance(), LORDLY_POSE_OK);
+                QCOMPARE(resumed.advance(1), LORDLY_POSE_BUDGET);
+                QVERIFY(!resumed.audioRequests().isEmpty());
+                int attempts = 0, status;
+                do {
+                    status = resumed.advance(1);
+                    QVERIFY(++attempts < 100);
+                } while (status == LORDLY_POSE_BUDGET);
+                QCOMPARE(status, LORDLY_POSE_OK);
+                QCOMPARE(resumed.audioRequests().size(), uninterrupted.audioRequests().size());
+                for (int i = 0; i < resumed.audioRequests().size(); ++i) {
+                    QCOMPARE(resumed.audioRequests()[i].context,
+                             uninterrupted.audioRequests()[i].context);
+                    QCOMPARE(resumed.audioRequests()[i].value,
+                             uninterrupted.audioRequests()[i].value);
+                }
+                return;
+            }
+        }
+        QFAIL("The retail corpus should contain a program beginning with sound");
+    }
+    void actorSweepBudgetResume() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        SceneActors baseline(rom, 2, 0), resumed(rom, 2, 0);
+        const int actorSlots[] = {0, 7, 27};
+        const int banks[] = {30, 57, 63};
+        for (int i = 0; i < 3; ++i) {
+            int result = 0;
+            const QVector<quint32> args{
+                quint32(actorSlots[i]), quint32(banks[i]), 0, 0, 1000, 2000, 3000, 0, 0};
+            QVERIFY(baseline.service(0x14, args, result));
+            QVERIFY(resumed.service(0x14, args, result));
+        }
+        int pauses = 0;
+        for (int tick = 0; tick < 64; ++tick) {
+            QVERIFY(baseline.advancePoses());
+            int attempts = 0;
+            while (!resumed.advancePoses(1)) {
+                ++pauses;
+                QVERIFY(++attempts < 100);
+            }
+            for (const int slot : actorSlots)
+                QCOMPARE(resumed.actor(slot)->record(), baseline.actor(slot)->record());
+        }
+        QVERIFY(pauses > 0);
+    }
     void effectsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

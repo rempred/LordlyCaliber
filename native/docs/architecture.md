@@ -1,5 +1,14 @@
 # Native Lordly Caliber
 
+Actor pose sweeps retain their current slot and instruction continuation across
+budget limits or unavailable context. Earlier actors are not replayed on resume;
+ScenePlayback retains the sweep's entry guard and reports a pose budget distinctly.
+Audio requests accumulate across parts of one invocation and clear at the next
+invocation. Three focused checks pass: 64 three-actor sweeps at one-command budgets,
+a retail sound-first program resumed after its sound request, and composed scene
+pause/resume behavior. Intermediate scene state must not be presented as a completed
+update; completedUpdates advances only after the scheduler finishes.
+
 SceneEffects implements the twenty 80-byte scene-color transitions (0x33),
 shared RGBA/mask writes, slot-zero mirroring, signed duration/progress and retained
 completion. Imported unknown bytes remain intact; fresh allocations initialize
