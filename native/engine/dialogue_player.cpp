@@ -12,7 +12,7 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
     auto &state = nextFrame.state;
     auto &window = nextFrame.window;
     nextFrame.children.clear();
-    nextFrame.glyphSounds = 0;
+    nextFrame.sounds.clear();
     auto spend = [&] {
         if (--budget < 0)
             throw Error("Dialogue reveal exceeded its budget");
@@ -82,7 +82,7 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
     auto stop = [&] { put16(state, 0x10, 256); };
     auto sound = [&] {
         if (!(u8(state, 0x48) & 1))
-            ++nextFrame.glyphSounds;
+            nextFrame.sounds.push_back({0x1a, 10});
     };
     put16(state, 0x10, u16(state, 0x10) + speed);
     while (u16(state, 0x10) > 256) {
@@ -342,6 +342,217 @@ quint8 revealDialogueText(DialogueTextFrame &frame, const QByteArray &source,
         put16(state, 0x10, u16(state, 0x10) - 256);
     }
     put8(state, 0x178 + u16(state, 0x34), 0);
+    const auto result = u8(state, 0x3c);
+    frame = std::move(nextFrame);
+    return result;
+}
+quint8 advanceDialogueWindow(DialogueTextFrame &frame, const QByteArray &source,
+                             const DialogueTextEnvironment &environment, DialogueInput input,
+                             const QByteArray &shakePattern, int budget) {
+    if (frame.window.size() != 168 || frame.state.size() != 1144 || budget < 1)
+        throw Error("Dialogue update requires complete records and a positive budget");
+    auto nextFrame = frame;
+    auto &state = nextFrame.state;
+    auto &window = nextFrame.window;
+    nextFrame.children.clear();
+    nextFrame.sounds.clear();
+    auto historyMarker = [&](quint8 value) {
+        const int row = u8(state, 0x54) + u16(state, 0x1e);
+        if (row >= 96)
+            throw Error("Dialogue history row exceeds its line table");
+        const int offset = u16(state, 0xb8 + row * 2);
+        if (offset > 768)
+            throw Error("Dialogue history marker exceeds its text buffer");
+        put8(state, 0x177 + offset, value);
+    };
+    auto selectionMarker = [&](quint8 value) {
+        const int row = u8(state, 0x53) + u8(state, 0x44) + u8(state, 0x46);
+        if (row >= 96)
+            throw Error("Dialogue selection exceeds its line flags");
+        put8(state, 0x57 + row, value);
+    };
+    auto audio = [&](quint16 sound, quint8 volume) { nextFrame.sounds.push_back({sound, volume}); };
+    auto shake = [&] {
+        if (!u8(state, 0x41))
+            return;
+        const auto index = u8(state, 0x3f);
+        const auto value = u8(shakePattern, index);
+        put8(state, 0x3f, index + 1);
+        put8(state, 0x40, value);
+        if (value == 0x80) {
+            put8(state, 0x41, 0);
+            put8(state, 0x40, 0);
+        }
+    };
+    auto cancel = [&] {
+        if ((u8(window, 0x91) & 1) && (input.pressed & 0x4000)) {
+            put16(window, 0, u16(window, 0) | 0x1000);
+            put8(state, 0x3c, 99);
+            put8(window, 0x91, u8(window, 0x91) | 2);
+        }
+    };
+    put8(state, 0x40, 0);
+    // ROM E6B14 history callback always precedes the state update.
+    put8(state, 0x50, 0);
+    if (u8(state, 0x4f))
+        historyMarker(10);
+    const auto phase = u8(state, 0x3c);
+    const bool historyInput = (phase == 3 || phase == 6 || (u8(state, 0x52) && phase == 7)) &&
+                              (input.history & 16) && u8(state, 0x53) && !u8(state, 0x4e);
+    if (historyInput) {
+        put8(state, 0x4f, 128);
+        if (input.repeat & 0x800) {
+            if (u8(state, 0x54)) {
+                put8(state, 0x54, u8(state, 0x54) - 1);
+                audio(2, 20);
+            }
+        } else if ((input.repeat & 0x400) && u8(state, 0x54) < u8(state, 0x53)) {
+            put8(state, 0x54, u8(state, 0x54) + 1);
+            audio(2, 20);
+        }
+        if (u8(state, 0x44))
+            selectionMarker(1);
+        if (u8(state, 0x54))
+            put8(state, 0x50, u8(state, 0x50) | 1);
+        if (u8(state, 0x54) < u8(state, 0x53))
+            put8(state, 0x50, u8(state, 0x50) | 2);
+    } else if (u8(state, 0x54) < u8(state, 0x53)) {
+        put8(state, 0x4f, u8(state, 0x4f) ^ 1);
+        if (!(u8(state, 0x4f) & 1)) {
+            put8(state, 0x54, u8(state, 0x54) + 1);
+            audio(2, 20);
+        }
+    } else {
+        put8(state, 0x4f, 0);
+        if (u8(state, 0x44))
+            selectionMarker(0);
+    }
+    if (u8(state, 0x4f))
+        historyMarker(0);
+    else {
+        switch (phase) {
+        case 0:
+            put8(state, 0x3c, 1);
+            break;
+        case 1:
+            advanceDialoguePosition(state);
+            if (!(u16(window, 0) & 0x800)) {
+                shake();
+                if (u8(state, 0x3e) && !u8(state, 0x41))
+                    put8(state, 0x3c, 2);
+            }
+            break;
+        case 2:
+            for (;;) {
+                if (--budget < 0)
+                    throw Error("Dialogue fast-forward exceeded its budget");
+                const auto previous = u8(state, 0x3c);
+                const auto sounds = nextFrame.sounds;
+                const auto children = nextFrame.children;
+                const auto result =
+                    revealDialogueText(nextFrame, source, environment, input.speed, budget);
+                nextFrame.sounds = sounds + nextFrame.sounds;
+                nextFrame.children = children + nextFrame.children;
+                if (result != previous || u8(state, 0x51) || !(input.pressed & 0x8000))
+                    break;
+            }
+            break;
+        case 3:
+            if (input.pressed & 0x8000)
+                put8(state, 0x3c, 2);
+            else
+                cancel();
+            break;
+        case 4:
+            if (u8(window, 0x8a) & 2) {
+                put8(window, 0x8a, u8(window, 0x8a) & 0xfc);
+                put8(state, 0x3c, 2);
+            }
+            break;
+        case 5:
+            shake();
+            if (!u8(state, 0x41))
+                put8(state, 0x3c, 2);
+            break;
+        case 6:
+            put8(state, 0x43, u8(state, 0x43) + 16);
+            if (input.pressed & 0x8000) {
+                put8(state, 0x3c, 2);
+                put8(state, 0x42, 0);
+            } else
+                cancel();
+            break;
+        case 7:
+            if (input.repeat & 0x800) {
+                if (u8(state, 0x44) >= 2) {
+                    put8(state, 0x44, u8(state, 0x44) - 1);
+                    audio(6, 30);
+                }
+            } else if (input.repeat & 0x400) {
+                if (u8(state, 0x44) < u8(state, 0x45)) {
+                    put8(state, 0x44, u8(state, 0x44) + 1);
+                    audio(6, 30);
+                }
+            } else if (input.pressed & 0x8000) {
+                if (u8(state, 0x44) >= 2) {
+                    auto cursor = u32(state, 8);
+                    seekDialogueChoice(source, cursor, u8(state, 0x44) + 48, budget);
+                    put32(state, 8, cursor);
+                }
+                selectionMarker(1);
+                put8(state, 0x44, 0);
+                put8(state, 0x3c, 2);
+                audio(0, 50);
+            } else
+                cancel();
+            break;
+        case 8:
+            put16(state, 0x12, u16(state, 0x12) - 1);
+            if (!u16(state, 0x12) || (!u8(state, 0x51) && (input.pressed & 0x8000)))
+                put8(state, 0x3c, 2);
+            break;
+        case 9: {
+            const int alpha = u8(state, 0x49) - 50;
+            if (alpha >= 0)
+                put8(state, 0x49, alpha);
+            else {
+                put8(state, 0x49, 0);
+                put8(state, 0x3c, phase + 1);
+                put16(state, 0x14, u16(state, 0x16));
+            }
+            break;
+        }
+        case 10: {
+            const int alpha = u8(state, 0x49) + 50;
+            put8(state, 0x49, std::min(alpha, 255));
+            if (alpha >= 255)
+                put8(state, 0x3c, 2);
+            break;
+        }
+        case 11:
+            if (input.pressed & 0x8000)
+                put8(state, 0x3c, 2);
+            else {
+                put16(state, 0x12, u16(state, 0x12) - 1);
+                if (!u16(state, 0x12))
+                    put8(state, 0x3c, 2);
+            }
+            break;
+        case 99:
+            put8(state, 0x3e, 0);
+            put16(state, 0x28, u16(state, 0x2c));
+            put16(state, 0x2a, u16(state, 0x2e));
+            put8(state, 0x3c, phase + 1);
+            break;
+        default:
+            if (!u8(state, 0x3e))
+                advanceDialoguePosition(state);
+            break;
+        }
+        if (u8(window, 0x8a) & 0x10)
+            trackDialoguePointer(window, state);
+        positionDialogueBounds(window, state);
+    }
     const auto result = u8(state, 0x3c);
     frame = std::move(nextFrame);
     return result;

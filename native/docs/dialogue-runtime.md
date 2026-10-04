@@ -1,5 +1,17 @@
 # Dialogue runtime
 
+The dialogue update callback now composes scrolling, input/state transitions,
+reveal, shake, motion, pointer placement and bounds in their native order.
+It reconstructs ROM E659C..E6D90, EA628..EA684 and EACC0..EACFC with explicit
+pressed/repeated/history input and current-ROM shake bytes. All 408 sequences /
+4,896 full snapshots pass (967 ms), including opening, scrolling, choices,
+confirm/cancel, waits, portrait fades and closing. Text reveal still passes.
+Sound, child allocation, zero-fill and formatted append are controlled; sound
+and child operations return requests for the scene owner to commit. Zero-speed
+fast-forward and invalid shake indices reject atomically. The initial constructed
+choice fixture omitted the rows its menu referenced; adding those rows fixed
+the invalid fixture without weakening the host's line-table bounds.
+
 Timed text reveal reconstructs ROM E87F8..E93A4 at RAM 8019BA78 with its line
 helper at E93A4. All 5,037 sequences / 10,592 complete snapshots pass (1,222 ms):
 all retail entries plus explicit controls, six speed boundaries and repeated
