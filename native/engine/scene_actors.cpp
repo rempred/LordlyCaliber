@@ -213,6 +213,23 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x15) {
+        if (args.size() != 5)
+            throw Error("Actor turn command is truncated");
+        const int slot = qint32(args[0]);
+        checkSlot(slot);
+        turns_[slot].start(rom_, qint32(args[1]), qint32(args[2]), qint32(args[3]),
+                           qint32(args[4]));
+        return true;
+    }
+    if (opcode == 0x16) {
+        if (args.size() != 3)
+            throw Error("Actor turn query is truncated");
+        const int slot = qint32(args[2]);
+        checkSlot(slot);
+        value = turns_[slot].present() ? 1 : 0;
+        return true;
+    }
     if (opcode == 0x7b) {
         if (args.size() != 4)
             throw Error("Actor height command is truncated");
@@ -358,6 +375,28 @@ void SceneActors::advanceHeights() {
     }
     actors_ = std::move(next);
     heights_ = std::move(heights);
+}
+const ActorTurnJob &SceneActors::turnJob(int slot) const {
+    checkSlot(slot);
+    return turns_[slot];
+}
+void SceneActors::supplyTurnJob(int slot, ActorTurnJob job) {
+    checkSlot(slot);
+    turns_[slot] = std::move(job);
+}
+void SceneActors::advanceTurns() {
+    auto next = actors_;
+    auto turns = turns_;
+    for (int slot = 0; slot < 28; ++slot) {
+        const auto facing = turns[slot].advance(rom_);
+        if (!facing)
+            continue;
+        if (!next[slot])
+            throw Error("Actor turn requires an occupied slot when selecting its pose");
+        next[slot]->select({slot, -1, -1, *facing, -1, {-1, -1, -1}, 0, 0});
+    }
+    actors_ = std::move(next);
+    turns_ = std::move(turns);
 }
 void SceneActors::advancePoses() {
     auto next = actors_;

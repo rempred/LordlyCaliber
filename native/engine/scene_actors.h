@@ -2,6 +2,7 @@
 #include "engine/actor_height.h"
 #include "engine/actor_instance.h"
 #include "engine/actor_motion.h"
+#include "engine/actor_turn.h"
 #include <array>
 #include <optional>
 namespace lordly {
@@ -42,6 +43,9 @@ class SceneActors {
     void supplyDepthAttachment(int slot, QByteArray record);
     const QByteArray &depthAttachment(int slot) const;
     void advanceHeights();
+    void advanceTurns();
+    const ActorTurnJob &turnJob(int slot) const;
+    void supplyTurnJob(int slot, ActorTurnJob job);
     void advancePoses();
 
   private:
@@ -58,6 +62,7 @@ class SceneActors {
     std::array<std::optional<ActorInstance>, 28> actors_;
     std::array<LordlyActorMotion, 28> motions_{};
     std::array<ActorHeightJob, 28> heights_;
+    std::array<ActorTurnJob, 28> turns_;
     std::array<QByteArray, 28> depths_;
     std::optional<quint32> sceneFlags_;
     std::optional<ActorBindingInputs> binding_;

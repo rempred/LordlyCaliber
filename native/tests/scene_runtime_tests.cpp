@@ -14,6 +14,58 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void turnsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-turn-mips.cjs"),
+             path, work.filePath("turns.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("turns.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 266);
+        const auto rom = Rom::open(path);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            SceneActors scene(rom, 2, 0);
+            scene.supplyActor(3, QByteArray::fromHex(row["initial"].toString().toLatin1()));
+            scene.supplyTurnJob(
+                3, ActorTurnJob(QByteArray::fromHex(row["initialJob"].toString().toLatin1())));
+            const auto operations = row["operations"].toArray(), states = row["states"].toArray();
+            for (int i = 0; i < operations.size(); ++i) {
+                const auto operation = operations[i].toObject();
+                int result = 0;
+                if (operation.contains("args")) {
+                    QVector<quint32> args;
+                    for (const auto &a : operation["args"].toArray())
+                        args << quint32(a.toInt());
+                    QVERIFY(scene.service(0x15, args, result));
+                } else
+                    scene.advanceTurns();
+                const auto expected = states[i].toObject();
+                QCOMPARE(scene.actor(3)->record().toHex(), expected["actor"].toString().toLatin1());
+                QCOMPARE(scene.turnJob(3).record().toHex(), expected["job"].toString().toLatin1());
+                QVERIFY(scene.service(0x16, {0, 0, 3}, result));
+                QCOMPARE(result, expected["query"].toInt());
+            }
+        }
+        SceneActors missing(rom, 2, 0);
+        int result = 0;
+        QVERIFY(missing.service(0x15, {0, 0, 1, 0xffffffffU, 12}, result));
+        const auto before = missing.turnJob(0).record();
+        QVERIFY_THROWS_EXCEPTION(Error, missing.advanceTurns());
+        QCOMPARE(missing.turnJob(0).record(), before);
+        QVERIFY_THROWS_EXCEPTION(Error, missing.service(0x15, {0, 1, 1, 1, 12}, result));
+        QCOMPARE(missing.turnJob(0).record(), before);
+        QVERIFY_THROWS_EXCEPTION(Error, missing.service(0x15, {0, 0, 1, 0, 12}, result));
+        QCOMPARE(missing.turnJob(0).record(), before);
+    }
     void movementAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

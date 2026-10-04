@@ -1,5 +1,17 @@
 # Native Lordly Caliber
 
+Timed facing turns (0x15/0x16) now read the current ROM's cardinal/phase tables,
+retain ten-byte job records and advance through the original cadence, halfword
+countdown and lifetime rules. Each phase invokes the existing Actor State path,
+including immediate pose execution; a missing animation/facing combination still
+consumes the turn phase. Scene-wide failures roll back jobs and actors together.
+All 266 original-instruction sequences match full job/query/actor records, including
+both directions, zero/negative/wrapped cadence, missing poses and retargeting.
+Original State, resolver and pose code execute; allocation/resource registration
+and audio consumption are controlled. The test-only instruction shim supports the
+observed full-word aligned LWL/LWR/SWL/SWR pairs and rejects other alignments.
+ScenePlayback now owns the facing stage; its composition/suspension check passes.
+
 SceneActors now executes the complete movement updater reconstructed from ROM
 2A0EF0..2A135C, including terrain calls, slot-motion cleanup, nearby-actor depth
 attachments and their second-pass updates/releases. Mode-two proximity requires

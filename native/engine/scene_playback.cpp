@@ -45,6 +45,9 @@ bool ScenePlayback::update(LordlySceneService service) {
     case LORDLY_SCENE_MOVEMENT:
         actors_.advanceMovement();
         return true;
+    case LORDLY_SCENE_FACING:
+        actors_.advanceTurns();
+        return true;
     case LORDLY_SCENE_PROJECTION:
         projection_.advance();
         return true;
