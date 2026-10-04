@@ -17,7 +17,7 @@ m.load(table,handles);m.w32(0x801d0690,table+handles.readUInt16BE(0));m.w32(0x80
 m.w32(0x801d0680,table+handles.readUInt16BE(4));m.w32(0x801d0728,pool);
 m.w32(0x8022a974,scene);m.w32(0x801ce8bc,cast);m.w32(0x801ce8fc,0x3c);
 let allocations=[];
-m.trap(0x80070f30,c=>{const size=c.get('a0');assert([4,16,29].includes(size));const p=alloc+allocations.length*80;
+m.trap(0x80070f30,c=>{const size=c.get('a0');assert([4,16,29,336,514].includes(size));const p=alloc+allocations.length*1024;assert(p+size<0x803f0000);
  allocations.push({p,size});m.load(p-16,Buffer.alloc(size+32,0xa7));m.load(p,Buffer.alloc(size));c.set('v0',p);});
 m.trap(0x800712c4,c=>assert(allocations.some(a=>a.p===c.get('a0'))));
 m.trap(0x801c27f8,c=>c.set('v0',c.get('a0'))); // Actual registration owner runs; native allocation handles are controlled.
@@ -87,5 +87,53 @@ for(let source=0;source<165;source++)for(const owner of new Set([source,30,rom[0
  if(owner>=172)continue;
  m.set('a0',source);m.set('a1',owner);m.call(direction?0x801be264:0x801be1e0);speeds.push({source,owner,direction,value:m.single(0)});
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds}));
+// Entrance resource allocation is supplied at the ordinary decompression boundary.
+m.trap(0x8009dd38,c=>{assert.equal(c.get('a0'),0x1a9045a);const b=decode(c.get('a0')),
+ p=alloc+allocations.length*1024;allocations.push({p,size:b.length});m.load(p-16,Buffer.alloc(b.length+32,0xa7));m.load(p,b);c.set('v0',p);});
+function memberAddress(id,bank){
+ return bank===0?(id<100?[0x80193bd8+id*56,0x80193bf3+id*56]:[0x80190ebc+id*2,0x80191010+id]):
+ (id<100?[0x80195578+id*52,0x80195593+id*52]:[0x8019532c+id*2,0x80195480+id]);
+}
+const entrances=[];
+for(const preset of [0,1,7,63])for(let kind=0;kind<5;kind++){
+ const rows=Array.from({length:28},()=>Buffer.alloc(248)),objs=[],initial=[],sideGroups=[29,30],members=[[],[]],overrideFlag=kind===4?1:0;
+ const sources=[30,10,135,135,161,136],ids=[0,99,100,164,255,1];
+ for(let i=0;i<sources.length;i++){
+  rows[i].writeUInt32BE(sources[i],0x48);rows[i].writeUInt32BE(sources[i],0x4c);rows[i].writeUInt32BE(i&1?0x100:0,0x40);rows[i][0xf6]=ids[i];
+  const count=i===0?3:i===1?2:1;
+  for(let member=0;member<count;member++){
+   if(kind===2&&i===0&&member===0)continue;
+   const address=objects+i*192+member*64,b=Buffer.alloc(48,0xa7);b.writeInt16BE(240+i*50,0x28);b.writeInt16BE(19+member,0x2a);b.writeInt16BE(20+member*25,0x2c);
+   rows[i].writeUInt32BE(address,member*4);objs.push({address,record:b.toString('hex')});
+  }
+  for(let bank=0;bank<2;bank++){
+   const value=(i+bank)%3===0?0:123,flags=(i+bank)%3===1?4:0;
+   members[bank].push({id:ids[i],value,flags});const [va,fa]=memberAddress(ids[i],bank);m.w16(va,value);m.w8(fa,flags);
+  }
+ }
+ if(kind===1){initial.push({slot:12,record:record(12,30,0,0,190,20).toString('hex')});initial.push({slot:26,record:record(26,135,0,2,100,100).toString('hex')});}
+ m.load(scene,Buffer.alloc(0x1cc0));m.load(pool,Buffer.alloc(20*0xb0));allocations=[];
+ rows.forEach((r,i)=>m.load(cast+0x1c4+i*248,r));objs.forEach(o=>m.load(o.address,Buffer.from(o.record,'hex')));
+ initial.forEach(a=>{const p=actors+a.slot*512;m.load(p,Buffer.from(a.record,'hex'));m.w32(scene+24+a.slot*4,p);});
+ const variant=kind===3?-3:kind===4?-10:0;
+ m.w32(0x801ceab0,preset);m.w8(0x8022ac80,variant);m.w8(0x8022a7f0,overrideFlag);m.w8(0x801976dc,sideGroups[0]);m.w8(0x801976e8,sideGroups[1]);
+ m.w8(0x8018fc19,2);m.w32(0x80197b14,8);m.w8(0x8022a980,0x67);m.set('sp',sp);
+ // Bootstrap construction narrows the terrain result; the normal movement updater does not.
+ m.trap(0x801bc35c,c=>c.setSingle(0,7.75));
+ try{m.call(0x8023b500,0x80000100,1000000);}catch(e){throw Error(`entrance preset=${preset} kind=${kind}: ${e.message}`);}
+ const states=[];
+ for(let step=0;step<100;step++){
+  if(step){m.call(0x802316c0);for(let slot=0;slot<28;slot++){const p=m.r32(scene+24+slot*4);if(p){m.set('a0',p);m.call(0x8022e9e8);}}m.call(0x8023dac4);}
+  const p=m.r32(scene+0x1ca8);
+  const actorStates=Array.from({length:28},(_,slot)=>{const p=m.r32(scene+24+slot*4);return p?{slot,record:read(p,336)}:null;}).filter(Boolean);
+  const motions=Array.from({length:28},(_,slot)=>{const p=m.r32(scene+0xf8+slot*4);return p?{slot,record:read(p,16)}:null;}).filter(Boolean);
+  states.push({actors:actorStates,motions,presentation:p?read(p,29):'',opacity:m.r8(0x8022a980)});
+  assert.equal(m.get('sp'),sp);
+  for(const a of allocations)for(let i=0;i<16;i++){assert.equal(m.r8(a.p-16+i),0xa7);assert.equal(m.r8(a.p+a.size+i),0xa7);}
+ }
+ entrances.push({preset,kind,variant,overrideFlag,sideGroups,members,rows:rows.map(r=>r.toString('hex')),objects:objs,initial,states});
+}
+fs.writeFileSync(process.argv[3],JSON.stringify({results,boundaries,speeds,entrances}));
 console.log(`Original presentation: ${results.length} sequences / ${results.length*80} snapshots, ${boundaries.length} boundary sequences, ${speeds.length} speed samples. Allocation/resource handles/terrain/audio controlled.`);
+
+console.log(`Original entrances: ${entrances.length} sequences / ${entrances.length*100} complete snapshots.`);

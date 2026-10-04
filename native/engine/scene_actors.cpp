@@ -86,8 +86,8 @@ void SceneActors::configureLinkedPose(ActorInstance &actor) const {
     const auto record = actor.record();
     const auto &row = bodyRow(u8(record, 0x147));
     const int member = u8(record, 0x149);
-    if (member >= 2)
-        throw Error("Body pose linked-object selector exceeds its pair");
+    if (member >= 3)
+        throw Error("Body pose linked-object selector exceeds its three entries");
     const auto object = u32(row, member * 4);
     if (object)
         actor.pose().setLinkedAudioContext(
@@ -213,6 +213,12 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x3f) {
+        if (args.size() != 1)
+            throw Error("Actor entrance command is truncated");
+        startEntrance();
+        return true;
+    }
     if (opcode == 0xa4) {
         if (args.size() != 1)
             throw Error("Actor return command is truncated");

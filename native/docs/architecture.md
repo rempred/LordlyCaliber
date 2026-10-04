@@ -1,5 +1,23 @@
 # Native Lordly Caliber
 
+Entrance command 3F now loads its current-ROM coordinate preset and builds
+missing army rows through the native three-object constructor. Existing actors
+retain the original skip rules and presentation transitions. Creation preserves
+first-free allocation, the constructor's signed terrain-height narrowing, special
+body states, sparse output-list behavior and immediate movement/body selection.
+Launch variant and roster state are explicit; no cast or destination is fabricated.
+The special roster predicate uses side group, member value and flags, including
+its exact override byte. Shared presentation opacity becomes 128.
+
+Twenty original-instruction entrance sequences match 2,000 complete actor/motion/
+vector snapshots across four presets, existing actors, three members, sparse rows,
+special classes and both filtered launch variants. Original constructors, selection,
+poses, movement and predicates run; resource loading/allocation, terrain and audio
+sinks are controlled. The combined lifecycle suite passes in 2,196 ms. The expanded
+missing-context/slot-exhaustion check passes separately in 136 ms; failed allocation
+leaves actors, opacity and the lifecycle vector unchanged. This corrects the earlier
+two-object assumption. Row type 1 is owner-class 1, not row flag bit 10.
+
 The shared actor-presentation lifecycle now runs in ScenePlayback's mode-two
 stage. Filtered command A4 preserves the 29-byte vector, applies side/subgroup
 flags, snaps only within the native tolerances, and starts the body return
@@ -19,7 +37,7 @@ the existing composed scheduler check passes. Initial fixture failures were a
 missing zero-fill service, an unlinked actor without its held pose, presentation
 context mismatch and an invalid class-zero owner 255 speed lookup. The host
 rejects out-of-range speed references. This does not establish scene rendering
-or dynamic army launch construction. Bootstrap 3F remains to implement.
+or dynamic army launch construction. The separate rendering and army launch extraction remain incomplete.
 
 The pose inspector now selects ordinary actors, class bodies or the independent
 2D sprite sequencer, with stepping, seeking, per-layer opacity and optional sepia.

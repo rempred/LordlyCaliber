@@ -138,6 +138,96 @@ class PresentationRuntimeTests : public QObject {
                                               c["direction"].toInt()),
                          float(c["value"].toDouble()));
             }
+
+            const auto entrances = data["entrances"].toArray();
+            QCOMPARE(entrances.size(), 20);
+            int entranceIndex = 0;
+            for (const auto &v : entrances) {
+                const auto c = v.toObject();
+                context = QString("entrance %1 construction").arg(entranceIndex);
+                SceneActors scene(rom, 2, 0x3c, [](int, float, float) { return 7.75f; });
+                scene.supplySceneFlags(8);
+                QVector<QByteArray> rows;
+                for (const auto &r : c["rows"].toArray())
+                    rows << bytes(r);
+                scene.supplyBodyRows(rows);
+                for (const auto &a : c["initial"].toArray()) {
+                    const auto r = a.toObject();
+                    scene.supplyActor(r["slot"].toInt(), bytes(r["record"]));
+                }
+                for (const auto &a : c["objects"].toArray()) {
+                    const auto r = a.toObject();
+                    scene.supplyBodyObject(quint32(r["address"].toDouble()), bytes(r["record"]));
+                }
+                PresentationRoster roster;
+                roster.overrideFlag = quint8(c["overrideFlag"].toInt());
+                for (int bank = 0; bank < 2; ++bank) {
+                    roster.sideGroups[bank] = quint8(c["sideGroups"].toArray()[bank].toInt());
+                    for (const auto &m : c["members"].toArray()[bank].toArray()) {
+                        const auto member = m.toObject();
+                        roster.members[bank].insert(
+                            member["id"].toInt(),
+                            {quint16(member["value"].toInt()), quint8(member["flags"].toInt())});
+                    }
+                }
+                scene.supplyPresentationLaunch(
+                    {c["preset"].toInt(), qint8(c["variant"].toInt()), roster});
+                int value = -100;
+                QVERIFY(scene.service(0x3f, {0xa7a7a7a7U}, value));
+                QCOMPARE(value, -100);
+                const auto states = c["states"].toArray();
+                for (int tick = 0; tick < states.size(); ++tick) {
+                    context = QString("entrance %1 tick %2").arg(entranceIndex).arg(tick);
+                    if (tick) {
+                        scene.advanceMovement();
+                        QVERIFY(scene.advancePoses());
+                        scene.advancePresentation();
+                    }
+                    const auto expected = states[tick].toObject();
+                    QVERIFY2(scene.presentationRecord() == bytes(expected["presentation"]),
+                             qPrintable(context));
+                    QCOMPARE(scene.presentationOpacity(),
+                             std::optional{quint8(expected["opacity"].toInt())});
+                    QJsonArray actualActors, motions;
+                    for (int slot = 0; slot < 28; ++slot) {
+                        if (scene.actor(slot))
+                            actualActors << QJsonObject{
+                                {"slot", slot},
+                                {"record",
+                                 QString::fromLatin1(scene.actor(slot)->record().toHex())}};
+                        if (scene.motion(slot).present)
+                            motions << QJsonObject{
+                                {"slot", slot},
+                                {"record",
+                                 QString::fromLatin1(motionBytes(scene.motion(slot)).toHex())}};
+                    }
+                    if (actualActors != expected["actors"].toArray()) {
+                        const auto want = expected["actors"].toArray();
+                        QCOMPARE(actualActors.size(), want.size());
+                        for (int i = 0; i < want.size(); ++i) {
+                            const auto a = actualActors[i].toObject(), b = want[i].toObject();
+                            QCOMPARE(a["slot"], b["slot"]);
+                            const auto actual = bytes(a["record"]), desired = bytes(b["record"]);
+                            if (actual != desired) {
+                                int offset = 0;
+                                while (offset < actual.size() && actual[offset] == desired[offset])
+                                    ++offset;
+                                QFAIL(qPrintable(
+                                    context +
+                                    QString(" slot %1 byte %2: %3 vs %4")
+                                        .arg(a["slot"].toInt())
+                                        .arg(offset, 0, 16)
+                                        .arg(
+                                            QString::fromLatin1(actual.mid(offset, 12).toHex()),
+                                            QString::fromLatin1(desired.mid(offset, 12).toHex()))));
+                            }
+                        }
+                    }
+                    QVERIFY2(motions == expected["motions"].toArray(),
+                             qPrintable(context + " motion"));
+                }
+                ++entranceIndex;
+            }
         } catch (const std::exception &e) {
             QFAIL(qPrintable(context + ": " + QString::fromUtf8(e.what())));
         }
@@ -180,6 +270,48 @@ class PresentationRuntimeTests : public QObject {
         QVERIFY_THROWS_EXCEPTION(Error, scene.supplyPresentationRecord(QByteArray(28, 4)));
         QVERIFY_THROWS_EXCEPTION(Error, scene.bodySpeed(30, 172, 0));
         QVERIFY_THROWS_EXCEPTION(Error, scene.bodySpeed(30, 30, 2));
+        SceneActors entrance(rom, 2, 0, [](int, float, float) { return 7.75f; });
+        QVERIFY_THROWS_EXCEPTION(Error, entrance.startEntrance());
+        entrance.supplyPresentationLaunch({64, 0, {}});
+        QVERIFY_THROWS_EXCEPTION(Error, entrance.startEntrance());
+        QVERIFY(!entrance.presentationOpacity());
+        rows.resize(20);
+        for (auto &row : rows)
+            if (row.isEmpty())
+                row = QByteArray(248, 0);
+        entrance.supplyBodyRows(rows);
+        entrance.supplyPresentationLaunch({0, -3, {}});
+        QVERIFY_THROWS_EXCEPTION(Error, entrance.startEntrance());
+        QVERIFY(entrance.presentationRecord().isEmpty());
+        entrance.supplyBodyObject(0x80330000U, object);
+        entrance.supplyBodyObject(0x80330040U, object);
+        // The override bypasses member reads; an otherwise empty roster is valid.
+        PresentationRoster roster;
+        roster.overrideFlag = 1;
+        entrance.supplyPresentationLaunch({0, -3, roster});
+        entrance.startEntrance();
+        QVERIFY(entrance.actor(0));
+        QVERIFY(entrance.actor(1));
+        QCOMPARE(entrance.presentationOpacity(), std::optional{quint8(128)});
+        SceneActors crowded(rom, 2, 0, [](int, float, float) { return 0.f; });
+        for (int i = 0; i < 27; ++i) {
+            auto occupied = before;
+            put32(occupied, 0xe4, quint32(i));
+            put8(occupied, 0x147, 255);
+            crowded.supplyActor(i, occupied);
+        }
+        put32(rows[0], 4, 0x80330040U);
+        put32(rows[0], 8, 0x80330080U);
+        crowded.supplyBodyRows(rows);
+        for (quint32 address : {0x80330000U, 0x80330040U, 0x80330080U})
+            crowded.supplyBodyObject(address, object);
+        crowded.supplyPresentationLaunch({0, 0, {}});
+        const auto occupiedBefore = crowded.actor(0)->record();
+        QVERIFY_THROWS_EXCEPTION(Error, crowded.startEntrance());
+        QVERIFY(!crowded.actor(27));
+        QVERIFY(crowded.presentationRecord().isEmpty());
+        QVERIFY(!crowded.presentationOpacity());
+        QCOMPARE(crowded.actor(0)->record(), occupiedBefore);
         SceneActors empty(rom, 2, 0);
         empty.advancePresentation();
         QVERIFY(empty.presentationRecord().isEmpty());

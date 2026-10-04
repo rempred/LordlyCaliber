@@ -14,6 +14,21 @@ struct ActorBindingInputs {
 struct BodyRegistration {
     int slot, source, owner, flagA, flagB, equipment;
 };
+struct PresentationMemberState {
+    quint16 value = 0;
+    quint8 flags = 0;
+};
+struct PresentationRoster {
+    quint8 overrideFlag = 0;
+    std::array<quint8, 2> sideGroups{};
+    // Native member tables selected by group <30 / >=30, keyed by member ID.
+    std::array<QHash<int, PresentationMemberState>, 2> members;
+};
+struct PresentationLaunch {
+    qint32 preset = 0;
+    qint8 variant = 0;
+    std::optional<PresentationRoster> roster;
+};
 class SceneActors {
   public:
     SceneActors(const Rom &rom, int mode, quint8 presentation, ActorInstance::Height height = {});
@@ -35,6 +50,13 @@ class SceneActors {
     }
     void supplyPresentationRecord(QByteArray record);
     void startReturn(int group);
+    void supplyPresentationLaunch(PresentationLaunch launch) {
+        presentationLaunch_ = std::move(launch);
+    }
+    void startEntrance();
+    std::optional<quint8> presentationOpacity() const {
+        return presentationOpacity_;
+    }
     void advancePresentation();
     float bodySpeed(int source, int owner, int direction) const;
     const QVector<BodyRegistration> &bodyRegistrations() const {
@@ -67,6 +89,8 @@ class SceneActors {
     void configureLinkedPose(ActorInstance &actor) const;
     std::array<float, 2> presentationTarget(const QByteArray &actor) const;
     void returnToBodyPosition(int slot);
+    bool presentationMemberUnavailable(const QByteArray &row) const;
+    std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial);
     Rom rom_;
     int mode_;
     quint8 presentation_;
@@ -84,5 +108,7 @@ class SceneActors {
     QVector<BodyRegistration> registrations_;
     QHash<quint32, QByteArray> bodyObjects_;
     QByteArray presentationRecord_;
+    std::optional<PresentationLaunch> presentationLaunch_;
+    std::optional<quint8> presentationOpacity_;
 };
 } // namespace lordly
