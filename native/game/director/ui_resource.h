@@ -21,6 +21,8 @@ typedef struct {
 void lordly_ui_priority(LordlyUiPool *, LordlyUiQueue *);
 /* ROM79EC..7FF8. Caller stages the pool; -1 invalid queue, -2 zero speed. */
 int lordly_ui_opening(LordlyUiPool *, const LordlyUiQueue *);
+/* One record from ROM7FF8..8380: 1 requests release, 0 keeps it, -2 zero speed. */
+int lordly_ui_closing(LordlyUiRecord *, int32_t margin);
 /* ROM735C..745C: preserves all bytes except the nine registration fields.
  * Native exhaustion loops forever; the host returns -1 without writes. */
 int lordly_ui_register(LordlyUiPool *, uint16_t flags, uint32_t initializer, uint16_t x, uint16_t y,

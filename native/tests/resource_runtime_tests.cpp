@@ -11,6 +11,61 @@ using namespace lordly;
 class ResourceRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void closingAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("ui-closing-mips.cjs"),
+             path, work.filePath("closing.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("closing.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 224);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            SceneResources pool({c["margin"].toInt(), 0, 0xffff});
+            const auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+            for (int i = 0; i < 6; ++i)
+                pool.supplyRecord(i, initial.mid(i * 168, 168));
+            int update = 0;
+            for (const auto &snapshot : c["snapshots"].toArray()) {
+                const auto expected = snapshot.toObject();
+                QJsonArray releases;
+                for (int i = 0; i < c["count"].toInt(); ++i) {
+                    const int slot = c["order"].toArray()[i].toInt();
+                    if (pool.advanceClosing(slot)) {
+                        releases.append(slot);
+                        pool.supplyRecord(slot, QByteArray(168, 0));
+                    }
+                }
+                QByteArray actual;
+                for (int i = 0; i < 6; ++i)
+                    actual += pool.record(i);
+                QVERIFY2(actual.toHex() == expected["pool"].toString().toLatin1(),
+                         qPrintable(c["id"].toString() + " update " + QString::number(update++)));
+                QCOMPARE(releases, expected["releases"].toArray());
+            }
+        }
+        SceneResources pool({1, 0, 0xffff});
+        auto record = QByteArray(168, 0);
+        put16(record, 0, 0xf000);
+        put16(record, 10, 100);
+        put16(record, 12, 100);
+        pool.supplyRecord(0, record);
+        QVERIFY_THROWS_EXCEPTION(Error, pool.advanceClosing(0));
+        QCOMPARE(pool.record(0), record);
+        put16(record, 10, 0);
+        put16(record, 12, 0);
+        pool.supplyRecord(0, record);
+        QVERIFY(pool.advanceClosing(0)); // Already closed: no division or early clearing.
+        QCOMPARE(pool.record(0), record);
+    }
     void openingAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

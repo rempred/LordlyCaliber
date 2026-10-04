@@ -1,5 +1,12 @@
 # Dialogue runtime
 
+Closing steps reconstruct ROM 7FF8..8380 at RAM 80077BF8. All 224 sequences /
+2,688 complete pool snapshots and ordered release requests pass (184 ms), with
+release controlled to record clearing. Signed margins, fractional shrinking,
+wrapping bounds and release on the following pass are retained. An already
+closed zero-speed record requests release without division; other zero-speed
+failures preserve its record. Recursive cleanup is the next separate owner.
+
 The opening queue compiles ROM 79EC..7FF8 at RAM 800775EC. All 512 sequences /
 6,144 complete pool snapshots pass (300 ms), with no controlled helpers. This
 preserves direction flags, signed extents, clipping, stored fractional byte lanes

@@ -38,6 +38,15 @@ void SceneResources::advanceOpening(const SceneResourceQueue &queue) {
                                  : "Scene resource queue exceeds the six-slot pool");
     pool_ = next;
 }
+bool SceneResources::advanceClosing(int slot) {
+    checkSlot(slot);
+    auto next = pool_.records[slot];
+    const auto result = lordly_ui_closing(&next, pool_.margin);
+    if (result < 0)
+        throw Error("Scene resource closing divides by zero speed");
+    pool_.records[slot] = next;
+    return result != 0;
+}
 int SceneResources::registerResource(quint16 flags, quint32 initializer, qint32 x, qint32 y,
                                      qint32 right, qint32 bottom, qint32 priority) {
     const int slot = lordly_ui_register(&pool_, flags, initializer, quint16(x), quint16(y),
