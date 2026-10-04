@@ -1,8 +1,10 @@
 #include "app/actor_pose_editor.h"
 #include "engine/class_data.h"
+#include "engine/scene_transforms.h"
 #include "engine/text.h"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -16,6 +18,9 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <bit>
+#include <cmath>
+#include <numbers>
 namespace lordly {
 namespace {
 struct PreviewPose {
@@ -67,7 +72,8 @@ class PoseView : public QGraphicsView {
     }
 };
 } // namespace
-ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(parent), rom_(rom) {
+ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
+    : QWidget(parent), rom_(rom), renderer_(rom) {
     auto layout = new QVBoxLayout(this);
     auto note = new QLabel(
         "Pose inspection with per-layer opacity and optional sepia. Playback speed is adjustable; "
@@ -137,6 +143,62 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     controls->addWidget(fit);
     controls->addWidget(actual);
     layout->addLayout(controls);
+    projected_ = new QCheckBox("Projected placement");
+    projected_->setObjectName("actorProjected");
+    projected_->setToolTip("Inspect native mode-zero Actor matrices with a reference camera. Scene "
+                           "commands and terrain are not executed here.");
+    layout->addWidget(projected_);
+    placementControls_ = new QWidget;
+    auto placementLayout = new QVBoxLayout(placementControls_);
+    placementLayout->setContentsMargins(0, 0, 0, 0);
+    auto placementRow = new QHBoxLayout;
+    auto number = [this](QHBoxLayout *row, const QString &label, const QString &name, double low,
+                         double high, double value) {
+        row->addWidget(new QLabel(label));
+        auto spin = new QDoubleSpinBox;
+        spin->setObjectName(name);
+        spin->setRange(low, high);
+        spin->setDecimals(3);
+        spin->setValue(value);
+        spin->setKeyboardTracking(false);
+        row->addWidget(spin);
+        connect(spin, &QDoubleSpinBox::valueChanged, this, &ActorPoseEditor::draw);
+        return spin;
+    };
+    for (int i = 0; i < 3; ++i)
+        placement_[i] = number(placementRow, QString("XYZ").mid(i, 1),
+                               QString("actorPlacement%1").arg(i), -10000, 10000, 0);
+    size_ = number(placementRow, "Scale", "actorPlacementScale", 0.01, 20, 1);
+    placementLayout->addLayout(placementRow);
+    auto cameraRow = new QHBoxLayout;
+    cameraYaw_ = number(cameraRow, "Camera angle", "actorCameraYaw", -180, 180, 0);
+    cameraHeight_ = number(cameraRow, "Height", "actorCameraHeight", -2000, 2000, 80);
+    cameraDistance_ = number(cameraRow, "Distance", "actorCameraDistance", 1, 2000, 300);
+    cameraRow->addWidget(new QLabel("Facing"));
+    facing_ = new QSpinBox;
+    facing_->setObjectName("actorPlacementFacing");
+    facing_->setRange(0, 9);
+    cameraRow->addWidget(facing_);
+    shadows_ = new QCheckBox("Shadow");
+    shadows_->setChecked(true);
+    shadows_->setObjectName("actorPlacementShadow");
+    cameraRow->addWidget(shadows_);
+    placementLayout->addLayout(cameraRow);
+    auto placementNote = new QLabel(
+        "Reference camera and preview position only. Native main/shadow matrices; Qt image "
+        "sampling. No scene lighting, custom material combiners or linked equipment.");
+    placementNote->setWordWrap(true);
+    placementLayout->addWidget(placementNote);
+    layout->addWidget(placementControls_);
+    placementControls_->hide();
+    connect(projected_, &QCheckBox::toggled, this, [this](bool enabled) {
+        placementControls_->setVisible(enabled);
+        variant_->setEnabled(!(enabled && kinds_->currentIndex() == 1));
+        fit_ = true;
+        draw();
+    });
+    connect(facing_, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
+    connect(shadows_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
     auto split = new QSplitter;
     canvas_ = new QGraphicsScene(this);
     view_ = new PoseView(canvas_);
@@ -223,6 +285,63 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent) : QWidget(pare
     });
     loadSources();
 }
+void ActorPoseEditor::selectCommand(const DirectorProgram &program, int command) {
+    stop();
+    try {
+        if (command < 0 || command >= program.commands.size() ||
+            program.commands[command].opcode != 0x14 ||
+            program.commands[command].operands.size() != 9)
+            throw Error("Select an Actor creation command");
+        const auto &args = program.commands[command].operands;
+        const int bank = qint32(args[1]), animation = qint32(args[2]), facing = qint32(args[3]);
+        if (facing < 0 || facing > 9)
+            throw Error("Actor placement requires a known facing in 0..9");
+        const auto art = ActorArt::load(rom_, bank);
+        const int state = art.resolve(animation, facing);
+        for (int i = 0; i < 3; ++i) {
+            const double value = double(qint32(args[4 + i])) / 1000.;
+            if (value < placement_[i]->minimum() || value > placement_[i]->maximum())
+                throw Error("Actor command position exceeds the placement inspector range");
+        }
+        kinds_->setCurrentIndex(0);
+        banks_->setCurrentIndex(banks_->findData(bank));
+        poses_->setCurrentIndex(poses_->findData(state));
+        variant_->setValue(quint8(args[8]));
+        for (int i = 0; i < 3; ++i) {
+            const QSignalBlocker block(placement_[i]);
+            placement_[i]->setValue(double(qint32(args[4 + i])) / 1000.);
+        }
+        {
+            const QSignalBlocker block(facing_);
+            facing_->setValue(facing);
+        }
+        size_->setValue(1.);
+        const bool modeZero = program.resourceClass() == 4 || program.resourceClass() == 5;
+        projected_->setChecked(modeZero);
+        restart();
+        {
+            const QSignalBlocker block(facing_);
+            facing_->setValue(facing);
+        }
+        seek(1);
+        status_->setText(
+            status_->text() +
+            QString(" Actor creation at word %1. %2")
+                .arg(program.commands[command].word)
+                .arg(modeZero ? "Command coordinates use the reference camera above; scene cameras "
+                                "and terrain are separate."
+                              : "Pose inspection only; this scene's placement path is separate."));
+        setProperty("inspectedActorCommand", command);
+    } catch (const std::exception &e) {
+        player_.reset();
+        items_.clear();
+        canvas_->clear();
+        layers_->clear();
+        setProperty("placementFrame", QImage());
+        setProperty("inspectedActorCommand", -1);
+        status_->setText(QString::fromUtf8(e.what()));
+    }
+}
 void ActorPoseEditor::stop() {
     play_->setChecked(false);
     timer_->stop();
@@ -230,6 +349,10 @@ void ActorPoseEditor::stop() {
 void ActorPoseEditor::loadSources() {
     stop();
     const bool body = kinds_->currentIndex() == 1;
+    projected_->setEnabled(kinds_->currentIndex() != 2);
+    if (kinds_->currentIndex() == 2)
+        projected_->setChecked(false);
+    variant_->setEnabled(!(projected_->isChecked() && body));
     owners_->setEnabled(body);
     flags_->setEnabled(body);
     try {
@@ -306,6 +429,14 @@ void ActorPoseEditor::restart() {
         if (art_->isBody())
             std::get<ActorPosePlayer>(*player_).setLinkedObjectKnownAbsent(true);
     }
+    if (!art_->isBody() && kinds_->currentIndex() != 2) {
+        for (const auto &selection : art_->selections())
+            if (selection.state == poses_->currentData().toInt()) {
+                const QSignalBlocker block(facing_);
+                facing_->setValue(selection.facing);
+                break;
+            }
+    }
     step_ = 0;
     {
         QSignalBlocker block(position_);
@@ -358,9 +489,14 @@ void ActorPoseEditor::draw() {
     canvas_->clear();
     layers_->clear();
     selection_->clear();
+    setProperty("placementFrame", QImage());
     if (!player_)
         return;
     try {
+        if (projected_->isChecked()) {
+            drawProjected();
+            return;
+        }
         const auto a = preview(*player_);
         const auto frame = art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked());
         QRectF bounds;
@@ -431,6 +567,87 @@ void ActorPoseEditor::draw() {
         stop();
         status_->setText(QString::fromUtf8(e.what()));
     }
+}
+void ActorPoseEditor::drawProjected() {
+    const auto &runtime = std::get<ActorPosePlayer>(*player_);
+    auto pose = runtime.actor();
+    pose.position.x += float(placement_[0]->value());
+    pose.position.y += float(placement_[1]->value());
+    pose.position.z += float(placement_[2]->value());
+    LordlyActorRecord raw{};
+    lordly_actor_write_pose(&raw, &pose);
+    QByteArray record(reinterpret_cast<const char *>(raw.bytes), 336);
+    for (int i = 0; i < 3; ++i) {
+        put32(record, 0x104 + i * 4, std::bit_cast<quint32>(float(size_->value())));
+        put8(record, 0x142 + i, 255);
+    }
+    put8(record, 0x13c, 255);
+    put8(record, 0x13f, quint8(facing_->value()));
+    put32(record, 0x130, std::bit_cast<quint32>(1.f));
+    auto camera = [](float fov, float x, float y, float z) {
+        const float values[]{fov, 4.f / 3, 1, 20000, 1, x, y, z, 0, 0, 0, 0, 1, 0};
+        QByteArray bank(56, 0);
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+        return SceneCamera(bank, 1.f);
+    };
+    const auto angle = cameraYaw_->value() * std::numbers::pi / 180.;
+    const auto registered =
+        camera(45, float(std::sin(angle) * cameraDistance_->value()), float(cameraHeight_->value()),
+               float(std::cos(angle) * cameraDistance_->value()));
+    const auto actorCamera = camera(90, 0, 0, 120);
+    SceneTransforms channels;
+    channels.prepareMatrices(rom_, actorCamera, 1);
+    const auto matrices = ActorMatrices::prepare(rom_, record, channels.channel(0), registered);
+    record.replace(0x20, 64, matrices.shadow);
+    record.replace(0x60, 64, matrices.shadow);
+    record.replace(0xa0, 64, matrices.matrix);
+    QVector<ActorRasterLayer> projected;
+    if (shadows_->isChecked())
+        projected += renderer_.projectRecord(*art_, record, true, actorCamera, {255, 255, 255},
+                                             sepia_->isChecked());
+    projected += renderer_.projectRecord(*art_, record, false, actorCamera, {255, 255, 255},
+                                         sepia_->isChecked());
+    QImage combined(320, 240, QImage::Format_RGBA8888);
+    combined.fill(Qt::transparent);
+    ActorRenderer::paint(combined, projected);
+    for (const auto &layer : projected) {
+        QImage image(320, 240, QImage::Format_RGBA8888);
+        image.fill(Qt::transparent);
+        ActorRenderer::paint(image, {layer});
+        auto item = canvas_->addPixmap(QPixmap::fromImage(image));
+        item->setFlag(QGraphicsItem::ItemIsSelectable);
+        item->setZValue(items_.size());
+        items_ << item;
+        auto row = new QListWidgetItem(
+            QString("%1 %2").arg(layer.shadow ? "Shadow layer" : "Layer").arg(layer.layer),
+            layers_);
+        row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
+        row->setCheckState(Qt::Checked);
+        row->setToolTip(QString("Primitive RGBA %1, %2, %3, %4; %5 clipped corners")
+                            .arg(layer.primitive[0])
+                            .arg(layer.primitive[1])
+                            .arg(layer.primitive[2])
+                            .arg(layer.primitive[3])
+                            .arg(layer.plane.clip.size()));
+    }
+    canvas_->setSceneRect(0, 0, 320, 240);
+    if (fit_) {
+        view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
+        fit_ = false;
+    }
+    setProperty("placementFrame", combined);
+    setProperty("frameToken", pose.frame);
+    setProperty("poseCursor", pose.cursor);
+    setProperty("poseDelay", pose.delay);
+    status_->setText(QString("Step %1 - frame %2 - projected position %3, %4, %5 - %6 layers. "
+                             "Reference camera; scene playback is separate.")
+                         .arg(step_)
+                         .arg(pose.frame)
+                         .arg(pose.position.x)
+                         .arg(pose.position.y)
+                         .arg(pose.position.z)
+                         .arg(projected.size()));
 }
 int ActorPoseEditor::advancePose() {
     return std::visit([](auto &runtime) { return runtime.advance(); }, *player_);

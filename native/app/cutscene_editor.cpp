@@ -216,21 +216,28 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         });
     } else
         pages->addTab(commands_, "Source commands");
-    pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
+    auto actorInspector = new ActorPoseEditor(rom_);
+    pages->addTab(actorInspector, "Pose inspector");
     transformPreview_ = new TransformPreview(rom_);
     pages->addTab(transformPreview_, "Transform preview");
     auto dialogue =
         project ? new DialogueInspector(project, undo, changed) : new DialogueInspector(rom_);
     pages->addTab(dialogue, "Dialogue");
-    commands_->setToolTip("Double-click a dialogue or transform command to preview it.");
+    commands_->setToolTip(
+        "Double-click an Actor creation, dialogue or transform command to preview it.");
     connect(commands_, &QTableWidget::cellDoubleClicked, this,
-            [this, pages, dialogue](int row, int) {
+            [this, pages, dialogue, actorInspector](int row, int) {
                 if (!directors_ || !scenes_->currentItem())
                     return;
                 const auto program = programs().program(selectedScene());
                 if (row < 0 || row >= program.commands.size())
                     return;
                 const auto &command = program.commands[row];
+                if (command.opcode == 0x14) {
+                    actorInspector->selectCommand(program, row);
+                    pages->setCurrentWidget(actorInspector);
+                    return;
+                }
                 if (command.opcode == 8) {
                     transformPreview_->selectCommand(program, row);
                     pages->setCurrentWidget(transformPreview_);

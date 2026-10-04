@@ -153,6 +153,71 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void projectedActorPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        ActorPoseEditor editor(Rom::open(path));
+        editor.resize(1250, 950);
+        editor.show();
+        auto banks = editor.findChild<QComboBox *>("actorBank"),
+             poses = editor.findChild<QComboBox *>("actorPose");
+        auto projected = editor.findChild<QCheckBox *>("actorProjected"),
+             shadow = editor.findChild<QCheckBox *>("actorPlacementShadow");
+        auto x = editor.findChild<QDoubleSpinBox *>("actorPlacement0"),
+             yaw = editor.findChild<QDoubleSpinBox *>("actorCameraYaw");
+        auto position = editor.findChild<QSpinBox *>("actorPosition");
+        auto layers = editor.findChild<QListWidget *>("actorLayers");
+        QVERIFY(banks && poses && projected && shadow && x && yaw && position && layers);
+        banks->setCurrentIndex(banks->findData(30));
+        poses->setCurrentIndex(poses->findData(12));
+        position->setValue(1);
+        projected->setChecked(true);
+        auto image = [&] { return editor.property("placementFrame").value<QImage>(); };
+        auto center = [](const QImage &frame) {
+            double sum = 0, weight = 0;
+            for (int y = 0; y < frame.height(); ++y)
+                for (int x = 0; x < frame.width(); ++x) {
+                    const auto a = frame.pixelColor(x, y).alpha();
+                    sum += x * a;
+                    weight += a;
+                }
+            return weight > 0 ? sum / weight : -1.;
+        };
+        QVERIFY(!image().isNull());
+        QVERIFY(center(image()) >= 0);
+        QVERIFY(layers->count() > 1);
+        const auto first = image();
+        const auto initialCenter = center(first);
+        x->setValue(30);
+        QVERIFY(center(image()) > initialCenter + 10);
+        x->setValue(0);
+        QCOMPARE(image(), first);
+        yaw->setValue(35);
+        QVERIFY(image() != first);
+        yaw->setValue(0);
+        QCOMPARE(image(), first);
+        position->setValue(8);
+        position->setValue(1);
+        QCOMPARE(image(), first);
+        const int withShadow = layers->count();
+        shadow->setChecked(false);
+        QCOMPARE(layers->count() * 2, withShadow);
+        QVERIFY(image() != first);
+        shadow->setChecked(true);
+        QCOMPARE(image(), first);
+        layers->setCurrentRow(0);
+        auto view = editor.findChild<QGraphicsView *>("actorCanvas");
+        QCOMPARE(view->scene()->selectedItems().size(), 1);
+        auto selectedLayer = view->scene()->selectedItems().first();
+        layers->item(0)->setCheckState(Qt::Unchecked);
+        QVERIFY(!selectedLayer->isVisible());
+        layers->item(0)->setCheckState(Qt::Checked);
+        QTest::qWait(25);
+        QVERIFY(editor.grab().save("projected-actor-preview.png"));
+        projected->setChecked(false);
+        QVERIFY(layers->count() > 0);
+    }
     void actorPosePreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -975,6 +1040,47 @@ class UiTests : public QObject {
             }
         }
         QVERIFY(foundTransform);
+        bool foundActor = false;
+        const auto actorInspector = editor.findChild<ActorPoseEditor *>();
+        QVERIFY(actorInspector);
+        for (const auto &resource : catalog.entries()) {
+            if (foundActor)
+                break;
+            if (resource.program.resourceClass() != 4 && resource.program.resourceClass() != 5)
+                continue;
+            for (int i = 0; i < resource.program.commands.size(); ++i) {
+                const auto &command = resource.program.commands[i];
+                if (command.opcode != 0x14 || command.operands.size() != 9)
+                    continue;
+                const auto &args = command.operands;
+                if (args[1] < 1 || args[1] > 68 || qint32(args[2]) < 0 || args[3] > 9)
+                    continue;
+                bool inRange = true;
+                for (int axis = 0; axis < 3; ++axis)
+                    inRange &= qAbs(double(qint32(args[4 + axis])) / 1000.) <= 10000;
+                if (!inRange)
+                    continue;
+                QVERIFY(selectScene(resource.key));
+                commands->cellDoubleClicked(i, 1);
+                QCOMPARE(pages->currentWidget(), actorInspector);
+                QVERIFY2(actorInspector->property("inspectedActorCommand").toInt() == i,
+                         qPrintable(actorInspector->findChild<QLabel *>("actorStatus")->text()));
+                QCOMPARE(actorInspector->findChild<QComboBox *>("actorBank")->currentData().toInt(),
+                         qint32(args[1]));
+                for (int axis = 0; axis < 3; ++axis)
+                    QCOMPARE(
+                        actorInspector
+                            ->findChild<QDoubleSpinBox *>(QString("actorPlacement%1").arg(axis))
+                            ->value(),
+                        double(qint32(args[4 + axis])) / 1000.);
+                QCOMPARE(actorInspector->findChild<QSpinBox *>("actorPlacementFacing")->value(),
+                         qint32(args[3]));
+                QVERIFY(actorInspector->findChild<QCheckBox *>("actorProjected")->isChecked());
+                foundActor = true;
+                break;
+            }
+        }
+        QVERIFY(foundActor);
         QVERIFY(selectScene(0x19aa852));
         pages->setCurrentIndex(0);
         QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),

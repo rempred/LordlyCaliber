@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Actor layer rendering and placement inspection
+
+ActorRenderer projects decoded ordinary and class-body layers using the packed
+main/shadow matrices, inclusive signed16 vertices and packed per-layer scale.
+Primitive color follows ROM29EAFC..29EE18, including the red-only global-color
+sentinel and the distinct main/shadow opacity rules. The class-size choice adapts
+accepted func_00043d1c.c (43d43ddd); size2 uses the current-ROM 1.1 multiplier.
+Body images use the resolved body-handle variant, separately from body flags.
+Decoded frames share a bounded64 MiB cache. Qt performs clipping, sampling and
+blending; custom RDP material combiners and linked equipment remain separate.
+
+The Pose inspector now offers reference-camera placement, scale, facing and
+shadow controls, with layer selection/visibility and repeatable backward seeks.
+Double-clicking an Actor creation command selects its bank, animation, variant,
+coordinates and facing. Mode-zero commands enable projected placement; other
+scene modes open pose inspection. This does not execute scene cameras or terrain.
+
+scene_runtime_tests actorPrimitiveColorsAgainstMips actorLayerProjectionAndComposition
+actorRendererUsesBodyVariant passes (196ms).216 primitive-color cases execute the
+original callback prefix with metadata/texture services controlled. Independent
+geometry, alpha, overlap and malformed-input checks cover the desktop compositor;
+a real class-body case distinguishes its image variant from its body flag.
+ui_tests projectedActorPreview cutsceneCatalogSelection actorPosePreview passes
+(1806ms), covering pixel movement, camera changes, seek restoration, shadow/layer
+controls and real-command navigation. The rendered panel was inspected. These
+checks establish the bounded inspector, not full scene or RSP/RDP pixel accuracy.
+
 ## Scene depth queues and mode-zero draw passes
 
 SceneDrawQueue reconstructs ROM29D634 construction,29D4F0 flattened-camera depth,

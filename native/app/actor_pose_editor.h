@@ -1,10 +1,13 @@
 #pragma once
 #include "engine/actor_pose.h"
+#include "engine/actor_renderer.h"
+#include "engine/director.h"
 #include "engine/sprite_pose.h"
 #include <QWidget>
 #include <optional>
 #include <variant>
 class QCheckBox;
+class QDoubleSpinBox;
 class QComboBox;
 class QSpinBox;
 class QLabel;
@@ -19,6 +22,7 @@ class ActorPoseEditor : public QWidget {
     Q_OBJECT
   public:
     explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
+    void selectCommand(const DirectorProgram &, int command);
 
   private:
     void loadSources();
@@ -27,11 +31,18 @@ class ActorPoseEditor : public QWidget {
     void seek(int step);
     void step();
     void draw();
+    void drawProjected();
     void stop();
     int advancePose();
     bool suspendedPose() const;
     QString poseError() const;
     Rom rom_;
+    ActorRenderer renderer_;
+    QCheckBox *projected_, *shadows_;
+    QWidget *placementControls_;
+    std::array<QDoubleSpinBox *, 3> placement_;
+    QDoubleSpinBox *size_, *cameraYaw_, *cameraHeight_, *cameraDistance_;
+    QSpinBox *facing_;
     std::optional<ActorArt> art_;
     std::optional<std::variant<ActorPosePlayer, SpritePosePlayer>> player_;
     QCheckBox *sepia_;

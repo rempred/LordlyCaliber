@@ -1,0 +1,37 @@
+#pragma once
+#include "engine/actor_instance.h"
+#include "engine/class_data.h"
+#include <QCache>
+#include <QImage>
+namespace lordly {
+struct ActorRasterLayer {
+    int slot = 0, layer = 0;
+    bool shadow = false;
+    std::array<quint8, 4> primitive{};
+    QImage image;
+    CameraPlane plane;
+};
+// Desktop projection/composition of decoded Actor layers. The game matrix,
+// primitive-color and geometry rules are retained; Qt samples and blends pixels.
+// Custom RDP combiner programs and linked equipment are separate render owners.
+class ActorRenderer {
+  public:
+    explicit ActorRenderer(Rom rom) : rom_(std::move(rom)), frames_(64 * 1024) {}
+    QVector<ActorRasterLayer> project(const ActorInstance &, bool shadow, const SceneCamera &,
+                                      const std::array<qint16, 3> &globalRgb, bool sepia = false);
+    QVector<ActorRasterLayer> projectRecord(const ActorArt &, const QByteArray &, bool shadow,
+                                            const SceneCamera &,
+                                            const std::array<qint16, 3> &globalRgb,
+                                            bool sepia = false);
+    static ActorRasterLayer projectLayer(const ActorFrameLayer &, const QByteArray &actor,
+                                         int layer, bool shadow, const SceneCamera &,
+                                         const std::array<qint16, 3> &globalRgb,
+                                         double bodyMultiplier = 1.);
+    static void paint(QImage &destination, const QVector<ActorRasterLayer> &);
+
+  private:
+    Rom rom_;
+    QCache<QString, QVector<ActorFrameLayer>> frames_;
+    std::optional<ClassData> classes_;
+};
+} // namespace lordly

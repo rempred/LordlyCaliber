@@ -1,8 +1,10 @@
 #include "engine/actor_matrices.h"
+#include "engine/actor_renderer.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
+#include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
 #include "game/director/scene_schedule.h"
 #include <QDir>
@@ -129,6 +131,140 @@ class SceneRuntimeTests : public QObject {
         QVERIFY_THROWS_EXCEPTION(Error, scene.drawQueue(QVector<QByteArray>(257), layout));
         scene.setMode(0);
         QCOMPARE(queue.record(), scene.drawQueue({}, layout).record());
+    }
+    void actorPrimitiveColorsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("actor-render-mips.cjs"), path, work.filePath("colors.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("colors.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 216);
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            const auto actor = QByteArray::fromHex(row["actor"].toString().toLatin1());
+            const auto globals = row["global"].toArray();
+            int16_t rgb[]{int16_t(globals[0].toInt()), int16_t(globals[1].toInt()),
+                          int16_t(globals[2].toInt())};
+            uint8_t rgba[4]{};
+            QVERIFY(lordly_actor_primitive(
+                rgba, reinterpret_cast<const uint8_t *>(actor.constData()), 0,
+                uint8_t(row["alpha"].toInt()), uint8_t(row["shadow"].toInt()), rgb));
+            const quint32 color =
+                quint32(rgba[0]) << 24 | quint32(rgba[1]) << 16 | quint32(rgba[2]) << 8 | rgba[3];
+            QCOMPARE(color, quint32(row["color"].toDouble()));
+        }
+    }
+    void actorLayerProjectionAndComposition() {
+        QByteArray bank(56, 0);
+        const float values[]{90, 4.f / 3, 1, 1000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+        SceneCamera camera(bank, 1.f);
+        QByteArray actor(336, 0);
+        for (int at : {0x20, 0xa0})
+            for (int i = 0; i < 4; ++i)
+                put16(actor, at + i * 10, 1);
+        put8(actor, 0, 128);
+        put8(actor, 0x13c, 64);
+        put8(actor, 0x142, 128);
+        put8(actor, 0x143, 255);
+        put8(actor, 0x144, 64);
+        ActorFrameLayer frame;
+        frame.metadata = {0, {-8, -16}, 16, 16, 0, 1024, 1024};
+        frame.pixels.image = {16, 16, QByteArray(16 * 16 * 4, 0)};
+        for (int i = 0; i < 16 * 16; ++i) {
+            put8(frame.pixels.image.rgba, i * 4, 200);
+            put8(frame.pixels.image.rgba, i * 4 + 1, 100);
+            put8(frame.pixels.image.rgba, i * 4 + 2, 50);
+            put8(frame.pixels.image.rgba, i * 4 + 3, 255);
+        }
+        const auto main =
+            ActorRenderer::projectLayer(frame, actor, 0, false, camera, {255, 255, 255});
+        const auto shadow =
+            ActorRenderer::projectLayer(frame, actor, 0, true, camera, {255, 255, 255});
+        const QVector<QPointF> expected{{152, 104}, {167, 104}, {167, 119}, {152, 119}};
+        QCOMPARE(main.plane.clip.size(), 4);
+        for (int i = 0; i < 4; ++i)
+            QVERIFY(QLineF(main.plane.clip[i], expected[i]).length() < 0.0001);
+        QCOMPARE(main.image.pixelColor(0, 0), QColor(100, 100, 12, 128));
+        QCOMPARE(shadow.image.pixelColor(0, 0), QColor(0, 0, 0, 32));
+        QImage composed(320, 240, QImage::Format_RGBA8888);
+        composed.fill(Qt::transparent);
+        ActorRenderer::paint(composed, {main});
+        QCOMPARE(composed.pixelColor(150, 110).alpha(), 0);
+        QVERIFY(composed.pixelColor(155, 110).alpha() > 0);
+        auto foreground = main;
+        foreground.image.fill(QColor(10, 20, 240, 255));
+        ActorRenderer::paint(composed, {foreground});
+        QCOMPARE(composed.pixelColor(155, 110), QColor(10, 20, 240, 255));
+        auto invalid = frame;
+        invalid.metadata.width = 17;
+        QVERIFY_THROWS_EXCEPTION(
+            Error, ActorRenderer::projectLayer(invalid, actor, 0, false, camera, {255, 255, 255}));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, ActorRenderer::projectLayer(frame, actor, 16, false, camera, {255, 255, 255}));
+        QByteArray classes(144, 0);
+        put8(classes, 4, 2);
+        put8(classes, 72 + 4, 1);
+        put8(classes, 69, 1);
+        uint8_t size = 0;
+        QVERIFY(lordly_actor_render_class_size(
+            reinterpret_cast<const uint8_t *>(classes.constData()), 2, 0, 1, &size));
+        QCOMPARE(size, 2);
+        put8(classes, 69, 0);
+        QVERIFY(lordly_actor_render_class_size(
+            reinterpret_cast<const uint8_t *>(classes.constData()), 2, 0, 1, &size));
+        QCOMPARE(size, 1);
+        QVERIFY(!lordly_actor_render_class_size(
+            reinterpret_cast<const uint8_t *>(classes.constData()), 2, 2, 0, &size));
+    }
+    void actorRendererUsesBodyVariant() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto camera = SceneCameras::freshModeTwo(rom).actor();
+        ActorRenderer renderer(rom);
+        bool found = false;
+        for (int source = 1; source < 165 && !found; ++source) {
+            ActorArt art = ActorArt::loadBody(rom, source, source, 0, 0);
+            if (!art.bodyVariant())
+                continue;
+            const auto frame = art.frame(rom, 0, art.bodyVariant()), wrong = art.frame(rom, 0, 0);
+            if (frame.isEmpty() || wrong.isEmpty() ||
+                frame[0].pixels.image.rgba == wrong[0].pixels.image.rgba)
+                continue;
+            QByteArray record(336, 0);
+            for (int i = 0; i < 16; ++i)
+                put8(record, i, 255);
+            for (int i = 0; i < 3; ++i)
+                put8(record, 0x142 + i, 255);
+            for (int i = 0; i < 4; ++i)
+                put16(record, 0xa0 + i * 10, 1);
+            put32(record, 0xe8, source);
+            put32(record, 0xec, source);
+            put8(record, 0x13d, 1);
+            ActorInstance actor(rom, record);
+            const auto rendered = renderer.project(actor, false, camera, {255, 255, 255});
+            QCOMPARE(rendered.size(), frame.size());
+            const auto &r = frame[0].pixels.image;
+            const QImage expected(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width,
+                                  r.height, r.width * 4, QImage::Format_RGBA8888);
+            QCOMPARE(rendered[0].image, expected);
+            const auto cached = renderer.project(actor, false, camera, {255, 255, 255});
+            QCOMPARE(cached[0].image, expected);
+            qInfo() << "Body image variant" << art.bodyVariant() << "from class" << source
+                    << "retained across cached redraw";
+            found = true;
+        }
+        QVERIFY(found);
     }
     void actorMainMatricesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

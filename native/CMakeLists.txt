@@ -47,7 +47,7 @@ target_sources(lordly_engine PRIVATE engine/actor_materials.cpp game/director/ac
 target_sources(lordly_engine PRIVATE engine/actor_divider.cpp game/director/actor_divider.c)
 target_sources(lordly_engine PRIVATE engine/scene_transforms.cpp game/director/scene_transform.c)
 target_sources(lordly_engine PRIVATE game/director/scene_matrix.c)
-target_sources(lordly_engine PRIVATE engine/actor_matrices.cpp game/director/actor_matrices.c)
+target_sources(lordly_engine PRIVATE engine/actor_matrices.cpp game/director/actor_matrices.c game/director/actor_render.c engine/actor_renderer.cpp)
 target_sources(lordly_engine PRIVATE engine/scene_actor_drawing.cpp)
 
 target_sources(lordly_engine PRIVATE engine/scene_draw_queue.cpp game/director/scene_draw_queue.c)
@@ -93,7 +93,7 @@ qt_add_resources(lordly_engine encounter_sources PREFIX "/" BASE . FILES game/en
 qt_add_resources(lordly_engine encounter_labels PREFIX "/" BASE . FILES game/encounters/labels.json)
 qt_add_resources(lordly_engine consumable_sources PREFIX "/" BASE . FILES game/consumables/effects.json game/consumables/effects.s)
 qt_add_resources(lordly_engine shop_sources PREFIX "/" BASE . FILES game/shops/owners.json game/shops/producer.s game/shops/consumers.s)
-target_link_libraries(lordly_engine PUBLIC Qt6::Core PRIVATE Qt6::Qml)
+target_link_libraries(lordly_engine PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Qml)
 target_sources(lordly_engine PRIVATE engine/scene_document_compiler.cpp engine/scene_import.cpp)
 qt_add_resources(lordly_engine legacy_scene_catalog PREFIX "/" BASE . FILES game/director/legacy-scenes.json)
 qt_add_resources(lordly_engine legacy_scene_compiler PREFIX "/legacy" BASE .. FILES ../cutscene-model.js ../cutscene-director.js ../cutscene-codec.js)
