@@ -738,6 +738,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(plan.sites.size());
     }
     if (p.scenePrograms() && p.scenePrograms()->modified()) {
+        p.scenePrograms()->validateReferences(Rom::fromBytes(result.image),
+                                              p.dialogues() ? &*p.dialogues() : nullptr);
         auto plan = p.scenePrograms()->plan();
         for (auto it = plan.begin(); it != plan.end(); ++it)
             it.value() =

@@ -11,7 +11,12 @@ Edits belong to physical resources, so selector aliases remain shared. Framing
 uses the maintained-C-derived command widths. The terminal command and resource
 class remain intact. Unknown operand values and untouched commands are preserved;
 this is a source-command editor, not a complete semantic validator for every game
-service. Context-sensitive references still need their native execution context.
+service. Export checks changed static scene/continuation selectors, dialogue entry
+references (including project additions), labels using the accepted C word-wise
+scanner, and class-4/5 background groups and member bounds. Missing targets reject
+with their scene key and command word. Existing unresolved references remain intact;
+launch substitutions still require their native execution context. The reference
+check and public export regression pass together (3,449 ms).
 Background resolution and dialogue navigation consume the edited program.
 
 Project manifests store changed programs as exact big-endian bytes. Export compiles

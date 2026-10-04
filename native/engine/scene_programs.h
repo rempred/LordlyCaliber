@@ -2,6 +2,7 @@
 #include "engine/director.h"
 #include <QJsonObject>
 namespace lordly {
+class Dialogues;
 // Edits are attached to physical resources: all existing selector aliases share
 // one program, as they do in the loaded ROM.
 class ScenePrograms {
@@ -17,6 +18,7 @@ class ScenePrograms {
     void removeCommand(quint32 key, int command);
     void replace(quint32 key, const QByteArray &);
     void restore(quint32 key);
+    void validateReferences(const Rom &, const Dialogues *dialogues = nullptr) const;
     QJsonObject json() const;
     void apply(const QJsonObject &);
     const QMap<quint32, QByteArray> &plan() const {

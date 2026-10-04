@@ -44,6 +44,67 @@ static int queryService(void *context, LordlyDirectorWord opcode, const LordlyDi
 class DirectorTests : public QObject {
     Q_OBJECT
   private slots:
+    void changedSceneReferences() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 key = 0;
+        for (const auto &resource : scenes.original().entries())
+            if (resource.program.resourceClass() == 5) {
+                key = resource.key;
+                break;
+            }
+        QVERIFY(key);
+        auto replace = [&](std::initializer_list<quint32> values) {
+            QByteArray bytes;
+            for (auto value : values) {
+                const auto at = bytes.size();
+                bytes.resize(at + 4);
+                put32(bytes, at, value);
+            }
+            scenes.replace(key, bytes);
+        };
+        replace({0x80000003, 0, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x80000003, 319, 0x80000001, 0xff000005});
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom));
+        replace({0x80000003, 0x088800ff, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom); // Runtime launch substitution remains explicit.
+        replace({0x99, 0, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x99, 254, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x99, 255, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x99, 5, 0x80000001, 0xff000005});
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom));
+        replace({0x59, 54321, 0x80000005, 54321, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x59, 54321, 0x80000001, 0xff000005});
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom));
+        replace({0x80000006, 22, 0x80000001, 0xff000005});
+        scenes.validateReferences(rom);
+        replace({0x80000006, 9999, 0x80000001, 0xff000005});
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom));
+        auto dialogues = Dialogues::load(rom);
+        const auto added = dialogues.appendEntry(Dialogues::Table::Primary, 0, "New dialogue@s@c");
+        replace({0xbf, 0, 0, quint32(added), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80000001, 0xff000005});
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom));
+        scenes.validateReferences(rom, &dialogues);
+        scenes.setOperand(key, 0, 2, 0x8000);
+        scenes.validateReferences(rom, &dialogues);
+        scenes.setOperand(key, 0, 2, 0x4000);
+        QVERIFY_THROWS_EXCEPTION(Error, scenes.validateReferences(rom, &dialogues));
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (!tools.isEmpty()) {
+            auto project = Project::fromRom(rom);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(project, tools, work.path()));
+        }
+    }
     void sceneEditingAndDynamicExport() {
         QString phase = "model editing";
         try {
