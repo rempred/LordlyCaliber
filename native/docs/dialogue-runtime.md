@@ -1,5 +1,14 @@
 # Dialogue runtime
 
+Line measurement reconstructs ROM E9528..E98BC at RAM 8019C7A8. All 32,305
+original-instruction comparisons pass for retail entries and boundary sources
+across seven column limits. The original recursive scanner and classifier run;
+names and the long-name suffix are explicit test inputs. Insertions count raw
+glyph units, including the raw-byte limit for `@&`, while page breaks retain the
+maximum line count. The host query keeps helper cursor publications local.
+Missing/truncated input and budget exhaustion reject. The line/scanner checks
+passed together in 5,752 ms. Pixel measurement and rendering remain separate.
+
 The bounded segment scanner reconstructs ROM E9EB0..EA184 at RAM 8019D130.
 All 23,070 original-instruction comparisons pass (938 ms): 4,569 retail sources
 and 45 boundary sources at five column limits, comparing count, cursor, stopping

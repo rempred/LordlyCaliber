@@ -5,8 +5,9 @@
 #include <algorithm>
 #include <functional>
 namespace lordly {
-DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
-                                        const QHash<int, QByteArray> &substitutions, int budget) {
+namespace {
+DialogueSegmentScan scanSegment(const QByteArray &source, quint16 columns,
+                                const QHash<int, QByteArray> &substitutions, int &budget) {
     if (budget < 1)
         throw Error("Dialogue segment budget must be positive");
     std::function<DialogueSegmentScan(const QByteArray &, int)> scan;
@@ -111,6 +112,139 @@ DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 column
         return {quint16(count), at - (stop == 0 ? 1U : 0U), stop, true};
     };
     return scan(source, 0);
+}
+} // namespace
+DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
+                                        const QHash<int, QByteArray> &substitutions, int budget) {
+    return scanSegment(source, columns, substitutions, budget);
+}
+quint16 countDialogueLines(const QByteArray &source, quint16 columns,
+                           const QHash<int, QByteArray> &substitutions,
+                           const QByteArray &longNameSuffix, int budget) {
+    if (source.isNull() || budget < 1)
+        throw Error("Dialogue line measurement requires text and a positive budget");
+    quint32 at = 0, column = 0, lines = 1, maximum = 1;
+    auto read = [&](const QByteArray &text, quint32 &cursor) {
+        if (--budget < 0)
+            throw Error("Dialogue line measurement exceeded its budget");
+        return u8(text, cursor++);
+    };
+    auto next = [&] { return read(source, at); };
+    auto skip = [&](const QByteArray &text, quint32 &cursor, quint32 bytes) {
+        if (bytes > quint64(text.size()) || cursor > quint64(text.size()) - bytes)
+            throw Error("Dialogue line control exceeds its source");
+        cursor += bytes;
+    };
+    auto glyph = [&] {
+        ++column;
+        if (quint16(column) > columns) {
+            column = 1;
+            ++lines;
+        }
+    };
+    auto lookup = [&](int index) -> const QByteArray & {
+        const auto found = substitutions.constFind(index);
+        if (found == substitutions.constEnd())
+            throw Error(QString("Dialogue substitution byte %1 is unavailable").arg(index));
+        return found.value();
+    };
+    auto insert = [&](const QByteArray &text, quint32 cursor, quint8 limit) {
+        if (text.isNull())
+            return;
+        quint32 used = 0;
+        do {
+            const auto c = read(text, cursor);
+            if (!c)
+                return;
+            if (lordly_text_lead_byte(c))
+                skip(text, cursor, 1);
+            glyph();
+        } while (quint8(++used) < limit);
+    };
+    for (;;) {
+        const auto c = next();
+        if (!c)
+            return std::max(quint16(maximum), quint16(lines));
+        if (lordly_text_lead_byte(c)) {
+            skip(source, at, 1);
+            glyph();
+        } else if (c != '@')
+            glyph();
+        else {
+            switch (next()) {
+            case 'c':
+            case '/':
+                maximum = std::max(quint16(maximum), quint16(lines));
+                column = 0;
+                lines = 1;
+                break;
+            case 'n':
+                column = 100;
+                if (columns < 100) {
+                    column = 0;
+                    ++lines;
+                }
+                break;
+            case '%':
+                insert(lookup(next()), 0, 99);
+                break;
+            case '&': {
+                const auto &text = lookup(next());
+                const auto limit = next(); // Raw byte, unlike the segment scanner.
+                insert(text, 0, limit);
+                break;
+            }
+            case '!': {
+                const auto &text = lookup(next());
+                const auto length = scanSegment(text, columns, substitutions, budget).count;
+                constexpr quint8 limited[] = {0, 1, 1, 2, 3};
+                const auto limit = length < 5 ? limited[length] : quint8(4);
+                if (limit)
+                    insert(text, 0, limit);
+                break;
+            }
+            case 'z': {
+                const auto &text = lookup(next());
+                if (text.isNull())
+                    break;
+                quint32 cursor = 0, last = 0, characters = 0;
+                for (;;) {
+                    const auto begin = cursor;
+                    const auto ch = read(text, cursor);
+                    if (!ch)
+                        break;
+                    last = begin;
+                    if (lordly_text_lead_byte(ch))
+                        skip(text, cursor, 1);
+                    ++characters;
+                }
+                if (quint16(characters) >= 2)
+                    insert(text, last, 99);
+                break;
+            }
+            case ':':
+                if (scanSegment(lookup(next()), columns, substitutions, budget).count >= 6)
+                    insert(longNameSuffix, 0, 99);
+                break;
+            case '<':
+            case 'F':
+            case 'T':
+            case 'e':
+            case 'f':
+            case 't':
+                skip(source, at, 3);
+                break;
+            case 'w':
+                skip(source, at, 4);
+                break;
+            case 'l':
+                skip(source, at, 1);
+                break;
+            default:
+                break;
+            }
+        }
+    }
 }
 quint8 DialogueFontMetrics::glyphWidth(quint32 character, bool other) const {
     quint8 width = 0;

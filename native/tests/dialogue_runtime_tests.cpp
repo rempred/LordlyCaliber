@@ -21,6 +21,47 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void lineCountsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-lines-mips.cjs"),
+                                 path, work.filePath("lines.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("lines.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        QHash<int, QByteArray> substitutions;
+        const auto entries = root["substitutions"].toArray();
+        for (int i = 0; i < entries.size(); ++i)
+            substitutions[i] = entries[i].isNull()
+                                   ? QByteArray{}
+                                   : QByteArray::fromHex(entries[i].toString().toLatin1());
+        const auto suffix = QByteArray::fromHex(root["suffix"].toString().toLatin1());
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 32305);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            const auto result =
+                countDialogueLines(QByteArray::fromHex(c["source"].toString().toLatin1()),
+                                   quint16(c["columns"].toInt()), substitutions, suffix);
+            QVERIFY2(result == c["lines"].toInt(),
+                     qPrintable(c["id"].toString() + " columns " +
+                                QString::number(c["columns"].toInt()) + " actual " +
+                                QString::number(result) + " expected " +
+                                QString::number(c["lines"].toInt())));
+        }
+        QVERIFY_THROWS_EXCEPTION(Error, countDialogueLines(QByteArray{}, 36, {}, {}));
+        QVERIFY_THROWS_EXCEPTION(Error, countDialogueLines(QByteArray("@%0\0", 4), 36, {}, {}));
+        QVERIFY_THROWS_EXCEPTION(Error, countDialogueLines(QByteArray("@w\0", 3), 36, {}, {}));
+        QVERIFY_THROWS_EXCEPTION(Error, countDialogueLines(QByteArray("ABC\0", 4), 36, {}, {}, 2));
+    }
     void segmentScanningAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

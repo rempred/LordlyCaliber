@@ -18,6 +18,10 @@ struct DialogueSegmentScan {
 DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
                                         const QHash<int, QByteArray> &substitutions,
                                         int budget = 100000);
+// Pure measurement: helper cursor publications are local to this operation.
+quint16 countDialogueLines(const QByteArray &source, quint16 columns,
+                           const QHash<int, QByteArray> &substitutions,
+                           const QByteArray &longNameSuffix, int budget = 100000);
 // Text coordinates are archive-relative byte offsets, never host/native pointers.
 // The leading-control grammar is distinct from the body and metric grammars.
 void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray &source,
