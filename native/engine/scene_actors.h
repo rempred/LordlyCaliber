@@ -3,6 +3,7 @@
 #include "engine/actor_instance.h"
 #include "engine/actor_motion.h"
 #include "engine/actor_turn.h"
+#include <QHash>
 #include <array>
 #include <optional>
 namespace lordly {
@@ -27,6 +28,15 @@ class SceneActors {
     // Explicit launch state: absent rows remain unknown, never silently zero-filled.
     void supplyBodyRows(const QVector<QByteArray> &rows);
     const QByteArray &bodyRow(int identity) const;
+    // Native pointers identify launch objects; they are never dereferenced on PC.
+    void supplyBodyObject(quint32 address, QByteArray record);
+    const QByteArray &presentationRecord() const {
+        return presentationRecord_;
+    }
+    void supplyPresentationRecord(QByteArray record);
+    void startReturn(int group);
+    void advancePresentation();
+    float bodySpeed(int source, int owner, int direction) const;
     const QVector<BodyRegistration> &bodyRegistrations() const {
         return registrations_;
     }
@@ -55,6 +65,8 @@ class SceneActors {
     int classification(const QByteArray &record) const;
     void selectBodyInternal(const LordlyActorBodySelection &selection);
     void configureLinkedPose(ActorInstance &actor) const;
+    std::array<float, 2> presentationTarget(const QByteArray &actor) const;
+    void returnToBodyPosition(int slot);
     Rom rom_;
     int mode_;
     quint8 presentation_;
@@ -70,5 +82,7 @@ class SceneActors {
     std::optional<ActorBindingInputs> binding_;
     std::array<QByteArray, 28> bodyRows_;
     QVector<BodyRegistration> registrations_;
+    QHash<quint32, QByteArray> bodyObjects_;
+    QByteArray presentationRecord_;
 };
 } // namespace lordly

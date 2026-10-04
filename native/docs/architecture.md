@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+The shared actor-presentation lifecycle now runs in ScenePlayback's mode-two
+stage. Filtered command A4 preserves the 29-byte vector, applies side/subgroup
+flags, snaps only within the native tolerances, and starts the body return
+sequence. Commands 40/A5 query the vector lifetime. Completion distinguishes
+stationary state 5 from movement state 2 and releases only on the next empty
+sweep. Army rows and linked objects are explicit inputs; missing context rolls
+back the whole operation. Speed lookup adapts accepted func_00201670/2016F4 at
+Decomp 497181d8, using current class data and resource 315736's two byte lanes.
+The alternate-body busy query uses the counted body decoder, not ordinary 0F.
+
+All 44 original-instruction return sequences finish and match 3,520 full actor,
+motion and vector snapshots. Another 168 state/variant/delay boundary sequences
+and 964 valid speed samples agree. Original selection, registration, pose,
+movement and predicates execute; allocation/resource handles, flat terrain and
+audio sinks are controlled. Missing-object rollback and bounds checks pass;
+the existing composed scheduler check passes. Initial fixture failures were a
+missing zero-fill service, an unlinked actor without its held pose, presentation
+context mismatch and an invalid class-zero owner 255 speed lookup. The host
+rejects out-of-range speed references. This does not establish scene rendering
+or dynamic army launch construction. Bootstrap 3F remains to implement.
+
 The pose inspector now selects ordinary actors, class bodies or the independent
 2D sprite sequencer, with stepping, seeking, per-layer opacity and optional sepia.
 Layer origins receive their metadata scale before pose translation, matching the

@@ -349,7 +349,7 @@ class SceneRuntimeTests : public QObject {
         auto emptyDomains = [](LordlySceneService) { return true; };
         auto baseline = create(0);
         QCOMPARE(baseline.advance(), ScenePlayback::Suspended);
-        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_MODE_TWO_4});
+        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_AFTER_DIRECTOR});
         QCOMPARE(baseline.completedUpdates(), 0U);
         QVector<QByteArray> actors, projections, fades, sprites, lastSprites;
         QVector<int> cursors;

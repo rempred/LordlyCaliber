@@ -213,6 +213,18 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0xa4) {
+        if (args.size() != 1)
+            throw Error("Actor return command is truncated");
+        startReturn(qint32(args[0]));
+        return true;
+    }
+    if (opcode == 0x40 || opcode == 0xa5) {
+        if (args.size() != 2)
+            throw Error("Actor presentation query is truncated");
+        value = !presentationRecord_.isEmpty();
+        return true;
+    }
     if (opcode == 0x15) {
         if (args.size() != 5)
             throw Error("Actor turn command is truncated");

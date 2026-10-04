@@ -107,4 +107,16 @@ int ActorPosePlayer::query() const {
         return ActorArt::load(rom_, actor_.bank).poseRecord(actor_.state, actor_.cursor).opcode;
     return art_.poseRecord(actor_.state, actor_.cursor).opcode;
 }
+bool ActorPosePlayer::bodyBusy() const {
+    const auto art = art_.isBody() ? art_
+                                   : ActorArt::loadBody(rom_, actor_.bank, actor_.owner,
+                                                        actor_.variant, actor_.flag_b);
+    const auto opcode = [&](quint32 offset) {
+        return art.poseRecord(actor_.state, qint32(quint32(actor_.cursor) + offset)).opcode;
+    };
+    const int current = opcode(0);
+    if (!current)
+        return false;
+    return current != 1 || opcode(1) != 4 || opcode(2) != 0 || actor_.delay >= 2;
+}
 } // namespace lordly

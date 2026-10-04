@@ -68,6 +68,9 @@ bool ScenePlayback::update(LordlySceneService service) {
     case LORDLY_SCENE_PROJECTION:
         projection_.advance();
         return true;
+    case LORDLY_SCENE_MODE_TWO_4:
+        actors_.advancePresentation();
+        return true;
     case LORDLY_SCENE_POSES:
         if (!poseSweepStarted_) {
             // The original sweep rechecks alternate at entry. A preceding
