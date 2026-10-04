@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/actor_main_matrix.h"
 #include "engine/actor_pose.h"
 #include "game/director/actor_record.h"
 #include <functional>
@@ -16,6 +17,7 @@ class ActorInstance {
     void setOpacity(quint8 value);
     void setTint(quint8 red, quint8 green, quint8 blue);
     void setChannel(quint8 channel);
+    void setMainDrawing(const ActorMainMatrix &);
     void setUniformScale(float value);
     void addHeight(float step);
     ActorPosePlayer &pose() {

@@ -1,5 +1,28 @@
 # Native Lordly Caliber
 
+## Mode-zero Actor main matrices
+
+The portable C main-matrix path reconstructs ROM 2AE654 and 2AEB48 through
+2AED04, before shadow construction, using original assembly at Decomp 62cc7ef4.
+It preserves packed intermediate quantization, the registered-camera prepass,
+separate origin/size-probe projection constants, channel counterrotation and the
+Actor camera's prepared channels. Host trigonometry replaces target libm; this is
+not accepted matching C. Current-ROM constants are read from qualified placements.
+
+ScenePlayback render preparation is separate from updates. It prepares channels
+and all present Actors in temporary copies, committing only after every matrix
+and channel reference validates. Only Actor A0..DF and FC..103 are written; other
+record fields and completed-update counts remain unchanged. Shadow construction,
+draw eligibility and final composition remain separate work.
+
+The original-instruction comparison executes 108 camera/position/rotation/scale
+cases, including an independently changed size-probe aspect constant. Every
+packed component matches exactly in the tested cases. Atomicity checks put an
+invalid channel in slot27 and verify no earlier Actor or channel changed; invalid
+mode/count also reject without mutation. These checks pass with playback timing,
+composition and material regressions. They do not establish displayed game frames.
+
+
 Scene transform inspection now has a desktop preview with resource, sequence,
 duration and channel selection, play/step/restart, configurable playback rate and
 backward seeking. Double-clicking command 08 loads its edited operands and the

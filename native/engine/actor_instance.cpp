@@ -112,6 +112,14 @@ void ActorInstance::setTint(quint8 red, quint8 green, quint8 blue) {
 void ActorInstance::setChannel(quint8 channel) {
     put8(record_, 0x13e, channel);
 }
+void ActorInstance::setMainDrawing(const ActorMainMatrix &drawing) {
+    const auto x = float(drawing.position.x()), y = float(drawing.position.y());
+    if (drawing.matrix.size() != 64 || !std::isfinite(x) || !std::isfinite(y))
+        throw Error("Invalid Actor main drawing state");
+    record_.replace(0xa0, 64, drawing.matrix);
+    put32(record_, 0xfc, std::bit_cast<quint32>(x));
+    put32(record_, 0x100, std::bit_cast<quint32>(y));
+}
 void ActorInstance::setUniformScale(float value) {
     if (!std::isfinite(value))
         throw Error("Actor scale must be finite");

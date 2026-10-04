@@ -1,3 +1,4 @@
+#include "engine/actor_main_matrix.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_playback.h"
@@ -15,6 +16,104 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorMainMatricesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("actor-matrix-mips.cjs"), path, work.filePath("actors.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("actors.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 108);
+        const auto rom = Rom::open(path);
+        qint64 maximum = 0;
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            auto bytes = [&](const QString &key) {
+                return QByteArray::fromHex(row[key].toString().toLatin1());
+            };
+            auto changedRom = rom.bytes();
+            const auto aspect = std::bit_cast<quint64>(row["probeAspect"].toDouble());
+            put32(changedRom, 0x2a8b70, quint32(aspect >> 32));
+            put32(changedRom, 0x2a8b74, quint32(aspect));
+            const auto result =
+                ActorMainMatrix::prepare(Rom::fromBytes(changedRom), bytes("actor"),
+                                         bytes("channel"), SceneCamera(bytes("camera"), 0.1f));
+            const auto expected = bytes("result").mid(0xa0, 64);
+            const auto prepass = row["prepass"].toObject();
+            const auto position = QByteArray::fromHex(prepass["position"].toString().toLatin1()),
+                       scale = QByteArray::fromHex(prepass["scale"].toString().toLatin1());
+            QVERIFY(qAbs(result.position.x() - std::bit_cast<float>(u32(position, 0))) < 0.0001);
+            QVERIFY(qAbs(result.position.y() - std::bit_cast<float>(u32(position, 4))) < 0.0001);
+            QVERIFY(qAbs(result.scale.x() - std::bit_cast<float>(u32(scale, 0))) < 0.000001);
+            QVERIFY(qAbs(result.scale.y() - std::bit_cast<float>(u32(scale, 4))) < 0.000001);
+            auto fixed = [](const QByteArray &b, int i) {
+                return qint32(quint32(u16(b, i * 2)) << 16 | u16(b, 32 + i * 2));
+            };
+            for (int i = 0; i < 16; ++i) {
+                const qint64 difference =
+                    qAbs(qint64(fixed(result.matrix, i)) - fixed(expected, i));
+                maximum = qMax(maximum, difference);
+                QVERIFY2(difference <= 4,
+                         qPrintable(QString("Actor matrix field %1 differs by %2 units")
+                                        .arg(i)
+                                        .arg(difference)));
+            }
+        }
+        qInfo() << "108 original Actor main matrices; maximum fixed-point difference:" << maximum;
+    }
+    void actorMainDrawingIsAtomic() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto resources = Directors::load(rom);
+        int selector = 0;
+        while (!resources.selectors()[selector])
+            ++selector;
+        ScenePlaybackStart start;
+        start.mode = 0;
+        auto cameras = SceneCameras::freshModeTwo(rom);
+        ScenePlayback scene(rom, resources, selector, start, cameras);
+        QByteArray record(336, 0);
+        put32(record, 0xe8, 30);
+        for (int i = 0; i < 3; ++i)
+            put32(record, 0x104 + i * 4, std::bit_cast<quint32>(1.f));
+        scene.actors().supplyActor(0, record);
+        const auto before = scene.actors().actor(0)->record(),
+                   channel = scene.transforms().channel(0);
+        auto bad = record;
+        put8(bad, 0x13e, 20);
+        scene.actors().supplyActor(27, bad);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(20));
+        QCOMPARE(scene.actors().actor(0)->record(), before);
+        QCOMPARE(scene.transforms().channel(0), channel);
+        QCOMPARE(scene.completedUpdates(), 0U);
+        scene.actors().supplyActor(27, record);
+        scene.prepareModeZeroMainDrawing(20);
+        const auto drawing = ActorMainMatrix::prepare(rom, before, scene.transforms().channel(0),
+                                                      cameras.registered());
+        auto expected = before;
+        expected.replace(0xa0, 64, drawing.matrix);
+        put32(expected, 0xfc, std::bit_cast<quint32>(float(drawing.position.x())));
+        put32(expected, 0x100, std::bit_cast<quint32>(float(drawing.position.y())));
+        QCOMPARE(scene.actors().actor(0)->record(), expected);
+        QCOMPARE(scene.actors().actor(27)->record(), expected);
+        QCOMPARE(scene.completedUpdates(), 0U);
+        const auto prepared = scene.transforms().channel(0);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(21));
+        QCOMPARE(scene.transforms().channel(0), prepared);
+        QCOMPARE(scene.actors().actor(0)->record(), expected);
+        scene.setMode(2);
+        QVERIFY_THROWS_EXCEPTION(Error, scene.prepareModeZeroMainDrawing(20));
+        QCOMPARE(scene.transforms().channel(0), prepared);
+        QCOMPARE(scene.actors().actor(0)->record(), expected);
+    }
     void sceneMatricesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

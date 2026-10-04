@@ -9,6 +9,7 @@
 #include <array>
 #include <optional>
 namespace lordly {
+class SceneTransforms;
 struct ActorBindingInputs {
     std::array<QByteArray, 20> rows;
     std::array<quint8, 5> unitMembers{};
@@ -78,6 +79,7 @@ class SceneActors {
         divider_ = std::move(divider);
     }
     void advanceDivider();
+    void prepareModeZeroMainMatrices(const SceneCamera &, const SceneTransforms &);
     quint8 defaultChannel() const {
         return defaultChannel_;
     }
