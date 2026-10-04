@@ -6,6 +6,15 @@ and placement stage copies so unavailable projection, portrait context or storag
 does not partially alter the scene. Native resource addresses are identities,
 never callable PC pointers.
 
+ScenePlayback accepts the current shared pool/window state, handles resume/close
+and window/control queries, and follows Actor anchors in the post-Director stage.
+Missing projection suspends that stage without replaying Director commands when
+it resumes. The composition check passes (96 ms), comparing normal execution with
+one-command/one-stage budgets; existing scene composition still passes (93 ms).
+BF creation remains external until its shared name-context effects are connected.
+The first composition fixture incorrectly ended with a padding word; replacing it
+with the native terminal-hold word fixed the fixture.
+
 The implementation reconstructs original US Rev 0 ROM 2A0088..2A05DC (loaded at
 RAM 80230858) and F9FF8..FA56C (loaded at RAM 8019EE58), including the dispatcher's
 portrait/mirror/pointer rules. The coordinate projector remains an explicit input.

@@ -2,6 +2,7 @@
 #include "engine/director_session.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_camera.h"
+#include "engine/scene_dialogue.h"
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
@@ -13,6 +14,11 @@ struct ScenePlaybackStart {
     quint8 presentation = 0, alternate = 0, delayedCounter = 0;
     DirectorLaunchTranslations translations;
     std::optional<quint32> sceneFlags;
+};
+struct SceneDialogueState {
+    SceneResources resources;
+    SceneDialogue windows;
+    SceneDialogue::Project project;
 };
 // One normal/alternate Actor-scene scheduler invocation, not a video frame.
 // Rendering and the fade's independent permanent-scheduler slot remain separate.
@@ -95,6 +101,19 @@ class ScenePlayback {
     const SceneEffects &effects() const {
         return effects_;
     }
+    // The six UI resources are shared beyond one scene. Their current state
+    // must be supplied by the UI-resource owner, rather than reset on launch.
+    void supplyDialogue(SceneResources resources, SceneDialogue windows,
+                        SceneDialogue::Project project = {}) {
+        dialogue_ =
+            SceneDialogueState{std::move(resources), std::move(windows), std::move(project)};
+    }
+    std::optional<SceneDialogueState> &dialogue() {
+        return dialogue_;
+    }
+    const std::optional<SceneDialogueState> &dialogue() const {
+        return dialogue_;
+    }
 
   private:
     static int invoke(void *, LordlySceneService);
@@ -107,6 +126,7 @@ class ScenePlayback {
     SceneCameras cameras_;
     SceneFade fade_;
     SceneEffects effects_;
+    std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};
     bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;
     bool poseSweepStarted_ = false;

@@ -20,6 +20,29 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (dialogue_) {
+        auto &state = *dialogue_;
+        switch (opcode) {
+        case 5:
+        case 6:
+            if (args.size() != 1)
+                throw Error("Dialogue window command is truncated");
+            if (opcode == 5)
+                state.windows.close(qint32(args[0]), state.resources);
+            else
+                state.windows.resume(args[0], state.resources);
+            return true;
+        case 0x10:
+        case 0x25:
+            if (args.size() != 3)
+                throw Error("Dialogue query is truncated");
+            value = opcode == 0x10 ? state.windows.query(args[2], state.resources)
+                                   : state.windows.control(qint32(args[2]));
+            return true;
+        default:
+            break;
+        }
+    }
     if (opcode == 0x97) {
         if (!schedule_.alternate)
             schedule_.alternate = 1;
@@ -70,6 +93,11 @@ bool ScenePlayback::update(LordlySceneService service) {
         return true;
     case LORDLY_SCENE_MODE_TWO_4:
         actors_.advancePresentation();
+        return true;
+    case LORDLY_SCENE_AFTER_DIRECTOR:
+        if (!dialogue_)
+            return supplemental_ && *supplemental_ && (*supplemental_)(service);
+        dialogue_->windows.updatePlacement(dialogue_->resources, dialogue_->project);
         return true;
     case LORDLY_SCENE_POSES:
         if (!poseSweepStarted_) {

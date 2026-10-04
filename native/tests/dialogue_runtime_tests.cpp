@@ -1,5 +1,6 @@
 #include "engine/dialogue_archive.h"
 #include "engine/scene_dialogue.h"
+#include "engine/scene_playback.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -18,6 +19,82 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void playbackTracksWindowsAcrossSuspension() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto bytes = Rom::open(path).bytes();
+            const QVector<quint32> words{6, 3, 0,           0x80000000U, 5,
+                                         3, 0, 0x80000000U, 0x80000001U, 0xff000001U};
+            QByteArray raw(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(raw, i * 4, words[i]);
+            const auto packed = encodeLzss(raw);
+            constexpr int at = 0x2700000;
+            put32(bytes, at, quint32(packed.size() + 4));
+            put32(bytes, at + 4, quint32(raw.size()));
+            bytes.replace(at + 8, packed.size(), packed);
+            put32(bytes, 0x1f3ca84, 4);
+            put32(bytes, 0x1f3ca88, at - 0x594280);
+            const auto rom = Rom::fromBytes(bytes);
+            const auto directors = Directors::load(rom);
+            SceneResources pool({8, 0xffff, 13});
+            SceneDialogue windows(0);
+            windows.create({3, 20, 2, 0, 0, 10, 192, 1, 1, 1, 84, 1, 0}, pool,
+                           [](int) { return QPointF(100, 50); });
+            auto create = [&] {
+                return ScenePlayback(rom, directors, 0, {}, SceneCameras::freshModeTwo(rom));
+            };
+            auto emptyDomains = [](LordlySceneService) { return true; };
+            int calls = 0;
+            auto project = [&](int actor) -> std::optional<QPointF> {
+                if (actor != 0)
+                    throw Error("Unexpected dialogue actor");
+                ++calls;
+                return QPointF(140.75, 200.25);
+            };
+            auto baseline = create();
+            baseline.supplyDialogue(pool, windows, project);
+            QCOMPARE(baseline.advance(emptyDomains), ScenePlayback::Advanced);
+            QCOMPARE(calls, 1);
+            const auto followed = poolBytes(baseline.dialogue()->resources);
+            QCOMPARE(u16(baseline.dialogue()->resources.record(0), 0x8c), 140);
+            QCOMPARE(u16(baseline.dialogue()->resources.record(0), 0x94), 155);
+            QVERIFY(u8(baseline.dialogue()->resources.record(0), 0x8a) & 2);
+            QCOMPARE(baseline.advance(emptyDomains), ScenePlayback::Advanced);
+            QCOMPARE(calls, 1); // Close removes the tracking before this stage.
+            QVERIFY(baseline.dialogue()->windows.tracking(0).isEmpty());
+            QVERIFY(u16(baseline.dialogue()->resources.record(0), 0) & 0x1000);
+            const auto closed = poolBytes(baseline.dialogue()->resources);
+            auto resumed = create();
+            resumed.supplyDialogue(pool, windows); // Projection is initially unavailable.
+            QCOMPARE(resumed.advance(emptyDomains), ScenePlayback::Suspended);
+            QCOMPARE(resumed.pendingService(), std::optional{LORDLY_SCENE_AFTER_DIRECTOR});
+            QCOMPARE(resumed.completedUpdates(), 0U);
+            QCOMPARE(u16(resumed.dialogue()->resources.record(0), 0x8c), 100);
+            const int cursor = resumed.director().state().resume_cursor;
+            resumed.dialogue()->project = project;
+            calls = 0;
+            for (int tick = 0; tick < 2; ++tick) {
+                int attempts = 0;
+                ScenePlayback::Result status;
+                do {
+                    status = resumed.advance(emptyDomains, {}, 1, 1);
+                    QVERIFY2(status != ScenePlayback::Suspended, qPrintable(resumed.reason()));
+                    QVERIFY(++attempts < 100);
+                } while (status == ScenePlayback::Budget);
+                QCOMPARE(status, ScenePlayback::Advanced);
+                QCOMPARE(poolBytes(resumed.dialogue()->resources), tick ? closed : followed);
+                QCOMPARE(resumed.completedUpdates(), quint64(tick + 1));
+                if (!tick)
+                    QCOMPARE(resumed.director().state().resume_cursor, cursor);
+            }
+            QCOMPARE(calls, 1);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void archivesFromCurrentRom() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
