@@ -80,8 +80,8 @@ class EngineTests : public QObject {
                 placed->saves.verify(image);
                 QCOMPARE(image.mid(SavePlacement::romAddress, placed->saves.codeBytes),
                          runtime.saves->code.bytes);
-                for (const auto site :
-                     {SavePlacement::romAddress, 0x4c5cU, 0x38670U, 0x74cb4U, 0x75028U}) {
+                for (const auto site : {SavePlacement::romAddress, 0x4c5cU, 0x38670U, 0x74cb4U,
+                                        0x75028U, 0x564d0U, 0x15e578U}) {
                     auto changedSave = image;
                     changedSave[site] ^= 1;
                     QVERIFY_THROWS_EXCEPTION(Error,
@@ -389,8 +389,10 @@ class EngineTests : public QObject {
         QCOMPARE(placement->dataRomOffset, runtime.dataRomOffset);
         QCOMPARE((u32(linked, 0x25a8) & 0x3ffffffU) << 2, runtime.placement.bootEntry & 0xfffffffU);
         QCOMPARE(u32(linked, 0x1148), quint32(0x2c42000a));
-        QCOMPARE(u32(linked, 0x243c) & 65535,
-                 (ClassPlacement::codeRamAddress + runtime.placement.codeBytes) & 65535);
+        QVERIFY(runtime.saves.has_value());
+        const auto cacheEnd = quint32(((u32(linked, 0x2438) & 65535) << 16) +
+                                     qint16(u32(linked, 0x243c) & 65535));
+        QCOMPARE(cacheEnd, quint32(0x80187f00U + runtime.saves->code.bytes.size()));
         auto reopened = ClassData::load(relocated);
         QCOMPARE(reopened.entries().size(), 166);
         for (int id = 0; id < 166; ++id) {
@@ -727,11 +729,34 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         bank.spec.id = "classes";
         auto original = QByteArray("Knight") + QByteArray::fromHex("8197819632383030");
         bank.entries = {{QByteArray(), QByteArray()}, {original, original}};
+        bank.entries.resize(225);
         QCOMPARE(bank.text(1), QString("Knight"));
         bank.setText(1, "Armored fighter");
         QCOMPARE(bank.entries[1].bytes,
                  QByteArray("Armored fighter") + QByteArray::fromHex("8197819632383030"));
         QCOMPARE(bank.entries[1].original, original);
+    }
+    void descriptionRuntimeBounds() {
+        TextBank bank;
+        bank.spec.id = "classes";
+        bank.spec.count = 225;
+        bank.entries.resize(225);
+        bank.setText(1, QString(1278, 'A'));
+        QCOMPARE(bank.entries[1].bytes.size() + 2, 0x500);
+        const auto maximum = bank.serialized();
+        QVERIFY_THROWS_EXCEPTION(Error, bank.setText(1, QString(1279, 'A')));
+        QCOMPARE(bank.serialized(), maximum);
+        bank.setText(1, "{HELP:2800}{HELP:2801}");
+        bank.setText(200, QString(639, 'B'));
+        bank.setText(201, QString(639, 'C'));
+        const auto valid = bank.serialized();
+        QVERIFY_THROWS_EXCEPTION(Error, bank.setText(201, QString(640, 'C')));
+        QCOMPARE(bank.serialized(), valid);
+        bank.setText(200, "{HELP:2801}");
+        const auto chained = bank.serialized();
+        QVERIFY_THROWS_EXCEPTION(Error, bank.setText(201, "{HELP:2800}"));
+        QCOMPARE(bank.serialized(), chained);
+        QVERIFY_THROWS_EXCEPTION(Error, bank.setText(2, "{REF:10}"));
     }
     void retailDescriptionExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -784,6 +809,85 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             QCOMPARE(u32(result.image, p.textBanks()["classes"].resource.romOffset), quint32(6403));
             QCOMPARE(Rom::open(path).bytes(), p.rom().bytes());
             QVERIFY(QFileInfo::exists(build.filePath("descriptions_classes.compiler.s")));
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
+    void addedClassPublicExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler are required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadTexts();
+            const auto originalDescriptions = project.textBanks()["classes"].entries;
+            QTemporaryDir build;
+            for (const int count : {166, 256, 256}) {
+                while (project.records(Table::Classes).size() < count)
+                    project.appendClass(
+                        5, QString("New class %1").arg(project.records(Table::Classes).size()));
+                const auto description = QString("Class %1 export description").arg(count);
+                project.setText("classes", Project::classDescriptionIndex(count - 1), description);
+                auto promotion = *project.promotion();
+                promotion.setGate(count - 1, 0, 75);
+                promotion.assign(
+                    count - 1,
+                    promotion.addFamily(QString("Family %1 %2")
+                                            .arg(count)
+                                            .arg(promotion.families["families"].toArray().size()),
+                                        1));
+                project.setPromotion(promotion.json());
+                const auto expectedData = project.classData().build(0x80243db0).bytes;
+                const auto result = rebuild(project, tools, build.path());
+                const auto candidateRoot =
+                    QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+                QTemporaryDir output(candidateRoot + "/native-added-class-XXXXXX");
+                QVERIFY(output.isValid());
+                output.setAutoRemove(false);
+                const auto outputPath = output.filePath(QFileInfo(path).fileName());
+                exportRom(project, result, outputPath);
+                auto reopened = Project::fromRom(Rom::open(outputPath));
+                reopened.loadTexts();
+                reopened.loadPromotion();
+                QCOMPARE(reopened.records(Table::Classes).size(), count);
+                QCOMPARE(reopened.classData().build(0x80243db0).bytes, expectedData);
+                QCOMPARE(reopened.promotion()->json(), project.promotion()->json());
+                QCOMPARE(reopened.textBanks()["classes"].serialized(),
+                         project.textBanks()["classes"].serialized());
+                QCOMPARE(
+                    reopened.textBanks()["classes"].text(Project::classDescriptionIndex(count - 1)),
+                    description);
+                for (int id = 165; id < 225; ++id)
+                    QCOMPARE(reopened.textBanks()["classes"].entries[id].bytes,
+                             originalDescriptions[id].bytes);
+                const auto placed = ClassPlacement::read(reopened.rom());
+                QVERIFY(placed->descriptionEntry);
+                QCOMPARE(placed->saves.version, 3U);
+                auto checksum = result.image;
+                Rom::updateChecksum(checksum);
+                QCOMPARE(checksum, result.image);
+                const auto layout = ClassMenuLayout::build(
+                    placed->layout, reopened.promotion()->buildExpandedData());
+                atomicWrite(
+                    output.filePath("menu-layout.json"),
+                    QJsonDocument(QJsonObject{{"rom", outputPath},
+                                              {"count", count},
+                                              {"ownerBytes", int(layout.ownerBytes)},
+                                              {"list", int(layout.list)},
+                                              {"ids", int(layout.categoryClasses)},
+                                              {"current", int(layout.currentCounts)},
+                                              {"eligible", int(layout.eligibleCounts)},
+                                              {"records", double(placed->layout.records)},
+                                              {"aliases", double(placed->layout.aliases)},
+                                              {"discovery", double(placed->layout.discovery)}})
+                        .toJson());
+                qInfo().noquote() << "Public added-class export:"
+                                  << output.filePath("menu-layout.json");
+                project = std::move(reopened);
+            }
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }

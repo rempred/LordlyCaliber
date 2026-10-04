@@ -1,6 +1,7 @@
 #include "engine/text.h"
 #include "engine/class_text.h"
 #include <QRegularExpression>
+#include <functional>
 
 namespace lordly {
 static const QByteArray lineBreak = QByteArray::fromHex("8197");
@@ -180,9 +181,52 @@ void TextBank::setText(int id, const QString &text) {
         if (decodeText(encoded).count('\n') >= 4)
             throw Error("Description plus its retained help reference exceeds four lines");
     }
+    auto candidate = *this;
+    candidate.entries[id].bytes = encoded;
+    candidate.validateRuntimeSize();
     entries[id].bytes = std::move(encoded);
 }
+void TextBank::validateRuntimeSize() const {
+    // Both the original record selector and the control-code expansion use
+    // 0x500-byte buffers. Reserve their final CRLF, including after HELP expansion.
+    QVector<int> state(entries.size(), 0), lengths(entries.size(), 0);
+    std::function<int(int)> expandedSize = [&](int id) {
+        if (state[id] == 1)
+            throw Error("Class help references form a cycle");
+        if (state[id] == 2)
+            return lengths[id];
+        state[id] = 1;
+        const auto &bytes = entries[id].bytes;
+        qsizetype size = bytes.size();
+        if (size + 2 > 0x500)
+            throw Error(QString("Description %1 exceeds the game's 1280-byte buffer").arg(id));
+        if (spec.id == "classes") {
+            qsizetype start = 0;
+            while ((start = bytes.indexOf(reference, start)) >= 0) {
+                const auto digits = bytes.mid(start + 2, 4);
+                bool ok = false;
+                const auto number = digits.toInt(&ok);
+                if (digits.size() != 4 || !ok || number < 2800 || number > 2822 ||
+                    digits != QByteArray::number(number) || number - 2600 >= entries.size())
+                    throw Error(
+                        "Class help reference must name an existing help entry from 2800 to 2822");
+                size += expandedSize(number - 2600) - 6;
+                start += 6;
+            }
+        }
+        if (size + 2 > 0x500)
+            throw Error(
+                QString("Description %1 and its help text exceed the game's 1280-byte buffer")
+                    .arg(id));
+        state[id] = 2;
+        lengths[id] = int(size);
+        return int(size);
+    };
+    for (int id = 0; id < entries.size(); ++id)
+        expandedSize(id);
+}
 QByteArray TextBank::serialized() const {
+    validateRuntimeSize();
     QByteArray out;
     for (const auto &entry : entries)
         out += entry.bytes + "\r\n";

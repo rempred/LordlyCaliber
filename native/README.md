@@ -9,8 +9,13 @@ during export; no Decomp checkout is required.
 This is an unfinished migration, not the 0.5 release. Classes and Items provide
 record editing, descriptions, undo, project persistence and source-built export.
 US Rev 0 Classes also provides promotion requirements, family selection and
-creation, and compatibility masks. Additional class IDs and the remaining browser
-Editor workspaces are not yet implemented. Imported unsupported sections remain
+creation, compatibility masks, and new classes through ID 255. Select a class and
+choose Add class from selected to copy its records, appearance, requirements and
+description. Rebuilds grow the owned tables and description resources, rebuild
+their game readers, and install compatible save conversion within the 4 MB RAM
+layout. Animation changes and the remaining browser workspaces still need native
+workflows. Full-game boot and hardware memory/device behavior remain unverified
+by the isolated instruction and simulated save tests. Imported unsupported sections remain
 in the project and block export so they cannot be silently dropped.
 
 Projects are folders containing `project.json`. Sharing archives use

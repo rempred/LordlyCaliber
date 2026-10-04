@@ -31,8 +31,8 @@ and calculates aligned record/appearance/alias/name/discovery allocations within
 an explicit 4 MB RAM interval. Its 256-entry representation limit is not a claim
 that every game consumer already supports that many IDs. Project/UI name edits
 and already-relocated source ROMs use this builder during export. Numeric-only
-edits to a retail source still compile into its existing table. New class
-creation needs the remaining consumer/menu/save work.
+edits to a retail source still compile into its existing table. New class creation now composes the expanded menus, save conversion and
+description routing in the normal export path.
 
 The internal class linker now installs the compiled data/boot module, updates
 the cataloged address pairs and heap-reset calls, and extends instruction-cache
@@ -48,8 +48,8 @@ not instruction bytes. Its 382 direct address pairs cover class data, appearance
 data and the allocator directory; ten calls cover initial load and later resets.
 The generator rejects mixed address uses, long pairs and relative branches into
 the middle of a pair. This does not prove an exhaustive census of all additional
-class-ID consumers. Full-game memory, remaining menus and save support are still
-required before enabling new classes for users.
+class-ID consumers. Expanded menus and save support now use separate authenticated owners.
+Peak full-game memory use remains unmeasured.
 
 Class names use raw source bytes in project state and undo commands. Display
 decoding never rewrites an untouched name. Edited names support printable game
@@ -59,16 +59,16 @@ editor uses Ctrl+Enter to commit, and dependent class selectors update with undo
 and redo. Growing an owned ROM allocation moves it when unrelated bytes follow;
 shrinking an allocation at the end removes only its owned trailing bytes.
 
-The promotion model also supports 165Ã¢â‚¬â€œ256 class IDs. Growing from the original
+The promotion model also supports 165ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ256 class IDs. Growing from the original
 81 manual entries preserves existing values and gives the remaining retail IDs
 no manual family by default. Appending a new ID copies a chosen template's
 requirements, family and compatibility mask. Schema 2 catalogs persist the
 larger assignment list. Its expanded payload contains eight requirement bytes,
 four packed family bytes, one mask byte and one class-line flag byte per class, followed by aligned family
 metadata. Readback validates framing and agreement between metadata and runtime
-family words. The public exporter still refuses this expanded model until the
-remaining game consumers and versioned ROM descriptor are integrated; it cannot
-fall through to a retail-size write.
+family words. The public exporter compiles this model with the matching class count,
+source-built menu owners, save module and description routing. Count mismatches
+fail before writing; expanded data cannot fall through to a retail-size write.
 
 The class-line flag byte preserves the original high nibble separately from
 family membership. Its known bit controls inclusion in the standard-equipment
@@ -78,8 +78,7 @@ without them inherit the source ROM's flags. New class templates copy the flags.
 
 Category lists and roster counts now compile from maintained C alongside the
 family, discovery and equipment lists. Their source configuration supports
-larger arrays, but public exports retain the retail layout until all screen and
-save consumers are integrated. The relocation linker authenticates the complete
+larger arrays, and expanded public exports use the configured screen layout. The relocation linker authenticates the complete
 normalized code before choosing a source-built owner's reference locations;
 recompiled instructions need not retain the original load/store positions.
 
@@ -90,7 +89,7 @@ class IDs, current counts and eligible counts. Their locations are shared by
 generated readers and future installation metadata; unrelated screen storage
 keeps its original positions. Layout validation requires matching table counts,
 aligned nonoverlapping arrays, and resident data inside the 4 MB address range.
-This allocation model does not yet install the expanded runtime or prove peak
+The normal exporter now installs this layout. It does not prove peak
 game memory use.
 
 Compiled C modules expose their actual global function addresses through the
@@ -115,8 +114,8 @@ addresses is checked against independent compiler links. This metadata belongs
 in ROM outside the decompressed promotion resource. The version 2 promotion
 container now stores and validates that inventory after its compressed stream,
 with separate bounds and checksums. The ordinary resource decoder sees only
-game tables. Complete expanded installation is still pending. A partial inventory alone
-does not prove that every required game consumer has been installed.
+game tables. Reopening requires the complete declared owner inventory. A partial inventory
+is rejected; it cannot substitute for an installed expanded runtime.
 
 `rebuild/promotion_runtime.*` now assembles the expanded menu installation as
 an internal build component. It compiles configured C, preserves authenticated
@@ -127,19 +126,19 @@ selection, name, count and sprite-call paths at high IDs with old arrays poisone
 Version 2 reopening verifies the complete inventory and restores promotion
 edits. Class and menu builds can be linked together so count changes remain
 consistent. Later name-only growth relocates the saved references and is checked
-against fresh compilation. Public export remains guarded until remaining
-consumers and saves are integrated; these candidates are not a claim of a
-playable expanded ROM.
+against fresh compilation. The public exporter now composes these owners with class tables, save support
+and description routing. Isolated instruction checks are not a full-game boot
+or playthrough proof.
 
 The expanded inventory also owns the original alias readers used by class
 eligibility, equipment summaries and confirmation paths. Those indexed reads
 move to the expanded alias array while C readers use linked symbol references.
 Discovery's required-equipment loop uses the configured class count, preserving
 its four slot checks for newly added IDs.
-Its special secondary-class rule remains limited to original IDs 42Ã¢â‚¬â€œ164;
+Its special secondary-class rule remains limited to original IDs 42ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ164;
 new IDs use their authored compatibility and requirement tables.
 The Army action checks likewise apply their special-class restrictions only to
-original IDs 81Ã¢â‚¬â€œ164. Both alias routes retain their original default-class
+original IDs 81ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ164. Both alias routes retain their original default-class
 selection; appended IDs take the ordinary-class path. The unrelated 128-entry
 squad-index bound remains unchanged.
 
@@ -151,8 +150,7 @@ unaligned position in the packed payload; remaining bits start clear. Options
 and a cleared suspend record retain their original meaning. Invalid records and
 short buffers fail before any write. This record-level component is tested
 against the original codec and checksum instructions. SRAM and Controller Pak
-dispatch and runtime callbacks are not yet installed, so it does not enable
-expanded public exports by itself. Whole SRAM-image conversion now moves records
+dispatch and runtime callbacks are installed by the coordinated class export. Whole SRAM-image conversion now moves records
 in reverse order to avoid overwriting unread bytes, retains invalid records as
 invalid, and preserves options and unallocated tail bytes. A checksummed
 `LC05SRA1` marker occupies 16 bytes after the expanded suspend record, allowing
@@ -174,8 +172,8 @@ of the class descriptor records its size and integrity checks for code, entry
 dispatch and the callback directory; version 1 remains readable. Rebuilds compile
 the save module again when class names move the discovery allocation. Isolated
 instruction checks execute the exported boot/reset and save dispatch with guarded
-allocations and synthetic SRAM. Public new-class export remains guarded while
-the remaining class consumers and full-game behavior are checked.
+allocations and synthetic SRAM. Public new-class exports now use this module. Full-game behavior remains
+unverified by these isolated checks.
 
 Controller Pak import/export retains the existing device workflow and 0x1900-byte
 file allocation. Two assembled adapters call maintained C to validate either
@@ -222,13 +220,36 @@ code. A checksummed LC05TEXT descriptor occupies the beginning of the former
 resource; the rest of that slot remains untouched. Reopening validates the entire
 resource and both full owners, accounting for independent class-data relocation.
 Later growth moves around unrelated allocations. Shared help entries retain their
-indices and raw bytes. New-class description index routing remains separate.
+indices and raw bytes. New-class description index routing is installed with the class runtime.
 
 The Project model now appends classes atomically with their cloned appearance,
 raw record, name, description and promotion state. New named-character aliases
-start at zero. New description entries start at index225, after all225 retained
-retail entries; classID165 maps to225. Project manifests persist the baseline
+start at zero. New description entries start at index 225, after all 225 retained
+retail entries; class ID165 maps to225. Project manifests persist the baseline
 assets and subsequent edits separately. Added records have no original ROM
-offset. Folder/archive reload and whole-operation undo cover all91 available
+offset. Folder/archive reload and whole-operation undo cover all 91 available
 new IDs. The Classes workspace offers creation from the selected template; the
-public export guard remains until runtime index routing is installed.
+normal exporter now builds its runtime dependencies together.
+
+Class descriptor version 3 adds the description adapter entry at byte 100. The
+maintained 64-byte assembly adapter fits after the three C loader functions
+inside their existing resident allocation. It maps class IDs 165..255 to text
+entries 225..315 at the ordinary bank5 reader. Shared HELP references call the
+lower reader directly and keep entries 200..222. Magnus's Prince exception uses
+request index 256 and maps back to original entry 224. Both affected function
+owners are authenticated in full; descriptor/code checks cover the adapter.
+No additional resident allocation or Expansion Pak requirement is introduced.
+
+Normal export now coordinates class data, configured promotion/menu code,
+description resources/routing and save conversion for 165..256 entries. It
+compiles maintained sources during export, validates all owned allocations,
+updates CIC-6102 and reopens every edited domain. The 256-class public workflow
+passes creation, folder/archive persistence, undo, export/reopen, growth of a
+previously exported ROM, and subsequent promotion/description edits. Instruction
+checks execute the original description selector for all 256 IDs plus the special
+Prince description. These checks use 4 MiB modeled RAM and synthetic SRAM/Pak;
+full-game cold boot, peak live memory and hardware-device behavior remain unproven.
+
+Description edits and exports enforce the original 0x500-byte scratch buffers,
+including the final CRLF and retained HELP expansion. Help cycles and missing
+targets fail before mutation; failed edits retain the previous bytes.

@@ -14,4 +14,6 @@ struct ClassTextPlacement {
 // Compiled authored text is moved only when it outgrows the retail resource or
 // already has an owned placement. Original help entries remain in the bank.
 QByteArray linkClassText(const Rom &rom, const QByteArray &compiled, int count);
+void verifyClassDescriptionRouting(const QByteArray &image, quint32 entry);
+void installClassDescriptionRouting(QByteArray &image, quint32 previousEntry, quint32 nextEntry);
 } // namespace lordly

@@ -178,5 +178,73 @@ for (const id of [1, 5, layout.count - 1]) for (const allowed of [false, true])
     assert.equal(m.get('v0'), allowed && (!check || missing === -1) ? 1 : 0);
     equipmentCases++;
   }
-console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, sourceClassCases, actionClassCases, equipmentCases, allocationBytes:layout.ownerBytes,
+let descriptionCases = 0, helpCases = 0, specialDescriptionCases = 0, descriptionRecords = 0;
+{
+  const m = cpu(), header = 0x5DC80;
+  assert.equal(rom.readUInt32BE(header + 8), 3);
+  m.load(0x80187C14, rom.subarray(0x5DB14, 0x5DC80));
+  m.load(0x801805D0, rom.subarray(0x564D0, 0x566F4));
+  m.load(0x8017FC28, rom.subarray(0x55B28, 0x564B4));
+  for (let bank = 0; bank < 21; ++bank) for (let id = 0; id <= 256; ++id) {
+    m.set('sp', stack); m.set('s6', 0x12345678); m.set('a0', 0x80051000);
+    m.set('a1', bank); m.set('a2', id); m.set('a3', 0x87654321);
+    m.call(0x801805D0, 0x801805D8);
+    const expected = bank !== 5 || id < 165 ? id : id === 256 ? 224 : id + 60;
+    assert.equal(m.get('a2'), expected);
+    assert.equal(m.get('a0'), 0x80051000); assert.equal(m.get('a1'), bank);
+    assert.equal(m.get('a3'), 0x87654321); assert.equal(m.get('sp'), stack - 0x88);
+    assert.equal(m.r32(stack - 8), 0x12345678); descriptionCases++;
+  }
+  for (let help = 0; help < 23; ++help) {
+    m.load(0x80051000, Buffer.from(String(help).padStart(2, '0')));
+    m.w8(0x801939D8, 1); m.set('s6', 0x80051000); m.set('s1', 0x80052000);
+    m.call(0x801804E0, 0x80180544);
+    assert.equal(m.get('a0'), 0x80052000); assert.equal(m.get('a2'), 200 + help);
+    assert.equal(m.get('a1'), rom.readUInt32BE(0x66D60)); helpCases++;
+  }
+  // This copied instruction span contains a relative selection branch and its
+  // original absolute exit. It tests the Prince exception, not overlay loading.
+  m.load(0x80052000, rom.subarray(0x15E558, 0x15E584));
+  for (const state of [0, 4, 5]) for (const id of [1, 98, 164, 165, 224, 255]) {
+    m.w8(0x8018F481, state); m.set('a0', id);
+    m.call(0x80052000, 0x8020D4F0);
+    const special = state === 4 && id === 98;
+    assert.equal(m.get('v0'), 0x5000 | (special ? 256 : id)); specialDescriptionCases++;
+  }
+  if (rom.toString('ascii', 0x2378854, 0x237885C) === 'LC05TEXT') {
+    // Independent browser codec supplies the decoded bank. Execute the original
+    // game's SJIS-aware record selector; allocation/free are the only traps.
+    const vm = require('node:vm');
+    const context = vm.createContext({window:{}, Uint8Array, DataView});
+    vm.runInContext('var OB64 = window.OB64 = {};\n' + fs.readFileSync(path.join(__dirname, '../../parsers.js'), 'utf8'), context);
+    const resourceOffset = rom.readUInt32BE(0x2378854 + 12);
+    const decoded = Buffer.from(context.OB64.lzssDecode(rom, resourceOffset + 8, rom.readUInt32BE(resourceOffset + 4)).output);
+    const entries = []; let pos = 0;
+    while (pos < decoded.length) {
+      const end = decoded.indexOf(Buffer.from([13,10]), pos);
+      assert(end >= pos); entries.push(decoded.subarray(pos,end)); pos = end + 2;
+    }
+    assert.equal(entries.length, layout.count + 60);
+    const resource = 0x80080000, output = 0x80054000;
+    m.load(0x8017FAF8, rom.subarray(0x559F8, 0x55B28));
+    m.trap(0x8009DD38, c => {
+      assert.equal(c.get('a0'), resourceOffset - 0x594280);
+      c.load(resource, decoded); c.set('v0', resource);
+    });
+    m.trap(0x800712C4, c => assert.equal(c.get('a0'), resource));
+    for (const id of [...Array(layout.count).keys(), 256]) {
+      m.set('sp', stack); m.set('a0', output); m.set('a1', 5); m.set('a2', id); m.set('a3', 0);
+      m.call(0x801805D0, 0x801805D8);
+      m.set('sp', stack); m.set('a1', resourceOffset - 0x594280);
+      m.load(output - 1, Buffer.alloc(0x502, 0xA5));
+      m.call(0x8017FAF8, 0x80000100, 2000000);
+      const index = id === 256 ? 224 : id < 165 ? id : id + 60;
+      const expected = Buffer.concat([entries[index], Buffer.from([13,10])]);
+      assert.deepEqual(Buffer.from(m.ram.slice(m.phys(output), m.phys(output) + expected.length)), expected);
+      assert.equal(m.r8(output - 1), 0xA5); assert.equal(m.r8(output + expected.length), 0xA5);
+      assert(expected.length < 0x500); descriptionRecords++;
+    }
+  }
+}
+console.log(JSON.stringify({classes:layout.count, categoryCases:cases, aliasCases, sourceClassCases, actionClassCases, equipmentCases, descriptionCases, helpCases, specialDescriptionCases, descriptionRecords, allocationBytes:layout.ownerBytes,
   scope:'executed selection/name/count/sprite-call spans; not raster output or full game'}));

@@ -179,6 +179,31 @@ class UiTests : public QObject {
         editor.selectClass(100);
         QVERIFY(!gate->isEnabled());
         QVERIFY(!equipment->isEnabled());
+        RecordModel model(&project, Table::Classes, &undo);
+        connect(&model, &RecordModel::edited, &editor,
+                [&] { editor.selectClass(model.rowCount() > 165 ? 165 : 100); });
+        QCOMPARE(model.appendClass(5, "New promotion class"), 165);
+        QVERIFY(gate->isEnabled());
+        QVERIFY(equipment->isEnabled());
+        QCOMPARE(gate->value(), 90);
+        gate->setValue(120);
+        QCOMPARE(u8(project.promotion()->gates, 165 * 8), quint8(120));
+        undo.undo();
+        QCOMPARE(gate->value(), 90);
+        undo.undo();
+        QVERIFY(!gate->isEnabled());
+        QCOMPARE(project.promotion()->classCount(), 81);
+        undo.redo();
+        QVERIFY(gate->isEnabled());
+        QCOMPARE(project.promotion()->classCount(), 166);
+        const auto previousFamily = project.promotion()->families["assignments"].toArray()[165];
+        editor.findChild<QLineEdit *>("newFamilyName")->setText("Added class family");
+        editor.findChild<QPushButton *>("createFamily")->click();
+        QCOMPARE(project.promotion()->families["assignments"].toArray()[165].toInt(), 17);
+        undo.undo();
+        QCOMPARE(project.promotion()->families["assignments"].toArray()[165], previousFamily);
+        undo.redo();
+        QCOMPARE(editor.findChild<QComboBox *>("classFamily")->currentData().toInt(), 17);
     }
 };
 QTEST_MAIN(UiTests)

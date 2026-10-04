@@ -6,11 +6,50 @@
 #include <QJsonDocument>
 
 namespace lordly {
-static QJsonArray owners() {
+static QJsonArray owners(const QString &kind = "owners") {
     QFile file(":/game/classes/text-owners.json");
     if (!file.open(QIODevice::ReadOnly))
         throw Error("Missing class description resource catalog");
-    return QJsonDocument::fromJson(file.readAll()).object()["owners"].toArray();
+    return QJsonDocument::fromJson(file.readAll()).object()[kind].toArray();
+}
+void verifyClassDescriptionRouting(const QByteArray &image, quint32 entry) {
+    for (const auto &value : owners("routingOwners")) {
+        const auto owner = value.toObject();
+        auto bytes = image.mid(owner["start"].toInt(), owner["size"].toInt());
+        if (bytes.size() != owner["size"].toInt())
+            throw Error("Truncated class description routing owner");
+        if (entry) {
+            if (owner["entry"].toBool()) {
+                if (u32(bytes, 0) != (0x08000000U | ((entry >> 2) & 0x3ffffff)) || u32(bytes, 4))
+                    throw Error("Class description routing entry has changed");
+                put32(bytes, 0, 0x27bdff78);
+                put32(bytes, 4, 0xafb60080);
+            } else {
+                const auto at = owner["immediate"].toInt();
+                if (u32(bytes, at) != 0x24040100)
+                    throw Error("Special class description routing has changed");
+                put32(bytes, at, 0x240400e0);
+            }
+        }
+        if (sha256(bytes) != owner["retailSha256"].toString().toLatin1())
+            throw Error("Unrecognized class description routing owner");
+    }
+}
+void installClassDescriptionRouting(QByteArray &image, quint32 previousEntry, quint32 nextEntry) {
+    verifyClassDescriptionRouting(image, previousEntry);
+    if (!nextEntry || nextEntry % 4)
+        throw Error("Invalid class description routing entry");
+    for (const auto &value : owners("routingOwners")) {
+        const auto owner = value.toObject();
+        const auto start = owner["start"].toInt();
+        if (owner["entry"].toBool()) {
+            put32(image, start, 0x08000000U | ((nextEntry >> 2) & 0x3ffffff));
+            put32(image, start + 4, 0);
+        } else {
+            put32(image, start + owner["immediate"].toInt(), 0x24040100);
+        }
+    }
+    verifyClassDescriptionRouting(image, nextEntry);
 }
 static QByteArray relocate(const QJsonObject &owner, QByteArray bytes, quint32 before,
                            quint32 after) {

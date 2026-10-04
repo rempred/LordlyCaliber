@@ -119,7 +119,7 @@ void PromotionEditor::selectClass(int id) {
 void PromotionEditor::refresh() {
     refreshing_ = true;
     const bool available = project_->promotion().has_value();
-    const bool editable = available && id_ >= 1 && id_ < 81;
+    const bool editable = available && id_ >= 1 && id_ < project_->promotion()->classCount();
     families_->setEnabled(editable);
     mask_->setEnabled(editable);
     equipmentSets_->setEnabled(editable);
@@ -159,7 +159,8 @@ void PromotionEditor::refresh() {
 }
 void PromotionEditor::edit(const QString &label,
                            const std::function<void(Promotion &)> &operation) {
-    if (refreshing_ || !project_->promotion() || id_ < 1 || id_ >= 81)
+    if (refreshing_ || !project_->promotion() || id_ < 1 ||
+        id_ >= project_->promotion()->classCount())
         return;
     try {
         auto before = project_->promotion()->json();

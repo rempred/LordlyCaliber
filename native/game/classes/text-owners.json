@@ -15,5 +15,19 @@
       "word": 20,
       "retailSha256": "0c9671e8cfe5d9e1454dc7c87ec849ff7f1262b7107795835264338678735937"
     }
+  ],
+  "routingOwners": [
+    {
+      "start": 353488,
+      "size": 548,
+      "entry": true,
+      "retailSha256": "b9a581cf4bdd0c4f6b83a9270cef4d21827469b0dfd82608f8bd411da0a654c5"
+    },
+    {
+      "start": 1434776,
+      "size": 472,
+      "immediate": 224,
+      "retailSha256": "e7bf5e93c23e39ce91a10b7a7513f401de16bcc75fba051e851be83ca534195e"
+    }
   ]
 }

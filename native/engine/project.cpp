@@ -511,6 +511,8 @@ void Project::applyManifest(const QJsonObject &object) {
         (!object.contains("promotion") ||
          candidate.promotion_->classCount() != candidate.records(Table::Classes).size()))
         throw Error("Added classes require matching promotion data");
+    for (const auto &bank : candidate.texts_)
+        bank.validateRuntimeSize();
     *this = std::move(candidate);
 }
 void Project::importLegacy(const QJsonObject &object) {

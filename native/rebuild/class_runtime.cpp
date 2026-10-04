@@ -48,6 +48,19 @@ ClassRuntimeBuild buildClassRuntime(const ClassData &classes, const Compiler &co
         !result.code.entries.contains("lc_secondary_reset") ||
         !result.code.entries.contains("lc_boot_classes"))
         throw Error("Class initialization module exceeds or disagrees with its runtime layout");
+    if (result.saves) {
+        QFile adapter(":/game/classes/description-index.s");
+        if (!adapter.open(QIODevice::ReadOnly))
+            throw Error("Missing maintained class description routing source");
+        result.placement.descriptionEntry = result.code.address + quint32(result.code.bytes.size());
+        const auto bytes = compiler.assembleOwner(adapter.readAll(), directory, "description_index",
+                                                  result.placement.descriptionEntry,
+                                                  {{"lc_description_continue", 0x801805d8}});
+        if (bytes.size() != 64 ||
+            result.code.bytes.size() + bytes.size() > ClassPlacement::codeCapacity)
+            throw Error("Class description routing exceeds its resident code allocation");
+        result.code.bytes += bytes;
+    }
     result.placement.layout = result.data.layout;
     result.placement.dataRomOffset = dataRomOffset;
     result.placement.codeBytes = quint32(result.code.bytes.size());
@@ -72,6 +85,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     const auto textPlacement = ClassTextPlacement::read(rom);
     if (prior && prior->saves.installed() && !build.saves)
         throw Error("Rebuilding this class allocation also requires its expanded save runtime");
+    if (prior && prior->descriptionEntry && !build.placement.descriptionEntry)
+        throw Error("Rebuilding this class allocation requires its description routing");
     const auto inventory = prior && !prior->runtimeInventory.isEmpty()
                                ? std::optional<ClassRuntimeInventory>(
                                      ClassRuntimeInventory::decode(prior->runtimeInventory))
@@ -232,6 +247,9 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
     if (build.saves)
         placement.saves =
             installSaveRuntime(image, *build.saves, prior ? prior->saves : SavePlacement{});
+    if (placement.descriptionEntry)
+        installClassDescriptionRouting(image, prior ? prior->descriptionEntry : 0,
+                                       placement.descriptionEntry);
     const auto descriptor = placement.descriptor(build.compiledData, build.code.bytes);
     image.replace(ClassPlacement::descriptorRomOffset, descriptor.size(), descriptor);
     image.replace(at, bytes, build.compiledData);

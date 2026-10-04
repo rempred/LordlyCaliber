@@ -20,6 +20,7 @@ struct TextBank {
     QString text(int id) const;
     void setText(int id, const QString &text);
     QByteArray serialized() const;
+    void validateRuntimeSize() const;
     bool modified() const;
 };
 QString decodeText(const QByteArray &bytes);

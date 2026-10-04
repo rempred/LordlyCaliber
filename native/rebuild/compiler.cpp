@@ -2,6 +2,7 @@
 #include "engine/class_text.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/elf_references.h"
+#include "rebuild/promotion_runtime.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -268,7 +269,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
     const auto &promotion = *p.promotion();
     if (promotion.classCount() != 81)
         throw Error(
-            "Expanded promotion data needs the remaining class-menu and save runtime integration");
+            "Expanded promotion data must use the coordinated class runtime builder");
     bool family = promotion.expanded || promotion.directGates ||
                   promotion.families != promotion.originalFamilies ||
                   encodeLzss(promotion.gates).size() > promotion.retailResource.capacity;
@@ -463,12 +464,26 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
         }
     }
 }
-BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &directory) {
+BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory) {
+    auto p = input;
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
-    const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified();
+    const bool expandedClasses =
+        p.records(Table::Classes).size() > 165 ||
+        (p.promotion() && p.promotion()->classCount() != 81) ||
+        (priorClassPlacement && !priorClassPlacement->runtimeInventory.isEmpty());
+    if (expandedClasses) {
+        p.loadPromotion();
+        p.loadTexts();
+        if (p.promotion()->classCount() != p.records(Table::Classes).size() ||
+            p.textBanks()["classes"].entries.size() != p.records(Table::Classes).size() + 60)
+            throw Error("Expanded class records, promotion data and descriptions must have "
+                        "matching counts");
+    }
+    const bool relocateClasses =
+        priorClassPlacement.has_value() || p.classNamesModified() || expandedClasses;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -501,7 +516,7 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
         auto compiled =
             compiler.compileData(bank.serialized(), directory, "descriptions_" + bank.spec.id);
         if (bank.spec.id == "classes" && p.rom().revision() == 0 &&
-            (ClassTextPlacement::read(p.rom()) ||
+            (ClassTextPlacement::read(p.rom()) || bank.entries.size() != 225 ||
              encodeLzss(compiled).size() > bank.resource.capacity)) {
             result.image =
                 linkClassText(Rom::fromBytes(result.image), compiled, int(bank.entries.size()));
@@ -511,7 +526,8 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
         }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
-    rebuildPromotion(p, compiler, directory, result);
+    if (!expandedClasses)
+        rebuildPromotion(p, compiler, directory, result);
     if (relocateClasses) {
         auto offset = priorClassPlacement ? priorClassPlacement->dataRomOffset
                                           : quint32((result.image.size() + 15) & ~qsizetype(15));
@@ -523,8 +539,22 @@ BuildResult rebuild(const Project &p, const QString &toolsRoot, const QString &d
                     priorClassPlacement->layout.indexBase !=
                 quint64(result.image.size()))
             offset = quint32((result.image.size() + 15) & ~qsizetype(15));
-        const auto classes = buildClassRuntime(data, compiler, directory, offset);
-        result.image = linkClassRuntime(Rom::fromBytes(result.image), classes);
+        const auto classes = buildClassRuntime(
+            data, compiler, directory, offset,
+            expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()));
+        const auto menus =
+            expandedClasses
+                ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
+                      p.rom(), classes.data.layout, *p.promotion(), compiler, directory))
+                : std::nullopt;
+        result.image =
+            linkClassRuntime(Rom::fromBytes(result.image), classes, menus ? &*menus : nullptr);
+        if (menus)
+            result.report
+                << QString(
+                       "Compiled expanded promotion, selection and category menus for %1 classes; "
+                       "rebuilt description routing and SRAM/Controller Pak conversion")
+                       .arg(classes.data.layout.count);
         result.report << QString("Rebuilt %1 classes with relocated names, appearance data and "
                                  "source-built initialization (%2 bytes of RAM)")
                              .arg(classes.data.layout.count)

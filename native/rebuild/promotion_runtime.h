@@ -10,8 +10,8 @@ struct PromotionRuntimeBuild {
     QMap<quint32, QByteArray> owners;
     QByteArray container;
 };
-// Internal build component. This alone does not install the remaining class
-// consumers or save support, and cannot be used as a public ROM export.
+// Compiles the menu owners. The normal exporter installs this together with
+// class data, description routing and save support.
 PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLayout &classes,
                                             const Promotion &promotion, const Compiler &compiler,
                                             const QString &directory);

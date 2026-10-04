@@ -25,6 +25,7 @@
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -184,8 +185,21 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
     for (int i = 2; i < model->columnCount(); ++i)
         grid->setColumnWidth(i, 130);
     split->addWidget(grid);
-    auto inspector = new QTabWidget;
+    auto inspector = new QWidget;
     inspector->setMinimumWidth(340);
+    auto inspectorLayout = new QVBoxLayout(inspector);
+    inspectorLayout->setContentsMargins(0, 0, 0, 0);
+    auto sections = new QComboBox;
+    sections->setObjectName(tableKey(table) + "InspectorSection");
+    auto inspectorPages = new QStackedWidget;
+    inspectorLayout->addWidget(sections);
+    inspectorLayout->addWidget(inspectorPages, 1);
+    connect(sections, &QComboBox::currentIndexChanged, inspectorPages,
+            &QStackedWidget::setCurrentIndex);
+    auto addInspectorPage = [sections, inspectorPages](QWidget *page, const QString &name) {
+        inspectorPages->addWidget(page);
+        sections->addItem(name);
+    };
     split->addWidget(inspector);
     split->setSizes({900, 390});
     auto selected = std::make_shared<int>(-1);
@@ -224,7 +238,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
             auto scroll = new QScrollArea;
             scroll->setWidgetResizable(true);
             scroll->setWidget(body);
-            inspector->addTab(scroll, f.group);
+            addInspectorPage(scroll, f.group);
             groups[f.group] = form;
         }
         auto editor = new ValueEditor(f, project_->catalog(), [model, selected, n](int value) {
@@ -241,7 +255,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         auto scroll = new QScrollArea;
         scroll->setWidgetResizable(true);
         scroll->setWidget(promotion);
-        inspector->addTab(scroll, "Promotion");
+        addInspectorPage(scroll, "Promotion");
     }
     auto refresh = [this, table, selected, editors, promotion, model, addClass] {
         if (*selected >= model->rowCount())
@@ -278,6 +292,9 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         auto group = columns->currentData().toString();
         for (int i = 0; i < fields(table).size(); ++i)
             grid->setColumnHidden(i + 2, !group.isEmpty() && fields(table)[i].group != group);
+        const auto section = sections->findText(group);
+        if (section >= 0)
+            sections->setCurrentIndex(section);
     });
     columns->setCurrentIndex(columns->findData("Stats"));
     workspaces_->addTab(page, title);

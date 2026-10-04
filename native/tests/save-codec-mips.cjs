@@ -286,7 +286,7 @@ if(process.argv[3]) {
   const candidate=fs.readFileSync(process.argv[3]);
   if(candidate.readUInt32BE(0)===0x37804012)candidate.swap16();
   const header=candidate.subarray(0x5DC80,0x5DD00);
-  assert.equal(header.toString('ascii',0,8),'LC05CLAS');assert.equal(header.readUInt32BE(8),2);
+  assert.equal(header.toString('ascii',0,8),'LC05CLAS');assert([2,3].includes(header.readUInt32BE(8)));
   runtimeFlags=header.readUInt32BE(44);
   const codeEnd=0x80187F00+header.readUInt32BE(84),pools=[],heaps=[],cacheRanges=[];
   m.load(0x80070C00,candidate.subarray(0x1000,0x3A000));

@@ -1,4 +1,5 @@
 #include "engine/class_data.h"
+#include "engine/class_text.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/promotion.h"
 #include <QFile>
@@ -31,6 +32,11 @@ static void validatePlacement(const ClassPlacement &p) {
     if (p.bootEntry == p.heapEntry || p.bootEntry == p.secondaryEntry ||
         p.heapEntry == p.secondaryEntry)
         throw Error("Class initialization entries overlap");
+    if (p.descriptionEntry &&
+        (!p.saves.installed() || p.descriptionEntry % 4 ||
+         p.descriptionEntry < ClassPlacement::codeRamAddress ||
+         p.descriptionEntry + 64 != ClassPlacement::codeRamAddress + p.codeBytes))
+        throw Error("Class description routing is outside its resident code allocation");
 }
 QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &code) const {
     validatePlacement(*this);
@@ -40,7 +46,7 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     paddedCode.append(QByteArray(codeCapacity - code.size(), 0));
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05CLAS");
-    put32(header, 8, saves.installed() ? 2 : 1);
+    put32(header, 8, descriptionEntry ? 3 : saves.installed() ? 2 : 1);
     put32(header, 12, dataRomOffset);
     put32(header, 16, quint32(data.size()));
     put32(header, 20, layout.count);
@@ -63,6 +69,7 @@ QByteArray ClassPlacement::descriptor(const QByteArray &data, const QByteArray &
     put32(header, 88, saves.codeChecksum);
     put32(header, 92, saves.ownerChecksum);
     put32(header, 96, saves.version >= 2 ? saves.version : 0);
+    put32(header, 100, descriptionEntry);
     put32(header, 124, crc32(header.first(124)));
     return header;
 }
@@ -71,10 +78,11 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     if (!header.startsWith("LC05CLAS"))
         return std::nullopt;
     const auto version = u32(header, 8);
-    if (rom.revision() != 0 || header.size() != descriptorSize || (version != 1 && version != 2) ||
-        u32(header, 124) != crc32(header.first(124)) || header.mid(100, 24) != QByteArray(24, 0) ||
+    if (rom.revision() != 0 || header.size() != descriptorSize || version < 1 || version > 3 ||
+        u32(header, 124) != crc32(header.first(124)) || header.mid(104, 20) != QByteArray(20, 0) ||
+        (version < 3 && u32(header, 100)) || (version == 3 && !u32(header, 100)) ||
         (version == 1 && header.mid(84, 16) != QByteArray(16, 0)) ||
-        (version == 2 && !u32(header, 84)))
+        (version >= 2 && !u32(header, 84)))
         throw Error("Unrecognized or damaged relocated class descriptor");
     ClassPlacement result;
     auto &l = result.layout;
@@ -90,13 +98,16 @@ std::optional<ClassPlacement> ClassPlacement::read(const Rom &rom) {
     result.bootEntry = u32(header, 60);
     result.heapEntry = u32(header, 64);
     result.secondaryEntry = u32(header, 68);
+    result.descriptionEntry = u32(header, 100);
     result.directory = u32(header, 72);
     result.directoryCapacity = int(u32(header, 76));
     result.codeBytes = u32(header, 80);
     result.saves = {u32(header, 84), u32(header, 88), u32(header, 92)};
-    result.saves.version = version == 2 ? (u32(header, 96) ? u32(header, 96) : 1) : 0;
+    result.saves.version = version >= 2 ? (u32(header, 96) ? u32(header, 96) : 1) : 0;
     validatePlacement(result);
     result.saves.verify(rom.bytes());
+    if (result.descriptionEntry)
+        verifyClassDescriptionRouting(rom.bytes(), result.descriptionEntry);
     if (u32(header, 16) != l.end - l.indexBase ||
         quint64(result.dataRomOffset) + u32(header, 16) > quint64(rom.bytes().size()) ||
         crc32(rom.bytes().mid(result.dataRomOffset, u32(header, 16))) != u32(header, 52) ||

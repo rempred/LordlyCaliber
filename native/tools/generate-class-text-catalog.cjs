@@ -12,6 +12,12 @@ const owners=[
 ].map(row=>({...row,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
 if(rom.readUInt32BE(0x56404)!==0x3C0501DE || rom.readUInt32BE(0x56408)!==0x34A545D4 ||
    rom.readUInt32BE(0x66D60)!==0x01DE45D4)throw Error('Unexpected class text resource references');
+const routingOwners=[
+  {start:0x564D0,size:0x224,entry:true},
+  {start:0x15E498,size:0x1D8,immediate:0xE0}
+].map(row=>({...row,retailSha256:hash(rom.subarray(row.start,row.start+row.size))}));
+if(rom.readUInt32BE(0x564D0)!==0x27BDFF78 || rom.readUInt32BE(0x564D4)!==0xAFB60080 ||
+   rom.readUInt32BE(0x15E578)!==0x240400E0)throw Error('Unexpected description routing owner');
 fs.writeFileSync(path.join(__dirname,'../game/classes/text-owners.json'),JSON.stringify({
-  generator:'native/tools/generate-class-text-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners
+  generator:'native/tools/generate-class-text-catalog.cjs',input:'US Rev 0 z64 SHA256 '+hash(rom),owners,routingOwners
 },null,2)+'\n');

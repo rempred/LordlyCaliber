@@ -30,6 +30,7 @@ struct ClassPlacement {
     ClassDataLayout layout;
     quint32 dataRomOffset = 0, codeBytes = 0;
     quint32 bootEntry = 0, heapEntry = 0, secondaryEntry = 0;
+    quint32 descriptionEntry = 0;
     quint32 directory = 0;
     int directoryCapacity = 0;
     SavePlacement saves;
