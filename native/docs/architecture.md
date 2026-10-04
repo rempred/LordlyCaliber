@@ -1,5 +1,18 @@
 # Native Lordly Caliber
 
+The scene scheduler now has a resumable portable control adaptation of original
+ROM 2A0680..2A0804. Its reference C at Decomp b5ee7cb3 is HYBRID_C; the host
+implementation contains no assembly. Mode guards are evaluated at their original
+points, and alternate scheduling selects only counter then Director at entry.
+Unavailable services and host budgets retain the current stage without replaying
+successful callbacks. The delayed signed-byte counter preserves wrap and callback
+reset order. All 265 original-instruction callback traces and state snapshots pass,
+both uninterrupted and with a pause before each callback plus one-service budgets.
+The callbacks are controlled, so this verifies orchestration rather than every
+subsystem's game behavior. Unimplemented services remain explicit boundaries.
+The executable places Y-step before the Director; sampled paths follow it. This
+corrects the earlier research reference's same-update claim for new Y-step jobs.
+
 SceneFade owns the full-screen overlay independently of Director state. Its
 12-byte record, scheduled-slot activity, retarget handshake, signed countdown,
 integer alpha interpolation, inherited alpha and explicit cleanup follow the
