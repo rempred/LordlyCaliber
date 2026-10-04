@@ -54,6 +54,34 @@ SceneDrawQueue SceneDrawQueue::fromRecord(const QByteArray &record) {
                                 qint16(u16(record, offset + 18))});
     return result;
 }
+QVector<LordlySceneWorldDrawPass>
+SceneDrawQueue::modeTwoPasses(const std::array<QByteArray, 28> &actors,
+                              const QVector<QByteArray> &objects,
+                              std::array<qint16, 2> shadowAlpha) const {
+    if (objects.size() > 256)
+        throw Error("World drawing supports at most256 objects");
+    const uint8_t *actorPointers[28]{}, *objectPointers[256]{};
+    for (int i = 0; i < 28; ++i) {
+        if (actors[i].isEmpty())
+            continue;
+        if (actors[i].size() != 336)
+            throw Error("Invalid Actor record in world draw queue");
+        actorPointers[i] = reinterpret_cast<const uint8_t *>(actors[i].constData());
+    }
+    for (int i = 0; i < objects.size(); ++i) {
+        if (objects[i].isEmpty())
+            continue;
+        if (objects[i].size() < 21)
+            throw Error("Invalid scene object in world draw queue");
+        objectPointers[i] = reinterpret_cast<const uint8_t *>(objects[i].constData());
+    }
+    LordlySceneWorldDrawPass passes[852];
+    int count = 0;
+    if (!lordly_scene_mode_two_passes(passes, &count, entries_.constData(), int(entries_.size()),
+                                      actorPointers, objectPointers, shadowAlpha.data()))
+        throw Error("World draw queue refers to an absent or invalid Actor/object");
+    return QVector<LordlySceneWorldDrawPass>(passes, passes + count);
+}
 QVector<LordlySceneDrawPass>
 SceneDrawQueue::modeZeroPasses(const std::array<QByteArray, 28> &actors, quint8 objectChannel,
                                quint8 channel) const {

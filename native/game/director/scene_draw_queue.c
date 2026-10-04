@@ -147,6 +147,50 @@ int lordly_scene_draw_queue(LordlySceneDrawEntry out[284], int *out_count,
     *out_count = count;
     return 1;
 }
+/* Selection and ordering from ROM2AA62C..2AAB88. Display-list matrices,
+ * materials and callback drawing are separate owners. */
+int lordly_scene_mode_two_passes(LordlySceneWorldDrawPass out[852], int *out_count,
+                                 const LordlySceneDrawEntry *queue, int queue_count,
+                                 const uint8_t *const actors[28], const uint8_t *const objects[256],
+                                 const int16_t shadow_alpha[2]) {
+    LordlySceneWorldDrawPass passes[852];
+    int i, j, count = 0;
+    if (queue_count < 0 || queue_count > 284)
+        return 0;
+    for (i = 0; i < queue_count; ++i) {
+        const int index = queue[i].index, kind = queue[i].kind;
+        if (kind == 1) {
+            if (index < 0 || index >= 28 || !actors[index])
+                return 0;
+            if (actors[index][0x141] < 2)
+                for (j = 0; j < 2; ++j)
+                    if (shadow_alpha[j] != 0) {
+                        passes[count].kind = 1;
+                        passes[count].index = (int16_t)index;
+                        passes[count].shadow = (int16_t)j;
+                        passes[count++].alpha = (uint8_t)shadow_alpha[j];
+                    }
+        } else if (kind == 0 || kind == 2 || kind == 3) {
+            if (index < 0 || index >= 256 || !objects[index])
+                return 0;
+        }
+    }
+    for (i = 0; i < queue_count; ++i) {
+        const int index = queue[i].index, kind = queue[i].kind;
+        if (kind == 1) {
+            if (actors[index][0x141] & 1)
+                continue;
+        } else if (kind != 0 && kind != 2 && kind != 3)
+            continue;
+        passes[count].kind = (int16_t)kind;
+        passes[count].index = (int16_t)index;
+        passes[count].shadow = -1;
+        passes[count++].alpha = 255;
+    }
+    memcpy(out, passes, count * sizeof(*passes));
+    *out_count = count;
+    return 1;
+}
 /* Selection and ordering from ROM 2AFC68..2B04FC; display-list construction and
  * drawing callbacks belong to their separate owners. */
 int lordly_scene_mode_zero_passes(LordlySceneDrawPass out[568], int *out_count,

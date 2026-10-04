@@ -12,6 +12,9 @@ class SceneDrawQueue {
     }
     QByteArray record() const;
     static SceneDrawQueue fromRecord(const QByteArray &);
+    QVector<LordlySceneWorldDrawPass> modeTwoPasses(const std::array<QByteArray, 28> &actors,
+                                                    const QVector<QByteArray> &objects,
+                                                    std::array<qint16, 2> shadowAlpha) const;
     QVector<LordlySceneDrawPass> modeZeroPasses(const std::array<QByteArray, 28> &actors,
                                                 quint8 objectChannel, quint8 channel) const;
 

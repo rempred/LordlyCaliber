@@ -66,6 +66,17 @@ checks establish the bounded inspector, not full scene or RSP/RDP pixel accuracy
 
 ## Scene depth queues and mode-zero draw passes
 
+Mode-two pass selection now reconstructs ROM2AA62C..2AAB88. Each eligible Actor
+draws both nonzero-opacity shadows in queue order, then the main queue draws
+world objects, projected objects and visible Actors. Channels do not filter this
+mode. Signed16 shadow opacity is tested before narrowing to a byte, preserving
+the original nonzero256-to-zero-alpha callback. Unknown queue kinds are ignored;
+invalid/missing references reject before returning a partial pass list.
+scene_runtime_tests sceneWorldPassesAgainstMips sceneDrawPassesAgainstMips passes
+(681ms):192 complete original world-driver cases/3904 callbacks agree in kind,
+index, shadow matrix and alpha; the existing288 layered-driver cases also pass.
+Queue, projection, material and raster services are controlled in this check.
+
 SceneDrawQueue reconstructs ROM29D634 construction,29D4F0 flattened-camera depth,
 2A17E0 comparison and20FEEC..2101DC sorting in maintained portable C. Objects with
 kind1..3 enter first; present Actors follow with coordinates multiplied by30 and

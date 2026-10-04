@@ -19,6 +19,57 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneWorldPassesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("scene-world-passes-mips.cjs"), path,
+                                 work.filePath("passes.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("passes.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 192);
+        qsizetype compared = 0;
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            auto bytes = [](const QJsonValue &v) {
+                return QByteArray::fromHex(v.toString().toLatin1());
+            };
+            std::array<QByteArray, 28> actors;
+            QVector<QByteArray> objects;
+            for (int i = 0; i < 28; ++i)
+                actors[i] = bytes(row["actors"].toArray()[i]);
+            for (const auto object : row["objects"].toArray())
+                objects.append(bytes(object));
+            const auto queue = SceneDrawQueue::fromRecord(bytes(row["queue"]));
+            const auto alpha = row["alpha"].toArray();
+            const auto passes = queue.modeTwoPasses(actors, objects,
+                {qint16(alpha[0].toInt()), qint16(alpha[1].toInt())});
+            const auto expected = row["calls"].toArray();
+            QCOMPARE(passes.size(), expected.size());
+            for (int i = 0; i < passes.size(); ++i) {
+                const auto call = expected[i].toArray();
+                QCOMPARE(passes[i].kind, call[0].toInt());
+                QCOMPARE(passes[i].index, call[1].toInt());
+                QCOMPARE(passes[i].shadow, call[2].toInt());
+                QCOMPARE(passes[i].alpha, call[3].toInt());
+            }
+            compared += passes.size();
+            objects[0].clear();
+            QVERIFY_THROWS_EXCEPTION(Error, queue.modeTwoPasses(actors, objects, {0, 0}));
+        }
+        qInfo() << "192 original world driver cases; complete callbacks compared:" << compared;
+        QByteArray invalid(20, 0);
+        put16(invalid, 16, 1);
+        put16(invalid, 18, 28);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(invalid).modeTwoPasses({}, {}, {0, 0}));
+        put16(invalid, 18, 0);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(invalid).modeTwoPasses({}, {}, {0, 0}));
+    }
     void actorWorldMatricesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
