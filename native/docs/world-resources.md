@@ -65,4 +65,16 @@ Native folder/archive persistence and ordinary compiled export compose sites and
 treasure with rebuilt shops and scenario squads. Reopening checks the full logical
 model; unchanged re-export is identical. Qt checks apply untouched controls to
 every loaded site/treasure, then exercise editing, addition/removal and undo. The
-rendered pages are inspected. Browser import and map presentation remain next.
+rendered pages are inspected.
+
+Browser scenario projects now import treasure payloads, allegiance intents and
+population/morale edits. The compatibility catalog checks 40 treasure archives,
+59 site streams and 470 site-selector mappings against the source ROM; 52 absent
+descriptors remain explicit rejections. The generator emits identities and hashes,
+not decoded game content. Imports retain the browser's shared-resource behavior,
+including ignoring allegiance intents equal to their original value and rejecting
+conflicting changes. Native edits can then diverge for individual scenarios while
+retaining shared collection flags. Clearing imported edits persists without reviving
+the retained browser project. The independent browser fixture authors and exports
+three payloads for native comparison, then native compile/export/reopen checks the
+same data. Map presentation remains unfinished.

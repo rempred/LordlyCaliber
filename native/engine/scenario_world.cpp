@@ -55,6 +55,7 @@ ScenarioWorld ScenarioWorld::load(const Rom &rom) {
                 throw Error("Scenario site references a missing global record");
         }
         result.rows_[key] = row;
+        result.originalTreasureGroups_[key] = resources.treasureSelector(key);
     }
     result.originals_ = result.rows_;
     return result;
@@ -232,7 +233,7 @@ void ScenarioWorld::apply(const QJsonObject &value) {
         next.validateScenario(key, s);
         next.rows_[key] = s;
     }
-    QSet<int> addedIds;
+    QMap<int, int> addedIds;
     for (auto it = next.rows_.begin(); it != next.rows_.end(); ++it) {
         QSet<int> originalIds;
         const auto &base = original(it.key()).treasures;
@@ -241,10 +242,14 @@ void ScenarioWorld::apply(const QJsonObject &value) {
         for (int i = 0; i < treasureCount(it->treasures); ++i) {
             const int id = u8(it->treasures, 1 + i * 6);
             if (!originalIds.contains(id)) {
-                if (reservedTreasureIds_.contains(id) || addedIds.contains(id))
+                // Imported archive aliases retain a shared collection flag even
+                // when their items or coordinates are edited independently later.
+                const int claim = originalTreasureGroups_[it.key()];
+                if (reservedTreasureIds_.contains(id) ||
+                    (addedIds.contains(id) && addedIds[id] != claim))
                     throw Error(
                         "Added treasures must not reuse another treasure's collection flag");
-                addedIds.insert(id);
+                addedIds[id] = claim;
             }
         }
     }

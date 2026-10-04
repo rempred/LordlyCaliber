@@ -176,12 +176,15 @@ class EngineTests : public QObject {
             restored.applyManifest(project.manifest());
             QVERIFY(!restored.scenarios()->modified());
             QCOMPARE(restored.manifest()["legacyImport"], project.manifest()["legacyImport"]);
-            // Unimplemented site/treasure sections remain pending instead of disappearing.
+            // Invalid world data rejects atomically; genuinely unknown sections remain pending.
             auto retained = scenario;
             retained["modifiedTreasures"] = QJsonObject{{"750", QJsonObject{{"rawHex", "00"}}}};
             auto pending = Project::fromRom(rom);
+            QVERIFY_THROWS_EXCEPTION(Error, pending.importLegacy(retained));
+            retained = scenario;
+            retained["futureWorldFeature"] = QJsonObject{{"enabled", true}};
             pending.importLegacy(retained);
-            QVERIFY(pending.pendingLegacySections().contains("scenario.modifiedTreasures"));
+            QVERIFY(pending.pendingLegacySections().contains("scenario.futureWorldFeature"));
             QVERIFY_THROWS_EXCEPTION(Error, rebuild(pending, tools, work.path()));
             QCOMPARE(Rom::open(path).bytes(), rom.bytes());
             output.setAutoRemove(false);
@@ -449,6 +452,118 @@ class EngineTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void browserWorldImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            QTemporaryDir work;
+            const auto fixturePath = work.filePath("world.json");
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("browser-world-fixture.cjs"),
+                                     path, fixturePath});
+            QVERIFY(generator.waitForFinished(30000));
+            const auto generatorErrors = generator.readAllStandardError();
+            QVERIFY2(generator.exitCode() == 0, generatorErrors.constData());
+            QFile file(fixturePath);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto fixture = QJsonDocument::fromJson(file.readAll()).object(),
+                       patch = fixture["patch"].toObject(),
+                       expected = fixture["expected"].toObject();
+            const int archive = fixture["treasureArchive"].toInt();
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.importLegacy(patch);
+            QVERIFY(project.world());
+            QVERIFY(project.pendingLegacySections().isEmpty());
+            const auto authored = project.world()->json();
+            auto independent = *project.world();
+            const int last = ScenarioWorld::treasureCount(independent.scenario(52).treasures) - 1;
+            auto moved = ScenarioWorld::treasureRecord(independent.scenario(52).treasures, last);
+            moved[1] ^= char(1);
+            independent.setTreasure(52, last, moved);
+            auto independentProject = project;
+            independentProject.setWorld(independent.json());
+            QCOMPARE(independentProject.world()->scenario(19), project.world()->scenario(19));
+            QCOMPARE(authored["towns"].toString(), expected["691"].toString());
+            for (const int k : {19, 52, 53, 54})
+                QCOMPARE(QString::fromLatin1(project.world()->scenario(k).treasures.toHex()),
+                         expected[QString::number(archive)].toString());
+            for (const int k : {52, 53, 54})
+                QCOMPARE(QString::fromLatin1(project.world()->scenario(k).sites.toHex()),
+                         expected["725"].toString());
+            QCOMPARE(project.world()->scenario(19).sites, project.world()->original(19).sites);
+            project.saveFolder(work.path());
+            project.saveArchive(work.filePath("world.lcproject"));
+            for (const auto &location : {work.path(), work.filePath("world.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.world()->json(), authored);
+                QVERIFY(restored.pendingLegacySections().isEmpty());
+            }
+            const auto result = rebuild(project, tools, work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-world-import-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadWorld();
+            QCOMPARE(reopened.world()->json(), authored);
+            auto fresh = Project::fromRom(rom);
+            const auto original = fresh.manifest();
+            const auto scenario = patch["patches"].toObject()["scenario"].toObject();
+            auto noOpIntent = scenario;
+            noOpIntent["siteAllegiances"] = QJsonObject{{"52", QJsonObject{{"1", "enemy"}}},
+                                                        {"53", QJsonObject{{"1", "allied"}}}};
+            auto noOpProject = Project::fromRom(rom);
+            noOpProject.importLegacy(noOpIntent);
+            QCOMPARE(noOpProject.world()->json(), authored);
+            auto invalid = scenario;
+            invalid["siteAllegiances"] = QJsonObject{{"52", QJsonObject{{"1", "enemy"}}},
+                                                     {"53", QJsonObject{{"1", "neutral"}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), original);
+            invalid = scenario;
+            auto treasures = invalid["modifiedTreasures"].toObject();
+            auto row = treasures[QString::number(archive)].toObject();
+            row["filename"] = "different.bin";
+            treasures[QString::number(archive)] = row;
+            invalid["modifiedTreasures"] = treasures;
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), original);
+            invalid = scenario;
+            invalid["siteAllegiances"] = QJsonObject{{"10", QJsonObject{{"1", "enemy"}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), original);
+            invalid = scenario;
+            invalid["strongholdFields"] = QJsonObject{{"185", QJsonObject{{"population", 1.5}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, fresh.importLegacy(invalid));
+            QCOMPARE(fresh.manifest(), original);
+            auto changedSource = Project::fromRom(Rom::fromBytes(result.image));
+            QVERIFY_THROWS_EXCEPTION(Error, changedSource.importLegacy(patch));
+            auto cleared = *project.world();
+            for (int k = 1; k < 65; ++k)
+                cleared.restoreScenario(k);
+            for (int id = 1; id <= ScenarioWorld::townCount; ++id)
+                cleared.restoreTown(id);
+            project.setWorld(cleared.json());
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(project.manifest());
+            QVERIFY(restored.world());
+            QVERIFY(!restored.world()->modified());
+            QVERIFY(restored.pendingLegacySections().isEmpty());
+            QCOMPARE(restored.manifest()["legacyImport"], project.manifest()["legacyImport"]);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Browser world export:" << candidate;
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void worldAuthoringExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -515,9 +630,9 @@ class EngineTests : public QObject {
             QVERIFY_THROWS_EXCEPTION(Error, exhausted.addTreasure(freeKey));
             auto malformed = model.json();
             auto rows = malformed["scenarios"].toObject();
-            auto row = rows["53"].toObject();
+            auto row = rows["1"].toObject();
             row["treasures"] = QString::fromLatin1(model.scenario(key).treasures.toHex());
-            rows["53"] = row;
+            rows["1"] = row;
             malformed["scenarios"] = rows;
             QVERIFY_THROWS_EXCEPTION(Error, rejected.apply(malformed));
             QCOMPARE(rejected.json(), model.json());

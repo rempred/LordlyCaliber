@@ -552,7 +552,7 @@ QJsonObject Project::manifest() const {
         result["scenarios"] = scenarios_->json();
     else
         result.remove("scenarios");
-    if (world_ && world_->modified())
+    if (world_ && (world_->modified() || oldPatches["scenario"].isObject()))
         result["world"] = world_->json();
     else
         result.remove("world");
@@ -697,7 +697,8 @@ void Project::applyManifest(const QJsonObject &object) {
         if (!object["world"].isObject())
             throw Error("Invalid saved scenario world data");
         candidate.setWorld(object["world"].toObject());
-    }
+    } else
+        candidate.importLegacyWorld(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -778,6 +779,15 @@ void Project::importLegacyScenarios(const QJsonObject &object) {
         return;
     loadScenarios();
     scenarios_->importBrowser(rom_, scenario, squads.isEmpty() ? oldSquads : squads, classData());
+}
+void Project::importLegacyWorld(const QJsonObject &object) {
+    const auto value = object["patches"].toObject()["scenario"];
+    if (value.isUndefined() || value.isNull())
+        return;
+    if (!value.isObject())
+        throw Error("Invalid imported scenario world data");
+    loadWorld();
+    world_->importBrowser(rom_, value.toObject());
 }
 void Project::importLegacyEncounters(const QJsonObject &object) {
     const auto patches = object["patches"].toObject();
@@ -961,6 +971,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyScenarioRates(object);
     candidate.importLegacyCustomSquads(object);
     candidate.importLegacyScenarios(object);
+    candidate.importLegacyWorld(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -1043,7 +1054,11 @@ QStringList Project::pendingLegacySections() const {
                 "modifiedEsets", "levelBaseEdits", "addedSquads", "squadLevelCopies", "layers"};
             const auto parts = it.value().toObject();
             for (auto part = parts.begin(); part != parts.end(); ++part)
-                if (!consumed.contains(part.key()) && changed(part.value()))
+                if (!consumed.contains(part.key()) &&
+                    !(world_ &&
+                      (part.key() == "modifiedTreasures" || part.key() == "siteAllegiances" ||
+                       part.key() == "strongholdFields")) &&
+                    changed(part.value()))
                     pending << "scenario." + part.key();
             continue;
         }

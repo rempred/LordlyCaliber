@@ -43,8 +43,8 @@ Browser scenario projects (versions 1–4) and scenario sections in the main pro
 now import explicit base-level intent, added squads, copied level records and
 ordinary squad overrides. Source hashes, ownership claims and aliases must agree;
 older resource paths can migrate under matching hashes. Native restore operations
-remain authoritative over retained browser state on reopening. Unimplemented
-site/treasure sections remain pending and block export. An independent fixture
+remain authoritative over retained browser state on reopening. Unknown project
+sections remain pending and block export. An independent fixture
 uses the browser's authoring and project writer, then checks native persistence,
 compiled export and reopening. Alternate-overlay key 54 remains unsupported.
 Site and treasure editing now uses a separate world model. Global site metadata,
@@ -56,7 +56,10 @@ collection flags and respect the original 16-entry scene arrays. Native and orig
 MIPS checks cover relocation, cache/free/reload, flag IDs through 255 and combined
 shop/squad/world exports. The desktop controls preserve untouched original data.
 See [world-resources.md](world-resources.md) for evidence and limitations. Browser
-site/treasure import, map presentation and full-game validation remain unfinished.
+site/treasure imports now retain their original shared-resource behavior, validate
+resource identities and preserve explicit intent. Independent browser-exported
+payloads match native import, persistence and compiled export. Map presentation
+and full-game validation remain unfinished.
 
 Carrying capacity is class body byte B59, at offset 71 in the full 72-byte native
 record. The initial implementation in f49d509 mistakenly read full-record offset

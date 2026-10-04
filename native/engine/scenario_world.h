@@ -29,6 +29,7 @@ class ScenarioWorld {
     void restoreTown(int id);
     QJsonObject json() const;
     void apply(const QJsonObject &value);
+    void importBrowser(const Rom &rom, const QJsonObject &value);
     WorldPlan plan() const;
     bool modified() const;
     int changedEntries() const;
@@ -42,5 +43,6 @@ class ScenarioWorld {
     QMap<int, WorldScenario> rows_, originals_;
     QByteArray towns_, originalTowns_;
     QSet<int> reservedTreasureIds_;
+    QMap<int, int> originalTreasureGroups_;
 };
 } // namespace lordly
