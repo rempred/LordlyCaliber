@@ -1,5 +1,16 @@
 # Dialogue runtime
 
+The resumable resource dispatcher reconstructs ROM 69D8..6EE8 and the flagged
+cleanup traversal. It preserves circular initialization, ascending updates,
+priority-based input selection, scratch-record publication, immediate release,
+queue-count narrowing and the original RNG advance after each update. All 192
+sequences / 576 passes match original records, service traces, queues, input
+selection and RNG seeds, both uninterrupted and with a pause before every service
+plus one-stage budgets (191 ms). Deliberate failed-service mutations remain private.
+Callbacks, payload/heap services and copy/clear are controlled; original priority,
+input selection, recursive release, cleanup and RNG execute. Render lists are
+explicitly empty in this check. Payload owners and final drawing remain separate.
+
 Roster context now publishes stable source identities and complete current backing
 records to text execution, including both retained 64-byte name workspaces. All
 480 original shared-name sequences / 960 snapshots pass through these bindings

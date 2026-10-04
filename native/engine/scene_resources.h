@@ -15,6 +15,9 @@ class SceneResources {
   public:
     explicit SceneResources(SceneResourceContext context);
     void setContext(SceneResourceContext context);
+    SceneResourceContext context() const {
+        return {pool_.margin, pool_.context, pool_.parent};
+    }
     QByteArray record(int slot) const;
     void supplyRecord(int slot, const QByteArray &record);
     bool active(int slot) const;

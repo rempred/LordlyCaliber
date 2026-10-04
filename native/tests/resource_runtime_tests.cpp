@@ -1,3 +1,4 @@
+#include "engine/scene_resource_dispatch.h"
 #include "engine/scene_resources.h"
 #include <QDir>
 #include <QFile>
@@ -11,6 +12,157 @@ using namespace lordly;
 class ResourceRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void dispatcherAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("ui-dispatch-mips.cjs"),
+             path, work.filePath("dispatch.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("dispatch.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 192);
+        for (const auto &value : cases)
+            for (const bool interrupted : {false, true}) {
+                const auto c = value.toObject();
+                SceneResources pool({1, -1, 0xffff});
+                auto initial = QByteArray::fromHex(c["initial"].toString().toLatin1());
+                for (int i = 0; i < 6; ++i)
+                    pool.supplyRecord(i, initial.mid(i * 168, 168));
+                SceneResourcePassState state;
+                state.randomSeed = quint32(c["seed"].toDouble());
+                state.cleanupStatus = quint16(c["status"].toInt());
+                state.renderContext = 0x803e0000;
+                state.selectedInput = c["selected"].toBool();
+                state.queue.count = quint16(c["count"].toInt());
+                for (int i = 0; i < 6; ++i)
+                    state.queue.entries[i] = quint16(c["entries"].toArray()[i].toInt());
+                SceneResourceDispatcher dispatch(state);
+                QHash<quint32, QByteArray> payloads;
+                for (int i = 0; i < 6; ++i)
+                    payloads[0x80300000 + i * 256] = QByteArray(32, char(0x80 + i));
+                QByteArray data(32, char(-18));
+                bool created = false, spawned = false, pause = interrupted;
+                const int mode = c["mode"].toInt();
+                auto fresh = [](int slot) {
+                    QByteArray r(168, 0);
+                    put16(r, 0, 0x8000);
+                    put8(r, 4, 2);
+                    put16(r, 14, 19);
+                    put32(r, 16, 0x802ff100);
+                    put32(r, 20, 0x802ff104);
+                    put16(r, 32, 32);
+                    put32(r, 36, 0x80300000 + slot * 256);
+                    put16(r, 0xa2, 0xffff);
+                    return r;
+                };
+                QJsonArray trace;
+                auto handler = [&](SceneResources &next, QByteArray &r, SceneResourcePassState &s,
+                                   const SceneResourceDispatcher::Call &call) {
+                    if (pause) {
+                        // Deliberate failed-service writes must not escape.
+                        next.supplyRecord(0, QByteArray(168, char(-1)));
+                        r.fill(char(-1));
+                        s.randomSeed = 123;
+                        s.queue.count = 123;
+                        pause = false;
+                        return false;
+                    }
+                    pause = interrupted;
+                    const int i = call.slot;
+                    using Service = SceneResourceDispatcher::Service;
+                    switch (call.service) {
+                    case Service::Initialize:
+                        trace.append(QJsonObject{{"op", "init"},
+                                                 {"slot", i},
+                                                 {"head", bool(u8(r, 2) & 4)},
+                                                 {"input", s.selectedInput},
+                                                 {"speed", int(u8(r, 4))},
+                                                 {"context", double(u32(r, 0x98))}});
+                        data = QByteArray(32, char(0x30 + i));
+                        put8(r, 0x60, u8(r, 0x60) + 1);
+                        if (mode == 2 && i == 5 && !created && !next.active(0)) {
+                            next.supplyRecord(0, fresh(0));
+                            created = true;
+                        }
+                        if (mode == 2 && i == 2)
+                            put8(r, 2, u8(r, 2) | 2);
+                        break;
+                    case Service::CaptureRender:
+                        put32(r, 0x98, 0); // Known empty render list, as in the reference.
+                        break;
+                    case Service::RestorePayload:
+                        trace.append(QJsonObject{{"op", "restore"}, {"slot", i}});
+                        data = payloads[u32(r, 0x24)];
+                        break;
+                    case Service::Update:
+                        trace.append(QJsonObject{{"op", "update"},
+                                                 {"slot", i},
+                                                 {"head", bool(u8(r, 2) & 4)},
+                                                 {"input", s.selectedInput},
+                                                 {"context", next.context().context},
+                                                 {"before", QString(data.toHex())}});
+                        put8(r, 0x60, u8(r, 0x60) + 3);
+                        put8(data, 0, u8(data, 0) + 1);
+                        if (mode == 2 && i == 1)
+                            put8(r, 2, u8(r, 2) | 2);
+                        if (mode == 2 && i == 3 && !spawned && !next.active(4)) {
+                            next.supplyRecord(4, fresh(4));
+                            spawned = true;
+                        }
+                        break;
+                    case Service::SavePayload:
+                        trace.append(QJsonObject{{"op", "save"},
+                                                 {"slot", i},
+                                                 {"head", bool(u8(r, 2) & 4)},
+                                                 {"data", QString(data.toHex())}});
+                        payloads[u32(r, 0x24)] = data;
+                        break;
+                    case Service::Release:
+                        for (const auto handle : next.release(i))
+                            trace.append(QJsonObject{{"op", "free"}, {"handle", double(handle)}});
+                        break;
+                    case Service::AdvanceRender:
+                        throw Error("Unexpected render node in dispatcher fixture");
+                    }
+                    return true;
+                };
+                for (const auto &snapshot : c["snapshots"].toArray()) {
+                    const auto expected = snapshot.toObject();
+                    trace = {};
+                    int attempts = 0;
+                    SceneResourceDispatcher::Result result;
+                    do {
+                        result = dispatch.advance(pool, handler, interrupted ? 1 : 1000);
+                        QVERIFY2(++attempts < 2000, qPrintable(c["id"].toString()));
+                    } while (result != SceneResourceDispatcher::Complete);
+                    QVERIFY(!dispatch.inProgress());
+                    QVERIFY(!dispatch.pending());
+                    QCOMPARE(trace, expected["trace"].toArray());
+                    QByteArray actual;
+                    for (int i = 0; i < 6; ++i)
+                        actual += pool.record(i);
+                    QVERIFY2(actual.toHex() == expected["pool"].toString().toLatin1(),
+                             qPrintable(c["id"].toString()));
+                    QCOMPARE(dispatch.state().randomSeed, quint32(expected["seed"].toDouble()));
+                    QCOMPARE(int(dispatch.state().queue.count), expected["count"].toInt());
+                    QCOMPARE(pool.context().context, expected["current"].toInt());
+                    QCOMPARE(dispatch.state().selectedInput, expected["input"].toBool());
+                    for (int i = 0; i < 6; ++i) {
+                        QCOMPARE(int(dispatch.state().queue.entries[i]),
+                                 expected["entries"].toArray()[i].toInt());
+                        QCOMPARE(payloads[0x80300000 + i * 256].toHex(),
+                                 expected["payloads"].toArray()[i].toString().toLatin1());
+                    }
+                }
+            }
+    }
     void releaseAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
