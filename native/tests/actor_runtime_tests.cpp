@@ -17,6 +17,43 @@ using namespace lordly;
 class ActorRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorPresentationAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-style-mips.cjs"),
+             path, work.filePath("styles.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("styles.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data = QJsonDocument::fromJson(file.readAll()).object();
+        const auto rom = Rom::open(path);
+        QCOMPARE(data["results"].toArray().size(), 160);
+        for (const auto &v : data["results"].toArray()) {
+            const auto row = v.toObject();
+            SceneActors scene(rom, 2, 0);
+            for (const auto &initial : data["initial"].toArray()) {
+                const auto a = initial.toObject();
+                scene.supplyActor(a["slot"].toInt(),
+                                  QByteArray::fromHex(a["record"].toString().toLatin1()));
+            }
+            int value = 123;
+            QVERIFY(scene.service(quint32(row["opcode"].toInt()),
+                                  {quint32(row["slot"].toInt()), quint32(row["value"].toInt())},
+                                  value));
+            QCOMPARE(value, 123);
+            for (const auto &after : row["after"].toArray()) {
+                const auto a = after.toObject();
+                QCOMPARE(scene.actor(a["slot"].toInt())->record().toHex(),
+                         a["record"].toString().toLatin1());
+            }
+        }
+    }
     void cameraPlacementAndPicking() {
         QFile file(QFileInfo(QString::fromUtf8(__FILE__))
                        .absoluteDir()

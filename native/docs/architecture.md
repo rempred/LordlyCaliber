@@ -1,5 +1,12 @@
 # Native Lordly Caliber
 
+SceneActors also executes uniform scale (0x1D) and opacity (0x48) without
+reconstructing actors or resetting their pose invocation. It retains the native
+all-slot sentinel, signed-halfword range narrowing and empty-slot behavior.
+Scale follows word-to-float-to-double division by the current ROM constant;
+opacity stores the low byte. All 160 original-instruction cases match complete
+336-byte records with no helper doubles, including large values and empty ranges.
+
 Scene projection changes (Director 0x2C) compile an adaptation of accepted
 func_002A91E4 from f53a12e53f3f6e7e389cd6e011b5be25d31bde15. Initialization and
 advancement reconstruct ROM 2A90EC and 2A9258. The complete 76-byte record is

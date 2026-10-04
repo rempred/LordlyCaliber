@@ -1,6 +1,8 @@
 #include "engine/scene_actors.h"
 #include "engine/class_data.h"
 #include "game/director/actor_body.h"
+#include <bit>
+#include <cmath>
 #include <cstring>
 namespace lordly {
 namespace {
@@ -198,6 +200,36 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x1d || opcode == 0x48) {
+        if (args.size() != 2)
+            throw Error("Actor scale/opacity command is truncated");
+        const int requested = qint32(args[0]);
+        const int first = requested == -1 ? 0 : qint16(args[0]);
+        const int end = requested == -1 ? 28 : qint16(args[0] + 1U);
+        if (first >= end)
+            return true;
+        checkSlot(first);
+        checkSlot(end - 1);
+        float scale = 0;
+        if (opcode == 0x1d) {
+            const auto &bytes = rom_.bytes();
+            const double divisor =
+                std::bit_cast<double>(quint64(u32(bytes, 0x2a8b80)) << 32 | u32(bytes, 0x2a8b84));
+            if (!std::isfinite(divisor) || divisor == 0)
+                throw Error("Actor scale divisor is invalid");
+            scale = float(double(float(qint32(args[1]))) / divisor);
+            if (!std::isfinite(scale))
+                throw Error("Actor scale exceeds the finite range");
+        }
+        for (int i = first; i < end; ++i)
+            if (actors_[i]) {
+                if (opcode == 0x1d)
+                    actors_[i]->setUniformScale(scale);
+                else
+                    actors_[i]->setOpacity(quint8(args[1]));
+            }
+        return true;
+    }
     if (opcode == 0x2a) {
         if (args.size() != 6)
             throw Error("Body selection command is truncated");

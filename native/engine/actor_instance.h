@@ -13,6 +13,8 @@ class ActorInstance {
     void select(const LordlyActorSelection &selection);
     QByteArray record() const;
     void setSlot(int slot);
+    void setOpacity(quint8 value);
+    void setUniformScale(float value);
     ActorPosePlayer &pose() {
         return pose_;
     }

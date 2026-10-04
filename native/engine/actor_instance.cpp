@@ -1,4 +1,6 @@
 #include "engine/actor_instance.h"
+#include <bit>
+#include <cmath>
 #include <cstring>
 namespace lordly {
 namespace {
@@ -98,5 +100,14 @@ void ActorInstance::setSlot(int slot) {
     if (slot < 0 || slot >= 28)
         throw Error("Actor slot is outside 0..27");
     put32(record_, 0xe4, quint32(slot));
+}
+void ActorInstance::setOpacity(quint8 value) {
+    put8(record_, 0x13c, value);
+}
+void ActorInstance::setUniformScale(float value) {
+    if (!std::isfinite(value))
+        throw Error("Actor scale must be finite");
+    for (int i = 0; i < 3; ++i)
+        put32(record_, 0x104 + i * 4, std::bit_cast<quint32>(value));
 }
 } // namespace lordly
