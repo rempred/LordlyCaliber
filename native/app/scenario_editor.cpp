@@ -1,5 +1,6 @@
 #include "app/scenario_editor.h"
 #include "app/scenario_route_editor.h"
+#include "app/scenario_world_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -100,6 +101,8 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     routes_ = new ScenarioRouteEditor(
         project_, [this](const Scenarios &next, const QString &label) { commit(next, label); });
     pages->addTab(routes_, "Routes and conditions");
+    world_ = new ScenarioWorldEditor(project_, undo_, changed_);
+    pages->addTab(world_, "Sites and treasure");
     auto roster = new QWidget;
     auto rosterLayout = new QVBoxLayout(roster);
     rosterLayout->setContentsMargins(0, 0, 0, 0);
@@ -339,6 +342,7 @@ void ScenarioEditor::showScenario() {
         editingKey_ = -1;
         editingRow_ = -1;
         routes_->refresh(-1);
+        world_->refresh(-1);
         return;
     }
     QSignalBlocker block(squads_);
@@ -363,6 +367,7 @@ void ScenarioEditor::showScenario() {
         s.squads.isEmpty() ? -1 : std::clamp(editingRow_, 0, int(s.squads.size()) - 1));
     showSquad();
     routes_->refresh(key());
+    world_->refresh(key());
 }
 void ScenarioEditor::showSquad() {
     if (loading_)

@@ -47,7 +47,16 @@ remain authoritative over retained browser state on reopening. Unimplemented
 site/treasure sections remain pending and block export. An independent fixture
 uses the browser's authoring and project writer, then checks native persistence,
 compiled export and reopening. Alternate-overlay key 54 remains unsupported.
-Full-game allied behavior and map/site/treasure work remain unfinished.
+Site and treasure editing now uses a separate world model. Global site metadata,
+scenario-specific allegiance, treasure item/coordinate changes and added treasures
+persist, undo and compile during ordinary export. World resource collections grow
+through their original directory links; original archive ordinals and shopcsv are
+preserved. The Shops reader follows that directory. Added treasures receive unused
+collection flags and respect the original 16-entry scene arrays. Native and original
+MIPS checks cover relocation, cache/free/reload, flag IDs through 255 and combined
+shop/squad/world exports. The desktop controls preserve untouched original data.
+See [world-resources.md](world-resources.md) for evidence and limitations. Browser
+site/treasure import, map presentation and full-game validation remain unfinished.
 
 Carrying capacity is class body byte B59, at offset 71 in the full 72-byte native
 record. The initial implementation in f49d509 mistakenly read full-record offset

@@ -58,6 +58,82 @@ class UiTests : public QObject {
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
     }
+    void scenarioWorldEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenarios();
+        QUndoStack undo;
+        ScenarioEditor editor(&project, &undo, [] {});
+        editor.resize(1450, 950);
+        editor.show();
+        editor.findChild<QTabWidget *>("scenarioPages")->setCurrentIndex(2);
+        auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
+        auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
+        auto missions = editor.findChild<QListWidget *>("scenarioList");
+        auto sites = editor.findChild<QListWidget *>("worldSites");
+        auto treasures = editor.findChild<QListWidget *>("worldTreasures");
+        const auto base = project.world()->json();
+        for (int i = 0; i < missions->count(); ++i) {
+            missions->setCurrentRow(i);
+            for (int row = 0; row < sites->count(); ++row) {
+                sites->setCurrentRow(row);
+                button("worldSiteApply")->click();
+                QCOMPARE(project.world()->json(), base);
+            }
+            for (int row = 0; row < treasures->count(); ++row) {
+                treasures->setCurrentRow(row);
+                button("worldTreasureApply")->click();
+                QCOMPARE(project.world()->json(), base);
+            }
+        }
+        QCOMPARE(undo.count(), 0);
+        for (int i = 0; i < missions->count(); ++i)
+            if (missions->item(i)->data(Qt::UserRole).toInt() == 52)
+                missions->setCurrentRow(i);
+        sites->setCurrentRow(0);
+        const int id = sites->currentItem()->data(Qt::UserRole).toInt();
+        spin("worldPopulation")->setValue(4567);
+        auto allegiance = editor.findChild<QComboBox *>("worldAllegiance");
+        allegiance->setCurrentIndex(allegiance->findData(2));
+        button("worldSiteApply")->click();
+        QCOMPARE(u16(project.world()->town(id), 22), quint16(4567));
+        QCOMPARE(u16(project.world()->scenario(52).sites, 3), quint16(4));
+        undo.undo();
+        QCOMPARE(project.world()->json(), base);
+        undo.redo();
+        auto objective = editor.findChild<QCheckBox *>("worldObjective");
+        objective->setChecked(true);
+        button("worldSiteApply")->click();
+        QCOMPARE(u8(project.world()->town(id), 24), quint8(255));
+        QVERIFY(!spin("worldMorale")->isEnabled());
+        editor.grab().save("scenario-sites.png");
+        editor.findChild<QTabWidget *>("worldPages")->setCurrentIndex(1);
+        const int count = treasures->count();
+        button("worldTreasureAdd")->click();
+        QCOMPARE(treasures->count(), count + 1);
+        const int row = treasures->currentRow();
+        spin("worldTreasureX")->setValue(255);
+        spin("worldTreasureZ")->setValue(0);
+        auto table = editor.findChild<QComboBox *>("worldTreasureTable");
+        table->setCurrentIndex(table->findData(1));
+        auto item = editor.findChild<QComboBox *>("worldTreasureItem");
+        item->setCurrentIndex(item->findData(277));
+        button("worldTreasureApply")->click();
+        const auto record =
+            ScenarioWorld::treasureRecord(project.world()->scenario(52).treasures, row);
+        QCOMPARE(u16(record, 4), quint16(277));
+        QCOMPARE(u8(record, 1), quint8(255));
+        editor.grab().save("scenario-treasure.png");
+        button("worldTreasureRemove")->click();
+        QCOMPARE(treasures->count(), count);
+        undo.undo();
+        QCOMPARE(treasures->count(), count + 1);
+        while (undo.canUndo())
+            undo.undo();
+        QCOMPARE(project.world()->json(), base);
+    }
     void scenarioRouteEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

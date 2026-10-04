@@ -35,3 +35,34 @@ instructions against the candidate: 309 loads include cache hits, free and reloa
 for every member of both rebuilt collections. All 65 selector setups are checked.
 RAM is bounded to 4 MiB with allocation guards. OS, allocation and PI services are
 simulated. These checks do not establish full-game loading or peak memory use.
+
+`ScenarioWorld` keeps complete 28-byte global site records and per-scenario
+treasure/SCINCSV data. Site membership cannot change independently of mission
+geometry, and inactive descriptor tails are retained. Editing a site changes its
+global name, population, morale/objective, facilities, type or shop assignment;
+allegiance edits affect only the chosen scenario. Untouched controls preserve raw
+names, unclassified values and descriptor addends. Explicit allegiance changes
+use neutral `0x0000`, enemy `0x0004`, or allied `0x2012`.
+
+The original site initializer at z64 `0x1279A8..0x1279C8` **adds** the descriptor
+to `(capabilities << 8) | type`. Clearing only `0x2000` from allied `0x2002` leaves
+the allied low bit set. This explains why the older simple bit-clearing rule is
+unsuitable for editing. Retail also uses allied `0x2012`. Existing descriptors
+remain unchanged unless the user chooses a new allegiance.
+
+Treasure records contain a collection ID, X, Z, item table and big-endian item ID.
+The loader at z64 `0x196174..0x196228` writes the count at RAM `0x801F0FE2`, then
+16 halfword items at `0x801F0FE4`, 16 X bytes at `0x801F1004`, 16 Z bytes at
+`0x801F1014`, and 16 IDs at `0x801F1024`. The adjacent arrays establish the
+16-entry scene limit. New entries receive an unused nonzero ID across all loaded
+resources and authored scenarios. Original IDs remain reserved after removal.
+The collection bitmap is 32 bytes at RAM `0x80196A38`; the reset at z64 `0x127A64`
+clears 32 bytes. Original read/write instruction checks cover IDs through 255
+with guards around that bitmap. These do not establish complete save/playthrough
+behavior.
+
+Native folder/archive persistence and ordinary compiled export compose sites and
+treasure with rebuilt shops and scenario squads. Reopening checks the full logical
+model; unchanged re-export is identical. Qt checks apply untouched controls to
+every loaded site/treasure, then exercise editing, addition/removal and undo. The
+rendered pages are inspected. Browser import and map presentation remain next.

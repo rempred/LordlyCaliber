@@ -141,6 +141,7 @@ void MainWindow::loadRom(const QString &path) {
                 project.loadConsumableEffects();
                 project.loadEncounters();
                 project.loadScenarios();
+                project.loadWorld();
             }
             return Result{std::move(project), {}};
         } catch (const std::exception &e) {
@@ -349,6 +350,7 @@ void MainWindow::openProject() {
             next.loadConsumableEffects();
             next.loadEncounters();
             next.loadScenarios();
+            next.loadWorld();
         }
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);

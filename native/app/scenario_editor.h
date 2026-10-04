@@ -13,6 +13,7 @@ class QTableWidget;
 class QPushButton;
 namespace lordly {
 class ScenarioRouteEditor;
+class ScenarioWorldEditor;
 class ScenarioEditor : public QWidget {
   public:
     ScenarioEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
@@ -44,6 +45,7 @@ class ScenarioEditor : public QWidget {
     QLabel *notice_, *formation_, *placementHelp_;
     QPushButton *remove_;
     ScenarioRouteEditor *routes_ = nullptr;
+    ScenarioWorldEditor *world_ = nullptr;
     int editingKey_ = -1, editingRow_ = -1;
     bool loading_ = true;
 };

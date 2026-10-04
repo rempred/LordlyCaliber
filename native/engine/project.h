@@ -4,6 +4,7 @@
 #include "engine/encounters.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
+#include "engine/scenario_world.h"
 #include "engine/scenarios.h"
 #include "engine/shops.h"
 #include "engine/text.h"
@@ -90,6 +91,11 @@ class Project {
         return scenarios_;
     }
     void setScenarios(const QJsonObject &value);
+    void loadWorld();
+    const std::optional<ScenarioWorld> &world() const {
+        return world_;
+    }
+    void setWorld(const QJsonObject &value);
     void loadConsumableEffects();
     const std::optional<ConsumableEffects> &consumableEffects() const {
         return consumableEffects_;
@@ -133,6 +139,7 @@ class Project {
     std::optional<ConsumableEffects> consumableEffects_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
+    std::optional<ScenarioWorld> world_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;

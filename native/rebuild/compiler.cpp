@@ -717,9 +717,32 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                              .arg(plan.esets.size())
                              .arg(plan.enemies.size() / 35);
     }
+    if (p.world() && p.world()->modified()) {
+        auto plan = p.world()->plan();
+        const auto worldRom = Rom::fromBytes(result.image);
+        const auto resources = WorldResources::load(worldRom);
+        if (plan.towns != resources.towns(worldRom))
+            plan.towns = compiler.compileData(plan.towns, directory, "scenario_towns");
+        for (auto it = plan.treasures.begin(); it != plan.treasures.end(); ++it)
+            it.value() =
+                compiler.compileData(it.value(), directory, QString("treasure_%1").arg(it.key()));
+        for (auto it = plan.sites.begin(); it != plan.sites.end(); ++it)
+            it.value() =
+                compiler.compileData(it.value(), directory, QString("sites_%1").arg(it.key()));
+        result.image = resources.rebuild(worldRom, plan.towns, plan.treasures, plan.sites);
+        result.report << QString("Rebuilt global sites, %1 treasure lists and %2 allegiance lists "
+                                 "through original resource links")
+                             .arg(plan.treasures.size())
+                             .arg(plan.sites.size());
+    }
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.world()) {
+        reopened.loadWorld();
+        if (reopened.world()->json() != p.world()->json())
+            throw Error("Exported site and treasure data differ from the project");
+    }
     if (p.scenarios()) {
         reopened.loadScenarios();
         if (reopened.scenarios()->json() != p.scenarios()->json())

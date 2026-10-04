@@ -53,4 +53,19 @@ for(const row of fixture.selectors){
  assert.deepEqual(args,[[0x21af9f8,0,0xfffffffd,row.treasure]]);
 }
 assert(frees>0);
+// The scene loader stores 16 IDs, and the collection flag is ID/8 plus ID%8.
+// Exercise the original read and write sequences at descriptor 7's actual PCs.
+for(const id of [1,7,8,230,231,255]){
+ const m=new Mips();m.ram=new Uint8Array(0x400000);const delta=0x800ab8c0;
+ const reader=(0x109f9c+delta)>>>0,writer=(0x11005c+delta)>>>0;
+ m.load(reader,rom.subarray(0x109f9c,0x109fd4));m.load(writer,rom.subarray(0x11005c,0x1100ac));
+ m.load(0x80196a28,Buffer.alloc(64,0xa7));m.load(0x80196a38,Buffer.alloc(32));
+ m.w8(0x801f1024+15,id);m.w32(0x801f0e04,15);m.set('s1',15);
+ m.call(reader,(0x109fd4+delta)>>>0);assert.equal(m.get('v1'),0);
+ m.call(writer,(0x1100ac+delta)>>>0);
+ m.set('s1',15);m.call(reader,(0x109fd4+delta)>>>0);assert.equal(m.get('v1'),1);
+ for(let i=0;i<32;i++)assert.equal(m.r8(0x80196a38+i),i===(id>>3)?1<<(id&7):0);
+ for(let i=0;i<16;i++){assert.equal(m.r8(0x80196a28+i),0xa7);assert.equal(m.r8(0x80196a58+i),0xa7);}
+}
 console.log(`PASS ${loads} original cached world loads, ${transfers} transfers, ${allocations} allocations and ${frees} frees; 65 site/treasure selector setups. Original -3 resource mode, relocated collections, preserved shop member and LH5 decode in guarded 4 MiB. OS/heap/PI are doubles; full-game loading and peak RAM remain unverified.`);
+console.log('PASS original collection flag read/write at IDs 1, 7, 8, 230, 231 and 255 with 32-byte bitmap guards.');

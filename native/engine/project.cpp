@@ -264,6 +264,8 @@ int Project::changedRecords() const {
         count += encounters_->changedRows();
     if (scenarios_)
         count += scenarios_->changedScenarios();
+    if (world_)
+        count += world_->changedEntries();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -411,6 +413,14 @@ void Project::loadScenarios() {
     if (!scenarios_)
         scenarios_ = Scenarios::load(rom_);
 }
+void Project::loadWorld() {
+    if (!world_)
+        world_ = ScenarioWorld::load(rom_);
+}
+void Project::setWorld(const QJsonObject &value) {
+    loadWorld();
+    world_->apply(value);
+}
 void Project::setScenarios(const QJsonObject &value) {
     loadScenarios();
     scenarios_->apply(value, classData());
@@ -542,6 +552,10 @@ QJsonObject Project::manifest() const {
         result["scenarios"] = scenarios_->json();
     else
         result.remove("scenarios");
+    if (world_ && world_->modified())
+        result["world"] = world_->json();
+    else
+        result.remove("world");
     return result;
 }
 void Project::applyManifest(const QJsonObject &object) {
@@ -564,6 +578,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadEncounters();
     if (scenarios_)
         candidate.loadScenarios();
+    if (world_)
+        candidate.loadWorld();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -677,6 +693,11 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setScenarios(object["scenarios"].toObject());
     } else
         candidate.importLegacyScenarios(candidate.legacy_);
+    if (object.contains("world")) {
+        if (!object["world"].isObject())
+            throw Error("Invalid saved scenario world data");
+        candidate.setWorld(object["world"].toObject());
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {

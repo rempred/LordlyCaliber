@@ -449,6 +449,120 @@ class EngineTests : public QObject {
             QFAIL(error.what());
         }
     }
+    void worldAuthoringExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and authenticated compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadWorld();
+            auto model = *project.world();
+            const auto base = model.json();
+            model.apply(base);
+            QCOMPARE(model.json(), base);
+            for (int id = 1; id <= ScenarioWorld::townCount; ++id)
+                model.setTown(id, model.town(id));
+            QCOMPARE(model.json(), base);
+            const int key = 52;
+            const int townId = u16(model.scenario(key).sites, 1);
+            auto town = model.town(townId);
+            put16(town, 22, 4321);
+            put8(town, 24, 99);
+            put8(town, 27, 35);
+            town.replace(1, 20, QByteArray("Native Test") + QByteArray(9, 0));
+            model.setTown(townId, town);
+            model.setSiteAllegiance(key, 0, 2);
+            const int added = model.addTreasure(key);
+            auto treasure = ScenarioWorld::treasureRecord(model.scenario(key).treasures, added);
+            QVERIFY(u8(treasure, 0) > 230);
+            put8(treasure, 1, 255);
+            put8(treasure, 2, 0);
+            put8(treasure, 3, 1);
+            put16(treasure, 4, 277);
+            model.setTreasure(key, added, treasure);
+            QCOMPARE(model.scenario(53), model.original(53));
+            auto rejected = model;
+            auto invalid = treasure;
+            invalid[0] ^= char(1);
+            QVERIFY_THROWS_EXCEPTION(Error, rejected.setTreasure(key, added, invalid));
+            invalid = treasure;
+            put16(invalid, 4, 278);
+            QVERIFY_THROWS_EXCEPTION(Error, rejected.setTreasure(key, added, invalid));
+            auto badTown = town;
+            badTown[21] ^= char(1);
+            QVERIFY_THROWS_EXCEPTION(Error, rejected.setTown(townId, badTown));
+            QVERIFY_THROWS_EXCEPTION(Error, rejected.setSiteAllegiance(10, 0, 1));
+            QCOMPARE(rejected.json(), model.json());
+            auto full = model;
+            while (ScenarioWorld::treasureCount(full.scenario(key).treasures) < 16)
+                full.addTreasure(key);
+            QVERIFY_THROWS_EXCEPTION(Error, full.addTreasure(key));
+            auto exhausted = model;
+            int freeKey = 1;
+            for (int id = 232; id <= 255; ++id) {
+                while (ScenarioWorld::treasureCount(exhausted.scenario(freeKey).treasures) == 16)
+                    ++freeKey;
+                const int row = exhausted.addTreasure(freeKey);
+                QCOMPARE(
+                    u8(ScenarioWorld::treasureRecord(exhausted.scenario(freeKey).treasures, row),
+                       0),
+                    quint8(id));
+            }
+            while (ScenarioWorld::treasureCount(exhausted.scenario(freeKey).treasures) == 16)
+                ++freeKey;
+            QVERIFY_THROWS_EXCEPTION(Error, exhausted.addTreasure(freeKey));
+            auto malformed = model.json();
+            auto rows = malformed["scenarios"].toObject();
+            auto row = rows["53"].toObject();
+            row["treasures"] = QString::fromLatin1(model.scenario(key).treasures.toHex());
+            rows["53"] = row;
+            malformed["scenarios"] = rows;
+            QVERIFY_THROWS_EXCEPTION(Error, rejected.apply(malformed));
+            QCOMPARE(rejected.json(), model.json());
+            project.setWorld(model.json());
+            project.loadShops();
+            auto shops = *project.shops();
+            shops.setStock(35, {{1, 277}, {1, 44}});
+            project.setShops(shops.json());
+            project.loadScenarios();
+            auto squads = *project.scenarios();
+            squads.setBaseLevel(10, 12, project.classData());
+            project.setScenarios(squads.json());
+            QTemporaryDir folder, work;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("world.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("world.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.world()->json(), model.json());
+            }
+            const auto result = rebuild(project, tools, work.path());
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-world-project-XXXXXX");
+            QVERIFY(output.isValid());
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, candidate);
+            auto reopened = Project::fromRom(Rom::open(candidate));
+            reopened.loadWorld();
+            reopened.loadShops();
+            reopened.loadScenarios();
+            QCOMPARE(reopened.world()->json(), model.json());
+            QCOMPARE(reopened.shops()->json(), shops.json());
+            QCOMPARE(reopened.scenarios()->json(), squads.json());
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, result.image);
+            model.removeTreasure(key, added);
+            model.restoreScenario(key);
+            model.restoreTown(townId);
+            QCOMPARE(model.json(), base);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "World project export:" << candidate;
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void worldResources() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
