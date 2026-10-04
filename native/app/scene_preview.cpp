@@ -15,7 +15,7 @@
 #include <bit>
 namespace lordly {
 ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
-    : QWidget(parent), rom_(rom), renderer_(rom) {
+    : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom) {
     auto layout = new QVBoxLayout(this);
     context_ = new QLabel("Select a scene to preview its current commands.");
     context_->setWordWrap(true);
@@ -106,7 +106,8 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Reference stage: flat terrain, empty external jobs and no army roster. "
             "Scripts control Actors and cameras; backdrop images are fitted as references. "
-            "Scene lighting starts with two reference lights. Equipment, scene sprites, audio and "
+            "Layered scenes include 2D sprites. Scene lighting starts with two reference lights. "
+            "Equipment, world/special sprite placement, audio and "
             "native background placement are separate. Unsupported commands pause playback.");
         restart();
     } catch (const std::exception &e) {
@@ -178,8 +179,11 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
     for (int slot = 0; slot < 30; ++slot)
-        if (drawing.sprites().sprite(slot))
-            throw Error("Scene sprite drawing requires its render owner");
+        if (const auto sprite = drawing.sprites().sprite(slot)) {
+            const auto animation = u16(sprite->record(), 0x44);
+            if (mode_ != 0 || animation == 800 || animation == 801)
+                throw Error("World and special sprites require their registered projection owner");
+        }
     const auto queue = drawing.drawQueue({}, {0x80300000, 0x80310000});
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
@@ -199,6 +203,17 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         }
         if (mode_ == 0) {
             for (int channel = 0; channel < 20; ++channel) {
+                const auto sprites = spriteRenderer_.project(
+                    drawing.sprites(), channel, 0, drawing.cameras().actor(),
+                    drawing.transforms().layerMatrix(channel), {255, 255, 255});
+                if (!sprites.isEmpty()) {
+                    QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
+                    spriteFrame.fill(Qt::transparent);
+                    ActorRenderer::paint(spriteFrame, sprites);
+                    painter.drawImage(0, 0, spriteFrame);
+                }
+                if (!drawing.sprites().draws(channel, 0).isEmpty())
+                    environment = {0, 0, 0, 1};
                 auto rendered =
                     renderer_.layered(drawing.actors(), queue, 0, quint8(channel),
                                       {drawing.cameras().actor(), {255, 255, 255}, environment});

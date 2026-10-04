@@ -1,5 +1,31 @@
 # Native Lordly Caliber
 
+## Layered scene sprites
+
+SpriteRenderer retains native pool selection, packed translation, Z rotation and
+uniform XYZ scale from ROM29A930, and the callback geometry/material rules from
+ROM29F5E8. It shares the qualified layer raster path, preserving separate texture
+alpha lanes and per-layer opacity. Each eligible sprite resets the native main
+preset and environment to black/alpha1. The caller retains that environment for
+following Actors even when the sprite clips outside the viewport.
+
+Mode-zero playback draws each channel's sprites before its Actor passes, using
+the channel's packed parent transform. World/special projection ownership remains
+explicitly unsupported in this panel. Host concatenation and Qt rasterization
+are approximations to RSP intermediate precision and RDP coverage/blending.
+
+`packedMatricesAgainstMips` captures packed matrices from192 complete original
+sprite-driver calls with original matrix constructors; only sin/cos and the final
+raster callback are controlled. `spriteProjectionAndPlacement` uses current-ROM
+art to verify visible pixels, pass filtering, a20-pixel translation and2x scaling
+without scaling translation. Together with `drawPlanAgainstMips`, they passed
+470ms after build2066. The composition UI check passed180ms after build71898:
+same-channel overlap, later-channel ordering, native environment inheritance and
+exact backward seeking. The Actor playback regression passed344ms in the prior
+run (the initial composition expectation omitted environment inheritance).
+These establish desktop composition and matrix bytes, not full scene launch or
+game framebuffer equivalence. The rendered overlapping sprites were inspected.
+
 ## Scene playback panel
 
 The Cutscenes workspace now includes step/play/restart/backward-seek playback
@@ -13,8 +39,8 @@ The current stage explicitly supplies reference cameras, flat terrain, two light
 neutral world environment, empty external jobs and no army roster. Script camera,
 Actor and material changes execute normally. Environment loads display a fitted
 reference backdrop, with multiple image membership disclosed. Native background
-placement, equipment, scene-sprite drawing and audio remain separate; occupied
-scene-sprite pools stop rather than disappear. Dynamic selectors/roster requirements
+placement, equipment and audio remain separate. Layered scene sprites draw in
+native channel order; world/special sprites pause pending registered projection. Dynamic selectors/roster requirements
 and unknown commands report their missing context. This is not complete native
 launch reconstruction or full game playback.
 

@@ -1,5 +1,7 @@
 #include "engine/scene_sprites.h"
 #include "engine/sprite_pose.h"
+#include "engine/sprite_renderer.h"
+#include "game/director/scene_matrix.h"
 #include "game/images/sepia.h"
 #include <QDir>
 #include <QFile>
@@ -13,6 +15,106 @@ using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void packedMatricesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("sprite-matrix-mips.cjs"),
+                                 path, work.filePath("matrices.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("matrices.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 192);
+        float identity[16];
+        lordly_matrix_identity(identity);
+        QByteArray parent(64, 0);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(parent.data()), identity));
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            const auto xy = row["xy"].toArray();
+            const int angle = row["angle"].toInt(), scale = row["scale"].toInt();
+            const SceneSpriteDraw draw{0,
+                                       0,
+                                       float(xy[0].toInt()),
+                                       float(xy[1].toInt()),
+                                       angle == 180 ? 0.f : float(angle + 180),
+                                       float(scale) / 100.f};
+            const auto actual = SpriteMatrices::prepare(rom, draw, parent);
+            const auto expected = row["matrices"].toArray();
+            int i = 0;
+            QCOMPARE(actual.translation, QByteArray::fromHex(expected[i++].toString().toLatin1()));
+            if (angle != 180)
+                QCOMPARE(actual.rotation, QByteArray::fromHex(expected[i++].toString().toLatin1()));
+            if (scale != 100)
+                QCOMPARE(actual.scale, QByteArray::fromHex(expected[i++].toString().toLatin1()));
+        }
+    }
+    void spriteProjectionAndPlacement() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        SceneSprites sprites(rom);
+        QByteArray record(80, 0);
+        for (int i = 0; i < 16; ++i)
+            put8(record, i, 255);
+        put32(record, 0x30, 30);
+        put32(record, 0x3c, 35);
+        put16(record, 0x40, 180);
+        put16(record, 0x48, 100);
+        sprites.supplyRecord(0, record);
+        QByteArray bank(56, 0), parent(64, 0);
+        const float values[]{90, 4.f / 3, 1, 20000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+        float identity[16];
+        lordly_matrix_identity(identity);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(parent.data()), identity));
+        SceneCamera camera(bank, 1);
+        SpriteRenderer renderer(rom);
+        const auto base = renderer.project(sprites, 0, 0, camera, parent, {255, 255, 255});
+        QVERIFY(!base.isEmpty());
+        QImage image(320, 240, QImage::Format_RGBA8888);
+        image.fill(Qt::transparent);
+        ActorRenderer::paint(image, base);
+        int visible = 0;
+        for (int y = 0; y < 240; ++y)
+            for (int x = 0; x < 320; ++x)
+                visible += image.pixelColor(x, y).alpha() > 0;
+        QVERIFY(visible > 10);
+        QVERIFY(renderer.project(sprites, 1, 0, camera, parent, {255, 255, 255}).isEmpty());
+        QVERIFY(renderer.project(sprites, 0, 1, camera, parent, {255, 255, 255}).isEmpty());
+        put32(record, 0x24, 20);
+        sprites.supplyRecord(0, record);
+        const auto moved = renderer.project(sprites, 0, 0, camera, parent, {255, 255, 255});
+        QCOMPARE(moved.size(), base.size());
+        for (int i = 0; i < base.size(); ++i) {
+            QCOMPARE(moved[i].image, base[i].image);
+            QCOMPARE(moved[i].plane.clip.size(), base[i].plane.clip.size());
+            for (int j = 0; j < base[i].plane.clip.size(); ++j) {
+                const auto delta = moved[i].plane.clip[j] - base[i].plane.clip[j];
+                QVERIFY(qAbs(delta.x() - 20.) < .001);
+                QVERIFY(qAbs(delta.y()) < .001);
+            }
+        }
+        put16(record, 0x48, 200);
+        sprites.supplyRecord(0, record);
+        const auto enlarged = renderer.project(sprites, 0, 0, camera, parent, {255, 255, 255});
+        for (int i = 0; i < base.size(); ++i)
+            for (int j = 0; j < base[i].plane.clip.size(); ++j) {
+                const auto expected =
+                    (base[i].plane.clip[j] - QPointF(160, 120)) * 2 + QPointF(180, 120);
+                QVERIFY(QLineF(enlarged[i].plane.clip[j], expected).length() < .001);
+            }
+        QVERIFY_THROWS_EXCEPTION(Error, renderer.project(sprites, 0, 0, camera, {}, {255, 255, 255}));
+    }
     void sepiaAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

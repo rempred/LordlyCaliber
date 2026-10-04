@@ -2,6 +2,7 @@
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_programs.h"
+#include "engine/sprite_renderer.h"
 #include <QMap>
 #include <QWidget>
 class QLabel;
@@ -42,6 +43,7 @@ class ScenePreview : public QWidget {
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
     Rom rom_;
     SceneActorRenderer renderer_;
+    SpriteRenderer spriteRenderer_;
     std::optional<Directors> resources_;
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;

@@ -44,6 +44,7 @@
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QPainter>
 #include <QtTest>
 #include <bit>
 using namespace lordly;
@@ -153,6 +154,58 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("transformRestart")->click();
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
+    }
+    void sceneSpriteComposition() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Sprite composition", source.key, false);
+        ScenePreview preview(rom);
+        preview.show();
+        auto next = preview.findChild<QPushButton *>("sceneStep");
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QVERIFY(next && position && status);
+        auto run = [&](QVector<quint32> words) {
+            for (int i = 0; i < 8; ++i) words << 0 << 0x80000000U;
+            words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            scenes.replace(id, bytes);
+            preview.selectScene(scenes, id, 0);
+            next->click();
+            return preview.renderedFrame();
+        };
+        const QVector<quint32> actor{0x14, 0, 30, 1, 2, 0, 0, 0, 0, 0};
+        QVector<quint32> sprite{0x46, 0, 30, 1, 2, 6, 0, 0, 100, 0};
+        const auto actorFrame = run(actor), spriteFrame = run(sprite);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        int overlap = 0;
+        for (int y = 0; y < 240; ++y) for (int x = 0; x < 320; ++x)
+            overlap += actorFrame.pixelColor(x, y).alpha() > 0 && spriteFrame.pixelColor(x, y).alpha() > 0;
+        QVERIFY(overlap > 10);
+        // Drawing a sprite also sets environment alpha to one. An offscreen
+        // sprite establishes that same native state for the isolated Actor frame.
+        auto offscreenSprite = sprite;
+        offscreenSprite[5] = 1000;
+        const auto actorAfterSprite = run(actor + offscreenSprite);
+        auto expected = spriteFrame.copy();
+        { QPainter painter(&expected); painter.drawImage(0, 0, actorAfterSprite); }
+        const auto together = run(actor + sprite);
+        QCOMPARE(together, expected); // Sprite pass is before Actor pass within a channel.
+        position->setValue(4);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 4);
+        position->setValue(1);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), together);
+        sprite[7] = 1; // A later sprite channel must instead appear over channel-zero Actors.
+        const auto laterSprite = run(sprite);
+        expected = actorFrame.copy();
+        { QPainter painter(&expected); painter.drawImage(0, 0, laterSprite); }
+        QCOMPARE(run(actor + sprite), expected);
+        QVERIFY(preview.grab().save("scene-sprite-composition.png"));
     }
     void scenePlaybackPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
