@@ -6,8 +6,8 @@
 #include <functional>
 #include <optional>
 namespace lordly {
-quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &metrics,
-                          int budget) {
+namespace {
+quint16 measureText(const QByteArray &source, const DialogueFontMetrics &metrics, int &budget) {
     if (source.isNull() || budget < 1)
         throw Error("Native text measurement requires text and a positive budget");
     quint32 at = 0, width = 0, previous = 0, spacing = 0;
@@ -106,7 +106,6 @@ quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &m
         ++at;
     }
 }
-namespace {
 DialogueSegmentScan scanSegment(const QByteArray &source, quint16 columns,
                                 const QHash<int, QByteArray> &substitutions, int &budget) {
     if (budget < 1)
@@ -215,6 +214,10 @@ DialogueSegmentScan scanSegment(const QByteArray &source, quint16 columns,
     return scan(source, 0);
 }
 } // namespace
+quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &metrics,
+                          int budget) {
+    return measureText(source, metrics, budget);
+}
 DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 columns,
                                         const QHash<int, QByteArray> &substitutions, int budget) {
     return scanSegment(source, columns, substitutions, budget);
@@ -340,6 +343,147 @@ quint16 countDialogueLines(const QByteArray &source, quint16 columns,
                 break;
             case 'l':
                 skip(source, at, 1);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+}
+quint16 measureDialogueWidth(const QByteArray &source, quint16 columns,
+                             const QHash<int, QByteArray> &substitutions,
+                             const QByteArray &longNameSuffix, const DialogueFontMetrics &metrics,
+                             qint32 minimum, int budget) {
+    if (budget < 1)
+        throw Error("Dialogue width measurement requires a positive budget");
+    if (source.isNull())
+        return 0;
+    quint32 at = 0, width = 0, maximum = 0, line = 0;
+    auto read = [&](const QByteArray &text, quint32 cursor) {
+        if (--budget < 0)
+            throw Error("Dialogue width measurement exceeded its budget");
+        return u8(text, cursor);
+    };
+    auto next = [&] { return read(source, at++); };
+    auto skip = [&](quint32 count) {
+        if (count > quint64(source.size()) || at > quint64(source.size()) - count)
+            throw Error("Dialogue width control exceeds its source");
+        at += count;
+    };
+    auto lookup = [&](int index) -> const QByteArray & {
+        const auto found = substitutions.constFind(index);
+        if (found == substitutions.constEnd())
+            throw Error(QString("Dialogue substitution byte %1 is unavailable").arg(index));
+        return found.value();
+    };
+    auto copy = [&](const QByteArray &text, quint32 start, quint32 count) {
+        if (count > 255)
+            throw Error("Dialogue token exceeds the native scratch buffer");
+        QByteArray result;
+        auto c = read(text, start);
+        while (c && count--) {
+            result += char(c);
+            c = read(text, ++start);
+        }
+        result += '\0';
+        return result;
+    };
+    for (;;) {
+        const auto c = next();
+        if (!c) {
+            maximum = std::max(quint16(maximum), quint16(width));
+            return quint16(std::max(qint32(maximum), minimum));
+        }
+        if (lordly_text_lead_byte(c)) {
+            skip(1);
+            width += 11;
+        } else if (c == '{') {
+            quint32 end = at;
+            while (read(source, end) && read(source, end) != '}')
+                ++end;
+            if (read(source, end) == '}') {
+                const auto token = copy(source, at - 1, end - at + 2);
+                width += measureText(token, metrics, budget);
+                at = end + 1;
+            }
+        } else if (c != '@')
+            width += metrics.glyphWidth(c);
+        else {
+            switch (const auto control = next(); control) {
+            case 'n':
+            case 'c':
+            case '/':
+                ++line;
+                maximum = std::max(quint16(maximum), quint16(width));
+                width = 0;
+                if (control != 'n')
+                    line = 0;
+                break;
+            case '%':
+                width += measureText(lookup(next()), metrics, budget);
+                break;
+            case '&': {
+                const auto &text = lookup(next());
+                const auto length = quint8(next() - 48);
+                width += measureText(copy(text, 0, length), metrics, budget);
+                break;
+            }
+            case '!': {
+                const auto &text = lookup(next());
+                const auto length = scanSegment(text, columns, substitutions, budget).count;
+                constexpr quint8 limited[] = {0, 1, 1, 2, 3};
+                width +=
+                    measureText(copy(text, 0, length < 5 ? limited[length] : 4), metrics, budget);
+                break;
+            }
+            case 'z': {
+                const auto &text = lookup(next());
+                if (!text.isNull()) {
+                    quint32 cursor = 0, last = 0, characters = 0;
+                    for (;;) {
+                        const auto ch = read(text, cursor);
+                        if (!ch)
+                            break;
+                        last = cursor;
+                        cursor += lordly_text_lead_byte(ch) ? 2 : 1;
+                        ++characters;
+                    }
+                    if (quint16(characters) >= 2)
+                        width += metrics.glyphWidth(read(text, last));
+                }
+                skip(1); // This grammar consumes another byte after the operand.
+                break;
+            }
+            case ':': {
+                const auto &text = lookup(next());
+                quint32 length = 0;
+                while (read(text, length))
+                    ++length;
+                if (length >= 6)
+                    width += measureText(longNameSuffix, metrics, budget);
+                break;
+            }
+            case 'i':
+                width = quint16(width) + 15U;
+                break;
+            case 'p':
+                // All original style/portrait branches reduce to this amount.
+                if (quint16(line) == 2)
+                    width = quint16(width) + 15U;
+                break;
+            case '<':
+            case 'F':
+            case 'T':
+            case 'e':
+            case 'f':
+            case 't':
+                skip(3);
+                break;
+            case 'w':
+                skip(4);
+                break;
+            case 'l':
+                skip(1);
                 break;
             default:
                 break;

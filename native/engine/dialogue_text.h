@@ -26,6 +26,10 @@ DialogueSegmentScan scanDialogueSegment(const QByteArray &source, quint16 column
 quint16 countDialogueLines(const QByteArray &source, quint16 columns,
                            const QHash<int, QByteArray> &substitutions,
                            const QByteArray &longNameSuffix, int budget = 100000);
+quint16 measureDialogueWidth(const QByteArray &source, quint16 columns,
+                             const QHash<int, QByteArray> &substitutions,
+                             const QByteArray &longNameSuffix, const DialogueFontMetrics &metrics,
+                             qint32 minimum = 0, int budget = 100000);
 // Text coordinates are archive-relative byte offsets, never host/native pointers.
 // The leading-control grammar is distinct from the body and metric grammars.
 void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray &source,

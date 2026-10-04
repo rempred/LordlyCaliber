@@ -1,5 +1,16 @@
 # Dialogue runtime
 
+Dialogue pixel measurement reconstructs ROM E98BC..E9EB0 at RAM 8019CB3C.
+All 6,169 comparisons pass, including every retail entry, minimum/column/fixed-font
+limits, page breaks and every style/side/control/portrait branch for `@i`/`@p`.
+Those spacing branches all reduce to 15 pixels. The `@z` width path consumes one
+additional byte after its substitution operand; line/segment grammars do not.
+Original general/segment/glyph/string helpers execute, with explicit synthetic
+names and metric tables. Width plus general-text regression passed in 2,611 ms.
+A constructed `@!` substitution truncates a two-byte glyph and makes native code
+read uninitialized scratch beyond its terminator; it is excluded from matching
+claims and explicitly rejected by the host. Missing context and bounds reject.
+
 The general text width helper reconstructs ROM 4F3C8..4F86C at RAM 801794C8,
 including its numeric reader at ROM 51400. All 1,851 original comparisons pass
 (189 ms), covering byte classes, two-byte glyphs, spacing, tabs, font changes,

@@ -21,6 +21,61 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void dialogueWidthsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-width-mips.cjs"),
+                                 path, work.filePath("widths.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("widths.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        QHash<int, QByteArray> substitutions;
+        const auto entries = root["substitutions"].toArray();
+        for (int i = 0; i < entries.size(); ++i)
+            substitutions[i] = QByteArray::fromHex(entries[i].toString().toLatin1());
+        const auto suffix = QByteArray::fromHex(root["suffix"].toString().toLatin1());
+        DialogueFontMetrics metrics{QByteArray::fromHex(root["normal"].toString().toLatin1()),
+                                    QByteArray::fromHex(root["alternate"].toString().toLatin1())};
+        QCOMPARE(root["retailCount"].toInt(), 4569);
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 6169);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            metrics.fixedIndex = qint16(c["fixed"].toInt());
+            const auto source = c["source"].isNull()
+                                    ? QByteArray{}
+                                    : QByteArray::fromHex(c["source"].toString().toLatin1());
+            quint16 width = 0;
+            try {
+                width = measureDialogueWidth(source, quint16(c["columns"].toInt()), substitutions,
+                                             suffix, metrics, c["minimum"].toInt());
+            } catch (const std::exception &e) {
+                QFAIL(qPrintable(c["id"].toString() + ": " + e.what()));
+            }
+            QVERIFY2(width == c["width"].toInt(), qPrintable(QString("%1, actual %2 expected %3")
+                                                                 .arg(c["id"].toString())
+                                                                 .arg(width)
+                                                                 .arg(c["width"].toInt())));
+        }
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 measureDialogueWidth(QByteArray("@%0\0", 4), 36, {}, {}, metrics));
+        QVERIFY_THROWS_EXCEPTION(Error, measureDialogueWidth(QByteArray("@!7X\0", 5), 36,
+                                                             substitutions, suffix, metrics));
+        substitutions[48] = QByteArray{};
+        QVERIFY_THROWS_EXCEPTION(
+            Error, measureDialogueWidth(QByteArray("@%0\0", 4), 36, substitutions, {}, metrics));
+        QVERIFY_THROWS_EXCEPTION(Error,
+                                 measureDialogueWidth(QByteArray("@w\0", 3), 36, {}, {}, metrics));
+        QVERIFY_THROWS_EXCEPTION(
+            Error, measureDialogueWidth(QByteArray("ABC\0", 4), 36, {}, {}, metrics, 0, 2));
+    }
     void generalTextMeasurementsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
