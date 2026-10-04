@@ -1,5 +1,20 @@
 # Native Lordly Caliber
 
+The native engine compiles a bounded adaptation of recovered `func_002A0B14.c`
+from Decomp commit `9955a5cdcf73a35e4ccf57ab9bb3b6d85dab40b3`.
+Motion is owned by a scene slot, independently of its occupant. Teleport and
+both-axis tolerance return paths preserve an existing motion. Speed-based moves
+use float distance, double scaling, truncation and a signed-halfword denominator;
+fixed duration divides by the full word but stores a halfword countdown. The
+current ROM supplies both tolerances and the scale. Errors reject atomically.
+The planar updater preserves paused-zero cleanup and active-zero wrapping; terrain,
+proximity and scheduler eligibility remain explicit responsibilities of the caller.
+Seventy-eight original-MIPS creator comparisons pass, with exact float bits and
+retained fields. Allocation and terrain services are controlled doubles. Separate
+lifetime/failure checks pass. Test COP1 models finite nearest-rounding arithmetic,
+not FCSR exceptions or denormal handling. No full-scene timing claim follows.
+
+
 Actor animation keys now resolve through compiled `game/director/actor_state.c`,
 a bounded adaptation of recovered `func_002A13EC.c` from accepted Decomp commit
 `3de8033d0e794bcf759ccfe4c7a67d82bd9ca656`. `ActorArt` reads the current ROM's
