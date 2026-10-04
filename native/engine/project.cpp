@@ -258,6 +258,8 @@ int Project::changedRecords() const {
         count += shops_->changedShops();
     if (consumableEffects_ && consumableEffects_->modified())
         ++count;
+    if (encounters_)
+        count += encounters_->changedRows();
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -393,6 +395,14 @@ void Project::loadConsumableEffects() {
     if (!consumableEffects_)
         consumableEffects_ = ConsumableEffects::load(rom_);
 }
+void Project::loadEncounters() {
+    if (!encounters_)
+        encounters_ = Encounters::load(rom_, int(records(Table::Classes).size()));
+}
+void Project::setEncounters(const QJsonObject &value) {
+    loadEncounters();
+    encounters_->apply(value, int(records(Table::Classes).size()));
+}
 void Project::setConsumableEffects(const QJsonObject &value) {
     loadConsumableEffects();
     consumableEffects_->apply(value);
@@ -506,6 +516,11 @@ QJsonObject Project::manifest() const {
         result["consumableEffects"] = consumableEffects_->json();
     else
         result.remove("consumableEffects");
+    if (encounters_ && (encounters_->modified() ||
+                        !legacy_["patches"].toObject()["neutral_encounters"].toObject().isEmpty()))
+        result["encounters"] = encounters_->json();
+    else
+        result.remove("encounters");
     return result;
 }
 void Project::applyManifest(const QJsonObject &object) {
@@ -524,6 +539,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadShops();
     if (consumableEffects_)
         candidate.loadConsumableEffects();
+    if (encounters_)
+        candidate.loadEncounters();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -616,6 +633,13 @@ void Project::applyManifest(const QJsonObject &object) {
     } else {
         candidate.importLegacyConsumableEffects(candidate.legacy_);
     }
+    if (object.contains("encounters")) {
+        if (!object["encounters"].isObject())
+            throw Error("Invalid saved encounters");
+        candidate.setEncounters(object["encounters"].toObject());
+    } else {
+        candidate.importLegacyEncounters(candidate.legacy_);
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -630,6 +654,18 @@ void Project::applyManifest(const QJsonObject &object) {
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
     *this = std::move(candidate);
+}
+void Project::importLegacyEncounters(const QJsonObject &object) {
+    const auto patches = object["patches"].toObject();
+    if (!patches.contains("neutral_encounters"))
+        return;
+    if (!patches["neutral_encounters"].isObject())
+        throw Error("Invalid imported encounters");
+    const auto values = patches["neutral_encounters"].toObject();
+    if (values.isEmpty())
+        return;
+    loadEncounters();
+    encounters_->importLegacy(values, int(records(Table::Classes).size()));
 }
 void Project::importLegacyConsumableEffects(const QJsonObject &object) {
     const auto patch = object["patches"].toObject();
@@ -789,6 +825,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyShops(object);
     candidate.importLegacyConsumables(object);
     candidate.importLegacyConsumableEffects(object);
+    candidate.importLegacyEncounters(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -862,12 +899,21 @@ QStringList Project::pendingLegacySections() const {
     };
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
-    for (auto it = patches.begin(); it != patches.end(); ++it)
+    for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (it.key() == "neutral_encounters" && encounters_) {
+            const auto parts = it.value().toObject();
+            for (auto part = parts.begin(); part != parts.end(); ++part)
+                if (part.key() != "scenario_slices" && part.key() != "terrain_rates" &&
+                    changed(part.value()))
+                    pending << "neutral_encounters." + part.key();
+            continue;
+        }
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
             it.key() != "descriptions" && it.key() != "statGates" && it.key() != "classFamilies" &&
             it.key() != "shops" && it.key() != "consumables" && it.key() != "consumableEffects" &&
             changed(it.value()))
             pending << it.key();
+    }
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {
         if (it.key() == "schema")

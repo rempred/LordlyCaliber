@@ -48,6 +48,139 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void encounterTablesExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadEncounters();
+            QCOMPARE(project.encounters()->classAt(41, 2, 0), 0x4c);
+            QCOMPARE(project.encounters()->classAt(41, 2, 1), 0x50);
+            QCOMPARE(project.encounters()->scenarioKeys(41), QVector<int>{59});
+            QCOMPARE(project.encounters()->scenarioKeys(45), QVector<int>{66});
+            const auto original = project.encounters()->json();
+            auto model = *project.encounters();
+            auto expected = source.bytes();
+            for (int p = 1; p <= 45; ++p)
+                for (int s = 0; s < 10; ++s) {
+                    const int first = (p * 7 + s * 3) % 165, second = (p * 11 + s * 5) % 165;
+                    model.setPair(p, s, first, second, 165);
+                    put8(expected, 0x141ed4 + (p - 1) * 20 + s * 2, quint8(first));
+                    put8(expected, 0x141ed4 + (p - 1) * 20 + s * 2 + 1, quint8(second));
+                }
+            for (int t = 0; t < 32; ++t) {
+                const int slot = t % 11, rate = slot ? (t * 17) % 101 : 0;
+                model.setTerrain(t, rate, slot);
+                put8(expected, 0x141e80 + t, quint8(rate));
+                put8(expected, 0x141ea0 + t, quint8(slot));
+            }
+            project.setEncounters(model.json());
+            const auto before = project.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, model.setPair(46, 0, 1, 2, 165));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setPair(45, 10, 1, 2, 165));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setPair(45, 0, 165, 2, 165));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setTerrain(31, 101, 1));
+            QVERIFY_THROWS_EXCEPTION(Error, model.setTerrain(31, 1, 0));
+            QCOMPARE(model.json(), project.encounters()->json());
+            auto bad = model.json();
+            auto pools = bad["pools"].toArray();
+            auto row = pools[44].toArray();
+            row[19] = true;
+            pools[44] = row;
+            bad["pools"] = pools;
+            QVERIFY_THROWS_EXCEPTION(Error, project.setEncounters(bad));
+            QCOMPARE(project.manifest(), before);
+            QTemporaryDir folder, build;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("encounters.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("encounters.lcproject")}) {
+                auto loaded = Project::fromRom(source);
+                loaded.applyManifest(Project::readProject(location));
+                QCOMPARE(loaded.encounters()->json(), project.encounters()->json());
+            }
+            const auto result = rebuild(project, tools, build.path());
+            Rom::updateChecksum(expected);
+            QCOMPARE(result.image, expected);
+            QTemporaryDir output(QDir(QFileInfo(path).absolutePath())
+                                     .filePath("Test ROMs/native-encounters-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, target);
+            auto reopened = Project::fromRom(Rom::open(target));
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->json(), project.encounters()->json());
+            atomicWrite(
+                output.filePath("encounters.json"),
+                QJsonDocument(QJsonObject{{"rom", target}, {"encounters", model.json()}}).toJson());
+            qInfo().noquote() << "Encounter tables candidate:"
+                              << output.filePath("encounters.json");
+            // Legacy subset imports preserve the five pools the browser never exposed.
+            const QJsonObject legacy{
+                {"format", "ob64-patch"},
+                {"version", 36},
+                {"patches",
+                 QJsonObject{
+                     {"neutral_encounters",
+                      QJsonObject{
+                          {"scenario_slices",
+                           QJsonObject{
+                               {"1",
+                                QJsonObject{{"row", 0},
+                                            {"slots", QJsonObject{{"0", QJsonArray{164, 0}}}}}}}},
+                          {"terrain_rates",
+                           QJsonObject{{"31", QJsonObject{{"rate", 100}, {"rawLookup", 10}}}}}}}}}};
+            auto imported = Project::fromRom(source);
+            imported.importLegacy(legacy);
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            QCOMPARE(imported.encounters()->classAt(1, 0, 0), 164);
+            QCOMPARE(imported.encounters()->poolBytes().mid(800),
+                     source.bytes().mid(0x141ed4 + 800, 100));
+            imported.setEncounters(original);
+            auto restored = Project::fromRom(source);
+            restored.applyManifest(imported.manifest());
+            QCOMPARE(restored.encounters()->json(), original);
+            auto unsupported = legacy;
+            auto patches = legacy["patches"].toObject();
+            auto neutral = patches["neutral_encounters"].toObject();
+            neutral["custom_squads"] = QJsonObject{{"example", true}};
+            patches["neutral_encounters"] = neutral;
+            unsupported["patches"] = patches;
+            imported.importLegacy(unsupported);
+            QVERIFY(imported.pendingLegacySections().contains("neutral_encounters.custom_squads"));
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(imported, tools, build.path()));
+            auto tampered = source.bytes();
+            put32(tampered, 0x13c414, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, Encounters::load(Rom::fromBytes(tampered), 165));
+            QCOMPARE(reopened.appendClass(1, "Encounter tester"), 165);
+            auto expanded = *reopened.encounters();
+            expanded.setPair(45, 9, 165, 0, 166);
+            reopened.setEncounters(expanded.json());
+            const auto grown = rebuild(reopened, tools, build.path());
+            auto grownProject = Project::fromRom(Rom::fromBytes(grown.image));
+            grownProject.loadEncounters();
+            QCOMPARE(grownProject.encounters()->classAt(45, 9, 0), 165);
+            QCOMPARE(grownProject.records(Table::Classes).size(), 166);
+            QTemporaryDir expandedOutput(QDir(QFileInfo(path).absolutePath())
+                                             .filePath("Test ROMs/native-encounters-class-XXXXXX"));
+            QVERIFY(expandedOutput.isValid());
+            expandedOutput.setAutoRemove(false);
+            const auto expandedTarget = expandedOutput.filePath(QFileInfo(path).fileName());
+            exportRom(reopened, grown, expandedTarget);
+            atomicWrite(
+                expandedOutput.filePath("encounters.json"),
+                QJsonDocument(QJsonObject{{"rom", expandedTarget}, {"encounters", expanded.json()}})
+                    .toJson());
+            qInfo().noquote() << "Expanded-class encounter candidate:"
+                              << expandedOutput.filePath("encounters.json");
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void consumableEffectWorkflow() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

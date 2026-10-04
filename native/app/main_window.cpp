@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/consumable_editor.h"
+#include "app/encounter_editor.h"
 #include "app/promotion_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
@@ -137,6 +138,7 @@ void MainWindow::loadRom(const QString &path) {
                 project.loadPromotion();
                 project.loadShops();
                 project.loadConsumableEffects();
+                project.loadEncounters();
             }
             return Result{std::move(project), {}};
         } catch (const std::exception &e) {
@@ -158,6 +160,9 @@ void MainWindow::installProject(Project project) {
     if (project_->shops())
         workspaces_->addTab(new ShopEditor(project_.get(), undo_, [this] { updateStatus(); }),
                             "Shops");
+    if (project_->encounters())
+        workspaces_->addTab(new EncounterEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                            "Encounters");
     if (!project_->textBanks().isEmpty())
         workspaces_->addTab(createTextWorkspace(project_.get(), undo_, [this] { updateStatus(); }),
                             "Descriptions");
@@ -337,6 +342,7 @@ void MainWindow::openProject() {
             next.loadPromotion();
             next.loadShops();
             next.loadConsumableEffects();
+            next.loadEncounters();
         }
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);

@@ -533,6 +533,20 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
+    if (p.encounters() && p.encounters()->modified()) {
+        Encounters::verifyReader(p.rom());
+        auto write = [&](const QByteArray &bytes, int offset, const QString &name) {
+            const auto built = compiler.compileData(bytes, directory, name);
+            if (built != bytes)
+                throw Error("Compiled encounter table differs from project");
+            result.image.replace(offset, bytes.size(), built);
+        };
+        write(p.encounters()->poolBytes(), Encounters::poolOffset, "encounter_pools");
+        write(p.encounters()->rateBytes(), Encounters::rateOffset, "encounter_terrain_rates");
+        write(p.encounters()->slotBytes(), Encounters::slotOffset, "encounter_terrain_slots");
+        result.report << "Compiled all 45 encounter pools and 32 terrain rates/slots into their "
+                         "original allocations";
+    }
     if (p.consumableEffects() && p.consumableEffects()->modified()) {
         const auto &effects = *p.consumableEffects();
         ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.
@@ -602,6 +616,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.encounters()) {
+        reopened.loadEncounters();
+        if (reopened.encounters()->json() != p.encounters()->json())
+            throw Error("Exported encounters differ from the project");
+    }
     if (p.consumableEffects()) {
         reopened.loadConsumableEffects();
         if (reopened.consumableEffects()->json() != p.consumableEffects()->json())

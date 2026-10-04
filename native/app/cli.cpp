@@ -52,6 +52,7 @@ int main(int argc, char **argv) {
             project.loadPromotion();
             project.loadShops();
             project.loadConsumableEffects();
+            project.loadEncounters();
         }
         if (parser.isSet("project")) {
             const auto manifest = lordly::Project::readProject(parser.value("project"));
@@ -69,6 +70,7 @@ int main(int argc, char **argv) {
             {"consumableEffectModels",
              project.consumableEffects() ? project.consumableEffects()->models().size() : 0},
             {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
+            {"encounterPools", project.encounters() ? lordly::Encounters::poolCount : 0},
             {"changedEntries", project.changedRecords()},
             {"pendingImportedSections",
              QJsonArray::fromStringList(project.pendingLegacySections())}};

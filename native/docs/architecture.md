@@ -315,3 +315,27 @@ Normal export composes effects with class relocation, Shops, records and text,
 then reopens and checks every loaded domain. Instruction tests execute authored
 query/apply effects, limits and special-target pools in guarded 4 MiB RAM with
 a controlled random service. They do not establish full-game menu or RNG behavior.
+
+The encounter pool owner is 900 bytes at z64 0x141ED4: 45 pools of ten byte pairs.
+This corrects the browser model's 40-pool bound. The leading four bytes and adjacent
+creature reward table at 0x142258 are retained. Scenario metadata keys59,63,64,65,66
+reference pools41..45. The workspace shows all pools and their actual metadata
+references; high-confidence labels are generated separately as navigation aids.
+Each pair validates against the project's current class count, including added IDs.
+
+The two32-byte terrain tables at z64 0x141E80/0x141EA0 retain their original allocation.
+Disabling a slot sets its chance to zero. Inspection of the original selector
+shows no zero-slot guard after the terrain roll passes: allowing a positive rate
+with a zero slot would index the preceding pool's last pair. Such imports are
+rejected. This refines the earlier general description that slot zero alone disables
+encounters in the parent neutral reference. Complete dispatcher authentication
+normalizes only the known global-rate operands and recognized gate branch forms;
+foreign runtime hooks are not silently presented as retail behavior.
+
+Pool and terrain exports compile generated C arrays and compare/reopen the result.
+Tests compare the entire image with independently constructed table edits, including
+pool45 and both neighboring allocations. Executed original instructions cover pool
+selection, unsigned class IDs and spawn markers, plus terrain thresholds and the
+existing item-based rate doubling. Full encounter materialization and gameplay are
+outside that check. Remaining imported encounter features stay retained and block
+export until their native implementation is available.

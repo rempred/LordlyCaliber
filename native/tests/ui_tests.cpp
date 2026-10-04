@@ -1,4 +1,5 @@
 #include "app/consumable_editor.h"
+#include "app/encounter_editor.h"
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
@@ -51,6 +52,58 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void encounterEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadEncounters();
+        project.appendClass(1, "Encounter tester");
+        QUndoStack undo;
+        EncounterEditor editor(&project, &undo, [] {});
+        editor.resize(1350, 750);
+        editor.show();
+        auto list = editor.findChild<QListWidget *>("encounterPools");
+        QCOMPARE(list->count(), 45);
+        list->setCurrentRow(44);
+        const auto original = project.encounters()->json();
+        auto first = editor.findChild<QComboBox *>("encounterClass_9_0");
+        first->setCurrentIndex(first->findData(165));
+        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
+        undo.undo();
+        QCOMPARE(project.encounters()->json(), original);
+        undo.redo();
+        QCOMPARE(first->currentData().toInt(), 165);
+        editor.findChild<QComboBox *>("encounterCopySource")->setCurrentIndex(0);
+        editor.findChild<QPushButton *>("encounterCopy")->click();
+        for (int s = 0; s < 10; ++s)
+            for (int side = 0; side < 2; ++side)
+                QCOMPARE(project.encounters()->classAt(45, s, side),
+                         project.encounters()->classAt(1, s, side));
+        undo.undo();
+        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
+        editor.findChild<QPushButton *>("encounterRestore")->click();
+        QCOMPARE(project.encounters()->json(), original);
+        undo.undo();
+        QCOMPARE(project.encounters()->classAt(45, 9, 0), 165);
+        auto slot = editor.findChild<QComboBox *>("encounterSlot_31");
+        auto rate = editor.findChild<QSpinBox *>("encounterRate_31");
+        QVERIFY(!rate->isEnabled());
+        slot->setCurrentIndex(10);
+        QVERIFY(rate->isEnabled());
+        rate->setValue(100);
+        QCOMPARE(project.encounters()->rate(31), 100);
+        slot->setCurrentIndex(0);
+        QCOMPARE(project.encounters()->rate(31), 0);
+        QVERIFY(!rate->isEnabled());
+        undo.undo();
+        QCOMPARE(rate->value(), 100);
+        QCOMPARE(slot->currentData().toInt(), 10);
+        editor.findChild<QLineEdit *>("encounterSearch")->setText("Encounter tester");
+        QVERIFY(!list->item(44)->isHidden());
+        QApplication::processEvents();
+        editor.grab().save(QCoreApplication::applicationDirPath() + "/encounters.png");
     }
     void consumableEffectEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -266,7 +319,7 @@ class UiTests : public QObject {
         MainWindow window;
         window.show();
         window.loadRom(path);
-        QTRY_COMPARE_WITH_TIMEOUT(window.findChildren<QTableView *>().size(), 3, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QListWidget *>("encounterPools"), 10000);
         auto classes = window.findChild<QTableView *>("classesTable");
         auto items = window.findChild<QTableView *>("itemsTable");
         auto consumables = window.findChild<QTableView *>("consumablesTable");
@@ -276,6 +329,7 @@ class UiTests : public QObject {
         QCOMPARE(classes->model()->rowCount(), 165);
         QCOMPARE(items->model()->rowCount(), 278);
         QCOMPARE(consumables->model()->rowCount(), 45);
+        QCOMPARE(window.findChild<QListWidget *>("encounterPools")->count(), 45);
         auto screenshot = qEnvironmentVariable("LORDLY_TEST_SCREENSHOT");
         if (!screenshot.isEmpty()) {
             QTest::qWait(100);
