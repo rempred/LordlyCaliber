@@ -23,6 +23,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
@@ -55,6 +56,107 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void customSquadEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadEncounters();
+        QCOMPARE(project.appendClass(5, "New squad class"), 165);
+        QUndoStack undo;
+        EncounterEditor editor(&project, &undo, [] {});
+        editor.resize(1400, 850);
+        editor.show();
+        editor.findChild<QTabWidget *>()->setCurrentWidget(
+            editor.findChild<QWidget *>("customSquadsPage"));
+        auto button = [&](const char *name) { return editor.findChild<QPushButton *>(name); };
+        auto combo = [&](const char *name) { return editor.findChild<QComboBox *>(name); };
+        auto spin = [&](const char *name) { return editor.findChild<QSpinBox *>(name); };
+        auto select = [&](const char *name, int id) {
+            auto box = combo(name);
+            QVERIFY(box);
+            const auto at = box->findData(id);
+            QVERIFY(at >= 0);
+            box->setCurrentIndex(at);
+        };
+        button("customNew")->click();
+        select("customScenario", 33);
+        select("customTerrain", 9);
+        editor.findChild<QLineEdit *>("customLabel")->setText("Raiding party");
+        spin("customMemberCount")->setValue(3);
+        select("customClass_0", 165);
+        select("customClass_1", 71);
+        spin("customLevel_1")->setValue(-10);
+        select("customEquipment_0_0", 277);
+        select("customEquipment_0_1", 1);
+        editor.findChild<QTableWidget *>("customMembers")->setCurrentCell(2, 0);
+        button("customCell_0")->click();
+        QCOMPARE(combo("customPosition_2")->currentData().toInt(), 0);
+        spin("customChance")->setValue(70);
+        spin("customRetreat")->setValue(12);
+        select("customBonusClass_0", 165);
+        spin("customBonus_0")->setValue(25);
+        select("customReward_0", 44);
+        select("customReward_1", 0x8115);
+        spin("customWeight_0")->setValue(3);
+        spin("customWeight_1")->setValue(1);
+        spin("customWeight_2")->setValue(2);
+        button("customApply")->click();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 1);
+        const auto saved = project.encounters()->customSquads().profiles()[339];
+        QCOMPARE(saved.members.size(), 3);
+        QCOMPARE(saved.members[0].classId, 165);
+        QCOMPARE(saved.members[0].equipment[0], 277);
+        QCOMPARE(saved.members[1].levelOffset, -10);
+        QCOMPARE(saved.members[2].cell, 0);
+        QCOMPARE(saved.chance, 70);
+        QCOMPARE(saved.retreatHp, 12);
+        QCOMPARE(saved.bonuses[0].second, 25);
+        QCOMPARE(saved.rewards.outcomes[0], 44);
+        const auto before = project.manifest();
+        select("customPosition_2", 6);
+        button("customApply")->click();
+        QCOMPARE(project.manifest(), before);
+        QVERIFY(editor.findChild<QLabel *>("customNotice")->text().contains("share"));
+        undo.undo();
+        QVERIFY(!project.encounters()->customSquads().hasProfiles());
+        undo.redo();
+        QCOMPARE(project.manifest(), before);
+        combo("customClass_0")->setEditText("No matching class");
+        button("customApply")->click();
+        QCOMPARE(project.manifest(), before);
+        select("customClass_0", 5);
+        select("customClass_0", 165);
+        QApplication::processEvents();
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
+                                   "/custom-squad-members.png"));
+        editor.findChild<QTabWidget *>("customDetailsTabs")->setCurrentIndex(1);
+        QApplication::processEvents();
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() +
+                                   "/custom-squad-battle.png"));
+        button("customCopy")->click();
+        QVERIFY(combo("customScenario")->currentData().toInt() != 33 ||
+                combo("customTerrain")->currentData().toInt() != 9);
+        button("customApply")->click();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 2);
+        button("customRemove")->click();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 1);
+        undo.undo();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 2);
+        button("customRestore")->click();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 1);
+        undo.undo();
+        QCOMPARE(project.encounters()->customSquads().profiles().size(), 2);
+        select("customPersuasion", 0);
+        QVERIFY(!spin("customChance")->isEnabled());
+        QVERIFY(!combo("customBonusClass_0")->isEnabled());
+        auto search = editor.findChild<QLineEdit *>("customSearch");
+        search->setText("No matching squad");
+        QVERIFY(!button("customApply")->isEnabled());
+        QVERIFY(!button("customCopy")->isEnabled());
+        search->clear();
+        QVERIFY(button("customApply")->isEnabled());
     }
     void scenarioRateEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -106,7 +208,7 @@ class UiTests : public QObject {
         QCOMPARE(project.encounters()->scenarioRates().branch(65, true)->passCount, quint32(100));
         editor.findChild<QTabWidget *>()->setCurrentWidget(
             editor.findChild<QWidget *>("scenarioRatesPage"));
-        QVERIFY(editor.grab().save("native/build/Release/scenario-rates.png"));
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/scenario-rates.png"));
         editor.findChild<QLineEdit *>("scenarioRateSearch")->setText("No matching scenario");
         QVERIFY(!keys->currentItem());
         QVERIFY(!apply->isEnabled());
@@ -161,7 +263,8 @@ class UiTests : public QObject {
         undo.undo();
         editor.findChild<QTabWidget *>()->setCurrentWidget(
             editor.findChild<QWidget *>("creatureRewardsPage"));
-        QVERIFY(editor.grab().save("native/build/Release/creature-rewards.png"));
+        QVERIFY(
+            editor.grab().save(QCoreApplication::applicationDirPath() + "/creature-rewards.png"));
         editor.findChild<QLineEdit *>("rewardSearch")->setText("No class with this name");
         QVERIFY(!classes->currentItem());
         QVERIFY(!apply->isEnabled());

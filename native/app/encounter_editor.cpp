@@ -1,4 +1,5 @@
 #include "app/encounter_editor.h"
+#include "app/custom_squad_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -203,6 +204,10 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     tabs->addTab(globalPage, "Global rates");
     tabs->addTab(createRewardsPage(), "Class rewards");
     tabs->addTab(createScenarioPage(), "Scenario rates");
+    tabs->addTab(new CustomSquadEditor(
+                     project_, undo_,
+                     [this](const Encounters &next, const QString &label) { commit(next, label); }),
+                 "Custom squads");
     for (int id = 1; id <= Encounters::poolCount; ++id) {
         auto item = new QListWidgetItem(project_->encounters()->label(id), pools_);
         item->setData(Qt::UserRole, id);

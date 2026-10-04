@@ -24,7 +24,12 @@ and installs its callers with the class/save, reward and rate owners. Re-export
 reuses owned space when it fits; growth preserves later allocations. Removing
 the last squad restores the callers and releases the module. Public export tests
 cover 65 profiles, a newly added class, moving behind expanded saves, unchanged
-re-export and removal. The desktop editing page is still in progress.
+re-export and removal. The desktop page provides searchable squads and classes,
+per-member settings, a clickable formation grid with large-member clearance,
+persuasion/retreat/reward controls, and undoable create/copy/restore/remove.
+Qt checks exercise those controls and atomic rejection of invalid edits. Rendered
+pages have been inspected. Insufficient actor capacity still needs a safe policy
+before the original materializer can be reached; full battles are not yet proven.
 
 The product targets Windows and integrated graphics. C++ owns the engine and
 Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,
