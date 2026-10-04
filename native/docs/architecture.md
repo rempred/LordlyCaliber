@@ -1,5 +1,14 @@
 # Native Lordly Caliber
 
+SceneResources owns the shared six 168-byte UI records independently of any
+particular callback. Maintained C reconstructs ordinary registration (ROM735C)
+and clipped window registration (ROMFA48). It preserves untouched record bytes,
+first-free allocation, signed-halfword clipping and the caller's explicit context,
+parent and margin values. A full pool raises an error rather than reproducing the
+game's infinite wait. All 1,116 complete pool comparisons match original code with
+no controlled helpers; slot exhaustion, reuse and bounds checks pass (151 ms).
+Dialogue integration and the shared resource scheduler remain to connect.
+
 Entrance command 3F now loads its current-ROM coordinate preset and builds
 missing army rows through the native three-object constructor. Existing actors
 retain the original skip rules and presentation transitions. Creation preserves
