@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include "app/scene_preview.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
@@ -152,6 +153,71 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("transformRestart")->click();
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
+    }
+    void scenePlaybackPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Preview test", source.key, false);
+        QVector<quint32> words{0x14, 0, 30, 1, 2, 0, 0, 0, 0, 0,
+                              0x1e, 0, 255, 255, 255, 255, 0, 0, 4, 1};
+        for (int i = 0; i < 8; ++i) words << 0 << 0x80000000U;
+        words << 0x80000006U << 0xffffffffU << 0x80000001U
+              << (0xff000000U | quint32(source.program.resourceClass()));
+        auto encode = [&] {
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            return bytes;
+        };
+        scenes.replace(id, encode());
+        ScenePreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        preview.selectScene(scenes, id, 0);
+        auto next = preview.findChild<QPushButton *>("sceneStep");
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QVERIFY(next && position && status);
+        next->click();
+        QCOMPARE(preview.property("sceneTick").toInt(), 1);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto first = preview.renderedFrame();
+        QVERIFY(!first.isNull());
+        int visible = 0;
+        for (int y = 0; y < first.height(); ++y)
+            for (int x = 0; x < first.width(); ++x)
+                visible += first.pixelColor(x, y).alpha() > 0;
+        QVERIFY(visible > 10);
+        position->setValue(4);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 4);
+        QVERIFY(preview.renderedFrame() != first);
+        position->setValue(1);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), first);
+        preview.repaint();
+        QCoreApplication::processEvents();
+        QCOMPARE(preview.renderedFrame(), first);
+        QVERIFY(preview.grab().save("scene-playback-preview.png"));
+        position->setValue(10);
+        QTRY_VERIFY(preview.property("sceneStopped").toBool());
+        QVERIFY(status->text().contains("gameplay launch context"));
+        QVERIFY(!next->isEnabled());
+        position->setValue(1);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), first);
+        QVERIFY(next->isEnabled());
+        position->setValue(10000);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(preview.property("sceneTick").toInt(), 0);
+        words[5] = 30000; // Reloaded project edits change the command's Actor X.
+        scenes.replace(id, encode());
+        preview.selectScene(scenes, id, 0);
+        next->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QVERIFY(preview.renderedFrame() != first);
     }
     void projectedActorPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

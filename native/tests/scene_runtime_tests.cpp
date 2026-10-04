@@ -6,6 +6,7 @@
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
+#include "engine/scene_programs.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
 #include "game/director/scene_schedule.h"
@@ -200,6 +201,39 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(u16(actors.materials().tint(1), 10), 0);
         QVERIFY(world.layers.size() > frame.layers.size());
         QVERIFY(world.image.save("composed-actors.png"));
+    }
+    void sceneLightingCommandUnits() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        QByteArray script(24, 0);
+        put32(script, 0, 0x47);
+        put32(script, 4, quint32(-200));
+        put32(script, 8, 50);
+        put32(script, 12, 400);
+        put32(script, 16, 0x80000001);
+        put32(script, 20, 0xff000000U | quint32(source.program.resourceClass()));
+        scenes.replace(source.key, script);
+        for (int mode : {0, 2}) {
+            ScenePlaybackStart start;
+            start.mode = mode;
+            start.lighting = LordlyActorLighting{{1,2,3}, {{4,5,6},{7,8,9}}};
+            ScenePlayback playback(rom, scenes.runtimeDirectors(), source.selectors.first(),
+                start, SceneCameras::freshModeTwo(rom));
+            QCOMPARE(playback.advance([](LordlySceneService) { return true; }), ScenePlayback::Advanced);
+            const auto light = *playback.lighting();
+            QCOMPARE(light.point[0], -200.f);
+            QCOMPARE(light.point[1], 50.f);
+            QCOMPARE(light.point[2], 400.f);
+            QCOMPARE(light.planar[0][0], mode == 2 ? -200.f : 4.f);
+            QCOMPARE(light.planar[0][1], mode == 2 ? 400.f : 5.f);
+            QCOMPARE(light.planar[0][2], mode == 2 ? 50.f : 6.f);
+            QCOMPARE(light.planar[1][0], 7.f);
+            QCOMPARE(light.planar[1][1], 8.f);
+            QCOMPARE(light.planar[1][2], 9.f);
+        }
     }
     void sceneWorldPassesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

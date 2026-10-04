@@ -18,6 +18,7 @@ namespace lordly {
 class Project;
 class SceneCommandEditor;
 class TransformPreview;
+class ScenePreview;
 class CutsceneEditor : public QWidget {
     Q_OBJECT
   public:
@@ -45,6 +46,7 @@ class CutsceneEditor : public QWidget {
                 *removeScene_ = nullptr, *wipeScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
     TransformPreview *transformPreview_ = nullptr;
+    ScenePreview *scenePreview_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;
     SceneBackgrounds backgrounds_;

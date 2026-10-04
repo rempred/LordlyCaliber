@@ -5,7 +5,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
       rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
-      cameras_(std::move(cameras)) {
+      cameras_(std::move(cameras)), lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
@@ -20,6 +20,20 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x47 && lighting_) {
+        if (args.size() != 3)
+            throw Error("Scene lighting command is truncated");
+        // Retained func_00284288 case47 casts signed words directly, without
+        // the thousandths conversion used for Actor/camera coordinates.
+        for (int i = 0; i < 3; ++i)
+            lighting_->point[i] = float(qint32(args[i]));
+        if (schedule_.mode == 2) {
+            lighting_->planar[0][0] = lighting_->point[0];
+            lighting_->planar[0][1] = lighting_->point[2];
+            lighting_->planar[0][2] = lighting_->point[1];
+        }
+        return true;
+    }
     if (schedule_.mode == 0 && (opcode == 8 || opcode == 0xd)) {
         if (opcode == 8) {
             if (args.size() != 3)

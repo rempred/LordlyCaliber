@@ -4,6 +4,7 @@
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
 #include "app/transform_preview.h"
+#include "app/scene_preview.h"
 #include "engine/scene_import.h"
 #include <QComboBox>
 #include <QDialog>
@@ -216,6 +217,8 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         });
     } else
         pages->addTab(commands_, "Source commands");
+    scenePreview_ = new ScenePreview(rom_);
+    pages->addTab(scenePreview_, "Scene playback");
     auto actorInspector = new ActorPoseEditor(rom_);
     pages->addTab(actorInspector, "Pose inspector");
     transformPreview_ = new TransformPreview(rom_);
@@ -512,6 +515,7 @@ void CutsceneEditor::selectScene() {
         backgrounds_.modeEvidence =
             QString("Preview unavailable: %1").arg(QString::fromUtf8(e.what()));
     }
+    scenePreview_->selectScene(programs(), key, backgrounds_.mode);
     commands_->setRowCount(scene.program.commands.size());
     for (int i = 0; i < scene.program.commands.size(); ++i) {
         const auto &cmd = scene.program.commands[i];

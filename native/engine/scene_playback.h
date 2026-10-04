@@ -16,6 +16,7 @@ struct ScenePlaybackStart {
     quint8 presentation = 0, alternate = 0, delayedCounter = 0;
     DirectorLaunchTranslations translations;
     std::optional<quint32> sceneFlags;
+    std::optional<LordlyActorLighting> lighting;
 };
 struct SceneDialogueState {
     SceneResources resources;
@@ -42,6 +43,9 @@ class ScenePlayback {
     // and shadow matrices; final draw ordering remains separate.
     void prepareModeZeroDrawing(int channelCount);
     void prepareModeTwoDrawing(const LordlyActorLighting &lighting);
+    const std::optional<LordlyActorLighting> &lighting() const {
+        return lighting_;
+    }
     SceneDrawQueue drawQueue(const QVector<QByteArray> &objects, LordlySceneDrawLayout) const;
     void setMode(int mode);
     const LordlySceneSchedule &schedule() const {
@@ -143,6 +147,7 @@ class ScenePlayback {
     SceneFade fade_;
     SceneEffects effects_;
     SceneTransforms transforms_;
+    std::optional<LordlyActorLighting> lighting_;
     std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};
     bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;

@@ -1,5 +1,33 @@
 # Native Lordly Caliber
 
+## Scene playback panel
+
+The Cutscenes workspace now includes step/play/restart/backward-seek playback
+using the project's current execution snapshot. Completed update/draw state and
+its image are stored together, so repainting cannot advance draw-driven tint.
+Checkpoints every120 updates bound repeat work; seeking yields to the Qt event
+loop after at most four updates/eight milliseconds and can be cancelled. The
+preview has a10000-update bound and stops when an owner is unavailable.
+
+The current stage explicitly supplies reference cameras, flat terrain, two lights,
+neutral world environment, empty external jobs and no army roster. Script camera,
+Actor and material changes execute normally. Environment loads display a fitted
+reference backdrop, with multiple image membership disclosed. Native background
+placement, equipment, scene-sprite drawing and audio remain separate; occupied
+scene-sprite pools stop rather than disappear. Dynamic selectors/roster requirements
+and unknown commands report their missing context. This is not complete native
+launch reconstruction or full game playback.
+
+ScenePlayback accepts initial lighting context and handles retained dispatcher
+case47. Signed operands convert directly to floats (no thousandths); mode2 also
+writes planar0 in X/Z/height order, retaining planar1. Lighting command checks in
+both modes and existing playback/transform timing passed392ms after build37441.
+The scenePlaybackPreview/cutsceneCatalogSelection UI checks passed1656ms: visible
+actors, changed material frames, exact backseek/repaint, missing-context pause,
+seek cancellation and reloaded edits. Final focused UI check passed219ms after
+build23165 and the scene-sprite guard. The rendered panel was inspected. No game
+frame or complete launch-context equivalence is claimed.
+
 ## Edited playback resources
 
 ScenePrograms::runtimeDirectors builds an immutable execution snapshot containing
