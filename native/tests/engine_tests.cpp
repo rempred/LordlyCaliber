@@ -47,6 +47,83 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void consumableRecordsExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        const auto source = Rom::open(path);
+        auto project = Project::fromRom(source);
+        QCOMPARE(project.records(Table::Consumables).size(), 45);
+        QVERIFY(project.record(Table::Consumables, 1).name.contains("Heal"));
+        const auto original = project.record(Table::Consumables, 44).bytes;
+        auto expected = original;
+        put16(expected, 4, 0x0201);
+        put16(expected, 6, 65535);
+        put8(expected, 8, 2);
+        put8(expected, 9, 7);
+        put8(expected, 10, 0x42);
+        put8(expected, 11, 0xa5);
+        const QJsonObject legacy{
+            {"format", "ob64-patch"},
+            {"version", 36},
+            {"patches",
+             QJsonObject{
+                 {"consumables",
+                  QJsonObject{{"44", QJsonObject{{"flagHi", 0x0201},
+                                                 {"price", 65535},
+                                                 {"flagLo", QJsonArray{2, 7, 0x42, 0xa5}}}}}}}}};
+        project.importLegacy(legacy);
+        QCOMPARE(project.record(Table::Consumables, 44).bytes, expected);
+        QVERIFY(project.pendingLegacySections().isEmpty());
+        const auto before = project.manifest();
+        for (auto bad : {QJsonValue(-1), QJsonValue(65536), QJsonValue(2.5), QJsonValue(true)}) {
+            auto invalid = legacy;
+            invalid["patches"] =
+                QJsonObject{{"consumables", QJsonObject{{"44", QJsonObject{{"price", bad}}}}}};
+            QVERIFY_THROWS_EXCEPTION(Error, project.importLegacy(invalid));
+            QCOMPARE(project.manifest(), before);
+        }
+        auto badPointer = expected;
+        badPointer[0] = 0;
+        QVERIFY_THROWS_EXCEPTION(Error, project.replaceBytes(Table::Consumables, 44, badPointer));
+        QTemporaryDir folder, build;
+        project.saveFolder(folder.path());
+        project.saveArchive(folder.filePath("consumables.lcproject"));
+        for (const auto &location : {folder.path(), folder.filePath("consumables.lcproject")}) {
+            auto reopened = Project::fromRom(source);
+            reopened.applyManifest(Project::readProject(location));
+            QCOMPARE(reopened.record(Table::Consumables, 44).bytes, expected);
+        }
+        const auto result = rebuild(project, tools, build.path());
+        auto expectedImage = source.bytes();
+        expectedImage.replace(0x645cc + 44 * 12, 12, expected);
+        Rom::updateChecksum(expectedImage);
+        QCOMPARE(result.image, expectedImage); // every neighboring byte, not just exposed fields
+        QTemporaryDir output(
+            QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-consumables-XXXXXX"));
+        QVERIFY(output.isValid());
+        output.setAutoRemove(false);
+        const auto target = output.filePath(QFileInfo(path).fileName());
+        exportRom(project, result, target);
+        auto reopened = Project::fromRom(Rom::open(target));
+        QCOMPARE(reopened.record(Table::Consumables, 44).bytes, expected);
+        qInfo().noquote() << "Consumable record export:" << target;
+        // Native projects retained before this table was supported migrate once.
+        auto historical = Project::fromRom(source).manifest();
+        auto records = historical["records"].toObject();
+        records.remove("consumables");
+        historical["records"] = records;
+        historical["legacyImport"] = legacy;
+        reopened = Project::fromRom(source);
+        reopened.applyManifest(historical);
+        QCOMPARE(reopened.record(Table::Consumables, 44).bytes, expected);
+        reopened.replaceBytes(Table::Consumables, 44, original);
+        auto restored = Project::fromRom(source);
+        restored.applyManifest(reopened.manifest());
+        QCOMPARE(restored.record(Table::Consumables, 44).bytes, original);
+        QCOMPARE(Rom::open(path).bytes(), source.bytes());
+    }
     void shopLegacyImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

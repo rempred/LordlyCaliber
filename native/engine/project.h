@@ -11,7 +11,7 @@
 #include <optional>
 
 namespace lordly {
-enum class Table { Classes, Items };
+enum class Table { Classes, Items, Consumables };
 struct Field {
     QString key, label, group;
     int offset = 0, width = 1;
@@ -95,6 +95,7 @@ class Project {
 
   private:
     void importLegacyShops(const QJsonObject &object);
+    void importLegacyConsumables(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;

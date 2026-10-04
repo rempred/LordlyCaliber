@@ -492,7 +492,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
-    for (auto table : {Table::Classes, Table::Items}) {
+    for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
         if (table == Table::Classes && relocateClasses)
             continue;
         const auto &records = p.records(table);
@@ -601,7 +601,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             if (reopened.textBanks().value(bank.key()).serialized() != bank->serialized())
                 throw Error("Exported descriptions differ from project");
     }
-    for (auto table : {Table::Classes, Table::Items})
+    for (auto table : {Table::Classes, Table::Items, Table::Consumables})
         for (int row = 0; row < p.records(table).size(); ++row)
             if (table == Table::Classes && relocateClasses
                     ? (reopened.record(table, row).bytes.sliced(4) !=
@@ -609,8 +609,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                        reopened.classNameBytes(row) != p.classNameBytes(row))
                     : reopened.record(table, row).bytes != p.record(table, row).bytes)
                 throw Error("Export reopen differs from the project");
-    result.report
-        << "Reopened every class and item record; CIC-6102 checksum updated when required";
+    result.report << "Reopened every class, equipment and consumable record; CIC-6102 checksum "
+                     "updated when required";
     return result;
 }
 void exportRom(const Project &p, const BuildResult &result, const QString &path) {

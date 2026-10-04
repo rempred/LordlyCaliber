@@ -152,6 +152,7 @@ void MainWindow::installProject(Project project) {
     project_ = std::make_unique<Project>(std::move(project));
     addRecordWorkspace(Table::Classes, "Classes");
     addRecordWorkspace(Table::Items, "Items");
+    addRecordWorkspace(Table::Consumables, "Consumables");
     if (project_->shops())
         workspaces_->addTab(new ShopEditor(project_.get(), undo_, [this] { updateStatus(); }),
                             "Shops");
@@ -302,7 +303,7 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         if (section >= 0)
             sections->setCurrentIndex(section);
     });
-    columns->setCurrentIndex(columns->findData("Stats"));
+    columns->setCurrentIndex(columns->findData(table == Table::Consumables ? "Values" : "Stats"));
     workspaces_->addTab(page, title);
     grid->selectRow(1);
 }

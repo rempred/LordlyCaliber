@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
                            {"revision", project.rom().revision()},
                            {"classes", project.records(lordly::Table::Classes).size()},
                            {"items", project.records(lordly::Table::Items).size()},
+                           {"consumables", project.records(lordly::Table::Consumables).size()},
                            {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
                            {"changedEntries", project.changedRecords()},
                            {"pendingImportedSections",

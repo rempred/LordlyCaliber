@@ -10,7 +10,15 @@
 
 namespace lordly {
 QString tableKey(Table t) {
-    return t == Table::Classes ? "classes" : "items";
+    switch (t) {
+    case Table::Classes:
+        return "classes";
+    case Table::Items:
+        return "items";
+    case Table::Consumables:
+        return "consumables";
+    }
+    throw Error("Unknown record table");
 }
 const QVector<Field> &fields(Table table) {
     static const auto classes = [] {
@@ -105,7 +113,13 @@ const QVector<Field> &fields(Table table) {
         }
         return f;
     }();
-    return table == Table::Classes ? classes : items;
+    static const QVector<Field> consumables = {{"price", "Price (Goth)", "Values", 6, 2},
+                                               {"flagHi", "Category metadata", "Advanced", 4, 2},
+                                               {"tier", "Tier", "Values", 8},
+                                               {"metadata", "Raw metadata byte", "Advanced", 9},
+                                               {"raw10", "Raw byte 10", "Advanced", 10},
+                                               {"raw11", "Raw byte 11", "Advanced", 11}};
+    return table == Table::Classes ? classes : table == Table::Items ? items : consumables;
 }
 Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
     rom.requireSupported();
@@ -123,11 +137,16 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
         } catch (const Error &) {
         }
     }
-    for (auto table : {Table::Classes, Table::Items}) {
+    for (auto table : {Table::Classes, Table::Items, Table::Consumables}) {
         auto &records = p.tables_[table];
         bool cls = table == Table::Classes;
         int count = cls ? 165 : 278, stride = cls ? 72 : 32;
         qsizetype base = cls ? 0x5dad8 + 72 - 12 : 0x62310 - 4;
+        if (table == Table::Consumables) {
+            count = 45;
+            stride = 12;
+            base = 0x645cc;
+        }
         if (p.rom_.revision() == 1)
             base += 0x20;
         if (cls && classPlacement) {
@@ -135,7 +154,11 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             base = classPlacement->dataRomOffset + classPlacement->layout.records -
                    classPlacement->layout.indexBase;
         }
-        auto names = catalog.value(cls ? "CLASS_NAMES" : "ITEM_NAMES").toObject();
+        auto names = catalog
+                         .value(cls                     ? "CLASS_NAMES"
+                                : table == Table::Items ? "ITEM_NAMES"
+                                                        : "CONSUMABLE_NAMES")
+                         .toObject();
         if (cls)
             for (auto it = names.begin(); it != names.end();) {
                 bool valid = false;
@@ -159,6 +182,16 @@ Project Project::fromRom(Rom rom, const QJsonObject &catalog) {
             r.bytes = r.original;
             if (r.bytes.size() != stride)
                 throw Error("Truncated record table");
+            if (table == Table::Consumables) {
+                const auto pointer = u32(r.bytes, 0);
+                const auto stringOffset = qint64(pointer) - 0x8012a100;
+                const auto shift = p.rom_.revision() == 1 ? 0x20 : 0;
+                if (stringOffset >= 0x66280 + shift && stringOffset < 0x665c4 + shift) {
+                    const auto end = p.rom_.bytes().indexOf(char(0), stringOffset);
+                    if (end >= stringOffset && end < 0x665c4 + shift)
+                        r.name = decodeText(p.rom_.bytes().mid(stringOffset, end - stringOffset));
+                }
+            }
             records.push_back(std::move(r));
         }
         if (cls)
@@ -204,6 +237,8 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
     if (t == Table::Classes && originalClasses_ &&
         bytes.first(4) != record(t, row).original.first(4))
         throw Error("Class name pointers are allocated during rebuild; edit the name instead");
+    if (t == Table::Consumables && bytes.first(4) != record(t, row).original.first(4))
+        throw Error("Consumable name pointers must retain their loaded allocation");
     tables_.at(t)[row].bytes = bytes;
 }
 int Project::changedRecords() const {
@@ -467,6 +502,8 @@ void Project::applyManifest(const QJsonObject &object) {
             table = Table::Classes;
         else if (it.key() == "items")
             table = Table::Items;
+        else if (it.key() == "consumables")
+            table = Table::Consumables;
         else
             throw Error("Unsupported project record type: " + it.key());
         if (!it.value().isObject())
@@ -518,6 +555,8 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
+    if (!object["records"].toObject().contains("consumables"))
+        candidate.importLegacyConsumables(candidate.legacy_);
     if (object.contains("shops")) {
         if (!object["shops"].isObject())
             throw Error("Invalid saved shops");
@@ -539,6 +578,40 @@ void Project::applyManifest(const QJsonObject &object) {
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
     *this = std::move(candidate);
+}
+void Project::importLegacyConsumables(const QJsonObject &object) {
+    const auto patch = object["patches"].toObject();
+    if (patch.contains("consumables") && !patch["consumables"].isObject())
+        throw Error("Imported consumables must be an object");
+    const auto edits = patch["consumables"].toObject();
+    auto number = [](const QJsonValue &v, int maximum) {
+        const auto value = v.toDouble(-1);
+        if (!v.isDouble() || !std::isfinite(value) || value != std::floor(value) || value < 0 ||
+            value > maximum)
+            throw Error("Invalid imported consumable value");
+        return int(value);
+    };
+    for (auto it = edits.begin(); it != edits.end(); ++it) {
+        bool ok = false;
+        const auto id = it.key().toInt(&ok);
+        if (!ok || QString::number(id) != it.key() || !it.value().isObject())
+            throw Error("Invalid imported consumable ID");
+        auto bytes = record(Table::Consumables, id).bytes;
+        const auto fields = it.value().toObject();
+        for (auto field = fields.begin(); field != fields.end(); ++field) {
+            if (field.key() == "price" || field.key() == "flagHi")
+                put16(bytes, field.key() == "price" ? 6 : 4, quint16(number(field.value(), 65535)));
+            else if (field.key() == "flagLo") {
+                if (!field.value().isArray() || field.value().toArray().size() > 4)
+                    throw Error("Consumable metadata must contain at most four bytes");
+                const auto values = field.value().toArray();
+                for (int index = 0; index < values.size(); ++index)
+                    put8(bytes, 8 + index, quint8(number(values[index], 255)));
+            } else
+                throw Error("Unrecognized imported consumable field: " + field.key());
+        }
+        replaceBytes(Table::Consumables, id, bytes);
+    }
 }
 void Project::importLegacyShops(const QJsonObject &object) {
     const auto patch = object["patches"].toObject();
@@ -645,6 +718,7 @@ void Project::importLegacy(const QJsonObject &object) {
         candidate.replaceBytes(Table::Items, id, bytes);
     }
     candidate.importLegacyShops(object);
+    candidate.importLegacyConsumables(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -721,7 +795,7 @@ QStringList Project::pendingLegacySections() const {
     for (auto it = patches.begin(); it != patches.end(); ++it)
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
             it.key() != "descriptions" && it.key() != "statGates" && it.key() != "classFamilies" &&
-            it.key() != "shops" && changed(it.value()))
+            it.key() != "shops" && it.key() != "consumables" && changed(it.value()))
             pending << it.key();
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {

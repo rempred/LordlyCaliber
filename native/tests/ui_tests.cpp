@@ -112,6 +112,27 @@ class UiTests : public QObject {
         if (!qEnvironmentVariable("LORDLY_SHOP_SCREENSHOT").isEmpty())
             QVERIFY(editor.grab().save(qEnvironmentVariable("LORDLY_SHOP_SCREENSHOT")));
     }
+    void consumableFieldsUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        const auto original = project.record(Table::Consumables, 1).bytes;
+        QUndoStack undo;
+        RecordModel model(&project, Table::Consumables, &undo);
+        QCOMPARE(model.rowCount(), 45);
+        QVERIFY(model.setData(model.index(1, 2), 65535, Qt::EditRole));
+        auto expected = original;
+        put16(expected, 6, 65535);
+        QCOMPARE(project.record(Table::Consumables, 1).bytes, expected);
+        undo.undo();
+        QCOMPARE(project.record(Table::Consumables, 1).bytes, original);
+        undo.redo();
+        QCOMPARE(project.record(Table::Consumables, 1).bytes, expected);
+        QVERIFY(!model.setData(model.index(1, 2), 65536, Qt::EditRole));
+        QCOMPARE(project.record(Table::Consumables, 1).bytes, expected);
+        QVERIFY(!(model.flags(model.index(1, 1)) & Qt::ItemIsEditable));
+    }
     void classNamesAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -192,13 +213,16 @@ class UiTests : public QObject {
         MainWindow window;
         window.show();
         window.loadRom(path);
-        QTRY_COMPARE_WITH_TIMEOUT(window.findChildren<QTableView *>().size(), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(window.findChildren<QTableView *>().size(), 3, 10000);
         auto classes = window.findChild<QTableView *>("classesTable");
         auto items = window.findChild<QTableView *>("itemsTable");
+        auto consumables = window.findChild<QTableView *>("consumablesTable");
         QVERIFY(classes);
         QVERIFY(items);
+        QVERIFY(consumables);
         QCOMPARE(classes->model()->rowCount(), 165);
         QCOMPARE(items->model()->rowCount(), 278);
+        QCOMPARE(consumables->model()->rowCount(), 45);
         auto screenshot = qEnvironmentVariable("LORDLY_TEST_SCREENSHOT");
         if (!screenshot.isEmpty()) {
             QTest::qWait(100);
