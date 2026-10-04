@@ -1,5 +1,13 @@
 # Dialogue runtime
 
+Window motion, bounds placement and pointer tracking compile maintained C from
+ROM EA184..EA628 at RAM 8019D404. All 270 sequences / 2,160 complete window and
+payload snapshots pass (186 ms), with no controlled helpers. Checks include
+overshoot, signed-halfword wrap, retained completion, zero/large steps, signed
+margins and portrait/style pointer limits. Invalid record sizes preserve inputs.
+These operations are ready for the dialogue update owner; its scheduling and
+text reveal state machine are still being connected.
+
 The initializer now composes prefix parsing, both measurements and accepted-source
 geometry. All 4,644 complete 168-byte window/1,144-byte payload comparisons pass
 (1,700 ms), including every retail source. Only archive resolution, zero-fill and

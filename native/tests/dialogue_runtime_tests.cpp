@@ -21,6 +21,47 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void windowMotionAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("dialogue-motion-mips.cjs"),
+                                 path, work.filePath("motion.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("motion.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 270);
+        int sample = 0;
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            auto window = QByteArray::fromHex(c["window"].toString().toLatin1());
+            auto state = QByteArray::fromHex(c["state"].toString().toLatin1());
+            for (const auto &s : c["snapshots"].toArray()) {
+                advanceDialoguePosition(state);
+                trackDialoguePointer(window, state);
+                positionDialogueBounds(window, state);
+                const auto expected = s.toObject();
+                QVERIFY2(window.toHex() == expected["window"].toString().toLatin1(),
+                         qPrintable(QString("Window %1").arg(sample)));
+                QVERIFY2(state.toHex() == expected["state"].toString().toLatin1(),
+                         qPrintable(QString("Payload %1").arg(sample)));
+            }
+            ++sample;
+        }
+        QByteArray window(167, 0), state(1144, 'x');
+        const auto before = state;
+        QVERIFY_THROWS_EXCEPTION(Error, positionDialogueBounds(window, state));
+        QCOMPARE(state, before);
+        QVERIFY_THROWS_EXCEPTION(Error, trackDialoguePointer(window, state));
+        QCOMPARE(state, before);
+        QVERIFY_THROWS_EXCEPTION(Error, advanceDialoguePosition(window));
+    }
     void completeInitializationAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

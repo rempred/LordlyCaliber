@@ -1,11 +1,29 @@
 #include "engine/dialogue_text.h"
 #include "game/director/dialogue_layout.h"
+#include "game/director/dialogue_motion.h"
 #include "game/director/dialogue_prefix.h"
 #include "game/director/text_metrics.h"
 #include <algorithm>
 #include <functional>
 #include <optional>
 namespace lordly {
+void advanceDialoguePosition(QByteArray &state) {
+    if (state.size() != 1144)
+        throw Error("Dialogue movement requires a complete payload");
+    lordly_dialogue_move(reinterpret_cast<uint8_t *>(state.data()));
+}
+void positionDialogueBounds(QByteArray &window, QByteArray &state) {
+    if (window.size() != 168 || state.size() != 1144)
+        throw Error("Dialogue bounds require complete window and payload records");
+    lordly_dialogue_bounds(reinterpret_cast<uint8_t *>(window.data()),
+                           reinterpret_cast<uint8_t *>(state.data()));
+}
+void trackDialoguePointer(const QByteArray &window, QByteArray &state) {
+    if (window.size() != 168 || state.size() != 1144)
+        throw Error("Dialogue pointer requires complete window and payload records");
+    lordly_dialogue_pointer(reinterpret_cast<const uint8_t *>(window.constData()),
+                            reinterpret_cast<uint8_t *>(state.data()));
+}
 namespace {
 quint16 measureText(const QByteArray &source, const DialogueFontMetrics &metrics, int &budget) {
     if (source.isNull() || budget < 1)

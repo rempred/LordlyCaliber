@@ -44,6 +44,9 @@ struct DialogueTextEnvironment {
     QHash<int, QByteArray> substitutions;
     QByteArray longNameSuffix;
 };
+void advanceDialoguePosition(QByteArray &state);
+void positionDialogueBounds(QByteArray &window, QByteArray &state);
+void trackDialoguePointer(const QByteArray &window, QByteArray &state);
 // Prefix, native measurements and accepted-source geometry in their native order.
 InitializedDialogue initializeDialogueWindow(const QByteArray &window, qint32 resourceSlot,
                                              const QByteArray &source,
