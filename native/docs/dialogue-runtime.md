@@ -1,5 +1,14 @@
 # Dialogue runtime
 
+The general text width helper reconstructs ROM 4F3C8..4F86C at RAM 801794C8,
+including its numeric reader at ROM 51400. All 1,851 original comparisons pass
+(189 ms), covering byte classes, two-byte glyphs, spacing, tabs, font changes,
+paired sections and 16-bit width wrap, with both metric tables supplied explicitly.
+No game helpers are replaced. Unlike the leaf glyph query, this routine ignores
+the fixed-index override. The host measurement bounds every source/table read
+and keeps the original helper's temporary cursor globals local. Malformed braced
+input, invalid indices, missing metrics and exhausted budgets reject.
+
 Line measurement reconstructs ROM E9528..E98BC at RAM 8019C7A8. All 32,305
 original-instruction comparisons pass for retail entries and boundary sources
 across seven column limits. The original recursive scanner and classifier run;

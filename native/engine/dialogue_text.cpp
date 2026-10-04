@@ -4,7 +4,108 @@
 #include "game/director/text_metrics.h"
 #include <algorithm>
 #include <functional>
+#include <optional>
 namespace lordly {
+quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &metrics,
+                          int budget) {
+    if (source.isNull() || budget < 1)
+        throw Error("Native text measurement requires text and a positive budget");
+    quint32 at = 0, width = 0, previous = 0, spacing = 0;
+    bool alternate = false;
+    auto read = [&](quint32 cursor) {
+        if (--budget < 0)
+            throw Error("Native text measurement exceeded its budget");
+        return u8(source, cursor);
+    };
+    auto metric = [&](quint32 index, bool other) {
+        return u8(other ? metrics.alternate : metrics.normal, index);
+    };
+    auto byteWidth = [&](quint8 c, bool other) { return metric(c < 128 ? c + 16 : c, other); };
+    auto number = [&] {
+        quint32 value = 0;
+        while (true) {
+            const auto c = read(++at);
+            if (c < '0' || c > '9')
+                return value;
+            value = value * 10 + c - '0';
+        }
+    };
+    auto findEnd = [&](quint32 cursor) -> std::optional<quint32> {
+        while (true) {
+            const auto c = read(cursor);
+            if (!c)
+                return {};
+            if (c == 15)
+                return cursor;
+            ++cursor;
+        }
+    };
+    for (;;) {
+        const auto c = read(at);
+        if (!c)
+            return quint16(width);
+        if (c == 14)
+            alternate = true;
+        else if (c == 15)
+            alternate = false;
+        else if (c == 10 || c == 13 || c == 12 || c == 8) {
+            // The original backspace subtract is immediately cancelled by its
+            // shared add, so it has no net measurement effect.
+        } else if (c == 9) {
+            const auto unit = quint32(quint16(spacing)) + 11;
+            const auto tab = quint16(quint16(width) / unit + 1);
+            width = ((quint32(tab) + 3) & ~3U) * unit + spacing;
+            previous = 0;
+        } else if (c == '{') {
+            previous = 0;
+            const auto kind = read(++at);
+            if (kind == 'T' || kind == 't')
+                previous = metric(quint32(quint16(number())) - 1, alternate);
+            else if (kind == 'H' || kind == 'h')
+                spacing = number();
+            else
+                while (read(++at) != '}') {
+                }
+            width += previous + spacing;
+        } else if (lordly_text_lead_byte(c)) {
+            read(++at); // Bounds check the second byte even though its value is ignored.
+            previous = 11;
+            width += previous + spacing;
+        } else if (!alternate) {
+            previous = byteWidth(c, false);
+            width += previous + spacing;
+        } else {
+            previous = 0;
+            const auto end = findEnd(at);
+            if (!end)
+                alternate = false;
+            else {
+                quint32 split = at;
+                while (split != *end && read(split) != 16)
+                    ++split;
+                if (split == *end) {
+                    while (at != *end)
+                        previous += byteWidth(read(at++), true);
+                } else {
+                    quint32 left = 0;
+                    while (at != split)
+                        left += byteWidth(read(at++), true);
+                    const auto digit = read(++at);
+                    previous = quint8(digit - (digit < 65 ? 48 : digit < 97 ? 55 : 87));
+                    ++at;
+                    const auto rightEnd = findEnd(at);
+                    if (!rightEnd)
+                        throw Error("Paired native text has no closing control");
+                    while (at != *rightEnd)
+                        previous += byteWidth(read(at++), true);
+                    previous = std::max(quint8(left), quint8(previous));
+                }
+                width += previous + spacing;
+            }
+        }
+        ++at;
+    }
+}
 namespace {
 DialogueSegmentScan scanSegment(const QByteArray &source, quint16 columns,
                                 const QHash<int, QByteArray> &substitutions, int &budget) {

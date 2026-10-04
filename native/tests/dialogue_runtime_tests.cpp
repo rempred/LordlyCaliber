@@ -21,6 +21,41 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void generalTextMeasurementsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("text-measure-mips.cjs"),
+             path, work.filePath("widths.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("widths.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        DialogueFontMetrics metrics{QByteArray::fromHex(root["normal"].toString().toLatin1()),
+                                    QByteArray::fromHex(root["alternate"].toString().toLatin1())};
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 1851);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            metrics.fixedIndex = qint16(c["fixed"].toInt());
+            const auto source = QByteArray::fromHex(c["source"].toString().toLatin1());
+            const auto width = measureNativeText(source, metrics);
+            QVERIFY2(width == c["width"].toInt(),
+                     qPrintable(QString("Source %1, actual %2 expected %3")
+                                    .arg(c["source"].toString())
+                                    .arg(width)
+                                    .arg(c["width"].toInt())));
+        }
+        QVERIFY_THROWS_EXCEPTION(Error, measureNativeText(QByteArray("{Qno end\0", 9), metrics));
+        QVERIFY_THROWS_EXCEPTION(Error, measureNativeText(QByteArray("{T0}\0", 5), metrics));
+        QVERIFY_THROWS_EXCEPTION(Error, measureNativeText(QByteArray("ABC\0", 4), metrics, 2));
+        QVERIFY_THROWS_EXCEPTION(Error, measureNativeText(QByteArray("A\0", 2), {}));
+    }
     void lineCountsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

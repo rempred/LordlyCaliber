@@ -7,6 +7,10 @@ struct DialogueFontMetrics {
     qint16 fixedIndex = -1;
     quint8 glyphWidth(quint32 character, bool other = false) const;
 };
+// The general text grammar reads the selected metric tables directly; it does
+// not use the single-glyph fixed-index override. Measurements have no host side effects.
+quint16 measureNativeText(const QByteArray &source, const DialogueFontMetrics &metrics,
+                          int budget = 100000);
 struct DialogueSegmentScan {
     quint16 count = 0;
     quint32 cursor = 0;
