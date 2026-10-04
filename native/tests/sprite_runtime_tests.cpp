@@ -1,3 +1,4 @@
+#include "engine/scene_sprites.h"
 #include "engine/sprite_pose.h"
 #include <QDir>
 #include <QFile>
@@ -10,6 +11,96 @@ using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void lifecycleAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("scene-sprites-mips.cjs"),
+                                 path, work.filePath("sprites.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("sprites.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QVERIFY(rows.size() >= 85);
+        const auto rom = Rom::open(path);
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            SceneSprites sprites(rom), resumed(rom);
+            for (const auto &r : row["initial"].toArray()) {
+                const auto item = r.toObject();
+                const auto record = QByteArray::fromHex(item["record"].toString().toLatin1());
+                sprites.supplyRecord(item["slot"].toInt(), record);
+                resumed.supplyRecord(item["slot"].toInt(), record);
+            }
+            const auto operations = row["operations"].toArray(), states = row["states"].toArray();
+            for (int step = 0; step < operations.size(); ++step) {
+                const auto op = operations[step].toObject(), expected = states[step].toObject();
+                if (op.contains("advance")) {
+                    QVERIFY(sprites.advancePoses());
+                    int attempts = 0;
+                    while (!resumed.advancePoses(1))
+                        QVERIFY(++attempts < 100);
+                } else {
+                    QVector<quint32> args;
+                    for (const auto &a : op["args"].toArray())
+                        args << quint32(a.toInteger());
+                    const bool query = op["opcode"].toInt() == 0x65;
+                    if (query)
+                        args = {0, 0, args[0]};
+                    int value = -100, other = -100;
+                    QVERIFY(sprites.service(quint32(op["opcode"].toInt()), args, value));
+                    QVERIFY(resumed.service(quint32(op["opcode"].toInt()), args, other));
+                    QCOMPARE(value, query ? expected["value"].toInt() : -100);
+                    QCOMPARE(other, value);
+                }
+                QJsonArray records;
+                for (int slot = 0; slot < 30; ++slot) {
+                    const auto sprite = sprites.sprite(slot), other = resumed.sprite(slot);
+                    QCOMPARE(sprite != nullptr, other != nullptr);
+                    if (!sprite)
+                        continue;
+                    QCOMPARE(sprite->record(), other->record());
+                    records << QJsonObject{
+                        {"slot", slot}, {"record", QString::fromLatin1(sprite->record().toHex())}};
+                }
+                QCOMPARE(records, expected["records"].toArray());
+            }
+        }
+    }
+    void lifecycleBoundsAndMissingContext() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        SceneSprites sprites(Rom::open(path));
+        int value = 0;
+        QVERIFY(sprites.service(0x46, {0, 57, 0, 0, 12, 13, 1, 100, 0}, value));
+        const auto initial = sprites.sprite(0)->record();
+        QVERIFY_THROWS_EXCEPTION(
+            Error,
+            sprites.service(0x46, {0, 57, 0, 0, 0xffffffffU, 0xffffffffU, 1, 100, 0}, value));
+        QCOMPARE(sprites.sprite(0)->record(), initial);
+        QVERIFY_THROWS_EXCEPTION(Error, sprites.service(0x65, {0, 0, 256}, value));
+        QVERIFY_THROWS_EXCEPTION(Error, sprites.service(0x64, {0, 0xffffffffU, 65535, 0}, value));
+        QCOMPARE(sprites.sprite(0)->record(), initial);
+        QVERIFY_THROWS_EXCEPTION(
+            Error,
+            sprites.service(0x63, {0, 63, 0, 0, 12, 13, 0, 0xffffffffU, 1, 0xffffffffU}, value));
+        QCOMPARE(sprites.sprite(0)->record(), initial);
+        sprites.setRotationSource([](qint32 group, qint32 entry) {
+            if (group != -1 || entry != 1)
+                throw Error("Unexpected path");
+            return qint16(270);
+        });
+        QVERIFY(
+            sprites.service(0x63, {0, 63, 0, 0, 12, 13, 0, 0xffffffffU, 1, 0xffffffffU}, value));
+        QCOMPARE(u16(sprites.sprite(0)->record(), 0x40), 270);
+        QCOMPARE(sprites.sprite(0)->sprite().bank, 63);
+    }
     void posesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

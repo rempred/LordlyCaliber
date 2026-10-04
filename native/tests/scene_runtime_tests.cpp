@@ -326,9 +326,10 @@ class SceneRuntimeTests : public QObject {
             allocation += (int(compressed.size()) + 9) & ~1;
             return key;
         };
-        const QVector<quint32> setup{0x14, 0,    30, 1, 2, 1000, 2000,  3000,  0,    0,
-                                     0x7b, 0,    1,  5, 3, 0x2c, 10000, 20000, 1000, 1000,
-                                     2,    0x1b, 3,  5, 6, 7,    255,   0};
+        const QVector<quint32> setup{
+            0x46, 0, 57,  0,    0,     13,    17,   1,    100, 0,    0x46, 29,   63, 0, 0,    40,
+            15,   3, 100, 0,    0x14,  0,     30,   1,    2,   1000, 2000, 3000, 0,  0, 0x7b, 0,
+            1,    5, 3,   0x2c, 10000, 20000, 1000, 1000, 2,   0x1b, 3,    5,    6,  7, 255,  0};
         auto ordinary = setup;
         ordinary << 1 << 0 << 0x80000000U << 0xe << 2 << 2 << 0 << 0x80000002U << 0x80000000U
                  << 0x7d << 2 << 0x80000001U << 0xff000001U;
@@ -343,20 +344,21 @@ class SceneRuntimeTests : public QObject {
         auto create = [&](int selector) {
             return ScenePlayback(rom, resources, selector, {}, SceneCameras::freshModeTwo(rom));
         };
-        // This fixture explicitly has no terrain motion, sprites, channels or
+        // This fixture explicitly has no terrain motion, channels or
         // other scheduled objects. Their callbacks acknowledge those empty pools.
         auto emptyDomains = [](LordlySceneService) { return true; };
         auto baseline = create(0);
         QCOMPARE(baseline.advance(), ScenePlayback::Suspended);
-        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_POSES});
+        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_MODE_TWO_4});
         QCOMPARE(baseline.completedUpdates(), 0U);
-        QVector<QByteArray> actors, projections, fades;
+        QVector<QByteArray> actors, projections, fades, sprites, lastSprites;
         QVector<int> cursors;
         const float heights[] = {2, 7, 12, 12};
         const int counts[] = {2, 1, 0, 0};
         for (int tick = 0; tick < 4; ++tick) {
-            QCOMPARE(baseline.advance(emptyDomains),
-                     tick == 3 ? ScenePlayback::Released : ScenePlayback::Advanced);
+            const auto result = baseline.advance(emptyDomains);
+            QVERIFY2(result == (tick == 3 ? ScenePlayback::Released : ScenePlayback::Advanced),
+                     qPrintable(baseline.reason()));
             QCOMPARE(baseline.completedUpdates(), quint64(tick + 1));
             QCOMPARE(baseline.director().state().counter, quint32(tick + 1));
             QCOMPARE(baseline.actors().actor(0)->pose().actor().position.y, heights[tick]);
@@ -365,6 +367,8 @@ class SceneRuntimeTests : public QObject {
             actors << baseline.actors().actor(0)->record();
             projections << baseline.projection().record();
             fades << baseline.fade().record();
+            sprites << baseline.sprites().sprite(0)->record();
+            lastSprites << baseline.sprites().sprite(29)->record();
             cursors << baseline.director().state().resume_cursor;
         }
         QCOMPARE(baseline.advance(emptyDomains), ScenePlayback::Released);
@@ -388,6 +392,8 @@ class SceneRuntimeTests : public QObject {
             QCOMPARE(resumed.actors().actor(0)->record(), actors[tick]);
             QCOMPARE(resumed.projection().record(), projections[tick]);
             QCOMPARE(resumed.fade().record(), fades[tick]);
+            QCOMPARE(resumed.sprites().sprite(0)->record(), sprites[tick]);
+            QCOMPARE(resumed.sprites().sprite(29)->record(), lastSprites[tick]);
             QCOMPARE(resumed.director().state().resume_cursor, cursors[tick]);
             QCOMPARE(resumed.director().state().counter, quint32(tick + 1));
             QCOMPARE(resumed.completedUpdates(), quint64(tick + 1));
@@ -395,8 +401,10 @@ class SceneRuntimeTests : public QObject {
         auto switched = create(1);
         QCOMPARE(switched.advance(emptyDomains), ScenePlayback::Advanced);
         QCOMPARE(switched.schedule().alternate, 1);
+        const auto heldSprite = switched.sprites().sprite(0)->record();
         QCOMPARE(switched.advance(), ScenePlayback::Advanced); // Alternate needs no other domains.
         QCOMPARE(switched.schedule().alternate, 0);
+        QCOMPARE(switched.sprites().sprite(0)->record(), heldSprite);
         QCOMPARE(switched.actors().actor(0)->pose().actor().position.y, 2.f);
         QCOMPARE(switched.projection().remaining(), 2);
         QCOMPARE(switched.advance(emptyDomains), ScenePlayback::Released);

@@ -4,7 +4,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ScenePlaybackStart start, SceneCameras cameras,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
-      actors_(rom, start.mode, start.presentation, std::move(height)),
+      actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
       cameras_(std::move(cameras)) {
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
@@ -29,7 +29,8 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         schedule_.alternate = 0;
         return true;
     }
-    if (actors_.service(opcode, args, value) || projection_.service(schedule_.mode, opcode, args) ||
+    if (actors_.service(opcode, args, value) || sprites_.service(opcode, args, value) ||
+        projection_.service(schedule_.mode, opcode, args) ||
         cameras_.service(schedule_.mode, opcode, args) || fade_.service(opcode, args, value) ||
         effects_.service(opcode, args))
         return true;
@@ -83,8 +84,11 @@ bool ScenePlayback::update(LordlySceneService service) {
             }
             actorsAdvanced_ = true;
         }
-        if (!supplemental_ || !*supplemental_ || !(*supplemental_)(service))
+        if (!sprites_.advancePoses(instructionBudget_)) {
+            poseBudgetReached_ = true;
+            reason_ = "Sprite pose instruction budget reached";
             return false;
+        }
         actorsAdvanced_ = false;
         poseSweepStarted_ = false;
         return true;

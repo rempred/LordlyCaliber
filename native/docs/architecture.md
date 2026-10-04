@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+SceneSprites owns the thirty animated 2D records. Commands 46/63 create or replace,
+64 restarts, 65 queries the current program opcode, and 66 releases one/all slots.
+Full records, replacement, narrow constructor slots, full-word query/release slots,
+rotation reuse, immediate poses and preserved restart fields agree with original
+instructions. Allocation/free/resource registration and the audio sink are controlled.
+Only full-word FFFFFFFF inherits the restart animation; 0000FFFF replaces it with
+signed halfword -1 and normally fails state resolution. Unsafe fresh-allocation
+preserve forms reject without replacing the existing sprite.
+
+ScenePlayback now advances the sprite pool after actors, within the same native
+pause guard and resumable stage. The composed Director check includes both end
+slots and compares whole records under one-instruction budgets and alternate mode.
+Direct rotations execute internally. Sampled/resource rotations require the path
+owner's explicit callback, including its temporary resource-path slot 19 lifecycle;
+that path implementation remains pending. Final sprite transforms/drawing are pending.
+
 The independent 2D SpritePosePlayer reconstructs ROM 29E7E0..29EAB0 with signed
 integer X/Y, the native cursor/delay rules and lossless 80-byte records. Unlike
 Actor poses, opcode 12 does nothing and the second material block is not added
@@ -75,7 +91,7 @@ before preventing another one. Fade updates remain an explicit independent call.
 A scripted integration check verifies creation, height cadence, projection delay,
 registered waits, alternate entry/exit, release and identical complete actor records
 under repeated suspension with one-instruction/one-service budgets. Its absent
-supplemental pools are explicitly acknowledged. Animated sprites after the actor sweep and other domain stages remain supplemental
+supplemental pools are explicitly acknowledged. Other domain stages remain supplemental
 services; missing ones suspend with their identity. This is an integrated execution
 boundary, not a complete retail-scene player or a new UI preview yet.
 

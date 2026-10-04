@@ -5,6 +5,7 @@
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
+#include "engine/scene_sprites.h"
 #include "game/director/scene_schedule.h"
 namespace lordly {
 struct ScenePlaybackStart {
@@ -21,9 +22,8 @@ class ScenePlayback {
     using Update = std::function<bool(LordlySceneService)>;
     ScenePlayback(const Rom &, Directors, int selector, ScenePlaybackStart, SceneCameras cameras,
                   ActorInstance::Height height = {});
-    // Internal stages: counter, height, movement, actor poses, projection and Director.
-    // POSES in the supplemental callback means only the subsequent 30-sprite
-    // sweep. Missing callbacks suspend, including empty pools
+    // Actor and sprite poses share the native sweep, in that order.
+    // Missing supplemental callbacks suspend, including empty pools
     // whose absence has not been established by the owner of that domain.
     Result advance(const Update &supplemental = {}, const DirectorSession::Service &commands = {},
                    int instructionBudget = 10000, int stageBudget = 64);
@@ -65,6 +65,12 @@ class ScenePlayback {
     const SceneActors &actors() const {
         return actors_;
     }
+    SceneSprites &sprites() {
+        return sprites_;
+    }
+    const SceneSprites &sprites() const {
+        return sprites_;
+    }
     SceneProjection &projection() {
         return projection_;
     }
@@ -96,6 +102,7 @@ class ScenePlayback {
     bool command(quint32, const QVector<quint32> &, int &);
     DirectorSession director_;
     SceneActors actors_;
+    SceneSprites sprites_;
     SceneProjection projection_;
     SceneCameras cameras_;
     SceneFade fade_;
