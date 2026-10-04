@@ -2,6 +2,8 @@
 #include "engine/actor_motion.h"
 #include "engine/actor_pose.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_camera.h"
+#include "engine/scene_projection.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -15,6 +17,125 @@ using namespace lordly;
 class ActorRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void cameraPlacementAndPicking() {
+        QFile file(QFileInfo(QString::fromUtf8(__FILE__))
+                       .absoluteDir()
+                       .filePath("../../tests/fixtures/cutscene-shared-actor.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 4);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            const auto values = row["camera"].toArray();
+            QByteArray bank(56, 0);
+            for (int i = 0; i < 14; ++i)
+                put32(bank, i * 4, std::bit_cast<quint32>(float(values[i].toDouble())));
+            const SceneCamera camera(bank, 0.1f);
+            const auto point = camera.projectPackedOrigin(
+                QByteArray::fromHex(row["matrixHex"].toString().toLatin1()));
+            const auto expected = row["output"].toArray();
+            QVERIFY2(std::abs(point.screen.x() - expected[0].toDouble()) < 0.01 &&
+                         std::abs(point.screen.y() - expected[1].toDouble()) < 0.01,
+                     qPrintable(row["name"].toString()));
+            QVERIFY(point.visible);
+        }
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for initializer and command checks");
+        const auto rom = Rom::open(path);
+        auto cameras = SceneCameras::freshModeTwo(rom);
+        QCOMPARE(u32(cameras.actor().bank(), 0), u32(rom.bytes(), 0x1efa68));
+        QCOMPARE(u32(cameras.actor().bank(), 20), u32(rom.bytes(), 0x1efa4c));
+        const auto original = cameras.actor().bank();
+        const QVector<SceneVector> positions{
+            {-40, 0, 0}, {240, 0, 55}, {100, 20, -30}, {-85, -17, 127}};
+        for (auto position : positions) {
+            const auto point = cameras.actor().project(position);
+            QVERIFY(point.visible);
+            const auto recovered = cameras.actor().unprojectAtHeight(point.screen, position.y);
+            QVERIFY2((position - recovered).length() < 0.05f,
+                     qPrintable(QString::number((position - recovered).length())));
+        }
+        QVERIFY(cameras.service(2, 0x35, {0, 0, 0, 0, 0, 400000, 38000}));
+        QCOMPARE(cameras.actor().bank(), original);
+        QCOMPARE(cameras.registered().bank(), cameras.shared().bank());
+        const auto selected = cameras.shared().bank();
+        QVERIFY(cameras.service(0, 0x36, {0, 0, 0, 20000, 80000, 600000, 55000}));
+        QCOMPARE(cameras.shared().bank(), selected);
+        const auto actor = cameras.actor().bank();
+        QCOMPARE(actor.mid(4, 16), original.mid(4, 16));
+        QCOMPARE(actor.mid(44), original.mid(44));
+        QVERIFY_THROWS_EXCEPTION(Error, cameras.service(2, 0x36, {0, 0, 0, 0, 0, 0, 0}));
+        QCOMPARE(cameras.actor().bank(), actor);
+        QCOMPARE(cameras.shared().bank(), selected);
+        QVERIFY(cameras.service(2, 0x36, {0, 0, 0, 0, 0, 400000, 38000}));
+        QVERIFY(!cameras.actor().project({0, 0, 5000}).visible);
+        QVERIFY_THROWS_EXCEPTION(Error, cameras.actor().unprojectAtHeight({160, 120}, 0));
+    }
+    void projectionAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("scene-projection-mips.cjs"),
+                                 path, work.filePath("projection.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("projection.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture = QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(SceneCameras::freshModeTwo(Rom::open(path)).actor().bank().toHex(),
+                 fixture["actorCamera"].toString().toLatin1());
+        const auto initial = QByteArray::fromHex(fixture["initial"].toString().toLatin1());
+        const auto initialized = QByteArray::fromHex(fixture["initialized"].toString().toLatin1());
+        LordlySceneProjection raw;
+        std::memcpy(raw.bytes, initial.constData(), sizeof(raw.bytes));
+        lordly_projection_initialize(&raw);
+        QCOMPARE(QByteArray(reinterpret_cast<const char *>(raw.bytes), sizeof(raw.bytes)),
+                 initialized);
+        QCOMPARE(fixture["cases"].toArray().size(), 13);
+        for (const auto &v : fixture["cases"].toArray()) {
+            SceneProjection projection(initialized);
+            for (const auto &item : v.toObject()["stages"].toArray()) {
+                const auto stage = item.toObject();
+                const auto target = stage["targets"].toArray();
+                auto f = [&](int i) {
+                    return std::bit_cast<float>(quint32(target[i].toInteger()));
+                };
+                projection.start(f(0), f(1), f(2), f(3), stage["duration"].toInt());
+                QCOMPARE(projection.record().toHex(), stage["setup"].toString().toLatin1());
+                for (const auto &step : stage["steps"].toArray()) {
+                    projection.advance();
+                    QCOMPARE(projection.record().toHex(), step.toString().toLatin1());
+                }
+            }
+        }
+        QCOMPARE(lordly_projection_advance(nullptr), 0);
+        SceneProjection projection;
+        QCOMPARE(projection.scaleX(), 1.f);
+        QCOMPARE(projection.translateX(), 0.f);
+        auto before = projection.record();
+        QVERIFY_THROWS_EXCEPTION(Error, projection.start(1, 2, 3, 4, 0));
+        QCOMPARE(projection.record(), before);
+        QVERIFY_THROWS_EXCEPTION(
+            Error, projection.start(std::numeric_limits<float>::infinity(), 2, 3, 4, 1));
+        QCOMPARE(projection.record(), before);
+        QVERIFY(projection.service(0, 0x2c, {0, 0, 0, 0, 0}));
+        QCOMPARE(projection.record(), before);
+        QVERIFY(projection.service(2, 0x2c, {quint32(-80000), 30000, 1000, 1000, 1}));
+        QCOMPARE(projection.translateX(), 0.f);
+        projection.advance();
+        QCOMPARE(projection.translateX(), -80.f);
+        QCOMPARE(projection.translateY(), 30.f);
+        QCOMPARE(projection.remaining(), 0);
+        QVERIFY(projection.service(2, 0x2c, {0, 0, 1000, 1000, 65536}));
+        before = projection.record();
+        projection.advance();
+        QCOMPARE(projection.record(), before);
+    }
     void bindingAndSlotMotion() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
