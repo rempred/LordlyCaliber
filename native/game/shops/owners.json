@@ -1,0 +1,113 @@
+{
+  "generator": "native/tools/generate-shop-catalog.cjs",
+  "input": "US Rev 0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "owners": [
+    {
+      "start": 1669088,
+      "size": 4580,
+      "retailSha256": "e1b25141cc49a6b8d9d30ea7dba9c2a582a5a7a6be6c1a582845f6bf4a112aad",
+      "maskedSha256": "e1b25141cc49a6b8d9d30ea7dba9c2a582a5a7a6be6c1a582845f6bf4a112aad"
+    },
+    {
+      "start": 1673668,
+      "size": 2800,
+      "retailSha256": "f18f6fb71140cc3b250bdc122998183f8705aedb8dad8ecc95f8009d5e7b777e",
+      "maskedSha256": "f18f6fb71140cc3b250bdc122998183f8705aedb8dad8ecc95f8009d5e7b777e"
+    },
+    {
+      "start": 1676468,
+      "size": 3320,
+      "retailSha256": "6575ca121ec9ce2a796039a42620dbc039203ac86e9c692caad5eca2090ca059",
+      "maskedSha256": "6575ca121ec9ce2a796039a42620dbc039203ac86e9c692caad5eca2090ca059"
+    },
+    {
+      "start": 1680020,
+      "size": 1904,
+      "retailSha256": "041d161509dabe0356ef2b87e81ca8d16e0dc2851a902854e90b489cfb93bd0a",
+      "maskedSha256": "041d161509dabe0356ef2b87e81ca8d16e0dc2851a902854e90b489cfb93bd0a"
+    },
+    {
+      "start": 1687104,
+      "size": 432,
+      "retailSha256": "64afe84bb2dd7c6a5a0b59cc19a348a27fd2b9f8971ee2a1b54b41679ab00405",
+      "maskedSha256": "86dcde5aab4b6bb8ab53b2cf9b88f6929b15fe0a2480d2d5c0aa3f0419fa9275"
+    }
+  ],
+  "patches": [
+    {
+      "site": 1669336,
+      "kind": "store",
+      "original": 2923757568
+    },
+    {
+      "site": 1669340,
+      "kind": "stride",
+      "original": 642908164
+    },
+    {
+      "site": 1669464,
+      "kind": "load",
+      "original": 2353176792
+    },
+    {
+      "site": 1670564,
+      "kind": "index",
+      "original": 135296
+    },
+    {
+      "site": 1670576,
+      "kind": "load",
+      "original": 2355339480
+    },
+    {
+      "site": 1671200,
+      "kind": "index",
+      "original": 135296
+    },
+    {
+      "site": 1671212,
+      "kind": "load",
+      "original": 2359664856
+    },
+    {
+      "site": 1674460,
+      "kind": "index",
+      "original": 1118336
+    },
+    {
+      "site": 1674472,
+      "kind": "offset",
+      "original": 2517672154
+    },
+    {
+      "site": 1675096,
+      "kind": "index",
+      "original": 1118336
+    },
+    {
+      "site": 1675104,
+      "kind": "load",
+      "original": 2353201152
+    },
+    {
+      "site": 1676624,
+      "kind": "index",
+      "original": 135296
+    },
+    {
+      "site": 1676636,
+      "kind": "offset",
+      "original": 2517672154
+    },
+    {
+      "site": 1680176,
+      "kind": "index",
+      "original": 135296
+    },
+    {
+      "site": 1680188,
+      "kind": "load",
+      "original": 2385617112
+    }
+  ]
+}

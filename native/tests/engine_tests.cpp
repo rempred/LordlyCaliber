@@ -5,6 +5,7 @@
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
+#include "engine/shop_runtime.h"
 #include "rebuild/class_menu_layout.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/compiler.h"
@@ -46,6 +47,79 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void shopRuntimeExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler are required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadShops();
+            auto shops = *project.shops();
+            for (int id = 1; id < Shops::count; ++id) {
+                ShopStock stock;
+                for (int n = 0; n < 50; ++n)
+                    stock.equipment << quint16(228 + (n + id) % 50);
+                for (int n = 0; n < 30; ++n)
+                    stock.consumables << quint16(15 + (n + id) % 30);
+                shops.setStock(id, stock);
+            }
+            project.setShops(shops.json());
+            QTemporaryDir build;
+            const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            for (int stage = 0; stage < 3; ++stage) {
+                if (stage == 1)
+                    project.appendClass(5, "Shop companion");
+                if (stage == 2)
+                    project.setClassNameBytes(165, encodeClassName("Shop companion renamed"));
+                const auto expected = project.shops()->json();
+                const auto result = rebuild(project, tools, build.path());
+                const auto placed = ShopPlacement::read(Rom::fromBytes(result.image));
+                QVERIFY(placed);
+                QCOMPARE(placed->offset % 16, 0U);
+                auto checksum = result.image;
+                Rom::updateChecksum(checksum);
+                QCOMPARE(checksum, result.image);
+                QTemporaryDir output(root + "/native-shops-XXXXXX");
+                QVERIFY(output.isValid());
+                output.setAutoRemove(false);
+                const auto target = output.filePath(QFileInfo(path).fileName());
+                exportRom(project, result, target);
+                auto reopened = Project::fromRom(Rom::open(target));
+                reopened.loadShops();
+                QCOMPARE(reopened.shops()->json(), expected);
+                QVERIFY(!reopened.shops()->modified());
+                QCOMPARE(reopened.records(Table::Classes).size(), stage ? 166 : 165);
+                atomicWrite(
+                    output.filePath("shops.json"),
+                    QJsonDocument(QJsonObject{{"rom", target}, {"shops", expected}}).toJson());
+                qInfo().noquote() << "Shop export:" << output.filePath("shops.json");
+                for (auto at :
+                     {placed->offset, ShopPlacement::descriptorOffset + 12,
+                      ShopPlacement::producerOffset + 60, quint32(0x198f60), quint32(0x199560)}) {
+                    auto damaged = result.image;
+                    damaged[at] = char(u8(damaged, at) ^ 1);
+                    QVERIFY_THROWS_EXCEPTION(Error, Shops::load(Rom::fromBytes(damaged)));
+                }
+                if (stage == 0) {
+                    // A second shop edit reuses its owned allocation alongside new classes.
+                    shops = *reopened.shops();
+                    auto stock = shops.stock(35);
+                    std::reverse(stock.consumables.begin(), stock.consumables.end());
+                    shops.setStock(35, stock);
+                    reopened.setShops(shops.json());
+                }
+                project = std::move(reopened);
+            }
+            auto foreign = source.bytes();
+            put32(foreign, ShopPlacement::producerOffset, 0x08000000);
+            QVERIFY_THROWS_EXCEPTION(Error, Shops::load(Rom::fromBytes(foreign)));
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+    }
     void shopMembershipProjects() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

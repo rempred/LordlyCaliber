@@ -1,6 +1,7 @@
 #include "rebuild/class_runtime.h"
 #include "engine/class_text.h"
 #include "engine/promotion.h"
+#include "engine/shop_runtime.h"
 #include "rebuild/promotion_runtime.h"
 #include <QFile>
 #include <QJsonArray>
@@ -83,6 +84,7 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         throw Error("Class runtime build does not match its declared layout");
     const auto prior = ClassPlacement::read(rom);
     const auto textPlacement = ClassTextPlacement::read(rom);
+    const auto shopPlacement = ShopPlacement::read(rom);
     if (prior && prior->saves.installed() && !build.saves)
         throw Error("Rebuilding this class allocation also requires its expanded save runtime");
     if (prior && prior->descriptionEntry && !build.placement.descriptionEntry)
@@ -198,6 +200,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
         }
         if (textPlacement)
             canonical = textPlacement->canonicalReferences(canonical, start);
+        if (shopPlacement)
+            canonical = shopPlacement->canonicalReferences(canonical, start);
         const auto hash = QString::fromLatin1(sha256(canonical));
         bool recognized = hash == owner["retailSha256"].toString();
         for (const auto item : promotion) {

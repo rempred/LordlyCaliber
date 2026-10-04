@@ -3,6 +3,7 @@
 #include "rebuild/class_runtime.h"
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
+#include "rebuild/shop_runtime.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -485,8 +486,6 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         priorClassPlacement.has_value() || p.classNamesModified() || expandedClasses;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
-    if (p.shops() && p.shops()->modified())
-        throw Error("Shop export requires its native runtime builder");
     if (!pending.isEmpty())
         throw Error("Imported sections still need native export support: " + pending.join(", "));
     for (auto table : {Table::Classes, Table::Items}) {
@@ -526,6 +525,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             result.image.replace(bank.resource.romOffset, container.size(), container);
         }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
+    }
+    if (p.shops() && p.shops()->modified()) {
+        result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
+        result.report << "Compiled shop stock, producer and halfword readers; retained original "
+                         "RAM allocations";
     }
     if (!expandedClasses)
         rebuildPromotion(p, compiler, directory, result);
@@ -576,6 +580,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.shops()) {
+        reopened.loadShops();
+        if (reopened.shops()->json() != p.shops()->json())
+            throw Error("Exported shop stock differs from the project");
+    }
     if (p.promotion()) {
         reopened.loadPromotion();
         if (reopened.promotion()->json() != p.promotion()->json())

@@ -1,0 +1,81 @@
+#include "rebuild/shop_runtime.h"
+#include "engine/shop_runtime.h"
+#include <QFile>
+#include <QJsonArray>
+
+namespace lordly {
+static QByteArray source(const QString &name) {
+    QFile file(":/game/shops/" + name);
+    if (!file.open(QIODevice::ReadOnly))
+        throw Error("Missing maintained shop source");
+    return file.readAll();
+}
+QByteArray rebuildShops(const Rom &rom, const Shops &shops, const Compiler &compiler,
+                        const QString &directory) {
+    const auto prior = ShopPlacement::read(rom);
+    if (!prior) {
+        verifyShopRuntime(rom, false);
+        if (rom.bytes().mid(ShopPlacement::descriptorOffset, ShopPlacement::descriptorSize) !=
+            QByteArray(ShopPlacement::descriptorSize, char(-1)))
+            throw Error("Shop descriptor allocation is occupied by another patch");
+    }
+    const auto offset = prior ? prior->offset : quint32((rom.bytes().size() + 15) & ~qsizetype(15));
+    if (offset < 0x2800000 || quint64(offset) + ShopPlacement::dataSize > 0x4000000)
+        throw Error("Shop data exceeds the cartridge address range");
+    QByteArray rows(ShopPlacement::dataSize, 0);
+    for (int id = 0; id < Shops::count; ++id) {
+        auto at = id * ShopPlacement::rowSize;
+        // Preserve the original consumer order: consumables, then equipment.
+        for (auto item : shops.stock(id).consumables) {
+            put16(rows, at, item);
+            at += 2;
+        }
+        for (auto item : shops.stock(id).equipment) {
+            put16(rows, at, item | 0x8000);
+            at += 2;
+        }
+    }
+    const auto data = compiler.compileData(rows, directory, "shop_rows");
+    if (data != rows)
+        throw Error("Compiled shop rows disagree with the authored inventory");
+    auto producer = compiler.assembleOwner(source("producer.s"), directory, "shop_producer",
+                                           ShopPlacement::producerOffset + ShopPlacement::slabDelta,
+                                           {{"lc_shop_rows", offset}, {"lc_dma_read", 0x8009da50}});
+    const auto consumers =
+        compiler.assembleOwner(source("consumers.s"), directory, "shop_consumers", 0x80000000);
+    const auto patches = shopRuntimeCatalog()["patches"].toArray();
+    auto fit = [](QByteArray bytes, qsizetype length) {
+        if (bytes.size() < length || bytes.mid(length) != QByteArray(bytes.size() - length, 0))
+            throw Error("Assembled shop code exceeds its owner");
+        return bytes.first(length);
+    };
+    producer = fit(producer, ShopPlacement::producerSize);
+    fit(consumers, patches.size() * 4);
+    auto image = rom.bytes();
+    if (quint64(image.size()) < quint64(offset) + data.size())
+        image.append(QByteArray(offset + data.size() - image.size(), char(-1)));
+    image.replace(offset, data.size(), data);
+    image.replace(ShopPlacement::producerOffset, producer.size(), producer);
+    for (int i = 0; i < patches.size(); ++i) {
+        const auto patch = patches[i].toObject();
+        const auto word = u32(consumers, i * 4);
+        if (word != rebuiltShopInstruction(patch))
+            throw Error("Assembled shop reader disagrees with its operand contract");
+        put32(image, patch["site"].toInt(), word);
+    }
+    QByteArray descriptor(ShopPlacement::descriptorSize, 0);
+    descriptor.replace(0, 8, "LC05SHOP");
+    put32(descriptor, 8, 1);
+    put32(descriptor, 12, offset);
+    put32(descriptor, 16, ShopPlacement::dataSize);
+    put32(descriptor, 20, ShopPlacement::rowCount);
+    put32(descriptor, 24, ShopPlacement::rowSize);
+    put32(descriptor, 28, crc32(data));
+    put32(descriptor, 32, crc32(producer));
+    put32(descriptor, 60, crc32(descriptor.first(60)));
+    image.replace(ShopPlacement::descriptorOffset, descriptor.size(), descriptor);
+    if (!ShopPlacement::read(Rom::fromBytes(image)))
+        throw Error("Shop rebuild readback failed");
+    return image;
+}
+} // namespace lordly

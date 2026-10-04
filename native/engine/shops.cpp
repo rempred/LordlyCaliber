@@ -1,4 +1,5 @@
 #include "engine/shops.h"
+#include "engine/shop_runtime.h"
 #include <QJsonArray>
 #include <QSet>
 #include <cmath>
@@ -23,6 +24,9 @@ void Shops::validate(int id, const ShopStock &stock) {
 }
 Shops Shops::load(const Rom &rom) {
     rom.requireSupported();
+    const auto placement = ShopPlacement::read(rom);
+    if (!placement)
+        verifyShopRuntime(rom, false);
     Shops result;
     const auto data = LhaMember::find(rom, "shopcsv.bin").decode(rom);
     if (data.size() < 512 || u16(data, 0) != 512 || u16(data, 2) != 512 ||
@@ -42,6 +46,33 @@ Shops Shops::load(const Rom &rom) {
             stock.consumables = {1, 2, 3, 4, 5, 6, 8};
         validate(id, stock);
         result.stock_.push_back(stock);
+    }
+    if (placement) {
+        for (int id = 0; id < count; ++id) {
+            const auto row = rom.bytes().mid(placement->offset + id * ShopPlacement::rowSize,
+                                             ShopPlacement::rowSize);
+            ShopStock stock;
+            bool ended = false, equipment = false;
+            for (int at = 0; at < row.size(); at += 2) {
+                const auto word = u16(row, at);
+                if (!word) {
+                    ended = true;
+                    continue;
+                }
+                if (ended || (!(word & 0x8000) && equipment))
+                    throw Error("Malformed rebuilt shop row or padding");
+                if (word & 0x8000) {
+                    equipment = true;
+                    stock.equipment << quint16(word & 0x7fff);
+                } else {
+                    stock.consumables << word;
+                }
+            }
+            if (!ended)
+                throw Error("Unterminated rebuilt shop row");
+            validate(id, stock);
+            result.stock_[id] = stock;
+        }
     }
     result.original_ = result.stock_;
     result.locations_.resize(count);
