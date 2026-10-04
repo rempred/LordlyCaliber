@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/scene_camera.h"
 #include <QVector>
 #include <array>
 #include <optional>
@@ -9,6 +10,7 @@ struct SceneTransformAsset {
     QByteArray decoded;
     int frameCount = 0;
     QVector<QVector<int>> groups;
+    static int selectorCount(const Rom &);
     static SceneTransformAsset load(const Rom &, int selector);
     static SceneTransformAsset parse(QByteArray, quint32 key = 0);
 };
@@ -20,6 +22,10 @@ class SceneTransforms {
     void start(const SceneTransformAsset &, int group, qint32 duration);
     void start(const Rom &, int selector, int group, qint32 duration);
     void advance();
+    // Render preparation, separate from animation cadence. Count belongs to the
+    // current background/layer owner. Channel uniform scale is applied there.
+    void prepareMatrices(const Rom &, const SceneCamera &, int count);
+    QByteArray layerMatrix(int index) const;
     bool done() const;
     quint32 remaining() const;
     int nextKeyframe() const;

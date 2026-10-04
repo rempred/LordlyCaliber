@@ -12,6 +12,7 @@
 #include "app/scene_event_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
+#include "app/transform_preview.h"
 #include "app/value_editor.h"
 #include "engine/scene_import.h"
 #include "rebuild/compiler.h"
@@ -43,6 +44,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
+#include <bit>
 using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
@@ -73,6 +75,83 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void transformSequencePreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto bytes = Rom::open(path).bytes();
+        QByteArray transform(8 + 960 + 16, 0);
+        put32(transform, 0, 2);
+        put32(transform, 4, 1);
+        put32(transform, 8 + 0xa0, 2000);
+        put32(transform, 488 + 0xa0, 8000);
+        for (int channel = 0; channel < 20; ++channel) {
+            put32(transform, 8 + 0x190 + channel * 4, 1000);
+            put32(transform, 488 + 0x190 + channel * 4, 1000);
+        }
+        put32(transform, 976, 1);
+        put32(transform, 980, 0xffffffffU);
+        const auto packed = encodeLzss(transform);
+        put32(bytes, 0x2700000, quint32(packed.size() + 4));
+        put32(bytes, 0x2700004, quint32(transform.size()));
+        bytes.replace(0x2700008, packed.size(), packed);
+        put32(bytes, 0x594280 + 0x19a63ec + 4, 0x2700000 - 0x594280);
+        const auto rom = Rom::fromBytes(bytes);
+        TransformPreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        DecodedImage image;
+        image.origin = {-10, -10};
+        image.composite = {20, 20, QByteArray(20 * 20 * 4, 0)};
+        for (int i = 0; i < 400; ++i) {
+            image.composite.rgba[i * 4] = char(-1);
+            image.composite.rgba[i * 4 + 3] = char(-1);
+        }
+        preview.setImage(image);
+        const QVector<quint32> words{0x36,  0, 0, 0, 0, 0,           120000,
+                                     90000, 8, 0, 0, 3, 0x80000001U, 0xff000005U};
+        QByteArray script(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(script, i * 4, words[i]);
+        const auto program = DirectorProgram::decode(script);
+        preview.selectCommand(program, 1);
+        auto tick = preview.findChild<QSpinBox *>("transformPosition");
+        auto channel = preview.findChild<QSpinBox *>("transformChannel");
+        auto play = preview.findChild<QPushButton *>("transformPlay");
+        auto step = preview.findChild<QPushButton *>("transformStep");
+        auto status = preview.findChild<QLabel *>("transformStatus");
+        QVERIFY(tick && channel && play && step && status);
+        QVERIFY2(!preview.renderedFrame().isNull(), qPrintable(status->text()));
+        const auto first = preview.renderedFrame();
+        QCOMPARE(first.pixelColor(153, 120), QColor(Qt::red));
+        QVERIFY(first.pixelColor(176, 120) != QColor(Qt::red));
+        step->click();
+        QCOMPARE(tick->value(), 1);
+        QCOMPARE(std::bit_cast<float>(u32(preview.property("channelRecord").toByteArray(), 0x40)),
+                 4.f);
+        tick->setValue(3);
+        QVERIFY(preview.renderedFrame().pixelColor(153, 120) != QColor(Qt::red));
+        QCOMPARE(preview.renderedFrame().pixelColor(176, 120), QColor(Qt::red));
+        QVERIFY(!play->isEnabled());
+        QVERIFY(status->text().contains("Sequence complete"));
+        channel->setValue(1);
+        QCOMPARE(std::bit_cast<float>(u32(preview.property("channelRecord").toByteArray(), 0x40)),
+                 0.f);
+        channel->setValue(0);
+        tick->setValue(0);
+        QCOMPARE(preview.renderedFrame(), first);
+        play->click();
+        QTRY_COMPARE_WITH_TIMEOUT(tick->value(), 3, 2000);
+        QCOMPARE(play->text(), QString("Play"));
+        QVERIFY(!play->isEnabled());
+        preview.selectSequence(0, 99, 3, SceneCamera(rom.bytes().mid(0x2866f0, 56), 1));
+        QVERIFY(preview.renderedFrame().isNull());
+        QVERIFY(!step->isEnabled());
+        QVERIFY(status->text().contains("group"));
+        preview.findChild<QPushButton *>("transformRestart")->click();
+        QCOMPARE(preview.renderedFrame(), first);
+        QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
     void actorPosePreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -875,6 +954,28 @@ class UiTests : public QObject {
             break;
         }
         QVERIFY(foundDialogue);
+        bool foundTransform = false;
+        const auto transform = editor.findChild<TransformPreview *>();
+        QVERIFY(transform);
+        for (const auto &resource : catalog.entries()) {
+            if (foundTransform)
+                break;
+            if (resource.program.resourceClass() != 4 && resource.program.resourceClass() != 5)
+                continue;
+            for (int i = 0; i < resource.program.commands.size(); ++i) {
+                if (resource.program.commands[i].opcode != 8)
+                    continue;
+                QVERIFY(selectScene(resource.key));
+                commands->cellDoubleClicked(i, 1);
+                QCOMPARE(pages->currentWidget(), transform);
+                QVERIFY2(!transform->property("channelRecord").toByteArray().isEmpty(),
+                         qPrintable(transform->findChild<QLabel *>("transformStatus")->text()));
+                foundTransform = true;
+                break;
+            }
+        }
+        QVERIFY(foundTransform);
+        QVERIFY(selectScene(0x19aa852));
         pages->setCurrentIndex(0);
         QTRY_COMPARE_WITH_TIMEOUT(editor.property("displayedImage").toString(),
                                   "mode2-environment:00236B58", 10000);
@@ -978,7 +1079,7 @@ class UiTests : public QObject {
                 const auto label = objects->item(i)->text();
                 if (label.startsWith(QString("Waypoint %1").arg(nodeId)))
                     waypointItem = i;
-                if (label.startsWith("Treasure 1 Â·"))
+                if (label.startsWith("Treasure 1 Ã‚Â·"))
                     treasureItem = i;
                 if (label == townName)
                     siteItem = i;
@@ -1272,7 +1373,7 @@ class UiTests : public QObject {
         spin("scenarioLevel_0")->setValue(127);
         button("scenarioSquadApply")->click();
         QCOMPARE(project.scenarios()->json(), after);
-        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("1â€“99"));
+        QVERIFY(editor.findChild<QLabel *>("scenarioEditNotice")->text().contains("1Ã¢â‚¬â€œ99"));
         spin("scenarioLevel_0")->setValue(0);
         button("scenarioAddSquad")->click();
         QCOMPARE(project.scenarios()->scenario(10).squads.size(),

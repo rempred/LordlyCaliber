@@ -17,6 +17,7 @@ class QTabWidget;
 namespace lordly {
 class Project;
 class SceneCommandEditor;
+class TransformPreview;
 class CutsceneEditor : public QWidget {
     Q_OBJECT
   public:
@@ -43,6 +44,7 @@ class CutsceneEditor : public QWidget {
     QPushButton *newScene_ = nullptr, *duplicateScene_ = nullptr, *renameScene_ = nullptr,
                 *removeScene_ = nullptr, *wipeScene_ = nullptr;
     SceneCommandEditor *commandEditor_ = nullptr;
+    TransformPreview *transformPreview_ = nullptr;
     std::optional<Directors> directors_;
     std::optional<DecodedImage> image_;
     SceneBackgrounds backgrounds_;

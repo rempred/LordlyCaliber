@@ -1,6 +1,7 @@
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_playback.h"
+#include "game/director/scene_matrix.h"
 #include "game/director/scene_schedule.h"
 #include <QDir>
 #include <QFile>
@@ -14,6 +15,127 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneMatricesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("scene-matrix-mips.cjs"), path, work.filePath("matrices.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile input(work.filePath("matrices.json"));
+        QVERIFY(input.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(input.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 36);
+        const auto rom = Rom::open(path);
+        qint64 maxDifference = 0;
+        for (const auto entry : cases) {
+            const auto row = entry.toObject();
+            const auto initial = QByteArray::fromHex(row["initial"].toString().toLatin1());
+            const auto expected = QByteArray::fromHex(row["result"].toString().toLatin1());
+            SceneTransforms state;
+            for (int i = 0; i < 20; ++i)
+                state.supplyChannel(i, initial.mid(i * 88, 88));
+            const auto camera =
+                SceneCamera(QByteArray::fromHex(row["camera"].toString().toLatin1()), 1.f);
+            state.prepareMatrices(rom, camera, row["count"].toInt());
+            for (int i = 0; i < 20; ++i) {
+                const auto actual = state.channel(i), target = expected.mid(i * 88, 88);
+                QCOMPARE(actual.mid(64), target.mid(64));
+                if (i >= row["count"].toInt()) {
+                    QCOMPARE(actual, target);
+                    continue;
+                }
+                QCOMPARE(state.layerMatrix(i),
+                         QByteArray::fromHex(row["layers"].toArray()[i].toString().toLatin1()));
+                auto fixed = [](const QByteArray &b, int field) {
+                    return qint32(quint32(u16(b, field * 2)) << 16 | u16(b, 32 + field * 2));
+                };
+                for (int field = 0; field < 16; ++field) {
+                    const auto difference =
+                        qAbs(qint64(fixed(actual, field)) - fixed(target, field));
+                    maxDifference = qMax(maxDifference, difference);
+                    // Allow two 16.16 least-significant units for host trig rounding.
+                    // Final pixel accuracy is a separate rendering concern.
+                    QVERIFY2(difference <= 2,
+                             qPrintable(QString("Channel %1 field %2 differs by %3 fixed units")
+                                            .arg(i)
+                                            .arg(field)
+                                            .arg(difference)));
+                }
+            }
+        }
+        qInfo() << "36 camera/count cases, 300 matrices; maximum 16.16 difference:"
+                << maxDifference;
+    }
+    void sceneMatrixProjectionAndBounds() {
+        float matrix[16], scale[16];
+        lordly_matrix_translate(matrix, 10.f, 20.f, -30.f);
+        lordly_matrix_scale(scale, 2.f, 3.f, 4.f);
+        lordly_matrix_multiply(matrix, matrix, scale);
+        QCOMPARE(matrix[12], 20.f);
+        QCOMPARE(matrix[13], 60.f);
+        QCOMPARE(matrix[14], -120.f);
+        QByteArray packed(64, 0);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(packed.data()), matrix));
+        const auto before = packed;
+        matrix[12] = 32768.f;
+        QVERIFY(!lordly_matrix_pack(reinterpret_cast<uint8_t *>(packed.data()), matrix));
+        QCOMPARE(packed, before);
+        QByteArray bank(56, 0);
+        const float values[14] = {90, 4.f / 3, 0.1f, 1000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+        for (int i = 0; i < 14; ++i)
+            put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+        const SceneCamera camera(bank, 1);
+        // Translated/scaled (5, -10, 30) is world (30,30,0), hence (190,90).
+        const auto point = camera.projectPackedPoint(packed, {5, -10, 30});
+        QVERIFY(qAbs(point.screen.x() - 190) < 0.0001);
+        QVERIFY(qAbs(point.screen.y() - 90) < 0.0001);
+        QVERIFY(point.visible);
+        // Eye at Z10, near Z8. A tilted 2x2 plane spans Z7..9, so exactly
+        // its left half survives. Expected screen corners are hand-computed.
+        put32(bank, 8, std::bit_cast<quint32>(2.f));
+        put32(bank, 28, std::bit_cast<quint32>(10.f));
+        const SceneCamera clipping(bank, 1);
+        lordly_matrix_identity(matrix);
+        QByteArray identityMatrix(64, 0);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(identityMatrix.data()), matrix));
+        const auto plane =
+            clipping.projectPackedPlane(identityMatrix, {-1, 1, 7}, {1, 0, 1}, {0, -1, 0}, {2, 2});
+        QCOMPARE(plane.clip.size(), 4);
+        const QVector<QPointF> expected{{120, 80}, {160, 60}, {160, 180}, {120, 160}};
+        for (const auto p : expected) {
+            bool found = false;
+            for (const auto actual : plane.clip)
+                found |= qAbs(actual.x() - p.x()) < 0.001 && qAbs(actual.y() - p.y()) < 0.001;
+            QVERIFY(found);
+        }
+        QVERIFY(
+            clipping.projectPackedPlane(identityMatrix, {-1, 1, 11}, {1, 0, 1}, {0, -1, 0}, {2, 2})
+                .clip.isEmpty());
+        QVERIFY(
+            clipping
+                .projectPackedPlane(identityMatrix, {-1, 1, -2000}, {1, 0, 0}, {0, -1, 0}, {2, 2})
+                .clip.isEmpty());
+        QVERIFY_THROWS_EXCEPTION(
+            Error, clipping.projectPackedPlane(identityMatrix, {}, {1, 0, 0}, {0, 1, 0}, {0, 1}));
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for current-ROM matrix constants");
+        const auto rom = Rom::open(path);
+        SceneTransforms state;
+        const auto identity = state.channel(0);
+        auto overflow = state.channel(19);
+        put32(overflow, 0x40, std::bit_cast<quint32>(1e30f));
+        state.supplyChannel(19, overflow);
+        QVERIFY_THROWS_EXCEPTION(Error, state.prepareMatrices(rom, camera, 20));
+        QCOMPARE(state.channel(0), identity);
+        QCOMPARE(state.channel(19), overflow);
+        QVERIFY_THROWS_EXCEPTION(Error, state.prepareMatrices(rom, camera, 21));
+        QCOMPARE(state.channel(0), identity);
+    }
     void sceneTransformsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

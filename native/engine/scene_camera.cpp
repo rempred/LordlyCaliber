@@ -81,12 +81,89 @@ CameraPoint SceneCamera::project(SceneVector point) const {
     return projectWorld(point * modelScale_);
 }
 CameraPoint SceneCamera::projectPackedOrigin(const QByteArray &matrix) const {
+    return projectPackedPoint(matrix, {});
+}
+CameraPoint SceneCamera::projectPackedPoint(const QByteArray &matrix, SceneVector point) const {
     if (matrix.size() != 64)
         throw Error("Native packed matrix must contain 64 bytes");
     auto component = [&](int i) {
         return float(qint32(quint32(u16(matrix, i * 2)) << 16 | u16(matrix, 32 + i * 2))) / 65536.f;
     };
-    return projectWorld({component(12), component(13), component(14)});
+    return projectWorld(
+        {point.x * component(0) + point.y * component(4) + point.z * component(8) + component(12),
+         point.x * component(1) + point.y * component(5) + point.z * component(9) + component(13),
+         point.x * component(2) + point.y * component(6) + point.z * component(10) +
+             component(14)});
+}
+CameraPlane SceneCamera::projectPackedPlane(const QByteArray &matrix, SceneVector origin,
+                                            SceneVector across, SceneVector down,
+                                            QSizeF size) const {
+    if (matrix.size() != 64 || !finite(origin) || !finite(across) || !finite(down) ||
+        !std::isfinite(size.width()) || !std::isfinite(size.height()) || size.width() <= 0 ||
+        size.height() <= 0)
+        throw Error("Invalid camera plane geometry");
+    auto component = [&](int i) {
+        return float(qint32(quint32(u16(matrix, i * 2)) << 16 | u16(matrix, 32 + i * 2))) / 65536.f;
+    };
+    auto homogeneous = [&](SceneVector p) {
+        const SceneVector world{
+            p.x * component(0) + p.y * component(4) + p.z * component(8) + component(12),
+            p.x * component(1) + p.y * component(5) + p.z * component(9) + component(13),
+            p.x * component(2) + p.y * component(6) + p.z * component(10) + component(14)};
+        const auto relative = world - eye_;
+        const auto depth = -dot(relative, back_);
+        const SceneVector result{160 * depth +
+                                     dot(relative, right_) * (double(focal_) * 4 / 3) / aspect_,
+                                 120 * depth - dot(relative, up_) * focal_, depth};
+        if (!finite(result))
+            throw Error("Camera plane projection overflow");
+        return result;
+    };
+    const auto base = homogeneous(origin), x = homogeneous(origin + across) - base,
+               y = homogeneous(origin + down) - base;
+    CameraPlane result{{x.x, x.y, x.z, y.x, y.y, y.z, base.x, base.y, base.z}, {}};
+    QVector<SceneVector> polygon{base, base + x * size.width(),
+                                 base + x * size.width() + y * size.height(),
+                                 base + y * size.height()};
+    // Clip in homogeneous coordinates before division. This handles corners
+    // behind the eye and bounds drawing even when a plane crosses the near plane.
+    for (int plane = 0; plane < 6 && !polygon.isEmpty(); ++plane) {
+        auto distance = [&](SceneVector p) {
+            switch (plane) {
+            case 0:
+                return p.z - near_;
+            case 1:
+                return far_ - p.z;
+            case 2:
+                return p.x;
+            case 3:
+                return 320 * p.z - p.x;
+            case 4:
+                return p.y;
+            default:
+                return 240 * p.z - p.y;
+            }
+        };
+        QVector<SceneVector> clipped;
+        auto previous = polygon.last();
+        auto before = distance(previous);
+        for (const auto current : polygon) {
+            const auto after = distance(current);
+            if ((before >= 0) != (after >= 0)) {
+                const auto intersection =
+                    previous + (current - previous) * (before / (before - after));
+                clipped << intersection;
+            }
+            if (after >= 0)
+                clipped << current;
+            previous = current;
+            before = after;
+        }
+        polygon = std::move(clipped);
+    }
+    for (const auto p : polygon)
+        result.clip << QPointF(p.x / p.z, p.y / p.z);
+    return result;
 }
 SceneVector SceneCamera::unprojectAtHeight(QPointF screen, double height) const {
     if (!std::isfinite(screen.x()) || !std::isfinite(screen.y()) || !std::isfinite(height))

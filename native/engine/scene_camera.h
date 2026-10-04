@@ -1,7 +1,9 @@
 #pragma once
 #include "engine/rom.h"
 #include <QPointF>
+#include <QSizeF>
 #include <QVector>
+#include <array>
 namespace lordly {
 struct SceneVector {
     double x = 0, y = 0, z = 0;
@@ -24,6 +26,11 @@ struct CameraPoint {
     float depth = 0, pixelsPerUnit = 0;
     bool visible = false;
 };
+struct CameraPlane {
+    // Row-vector 3x3 homography mapping local image pixels to screen pixels.
+    std::array<double, 9> mapping{};
+    QVector<QPointF> clip;
+};
 // Floating desktop projection. Native 16.16 object matrices are decoded when
 // supplied; this does not emulate RSP clipping, rasterization or depth precision.
 class SceneCamera {
@@ -38,6 +45,9 @@ class SceneCamera {
     void select(const QVector<quint32> &operands);
     CameraPoint project(SceneVector point) const;
     CameraPoint projectPackedOrigin(const QByteArray &matrix) const;
+    CameraPoint projectPackedPoint(const QByteArray &matrix, SceneVector point) const;
+    CameraPlane projectPackedPlane(const QByteArray &matrix, SceneVector origin, SceneVector across,
+                                   SceneVector down, QSizeF size) const;
     SceneVector unprojectAtHeight(QPointF screen, double height) const;
 
   private:

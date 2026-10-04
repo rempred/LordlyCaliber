@@ -1,4 +1,5 @@
 #include "engine/scene_transforms.h"
+#include "game/director/scene_matrix.h"
 #include "game/director/scene_transform.h"
 #include <bit>
 #include <cmath>
@@ -19,6 +20,15 @@ void checkChannel(int index) {
         throw Error("Scene transform channel is outside 0..19");
 }
 } // namespace
+int SceneTransformAsset::selectorCount(const Rom &rom) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Scene transforms require US revision zero");
+    const auto table = resource(rom, 0x19a63ec);
+    if (table.size() % 4)
+        throw Error("Scene transform directory is truncated");
+    return int(table.size() / 4);
+}
 SceneTransformAsset SceneTransformAsset::load(const Rom &rom, int selector) {
     rom.requireSupported();
     if (rom.revision())
@@ -123,8 +133,35 @@ void SceneTransforms::advance() {
         next.prepare();
     *this = std::move(next);
 }
+void SceneTransforms::prepareMatrices(const Rom &rom, const SceneCamera &camera, int count) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Scene transform matrix constants require US revision zero");
+    float values[14];
+    double constants[4];
+    for (int i = 0; i < 14; ++i)
+        values[i] = std::bit_cast<float>(u32(camera.bank(), i * 4));
+    // Mode-zero image maps ROM 2B8A60..2B8A78 to RAM 80243C60..80243C78.
+    for (int i = 0; i < 3; ++i) {
+        const auto at = 0x2b8a60 + i * 8;
+        constants[i] =
+            std::bit_cast<double>(quint64(u32(rom.bytes(), at)) << 32 | u32(rom.bytes(), at + 4));
+    }
+    // Saved-image equality in the shared-Actor projection reference qualifies
+    // this resident constant separately from the mode-zero overlay mapping.
+    constants[3] = std::bit_cast<float>(u32(rom.bytes(), 0x3ab50));
+    if (!lordly_channel_matrices(channels_, count, values, constants))
+        throw Error("Scene transform matrix exceeds its channel or fixed-point bounds");
+}
 bool SceneTransforms::done() const {
     return lordly_transform_done(job_.has_value());
+}
+QByteArray SceneTransforms::layerMatrix(int index) const {
+    checkChannel(index);
+    QByteArray result(64, 0);
+    if (!lordly_channel_layer_matrix(reinterpret_cast<uint8_t *>(result.data()), channels_[index]))
+        throw Error("Scene layer matrix exceeds fixed-point bounds");
+    return result;
 }
 quint32 SceneTransforms::remaining() const {
     return job_ ? job_->remaining : 0;

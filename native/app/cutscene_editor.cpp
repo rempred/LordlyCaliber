@@ -3,6 +3,7 @@
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
+#include "app/transform_preview.h"
 #include "engine/scene_import.h"
 #include <QComboBox>
 #include <QDialog>
@@ -216,10 +217,12 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     } else
         pages->addTab(commands_, "Source commands");
     pages->addTab(new ActorPoseEditor(rom_), "Pose inspector");
+    transformPreview_ = new TransformPreview(rom_);
+    pages->addTab(transformPreview_, "Transform preview");
     auto dialogue =
         project ? new DialogueInspector(project, undo, changed) : new DialogueInspector(rom_);
     pages->addTab(dialogue, "Dialogue");
-    commands_->setToolTip("Double-click a dialogue command to inspect its archive entry.");
+    commands_->setToolTip("Double-click a dialogue or transform command to preview it.");
     connect(commands_, &QTableWidget::cellDoubleClicked, this,
             [this, pages, dialogue](int row, int) {
                 if (!directors_ || !scenes_->currentItem())
@@ -228,6 +231,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 if (row < 0 || row >= program.commands.size())
                     return;
                 const auto &command = program.commands[row];
+                if (command.opcode == 8) {
+                    transformPreview_->selectCommand(program, row);
+                    pages->setCurrentWidget(transformPreview_);
+                    return;
+                }
                 if (command.opcode != 0xbf || command.operands.size() != 13)
                     return;
                 dialogue->selectEntry(quint16(command.operands[1]), quint16(command.operands[2]));
@@ -469,6 +477,7 @@ void CutsceneEditor::selectScene() {
     if (!directors_ || !scenes_->currentItem() || catalogTabs_->currentIndex() != 0)
         return;
     const auto key = selectedScene();
+    transformPreview_->clear();
     auto scene = programs().resource(key);
     scene.program = programs().program(key);
     if (project_) {
@@ -544,6 +553,7 @@ void CutsceneEditor::selectImage(const QString &id) {
     const auto generation = ++generation_;
     imageId_ = id;
     image_.reset();
+    transformPreview_->setImage({});
     layerItems_.clear();
     canvas_->clear();
     layers_->clear();
@@ -575,6 +585,7 @@ void CutsceneEditor::selectImage(const QString &id) {
             return;
         }
         image_ = std::move(result.value);
+        transformPreview_->setImage(image_);
         {
             const QSignalBlocker block(frames_);
             frames_->addItem("Complete image", -1);

@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+Scene transform inspection now has a desktop preview with resource, sequence,
+duration and channel selection, play/step/restart, configurable playback rate and
+backward seeking. Double-clicking command 08 loads its edited operands and the
+preceding actor-camera command in source order. The UI explicitly identifies this
+as isolated playback: it does not evaluate branches or other scene actions. The
+selected image is a channel reference; absent imagery uses a labeled grid.
+Long or negative-duration sequences have a 10,000-update preview budget. Seeking
+uses snapshots every 120 updates and does not modify project data.
+
+Channel matrix preparation reconstructs original rotation, translation, camera
+normalization, concatenation and 16.16 packing in maintained C. Host trigonometry
+replaces the target math library. Normalization constants come from the current
+mode-zero ROM image; the resident rotation constant has a separate saved-image
+placement reference. Background uniform scale is packed and concatenated after
+the channel matrix, scaling translation too. Invalid packing rejects atomically.
+Desktop plane projection clips against near/far and viewport planes before
+homogeneous division; Qt performs image sampling, not the N64 RSP/RDP.
+
+`scene_runtime_tests sceneMatricesAgainstMips sceneMatrixProjectionAndBounds`
+passes (315 ms): 36 camera/count cases, 300 channel matrices and 300 background
+matrices match original instructions with trigonometric services controlled.
+The observed maximum fixed-point difference is zero. Independently calculated
+near-plane corners, complete near/far rejection and invalid packing/geometry
+checks pass. The existing camera-placement/picking check passes (94 ms).
+`ui_tests transformSequencePreview cutsceneCatalogSelection` passes (1,770 ms),
+covering actual pixel movement, stepping, seeking, channel changes, timed completion,
+invalid sequence recovery and command navigation. Restart recovery after an invalid
+sequence also passes in the focused preview check (368 ms). The rendered panel was inspected.
+This establishes the bounded preview workflow, not original-game pixel accuracy.
+
 Scene-transform command 08 and query 0D now execute in mode zero. The current-ROM
 resource directory supplies 20 channels with six fixed-thousandths fields per
 keyframe. Maintained portable C preserves integer delta division before float
@@ -16,8 +46,8 @@ zero-fill and resource I/O are controlled. Invalid frames, division, oversized
 sequences and nonfinite supplied fields leave prior state unchanged. The composed
 `sceneTransformPlaybackTiming` test checks immediate start, before-Director updates,
 completion waiting, alternate suspension and budget/retry resumption. It and divider/
-playback regressions pass (444 ms). Transform fields are integrated; rebuilding their
-packed matrices and connecting them to final scene drawing remain next.
+playback regressions pass (444 ms). Transform fields and packed channel matrices are integrated. Final full-scene Actor
+and background composition remains in progress.
 
 Actor layer assignment now handles 1C, the mode-zero automatic divider 5F/75,
 and the stored default-channel byte 7C. The divider uses maintained portable C
