@@ -5,6 +5,7 @@
 #include "engine/actor_materials.h"
 #include "engine/actor_motion.h"
 #include "engine/actor_turn.h"
+#include "engine/scene_draw_queue.h"
 #include <QHash>
 #include <array>
 #include <optional>
@@ -80,6 +81,7 @@ class SceneActors {
     }
     void advanceDivider();
     void prepareModeZeroMatrices(const SceneCamera &, const SceneTransforms &);
+    std::array<QByteArray, 28> actorRecords() const;
     quint8 defaultChannel() const {
         return defaultChannel_;
     }

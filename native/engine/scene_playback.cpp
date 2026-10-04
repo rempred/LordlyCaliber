@@ -252,4 +252,9 @@ void ScenePlayback::prepareModeZeroDrawing(int channelCount) {
     transforms_ = std::move(transforms);
     actors_ = std::move(actors);
 }
+SceneDrawQueue ScenePlayback::drawQueue(const QVector<QByteArray> &objects,
+                                        LordlySceneDrawLayout layout) const {
+    return SceneDrawQueue::build(actors_.actorRecords(), objects,
+                                 schedule_.mode ? cameras_.actor() : cameras_.registered(), layout);
+}
 } // namespace lordly

@@ -1,6 +1,7 @@
 #include "engine/actor_matrices.h"
 #include "engine/rom.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
 #include "game/director/scene_matrix.h"
 #include "game/director/scene_schedule.h"
@@ -16,6 +17,119 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneDrawQueueAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("scene-draw-queue-mips.cjs"), path,
+                                 work.filePath("queue.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("queue.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 648);
+        qsizetype compared = 0;
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            auto bytes = [](const QJsonValue &v) {
+                return QByteArray::fromHex(v.toString().toLatin1());
+            };
+            std::array<QByteArray, 28> actors;
+            QVector<QByteArray> objects;
+            const auto sourceActors = row["actors"].toArray();
+            for (int i = 0; i < 28; ++i)
+                actors[i] = bytes(sourceActors[i]);
+            for (const auto object : row["objects"].toArray())
+                objects.append(bytes(object));
+            const auto queue = SceneDrawQueue::build(
+                actors, objects, SceneCamera(bytes(row["camera"]), 1.f),
+                {quint32(row["queue"].toDouble()), quint32(row["temporary"].toDouble())});
+            QCOMPARE(queue.record(), bytes(row["result"]));
+            compared += queue.entries().size();
+        }
+        qInfo() << "648 complete original queues; entries compared:" << compared;
+    }
+    void sceneDrawPassesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("scene-draw-passes-mips.cjs"), path,
+                                 work.filePath("passes.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("passes.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(rows.size(), 288);
+        for (const auto value : rows) {
+            const auto row = value.toObject();
+            const auto sourceActors = row["actors"].toArray();
+            std::array<QByteArray, 28> actors;
+            for (int i = 0; i < 28; ++i)
+                actors[i] = QByteArray::fromHex(sourceActors[i].toString().toLatin1());
+            const auto queue =
+                SceneDrawQueue::fromRecord(QByteArray::fromHex(row["queue"].toString().toLatin1()));
+            const auto passes = queue.modeZeroPasses(actors, quint8(row["objectChannel"].toInt()),
+                                                     quint8(row["channel"].toInt()));
+            const auto expected = row["calls"].toArray();
+            QCOMPARE(passes.size(), expected.size());
+            for (int i = 0; i < passes.size(); ++i) {
+                QCOMPARE(passes[i].kind, expected[i].toArray()[0].toInt());
+                QCOMPARE(passes[i].index, expected[i].toArray()[1].toInt());
+            }
+        }
+    }
+    void sceneDrawQueueBounds() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto cameras = SceneCameras::freshModeTwo(rom);
+        ScenePlaybackStart start;
+        start.mode = 0;
+        const auto directors = Directors::load(rom);
+        int selector = 0;
+        while (!directors.selectors()[selector])
+            ++selector;
+        ScenePlayback scene(rom, directors, selector, start, cameras);
+        QByteArray actor(336, 0);
+        put32(actor, 0xe8, 30);
+        put32(actor, 0x11c, std::bit_cast<quint32>(45.f));
+        put32(actor, 0x124, std::bit_cast<quint32>(-80.f));
+        scene.actors().supplyActor(7, actor);
+        const LordlySceneDrawLayout layout{0x80300328, 0x80330000};
+        auto queue = scene.drawQueue({}, layout);
+        QCOMPARE(queue.record(), SceneDrawQueue::build(scene.actors().actorRecords(), {},
+                                                       cameras.registered(), layout)
+                                     .record());
+        scene.setMode(2);
+        QCOMPARE(scene.drawQueue({}, layout).record(),
+                 SceneDrawQueue::build(scene.actors().actorRecords(), {}, cameras.actor(), layout)
+                     .record());
+        QCOMPARE(queue.entries()[0].x, 1350);
+        QCOMPARE(queue.entries()[0].z, -2400);
+        QCOMPARE(queue.entries()[0].index, 7);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(QByteArray(21, 0)));
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(QByteArray(285 * 20, 0)));
+        auto missing = queue.record();
+        put16(missing, 18, 28);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(missing).modeZeroPasses(
+                                            scene.actors().actorRecords(), 0, 0));
+        put16(missing, 18, 6);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::fromRecord(missing).modeZeroPasses(
+                                            scene.actors().actorRecords(), 0, 0));
+        auto actors = scene.actors().actorRecords();
+        put32(actors[7], 0x11c, std::bit_cast<quint32>(std::numeric_limits<float>::infinity()));
+        QVERIFY_THROWS_EXCEPTION(Error, SceneDrawQueue::build(actors, {}, cameras.actor(), layout));
+        QVERIFY_THROWS_EXCEPTION(Error, scene.drawQueue(QVector<QByteArray>(257), layout));
+        scene.setMode(0);
+        QCOMPARE(queue.record(), scene.drawQueue({}, layout).record());
+    }
     void actorMainMatricesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

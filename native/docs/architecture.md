@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Scene depth queues and mode-zero draw passes
+
+SceneDrawQueue reconstructs ROM29D634 construction,29D4F0 flattened-camera depth,
+2A17E0 comparison and20FEEC..2101DC sorting in maintained portable C. Objects with
+kind1..3 enter first; present Actors follow with coordinates multiplied by30 and
+truncated to signed32-bit. Depth uses the selected camera's horizontal view.
+ScenePlayback selects the registered bank in mode0 and Actor bank otherwise.
+
+The comparator orders depth ascending, then height descending. Exact ties also
+consume the queue and temporary allocation addresses. The API requires those
+virtual addresses explicitly; it never dereferences them on the PC or silently
+substitutes a different tie rule. The original quick/insertion algorithm remains.
+The complete752-byte sorter matches saved RAM801CCA5C..801CCD4C; another ROM copy
+has the same prefix but different later branches, so prefix equality is insufficient.
+
+Mode-zero passes reproduce ROM2AFC68 selection: queue kind1 shadows with Actor141
+below2, followed by objects and nonzero-kind Actor main passes with bit0 clear.
+Both Actor passes filter channel13E; scene objects share their supplied channel.
+Invalid record sizes/references and nonfinite/out-of-range coordinates reject.
+Pass lists are returned only after complete validation; material updates and final
+rasterization remain separate. Queue kinds2/3 retain the original nonzero Actor
+main dispatch rule, with checked slot references instead of unsafe dereferences.
+
+scene_runtime_tests sceneDrawQueueAgainstMips sceneDrawPassesAgainstMips
+sceneDrawQueueBounds passes (3623ms). It compares648 full original queues/43722
+entries, three allocator layouts, both camera branches, tied and crowded inputs.
+It also checks288 original-driver callback sequences with channels, flags and
+reversed queues. Queue tests control only allocation/free/copy; pass tests control
+projection/material/draw callbacks. Neither establishes rasterized game pixels.
+
+
 ## Mode-zero Actor matrices
 
 Portable C reconstructs the complete ROM 2AE654 prepass and 2AEB48..2AEFB8

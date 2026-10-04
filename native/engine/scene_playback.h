@@ -41,6 +41,7 @@ class ScenePlayback {
     // Render preparation is separate from update cadence. This prepares main
     // and shadow matrices; final draw ordering remains separate.
     void prepareModeZeroDrawing(int channelCount);
+    SceneDrawQueue drawQueue(const QVector<QByteArray> &objects, LordlySceneDrawLayout) const;
     void setMode(int mode);
     const LordlySceneSchedule &schedule() const {
         return schedule_;
