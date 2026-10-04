@@ -45,7 +45,7 @@ int lordly_scene_schedule(LordlySceneSchedule *s, LordlySceneInvoke invoke, void
             s->phase = s->mode == 2 ? 9 : 10;
             continue;
         case 9:
-            service = LORDLY_SCENE_DIVIDER;
+            service = LORDLY_SCENE_MODE_TWO_PREPARE;
             break;
         case 10:
             service = LORDLY_SCENE_COUNTER;
@@ -66,10 +66,10 @@ int lordly_scene_schedule(LordlySceneSchedule *s, LordlySceneInvoke invoke, void
             s->phase = s->mode == 2 ? 16 : 20;
             continue;
         case 16:
-            service = LORDLY_SCENE_MODE_TWO_1;
+            service = LORDLY_SCENE_SPECIAL_BLACK;
             break;
         case 17:
-            service = LORDLY_SCENE_MODE_TWO_2;
+            service = LORDLY_SCENE_RESOURCE_CACHE;
             break;
         case 18:
             service = LORDLY_SCENE_PROJECTION;

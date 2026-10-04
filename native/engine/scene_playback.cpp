@@ -30,12 +30,28 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         return true;
     }
     if (actors_.service(opcode, args, value) || projection_.service(schedule_.mode, opcode, args) ||
-        cameras_.service(schedule_.mode, opcode, args) || fade_.service(opcode, args, value))
+        cameras_.service(schedule_.mode, opcode, args) || fade_.service(opcode, args, value) ||
+        effects_.service(opcode, args))
         return true;
     return commands_ && *commands_ && (*commands_)(opcode, args, value);
 }
 bool ScenePlayback::update(LordlySceneService service) {
     switch (service) {
+    case LORDLY_SCENE_COLOR:
+        effects_.advanceColors();
+        return true;
+    case LORDLY_SCENE_SPECIAL_BLACK:
+        effects_.advanceSpecialBlack();
+        return true;
+    case LORDLY_SCENE_MODE_TWO_PREPARE:
+        // In the mode-two image ROM 2AB53C calls 2AB558, an empty 28-iteration
+        // loop with no scene reads/writes. It is not the mode-zero divider.
+        return true;
+    case LORDLY_SCENE_RESOURCE_CACHE:
+        // Recovered func_002071F4 (5ae68e14) only ages/releases native allocation
+        // handles. ActorArt/ActorPosePlayer own those decoded resources on PC;
+        // Qt shared ownership replaces the target's twenty-record eviction pool.
+        return true;
     case LORDLY_SCENE_COUNTER:
         director_.advanceCounter();
         return true;

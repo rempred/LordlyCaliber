@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+SceneEffects implements the twenty 80-byte scene-color transitions (0x33),
+shared RGBA/mask writes, slot-zero mirroring, signed duration/progress and retained
+completion. Imported unknown bytes remain intact; fresh allocations initialize
+unspecified bytes to zero. All 88 original-instruction sequences match complete
+records and shared state, with allocation/free controlled. Atomic malformed-input
+checks pass. The mode-two special black fade (0xA9) retains its four-byte record,
+60-update ceiling and renderer alpha; 70 original update/render samples agree.
+The render test controls camera preparation and has no actors. All 259 source
+predicate cases match: ROM 2AA608 checks Actor +E8, the art/class source, not pose
+State as the older research prose called it. Full special-pass drawing is pending.
+
+ScenePlayback owns those effect updates. Its mode-two preparation callback is an
+intentional no-op: ROM 2AB53C calls 2AB558's empty 28-iteration loop. The earlier
+`DIVIDER` service label was wrong for this image. The automatic divider belongs to
+a different scene path. ROM 2071F4's resource-cache callback only ages/free native
+allocation handles, as recovered pure C at Decomp 5ae68e14 shows. Host ActorArt and
+ActorPosePlayer retain resources through Qt ownership rather than emulating that
+20-record eviction pool. The composition/suspension check remains passing.
+
 Timed facing turns (0x15/0x16) now read the current ROM's cardinal/phase tables,
 retain ten-byte job records and advance through the original cadence, halfword
 countdown and lifetime rules. Each phase invokes the existing Actor State path,

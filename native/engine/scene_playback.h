@@ -2,6 +2,7 @@
 #include "engine/director_session.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_camera.h"
+#include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_projection.h"
 #include "game/director/scene_schedule.h"
@@ -82,6 +83,12 @@ class ScenePlayback {
     const SceneFade &fade() const {
         return fade_;
     }
+    SceneEffects &effects() {
+        return effects_;
+    }
+    const SceneEffects &effects() const {
+        return effects_;
+    }
 
   private:
     static int invoke(void *, LordlySceneService);
@@ -92,6 +99,7 @@ class ScenePlayback {
     SceneProjection projection_;
     SceneCameras cameras_;
     SceneFade fade_;
+    SceneEffects effects_;
     LordlySceneSchedule schedule_{};
     bool actorsAdvanced_ = false, releaseRequested_ = false, released_ = false;
     quint64 completed_ = 0;

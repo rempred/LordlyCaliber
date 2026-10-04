@@ -14,6 +14,83 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void effectsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("scene-effects-mips.cjs"),
+                                 path, work.filePath("effects.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("effects.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data = QJsonDocument::fromJson(file.readAll()).object();
+        const auto cases = data["results"].toArray();
+        QCOMPARE(cases.size(), 88);
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            SceneEffects effects;
+            effects.setSharedColor({0x11, 0x22, 0x33, 0x44, 0x55});
+            for (const auto &a : row["initial"].toArray()) {
+                const auto record = a.toObject();
+                effects.supplyColor(record["slot"].toInt(),
+                                    QByteArray::fromHex(record["record"].toString().toLatin1()));
+            }
+            const auto operations = row["operations"].toArray(), states = row["states"].toArray();
+            for (int step = 0; step < operations.size(); ++step) {
+                const auto op = operations[step].toObject();
+                if (op.contains("args")) {
+                    QVector<quint32> args;
+                    for (const auto &a : op["args"].toArray())
+                        args << quint32(a.toInt());
+                    QVERIFY(effects.service(0x33, args));
+                } else
+                    effects.advanceColors();
+                QJsonArray actual;
+                for (int slot = 0; slot < 20; ++slot)
+                    if (!effects.colorRecord(slot).isEmpty())
+                        actual.append(QJsonObject{
+                            {"slot", slot},
+                            {"record", QString::fromLatin1(effects.colorRecord(slot).toHex())}});
+                QCOMPARE(actual, states[step].toObject()["records"].toArray());
+                const auto &shared = effects.sharedColor();
+                QCOMPARE(QByteArray(reinterpret_cast<const char *>(shared.data()), 5).toHex(),
+                         states[step].toObject()["shared"].toString().toLatin1());
+            }
+        }
+        SceneEffects effects;
+        QCOMPARE(effects.specialBlackAlpha(), 0);
+        QCOMPARE(data["special"].toArray().size(), 70);
+        for (const auto &v : data["special"].toArray()) {
+            const auto row = v.toObject();
+            if (row["restart"].toBool())
+                QVERIFY(effects.service(0xa9, {}));
+            else
+                effects.advanceSpecialBlack();
+            QCOMPARE(effects.specialBlackRecord().toHex(), row["record"].toString().toLatin1());
+            QCOMPARE(effects.specialBlackAlpha(), row["alpha"].toInt());
+        }
+        for (const auto &v : data["sources"].toArray()) {
+            const auto row = v.toObject();
+            QCOMPARE(SceneEffects::visibleAboveSpecialBlack(row["source"].toInt()),
+                     row["visible"].toBool());
+        }
+        QVERIFY(effects.service(0x33, {1, 2, 3, 4, 5, 6, 3, 0}));
+        const auto before = effects.colorRecord(0);
+        auto invalid = before;
+        put16(invalid, 0, 0);
+        put16(invalid, 2, 0xffff);
+        effects.supplyColor(19, invalid);
+        QVERIFY_THROWS_EXCEPTION(Error, effects.advanceColors());
+        QCOMPARE(effects.colorRecord(0), before);
+        QCOMPARE(effects.colorRecord(19), invalid);
+        QVERIFY_THROWS_EXCEPTION(Error, effects.service(0x33, {1, 2, 3, 4, 5, 6, 3, 20}));
+        QCOMPARE(effects.colorRecord(0), before);
+    }
     void turnsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -210,7 +287,7 @@ class SceneRuntimeTests : public QObject {
         auto emptyDomains = [](LordlySceneService) { return true; };
         auto baseline = create(0);
         QCOMPARE(baseline.advance(), ScenePlayback::Suspended);
-        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_COLOR});
+        QCOMPARE(baseline.pendingService(), std::optional{LORDLY_SCENE_POSES});
         QCOMPARE(baseline.completedUpdates(), 0U);
         QVector<QByteArray> actors, projections, fades;
         QVector<int> cursors;
