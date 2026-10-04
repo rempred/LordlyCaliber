@@ -1,6 +1,11 @@
 #pragma once
 #include "engine/rom.h"
 namespace lordly {
+struct DialogueFontMetrics {
+    QByteArray normal, alternate;
+    qint16 fixedIndex = -1;
+    quint8 glyphWidth(quint32 character, bool other = false) const;
+};
 // Text coordinates are archive-relative byte offsets, never host/native pointers.
 // The leading-control grammar is distinct from the body and metric grammars.
 void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray &source,

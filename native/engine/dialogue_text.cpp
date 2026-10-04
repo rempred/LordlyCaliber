@@ -1,7 +1,17 @@
 #include "engine/dialogue_text.h"
 #include "game/director/dialogue_layout.h"
 #include "game/director/dialogue_prefix.h"
+#include "game/director/text_metrics.h"
 namespace lordly {
+quint8 DialogueFontMetrics::glyphWidth(quint32 character, bool other) const {
+    quint8 width = 0;
+    if (lordly_text_glyph_width(
+            character, other, fixedIndex, reinterpret_cast<const uint8_t *>(normal.constData()),
+            size_t(normal.size()), reinterpret_cast<const uint8_t *>(alternate.constData()),
+            size_t(alternate.size()), &width))
+        throw Error("Text glyph exceeds its currently selected metric table");
+    return width;
+}
 void parseDialoguePrefix(QByteArray &window, QByteArray &state, const QByteArray &source,
                          quint32 &cursor) {
     if (window.size() != 168 || state.size() != 1144)

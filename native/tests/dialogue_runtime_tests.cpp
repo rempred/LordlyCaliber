@@ -2,6 +2,7 @@
 #include "engine/dialogue_text.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_playback.h"
+#include "game/director/text_metrics.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -20,6 +21,43 @@ class DialogueRuntimeTests : public QObject {
         return bytes;
     }
   private slots:
+    void glyphWidthsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("text-glyph-mips.cjs"),
+             path, work.filePath("glyph.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("glyph.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto root = QJsonDocument::fromJson(file.readAll()).object();
+        DialogueFontMetrics metrics{QByteArray::fromHex(root["normal"].toString().toLatin1()),
+                                    QByteArray::fromHex(root["alternate"].toString().toLatin1())};
+        const auto cases = root["results"].toArray();
+        QCOMPARE(cases.size(), 4608);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            metrics.fixedIndex = qint16(c["fixed"].toInt());
+            const auto character = quint32(c["character"].toInt()) | 0x12340000;
+            QCOMPARE(metrics.glyphWidth(character, c["other"].toInt() != 0), c["width"].toInt());
+            QCOMPARE(lordly_text_lead_byte(character), c["lead"].toInt());
+        }
+        metrics.fixedIndex = -2;
+        QVERIFY_THROWS_EXCEPTION(Error, metrics.glyphWidth('A'));
+        QCOMPARE(metrics.glyphWidth(0x81), 11); // Lead/control paths precede table access.
+        QCOMPARE(metrics.glyphWidth(16), 0);
+        metrics.fixedIndex = -1;
+        metrics.alternate.clear();
+        QVERIFY_THROWS_EXCEPTION(Error, metrics.glyphWidth('A', true));
+        metrics.normal.resize(166);
+        QVERIFY_THROWS_EXCEPTION(Error, metrics.glyphWidth(0xfd));
+        QCOMPARE(metrics.glyphWidth('A'), quint8((81 * 7 + 3) & 255));
+    }
     void initializationGeometryAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

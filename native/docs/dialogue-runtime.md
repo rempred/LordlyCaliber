@@ -1,5 +1,13 @@
 # Dialogue runtime
 
+Glyph-width and lead-byte classification compile maintained C from resident ROM
+4F2E4..4F3C8 and 51450..5148C (RAM 801793E4 and 8017B550). All 4,608 original
+comparisons pass with no helper substitutions (121 ms), covering both tables,
+fixed-index overrides and byte narrowing. Invalid metric ranges fail explicitly.
+Metric tables are current context inputs; their presence alone does not prove
+that a scene selected that font. These leaf helpers do not implement the larger
+width/line/body grammars.
+
 Leading-control parsing now compiles maintained C reconstructed from ROM
 EA930..EACC0, loaded at RAM 8019DBB0. All 4,569 retail entries plus 56 boundary
 cases match complete window/payload records and cursor offsets (419 ms), with
