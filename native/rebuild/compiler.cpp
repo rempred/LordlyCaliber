@@ -234,7 +234,8 @@ QByteArray Compiler::compileData(const QByteArray &bytes, const QString &directo
 }
 QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &directory,
                                    const QString &name, quint32 address,
-                                   const QMap<QString, quint32> &symbols) const {
+                                   const QMap<QString, quint32> &symbols,
+                                   bool preserveInstructionPositions) const {
     QDir dir(directory);
     if (!dir.mkpath("."))
         throw Error("Cannot create assembly build directory");
@@ -242,8 +243,10 @@ QByteArray Compiler::assembleOwner(const QByteArray &source, const QString &dire
     auto script = dir.absoluteFilePath(name + ".ld"), elf = dir.absoluteFilePath(name + ".elf");
     auto binary = dir.absoluteFilePath(name + ".bin");
     atomicWrite(input, ".set noat\n.set noreorder\n.section .owner,\"ax\"\n.balign 4\n" + source);
-    run("mips-kmc-elf-as.exe", {"-G", "0", "-mips3", "-mabi=32", "-EB", "-o", object, input},
-        directory);
+    QStringList arguments = {"-G", "0", "-mips3", "-mabi=32", "-EB", "-o", object, input};
+    if (preserveInstructionPositions)
+        arguments.prepend("--vr4300mul-off");
+    run("mips-kmc-elf-as.exe", arguments, directory);
     QByteArray bindings;
     for (auto it = symbols.begin(); it != symbols.end(); ++it) {
         if (!QRegularExpression("^[a-zA-Z_][a-zA-Z0-9_]*$").match(it.key()).hasMatch())
@@ -530,6 +533,20 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         result.report << "Rebuilt " + bank.spec.label + " from edited C data";
     }
+    if (p.consumableEffects() && p.consumableEffects()->modified()) {
+        const auto &effects = *p.consumableEffects();
+        ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.
+        const auto built = compiler.assembleOwner(
+            effects.assemblyDefinitions() + readFile(":/game/consumables/effects.s"), directory,
+            "consumable_effects", ConsumableEffects::ramAddress,
+            ConsumableEffects::serviceAddresses(), true);
+        if (built != effects.expectedCode(p.rom().bytes().mid(ConsumableEffects::romOffset,
+                                                              ConsumableEffects::codeSize)))
+            throw Error("Compiled consumable effects differ outside their authored parameters");
+        result.image.replace(ConsumableEffects::romOffset, ConsumableEffects::codeSize, built);
+        result.report << "Compiled all ten consumable effect models from maintained assembly "
+                         "within the original resident allocation";
+    }
     if (p.shops() &&
         (p.shops()->modified() || (priorShopPlacement && priorShopPlacement->version < 2))) {
         result.image = rebuildShops(Rom::fromBytes(result.image), *p.shops(), compiler, directory);
@@ -585,6 +602,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());
+    if (p.consumableEffects()) {
+        reopened.loadConsumableEffects();
+        if (reopened.consumableEffects()->json() != p.consumableEffects()->json())
+            throw Error("Exported consumable effects differ from the project");
+    }
     if (p.shops()) {
         reopened.loadShops();
         if (reopened.shops()->json() != p.shops()->json())

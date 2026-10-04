@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/consumable_editor.h"
 #include "app/promotion_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
@@ -135,6 +136,7 @@ void MainWindow::loadRom(const QString &path) {
             if (project.rom().revision() == 0) {
                 project.loadPromotion();
                 project.loadShops();
+                project.loadConsumableEffects();
             }
             return Result{std::move(project), {}};
         } catch (const std::exception &e) {
@@ -257,6 +259,11 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         groups[f.group]->addRow(f.label, editor);
     }
     PromotionEditor *promotion = nullptr;
+    ConsumableEditor *effects = nullptr;
+    if (table == Table::Consumables && project_->consumableEffects()) {
+        effects = new ConsumableEditor(project_.get(), undo_, [this] { updateStatus(); });
+        addInspectorPage(effects, "Effects");
+    }
     if (table == Table::Classes) {
         promotion = new PromotionEditor(project_.get(), undo_, [this] { updateStatus(); });
         auto scroll = new QScrollArea;
@@ -264,13 +271,15 @@ void MainWindow::addRecordWorkspace(Table table, const QString &title) {
         scroll->setWidget(promotion);
         addInspectorPage(scroll, "Promotion");
     }
-    auto refresh = [this, table, selected, editors, promotion, model, addClass] {
+    auto refresh = [this, table, selected, editors, promotion, effects, model, addClass] {
         if (*selected >= model->rowCount())
             *selected = -1;
         if (addClass)
             addClass->setEnabled(*selected >= 1 && model->rowCount() < 256);
         if (promotion)
             promotion->selectClass(*selected);
+        if (effects)
+            effects->selectConsumable(*selected);
         for (int n = 0; n < editors->size(); ++n) {
             auto editor = (*editors)[n];
             editor->setEnabled(*selected >= 0 &&
@@ -327,6 +336,7 @@ void MainWindow::openProject() {
         if (next.rom().revision() == 0) {
             next.loadPromotion();
             next.loadShops();
+            next.loadConsumableEffects();
         }
         if (object.value("format") == "LordlyCaliberProject")
             next.applyManifest(object);

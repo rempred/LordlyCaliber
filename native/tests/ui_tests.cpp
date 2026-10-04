@@ -1,3 +1,4 @@
+#include "app/consumable_editor.h"
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
@@ -50,6 +51,58 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void consumableEffectEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM not supplied");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadTexts();
+        project.loadConsumableEffects();
+        QUndoStack undo;
+        ConsumableEditor editor(&project, &undo, [] {});
+        editor.resize(410, 550);
+        editor.show();
+        editor.selectConsumable(3);
+        const auto before = project.manifest();
+        auto minimum = editor.findChild<QSpinBox *>("effectMinimum");
+        auto maximum = editor.findChild<QSpinBox *>("effectMaximum");
+        auto apply = editor.findChild<QPushButton *>("effectApply");
+        minimum->setValue(333);
+        apply->click();
+        QCOMPARE(project.consumableEffects()->models()["healPack"].toObject()["magnitude"].toInt(),
+                 333);
+        QVERIFY(project.textBanks()["consumables"].text(3).contains("333HP"));
+        undo.undo();
+        QCOMPARE(project.manifest(), before);
+        QCOMPARE(minimum->value(), 150);
+        undo.redo();
+        QCOMPARE(minimum->value(), 333);
+        editor.selectConsumable(11);
+        minimum->setValue(7);
+        maximum->setValue(9);
+        apply->click();
+        editor.selectConsumable(16);
+        QCOMPARE(minimum->value(), 7);
+        QCOMPARE(maximum->value(), 9);
+        const auto count = undo.count();
+        minimum->setValue(12);
+        maximum->setValue(10);
+        apply->click();
+        QCOMPARE(undo.count(), count);
+        QCOMPARE(project.consumableEffects()
+                     ->models()["sharedStatBoosters11To16"]
+                     .toObject()["minimum"]
+                     .toInt(),
+                 7);
+        editor.selectConsumable(44);
+        QVERIFY(!apply->isEnabled());
+        editor.selectConsumable(3);
+        editor.findChild<QPushButton *>("effectRestore")->click();
+        QCOMPARE(minimum->value(), 150);
+        undo.undo();
+        QCOMPARE(minimum->value(), 333);
+        editor.grab().save(QCoreApplication::applicationDirPath() + "/consumable-effects.png");
     }
     void shopEditingAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

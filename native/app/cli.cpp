@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
         if (project.rom().revision() == 0) {
             project.loadPromotion();
             project.loadShops();
+            project.loadConsumableEffects();
         }
         if (parser.isSet("project")) {
             const auto manifest = lordly::Project::readProject(parser.value("project"));
@@ -59,15 +60,18 @@ int main(int argc, char **argv) {
             else
                 project.applyManifest(manifest);
         }
-        QJsonObject report{{"title", project.rom().title()},
-                           {"revision", project.rom().revision()},
-                           {"classes", project.records(lordly::Table::Classes).size()},
-                           {"items", project.records(lordly::Table::Items).size()},
-                           {"consumables", project.records(lordly::Table::Consumables).size()},
-                           {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
-                           {"changedEntries", project.changedRecords()},
-                           {"pendingImportedSections",
-                            QJsonArray::fromStringList(project.pendingLegacySections())}};
+        QJsonObject report{
+            {"title", project.rom().title()},
+            {"revision", project.rom().revision()},
+            {"classes", project.records(lordly::Table::Classes).size()},
+            {"items", project.records(lordly::Table::Items).size()},
+            {"consumables", project.records(lordly::Table::Consumables).size()},
+            {"consumableEffectModels",
+             project.consumableEffects() ? project.consumableEffects()->models().size() : 0},
+            {"shops", project.shops() ? lordly::Shops::count - 1 : 0},
+            {"changedEntries", project.changedRecords()},
+            {"pendingImportedSections",
+             QJsonArray::fromStringList(project.pendingLegacySections())}};
         if (parser.isSet("output")) {
             auto root = parser.value("tools");
             if (root.isEmpty())

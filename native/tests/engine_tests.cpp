@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 #include "engine/class_runtime_inventory.h"
 #include "engine/class_text.h"
+#include "engine/consumable_effects.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
@@ -47,6 +48,209 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void consumableEffectWorkflow() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto source = Rom::open(path);
+            auto project = Project::fromRom(source);
+            project.loadTexts();
+            project.loadConsumableEffects();
+            const auto retail = project.consumableEffects()->json();
+            const auto description = project.textBanks()["consumables"].entries[1].bytes;
+            const QJsonObject imported{{"1", QJsonObject{{"magnitude", 111}}},
+                                       {"2", QJsonObject{{"magnitude", 222}}},
+                                       {"3", QJsonObject{{"magnitude", 333}}},
+                                       {"4", QJsonObject{{"magnitude", 65535}}},
+                                       {"5", QJsonObject{{"magnitude", 0}}},
+                                       {"10", QJsonObject{{"deltaMin", 7}, {"deltaMax", 12}}},
+                                       {"11-16", QJsonObject{{"deltaMin", 3}, {"deltaMax", 5}}},
+                                       {"17", QJsonObject{{"deltaMin", 7}, {"deltaMax", 9}}},
+                                       {"18", QJsonObject{{"deltaMin", -8}, {"deltaMax", -4}}},
+                                       {"19", QJsonObject{{"deltaMin", -5}, {"deltaMax", 5}}}};
+            const QJsonObject legacy{{"format", "ob64-patch"},
+                                     {"version", 36},
+                                     {"patches", QJsonObject{{"consumableEffects", imported}}}};
+            project.importLegacy(legacy);
+            QVERIFY(project.pendingLegacySections().isEmpty());
+            auto expectedDescription = description;
+            expectedDescription.replace("100HP", "111HP");
+            QCOMPARE(project.textBanks()["consumables"].entries[1].bytes, expectedDescription);
+            QVERIFY(project.textBanks()["consumables"].text(2).contains("222HP"));
+            QVERIFY(project.textBanks()["consumables"].text(3).contains("333HP"));
+            auto before = project.manifest();
+            for (const auto &invalid :
+                 {QJsonObject{{"11", QJsonObject{{"deltaMin", 2}, {"deltaMax", 4}}}},
+                  QJsonObject{{"3", QJsonObject{{"magnitude", 1000}}}},
+                  QJsonObject{{"19", QJsonObject{{"deltaMin", 5}, {"deltaMax", -5}}}},
+                  QJsonObject{{"1", QJsonObject{{"magnitude", true}}}}}) {
+                auto bad = legacy;
+                bad["patches"] = QJsonObject{{"consumableEffects", invalid}};
+                QVERIFY_THROWS_EXCEPTION(Error, project.importLegacy(bad));
+                QCOMPARE(project.manifest(), before);
+            }
+            project.setText("consumables", 1, "My custom healing text.");
+            before = project.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     project.editConsumableEffect("healLeaf", {{"magnitude", 42}}));
+            QCOMPARE(project.manifest(), before);
+            project.editConsumableEffect("healLeaf", {{"magnitude", 42}}, false);
+            QCOMPARE(project.textBanks()["consumables"].text(1), "My custom healing text.");
+            project.setText("consumables", 1, "Custom herbs restore 42HP.");
+            project.editConsumableEffect("healLeaf", {{"magnitude", 111}});
+            QCOMPARE(project.textBanks()["consumables"].text(1), "Custom herbs restore 111HP.");
+            // Keep the native baseline after restoration; retained browser data must not revive it.
+            auto restored = project;
+            restored.setConsumableEffects(retail);
+            auto loaded = Project::fromRom(source);
+            loaded.applyManifest(restored.manifest());
+            QCOMPARE(loaded.consumableEffects()->json(), retail);
+            auto historical = Project::fromRom(source).manifest();
+            historical["legacyImport"] = legacy;
+            loaded.applyManifest(historical);
+            QCOMPARE(loaded.consumableEffects()->json(), project.consumableEffects()->json());
+            QTemporaryDir folder, build;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("effects.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("effects.lcproject")}) {
+                auto reopened = Project::fromRom(source);
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.consumableEffects()->json(), project.consumableEffects()->json());
+                QCOMPARE(reopened.textBanks()["consumables"].serialized(),
+                         project.textBanks()["consumables"].serialized());
+            }
+            project.setValue(Table::Consumables, 1, 0, 4321);
+            project.loadShops();
+            auto shops = project.shops()->json();
+            auto rows = shops["records"].toArray();
+            auto row = rows[2].toObject();
+            row["consumables"] = QJsonArray{19, 1, 3};
+            rows[2] = row;
+            shops["records"] = rows;
+            project.setShops(shops);
+            QCOMPARE(project.appendClass(1, "Effect tester"), 165);
+            const auto result = rebuild(project, tools, build.path());
+            QTemporaryDir output(QDir(QFileInfo(path).absolutePath())
+                                     .filePath("Test ROMs/native-consumable-workflow-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, target);
+            auto reopened = Project::fromRom(Rom::open(target));
+            reopened.loadConsumableEffects();
+            reopened.loadTexts();
+            reopened.loadShops();
+            QCOMPARE(reopened.consumableEffects()->json(), project.consumableEffects()->json());
+            QCOMPARE(reopened.textBanks()["consumables"].serialized(),
+                     project.textBanks()["consumables"].serialized());
+            QCOMPARE(reopened.shops()->json(), project.shops()->json());
+            QCOMPARE(reopened.records(Table::Classes).size(), 166);
+            QCOMPARE(reopened.value(Table::Consumables, 1, 0), 4321);
+            auto checksum = result.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, result.image);
+            // A subsequent effect edit composes with already-relocated classes and shops.
+            reopened.editConsumableEffect("healSeed", {{"magnitude", 42}});
+            const auto subsequent = rebuild(reopened, tools, build.path());
+            auto again = Project::fromRom(Rom::fromBytes(subsequent.image));
+            again.loadConsumableEffects();
+            again.loadTexts();
+            QCOMPARE(
+                again.consumableEffects()->models()["healSeed"].toObject()["magnitude"].toInt(),
+                42);
+            QVERIFY(again.textBanks()["consumables"].text(2).contains("042HP"));
+            atomicWrite(
+                output.filePath("effects.json"),
+                QJsonDocument(
+                    QJsonObject{{"rom", target}, {"models", project.consumableEffects()->models()}})
+                    .toJson());
+            qInfo().noquote() << "Consumable workflow candidate:"
+                              << output.filePath("effects.json");
+            QCOMPARE(Rom::open(path).bytes(), source.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void consumableEffectSource() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto effects = ConsumableEffects::load(rom);
+            QCOMPARE(effects.models().size(), 10);
+            QCOMPARE(effects.models()["healLeaf"].toObject()["magnitude"].toInt(), 100);
+            QCOMPARE(effects.models()["urnOfChaos"].toObject()["minimum"].toInt(), -3);
+            const auto original =
+                rom.bytes().mid(ConsumableEffects::romOffset, ConsumableEffects::codeSize);
+            QFile file(":/game/consumables/effects.s");
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto source = file.readAll();
+            QTemporaryDir directory;
+            Compiler compiler(tools);
+            compiler.authenticate();
+            QCOMPARE(compiler.assembleOwner(effects.assemblyDefinitions() + source,
+                                            directory.path(), "consumable_retail",
+                                            ConsumableEffects::ramAddress,
+                                            ConsumableEffects::serviceAddresses(), true),
+                     original);
+            effects.setModel("healLeaf", {{"magnitude", 111}});
+            effects.setModel("healSeed", {{"magnitude", 222}});
+            effects.setModel("healPack", {{"magnitude", 333}});
+            effects.setModel("powerFruit", {{"magnitude", 65535}});
+            effects.setModel("angelFruit", {{"magnitude", 0}});
+            effects.setModel("cupOfLife", {{"minimum", 7}, {"maximum", 12}});
+            effects.setModel("sharedStatBoosters11To16", {{"minimum", 3}, {"maximum", 5}});
+            effects.setModel("scrollOfDiscipline", {{"minimum", 7}, {"maximum", 9}});
+            effects.setModel("urnOfChaos", {{"minimum", -8}, {"maximum", -4}});
+            effects.setModel("gobletOfDestiny", {{"minimum", -5}, {"maximum", 5}});
+            const auto compiled = compiler.assembleOwner(
+                effects.assemblyDefinitions() + source, directory.path(), "consumable_edited",
+                ConsumableEffects::ramAddress, ConsumableEffects::serviceAddresses(), true);
+            auto expected = original;
+            const QList<QPair<int, int>> values = {
+                {0x410f8, 111},   {0x410fc, 222}, {0x41108, 333}, {0x4110c, 333},
+                {0x41248, 65535}, {0x4124c, 0},   {0x4134c, 6},   {0x41388, 7},
+                {0x41444, 3},     {0x41480, 3},   {0x4149c, 3},   {0x414d8, 7},
+                {0x41518, 5},     {0x41554, -8},  {0x41570, 11},  {0x415ac, -5}};
+            for (auto [at, value] : values)
+                put16(expected, at - int(ConsumableEffects::romOffset) + 2, quint16(value));
+            QCOMPARE(compiled, expected);
+            QCOMPARE(effects.expectedCode(original), expected);
+            auto changed = rom.bytes();
+            changed.replace(ConsumableEffects::romOffset, compiled.size(), compiled);
+            QCOMPARE(ConsumableEffects::load(Rom::fromBytes(changed)).json(), effects.json());
+            const auto before = effects.json();
+            QVERIFY_THROWS_EXCEPTION(
+                Error, effects.setModel("urnOfChaos", {{"minimum", -1}, {"maximum", 1}}));
+            QVERIFY_THROWS_EXCEPTION(Error, effects.setModel("healPack", {{"magnitude", 1000}}));
+            QVERIFY_THROWS_EXCEPTION(
+                Error, effects.setModel("cupOfLife", {{"minimum", 10}, {"maximum", 9}}));
+            QCOMPARE(effects.json(), before);
+            for (auto site : {0x41098, 0x41108, 0x65d60}) {
+                auto bad = changed;
+                bad[site + 3] = char(u8(bad, site + 3) ^ 1);
+                QVERIFY_THROWS_EXCEPTION(Error, ConsumableEffects::load(Rom::fromBytes(bad)));
+            }
+            const auto root = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir output(root + "/native-consumable-effects-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            Rom::updateChecksum(changed);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            atomicWrite(target, rom.serialize(changed));
+            atomicWrite(
+                output.filePath("effects.json"),
+                QJsonDocument(QJsonObject{{"rom", target}, {"models", effects.models()}}).toJson());
+            qInfo().noquote() << "Consumable effect source candidate:"
+                              << output.filePath("effects.json");
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void consumableRecordsExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

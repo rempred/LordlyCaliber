@@ -1,0 +1,250 @@
+{
+  "generator": "native/tools/generate-consumable-sources.cjs",
+  "input": "Accepted Decomp ASM func_00041098.s; US Rev0 z64 SHA256 571e83396bc81e70da4c0a20313d82dbd7dfe685f2c37418c8e27f927e2cc67a",
+  "start": 266392,
+  "size": 1380,
+  "address": 2148970904,
+  "retailSha256": "1a04986b509ea8db35549f889d240ad75278f035cb30938ea4c199fa156fdd18",
+  "dispatch": {
+    "start": 417120,
+    "size": 76,
+    "retailSha256": "06532d7bca4fd20ff9409cceefaf0b518250005db000039cfdf66ffb375d1d04"
+  },
+  "calls": {
+    "service_8009c7cc": 2148124620,
+    "service_8016eba4": 2148985764
+  },
+  "models": [
+    {
+      "key": "healLeaf",
+      "projectKey": "1",
+      "kind": "magnitude",
+      "itemIds": [
+        1
+      ],
+      "domainMin": 0,
+      "domainMax": 999,
+      "target": "Current HP for one target; bounded special-pool path",
+      "fields": [
+        {
+          "offset": 96,
+          "kind": "magnitude",
+          "symbol": "LC_HEAL_LEAF",
+          "retail": 604635236
+        }
+      ]
+    },
+    {
+      "key": "healSeed",
+      "projectKey": "2",
+      "kind": "magnitude",
+      "itemIds": [
+        2
+      ],
+      "domainMin": 0,
+      "domainMax": 999,
+      "target": "Current HP for one target; bounded special-pool path",
+      "fields": [
+        {
+          "offset": 100,
+          "kind": "magnitude",
+          "symbol": "LC_HEAL_SEED",
+          "retail": 604635436
+        }
+      ]
+    },
+    {
+      "key": "healPack",
+      "projectKey": "3",
+      "kind": "magnitude",
+      "itemIds": [
+        3
+      ],
+      "domainMin": 0,
+      "domainMax": 999,
+      "target": "Current HP across the group; bounded special-pool path",
+      "fields": [
+        {
+          "offset": 112,
+          "kind": "magnitude",
+          "symbol": "LC_HEAL_PACK",
+          "retail": 604635286
+        },
+        {
+          "offset": 116,
+          "kind": "magnitude",
+          "symbol": "LC_HEAL_PACK",
+          "retail": 604504214
+        }
+      ]
+    },
+    {
+      "key": "powerFruit",
+      "projectKey": "4",
+      "kind": "magnitude",
+      "itemIds": [
+        4
+      ],
+      "domainMin": 0,
+      "domainMax": 65535,
+      "target": "Ordinary-target Fatigue byte (C+0x32); special targets are unchanged",
+      "fields": [
+        {
+          "offset": 432,
+          "kind": "magnitude",
+          "symbol": "LC_POWER_FRUIT",
+          "retail": 604635156
+        }
+      ]
+    },
+    {
+      "key": "angelFruit",
+      "projectKey": "5",
+      "kind": "magnitude",
+      "itemIds": [
+        5
+      ],
+      "domainMin": 0,
+      "domainMax": 65535,
+      "target": "Ordinary-target Fatigue byte (C+0x32); special targets are unchanged",
+      "fields": [
+        {
+          "offset": 436,
+          "kind": "magnitude",
+          "symbol": "LC_ANGEL_FRUIT",
+          "retail": 604635186
+        }
+      ]
+    },
+    {
+      "key": "cupOfLife",
+      "projectKey": "10",
+      "kind": "range",
+      "itemIds": [
+        10
+      ],
+      "domainMin": 0,
+      "domainMax": 999,
+      "target": "Maximum HP (C+0x16)",
+      "fields": [
+        {
+          "offset": 752,
+          "kind": "minimum",
+          "symbol": "LC_CUP_OF_LIFE_MIN",
+          "retail": 610795525
+        },
+        {
+          "offset": 692,
+          "kind": "width",
+          "symbol": "LC_CUP_OF_LIFE_WIDTH",
+          "retail": 604176390
+        }
+      ]
+    },
+    {
+      "key": "sharedStatBoosters11To16",
+      "projectKey": "11-16",
+      "kind": "range",
+      "itemIds": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "domainMin": 0,
+      "domainMax": 999,
+      "target": "Shared STR / VIT / INT / MEN / AGI / DEX range",
+      "fields": [
+        {
+          "offset": 1000,
+          "kind": "minimum",
+          "symbol": "LC_SHARED_STAT_BOOSTERS11_TO16_MIN",
+          "retail": 610795522
+        },
+        {
+          "offset": 940,
+          "kind": "width",
+          "symbol": "LC_SHARED_STAT_BOOSTERS11_TO16_WIDTH",
+          "retail": 604176387
+        }
+      ]
+    },
+    {
+      "key": "scrollOfDiscipline",
+      "projectKey": "17",
+      "kind": "range",
+      "itemIds": [
+        17
+      ],
+      "domainMin": 1,
+      "domainMax": 100,
+      "target": "Alignment (C+0x1B)",
+      "fields": [
+        {
+          "offset": 1088,
+          "kind": "minimum",
+          "symbol": "LC_SCROLL_OF_DISCIPLINE_MIN",
+          "retail": 610795521
+        },
+        {
+          "offset": 1028,
+          "kind": "width",
+          "symbol": "LC_SCROLL_OF_DISCIPLINE_WIDTH",
+          "retail": 604176387
+        }
+      ]
+    },
+    {
+      "key": "urnOfChaos",
+      "projectKey": "18",
+      "kind": "range",
+      "itemIds": [
+        18
+      ],
+      "domainMin": -100,
+      "domainMax": -1,
+      "target": "Alignment (C+0x1B)",
+      "fields": [
+        {
+          "offset": 1212,
+          "kind": "minimum",
+          "symbol": "LC_URN_OF_CHAOS_MIN",
+          "retail": 610861053
+        },
+        {
+          "offset": 1152,
+          "kind": "width",
+          "symbol": "LC_URN_OF_CHAOS_WIDTH",
+          "retail": 604176387
+        }
+      ]
+    },
+    {
+      "key": "gobletOfDestiny",
+      "projectKey": "19",
+      "kind": "range",
+      "itemIds": [
+        19
+      ],
+      "domainMin": -100,
+      "domainMax": 100,
+      "target": "Luck (C+0x28)",
+      "fields": [
+        {
+          "offset": 1300,
+          "kind": "minimum",
+          "symbol": "LC_GOBLET_OF_DESTINY_MIN",
+          "retail": 610861055
+        },
+        {
+          "offset": 1240,
+          "kind": "width",
+          "symbol": "LC_GOBLET_OF_DESTINY_WIDTH",
+          "retail": 604176387
+        }
+      ]
+    }
+  ]
+}

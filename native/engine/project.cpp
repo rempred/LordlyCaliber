@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <cmath>
 #include <limits>
@@ -255,6 +256,8 @@ int Project::changedRecords() const {
         ++count;
     if (shops_)
         count += shops_->changedShops();
+    if (consumableEffects_ && consumableEffects_->modified())
+        ++count;
     return count;
 }
 QByteArray encodeClassName(const QString &name) {
@@ -386,6 +389,40 @@ void Project::setShops(const QJsonObject &value) {
     loadShops();
     shops_->apply(value);
 }
+void Project::loadConsumableEffects() {
+    if (!consumableEffects_)
+        consumableEffects_ = ConsumableEffects::load(rom_);
+}
+void Project::setConsumableEffects(const QJsonObject &value) {
+    loadConsumableEffects();
+    consumableEffects_->apply(value);
+}
+void Project::editConsumableEffect(const QString &key, const QJsonObject &value,
+                                   bool updateHealingDescription) {
+    auto next = *this;
+    next.loadConsumableEffects();
+    next.consumableEffects_->setModel(key, value);
+    const int id = key == "healLeaf" ? 1 : key == "healSeed" ? 2 : key == "healPack" ? 3 : 0;
+    if (id && updateHealingDescription) {
+        next.loadTexts();
+        auto &bank = next.texts_["consumables"];
+        auto &bytes = bank.entries[id].bytes;
+        const auto text = QString::fromLatin1(bytes);
+        const QRegularExpression amount("(?<![0-9])[0-9]{1,3}(?=HP\\b)");
+        auto matches = amount.globalMatch(text);
+        if (!matches.hasNext())
+            throw Error("Description has no HP amount to update. Edit the description or disable "
+                        "automatic description updates.");
+        const auto match = matches.next();
+        if (matches.hasNext())
+            throw Error("Description has multiple HP amounts. Edit it directly or disable "
+                        "automatic description updates.");
+        bytes.replace(match.capturedStart(), match.capturedLength(),
+                      QByteArray::number(value["magnitude"].toInt()).rightJustified(3, '0'));
+        bank.validateRuntimeSize();
+    }
+    *this = std::move(next);
+}
 void Project::setPromotion(const QJsonObject &value) {
     loadPromotion();
     promotion_->apply(value);
@@ -463,6 +500,12 @@ QJsonObject Project::manifest() const {
         result["shops"] = shops_->json();
     else
         result.remove("shops");
+    if (consumableEffects_ &&
+        (consumableEffects_->modified() ||
+         !legacy_["patches"].toObject()["consumableEffects"].toObject().isEmpty()))
+        result["consumableEffects"] = consumableEffects_->json();
+    else
+        result.remove("consumableEffects");
     return result;
 }
 void Project::applyManifest(const QJsonObject &object) {
@@ -479,6 +522,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadPromotion();
     if (shops_)
         candidate.loadShops();
+    if (consumableEffects_)
+        candidate.loadConsumableEffects();
     if (object.contains("addedClasses") && !object["addedClasses"].isArray())
         throw Error("Added classes must be an array");
     for (const auto &value : object["addedClasses"].toArray()) {
@@ -564,6 +609,13 @@ void Project::applyManifest(const QJsonObject &object) {
     } else {
         candidate.importLegacyShops(candidate.legacy_);
     }
+    if (object.contains("consumableEffects")) {
+        if (!object["consumableEffects"].isObject())
+            throw Error("Invalid saved consumable effects");
+        candidate.setConsumableEffects(object["consumableEffects"].toObject());
+    } else {
+        candidate.importLegacyConsumableEffects(candidate.legacy_);
+    }
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -578,6 +630,23 @@ void Project::applyManifest(const QJsonObject &object) {
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
     *this = std::move(candidate);
+}
+void Project::importLegacyConsumableEffects(const QJsonObject &object) {
+    const auto patch = object["patches"].toObject();
+    if (patch.contains("consumableEffects") && !patch["consumableEffects"].isObject())
+        throw Error("Imported consumable effects must be an object");
+    const auto values = patch["consumableEffects"].toObject();
+    if (values.isEmpty())
+        return;
+    loadConsumableEffects();
+    auto effects = *consumableEffects_;
+    effects.importLegacy(values, object["version"].toInt());
+    for (const auto &entry : ConsumableEffects::definitions()) {
+        const auto def = entry.toObject();
+        if (values.contains(def["projectKey"].toString()))
+            editConsumableEffect(def["key"].toString(),
+                                 effects.models()[def["key"].toString()].toObject());
+    }
 }
 void Project::importLegacyConsumables(const QJsonObject &object) {
     const auto patch = object["patches"].toObject();
@@ -719,6 +788,7 @@ void Project::importLegacy(const QJsonObject &object) {
     }
     candidate.importLegacyShops(object);
     candidate.importLegacyConsumables(object);
+    candidate.importLegacyConsumableEffects(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -795,7 +865,8 @@ QStringList Project::pendingLegacySections() const {
     for (auto it = patches.begin(); it != patches.end(); ++it)
         if (it.key() != "classDefs" && it.key() != "items" && it.key() != "item_prices" &&
             it.key() != "descriptions" && it.key() != "statGates" && it.key() != "classFamilies" &&
-            it.key() != "shops" && it.key() != "consumables" && changed(it.value()))
+            it.key() != "shops" && it.key() != "consumables" && it.key() != "consumableEffects" &&
+            changed(it.value()))
             pending << it.key();
     const auto owners = legacy_.value("rebuild_owners").toObject();
     for (auto it = owners.begin(); it != owners.end(); ++it) {

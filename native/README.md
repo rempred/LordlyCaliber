@@ -22,6 +22,14 @@ Projects are folders containing `project.json`. Sharing archives use
 `.lcproject` and omit the ROM. Existing browser Editor JSON projects can be
 imported through Open project after opening the matching source ROM.
 
+Shops supports all 35 shops with up to 50 equipment items and 30 consumables,
+including empty stock, search, reordering and undo. Consumables provides prices,
+metadata and ten supported effect models in the Effects inspector. Items 11–16
+share one stat-increase range. Healing amounts can update the description's HP
+number; turn that option off when a custom description has no numeric amount.
+Other item behaviors remain unchanged. Export rebuilds maintained sources in
+the game's original RAM allocations and reopens the results before saving.
+
 For scripting:
 
 ```powershell

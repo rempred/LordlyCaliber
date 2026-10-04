@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/class_data.h"
+#include "engine/consumable_effects.h"
 #include "engine/promotion.h"
 #include "engine/rom.h"
 #include "engine/shops.h"
@@ -77,6 +78,13 @@ class Project {
         return shops_;
     }
     void setShops(const QJsonObject &value);
+    void loadConsumableEffects();
+    const std::optional<ConsumableEffects> &consumableEffects() const {
+        return consumableEffects_;
+    }
+    void setConsumableEffects(const QJsonObject &value);
+    void editConsumableEffect(const QString &key, const QJsonObject &value,
+                              bool updateHealingDescription = true);
     bool hasClassData() const {
         return originalClasses_.has_value();
     }
@@ -96,6 +104,7 @@ class Project {
   private:
     void importLegacyShops(const QJsonObject &object);
     void importLegacyConsumables(const QJsonObject &object);
+    void importLegacyConsumableEffects(const QJsonObject &object);
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     std::map<Table, QVector<Record>> tables_;
@@ -103,6 +112,7 @@ class Project {
     QMap<QString, TextBank> texts_;
     std::optional<Promotion> promotion_;
     std::optional<Shops> shops_;
+    std::optional<ConsumableEffects> consumableEffects_;
     std::optional<ClassData> originalClasses_;
     QMap<int, QByteArray> classNames_;
     QVector<ClassAsset> addedClasses_;

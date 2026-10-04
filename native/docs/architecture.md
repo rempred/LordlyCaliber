@@ -288,3 +288,30 @@ upgrade on export. Tests execute exported producer/splitter/reader/category and
 confirmation paths with guarded4 MiB RAM, including empty shops and maximum
 stock; the normal export also composes with added classes and reopens every row.
 Full-game rendering, navigation and peak memory remain outside those proofs.
+
+Consumable metadata uses the actual 45 records of 12 bytes at z64 0x645CC
+(US Rev1 adds 0x20), preserving each name pointer. The effect model separately
+owns ten magnitude/range settings in the US Rev0 resident routine at ROM
+0x41098, RAM 0x8016B198. Its 345 maintained assembly instructions compile during
+export within the original 1,380-byte extent. No added RAM or tail-code hook is
+needed. The complete routine is authenticated after normalizing its 16 parameters;
+the original 19-entry dispatch table is independently authenticated. Heal Pack's
+two magnitude paths must agree. Shared stat boosters use one range.
+
+The accepted routine currently has ASM, not accepted C. Its migration generator
+checks every instruction against the private reference ROM, converts branch targets
+to labels using actual instruction operands, and gives external calls explicit
+linker symbols. GNU 2.6's automatic VR4300 multiply workaround is disabled only
+for this instruction-position-preserving build; the original spacing is retained.
+The compiled retail routine must match all original bytes. Edited builds must
+differ only in the modeled parameters. Other builds retain their assembler flags.
+
+Effect changes and optional healing-description number updates are one undoable
+transaction. Only a single recognizable HP amount is replaced; other encoded text
+bytes remain intact. Ambiguous custom descriptions reject automatic replacement
+and can instead be edited directly. Browser magnitude/range imports migrate to
+canonical native state; retained import data cannot revive a restored effect.
+Normal export composes effects with class relocation, Shops, records and text,
+then reopens and checks every loaded domain. Instruction tests execute authored
+query/apply effects, limits and special-target pools in guarded 4 MiB RAM with
+a controlled random service. They do not establish full-game menu or RNG behavior.

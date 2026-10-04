@@ -32,7 +32,8 @@ class Compiler {
     void authenticate() const;
     QByteArray assembleOwner(const QByteArray &source, const QString &directory,
                              const QString &name, quint32 address,
-                             const QMap<QString, quint32> &symbols = {}) const;
+                             const QMap<QString, quint32> &symbols = {},
+                             bool preserveInstructionPositions = false) const;
 
   private:
     void run(const QString &tool, const QStringList &args, const QString &directory) const;
