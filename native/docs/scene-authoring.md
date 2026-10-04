@@ -186,3 +186,34 @@ with development PATH/QT/QML variables removed. That check found and corrected t
 CLI's dispatch of standalone browser project formats. It is not a clean-machine
 or full-game test. Existing browser-ROM authored arena identities still need
 migration support; retail and native-rebuilt project sources are covered here.
+
+## Browser-exported ROM migration
+
+The native loader reads the browser OBCS arena at z64 0x2780000..0x27B0000.
+It verifies descriptor bounds, record kinds, nonoverlap, authored/event exclusive
+selector ownership, script digest prefixes, class-5 setup/exit and manifest
+identities. Event bindings must match the actual decoded event programs. Unknown
+foreign arena data is not claimed. Browser projects made from these ROMs retain
+the same authored UUID and baseline when imported.
+
+The next scene/event export migrates authored programs and event rows together.
+LC05SCPT version four adds `legacyArenaRetired` to the owned JSON metadata; versions
+one through three remain readable. All bytes of the browser arena, including its
+manifest and any still-referenced retail resources, remain intact. The marker
+prevents old authored records from being rediscovered after migration. When the
+last migrated scene/event is deleted, a small metadata-only allocation retains
+that marker. Ordinary native allocations still clear completely when emptied.
+A no-edit rebuild leaves the original browser ROM unchanged.
+
+`scene_import_tests browserRomMigration` passes (9,765 ms) using a fixture made by
+the existing browser `prepare/apply/validateApplied` exporter. It checks project
+import, edit/save/export/reopen, stable names/UUIDs and event launches, deletion
+both before and after migration, unchanged old-arena bytes, retained foreign tail
+data, and rejection of duplicate ownership, altered digest and damaged manifest.
+The test exports to a separate candidate path and reopens it; it does not launch
+the game. Existing native allocation upgrade, authored/export and event/deletion
+checks pass (5,601 ms and 7,693 ms respectively).
+
+Correction to the earlier migration research note: allocation record word six is
+not always zero. The browser exporter fills it with the first 32 bits of the
+script's decoded SHA-256 after encoding; plain manifest records keep zero.

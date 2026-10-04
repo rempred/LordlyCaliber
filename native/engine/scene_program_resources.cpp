@@ -1,4 +1,5 @@
 #include "engine/scene_program_resources.h"
+#include "engine/legacy_scene_arena.h"
 #include "engine/promotion.h"
 #include "engine/scene_events.h"
 #include <QJsonArray>
@@ -41,15 +42,15 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
     if (header == QByteArray(descriptorSize, char(-1)))
         return {};
     if (header.size() != descriptorSize || header.first(8) != "LC05SCPT" ||
-        (u32(header, 8) < 1 || u32(header, 8) > 3) ||
+        (u32(header, 8) < 1 || u32(header, 8) > 4) ||
         header.mid(u32(header, 8) == 1 ? 28 : 36, u32(header, 8) == 1 ? 64 : 56) !=
             QByteArray(u32(header, 8) == 1 ? 64 : 56, 0) ||
         u32(header, 92) != crc32(header.first(92)))
         throw Error("Scene allocation descriptor is damaged or occupied");
     SceneProgramPlacement result{u32(header, 12), u32(header, 16), {}};
     const auto count = u32(header, 20);
-    if (!count || count > 65536 || result.offset < 0x2800000 || result.offset % 16 ||
-        !result.allocation || result.allocation % 16 ||
+    if ((!count && u32(header, 8) < 4) || count > 65536 || result.offset < 0x2800000 ||
+        result.offset % 16 || !result.allocation || result.allocation % 16 ||
         quint64(result.offset) + result.allocation > 0x4000000 ||
         quint64(result.offset) + result.allocation > quint64(rom.bytes().size()) ||
         count * 20 > result.allocation)
@@ -98,9 +99,17 @@ std::optional<SceneProgramPlacement> SceneProgramResources::placement(const Rom 
         QSet<int> selectors;
         const auto tableBytes = u32(rom.bytes(), 0x1f3ca84);
         const auto manifest = document.object();
-        if (u32(header, 8) == 3 && (manifest.size() != 2 || !manifest["authored"].isArray() ||
-                                    !manifest["eventBindings"].isObject()))
+        if (u32(header, 8) >= 3 &&
+            (manifest.size() != (u32(header, 8) == 4 ? 3 : 2) || !manifest["authored"].isArray() ||
+             !manifest["eventBindings"].isObject()))
             throw Error("Invalid scene allocation metadata");
+        if (u32(header, 8) == 4) {
+            if (!manifest["legacyArenaRetired"].isBool())
+                throw Error("Invalid browser arena retirement metadata");
+            result.legacyArenaRetired = manifest["legacyArenaRetired"].toBool();
+        }
+        if (!count && !result.legacyArenaRetired)
+            throw Error("An empty scene allocation has no retired browser arena");
         for (const auto value :
              u32(header, 8) == 2 ? document.array() : manifest["authored"].toArray()) {
             const auto entry = value.toObject();
@@ -172,8 +181,19 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
                                const std::optional<QVector<AuthoredSceneBuild>> &authored,
                                const SceneEventBuild *events) {
     const auto prior = placement(rom);
-    if (compiled.isEmpty() && (!authored || (!prior && authored->isEmpty())) && !events)
+    const auto legacy = prior && prior->legacyArenaRetired ? std::optional<LegacySceneArena>{}
+                                                           : LegacySceneArena::read(rom);
+    const bool legacyRetired = (prior && prior->legacyArenaRetired) || legacy.has_value();
+    auto oldAuthored = prior ? prior->authored : QVector<AuthoredSceneBuild>{};
+    if (legacy)
+        oldAuthored += legacy->authored;
+    if (compiled.isEmpty() && (!authored || (!prior && !legacy && authored->isEmpty())) && !events)
         return rom.bytes();
+    std::optional<SceneEventBuild> migratedEvents;
+    if (legacy && !events) {
+        migratedEvents = SceneEvents::load(rom).plan();
+        events = &*migratedEvents;
+    }
     struct Member {
         QByteArray bytes;
         QVector<quint32> references;
@@ -211,17 +231,15 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         envelope += trailing;
         members[links.first()] = {envelope, links};
     }
-    const auto authoredScenes = authored ? *authored
-                                : prior  ? prior->authored
-                                         : QVector<AuthoredSceneBuild>{};
+    const auto authoredScenes = authored ? *authored : oldAuthored;
     QJsonArray manifest;
     QMap<quint32, quint32> restored;
     QSet<int> removedSelectors;
     QSet<quint32> removedKeys;
     QSet<QString> identities;
     QSet<int> selectors;
-    if (prior && authored) {
-        for (const auto &old : prior->authored) {
+    if (authored) {
+        for (const auto &old : oldAuthored) {
             bool retained = false;
             for (const auto &next : authoredScenes)
                 retained |= next.id == old.id && next.selector == old.selector;
@@ -249,9 +267,8 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         const auto owner = 0x1f3ca88U + quint32(selector) * 4;
         const auto currentKey = sources.selectors()[selector];
         bool owned = false;
-        if (prior)
-            for (const auto &old : prior->authored)
-                owned |= old.id == scene.id && old.selector == selector;
+        for (const auto &old : oldAuthored)
+            owned |= old.id == scene.id && old.selector == selector;
         if ((currentKey || Directors::reservedSelectors().contains(selector)) && !owned)
             throw Error("The new scene selector is already occupied or reserved");
         const auto programBytes =
@@ -263,7 +280,10 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
             throw Error("Authored scene requires its original terminal resource class");
         QByteArray trailing;
         if (owned) {
-            const auto &old = members[owner].bytes;
+            const auto old =
+                members.contains(owner)
+                    ? members[owner].bytes
+                    : rom.bytes().mid(base + currentKey, 4 + u32(rom.bytes(), base + currentKey));
             qsizetype consumed = 0;
             decodeLzss(old.mid(8), u32(old, 4), &consumed);
             trailing = old.mid(8 + consumed);
@@ -356,7 +376,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
             members[owner] = {envelope, {owner}};
         }
     }
-    if (members.isEmpty()) {
+    if (members.isEmpty() && !legacyRetired) {
         auto image = rom.bytes();
         for (auto it = restored.cbegin(); it != restored.cend(); ++it)
             put32(image, it.key(), it.value());
@@ -370,9 +390,10 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
         image.replace(descriptorOffset, descriptorSize, QByteArray(descriptorSize, char(-1)));
         return image;
     }
-    const auto metadata =
-        QJsonDocument(QJsonObject{{"authored", manifest}, {"eventBindings", bindingMetadata}})
-            .toJson(QJsonDocument::Compact);
+    const auto metadata = QJsonDocument(QJsonObject{{"authored", manifest},
+                                                    {"eventBindings", bindingMetadata},
+                                                    {"legacyArenaRetired", legacyRetired}})
+                              .toJson(QJsonDocument::Compact);
     quint32 refsSize = 0;
     for (const auto &member : members)
         refsSize += quint32(member.references.size() * 4);
@@ -420,7 +441,7 @@ SceneProgramResources::rebuild(const Rom &rom, const QMap<quint32, QByteArray> &
     }
     QByteArray header(descriptorSize, 0);
     header.replace(0, 8, "LC05SCPT");
-    put32(header, 8, 3);
+    put32(header, 8, 4);
     put32(header, 12, offset);
     put32(header, 16, allocation);
     put32(header, 20, quint32(members.size()));

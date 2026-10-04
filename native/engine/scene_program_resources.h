@@ -21,6 +21,7 @@ struct SceneProgramPlacement {
     QVector<AuthoredSceneBuild> authored;
     QMap<QString, int> eventBindings;
     QSet<int> eventRows;
+    bool legacyArenaRetired = false;
 };
 class SceneProgramResources {
   public:

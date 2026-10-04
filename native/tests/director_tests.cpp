@@ -86,7 +86,7 @@ class DirectorTests : public QObject {
             QCOMPARE(read.program(key).source, source.program.source);
             const auto upgraded =
                 SceneProgramResources::rebuild(old, {{key, source.program.source}});
-            QCOMPARE(u32(upgraded, SceneProgramResources::descriptorOffset + 8), quint32(3));
+            QCOMPARE(u32(upgraded, SceneProgramResources::descriptorOffset + 8), quint32(4));
             const auto reopened = ScenePrograms::load(Rom::fromBytes(upgraded));
             QCOMPARE(
                 reopened.program(reopened.original().selectors()[source.selectors.first()]).source,

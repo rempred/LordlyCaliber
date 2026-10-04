@@ -1,4 +1,5 @@
 #include "engine/scene_events.h"
+#include "engine/legacy_scene_arena.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -171,6 +172,8 @@ SceneEvents SceneEvents::load(Rom rom) {
         throw Error("Event directory differs from the supported layout");
     SceneEvents result(rom);
     const auto placement = SceneProgramResources::placement(rom);
+    if (!placement || !placement->legacyArenaRetired)
+        LegacySceneArena::read(rom);
     if (placement)
         result.bindings_ = placement->eventBindings;
     for (int row = 0; row < 115; ++row) {

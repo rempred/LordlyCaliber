@@ -1,5 +1,6 @@
 #include "engine/scene_programs.h"
 #include "engine/dialogues.h"
+#include "engine/legacy_scene_arena.h"
 #include "game/director/control_flow.h"
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -8,13 +9,18 @@
 namespace lordly {
 ScenePrograms ScenePrograms::load(const Rom &rom) {
     ScenePrograms result(Directors::load(rom));
-    if (const auto placement = SceneProgramResources::placement(rom)) {
-        for (const auto &scene : placement->authored) {
-            const auto key = result.original_.selectors()[scene.selector];
-            const auto baseline = result.original_.entries()[key];
-            result.authored_[scene.id] = {scene.id, scene.name, scene.selector, baseline,
-                                          baseline.program};
-        }
+    const auto placement = SceneProgramResources::placement(rom);
+    auto authored = placement ? placement->authored : QVector<AuthoredSceneBuild>{};
+    if (!placement || !placement->legacyArenaRetired)
+        if (const auto legacy = LegacySceneArena::read(rom))
+            authored += legacy->authored;
+    for (const auto &scene : authored) {
+        if (result.authored_.contains(scene.id))
+            throw Error("Native and browser scene allocations claim the same identity");
+        const auto key = result.original_.selectors()[scene.selector];
+        const auto baseline = result.original_.entries()[key];
+        result.authored_[scene.id] = {scene.id, scene.name, scene.selector, baseline,
+                                      baseline.program};
     }
     result.originalAuthored_ = result.authored_;
     return result;

@@ -1,3 +1,4 @@
+#include "engine/legacy_scene_arena.h"
 #include "engine/project.h"
 #include "engine/scene_document_compiler.h"
 #include "engine/scene_import.h"
@@ -13,6 +14,130 @@ using namespace lordly;
 class SceneImportTests : public QObject {
     Q_OBJECT
   private slots:
+    void browserRomMigration() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and N64 compiler required");
+        try {
+            QTemporaryDir work;
+            QDir parent(QFileInfo(path).absolutePath());
+            QVERIFY(parent.mkpath("Test ROMs"));
+            QTemporaryDir output(parent.filePath("Test ROMs/browser-rom-migration-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto candidate = output.filePath(QFileInfo(path).fileName());
+            QProcess generator;
+            generator.start("node", {QFINDTESTDATA("browser-scene-rom.cjs"), path, candidate,
+                                     work.filePath("fixture.json")});
+            QVERIFY(generator.waitForFinished(60000));
+            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+            QFile json(work.filePath("fixture.json"));
+            QVERIFY(json.open(QIODevice::ReadOnly));
+            const auto fixture = QJsonDocument::fromJson(json.readAll()).object();
+            const auto rom = Rom::open(candidate);
+            const auto arena = rom.bytes().mid(LegacySceneArena::start,
+                                               LegacySceneArena::end - LegacySceneArena::start);
+            const auto legacy = LegacySceneArena::read(rom);
+            QVERIFY(legacy);
+            QCOMPARE(legacy->authored.size(), 1);
+            QCOMPARE(SceneProgramResources::rebuild(rom, {}), rom.bytes());
+            const auto id = SceneId::authored(fixture["id"].toString());
+            auto scenes = ScenePrograms::load(rom);
+            QCOMPARE(scenes.authoredScenes()[id.authoredId].name, fixture["name"].toString());
+            QCOMPARE(scenes.canonical(scenes.original().selectors()[319]), id);
+            QCOMPARE(SceneEvents::load(rom).target("event-director:1:b0032"), 319);
+            auto project = Project::fromRom(rom);
+            project.importLegacy(fixture["project"].toObject());
+            QCOMPARE(project.scenePrograms()->program(id).source, scenes.program(id).source);
+            scenes.renameScene(id, "Migrated and edited");
+            scenes.setOperand(id, 1, 0, 17);
+            project.setScenePrograms(scenes.json());
+            project.saveFolder(work.filePath("saved"));
+            auto loaded = Project::fromRom(rom);
+            loaded.applyManifest(Project::readProject(work.filePath("saved")));
+            const auto built = rebuild(loaded, tools, work.path());
+            const auto migrated = Rom::fromBytes(built.image);
+            QCOMPARE(migrated.bytes().mid(LegacySceneArena::start, arena.size()), arena);
+            auto placement = SceneProgramResources::placement(migrated);
+            QVERIFY(placement && placement->legacyArenaRetired);
+            QCOMPARE(placement->authored.size(), 1);
+            const auto reopened = ScenePrograms::load(migrated);
+            QCOMPARE(reopened.authoredScenes()[id.authoredId].name, QString("Migrated and edited"));
+            QCOMPARE(reopened.program(id).source, scenes.program(id).source);
+            QCOMPARE(SceneEvents::load(migrated).target("event-director:1:b0032"), 319);
+            QVERIFY(QDir(output.path()).mkpath("native"));
+            const auto nativeCandidate = output.filePath("native/" + QFileInfo(path).fileName());
+            exportRom(loaded, built, nativeCandidate);
+            QCOMPARE(ScenePrograms::load(Rom::open(nativeCandidate)).program(id).source,
+                     scenes.program(id).source);
+            auto deleted = Project::fromRom(migrated);
+            deleted.importLegacy({{"format", "ob64-cutscene-project"},
+                                  {"schemaVersion", 2},
+                                  {"sourceRevision", "us-rev0"},
+                                  {"scenes", QJsonArray{}},
+                                  {"eventBindings", QJsonArray{}},
+                                  {"deletedAuthoredScenes", QJsonArray{id.authoredId}}});
+            const auto removed = rebuild(deleted, tools, work.path());
+            const auto empty = Rom::fromBytes(removed.image);
+            placement = SceneProgramResources::placement(empty);
+            QVERIFY(placement && placement->legacyArenaRetired && placement->members.isEmpty());
+            QVERIFY(ScenePrograms::load(empty).authoredScenes().isEmpty());
+            QCOMPARE(u32(empty.bytes(), 0x1f3ca88 + 319 * 4), 0U);
+            QCOMPARE(empty.bytes().mid(LegacySceneArena::start, arena.size()), arena);
+            QCOMPARE(SceneEvents::load(empty).target("event-director:1:b0032"), 1);
+            auto directDeletion = Project::fromRom(rom);
+            directDeletion.importLegacy({{"format", "ob64-cutscene-project"},
+                                         {"schemaVersion", 2},
+                                         {"sourceRevision", "us-rev0"},
+                                         {"scenes", QJsonArray{}},
+                                         {"eventBindings", QJsonArray{}},
+                                         {"deletedAuthoredScenes", QJsonArray{id.authoredId}}});
+            const auto direct = Rom::fromBytes(rebuild(directDeletion, tools, work.path()).image);
+            QVERIFY(ScenePrograms::load(direct).authoredScenes().isEmpty());
+            QVERIFY(SceneProgramResources::placement(direct)->legacyArenaRetired);
+            QCOMPARE(direct.bytes().mid(LegacySceneArena::start, arena.size()), arena);
+            // Unknown appended data cannot be consumed by resizing our native allocation.
+            auto foreign = migrated.bytes() + QByteArray("KEEP THIS REGION");
+            const auto foreignAt = migrated.bytes().size();
+            auto foreignProject = Project::fromRom(Rom::fromBytes(foreign));
+            foreignProject.importLegacy({{"format", "ob64-cutscene-project"},
+                                         {"schemaVersion", 2},
+                                         {"sourceRevision", "us-rev0"},
+                                         {"scenes", QJsonArray{}},
+                                         {"eventBindings", QJsonArray{}},
+                                         {"deletedAuthoredScenes", QJsonArray{id.authoredId}}});
+            QCOMPARE(rebuild(foreignProject, tools, work.path()).image.mid(foreignAt),
+                     QByteArray("KEEP THIS REGION"));
+            auto damaged = rom.bytes();
+            put32(damaged, 0x1f3ca88 + 320 * 4, u32(damaged, 0x1f3ca88 + 319 * 4));
+            QVERIFY_THROWS_EXCEPTION(Error, ScenePrograms::load(Rom::fromBytes(damaged)));
+            damaged = rom.bytes();
+            put32(damaged, LegacySceneArena::descriptor + 64 + 24, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, ScenePrograms::load(Rom::fromBytes(damaged)));
+            damaged = rom.bytes();
+            const auto manifestAt =
+                damaged.indexOf("ob64-cutscene-arena-manifest", LegacySceneArena::start);
+            QVERIFY(manifestAt >= LegacySceneArena::start);
+            damaged[manifestAt] = 'X';
+            QVERIFY_THROWS_EXCEPTION(Error, ScenePrograms::load(Rom::fromBytes(damaged)));
+            damaged = rom.bytes();
+            for (quint32 row = 0; row < u32(damaged, LegacySceneArena::descriptor + 8); ++row) {
+                const auto at = LegacySceneArena::descriptor + 64 + row * 28;
+                if (u32(damaged, at) >> 28 != 3)
+                    continue;
+                const auto start = u32(damaged, at + 8) + 4, size = u32(damaged, at + 12);
+                damaged.replace(start, size, QByteArray("{}") + QByteArray(size - 2, ' '));
+            }
+            QVERIFY_THROWS_EXCEPTION(Error, ScenePrograms::load(Rom::fromBytes(damaged)));
+            damaged = rom.bytes();
+            damaged.replace(LegacySceneArena::descriptor, 4, "OTHER", 4);
+            QVERIFY(!LegacySceneArena::read(Rom::fromBytes(damaged)));
+            qInfo().noquote() << "Browser-ROM migration candidate:" << nativeCandidate;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void registeredWaitCompatibility() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
