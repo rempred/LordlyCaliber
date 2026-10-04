@@ -1,5 +1,17 @@
 # Native Lordly Caliber
 
+`SpriteObject` decodes native 0x5554 sprite containers, preserving original
+headers and padded color/alpha/palette lanes. Variant deltas support nibble,
+byte and halfword subtraction plus RGBA32 XOR; discriminator cycles and missing
+base lanes reject. Pixel conversion supports embedded/external palettes and
+separate I4/I8 alpha. An out-of-range requested child selects child zero and the
+result records that fallback explicitly. Dimensions, source extents and decoded
+memory are bounded. Manual color/alpha/delta/fallback/malformed cases pass, and
+7,366 actor resource/palette combinations with 22,867 child variants match the
+independent prior decoder's lanes and pixels. This covers the 68 catalogued
+actor-art banks; it does not yet connect actor state, pose scheduling or scene
+projection, and does not claim original RSP blend equivalence.
+
 `DirectorSession` now owns the single saved parent stream used by the recovered
 loader. Nested continuations replace the active child; return restores the first
 parent's saved cursor. Replacement scenes clear the saved slot and resume at zero.
