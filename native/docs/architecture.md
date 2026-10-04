@@ -1,5 +1,14 @@
 # Native Lordly Caliber
 
+Director action mode guards now consume their full width without invoking a
+service when disabled. Query mode guards retain their separate word-wise behavior.
+Command 0x7D marks the fade through its service, then returns a distinct scene-slot
+release result without executing later commands; DirectorSession retains that
+terminal result. This differs from 0x7E, which releases only the fade and continues,
+and the terminal-hold word, which requests no slot release. The original-dispatcher
+comparison now covers 51 cases, including every mode-gated action in both disabled
+modes and fade-present/absent release. Continuation and bounded-dispatch checks pass.
+
 Actor height jobs (0x7B) now retain their native 12-byte records and slot ownership.
 Periodic cadence, signed-halfword wrap, target-mode division, current-ROM tolerances,
 expiry-before-application and base/secondary-height flags follow ROM 29A59C..29A7C4.

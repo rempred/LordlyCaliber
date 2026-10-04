@@ -61,8 +61,8 @@ int DirectorSession::invoke(void *context, LordlyDirectorWord opcode,
 int DirectorSession::dispatch(const Service &service, int instructionBudget) {
     if (instructionBudget < 1)
         throw Error("Director instruction budget must be positive");
-    if (ended_)
-        return LORDLY_DIRECTOR_END;
+    if (terminalResult_ != LORDLY_DIRECTOR_YIELD)
+        return terminalResult_;
     reason_.clear();
     service_ = &service;
     int remaining = instructionBudget;
@@ -72,8 +72,8 @@ int DirectorSession::dispatch(const Service &service, int instructionBudget) {
                                      int(current_.words.size()), remaining, lookup, invoke, this);
         remaining -= state_.executed;
         if (result != LORDLY_DIRECTOR_TRANSFER) {
-            if (result == LORDLY_DIRECTOR_END)
-                ended_ = true;
+            if (result == LORDLY_DIRECTOR_END || result == LORDLY_DIRECTOR_RELEASE)
+                terminalResult_ = result;
             else if (result == LORDLY_DIRECTOR_SERVICE && reason_.isEmpty())
                 reason_ = QString("Game service for command %1 at word %2 is unavailable")
                               .arg(current_.words.value(state_.cursor), 8, 16, QChar('0'))

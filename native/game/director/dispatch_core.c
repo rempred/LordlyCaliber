@@ -41,6 +41,10 @@ int lordly_director_dispatch(LordlyDirectorDispatch *s, const LordlyDirectorWord
             return LORDLY_DIRECTOR_END;
         }
         if (def.words > count - s->cursor) return LORDLY_DIRECTOR_INVALID;
+        if (!def.query && def.mode != -1 && def.mode != s->mode) {
+            s->cursor += def.words;
+            continue;
+        }
         switch (command) {
         case 0: s->handoff = 1; break;
         case 1: s->counter = 1; break;
@@ -80,6 +84,11 @@ int lordly_director_dispatch(LordlyDirectorDispatch *s, const LordlyDirectorWord
         case 0x80000003U:
         case 0xbb:
             return LORDLY_DIRECTOR_TRANSFER;
+        case 0x7d:
+            if (!service || !service(context, command, words + s->cursor, def.words, &value))
+                return LORDLY_DIRECTOR_SERVICE;
+            s->active = 0;
+            return LORDLY_DIRECTOR_RELEASE;
         /* These recovered cases only consume words, without a service call. */
         case 0x12: case 0x20: case 0x21: case 0x5c: case 0x8e:
         case 0x80000002U: case 0x80000004U: case 0x80000007U:

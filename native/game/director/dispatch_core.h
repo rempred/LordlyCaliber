@@ -24,7 +24,8 @@ enum LordlyDirectorDispatchResult {
     LORDLY_DIRECTOR_SERVICE = 2,
     LORDLY_DIRECTOR_INVALID = 3,
     LORDLY_DIRECTOR_BUDGET = 4,
-    LORDLY_DIRECTOR_TRANSFER = 5
+    LORDLY_DIRECTOR_TRANSFER = 5,
+    LORDLY_DIRECTOR_RELEASE = 6 /* 0x7D requests permanent scene-slot release. */
 };
 /* Lookup returns zero for an unknown command. A service returns zero when its
  * external state or implementation is unavailable, without changing host state.

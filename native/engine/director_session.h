@@ -64,6 +64,6 @@ class DirectorSession {
     LordlyDirectorDispatch state_{};
     const Service *service_ = nullptr;
     QString reason_;
-    bool ended_ = false;
+    int terminalResult_ = LORDLY_DIRECTOR_YIELD;
 };
 } // namespace lordly

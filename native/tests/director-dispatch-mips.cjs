@@ -21,7 +21,7 @@ assert.equal(start,0x281860);assert.equal(end,0x286bd0);
 const address=offset=>(vram+offset-start)>>>0,stop=0x80000001,barrier=0x80000000,bridge=0x80000002;
 const rows=[];
 function check(name,words,initial={}) {
- const input={resume:0,mode:2,counter:0,controller:0,barrierState:0,producer:0,...initial};
+ const input={resume:0,mode:2,counter:0,controller:0,barrierState:0,producer:0,fadePresent:false,...initial};
  const m=new ControlMips();m.ram=new Uint8Array(0x400000);m.load(vram,rom.subarray(start,end));
  m.set('sp',0x803ffe00);const stream=0x80300010,object=0x80310000;
  m.load(stream-16,Buffer.alloc(words.length*4+32,0xa7));
@@ -29,12 +29,14 @@ function check(name,words,initial={}) {
  m.w32(0x8022a958,stream);m.w32(0x8022a950,input.resume);m.w32(0x8022a990,input.counter);
  m.w8(0x8018fc19,input.mode);m.w16(0x800e8100,input.controller);
  m.w32(0x8022a970,object);m.w8(object+0x840,input.barrierState);
+ m.w32(0x8018fc10,input.fadePresent?0x80311000:0);m.w8(0x80311007,2);m.w8(0x8022a998,0);
  let producerCalls=0;m.trap(address(0x2864f8),c=>{assert.equal(c.get('a0'),77);c.set('v0',input.producer);producerCalls++;});
  m.call(address(0x284288));
  for(let i=0;i<16;i++){assert.equal(m.r8(stream-16+i),0xa7);assert.equal(m.r8(stream+words.length*4+i),0xa7);}
  assert.equal(m.get('sp'),0x803ffe00);
  rows.push({name,words:words.map(w=>w>>>0),initial:input,expected:{result:m.get('v0')|0,
-  resume:m.r32(0x8022a950),counter:m.r32(0x8022a990),barrierState:m.r8(object+0x840),producerCalls}});
+  resume:m.r32(0x8022a950),counter:m.r32(0x8022a990),barrierState:m.r8(object+0x840),producerCalls,
+  released:!!m.r8(0x8022a998),fadeState:m.r8(0x80311007)}});
 }
 check('terminal',[stop]);
 check('uncommitted barrier',[1,barrier,stop]);
@@ -51,5 +53,10 @@ check('inactive query operands execute',[0xd,0x12,0x12,0,barrier,stop],{mode:2})
 check('A button counter skip',[0xb5,2,50,0,bridge,barrier,stop],{controller:0x8000});
 check('label yield',[0x59,7,0x80000005,7,stop]);
 check('tracked object label redirect',[0,barrier,0x80000005,12345,stop],{barrierState:2});
+const grammar=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'../game/director/grammar.json'),'utf8'));
+for(const row of grammar.rows.filter(r=>r.mode!==null&&r.query===null))for(const mode of [0,1,2].filter(v=>v!==row.mode))
+ check(`inactive action ${row.opcode.toString(16)}/${mode}`,[row.opcode,...Array(row.words-1).fill(0xdeadbeef),1,0,barrier,stop],{mode});
+for(const fadePresent of [false,true])check(`scene release/${fadePresent}`,[1,0x7d,2,stop],{fadePresent});
+check('fade release continues parsing',[0x7e,1,0,barrier,stop],{fadePresent:true});
 fs.writeFileSync(process.argv[3],JSON.stringify({rows}));
 console.log(`Original MIPS dispatcher: ${rows.length} bounded control cases, descriptor 14, 4 MiB RAM.`);

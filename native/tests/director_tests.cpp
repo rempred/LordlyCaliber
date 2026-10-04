@@ -21,12 +21,19 @@ static int definition(void *, LordlyDirectorWord word, LordlyDirectorDefinition 
 }
 struct QueryFixture {
     int value = 0, calls = 0;
+    bool fadePresent = false;
+    int fadeState = 2;
 };
 static int queryService(void *context, LordlyDirectorWord opcode, const LordlyDirectorWord *words,
                         int count, int *value) {
+    auto &fixture = *static_cast<QueryFixture *>(context);
+    if (opcode == 0x7d || opcode == 0x7e) {
+        if (fixture.fadePresent)
+            fixture.fadeState = 1;
+        return 1;
+    }
     if (opcode != 0x57 || count != 4 || words[3] != 77)
         return 0;
-    auto &fixture = *static_cast<QueryFixture *>(context);
     ++fixture.calls;
     *value = fixture.value;
     return 1;
@@ -145,7 +152,7 @@ class DirectorTests : public QObject {
         QFile file(work.filePath("reference.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
-        QCOMPARE(rows.size(), 32);
+        QCOMPARE(rows.size(), 51);
         for (const auto &v : rows) {
             const auto row = v.toObject(), initial = row["initial"].toObject(),
                        expected = row["expected"].toObject();
@@ -158,17 +165,20 @@ class DirectorTests : public QObject {
             state.counter = quint32(initial["counter"].toInteger());
             state.controller = quint16(initial["controller"].toInt());
             state.barrier_state = quint8(initial["barrierState"].toInt());
-            QueryFixture fixture{initial["producer"].toInt(), 0};
+            QueryFixture fixture{initial["producer"].toInt(), 0, initial["fadePresent"].toBool(),
+                                 2};
             const auto status = lordly_director_dispatch(&state, words.data(), int(words.size()),
                                                          1000, definition, queryService, &fixture);
             const auto name = row["name"].toString();
-            QVERIFY2(status == (expected["result"].toInt() == -1 ? LORDLY_DIRECTOR_END
-                                                                 : LORDLY_DIRECTOR_YIELD),
+            QVERIFY2(status == (expected["released"].toBool()      ? LORDLY_DIRECTOR_RELEASE
+                                : expected["result"].toInt() == -1 ? LORDLY_DIRECTOR_END
+                                                                   : LORDLY_DIRECTOR_YIELD),
                      qPrintable(name));
             QVERIFY2(state.resume_cursor == expected["resume"].toInt(), qPrintable(name));
             QVERIFY2(state.counter == quint32(expected["counter"].toInteger()), qPrintable(name));
             QVERIFY2(state.barrier_state == expected["barrierState"].toInt(), qPrintable(name));
             QVERIFY2(fixture.calls == expected["producerCalls"].toInt(), qPrintable(name));
+            QCOMPARE(fixture.fadeState, expected["fadeState"].toInt());
         }
     }
     void boundedDispatchAndMissingServices() {
