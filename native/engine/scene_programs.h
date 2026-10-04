@@ -38,6 +38,9 @@ class ScenePrograms {
     }
     const DirectorResource &resource(SceneId id) const;
     DirectorProgram program(SceneId id) const;
+    // Snapshot for PC execution. New authored scenes receive virtual keys;
+    // these are resource identities, never ROM addresses or export placements.
+    Directors runtimeDirectors() const;
     void setOperand(SceneId id, int command, int operand, quint32 value);
     void insertCommand(SceneId id, int before, quint32 opcode);
     void removeCommand(SceneId id, int command);

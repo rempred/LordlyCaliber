@@ -62,6 +62,42 @@ DirectorProgram ScenePrograms::program(SceneId id) const {
     return changed == changes_.cend() ? resource(id).program
                                       : DirectorProgram::decode(changed.value());
 }
+Directors ScenePrograms::runtimeDirectors() const {
+    auto result = original_;
+    for (auto it = changes_.cbegin(); it != changes_.cend(); ++it) {
+        const auto edited = DirectorProgram::decode(it.value());
+        if (result.resources_.contains(it.key()))
+            result.resources_[it.key()].program = edited;
+        if (result.continuations_.contains(it.key()))
+            result.continuations_[it.key()].program = edited;
+    }
+    for (const auto &scene : originalAuthored_) {
+        if (authored_.contains(scene.id))
+            continue;
+        const auto key = result.selectors_[scene.selector];
+        result.selectors_[scene.selector] = 0;
+        if (!result.selectors_.contains(key))
+            result.resources_.remove(key);
+        else
+            result.resources_[key].selectors.removeAll(scene.selector);
+    }
+    for (const auto &scene : authored_) {
+        auto resource = scene.baseline;
+        if (!resource.key) {
+            resource.key = 0xf0000000U + quint32(scene.selector + 1) * 2;
+            while (result.resources_.contains(resource.key) ||
+                   result.continuations_.contains(resource.key))
+                ++resource.key;
+        }
+        resource.envelope = 0; // Runtime data is not a serialized ROM resource.
+        resource.name = scene.name;
+        resource.program = scene.current;
+        const auto key = resource.key;
+        result.resources_[key] = std::move(resource);
+        result.selectors_[scene.selector] = key;
+    }
+    return result;
+}
 void ScenePrograms::replace(SceneId id, const QByteArray &bytes) {
     id = canonical(id);
     const auto &source = resource(id).program;

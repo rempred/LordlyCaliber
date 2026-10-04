@@ -50,6 +50,7 @@ class Directors {
     }
 
   private:
+    friend class ScenePrograms;
     QMap<quint32, DirectorResource> resources_;
     QVector<quint32> selectors_;
     QMap<quint32, DirectorResource> continuations_;

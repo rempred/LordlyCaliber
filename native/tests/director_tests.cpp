@@ -45,6 +45,71 @@ static int queryService(void *context, LordlyDirectorWord opcode, const LordlyDi
 class DirectorTests : public QObject {
     Q_OBJECT
   private slots:
+    void editedRuntimeSnapshot() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto originalBytes = source.program.source;
+        auto script = [](int marker, int resourceClass) {
+            QByteArray bytes(4 * (resourceClass < 0 ? 5 : 6), 0);
+            put32(bytes, 0, 0x47);
+            put32(bytes, 4, quint32(marker));
+            put32(bytes, 8, 22);
+            put32(bytes, 12, 33);
+            put32(bytes, 16, 0x80000001);
+            if (resourceClass >= 0)
+                put32(bytes, 20, 0xff000000U | quint32(resourceClass));
+            return bytes;
+        };
+        scenes.replace(source.key, script(11, source.program.resourceClass()));
+        const auto added = scenes.createScene("Runtime snapshot", source.key, false);
+        scenes.replace(added, script(77, source.program.resourceClass()));
+        const auto continuation = scenes.original().continuations().first();
+        scenes.replace(continuation.key, script(99, continuation.program.resourceClass()));
+        const auto saved = scenes.json();
+        const auto runtime = scenes.runtimeDirectors();
+        QCOMPARE(scenes.json(), saved);
+        QCOMPARE(scenes.original().entries()[source.key].program.source, originalBytes);
+        auto execute = [&](const Directors &snapshot, int selector) {
+            DirectorSession session(snapshot, selector, 2);
+            int marker = -1;
+            const auto result = session.dispatch([&](quint32 opcode, const QVector<quint32> &args, int &) {
+                if (opcode != 0x47 || args.size() != 3)
+                    throw Error("Unexpected runtime command");
+                marker = qint32(args[0]);
+                return true;
+            });
+            if (result != LORDLY_DIRECTOR_END)
+                throw Error(session.reason().isEmpty() ? "Runtime script did not finish" : session.reason());
+            return marker;
+        };
+        for (int selector : source.selectors)
+            QCOMPARE(execute(runtime, selector), 11);
+        const int newSelector = scenes.resource(added).selectors.first();
+        QCOMPARE(execute(runtime, newSelector), 77);
+        const auto runtimeKey = runtime.selectors()[newSelector];
+        QVERIFY(runtimeKey >= 0xf0000000U);
+        QCOMPARE(runtime.entries()[runtimeKey].envelope, 0U);
+        QCOMPARE(runtime.continuations()[continuation.key].program.source,
+                 script(99, continuation.program.resourceClass()));
+        QByteArray caller(24, 0);
+        put32(caller, 0, 0x99);
+        put32(caller, 4, quint32(continuation.selectors.first()));
+        put32(caller, 12, 0x80000000);
+        put32(caller, 16, 0x80000001);
+        put32(caller, 20, 0xff000000U | quint32(source.program.resourceClass()));
+        scenes.replace(added, caller);
+        QCOMPARE(execute(scenes.runtimeDirectors(), newSelector), 99);
+        scenes.removeScene(added);
+        const auto removed = scenes.runtimeDirectors();
+        QCOMPARE(removed.selectors()[newSelector], 0U);
+        QVERIFY_THROWS_EXCEPTION(Error, DirectorSession(removed, newSelector, 2));
+        QCOMPARE(execute(runtime, newSelector), 77); // Existing snapshots remain usable.
+        QCOMPARE(rom.bytes(), Rom::open(path).bytes());
+    }
     void legacySceneAllocationUpgrade() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

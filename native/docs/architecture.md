@@ -1,5 +1,20 @@
 # Native Lordly Caliber
 
+## Edited playback resources
+
+ScenePrograms::runtimeDirectors builds an immutable execution snapshot containing
+current primary and continuation edits and authored scenes. Existing aliases keep
+their shared physical resource identity. New scenes use explicit virtual resource
+keys above F0000000; these are not ROM offsets. Deleted imported authored selectors
+are removed from new snapshots while already-running snapshots remain usable.
+No ROM or project model mutation is needed before previewing an edit.
+
+The editedRuntimeSnapshot check dispatches known marker commands from edited
+primary scripts, new scenes and edited continuations. It checks deletion,
+original-data preservation and prior snapshot lifetime. It passed223ms after
+build6168; existing continuation ownership also passed in the preceding301ms run.
+Export allocation remains owned by the separate source-built export path.
+
 ## Composed Actor passes
 
 SceneActorRenderer now joins prepared matrices, native queue selection, tint/
