@@ -1,4 +1,5 @@
 #include "app/dialogue_inspector.h"
+#include "app/dialogue_preview.h"
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QLabel>
@@ -7,13 +8,13 @@
 #include <QPlainTextEdit>
 #include <QSignalBlocker>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QVBoxLayout>
 namespace lordly {
 DialogueInspector::DialogueInspector(const Rom &rom, QWidget *parent) : QWidget(parent), rom_(rom) {
     auto layout = new QVBoxLayout(this);
-    auto note = new QLabel(
-        "Dialogue source from the current ROM. Controls such as @n, @p and "
-        "{T05} are shown exactly. Window layout and timed playback are being implemented.");
+    auto note = new QLabel("Dialogue source from the current ROM. Controls such as @n, @p and "
+                           "{T05} are shown exactly. Use Playback to preview the selected entry.");
     note->setWordWrap(true);
     layout->addWidget(note);
     archives_ = new QComboBox;
@@ -39,7 +40,12 @@ DialogueInspector::DialogueInspector(const Rom &rom, QWidget *parent) : QWidget(
     source_->setAccessibleName("Exact dialogue source");
     source_->setReadOnly(true);
     source_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    split->addWidget(source_);
+    auto pages = new QTabWidget;
+    pages->setObjectName("dialogueDetailPages");
+    pages->addTab(source_, "Source");
+    preview_ = new DialoguePreview(rom_, this);
+    pages->addTab(preview_, "Playback");
+    split->addWidget(pages);
     split->setSizes({310, 690});
     layout->addWidget(split, 1);
     status_ = new QLabel;
@@ -84,6 +90,7 @@ void DialogueInspector::loadArchive() {
     archive_.reset();
     entries_->clear();
     source_->clear();
+    preview_->clear();
     setProperty("archiveSelector", -1);
     setProperty("archiveTable", -1);
     setProperty("entryIndex", -1);
@@ -117,6 +124,7 @@ void DialogueInspector::loadArchive() {
 }
 void DialogueInspector::showEntry() {
     source_->clear();
+    preview_->clear();
     setProperty("entryIndex", -1);
     if (!archive_ || entries_->currentRow() < 0)
         return;
@@ -124,6 +132,9 @@ void DialogueInspector::showEntry() {
     const auto bytes = archive_->entry(entry);
     source_->setPlainText(QString::fromLatin1(bytes));
     setProperty("entryIndex", entry);
+    preview_->selectEntry(
+        archives_->currentData().toInt(),
+        quint16(entry | (archives_->currentData(Qt::UserRole + 1).toInt() ? 0x8000 : 0)));
     status_->setText(QString("%1 · %2 · entry %3 of %4 · %5 source bytes")
                          .arg(archive_->name())
                          .arg(archives_->currentText())
@@ -151,6 +162,7 @@ void DialogueInspector::selectEntry(int selector, int entry) {
         archive_.reset();
         entries_->clear();
         source_->clear();
+        preview_->clear();
         setProperty("archiveSelector", -1);
         setProperty("archiveTable", -1);
         setProperty("entryIndex", -1);

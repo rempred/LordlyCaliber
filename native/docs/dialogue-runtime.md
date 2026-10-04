@@ -1,5 +1,18 @@
 # Dialogue runtime
 
+The Dialogue page now includes standalone native playback: step, play/pause,
+restart, confirm/cancel, choice navigation, history and script resume. The user
+selects resource passes per second and supplies explicit preview substitutions.
+Scene actor placement and sound output remain separate. DialogueSession composes
+opening/closing, resource dispatch and source resolution transactionally, then
+draws windows in reverse priority order. A retail entry reaches its script wait,
+resumes, closes, restarts and obeys timer pause; source/cutscene navigation also
+pass (1,844 ms initial combined UI run). Visual inspection caught the standalone
+portrait override: -1 means mirrored portrait one. Zero correctly preserves any
+source portrait and otherwise leaves it absent. The corrected view was inspected;
+latest focused playback check passes (315 ms). Expected offscreen font/platform
+warnings remain. Editing, persistence and ROM export are next.
+
 The artwork backend now consumes the compiled C drawing plan directly, including
 style-one/two layout, all prompt positions, selection/history markers and opacity.
 All 192 original-trace states compose and paint; the 93 exact rectangle comparisons

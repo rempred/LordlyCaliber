@@ -7,6 +7,7 @@ class QListWidget;
 class QPlainTextEdit;
 class QLabel;
 namespace lordly {
+class DialoguePreview;
 class DialogueInspector : public QWidget {
     Q_OBJECT
   public:
@@ -23,5 +24,6 @@ class DialogueInspector : public QWidget {
     QListWidget *entries_;
     QPlainTextEdit *source_;
     QLabel *status_;
+    DialoguePreview *preview_;
 };
 } // namespace lordly

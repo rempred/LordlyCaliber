@@ -2,6 +2,7 @@
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
+#include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
 #include "app/promotion_editor.h"
@@ -214,6 +215,55 @@ class UiTests : public QObject {
         sepia->setChecked(false);
         next->click();
         QCOMPARE(position->value(), 1);
+    }
+    void dialoguePlaybackControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        DialogueInspector inspector(Rom::open(path));
+        inspector.resize(1200, 850);
+        inspector.show();
+        auto pages = inspector.findChild<QTabWidget *>("dialogueDetailPages");
+        auto preview = inspector.findChild<DialoguePreview *>();
+        QVERIFY(pages && preview);
+        pages->setCurrentWidget(preview);
+        auto step = preview->findChild<QPushButton *>("dialogueStep");
+        auto play = preview->findChild<QPushButton *>("dialoguePlay");
+        auto restart = preview->findChild<QPushButton *>("dialogueRestart");
+        auto resume = preview->findChild<QPushButton *>("dialogueResume");
+        auto canvas = preview->findChild<QLabel *>("dialogueCanvas");
+        auto status = preview->findChild<QLabel *>("dialoguePlaybackStatus");
+        QVERIFY(step && play && restart && resume && canvas && status);
+        QVERIFY2(!status->text().contains("unavailable"), qPrintable(status->text()));
+        QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(1));
+        int updates = 0;
+        for (; updates < 200 && preview->property("dialogueState").toInt() != 4; ++updates) {
+            step->click();
+            QVERIFY2(!status->text().contains("unavailable"), qPrintable(status->text()));
+        }
+        QVERIFY(updates < 200);
+        QVERIFY(!canvas->pixmap().isNull());
+        QVERIFY(inspector.grab().save("native-dialogue-playback.png"));
+        resume->click();
+        for (updates = 0; updates < 100 && preview->property("dialogueState").toInt() != -1;
+             ++updates) {
+            step->click();
+            QVERIFY2(!status->text().contains("unavailable"), qPrintable(status->text()));
+        }
+        QVERIFY(updates < 100);
+        QVERIFY(status->text().startsWith("Closed"));
+        restart->click();
+        QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(1));
+        play->click();
+        QTRY_VERIFY_WITH_TIMEOUT(preview->property("updateCount").toULongLong() > 1, 1000);
+        play->click();
+        QVERIFY(!play->isChecked());
+        const auto paused = preview->property("updateCount").toULongLong();
+        QTest::qWait(80);
+        QCOMPARE(preview->property("updateCount").toULongLong(), paused);
+        inspector.selectEntry(9, 0);
+        QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(0));
+        QVERIFY(canvas->pixmap().isNull());
     }
     void dialogueSourceSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
