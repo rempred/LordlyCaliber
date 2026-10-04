@@ -544,6 +544,20 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         write(p.encounters()->poolBytes(), Encounters::poolOffset, "encounter_pools");
         write(p.encounters()->rateBytes(), Encounters::rateOffset, "encounter_terrain_rates");
         write(p.encounters()->slotBytes(), Encounters::slotOffset, "encounter_terrain_slots");
+        if (p.encounters()->globalRate().modified()) {
+            const auto &rate = p.encounters()->globalRate();
+            const auto code = compiler.assembleOwner(
+                rate.assemblyDefinitions() + readFile(":/game/encounters/dispatcher.s"), directory,
+                "encounter_dispatcher", EncounterRate::ramAddress,
+                EncounterRate::serviceAddresses(), true);
+            if (code.size() != EncounterRate::codeSize)
+                throw Error("Encounter dispatcher exceeds its original allocation");
+            result.image.replace(EncounterRate::romOffset, EncounterRate::codeSize, code);
+            if (EncounterRate::load(Rom::fromBytes(result.image)).json() != rate.json())
+                throw Error("Compiled encounter rate differs from project");
+            result.report << "Rebuilt the encounter dispatcher with independent 32-bit pass counts "
+                             "in its original instruction space";
+        }
         result.report << "Compiled all 45 encounter pools and 32 terrain rates/slots into their "
                          "original allocations";
     }

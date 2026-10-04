@@ -1,6 +1,9 @@
 #include "app/encounter_editor.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -136,6 +139,68 @@ EncounterEditor::EncounterEditor(Project *project, QUndoStack *undo, std::functi
     }
     rateLayout->addWidget(rateTable);
     tabs->addTab(ratePage, "Terrain rates");
+    auto globalPage = new QWidget;
+    auto globalLayout = new QVBoxLayout(globalPage);
+    auto globalExplanation = new QLabel(
+        "The first encounter check draws a value below the number of possible outcomes. "
+        "It passes when the value is below the successful-outcome count. The game selects "
+        "the normal or alternate count using state flag 17. Terrain rates and unit eligibility "
+        "still apply afterward.");
+    globalExplanation->setWordWrap(true);
+    globalLayout->addWidget(globalExplanation);
+    auto form = new QFormLayout;
+    divisor_ = new QDoubleSpinBox;
+    normalPass_ = new QDoubleSpinBox;
+    alternatePass_ = new QDoubleSpinBox;
+    divisor_->setObjectName("encounterDivisor");
+    normalPass_->setObjectName("encounterNormalPass");
+    alternatePass_->setObjectName("encounterAlternatePass");
+    for (auto spin : {divisor_, normalPass_, alternatePass_}) {
+        spin->setDecimals(0);
+        spin->setRange(0, 4294967295.0);
+        spin->setSingleStep(1);
+        spin->setGroupSeparatorShown(true);
+        connect(spin, &QDoubleSpinBox::valueChanged, this, [this] { showGlobalRatio(); });
+    }
+    divisor_->setMinimum(1);
+    form->addRow("Possible outcomes", divisor_);
+    form->addRow("Normal successful outcomes", normalPass_);
+    form->addRow("Alternate successful outcomes", alternatePass_);
+    globalLayout->addLayout(form);
+    linkedRates_ = new QCheckBox("Use the normal count for both rolls");
+    linkedRates_->setObjectName("encounterLinkRates");
+    globalLayout->addWidget(linkedRates_);
+    globalRatio_ = new QLabel;
+    globalRatio_->setWordWrap(true);
+    globalRatio_->setObjectName("encounterGlobalRatio");
+    globalLayout->addWidget(globalRatio_);
+    auto globalActions = new QHBoxLayout;
+    auto applyGlobal = new QPushButton("Apply global rates");
+    applyGlobal->setObjectName("encounterApplyGlobal");
+    auto restoreGlobal = new QPushButton("Restore loaded global rates");
+    restoreGlobal->setObjectName("encounterRestoreGlobal");
+    globalActions->addWidget(applyGlobal);
+    globalActions->addWidget(restoreGlobal);
+    globalActions->addStretch();
+    globalLayout->addLayout(globalActions);
+    globalNotice_ = new QLabel;
+    globalNotice_->setObjectName("encounterGlobalNotice");
+    globalNotice_->setWordWrap(true);
+    globalLayout->addWidget(globalNotice_);
+    globalLayout->addStretch();
+    connect(linkedRates_, &QCheckBox::toggled, this, [this](bool linked) {
+        alternatePass_->setEnabled(!linked);
+        if (linked)
+            alternatePass_->setValue(normalPass_->value());
+        showGlobalRatio();
+    });
+    connect(normalPass_, &QDoubleSpinBox::valueChanged, this, [this](double value) {
+        if (linkedRates_->isChecked())
+            alternatePass_->setValue(value);
+    });
+    connect(applyGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(false); });
+    connect(restoreGlobal, &QPushButton::clicked, this, [this] { applyGlobalRate(true); });
+    tabs->addTab(globalPage, "Global rates");
     for (int id = 1; id <= Encounters::poolCount; ++id) {
         auto item = new QListWidgetItem(project_->encounters()->label(id), pools_);
         item->setData(Qt::UserRole, id);
@@ -208,6 +273,49 @@ void EncounterEditor::refresh() {
         lookups_[t]->setCurrentIndex(lookups_[t]->findData(encounters.lookup(t)));
     }
     notice_->clear();
+    const auto &global = encounters.globalRate();
+    QSignalBlocker divisorBlock(divisor_), normalBlock(normalPass_), alternateBlock(alternatePass_),
+        linkedBlock(linkedRates_);
+    divisor_->setValue(global.divisor());
+    normalPass_->setValue(global.normalPassCount());
+    alternatePass_->setValue(global.alternatePassCount());
+    if (global.normalPassCount() != global.alternatePassCount())
+        linkedRates_->setChecked(false);
+    alternatePass_->setEnabled(!linkedRates_->isChecked());
+    showGlobalRatio();
+    globalNotice_->clear();
+}
+void EncounterEditor::showGlobalRatio() {
+    // Construction sets ranges before the remaining controls exist.
+    if (!globalRatio_)
+        return;
+    const auto divisor = quint32(divisor_->value()), normal = quint32(normalPass_->value()),
+               alternate = quint32(alternatePass_->value());
+    if (normal > divisor || alternate > divisor) {
+        globalRatio_->setText("Successful outcomes cannot exceed the possible-outcome count.");
+        return;
+    }
+    globalRatio_->setText(
+        QString("Share of random values passing: normal %1%; alternate %2%.\n"
+                "Zero successful outcomes disables that roll. Matching the possible "
+                "outcome count passes this check every time. These figures account for the "
+                "game's 30-bit random-number range; actual encounter frequency also depends "
+                "on the later checks.")
+            .arg(100.0 * EncounterRate::passingFraction(divisor, normal), 0, 'f', 8)
+            .arg(100.0 * EncounterRate::passingFraction(divisor, alternate), 0, 'f', 8));
+}
+void EncounterEditor::applyGlobalRate(bool restore) {
+    try {
+        auto next = *project_->encounters();
+        next.setGlobalRate(restore ? EncounterRate::load(project_->rom()).json()
+                                   : QJsonObject{{"divisor", divisor_->value()},
+                                                 {"normalPassCount", normalPass_->value()},
+                                                 {"alternatePassCount", alternatePass_->value()}});
+        commit(next, restore ? "Restore global encounter rates" : "Edit global encounter rates");
+        refresh();
+    } catch (const std::exception &e) {
+        globalNotice_->setText(QString::fromUtf8(e.what()));
+    }
 }
 void EncounterEditor::filter() {
     const auto query = search_->text();

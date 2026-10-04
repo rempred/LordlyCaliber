@@ -18,32 +18,15 @@ static int index(const QString &key, int maximum) {
     return id;
 }
 void Encounters::verifyReader(const Rom &rom) {
-    rom.requireSupported();
-    if (rom.revision() != 0)
-        throw Error("Native encounter editing currently supports US Rev0");
-    // Known global-rate operands can vary independently; all selection code is retained.
-    auto owner = rom.bytes().mid(0x13c060, 0x43c);
-    const QList<QPair<int, quint32>> parameters = {
-        {0x188, 0x3c110001}, {0x18c, 0x36311940}, {0x19c, 0x24100032}, {0x1a0, 0x2410000a}};
-    for (const auto [at, retail] : parameters) {
-        if ((u32(owner, at) & 0xffff0000U) != (retail & 0xffff0000U))
-            throw Error("Unrecognized encounter rate instruction");
-        put32(owner, at, retail);
-    }
-    const auto branch = u32(owner, 0x1c8);
-    if (branch != 0x14600090 && branch != 0x10000090 && branch != 0)
-        throw Error("Unrecognized encounter gate instruction");
-    put32(owner, 0x1c8, 0x14600090);
-    if (sha256(owner) != "dbaa9242f9dd566468fa8f5fd4492e93a69be37dd59f80931e28d81835c5d8cd")
-        throw Error("Encounter selection code has an unsupported runtime modification");
+    EncounterRate::load(rom);
 }
 QStringList Encounters::terrainNames() {
     return {"Plains / Roads", "Plains",       "Barrens",       "Forests",       "Marshes",
             "Highlands",      "Snowy Plains", "Snowy Barrens", "Snowy Forests", "Snowy Highlands"};
 }
 Encounters Encounters::load(const Rom &rom, int classCount) {
-    verifyReader(rom);
     Encounters result;
+    result.globalRate_ = EncounterRate::load(rom);
     result.pools_ = rom.bytes().mid(poolOffset, poolCount * slotCount * 2);
     result.rates_ = rom.bytes().mid(rateOffset, terrainCount);
     result.slots_ = rom.bytes().mid(slotOffset, terrainCount);
@@ -122,10 +105,11 @@ void Encounters::setTerrain(int terrain, int value, int slot) {
     put8(slots_, terrain, quint8(slot));
 }
 bool Encounters::modified() const {
-    return pools_ != originalPools_ || rates_ != originalRates_ || slots_ != originalSlots_;
+    return pools_ != originalPools_ || rates_ != originalRates_ || slots_ != originalSlots_ ||
+           globalRate_.modified();
 }
 int Encounters::changedRows() const {
-    int count = 0;
+    int count = globalRate_.modified() ? 1 : 0;
     for (int p = 0; p < poolCount; ++p)
         if (pools_.mid(p * 20, 20) != originalPools_.mid(p * 20, 20))
             ++count;
@@ -146,8 +130,11 @@ QJsonObject Encounters::json() const {
         rates << rate(t);
         slotValues << lookup(t);
     }
-    return {
-        {"version", 1}, {"pools", pools}, {"terrainRates", rates}, {"terrainSlots", slotValues}};
+    return {{"version", 1},
+            {"pools", pools},
+            {"terrainRates", rates},
+            {"terrainSlots", slotValues},
+            {"globalRate", globalRate_.json()}};
 }
 void Encounters::apply(const QJsonObject &object, int classCount) {
     if (object["version"] != 1 || !object["pools"].isArray() ||
@@ -157,6 +144,11 @@ void Encounters::apply(const QJsonObject &object, int classCount) {
         object["terrainSlots"].toArray().size() != terrainCount)
         throw Error("Encounter project requires 45 pools and 32 terrain entries");
     auto next = *this;
+    if (object.contains("globalRate")) {
+        if (!object["globalRate"].isObject())
+            throw Error("Invalid saved global encounter rate");
+        next.globalRate_.apply(object["globalRate"].toObject());
+    }
     const auto pools = object["pools"].toArray(), rates = object["terrainRates"].toArray(),
                slotValues = object["terrainSlots"].toArray();
     for (int p = 0; p < poolCount; ++p) {

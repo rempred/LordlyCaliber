@@ -339,3 +339,30 @@ selection, unsigned class IDs and spawn markers, plus terrain thresholds and the
 existing item-based rate doubling. Full encounter materialization and gameplay are
 outside that check. Remaining imported encounter features stay retained and block
 export until their native implementation is available.
+
+Global rates are now a separate model within the encounter workspace. Its divisor
+and two pass counts are unsigned32-bit values, with a nonzero divisor and each
+count bounded by that divisor. Normal and alternate rolls can independently be
+disabled or always pass. The existing state-flag17 selection and RNG calls remain.
+The maintained dispatcher assembly has an exact retail mode and a native mode:
+native mode replaces14 instructions at z64 0x13C1F8..0x13C230 with full-width count
+selection and an unsigned remainder comparison. It occupies the same1,084-byte
+function allocation and retains all other instruction positions. No tail hook,
+additional resident code allocation or external source checkout is required.
+
+Source generation authenticates every instruction against accepted
+func_0013C060.s. The native source catalog records full normalized owner hashes,
+six parameter halves and explicit external service symbols. Loading accepts the
+authenticated retail forms and this native form; edited export compiles source
+and reopens its parameters. Earlier projects without the nested globalRate field
+retain the loaded ROM's rate or migrate retained browser settings once.
+
+The original RNG at RAM80092A60 / z640x22E60 updates a30-bit state:
+next=(4*state*state+5*state+1) mod2^30. Its complete44-byte function is authenticated
+before interpreting rate percentages. The display counts the share of values in
+that range whose remainder passes, including modulo imbalance and divisors larger
+than the RNG range. It does not claim an observed per-frame encounter frequency
+or prove the RNG's full-period distribution. Tests execute576 original RNG steps,
+and108 state-flag/RNG boundary cases across the original and five native builds.
+Whole-image export checks retain all bytes outside the dispatcher, and project
+and UI tests cover legacy imports, restoration, linking, invalid values and undo.

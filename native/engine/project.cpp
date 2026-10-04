@@ -517,7 +517,8 @@ QJsonObject Project::manifest() const {
     else
         result.remove("consumableEffects");
     if (encounters_ && (encounters_->modified() ||
-                        !legacy_["patches"].toObject()["neutral_encounters"].toObject().isEmpty()))
+                        !legacy_["patches"].toObject()["neutral_encounters"].toObject().isEmpty() ||
+                        !legacy_["patches"].toObject()["neutral_global_rate"].toObject().isEmpty()))
         result["encounters"] = encounters_->json();
     else
         result.remove("encounters");
@@ -640,6 +641,8 @@ void Project::applyManifest(const QJsonObject &object) {
     } else {
         candidate.importLegacyEncounters(candidate.legacy_);
     }
+    if (!object["encounters"].toObject().contains("globalRate"))
+        candidate.importLegacyGlobalRate(candidate.legacy_);
     if (candidate.promotion_ && candidate.addedClasses_.isEmpty())
         candidate.promotion_ = Promotion::load(rom_);
     if (object.contains("promotion")) {
@@ -654,6 +657,18 @@ void Project::applyManifest(const QJsonObject &object) {
     for (const auto &bank : candidate.texts_)
         bank.validateRuntimeSize();
     *this = std::move(candidate);
+}
+void Project::importLegacyGlobalRate(const QJsonObject &object) {
+    // Copy the value; a reference into the temporary patch object would dangle.
+    const QJsonValue value = object["patches"].toObject()["neutral_global_rate"];
+    if (value.isUndefined() || value.isNull())
+        return;
+    if (!value.isObject())
+        throw Error("Invalid imported global encounter rate");
+    if (value.toObject().isEmpty())
+        return;
+    loadEncounters();
+    encounters_->importLegacyGlobalRate(value.toObject());
 }
 void Project::importLegacyEncounters(const QJsonObject &object) {
     const auto patches = object["patches"].toObject();
@@ -826,6 +841,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyConsumables(object);
     candidate.importLegacyConsumableEffects(object);
     candidate.importLegacyEncounters(object);
+    candidate.importLegacyGlobalRate(object);
     candidate.legacy_ = object;
     if (patch.contains("descriptions") && !patch["descriptions"].isObject())
         throw Error("Imported descriptions must be an object");
@@ -900,6 +916,8 @@ QStringList Project::pendingLegacySections() const {
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (it.key() == "neutral_global_rate" && encounters_)
+            continue;
         if (it.key() == "neutral_encounters" && encounters_) {
             const auto parts = it.value().toObject();
             for (auto part = parts.begin(); part != parts.end(); ++part)

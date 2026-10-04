@@ -48,6 +48,154 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void encounterRateSourceExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto rate = EncounterRate::load(rom);
+            QCOMPARE(rate.divisor(), quint32(72000));
+            QCOMPARE(rate.normalPassCount(), quint32(51));
+            QCOMPARE(rate.alternatePassCount(), quint32(11));
+            QCOMPARE(EncounterRate::passingFraction(0x40000000, 0x20000000), 0.5);
+            QCOMPARE(EncounterRate::passingFraction(0x80000000, 0x20000000), 0.5);
+            QCOMPARE(EncounterRate::passingFraction(0xffffffff, 0x80000000), 1.0);
+            QCOMPARE(EncounterRate::passingFraction(3, 1), 357913942.0 / 1073741824.0);
+            QCOMPARE(EncounterRate::passingFraction(72000, 0), 0.0);
+            QVERIFY_THROWS_EXCEPTION(Error, EncounterRate::passingFraction(0, 0));
+            const auto retail = rate.json();
+            const auto original =
+                rom.bytes().mid(EncounterRate::romOffset, EncounterRate::codeSize);
+            QFile file(":/game/encounters/dispatcher.s");
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto source = file.readAll();
+            QTemporaryDir build;
+            Compiler compiler(tools);
+            compiler.authenticate();
+            QCOMPARE(compiler.assembleOwner(rate.assemblyDefinitions(false) + source, build.path(),
+                                            "global_retail", EncounterRate::ramAddress,
+                                            EncounterRate::serviceAddresses(), true),
+                     original);
+            QJsonArray variants{QJsonObject{{"name", "retail"},
+                                            {"rate", retail},
+                                            {"code", QString::fromLatin1(original.toHex())}}};
+            const QVector<QJsonObject> cases = {
+                retail,
+                {{"divisor", 1}, {"normalPassCount", 0}, {"alternatePassCount", 1}},
+                {{"divisor", 65536}, {"normalPassCount", 32768}, {"alternatePassCount", 65536}},
+                {{"divisor", 4294967295.0},
+                 {"normalPassCount", 2147483648.0},
+                 {"alternatePassCount", 4294967295.0}},
+                {{"divisor", 1000000}, {"normalPassCount", 0}, {"alternatePassCount", 1000000}}};
+            QByteArray last;
+            for (int i = 0; i < cases.size(); ++i) {
+                rate.apply(cases[i]);
+                const auto code = compiler.assembleOwner(
+                    rate.assemblyDefinitions() + source, build.path(),
+                    QString("global_native_%1").arg(i), EncounterRate::ramAddress,
+                    EncounterRate::serviceAddresses(), true);
+                QCOMPARE(code.size(), EncounterRate::codeSize);
+                for (int at = 0; at < code.size(); ++at)
+                    if (!(at >= 0x188 && at < 0x190) && !(at >= 0x198 && at < 0x1d0))
+                        QCOMPARE(code[at], original[at]);
+                auto image = rom.bytes();
+                image.replace(EncounterRate::romOffset, code.size(), code);
+                QCOMPARE(EncounterRate::load(Rom::fromBytes(image)).json(), cases[i]);
+                auto bad = image;
+                bad[EncounterRate::romOffset + 0x220] ^= 1;
+                QVERIFY_THROWS_EXCEPTION(Error, EncounterRate::load(Rom::fromBytes(bad)));
+                variants << QJsonObject{{"name", QString("native%1").arg(i)},
+                                        {"rate", cases[i]},
+                                        {"code", QString::fromLatin1(code.toHex())}};
+                last = code;
+            }
+            const auto before = rate.json();
+            for (const auto &bad : QVector<QJsonObject>{
+                     {{"divisor", 0}, {"normalPassCount", 0}, {"alternatePassCount", 0}},
+                     {{"divisor", 100}, {"normalPassCount", 101}, {"alternatePassCount", 10}},
+                     {{"divisor", 100}, {"normalPassCount", true}, {"alternatePassCount", 10}},
+                     {{"divisor", 4294967296.0},
+                      {"normalPassCount", 0},
+                      {"alternatePassCount", 10}}}) {
+                QVERIFY_THROWS_EXCEPTION(Error, rate.apply(bad));
+                QCOMPARE(rate.json(), before);
+            }
+            auto project = Project::fromRom(rom);
+            project.loadEncounters();
+            auto encounters = *project.encounters();
+            encounters.setGlobalRate(before);
+            project.setEncounters(encounters.json());
+            QTemporaryDir folder;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("global.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("global.lcproject")}) {
+                auto reopened = Project::fromRom(rom);
+                reopened.applyManifest(Project::readProject(location));
+                QCOMPARE(reopened.encounters()->globalRate().json(), before);
+            }
+            const auto result = rebuild(project, tools, build.path());
+            auto expected = rom.bytes();
+            expected.replace(EncounterRate::romOffset, last.size(), last);
+            Rom::updateChecksum(expected);
+            QCOMPARE(result.image, expected);
+            QTemporaryDir output(QDir(QFileInfo(path).absolutePath())
+                                     .filePath("Test ROMs/native-global-rate-XXXXXX"));
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto target = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, result, target);
+            auto reopened = Project::fromRom(Rom::open(target));
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->globalRate().json(), before);
+            auto edited = *reopened.encounters();
+            edited.setGlobalRate(retail);
+            reopened.setEncounters(edited.json());
+            const auto rebuilt = rebuild(reopened, tools, build.path());
+            QCOMPARE(EncounterRate::load(Rom::fromBytes(rebuilt.image)).json(), retail);
+            const QJsonObject legacy{
+                {"format", "ob64-patch"},
+                {"version", 36},
+                {"patches",
+                 QJsonObject{{"neutral_global_rate",
+                              QJsonObject{{"schema", 2},
+                                          {"divisor", 1000000},
+                                          {"linked", false},
+                                          {"normal", QJsonObject{{"pass_count", 125}}},
+                                          {"alternate", QJsonObject{{"percent", 0.5}}}}}}}};
+            auto imported = Project::fromRom(rom);
+            imported.importLegacy(legacy);
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            QCOMPARE(imported.encounters()->globalRate().normalPassCount(), quint32(125));
+            QCOMPARE(imported.encounters()->globalRate().alternatePassCount(), quint32(5000));
+            auto restored = *imported.encounters();
+            restored.setGlobalRate(retail);
+            imported.setEncounters(restored.json());
+            auto loaded = Project::fromRom(rom);
+            loaded.applyManifest(imported.manifest());
+            QCOMPARE(loaded.encounters()->globalRate().json(), retail);
+            auto historical = imported.manifest();
+            auto oldEncounters = historical["encounters"].toObject();
+            oldEncounters.remove("globalRate");
+            historical["encounters"] = oldEncounters;
+            loaded.applyManifest(historical);
+            QCOMPARE(loaded.encounters()->globalRate().normalPassCount(), quint32(125));
+            rate.importLegacy({{"divisor", 10000}, {"percent", 1.5}});
+            QCOMPARE(rate.normalPassCount(), quint32(150));
+            QCOMPARE(rate.alternatePassCount(), quint32(150));
+            rate.apply(retail);
+            rate.importLegacy({{"divisor", 144000}, {"normal", QJsonObject{{"pass_count", 125}}}});
+            QCOMPARE(rate.normalPassCount(), quint32(125));
+            QCOMPARE(rate.alternatePassCount(), quint32(22));
+            atomicWrite(
+                output.filePath("global-rate.json"),
+                QJsonDocument(QJsonObject{{"rom", target}, {"variants", variants}}).toJson());
+            qInfo().noquote() << "Global rate candidate:" << output.filePath("global-rate.json");
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void encounterTablesExport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

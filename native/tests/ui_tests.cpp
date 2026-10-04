@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFontDatabase>
 #include <QJsonArray>
@@ -20,6 +21,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableView>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
@@ -52,6 +54,55 @@ class UiTests : public QObject {
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
         QVERIFY(!model.setData(model.index(5, 2), 256, Qt::EditRole));
         QCOMPARE(project.record(Table::Classes, 5).bytes, expected);
+    }
+    void encounterGlobalRateEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadEncounters();
+        QUndoStack undo;
+        EncounterEditor editor(&project, &undo, [] {});
+        editor.resize(1200, 750);
+        editor.show();
+        auto divisor = editor.findChild<QDoubleSpinBox *>("encounterDivisor"),
+             normal = editor.findChild<QDoubleSpinBox *>("encounterNormalPass"),
+             alternate = editor.findChild<QDoubleSpinBox *>("encounterAlternatePass");
+        auto apply = editor.findChild<QPushButton *>("encounterApplyGlobal");
+        QCOMPARE(divisor->value(), 72000.0);
+        QCOMPARE(normal->value(), 51.0);
+        QCOMPARE(alternate->value(), 11.0);
+        const auto original = project.encounters()->json();
+        divisor->setValue(1000000);
+        normal->setValue(0);
+        alternate->setValue(1000000);
+        apply->click();
+        QCOMPARE(project.encounters()->globalRate().normalPassCount(), quint32(0));
+        QCOMPARE(project.encounters()->globalRate().alternatePassCount(), quint32(1000000));
+        undo.undo();
+        QCOMPARE(project.encounters()->json(), original);
+        QCOMPARE(normal->value(), 51.0);
+        undo.redo();
+        auto linked = editor.findChild<QCheckBox *>("encounterLinkRates");
+        linked->setChecked(true);
+        normal->setValue(700);
+        QCOMPARE(alternate->value(), 700.0);
+        QVERIFY(!alternate->isEnabled());
+        apply->click();
+        QCOMPARE(project.encounters()->globalRate().alternatePassCount(), quint32(700));
+        const auto before = project.manifest();
+        divisor->setValue(1);
+        apply->click();
+        QCOMPARE(project.manifest(), before);
+        editor.findChild<QPushButton *>("encounterRestoreGlobal")->click();
+        QCOMPARE(project.encounters()->json(), original);
+        QVERIFY(!linked->isChecked());
+        undo.undo();
+        QCOMPARE(project.encounters()->globalRate().normalPassCount(), quint32(700));
+        auto tabs = editor.findChild<QTabWidget *>();
+        tabs->setCurrentIndex(2);
+        QApplication::processEvents();
+        QVERIFY(editor.grab().save(QCoreApplication::applicationDirPath() + "/global-rates.png"));
     }
     void encounterEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -30,6 +30,13 @@ number; turn that option off when a custom description has no numeric amount.
 Other item behaviors remain unchanged. Export rebuilds maintained sources in
 the game's original RAM allocations and reopens the results before saving.
 
+Encounters exposes all45 pools, their shared scenario references, and32 terrain
+rates/slots. Pools can use added classes, be copied, or restored. Global rates
+provide independent normal/alternate rolls, including zero and full chance for
+that check; terrain and unit checks still follow. Their dispatcher rebuild fits
+its original code allocation. Scenario overrides, custom neutral squads and
+encounter battle/reward editing are still being migrated.
+
 For scripting:
 
 ```powershell

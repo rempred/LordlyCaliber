@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/encounter_rate.h"
 #include "engine/rom.h"
 #include <QJsonObject>
 #include <QMap>
@@ -19,6 +20,15 @@ class Encounters {
     QString label(int pool) const;
     void setPair(int pool, int slot, int first, int second, int classCount);
     void setTerrain(int terrain, int rate, int lookup);
+    const EncounterRate &globalRate() const {
+        return globalRate_;
+    }
+    void setGlobalRate(const QJsonObject &value) {
+        globalRate_.apply(value);
+    }
+    void importLegacyGlobalRate(const QJsonObject &value) {
+        globalRate_.importLegacy(value);
+    }
     const QByteArray &poolBytes() const {
         return pools_;
     }
@@ -40,5 +50,6 @@ class Encounters {
     QByteArray pools_, rates_, slots_, originalPools_, originalRates_, originalSlots_;
     QVector<QVector<int>> keys_;
     QMap<int, QString> names_;
+    EncounterRate globalRate_;
 };
 } // namespace lordly
