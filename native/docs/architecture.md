@@ -1,5 +1,19 @@
 # Native Lordly Caliber
 
+Actor animation keys now resolve through compiled `game/director/actor_state.c`,
+a bounded adaptation of recovered `func_002A13EC.c` from accepted Decomp commit
+`3de8033d0e794bcf759ccfe4c7a67d82bd9ca656`. `ActorArt` reads the current ROM's
+compressed vocabulary resource at key 0x0109EEB0. An offline original initializer
+run identified that resource as the source of RAM pointer 0x8022A97C; the table is
+allocated per scene but its bank vocabulary comes from this shared resource.
+Lookup uses the bank's halfword offset, compares animation-key times ten plus
+facing, and returns the matching list position as the physical pose state.
+The PC arithmetic preserves target 32-bit wrap and reports out-of-bounds walks
+separately from an ordinary no-match. All 4,620 checked cases agree with the
+original resolver at RAM 0x80231BBC / ROM 0x002A13EC: 2,275 known selectors, their
+option-rejected counterparts, missing keys and overflow controls. No resolver
+service was mocked. Frame/pose corpus checks still pass after this connection.
+
 `ActorArt` follows the current ROM's one-based cutscene-bank directory at
 resource key 0x0109F95E, then reads the descriptor's metadata, pose, configuration,
 palette and art members. It preserves empty pose ranges and every counted bytecode

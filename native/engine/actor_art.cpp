@@ -1,4 +1,5 @@
 #include "engine/actor_art.h"
+#include "game/director/actor_state.h"
 #include <iterator>
 namespace lordly {
 namespace {
@@ -83,7 +84,23 @@ ActorArt ActorArt::load(const Rom &rom, int bank) {
         quint64(map) + result.artKeys_.size() > quint64(config.size()))
         throw Error("Actor palette map does not match its art count");
     result.paletteMap_ = config.mid(map, result.artKeys_.size());
+    // Both the original shared initializer and the bank-local resolver use
+    // this vocabulary. It is allocated per scene but loaded from one ROM resource.
+    const auto states = resource(rom, 0x0109eeb0, true);
+    if (states.size() % 2)
+        throw Error("Actor state vocabulary is not halfword aligned");
+    for (int at = 0; at < states.size(); at += 2)
+        result.stateTable_ << qint16(u16(states, at));
     return result;
+}
+int ActorArt::resolve(int animation, int facing, int option) const {
+    int state = -1;
+    if (lordly_actor_resolve_state(stateTable_.constData(), int(stateTable_.size()), bank_,
+                                   animation, facing, option, &state))
+        throw Error("Actor state lookup exceeds its current ROM vocabulary");
+    if (state >= poses_.size())
+        throw Error("Actor state vocabulary selects an absent pose program");
+    return state;
 }
 QVector<ActorLayer> ActorArt::layers(int token) const {
     if (token < 0 || token > 65535)

@@ -1,5 +1,6 @@
 #include "engine/actor_art.h"
 #include "engine/sprite_object.h"
+#include "game/director/actor_state.h"
 #include <QDir>
 #include <QFile>
 #include <QImage>
@@ -13,6 +14,43 @@ using namespace lordly;
 class SpriteTests : public QObject {
     Q_OBJECT
   private slots:
+    void animationResolverAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("actor-state-mips.cjs"),
+             path, work.filePath("states.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        const auto errors = reference.readAllStandardError();
+        QVERIFY2(reference.exitCode() == 0, errors.constData());
+        QFile file(work.filePath("states.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QCOMPARE(rows.size(), 4620);
+        const auto rom = Rom::open(path);
+        QMap<int, ActorArt> banks;
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            const int bank = row["bank"].toInt();
+            if (!banks.contains(bank))
+                banks.insert(bank, ActorArt::load(rom, bank));
+            QCOMPARE(banks[bank].resolve(row["key"].toInt(), row["facing"].toInt(),
+                                         row["option"].toInt()),
+                     row["result"].toInt());
+        }
+        const short invalid[] = {3, 0, 123};
+        int output = 42;
+        QCOMPARE(lordly_actor_resolve_state(invalid, 3, 1, 1, 0, 0, &output), 1);
+        QCOMPARE(output, 42);
+        const short unterminated[] = {2, 0, 123};
+        QCOMPARE(lordly_actor_resolve_state(unterminated, 3, 1, 1, 0, 0, &output), 1);
+        QCOMPARE(lordly_actor_resolve_state(unterminated, 3, 0, 1, 0, 0, &output), 1);
+        QCOMPARE(output, 42);
+    }
     void actorBanksPosesAndFrames() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

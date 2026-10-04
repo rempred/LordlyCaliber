@@ -36,6 +36,7 @@ class ActorArt {
     const QVector<PoseProgram> &poses() const {
         return poses_;
     }
+    int resolve(int animation, int facing, int option = 0) const;
     QVector<ActorLayer> layers(int token) const;
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant) const;
 
@@ -45,5 +46,6 @@ class ActorArt {
     QVector<quint32> artKeys_;
     QByteArray metadata_, palettes_, paletteMap_;
     QVector<PoseProgram> poses_;
+    QVector<short> stateTable_;
 };
 } // namespace lordly
