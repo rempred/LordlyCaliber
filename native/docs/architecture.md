@@ -16,8 +16,15 @@ declared custom call sites. LC05NEUT records the ROM profile index, packed
 profiles, resident allocation and linked entries. Install/reopen/removal,
 installed call-site execution and profile-to-reward instruction flows are
 checked in 4 MB memory. Original actor services and PI hardware are simulated;
-full-game behavior remains unverified. Product editing and export integration
-are still in progress.
+full-game behavior remains unverified. The native project now stores independent
+members, formation positions, per-member equipment, card text, persuasion,
+retreat and weighted rewards. Browser cohort imports expand into these members.
+The ordinary exporter reserves the resident module, compiles the ROM library,
+and installs its callers with the class/save, reward and rate owners. Re-export
+reuses owned space when it fits; growth preserves later allocations. Removing
+the last squad restores the callers and releases the module. Public export tests
+cover 65 profiles, a newly added class, moving behind expanded saves, unchanged
+re-export and removal. The desktop editing page is still in progress.
 
 The product targets Windows and integrated graphics. C++ owns the engine and
 Qt Widgets owns the desktop interface. The engine has no dependency on Widgets,

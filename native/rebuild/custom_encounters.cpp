@@ -5,6 +5,74 @@
 #include <QFile>
 #include <QJsonArray>
 namespace lordly {
+QByteArray removeCustomInstallation(const Rom &rom, const CustomPlacement &previous,
+                                    const Compiler &compiler, const QString &directory) {
+    const auto actual = CustomPlacement::read(rom);
+    if (!actual || actual->dataOffset != previous.dataOffset ||
+        actual->dataSize != previous.dataSize || actual->entries != previous.entries)
+        throw Error("Custom encounter removal disagrees with its installed allocation");
+    auto image = rebuildCustomCallers(rom, compiler, directory, {}, actual);
+    image.replace(CustomPlacement::descriptorOffset, CustomPlacement::descriptorSize,
+                  QByteArray(CustomPlacement::descriptorSize, char(-1)));
+    if (quint64(previous.dataOffset) + previous.dataSize == quint64(image.size()))
+        image.truncate(previous.dataOffset);
+    else
+        image.replace(previous.dataOffset, previous.dataSize,
+                      QByteArray(previous.dataSize, char(-1)));
+    return image;
+}
+QByteArray installCustomEncounters(const Rom &rom, const CustomSquads &squads,
+                                   const CustomRuntimeBuild &runtime, const Compiler &compiler,
+                                   const QString &directory,
+                                   const std::optional<CustomPlacement> &previous) {
+    const auto at = runtime.indexRomOffset;
+    const auto expected = squads.bytes(at);
+    if (expected.isEmpty())
+        throw Error("Cannot install an empty custom squad library");
+    const auto classes = ClassPlacement::read(rom);
+    if (!classes || classes->residentAddress != runtime.code.address ||
+        classes->residentBytes != runtime.bytes.size() ||
+        rom.bytes().mid(runtime.code.address - ClassPlacement::residentDelta,
+                        runtime.bytes.size()) != runtime.bytes ||
+        runtime.stateAddress != runtime.code.address + runtime.code.bytes.size())
+        throw Error("Custom encounter runtime was not reserved and linked by the class rebuild");
+    squads.validateFormations(ClassData::load(rom));
+    if (rom.bytes().mid(CustomPlacement::descriptorOffset, CustomPlacement::descriptorSize) !=
+        QByteArray(CustomPlacement::descriptorSize, char(-1)))
+        throw Error("Custom encounter descriptor allocation is occupied");
+    if (at < quint64(rom.bytes().size()) &&
+        (!previous || at != previous->dataOffset || expected.size() > previous->dataSize ||
+         rom.bytes().mid(at, expected.size()) != QByteArray(expected.size(), char(-1))))
+        throw Error("Custom squad library would overwrite unrelated cartridge data");
+    const auto classEnd =
+        quint64(classes->dataRomOffset) + classes->layout.end - classes->layout.indexBase;
+    if (at < classEnd && quint64(at) + expected.size() > classes->dataRomOffset)
+        throw Error("Custom squad library overlaps rebuilt classes");
+    const auto data = compiler.compileData(expected, directory, "custom_squad_library");
+    if (data != expected)
+        throw Error("Compiled custom squads disagree with their source");
+    CustomPlacement placed;
+    placed.dataOffset = at;
+    placed.dataSize = quint32(data.size());
+    placed.profileCount = quint32(squads.profiles().size());
+    placed.codeAddress = runtime.code.address;
+    placed.codeBytes = quint32(runtime.code.bytes.size());
+    placed.residentBytes = quint32(runtime.bytes.size());
+    placed.stateAddress = runtime.stateAddress;
+    for (const auto &name : customRuntimeEntries())
+        placed.entries[name] = runtime.code.entries.value(name);
+    auto image = rebuildCustomCallers(rom, compiler, directory, placed.entries);
+    if (quint64(at) + data.size() > quint64(image.size()))
+        image.append(QByteArray(at + data.size() - image.size(), char(-1)));
+    image.replace(at, data.size(), data);
+    image.replace(CustomPlacement::descriptorOffset, CustomPlacement::descriptorSize,
+                  placed.descriptor(data, runtime.bytes));
+    const auto reopened = Rom::fromBytes(image);
+    verifyCustomCallers(reopened, CustomPlacement::read(reopened));
+    if (CustomSquads::load(reopened, classes->layout.count).json() != squads.json())
+        throw Error("Custom squad export failed readback");
+    return image;
+}
 QByteArray rebuildCustomCallers(const Rom &rom, const Compiler &compiler, const QString &directory,
                                 const QMap<QString, quint32> &entries,
                                 const std::optional<CustomPlacement> &previous) {
@@ -134,6 +202,6 @@ CustomRuntimeBuild buildCustomRuntime(const Compiler &compiler, const QString &d
             throw Error("Missing linked custom encounter entry: " + QString::fromLatin1(entry));
     const auto bytes =
         code.bytes + QByteArray(size + CustomRuntimeBuild::stateSize - code.bytes.size(), 0);
-    return {code, bytes, address + size};
+    return {code, bytes, address + size, indexRomOffset};
 }
 } // namespace lordly

@@ -3,6 +3,7 @@
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/creature_rewards.h"
+#include "rebuild/custom_encounters.h"
 #include "rebuild/elf_references.h"
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
@@ -477,6 +478,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     BuildResult result{p.rom().bytes(), {}};
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
     const auto priorShopPlacement = ShopPlacement::read(p.rom());
+    const auto priorCustom = CustomPlacement::read(p.rom());
+    if (priorCustom)
+        p.loadEncounters();
+    const bool customSquads = p.encounters() && p.encounters()->customSquads().hasProfiles();
+    if (customSquads)
+        p.encounters()->customSquads().validateFormations(p.classData());
+    if (priorCustom)
+        result.image = removeCustomInstallation(p.rom(), *priorCustom, compiler, directory);
     if (priorShopPlacement && priorShopPlacement->version < 2)
         p.loadShops();
     const bool expandedClasses =
@@ -491,8 +500,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             throw Error("Expanded class records, promotion data and descriptions must have "
                         "matching counts");
     }
-    const bool relocateClasses =
-        priorClassPlacement.has_value() || p.classNamesModified() || expandedClasses;
+    const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified() ||
+                                 expandedClasses || customSquads;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -576,6 +585,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << "Compiled all 45 encounter pools and 32 terrain rates/slots into their "
                          "original allocations";
     }
+    if (customSquads && !CreatureRewards::placement(Rom::fromBytes(result.image))) {
+        result.image = rebuildCreatureRewards(Rom::fromBytes(result.image),
+                                              p.encounters()->rewards(), compiler, directory);
+        result.report << "Rebuilt class reward rows alongside custom encounter rewards";
+    }
     if (p.consumableEffects() && p.consumableEffects()->modified()) {
         const auto &effects = *p.consumableEffects();
         ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.
@@ -609,9 +623,33 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     priorClassPlacement->layout.indexBase !=
                 quint64(result.image.size()))
             offset = quint32((result.image.size() + 15) & ~qsizetype(15));
-        const auto classes = buildClassRuntime(
+        std::optional<CustomRuntimeBuild> custom;
+        std::function<QByteArray(quint32, quint32)> residentBuilder;
+        if (customSquads) {
+            const auto classEnd = quint64(offset) + data.build(0x80243db0).bytes.size();
+            const auto prospectiveEnd = qMax(quint64(result.image.size()), classEnd);
+            auto index = quint32((prospectiveEnd + 15) & ~quint64(15));
+            const auto bytes = p.encounters()->customSquads().bytes(0x2800000).size();
+            if (priorCustom) {
+                const auto before = priorCustom->dataOffset;
+                const bool separate = quint64(before) + bytes <= offset || before >= classEnd;
+                const bool append = before >= prospectiveEnd;
+                const bool reuse = bytes <= priorCustom->dataSize &&
+                                   quint64(before) + bytes <= quint64(result.image.size()) &&
+                                   result.image.mid(before, bytes) == QByteArray(bytes, char(-1));
+                if (separate && (append || reuse))
+                    index = before;
+            }
+            residentBuilder = [&, index](quint32 address, quint32 capacity) {
+                custom = buildCustomRuntime(compiler, directory, address, capacity, index);
+                return custom->bytes;
+            };
+        }
+        auto classes = buildClassRuntime(
             data, compiler, directory, offset,
-            expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()));
+            expandedClasses || (priorClassPlacement && priorClassPlacement->saves.installed()),
+            residentBuilder);
+        classes.removeResident = priorCustom.has_value() && !customSquads;
         const auto menus =
             expandedClasses
                 ? std::optional<PromotionRuntimeBuild>(buildPromotionRuntime(
@@ -619,6 +657,19 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 : std::nullopt;
         result.image =
             linkClassRuntime(Rom::fromBytes(result.image), classes, menus ? &*menus : nullptr);
+        if (custom) {
+            result.image = installCustomEncounters(Rom::fromBytes(result.image),
+                                                   p.encounters()->customSquads(), *custom,
+                                                   compiler, directory, priorCustom);
+            result.report << QString(
+                                 "Compiled %1 custom squads and their battle behavior; %2 bytes "
+                                 "reserved in reclaimed resident storage within 4 MB RAM")
+                                 .arg(p.encounters()->customSquads().profiles().size())
+                                 .arg(custom->bytes.size());
+        } else if (priorCustom) {
+            result.report << "Removed custom squad callers and returned their resident allocation "
+                             "to the heap";
+        }
         if (menus)
             result.report
                 << QString(

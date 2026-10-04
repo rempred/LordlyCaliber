@@ -14,7 +14,7 @@ target_sources(lordly_engine PRIVATE engine/encounters.cpp engine/encounter_rate
 target_sources(lordly_engine PRIVATE engine/creature_rewards.cpp rebuild/creature_rewards.cpp)
 target_sources(lordly_engine PRIVATE engine/scenario_rates.cpp rebuild/scenario_rates.cpp)
 qt_add_resources(lordly_engine reward_sources PREFIX "/" BASE . FILES game/encounters/rewards.s game/encounters/rewards.json)
-target_sources(lordly_engine PRIVATE engine/custom_runtime.cpp rebuild/custom_encounters.cpp)
+target_sources(lordly_engine PRIVATE engine/custom_runtime.cpp engine/custom_squads.cpp rebuild/custom_encounters.cpp)
 qt_add_resources(lordly_engine custom_sources PREFIX "/" BASE . FILES game/encounters/custom.c game/encounters/custom.h game/encounters/custom-sites.s)
 qt_add_resources(lordly_engine custom_callers PREFIX "/" BASE . FILES
   game/encounters/custom-owners/catalog.json game/encounters/custom-owners/card_text.s

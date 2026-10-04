@@ -3,6 +3,7 @@
 #include "engine/class_runtime_inventory.h"
 #include "engine/class_text.h"
 #include "engine/consumable_effects.h"
+#include "engine/custom_squads.h"
 #include "engine/expanded_promotion_resource.h"
 #include "engine/project.h"
 #include "engine/resource.h"
@@ -51,6 +52,298 @@ static Promotion syntheticPromotion() {
 class EngineTests : public QObject {
     Q_OBJECT
   private slots:
+    void customSquadProjectExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and authenticated compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadEncounters();
+            auto model = *project.encounters();
+            CustomSquad row;
+            row.scenarioKey = 33;
+            row.terrainSlot = 9;
+            row.label = "Custom squad";
+            row.members[0].equipment = {277, 1};
+            row.members[1].classId = 16;
+            row.members[1].levelOffset = -1;
+            row.bonuses = {{5, 25}};
+            row.retreatHp = 25;
+            row.rewards = {{44, 0x8115, 0}, {2, 3, 1}};
+            model.setCustomSquad(row, 165);
+            row.scenarioKey = 255;
+            row.terrainSlot = 0;
+            row.enabled = false;
+            row.members[0].levelOffset = -128;
+            row.members[1].levelOffset = 127;
+            model.setCustomSquad(row, 165);
+            model.setScenarioBranch(33, true, ScenarioRoll{7, 2});
+            project.setEncounters(model.json());
+            QTemporaryDir folder, work;
+            project.saveFolder(folder.path());
+            project.saveArchive(folder.filePath("squads.lcproject"));
+            for (const auto &location : {folder.path(), folder.filePath("squads.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.encounters()->json(), model.json());
+            }
+            const auto candidates = QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs");
+            QTemporaryDir candidate(candidates + "/native-custom-project-XXXXXX");
+            QVERIFY(candidate.isValid());
+            auto save = [&](const QString &kind, const BuildResult &build) {
+                const auto directory = candidate.filePath(kind);
+                QDir().mkpath(directory);
+                const auto out = QDir(directory).filePath(QFileInfo(path).fileName());
+                exportRom(project, build, out);
+                return out;
+            };
+            const auto first = rebuild(project, tools, work.path());
+            const auto firstPath = save("initial", first);
+            const auto firstPlacement = CustomPlacement::read(Rom::fromBytes(first.image));
+            QVERIFY(firstPlacement.has_value());
+            auto opened = Project::fromRom(Rom::open(firstPath));
+            opened.loadEncounters();
+            QCOMPARE(opened.encounters()->json(), project.encounters()->json());
+            const auto unchanged =
+                rebuild(Project::fromRom(Rom::fromBytes(first.image)), tools, work.path());
+            QCOMPARE(unchanged.image, first.image);
+            const QByteArray marker(32, char(0x5a));
+            const auto later = first.image + marker;
+            auto growing = Project::fromRom(Rom::fromBytes(later));
+            growing.loadEncounters();
+            QCOMPARE(growing.appendClass(5, "New squad class"), 165);
+            auto grownModel = *growing.encounters();
+            for (int key = 1; key <= 64; ++key) {
+                row = CustomSquad{};
+                row.scenarioKey = key;
+                row.terrainSlot = 9;
+                row.members[0].classId = 165;
+                row.members[1].equipment = {1, 277};
+                grownModel.setCustomSquad(row, 166);
+            }
+            growing.setEncounters(grownModel.json());
+            const auto grown = rebuild(growing, tools, work.path());
+            const auto grownPath = save("grown", grown);
+            const auto grownRom = Rom::fromBytes(grown.image);
+            const auto grownPlacement = CustomPlacement::read(grownRom);
+            QVERIFY(grownPlacement.has_value());
+            QVERIFY(grownPlacement->profileCount > 56);
+            QVERIFY(grownPlacement->dataOffset >= quint64(later.size()));
+            QVERIFY(grownPlacement->codeAddress != firstPlacement->codeAddress);
+            QCOMPARE(grown.image.mid(first.image.size(), marker.size()), marker);
+            QCOMPARE(grown.image.mid(firstPlacement->dataOffset, firstPlacement->dataSize),
+                     QByteArray(firstPlacement->dataSize, char(-1)));
+            auto reopened = Project::fromRom(grownRom);
+            reopened.loadEncounters();
+            QCOMPARE(reopened.encounters()->json(), grownModel.json());
+            QCOMPARE(reopened.records(Table::Classes).size(), 166);
+            auto removedModel = *reopened.encounters();
+            const auto all = removedModel.customSquads().profiles();
+            for (const auto &profile : all)
+                removedModel.removeCustomSquad(profile.scenarioKey, profile.terrainSlot);
+            reopened.setEncounters(removedModel.json());
+            const auto removed = rebuild(reopened, tools, work.path());
+            save("removed", removed);
+            const auto removedRom = Rom::fromBytes(removed.image);
+            QVERIFY(!CustomPlacement::read(removedRom));
+            QCOMPARE(ClassPlacement::read(removedRom)->residentBytes, 0U);
+            QVERIFY(ClassPlacement::read(removedRom)->saves.installed());
+            QCOMPARE(removed.image.mid(first.image.size(), marker.size()), marker);
+            auto final = Project::fromRom(removedRom);
+            final.loadEncounters();
+            QCOMPARE(final.encounters()->json(), removedModel.json());
+            // Native empty state must override retained browser edits on the next open.
+            auto imported = Project::fromRom(rom);
+            const auto legacy = QJsonDocument::fromJson(R"({
+  "format": "ob64-patch",
+  "version": 36,
+  "patches": {
+    "neutral_encounters": {
+      "custom_squads": {
+        "33:9": {
+          "runtime_key": 33,
+          "terrain_slot": 9,
+          "label": "Imported",
+          "members": [
+            {
+              "class_id": 5,
+              "level_offset_raw": 0,
+              "cell": 8,
+              "cohort": "A"
+            },
+            {
+              "class_id": 5,
+              "level_offset_raw": 255,
+              "cell": 6,
+              "cohort": "B"
+            }
+          ]
+        }
+      }
+    }
+  }
+})")
+                                    .object();
+            imported.importLegacy(legacy);
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            QVERIFY(imported.encounters()->customSquads().hasProfiles());
+            auto cleared = *imported.encounters();
+            cleared.removeCustomSquad(33, 9);
+            imported.setEncounters(cleared.json());
+            auto importRestored = Project::fromRom(rom);
+            importRestored.applyManifest(imported.manifest());
+            QVERIFY(!importRestored.encounters()->customSquads().hasProfiles());
+            candidate.setAutoRemove(false);
+            qInfo().noquote() << "Public custom squad exports:" << candidate.path();
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void customSquadModel() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required for class size/reference checks");
+        try {
+            const auto rom = Rom::open(path);
+            auto classes = ClassData::load(rom);
+            auto squads = CustomSquads::load(rom, 165);
+            QVERIFY(!squads.modified());
+            const auto empty = squads.json();
+            CustomSquad row;
+            row.scenarioKey = 255;
+            row.terrainSlot = 9;
+            while (classes.entries().size() < 256)
+                classes.append(5, "Custom class");
+            row.members[0].classId = 255;
+            row.members[0].levelOffset = -128;
+            row.members[0].equipment = {277, 1};
+            row.members[1].classId = 165;
+            row.members[1].levelOffset = 127;
+            row.members[1].equipment = {1, 277};
+            row.label = "123456789012345678901234";
+            row.bonuses = {{255, 100}, {165, 1}};
+            row.retreatHp = 100;
+            row.rewards = {{0, 44, 0x8115}, {65535, 0, 65535}};
+            squads.set(row, 256);
+            squads.validateFormations(classes);
+            QCOMPARE(squads.changedRows(), 1);
+            const auto saved = squads.json();
+            CustomSquads restored;
+            restored.apply(saved, 256);
+            QCOMPARE(restored.json(), saved);
+            const auto data = squads.bytes(0x2800000), profile = row.bytes();
+            QCOMPARE(u32(data, 2559 * 4), 0x2800000U + CustomPlacement::indexBytes);
+            QCOMPARE(data.mid(CustomPlacement::indexBytes), profile);
+            QCOMPARE(u8(profile, 9), 128);
+            QCOMPARE(u8(profile, 17), 127);
+            QCOMPARE(profile.mid(68, 38),
+                     QByteArray("@b@%0@n\"123456789012345678901234\"@a@c\0", 38));
+            for (const auto &field : {"classId", "levelOffset", "cell", "equipment"}) {
+                auto bad = row.json();
+                auto members = bad["members"].toArray();
+                auto member = members[0].toObject();
+                member[field] = field == QString("equipment")
+                                    ? QJsonValue(QJsonArray{0, 278})
+                                    : QJsonValue(field == QString("classId")       ? 256
+                                                 : field == QString("levelOffset") ? 128
+                                                                                   : 9);
+                members[0] = member;
+                bad["members"] = members;
+                QVERIFY_THROWS_EXCEPTION(Error, CustomSquad::parse(bad, 256));
+            }
+            QVERIFY_THROWS_EXCEPTION(Error, squads.set(row, 165));
+            auto bad = row;
+            bad.members[1].cell = bad.members[0].cell;
+            QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
+            bad = row;
+            bad.bonuses.append({255, 1});
+            QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
+            bad = row;
+            bad.rewards.weights = {0, 0, 0};
+            QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
+            for (const auto &label :
+                 {QString(), QString(25, 'A'), QString("Bad@text"), QString("Bad\"text"),
+                  QString("Bad\\text"), QString::fromUtf8("é")}) {
+                bad = row;
+                bad.label = label;
+                QVERIFY_THROWS_EXCEPTION(Error, squads.set(bad, 256));
+            }
+            auto large = classes.entries()[255];
+            large.record[4] = 2;
+            classes.set(255, large);
+            squads.validateFormations(classes);
+            bad = row;
+            bad.members[1].cell = 7;
+            squads.set(bad, 256);
+            QVERIFY_THROWS_EXCEPTION(Error, squads.validateFormations(classes));
+            bad = row;
+            bad.members = {{255, 0, 8, {0, 0}}, {255, 0, 6, {0, 0}}, {255, 0, 0, {0, 0}}};
+            squads.set(bad, 256);
+            QVERIFY_THROWS_EXCEPTION(Error, squads.validateFormations(classes));
+            squads.apply(saved, 256);
+            const auto legacyRow = QJsonObject{
+                {"profile_id", 1},
+                {"runtime_key", 33},
+                {"terrain_slot", 9},
+                {"slice", 40},
+                {"label", "Bandits!"},
+                {"members", QJsonArray{QJsonObject{{"class_id", 5},
+                                                   {"level_offset_raw", 255},
+                                                   {"cell", 8},
+                                                   {"cohort", "A"}},
+                                       QJsonObject{{"class_id", 16},
+                                                   {"level_offset_raw", 127},
+                                                   {"cell", 6},
+                                                   {"cohort", "B"}}}},
+                {"equipment", QJsonObject{{"A", QJsonArray{277, 1}}, {"B", QJsonArray{0, 277}}}},
+                {"persuasion",
+                 QJsonObject{{"mode", "fixed"},
+                             {"chance", 37},
+                             {"class_bonuses",
+                              QJsonArray{QJsonObject{{"class_id", 5}, {"bonus_percent", 10}}}}}},
+                {"retreat", QJsonObject{{"hp_threshold", 25}}},
+                {"rewards",
+                 QJsonObject{{"slots", QJsonArray{QJsonObject{{"raw", 44}, {"weight", 2}},
+                                                  QJsonObject{{"raw", 0x8115}, {"weight", 3}},
+                                                  QJsonObject{{"raw", 0}, {"weight", 1}}}}}}};
+            CustomSquads imported;
+            imported.importLegacy({{"33:9", legacyRow}}, 165);
+            const auto &legacy = imported.profiles()[339];
+            QCOMPARE(legacy.members[0].levelOffset, -1);
+            QCOMPARE(legacy.members[1].equipment[1], 277);
+            QCOMPARE(legacy.chance, 37);
+            QCOMPARE(legacy.rewards.outcomes[0], 44);
+            const auto before = imported.json();
+            QVERIFY_THROWS_EXCEPTION(
+                Error, imported.importLegacy({{"33:9", QJsonValue::Null}, {"34:0", 7}}, 165));
+            QCOMPARE(imported.json(), before);
+            imported.importLegacy({{"33:9", QJsonValue::Null}}, 165);
+            QVERIFY(!imported.hasProfiles());
+            restored.apply(empty, 256);
+            QVERIFY(!restored.modified());
+            row = CustomSquad{};
+            for (int key = 0; key < 256; ++key)
+                for (int slot = 0; slot < 10; ++slot) {
+                    row.scenarioKey = key;
+                    row.terrainSlot = slot;
+                    row.enabled = (slot % 2) == 0;
+                    restored.set(row, 165);
+                }
+            QCOMPARE(restored.profiles().size(), 2560);
+            const auto expanded = restored.bytes(0x2800000);
+            QCOMPARE(expanded.size(), CustomPlacement::indexBytes + 2560 * 128);
+            for (int i = 0; i < 2560; ++i)
+                QCOMPARE(u32(expanded, i * 4),
+                         quint32(0x2800000 + CustomPlacement::indexBytes + i * 128));
+            QVERIFY_THROWS_EXCEPTION(Error, restored.bytes(0x3fffff0));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void customCallerInstallation() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -137,6 +430,12 @@ class EngineTests : public QObject {
                 QCOMPARE(EncounterRate::load(rebuilt).json(), rate.json());
                 QCOMPARE(ScenarioRates::load(rebuilt).json(), rates.json());
                 QCOMPARE(CreatureRewards::load(rebuilt).json(), rewards.json());
+                const auto squads = CustomSquads::load(rebuilt, 165);
+                squads.validateFormations(ClassData::load(rebuilt));
+                QCOMPARE(squads.profiles().size(), 1);
+                QCOMPARE(squads.profiles()[339].members[1].levelOffset, -1);
+                QCOMPARE(squads.bytes(placed.dataOffset), data);
+                QVERIFY(!squads.modified());
                 auto corrupt = image;
                 corrupt[0x214a08] ^= 1;
                 QVERIFY_THROWS_EXCEPTION(Error,
@@ -527,8 +826,9 @@ class EngineTests : public QObject {
             }
             auto special = rom.bytes();
             put16(special, 0x142258,
-                  0x100 | u8(special, 0x142259));          // Nonzero pad is part of the key.
-            put16(special, 0x142258 + 35 * 8 + 2, 0x8001); // Zero key need not mean zero outcomes.
+                  0x100 | u8(special, 0x142259)); // Nonzero pad is part of the key.
+            put16(special, 0x142258 + 35 * 8 + 2,
+                  0x8001); // Zero key need not mean zero outcomes.
             const auto specialRewards = CreatureRewards::load(Rom::fromBytes(special));
             QCOMPARE(specialRewards.row(255).outcomes[0], 0x8001);
             QCOMPARE(specialRewards.row(u8(special, 0x142259)).outcomes[0], 0x8001);
@@ -591,7 +891,8 @@ class EngineTests : public QObject {
             restoredBytes.replace(0x101ddc, 4388, rom.bytes().mid(0x101ddc, 4388));
             restoredBytes.replace(0x27c4100, 64, rom.bytes().mid(0x27c4100, 64));
             restoredBytes.replace(0x10, 8, rom.bytes().mid(0x10, 8));
-            QCOMPARE(restoredBytes, rom.bytes()); // Entire original image outside the owned ranges.
+            QCOMPARE(restoredBytes,
+                     rom.bytes()); // Entire original image outside the owned ranges.
             auto checksum = result.image;
             Rom::updateChecksum(checksum);
             QCOMPARE(checksum, result.image);
@@ -1011,7 +1312,8 @@ class EngineTests : public QObject {
             project.setText("consumables", 1, "Custom herbs restore 42HP.");
             project.editConsumableEffect("healLeaf", {{"magnitude", 111}});
             QCOMPARE(project.textBanks()["consumables"].text(1), "Custom herbs restore 111HP.");
-            // Keep the native baseline after restoration; retained browser data must not revive it.
+            // Keep the native baseline after restoration; retained browser data must not revive
+            // it.
             auto restored = project;
             restored.setConsumableEffects(retail);
             auto loaded = Project::fromRom(source);
@@ -1213,7 +1515,8 @@ class EngineTests : public QObject {
         auto expectedImage = source.bytes();
         expectedImage.replace(0x645cc + 44 * 12, 12, expected);
         Rom::updateChecksum(expectedImage);
-        QCOMPARE(result.image, expectedImage); // every neighboring byte, not just exposed fields
+        QCOMPARE(result.image,
+                 expectedImage); // every neighboring byte, not just exposed fields
         QTemporaryDir output(
             QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-consumables-XXXXXX"));
         QVERIFY(output.isValid());
@@ -1952,7 +2255,8 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         const auto references = compiler.compileModule(
             "extern unsigned char records[], other[];\n"
             "unsigned int first(unsigned int id) { return records[id * 72 + 69]; }\n"
-            "unsigned int second(unsigned int id) { return records[id * 72 - 57] + other[id]; }\n",
+            "unsigned int second(unsigned int id) { return records[id * 72 - 57] + other[id]; "
+            "}\n",
             work.path(), "references", 0x80100004, {}, bindings);
         QVERIFY(references.entries["first"] > references.address);
         QSet<QString> observed;

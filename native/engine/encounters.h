@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/creature_rewards.h"
+#include "engine/custom_squads.h"
 #include "engine/encounter_rate.h"
 #include "engine/rom.h"
 #include "engine/scenario_rates.h"
@@ -52,6 +53,18 @@ class Encounters {
     void importLegacyScenarioRates(const QJsonObject &value) {
         scenarioRates_.importLegacy(value);
     }
+    const CustomSquads &customSquads() const {
+        return customSquads_;
+    }
+    void setCustomSquad(const CustomSquad &value, int classCount) {
+        customSquads_.set(value, classCount);
+    }
+    void removeCustomSquad(int key, int slot) {
+        customSquads_.remove(key, slot);
+    }
+    void importLegacyCustomSquads(const QJsonObject &value, int classCount) {
+        customSquads_.importLegacy(value, classCount);
+    }
     const QByteArray &poolBytes() const {
         return pools_;
     }
@@ -76,5 +89,6 @@ class Encounters {
     EncounterRate globalRate_;
     CreatureRewards rewards_;
     ScenarioRates scenarioRates_;
+    CustomSquads customSquads_;
 };
 } // namespace lordly
