@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+## Appended frame metadata
+
+AnimationDescriptor can append validated layer records and expand the relative-offset frame
+directory. Every original pointer moves by the directory growth; the complete original body,
+including unknown bytes, is retained. Editing one pose instruction can therefore select a
+new frame without changing other instructions sharing the old token. Saved descriptors carry
+metadata before pose validation. Import accepts older three-field snapshots; new metadata
+must retain original pointers/body and claim all added rows contiguously. Invalid art indexes,
+dimensions, overlaps, original-byte changes and excess data reject atomically.
+
+`animation_descriptor_tests` passed208ms: copied Fighter frame17 with first-layerX+11, all
+original frames unchanged, native body layer coordinates, JSON/legacy roundtrip, invalid edits,
+and frame256 through the actual opcode21 pose interpreter. `animation_sequences_tests` passed
+16088ms with private frame32/X+5 through source export, reopening, clone/growth/removal and
+ownership checks; candidate native-private-animations-vyOQRf. Sequence UI regression passed774ms.
+Build50512 passed. These checks cover ordinary pose40; the equipment-marker consumer scanning
+poses38/88 still recognizes only opcode1 and needs a compatibility fix before wide marker
+frames can work. Layer authoring controls and additional sprite bindings remain in progress.
+
 ## Private sequence authoring controls
 
 The Art workspace includes Private sequences: searchable class/body-route/pose selection,

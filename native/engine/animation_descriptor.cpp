@@ -67,6 +67,49 @@ QByteArray AnimationDescriptor::frame(int token) const {
     }
     return bytes.mid(at, 2 + count * 16);
 }
+int AnimationDescriptor::appendFrame(const QByteArray &row) {
+    const int count = frameCount();
+    if (count >= 65536 || row.size() < 2 || row.size() != 2 + u16(row, 0) * 16 ||
+        controls_[0].size() + 4 + row.size() > 16 * 1024 * 1024)
+        throw Error("New animation frame exceeds its metadata budget");
+    QByteArray bytes((count + 1) * 4, 0);
+    for (int token = 0; token < count; ++token)
+        put32(bytes, token * 4, u32(controls_[0], token * 4) + 4);
+    put32(bytes, count * 4, quint32(controls_[0].size() + 4));
+    bytes += controls_[0].mid(count * 4) + row;
+    auto next = *this;
+    next.controls_[0] = bytes;
+    next.frame(count);
+    *this = std::move(next);
+    return count;
+}
+void AnimationDescriptor::setMetadata(const QByteArray &bytes) {
+    if (bytes == controls_[0])
+        return;
+    if (bytes.size() > 16 * 1024 * 1024)
+        throw Error("Private metadata exceeds its data budget");
+    auto next = *this;
+    next.controls_[0] = bytes;
+    const int oldCount = frameCount(), count = next.frameCount();
+    if (count < oldCount)
+        throw Error("Private metadata must retain original frames");
+    const int shift = (count - oldCount) * 4;
+    for (int token = 0; token < oldCount; ++token)
+        if (u32(bytes, token * 4) != u32(controls_[0], token * 4) + shift)
+            throw Error("Private metadata changed an original frame pointer");
+    const auto body = controls_[0].mid(oldCount * 4);
+    if (bytes.mid(count * 4, body.size()) != body)
+        throw Error("Private metadata changed original frame data");
+    qsizetype cursor = count * 4 + body.size();
+    for (int token = oldCount; token < count; ++token) {
+        if (u32(bytes, token * 4) != cursor)
+            throw Error("Private metadata has overlapping or unclaimed new frames");
+        cursor += next.frame(token).size();
+    }
+    if (cursor != bytes.size())
+        throw Error("Private metadata has an unclaimed tail");
+    controls_[0] = bytes;
+}
 void AnimationDescriptor::setPoses(const PoseBank &bank) {
     const auto before = poses();
     if (bank.programs().size() < before.programs().size())
@@ -137,11 +180,14 @@ QJsonObject AnimationDescriptor::json() const {
     for (auto it = artwork_.cbegin(); it != artwork_.cend(); ++it)
         artwork[QString::number(it.key())] = QString::fromLatin1(it->toBase64());
     return {{"key", double(key_)},
+            {"metadata", QString::fromLatin1(controls_[0].toBase64())},
             {"poses", QString::fromLatin1(controls_[1].toBase64())},
             {"artwork", artwork}};
 }
 AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObject &object) {
-    if (object.size() != 3 || !object["poses"].isString() || !object["artwork"].isObject())
+    if ((object.size() != 3 && object.size() != 4) ||
+        (object.size() == 4 && !object.contains("metadata")) || !object["poses"].isString() ||
+        !object["artwork"].isObject())
         throw Error("Invalid saved private animation descriptor");
     const auto key = object["key"].toInteger(-1);
     if (key <= 0 || key >= 0x4000000 - 0x594280 || object["key"].toDouble() != double(key))
@@ -156,6 +202,8 @@ AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObj
             throw Error("Invalid private animation encoding");
         return bytes;
     };
+    if (object.contains("metadata"))
+        result.setMetadata(decode(object["metadata"]));
     result.setPoses(PoseBank::parse(decode(object["poses"])));
     const auto edits = object["artwork"].toObject();
     for (auto it = edits.begin(); it != edits.end(); ++it) {

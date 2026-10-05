@@ -27,6 +27,7 @@ class AnimationDescriptor {
     }
     void setPoses(const PoseBank &);
     QByteArray frame(int token) const;
+    int appendFrame(const QByteArray &);
     int frameCount() const;
     QByteArray sprite(int art) const;
     void setSprite(int art, const QByteArray &);
@@ -35,6 +36,7 @@ class AnimationDescriptor {
     static AnimationDescriptor fromJson(const Rom &, const QJsonObject &);
 
   private:
+    void setMetadata(const QByteArray &);
     Rom rom_;
     quint32 key_ = 0;
     QVector<quint32> members_;

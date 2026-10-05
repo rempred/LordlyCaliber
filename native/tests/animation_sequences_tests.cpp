@@ -24,8 +24,12 @@ class AnimationSequencesTests : public QObject {
             auto sequences = *project.animationSequences();
             sequences.create(2, 0, *project.animationRoutes());
             auto descriptor = *sequences.find(2, 0);
+            auto frame = descriptor.frame(17);
+            put16(frame, 4, quint16(qint16(u16(frame, 4)) + 5));
+            const int privateFrame = descriptor.appendFrame(frame);
+            QCOMPARE(privateFrame, 32);
             auto poses = descriptor.poses();
-            poses.setFrame(40, 0, 17, 2);
+            poses.setFrame(40, 0, privateFrame, 2);
             descriptor.setPoses(poses);
             sequences.setDescriptor(2, 0, descriptor);
             project.setAnimationSequences(sequences.json());
@@ -57,7 +61,7 @@ class AnimationSequencesTests : public QObject {
                 QCOMPARE(ActorArt::loadBody(rom, 2, 2, 0, 0, restored.bodyAnimationData())
                              .poseRecord(40, 0)
                              .operands,
-                         QByteArray::fromHex("1102"));
+                         QByteArray::fromHex("2002"));
             }
             const auto built = rebuild(project, tools, work.path());
             const auto exported = Rom::fromBytes(built.image);
@@ -71,7 +75,7 @@ class AnimationSequencesTests : public QObject {
             QCOMPARE(realRoutes.row(2)[0] & 4095, 209);
             QCOMPARE(realRoutes.row(2)[1], originalRoutes.row(2)[1]);
             QCOMPARE(ActorArt::loadBody(exported, 2, 2, 0, 0).poseRecord(40, 0).operands,
-                     QByteArray::fromHex("1102"));
+                     QByteArray::fromHex("2002"));
             QCOMPARE(CombatArtwork::load(exported).bindings().size(),
                      CombatArtwork::load(rom).bindings().size());
             auto conservation = built.image.left(rom.bytes().size());
@@ -113,7 +117,7 @@ class AnimationSequencesTests : public QObject {
             const auto cloneRom = Rom::fromBytes(cloned.image);
             QCOMPARE(ClassData::load(cloneRom).entries().size(), 166);
             QCOMPARE(ActorArt::loadBody(cloneRom, 165, 165, 0, 0).poseRecord(40, 0).operands,
-                     QByteArray::fromHex("1102"));
+                     QByteArray::fromHex("2002"));
             QVERIFY(AnimationRoutes::load(cloneRom).row(165)[0] !=
                     AnimationRoutes::load(cloneRom).row(2)[0]);
 
