@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Existing combat override compatibility
+
+AnimationOverrideImage authenticates retail and OBSO-v1/v2/v3 independently of
+ClassData. It checks bootstrap, hook, return and six carrier sites, immutable module
+identity, table hash, flags, order, duplicate keys and unused records. Unknown or
+partial owners remain identified as unavailable; bytes are preserved. V1 rows expose
+their original single selector as both Normal and Blocked. This binary inspector
+does not make advanced exact-original records editable.
+
+Class-owner fingerprints now canonicalize authenticated override instruction sites.
+Validation stays independent of ClassData to avoid recursively loading a class
+owner through its selector-return hook. Existing owned override bytes can coexist
+with a new-class source rebuild and reopening.
+
+`native/tools/generate-animation-overrides.py` translates the parent maintained
+OBSO producer to seven symbolic assembly sources. Generated metadata holds compiler
+bindings and compatibility hashes, not compiled module bytes. Named linker symbols
+are required for historical GNU J/JAL assembly. This developer generator is separate
+from the user's export path; users will not need a parent or Decomp checkout.
+`node native/tests/animation-override-source.cjs` passed: all seven fragments match
+the accepted patch,9,216 lookup cases,16 mode-return cases, null actors and four
+bootstrap paths including controlled PI DMA and resident reuse. The complete128-row
+table and a match in its final slot are exercised. The existing patch uses8MiB RAM;
+these checks do not establish full-game heap room or hardware timing.
+
+`animation_override_tests` passed5,763ms: retail/all historical versions, corruption,
+mixed instructions, duplicate/undeclared/malformed records, unchanged region guards,
+class readers and an added-class public export with an installed v3 patch. Native
+logical override editing, browser project import and source export of changed rows
+are the next integration step; source/owner identity must use the current full class
+record byte69 (class-copy match), not the unrelated named-alias byte.
+
 ## Expandable class animation data
 
 AnimationRoutes owns the five class-indexed sections of raw resource00315736:

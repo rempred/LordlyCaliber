@@ -1,22 +1,26 @@
 #include "engine/art_resource_links.h"
 #include "engine/animation_routes.h"
+#include "engine/animation_override_image.h"
 #include "engine/army_artwork.h"
 #include "engine/avatar_library.h"
 #include "engine/icon_artwork.h"
 namespace lordly {
 QByteArray canonicalArtOwner(QByteArray code, qsizetype start) {
+    code = AnimationOverrideImage::canonicalOwner(std::move(code),start);
     code = AnimationRoutes::canonicalOwner(std::move(code), start);
     return ArmyArtwork::canonicalOwner(
         AvatarLibrary::canonicalOwner(IconArtwork::canonicalOwner(std::move(code), start), start),
         start);
 }
 void validateArtResourceLinks(const Rom &rom) {
+    AnimationOverrideImage::validateOwner(rom,0,rom.bytes().size());
     IconArtwork::validateRelocations(rom);
     AvatarLibrary::validateRelocations(rom);
     ArmyArtwork::validateRelocations(rom);
     AnimationRoutes::validateRelocations(rom);
 }
 void validateArtOwnerLinks(const Rom &rom, qsizetype start, qsizetype size) {
+    AnimationOverrideImage::validateOwner(rom,start,size);
     auto contained = [&](QPair<int, int> site) {
         return site.first >= start && site.second >= start && site.first + 4 <= start + size &&
                site.second + 4 <= start + size;

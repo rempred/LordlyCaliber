@@ -1,0 +1,1780 @@
+{
+  "version": 1,
+  "layout": {
+    "bootstrapRam": 2148158464,
+    "bootstrapSize": 256,
+    "bootstrapZ64": 217088,
+    "capacity": 128,
+    "hookRam": 2149423348,
+    "hookZ64": 2214852,
+    "moduleRam": 2152071168,
+    "moduleSize": 2048,
+    "moduleZ64": 41615360,
+    "recordSize": 8,
+    "selectorReturnRam": 2149311392,
+    "selectorReturnZ64": 2103344,
+    "tableOffset": 1024
+  },
+  "versions": [
+    {
+      "version": 1,
+      "bootstrapSize": 192,
+      "bootstrapSha256": "91f5ff914bb3ba9359d39af0a61754308078e111ee443575287d0eeaf761793c",
+      "hookSha256": "c718e5faf70ce6637758aaa68da9922b3cf42423fb3aef34cf437bcb1be9799c",
+      "moduleTemplateSha256": "e3e96be6f7117ca9f9396dc9926deae565e33bea69408df98da90960e9ec6318"
+    },
+    {
+      "version": 2,
+      "bootstrapSize": 256,
+      "bootstrapSha256": "89ff5d8e73c42335050abd15495534df5442827d74e52d8551cdb2c0d2831a01",
+      "hookSha256": "c718e5faf70ce6637758aaa68da9922b3cf42423fb3aef34cf437bcb1be9799c",
+      "moduleTemplateSha256": "d2aa33614f89bd5e163c044ef09141a3f864d545f79e95e1f9dc815bffc2586a"
+    },
+    {
+      "version": 3,
+      "bootstrapSize": 256,
+      "bootstrapSha256": "866176eea97404ad57b42265451b2fcb71af19ae12c0661a23d86a607fd07c47",
+      "hookSha256": "c718e5faf70ce6637758aaa68da9922b3cf42423fb3aef34cf437bcb1be9799c",
+      "moduleTemplateSha256": "86476bdfb130bc9c11126b45077b20cd9c7eb0029cd25dece1f5db29545256b4"
+    }
+  ],
+  "actions": [
+    {
+      "id": 1,
+      "name": "Thrust",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 2,
+      "name": "Peck",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 3,
+      "name": "Pierce",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 4,
+      "name": "Slash",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 5,
+      "name": "Cleave",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 6,
+      "name": "Rend",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 7,
+      "name": "Claw",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 8,
+      "name": "Bite",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 9,
+      "name": "Strike",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 10,
+      "name": "Crush",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 11,
+      "name": "Smash",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 12,
+      "name": "Lash",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 13,
+      "name": "Pull Strings",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 14,
+      "name": "Shoot",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 15,
+      "name": "Take a Peek",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 16,
+      "name": "Flip Over",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 17,
+      "name": "Sonic Boom",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 18,
+      "name": "Wind Shot",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 19,
+      "name": "\u000eThunder\u0010cArrow\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 20,
+      "name": "Wind Storm",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 21,
+      "name": "Mesmerize",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 22,
+      "name": "Life Drain",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 23,
+      "name": "Throw a Kiss",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 24,
+      "name": "Throw a Kiss",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 25,
+      "name": "\u000eGaze of\u0010cTerror\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 26,
+      "name": "Pumpkin Smash",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 27,
+      "name": "\u000ePumpkin\u0010cShower\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 28,
+      "name": "Banish",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 29,
+      "name": "Jihad",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 30,
+      "name": "Magic Missile",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 31,
+      "name": "Abyss",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 32,
+      "name": "\u000eLightning\u0010cBreath\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 33,
+      "name": "Fire Breath",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 34,
+      "name": "Acid Breath",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 35,
+      "name": "Breath of Cold",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 36,
+      "name": "Sacred Breath",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 37,
+      "name": "Rotten Breath",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 38,
+      "name": "Petrify",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 39,
+      "name": "Radiant Gale",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 40,
+      "name": "Crimson Note",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 41,
+      "name": "Earthquake",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 42,
+      "name": "\u000eClear\u0010cDisaster\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 43,
+      "name": "Divine Ray",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 44,
+      "name": "Evil Dead",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 45,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 46,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 47,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 48,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 49,
+      "name": "Evocation",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 50,
+      "name": "Ninja Art",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 51,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 52,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 53,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 54,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 55,
+      "name": "Lightning",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 56,
+      "name": "Lightning",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 57,
+      "name": "Thunder Flare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 58,
+      "name": "Thunder Flare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 59,
+      "name": "Shock Bolt",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 60,
+      "name": "Thunderbird",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 61,
+      "name": "Thunderbird",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 62,
+      "name": "Thunderbird",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 63,
+      "name": "Fireball",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 64,
+      "name": "Fireball",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 65,
+      "name": "Fire Storm",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 66,
+      "name": "Fire Storm",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 67,
+      "name": "\u000eRay of\u0010cParalysis\u000f",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 68,
+      "name": "Salamander",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 69,
+      "name": "Salamander",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 70,
+      "name": "Salamander",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 71,
+      "name": "Acid Vapor",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 72,
+      "name": "Acid Vapor",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 73,
+      "name": "Crag Press",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 74,
+      "name": "Crag Press",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 75,
+      "name": "Poison Cloud",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 76,
+      "name": "Gnome",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 77,
+      "name": "Gnome",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 78,
+      "name": "Gnome",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 79,
+      "name": "Ice Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 80,
+      "name": "Ice Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 81,
+      "name": "Ice Field",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 82,
+      "name": "Ice Field",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 83,
+      "name": "Slumber Mist",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 84,
+      "name": "Fenrir",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 85,
+      "name": "Fenrir",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 86,
+      "name": "Fenrir",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 87,
+      "name": "Healing",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 88,
+      "name": "Healing",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 89,
+      "name": "Healing Plus",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 90,
+      "name": "Healing Plus",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 91,
+      "name": "Word of Pain",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 92,
+      "name": "Word of Pain",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 93,
+      "name": "Dark Quest",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 94,
+      "name": "Dark Quest",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 95,
+      "name": "Nightmare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 96,
+      "name": "Dark Lore",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 97,
+      "name": "Dark Lore",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 98,
+      "name": "Dark Lore",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 99,
+      "name": "Tempest",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 100,
+      "name": "Annihilation",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 101,
+      "name": "Meteor Strike",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 102,
+      "name": "White Mute",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 103,
+      "name": "Ionosphere",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 104,
+      "name": "Ionosphere",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 105,
+      "name": "Atmosphere",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 106,
+      "name": "Atmosphere",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 107,
+      "name": "Deep Sleep",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 108,
+      "name": "Deep Sleep",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 109,
+      "name": "Deep Sleep",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 110,
+      "name": "Plasma Ball",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 111,
+      "name": "Plasma Ball",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 112,
+      "name": "Plasma Storm",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 113,
+      "name": "Plasma Storm",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 114,
+      "name": "Bind Flare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 115,
+      "name": "Bind Flare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 116,
+      "name": "Bind Flare",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 117,
+      "name": "Lava Shot",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 118,
+      "name": "Lava Shot",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 119,
+      "name": "Lava Flow",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 120,
+      "name": "Lava Flow",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 121,
+      "name": "Poison Plant",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 122,
+      "name": "Poison Plant",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 123,
+      "name": "Poison Plant",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 124,
+      "name": "Clay Assault",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 125,
+      "name": "Clay Assault",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 126,
+      "name": "Blue Spiral",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 127,
+      "name": "Blue Spiral",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 128,
+      "name": "Poison Lime",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 129,
+      "name": "Poison Lime",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 130,
+      "name": "Poison Lime",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 131,
+      "name": "Infest",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 132,
+      "name": "Infest",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 133,
+      "name": "Inferno",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 134,
+      "name": "Inferno",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 135,
+      "name": "Black Breeze",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 136,
+      "name": "Black Breeze",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 137,
+      "name": "Black Breeze",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 138,
+      "name": "Dark Blaze",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 139,
+      "name": "Dark Blaze",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 140,
+      "name": "Dark Flame",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 141,
+      "name": "Dark Flame",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 142,
+      "name": "Doom",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 143,
+      "name": "Doom",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 144,
+      "name": "Doom",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 145,
+      "name": "[Elemental Magic]",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 146,
+      "name": "Sonic Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 147,
+      "name": "Wind Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 148,
+      "name": "Fire Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 149,
+      "name": "Earth Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 150,
+      "name": "Aqua Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 151,
+      "name": "Holy Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 152,
+      "name": "Dark Blast",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 153,
+      "name": "Sonic Blade",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 154,
+      "name": "Ignis Fatuus",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 155,
+      "name": "Ignis Fatuus",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 156,
+      "name": "Ignis Fatuus",
+      "opcodeFamily": "0x0B"
+    },
+    {
+      "id": 157,
+      "name": "Mirage Slash",
+      "opcodeFamily": "6-or-7"
+    },
+    {
+      "id": 158,
+      "name": "Fatal Dance",
+      "opcodeFamily": "6-or-7"
+    }
+  ],
+  "classes": [
+    {
+      "id": 1,
+      "source": 1,
+      "owner": 1
+    },
+    {
+      "id": 2,
+      "source": 2,
+      "owner": 2
+    },
+    {
+      "id": 3,
+      "source": 3,
+      "owner": 3
+    },
+    {
+      "id": 4,
+      "source": 4,
+      "owner": 4
+    },
+    {
+      "id": 5,
+      "source": 5,
+      "owner": 5
+    },
+    {
+      "id": 6,
+      "source": 6,
+      "owner": 6
+    },
+    {
+      "id": 7,
+      "source": 7,
+      "owner": 7
+    },
+    {
+      "id": 8,
+      "source": 8,
+      "owner": 8
+    },
+    {
+      "id": 9,
+      "source": 9,
+      "owner": 9
+    },
+    {
+      "id": 10,
+      "source": 10,
+      "owner": 10
+    },
+    {
+      "id": 11,
+      "source": 11,
+      "owner": 11
+    },
+    {
+      "id": 12,
+      "source": 12,
+      "owner": 12
+    },
+    {
+      "id": 13,
+      "source": 13,
+      "owner": 13
+    },
+    {
+      "id": 14,
+      "source": 14,
+      "owner": 14
+    },
+    {
+      "id": 15,
+      "source": 15,
+      "owner": 15
+    },
+    {
+      "id": 16,
+      "source": 16,
+      "owner": 16
+    },
+    {
+      "id": 17,
+      "source": 17,
+      "owner": 17
+    },
+    {
+      "id": 18,
+      "source": 18,
+      "owner": 18
+    },
+    {
+      "id": 19,
+      "source": 19,
+      "owner": 19
+    },
+    {
+      "id": 20,
+      "source": 20,
+      "owner": 20
+    },
+    {
+      "id": 21,
+      "source": 21,
+      "owner": 21
+    },
+    {
+      "id": 22,
+      "source": 22,
+      "owner": 22
+    },
+    {
+      "id": 23,
+      "source": 23,
+      "owner": 23
+    },
+    {
+      "id": 24,
+      "source": 24,
+      "owner": 24
+    },
+    {
+      "id": 25,
+      "source": 25,
+      "owner": 25
+    },
+    {
+      "id": 26,
+      "source": 26,
+      "owner": 26
+    },
+    {
+      "id": 27,
+      "source": 27,
+      "owner": 27
+    },
+    {
+      "id": 28,
+      "source": 28,
+      "owner": 28
+    },
+    {
+      "id": 29,
+      "source": 29,
+      "owner": 29
+    },
+    {
+      "id": 30,
+      "source": 30,
+      "owner": 30
+    },
+    {
+      "id": 31,
+      "source": 31,
+      "owner": 31
+    },
+    {
+      "id": 32,
+      "source": 32,
+      "owner": 32
+    },
+    {
+      "id": 33,
+      "source": 33,
+      "owner": 33
+    },
+    {
+      "id": 34,
+      "source": 34,
+      "owner": 34
+    },
+    {
+      "id": 35,
+      "source": 35,
+      "owner": 35
+    },
+    {
+      "id": 36,
+      "source": 36,
+      "owner": 36
+    },
+    {
+      "id": 37,
+      "source": 37,
+      "owner": 37
+    },
+    {
+      "id": 38,
+      "source": 38,
+      "owner": 38
+    },
+    {
+      "id": 39,
+      "source": 39,
+      "owner": 39
+    },
+    {
+      "id": 40,
+      "source": 40,
+      "owner": 40
+    },
+    {
+      "id": 41,
+      "source": 41,
+      "owner": 41
+    },
+    {
+      "id": 42,
+      "source": 42,
+      "owner": 42
+    },
+    {
+      "id": 43,
+      "source": 43,
+      "owner": 43
+    },
+    {
+      "id": 44,
+      "source": 44,
+      "owner": 44
+    },
+    {
+      "id": 45,
+      "source": 45,
+      "owner": 45
+    },
+    {
+      "id": 46,
+      "source": 46,
+      "owner": 46
+    },
+    {
+      "id": 47,
+      "source": 47,
+      "owner": 47
+    },
+    {
+      "id": 48,
+      "source": 48,
+      "owner": 48
+    },
+    {
+      "id": 49,
+      "source": 49,
+      "owner": 49
+    },
+    {
+      "id": 50,
+      "source": 50,
+      "owner": 50
+    },
+    {
+      "id": 51,
+      "source": 51,
+      "owner": 51
+    },
+    {
+      "id": 52,
+      "source": 52,
+      "owner": 52
+    },
+    {
+      "id": 53,
+      "source": 53,
+      "owner": 53
+    },
+    {
+      "id": 54,
+      "source": 54,
+      "owner": 54
+    },
+    {
+      "id": 55,
+      "source": 55,
+      "owner": 55
+    },
+    {
+      "id": 56,
+      "source": 56,
+      "owner": 56
+    },
+    {
+      "id": 57,
+      "source": 57,
+      "owner": 57
+    },
+    {
+      "id": 58,
+      "source": 58,
+      "owner": 58
+    },
+    {
+      "id": 59,
+      "source": 59,
+      "owner": 59
+    },
+    {
+      "id": 60,
+      "source": 60,
+      "owner": 60
+    },
+    {
+      "id": 61,
+      "source": 61,
+      "owner": 61
+    },
+    {
+      "id": 62,
+      "source": 62,
+      "owner": 62
+    },
+    {
+      "id": 63,
+      "source": 63,
+      "owner": 63
+    },
+    {
+      "id": 64,
+      "source": 64,
+      "owner": 64
+    },
+    {
+      "id": 65,
+      "source": 65,
+      "owner": 65
+    },
+    {
+      "id": 66,
+      "source": 66,
+      "owner": 66
+    },
+    {
+      "id": 67,
+      "source": 67,
+      "owner": 67
+    },
+    {
+      "id": 68,
+      "source": 68,
+      "owner": 68
+    },
+    {
+      "id": 69,
+      "source": 69,
+      "owner": 69
+    },
+    {
+      "id": 70,
+      "source": 70,
+      "owner": 70
+    },
+    {
+      "id": 71,
+      "source": 71,
+      "owner": 71
+    },
+    {
+      "id": 72,
+      "source": 72,
+      "owner": 72
+    },
+    {
+      "id": 73,
+      "source": 73,
+      "owner": 73
+    },
+    {
+      "id": 74,
+      "source": 74,
+      "owner": 74
+    },
+    {
+      "id": 75,
+      "source": 75,
+      "owner": 75
+    },
+    {
+      "id": 76,
+      "source": 76,
+      "owner": 76
+    },
+    {
+      "id": 77,
+      "source": 77,
+      "owner": 77
+    },
+    {
+      "id": 78,
+      "source": 78,
+      "owner": 78
+    },
+    {
+      "id": 79,
+      "source": 79,
+      "owner": 79
+    },
+    {
+      "id": 80,
+      "source": 80,
+      "owner": 80
+    },
+    {
+      "id": 81,
+      "source": 81,
+      "owner": 81
+    },
+    {
+      "id": 82,
+      "source": 82,
+      "owner": 82
+    },
+    {
+      "id": 83,
+      "source": 83,
+      "owner": 83
+    },
+    {
+      "id": 84,
+      "source": 84,
+      "owner": 84
+    },
+    {
+      "id": 85,
+      "source": 85,
+      "owner": 85
+    },
+    {
+      "id": 86,
+      "source": 86,
+      "owner": 86
+    },
+    {
+      "id": 87,
+      "source": 87,
+      "owner": 87
+    },
+    {
+      "id": 88,
+      "source": 88,
+      "owner": 88
+    },
+    {
+      "id": 89,
+      "source": 89,
+      "owner": 89
+    },
+    {
+      "id": 90,
+      "source": 90,
+      "owner": 90
+    },
+    {
+      "id": 91,
+      "source": 91,
+      "owner": 91
+    },
+    {
+      "id": 92,
+      "source": 92,
+      "owner": 92
+    },
+    {
+      "id": 93,
+      "source": 93,
+      "owner": 114
+    },
+    {
+      "id": 94,
+      "source": 94,
+      "owner": 94
+    },
+    {
+      "id": 95,
+      "source": 95,
+      "owner": 95
+    },
+    {
+      "id": 96,
+      "source": 96,
+      "owner": 96
+    },
+    {
+      "id": 97,
+      "source": 97,
+      "owner": 97
+    },
+    {
+      "id": 98,
+      "source": 98,
+      "owner": 98
+    },
+    {
+      "id": 99,
+      "source": 99,
+      "owner": 99
+    },
+    {
+      "id": 100,
+      "source": 100,
+      "owner": 100
+    },
+    {
+      "id": 101,
+      "source": 101,
+      "owner": 101
+    },
+    {
+      "id": 102,
+      "source": 102,
+      "owner": 102
+    },
+    {
+      "id": 103,
+      "source": 103,
+      "owner": 103
+    },
+    {
+      "id": 104,
+      "source": 104,
+      "owner": 104
+    },
+    {
+      "id": 105,
+      "source": 105,
+      "owner": 105
+    },
+    {
+      "id": 106,
+      "source": 106,
+      "owner": 105
+    },
+    {
+      "id": 107,
+      "source": 107,
+      "owner": 105
+    },
+    {
+      "id": 108,
+      "source": 108,
+      "owner": 108
+    },
+    {
+      "id": 109,
+      "source": 109,
+      "owner": 108
+    },
+    {
+      "id": 110,
+      "source": 110,
+      "owner": 108
+    },
+    {
+      "id": 111,
+      "source": 111,
+      "owner": 111
+    },
+    {
+      "id": 112,
+      "source": 112,
+      "owner": 112
+    },
+    {
+      "id": 113,
+      "source": 113,
+      "owner": 113
+    },
+    {
+      "id": 114,
+      "source": 114,
+      "owner": 114
+    },
+    {
+      "id": 115,
+      "source": 115,
+      "owner": 115
+    },
+    {
+      "id": 116,
+      "source": 116,
+      "owner": 116
+    },
+    {
+      "id": 117,
+      "source": 117,
+      "owner": 117
+    },
+    {
+      "id": 118,
+      "source": 118,
+      "owner": 118
+    },
+    {
+      "id": 119,
+      "source": 119,
+      "owner": 119
+    },
+    {
+      "id": 120,
+      "source": 120,
+      "owner": 120
+    },
+    {
+      "id": 121,
+      "source": 121,
+      "owner": 121
+    },
+    {
+      "id": 122,
+      "source": 122,
+      "owner": 122
+    },
+    {
+      "id": 123,
+      "source": 123,
+      "owner": 123
+    },
+    {
+      "id": 124,
+      "source": 124,
+      "owner": 124
+    },
+    {
+      "id": 125,
+      "source": 125,
+      "owner": 125
+    },
+    {
+      "id": 126,
+      "source": 126,
+      "owner": 126
+    },
+    {
+      "id": 127,
+      "source": 127,
+      "owner": 127
+    },
+    {
+      "id": 128,
+      "source": 128,
+      "owner": 128
+    },
+    {
+      "id": 129,
+      "source": 129,
+      "owner": 129
+    },
+    {
+      "id": 130,
+      "source": 130,
+      "owner": 130
+    },
+    {
+      "id": 131,
+      "source": 131,
+      "owner": 131
+    },
+    {
+      "id": 132,
+      "source": 132,
+      "owner": 132
+    },
+    {
+      "id": 133,
+      "source": 133,
+      "owner": 133
+    },
+    {
+      "id": 134,
+      "source": 134,
+      "owner": 134
+    },
+    {
+      "id": 135,
+      "source": 135,
+      "owner": 135
+    },
+    {
+      "id": 136,
+      "source": 136,
+      "owner": 136
+    },
+    {
+      "id": 137,
+      "source": 137,
+      "owner": 13
+    },
+    {
+      "id": 138,
+      "source": 138,
+      "owner": 6
+    },
+    {
+      "id": 139,
+      "source": 139,
+      "owner": 9
+    },
+    {
+      "id": 140,
+      "source": 140,
+      "owner": 15
+    },
+    {
+      "id": 141,
+      "source": 141,
+      "owner": 12
+    },
+    {
+      "id": 142,
+      "source": 142,
+      "owner": 8
+    },
+    {
+      "id": 143,
+      "source": 143,
+      "owner": 6
+    },
+    {
+      "id": 144,
+      "source": 144,
+      "owner": 5
+    },
+    {
+      "id": 145,
+      "source": 145,
+      "owner": 26
+    },
+    {
+      "id": 146,
+      "source": 146,
+      "owner": 10
+    },
+    {
+      "id": 147,
+      "source": 147,
+      "owner": 115
+    },
+    {
+      "id": 148,
+      "source": 148,
+      "owner": 27
+    },
+    {
+      "id": 149,
+      "source": 149,
+      "owner": 32
+    },
+    {
+      "id": 150,
+      "source": 150,
+      "owner": 21
+    },
+    {
+      "id": 151,
+      "source": 151,
+      "owner": 29
+    },
+    {
+      "id": 152,
+      "source": 152,
+      "owner": 31
+    },
+    {
+      "id": 153,
+      "source": 153,
+      "owner": 54
+    },
+    {
+      "id": 154,
+      "source": 154,
+      "owner": 22
+    },
+    {
+      "id": 155,
+      "source": 155,
+      "owner": 115
+    },
+    {
+      "id": 156,
+      "source": 156,
+      "owner": 20
+    },
+    {
+      "id": 157,
+      "source": 157,
+      "owner": 49
+    },
+    {
+      "id": 158,
+      "source": 158,
+      "owner": 38
+    },
+    {
+      "id": 159,
+      "source": 159,
+      "owner": 116
+    },
+    {
+      "id": 160,
+      "source": 160,
+      "owner": 19
+    },
+    {
+      "id": 161,
+      "source": 161,
+      "owner": 161
+    },
+    {
+      "id": 162,
+      "source": 162,
+      "owner": 19
+    },
+    {
+      "id": 163,
+      "source": 163,
+      "owner": 163
+    },
+    {
+      "id": 164,
+      "source": 164,
+      "owner": 164
+    }
+  ],
+  "sites": [
+    {
+      "name": "hook",
+      "offset": 2214852,
+      "size": 8,
+      "retailSha256": "09e0a6da960bc0d433a4f390f59559d181604d0a8f22fad6ad78a3b3404876c7",
+      "activeSha256": "c718e5faf70ce6637758aaa68da9922b3cf42423fb3aef34cf437bcb1be9799c"
+    },
+    {
+      "name": "return",
+      "offset": 2103344,
+      "size": 8,
+      "retailSha256": "78aa5094d5ec7291c79f799c009d04f06c2f20187988e3dcc8d35ee5efdbb378",
+      "activeSha256": "b1654fe034629ec77871012e65a054cd250c09afbc3933025ab0b165d8c026b3"
+    },
+    {
+      "name": "carrier0",
+      "offset": 2275180,
+      "size": 4,
+      "retailSha256": "a833a1d6f2132db66e162fa715f4d76a933bd3d6b10e986a803ad5d853a1ceec",
+      "activeSha256": "40d33b2cccdb5dc1c1c7ba3aad6c5e2c7a12fc1276bfef50fa3c92d37f8e2071"
+    },
+    {
+      "name": "carrier1",
+      "offset": 2275264,
+      "size": 4,
+      "retailSha256": "a833a1d6f2132db66e162fa715f4d76a933bd3d6b10e986a803ad5d853a1ceec",
+      "activeSha256": "40d33b2cccdb5dc1c1c7ba3aad6c5e2c7a12fc1276bfef50fa3c92d37f8e2071"
+    },
+    {
+      "name": "carrier2",
+      "offset": 2280228,
+      "size": 4,
+      "retailSha256": "67baeb14d4a6dbb192b031d02215cd025ea07a941ff9c90056e6e00e62a71281",
+      "activeSha256": "f1013415c422603a0b831942ed0b99a62f933231bde7bca92cb158eef5ef332f"
+    },
+    {
+      "name": "carrier3",
+      "offset": 2280236,
+      "size": 4,
+      "retailSha256": "44098231139c2e5ec7759c4cac85ab54496c63dee8765984520afd34d9757f4d",
+      "activeSha256": "8be3a1cf24597a7be44b13af8a80f28795f9317d091d3dd9ca03b2f580cab784"
+    },
+    {
+      "name": "carrier4",
+      "offset": 2298124,
+      "size": 4,
+      "retailSha256": "15ad8003d38957336c8f1ce671ba2d44dd4c9c492341a1c66e5ca6172bcbb018",
+      "activeSha256": "8c7b2a2d0cf46c477cf8e3903287f0ca7a0b07694c3d1f6b4cc2f4c7584e84da"
+    },
+    {
+      "name": "carrier5",
+      "offset": 2298132,
+      "size": 4,
+      "retailSha256": "2ea83e0ba1d812c886672b9e4f49ae1ab177367e6fdd3afcb0cd81b424c398e8",
+      "activeSha256": "34e3a9fae4f11f6ec4a3d4d4266d0f721fcdca61798ccba11b907a1f3f333ef6"
+    }
+  ],
+  "sources": {
+    "bootstrap": {
+      "file": "game/art/animation-override-bootstrap.s",
+      "address": 2148158464,
+      "size": 256,
+      "sha256": "866176eea97404ad57b42265451b2fcb71af19ae12c0661a23d86a607fd07c47",
+      "symbols": {
+        "LC_ICACHE_INVALIDATE": 2148073664,
+        "LC_DCACHE_INVALIDATE": 2148073488,
+        "LC_MODE_RETURN": 2152071552,
+        "LC_MODULE_ENTRY": 2152071232
+      }
+    },
+    "lookup": {
+      "file": "game/art/animation-override-lookup.s",
+      "address": 2152071680,
+      "size": 352,
+      "sha256": "fc564488a2ae42b980af2d36d7a6206221b59303b2615a8fb56b45ea88c5e243",
+      "symbols": {
+        "LC_ORIGINAL_PROLOGUE": 2149423356
+      }
+    },
+    "mode-return": {
+      "file": "game/art/animation-override-mode-return.s",
+      "address": 2152071552,
+      "size": 20,
+      "sha256": "facfab4929a33e80a257f1836ca7c3caa22a7b4de366828a6eb5f1f86e4ee13c",
+      "symbols": {}
+    },
+    "entry": {
+      "file": "game/art/animation-override-entry.s",
+      "address": 2152071232,
+      "symbols": {
+        "LC_LOOKUP": 2152071680
+      }
+    },
+    "hook": {
+      "file": "game/art/animation-override-hook.s",
+      "address": 2149423348,
+      "symbols": {
+        "LC_BOOT": 2148158464
+      }
+    },
+    "return": {
+      "file": "game/art/animation-override-return.s",
+      "address": 2149311392,
+      "symbols": {
+        "LC_BOOT_SELECTOR": 2148158476
+      }
+    },
+    "carriers": {
+      "file": "game/art/animation-override-carriers.s",
+      "address": 2147483648,
+      "symbols": {}
+    }
+  },
+  "generator": "native/tools/generate-animation-overrides.py",
+  "inputs": [
+    {
+      "path": "tools/generate_editor_combat_animation_override_data.py",
+      "sha256": "2fc72d2e1edb02089699eda7232ce7908edbbc6d0ebce0096f68ba9415549a07"
+    },
+    {
+      "path": "tools/build_combat_body_animation_selector_override_rom.py",
+      "sha256": "820c0ba684435df59350df13e7b9554463bd0092c6c4fbbf1fd1a681e82f7496"
+    }
+  ]
+}
