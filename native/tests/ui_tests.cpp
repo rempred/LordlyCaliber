@@ -283,6 +283,63 @@ class UiTests : public QObject {
         seek(25);
         QCOMPARE(preview.renderedFrame(), closed);
     }
+    void screenCropPreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Screen crop playback", source.key, false);
+        QVector<quint32> words{0x80000006U, 0};
+        for (int i = 0; i < 3; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x3b << 0xffffffffU << 0xffffffffU << 80 << 70 << 4 << 1;
+        for (int i = 0; i < 140; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x3b << 80 << 70 << 24 << 24 << 4 << 0;
+        for (int i = 0; i < 20; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        ScenePreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        preview.selectScene(scenes, id, 0);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const auto seek = [&](int tick) {
+            position->setValue(tick);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        };
+        seek(3);
+        const auto before = preview.renderedFrame();
+        QCOMPARE(before.pixelColor(160, 10), QColor(Qt::black));
+        seek(5);
+        const auto halfway = preview.renderedFrame();
+        QVERIFY(halfway != before);
+        seek(8);
+        const auto closed = preview.renderedFrame();
+        QVERIFY(closed != halfway);
+        QCOMPARE(closed.pixelColor(160, 79), QColor(Qt::black));
+        QCOMPARE(closed.pixelColor(160, 170), QColor(Qt::black));
+        QVERIFY(closed.pixelColor(160, 110) != QColor(Qt::black));
+        preview.repaint();
+        QCOMPARE(preview.renderedFrame(), closed);
+        seek(124);
+        QCOMPARE(preview.renderedFrame(), closed);
+        seek(5);
+        QCOMPARE(preview.renderedFrame(), halfway);
+        seek(151);
+        QCOMPARE(preview.renderedFrame(), before);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        seek(8);
+        QCOMPARE(preview.renderedFrame(), closed);
+    }
     void launchImageSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -477,7 +534,8 @@ class UiTests : public QObject {
         const auto first = preview.renderedFrame();
         auto center = [](const QImage &image) {
             QPointF sum; double weight = 0;
-            for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x) {
+            // Measure the sprite inside the native scissor, excluding its black border.
+            for (int y = 24; y < 215; ++y) for (int x = 0; x < 319; ++x) {
                 const auto a = image.pixelColor(x,y).alpha(); sum += QPointF(x,y)*a; weight += a;
             }
             return weight ? sum / weight : QPointF(-10000,-10000);
@@ -664,7 +722,10 @@ class UiTests : public QObject {
         QVERIFY(!preview.property("sceneStopped").toBool());
         QVERIFY(empty != background);
         for (int y = 0; y < empty.height(); ++y) for (int x = 0; x < empty.width(); ++x)
-            QCOMPARE(empty.pixelColor(x, y).alpha(), 0);
+            if (x >= 319 || y < 24 || y >= 215)
+                QCOMPARE(empty.pixelColor(x, y), QColor(Qt::black));
+            else
+                QCOMPARE(empty.pixelColor(x, y).alpha(), 0);
     }
     void sceneSpriteComposition() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

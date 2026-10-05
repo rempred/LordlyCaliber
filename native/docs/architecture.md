@@ -1,5 +1,40 @@
 # Native Lordly Caliber
 
+## Draw-driven screen crop
+
+SceneCrop handles3B/3C for the non-title launch variant using reconstructed C.
+The constructor preserves full-word sentinel comparison before signed-halfword
+storage. Progress advances before interpolation during a completed draw; query,
+zero duration, persistence, replacement and release follow the original record.
+UI repaint and snapshot presentation do not advance it. The preview now includes
+the common renderer's default scissor (top24, bottom215, right319) and applies
+authored crop edges before its independent full-screen fade. Desktop limits are
+interpreted as exclusive; exact hardware coverage is not claimed. Selector0's
+separate textured title reveal remains explicitly unsupported.
+
+Complete original functions uniquely match retained opening-scene RAM:
+ROM2AD6D0..2AD7B0 at8023DF70,2AD7B0..2ADA20 at8023E050,
+2ADA20..2ADA48 at8023E2C0. The54-byte shared interpolation instruction span at
+RAM80227DC4 uniquely matchesROM283D94. Wrapper2821DC calls the crop draw and
+emits default scissor wordsED000060/004FC35C when it returns zero.
+
+Build3511 scene_runtime_tests screenCropAgainstMips passed145ms:1472 complete
+record/query/scissor snapshots across128 original sequences. Allocation/free are
+controlled; native interpolation and display-list emission execute. Inputs cover
+sentinels, halfword truncation, signed edges,zero/negative duration, persistence
+and replacement. Negative durations are sampled before completion. The first
+fixture used800F9BA0 rather than the signed-address result800E9BA0 for the display
+cursor; fixing that input resolved the mismatch without changing product code.
+
+Build3511 ui_tests screenCropPreviewSeek passed within the5590ms scene suite;
+iris,sprite,color,capture and manual-input regressions also passed. The empty-room
+fixture now expects black outside the scissor, verified in Build25222 alongside
+scenePlaybackPreview,imagePresentationPlayback and pathRibbonPreviewSeek (2905ms
+suite). World-pan centroid measurement now excludes the black border rather than
+counting it as sprite opacity; Build86651 worldScenePanAndSeek passed252ms.
+New checks cover visible boundaries, repaint stability,persistence,release and
+checkpoint/restart restoration. No ROMs were written.
+
 ## Iris playback and composition
 
 ScenePlayback now advances the iris in MODE_ZERO5 and exposes the4E query.

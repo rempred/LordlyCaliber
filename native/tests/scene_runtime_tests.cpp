@@ -23,6 +23,52 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void screenCropAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node",
+                        {QFINDTESTDATA("screen-crop-mips.cjs"), path, work.filePath("crop.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("crop.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QCOMPARE(rows.size(), 128);
+        int snapshots = 0;
+        for (const auto &v : rows) {
+            SceneCrop crop;
+            for (const auto &s : v.toObject()["steps"].toArray()) {
+                const auto step = s.toObject();
+                if (step.contains("start")) {
+                    QVector<quint32> args;
+                    for (const auto &a : step["start"].toArray())
+                        args << quint32(a.toInteger());
+                    crop.start(args);
+                } else {
+                    crop.draw();
+                    const auto scissor = step["scissor"].toArray();
+                    QCOMPARE(crop.scissor()[0], quint32(scissor[0].toInteger()));
+                    QCOMPARE(crop.scissor()[1], quint32(scissor[1].toInteger()));
+                }
+                QCOMPARE(crop.record(), QByteArray::fromHex(step["record"].toString().toLatin1()));
+                QCOMPARE(int(crop.active()), step["query"].toInt());
+                ++snapshots;
+            }
+        }
+        SceneCrop crop;
+        crop.start({0xffffffff, 0xffffffff, 0, 0, 4, 1});
+        const auto record = crop.record();
+        QVERIFY_THROWS_EXCEPTION(Error, crop.start({1, 2}));
+        QCOMPARE(crop.record(), record);
+        auto copy = crop;
+        copy.draw();
+        QCOMPARE(crop.record(), record);
+        QVERIFY(copy.record() != record);
+        qInfo() << snapshots << "original crop records, queries and scissor commands agree";
+    }
     void irisPlaybackLifecycle() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

@@ -41,6 +41,9 @@ Iris close/open transitions now retain captured frames and background layers,
 move and release Actor/sprite owners, render the native mask mesh, and replay
 across checkpoints. Desktop capture timing and edge blending remain explicit
 approximations.
+Authored screen crops now advance with native draw timing, retain or release their
+final edges, and replay through seeking. The default game scissor is also visible.
+The title-card variant's separate textured reveal is still pending.
 
 Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic

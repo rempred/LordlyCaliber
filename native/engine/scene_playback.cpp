@@ -7,6 +7,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
       rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
       cameras_(std::move(cameras)), imageMotion_(rom), ribbons_(rom), lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
+    screenVariant_ = selector;
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
     if (start.sceneFlags)
@@ -103,6 +104,15 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x3b || opcode == 0x3c) {
+        if (screenVariant_ == 0)
+            throw Error("Title-card edge reveal requires its title-scene renderer");
+        if (opcode == 0x3b)
+            crop_.start(args);
+        else
+            value = crop_.active();
+        return true;
+    }
     if (opcode == 0x4e) {
         value = iris_ && iris_->active();
         return true;

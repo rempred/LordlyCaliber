@@ -438,6 +438,8 @@ void ScenePreview::convertBackgrounds(Snapshot &next) {
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
+    if (commitDraw)
+        drawing.crop().draw();
     const bool sepia = drawing.effects().sepia();
     if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.flatProps)
         next.flatProps->advance();
@@ -619,6 +621,11 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             painter.drawImage(0, 0, capture.frame());
             painter.setOpacity(1);
         }
+        const auto clip = drawing.crop().clip();
+        painter.save();
+        painter.setClipRegion(QRegion(frame.rect()).subtracted(QRegion(clip)));
+        painter.fillRect(frame.rect(), Qt::black);
+        painter.restore();
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));

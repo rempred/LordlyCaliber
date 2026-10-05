@@ -2,6 +2,7 @@
 #include "engine/director_session.h"
 #include "engine/scene_actors.h"
 #include "engine/scene_camera.h"
+#include "engine/scene_crop.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_dialogue_context.h"
 #include "engine/scene_effects.h"
@@ -116,6 +117,12 @@ class ScenePlayback {
     SceneEffects &effects() {
         return effects_;
     }
+    SceneCrop &crop() {
+        return crop_;
+    }
+    const SceneCrop &crop() const {
+        return crop_;
+    }
     const SceneEffects &effects() const {
         return effects_;
     }
@@ -189,6 +196,8 @@ class ScenePlayback {
     SceneCameras cameras_;
     SceneFade fade_;
     SceneEffects effects_;
+    SceneCrop crop_;
+    int screenVariant_ = -1;
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;
     SceneRibbons ribbons_;
