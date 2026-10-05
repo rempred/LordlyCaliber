@@ -1,3 +1,4 @@
+#include "engine/direct_descriptors.h"
 #include "engine/animation_routes.h"
 #include <QJsonArray>
 #include <algorithm>
@@ -156,7 +157,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
     result.source_ = rawResource(rom, key);
     result.prefix_ = result.source_;
     result.rows_ = parseEntries(result.source_);
-    result.root_ = rawResource(rom, 0x3b6cd0);
+    result.root_ = DirectDescriptors::directory(rom);
     if (result.root_.size() % 4 || result.root_.size() > 4095 * 4)
         throw Error("Invalid class-animation descriptor directory");
     for (const auto &[hi, lo] : sites()) {

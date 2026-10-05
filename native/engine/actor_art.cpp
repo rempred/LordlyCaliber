@@ -1,3 +1,4 @@
+#include "engine/direct_descriptors.h"
 #include "engine/actor_art.h"
 #include "engine/class_data.h"
 #include "engine/animation_routes.h"
@@ -120,7 +121,7 @@ ActorArt ActorArt::loadDirect(const Rom &rom, quint16 handle) {
     rom.requireSupported();
     if (rom.revision())
         throw Error("Direct descriptor art currently requires US revision 0");
-    const auto directory = resource(rom, 0x3b6cd0, false);
+    const auto directory = DirectDescriptors::directory(rom);
     const int slot = (handle & 0xfff) - 1;
     if (directory.size() % 4 || slot < 0 || slot >= directory.size() / 4)
         throw Error("Direct handle selects an absent descriptor");

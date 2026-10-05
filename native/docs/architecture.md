@@ -1,5 +1,34 @@
 # Native Lordly Caliber
 
+## Expandable direct descriptor directory
+
+DirectDescriptors owns the twelve-bit direct-handle directory used by class bodies,
+combat artwork and Stage art. The retail root003B6CD0 has208 entries. A complete
+LUI/ORI resource-key scan found12 operand pairs in6 loaders and no aligned literal
+keys. All6 request the directory's resource size before allocating/reading it; no
+fixed208-entry allocation or new loader hook is required. Native ActorArt, AnimationRoutes
+and CombatArtwork now discover/authenticate the current directory through this owner.
+
+LC05DRTE v1 at z64027C4D00 is96bytes: allocation offset/size at12/16, entry count20,
+reserved zeros24..63, SHA-25664..95. A length-prefixed raw directory is aligned to16
+with FF padding. Original data stays intact. Export requires compiled generated C
+data, updates all12 existing key operands without changing opcodes/registers, guards
+original directory/preimages, and authenticates readback. Tail growth/reuse and movement
+around another owner's allocation are supported through4095 entries. Class-owner
+canonicalization authenticates these sites independently of ClassData. This is the
+allocation foundation for private sequence descriptors; sequence authoring is separate.
+
+`direct_descriptors_tests` passed12764ms: compiled257-entry directory, original-byte
+conservation/checksum, all6 original loader slices (18 first/fixed/last-handle cases),
+new class165 using handle257 through public source export/reopen/no-op export, compiled
+4095-entry growth, later-marker preservation, bounds/corruption/occupied/preimage guards.
+The one fixed-handle loader retains handle37. Loader service memory is modeled within
+4MiB; full-game heap/hardware behavior is not established. Candidate:
+parent Test ROMs/native-descriptor-directory-lhhnqO/masterfilename.
+CombatArtwork full regression passed11505ms, including38 browser materialized/delta
+comparisons and source export/reopen. The staged animation, equipment and story-cast
+UI regressions passed1321ms. No new automatic Expansion Pak requirement is introduced.
+
 ## Staged class animation previews
 
 BodyAnimationData is an immutable snapshot shared by Actors and playback checkpoints.

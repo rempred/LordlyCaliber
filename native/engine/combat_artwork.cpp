@@ -1,3 +1,4 @@
+#include "engine/direct_descriptors.h"
 #include "engine/combat_artwork.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -60,7 +61,7 @@ CombatArtwork CombatArtwork::load(const Rom &rom) {
     CombatArtwork result;
     result.source_ = rom.bytes();
     result.descriptor_ = rom.bytes().mid(descriptorOffset, descriptorSize);
-    const auto directory = resource(rom.bytes(), 0x3b6cd0, false);
+    const auto directory = DirectDescriptors::directory(rom);
     if (directory.isEmpty() || directory.size() % 4 || directory.size() > 4095 * 4)
         throw Error("Invalid combat artwork directory");
     QMap<quint32, QVector<int>> handles;
