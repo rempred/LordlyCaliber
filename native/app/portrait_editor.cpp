@@ -1,4 +1,5 @@
 #include "app/portrait_editor.h"
+#include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
 #include <QBuffer>
 #include <QCheckBox>
@@ -60,16 +61,7 @@ class LibraryCommand final : public QUndoCommand {
     Project *project_;
     SpriteLibrary before_, after_;
 };
-QImage readImage(const QString &path) {
-    QImageReader reader(path);
-    const auto size = reader.size();
-    if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096)
-        throw Error("Image dimensions must be 1–4096 pixels");
-    const auto image = reader.read();
-    if (image.isNull())
-        throw Error("Cannot read image: " + reader.errorString());
-    return image;
-}
+
 } // namespace
 PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                                QWidget *parent)
@@ -101,7 +93,7 @@ PortraitEditor::PortraitEditor(Project *project, QUndoStack *undo, std::function
         const auto path = QFileDialog::getOpenFileName(this, "Prepare portrait", {},
                                                        "Images (*.png *.jpg *.jpeg)");
         if (!path.isEmpty())
-            prepareImage(readImage(path));
+            prepareImage(loadArtworkImage(path));
     });
     action("Export PNG…", "portraitExport", [this] {
         const auto path = QFileDialog::getSaveFileName(
@@ -424,109 +416,28 @@ void PortraitEditor::exportImage(const QString &path) const {
     atomicWrite(path, bytes);
 }
 void PortraitEditor::importImage(const QString &path) {
-    assignImage(readImage(path), true);
+    assignImage(loadArtworkImage(path), true);
 }
 void PortraitEditor::prepareImage(const QImage &image) {
-    if (image.isNull() || image.width() > 4096 || image.height() > 4096)
-        throw Error("Invalid source image");
     const auto id = selected_, selector = selector_;
     const auto before = project_->avatarArtwork()->json();
-    QByteArray prepared;
-    QColor background = Qt::black;
-    QDialog dialog(this);
-    dialog.setObjectName("portraitImagePreparation");
-    dialog.setWindowTitle("Assign portrait image");
-    auto layout = new QVBoxLayout(&dialog);
-    layout->addWidget(
-        new QLabel("Preview the crop and final 80-color game image before assigning."));
-    auto previews = new QHBoxLayout;
-    layout->addLayout(previews);
-    auto input = new QLabel, output = new QLabel;
-    for (auto label : {input, output}) {
-        label->setMinimumSize(200, 240);
-        label->setAlignment(Qt::AlignCenter);
-        previews->addWidget(label);
-    }
-    input->setPixmap(
-        QPixmap::fromImage(image.scaled(200, 240, Qt::KeepAspectRatio, Qt::FastTransformation)));
-    auto form = new QFormLayout;
-    layout->addLayout(form);
-    QComboBox fit;
-    fit.setObjectName("portraitImportFit");
-    fit.addItems({"Fit inside", "Fill and crop", "Stretch", "Keep pixel size"});
-    form->addRow("Placement", &fit);
-    QComboBox sampling;
-    sampling.addItems({"Nearest pixel", "Smooth"});
-    form->addRow("Sampling", &sampling);
-    QDoubleSpinBox zoom;
-    zoom.setRange(.125, 8);
-    zoom.setValue(1);
-    zoom.setSingleStep(.125);
-    form->addRow("Zoom", &zoom);
-    QSpinBox x, y;
-    for (auto spin : {&x, &y})
-        spin->setRange(-4096, 4096);
-    form->addRow("Offset X (output pixels)", &x);
-    form->addRow("Offset Y (output pixels)", &y);
-    QPushButton fill("Black");
-    form->addRow("Opaque background", &fill);
-    auto status = new QLabel;
-    status->setWordWrap(true);
-    layout->addWidget(status);
-    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    buttons.button(QDialogButtonBox::Ok)->setText("Assign portrait");
-    layout->addWidget(&buttons);
-    auto update = [&] {
-        try {
-            double sx = 40.0 / image.width(), sy = 48.0 / image.height();
-            if (fit.currentIndex() != 2)
-                sx = sy = fit.currentIndex() == 0   ? std::min(sx, sy)
-                          : fit.currentIndex() == 1 ? std::max(sx, sy)
-                                                    : 1.;
-            sx *= zoom.value();
-            sy *= zoom.value();
-            QImage target(40, 48, QImage::Format_RGBA8888);
-            target.fill(background);
-            QPainter painter(&target);
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, sampling.currentIndex() == 1);
-            const QSizeF size(image.width() * sx, image.height() * sy);
-            painter.drawImage(QRectF((40 - size.width()) / 2 + x.value(),
-                                     (48 - size.height()) / 2 + y.value(), size.width(),
-                                     size.height()),
-                              image);
-            painter.end();
-            prepared = AvatarArtwork::mapImage(target, true, background);
-            output->setPixmap(QPixmap::fromImage(AvatarArtwork::render(prepared).scaled(
-                200, 240, Qt::IgnoreAspectRatio, Qt::FastTransformation)));
-            status->setText("Left: source · Right: exact game colors. Transparent areas use the "
-                            "background color.");
-            buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
-        } catch (const std::exception &e) {
-            prepared.clear();
-            status->setText(QString::fromUtf8(e.what()));
-            buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
-        }
-    };
-    connect(&fit, &QComboBox::currentIndexChanged, &dialog, update);
-    connect(&sampling, &QComboBox::currentIndexChanged, &dialog, update);
-    connect(&zoom, &QDoubleSpinBox::valueChanged, &dialog, update);
-    connect(&x, &QSpinBox::valueChanged, &dialog, update);
-    connect(&y, &QSpinBox::valueChanged, &dialog, update);
-    connect(&fill, &QPushButton::clicked, &dialog, [&] {
-        const auto color = QColorDialog::getColor(background, &dialog, "Portrait background");
-        if (color.isValid()) {
-            background = color;
-            fill.setText(color.name());
-            update();
-        }
-    });
-    connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    update();
-    if (dialog.exec() == QDialog::Accepted) {
+    const auto prepared =
+        prepareArtworkImage(this, image,
+                            {{40, 48},
+                             "portrait",
+                             "Assign portrait image",
+                             "Preview the crop and final 80-color game image. Transparent areas "
+                             "use the opaque background.",
+                             true},
+                            [](const QImage &target, int) {
+                                const auto words = AvatarArtwork::mapImage(target, true);
+                                return ArtImageMapping{words, AvatarArtwork::render(words)};
+                            });
+    if (prepared) {
         if (selected_ != id || selector_ != selector || project_->avatarArtwork()->json() != before)
-            throw Error("Portrait selection changed while assignment was open");
-        apply(prepared, "Assign portrait image");
+            throw Error("Portrait selection changed while the assignment preview was open");
+        apply(*prepared, "Assign portrait image");
     }
 }
+
 } // namespace lordly

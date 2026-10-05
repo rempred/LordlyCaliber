@@ -18,6 +18,9 @@ class SpriteCanvas : public QWidget {
     enum class Tool { Pencil, Eraser, Fill, Pick, Select, Move };
     explicit SpriteCanvas(QWidget *parent = nullptr);
     void setAsset(const SpriteAsset *, int frame, int layer, bool resetSelection = false);
+    void setIndexedAsset(const QString &identity,QSize,const QByteArray &indices,
+                         const QVector<QColor> &palette,quint8 transparentIndex);
+    void setIndexColor(quint8 index);
     void setZoom(int);
     void setGrid(bool value) {
         grid_ = value;
@@ -44,6 +47,8 @@ class SpriteCanvas : public QWidget {
   signals:
     void committed(const QImage &, QPoint);
     void colorPicked(QColor);
+    void indexPicked(int);
+    void indicesCommitted(const QByteArray &,QPoint);
     void cursorChanged(QPoint);
 
   protected:
@@ -65,6 +70,8 @@ class SpriteCanvas : public QWidget {
     bool grid_ = true, drawing_ = false;
     Tool tool_ = Tool::Pencil;
     QColor color_ = Qt::black;
+    QVector<QColor> indexedPalette_;
+    quint8 transparentIndex_=0,indexColor_=0;
 };
 class SpriteEditor : public QWidget {
     Q_OBJECT

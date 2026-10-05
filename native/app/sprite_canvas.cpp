@@ -12,6 +12,9 @@ SpriteCanvas::SpriteCanvas(QWidget *parent) : QWidget(parent) {
 }
 void SpriteCanvas::setAsset(const SpriteAsset *asset, int frame, int layer, bool reset) {
     cancelStroke();
+    if (!indexedPalette_.isEmpty())
+        color_ = indexedPalette_[indexColor_];
+    indexedPalette_.clear();
     reset =
         reset || !asset || !asset_ || asset_->id != asset->id || frame_ != frame || layer_ != layer;
     asset_ = asset ? std::optional<SpriteAsset>(*asset) : std::nullopt;
@@ -23,6 +26,30 @@ void SpriteCanvas::setAsset(const SpriteAsset *asset, int frame, int layer, bool
         selection_ = selection_.intersected(QRect({}, asset_->size));
     updatePreview();
     setZoom(zoom_);
+}
+void SpriteCanvas::setIndexedAsset(const QString &identity, QSize size, const QByteArray &indices,
+                                   const QVector<QColor> &palette, quint8 transparent) {
+    if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096 ||
+        indices.size() != qsizetype(size.width()) * size.height() || palette.size() != 256 ||
+        palette[transparent].alpha() != 0)
+        throw Error("Invalid indexed canvas dimensions or palette");
+    // Keep indices as opaque channel values while reusing the exact pixel tools.
+    // Color resolution happens only at presentation; equal palette colors stay distinct.
+    QImage encoded(size, QImage::Format_RGBA8888);
+    for (int y = 0; y < size.height(); ++y)
+        for (int x = 0; x < size.width(); ++x)
+            encoded.setPixelColor(x, y, {quint8(indices[y * size.width() + x]), 0, 0, 255});
+    auto asset = SpriteAsset::fromImage("Indexed artwork", encoded);
+    asset.id = identity;
+    setAsset(&asset, 0, 0);
+    indexedPalette_ = palette;
+    transparentIndex_ = transparent;
+    setIndexColor(indexColor_);
+    update();
+}
+void SpriteCanvas::setIndexColor(quint8 index) {
+    indexColor_ = index;
+    color_ = {index, 0, 0, 255};
 }
 void SpriteCanvas::setZoom(int value) {
     zoom_ = std::clamp(value, 1, 32);
@@ -56,7 +83,18 @@ void SpriteCanvas::paintEvent(QPaintEvent *event) {
     }
     painter.fillRect(rect(), QBrush(checker));
     painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-    painter.drawImage(rect(), preview_);
+    if (indexedPalette_.isEmpty())
+        painter.drawImage(rect(), preview_);
+    else {
+        QImage visible(preview_.size(), QImage::Format_RGBA8888);
+        for (int y = 0; y < visible.height(); ++y)
+            for (int x = 0; x < visible.width(); ++x) {
+                const auto pixel = preview_.pixelColor(x, y);
+                visible.setPixelColor(
+                    x, y, indexedPalette_[pixel.alpha() ? pixel.red() : transparentIndex_]);
+            }
+        painter.drawImage(rect(), visible);
+    }
     if (grid_ && zoom_ >= 6) {
         painter.setPen(QColor(50, 55, 65, 65));
         const auto visible = visibleRegion().boundingRect();
@@ -102,7 +140,12 @@ void SpriteCanvas::mousePressEvent(QMouseEvent *event) {
     if (!QRect({}, asset_->size).contains(p))
         return;
     if (tool_ == Tool::Pick) {
-        emit colorPicked(preview_.pixelColor(p));
+        if (indexedPalette_.isEmpty())
+            emit colorPicked(preview_.pixelColor(p));
+        else {
+            const auto pixel = preview_.pixelColor(p);
+            emit indexPicked(pixel.alpha() ? pixel.red() : transparentIndex_);
+        }
         return;
     }
     auto &layer = asset_->frames[frame_].layers[layer_];
@@ -169,7 +212,18 @@ void SpriteCanvas::mouseReleaseEvent(QMouseEvent *event) {
         // The receiver may replace asset_ synchronously while refreshing the workspace.
         const auto image = layer.image;
         const auto position = layer.position;
-        emit committed(image, position);
+        if (indexedPalette_.isEmpty())
+            emit committed(image, position);
+        else {
+            QByteArray indices(image.width() * image.height(), char(transparentIndex_));
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const auto pixel = image.pixelColor(x, y);
+                    indices[y * image.width() + x] =
+                        char(pixel.alpha() ? pixel.red() : transparentIndex_);
+                }
+            emit indicesCommitted(indices, position);
+        }
     }
     before_ = {};
 }

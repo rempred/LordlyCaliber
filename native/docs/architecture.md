@@ -1,5 +1,41 @@
 # Native Lordly Caliber
 
+## Army workspace and indexed pixel tools
+
+Art now includes an Army sprites page with all six front/back atlases, shared-class
+consumer lists (including newly added classes), model search, both palette views,
+explicit missing-plane creation, restoration and project undo. The canvas paints
+palette indices directly, including erasing, fill, picking, selection and moves;
+brush, zoom and grid controls remain available. A second preview displays the other
+palette. Sprite-library transfers and PNG import/export use the selected palette;
+original palette words remain fixed. Source-ROM overwrites are refused.
+
+SpriteCanvas has an optional indexed mode. It retains indices as opaque channel
+values during existing pixel operations and resolves the palette only when drawing.
+Thus equal visible colors can carry different indices, and moving one preserves
+its other-palette identity. Cleared pixels use the selected atlas's transparent
+index. Typed index commits support one undo command per stroke. Ordinary RGBA
+editing retains its earlier behavior.
+
+The shared art_image_assignment dialog now serves icons, portraits and Army images.
+It handles placement/cropping, zoom, offsets, sampling and transparency/background;
+a domain callback supplies exact bytes and the final game-color preview. Output
+previews use an integer scale. Callers retain selection/change guards and their
+original project ownership. Duplicated dialog code was removed from the first two
+pages; their existing assignment workflows remain checked.
+
+Build 78267 and ui_tests indexedPixelTools spriteWorkspaceEditing
+iconArtworkEditing portraitArtworkEditing passed 1691 ms. The indexed case verifies
+changing duplicate-color index 1 to 2 without a visible color change, exposing that
+change through the other palette, and exact move/erase/pick behavior. Build 86702
+and ui_tests armyArtworkEditing indexedPixelTools iconArtworkEditing
+portraitArtworkEditing loadDesktopWorkspace passed 2844 ms. The Army case uses real
+missing-plane creation, painting, undo, palette switching, library assignment,
+PNG transfers, restore, project reopening, source guard and new-class consumers.
+After preview/label polish, build 70420 passed without warnings and the three art
+UI cases passed 2171 ms. Both authored and populated Army workspace screenshots
+were inspected. Backend resource/export checks below remain applicable.
+
 ## Army and battle-formation artwork rebuild
 
 ArmyArtwork reads all six native CI8 atlases, their two fixed RGBA5551 palettes,
@@ -46,7 +82,7 @@ both class/art editing orders, class growth, damaged owners, and project/native/
 browser persistence/reset. Latest candidate: parent Test ROMs/native-army-wxGZcc.
 engine_tests classMenuSourceLayout promotionFamiliesExport passed 21,798 ms;
 icon_artwork_tests browserImportAndReset passed 580 ms. These are file/resource/
-instruction checks, not an emulator cold boot. The Army authoring UI is next.
+instruction checks, not an emulator cold boot. The authoring UI is described above.
 
 ## Portrait workspace and edited-art previews
 

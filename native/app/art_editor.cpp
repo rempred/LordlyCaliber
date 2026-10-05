@@ -1,4 +1,5 @@
 #include "app/art_editor.h"
+#include "app/art_image_assignment.h"
 #include "app/sprite_editor.h"
 #include <QBuffer>
 #include <QCheckBox>
@@ -62,16 +63,7 @@ QColor wordColor(quint16 word) {
     return {((word >> 11) * 255 + 15) / 31, (((word >> 6) & 31) * 255 + 15) / 31,
             (((word >> 1) & 31) * 255 + 15) / 31, (word & 1) ? 255 : 0};
 }
-QImage readImage(const QString &path) {
-    QImageReader reader(path);
-    const auto size = reader.size();
-    if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096)
-        throw Error("Image dimensions must be 1–4096 pixels");
-    const auto image = reader.read();
-    if (image.isNull())
-        throw Error("Cannot read image: " + reader.errorString());
-    return image;
-}
+
 QString iconName(const Project &project, quint16 item) {
     const auto &rows = project.records(item & 0x200 ? Table::Consumables : Table::Items);
     const int id = item & 0x1ff;
@@ -108,7 +100,7 @@ ArtEditor::ArtEditor(Project *project, QUndoStack *undo, std::function<void()> c
         const auto path = QFileDialog::getOpenFileName(this, "Prepare item icon", {},
                                                        "Images (*.png *.jpg *.jpeg)");
         if (!path.isEmpty())
-            prepareImage(readImage(path));
+            prepareImage(loadArtworkImage(path));
     });
     action("Export PNG…", "artExport", [this] {
         const auto path = QFileDialog::getSaveFileName(
@@ -403,105 +395,28 @@ void ArtEditor::exportImage(const QString &path) const {
     atomicWrite(path, bytes);
 }
 void ArtEditor::importImage(const QString &path) {
-    assignImage(readImage(path));
+    assignImage(loadArtworkImage(path));
 }
 void ArtEditor::prepareImage(const QImage &image) {
-    if (image.isNull() || image.width() > 4096 || image.height() > 4096)
-        throw Error("Invalid source image");
     const auto item = selected_;
-    const auto before = project_->iconArtwork()->words(selected_);
-    QByteArray prepared;
-    QDialog dialog(this);
-    dialog.setObjectName("artImagePreparation");
-    dialog.setWindowTitle("Assign image to item icon");
-    auto layout = new QVBoxLayout(&dialog);
-    layout->addWidget(
-        new QLabel("The preview uses this pack's shared palette and one-bit transparency."));
-    auto previews = new QHBoxLayout;
-    layout->addLayout(previews);
-    auto input = new QLabel, output = new QLabel;
-    input->setAlignment(Qt::AlignCenter);
-    output->setAlignment(Qt::AlignCenter);
-    input->setMinimumSize(200, 200);
-    output->setMinimumSize(200, 200);
-    input->setPixmap(
-        QPixmap::fromImage(image.scaled(200, 200, Qt::KeepAspectRatio, Qt::FastTransformation)));
-    previews->addWidget(input);
-    previews->addWidget(output);
-    auto form = new QFormLayout;
-    layout->addLayout(form);
-    QComboBox fit;
-    fit.addItems({"Fit inside", "Fill and crop", "Stretch", "Keep pixel size"});
-    fit.setObjectName("artImportFit");
-    form->addRow("Placement", &fit);
-    QComboBox sampling;
-    sampling.addItems({"Nearest pixel", "Smooth"});
-    form->addRow("Sampling", &sampling);
-    QDoubleSpinBox zoom;
-    zoom.setRange(.125, 8);
-    zoom.setValue(1);
-    zoom.setSingleStep(.125);
-    form->addRow("Zoom", &zoom);
-    QSpinBox x, y, alpha;
-    for (auto box : {&x, &y})
-        box->setRange(-4096, 4096);
-    alpha.setRange(1, 255);
-    alpha.setValue(128);
-    form->addRow("Offset X (output pixels)", &x);
-    form->addRow("Offset Y (output pixels)", &y);
-    form->addRow("Opaque from alpha", &alpha);
-    auto status = new QLabel;
-    status->setWordWrap(true);
-    layout->addWidget(status);
-    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    layout->addWidget(&buttons);
-    buttons.button(QDialogButtonBox::Ok)->setText("Assign icon");
-    auto update = [&] {
-        try {
-            double sx = 16.0 / image.width(), sy = 16.0 / image.height();
-            if (fit.currentIndex() != 2)
-                sx = sy = fit.currentIndex() == 0   ? std::min(sx, sy)
-                          : fit.currentIndex() == 1 ? std::max(sx, sy)
-                                                    : 1.;
-            sx *= zoom.value();
-            sy *= zoom.value();
-            QImage target(16, 16, QImage::Format_RGBA8888);
-            target.fill(Qt::transparent);
-            QPainter painter(&target);
-            painter.setCompositionMode(QPainter::CompositionMode_Source);
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, sampling.currentIndex() == 1);
-            const QSizeF size(image.width() * sx, image.height() * sy);
-            painter.drawImage(QRectF((16 - size.width()) / 2 + x.value(),
-                                     (16 - size.height()) / 2 + y.value(), size.width(),
-                                     size.height()),
-                              image);
-            painter.end();
-            prepared = project_->iconArtwork()->mapImage(item, target, true, alpha.value());
-            auto candidate = *project_->iconArtwork();
-            candidate.setWords(item, prepared);
-            output->setPixmap(QPixmap::fromImage(candidate.image(item).scaled(
-                192, 192, Qt::IgnoreAspectRatio, Qt::FastTransformation)));
-            status->setText("Left: source image · Right: exact 16 × 16 game colors. Other icons "
-                            "retain their pixels.");
-            buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
-        } catch (const std::exception &e) {
-            prepared.clear();
-            status->setText(QString::fromUtf8(e.what()));
-            buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
-        }
-    };
-    connect(&fit, &QComboBox::currentIndexChanged, &dialog, update);
-    connect(&sampling, &QComboBox::currentIndexChanged, &dialog, update);
-    connect(&zoom, &QDoubleSpinBox::valueChanged, &dialog, update);
-    for (auto box : {&x, &y, &alpha})
-        connect(box, &QSpinBox::valueChanged, &dialog, update);
-    connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    update();
-    if (dialog.exec() == QDialog::Accepted) {
+    const auto before = project_->iconArtwork()->words(item);
+    const auto prepared = prepareArtworkImage(
+        this, image,
+        {{16, 16},
+         "art",
+         "Assign image to item icon",
+         "The preview uses this pack's shared palette and one-bit transparency."},
+        [&](const QImage &target, int alpha) {
+            const auto words = project_->iconArtwork()->mapImage(item, target, true, alpha);
+            auto next = *project_->iconArtwork();
+            next.setWords(item, words);
+            return ArtImageMapping{words, next.image(item)};
+        });
+    if (prepared) {
         if (selected_ != item || project_->iconArtwork()->words(item) != before)
             throw Error("This icon changed while the assignment preview was open");
-        apply(prepared, "Assign image to item icon");
+        apply(*prepared, "Assign image to item icon");
     }
 }
+
 } // namespace lordly

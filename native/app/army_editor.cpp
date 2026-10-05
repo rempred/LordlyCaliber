@@ -1,0 +1,488 @@
+#include "app/army_editor.h"
+#include "app/art_image_assignment.h"
+#include "app/sprite_editor.h"
+#include <QBuffer>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSignalBlocker>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QTableWidget>
+#include <QUndoStack>
+#include <QVBoxLayout>
+#include <algorithm>
+namespace lordly {
+namespace {
+class ArmyCommand final : public QUndoCommand {
+  public:
+    ArmyCommand(Project *project, QString label, QJsonObject after)
+        : QUndoCommand(label), project_(project), before_(project->armyArtwork()->json()),
+          after_(std::move(after)) {}
+    void undo() override {
+        project_->setArmyArtwork(before_);
+    }
+    void redo() override {
+        project_->setArmyArtwork(after_);
+    }
+
+  private:
+    Project *project_;
+    QJsonObject before_, after_;
+};
+class LibraryCommand final : public QUndoCommand {
+  public:
+    LibraryCommand(Project *project, SpriteLibrary after)
+        : QUndoCommand("Copy Army sprite to library"), project_(project),
+          before_(project->sprites()), after_(std::move(after)) {}
+    void undo() override {
+        project_->setSprites(before_);
+    }
+    void redo() override {
+        project_->setSprites(after_);
+    }
+
+  private:
+    Project *project_;
+    SpriteLibrary before_, after_;
+};
+QColor color(quint16 word) {
+    return {(255 * (word >> 11) + 15) / 31, (255 * ((word >> 6) & 31) + 15) / 31,
+            (255 * ((word >> 1) & 31) + 15) / 31, (word & 1) ? 255 : 0};
+}
+} // namespace
+ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
+                       QWidget *parent)
+    : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
+    setObjectName("armyEditor");
+    auto outer = new QVBoxLayout(this);
+    outer->addWidget(
+        new QLabel("<b>Army and formation sprites</b> · Shared models with two fixed palettes"));
+    notice_ = new QLabel;
+    notice_->setObjectName("armyNotice");
+    notice_->setWordWrap(true);
+    try {
+        project_->loadArmyArtwork();
+    } catch (const std::exception &e) {
+        notice_->setText(QString::fromUtf8(e.what()));
+        outer->addWidget(notice_);
+        return;
+    }
+    auto actions = new QHBoxLayout;
+    outer->addLayout(actions);
+    auto action = [&](QString text, const char *id, std::function<void()> callback) {
+        auto button = new QPushButton(text);
+        button->setObjectName(id);
+        actions->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, callback] { guarded(callback); });
+        return button;
+    };
+    action("Import image…", "armyImport", [this] {
+        const auto path = QFileDialog::getOpenFileName(this, "Prepare Army sprite", {},
+                                                       "Images (*.png *.jpg *.jpeg)");
+        if (!path.isEmpty())
+            prepareImage(loadArtworkImage(path));
+    });
+    action("Export PNG…", "armyExport", [this] {
+        const auto path = QFileDialog::getSaveFileName(this, "Export Army sprite",
+                                                       modelName(model_) + ".png", "PNG (*.png)");
+        if (!path.isEmpty())
+            exportImage(path);
+    });
+    action("Copy to sprite library", "armyCopyToLibrary", [this] { copyToLibrary(); });
+    action("Restore loaded sprite", "armyRestore", [this] {
+        auto next = *project_->armyArtwork();
+        next.restore(atlas_, model_);
+        if (next.json() != project_->armyArtwork()->json())
+            undo_->push(new ArmyCommand(project_, "Restore Army sprite", next.json()));
+    });
+    create_ = action("Create missing plane", "armyCreate", [this] {
+        const auto &spec = ArmyArtwork::specs()[atlas_];
+        apply(QByteArray(spec.width * spec.height, char(spec.transparent.first())),
+              "Create Army sprite plane");
+    });
+    actions->addStretch();
+    auto split = new QSplitter;
+    outer->addWidget(split, 1);
+    auto browser = new QWidget;
+    auto browse = new QVBoxLayout(browser);
+    browse->setContentsMargins(0, 0, 0, 0);
+    atlasSelect_ = new QComboBox;
+    atlasSelect_->setObjectName("armyAtlas");
+    for (const auto &spec : ArmyArtwork::specs())
+        atlasSelect_->addItem(spec.label);
+    browse->addWidget(atlasSelect_);
+    search_ = new QLineEdit;
+    search_->setPlaceholderText("Find model or class");
+    search_->setObjectName("armySearch");
+    browse->addWidget(search_);
+    models_ = new QListWidget;
+    models_->setObjectName("armyModels");
+    models_->setIconSize({48, 48});
+    browse->addWidget(models_);
+    split->addWidget(browser);
+    auto editing = new QWidget;
+    auto edit = new QVBoxLayout(editing);
+    edit->setContentsMargins(0, 0, 0, 0);
+    title_ = new QLabel;
+    edit->addWidget(title_);
+    consumers_ = new QLabel;
+    consumers_->setObjectName("armyConsumers");
+    consumers_->setWordWrap(true);
+    edit->addWidget(consumers_);
+    auto tools = new QHBoxLayout;
+    edit->addLayout(tools);
+    paletteSelect_ = new QComboBox;
+    paletteSelect_->setObjectName("armyPalette");
+    paletteSelect_->addItems({"Palette A", "Palette B"});
+    tools->addWidget(paletteSelect_);
+    auto tool = new QComboBox;
+    tool->setObjectName("armyTool");
+    tool->addItems({"Pencil", "Eraser", "Fill", "Pick index", "Select", "Move selection"});
+    tools->addWidget(tool);
+    ink_ = new QSpinBox;
+    ink_->setObjectName("armyInk");
+    ink_->setRange(0, 255);
+    ink_->setValue(1);
+    ink_->setPrefix("Index ");
+    tools->addWidget(ink_);
+    auto brush = new QSpinBox;
+    brush->setRange(1, 16);
+    brush->setPrefix("Brush ");
+    tools->addWidget(brush);
+    auto zoom = new QSpinBox;
+    zoom->setRange(1, 32);
+    zoom->setValue(12);
+    zoom->setPrefix("Zoom ");
+    tools->addWidget(zoom);
+    auto grid = new QCheckBox("Grid");
+    grid->setChecked(true);
+    tools->addWidget(grid);
+    auto deselect = new QPushButton("Deselect");
+    tools->addWidget(deselect);
+    tools->addStretch();
+    auto row = new QHBoxLayout;
+    edit->addLayout(row, 1);
+    canvas_ = new SpriteCanvas;
+    canvas_->setObjectName("armyCanvas");
+    canvas_->setZoom(12);
+    auto scroll = new QScrollArea;
+    scroll->setWidget(canvas_);
+    scroll->setAlignment(Qt::AlignCenter);
+    row->addWidget(scroll, 1);
+    auto paletteColumn = new QVBoxLayout;
+    row->addLayout(paletteColumn);
+    colors_ = new QTableWidget(16, 16);
+    colors_->setObjectName("armyColors");
+    colors_->horizontalHeader()->hide();
+    colors_->verticalHeader()->hide();
+    for (auto header : {colors_->horizontalHeader(), colors_->verticalHeader()}) {
+        header->setMinimumSectionSize(18);
+        header->setDefaultSectionSize(18);
+        header->setSectionResizeMode(QHeaderView::Fixed);
+    }
+    colors_->setFixedSize(292, 292);
+    colors_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    colors_->setSelectionMode(QAbstractItemView::NoSelection);
+    paletteColumn->addWidget(colors_);
+    paletteColumn->addWidget(new QLabel("Other palette"));
+    alternate_ = new QLabel;
+    alternate_->setObjectName("armyOtherPalette");
+    alternate_->setAlignment(Qt::AlignCenter);
+    paletteColumn->addWidget(alternate_);
+    paletteColumn->addStretch();
+    auto libraryRow = new QHBoxLayout;
+    edit->addLayout(libraryRow);
+    library_ = new QComboBox;
+    library_->setObjectName("armyLibrary");
+    libraryRow->addWidget(library_, 1);
+    frame_ = new QSpinBox;
+    frame_->setMinimum(1);
+    frame_->setPrefix("Frame ");
+    libraryRow->addWidget(frame_);
+    auto assign = new QPushButton("Assign library image…");
+    assign->setObjectName("armyAssignLibrary");
+    libraryRow->addWidget(assign);
+    split->addWidget(editing);
+    split->setSizes({290, 960});
+    split->setStretchFactor(1, 1);
+    outer->addWidget(notice_);
+    connect(atlasSelect_, &QComboBox::currentIndexChanged, this, [this](int i) {
+        if (!refreshing_) {
+            atlas_ = i;
+            model_ = 0;
+            refresh();
+        }
+    });
+    connect(paletteSelect_, &QComboBox::currentIndexChanged, this, [this](int i) {
+        if (!refreshing_) {
+            paletteOrdinal_ = i;
+            refresh();
+        }
+    });
+    connect(models_, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (!refreshing_ && row >= 0) {
+            model_ = models_->item(row)->data(Qt::UserRole).toInt();
+            refreshPlane();
+        }
+    });
+    connect(search_, &QLineEdit::textChanged, this, [this] {
+        for (int i = 0; i < models_->count(); ++i)
+            models_->item(i)->setHidden(
+                !models_->item(i)->toolTip().contains(search_->text(), Qt::CaseInsensitive));
+    });
+    connect(tool, &QComboBox::currentIndexChanged, this,
+            [this](int i) { canvas_->setTool(SpriteCanvas::Tool(i)); });
+    connect(ink_, &QSpinBox::valueChanged, this,
+            [this](int i) { canvas_->setIndexColor(quint8(i)); });
+    connect(canvas_, &SpriteCanvas::indexPicked, ink_, &QSpinBox::setValue);
+    connect(brush, &QSpinBox::valueChanged, canvas_, &SpriteCanvas::setBrush);
+    connect(zoom, &QSpinBox::valueChanged, canvas_, &SpriteCanvas::setZoom);
+    connect(grid, &QCheckBox::toggled, canvas_, &SpriteCanvas::setGrid);
+    connect(deselect, &QPushButton::clicked, canvas_, &SpriteCanvas::clearSelection);
+    connect(colors_, &QTableWidget::cellClicked, this,
+            [this](int y, int x) { ink_->setValue(y * 16 + x); });
+    connect(canvas_, &SpriteCanvas::indicesCommitted, this,
+            [this](const QByteArray &pixels, QPoint position) {
+                guarded([&] {
+                    const auto &spec = ArmyArtwork::specs()[atlas_];
+                    auto shifted = pixels;
+                    if (!position.isNull()) {
+                        shifted.fill(char(spec.transparent.first()));
+                        for (int y = 0; y < spec.height; ++y)
+                            for (int x = 0; x < spec.width; ++x) {
+                                const auto source = QPoint(x, y) - position;
+                                if (source.x() >= 0 && source.x() < spec.width && source.y() >= 0 &&
+                                    source.y() < spec.height)
+                                    shifted[y * spec.width + x] =
+                                        pixels[source.y() * spec.width + source.x()];
+                            }
+                    }
+                    apply(shifted, "Paint Army sprite");
+                });
+            });
+    connect(library_, &QComboBox::currentIndexChanged, this, [this] {
+        frame_->setMaximum(
+            library_->currentIndex() < 0
+                ? 1
+                : int(project_->sprites().asset(library_->currentData().toString()).frames.size()));
+    });
+    connect(assign, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            if (library_->currentIndex() < 0)
+                throw Error("Choose a sprite library image");
+            prepareImage(project_->sprites()
+                             .asset(library_->currentData().toString())
+                             .composite(frame_->value() - 1));
+        });
+    });
+    connect(undo_, &QUndoStack::indexChanged, this, [this] {
+        refresh();
+        changed_();
+    });
+    refresh();
+}
+ArmyEditor::~ArmyEditor() {
+    disconnect(undo_, nullptr, this, nullptr);
+}
+void ArmyEditor::guarded(const std::function<void()> &action) {
+    try {
+        action();
+        notice_->setText("Sprite edits affect every listed class and both palettes. The palettes "
+                         "remain unchanged.");
+    } catch (const std::exception &e) {
+        refresh();
+        notice_->setText(QString::fromUtf8(e.what()));
+    }
+}
+QString ArmyEditor::modelName(int model) const {
+    const auto users = project_->armyArtwork()->consumers(project_->classData(), atlas_, model);
+    if (users.isEmpty())
+        return "Unassigned model";
+    return project_->record(Table::Classes, users.first()).name +
+           (users.size() > 1 ? QString(" +%1").arg(users.size() - 1) : QString());
+}
+void ArmyEditor::selectModel(int atlas, int model, int palette) {
+    if (!project_->armyArtwork())
+        throw Error("Army artwork is unavailable");
+    project_->armyArtwork()->words(atlas, model, palette);
+    atlas_ = atlas;
+    model_ = model;
+    paletteOrdinal_ = palette;
+    refresh();
+}
+void ArmyEditor::refresh() {
+    if (!project_->armyArtwork())
+        return;
+    refreshing_ = true;
+    atlasSelect_->setCurrentIndex(atlas_);
+    paletteSelect_->setCurrentIndex(paletteOrdinal_);
+    models_->clear();
+    const auto classes = project_->classData();
+    for (int model = 0; model < ArmyArtwork::specs()[atlas_].capacity; ++model) {
+        const bool present = project_->armyArtwork()->present(atlas_, model);
+        auto item = new QListWidgetItem(
+            QString("0x%1 · %2%3%4")
+                .arg(model, 2, 16, QChar('0'))
+                .arg(modelName(model))
+                .arg(present ? "" : " · missing")
+                .arg(project_->armyArtwork()->modified(atlas_, model) ? " *" : ""),
+            models_);
+        item->setData(Qt::UserRole, model);
+        item->setIcon(
+            QPixmap::fromImage(project_->armyArtwork()
+                                   ->image(atlas_, model, paletteOrdinal_)
+                                   .scaled(48, 48, Qt::KeepAspectRatio, Qt::FastTransformation)));
+        QStringList names;
+        for (const auto id : project_->armyArtwork()->consumers(classes, atlas_, model))
+            names << project_->record(Table::Classes, id).name;
+        item->setToolTip(item->text() + "\n" + names.join(", "));
+        item->setHidden(!item->toolTip().contains(search_->text(), Qt::CaseInsensitive));
+        if (model == model_)
+            models_->setCurrentItem(item);
+    }
+    const auto old = library_->currentData().toString();
+    {
+        QSignalBlocker blocker(library_);
+        library_->clear();
+        for (const auto &asset : project_->sprites().assets())
+            library_->addItem(asset.name, asset.id);
+        const auto at = library_->findData(old);
+        if (at >= 0)
+            library_->setCurrentIndex(at);
+    }
+    frame_->setMaximum(
+        library_->currentIndex() < 0
+            ? 1
+            : int(project_->sprites().asset(library_->currentData().toString()).frames.size()));
+    refreshing_ = false;
+    refreshPlane();
+}
+void ArmyEditor::refreshPlane() {
+    const auto &spec = ArmyArtwork::specs()[atlas_];
+    const bool present = project_->armyArtwork()->present(atlas_, model_);
+    const auto palette = project_->armyArtwork()->palette(atlas_, paletteOrdinal_);
+    QVector<QColor> colors;
+    for (int i = 0; i < 256; ++i) {
+        const auto c = color(palette[i]);
+        colors.append(c);
+        auto item = colors_->item(i / 16, i % 16);
+        if (!item) {
+            item = new QTableWidgetItem;
+            colors_->setItem(i / 16, i % 16, item);
+        }
+        item->setBackground(c.alpha() ? c : QColor(230, 230, 230));
+        item->setText(c.alpha() ? "" : "×");
+        item->setTextAlignment(Qt::AlignCenter);
+        item->setToolTip(QString("Index %1 · %2").arg(i).arg(c.alpha() ? c.name() : "transparent"));
+    }
+    if (present)
+        canvas_->setIndexedAsset(QString("army-%1-%2").arg(atlas_).arg(model_),
+                                 {spec.width, spec.height},
+                                 project_->armyArtwork()->indices(atlas_, model_), colors,
+                                 quint8(spec.transparent.first()));
+    else
+        canvas_->setAsset(nullptr, 0, 0);
+    canvas_->setEnabled(present);
+    canvas_->setIndexColor(quint8(ink_->value()));
+    create_->setEnabled(!present);
+    alternate_->setPixmap(
+        QPixmap::fromImage(project_->armyArtwork()
+                               ->image(atlas_, model_, 1 - paletteOrdinal_)
+                               .scaled(spec.width * 3, spec.height * 3, Qt::IgnoreAspectRatio,
+                                       Qt::FastTransformation)));
+    title_->setText(QString("%1 · Model 0x%2 · %3 × %4%5")
+                        .arg(modelName(model_))
+                        .arg(model_, 2, 16, QChar('0'))
+                        .arg(spec.width)
+                        .arg(spec.height)
+                        .arg(present ? "" : " · No loaded plane"));
+    QStringList names;
+    for (const auto id : project_->armyArtwork()->consumers(project_->classData(), atlas_, model_))
+        names << QString("%1 (%2)").arg(project_->record(Table::Classes, id).name).arg(id);
+    consumers_->setText(names.isEmpty() ? "No current class uses this model."
+                                        : "Shared by: " + names.join(", "));
+    notice_->setText(
+        present
+            ? "Paint indices to retain both palette appearances. Edits affect every listed class."
+            : "This player-facing plane is absent in the loaded ROM. Create a plane or import "
+              "artwork to author it.");
+}
+void ArmyEditor::apply(const QByteArray &pixels, const QString &label) {
+    auto next = *project_->armyArtwork();
+    next.setIndices(atlas_, model_, pixels);
+    if (next.json() != project_->armyArtwork()->json())
+        undo_->push(new ArmyCommand(project_, label, next.json()));
+}
+void ArmyEditor::assignImage(const QImage &image, int threshold) {
+    apply(project_->armyArtwork()->mapImage(atlas_, paletteOrdinal_, image, threshold,
+                                            project_->armyArtwork()->indices(atlas_, model_)),
+          "Assign Army sprite image");
+}
+QString ArmyEditor::copyToLibrary() {
+    if (!project_->armyArtwork()->present(atlas_, model_))
+        throw Error("Create or import this plane first");
+    auto asset =
+        SpriteAsset::fromImage(modelName(model_) + " · " + ArmyArtwork::specs()[atlas_].label,
+                               project_->armyArtwork()->image(atlas_, model_, paletteOrdinal_));
+    asset.provenance = {{"gameSource", "army-sprite"},
+                        {"atlas", ArmyArtwork::specs()[atlas_].slug},
+                        {"modelId", model_},
+                        {"palette", paletteOrdinal_}};
+    const auto id = asset.id;
+    auto library = project_->sprites();
+    library.replace(asset);
+    undo_->push(new LibraryCommand(project_, library));
+    return id;
+}
+void ArmyEditor::importImage(const QString &path) {
+    assignImage(loadArtworkImage(path));
+}
+void ArmyEditor::exportImage(const QString &path) const {
+    if (!project_->armyArtwork()->present(atlas_, model_))
+        throw Error("Create or import this plane first");
+    const auto source = QFileInfo(project_->rom().sourcePath()).canonicalFilePath();
+    if (!source.isEmpty() &&
+        (QFileInfo(path).canonicalFilePath() == source ||
+         QFileInfo(path).absoluteFilePath().compare(source, Qt::CaseInsensitive) == 0))
+        throw Error("Choose a path different from the source ROM");
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!project_->armyArtwork()->image(atlas_, model_, paletteOrdinal_).save(&buffer, "PNG"))
+        throw Error("Cannot encode Army sprite");
+    atomicWrite(path, bytes);
+}
+void ArmyEditor::prepareImage(const QImage &image) {
+    const auto atlas = atlas_, model = model_, ordinal = paletteOrdinal_;
+    const auto before = project_->armyArtwork()->json();
+    const auto &spec = ArmyArtwork::specs()[atlas];
+    const auto prepared =
+        prepareArtworkImage(this, image,
+                            {{spec.width, spec.height},
+                             "army",
+                             "Assign Army sprite image",
+                             "The selected fixed palette determines the preview. Both palettes "
+                             "share the resulting pixel indices."},
+                            [&](const QImage &target, int threshold) {
+                                auto next = *project_->armyArtwork();
+                                const auto pixels = next.mapImage(atlas, ordinal, target, threshold,
+                                                                  next.indices(atlas, model));
+                                next.setIndices(atlas, model, pixels);
+                                return ArtImageMapping{pixels, next.image(atlas, model, ordinal)};
+                            });
+    if (prepared) {
+        if (atlas_ != atlas || model_ != model || paletteOrdinal_ != ordinal ||
+            project_->armyArtwork()->json() != before)
+            throw Error("Army artwork changed while assignment was open");
+        apply(*prepared, "Assign Army sprite image");
+    }
+}
+} // namespace lordly

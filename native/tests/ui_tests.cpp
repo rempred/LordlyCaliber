@@ -11,6 +11,7 @@
 #include "app/sprite_editor.h"
 #include "app/art_editor.h"
 #include "app/portrait_editor.h"
+#include "app/army_editor.h"
 #include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
@@ -59,6 +60,46 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void armyArtworkEditing() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ArmyEditor editor(&project,&undo,[]{});editor.resize(1300,820);editor.show();
+            auto models=editor.findChild<QListWidget *>("armyModels");QVERIFY(models);QCOMPARE(models->count(),56);
+            editor.selectModel(3,24);QCOMPARE(models->count(),38);auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");QVERIFY(canvas);QVERIFY(!canvas->isEnabled());
+            auto create=editor.findChild<QPushButton *>("armyCreate");QVERIFY(create->isEnabled());create->click();QVERIFY(canvas->isEnabled());QVERIFY(project.armyArtwork()->present(3,24));QCOMPARE(project.armyArtwork()->indices(3,24),QByteArray(384,char(-1)));
+            editor.findChild<QSpinBox *>("armyInk")->setValue(1);QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,3)*canvas->zoom()+QPoint(2,2));
+            QCOMPARE(u8(project.armyArtwork()->indices(3,24),3*16+2),quint8(1));QCOMPARE(undo.count(),2);
+            const auto painted=project.armyArtwork()->indices(3,24);undo.undo();QCOMPARE(project.armyArtwork()->indices(3,24),QByteArray(384,char(-1)));undo.redo();
+            editor.findChild<QComboBox *>("armyPalette")->setCurrentIndex(1);QCOMPARE(project.armyArtwork()->indices(3,24),painted);
+            const auto image=project.armyArtwork()->image(3,24,1);const auto pixel=image.pixelColor(2,3);const auto copied=editor.copyToLibrary();QCOMPARE(project.sprites().asset(copied).frames[0].layers[0].image,image);
+            editor.selectModel(3,25,1);auto library=editor.findChild<QComboBox *>("armyLibrary");library->setCurrentIndex(library->findData(copied));
+            QTimer::singleShot(0,&editor,[&]{auto dialog=editor.findChild<QDialog *>("armyImagePreparation");QVERIFY(dialog);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();});editor.findChild<QPushButton *>("armyAssignLibrary")->click();
+            QVERIFY(project.armyArtwork()->present(3,25));QCOMPARE(project.armyArtwork()->image(3,25,1).pixelColor(2,3),pixel);QCOMPARE(project.armyArtwork()->image(3,25,1).pixelColor(0,0).alpha(),0);
+            QTemporaryDir work;editor.exportImage(work.filePath("army.png"));QCOMPARE(QImage(work.filePath("army.png")).convertToFormat(QImage::Format_RGBA8888),project.armyArtwork()->image(3,25,1));
+            editor.selectModel(3,26,1);editor.importImage(work.filePath("army.png"));QCOMPARE(project.armyArtwork()->image(3,26,1).pixelColor(2,3),pixel);
+            const auto saved=project.armyArtwork()->json();project.saveFolder(work.filePath("project"));auto reopened=Project::fromRom(project.rom());reopened.applyManifest(Project::readProject(work.filePath("project")));QCOMPARE(reopened.armyArtwork()->json(),saved);
+            editor.findChild<QPushButton *>("armyRestore")->click();QVERIFY(!project.armyArtwork()->present(3,26));undo.undo();QCOMPARE(project.armyArtwork()->json(),saved);
+            QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("army-artwork-workspace.png"));
+            QCOMPARE(project.appendClass(1,"New Army class"),165);const auto added=project.classData().entries()[165];editor.selectModel(ArmyArtwork::classLane(added)*2,ArmyArtwork::classModel(added));QVERIFY(editor.findChild<QLabel *>("armyConsumers")->text().contains("New Army class (165)"));
+            editor.selectModel(4,16,0);QVERIFY(editor.grab().save("army-artwork-loaded-workspace.png"));
+        }catch(const Error &e){QFAIL(e.what());}
+    }
+    void indexedPixelTools() {
+        SpriteCanvas canvas;canvas.setZoom(8);canvas.setGrid(false);canvas.show();
+        QVector<QColor> palette(256,QColor(Qt::black));palette[0]=Qt::transparent;palette[1]=palette[2]=Qt::red;
+        QByteArray pixels(12,char(1));pixels[0]=2;canvas.setIndexedAsset("paired",{4,3},pixels,palette,0);
+        connect(&canvas,&SpriteCanvas::indicesCommitted,&canvas,[&](const QByteArray &next,QPoint at){QCOMPARE(at,QPoint{});pixels=next;canvas.setIndexedAsset("paired",{4,3},pixels,palette,0);});
+        const auto original=canvas.grab().toImage();canvas.setIndexColor(2);
+        QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(12,12));
+        QCOMPARE(quint8(pixels[5]),quint8(2));QCOMPARE(canvas.grab().toImage(),original);
+        palette[2]=Qt::blue;canvas.setIndexedAsset("paired",{4,3},pixels,palette,0);
+        QCOMPARE(canvas.grab().toImage().pixelColor(12,12),QColor(Qt::blue));
+        canvas.setTool(SpriteCanvas::Tool::Select);QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(12,12));
+        canvas.setTool(SpriteCanvas::Tool::Move);QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(12,12));QTest::mouseMove(&canvas,QPoint(20,12));QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(20,12));
+        QCOMPARE(quint8(pixels[5]),quint8(0));QCOMPARE(quint8(pixels[6]),quint8(2));
+        canvas.clearSelection();canvas.setTool(SpriteCanvas::Tool::Eraser);QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(20,12));QCOMPARE(quint8(pixels[6]),quint8(0));
+        QSignalSpy picked(&canvas,&SpriteCanvas::indexPicked);canvas.setTool(SpriteCanvas::Tool::Pick);QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,2));QCOMPARE(picked.count(),1);QCOMPARE(picked.first().first().toInt(),2);
+    }
     void portraitArtworkEditing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

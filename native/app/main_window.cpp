@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/art_editor.h"
 #include "app/portrait_editor.h"
+#include "app/army_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
@@ -212,6 +213,7 @@ void MainWindow::installProject(Project project) {
         auto artwork=new QTabWidget;
         artwork->addTab(new ArtEditor(project_.get(),undo_,[this]{updateStatus();}),"Item icons");
         artwork->addTab(new PortraitEditor(project_.get(),undo_,[this]{updateStatus();}),"Portraits");
+        artwork->addTab(new ArmyEditor(project_.get(),undo_,[this]{updateStatus();}),"Army sprites");
         workspaces_->addTab(artwork,"Art");
     }
     if (project_->rom().revision() == 0) {
