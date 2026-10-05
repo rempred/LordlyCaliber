@@ -15,6 +15,7 @@
 #include "engine/sprite_library.h"
 #include "engine/icon_artwork.h"
 #include "engine/avatar_artwork.h"
+#include "engine/army_artwork.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -63,6 +64,9 @@ class Project {
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
+    void loadArmyArtwork();
+    const std::optional<ArmyArtwork> &armyArtwork() const {return army_;}
+    void setArmyArtwork(const QJsonObject &);
     void loadAvatarArtwork();
     const std::optional<AvatarArtwork> &avatarArtwork() const { return avatars_; }
     void setAvatarArtwork(const QJsonObject &);
@@ -159,6 +163,7 @@ class Project {
     void importLegacyTools(const QJsonObject &);
     void importLegacyIconArtwork(const QJsonObject &);
     void importLegacyAvatarArtwork(const QJsonObject &);
+    void importLegacyArmyArtwork(const QJsonObject &);
     void importLegacyEncounters(const QJsonObject &object);
     void importLegacyGlobalRate(const QJsonObject &object);
     void importLegacyRewards(const QJsonObject &object);
@@ -181,6 +186,7 @@ class Project {
     SpriteLibrary sprites_;
     std::optional<IconArtwork> icons_;
     std::optional<AvatarArtwork> avatars_;
+    std::optional<ArmyArtwork> army_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;

@@ -1,5 +1,53 @@
 # Native Lordly Caliber
 
+## Army and battle-formation artwork rebuild
+
+ArmyArtwork reads all six native CI8 atlases, their two fixed RGBA5551 palettes,
+225 existing planes, and the 512-byte unknown player/ordinary tail. Missing player
+special models 24–37 and player large model 25 remain explicitly absent until
+assigned. Creating a missing plane expands its atlas and initializes other new
+slots to transparent indices. Existing palettes, tail bytes and unedited planes
+remain intact. Native project folders/archives and browser art schemas 4–5 import
+these edits, including browser hexadecimal model keys and exact palette identity.
+Explicit empty native state prevents restored legacy edits from returning.
+
+Class routing uses ClassData's full-record unitSizeOffset (4), not the old browser
+record-view offset 64: both refer to retail z64 0x5DB18 for class zero. Appearance
+byte 4 supplies the lower six model bits and special-lane bit 7; unit size 2 selects
+large. Bit 6 and appearance byte 5 remain uninterpreted and unchanged. Consumers
+are computed from current ClassData, including added classes.
+
+A whole-ROM LUI/ORI/ADDIU and literal-key scan identified 26 actual resource
+operand pairs; there were no further literal keys. The battle model selector
+shares one LUI between front/back ORIs for each lane (z64 0x2093DC, 0x2093F4 and
+0x20942C). Each exported pair therefore starts within one 64 KiB resource-key
+bank, retaining the original instructions and cache buffers. Bank alignment is
+resourceBase 0x594280 plus N times 65536, not a 64 KiB ROM boundary. All six decoded
+atlases compile from generated C at user export before compression/placement.
+The existing class menu's Army operands participate in normalized owner hashes;
+actual links and original a0 operand registers are checked separately.
+
+LC05ARMY version 1 at z64 0x27C4A00 owns 160 bytes of metadata: payload offset/size
+at 12/16, six relative offsets at 32, six container sizes at 56, raw SHA256 at 128,
+and zero reserved spans. Its payload contains three paired banks with FF padding.
+Reads validate bounds, pairing, exact padding and ownership. Later exports reuse,
+grow the tail, or relocate only the authenticated allocation; cartridge bounds
+remain 64 MiB. No Expansion Pak requirement or new runtime hook is introduced.
+
+After build 49300, army_artwork_tests passed 50,376 ms. An earlier comparison
+caught the class-record-view offset mismatch above; it was corrected before any
+export passed. Build 11562 adds forced allocation growth: the full case passed
+54,817 ms, including reuse at the ROM tail and relocation around later class data.
+It compares all 450 original palette images and raw indices, 165 class routes,
+480 expanded images through the independent browser decoder, and all six original
+MIPS side-selection branches up to their resource call. It also checks unchanged
+ROM bytes, palettes/tail, source compilation, CRC, repeated/reopened exports,
+both class/art editing orders, class growth, damaged owners, and project/native/
+browser persistence/reset. Latest candidate: parent Test ROMs/native-army-wxGZcc.
+engine_tests classMenuSourceLayout promotionFamiliesExport passed 21,798 ms;
+icon_artwork_tests browserImportAndReset passed 580 ms. These are file/resource/
+instruction checks, not an emulator cold boot. The Army authoring UI is next.
+
 ## Portrait workspace and edited-art previews
 
 Art now contains Item icons and Portraits pages. Portraits lists every current

@@ -819,6 +819,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=p.iconArtwork()->rebuild(Rom::fromBytes(result.image),packs);
         result.report << "Compiled and rebuilt both shared item-icon packs through their original resource loaders";
     }
+    if(p.armyArtwork() && p.armyArtwork()->modified()) {
+        auto packs=p.armyArtwork()->decodedPacks();
+        for(int i=0;i<6;++i)packs[i]=compiler.compileData(packs[i],directory,QString("army_atlas_%1").arg(i));
+        result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
+        result.report << "Compiled all six Army/formation atlases and retained shared front/back resource operands";
+    }
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);

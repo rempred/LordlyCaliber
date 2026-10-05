@@ -1,14 +1,17 @@
 #include "engine/art_resource_links.h"
+#include "engine/army_artwork.h"
 #include "engine/avatar_library.h"
 #include "engine/icon_artwork.h"
 namespace lordly {
 QByteArray canonicalArtOwner(QByteArray code, qsizetype start) {
-    return AvatarLibrary::canonicalOwner(IconArtwork::canonicalOwner(std::move(code), start),
-                                         start);
+    return ArmyArtwork::canonicalOwner(
+        AvatarLibrary::canonicalOwner(IconArtwork::canonicalOwner(std::move(code), start), start),
+        start);
 }
 void validateArtResourceLinks(const Rom &rom) {
     IconArtwork::validateRelocations(rom);
     AvatarLibrary::validateRelocations(rom);
+    ArmyArtwork::validateRelocations(rom);
 }
 void validateArtOwnerLinks(const Rom &rom, qsizetype start, qsizetype size) {
     auto contained = [&](QPair<int, int> site) {
@@ -26,5 +29,11 @@ void validateArtOwnerLinks(const Rom &rom, qsizetype start, qsizetype size) {
         avatars |= contained(site);
     if (avatars)
         AvatarLibrary::validateRelocations(rom);
+    bool army = false;
+    for (const auto &spec : ArmyArtwork::specs())
+        for (const auto &site : spec.sites)
+            army |= contained(site);
+    if (army)
+        ArmyArtwork::validateRelocations(rom);
 }
 } // namespace lordly
