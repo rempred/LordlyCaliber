@@ -20,6 +20,7 @@
 #include "rebuild/promotion_runtime.h"
 #include "rebuild/scenario_rates.h"
 #include <QJsonArray>
+#include <QElapsedTimer>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -3331,6 +3332,34 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             mixed.append(char(i));
         mixed += QByteArray(1000, 0) + QByteArray(700, char(-1));
         QCOMPARE(decodeLzss(encodeLzss(mixed), mixed.size()), mixed);
+    }
+    void compressionMatchBoundaries() {
+        QByteArray noise(70000, 0); quint32 state = 0x9137ab35;
+        for (auto &byte : noise) { state = state * 1664525U + 1013904223U; byte = char(state >> 24); }
+        for (int distance : {2047,2048,2049,16383,16384,16385,65535,65536,65537}) {
+            auto input = noise.left(distance) + noise.left(260);
+            input += QByteArray(600, 0) + QByteArray(600, char(-1));
+            const auto encoded = encodeLzss(input);
+            QCOMPARE(decodeLzss(encoded, input.size()), input);
+            QCOMPARE(encodeLzss(input), encoded);
+        }
+    }
+    void compressionSpriteCompatibility() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        // Recorded from the previous exhaustive encoder on these exact ROM resources.
+        const std::array<quint32,2> keys{0x3c00e0,0x3c412e};
+        const std::array<QByteArray,2> expected{
+            "6c7f7f7cc8eab92ce8bb2db851cba968dc52439d01a0509be848735d4cf82ede",
+            "5d7101da661c6883022a854bab6d269c0e66e766331dbfea841c158b688513a3"};
+        for (int i=0;i<2;++i) {
+            const auto at=0x594280+keys[i], size=u32(rom.bytes(),at), decodedSize=u32(rom.bytes(),at+4);
+            const auto decoded=decodeLzss(rom.bytes().mid(at+8,size-4),decodedSize);
+            QElapsedTimer timer; timer.start(); const auto encoded=encodeLzss(decoded);
+            qInfo()<<"Sprite compressor"<<keys[i]<<"bytes"<<decoded.size()<<"milliseconds"<<timer.elapsed();
+            QCOMPARE(sha256(encoded),expected[i]); QCOMPARE(decodeLzss(encoded,decoded.size()),decoded);
+        }
     }
     void recordFramingAndPreservation() {
         auto data = syntheticRom();

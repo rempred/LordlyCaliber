@@ -1,5 +1,23 @@
 # Native Lordly Caliber
 
+## Compression search performance
+
+The native LZSS encoder skips candidates that cannot improve an available distance
+class and tests the first byte needed for an improvement before rescanning a long
+repeated prefix. It preserves the exhaustive match result, nearest-distance tie
+selection and existing optimal-cost parse. No search-depth cap or compression
+quality tradeoff was introduced.
+
+Profiling copied equipment sprites exposed the issue: 25984 and 27888 decoded bytes
+took 13.783 and 31.643 seconds with the earlier encoder. The new encoder took 809
+and 1221 ms with byte-identical compressed output. `engine_tests compressionCommands
+compressionMatchBoundaries compressionSpriteCompatibility` passed in 2201 ms.
+Checks cover original command fixtures, deterministic roundtrips immediately around
+the 2048/16384/65536 distance limits and exact recorded output hashes for the two
+private-ROM resources. The full local browser-sequence import/export/reopen workload
+fell from 272948 to 39904 ms. Timings are observations on this PC, not release
+performance guarantees.
+
 ## Inheritable body construction and fixed poses
 
 Animation sets now carry independent body-construction and fixed-pose policies.

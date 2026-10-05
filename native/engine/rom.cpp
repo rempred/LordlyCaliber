@@ -116,6 +116,23 @@ QByteArray encodeLzss(const QByteArray &data) {
         const int maximum = std::min(260, size - pos);
         while (candidate >= 0 && pos - candidate <= 65536) {
             int distance = pos - candidate, length = 0;
+            // Older candidates can only improve a still-available distance class.
+            // Test the first byte beyond its current best match before rescanning
+            // long repeated prefixes. Equal matches keep the nearest candidate.
+            int needed = maximum + 1;
+            for (int type = 0; type < 3; ++type) {
+                const int limit = type == 0 ? 18 : type == 1 ? 67 : 260;
+                const int range = type == 0 ? 2048 : type == 1 ? 16384 : 65536;
+                if (distance <= range && maximum >= type + 3 &&
+                    matches[pos].length[type] < std::min(limit, maximum))
+                    needed = std::min(needed, std::max(type + 3, matches[pos].length[type] + 1));
+            }
+            if (needed > maximum)
+                break;
+            if (data[pos + needed - 1] != data[pos + needed - 1 - distance]) {
+                candidate = previous[candidate];
+                continue;
+            }
             while (length < maximum && data[pos + length] == data[pos + length - distance])
                 ++length;
             for (int type = 0; type < 3; ++type) {
