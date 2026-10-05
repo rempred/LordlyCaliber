@@ -261,6 +261,8 @@ int Project::changedRecords() const {
         count += shops_->changedShops();
     if (consumableEffects_ && consumableEffects_->modified())
         ++count;
+    if (tools_ && tools_->modified())
+        ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)
@@ -408,6 +410,35 @@ void Project::loadConsumableEffects() {
     if (!consumableEffects_)
         consumableEffects_ = ConsumableEffects::load(rom_);
 }
+void Project::loadTools() {
+    if (!tools_)
+        tools_ = ToolSettings::load(rom_);
+}
+void Project::setTools(const QJsonObject &value) {
+    loadTools();
+    tools_->apply(value);
+}
+void Project::importLegacyTools(const QJsonObject &object) {
+    const auto patches = object["patches"].toObject();
+    if (patches.contains("tools") && !patches["tools"].isObject())
+        throw Error("Imported tool settings must be an object");
+    const auto tools = patches["tools"].toObject();
+    const auto owner = object["rebuild_owners"].toObject();
+    QJsonValue percent(QJsonValue::Undefined);
+    if (tools.contains("experience-size-scale")) {
+        const auto value = tools["experience-size-scale"].toObject();
+        if (value["schema"] != 1 || !value.contains("percent"))
+            throw Error("Invalid imported experience setting");
+        percent = value["percent"];
+    }
+    if (owner.contains("experience_scale_percent")) {
+        if (!percent.isUndefined() && percent != owner["experience_scale_percent"])
+            throw Error("Imported experience settings disagree");
+        percent = owner["experience_scale_percent"];
+    }
+    if (!percent.isUndefined())
+        setTools({{"version", 1}, {"experienceScalePercent", percent}});
+}
 void Project::loadEncounters() {
     if (!encounters_)
         encounters_ = Encounters::load(rom_, int(records(Table::Classes).size()));
@@ -539,6 +570,13 @@ QJsonObject Project::manifest() const {
         result["shops"] = shops_->json();
     else
         result.remove("shops");
+    if (tools_ &&
+        (tools_->modified() ||
+         legacy_["patches"].toObject()["tools"].toObject().contains("experience-size-scale") ||
+         legacy_["rebuild_owners"].toObject().contains("experience_scale_percent")))
+        result["tools"] = tools_->json();
+    else
+        result.remove("tools");
     if (consumableEffects_ &&
         (consumableEffects_->modified() ||
          !legacy_["patches"].toObject()["consumableEffects"].toObject().isEmpty()))
@@ -631,6 +669,8 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.loadShops();
     if (consumableEffects_)
         candidate.loadConsumableEffects();
+    if (tools_)
+        candidate.loadTools();
     if (encounters_)
         candidate.loadEncounters();
     if (scenarios_)
@@ -726,6 +766,12 @@ void Project::applyManifest(const QJsonObject &object) {
     } else {
         candidate.importLegacyShops(candidate.legacy_);
     }
+    if (object.contains("tools")) {
+        if (!object["tools"].isObject())
+            throw Error("Invalid saved tools");
+        candidate.setTools(object["tools"].toObject());
+    } else
+        candidate.importLegacyTools(candidate.legacy_);
     if (object.contains("consumableEffects")) {
         if (!object["consumableEffects"].isObject())
             throw Error("Invalid saved consumable effects");
@@ -1080,6 +1126,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyShops(object);
     candidate.importLegacyConsumables(object);
     candidate.importLegacyConsumableEffects(object);
+    candidate.importLegacyTools(object);
     candidate.importLegacyEncounters(object);
     candidate.importLegacyGlobalRate(object);
     candidate.importLegacyRewards(object);
@@ -1163,6 +1210,13 @@ QStringList Project::pendingLegacySections() const {
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (it.key() == "tools" && tools_) {
+            const auto values = it.value().toObject();
+            for (auto setting = values.begin(); setting != values.end(); ++setting)
+                if (setting.key() != "experience-size-scale" && changed(setting.value()))
+                    pending << "tools." + setting.key();
+            continue;
+        }
         if (it.key() == "cutscenes" && legacyScenesImported_)
             continue;
         if (scenarios_ && (it.key() == "squadOverrides" || it.key() == "squad_overrides"))
@@ -1206,7 +1260,7 @@ QStringList Project::pendingLegacySections() const {
             continue;
         if (it.key() == "shop_memberships" && it.value().isBool() && shops_)
             continue;
-        if (it.key() == "experience_scale_percent" && it.value().toInt() == 100)
+        if (it.key() == "experience_scale_percent" && (tools_ || it.value().toInt() == 100))
             continue;
         if (it.value().isBool() && !it.value().toBool())
             continue;

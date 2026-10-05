@@ -601,6 +601,29 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                               p.encounters()->rewards(), compiler, directory);
         result.report << "Rebuilt class reward rows alongside custom encounter rewards";
     }
+    if (p.tools() && p.tools()->modified()) {
+        if (!ToolSettings::load(p.rom()).available())
+            throw Error("Experience source code changed outside its supported model");
+        const auto sites = ToolSettings::experienceSites();
+        for (int i = 0; i < sites.size(); ++i) {
+            const auto site = sites[i].toObject();
+            const int offset = site["rom"].toInt(), size = site["size"].toInt();
+            if (result.image.mid(offset, size) != p.rom().bytes().mid(offset, size))
+                throw Error("Another rebuild owner overlaps the experience setting");
+            const auto code = compiler.assembleOwner(
+                p.tools()->assemblyDefinitions(i) + readFile(":/game/tools/experience.s"),
+                directory, QString("experience_%1").arg(i), quint32(site["ram"].toInteger()),
+                {{"XP_RETAIL_WEIGHTED", 0x801d604c}}, true);
+            p.tools()->validateCompiled(i, code);
+            result.image.replace(offset, size, code);
+        }
+        const auto reopened = ToolSettings::load(Rom::fromBytes(result.image));
+        if (!reopened.available() || reopened.experiencePercent() != p.tools()->experiencePercent())
+            throw Error("Rebuilt experience setting failed readback");
+        result.report << QString("Compiled experience size-weight scale at %1% in its original "
+                                 "combat code allocation")
+                             .arg(p.tools()->experiencePercent());
+    }
     if (p.consumableEffects() && p.consumableEffects()->modified()) {
         const auto &effects = *p.consumableEffects();
         ConsumableEffects::load(p.rom()); // Authenticate the complete owner and dispatch table.

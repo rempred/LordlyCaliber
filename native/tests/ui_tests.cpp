@@ -1,5 +1,6 @@
 #include "app/actor_pose_editor.h"
 #include "app/scene_preview.h"
+#include "app/tools_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/dialogue_inspector.h"
@@ -56,6 +57,43 @@ class UiTests : public QObject {
         QFontDatabase::addApplicationFont(
             QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts/segoeui.ttf"));
         QApplication::setFont(QFont("Segoe UI", 10));
+    }
+    void experienceToolsEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        QUndoStack undo;
+        ToolsEditor editor(&project, &undo, [] {});
+        editor.resize(850, 420);
+        editor.show();
+        auto percent = editor.findChild<QSpinBox *>("experienceScale");
+        auto weights = editor.findChild<QLabel *>("experienceWeights");
+        auto restore = editor.findChild<QPushButton *>("experienceRestore");
+        QVERIFY(percent->isEnabled());
+        QCOMPARE(percent->value(), 100);
+        percent->setValue(137);
+        QCOMPARE(project.tools()->experiencePercent(), 137);
+        QVERIFY(weights->text().contains("109.6%"));
+        QVERIFY(restore->isEnabled());
+        undo.undo();
+        QCOMPARE(percent->value(), 100);
+        undo.redo();
+        QCOMPARE(percent->value(), 137);
+        QVERIFY(editor.grab().save("experience-tools.png"));
+        restore->click();
+        QCOMPARE(percent->value(), 100);
+        undo.undo();
+        QCOMPARE(percent->value(), 137);
+        editor.findChild<QPushButton *>("experienceRetail")->click();
+        QCOMPARE(project.tools()->experiencePercent(), 100);
+        auto bytes = rom.bytes();
+        bytes[0x21928c] ^= 1;
+        auto foreign = Project::fromRom(Rom::fromBytes(bytes));
+        QUndoStack foreignUndo;
+        ToolsEditor disabled(&foreign, &foreignUndo, [] {});
+        QVERIFY(!disabled.findChild<QSpinBox *>("experienceScale")->isEnabled());
+        QVERIFY(disabled.findChild<QLabel *>("toolsNotice")->text().contains("unrecognized"));
     }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));

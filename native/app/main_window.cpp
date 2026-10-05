@@ -6,6 +6,7 @@
 #include "app/scenario_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
+#include "app/tools_editor.h"
 #include "app/value_editor.h"
 #include "rebuild/compiler.h"
 #include <QAction>
@@ -177,6 +178,7 @@ void MainWindow::installProject(Project project) {
         workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
                                                [this] { updateStatus(); }),
                             "Cutscenes");
+    workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }), "Tools");
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {

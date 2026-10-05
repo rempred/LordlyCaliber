@@ -11,6 +11,7 @@
 #include "engine/scene_programs.h"
 #include "engine/shops.h"
 #include "engine/text.h"
+#include "engine/tool_settings.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -115,6 +116,9 @@ class Project {
     }
     void setDialogues(const QJsonObject &value);
     void loadConsumableEffects();
+    void loadTools();
+    const std::optional<ToolSettings> &tools() const { return tools_; }
+    void setTools(const QJsonObject &);
     const std::optional<ConsumableEffects> &consumableEffects() const {
         return consumableEffects_;
     }
@@ -141,6 +145,7 @@ class Project {
     void importLegacyShops(const QJsonObject &object);
     void importLegacyConsumables(const QJsonObject &object);
     void importLegacyConsumableEffects(const QJsonObject &object);
+    void importLegacyTools(const QJsonObject &);
     void importLegacyEncounters(const QJsonObject &object);
     void importLegacyGlobalRate(const QJsonObject &object);
     void importLegacyRewards(const QJsonObject &object);
@@ -159,6 +164,7 @@ class Project {
     std::optional<Promotion> promotion_;
     std::optional<Shops> shops_;
     std::optional<ConsumableEffects> consumableEffects_;
+    std::optional<ToolSettings> tools_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;

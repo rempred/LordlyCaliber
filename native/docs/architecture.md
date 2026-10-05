@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Tools: experience size-weight scale
+
+The Tools workspace now edits the shared0..300% multiplier with undo/redo,
+loaded-value restoration and a retail100% reset. Project folders/archives and
+both browser patch and rebuild-owner imports retain the value. Native snapshots
+override earlier imported values; unsupported tool edits remain retained and
+continue to block export. Unrecognized experience code disables this setting
+without changing its bytes.
+
+User export assembles maintained game/tools/experience.s for three bounded
+regions of the existing combat calculator: ROM21928C/2192BC/2192F8, qualified
+live801D5FBC/801D5FEC/801D6028. The build authenticates source regions, checks
+compiled instruction hashes and parameters, and rejects overlapping owners.
+100% assembles the original instructions. No allocation growth or extra RAM is
+needed. The generated catalog contains recognition hashes, not game payloads.
+The historical assembler requires nested .if blocks, not ==/.elseif syntax.
+
+Build39271 tool_settings_tests sourceExportAndReopen passed5689ms:0/75/137/300%
+match browser export bytes, save under the master filename, reopen with their
+selected values, and restore100% byte-for-byte. Foreign code remains unchanged.
+Candidates: parent Test ROMs/native-tools-wBqQoW. Build49980
+projectPersistenceAndImport passed3361ms: folder/archive round trips, both import
+forms, native reset precedence, invalid values, unknown native fields, retained
+unsupported browser tools, conflict rollback and unavailable foreign code.
+Build59587 ui_tests experienceToolsEditing passed112ms: effective weights,
+undo/redo, restore/reset and foreign-code disabling; screenshot inspected.
+Existing engine_tests projectPersistence browserProjectImport shopLegacyImport
+passed3772ms. These checks establish export compatibility and editor behavior;
+full-game natural-load validation remains pending.
+
 ## Reward artwork
 
 ItemIcons decodes shared CI8/RGBA5551 equipment and consumable packs, following
