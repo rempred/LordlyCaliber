@@ -1,6 +1,8 @@
 #include "engine/actor_art.h"
 #include "engine/project.h"
+#include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <algorithm>
 #include <cmath>
 namespace lordly {
@@ -37,6 +39,7 @@ struct Reference {
     int id, flags, selector;
     AnimationDescriptor descriptor;
     bool idle;
+    int child;
 };
 Reference reference(const Rom &rom, const QJsonValue &value, BodyAnimationData::Pointer body) {
     if (!value.isObject())
@@ -55,8 +58,12 @@ Reference reference(const Rom &rom, const QJsonValue &value, BodyAnimationData::
     integer(row["rawMode"], 0, 2);
     if (!row["idleSequence"].isBool())
         throw Error("Invalid imported idle reference");
-    return {id, flags, selector, AnimationDescriptor::load(rom, art.descriptorKey()),
-            row["idleSequence"].toBool()};
+    return {id,
+            flags,
+            selector,
+            AnimationDescriptor::load(rom, art.descriptorKey()),
+            row["idleSequence"].toBool(),
+            art.bodyVariant()};
 }
 QVector<PoseRecord> donorRecords(const Reference &donor, bool idle) {
     auto records = donor.descriptor.poses().effective(donor.selector).records;
@@ -121,6 +128,176 @@ QVector<PoseRecord> program(const QJsonObject &entry, const Reference &donor) {
     if (control != controls.size() || frame != frames.size() || !frame)
         throw Error("Imported pose does not match its frames and controls");
     return records;
+}
+QJsonObject restoreProgram(QJsonObject entry, const Reference &donor, int version) {
+    if (version == 4)
+        return entry;
+    const bool idle = entry["laneKey"] == "idle";
+    const auto records = donorRecords(donor, idle);
+    QVector<PoseRecord> visible;
+    for (const auto &record : records)
+        if (record.opcode == 1)
+            visible << record;
+    if (!entry["frames"].isArray())
+        throw Error("Imported legacy sequence has no frame structure");
+    auto frames = entry["frames"].toArray();
+    if (frames.isEmpty() || (version == 2 && frames.size() != visible.size()))
+        throw Error("Imported legacy sequence has an incompatible frame count");
+    int previous = -1;
+    QSet<int> kept;
+    for (int i = 0; i < frames.size(); ++i) {
+        auto frame = frames[i].toObject();
+        const int source =
+            version == 2 ? i : integer(frame["sourceFrameIndex"], 0, int(visible.size()) - 1);
+        if (source <= previous || integer(frame["sequenceIndex"], 0, 255) != i ||
+            integer(frame["token"], 0, 255) != u8(visible[source].operands, 0) ||
+            integer(frame["ticks"], 0, 255) != u8(visible[source].operands, 1))
+            throw Error("Imported legacy frame no longer matches its ROM donor");
+        previous = source;
+        kept.insert(source);
+        frame["sourceFrameIndex"] = source;
+        frames[i] = frame;
+    }
+    QVector<PoseRecord> selected;
+    int frame = 0, first = -1;
+    for (const auto &record : records) {
+        if (record.opcode == 1) {
+            if (!kept.contains(frame++))
+                continue;
+            if (first < 0)
+                first = int(selected.size());
+        }
+        selected << record;
+    }
+    if (idle)
+        selected.last().operands[0] = char(first);
+    entry["frames"] = frames;
+    entry["poseProgramBase64"] = QString::fromLatin1(PoseBank::encodeProgram(selected).toBase64());
+    return entry;
+}
+QJsonObject restoreStructure(QJsonObject entry, const Reference &donor) {
+    // Schema one stored only editable pixels. Binding names determine the old
+    // source ordinals; frame/resource contents still come from the user's ROM.
+    static const auto vocabulary = [] {
+        QFile file(":/game/art/combat-import.json");
+        if (!file.open(QIODevice::ReadOnly))
+            throw Error("Missing legacy animation source vocabulary");
+        return QJsonDocument::fromJson(file.readAll()).object()["sequenceSources"].toObject();
+    }();
+    if (!entry["sources"].isObject())
+        throw Error("Imported legacy sequence has no source pixels");
+    const auto input = entry["sources"].toObject();
+    const auto &descriptor = donor.descriptor;
+    const auto bindings = vocabulary[QString::number(descriptor.key(), 16)].toObject();
+    const auto records = donorRecords(donor, entry["laneKey"] == "idle");
+    const auto &config = descriptor.controls()[2], &palettes = descriptor.controls()[3];
+    QSet<int> used;
+    for (const auto &record : records)
+        if (record.opcode == 1) {
+            const auto frame = descriptor.frame(u8(record.operands, 0));
+            for (int layer = 0; layer < u16(frame, 0); ++layer)
+                used.insert(u16(frame, 2 + layer * 16));
+        }
+    const auto bindingName = [&](int art) {
+        const auto known = bindings[QString::number(art)].toObject()["id"].toString();
+        if (!known.isEmpty())
+            return known;
+        return QString("dynamic-binding-%1-%2-%3")
+            .arg(descriptor.key(), 8, 16, QChar('0'))
+            .arg(art, 3, 16, QChar('0'))
+            .arg(descriptor.members()[art + 4], 8, 16, QChar('0'));
+    };
+    auto arts = used.values();
+    std::sort(arts.begin(), arts.end(),
+              [&](int a, int b) { return bindingName(a) < bindingName(b); });
+    QMap<int, int> ordinals;
+    QJsonObject sources;
+    int consumed = 0;
+    for (int ordinal = 0; ordinal < arts.size(); ++ordinal) {
+        const int art = arts[ordinal], policy = u8(config, 32 + art);
+        ordinals[art] = ordinal;
+        const auto binding = bindings[QString::number(art)].toObject();
+        const auto role = binding["role"].toString(policy == 1 ? "equipment" : "body");
+        auto bytes = descriptor.sprite(art);
+        auto sprite = SpriteObject::decode(bytes);
+        if (role == "body") {
+            const int child = donor.child < sprite.children().size() ? donor.child : 0;
+            const auto lanes = sprite.materialize(child);
+            const auto header = sprite.children()[child];
+            bytes = bytes.left(8);
+            bytes[2] = 1;
+            QByteArray next(8, 0);
+            put16(next, 0, 0x5554);
+            put8(next, 3,
+                 quint8((lanes.color.isEmpty() ? 0 : 1) | (lanes.alpha.isEmpty() ? 0 : 2) |
+                        (lanes.palette.isEmpty() ? 0 : 4)));
+            put16(next, 4, quint16(header.widthField));
+            put16(next, 6, quint16(header.heightField));
+            bytes += next + lanes.color + lanes.alpha + lanes.palette;
+            sprite = SpriteObject::decode(bytes);
+        }
+        const bool editable = sprite.colorFormat() == 1 && sprite.alphaFormat() == 0;
+        QJsonObject children;
+        if (editable) {
+            const auto row = input[QString::number(ordinal)].toObject();
+            if (integer(row["width"], 1, 65535) != sprite.width() ||
+                integer(row["height"], 1, 65535) != sprite.height() ||
+                integer(row["childCount"], 1, 255) != sprite.children().size() ||
+                !row["children"].isObject())
+                throw Error("Imported legacy pixels differ from their ROM sprite");
+            children = row["children"].toObject();
+            ++consumed;
+        }
+        const auto palette = palettes.mid(u8(config, u32(config, 28) + art) * 512, 512);
+        sources[QString::number(ordinal)] =
+            QJsonObject{{"resourceKey", double(descriptor.members()[art + 4])},
+                        {"artId", art},
+                        {"sourceRole", role},
+                        {"selectorPolicy", policy},
+                        {"formatKind", sprite.colorFormat() == 2 ? "direct-rgba5551"
+                                       : editable                ? "indexed-ci8"
+                                                                 : "indexed-ci8-alpha8"},
+                        {"editable", editable},
+                        {"childOrdinal", 0},
+                        {"width", sprite.width()},
+                        {"height", sprite.height()},
+                        {"childCount", int(sprite.children().size())},
+                        {"children", children},
+                        {"decodedBase64", QString::fromLatin1(bytes.toBase64())},
+                        {"paletteRgba5551BeBase64", QString::fromLatin1(palette.toBase64())}};
+    }
+    if (consumed != input.size())
+        throw Error("Imported legacy pixels contain unrelated sources");
+    QJsonArray frames;
+    for (const auto &record : records)
+        if (record.opcode == 1) {
+            const int token = u8(record.operands, 0);
+            const auto bytes = descriptor.frame(token);
+            QJsonArray layers;
+            for (int i = 0; i < u16(bytes, 0); ++i) {
+                const int at = 2 + i * 16, art = u16(bytes, at);
+                layers << QJsonObject{{"sourceOrdinal", ordinals[art]},
+                                      {"artId", art},
+                                      {"drawOffsetX", qint16(u16(bytes, at + 2))},
+                                      {"drawOffsetY", qint16(u16(bytes, at + 4))},
+                                      {"width", u16(bytes, at + 6)},
+                                      {"height", u16(bytes, at + 8)},
+                                      {"flags", u16(bytes, at + 10)},
+                                      {"scaleXRaw", u16(bytes, at + 12)},
+                                      {"scaleYRaw", u16(bytes, at + 14)},
+                                      {"requestedChildOrdinal", 0},
+                                      {"selectedChildOrdinal", 0}};
+            }
+            frames << QJsonObject{{"sequenceIndex", int(frames.size())},
+                                  {"sourceFrameIndex", int(frames.size())},
+                                  {"token", token},
+                                  {"ticks", u8(record.operands, 1)},
+                                  {"layers", layers}};
+        }
+    entry["sources"] = sources;
+    entry["frames"] = frames;
+    entry["poseProgramBase64"] = QString::fromLatin1(PoseBank::encodeProgram(records).toBase64());
+    return entry;
 }
 struct Source {
     int art, width, height, children, format;
@@ -238,7 +415,8 @@ void Project::importLegacyAnimationSequences(const QJsonObject &object) {
     const QJsonValue payload = object["patches"].toObject()["art"].toObject()["separations"];
     if (payload.isNull() || payload.isUndefined())
         return;
-    if (!payload.isObject() || payload.toObject()["schemaVersion"] != 4 ||
+    if (!payload.isObject() || payload.toObject()["schemaVersion"].toInt() < 1 ||
+        payload.toObject()["schemaVersion"].toInt() > 4 ||
         !payload.toObject()["entries"].isObject() ||
         !payload.toObject()["routeBaselines"].isObject())
         throw Error("Unsupported browser private-animation document");
@@ -250,6 +428,7 @@ void Project::importLegacyAnimationSequences(const QJsonObject &object) {
     const auto body = std::make_shared<const BodyAnimationData>(classes, *animationRoutes_);
     const auto input = payload.toObject(), entries = input["entries"].toObject(),
                baselines = input["routeBaselines"].toObject();
+    const int version = integer(input["schemaVersion"], 1, 4);
     const QMap<QString, QPair<int, int>> fixed{
         {"idle", {-1, 0}}, {"advance", {-2, 5}}, {"return", {-3, 11}}, {"hit", {-4, 17}}};
     QMap<int, QVector<Row>> groups;
@@ -271,8 +450,10 @@ void Project::importLegacyAnimationSequences(const QJsonObject &object) {
             (!fixed.contains(lane) &&
              ((e["targetRef"].toObject()["rawMode"] == 2) != (lane == "blocked"))))
             throw Error("Imported sequence target differs from its route");
+        const auto converted =
+            version == 1 ? restoreStructure(e, donor) : restoreProgram(e, donor, version);
         groups[id * 4 + flags] << Row{
-            it.key(), lane, id, flags, action, e, std::move(target), std::move(donor)};
+            it.key(), lane, id, flags, action, converted, std::move(target), std::move(donor)};
         if (action >= 0)
             required.insert(QString("%1:%2:%3").arg(id).arg(action).arg(flags));
     }

@@ -436,6 +436,14 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
     if (groups_.isEmpty())
         return result;
     QMap<int, QVector<QByteArray>> containers;
+    QHash<QByteArray, QByteArray> encoded;
+    const auto compressed = [&](const QByteArray &bytes) {
+        const auto found = encoded.constFind(bytes);
+        if (found != encoded.cend()) return found.value();
+        const auto result = container(bytes);
+        encoded.insert(bytes, result);
+        return result;
+    };
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
         const auto &descriptor = it->descriptor;
         const auto original = AnimationDescriptor::load(rom_, descriptor.key());
@@ -447,9 +455,9 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
                 continue;
             }
             if (member < 4 && descriptor.controls()[member] != original.controls()[member])
-                members << container(descriptor.controls()[member]);
+                members << compressed(descriptor.controls()[member]);
             else if (member >= 4 && descriptor.artwork().contains(member - 4))
-                members << container(descriptor.artwork().value(member - 4));
+                members << compressed(descriptor.artwork().value(member - 4));
             else {
                 const quint64 at = quint64(key) + DirectDescriptors::resourceBase;
                 const auto size = u32(rom_.bytes(), qsizetype(at));

@@ -2,7 +2,7 @@
 
 ## Browser private-sequence conversion
 
-Schema-four browser `art.separations` documents now convert into native private
+Browser `art.separations` documents from schemas one through four convert into native private
 descriptors and attack assignments. Conversion validates current-ROM target/donor
 references, complete sprite children and palettes, frame identities, dimensions,
 timing, preserved control instructions and prior assignment baselines. It remaps
@@ -14,8 +14,11 @@ model. Browser source files and compilation methods are not runtime dependencies
 Converted projects save an explicit native snapshot, including an empty snapshot
 after removal. Older native projects that retained this browser section convert
 on load; subsequent native edits and deletions do not trigger another import.
-Malformed conversion leaves the project unchanged. Schemas one through three still
-need their historical frame/source reconstruction.
+Malformed conversion leaves the project unchanged. Schema one reconstructs frame
+structure and normalized body children from the current ROM; its embedded generated
+binding vocabulary contains identities and roles, not game artwork. Schemas two
+and three reconstruct unchanged control instructions and validate the original
+frame identities/timing, including ordered frame deletion in schema three.
 
 `animation_sequences_tests browserSequenceImport` generates its input using the
 browser's authoring APIs and the supplied private ROM. It changes idle timing,
@@ -25,9 +28,12 @@ all child pixels/rendering match the browser's decoded export plan. Compression 
 stubbed only in the reference planner; the native ROM export uses the real encoder
 and compiler. Folder save/load, retained-project migration, malformed import
 atomicity, export/reopening, unchanged export and persistent removal pass. The
-fixture adds 104 sprite members in one private group. The complete check passed in
-39904 ms after the encoder optimization (272948 ms before it). Candidate: parent
-Test ROMs/native-browser-sequences-ZyLFHQ. This establishes asset/program conversion
+fixture now covers four copied sequences in two groups, including a linked attack
+and companion. Five historical fixtures cover schemas one/two/three, deleted frames
+and an alternate body child; their native output equals the corresponding modern
+conversion. Damaged historical dimensions/timing reject without changing the project.
+The expanded check passed in 30854 ms. Candidate: parent
+Test ROMs/native-browser-sequences-wVSzNy. This establishes asset/program conversion
 and rebuild behavior, not full-game rendering or audio fidelity.
 The full application build passed. Existing private-attack persistence/export passed
 in 25132 ms. The general browser-project import check exposed an existing empty
@@ -50,7 +56,10 @@ Checks cover original command fixtures, deterministic roundtrips immediately aro
 the 2048/16384/65536 distance limits and exact recorded output hashes for the two
 private-ROM resources. The full local browser-sequence import/export/reopen workload
 fell from 272948 to 39904 ms. Timings are observations on this PC, not release
-performance guarantees.
+performance guarantees. A per-plan decoded-byte cache also avoids repeatedly
+compressing identical private sprite copies. The same three-sequence export fell
+from 39904 to 26008 ms with a byte-identical ROM; this includes additional legacy
+format checks.
 
 ## Inheritable body construction and fixed poses
 

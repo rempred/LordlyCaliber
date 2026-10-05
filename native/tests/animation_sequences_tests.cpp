@@ -30,7 +30,26 @@ class AnimationSequencesTests : public QObject {
             const auto log = generator.readAll(); QVERIFY2(generator.exitCode() == 0, log.constData()); qInfo().noquote() << log;
             QFile file(work.filePath("fixture.json")); QVERIFY(file.open(QIODevice::ReadOnly));
             const auto fixture = QJsonDocument::fromJson(file.readAll()).object(), input = fixture["project"].toObject();
+            const auto document = [](const QJsonValue &separations) {
+                return QJsonObject{{"format","ob64-patch"},{"version",36},{"patches",QJsonObject{{"art",QJsonObject{{"schemaVersion",5},{"separations",separations}}}}}};
+            };
+            for (const auto &legacy : fixture["legacy"].toArray()) {
+                auto baseline = Project::fromRom(rom); baseline.importLegacy(document(legacy.toObject()["expected"]));
+                auto old = Project::fromRom(rom); old.importLegacy(document(legacy.toObject()["input"]));
+                QCOMPARE(old.animationSequences()->json(),baseline.animationSequences()->json());
+                QVERIFY(old.pendingLegacySections().isEmpty());
+                const auto saved=old.manifest();auto malformed=legacy.toObject()["input"].toObject();auto entries=malformed["entries"].toObject();
+                const auto key=entries.keys().first();auto entry=entries[key].toObject();
+                if(malformed["schemaVersion"]==1){auto sources=entry["sources"].toObject();const auto sourceKey=sources.keys().first();auto source=sources[sourceKey].toObject();source["childCount"]=source["childCount"].toInt()+1;sources[sourceKey]=source;entry["sources"]=sources;}
+                else {auto frames=entry["frames"].toArray();auto frame=frames[0].toObject();frame["ticks"]=(frame["ticks"].toInt()+1)%256;frames[0]=frame;entry["frames"]=frames;}
+                entries[key]=entry;malformed["entries"]=entries;
+                QVERIFY_THROWS_EXCEPTION(Error,old.importLegacy(document(malformed)));QCOMPARE(old.manifest(),saved);
+            }
             auto project = Project::fromRom(rom); project.importLegacy(input);
+            const auto importedBody=project.bodyAnimationData();const int primary=importedBody->selector(10,10,13,0,0);
+            const int secondary=importedBody->routes().privatePose(10,10,0,primary);QVERIFY(secondary>=256);
+            ActorPosePlayer paired(rom,ActorArt::loadBody(rom,10,10,0,0,importedBody),secondary);paired.setLinkedObjectKnownAbsent(true);
+            QCOMPARE(paired.advance(),int(LORDLY_POSE_OK));QCOMPARE(paired.actor().state,secondary);
             QVERIFY2(project.pendingLegacySections().isEmpty(), qPrintable(project.pendingLegacySections().join(',')));
             const auto check = [&](Project &p) {
                 const auto body = p.bodyAnimationData();
@@ -106,11 +125,13 @@ class AnimationSequencesTests : public QObject {
             auto reopened=Project::fromRom(Rom::open(output));
             // Exported descriptors have new resource identities; compare programs and rendered assets through the staged baseline.
             const auto reloaded=reopened.bodyAnimationData();QVERIFY(reopened.animationSequences()->find(2,0));
-            const auto &before=*project.animationSequences()->find(2,0),&after=*reopened.animationSequences()->find(2,0);
-            QCOMPARE(after.controls(),before.controls());
-            for(int artId=0;artId<before.members().size()-4;++artId)QCOMPARE(after.sprite(artId),before.sprite(artId));
+            for(auto group=project.animationSequences()->groups().begin();group!=project.animationSequences()->groups().end();++group){
+                const auto &before=group->descriptor,&after=*reopened.animationSequences()->find(group.key()/4,group.key()%4);
+                QCOMPARE(after.controls(),before.controls());
+                for(int artId=0;artId<before.members().size()-4;++artId)QCOMPARE(after.sprite(artId),before.sprite(artId));
+            }
             QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
-            restored.removePrivateAnimation(2,0);restored.saveFolder(work.filePath("removed"));
+            const auto removeGroups=restored.animationSequences()->groups().keys();for(int group:removeGroups)restored.removePrivateAnimation(group/4,group%4);restored.saveFolder(work.filePath("removed"));
             auto removed=Project::fromRom(rom);removed.applyManifest(Project::readProject(work.filePath("removed")));
             QVERIFY(removed.animationSequences()->groups().isEmpty());QVERIFY(removed.pendingLegacySections().isEmpty());
             QCOMPARE(removed.bodyAnimationData()->selector(2,2,4,0,0),40);
