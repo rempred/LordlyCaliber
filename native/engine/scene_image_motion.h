@@ -12,6 +12,7 @@ class SceneImageMotion {
     explicit SceneImageMotion(const Rom &);
     void start(const QVector<quint32> &, QByteArray &context, const QByteArray &channel);
     void advance(QByteArray &context, QByteArray &channel);
+    void manual(QByteArray &context, QByteArray &channel, LordlyImageInput input) const;
     bool active() const {
         return motion_.has_value();
     }

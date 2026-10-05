@@ -4,6 +4,7 @@
 #include "engine/scene_image_presentation.h"
 #include "engine/color_combiner.h"
 #include "game/director/image_presentation.h"
+#include "engine/scene_image_motion.h"
 #include <bit>
 #include <QImage>
 #include <QJsonArray>
@@ -15,6 +16,29 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageManualAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;
+        reference.start("node",{QFINDTESTDATA("image-manual-mips.cjs"),path,work.filePath("manual.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("manual.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows=QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();QCOMPARE(rows.size(),1214);
+        auto bytes=[](const QJsonObject &o,const char *key){return QByteArray::fromHex(o[key].toString().toLatin1());};
+        int checked=0;
+        for(const auto &v:rows) {
+            const auto row=v.toObject(),initial=row["initial"].toObject(),input=row["input"].toObject();
+            QByteArray context(0x848,0);context.replace(0x818,0x30,bytes(initial,"context"));auto channel=bytes(initial,"channel");
+            const LordlyImageInput controls{quint16(input["digital"].toInt()),qint8(input["x"].toInt()),qint8(input["y"].toInt()),quint8(input["present"].toBool())};
+            SceneImageMotion motion(rom);
+            for(const auto &step:row["steps"].toArray()) {
+                motion.manual(context,channel,controls);
+                QCOMPARE(context.mid(0x818),bytes(step.toObject(),"context"));QCOMPARE(channel,bytes(step.toObject(),"channel"));++checked;
+            }
+        }
+        QCOMPARE(checked,4014);
+        SceneImageMotion motion(rom);QByteArray context(0x848,0),channel(88,0);put8(context,0x83f,1);put32(channel,0x40,0x7fc00000);
+        const auto before=context,view=channel;QVERIFY_THROWS_EXCEPTION(Error,motion.manual(context,channel,{}));QCOMPARE(context,before);QCOMPARE(channel,view);
+    }
     void imageDrawingAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         QTemporaryDir work;QProcess reference;

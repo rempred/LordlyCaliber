@@ -19,6 +19,11 @@ class SceneSprites {
     bool advancePoses(int instructionBudget = 256);
     const SpritePosePlayer *sprite(int slot) const;
     void supplyRecord(int slot, const QByteArray &record);
+    void supplySprite(int slot, const SpritePosePlayer &);
+    quint64 identity(int slot) const {
+        checkSlot(slot);
+        return identities_[slot];
+    }
     void setRotationSource(Rotation source) {
         rotation_ = std::move(source);
     }
@@ -34,6 +39,8 @@ class SceneSprites {
     SpritePosePlayer create(const QVector<quint32> &args) const;
     Rom rom_;
     std::array<std::optional<SpritePosePlayer>, 30> sprites_;
+    std::array<quint64, 30> identities_{};
+    quint64 nextIdentity_ = 0;
     int nextPoseSlot_ = 0;
     Rotation rotation_;
 };

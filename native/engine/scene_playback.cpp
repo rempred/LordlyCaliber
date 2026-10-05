@@ -31,6 +31,22 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x55 || opcode == 0x6c || opcode == 0x6d) {
+        if (!imageView_ || !imagePresentation_)
+            throw Error("Image controls require the launch image presentation");
+        if (opcode == 0x6c) {
+            if (args.size() != 1)
+                throw Error("Image arrow selection requires one operand");
+            imageControls_.enable(args[0], *imageView_, sprites_);
+        } else if (opcode == 0x6d)
+            imageControls_.disable(*imageView_, sprites_);
+        else {
+            auto channel = transforms_.channel(1);
+            imageMotion_.manual(*imageView_, channel, imageInput_);
+            transforms_.supplyChannel(1, channel);
+        }
+        return true;
+    }
     if (opcode == 0x50) {
         if (!imagePresentation_ || !imageView_)
             throw Error("Image transition requires its launch image presentation");
@@ -42,7 +58,8 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
     if (opcode == 0x54) {
         if (!imageView_)
             throw Error("Image transition query requires its launch image presentation");
-        value = qint32(lordly_image_echo_query(reinterpret_cast<const uint8_t *>(imageView_->constData())));
+        value = qint32(
+            lordly_image_echo_query(reinterpret_cast<const uint8_t *>(imageView_->constData())));
         return true;
     }
     if (opcode == 0x3a) {
@@ -192,13 +209,13 @@ bool ScenePlayback::update(LordlySceneService service) {
             imagePresentation_->advanceEcho(rom_, *imageView_);
         return true;
     case LORDLY_SCENE_MODE_ZERO_6: {
-        //2B529C also owns a separate image-caption pool. Require its caller to
-        // acknowledge that domain; commit our alpha update only on success.
+        // 2B529C also owns a separate image-caption pool. Require its caller to
+        //  acknowledge that domain; commit our alpha update only on success.
         if (!supplemental_ || !*supplemental_ || !(*supplemental_)(service))
             return false;
         if (imagePresentation_ && imageView_)
             lordly_image_echo_fade(reinterpret_cast<uint8_t *>(imageView_->data()),
-                                    &imagePresentation_->echo(), 0);
+                                   &imagePresentation_->echo(), 0);
         return true;
     }
     case LORDLY_SCENE_MODE_ZERO_4:

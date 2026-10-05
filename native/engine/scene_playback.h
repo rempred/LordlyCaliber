@@ -6,6 +6,7 @@
 #include "engine/scene_dialogue_context.h"
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
+#include "engine/scene_image_controls.h"
 #include "engine/scene_image_motion.h"
 #include "engine/scene_image_presentation.h"
 #include "engine/scene_projection.h"
@@ -121,6 +122,16 @@ class ScenePlayback {
     }
     void supplyImageView(QByteArray context);
     void loadImagePresentation(int row);
+    void setImageInput(LordlyImageInput input) {
+        imageInput_ = input;
+    }
+    bool imageControlsEnabled() const {
+        return imageControls_.enabled();
+    }
+    void finishImageDraw() {
+        if (imageView_)
+            imageControls_.finishDraw(*imageView_, sprites_);
+    }
     const std::optional<SceneImagePresentation> &imagePresentation() const {
         return imagePresentation_;
     }
@@ -163,6 +174,8 @@ class ScenePlayback {
     SceneImageMotion imageMotion_;
     std::optional<QByteArray> imageView_;
     std::optional<SceneImagePresentation> imagePresentation_;
+    SceneImageControls imageControls_;
+    LordlyImageInput imageInput_{};
     std::optional<LordlyActorLighting> lighting_;
     std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};

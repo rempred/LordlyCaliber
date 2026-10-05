@@ -29,6 +29,7 @@ class ScenePreview : public QWidget {
 
   protected:
     void hideEvent(QHideEvent *) override;
+    bool eventFilter(QObject *, QEvent *) override;
 
   private:
     struct Snapshot {
@@ -52,6 +53,8 @@ class ScenePreview : public QWidget {
     void stop();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
+    void imageButton(quint16 bit, bool down);
+    void imageInput(LordlyImageInput);
     Rom rom_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
@@ -60,6 +63,8 @@ class ScenePreview : public QWidget {
     std::optional<Directors> resources_;
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;
+    QMap<int, LordlyImageInput> inputHistory_;
+    LordlyImageInput liveInput_{};
     QImage frame_;
     int selector_ = -1, mode_ = -1, tick_ = 0;
     QSpinBox *position_, *rate_;
@@ -69,5 +74,6 @@ class ScenePreview : public QWidget {
     int seekTarget_ = -1;
     QGraphicsScene *canvas_;
     QGraphicsView *view_;
+    QWidget *imageControlsUi_;
 };
 } // namespace lordly

@@ -5,6 +5,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QHideEvent>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QPainter>
 #include <QPushButton>
@@ -46,9 +47,35 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     controls->addStretch();
     controls->addWidget(fit);
     layout->addLayout(controls);
+    imageControlsUi_ = new QWidget;
+    imageControlsUi_->setObjectName("sceneImageControls");
+    auto imageButtons = new QHBoxLayout(imageControlsUi_);
+    imageButtons->setContentsMargins(0, 0, 0, 0);
+    imageButtons->addWidget(new QLabel("Image controls"));
+    const struct {
+        const char *label;
+        const char *name;
+        quint16 bit;
+    } buttons[]{{"Left", "imagePanLeft", 0x200}, {"Right", "imagePanRight", 0x100},
+                {"Up", "imagePanUp", 0x800},     {"Down", "imagePanDown", 0x400},
+                {"Zoom in", "imageZoomIn", 8},   {"Zoom out", "imageZoomOut", 4}};
+    for (const auto &spec : buttons) {
+        auto button = new QPushButton(QString::fromLatin1(spec.label));
+        button->setObjectName(QString::fromLatin1(spec.name));
+        imageButtons->addWidget(button);
+        connect(button, &QPushButton::pressed, this,
+                [this, bit = spec.bit] { imageButton(bit, true); });
+        connect(button, &QPushButton::released, this,
+                [this, bit = spec.bit] { imageButton(bit, false); });
+    }
+    imageButtons->addWidget(new QLabel("Arrow keys · + / − to zoom"));
+    imageButtons->addStretch();
+    imageControlsUi_->hide();
+    layout->addWidget(imageControlsUi_);
     canvas_ = new QGraphicsScene(this);
     view_ = new QGraphicsView(canvas_);
     view_->setObjectName("sceneCanvas");
+    view_->installEventFilter(this);
     view_->setBackgroundBrush(QColor("#252931"));
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     layout->addWidget(view_, 1);
@@ -93,10 +120,73 @@ void ScenePreview::stop() {
 }
 void ScenePreview::hideEvent(QHideEvent *event) {
     stop();
+    imageInput({});
     QWidget::hideEvent(event);
+}
+void ScenePreview::imageInput(LordlyImageInput input) {
+    if (input.digital == liveInput_.digital && input.stick_x == liveInput_.stick_x &&
+        input.stick_y == liveInput_.stick_y &&
+        input.controller_present == liveInput_.controller_present)
+        return;
+    if (seekTarget_ >= 0)
+        stop();
+    liveInput_ = input;
+    auto inputs = inputHistory_.lowerBound(tick_);
+    while (inputs != inputHistory_.end())
+        inputs = inputHistory_.erase(inputs);
+    auto snapshots = checkpoints_.upperBound(tick_);
+    while (snapshots != checkpoints_.end())
+        snapshots = checkpoints_.erase(snapshots);
+}
+void ScenePreview::imageButton(quint16 bit, bool down) {
+    auto input = liveInput_;
+    input.digital = down ? quint16(input.digital | bit) : quint16(input.digital & ~bit);
+    imageInput(input);
+    if (down && !timer_->isActive() && current_ && !current_->stopped &&
+        current_->playback.imageControlsEnabled())
+        step();
+}
+bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (object == view_ &&
+        (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) && current_ &&
+        current_->playback.imageControlsEnabled()) {
+        const auto key = static_cast<QKeyEvent *>(event);
+        quint16 bit = 0;
+        switch (key->key()) {
+        case Qt::Key_Left:
+            bit = 0x200;
+            break;
+        case Qt::Key_Right:
+            bit = 0x100;
+            break;
+        case Qt::Key_Up:
+            bit = 0x800;
+            break;
+        case Qt::Key_Down:
+            bit = 0x400;
+            break;
+        case Qt::Key_Plus:
+        case Qt::Key_Equal:
+            bit = 8;
+            break;
+        case Qt::Key_Minus:
+            bit = 4;
+            break;
+        }
+        if (bit) {
+            if (!key->isAutoRepeat())
+                imageButton(bit, event->type() == QEvent::KeyPress);
+            return true;
+        }
+    }
+    if (object == view_ && event->type() == QEvent::FocusOut)
+        imageInput({});
+    return QWidget::eventFilter(object, event);
 }
 void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode) {
     stop();
+    inputHistory_.clear();
+    liveInput_ = {};
     try {
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
@@ -107,7 +197,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Scattered props use a fixed preview seed. Launch bindings, manual image controls and audio remain "
+            "Scattered props use a fixed preview seed. Launch bindings and audio remain "
             "unfinished.");
         restart();
     } catch (const std::exception &e) {
@@ -124,6 +214,7 @@ void ScenePreview::restart() {
     current_.reset();
     checkpoints_.clear();
     tick_ = 0;
+    liveInput_ = {};
     frame_ = {};
     if (!resources_) {
         present();
@@ -146,7 +237,8 @@ void ScenePreview::restart() {
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
-        const auto launch = SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
+        const auto launch =
+            SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
         if (launch.resource_class == 4 && launch.image_row >= 0)
             playback.loadImagePresentation(launch.image_row);
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
@@ -247,6 +339,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     int channelCount = next.backgrounds ? next.backgrounds->channelCount() : 20;
     if (drawing.imagePresentation())
         channelCount = qMax(channelCount, drawing.imagePresentation()->channelCount());
+    if (drawing.imageControlsEnabled())
+        channelCount = qMax(channelCount, 3);
     if (mode_ == 0)
         drawing.prepareModeZeroDrawing(channelCount);
     else
@@ -263,26 +357,30 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 if (!color.isEmpty())
                     for (int c = 0; c < 3; ++c)
                         backgroundColor[c] = u8(color, 4 + c);
-                const bool presentation = drawing.imagePresentation() &&
-                    drawing.imagePresentation()->contains(channel);
-                if (presentation || (next.backgrounds && channel < next.backgrounds->channelCount())) {
+                const bool presentation =
+                    drawing.imagePresentation() && drawing.imagePresentation()->contains(channel);
+                if (presentation ||
+                    (next.backgrounds && channel < next.backgrounds->channelCount())) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
-                    const auto layers = presentation
-                        ? drawing.imagePresentation()->project(channel, *drawing.imageView(),
-                                                              drawing.cameras().actor(), parent)
-                        : next.backgrounds->project(channel, drawing.cameras().actor(), parent,
-                                                    backgroundColor);
+                    const auto layers =
+                        presentation
+                            ? drawing.imagePresentation()->project(
+                                  channel, *drawing.imageView(), drawing.cameras().actor(), parent)
+                            : next.backgrounds->project(channel, drawing.cameras().actor(), parent,
+                                                        backgroundColor);
                     ActorRenderer::paint(background, layers);
                     if (presentation) {
                         // ROM2B2868 pops the image/last trail matrix before
                         // calling29A930(1,1). Special sprites inherit this
                         // channel's parent, independently of image geometry.
-                        ActorRenderer::paint(background, spriteRenderer_.project(
-                            drawing.sprites(),1,1,drawing.cameras().actor(),parent,
-                            {255,255,255},drawing.effects().colorRecord(1),sepia));
-                        if (!drawing.sprites().draws(1,1).isEmpty())
-                            environment = {0,0,0,1};
+                        ActorRenderer::paint(background,
+                                             spriteRenderer_.project(
+                                                 drawing.sprites(), 1, 1, drawing.cameras().actor(),
+                                                 parent, {255, 255, 255},
+                                                 drawing.effects().colorRecord(1), sepia));
+                        if (!drawing.sprites().draws(1, 1).isEmpty())
+                            environment = {0, 0, 0, 1};
                     }
                     painter.drawImage(0, 0, background);
                 }
@@ -395,8 +493,11 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         ++next.texturePhase;
     if (commitDraw)
         drawing.effects().images().finishDraw();
-    if (commitDraw)
+    if (commitDraw) {
+        if (mode_ == 0)
+            drawing.finishImageDraw();
         next.playback = std::move(drawing);
+    }
 }
 void ScenePreview::step() {
     if (!current_ || current_->stopped || tick_ >= 10000) {
@@ -405,6 +506,9 @@ void ScenePreview::step() {
     }
     auto next = *current_;
     try {
+        if (!inputHistory_.contains(tick_))
+            inputHistory_.insert(tick_, liveInput_);
+        next.playback.setImageInput(inputHistory_.value(tick_));
         next.playback.advanceFade();
         // This reference stage starts these job/object pools empty. Commands
         // needing an unimplemented owner stop rather than adding hidden jobs.
@@ -485,6 +589,8 @@ void ScenePreview::present() {
     position_->setValue(tick_);
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
     step_->setEnabled(play_->isEnabled());
+    imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
+    imageControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);

@@ -72,6 +72,13 @@ void SceneImageMotion::advance(QByteArray &context, QByteArray &channel) {
     else
         motion_.reset();
 }
+void SceneImageMotion::manual(QByteArray &context, QByteArray &channel,
+                              LordlyImageInput input) const {
+    validate(context, channel);
+    if (!lordly_image_manual(reinterpret_cast<uint8_t *>(context.data()),
+                             reinterpret_cast<uint8_t *>(channel.data()), input, constants_.data()))
+        throw Error("Manual image input produced nonfinite movement or zoom");
+}
 QByteArray SceneImageMotion::record() const {
     if (!motion_)
         return {};

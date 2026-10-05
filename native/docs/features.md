@@ -30,6 +30,12 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Scene images support native vignette construction, scripted pan/zoom, forward
+and reverse trails, and manual direction/zoom controls with animated boundary
+indicators. Keyboard/button input is recorded for deterministic seeking and can
+be changed after rewinding. Native-image caption services and external launch
+context remain separate unfinished work.
+
 Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic
 runtime snapshots, and performance measurements on representative workloads.

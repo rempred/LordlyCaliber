@@ -161,6 +161,43 @@ class UiTests : public QObject {
         QTest::newRow("echo-forward")<<0;
         QTest::newRow("echo-reverse")<<1;
     }
+    void manualImageInputReplay() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
+        for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
+        QVERIFY(source);const auto id=scenes.createScene("Manual image input",source,false);
+        // Retail row47 is288x276, exceeding both manual movement thresholds.
+        QVector<quint32> words{0x80000007U,47,0x3a,1,0,0,0,70,70,130,8,0x50,0,1,0,0x6c,56};
+        for(int i=0;i<170;++i)words<<0x55<<0<<0x80000000U;
+        words<<0x6d<<0<<0x80000000U<<0<<0x80000000U<<0x80000001U<<0xff000004U;
+        QByteArray bytes(words.size()*4,0);for(int i=0;i<words.size();++i)put32(bytes,i*4,words[i]);scenes.replace(id,bytes);
+        ScenePreview preview(rom);preview.resize(1200,800);preview.show();preview.selectScene(scenes,id,0);
+        auto position=preview.findChild<QSpinBox *>("scenePosition");auto status=preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto controls=preview.findChild<QWidget *>("sceneImageControls");auto view=preview.findChild<QGraphicsView *>("sceneCanvas");
+        QVERIFY(!controls->isVisible());position->setValue(4);QTRY_COMPARE(preview.property("sceneTick").toInt(),4);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(controls->isVisible());
+        const auto original=preview.renderedFrame();
+        QTest::keyPress(view,Qt::Key_Right);QCOMPARE(preview.property("sceneTick").toInt(),5);
+        position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QTest::keyRelease(view,Qt::Key_Right);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));const auto moved=preview.renderedFrame();QVERIFY(moved!=original);
+        position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));
+        position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),moved);
+        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),moved);
+        position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
+        QTest::mouseClick(preview.findChild<QPushButton *>("imagePanLeft"),Qt::LeftButton);
+        position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QVERIFY(preview.renderedFrame()!=moved);
+        const auto beforeZoom=preview.renderedFrame();
+        QTest::mouseClick(preview.findChild<QPushButton *>("imageZoomOut"),Qt::LeftButton);
+        position->setValue(75);QTRY_COMPARE(preview.property("sceneTick").toInt(),75);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(preview.renderedFrame()!=beforeZoom);
+        const auto zoomed=preview.renderedFrame();position->setValue(124);QTRY_COMPARE(preview.property("sceneTick").toInt(),124);
+        position->setValue(75);QTRY_COMPARE(preview.property("sceneTick").toInt(),75);QCOMPARE(preview.renderedFrame(),zoomed);
+        QVERIFY(preview.grab().save("manual-image-controls.png"));
+        position->setValue(171);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),171,20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(!controls->isVisible());
+    }
     void imagePresentationPlayback() {
         QFETCH(int,transition);
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

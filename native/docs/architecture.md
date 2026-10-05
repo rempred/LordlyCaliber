@@ -1,5 +1,48 @@
 # Native Lordly Caliber
 
+## Manual scene-image controls and reproducible input
+
+SceneImageMotion::manual reconstructs opcode55's input and zoom behavior. It
+retains the signed image dimensions, strict pre-movement bounds, analog deadband
+and truncation, combined digital/analog movement and native thirty-update zoom.
+The host receives the two input bytes and raw digital mask explicitly.
+
+SceneImageControls implements6C/6D and the post-channel-draw indicator manager.
+Bank56 supplies the four retail animation700 poses. Hidden arrows retain their
+records and only attached sprites advance. Reattachment copies the last live
+arrow's cursor/delay, retaining its own frame. Available-direction bits attach
+arrows when set. Snapshot-owned sprite identities distinguish retained arrows
+from new sprites assigned to the same slot. Commands can replace those slots
+without silently replacing the image owner's retained record.
+
+The preview offers arrow keys and pan/zoom buttons while6C is enabled. A press
+while paused advances one step; held input continues during playback. Per-step
+input history makes backward seeking and restart reproducible. Changing input
+after seeking invalidates later input and frame checkpoints. New scene selection
+clears the preview input history; this history is not project/ROM content.
+
+Build83511: image_tests imageManualAgainstMips passed324ms, comparing1214 original
+sequences/4014 updates with no controlled movement or zoom helper. They cover
+threshold dimensions, exact edges, combined inputs, disabled controls and full
+zoom cycles. Full1304-byte manual code and324-byte indicator code uniquely match
+retained opening RAM. A114-byte data window uniquely qualifies the four initial
+indicator flags; the sixteen-byte all-ones sequence alone was not unique.
+
+Build24377: sprite_runtime_tests imageControlsAgainstMips passed266ms across14
+complete original enable/visibility/disable sequences. Sprite creation/release
+use supplied real records; original ownership/visibility/counter logic executes.
+Checks include occupied slots, idempotence, replacement records, pose-counter
+synchronization and invalid bank rollback. Build63449 retained scheduler
+composition/suspension and scripted motion checks, passing277ms.
+
+Build30795: ui_tests manualImageInputReplay passed1948ms: keyboard movement,
+124-step checkpoint replay, input changes after seeking, button-controlled zoom,
+restart and scene-controlled disabling. The final image was inspected. Its first
+run correctly found no movement with a224x160 source; the test now uses retail
+row47's288x276 image, which exceeds both native movement thresholds. Existing
+pan/echo UI checks passed after the input integration. This establishes manual
+image preview interaction, not a complete game controller or image-caption UI.
+
 ## Scene image presentation and trails
 
 Class-four previews resolve the image from the edited launch stream and current

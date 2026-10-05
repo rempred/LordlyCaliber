@@ -40,6 +40,12 @@ void SceneSprites::supplyRecord(int slot, const QByteArray &record) {
         sprites_[slot].reset();
     else
         sprites_[slot] = SpritePosePlayer(rom_, record);
+    identities_[slot] = record.isEmpty() ? 0 : ++nextIdentity_;
+}
+void SceneSprites::supplySprite(int slot, const SpritePosePlayer &sprite) {
+    checkSlot(slot);
+    sprites_[slot] = sprite;
+    identities_[slot] = ++nextIdentity_;
 }
 SpritePosePlayer SceneSprites::create(const QVector<quint32> &args) const {
     const int slot = quint8(args[0]);
@@ -96,13 +102,16 @@ bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &va
     if (opcode == 0x66 && slot == -1) {
         for (auto &sprite : sprites_)
             sprite.reset();
+        identities_ = {};
         return true;
     }
     checkSlot(slot);
     if (opcode == 0x46) {
         sprites_[slot] = create(args);
+        identities_[slot] = ++nextIdentity_;
     } else if (opcode == 0x66) {
         sprites_[slot].reset();
+        identities_[slot] = 0;
     } else if (opcode == 0x63) {
         // Stage replacement until all required context is available.
         std::optional<SpritePosePlayer> next;
@@ -123,6 +132,8 @@ bool SceneSprites::service(quint32 opcode, const QVector<quint32> &args, int &va
         }
         next->setRotation(rotation);
         sprites_[slot] = std::move(next);
+        if (args[9] == 0xffffffffU)
+            identities_[slot] = ++nextIdentity_;
     } else {
         if (!sprites_[slot])
             throw Error("Scene-sprite command requires an existing sprite");

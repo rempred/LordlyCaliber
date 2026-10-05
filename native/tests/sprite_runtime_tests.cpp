@@ -2,6 +2,7 @@
 #include "engine/sprite_pose.h"
 #include "engine/sprite_renderer.h"
 #include "engine/scene_image_presentation.h"
+#include "engine/scene_image_controls.h"
 #include "game/director/scene_matrix.h"
 #include "game/images/sepia.h"
 #include <QDir>
@@ -16,6 +17,48 @@ using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageControlsAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);SceneSprites templates(rom);QJsonArray created,existing;int ignored=0;
+        const int xs[]{0,-124,124,0},ys[]{-84,0,0,84};
+        for(int i=0;i<4;++i) {
+            templates.service(0x46,{quint32(29-i),56,700,quint32(i),quint32(xs[i]),quint32(ys[i]),2,100,0},ignored);
+            auto record=templates.sprite(29-i)->record();created<<QString::fromLatin1(record.toHex());
+            put32(record,0x34,10+i);put32(record,0x38,20+i);existing<<QString::fromLatin1(record.toHex());
+        }
+        auto replacement=QByteArray::fromHex(existing.last().toString().toLatin1());put32(replacement,0x34,123);put32(replacement,0x38,234);
+        QTemporaryDir work;QFile input(work.filePath("input.json"));QVERIFY(input.open(QIODevice::WriteOnly));
+        input.write(QJsonDocument(QJsonObject{{"created",created},{"existing",existing},{"replacement",QString::fromLatin1(replacement.toHex())}}).toJson());input.close();
+        QProcess reference;reference.start("node",{QFINDTESTDATA("image-controls-mips.cjs"),path,input.fileName(),work.filePath("controls.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("controls.json"));QVERIFY(file.open(QIODevice::ReadOnly));const auto cases=QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();QCOMPARE(cases.size(),14);
+        for(const auto &v:cases) {
+            const auto row=v.toObject();auto context=QByteArray::fromHex(row["initial"].toObject()["context"].toString().toLatin1());
+            SceneImageControls controls;SceneSprites sprites(rom);
+            if(row["occupied"].toBool())for(int i=0;i<4;++i)sprites.supplyRecord(29-i,QByteArray::fromHex(existing[i].toString().toLatin1()));
+            auto compare=[&](const QJsonObject &expected,bool retained) {
+                auto native=QByteArray::fromHex(expected["context"].toString().toLatin1());
+                for(int i=0;i<4;++i)put32(native,0xa8+i*4,u32(native,0xa8+i*4)?quint32(i+1):0);
+                QCOMPARE(context,native);
+                for(int i=0;i<4;++i) {
+                    const auto sprite=sprites.sprite(29-i);const auto record=sprite?sprite->record():QByteArray{};
+                    QCOMPARE(record,QByteArray::fromHex(expected["attached"].toArray()[i].toString().toLatin1()));
+                    if(retained)QCOMPARE(controls.retained(i),QByteArray::fromHex(expected["retained"].toArray()[i].toString().toLatin1()));
+                }
+            };
+            controls.enable(56,context,sprites);QVERIFY(controls.enabled());compare(row["built"].toObject(),true);
+            controls.enable(999,context,sprites);compare(row["built"].toObject(),true);
+            for(const auto &s:row["steps"].toArray()) {
+                const auto step=s.toObject();if(step["replace"].toBool())sprites.supplyRecord(26,replacement);
+                put8(context,0x83e,quint8(step["mask"].toInt()));controls.finishDraw(context,sprites);compare(step["after"].toObject(),true);
+            }
+            controls.disable(context,sprites);QVERIFY(!controls.enabled());compare(row["disabled"].toObject(),false);
+        }
+        QByteArray context(0x848,0);put16(context,0x834,640);put16(context,0x836,480);
+        SceneImageControls controls;SceneSprites sprites(rom);const auto before=context;
+        QVERIFY_THROWS_EXCEPTION(Error,controls.enable(999,context,sprites));QCOMPARE(context,before);QVERIFY(!controls.enabled());
+        for(int i=26;i<30;++i)QVERIFY(!sprites.sprite(i));
+    }
     void specialImageComposition() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);SceneSprites sprites(rom);SpriteRenderer renderer(rom);
