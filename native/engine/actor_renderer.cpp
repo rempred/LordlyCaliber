@@ -130,6 +130,7 @@ ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool
                       .arg(token)
                       .arg(variant)
                       .arg(sepia);
+    if (!art.contentIdentity().isEmpty()) key += "/private/" + QString::fromLatin1(art.contentIdentity());
     if (appearance)
         key += QString("/body/%1/%2/%3")
                    .arg(appearance->equipment)

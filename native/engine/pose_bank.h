@@ -21,6 +21,7 @@ class PoseBank {
     }
     const PoseProgram &effective(int state) const;
     QByteArray encoded() const;
+    void validateEntry(int state)const { validateProgress(state); }
     void setProgram(int state, const QByteArray &);
     void setFrame(int state, int record, int token, int ticks);
     void insertFrame(int state, int before, int token, int ticks);

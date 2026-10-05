@@ -1,5 +1,21 @@
 # Native Lordly Caliber
 
+## Private descriptor snapshots
+
+AnimationDescriptor captures descriptor controls and staged sprite edits without changing
+shared resources. ActorArt binds the snapshot while retaining body source/owner/variant
+and equipment selection. Private previews ignore subsequent global artwork changes;
+content identities keep renderer caches separate across private edits. Changed pose entries
+validate progress and metadata tokens before publication. Unknown original records stay
+intact. This is the preview foundation; project authoring and export integration remain.
+
+`animation_descriptor_tests` passed115ms against Fighter resources: independent pose40
+first-frame timing, captured pixels, later shared edit isolation, rejected missing frames
+and malformed sprites, and renderer cache redraw. Body program/frame and equipment checks
+passed11437ms; staged-animation/equipment UI checks passed1157ms. The first render test
+used the wrong write width for the32-bit frame field; correcting that fixture made the
+check pass. These checks do not establish authored-sequence ROM export or game execution.
+
 ## Editable counted pose programs
 
 PoseBank now owns the counted-program codec used by ActorArt. It preserves physical

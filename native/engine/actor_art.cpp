@@ -66,20 +66,41 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     result.flagA_ = flagA;
     result.flagB_ = flagB;
     result.bodyHandle_ = handle;
+    result.prepareBodyFrames();
+    return result;
+}
+void ActorArt::prepareBodyFrames() {
+    bodyReplacements_.fill(65535);
     // Accepted 205C88 scans pose 38/88 for the last two frame commands.
     for (int pair = 0; pair < 2; ++pair) {
         int state = pair ? 88 : 38;
-        while (state < result.poses_.size() && result.poses_[state].source.isEmpty())
+        while (state < poses_.size() && poses_[state].source.isEmpty())
             ++state;
-        if (state >= result.poses_.size())
+        if (state >= poses_.size())
             continue;
-        for (const auto &command : result.poses_[state].records) {
+        for (const auto &command : poses_[state].records) {
             if (command.opcode == 1) {
-                result.bodyReplacements_[pair * 2 + 1] = result.bodyReplacements_[pair * 2];
-                result.bodyReplacements_[pair * 2] = u8(command.operands, 0);
+                bodyReplacements_[pair * 2 + 1] = bodyReplacements_[pair * 2];
+                bodyReplacements_[pair * 2] = u8(command.operands, 0);
             }
         }
     }
+}
+ActorArt ActorArt::withDescriptor(const AnimationDescriptor &descriptor)const {
+    auto result=*this;
+    result.descriptorKey_=descriptor.key();
+    result.metadata_=descriptor.controls()[0];
+    result.poses_=descriptor.poses().programs();
+    const auto &config=descriptor.controls()[2];
+    result.palettes_=descriptor.controls()[3];
+    result.artKeys_=descriptor.members().sliced(4);
+    const auto map=u32(config,0x1c);
+    result.paletteMap_=config.mid(map,result.artKeys_.size());
+    result.imageKinds_=config.mid(0x20,result.artKeys_.size());
+    result.privateArtwork_=descriptor.artwork();
+    result.contentIdentity_=descriptor.identity();
+    result.isolated_=true;
+    if(result.body_)result.prepareBodyFrames();
     return result;
 }
 ActorArt ActorArt::loadDirect(const Rom &rom, quint16 handle) {
@@ -184,10 +205,11 @@ QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant,
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     const auto metadata = layers(token);
+    const auto &currentArtwork = isolated_ ? privateArtwork_ : artwork;
     if (!perLayer.isEmpty() && perLayer.size() != metadata.size())
         throw Error("Actor processing decisions do not match its layers");
     for (const auto &layer : metadata) {
-        const auto bytes = artwork.contains(layer.art) ? artwork.value(layer.art)
+        const auto bytes = currentArtwork.contains(layer.art) ? currentArtwork.value(layer.art)
                                                        : resource(rom, artKeys_[layer.art], true);
         SpriteFrame pixels;
         if (u16(bytes, 0) == 0x3634) {
@@ -279,12 +301,13 @@ BodyAppearance ActorArt::defaultAppearance(const Rom &rom) const {
 QVector<ActorFrameLayer> ActorArt::bodyFrame(const Rom &rom, int token, BodyAppearance appearance,
                                              int sepia,
                                              const QMap<int, QByteArray> &artwork) const {
+    const auto &currentArtwork = isolated_ ? privateArtwork_ : artwork;
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     for (const auto &selected : bodyLayers(rom, token, appearance)) {
         const auto &layer = selected.metadata;
-        const auto sprite = SpriteObject::decode(artwork.contains(layer.art)
-                                                     ? artwork.value(layer.art)
+        const auto sprite = SpriteObject::decode(currentArtwork.contains(layer.art)
+                                                     ? currentArtwork.value(layer.art)
                                                      : resource(rom, artKeys_[layer.art], true));
         auto pixels = sprite.frame(selected.child, palettes_.mid(selected.paletteOffset, 512),
                                    sepia, (layer.flags & 0xc0) != 0);

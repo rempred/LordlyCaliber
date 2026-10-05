@@ -3,6 +3,7 @@
 #include "engine/body_animation_data.h"
 #include "engine/sprite_object.h"
 #include "engine/pose_bank.h"
+#include "engine/animation_descriptor.h"
 #include <QMap>
 #include <QPoint>
 #include <array>
@@ -36,6 +37,8 @@ class ActorArt {
     // Direct descriptor handles used by Stage props; no class or cutscene vocabulary.
     static ActorArt loadDirect(const Rom &rom, quint16 handle);
     static int bankCount(const Rom &rom);
+    ActorArt withDescriptor(const AnimationDescriptor &)const;
+    const QByteArray &contentIdentity()const{return contentIdentity_;}
     bool isBody() const {
         return body_;
     }
@@ -84,7 +87,11 @@ class ActorArt {
 
   private:
     static ActorArt descriptor(const Rom &rom, quint32 key);
+    void prepareBodyFrames();
     BodyAnimationData::Pointer bodyData_;
+    QMap<int,QByteArray> privateArtwork_;
+    QByteArray contentIdentity_;
+    bool isolated_=false;
     int bank_ = 0;
     bool body_ = false;
     int sourceClass_ = 0, ownerClass_ = 0, flagA_ = 0, flagB_ = 0;
