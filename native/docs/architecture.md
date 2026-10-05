@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Direct Stage placement and pose records
+
+StagePlacements reads the foreground selector's two lists from current-ROM resource
+315736, preserving each complete source row. Its sparse resolver retains untouched
+output fields, the -1 terminator, -2 randomized rows and the perspective 8000
+height conversion. These are distinct from cutscene Actor and Sprite records.
+
+DirectPosePlayer uses direct descriptor handles through ActorArt::loadDirect.
+The portable C sequencer adapts accepted func_001F0E64 and func_001F1218 from
+Decomp main62cc7ef4, with explicit big-endian80-byte storage, bounded native
+four-entry stacks and resumable instruction budgets. Randomness is supplied by
+the caller; sound requests retain their opcode, key and linked-object identity.
+This is a host adaptation, not newly accepted matching C or completed audio.
+
+After build58798, `stage_props_tests -o stage-props-report.txt,txt` passed547ms:
+334 original resolver comparisons (all80 selectors,168 populated source rows,
+terminators and synthetic boundaries),32 initializer comparisons and10,880 pose
+updates. The latter use all placement-selected programs plus calls/returns,
+counted loops, signed16 wrapping, saturating colors and one-command suspension.
+Original resource lookup and audio sinks are controlled; original counted decoding
+and record writes execute. Invalid host stacks and missing RNG reject safely.
+The shared-loader regression `body_art_tests bodyProgramsAndFrames` passed14170ms.
+No rendered geometry or complete Stage playback is established by these checks.
+
+The complete original ranges were uniquely located in the retained opening RAM:
+ROM201908/236bytes -> RAM801BE478;2019F4/292 ->801BE564;
+1F0E64/248 ->801AD9D4;1F1218/1892 ->801ADD88;2050AC/372 ->801C1C1C.
+Further geometry/update references qualified likewise:1FFE80/796 ->801BC9F0,
+1FDEC8/2900 ->801BAA38 (including the16-byte preamble).
+
 ## World drawing passes
 
 World previews now use SceneCameras::freshModeTwo's current-ROM common-launch

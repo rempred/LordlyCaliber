@@ -28,6 +28,8 @@ class ActorArt {
   public:
     static ActorArt load(const Rom &rom, int bank);
     static ActorArt loadBody(const Rom &rom, int source, int owner, int flagA, int flagB);
+    // Direct descriptor handles used by Stage props; no class or cutscene vocabulary.
+    static ActorArt loadDirect(const Rom &rom, quint16 handle);
     static int bankCount(const Rom &rom);
     bool isBody() const {
         return body_;

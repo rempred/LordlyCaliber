@@ -103,11 +103,7 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     if (lordly_actor_body_handle(table.constData(), int(table.size()), source, owner,
                                  u8(classes.entries()[source].record, 0x45), flagA, flagB, &handle))
         throw Error("Class body route exceeds its current ROM handle table");
-    const auto directory = resource(rom, 0x3b6cd0, false);
-    const int slot = (handle & 0xfff) - 1;
-    if (directory.size() % 4 || slot < 0 || slot >= directory.size() / 4)
-        throw Error("Class body handle selects an absent descriptor");
-    auto result = descriptor(rom, u32(directory, slot * 4));
+    auto result = loadDirect(rom, handle);
     result.body_ = true;
     result.sourceClass_ = source;
     result.ownerClass_ = owner;
@@ -115,6 +111,16 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     result.flagB_ = flagB;
     result.bodyHandle_ = handle;
     return result;
+}
+ActorArt ActorArt::loadDirect(const Rom &rom, quint16 handle) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Direct descriptor art currently requires US revision 0");
+    const auto directory = resource(rom, 0x3b6cd0, false);
+    const int slot = (handle & 0xfff) - 1;
+    if (directory.size() % 4 || slot < 0 || slot >= directory.size() / 4)
+        throw Error("Direct handle selects an absent descriptor");
+    return descriptor(rom, u32(directory, slot * 4));
 }
 ActorArt ActorArt::descriptor(const Rom &rom, quint32 key) {
     ActorArt result;
