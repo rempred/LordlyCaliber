@@ -1,5 +1,6 @@
 #include "engine/class_runtime_inventory.h"
 #include "engine/promotion.h"
+#include "engine/icon_artwork.h"
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSet>
@@ -101,7 +102,7 @@ RuntimeOwnerRecord ClassRuntimeInventory::capture(quint32 start, const QByteArra
                                                   const QMap<QString, quint32> &bases) {
     RuntimeOwnerRecord result{start, quint32(code.size()), QByteArray(64, '0'), references};
     validateRecord(result);
-    result.canonicalSha256 = sha256(transform(result, code, bases, canonicalBases()));
+    result.canonicalSha256 = sha256(IconArtwork::canonicalOwner(transform(result, code, bases, canonicalBases()),start));
     return result;
 }
 QByteArray ClassRuntimeInventory::encode() const {
@@ -186,7 +187,8 @@ QByteArray ClassRuntimeInventory::relocate(quint32 start, const QByteArray &code
             continue;
         validateRecord(owner);
         const auto canonical = transform(owner, code, from, canonicalBases());
-        if (sha256(canonical) != owner.canonicalSha256)
+        if (sha256(IconArtwork::canonicalOwner(canonical,start)) != owner.canonicalSha256 &&
+            sha256(canonical) != owner.canonicalSha256)
             throw Error("Class runtime code changed outside its recorded rebuild");
         return transform(owner, canonical, canonicalBases(), to);
     }
@@ -194,6 +196,13 @@ QByteArray ClassRuntimeInventory::relocate(quint32 start, const QByteArray &code
 }
 void ClassRuntimeInventory::verify(const Rom &rom, const QMap<QString, quint32> &bases) const {
     encode(); // Require a valid, nonempty inventory before checking its code.
+    bool usesIcons=false;
+    for(const auto &owner:owners)for(const auto &spec:IconArtwork::specs())
+        for(const auto &[hi,lo]:spec.sites)
+            usesIcons |= quint32(hi)>=owner.start && quint32(lo)>=owner.start &&
+                quint64(hi)+4<=quint64(owner.start)+owner.size &&
+                quint64(lo)+4<=quint64(owner.start)+owner.size;
+    if(usesIcons)IconArtwork::validateRelocations(rom);
     for (const auto &owner : owners)
         relocate(owner.start, rom.bytes().mid(owner.start, owner.size), bases, bases);
 }

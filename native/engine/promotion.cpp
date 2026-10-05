@@ -1,5 +1,6 @@
 #include "engine/promotion.h"
 #include "engine/class_data.h"
+#include "engine/icon_artwork.h"
 #include "engine/expanded_promotion_resource.h"
 #include <QFile>
 #include <QJsonArray>
@@ -84,6 +85,7 @@ QJsonObject Promotion::validateFamilies(const QJsonObject &value) {
     return result;
 }
 Promotion Promotion::load(const Rom &rom) {
+    IconArtwork::validateRelocations(rom);
     if (rom.revision() != 0)
         throw Error("Promotion source owners currently support US Rev 0");
     Promotion p;
@@ -141,7 +143,7 @@ Promotion Promotion::load(const Rom &rom) {
         auto code = rom.bytes().mid(owner["start"].toInt(), owner["size"].toInt());
         if (classPlacement)
             code = classPlacement->canonicalReferences(code, owner["start"].toInt());
-        auto hash = QString::fromLatin1(sha256(code));
+        auto hash = QString::fromLatin1(sha256(IconArtwork::canonicalOwner(code,owner["start"].toInt())));
         bool family =
             hash == owner["familySha256"].toString() ||
             (owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString());

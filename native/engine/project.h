@@ -13,6 +13,7 @@
 #include "engine/text.h"
 #include "engine/tool_settings.h"
 #include "engine/sprite_library.h"
+#include "engine/icon_artwork.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -61,6 +62,9 @@ class Project {
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
+    void loadIconArtwork();
+    const std::optional<IconArtwork> &iconArtwork() const { return icons_; }
+    void setIconArtwork(const QJsonObject &);
     void saveFolder(const QString &folder) const;
     static QJsonObject readProject(const QString &path);
     void saveArchive(const QString &path) const;
@@ -149,6 +153,7 @@ class Project {
     void importLegacyConsumables(const QJsonObject &object);
     void importLegacyConsumableEffects(const QJsonObject &object);
     void importLegacyTools(const QJsonObject &);
+    void importLegacyIconArtwork(const QJsonObject &);
     void importLegacyEncounters(const QJsonObject &object);
     void importLegacyGlobalRate(const QJsonObject &object);
     void importLegacyRewards(const QJsonObject &object);
@@ -169,6 +174,7 @@ class Project {
     std::optional<ConsumableEffects> consumableEffects_;
     std::optional<ToolSettings> tools_;
     SpriteLibrary sprites_;
+    std::optional<IconArtwork> icons_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;

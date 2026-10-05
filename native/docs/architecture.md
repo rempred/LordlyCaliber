@@ -1,5 +1,57 @@
 # Native Lordly Caliber
 
+## Item-icon rebuild engine
+
+`IconArtwork` loads all 277 equipment and 44 consumable CI8 icons through the
+current ROM's 17 LUI/ORI resource-reference pairs. It validates instruction
+forms, agreement, compressed/decoded sizes and each pack's transparent index.
+The authoring model retains exact RGBA5551 words; native display uses the same
+rounded channel expansion as the existing image decoder. Mapping a native
+image back to its words is lossless. Image assignment can map to the current
+shared palette; complete-pack validation rejects more than 255 opaque colors.
+Atomic multi-icon imports can replace shared colors together. Unedited icon
+pixels and unused palette words remain intact.
+
+Native project `iconArtwork` version 1 stores changed word arrays. Browser art
+schemas 1–5 import `art.icons`; unknown art sections remain retained and block
+export. Canonical empty edits override prior browser imports. During export,
+both decoded packs compile from generated C, compress and relocate together
+through the existing game loaders. Decoded sizes remain unchanged; this path
+adds no RAM or Expansion Pak requirement. Original retail/browser pack storage
+is retained. A verified native allocation can be reused, grown at the ROM tail
+or replaced when another allocation follows it.
+
+The 96-byte `LC05ICON` descriptor is at z64 ROM 0x27C4800, outside the other
+native resource descriptors. Version 1 stores payload offset/allocation, two
+relative resource offsets/lengths, reserved zero bytes and the SHA-256 of its
+complete payload. Containers and padding are aligned to 16 bytes and bounded
+within the 40–64 MiB cartridge range. Readback checks links, padding, extents,
+resource bytes and all 321 pixel-word images. Export refuses changed descriptor,
+payload or instruction preimages and updates CIC-6102 CRC through the shared
+export path.
+
+The class menu at z64 0xAEB8C also owns two icon-address pairs. Its class-runtime
+fingerprint now normalizes only these recognized key immediates for comparison;
+actual source/rebuilt instructions retain current icon keys. Class/promotion
+verification separately checks all current icon links/resources when relocated,
+and native descriptor integrity when present. Opcode/register changes and
+unrelated menu edits still fail. Partial class inventories without icon sites
+do not gain a dependency on unrelated icon resources. Old raw inventory hashes
+remain accepted for backward compatibility.
+
+Build94337 `icon_artwork_tests` passed in 63057 ms: all 321 original displays and
+inverse RGBA mappings; both edited packs compiled/exported/reopened; independent
+browser decoder checks of all 321 images; unchanged data, checksums, repeated
+exports, owner corruption, shared-palette overflow, project folders/archives,
+browser import/reset and unknown-art retention. New-class integration passes
+in both editing orders, repeat combined exports are byte-identical, and later
+growth to 167 classes retains new icon edits. Candidates are in parent
+`Test ROMs/native-icons-zEwzVr/` under the master ROM filename. Build22155 then
+scoped dependency checks to inventory owners containing icon sites;
+`engine_tests classMenuSourceLayout promotionFamiliesExport` passed in 19222 ms.
+The full-inventory icon checks retain the same path. These are offline rebuild
+and decoder checks, not emulator loads. Desktop icon controls are in progress.
+
 ## Sprite studio and project artwork
 
 The native Sprites workspace owns editable RGBA assets with independent frame

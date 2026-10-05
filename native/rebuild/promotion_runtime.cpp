@@ -1,4 +1,5 @@
 #include "rebuild/promotion_runtime.h"
+#include "engine/icon_artwork.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QSet>
@@ -14,6 +15,7 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
                                             const Promotion &promotion, const Compiler &compiler,
                                             const QString &directory) {
     source.requireSupported();
+    IconArtwork::validateRelocations(source);
     if (source.revision() != 0)
         throw Error("Expanded class menus require US Rev 0");
     PromotionRuntimeBuild result;
@@ -38,14 +40,14 @@ PromotionRuntimeBuild buildPromotionRuntime(const Rom &source, const ClassDataLa
         auto original = source.bytes().mid(start, size);
         if (placement)
             original = placement->canonicalReferences(original, start);
-        const auto hash = sha256(original);
+        const auto hash = sha256(IconArtwork::canonicalOwner(original,start));
         bool known = false;
         for (const auto key : {"retailSha256", "familySha256", "cSourceSha256", "directGateSha256"})
             known |= owner.contains(key) && hash == owner[key].toString().toLatin1();
         if (previous)
             for (const auto &record : previous->owners)
                 if (record.start == start)
-                    known |= hash == record.canonicalSha256;
+                    known |= hash == record.canonicalSha256 || sha256(original)==record.canonicalSha256;
         if (!known || original.size() != size)
             throw Error("Unrecognized expanded menu source owner: " + owner["name"].toString());
 

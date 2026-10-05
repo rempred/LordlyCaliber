@@ -5,7 +5,8 @@ global.window=global;global.OB64={};
 vm.runInThisContext(fs.readFileSync(path.resolve(__dirname,'../../art.js'),'utf8'));
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const icons=[];
-for(const [key,count,flag] of [[0x1dee82c,277,0],[0x1df7bf8,44,0x200]]){
+const keyAt=(hi,lo)=>((rom.readUInt32BE(hi)&65535)*65536)+(rom.readUInt32BE(lo)&65535);
+for(const [key,count,flag] of [[keyAt(0x2a6640,0x2a664c),277,0],[keyAt(0x2a6624,0x2a6634),44,0x200]]){
  const bytes=Buffer.from(OB64.art.readCompressedResource(rom,key).decoded);
  for(let id=1;id<=count;++id){
   const rgba=Buffer.alloc(1024);

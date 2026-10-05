@@ -313,7 +313,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto original = bytes.mid(start, size);
             if (classPlacement)
                 original = classPlacement->canonicalReferences(original, start);
-            auto hash = QString::fromLatin1(sha256(original));
+            auto hash = QString::fromLatin1(sha256(IconArtwork::canonicalOwner(original,start)));
             if (hash != owner["retailSha256"].toString() &&
                 hash != owner["familySha256"].toString() &&
                 !(owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString()) &&
@@ -416,7 +416,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 built.replace(offset, length, code);
                 fragmentEnd = offset + length;
             }
-            if (built.size() != size || sha256(built) != expected)
+            if (built.size() != size || sha256(IconArtwork::canonicalOwner(built,start)) != expected)
                 throw Error("Compiled promotion owner differs from validated source: " +
                             owner["name"].toString());
             if (classPlacement)
@@ -797,6 +797,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report
             << QString("Compiled and rebuilt %1 dialogue archives through original resource links")
                    .arg(plan.size());
+    }
+    if(p.iconArtwork() && p.iconArtwork()->modified()) {
+        auto packs=p.iconArtwork()->decodedPacks();
+        for(int i=0;i<2;++i)packs[i]=compiler.compileData(packs[i],directory,QString("icon_pack_%1").arg(i));
+        result.image=p.iconArtwork()->rebuild(Rom::fromBytes(result.image),packs);
+        result.report << "Compiled and rebuilt both shared item-icon packs through their original resource loaders";
     }
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
