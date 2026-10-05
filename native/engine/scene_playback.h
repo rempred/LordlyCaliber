@@ -7,6 +7,7 @@
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_image_motion.h"
+#include "engine/scene_image_presentation.h"
 #include "engine/scene_projection.h"
 #include "engine/scene_sprites.h"
 #include "engine/scene_transforms.h"
@@ -119,6 +120,10 @@ class ScenePlayback {
         return transforms_;
     }
     void supplyImageView(QByteArray context);
+    void loadImagePresentation(int row);
+    const std::optional<SceneImagePresentation> &imagePresentation() const {
+        return imagePresentation_;
+    }
     const std::optional<QByteArray> &imageView() const {
         return imageView_;
     }
@@ -157,6 +162,7 @@ class ScenePlayback {
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;
     std::optional<QByteArray> imageView_;
+    std::optional<SceneImagePresentation> imagePresentation_;
     std::optional<LordlyActorLighting> lighting_;
     std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};

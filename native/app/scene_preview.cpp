@@ -107,7 +107,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Scattered props use a fixed preview seed. Equipment, special sprites and audio remain "
+            "Scattered props use a fixed preview seed. Special sprites and audio remain "
             "unfinished.");
         restart();
     } catch (const std::exception &e) {
@@ -146,6 +146,9 @@ void ScenePreview::restart() {
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
+        const auto launch = SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
+        if (launch.resource_class == 4 && launch.image_row >= 0)
+            playback.loadImagePresentation(launch.image_row);
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
         render(*current_, false);
         checkpoints_.insert(0, *current_);
@@ -239,15 +242,18 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
+    int channelCount = next.backgrounds ? next.backgrounds->channelCount() : 20;
+    if (drawing.imagePresentation())
+        channelCount = qMax(channelCount, drawing.imagePresentation()->slot() + 1);
     if (mode_ == 0)
-        drawing.prepareModeZeroDrawing(next.backgrounds ? next.backgrounds->channelCount() : 20);
+        drawing.prepareModeZeroDrawing(channelCount);
     else
         drawing.prepareModeTwoDrawing(*drawing.lighting());
     const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     {
         QPainter painter(&frame);
         if (mode_ == 0) {
-            const int count = next.backgrounds ? next.backgrounds->channelCount() : 20;
+            const int count = channelCount;
             for (int channel = 0; channel < count; ++channel) {
                 const auto parent = drawing.transforms().layerMatrix(channel);
                 const auto &color = drawing.effects().colorRecord(channel);
@@ -255,12 +261,17 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 if (!color.isEmpty())
                     for (int c = 0; c < 3; ++c)
                         backgroundColor[c] = u8(color, 4 + c);
-                if (next.backgrounds) {
+                const bool presentation = drawing.imagePresentation() &&
+                    drawing.imagePresentation()->slot() == channel;
+                if (presentation || (next.backgrounds && channel < next.backgrounds->channelCount())) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
-                    ActorRenderer::paint(
-                        background, next.backgrounds->project(channel, drawing.cameras().actor(),
-                                                              parent, backgroundColor));
+                    const auto layers = presentation
+                        ? drawing.imagePresentation()->project(*drawing.imageView(),
+                                                              drawing.cameras().actor(), parent)
+                        : next.backgrounds->project(channel, drawing.cameras().actor(), parent,
+                                                    backgroundColor);
+                    ActorRenderer::paint(background, layers);
                     painter.drawImage(0, 0, background);
                 }
                 const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,

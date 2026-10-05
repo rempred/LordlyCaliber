@@ -17,6 +17,12 @@ void ScenePlayback::supplyImageView(QByteArray context) {
         throw Error("Image presentation requires its complete context");
     imageView_ = std::move(context);
 }
+void ScenePlayback::loadImagePresentation(int row) {
+    auto image = SceneImagePresentation::load(rom_, row);
+    auto context = image.initialContext();
+    imagePresentation_ = std::move(image);
+    imageView_ = std::move(context);
+}
 void ScenePlayback::setMode(int mode) {
     if (mode < 0 || mode > 2)
         throw Error("Scene mode is outside 0..2");
@@ -25,6 +31,12 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x3a) {
+        if (!imagePresentation_ || !imageView_)
+            throw Error("Scene vignette requires its launch image presentation");
+        imagePresentation_->construct(rom_, args, cameras_.registered(), *imageView_);
+        return true;
+    }
     if (opcode == 0x76) {
         if (!imageView_)
             throw Error("Scripted image motion requires its launch image presentation");

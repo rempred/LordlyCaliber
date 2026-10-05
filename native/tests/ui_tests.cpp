@@ -155,6 +155,34 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void imagePresentationPlayback() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
+        for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
+        QVERIFY(source);const auto id=scenes.createScene("Image presentation playback",source,false);
+        QVector<quint32> words{0x80000007U,1,0x3a,1,0,0,0,70,70,130,8,
+                              0x76,quint32(-1),quint32(-1),0,50,0,0,20};
+        for(int i=0;i<140;++i)words<<0<<0x80000000U;
+        words<<0x80000001U<<0xff000004U;
+        QByteArray bytes(words.size()*4,0);for(int i=0;i<words.size();++i)put32(bytes,i*4,words[i]);
+        scenes.replace(id,bytes);ScenePreview preview(rom);preview.resize(1000,750);preview.show();preview.selectScene(scenes,id,0);
+        auto position=preview.findChild<QSpinBox *>("scenePosition");auto status=preview.findChild<QLabel *>("scenePlaybackStatus");
+        preview.findChild<QPushButton *>("sceneStep")->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));
+        const auto first=preview.renderedFrame();int visible=0;
+        for(int y=0;y<first.height();++y)for(int x=0;x<first.width();++x)if(first.pixelColor(x,y).alpha()>16)++visible;
+        QVERIFY(visible>1000);
+        position->setValue(12);QTRY_COMPARE(preview.property("sceneTick").toInt(),12);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(preview.renderedFrame()!=first);
+        const auto moved=preview.renderedFrame();
+        position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));
+        position->setValue(12);QTRY_COMPARE(preview.property("sceneTick").toInt(),12);QCOMPARE(preview.renderedFrame(),moved);
+        position->setValue(1);QTRY_COMPARE(preview.property("sceneTick").toInt(),1);QCOMPARE(preview.renderedFrame(),first);
+        preview.update();QCoreApplication::processEvents();QCOMPARE(preview.renderedFrame(),first);
+        QVERIFY(preview.grab().save("scene-image-presentation.png"));
+        preview.findChild<QPushButton *>("sceneRestart")->click();preview.findChild<QPushButton *>("sceneStep")->click();QCOMPARE(preview.renderedFrame(),first);
+    }
     void scatteredPropsSeek_data() {
         QTest::addColumn<int>("environmentSelector");
         QTest::newRow("snow") << 35;

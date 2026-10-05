@@ -1,6 +1,9 @@
 #include "engine/archive.h"
 #include "engine/image.h"
 #include "engine/scene_images.h"
+#include "engine/scene_image_presentation.h"
+#include "game/director/image_presentation.h"
+#include <bit>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -11,6 +14,53 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void imagePresentationAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;
+        reference.start("node",{QFINDTESTDATA("image-presentation-mips.cjs"),path,work.filePath("presentation.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("presentation.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(data["pixels"].toArray().size(),24);
+        for(const auto &v:data["pixels"].toArray()) {
+            const auto row=v.toObject();const int w=row["width"].toInt(),h=row["height"].toInt();
+            QImage source(w,h,QImage::Format_RGBA8888);
+            for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+                const auto color=quint16((y*w+x)*977+0x9345);auto p=source.scanLine(y)+x*4;
+                p[0]=quint8((color>>11)<<3);p[1]=quint8((color>>6&31)<<3);p[2]=quint8((color>>1&31)<<3);p[3]=(color&1)?255:0;
+            }
+            const auto retained=source.copy();const auto output=SceneImagePresentation::vignette(source,row["cap"].toInt());
+            QCOMPARE(source,retained);QCOMPARE(output.size(),QSize(w/2,h/2));
+            const auto expected=QByteArray::fromBase64(row["rgba"].toString().toLatin1());
+            for(int y=0;y<h/2;++y)
+                QCOMPARE(QByteArray(reinterpret_cast<const char *>(output.constScanLine(y)),w/2*4),expected.mid(y*(w/2)*4,w/2*4));
+        }
+        double constants[5];for(int i=0;i<5;++i)constants[i]=std::bit_cast<double>(quint64(u32(rom.bytes(),0x2b8a98+i*8))<<32|u32(rom.bytes(),0x2b8a9c+i*8));
+        const float radians=std::bit_cast<float>(u32(rom.bytes(),0x3ab50));
+        QCOMPARE(data["matrices"].toArray().size(),96);
+        for(const auto &v:data["matrices"].toArray()) {
+            const auto row=v.toObject();auto context=QByteArray::fromHex(row["before"].toString().toLatin1());
+            const auto expected=QByteArray::fromHex(row["after"].toString().toLatin1());
+            float camera[14],placement[4];for(int i=0;i<14;++i)camera[i]=float(row["camera"].toArray()[i].toDouble());
+            for(int i=0;i<4;++i)placement[i]=float(row["placement"].toArray()[i].toDouble());
+            QVERIFY(lordly_image_matrices(reinterpret_cast<uint8_t *>(context.data()),camera,placement,quint32(row["flags"].toInteger()),constants,radians));
+            put8(context,0x838,2);put8(context,0x83d,130);put32(context,0x50,1);put32(context,0x4c,2);
+            QCOMPARE(context,expected);
+        }
+        auto owner=SceneImagePresentation::load(rom,1);auto context=owner.initialContext();
+        QByteArray cameraBytes(56,0);const float cam[]{45,4.f/3,1,20000,1,272,80,127,0,0,0,0,1,0};
+        for(int i=0;i<14;++i)put32(cameraBytes,i*4,std::bit_cast<quint32>(cam[i]));
+        const SceneCamera camera(cameraBytes,1);
+        const auto before=context;
+        QVERIFY_THROWS_EXCEPTION(Error,owner.construct(rom,{20,0,0,0,100,100,130,4},camera,context));
+        QCOMPARE(context,before);QCOMPARE(owner.slot(),-1);QVERIFY(owner.processed().isNull());
+        owner.construct(rom,{2,quint32(-102),39,0,29,29,130,4},camera,context);
+        QCOMPARE(owner.slot(),2);QCOMPARE(owner.processed().size(),owner.source().size()/2);
+        const auto built=context;
+        const auto original=owner.source();
+        QVERIFY_THROWS_EXCEPTION(Error,owner.construct(rom,{2,0,0,0,100,100,130,4},camera,context));
+        QCOMPARE(context,built);QCOMPARE(owner.source(),original);
+    }
     void imageLaunchAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         QTemporaryDir work;QProcess reference;
