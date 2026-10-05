@@ -80,3 +80,8 @@ The preview hides displayed output while retaining the underlying scene, reports
 blackout in the status line and restores pending state when seeking. Original
 request/task/VI-bit comparisons and desktop blackout/reveal checks pass. Hardware
 queue latency and PAL scaling remain outside the NTSC desktop preview.
+
+Repeat-briefing confirmation (preset2) now joins end-briefing confirmation,
+briefing choices, map help and reward panels. Duplicate-preset completion queries
+match native identity rules, and Yes/No labels read the correct current-ROM strings.
+Original multi-panel/input/lifecycle and desktop replay checks pass.

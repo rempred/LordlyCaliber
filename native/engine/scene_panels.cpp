@@ -27,6 +27,19 @@ QString label(const QByteArray &b) {
     return out;
 }
 } // namespace
+QString ScenePanels::confirmationChoice(const Rom &rom, int index) {
+    rom.requireSupported();
+    if (rom.revision() || index < 0 || index > 1)
+        throw Error("Unsupported confirmation choice");
+    // Renderer ROM54AE4/54B38 uses live8018FE10/8018FE14. Resident
+    // DMA40E80->8016AF80 qualifies these four-byte strings at ROM65D10/14.
+    const int at = 0x65d10 + index * 4;
+    const auto bytes = rom.bytes().mid(at, 4);
+    const auto end = bytes.indexOf(char(0));
+    if (end < 0)
+        throw Error("Confirmation choice has no bounded terminator");
+    return label(bytes.first(end));
+}
 QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
     rom.requireSupported();
     if (rom.revision())
@@ -113,7 +126,7 @@ QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity) const 
 }
 void ScenePanels::create(int slot, int preset, int width, int height) {
     checkSlot(slot);
-    if (preset != 33 && preset != 3 && preset != 1 && preset != 34)
+    if (preset != 33 && preset != 3 && preset != 1 && preset != 2 && preset != 34)
         throw Error("This panel preset is not implemented");
     if (preset == 34 && !reward_)
         throw Error("Reward panel requires the parent event's item selection");
@@ -158,7 +171,7 @@ void ScenePanels::create(int slot, int preset, int width, int height) {
                             preset == 3 ? 0x8017ec84 : 0x8017c584, initial, target);
     const quint32 selector = preset == 33  ? (small ? 0x113 : 0x112)
                              : preset == 3 ? 0x21003
-                                           : 0x10101;
+                                           : 0x10100U + quint32(preset);
     e.payload = textPayload(selector, e.record);
     if (preset == 33)
         put32(e.payload, 0x600, 0x121);
@@ -192,7 +205,9 @@ int ScenePanels::query(int slot) const {
         return -5;
     const auto &owner = *owners_[slot];
     for (const auto &e : entities_)
-        if (e.identity == owner.entity)
+        // ROM283700..283718 matches the nested preset selector, not the
+        // retained entity pointer. Another attached copy keeps this owner live.
+        if (!e.payload.isEmpty() && u32(e.payload, 0x600) == owner.selector)
             return owner.status;
     return -6;
 }
@@ -324,11 +339,8 @@ QImage ScenePanels::render() const {
                              Qt::AlignLeft | Qt::AlignVCenter, rewardName(rom_, *e.reward));
         } else if (e.parent) {
             for (int i = 0; i < 2; ++i) {
-                const int at = 0x66710 + (i ? 4 : 0);
-                int end = at;
-                while (end < at + 16 && u8(rom_.bytes(), end))
-                    ++end;
-                drawLine(rom_.bytes().mid(at, end - at), left + 21, top + (i ? 14 : 2));
+                painter.drawText(QPoint(left + 21, top + (i ? 14 : 2) + 10),
+                                 confirmationChoice(rom_, i));
             }
         } else
             for (int i = 0; i < u8(e.payload, 0x5f4); ++i) {

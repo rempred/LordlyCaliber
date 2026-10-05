@@ -195,6 +195,83 @@ class SceneRuntimeTests : public QObject {
         invalid[0].primary = 0x33;
         QVERIFY_THROWS_EXCEPTION(Error, SceneStoryCast::translations(invalid));
     }
+    void confirmationPanelsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("confirmation-panels-mips.cjs"), path,
+                                 work.filePath("confirmations.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("confirmations.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 30);
+        int snapshots = 0;
+        for (const auto &v : cases) {
+            const auto row = v.toObject();
+            ScenePanels panels(rom);
+            const auto layout = row["layout"].toArray();
+            for (const auto &part : layout) {
+                const auto a = part.toArray();
+                panels.create(a[0].toInt(), a[1].toInt(), 320, 240);
+            }
+            int tick = 0;
+            for (const auto &stepValue : row["steps"].toArray()) {
+                const auto step = stepValue.toObject();
+                if (!step["released"].isNull())
+                    panels.release(step["released"].toInt());
+                else if (tick)
+                    panels.advance(quint16(step["action"].toInt()), quint16(step["dir"].toInt()));
+                const auto queries = step["queries"].toArray(), records = step["records"].toArray();
+                for (int i = 0; i < layout.size(); ++i)
+                    QVERIFY2(
+                        panels.query(layout[i].toArray()[0].toInt()) == queries[i].toInt(),
+                        qPrintable(QString("Snapshot %1 slot %2 actual %3 expected %4 layout %5")
+                                       .arg(snapshots)
+                                       .arg(layout[i].toArray()[0].toInt())
+                                       .arg(panels.query(layout[i].toArray()[0].toInt()))
+                                       .arg(queries[i].toInt())
+                                       .arg(QString::fromUtf8(
+                                           QJsonDocument(layout).toJson(QJsonDocument::Compact)))));
+                QCOMPARE(panels.entities().size(), records.size());
+                for (int i = 0; i < records.size(); ++i) {
+                    const auto expected = records[i].toObject();
+                    auto record = panels.entities()[i].record;
+                    for (const int at : {0, 4, 0xd0})
+                        put32(record, at, 0);
+                    QVERIFY2(
+                        record.toHex() == expected["record"].toString().toLatin1(),
+                        qPrintable(QString("Snapshot%1 entity%2 record").arg(snapshots).arg(i)));
+                    QCOMPARE(panels.entities()[i].payload.toHex(),
+                             expected["payload"].toString().toLatin1());
+                }
+                if (step["released"].isNull()) {
+                    QVector<int> audio;
+                    for (const auto &a : step["audio"].toArray())
+                        audio << a.toInt();
+                    QCOMPARE(panels.audioRequests(), audio);
+                }
+                ++tick;
+                ++snapshots;
+            }
+        }
+        QCOMPARE(ScenePanels::confirmationChoice(rom, 0), QString("Yes"));
+        QCOMPARE(ScenePanels::confirmationChoice(rom, 1), QString("No"));
+        auto edited = rom.bytes();
+        edited.replace(0x65d10, 4, QByteArray("Yup\0", 4));
+        edited.replace(0x65d14, 4, QByteArray("Nah\0", 4));
+        const auto alternate = Rom::fromBytes(edited);
+        QCOMPARE(ScenePanels::confirmationChoice(alternate, 0), QString("Yup"));
+        QCOMPARE(ScenePanels::confirmationChoice(alternate, 1), QString("Nah"));
+        edited.replace(0x65d10, 4, QByteArray("ABCD", 4));
+        QVERIFY_THROWS_EXCEPTION(Error, ScenePanels::confirmationChoice(Rom::fromBytes(edited), 0));
+        QVERIFY_THROWS_EXCEPTION(Error, ScenePanels::confirmationChoice(rom, 2));
+        qInfo() << snapshots << "original confirmation entity/payload/query snapshots agree";
+    }
     void panelsNativeReference() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -18,6 +18,7 @@ class ScenePanels {
     explicit ScenePanels(Rom rom) : rom_(rom), icons_(std::move(rom)) {}
     void create(int slot, int preset, int width, int height);
     static QString rewardName(const Rom &, quint16 item);
+    static QString confirmationChoice(const Rom &, int index);
     void supplyReward(quint16 item) {
         rewardName(rom_, item);
         reward_ = item;

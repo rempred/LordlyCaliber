@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Repeat-briefing confirmation and shared preset queries
+
+Main panel preset2 now opens the current-ROM repeat-briefing confirmation through
+the same native text/confirmation controller as preset1. Its selector is0x10102;
+Yes/No/Cancel and child lifetime remain native. Preset0 remains unsupported because
+its zero section selector has no bounded match in the retail text scanner.
+
+Original query ROM283700..283718 matches an owner's preset identity against any
+attached entity's nested selector. The native query now does the same: another
+attached copy keeps a same-preset owner live after its retained entity detaches.
+The original updater controls only the foremost panel, then finds its owner by
+selector. That behavior is intentional; controllers were not changed to run all
+at once. Independent shared entity animation retains its existing ordering.
+
+The native child renderer also had an incorrect ROM address for Yes/No, causing
+garbage labels. Renderer ROM54AE4/54B38 reads live8018FE10/8018FE14. The qualified
+resident load40E80->8016AF80 maps these strings to ROM65D10/65D14. The desktop now
+reads those bounded four-byte current-ROM strings and rejects missing terminators.
+
+`scene_runtime_tests confirmationPanelsAgainstMips panelsNativeReference` passed
+in627ms:2478 new original-instruction entity/payload/query/audio snapshots over30
+cases, including early input, directions, Yes/No/Cancel, overlapping owners,
+duplicate presets and ordered release;788 earlier menu snapshots still agree.
+The heap, text resource decoder and audio service are controlled; original
+constructor, text builder, controller, query and entity updater execute. Retail,
+altered and malformed confirmation strings are checked separately.
+`ui_tests panelPreviewSeek` passed in9387ms across all five supported presets,
+including repeat-confirmation input, cancellation, seeking, restart and unchanged
+source scene data. The corrected Yes/No capture was inspected. Frame/font rendering
+remains approximate; other unimplemented presets still report their missing owner.
+
+
 ## Display blackout and deferred reveal
 
 Director commands84/85 now use a shared display-state owner. Blackout waits for

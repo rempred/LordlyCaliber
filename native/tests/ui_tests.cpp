@@ -1433,7 +1433,7 @@ class UiTests : public QObject {
                 break;
             }
         QVERIFY(source);
-        for (quint32 preset : {33U, 3U, 1U, 34U}) {
+        for (quint32 preset : {33U, 3U, 1U, 2U, 34U}) {
             const auto id =
                 scenes.createScene(QString("Panel %1 replay").arg(preset), source, false);
             QVector<quint32> words{0x80000007U, 47, 0x80000006U, 0,  0x3a, 2, 0,
@@ -1475,7 +1475,7 @@ class UiTests : public QObject {
             const auto ready = preview.renderedFrame();
             QVERIFY(ready != opening);
             QVERIFY(status->text().contains("approximate frame"));
-            if (preset == 3 || preset == 1) {
+            if (preset == 3 || preset == 1 || preset == 2) {
                 preview.findChild<QPushButton *>("panelDown")->click();
                 QCOMPARE(preview.property("sceneTick").toInt(), 21);
                 QVERIFY(preview.renderedFrame() != ready);
@@ -1485,6 +1485,8 @@ class UiTests : public QObject {
             const auto accepted = preview.renderedFrame();
             if (preset == 3)
                 QVERIFY(preview.grab().save("scene-briefing-panel.png"));
+            if (preset == 2)
+                QVERIFY(preview.grab().save("scene-repeat-confirmation.png"));
             seek(40);
             QCOMPARE(preview.renderedFrame(), before);
             QVERIFY(!preview.findChild<QPushButton *>("panelConfirm")->isVisible());
