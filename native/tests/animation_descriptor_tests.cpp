@@ -3,11 +3,92 @@
 #include "engine/animation_descriptor.h"
 #include "engine/combat_artwork.h"
 #include "engine/scene_actors.h"
+#include "engine/sprite_object.h"
+#include <QJsonArray>
 #include <QtTest>
 using namespace lordly;
 class AnimationDescriptorTests : public QObject {
     Q_OBJECT
   private slots:
+    void appendedSpriteResources() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            const RasterImage input{
+                3, 2, QByteArray::fromHex("ff0000ff00ff00800000ff0001020344abcdefc010203001")};
+            const auto sprite = SpriteObject::fromImage(input);
+            QCOMPARE(sprite.width(), 3);
+            QCOMPARE(sprite.height(), 2);
+            QCOMPARE(sprite.pixels(0).color, QByteArray::fromHex("f80107c1003f0001ae7b110d"));
+            QCOMPARE(sprite.pixels(0).alpha, QByteArray::fromHex("ff800044c001"));
+            QCOMPARE(sprite.frame(0).image.rgba,
+                     QByteArray::fromHex("ff0000ff00ff00800000ff0000000044adceefc010213101"));
+            QCOMPARE(sprite.source().size(), 48);
+            QCOMPARE(sprite.frame(99).image.rgba, sprite.frame(0).image.rgba);
+            QVERIFY_THROWS_EXCEPTION(Error, SpriteObject::fromImage({3, 3, input.rgba}));
+            const auto rom = Rom::open(path);
+            const auto original = AnimationDescriptor::load(rom, 0x3d7e3c);
+            auto descriptor = original;
+            auto palette = original.controls()[3].left(512);
+            palette[0] ^= 1;
+            const int art = descriptor.appendSprite(sprite.source(), 0, palette);
+            QCOMPARE(art, 107);
+            QCOMPARE(descriptor.sprite(art), sprite.source());
+            QCOMPARE(descriptor.controls()[3], original.controls()[3] + palette);
+            auto config = descriptor.controls()[2];
+            QCOMPARE(u32(config, 0), quint32(108));
+            QCOMPARE(u32(config, 28), u32(original.controls()[2], 28) + 1);
+            QCOMPARE(u8(config, u32(config, 28) + art), original.controls()[3].size() / 512);
+            config.remove(u32(config, 28) + art, 1);
+            config.remove(32 + art, 1);
+            put32(config, 0, 107);
+            put32(config, 28, u32(original.controls()[2], 28));
+            QCOMPARE(config, original.controls()[2]);
+            QByteArray row(18, 0);
+            put16(row, 0, 1);
+            put16(row, 2, quint16(art));
+            put16(row, 4, quint16(-5));
+            put16(row, 6, quint16(-7));
+            put16(row, 8, 3);
+            put16(row, 10, 2);
+            put16(row, 14, 1024);
+            put16(row, 16, 1024);
+            const int frame = descriptor.appendFrame(row);
+            auto poses = descriptor.poses();
+            poses.setFrame(40, 0, frame, 2);
+            descriptor.setPoses(poses);
+            const auto artPreview = ActorArt::loadBody(rom, 2, 2, 0, 0).withDescriptor(descriptor);
+            const auto layers = artPreview.bodyFrame(rom, frame, artPreview.defaultAppearance(rom));
+            QCOMPARE(layers.size(), 1);
+            QCOMPARE(layers.first().metadata.origin, QPoint(-5, -7));
+            QCOMPARE(layers.first().pixels.image.rgba, sprite.frame(0).image.rgba);
+            QCOMPARE(AnimationDescriptor::fromJson(rom, descriptor.json()).identity(),
+                     descriptor.identity());
+            const auto before = descriptor.identity();
+            QVERIFY_THROWS_EXCEPTION(Error, descriptor.appendSprite(sprite.source(), 3, palette));
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     descriptor.appendSprite(sprite.source(), 0, palette.left(32)));
+            QCOMPARE(descriptor.identity(), before);
+            auto invalid = descriptor.json();
+            auto extras = invalid["extraSprites"].toArray();
+            auto extra = extras[0].toObject();
+            extra["policy"] = 0.5;
+            extras[0] = extra;
+            invalid["extraSprites"] = extras;
+            QVERIFY_THROWS_EXCEPTION(Error, AnimationDescriptor::fromJson(rom, invalid));
+            QCOMPARE(descriptor.appendSprite(sprite.source(), 1, palette), 108);
+            QCOMPARE(descriptor.controls()[3].size(), original.controls()[3].size() + 512);
+            QCOMPARE(AnimationDescriptor::fromJson(rom, descriptor.json()).identity(),
+                     descriptor.identity());
+            const auto altered =
+                sprite.rebuild({{0, {sprite.pixels(0).color, QByteArray(6, char(9))}}});
+            descriptor.setSprite(108, altered);
+            QCOMPARE(AnimationDescriptor::fromJson(rom, descriptor.json()).sprite(108), altered);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void frameMetadataIsolation() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -2,6 +2,7 @@
 #include "engine/animation_sequences.h"
 #include "engine/body_markers.h"
 #include "engine/project.h"
+#include "engine/sprite_object.h"
 #include "rebuild/body_markers.h"
 #include "rebuild/compiler.h"
 #include <QDir>
@@ -156,8 +157,23 @@ class AnimationSequencesTests : public QObject {
             put16(frame, 4, quint16(qint16(u16(frame, 4)) + 5));
             const int privateFrame = descriptor.appendFrame(frame);
             QCOMPARE(privateFrame, 32);
+            const auto importedSprite = SpriteObject::fromImage(
+                {3, 2, QByteArray::fromHex("ff0000ff00ff00800000ff0001020344abcdefc010203001")});
+            const int importedArt = descriptor.appendSprite(importedSprite.source(), 0,
+                                                            descriptor.controls()[3].left(512));
+            QByteArray importedRow(18, 0);
+            put16(importedRow, 0, 1);
+            put16(importedRow, 2, quint16(importedArt));
+            put16(importedRow, 4, quint16(-5));
+            put16(importedRow, 6, quint16(-7));
+            put16(importedRow, 8, 3);
+            put16(importedRow, 10, 2);
+            put16(importedRow, 14, 1024);
+            put16(importedRow, 16, 1024);
+            const int importedFrame = descriptor.appendFrame(importedRow);
             auto poses = descriptor.poses();
             poses.setFrame(40, 0, privateFrame, 2);
+            poses.setFrame(40, 1, importedFrame, 6);
             descriptor.setPoses(poses);
             sequences.setDescriptor(2, 0, descriptor);
             project.setAnimationSequences(sequences.json());
@@ -173,7 +189,7 @@ class AnimationSequencesTests : public QObject {
                 QCOMPARE(shared.advance(), int(LORDLY_POSE_OK));
                 QCOMPARE(baseline.advance(), int(LORDLY_POSE_OK));
             }
-            QCOMPARE(edited.actor().frame, 18);
+            QCOMPARE(edited.actor().frame, importedFrame);
             QCOMPARE(shared.actor().frame, baseline.actor().frame);
             auto routes = *project.animationRoutes();
             routes.setEntry(2, originalRoutes.entry(3));
@@ -205,6 +221,13 @@ class AnimationSequencesTests : public QObject {
             }
             const auto built = rebuild(project, tools, work.path());
             const auto exported = Rom::fromBytes(built.image);
+            const auto importedBody = ActorArt::loadBody(exported, 2, 2, 0, 0);
+            QCOMPARE(
+                importedBody
+                    .bodyFrame(exported, importedFrame, importedBody.defaultAppearance(exported))
+                    .first()
+                    .pixels.image.rgba,
+                importedSprite.frame(0).image.rgba);
             const auto loaded = AnimationSequences::load(exported);
             QCOMPARE(loaded.groups().size(), 1);
             QVERIFY(!loaded.modified());
@@ -245,6 +268,12 @@ class AnimationSequencesTests : public QObject {
             candidates.setAutoRemove(false);
             const auto output = candidates.filePath(QFileInfo(path).fileName());
             exportRom(project, built, output);
+            QProcess probe;
+            probe.start("node", {QFINDTESTDATA("private-sprite-mips.cjs"), output,
+                                 QString::number(importedFrame), QString::number(importedArt)});
+            QVERIFY(probe.waitForFinished(60000));
+            QVERIFY2(probe.exitCode() == 0, probe.readAllStandardError().constData());
+            qInfo().noquote() << probe.readAllStandardOutput();
             auto reopened = Project::fromRom(Rom::open(output));
             reopened.loadAnimationRoutes();
             QCOMPARE(reopened.changedRecords(), 0);

@@ -1,8 +1,11 @@
 #include "app/animation_sequence_editor.h"
 #include "app/actor_pose_editor.h"
+#include "app/art_image_assignment.h"
 #include "app/frame_layer_editor.h"
+#include "engine/sprite_object.h"
 #include <QComboBox>
 #include <QCompleter>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -159,7 +162,41 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
              [](PoseBank &bank, int state, int row) { bank.moveFrame(state, row, row + 1); });
     });
     add("Edit frame layers", "sequenceEditLayers", 3, 0, [this] { editLayers(); });
+    add("Import frame image…", "sequenceImport", 3, 1, [this] {
+        const auto path = QFileDialog::getOpenFileName(this, "Import private sequence frame", {},
+                                                       "Images (*.png *.jpg *.jpeg)");
+        if (!path.isEmpty())
+            importImage(path);
+    });
     form->addRow(editButtons);
+    auto libraryRow = new QHBoxLayout;
+    library_ = new QComboBox;
+    library_->setObjectName("sequenceLibrary");
+    libraryFrame_ = new QSpinBox;
+    libraryFrame_->setObjectName("sequenceLibraryFrame");
+    libraryFrame_->setRange(1, 1);
+    libraryFrame_->setPrefix("Frame ");
+    auto importLibrary = new QPushButton("Insert library frame…");
+    importLibrary->setObjectName("sequenceImportLibrary");
+    libraryRow->addWidget(library_, 1);
+    libraryRow->addWidget(libraryFrame_);
+    libraryRow->addWidget(importLibrary);
+    form->addRow(libraryRow);
+    connect(library_, &QComboBox::currentIndexChanged, this, [this] {
+        libraryFrame_->setMaximum(
+            library_->currentIndex() < 0
+                ? 1
+                : int(project_->sprites().asset(library_->currentData().toString()).frames.size()));
+    });
+    connect(importLibrary, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            if (library_->currentIndex() < 0)
+                throw Error("Choose a sprite library image");
+            prepareImage(project_->sprites()
+                             .asset(library_->currentData().toString())
+                             .composite(libraryFrame_->value() - 1));
+        });
+    });
     panel->addWidget(edits_);
     summary_ = new QLabel;
     summary_->setObjectName("sequenceSummary");
@@ -308,11 +345,76 @@ void AnimationSequenceEditor::editLayers() {
     next.setDescriptor(id, flags, snapshot);
     apply(std::move(next), "Edit private frame layers");
 }
+void AnimationSequenceEditor::importImage(const QString &path) {
+    prepareImage(loadArtworkImage(path));
+}
+void AnimationSequenceEditor::prepareImage(const QImage &image) {
+    const int id = selectedClass(), flags = routes_->currentIndex(),
+              state = poses_->currentData().toInt(), index = std::max(0, records_->currentRow()),
+              ticks = ticks_->value();
+    const auto *original = project_->animationSequences()->find(id, flags);
+    if (!original)
+        throw Error("Make a private copy before importing a frame");
+    auto snapshot = *original;
+    const auto before = project_->animationSequences()->json();
+    const auto prepared = prepareArtworkImage(
+        this, image,
+        {image.size(), "sequence", "Import private frame",
+         "Insert a new frame before the selected instruction. Colors use the game's 5-bit RGB "
+         "precision; opacity retains all 256 levels. Other frames keep their artwork.",
+         false, false},
+        [](const QImage &target, int) {
+            const auto rgba = target.convertToFormat(QImage::Format_RGBA8888);
+            const auto sprite = SpriteObject::fromImage(
+                {rgba.width(), rgba.height(),
+                 QByteArray(reinterpret_cast<const char *>(rgba.constBits()), rgba.sizeInBytes())});
+            const auto pixels = sprite.frame(0).image;
+            return ArtImageMapping{sprite.source(),
+                                   QImage(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
+                                          pixels.width, pixels.height, pixels.width * 4,
+                                          QImage::Format_RGBA8888)
+                                       .copy()};
+        });
+    if (!prepared)
+        return;
+    if (project_->animationSequences()->json() != before)
+        throw Error("Private sequences changed while image preparation was open");
+    const auto sprite = SpriteObject::decode(*prepared);
+    const int art = snapshot.appendSprite(*prepared, 0, snapshot.controls()[3].left(512));
+    QByteArray row(18, 0);
+    put16(row, 0, 1);
+    put16(row, 2, quint16(art));
+    put16(row, 8, quint16(sprite.width()));
+    put16(row, 10, quint16(sprite.height()));
+    put16(row, 14, 1024);
+    put16(row, 16, 1024);
+    auto bank = snapshot.poses();
+    const auto &records = bank.effective(state).records;
+    if (index < records.size() && isFrame(records[index])) {
+        const auto frame = snapshot.frame(token(records[index]));
+        if (u16(frame, 0)) {
+            put16(row, 4, u16(frame, 4));
+            put16(row, 6, u16(frame, 6));
+        }
+    }
+    const int frame = snapshot.appendFrame(row);
+    bank.insertFrame(state, index, frame, ticks);
+    snapshot.setPoses(bank);
+    auto next = *project_->animationSequences();
+    next.setDescriptor(id, flags, snapshot);
+    apply(std::move(next), "Import private sequence frame");
+}
 void AnimationSequenceEditor::refresh() {
     if (refreshing_ || !classes_)
         return;
     QScopedValueRollback guard(refreshing_, true);
     guarded([this] {
+        const auto selectedLibrary = library_->currentData().toString();
+        library_->clear();
+        for (const auto &asset : project_->sprites().assets())
+            library_->addItem(asset.name, asset.id);
+        if (const int at = library_->findData(selectedLibrary); at >= 0)
+            library_->setCurrentIndex(at);
         const int selected = classes_->currentIndex() < 0 ? 2 : classes_->currentData().toInt(),
                   pose = poses_->currentIndex() < 0 ? 40 : poses_->currentData().toInt(),
                   row = records_->currentRow();

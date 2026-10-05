@@ -31,6 +31,7 @@ class AnimationDescriptor {
     int frameCount() const;
     QByteArray sprite(int art) const;
     void setSprite(int art, const QByteArray &);
+    int appendSprite(const QByteArray &, int policy, const QByteArray &palette);
     QByteArray identity() const;
     QJsonObject json() const;
     static AnimationDescriptor fromJson(const Rom &, const QJsonObject &);
@@ -39,6 +40,7 @@ class AnimationDescriptor {
     void setMetadata(const QByteArray &);
     Rom rom_;
     quint32 key_ = 0;
+    int originalArtCount_ = 0;
     QVector<quint32> members_;
     std::array<QByteArray, 4> controls_;
     QMap<int, QByteArray> artwork_;

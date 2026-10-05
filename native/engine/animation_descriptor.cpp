@@ -1,5 +1,6 @@
 #include "engine/animation_descriptor.h"
 #include "engine/sprite_object.h"
+#include <QJsonArray>
 namespace lordly {
 namespace {
 QByteArray resource(const Rom &rom, quint32 key, bool compressed) {
@@ -34,6 +35,7 @@ AnimationDescriptor AnimationDescriptor::load(const Rom &rom, quint32 key,
         result.controls_[i] = resource(rom, result.members_[i], true);
     const auto &config = result.controls_[2];
     const int count = int(result.members_.size()) - 4;
+    result.originalArtCount_ = count;
     if (u32(config, 0) != quint32(count) ||
         quint64(u32(config, 0x1c)) + count > quint64(config.size()) ||
         0x20 + count > config.size() || result.controls_[3].size() % 512)
@@ -149,11 +151,48 @@ void AnimationDescriptor::setSprite(int art, const QByteArray &bytes) {
     // Preserve the separate3634 format when untouched; its authoring has a
     // different image contract. Indexed/direct5554 sprites use the shared codec.
     SpriteObject::decode(bytes);
-    const auto original = resource(rom_, members_[art + 4], true);
-    if (bytes == original)
+    const auto key = members_[art + 4];
+    const auto original = key ? resource(rom_, key, true) : QByteArray{};
+    if (key && bytes == original)
         artwork_.remove(art);
     else
         artwork_[art] = bytes;
+}
+int AnimationDescriptor::appendSprite(const QByteArray &bytes, int policy,
+                                      const QByteArray &palette) {
+    const int count = int(members_.size()) - 4;
+    const auto &config = controls_[2];
+    const auto map = u32(config, 0x1c);
+    if (count >= 65536 || policy < 0 || policy > 2 || palette.size() != 512 ||
+        bytes.size() > 16 * 1024 * 1024 || map < quint32(32 + count) ||
+        quint64(map) + count > quint64(config.size()) || config.size() + 2 > 16 * 1024 * 1024)
+        throw Error("New sprite exceeds its descriptor or has an incompatible configuration");
+    SpriteObject::decode(bytes);
+    auto next = *this;
+    auto &palettes = next.controls_[3];
+    int bank = -1;
+    for (int i = 0; i < palettes.size() / 512 && i < 256; ++i)
+        if (palettes.mid(i * 512, 512) == palette) {
+            bank = i;
+            break;
+        }
+    if (bank < 0) {
+        bank = int(palettes.size() / 512);
+        if (bank >= 256)
+            throw Error("A private sprite descriptor supports at most 256 palette banks");
+        palettes += palette;
+    }
+    // Both arrays contain bytes. Insert only their new entries; retain padding
+    // and unknown configuration data, moving the palette-map offset with it.
+    auto &updated = next.controls_[2];
+    updated.insert(32 + count, char(policy));
+    updated.insert(map + 1 + count, char(bank));
+    put32(updated, 0, quint32(count + 1));
+    put32(updated, 0x1c, map + 1);
+    next.members_ << 0;
+    next.artwork_[count] = bytes;
+    *this = std::move(next);
+    return count;
 }
 QByteArray AnimationDescriptor::identity() const {
     QByteArray bytes;
@@ -178,16 +217,31 @@ QByteArray AnimationDescriptor::identity() const {
 QJsonObject AnimationDescriptor::json() const {
     QJsonObject artwork;
     for (auto it = artwork_.cbegin(); it != artwork_.cend(); ++it)
-        artwork[QString::number(it.key())] = QString::fromLatin1(it->toBase64());
-    return {{"key", double(key_)},
-            {"metadata", QString::fromLatin1(controls_[0].toBase64())},
-            {"poses", QString::fromLatin1(controls_[1].toBase64())},
-            {"artwork", artwork}};
+        if (it.key() < originalArtCount_)
+            artwork[QString::number(it.key())] = QString::fromLatin1(it->toBase64());
+    QJsonObject result{{"key", double(key_)},
+                       {"metadata", QString::fromLatin1(controls_[0].toBase64())},
+                       {"poses", QString::fromLatin1(controls_[1].toBase64())},
+                       {"artwork", artwork}};
+    QJsonArray extras;
+    for (int art = originalArtCount_; art < members_.size() - 4; ++art)
+        extras << QJsonObject{
+            {"data", QString::fromLatin1(sprite(art).toBase64())},
+            {"policy", u8(controls_[2], 32 + art)},
+            {"palette",
+             QString::fromLatin1(controls_[3]
+                                     .mid(u8(controls_[2], u32(controls_[2], 28) + art) * 512, 512)
+                                     .toBase64())}};
+    if (!extras.isEmpty())
+        result["extraSprites"] = extras;
+    return result;
 }
 AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObject &object) {
-    if ((object.size() != 3 && object.size() != 4) ||
-        (object.size() == 4 && !object.contains("metadata")) || !object["poses"].isString() ||
-        !object["artwork"].isObject())
+    for (const auto &key : object.keys())
+        if (!QStringList{"key", "metadata", "poses", "artwork", "extraSprites"}.contains(key))
+            throw Error("Unknown saved private animation field");
+    if (!object["poses"].isString() || !object["artwork"].isObject() ||
+        (object.contains("extraSprites") && !object["extraSprites"].isArray()))
         throw Error("Invalid saved private animation descriptor");
     const auto key = object["key"].toInteger(-1);
     if (key <= 0 || key >= 0x4000000 - 0x594280 || object["key"].toDouble() != double(key))
@@ -202,6 +256,19 @@ AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObj
             throw Error("Invalid private animation encoding");
         return bytes;
     };
+    quint64 addedBytes = 0;
+    for (const auto &value : object["extraSprites"].toArray()) {
+        const auto extra = value.toObject();
+        const auto policy = extra["policy"].toInteger(-1);
+        if (extra.size() != 3 || policy < 0 || policy > 2 ||
+            extra["policy"].toDouble() != double(policy))
+            throw Error("Invalid saved private sprite binding");
+        const auto bytes = decode(extra["data"]);
+        addedBytes += bytes.size();
+        if (addedBytes > 512ULL * 1024 * 1024)
+            throw Error("Private sprites exceed their saved data budget");
+        result.appendSprite(bytes, int(policy), decode(extra["palette"]));
+    }
     if (object.contains("metadata"))
         result.setMetadata(decode(object["metadata"]));
     result.setPoses(PoseBank::parse(decode(object["poses"])));
@@ -209,7 +276,7 @@ AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObj
     for (auto it = edits.begin(); it != edits.end(); ++it) {
         bool ok = false;
         const int art = it.key().toInt(&ok);
-        if (!ok || QString::number(art) != it.key())
+        if (!ok || QString::number(art) != it.key() || art >= result.originalArtCount_)
             throw Error("Invalid private sprite ordinal");
         result.setSprite(art, decode(it.value()));
     }

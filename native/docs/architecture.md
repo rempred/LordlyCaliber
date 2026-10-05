@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Private frame image imports
+
+Private sequences import PNG/JPEG or a sprite-library frame through image preparation,
+then append a new sprite and single-layer metadata frame before the selected instruction.
+Existing artwork and metadata remain intact. The inserted frame inherits the selected layer's
+position, has independent timing/layer controls, and uses shared undo. A5554 creation path
+encodes RGBA5551 color with a separateI8 opacity lane, padded by native row strides. No palette
+quantization limit is introduced for these direct-color imports.
+
+AnimationDescriptor.appendSprite supports body/equipment/palette-selection policy and a
+complete512-byte palette bank. Banks deduplicate or append through256; art ordinals can grow
+through65535. Configuration growth inserts the two byte-array entries, updates count/map
+offset, and preserves all other bytes. Header4/8/12 remains unchanged: the exercised original
+constructor/converter sizes its caches from count and allocates image data dynamically.
+Saved optional extraSprites carry decoded containers/policy/palette before frame/pose import;
+older snapshots remain accepted. Reopened exported ROMs treat their appended resources as
+loaded originals. Existing source-built allocation ownership handles the larger descriptor.
+
+`animation_descriptor_tests` passed296ms: known six-pixel color/opacity results and padding,
+child fallback, invalid input, new bank/reference, original-config conservation, native frame
+preview, snapshot roundtrip, palette reuse and edits to added sprites.
+`animation_sequences_tests projectExportAndOwnership` passed12499ms: appended art107/frame33,
+source export/reopen, project/archive, independent class165 inheritance, no-op, relocation,
+removal and ownership checks. Candidate: parent Test ROMs/native-private-animations-wpYeYG/
+masterfilename. `private-sprite-mips.cjs` additionally executed the original constructor,
+layer/image selection and pixel conversion in4MiB modeled RAM:108art entries, correct child/
+palette/newresource, exact48-byte converted image and intact allocation/request guards.
+`sequence_editor_tests` passed1839ms: import/cancel, sprite-library transfer, preview stepping
+to added art107/108, persistence and undo, plus layer/marker controls. The1300x880 capture was
+inspected with Windows fonts. Build45041 passed without new warnings. These checks are not
+full-game heap/hardware validation. Private attack assignment and browser sequence import remain.
+
 ## Expanded equipment-marker frames
 
 Private marker poses38/88 now accept opcode21 frame tokens. Export compiles maintained

@@ -1,5 +1,6 @@
 #include "app/animation_sequence_editor.h"
 #include "engine/actor_art.h"
+#include "engine/sprite_object.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -12,6 +13,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QLabel>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -23,6 +25,84 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void initTestCase() {
+        QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
+    }
+    void importedFrameAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1300, 880);
+            editor.show();
+            editor.findChild<QPushButton *>("sequenceCreate")->click();
+            auto rows = editor.findChild<QTableWidget *>("sequenceRecords");
+            rows->selectRow(0);
+            const auto before = project.animationSequences()->json();
+            const int beforeUndo = undo.count(), beforeRows = rows->rowCount();
+            QTemporaryDir folder;
+            const auto file = folder.filePath("new.png");
+            QImage input(3, 2, QImage::Format_RGBA8888);
+            input.fill(QColor(171, 205, 239, 128));
+            QVERIFY(input.save(file));
+            const auto respond = [](bool accept) {
+                QTimer::singleShot(50, [accept] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    if (!dialog)
+                        return;
+                    auto buttons = dialog->findChild<QDialogButtonBox *>();
+                    buttons->button(accept ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)
+                        ->click();
+                });
+            };
+            respond(false);
+            editor.importImage(file);
+            QCOMPARE(project.animationSequences()->json(), before);
+            QCOMPARE(undo.count(), beforeUndo);
+            respond(true);
+            editor.importImage(file);
+            QCOMPARE(undo.count(), beforeUndo + 1);
+            QCOMPARE(rows->rowCount(), beforeRows + 1);
+            QCOMPARE(rows->item(0, 1)->text(), "32");
+            QCOMPARE(rows->item(1, 1)->text(), "17");
+            const auto *value = project.animationSequences()->find(2, 0);
+            QCOMPARE(value->members().size(), 112);
+            QCOMPARE(u16(value->frame(32), 2), 107);
+            QCOMPARE(SpriteObject::decode(value->sprite(107)).frame(0).image.rgba,
+                     QByteArray::fromHex("adceef80adceef80adceef80adceef80adceef80adceef80"));
+            const auto imported = project.animationSequences()->json();
+            editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
+            auto layers = editor.findChild<QListWidget *>("actorLayers");
+            QCOMPARE(layers->count(), 1);
+            QVERIFY(layers->item(0)->text().contains("art 107"));
+            undo.undo();
+            QCOMPARE(project.animationSequences()->json(), before);
+            undo.redo();
+            QCOMPARE(project.animationSequences()->json(), imported);
+            auto library = project.sprites();
+            library.replace(SpriteAsset::fromImage("Imported example", input));
+            project.setSprites(library);
+            undo.undo();
+            undo.redo(); // Refresh the asset choices through the shared undo path.
+            respond(true);
+            editor.findChild<QPushButton *>("sequenceImportLibrary")->click();
+            auto notice = editor.findChild<QLabel *>("sequenceNotice");
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QCOMPARE(project.animationSequences()->find(2, 0)->members().size(), 113);
+            QCOMPARE(layers->count(), 1);
+            QVERIFY(layers->item(0)->text().contains("art 108"));
+            project.saveFolder(folder.filePath("project"));
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(Project::readProject(folder.filePath("project")));
+            QCOMPARE(reopened.animationSequences()->json(), project.animationSequences()->json());
+            QVERIFY(editor.grab().save(QDir::current().filePath("private-frame-import.png")));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void markerLayerPreviewAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -76,11 +156,12 @@ class SequenceEditorTests : public QObject {
                         const QImage expectedImage(
                             reinterpret_cast<const uchar *>(image.rgba.constData()), image.width,
                             image.height, image.width * 4, QImage::Format_RGBA8888);
-                        if (pixels->pixmap().toImage() != QPixmap::fromImage(expectedImage).toImage())
+                        if (pixels->pixmap().toImage() !=
+                            QPixmap::fromImage(expectedImage).toImage())
                             throw Error("Draft pixels differ from the substituted body frame");
                         if (pixels->pos() !=
-                                QPointF(want.metadata.origin.x() * want.metadata.scaleX / 1024.,
-                                        want.metadata.origin.y() * want.metadata.scaleY / 1024.))
+                            QPointF(want.metadata.origin.x() * want.metadata.scaleX / 1024.,
+                                    want.metadata.origin.y() * want.metadata.scaleY / 1024.))
                             throw Error("Draft position differs from the substituted body frame");
                     }
                     if (layer != expected.size())

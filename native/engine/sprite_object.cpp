@@ -61,6 +61,34 @@ SpriteFrame SpriteFrame::oriented(int width, int height, bool flipX, bool flipY)
         }
     return result;
 }
+SpriteObject SpriteObject::fromImage(const RasterImage &image) {
+    if (image.width < 1 || image.height < 1 || image.width > 8192 || image.height > 8192 ||
+        qint64(image.width) * image.height > 4194304 ||
+        qint64(image.width) * image.height * 4 != image.rgba.size())
+        throw Error("New sprite dimensions exceed the pixel budget");
+    const int colorStride = stride(2, image.width), alphaStride = stride(1, image.width);
+    QByteArray bytes(16 + (colorStride + alphaStride) * image.height, 0);
+    put16(bytes, 0, 0x5554);
+    put8(bytes, 2, 1);
+    put16(bytes, 4, quint16(image.width));
+    put16(bytes, 6, quint16(image.height));
+    put16(bytes, 8, 0x5554);
+    put8(bytes, 11, 3);
+    put16(bytes, 12, quint16(image.width));
+    put16(bytes, 14, quint16(image.height));
+    const int alpha = 16 + colorStride * image.height;
+    for (int y = 0; y < image.height; ++y)
+        for (int x = 0; x < image.width; ++x) {
+            const int pixel = (y * image.width + x) * 4;
+            const auto channel = [&](int c) {
+                return (u8(image.rgba, pixel + c) * 31 + 127) / 255;
+            };
+            put16(bytes, 16 + y * colorStride + x * 2,
+                  quint16((channel(0) << 11) | (channel(1) << 6) | (channel(2) << 1) | 1));
+            put8(bytes, alpha + y * alphaStride + x, u8(image.rgba, pixel + 3));
+        }
+    return decode(std::move(bytes));
+}
 SpriteObject SpriteObject::decode(QByteArray bytes) {
     if (bytes.size() < 8 || u16(bytes, 0) != 0x5554 || bytes.size() > 64 * 1024 * 1024)
         throw Error("Invalid native sprite container");

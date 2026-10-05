@@ -31,6 +31,7 @@ struct SpriteFrame {
 class SpriteObject {
   public:
     static SpriteObject decode(QByteArray bytes);
+    static SpriteObject fromImage(const RasterImage &);
     const QByteArray &source() const {
         return source_;
     }
