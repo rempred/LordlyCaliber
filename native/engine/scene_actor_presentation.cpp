@@ -1,3 +1,4 @@
+#include "engine/animation_routes.h"
 #include "engine/class_data.h"
 #include "engine/resource.h"
 #include "engine/scene_actors.h"
@@ -42,17 +43,10 @@ float SceneActors::bodySpeed(int source, int owner, int direction) const {
     if (source < 0 || source >= classes.entries().size() || owner < 0 || direction < 0 ||
         direction > 1)
         throw Error("Invalid actor movement source, owner or direction");
-    const int at = 0x594280 + 0x315736;
-    const auto size = u32(rom_.bytes(), at);
-    if (size < 6 || quint64(at) + 4 + size > quint64(rom_.bytes().size()))
-        throw Error("Body movement resource exceeds the ROM");
-    const int begin = u16(rom_.bytes(), at + 6), end = u16(rom_.bytes(), at + 8);
-    if (begin > end || quint32(end) > size || (end - begin) % 2 || source >= (end - begin) / 2 ||
-        owner >= (end - begin) / 2)
-        throw Error("Body movement source or owner exceeds the current speed table");
+    const auto routes = AnimationRoutes::load(rom_);
     return lordly_body_speed(u8(classes.entries()[source].record, 69), owner,
-                             u8(rom_.bytes(), at + 4 + begin + source * 2 + direction),
-                             u8(rom_.bytes(), at + 4 + begin + owner * 2 + direction));
+                             routes.entry(source).speeds[direction],
+                             routes.entry(owner).speeds[direction]);
 }
 void SceneActors::startReturn(int group) {
     // ROM 2ACFD8. The selector is a signed word; its signed remainder is retained.

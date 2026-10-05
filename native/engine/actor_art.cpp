@@ -1,5 +1,6 @@
 #include "engine/actor_art.h"
 #include "engine/class_data.h"
+#include "engine/animation_routes.h"
 #include "game/director/actor_body.h"
 #include "game/director/actor_state.h"
 #include <iterator>
@@ -93,7 +94,7 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
         flagB < 0 || flagB > 1)
         throw Error("Invalid class body source, owner or flags");
     // func_002015C8: byte at RAM index-base + 0x45, not modder body byte B45.
-    const auto handles = resource(rom, 0x315736, false);
+    const auto handles = AnimationRoutes::resourceBytes(rom);
     const quint32 begin = u16(handles, 0), end = u16(handles, 2);
     if (begin > end || end > quint32(handles.size()) || (end - begin) % 2)
         throw Error("Class body route exceeds its current ROM handle table");
@@ -276,9 +277,8 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
     const int item = lordly_body_equipment_variant(sourceClass_, appearance.equipment);
     if (item < 0 || item >= 278)
         throw Error("Body equipment exceeds the current item table");
-    const auto handles = resource(rom, 0x315736, false);
-    const int begin = u16(handles, 4), end = u16(handles, 6);
-    if (begin > end || end > handles.size() || item >= end - begin)
+    const auto variants = AnimationRoutes::load(rom).section(2);
+    if (item >= variants.size())
         throw Error("Body equipment image variant exceeds its table");
     QVector<BodyLayerSelection> result;
     for (auto layer : layers(token)) {
@@ -288,7 +288,7 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
             kind = 1;
         int child = bodyVariant(), palette = u8(paletteMap_, layer.art) * 512;
         if (kind == 1)
-            child = u8(handles, begin + item);
+            child = u8(variants, item);
         else if (kind >= 2) {
             int selected = u8(rom.bytes(), 0x62300 + item * 32 + 0x11);
             if (selected == 16) {

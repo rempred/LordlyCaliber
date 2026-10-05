@@ -852,6 +852,17 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
         result.report << "Compiled all six Army/formation atlases and retained shared front/back resource operands";
     }
+    if (p.animationRoutes() && p.animationRoutes()->modified()) {
+        const auto compiled = compiler.compileData(p.animationRoutes()->decodedResource(),
+                                                   directory, "class_animation_routes");
+        const auto copyLoads = compiler.assembleOwner(
+            readFile(":/game/art/animation-copy.s"), directory, "class_animation_copy", 0x80000000);
+        result.image =
+            p.animationRoutes()->rebuild(Rom::fromBytes(result.image), compiled, copyLoads);
+        result.report << QString("Compiled class-animation routes for %1 table rows and preserved "
+                                 "the other compound-resource sections")
+                             .arg(p.animationRoutes()->rowCount());
+    }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();
         int ordinal = 0;

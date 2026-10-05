@@ -1,4 +1,5 @@
 #include "engine/stage_placements.h"
+#include "engine/animation_routes.h"
 namespace lordly {
 QByteArray StagePlacement::resolve(QByteArray out) const {
     const bool perspective = kind == StagePlacementKind::Perspective;
@@ -47,11 +48,7 @@ StagePlacements StagePlacements::load(const Rom &rom, int selector) {
     rom.requireSupported();
     if (rom.revision() || selector < 0 || selector >= 80)
         throw Error("Stage placement requires a revision-0 foreground selector in 0..79");
-    constexpr quint32 envelope = 0x315736 + 0x594280;
-    const auto size = u32(rom.bytes(), envelope);
-    if (size < 36 || size > 65536 || quint64(envelope) + 4 + size > quint64(rom.bytes().size()))
-        throw Error("Stage placement resource exceeds its ROM envelope");
-    const auto data = rom.bytes().mid(envelope + 4, size);
+    const auto data = AnimationRoutes::resourceBytes(rom);
     StagePlacements result;
     for (int kind = 0; kind < 2; ++kind) {
         const int base = u16(data, 18 + kind * 2), stride = kind ? 26 : 22;

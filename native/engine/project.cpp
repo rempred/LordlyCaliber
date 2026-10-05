@@ -271,6 +271,8 @@ int Project::changedRecords() const {
         ++count;
     if (army_ && army_->modified())
         ++count;
+    if (combat_ && combat_->modified()) ++count;
+    if (animationRoutes_ && animationRoutes_->modified()) ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)
@@ -397,6 +399,8 @@ int Project::appendClass(int templateId, const QString &name) {
     if (sourceText >= bank.entries.size())
         throw Error("The template class description is missing");
     candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
+    candidate.loadAnimationRoutes();
+    candidate.animationRoutes_->cloneClass(templateId,id);
     if (candidate.army_ && candidate.army_->routes().contains(templateId)) {
         const auto route = candidate.army_->routes()[templateId];
         candidate.army_->setRoute(candidate.classData(), id, route.lane, route.model);
@@ -565,11 +569,34 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
         throw Error("Invalid description record");
     texts_[kind].entries[id].bytes = bytes;
 }
+void Project::loadAnimationRoutes() {
+    if (!animationRoutes_)
+        animationRoutes_ = AnimationRoutes::load(rom_);
+}
+void Project::setAnimationRoutes(const QJsonObject &object) {
+    loadAnimationRoutes();
+    auto next = *animationRoutes_;
+    next.apply(object);
+    const auto count = records(Table::Classes).size();
+    for (auto it = next.edits().cbegin(); it != next.edits().cend(); ++it)
+        if (it.key() >= count)
+            throw Error("Animation assignment selects a class outside this project");
+    for (int id : next.pending())
+        if (id >= count)
+            throw Error("Pending animation class is outside this project");
+    for (int id = originalClasses_ ? int(originalClasses_->entries().size()) : count; id < count;
+         ++id)
+        if (!next.pending().contains(id))
+            next.entry(id);
+    animationRoutes_ = std::move(next);
+}
 void Project::loadCombatArtwork() {
-    if (!combat_) combat_ = CombatArtwork::load(rom_);
+    if (!combat_)
+        combat_ = CombatArtwork::load(rom_);
 }
 void Project::setCombatArtwork(const QJsonObject &value) {
-    loadCombatArtwork(); combat_->apply(value);
+    loadCombatArtwork();
+    combat_->apply(value);
 }
 void Project::importLegacyCombatArtwork(const QJsonObject &object) {
     const auto art = object["patches"].toObject().value("art");
@@ -652,6 +679,8 @@ QJsonObject Project::manifest() const {
     if (combat_ && (combat_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("animations")))
         result["combatArtwork"] = combat_->json();
     else result.remove("combatArtwork");
+    if (animationRoutes_ && (animationRoutes_->modified() || !addedClasses_.isEmpty())) result["animationRoutes"]=animationRoutes_->json();
+    else result.remove("animationRoutes");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -917,11 +946,45 @@ void Project::applyManifest(const QJsonObject &object) {
     if (object.contains("combatArtwork")) {
         if (!object["combatArtwork"].isObject()) throw Error("Invalid saved combat artwork");
         candidate.setCombatArtwork(object["combatArtwork"].toObject());
-    } else candidate.importLegacyCombatArtwork(candidate.legacy_);
-    const auto spriteLibrary = object.contains("spriteLibrary") ? object["spriteLibrary"] :
-        candidate.legacy_["patches"].toObject().value("spriteLibrary");
+    } else
+        candidate.importLegacyCombatArtwork(candidate.legacy_);
+    if (object.contains("animationRoutes")) {
+        if (!object["animationRoutes"].isObject())
+            throw Error("Invalid saved animation routes");
+        candidate.setAnimationRoutes(object["animationRoutes"].toObject());
+    } else if (!candidate.addedClasses_.isEmpty()) {
+        candidate.loadAnimationRoutes();
+        for (int added = 0; added < candidate.addedClasses_.size(); ++added) {
+            const int id = int(candidate.originalClasses_->entries().size()) + added;
+            const auto &record = candidate.addedClasses_[added].record;
+            std::optional<AnimationRoutes::Entry> inherited;
+            bool ambiguous = false;
+            for (int source = 1; source < candidate.originalClasses_->entries().size(); ++source) {
+                if (record != candidate.originalClasses_->entries()[source].record &&
+                    record != candidate.record(Table::Classes, source).bytes)
+                    continue;
+                const auto entry = candidate.animationRoutes_->entry(source);
+                if (inherited && *inherited != entry)
+                    ambiguous = true;
+                inherited = entry;
+            }
+            if (inherited && !ambiguous)
+                candidate.animationRoutes_->setEntry(id, *inherited);
+            else {
+                candidate.animationRoutes_->requireAssignment(id);
+                candidate.importWarnings_
+                    << QString("Added class %1 has no saved animation template; choose its "
+                               "animation source before export.")
+                           .arg(id);
+            }
+        }
+    }
+    const auto spriteLibrary = object.contains("spriteLibrary")
+                                   ? object["spriteLibrary"]
+                                   : candidate.legacy_["patches"].toObject().value("spriteLibrary");
     if (!spriteLibrary.isUndefined() && !spriteLibrary.isNull()) {
-        if (!spriteLibrary.isObject()) throw Error("Invalid saved sprite library");
+        if (!spriteLibrary.isObject())
+            throw Error("Invalid saved sprite library");
         candidate.sprites_ = SpriteLibrary::fromJson(spriteLibrary.toObject());
     }
     if (!object["records"].toObject().contains("consumables"))

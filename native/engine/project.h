@@ -17,6 +17,7 @@
 #include "engine/avatar_artwork.h"
 #include "engine/army_artwork.h"
 #include "engine/combat_artwork.h"
+#include "engine/animation_routes.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -65,6 +66,9 @@ class Project {
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
+    void loadAnimationRoutes();
+    const std::optional<AnimationRoutes> &animationRoutes() const {return animationRoutes_;}
+    void setAnimationRoutes(const QJsonObject &);
     void loadCombatArtwork();
     const std::optional<CombatArtwork> &combatArtwork() const {return combat_;}
     void setCombatArtwork(const QJsonObject &);
@@ -193,6 +197,7 @@ class Project {
     std::optional<AvatarArtwork> avatars_;
     std::optional<ArmyArtwork> army_;
     std::optional<CombatArtwork> combat_;
+    std::optional<AnimationRoutes> animationRoutes_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;
