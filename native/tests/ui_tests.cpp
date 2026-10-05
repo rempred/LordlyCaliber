@@ -8,6 +8,7 @@
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
 #include "app/save_editor.h"
+#include "app/sprite_editor.h"
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
 #include "app/promotion_editor.h"
@@ -55,6 +56,126 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void spriteWorkspaceEditing() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            SpriteEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 820);
+            editor.show();
+            auto asset = SpriteAsset::blank("Layered test", {16, 12});
+            editor.addAsset(asset);
+            const auto id = asset.id;
+            auto canvas = editor.findChild<SpriteCanvas *>();
+            auto tool = editor.findChild<QComboBox *>("spriteTool");
+            auto frameList = editor.findChild<QListWidget *>("spriteFrames");
+            auto layerList = editor.findChild<QListWidget *>("spriteLayers");
+            auto click = [&](const char *name) {
+                auto button = editor.findChild<QPushButton *>(name);
+                QVERIFY(button);
+                button->click();
+            };
+            auto paint = [&](QPoint from, QPoint to) {
+                QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier,
+                                  from * canvas->zoom() + QPoint(2, 2));
+                QTest::mouseMove(canvas, to * canvas->zoom() + QPoint(2, 2));
+                QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier,
+                                    to * canvas->zoom() + QPoint(2, 2));
+            };
+            QApplication::processEvents();
+            canvas->setColor(QColor(200, 40, 20, 128));
+            paint({1, 1}, {5, 1});
+            QCOMPARE(undo.count(), 2);
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[0].image.pixelColor(3, 1),
+                     QColor(200, 40, 20, 128));
+            undo.undo();
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[0].image.pixelColor(3, 1),
+                     QColor(Qt::transparent));
+            undo.redo();
+            click("spriteAddLayer");
+            QCOMPARE(layerList->currentRow(), 0);
+            QCOMPARE(project.sprites().asset(id).frames[0].layers.size(), 2);
+            canvas->setColor(Qt::blue);
+            paint({2, 2}, {4, 2});
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[1].image.pixelColor(3, 2),
+                     QColor(Qt::blue));
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[0].image.pixelColor(3, 2),
+                     QColor(Qt::transparent));
+            editor.findChild<QSpinBox *>("spriteLayerX")->setValue(-1);
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[1].position, QPoint(-1, 0));
+            auto visible = editor.findChild<QCheckBox *>("spriteLayerVisible");
+            visible->setChecked(false);
+            QCOMPARE(project.sprites().asset(id).composite(0).pixelColor(2, 2),
+                     QColor(Qt::transparent));
+            undo.undo();
+            click("spriteLayerDown");
+            QCOMPARE(layerList->currentRow(), 1);
+            QCOMPARE(project.sprites().asset(id).frames[0].layers[0].position, QPoint(-1, 0));
+            undo.undo();
+            layerList->setCurrentRow(0);
+            tool->setCurrentIndex(int(SpriteCanvas::Tool::Select));
+            paint({1, 2}, {2, 2});
+            QCOMPARE(canvas->selection(), QRect(1, 2, 2, 1));
+            tool->setCurrentIndex(int(SpriteCanvas::Tool::Eraser));
+            paint({0, 2}, {4, 2});
+            auto erased = project.sprites().asset(id).frames[0].layers[1].image;
+            QCOMPARE(erased.pixelColor(2, 2), QColor(Qt::transparent));
+            QCOMPARE(erased.pixelColor(3, 2), QColor(Qt::transparent));
+            QCOMPARE(erased.pixelColor(4, 2), QColor(Qt::blue));
+            undo.undo();
+            tool->setCurrentIndex(int(SpriteCanvas::Tool::Pencil));
+            const int count = undo.count();
+            QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier,
+                              QPoint(9, 9) * canvas->zoom());
+            QTest::keyClick(canvas, Qt::Key_Escape);
+            QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier,
+                                QPoint(10, 9) * canvas->zoom());
+            QCOMPARE(undo.count(), count);
+            click("spriteDuplicateFrame");
+            QCOMPARE(frameList->currentRow(), 1);
+            QCOMPARE(project.sprites().asset(id).frames.size(), 2);
+            editor.findChild<QSpinBox *>("spriteFrameTicks")->setValue(3);
+            QCOMPARE(project.sprites().asset(id).frames[1].ticks, 3);
+            click("spriteFrameLeft");
+            QCOMPARE(frameList->currentRow(), 0);
+            QCOMPARE(project.sprites().asset(id).frames[0].ticks, 3);
+            QTemporaryDir work;
+            editor.exportAsset(work.filePath("sprite.json"), true);
+            editor.exportAsset(work.filePath("sprite.lcsprite"), false);
+            editor.exportImage(work.filePath("frame.png"), "PNG");
+            QCOMPARE(QImage(work.filePath("frame.png")).convertToFormat(QImage::Format_RGBA8888),
+                     project.sprites().asset(id).composite(0));
+            editor.exportImage(work.filePath("frame.jpg"), "JPEG");
+            QVERIFY(!QImage(work.filePath("frame.jpg")).isNull());
+            const auto before = project.sprites().asset(id);
+            editor.importFile(work.filePath("sprite.json"));
+            QCOMPARE(project.sprites().assets().size(), 2);
+            QVERIFY(editor.selectedAsset() != id);
+            auto imported = project.sprites().asset(editor.selectedAsset());
+            imported.id = id;
+            QCOMPARE(imported.json(true), before.json(true));
+            undo.undo();
+            QCOMPARE(project.sprites().assets().size(), 1);
+            editor.importFile(work.filePath("frame.png"));
+            QCOMPARE(project.sprites().assets().size(), 2);
+            QCOMPARE(project.sprites().asset(editor.selectedAsset()).composite(0),
+                     before.composite(0));
+            undo.undo();
+            editor.selectAsset(id);
+            click("spriteDelete");
+            QVERIFY(project.sprites().assets().isEmpty());
+            undo.undo();
+            QCOMPARE(project.sprites().asset(id).json(), before.json());
+            editor.selectAsset(id);
+            QVERIFY(editor.grab().save("sprite-workspace.png"));
+            QVERIFY_THROWS_EXCEPTION(Error, editor.exportImage(path, "PNG"));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void initTestCase() {
         // The offscreen Qt platform does not enumerate Windows system fonts.
         QFontDatabase::addApplicationFont(

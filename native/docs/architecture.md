@@ -1,5 +1,53 @@
 # Native Lordly Caliber
 
+## Sprite studio and project artwork
+
+The native Sprites workspace owns editable RGBA assets with independent frame
+layers, signed offsets, visibility, canvas anchors and 30 Hz frame durations.
+Pencil/eraser/fill, eyedropper, rectangular selection, layer/selection movement,
+clipboard transfer, canvas resize/crop, nearest scaling, rotation, flips and
+transparent-edge trimming use project Undo/Redo. Frame/layer creation, copying,
+ordering, removal, names and timing persist. Mouse strokes commit once; Escape
+cancels. Copy-on-write images retain unedited layers and avoid a full image copy
+on every pencil segment. Selection movement copies raw RGBA, retaining hidden
+RGB and translucent pixels. Preview timing uses elapsed time, avoiding drift
+from rounding each display timer to 33 ms.
+
+Native sprite asset/library schema 3 embeds lossless PNG layers; imports accept
+browser versions 1/2 and native version 3. Browser-compatible version 2 export
+retains raw RGBA, layer geometry, identifiers, names, anchors and provenance.
+PNG/JPEG image import/export work independently; JPEG flattens onto white.
+Imported files create fresh asset identities. Project folders and sharing
+archives store the complete library. A canonical empty library overrides the
+retained browser import so deleted artwork never reappears when reopening.
+Unassigned library artwork does not change ROM bytes or block ROM export.
+Game-resource assignment/export, video export, source-art import and the
+remaining palette/image-preparation conveniences are still being implemented.
+
+Limits are 4096 pixels per dimension, 512 assets, 1024 frames per asset, 64
+layers per frame and 64 Mi pixels across the library. Base64, dimensions, PNG
+headers, IDs, frame kinds and budgets are validated before accepting edits.
+Project reading now allows bounded 512 MiB documents. Archive inflation uses
+Qt's existing zlib `uncompress2`, requiring exactly the declared output size
+and complete input consumption; it no longer trusts the size header passed to
+unbounded `qUncompress`. This adds no dependency.
+
+Build37387 succeeds. `sprite_library_tests` passed in 3317 ms: 24 synthetic
+layered assets/72 composites, rotation and nearest resize compared with the
+preserved browser implementation; v1/v2/v3 round-trips; transparent RGBA,
+clipping, brush/fill/move/selection semantics; project folders/archives/import,
+deleted-asset persistence, a valid 65 MiB document and malformed archive
+rejection. `ui_tests spriteWorkspaceEditing` passed in 156 ms: real mouse
+strokes, correct reversed layer selection, selection erasure, Escape, undo,
+frames/timing/order/visibility, PNG/JPEG/asset export and import, source-ROM
+protection and deletion recovery. The earlier workspace-load regression also
+passed (build2044, combined desktop tests 868 ms). Screenshot inspected. These
+are offline asset/editor checks, not ROM art assignment or game-load checks.
+Build44104 additionally removes the converted browser pixel copy from saved
+legacy metadata and bounds writes to the reader limit. The targeted
+`projectPersistenceAndArchiveBounds` check passed in 3047 ms; older native
+projects retaining that copy still honor canonical deletion intent.
+
 ## Save workspace
 
 The native Save workspace owns a separate document and undo stack. It opens

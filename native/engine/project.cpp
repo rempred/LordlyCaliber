@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
+#include <QtZlib/zlib.h>
 #include <cmath>
 #include <limits>
 #include <tuple>
@@ -559,6 +560,7 @@ QJsonObject Project::manifest() const {
         edits[tableKey(table)] = rows;
     }
     result["records"] = edits;
+    result["spriteLibrary"] = sprites_.json();
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -596,8 +598,15 @@ QJsonObject Project::manifest() const {
         result["promotion"] = promotion_->json();
     else
         result.remove("promotion");
-    if (!legacy_.isEmpty())
-        result["legacyImport"] = legacy_;
+    if (!legacy_.isEmpty()) {
+        auto legacy = legacy_;
+        auto patches = legacy["patches"].toObject();
+        // The canonical library carries these pixels, including deletion intent.
+        // Retaining a second raw-RGBA copy can exceed the project size budget.
+        patches.remove("spriteLibrary");
+        legacy["patches"] = patches;
+        result["legacyImport"] = legacy;
+    }
     if (shops_ &&
         (shops_->modified() || !legacy_["patches"].toObject()["shops"].toObject().isEmpty() ||
          legacy_["rebuild_owners"].toObject()["shop_memberships"].toBool()))
@@ -799,6 +808,12 @@ void Project::applyManifest(const QJsonObject &object) {
         }
     }
     candidate.legacy_ = object.value("legacyImport").toObject();
+    const auto spriteLibrary = object.contains("spriteLibrary") ? object["spriteLibrary"] :
+        candidate.legacy_["patches"].toObject().value("spriteLibrary");
+    if (!spriteLibrary.isUndefined() && !spriteLibrary.isNull()) {
+        if (!spriteLibrary.isObject()) throw Error("Invalid saved sprite library");
+        candidate.sprites_ = SpriteLibrary::fromJson(spriteLibrary.toObject());
+    }
     if (!object["records"].toObject().contains("consumables"))
         candidate.importLegacyConsumables(candidate.legacy_);
     if (object.contains("shops")) {
@@ -1169,6 +1184,10 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyConsumables(object);
     candidate.importLegacyConsumableEffects(object);
     candidate.importLegacyTools(object);
+    if (patch.contains("spriteLibrary") && !patch["spriteLibrary"].isNull()) {
+        if (!patch["spriteLibrary"].isObject()) throw Error("Invalid imported sprite library");
+        candidate.sprites_.merge(SpriteLibrary::fromJson(patch["spriteLibrary"].toObject()));
+    }
     candidate.importLegacyEncounters(object);
     candidate.importLegacyGlobalRate(object);
     candidate.importLegacyRewards(object);
@@ -1252,6 +1271,8 @@ QStringList Project::pendingLegacySections() const {
     QStringList pending;
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
+        if (it.key() == "spriteLibrary")
+            continue;
         if (it.key() == "tools" && tools_) {
             const auto values = it.value().toObject();
             for (auto setting = values.begin(); setting != values.end(); ++setting)
@@ -1326,20 +1347,29 @@ void atomicWrite(const QString &path, const QByteArray &data) {
 void Project::saveFolder(const QString &folder) const {
     if (!QDir().mkpath(folder))
         throw Error("Cannot create project folder");
-    atomicWrite(QDir(folder).filePath("project.json"), QJsonDocument(manifest()).toJson());
+    const auto bytes = QJsonDocument(manifest()).toJson();
+    if (bytes.size() > 512 * 1024 * 1024)
+        throw Error("Project exceeds the 512 MiB document limit");
+    atomicWrite(QDir(folder).filePath("project.json"), bytes);
 }
 QJsonObject Project::readProject(const QString &path) {
+    constexpr qsizetype limit = 512 * 1024 * 1024;
     QFile file(QFileInfo(path).isDir() ? QDir(path).filePath("project.json") : path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() > 64 * 1024 * 1024)
+    if (!file.open(QIODevice::ReadOnly) || file.size() > limit)
         throw Error("Cannot read project or project is too large");
     auto bytes = file.readAll();
     if (bytes.startsWith("LC05PACK\n")) {
         bytes = bytes.mid(9);
-        if (bytes.size() < 4 || u32(bytes, 0) > 64 * 1024 * 1024)
+        if (bytes.size() < 5 || u32(bytes, 0) == 0 || u32(bytes, 0) > limit)
             throw Error("Project archive exceeds decoded size limit");
-        bytes = qUncompress(bytes);
-        if (bytes.isEmpty())
+        uLongf produced = u32(bytes, 0);
+        uLong consumed = uLong(bytes.size() - 4);
+        QByteArray decoded(qsizetype(produced), Qt::Uninitialized);
+        const int status = uncompress2(reinterpret_cast<Bytef *>(decoded.data()), &produced,
+            reinterpret_cast<const Bytef *>(bytes.constData() + 4), &consumed);
+        if (status != Z_OK || produced != uLongf(decoded.size()) || consumed != uLong(bytes.size() - 4))
             throw Error("Damaged project archive");
+        bytes = std::move(decoded);
     }
     QJsonParseError error;
     auto doc = QJsonDocument::fromJson(bytes, &error);
@@ -1353,8 +1383,10 @@ void Project::saveArchive(const QString &path) const {
         throw Error("A project archive cannot overwrite the source ROM");
     auto object = manifest();
     object.remove("sourcePath");
-    atomicWrite(path,
-                "LC05PACK\n" + qCompress(QJsonDocument(object).toJson(QJsonDocument::Compact), 9));
+    const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    if (bytes.size() > 512 * 1024 * 1024)
+        throw Error("Project exceeds the 512 MiB document limit");
+    atomicWrite(path, "LC05PACK\n" + qCompress(bytes, 9));
 }
 QByteArray Project::rebuildRecords() const {
     auto out = rom_.bytes();

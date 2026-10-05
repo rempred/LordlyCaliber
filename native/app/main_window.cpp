@@ -4,6 +4,7 @@
 #include "app/encounter_editor.h"
 #include "app/promotion_editor.h"
 #include "app/save_editor.h"
+#include "app/sprite_editor.h"
 #include "app/scenario_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
@@ -203,6 +204,8 @@ void MainWindow::installProject(Project project) {
                             "Cutscenes");
     workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Tools");
+    workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Sprites");
     if (project_->rom().revision() == 0) {
         auto save = new SaveEditor(project_.get());
         undoGroup_->addStack(save->undoStack());

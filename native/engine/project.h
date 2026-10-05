@@ -12,6 +12,7 @@
 #include "engine/shops.h"
 #include "engine/text.h"
 #include "engine/tool_settings.h"
+#include "engine/sprite_library.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -58,6 +59,8 @@ class Project {
     QJsonObject manifest() const;
     void applyManifest(const QJsonObject &object);
     void importLegacy(const QJsonObject &object);
+    const SpriteLibrary &sprites() const { return sprites_; }
+    void setSprites(const SpriteLibrary &library) { sprites_ = library; }
     void saveFolder(const QString &folder) const;
     static QJsonObject readProject(const QString &path);
     void saveArchive(const QString &path) const;
@@ -165,6 +168,7 @@ class Project {
     std::optional<Shops> shops_;
     std::optional<ConsumableEffects> consumableEffects_;
     std::optional<ToolSettings> tools_;
+    SpriteLibrary sprites_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;
