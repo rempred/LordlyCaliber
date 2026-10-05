@@ -31,6 +31,7 @@ target_sources(lordly_engine PRIVATE engine/combat_artwork.cpp engine/combat_art
 target_sources(lordly_engine PRIVATE engine/animation_routes.cpp engine/body_animation_data.cpp engine/direct_descriptors.cpp engine/pose_bank.cpp engine/animation_descriptor.cpp engine/animation_sequences.cpp)
 target_sources(lordly_engine PRIVATE engine/animation_override_image.cpp)
 target_sources(lordly_engine PRIVATE engine/private_animation_assignments.cpp)
+target_sources(lordly_engine PRIVATE engine/animation_sequence_import.cpp)
 target_sources(lordly_engine PRIVATE engine/body_markers.cpp rebuild/body_markers.cpp engine/body_selection.cpp rebuild/body_selection.cpp engine/pose_runtime.cpp rebuild/pose_runtime.cpp engine/body_visual_policy.cpp rebuild/body_visual_policy.cpp)
 qt_add_resources(lordly_engine body_marker_sources PREFIX "/" BASE . FILES game/art/body-markers.s game/art/body-selection.c game/art/body-record.c game/art/pose-advance.c game/art/leader-slots.c game/art/equipment-register.s game/art/equipment-allocate.s game/art/equipment-image.s game/art/equipment-image-context.s game/art/equipment-image-kind.s game/art/body-construction.s game/art/body-roster-sticky.s game/art/body-entrance-skip.s game/art/body-entrance-sticky.s)
 target_sources(lordly_engine PRIVATE engine/animation_overrides.cpp)

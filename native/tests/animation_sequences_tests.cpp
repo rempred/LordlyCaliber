@@ -19,6 +19,104 @@ using namespace lordly;
 class AnimationSequencesTests : public QObject {
     Q_OBJECT
   private slots:
+    void browserSequenceImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path); QTemporaryDir work;
+            QProcess generator; generator.setProcessChannelMode(QProcess::MergedChannels);
+            generator.start("node", {QFINDTESTDATA("browser-sequence-fixture.cjs"), path, work.filePath("fixture.json")});
+            QVERIFY(generator.waitForFinished(60000));
+            const auto log = generator.readAll(); QVERIFY2(generator.exitCode() == 0, log.constData()); qInfo().noquote() << log;
+            QFile file(work.filePath("fixture.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto fixture = QJsonDocument::fromJson(file.readAll()).object(), input = fixture["project"].toObject();
+            auto project = Project::fromRom(rom); project.importLegacy(input);
+            QVERIFY2(project.pendingLegacySections().isEmpty(), qPrintable(project.pendingLegacySections().join(',')));
+            const auto check = [&](Project &p) {
+                const auto body = p.bodyAnimationData();
+                for (const auto &value : fixture["expected"].toArray()) {
+                    const auto group = value.toObject(); const auto parts = group["id"].toString().split(':');
+                    const int id = parts[0].toInt(), flags = parts[1].toInt();
+                    const auto *descriptor = p.animationSequences()->find(id, flags); QVERIFY(descriptor);
+                    const auto bank = descriptor->poses();
+                    const auto values = group["controls"].toArray();
+                    std::array<QByteArray, 4> controls;
+                    for (int i = 0; i < 4; ++i) controls[i] = QByteArray::fromBase64(values[i].toString().toLatin1());
+                    const auto expected = PoseBank::parse(controls[1]);
+                    const auto original = AnimationDescriptor::load(rom, descriptor->key());
+                    const int originalArtCount = int(original.members().size()) - 4;
+                    QMap<int,int> states{{0,0},{1,1},{2,2},{3,3},{4,4},{8,8},{18,18}};
+                    for (const auto &v : group["routes"].toArray()) {
+                        const auto row = v.toObject();
+                        if (row["actionId"].toInt() >= 0) {
+                            const int field = u8(p.record(Table::Classes,id).bytes,69), owner = field ? field : id;
+                            states[row["selector"].toInt()] = body->selector(id,owner,row["actionId"].toInt(),row["laneKey"]=="blocked"?2:0,flags);
+                        }
+                    }
+                    QSet<QPair<int,int>> compared;
+                    for (auto state = states.begin(); state != states.end(); ++state) {
+                        const auto want = expected.effective(state.key()).records, actual = bank.effective(state.value()).records;
+                        QCOMPARE(actual.size(),want.size());
+                        for (int instruction = 0; instruction < want.size(); ++instruction) {
+                            const auto &a = actual[instruction], &b = want[instruction];
+                            if (b.opcode != 1) { QCOMPARE(a.opcode,b.opcode); QCOMPARE(a.operands,b.operands); continue; }
+                            QVERIFY(a.opcode==1||a.opcode==21); QCOMPARE(a.operands.back(),b.operands.back());
+                            const int actualToken = u8(a.operands,0)+(a.opcode==21?256*u8(a.operands,1):0), expectedToken=u8(b.operands,0);
+                            const auto frame = descriptor->frame(actualToken);
+                            const int offset = int(u32(controls[0],expectedToken*4));
+                            const auto reference = controls[0].mid(offset,2+16*u16(controls[0],offset));
+                            QCOMPARE(frame.size(),reference.size());
+                            for(int layer=0;layer<u16(frame,0);++layer) {
+                                const int at=2+layer*16, actualArt=u16(frame,at), expectedArt=u16(reference,at);
+                                QCOMPARE(frame.mid(at+2,14),reference.mid(at+2,14));
+                                const QPair<int,int> identity{actualArt,expectedArt}; if(compared.contains(identity)) continue; compared.insert(identity);
+                                const auto &config=descriptor->controls()[2];
+                                QCOMPARE(u8(config,32+actualArt),u8(controls[2],32+expectedArt));
+                                const auto palette=descriptor->controls()[3].mid(u8(config,u32(config,28)+actualArt)*512,512),
+                                    referencePalette=controls[3].mid(u8(controls[2],u32(controls[2],28)+expectedArt)*512,512);
+                                QCOMPARE(palette,referencePalette);
+                                QByteArray resource;
+                                if(expectedArt<originalArtCount) resource=original.sprite(expectedArt);
+                                else resource=QByteArray::fromBase64(group["sources"].toArray()[expectedArt-originalArtCount].toObject()["data"].toString().toLatin1());
+                                const auto sprite=SpriteObject::decode(descriptor->sprite(actualArt)), source=SpriteObject::decode(resource);
+                                QCOMPARE(sprite.width(),source.width()); QCOMPARE(sprite.height(),source.height()); QCOMPARE(sprite.children().size(),source.children().size());
+                                for(int child=0;child<source.children().size();++child) {
+                                    QCOMPARE(sprite.pixels(child),source.pixels(child));
+                                    QCOMPARE(sprite.frame(child,palette).image.rgba,source.frame(child,referencePalette).image.rgba);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            check(project); QVERIFY(!QTest::currentTestFailed());
+            const auto saved=project.manifest(); project.saveFolder(work.filePath("project"));
+            auto restored=Project::fromRom(rom); restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationSequences()->json(),project.animationSequences()->json()); check(restored); QVERIFY(!QTest::currentTestFailed());
+            // Older native projects retained this browser section without converting it.
+            auto legacyManifest=Project::fromRom(rom).manifest();legacyManifest["legacyImport"]=input;
+            auto migrated=Project::fromRom(rom);migrated.applyManifest(legacyManifest);check(migrated);QVERIFY(!QTest::currentTestFailed());
+            auto malformed=input;auto patches=malformed["patches"].toObject(),art=patches["art"].toObject(),separations=art["separations"].toObject(),entries=separations["entries"].toObject();
+            auto row=entries["2:-1:0:idle"].toObject();row["poseProgramBase64"]="AA==";entries["2:-1:0:idle"]=row;
+            separations["entries"]=entries;art["separations"]=separations;patches["art"]=art;malformed["patches"]=patches;
+            QVERIFY_THROWS_EXCEPTION(Error,project.importLegacy(malformed));QCOMPARE(project.manifest(),saved);
+            const auto built=rebuild(project,tools,work.path());
+            QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-browser-sequences-XXXXXX"));QVERIFY(candidates.isValid());candidates.setAutoRemove(false);
+            const auto output=candidates.filePath(QFileInfo(path).fileName());exportRom(project,built,output);
+            auto reopened=Project::fromRom(Rom::open(output));
+            // Exported descriptors have new resource identities; compare programs and rendered assets through the staged baseline.
+            const auto reloaded=reopened.bodyAnimationData();QVERIFY(reopened.animationSequences()->find(2,0));
+            const auto &before=*project.animationSequences()->find(2,0),&after=*reopened.animationSequences()->find(2,0);
+            QCOMPARE(after.controls(),before.controls());
+            for(int artId=0;artId<before.members().size()-4;++artId)QCOMPARE(after.sprite(artId),before.sprite(artId));
+            QCOMPARE(rebuild(reopened,tools,work.path()).image,built.image);
+            restored.removePrivateAnimation(2,0);restored.saveFolder(work.filePath("removed"));
+            auto removed=Project::fromRom(rom);removed.applyManifest(Project::readProject(work.filePath("removed")));
+            QVERIFY(removed.animationSequences()->groups().isEmpty());QVERIFY(removed.pendingLegacySections().isEmpty());
+            QCOMPARE(removed.bodyAnimationData()->selector(2,2,4,0,0),40);
+            qInfo().noquote()<<"Browser sequence candidate:"<<output;
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void privateAttackAssignments() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

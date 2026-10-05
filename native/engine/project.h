@@ -191,6 +191,7 @@ class Project {
     void importLegacyAvatarArtwork(const QJsonObject &);
     void importLegacyCombatArtwork(const QJsonObject &);
     void importLegacyArmyArtwork(const QJsonObject &);
+    void importLegacyAnimationSequences(const QJsonObject &);
     void importLegacyEncounters(const QJsonObject &object);
     void importLegacyGlobalRate(const QJsonObject &object);
     void importLegacyRewards(const QJsonObject &object);
@@ -203,6 +204,7 @@ class Project {
     Rom rom_;
     QJsonObject catalog_, retained_, legacy_;
     bool legacyScenesImported_ = false;
+    bool legacyAnimationSequencesImported_ = false;
     std::map<Table, QVector<Record>> tables_;
     QStringList importWarnings_;
     QMap<QString, TextBank> texts_;

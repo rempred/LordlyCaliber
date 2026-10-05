@@ -3449,6 +3449,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         }
     }
     void browserProjectImport() {
+        try {
         QJsonObject legacy{
             {"format", "ob64-patch"},
             {"version", 36},
@@ -3486,6 +3487,7 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
         legacy["patches"] = patches;
         p.importLegacy(legacy);
         QCOMPARE(p.pendingLegacySections(), QStringList{"tools"});
+        } catch (const Error &e) { QFAIL(e.what()); }
     }
     void retailResourceCompression() {
         auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

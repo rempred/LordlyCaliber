@@ -1,5 +1,39 @@
 # Native Lordly Caliber
 
+## Browser private-sequence conversion
+
+Schema-four browser `art.separations` documents now convert into native private
+descriptors and attack assignments. Conversion validates current-ROM target/donor
+references, complete sprite children and palettes, frame identities, dimensions,
+timing, preserved control instructions and prior assignment baselines. It remaps
+frame tokens and attack selectors, carries idle loops into their recovery consumers,
+and retains Normal/Blocked restoration. New frame tokens can use the native wide
+instruction. Linked owners retain secondary programs through the maintained pairing
+model. Browser source files and compilation methods are not runtime dependencies.
+
+Converted projects save an explicit native snapshot, including an empty snapshot
+after removal. Older native projects that retained this browser section convert
+on load; subsequent native edits and deletions do not trigger another import.
+Malformed conversion leaves the project unchanged. Schemas one through three still
+need their historical frame/source reconstruction.
+
+`animation_sequences_tests browserSequenceImport` generates its input using the
+browser's authoring APIs and the supplied private ROM. It changes idle timing,
+position and a child pixel, duplicates a frame, and imports Normal/Blocked programs
+from another class. Native programs, every layer field, image policy, palette and
+all child pixels/rendering match the browser's decoded export plan. Compression is
+stubbed only in the reference planner; the native ROM export uses the real encoder
+and compiler. Folder save/load, retained-project migration, malformed import
+atomicity, export/reopening, unchanged export and persistent removal pass. The
+fixture adds 104 sprite members in one private group. The complete check passed in
+39904 ms after the encoder optimization (272948 ms before it). Candidate: parent
+Test ROMs/native-browser-sequences-ZyLFHQ. This establishes asset/program conversion
+and rebuild behavior, not full-game rendering or audio fidelity.
+The full application build passed. Existing private-attack persistence/export passed
+in 25132 ms. The general browser-project import check exposed an existing empty
+portrait-section load against its synthetic ROM; an unloaded empty section now
+remains a no-op. That regression passed in 782 ms after the correction.
+
 ## Compression search performance
 
 The native LZSS encoder skips candidates that cannot improve an available distance

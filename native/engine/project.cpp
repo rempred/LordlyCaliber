@@ -692,6 +692,8 @@ void Project::importLegacyAvatarArtwork(const QJsonObject &object) {
     if(art.isNull() || art.isUndefined())return;
     if(!art.isObject())throw Error("Invalid imported art");
     if(art.toObject().contains("avatars")) {
+        const auto rows = art.toObject().value("avatars");
+        if (!avatars_ && rows.isObject() && rows.toObject().isEmpty()) return;
         loadAvatarArtwork();avatars_->importLegacy(classData(),art.toObject());
     }
 }
@@ -741,7 +743,7 @@ QJsonObject Project::manifest() const {
     else result.remove("animationRoutes");
     if(animationOverrides_&&(animationOverrides_->modified()||legacy_["patches"].toObject().contains("combatAnimationOverrides")))result["animationOverrides"]=animationOverrides_->json();
     else result.remove("animationOverrides");
-    if(animationSequences_&&animationSequences_->modified())result["animationSequences"]=animationSequences_->json();
+    if(animationSequences_&&(animationSequences_->modified()||legacyAnimationSequencesImported_))result["animationSequences"]=animationSequences_->json();
     else result.remove("animationSequences");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
@@ -1013,6 +1015,7 @@ void Project::applyManifest(const QJsonObject &object) {
     if(object.contains("animationSequences")) {
         if(!object["animationSequences"].isObject())throw Error("Invalid saved private animation sequences");
         candidate.loadAnimationSequences();candidate.animationSequences_->apply(object["animationSequences"].toObject());
+        candidate.legacyAnimationSequencesImported_ = true;
     }
     if (object.contains("animationRoutes")) {
         if (!object["animationRoutes"].isObject())
@@ -1050,6 +1053,7 @@ void Project::applyManifest(const QJsonObject &object) {
         if(!object["animationOverrides"].isObject())throw Error("Invalid saved animation overrides");
         candidate.setAnimationOverrides(object["animationOverrides"].toObject());
     } else candidate.importLegacyAnimationOverrides(candidate.legacy_);
+    if (!object.contains("animationSequences")) candidate.importLegacyAnimationSequences(candidate.legacy_);
     candidate.validateAnimationAssignments();
     const auto spriteLibrary = object.contains("spriteLibrary")
                                    ? object["spriteLibrary"]
@@ -1434,6 +1438,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyArmyArtwork(object);
     candidate.importLegacyCombatArtwork(object);
     candidate.importLegacyAnimationOverrides(object);
+    candidate.importLegacyAnimationSequences(object);
     if (patch.contains("spriteLibrary") && !patch["spriteLibrary"].isNull()) {
         if (!patch["spriteLibrary"].isObject()) throw Error("Invalid imported sprite library");
         candidate.sprites_.merge(SpriteLibrary::fromJson(patch["spriteLibrary"].toObject()));
@@ -1525,10 +1530,10 @@ QStringList Project::pendingLegacySections() const {
             continue;
         if(it.key()=="combatAnimationOverrides"&&animationOverrides_)
             continue;
-        if(it.key()=="art" && (icons_ || avatars_ || army_ || combat_)) {
+        if(it.key()=="art" && (icons_ || avatars_ || army_ || combat_ || legacyAnimationSequencesImported_)) {
             const auto sections=it.value().toObject();
             for(auto section=sections.begin();section!=sections.end();++section)
-                if(section.key()!="schemaVersion" && !(section.key()=="icons" && icons_) && !(section.key()=="avatars" && avatars_) && !(section.key()=="armySprites" && army_) && !(section.key()=="animations" && combat_) && changed(section.value()))
+                if(section.key()!="schemaVersion" && !(section.key()=="icons" && icons_) && !(section.key()=="avatars" && avatars_) && !(section.key()=="armySprites" && army_) && !(section.key()=="animations" && combat_) && !(section.key()=="separations" && legacyAnimationSequencesImported_) && changed(section.value()))
                     pending << "art."+section.key();
             continue;
         }
