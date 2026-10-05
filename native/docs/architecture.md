@@ -50,7 +50,35 @@ growth to 167 classes retains new icon edits. Candidates are in parent
 scoped dependency checks to inventory owners containing icon sites;
 `engine_tests classMenuSourceLayout promotionFamiliesExport` passed in 19222 ms.
 The full-inventory icon checks retain the same path. These are offline rebuild
-and decoder checks, not emulator loads. Desktop icon controls are in progress.
+and decoder checks, not emulator loads. Desktop icon controls are described below.
+
+## Art workspace: item icons
+
+The native Art workspace exposes both icon packs with names, image thumbnails,
+search, the complete shared palette and a transparency swatch. It reuses the
+native pixel canvas for pencil/erase/fill/pick/selection/movement, brush size,
+zoom and grid. Painting, restoring the loaded icon and assignments use project
+Undo/Redo. Artwork can be exported as PNG, copied into the sprite library with
+source provenance, or assigned from a selected library frame.
+
+Image assignment previews source and final game colors before accepting it.
+Placement supports fit, cover/crop, stretch and original pixel size, nearest or
+smooth sampling, zoom, output-pixel offsets and an explicit one-bit alpha
+threshold. It maps to the selected pack's current palette and keeps other icons
+intact. Source images are limited to 4096 pixels per dimension. PNG export
+writes atomically and refuses to overwrite the source ROM. Unrecognized icon
+sources display a local error while the other workspaces remain usable.
+
+Build47999 succeeded. `ui_tests iconArtworkEditing spriteWorkspaceEditing
+loadDesktopWorkspace` passed in 1562 ms: real mouse erasure/undo, library transfer,
+accepting the preparation dialog, PNG import/export across packs, restore,
+project save/reopen, source protection and existing workspace regressions.
+Screenshot inspection found the initial palette cell-size order was clamping
+columns to the style minimum and hiding swatches behind scrollbars. Build14274
+corrected this; `ui_tests iconArtworkEditing` passed in 778 ms and the full
+16×16 palette screenshot was inspected. Engine/export evidence above remains
+applicable. Portraits, Army sprites, combat artwork and video are still separate
+unfinished work; this does not mark the whole Art/Animation domain complete.
 
 ## Sprite studio and project artwork
 

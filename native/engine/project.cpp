@@ -265,6 +265,8 @@ int Project::changedRecords() const {
         ++count;
     if (tools_ && tools_->modified())
         ++count;
+    if (icons_ && icons_->modified())
+        ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)

@@ -9,6 +9,8 @@
 #include "app/main_window.h"
 #include "app/save_editor.h"
 #include "app/sprite_editor.h"
+#include "app/art_editor.h"
+#include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
 #include "app/promotion_editor.h"
@@ -56,6 +58,29 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void iconArtworkEditing() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ArtEditor editor(&project,&undo,[]{});editor.resize(1250,790);editor.show();
+            auto list=editor.findChild<QListWidget *>("artIcons");QVERIFY(list);QCOMPARE(list->count(),277);
+            const auto original=project.iconArtwork()->words(1);auto canvas=editor.findChild<SpriteCanvas *>("artIconCanvas");QVERIFY(canvas);auto tools=editor.findChild<QComboBox *>("artPixelTool");
+            tools->setCurrentIndex(int(SpriteCanvas::Tool::Eraser));
+            // Pick an opaque source pixel so erasing necessarily changes the icon.
+            const auto source=project.iconArtwork()->image(1);QPoint target;bool found=false;
+            for(int y=0;y<16 && !found;++y)for(int x=0;x<16;++x)if(source.pixelColor(x,y).alpha()){target={x,y};found=true;break;}QVERIFY(found);
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,target*canvas->zoom()+QPoint(2,2));QVERIFY(project.iconArtwork()->modified(1));QCOMPARE(project.iconArtwork()->image(1).pixelColor(target).alpha(),0);QCOMPARE(undo.count(),1);
+            undo.undo();QCOMPARE(project.iconArtwork()->words(1),original);undo.redo();
+            const auto libraryId=editor.copyToLibrary();QCOMPARE(project.sprites().asset(libraryId).frames[0].layers[0].image,project.iconArtwork()->image(1));QCOMPARE(project.sprites().assets().size(),1);
+            editor.selectIcon(2);auto library=editor.findChild<QComboBox *>("artLibraryAsset");library->setCurrentIndex(library->findData(libraryId));
+            QTimer::singleShot(0,&editor,[&]{auto dialog=editor.findChild<QDialog *>("artImagePreparation");QVERIFY(dialog);dialog->findChild<QComboBox *>("artImportFit")->setCurrentIndex(3);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();});
+            editor.findChild<QPushButton *>("artAssignLibrary")->click();QCOMPARE(project.iconArtwork()->words(2),project.iconArtwork()->words(1));
+            const auto edited=project.iconArtwork()->json();QTemporaryDir work;editor.exportImage(work.filePath("icon.png"));QCOMPARE(QImage(work.filePath("icon.png")).convertToFormat(QImage::Format_RGBA8888),project.iconArtwork()->image(2));
+            editor.selectIcon(0x201);QCOMPARE(list->count(),44);const auto consumable=project.iconArtwork()->words(0x201);editor.importImage(work.filePath("icon.png"));QVERIFY(project.iconArtwork()->words(0x201)!=consumable);undo.undo();QCOMPARE(project.iconArtwork()->json(),edited);
+            project.saveFolder(work.filePath("project"));auto restored=Project::fromRom(project.rom());restored.applyManifest(Project::readProject(work.filePath("project")));QCOMPARE(restored.iconArtwork()->json(),edited);QCOMPARE(restored.sprites().json(),project.sprites().json());
+            editor.selectIcon(2);editor.findChild<QPushButton *>("artRestore")->click();QVERIFY(!project.iconArtwork()->modified(2));undo.undo();QCOMPARE(project.iconArtwork()->json(),edited);
+            QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("icon-artwork-workspace.png"));
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void spriteWorkspaceEditing() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

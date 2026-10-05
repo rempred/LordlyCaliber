@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/art_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
@@ -206,6 +207,8 @@ void MainWindow::installProject(Project project) {
                         "Tools");
     workspaces_->addTab(new SpriteEditor(project_.get(), undo_, [this] { updateStatus(); }),
                         "Sprites");
+    if(project_->rom().revision()==0)
+        workspaces_->addTab(new ArtEditor(project_.get(),undo_,[this]{updateStatus();}),"Art");
     if (project_->rom().revision() == 0) {
         auto save = new SaveEditor(project_.get());
         undoGroup_->addStack(save->undoStack());
