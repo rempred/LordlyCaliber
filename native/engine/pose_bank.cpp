@@ -3,8 +3,8 @@
 #include <array>
 namespace lordly {
 namespace {
-constexpr std::array<int, 22> widths{1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
-                                     1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4};
+constexpr std::array<int, 23> widths{1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1,
+                                     1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4, 3};
 bool frame(const PoseRecord &r) {
     return r.opcode == 1 || r.opcode == 21;
 }
@@ -147,7 +147,10 @@ void PoseBank::validateProgress(int state) const {
         if (!record.opcode || ((record.opcode == 1 || record.opcode == 21 || record.opcode == 3) &&
                               u8(record.operands, record.operands.size()-1) > 0)) ++delays;
         if (record.opcode == 4) index = u8(record.operands,0);
-        else if (record.opcode == 5) { current=u8(record.operands,0); index=0; }
+        else if (record.opcode == 5 || record.opcode == 22) {
+            current = u8(record.operands, 0) + (record.opcode == 22 ? 256 * u8(record.operands, 1) : 0);
+            index = 0;
+        }
         else ++index;
     }
 }

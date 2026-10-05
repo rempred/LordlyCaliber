@@ -69,16 +69,17 @@ QJsonObject readBaselines(const QByteArray &bytes) {
 }
 QByteArray pairingBytes(const AnimationSequences::Group &group) {
     const int start = group.reservedAttackStart;
-    if ((start && (start < 101 || start > 256)) || group.pairedPoses.size() > 156)
+    if ((start && (start < 101 || start > 256)) || group.pairedPoses.size() > 256)
         throw Error("Invalid reserved private attack range");
     QByteArray bytes;
     for (auto it = group.pairedPoses.begin(); it != group.pairedPoses.end(); ++it) {
         const int primary = it.key(), secondary = it.value();
-        if (!start || primary < 100 || primary > 255 || secondary < 256 || secondary > 32767 ||
-            secondary >= group.descriptor.poses().programs().size())
+        if (primary < 0 || primary > 255 || secondary < -1 || secondary > 32767 ||
+            (secondary >= 0 && (!start || primary < 100 || secondary < 256 ||
+             secondary >= group.descriptor.poses().programs().size())))
             throw Error("Invalid private secondary pose");
         group.descriptor.poses().validateEntry(primary);
-        group.descriptor.poses().validateEntry(secondary);
+        if (secondary >= 0) group.descriptor.poses().validateEntry(secondary);
         QByteArray row(4, 0);
         put16(row, 0, quint16(primary)); put16(row, 2, quint16(secondary));
         bytes += row;
@@ -155,7 +156,7 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
                     const int primary = u16(metadata, pos);
                     if (primary <= previousPair) throw Error("Unsorted private pose pairs");
                     previousPair = primary;
-                    group.pairedPoses[primary] = u16(metadata, pos + 2);
+                    group.pairedPoses[primary] = qint16(u16(metadata, pos + 2));
                 }
                 metadata = metadata.mid(4, baselineSize);
             }
@@ -303,6 +304,19 @@ void AnimationSequences::validate(const AnimationRoutes &routes, int count) cons
         throw Error(
             "The equipment marker code is not recognized and cannot accept these marker edits");
 }
+namespace {
+bool wideStates(const QMap<int, AnimationSequences::Group> &groups) {
+    for (const auto &group : groups) {
+        const auto bank = group.descriptor.poses();
+        for (const auto &program : bank.programs())
+            for (const auto &record : program.records)
+                if (record.opcode == 22) return true;
+    }
+    return false;
+}
+}
+bool AnimationSequences::requiresWideStates() const { return wideStates(groups_); }
+bool AnimationSequences::sourceRequiresWideStates() const { return wideStates(loaded_); }
 bool AnimationSequences::requiresMarkerRuntime() const {
     for (const auto &group : groups_) {
         const auto bank = group.descriptor.poses();
@@ -331,7 +345,7 @@ QJsonObject AnimationSequences::json() const {
                         {"descriptor", it->descriptor.json()}};
         if (!it->attackBaselines.isEmpty())
             row["attackBaselines"] = it->attackBaselines;
-        if (it->reservedAttackStart) {
+        if (it->reservedAttackStart || !it->pairedPoses.isEmpty()) {
             row["reservedAttackStart"] = it->reservedAttackStart;
             QJsonObject pairs;
             for (auto pair = it->pairedPoses.begin(); pair != it->pairedPoses.end(); ++pair)
@@ -370,12 +384,12 @@ void AnimationSequences::apply(const QJsonObject &object) {
         baselineBytes(groups[id].attackBaselines);
         if (row.contains("reservedAttackStart")) {
             groups[id].reservedAttackStart = integer("reservedAttackStart");
-            if (!groups[id].reservedAttackStart || !row["pairedPoses"].isObject())
+            if (!row["pairedPoses"].isObject())
                 throw Error("Invalid saved private pose pairs");
             const auto pairs = row["pairedPoses"].toObject();
             for (auto it = pairs.begin(); it != pairs.end(); ++it) {
                 bool ok = false;
-                const int primary = it.key().toInt(&ok), secondary = it->toInt(-1);
+                const int primary = it.key().toInt(&ok), secondary = it->toInt(-2);
                 if (!ok || QString::number(primary) != it.key() || it->toDouble() != double(secondary))
                     throw Error("Invalid saved private pose pair");
                 groups[id].pairedPoses[primary] = secondary;
@@ -446,7 +460,7 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
         }
     }
     bool paired = false;
-    for (const auto &group : groups_) paired |= bool(group.reservedAttackStart);
+    for (const auto &group : groups_) paired |= bool(group.reservedAttackStart) || !group.pairedPoses.isEmpty();
     const auto build = [&](quint32 offset) {
         QByteArray bytes(groups_.size() * 16, 0);
         QMap<QByteArray, quint32> resources;
@@ -481,7 +495,7 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
             put16(bytes, row * 16 + 6, result.handles[it.key()]);
             put32(bytes, row * 16 + 8, key);
             auto baselines = baselineBytes(it->attackBaselines);
-            if (paired && (!baselines.isEmpty() || it->reservedAttackStart)) {
+            if (paired && (!baselines.isEmpty() || it->reservedAttackStart || !it->pairedPoses.isEmpty())) {
                 QByteArray head(4, 0);
                 put16(head, 0, quint16(baselines.size() / 8));
                 put16(head, 2, quint16(it->reservedAttackStart));
@@ -543,7 +557,7 @@ QByteArray AnimationSequences::materialize(const Rom &rom, const Plan &plan,
         int version = 1;
         for (const auto &group : groups_) {
             if (!group.attackBaselines.isEmpty()) version = std::max(version, 2);
-            if (group.reservedAttackStart) version = 3;
+            if (group.reservedAttackStart || !group.pairedPoses.isEmpty()) version = 3;
         }
         put32(header, 8, quint32(version));
         put32(header, 12, plan.offset);

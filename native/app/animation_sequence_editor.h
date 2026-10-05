@@ -28,6 +28,7 @@ class AnimationSequenceEditor : public QWidget {
     void refreshAssignments();
     void edit(const QString &, const std::function<void(PoseBank &, int, int)> &);
     int selectedClass() const;
+    int owner(int classId) const;
     AnimationDescriptor descriptor() const;
     Project *project_;
     QUndoStack *undo_;

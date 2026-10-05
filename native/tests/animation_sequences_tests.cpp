@@ -2,6 +2,7 @@
 #include "engine/animation_sequences.h"
 #include "engine/body_markers.h"
 #include "engine/body_selection.h"
+#include "engine/pose_runtime.h"
 #include "engine/scene_actors.h"
 #include "engine/project.h"
 #include "engine/sprite_object.h"
@@ -10,6 +11,7 @@
 #include "rebuild/compiler.h"
 #include <QDir>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -206,6 +208,138 @@ class AnimationSequencesTests : public QObject {
             empty.loadAnimationRoutes(); QVERIFY(empty.animationSequences()->groups().isEmpty());
             QCOMPARE(BodySelectionImage::count(empty.rom()), 0);
             qInfo().noquote() << "Linked attack candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
+    void fixedPosesAndWideTransfers() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAnimationRoutes();
+            auto copies = *project.animationSequences();
+            for (int id : {10, 135, 136, 161}) copies.create(id, 0, *project.animationRoutes());
+            // A delayed secondary loop with an explicit self-state transfer.
+            auto descriptor = *copies.find(10, 0);
+            auto poses = descriptor.poses();
+            poses.setProgram(90, QByteArray::fromHex("02010002055a"));
+            descriptor.setPoses(poses); copies.setDescriptor(10, 0, descriptor);
+            project.setAnimationSequences(copies.json());
+            QCOMPARE(project.assignPrivateAttack(10, 0, 4, false, 40), 100);
+            const auto companion = project.animationSequences()->find(10, 0)->poses().effective(256);
+            QCOMPARE(companion.records.last().opcode, 22);
+            QCOMPARE(companion.records.last().operands, QByteArray::fromHex("0001"));
+            for (int id : {135, 136, 161}) {
+                const int selected = project.assignPrivateAttack(id, 0, 4, false, 0);
+                QCOMPARE(selected, 100);
+                const int field = u8(project.record(Table::Classes, id).bytes, 69), owner = field ? field : id;
+                const auto data = project.bodyAnimationData();
+                QCOMPARE(data->routes().privatePose(id, owner, 0, selected), -1);
+                QCOMPARE(data->routes().privatePose(id, owner, 0, 40), -2);
+                ActorPosePlayer player(rom, ActorArt::loadBody(rom, id, owner, 0, 0, data), selected);
+                player.setLinkedObjectKnownAbsent(true);
+                QCOMPARE(player.advance(), int(LORDLY_POSE_OK));
+                QCOMPARE(player.actor().state, qint16(selected));
+                ActorPosePlayer fallback(rom, ActorArt::loadBody(rom, id, owner, 0, 0, data), 40);
+                fallback.setLinkedObjectKnownAbsent(true);
+                QCOMPARE(fallback.advance(), int(LORDLY_POSE_OK));
+                QCOMPARE(fallback.actor().state, qint16(0));
+            }
+            QVERIFY(project.animationSequences()->requiresWideStates());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationSequences()->json(), project.animationSequences()->json());
+            const auto built = rebuild(project, tools, work.path());
+            QCOMPARE(u8(built.image, PoseRuntimeImage::widthsOffset + 22), quint8(3));
+            for (const auto &[offset, size] : {QPair<int,int>{PoseRuntimeImage::poseOffset, PoseRuntimeImage::poseSize},
+                                              {PoseRuntimeImage::readerOffset, PoseRuntimeImage::readerSize}}) {
+                QCOMPARE(built.image.mid(offset - 8, 8), rom.bytes().mid(offset - 8, 8));
+                QCOMPARE(built.image.mid(offset + size, 8), rom.bytes().mid(offset + size, 8));
+            }
+            QCOMPARE(built.image.mid(PoseRuntimeImage::widthsOffset + 23, 25), rom.bytes().mid(PoseRuntimeImage::widthsOffset + 23, 25));
+            QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-private-pose-runtime-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            auto reopened = Project::fromRom(Rom::open(output));
+            QCOMPARE(reopened.bodyAnimationData()->routes().privatePoses(), project.privatePoseMappings());
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            ActorPosePlayer wide(reopened.rom(), ActorArt::loadBody(reopened.rom(), 10, 10, 0, 0, reopened.bodyAnimationData()), 256);
+            wide.setLinkedObjectKnownAbsent(true);
+            for (int tick = 0; tick < 8; ++tick) { QCOMPARE(wide.advance(), int(LORDLY_POSE_OK)); QCOMPARE(wide.actor().state, qint16(256)); }
+            QCOMPARE(wide.actor().previous_state, qint16(256));
+            const auto run = [&](const QString &script, const QStringList &args) {
+                QProcess process; process.setProcessChannelMode(QProcess::MergedChannels);
+                process.start("node", QStringList{script} + args);
+                if (!process.waitForFinished(60000) || process.exitCode()) throw Error(QString::fromLocal8Bit(process.readAll()));
+                qInfo().noquote() << process.readAll();
+            };
+            run(QFINDTESTDATA("private-pose-mips.cjs"), {path, output});
+            atomicWrite(work.filePath("pose.bin"), built.image.mid(PoseRuntimeImage::poseOffset, PoseRuntimeImage::poseSize));
+            atomicWrite(work.filePath("reader.bin"), built.image.mid(PoseRuntimeImage::readerOffset, PoseRuntimeImage::readerSize));
+            atomicWrite(work.filePath("widths.bin"), built.image.mid(PoseRuntimeImage::widthsOffset, PoseRuntimeImage::widthsSize));
+            const auto rows = [&](const QString &file) {
+                QFile input(file); if (!input.open(QIODevice::ReadOnly)) throw Error("Missing pose fixture");
+                return QJsonDocument::fromJson(input.readAll()).object()["rows"].toArray();
+            };
+            for (const auto *kind : {"actor", "body"}) {
+                const auto script = QFINDTESTDATA("actor-pose-mips.cjs").replace("actor-pose", QString(kind) + "-pose");
+                const auto baseline = work.filePath(QString(kind) + "-original.json"), changed = work.filePath(QString(kind) + "-rebuilt.json");
+                run(script, {path, baseline, "linked"});
+                run(script, {path, changed, "linked", work.filePath("pose.bin"), work.filePath("reader.bin"), work.filePath("widths.bin")});
+                QVERIFY2(rows(baseline) == rows(changed), kind);
+            }
+            for (int offset : {PoseRuntimeImage::poseOffset, PoseRuntimeImage::readerOffset, PoseRuntimeImage::widthsOffset + 22}) {
+                auto bytes = built.image; bytes[offset] ^= 1;
+                auto bad = Project::fromRom(Rom::fromBytes(bytes));
+                QVERIFY_THROWS_EXCEPTION(Error, bad.loadAnimationRoutes());
+            }
+            for (int id : {10, 135, 136, 161}) reopened.removePrivateAnimation(id, 0);
+            const auto removed = rebuild(reopened, tools, work.path());
+            auto empty = Project::fromRom(Rom::fromBytes(removed.image));
+            empty.loadAnimationRoutes();
+            QVERIFY(empty.animationSequences()->groups().isEmpty());
+            QCOMPARE(PoseRuntimeImage::count(empty.rom()), 0);
+            QCOMPARE(u8(removed.image, PoseRuntimeImage::widthsOffset + 22), quint8(0));
+            QCOMPARE(rebuild(empty, tools, work.path()).image, removed.image);
+            QVERIFY(QDir(candidates.path()).mkpath("restored"));
+            const auto resetOutput = candidates.filePath("restored/" + QFileInfo(path).fileName());
+            exportRom(reopened, removed, resetOutput);
+            run(QFINDTESTDATA("private-pose-mips.cjs"), {path, resetOutput, "baseline"});
+            // Class edits can combine a fixed source ID with a linked owner.
+            auto mixed = Project::fromRom(rom);
+            auto record = mixed.record(Table::Classes, 135).bytes;
+            put8(record, 69, 10); mixed.replaceBytes(Table::Classes, 135, record);
+            mixed.loadAnimationRoutes();
+            auto routes = *mixed.animationRoutes(); routes.cloneClass(10, 135);
+            mixed.setAnimationRoutes(routes.json());
+            auto privateRows = *mixed.animationSequences(); privateRows.create(135, 0, *mixed.animationRoutes());
+            mixed.setAnimationSequences(privateRows.json());
+            QCOMPARE(mixed.assignPrivateAttack(135, 0, 4, false, 40), 100);
+            QCOMPARE(mixed.assignPrivateAttack(135, 0, 4, true, 40), 101);
+            const auto mixedBody = mixed.bodyAnimationData();
+            QCOMPARE(mixedBody->routes().privatePose(135, 10, 0, 100), 256);
+            QVERIFY(mixedBody->routes().registeredPose(135, 10, 0, 256));
+            QVERIFY(!mixedBody->routes().registeredPose(135, 10, 0, -1));
+            QVERIFY(!mixedBody->routes().registeredPose(135, 10, 0, 65535));
+            for (int state : {100, 256}) {
+                ActorPosePlayer player(rom, ActorArt::loadBody(rom, 135, 10, 0, 0, mixedBody), state);
+                player.setLinkedObjectKnownAbsent(true);
+                QCOMPARE(player.advance(), int(LORDLY_POSE_OK));
+                QCOMPARE(player.actor().state, qint16(state));
+            }
+            const auto combined = rebuild(mixed, tools, work.path());
+            QCOMPARE(PoseRuntimeImage::count(Rom::fromBytes(combined.image)), 2);
+            QVERIFY(QDir(candidates.path()).mkpath("combined"));
+            const auto combinedOutput = candidates.filePath("combined/" + QFileInfo(path).fileName());
+            exportRom(mixed, combined, combinedOutput);
+            run(QFINDTESTDATA("private-pose-mips.cjs"), {path, combinedOutput});
+            auto mixedReopened = Project::fromRom(Rom::open(combinedOutput));
+            QVERIFY(mixedReopened.bodyAnimationData()->routes().registeredPose(135, 10, 0, 256));
+            QCOMPARE(rebuild(mixedReopened, tools, work.path()).image, combined.image);
+            qInfo().noquote() << "Private pose runtime candidate:" << output;
         } catch (const Error &e) { QFAIL(e.what()); }
     }
     void wideEquipmentMarkers() {

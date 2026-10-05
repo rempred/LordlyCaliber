@@ -123,6 +123,40 @@ class SequenceEditorTests : public QObject {
             QCOMPARE(project.bodyAnimationData()->routes().privatePose(10, 10, 0, 100), 256);
         } catch (const Error &e) { QFAIL(e.what()); }
     }
+    void fixedOwnerPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 1000); editor.show();
+            auto classes = editor.findChild<QComboBox *>("sequenceClass");
+            for (int id : {135, 161, 160}) {
+                classes->setCurrentIndex(classes->findData(id));
+                editor.findChild<QPushButton *>("sequenceCreate")->click();
+                auto poses = editor.findChild<QComboBox *>("sequencePose");
+                poses->setCurrentIndex(poses->findData(0));
+                auto actions = editor.findChild<QComboBox *>("sequenceAttack");
+                actions->setCurrentIndex(actions->findData(4));
+                editor.findChild<QPushButton *>("sequenceAssignAttack")->click();
+                const auto notice = editor.findChild<QLabel *>("sequenceNotice");
+                QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+                QCOMPARE(poses->currentData().toInt(), 100);
+                editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
+                const auto status = editor.findChild<QLabel *>("actorStatus")->text();
+                QVERIFY2(status.contains("state 100"), qPrintable(status));
+                QCOMPARE(editor.findChild<QComboBox *>("actorOwner")->currentData().toInt(), id == 160 ? 19 : -1);
+                undo.undo();
+                QVERIFY(project.animationSequences()->groups().value(id * 4).pairedPoses.isEmpty());
+                undo.redo();
+                QCOMPARE(project.animationSequences()->groups().value(id * 4).pairedPoses.value(100, -2), id == 160 ? -2 : -1);
+            }
+            editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save(QDir::current().filePath("fixed-private-attack.png")));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void importedFrameAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

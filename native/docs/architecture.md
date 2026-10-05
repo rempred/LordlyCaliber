@@ -1,5 +1,48 @@
 # Native Lordly Caliber
 
+## Fixed private poses and wide transfers
+
+Fixed sources 135/136/161 now accept registered private attack poses while retaining
+the original 0/50 clamp for all unregistered states. Registration covers both the
+primary and its linked companion, including a fixed source edited to use a linked
+owner. A pair value of -1 registers a primary without a companion. Preview reads
+the actual class body-owner field; on the canonical ROM, class 160 uses owner 19,
+while 135/136/161 use their own IDs when that field is zero.
+
+Companion self-transfers now use opcode 22 with a little-endian 16-bit target.
+Validation rejects missing targets, states outside 0..32767 and delay-free cycles.
+Copies preserve unrelated transfers. Wide execution remains installed while any
+private program needs it, even after its attack assignment has been restored.
+
+Maintained `game/art/pose-advance.c` and `body-record.c` compile during user export
+into the original z64 allocations [29E218,29E70C) and [204F34,2050AC), respectively.
+Their public live entries remain 8022E9E8 and 801C1AA4. The common reader also holds
+the registration query, so playback does not depend on the second Director slab.
+The extended reader uses 372 of 376 bytes including leading alignment; only zero
+linker padding outside the allocation is discarded. Opcode 22 gets width 3 in the
+existing 48-byte width area at z64 212370; its other unused bytes are preserved.
+No additional high-RAM code allocation is introduced. Existing OBSO assignments
+retain their Expansion Pak requirement.
+
+LC05POSE at z64 27C5000 (160 bytes) authenticates map count/hash, wide flag, query
+address, both compiled owners and width data. Source validation distinguishes
+loaded ROM programs from staged edits. Removal rebuilds baseline C semantics;
+this is not byte-identical retail code restoration. Unknown owners reject safely.
+
+`animation_sequences_tests fixedPosesAndWideTransfers` passed in 21492 ms: fixed
+sources, linked self-transfer, combined fixed/linked owner without opcode 22,
+folder import, export/reopen/no-op, removal, altered-code rejection and adjacent
+allocation conservation. Compiled execution matches 195,664 original invocations,
+with controlled resource and sound services. Three export variants pass 99/81/90
+synthetic policy cases and 432 reader comparisons each, including null/aliased
+operand pointers. Candidate: parent `Test ROMs/native-private-pose-runtime-FQoDki/`.
+`pose_bank_tests` passed in 109 ms; five existing sequence regressions in 61374 ms;
+body/Actor regressions in 8422/2571 ms. Existing UI cases passed, and the corrected
+`sequence_editor_tests fixedOwnerPreview` passed in 271 ms. Its 1400x1000 capture
+was inspected. Full builds succeeded without new warnings. These checks do not
+establish full-game heap or hardware behavior. Leader normalization, fixed-ID
+template inheritance and browser sequence import remain active work.
+
 ## Private linked-body attacks
 
 Private attack copies for linked body owners10/25/123 now retain a primary/companion
@@ -7,8 +50,7 @@ pair. Primary selectors remain100..255; companions append at256 or above. The fi
 paired copy reserves the unused primary interval before padding the bank to256.
 Subsequent copies use unoccupied reserved states, so edited padding is never overwritten.
 Each group saves `pairedPoses` and `reservedAttackStart`, clones them with the class,
-and validates both programs. A companion self-transfer using the original one-byte
-opcode5 is currently rejected; wide state-transfer support remains active work.
+and validates both programs. Companion self-transfers use the wide transfer described above.
 
 LC05ASEQversion3 stores group metadata at record+12: two big-endian halfwords give
 baseline-row count and reserved-primary start, followed by the existing8-byte baseline
@@ -43,8 +85,8 @@ command atomicity passed912ms. `sequence_editor_tests` passed2493ms, including i
 companion timing, selection, undo and removal. A final229ms companion-only check and inspected
 1400x1000 image verify the shortened assignment summary and actual companion frame preview.
 These are instruction-model/desktop checks, not full-game heap or hardware validation.
-Fixed-pose sources135/136/161, their new-class template policy, wide self-transfers and browser
-sequence import remain in progress.
+The later fixed-pose work above extends this implementation. New-class visual template
+policy and browser sequence import remain in progress.
 
 ## Private attack assignments
 
@@ -73,11 +115,8 @@ baseline inheritance added. Candidate: parent Test ROMs/native-private-attacks-J
 restoration, private-copy removal and all frame-import/layer regressions. The1400x1000 capture
 was inspected. Build37833 passed without compiler warnings after renaming a shadowed local.
 
-This completes ordinary-body assignment, not extended linked-body routing. Owners10/25/123
-still reject newly assigned selectors>=50 because native secondary setup skips those requests.
-Classes135/136/161 still reject non0/50 assignments because native playback clamps those states.
-Both runtime paths remain active implementation work, along with browser sequence import and
-fixed-class template policies. No full-game heap/hardware validation is claimed.
+This initial ordinary-body implementation is extended by the linked and fixed-pose
+work documented above. No full-game heap/hardware validation is claimed.
 
 ## Private frame image imports
 

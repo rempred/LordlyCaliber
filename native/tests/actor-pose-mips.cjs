@@ -15,6 +15,10 @@ m.trap(0x801c5938,c=>audio.push([c.get('a0')===0x800eb240?0:1,c.get('a1')]));
 m.trap(0x8022d534,c=>{ // Output-only projector; input is the original ROM template.
  assert.equal(c.get('a2'),actor+0xa0);c.writeFloat(c.get('a1'),987);c.writeFloat(c.get('a1')+4,654);
 });
+// Optional source-built owners; the baseline invocation omits all three paths.
+if(process.argv[5])m.load(0x8022e9e8,fs.readFileSync(process.argv[5]));
+if(process.argv[6])m.load(0x801c1aa4,fs.readFileSync(process.argv[6]));
+if(process.argv[7])m.load(0x801ceee0,fs.readFileSync(process.argv[7]));
 const rows=[];let steps=0,unbound=0;
 for(const source of OB64.cutsceneData.actorArtSources){
  const descriptor=rom.subarray(source.descriptorKey+0x594284),key=descriptor.readUInt32BE(4);

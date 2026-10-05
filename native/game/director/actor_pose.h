@@ -15,6 +15,7 @@ typedef struct { uint8_t opcode, operands[3]; } LordlyPoseRecord;
  * unchanged when declining. Exhausted counted programs supply opcode zero. */
 typedef int (*LordlyPoseLookup)(void *context, const LordlyActorPose *actor, LordlyPoseRecord *record);
 typedef int (*LordlyPoseShared)(void *context, const LordlyActorPose *actor, const LordlyPoseRecord *record);
+typedef int (*LordlyPoseRegistered)(void *context, const LordlyActorPose *actor);
 typedef struct { int active; uint8_t result; } LordlyPoseInvocation;
 enum { LORDLY_POSE_OK, LORDLY_POSE_BUDGET, LORDLY_POSE_LOOKUP,
        LORDLY_POSE_SHARED, LORDLY_POSE_INVALID };
@@ -23,6 +24,8 @@ enum { LORDLY_POSE_OK, LORDLY_POSE_BUDGET, LORDLY_POSE_LOOKUP,
  * or retains invocation state at a bounded host suspension. Not a video tick. */
 int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
     int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context);
+int lordly_actor_advance_pose_mapped(LordlyActorPose *, LordlyPoseInvocation *, int budget,
+    LordlyPoseLookup, LordlyPoseShared, void *context, LordlyPoseRegistered);
 #ifdef __cplusplus
 }
 #endif

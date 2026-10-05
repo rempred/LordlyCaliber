@@ -7,8 +7,8 @@ static int32_t signed_word(uint32_t value) {
     return value <= 0x7fffffffU ? (int32_t)value : -1 - (int32_t)(~value);
 }
 static int signed_byte(uint8_t value) { return value < 128 ? value : (int)value - 256; }
-int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
-    int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context) {
+int lordly_actor_advance_pose_mapped(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
+    int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context, LordlyPoseRegistered registered) {
     int i;
     if (!actor || !invocation || !lookup || budget < 0) return LORDLY_POSE_INVALID;
     if (!isfinite(actor->position.x) || !isfinite(actor->position.y) || !isfinite(actor->position.z))
@@ -23,7 +23,8 @@ int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invo
         next.cursor = signed_word((uint32_t)next.cursor + 1U);
         if (next.decoder_mode) {
             uint32_t bank = (uint32_t)next.bank & 65535U;
-            if (bank == 135 || bank == 136 || bank == 161 || bank == 65535)
+            if ((bank == 135 || bank == 136 || bank == 161 || bank == 65535) &&
+                (!registered || !registered(context, &next)))
                 next.state = next.state < 50 ? 0 : 50;
         }
         if (!lookup(context, &next, &record)) return LORDLY_POSE_LOOKUP;
@@ -38,8 +39,10 @@ int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invo
             next.position.z -= (float)signed_byte(record.operands[1]); break;
         case 3: next.delay = record.operands[0]; break;
         case 4: next.cursor = (int32_t)record.operands[0] - 1; break;
-        case 5:
-            next.previous_state = next.state; next.state = record.operands[0];
+        case 5: case 22:
+            i = record.operands[0] + (record.opcode == 22 ? 256 * record.operands[1] : 0);
+            if (i > 32767) return LORDLY_POSE_INVALID;
+            next.previous_state = next.state; next.state = (int16_t)i;
             next.cursor = -1; break;
         case 12:
             next.position.x += (float)signed_byte(record.operands[0]);
@@ -68,4 +71,9 @@ int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invo
     actor->delay = signed_word((uint32_t)actor->delay - 2U);
     invocation->active = 0;
     return LORDLY_POSE_OK;
+}
+
+int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
+    int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context) {
+    return lordly_actor_advance_pose_mapped(actor, invocation, budget, lookup, shared, context, 0);
 }

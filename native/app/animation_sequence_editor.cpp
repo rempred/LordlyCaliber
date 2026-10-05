@@ -299,11 +299,15 @@ int AnimationSequenceEditor::selectedClass() const {
         throw Error("Choose a class from the search results");
     return classes_->currentData().toInt();
 }
+int AnimationSequenceEditor::owner(int classId) const {
+    const int value = u8(project_->record(Table::Classes, classId).bytes, 69);
+    return value ? value : classId;
+}
 AnimationDescriptor AnimationSequenceEditor::descriptor() const {
     const int id = selectedClass(), flags = routes_->currentIndex();
     if (const auto *value = project_->animationSequences()->find(id, flags))
         return *value;
-    const auto art = ActorArt::loadBody(project_->rom(), id, id, flags >> 1, flags & 1,
+    const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
                                         project_->bodyAnimationData());
     return AnimationDescriptor::load(project_->rom(), art.descriptorKey());
 }
@@ -407,7 +411,7 @@ void AnimationSequenceEditor::editLayers() {
             break;
         }
     }
-    const auto art = ActorArt::loadBody(project_->rom(), id, id, flags >> 1, flags & 1,
+    const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
                                         project_->bodyAnimationData());
     const auto render = [&, art](const QByteArray &draft) {
         auto copy = snapshot;

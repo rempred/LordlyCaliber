@@ -70,6 +70,18 @@ class PoseBankTests : public QObject {
         auto limit = PoseBank::parse(bank(QVector<QByteArray>(32768, QByteArray(1, 0))));
         QVERIFY_THROWS_EXCEPTION(Error, limit.appendProgram(original));
     }
+    void wideStateTransfers() {
+        auto poses = PoseBank::parse(bank(QVector<QByteArray>(258, QByteArray(1, 0))));
+        poses.setProgram(256, QByteArray::fromHex("02012a02160001"));
+        poses.setProgram(257, QByteArray::fromHex("0216000100"));
+        QCOMPARE(frames(poses, 256, 8), QVector<int>(8, 42));
+        QCOMPARE(frames(poses, 257, 8), QVector<int>(8, 42));
+        QCOMPARE(PoseBank::parse(poses.encoded()).encoded(), poses.encoded());
+        const auto safe = poses.encoded();
+        QVERIFY_THROWS_EXCEPTION(Error, poses.setProgram(256, QByteArray::fromHex("01160001")));
+        QVERIFY_THROWS_EXCEPTION(Error, poses.setProgram(256, QByteArray::fromHex("01160080")));
+        QCOMPARE(poses.encoded(), safe);
+    }
     void frameEditingAndAliases() {
         const auto original = QByteArray::fromHex("040c010000010a040114020401");
         const auto bytes = bank({{}, original, QByteArray::fromHex("0100")});

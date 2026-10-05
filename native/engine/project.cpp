@@ -1,5 +1,6 @@
 #include "engine/project.h"
 #include "engine/body_selection.h"
+#include "engine/pose_runtime.h"
 #include "engine/scene_import.h"
 #include <QDir>
 #include <QFile>
@@ -607,6 +608,7 @@ void Project::loadAnimationRoutes() {
         loadAnimationSequences();
         const auto routes = AnimationRoutes::load(rom_);
         BodySelectionImage::validate(rom_, routes.privatePoses());
+        PoseRuntimeImage::validate(rom_, routes.privatePoses(), animationSequences_->sourceRequiresWideStates());
         animationRoutes_ = animationSequences_->baseRoutes(routes);
     }
 }

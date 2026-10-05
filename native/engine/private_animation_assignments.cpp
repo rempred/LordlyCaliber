@@ -53,7 +53,7 @@ void validate(const AnimationSequences &sequences, const AnimationOverrides &ove
                     throw Error("A private attack selects an absent or empty pose");
                 bank.validateEntry(state);
                 if ((owner == 10 || owner == 25 || owner == 123) && state >= 50 &&
-                    !it->pairedPoses.contains(state))
+                    it->pairedPoses.value(state, -1) < 256)
                     throw Error("A linked private attack needs its secondary pose assignment");
             }
         }
@@ -116,9 +116,6 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
                 bank.effective(companion).records.isEmpty())
                 throw Error("Choose a primary pose with a linked secondary program");
             bank.validateEntry(companion);
-            for (const auto &record : bank.effective(companion).records)
-                if (record.opcode == 5 && u8(record.operands, 0) == companion)
-                    throw Error("This secondary program needs a wide self-transfer before it can be copied");
         }
         if (group.reservedAttackStart) {
             selected = group.reservedAttackStart;
@@ -137,8 +134,11 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
         }
         auto records = bank.effective(selected).records;
         for (auto &record : records)
-            if (record.opcode == 5 && u8(record.operands, 0) == pose)
+            if ((record.opcode == 5 || record.opcode == 22) &&
+                u8(record.operands, 0) + (record.opcode == 22 ? 256 * u8(record.operands, 1) : 0) == pose) {
                 record.operands[0] = char(selected);
+                if (record.opcode == 22) record.operands[1] = 0;
+            }
         bank.setProgram(selected, PoseBank::encodeProgram(records));
         if (linked) {
             const auto secondary = bank.effective(companion).source;
@@ -146,18 +146,24 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
                 group.reservedAttackStart = selected + 1;
             while (bank.programs().size() < 256)
                 bank.appendProgram(QByteArray(1, 0));
-            // State-transfer operands are one byte. Keep their original targets;
-            // the copied companion itself has an independent signed-halfword state.
-            group.pairedPoses[selected] = bank.appendProgram(secondary);
+            const int copied = bank.appendProgram(secondary);
+            auto controls = bank.effective(copied).records;
+            for (auto &record : controls)
+                if ((record.opcode == 5 || record.opcode == 22) &&
+                    u8(record.operands, 0) + (record.opcode == 22 ? 256 * u8(record.operands, 1) : 0) == companion) {
+                    record.opcode = 22;
+                    record.operands = QByteArray(1, char(copied)) + QByteArray(1, char(copied >> 8));
+                }
+            bank.setProgram(copied, PoseBank::encodeProgram(controls));
+            group.pairedPoses[selected] = copied;
         }
     }
     if (selected < 0 || selected > 255)
         throw Error("Attack assignments require a one-byte selector");
-    if (linked && selected >= 50 && !group.pairedPoses.contains(selected))
+    if (linked && selected >= 50 && group.pairedPoses.value(selected, -1) < 256)
         throw Error("This private attack has no linked secondary program");
-    if ((id == 135 || id == 136 || id == 161) && selected != 0 && selected != 50)
-        throw Error("This class needs its fixed-pose runtime policy rebuilt before assigning this "
-                    "selector");
+    if ((id == 135 || id == 136 || id == 161) && !group.pairedPoses.contains(selected))
+        group.pairedPoses[selected] = -1;
     descriptor.setPoses(bank);
     auto sequences = *animationSequences_;
     sequences.setDescriptor(id, flags, descriptor);

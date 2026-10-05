@@ -16,6 +16,10 @@ m.trap(0x801c2ce4,c=>c.set('v0',program));
 let audio=[];m.trap(0x801c5938,c=>audio.push([c.get('a0')===0x800eb240?0:1,c.get('a1')]));
 let linkedAudio=[];m.trap(0x8022e72c,c=>linkedAudio.push([c.get('a0')-0x44,c.get('a1'),c.get('a2'),
  ((c.get('a3')&255)<<8)+(c.r32(c.get('sp')+16)&255),c.r32(c.get('sp')+20)&255]));
+// Optional source-built owners; the baseline invocation omits all three paths.
+if(process.argv[5])m.load(0x8022e9e8,fs.readFileSync(process.argv[5]));
+if(process.argv[6])m.load(0x801c1aa4,fs.readFileSync(process.argv[6]));
+if(process.argv[7])m.load(0x801ceee0,fs.readFileSync(process.argv[7]));
 const rows=[],seen=new Set();let steps=0;
 for(let source=0;source<165;source++)for(let flags=0;flags<4;flags++){
  const handle=handles.readUInt16BE(begin+(source*4+flags)*2),slot=(handle&0xfff)-1;if(slot<0||slot>=directory.length/4)continue;

@@ -56,6 +56,7 @@ class ActorPosePlayer {
     void setLinkedAudioContext(LinkedPoseAudioContext context);
 
   private:
+    static int registered(void *, const LordlyActorPose *);
     static int lookup(void *, const LordlyActorPose *, LordlyPoseRecord *);
     static int shared(void *, const LordlyActorPose *, const LordlyPoseRecord *);
     Rom rom_;

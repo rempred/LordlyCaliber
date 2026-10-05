@@ -448,15 +448,18 @@ void ActorPoseEditor::stop() {
     timer_->stop();
 }
 void ActorPoseEditor::selectPrivateSequence(int classId,int flags,int state) {
+    const auto classes = bodyAnimations_ ? bodyAnimations_->classes() : ClassData::load(rom_);
+    if (classId < 0 || classId >= classes.entries().size()) throw Error("Invalid private preview class");
+    const int field = u8(classes.entries()[classId].record, 69), owner = field ? field : -1;
     sourceControls_->hide();actionControls_->hide();
     kinds_->setEnabled(false);banks_->setEnabled(false);owners_->setEnabled(false);
     flags_->setEnabled(false);poses_->setEnabled(false);actions_->setEnabled(false);actionModes_->setEnabled(false);
     if(kinds_->currentIndex()==1&&banks_->currentData().toInt()==classId&&
-       owners_->currentData().toInt()==-1&&flags_->currentIndex()==flags&&poses_->currentData().toInt()==state)return;
+       owners_->currentData().toInt()==owner&&flags_->currentIndex()==flags&&poses_->currentData().toInt()==state)return;
     if(kinds_->currentIndex()!=1)kinds_->setCurrentIndex(1);
     {
         const QSignalBlocker a(banks_),b(owners_),c(flags_),d(actions_);
-        banks_->setCurrentIndex(banks_->findData(classId));owners_->setCurrentIndex(0);flags_->setCurrentIndex(flags);actions_->setCurrentIndex(0);
+        banks_->setCurrentIndex(banks_->findData(classId));owners_->setCurrentIndex(owners_->findData(owner));flags_->setCurrentIndex(flags);actions_->setCurrentIndex(0);
     }
     loadBank();
     if(poses_->findData(state)<0)throw Error("The selected pose is absent from this body route");

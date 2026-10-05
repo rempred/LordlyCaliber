@@ -55,6 +55,7 @@ class AnimationRoutes {
     const QByteArray &privatePoses() const { return privatePoses_; }
     void setPrivatePoses(const QByteArray &);
     int privatePose(int source, int owner, int flags, int state) const;
+    bool registeredPose(int source, int owner, int flags, int state) const;
     // Unchanged sections use the original header's physical extent.
     QByteArray section(int index) const;
     QByteArray rebuild(const Rom &, const QByteArray &compiled,

@@ -3,6 +3,7 @@
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
 #include "rebuild/body_selection.h"
+#include "rebuild/pose_runtime.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
@@ -922,6 +923,12 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                             exportAnimationRoutes->privatePoses(), compiler, directory);
         if (result.image != beforeSelection)
             result.report << "Compiled linked-body selection from C within its original code allocation";
+        const auto beforePose = result.image;
+        result.image = rebuildPoseRuntime(Rom::fromBytes(result.image), p.rom(),
+            exportAnimationRoutes->privatePoses(), p.animationSequences() && p.animationSequences()->requiresWideStates(),
+            compiler, directory);
+        if (result.image != beforePose)
+            result.report << "Compiled private-pose execution and class record lookup within their original allocations";
     }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();

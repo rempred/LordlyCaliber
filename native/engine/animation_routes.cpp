@@ -383,7 +383,7 @@ void AnimationRoutes::setPrivatePoses(const QByteArray &bytes) {
         const auto key = u32(bytes, at);
         const int secondary = qint16(u16(bytes, at + 4));
         if ((at && key <= previous) || !u8(bytes, at) || u8(bytes, at + 2) > 3 ||
-            u8(bytes, at + 3) < 50 || secondary < -1 || u16(bytes, at + 6))
+            secondary < -1 || u16(bytes, at + 6))
             throw Error("Invalid private pose mapping record");
         previous = key;
     }
@@ -397,6 +397,15 @@ int AnimationRoutes::privatePose(int source, int owner, int flags, int state) co
     for (int at = 0; at < privatePoses_.size(); at += 8)
         if (u32(privatePoses_, at) == key) return qint16(u16(privatePoses_, at + 4));
     return -2;
+}
+bool AnimationRoutes::registeredPose(int source, int owner, int flags, int state) const {
+    if (source < 0 || source > 255 || owner < 0 || owner > 255 || flags < 0 || flags > 3 ||
+        state < 0 || state > 32767) return false;
+    const quint32 key = (quint32(source) << 16) | (quint32(owner) << 8) | quint32(flags);
+    for (int at = 0; at < privatePoses_.size(); at += 8)
+        if ((u32(privatePoses_, at) >> 8) == key &&
+            (u8(privatePoses_, at + 3) == state || qint16(u16(privatePoses_, at + 4)) == state)) return true;
+    return false;
 }
 QByteArray AnimationRoutes::decodedResource() const {
     if (!pending_.isEmpty())
