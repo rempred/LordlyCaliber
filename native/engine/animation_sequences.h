@@ -10,6 +10,8 @@ class AnimationSequences {
         quint16 baselineHandle = 0, privateHandle = 0;
         AnimationDescriptor descriptor;
         QJsonObject attackBaselines;
+        QMap<int, int> pairedPoses;
+        int reservedAttackStart = 0;
     };
     struct Plan {
         quint32 offset = 0;
@@ -27,6 +29,7 @@ class AnimationSequences {
     void create(int classId, int flags, const AnimationRoutes &, const ActorArtworkEdits & = {});
     void setDescriptor(int classId, int flags, const AnimationDescriptor &);
     void rememberAttackBaseline(int classId, int flags, int action, const QJsonValue &);
+    void setPairedPoses(int classId, int flags, const QMap<int, int> &, int reservedStart);
     void clearAttackBaseline(int classId, int flags, int action);
     void remove(int classId, int flags);
     void cloneClass(int source, int target);

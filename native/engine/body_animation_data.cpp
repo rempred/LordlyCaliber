@@ -1,4 +1,5 @@
 #include "engine/body_animation_data.h"
+#include "engine/body_selection.h"
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
                                      std::optional<AnimationOverrides> overrides,
@@ -23,6 +24,7 @@ BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
 BodyAnimationData::Pointer BodyAnimationData::load(const Rom &rom) {
     auto classes = ClassData::load(rom);
     auto routes = AnimationRoutes::load(rom);
+    BodySelectionImage::validate(rom, routes.privatePoses());
     auto overrides = AnimationOverrides::load(rom, classes, routes);
     return std::make_shared<const BodyAnimationData>(std::move(classes), std::move(routes),
                                                      std::move(overrides));

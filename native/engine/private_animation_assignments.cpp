@@ -30,7 +30,8 @@ QJsonArray replacePair(const QJsonArray &rows, int id, int flags, int action,
     }
     return result;
 }
-void validate(const AnimationSequences &sequences, const AnimationOverrides &overrides) {
+void validate(const AnimationSequences &sequences, const AnimationOverrides &overrides,
+              const ClassData &classes) {
     for (auto it = sequences.groups().begin(); it != sequences.groups().end(); ++it) {
         const auto &baselines = it->attackBaselines;
         if (baselines.isEmpty())
@@ -38,6 +39,8 @@ void validate(const AnimationSequences &sequences, const AnimationOverrides &ove
         if (!overrides.available())
             throw Error("Private attacks require an editable animation override owner");
         const auto bank = it->descriptor.poses();
+        const int id = it.key() / 4, ownerByte = u8(classes.entries()[id].record, 69),
+                  owner = ownerByte ? ownerByte : id;
         for (auto action = baselines.begin(); action != baselines.end(); ++action) {
             const auto pair =
                 exactPair(overrides.entries(), it.key() / 4, it.key() % 4, action.key().toInt());
@@ -49,6 +52,9 @@ void validate(const AnimationSequences &sequences, const AnimationOverrides &ove
                     bank.effective(state).records.isEmpty())
                     throw Error("A private attack selects an absent or empty pose");
                 bank.validateEntry(state);
+                if ((owner == 10 || owner == 25 || owner == 123) && state >= 50 &&
+                    !it->pairedPoses.contains(state))
+                    throw Error("A linked private attack needs its secondary pose assignment");
             }
         }
     }
@@ -57,7 +63,7 @@ void validate(const AnimationSequences &sequences, const AnimationOverrides &ove
 void Project::validateAnimationAssignments() {
     loadAnimationRoutes();
     loadAnimationOverrides();
-    validate(*animationSequences_, *animationOverrides_);
+    validate(*animationSequences_, *animationOverrides_, classData());
 }
 void Project::setPrivateAnimationState(const QJsonObject &sequenceData,
                                        const QJsonObject &overrideData) {
@@ -69,7 +75,7 @@ void Project::setPrivateAnimationState(const QJsonObject &sequenceData,
     sequences.validate(*animationRoutes_, records(Table::Classes).size());
     if (overrideData != overrides.json())
         overrides.apply(overrideData, rom_, classData(), *animationRoutes_);
-    validate(sequences, overrides);
+    validate(sequences, overrides, classData());
     for (auto it = animationSequences_->groups().begin(); it != animationSequences_->groups().end();
          ++it) {
         const auto next = sequences.groups().value(it.key()).attackBaselines;
@@ -99,30 +105,63 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
         throw Error("Choose a pose with instructions");
     const auto classes = classData();
     const int ownerByte = u8(classes.entries()[id].record, 69), owner = ownerByte ? ownerByte : id;
+    const bool linked = owner == 10 || owner == 25 || owner == 123;
+    auto group = animationSequences_->groups().value(id * 4 + flags);
     int selected = pose;
     if (duplicate) {
-        if (bank.programs().size() >= 256)
-            throw Error("The attack selector's one-byte range is full");
-        while (bank.programs().size() < 100)
-            bank.appendProgram(QByteArray(1, 0));
-        selected = bank.appendProgram(source);
+        int companion = -1;
+        if (linked) {
+            companion = pose < 50 ? pose + 50 : group.pairedPoses.value(pose, -1);
+            if (companion < 0 || companion >= bank.programs().size() ||
+                bank.effective(companion).records.isEmpty())
+                throw Error("Choose a primary pose with a linked secondary program");
+            bank.validateEntry(companion);
+            for (const auto &record : bank.effective(companion).records)
+                if (record.opcode == 5 && u8(record.operands, 0) == companion)
+                    throw Error("This secondary program needs a wide self-transfer before it can be copied");
+        }
+        if (group.reservedAttackStart) {
+            selected = group.reservedAttackStart;
+            while (selected < 256 && (group.pairedPoses.contains(selected) ||
+                                      bank.programs()[selected].source != QByteArray(1, 0)))
+                ++selected;
+            if (selected == 256)
+                throw Error("The attack selector's one-byte range is full");
+            bank.setProgram(selected, source);
+        } else {
+            if (bank.programs().size() >= 256)
+                throw Error("The attack selector's one-byte range is full");
+            while (bank.programs().size() < 100)
+                bank.appendProgram(QByteArray(1, 0));
+            selected = bank.appendProgram(source);
+        }
         auto records = bank.effective(selected).records;
         for (auto &record : records)
             if (record.opcode == 5 && u8(record.operands, 0) == pose)
                 record.operands[0] = char(selected);
         bank.setProgram(selected, PoseBank::encodeProgram(records));
+        if (linked) {
+            const auto secondary = bank.effective(companion).source;
+            if (!group.reservedAttackStart)
+                group.reservedAttackStart = selected + 1;
+            while (bank.programs().size() < 256)
+                bank.appendProgram(QByteArray(1, 0));
+            // State-transfer operands are one byte. Keep their original targets;
+            // the copied companion itself has an independent signed-halfword state.
+            group.pairedPoses[selected] = bank.appendProgram(secondary);
+        }
     }
     if (selected < 0 || selected > 255)
         throw Error("Attack assignments require a one-byte selector");
-    if ((owner == 10 || owner == 25 || owner == 123) && selected >= 50)
-        throw Error("This linked body needs extended secondary-pose routing before assigning this "
-                    "selector");
+    if (linked && selected >= 50 && !group.pairedPoses.contains(selected))
+        throw Error("This private attack has no linked secondary program");
     if ((id == 135 || id == 136 || id == 161) && selected != 0 && selected != 50)
         throw Error("This class needs its fixed-pose runtime policy rebuilt before assigning this "
                     "selector");
     descriptor.setPoses(bank);
     auto sequences = *animationSequences_;
     sequences.setDescriptor(id, flags, descriptor);
+    sequences.setPairedPoses(id, flags, group.pairedPoses, group.reservedAttackStart);
     sequences.rememberAttackBaseline(id, flags, action,
                                      exactPair(animationOverrides_->entries(), id, flags, action));
     const auto current = bodyAnimationData();
@@ -134,6 +173,41 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
                          *animationRoutes_);
     setPrivateAnimationState(sequences.json(), overrides.json());
     return selected;
+}
+QByteArray Project::privatePoseMappings() {
+    validateAnimationAssignments();
+    QMap<quint32, quint16> mappings;
+    const auto classes = classData();
+    for (auto it = animationSequences_->groups().begin(); it != animationSequences_->groups().end();
+         ++it) {
+        const int id = it.key() / 4, flags = it.key() % 4;
+        const int ownerByte = u8(classes.entries()[id].record, 69),
+                  owner = ownerByte ? ownerByte : id;
+        for (auto action = it->attackBaselines.begin(); action != it->attackBaselines.end();
+             ++action) {
+            const auto pair =
+                exactPair(animationOverrides_->entries(), id, flags, action.key().toInt())
+                    .toObject();
+            for (const auto *lane : {"normalSelector", "blockedSelector"}) {
+                const int primary = pair[lane].toInt();
+                if (!it->pairedPoses.contains(primary))
+                    continue;
+                const quint32 key = (quint32(id) << 24) | (quint32(owner) << 16) |
+                                    (quint32(flags) << 8) | quint32(primary);
+                mappings[key] = quint16(it->pairedPoses.value(primary));
+            }
+        }
+    }
+    QByteArray bytes;
+    for (auto it = mappings.begin(); it != mappings.end(); ++it) {
+        QByteArray row(8, 0);
+        put32(row, 0, it.key());
+        put16(row, 4, it.value());
+        bytes += row;
+    }
+    auto routes = *animationRoutes_;
+    routes.setPrivatePoses(bytes); // One shared serialization/domain check.
+    return bytes;
 }
 void Project::restorePrivateAttack(int id, int flags, int action) {
     loadAnimationRoutes();

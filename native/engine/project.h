@@ -75,6 +75,7 @@ class Project {
     void setAnimationSequences(const QJsonObject &);
     void setPrivateAnimationState(const QJsonObject &sequences, const QJsonObject &overrides);
     void validateAnimationAssignments();
+    QByteArray privatePoseMappings();
     int assignPrivateAttack(int classId, int flags, int action, bool blocked, int pose,
                             bool duplicate = true);
     void restorePrivateAttack(int classId, int flags, int action);

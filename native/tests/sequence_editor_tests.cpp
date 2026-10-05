@@ -76,6 +76,53 @@ class SequenceEditorTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void linkedCompanionEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 1000); editor.show();
+            auto classes = editor.findChild<QComboBox *>("sequenceClass");
+            classes->setCurrentIndex(classes->findData(10));
+            editor.findChild<QPushButton *>("sequenceCreate")->click();
+            auto poses = editor.findChild<QComboBox *>("sequencePose");
+            poses->setCurrentIndex(poses->findData(40));
+            auto actions = editor.findChild<QComboBox *>("sequenceAttack");
+            actions->setCurrentIndex(actions->findData(4));
+            editor.findChild<QPushButton *>("sequenceAssignAttack")->click();
+            const auto notice = editor.findChild<QLabel *>("sequenceNotice");
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QCOMPARE(poses->currentData().toInt(), 100);
+            QVERIFY(editor.findChild<QLabel *>("sequenceAssignmentSummary")->text().contains("linked pose 256"));
+            poses->setCurrentIndex(poses->findData(256));
+            QCOMPARE(poses->currentData().toInt(), 256);
+            const auto before = project.animationSequences()->json();
+            auto rows = editor.findChild<QTableWidget *>("sequenceRecords");
+            int frame = 0;
+            const auto program = project.animationSequences()->find(10, 0)->poses().effective(256);
+            while (frame < program.records.size() && program.records[frame].opcode != 1 && program.records[frame].opcode != 21) ++frame;
+            QVERIFY(frame < program.records.size()); rows->selectRow(frame);
+            auto ticks = editor.findChild<QSpinBox *>("sequenceTicks");
+            ticks->setValue(ticks->value() == 19 ? 20 : 19);
+            editor.findChild<QPushButton *>("sequenceApplyFrame")->click();
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QVERIFY(project.animationSequences()->json() != before);
+            const auto bank = project.animationSequences()->find(10, 0)->poses();
+            QCOMPARE(bank.effective(90).source, program.source);
+            QCOMPARE(project.bodyAnimationData()->routes().privatePose(10, 10, 0, 100), 256);
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), before);
+            undo.redo();
+            editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save(QDir::current().filePath("linked-private-attack.png")));
+            editor.findChild<QPushButton *>("sequenceRemoveCopy")->click();
+            QVERIFY(!project.animationSequences()->find(10, 0));
+            undo.undo();
+            QCOMPARE(project.bodyAnimationData()->routes().privatePose(10, 10, 0, 100), 256);
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void importedFrameAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -344,12 +344,17 @@ void AnimationSequenceEditor::refreshAssignments() {
                                   ->groups()
                                   .value(id * 4 + flags)
                                   .attackBaselines.contains(QString::number(action));
+        const auto poseLabel = [&](int state) {
+            const int secondary = animations->routes().privatePose(id, owner, flags, state);
+            return secondary >= 0 ? QString("%1 + linked pose %2").arg(state).arg(secondary)
+                                  : QString::number(state);
+        };
         assignmentSummary_->setText(
-            QString("%1 · Normal: pose %2 · Blocked: pose %3\nAttack assignments use the existing "
-                    "animation patch and require an Expansion Pak.")
+            QString("%1 · Normal: pose %2 · Blocked: pose %3\n"
+                    "Expansion Pak required for attack assignments.")
                 .arg(assigned ? "Private assignment" : "Current assignment")
-                .arg(animations->selector(id, owner, action, 0, flags))
-                .arg(animations->selector(id, owner, action, 2, flags)));
+                .arg(poseLabel(animations->selector(id, owner, action, 0, flags)))
+                .arg(poseLabel(animations->selector(id, owner, action, 2, flags))));
     } catch (const std::exception &e) {
         assignmentSummary_->setText(QString::fromUtf8(e.what()));
     }

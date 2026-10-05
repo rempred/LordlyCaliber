@@ -1,4 +1,5 @@
 #include "engine/project.h"
+#include "engine/body_selection.h"
 #include "engine/scene_import.h"
 #include <QDir>
 #include <QFile>
@@ -590,7 +591,9 @@ BodyAnimationData::Pointer Project::bodyAnimationData() {
     validateAnimationAssignments();
     QMap<int,AnimationDescriptor> descriptors;
     for(auto it=animationSequences_->groups().cbegin();it!=animationSequences_->groups().cend();++it)descriptors[it.key()]=it->descriptor;
-    return std::make_shared<const BodyAnimationData>(classData(),*animationRoutes_,*animationOverrides_,std::move(descriptors));
+    auto routes = *animationRoutes_;
+    routes.setPrivatePoses(privatePoseMappings());
+    return std::make_shared<const BodyAnimationData>(classData(),std::move(routes),*animationOverrides_,std::move(descriptors));
 }
 void Project::loadAnimationSequences() {
     if(!animationSequences_)animationSequences_=AnimationSequences::load(rom_);
@@ -602,7 +605,9 @@ void Project::setAnimationSequences(const QJsonObject &object) {
 void Project::loadAnimationRoutes() {
     if (!animationRoutes_) {
         loadAnimationSequences();
-        animationRoutes_ = animationSequences_->baseRoutes(AnimationRoutes::load(rom_));
+        const auto routes = AnimationRoutes::load(rom_);
+        BodySelectionImage::validate(rom_, routes.privatePoses());
+        animationRoutes_ = animationSequences_->baseRoutes(routes);
     }
 }
 void Project::setAnimationRoutes(const QJsonObject &object) {

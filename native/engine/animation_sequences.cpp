@@ -67,6 +67,26 @@ QJsonObject readBaselines(const QByteArray &bytes) {
     }
     return result;
 }
+QByteArray pairingBytes(const AnimationSequences::Group &group) {
+    const int start = group.reservedAttackStart;
+    if ((start && (start < 101 || start > 256)) || group.pairedPoses.size() > 156)
+        throw Error("Invalid reserved private attack range");
+    QByteArray bytes;
+    for (auto it = group.pairedPoses.begin(); it != group.pairedPoses.end(); ++it) {
+        const int primary = it.key(), secondary = it.value();
+        if (!start || primary < 100 || primary > 255 || secondary < 256 || secondary > 32767 ||
+            secondary >= group.descriptor.poses().programs().size())
+            throw Error("Invalid private secondary pose");
+        group.descriptor.poses().validateEntry(primary);
+        group.descriptor.poses().validateEntry(secondary);
+        QByteArray row(4, 0);
+        put16(row, 0, quint16(primary)); put16(row, 2, quint16(secondary));
+        bytes += row;
+    }
+    if (start && group.descriptor.poses().programs().size() < 256)
+        throw Error("Reserved private attacks exceed their pose bank");
+    return bytes;
+}
 } // namespace
 AnimationSequences AnimationSequences::load(const Rom &rom) {
     AnimationSequences result;
@@ -77,7 +97,7 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
         result.original_ = result.json();
         return result;
     }
-    if (d.size() != descriptorSize || (u32(d, 8) != 1 && u32(d, 8) != 2) ||
+    if (d.size() != descriptorSize || (u32(d, 8) < 1 || u32(d, 8) > 3) ||
         d.mid(24, 40) != QByteArray(40, 0))
         throw Error("Invalid private animation allocation header");
     result.offset_ = u32(d, 12);
@@ -124,7 +144,22 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
         if (const auto baseline = u32(data, i * 16 + 12)) {
             span(baseline);
             const auto at = baseline + DirectDescriptors::resourceBase;
-            group.attackBaselines = readBaselines(rom.bytes().mid(at + 4, u32(rom.bytes(), at)));
+            auto metadata = rom.bytes().mid(at + 4, u32(rom.bytes(), at));
+            if (u32(d, 8) == 3) {
+                const int baselineSize = u16(metadata, 0) * 8;
+                group.reservedAttackStart = u16(metadata, 2);
+                if (metadata.size() < 4 + baselineSize || (metadata.size() - 4 - baselineSize) % 4)
+                    throw Error("Invalid private pairing resource");
+                int previousPair = -1;
+                for (int pos = 4 + baselineSize; pos < metadata.size(); pos += 4) {
+                    const int primary = u16(metadata, pos);
+                    if (primary <= previousPair) throw Error("Unsorted private pose pairs");
+                    previousPair = primary;
+                    group.pairedPoses[primary] = u16(metadata, pos + 2);
+                }
+                metadata = metadata.mid(4, baselineSize);
+            }
+            if (!metadata.isEmpty()) group.attackBaselines = readBaselines(metadata);
         }
         group.descriptor = AnimationDescriptor::load(rom, key);
         for (int m = 0; m < group.descriptor.members().size(); ++m) {
@@ -137,6 +172,7 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
             if (decoded > 512ULL * 1024 * 1024)
                 throw Error("Private animations exceed their decoded data budget");
         }
+        pairingBytes(group);
         result.groups_[id] = std::move(group);
     }
     for (const auto &group : result.groups_)
@@ -206,6 +242,14 @@ void AnimationSequences::rememberAttackBaseline(int classId, int flags, int acti
     values[key] = baseline;
     baselineBytes(values);
     it->attackBaselines = values;
+}
+void AnimationSequences::setPairedPoses(int classId, int flags, const QMap<int, int> &pairs, int start) {
+    auto it = groups_.find(groupId(classId, flags));
+    if (it == groups_.end()) throw Error("Create a private copy before pairing attacks");
+    auto next = *it;
+    next.pairedPoses = pairs; next.reservedAttackStart = start;
+    pairingBytes(next);
+    *it = std::move(next);
 }
 void AnimationSequences::clearAttackBaseline(int classId, int flags, int action) {
     auto it = groups_.find(groupId(classId, flags));
@@ -287,6 +331,13 @@ QJsonObject AnimationSequences::json() const {
                         {"descriptor", it->descriptor.json()}};
         if (!it->attackBaselines.isEmpty())
             row["attackBaselines"] = it->attackBaselines;
+        if (it->reservedAttackStart) {
+            row["reservedAttackStart"] = it->reservedAttackStart;
+            QJsonObject pairs;
+            for (auto pair = it->pairedPoses.begin(); pair != it->pairedPoses.end(); ++pair)
+                pairs[QString::number(pair.key())] = pair.value();
+            row["pairedPoses"] = pairs;
+        }
         rows << row;
     }
     return {{"version", 1}, {"groups", rows}};
@@ -298,8 +349,9 @@ void AnimationSequences::apply(const QJsonObject &object) {
     QMap<int, Group> groups;
     for (const auto &value : object["groups"].toArray()) {
         const auto row = value.toObject();
-        if (!value.isObject() || (row.size() != 4 && row.size() != 5) ||
-            (row.size() == 5 && !row["attackBaselines"].isObject()) ||
+        if (!value.isObject() || row.size() != 4 + int(row.contains("attackBaselines")) +
+                2 * int(row.contains("reservedAttackStart")) ||
+            (row.contains("attackBaselines") && !row["attackBaselines"].isObject()) ||
             !row["descriptor"].isObject())
             throw Error("Invalid saved private sequence");
         const auto integer = [&](const char *key) {
@@ -316,6 +368,20 @@ void AnimationSequences::apply(const QJsonObject &object) {
                       AnimationDescriptor::fromJson(rom_, row["descriptor"].toObject())};
         groups[id].attackBaselines = row["attackBaselines"].toObject();
         baselineBytes(groups[id].attackBaselines);
+        if (row.contains("reservedAttackStart")) {
+            groups[id].reservedAttackStart = integer("reservedAttackStart");
+            if (!groups[id].reservedAttackStart || !row["pairedPoses"].isObject())
+                throw Error("Invalid saved private pose pairs");
+            const auto pairs = row["pairedPoses"].toObject();
+            for (auto it = pairs.begin(); it != pairs.end(); ++it) {
+                bool ok = false;
+                const int primary = it.key().toInt(&ok), secondary = it->toInt(-1);
+                if (!ok || QString::number(primary) != it.key() || it->toDouble() != double(secondary))
+                    throw Error("Invalid saved private pose pair");
+                groups[id].pairedPoses[primary] = secondary;
+            }
+        }
+        pairingBytes(groups[id]);
     }
     groups_ = std::move(groups);
 }
@@ -379,6 +445,8 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
             }
         }
     }
+    bool paired = false;
+    for (const auto &group : groups_) paired |= bool(group.reservedAttackStart);
     const auto build = [&](quint32 offset) {
         QByteArray bytes(groups_.size() * 16, 0);
         QMap<QByteArray, quint32> resources;
@@ -412,7 +480,13 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
             put16(bytes, row * 16 + 4, it->baselineHandle);
             put16(bytes, row * 16 + 6, result.handles[it.key()]);
             put32(bytes, row * 16 + 8, key);
-            const auto baselines = baselineBytes(it->attackBaselines);
+            auto baselines = baselineBytes(it->attackBaselines);
+            if (paired && (!baselines.isEmpty() || it->reservedAttackStart)) {
+                QByteArray head(4, 0);
+                put16(head, 0, quint16(baselines.size() / 8));
+                put16(head, 2, quint16(it->reservedAttackStart));
+                baselines = head + baselines + pairingBytes(*it);
+            }
             if (!baselines.isEmpty()) {
                 QByteArray resource(4, 0);
                 put32(resource, 0, quint32(baselines.size()));
@@ -466,10 +540,12 @@ QByteArray AnimationSequences::materialize(const Rom &rom, const Plan &plan,
         image.replace(plan.offset, compiled.size(), compiled);
         header.fill(0);
         header.replace(0, 8, "LC05ASEQ");
-        bool extended = false;
-        for (const auto &group : groups_)
-            extended |= !group.attackBaselines.isEmpty();
-        put32(header, 8, extended ? 2 : 1);
+        int version = 1;
+        for (const auto &group : groups_) {
+            if (!group.attackBaselines.isEmpty()) version = std::max(version, 2);
+            if (group.reservedAttackStart) version = 3;
+        }
+        put32(header, 8, quint32(version));
         put32(header, 12, plan.offset);
         put32(header, 16, quint32(compiled.size()));
         put32(header, 20, quint32(groups_.size()));

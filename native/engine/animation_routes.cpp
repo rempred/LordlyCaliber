@@ -177,7 +177,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
     }
     if (result.descriptor_.startsWith("LC05ARTE")) {
         const auto &d = result.descriptor_;
-        if (d.size() != descriptorSize || u32(d, 8) != 1)
+        if (d.size() != descriptorSize || (u32(d, 8) != 1 && u32(d, 8) != 2))
             throw Error("Invalid native class-animation allocation header");
         result.allocationOffset_ = u32(d, 12);
         result.allocationSize_ = u32(d, 16);
@@ -187,7 +187,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
             result.allocationSize_ > 65552 ||
             quint64(result.allocationOffset_) + result.allocationSize_ >
                 quint64(rom.bytes().size()) ||
-            key != result.allocationOffset_ - resourceBase || prefix != u16(result.source_, 0) ||
+            key != result.allocationOffset_ - resourceBase || prefix > u16(result.source_, 0) ||
             prefix < 36 || prefix >= quint32(result.source_.size()) ||
             count != quint32(result.rows_.size()) ||
             result.source_.size() + 4 > result.allocationSize_)
@@ -197,10 +197,15 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
             payload.mid(result.source_.size() + 4) !=
                 QByteArray(payload.size() - result.source_.size() - 4, char(-1)))
             throw Error("Native class-animation allocation differs from its stored identity");
+        const int mapSize = u16(result.source_, 0) - int(prefix);
+        if (u32(d, 8) == 1 && mapSize)
+            throw Error("Unexpected private pose mapping in version one animation data");
+        result.setPrivatePoses(result.source_.mid(prefix, mapSize));
+        result.loadedPrivatePoses_ = result.privatePoses_;
         result.prefix_ = result.source_.left(prefix);
         result.prefix_.replace(0, 36, d.mid(28, 36));
         parseEntries(result.prefix_);
-        if (pack(result.prefix_, result.rows_) != result.source_)
+        if (pack(result.prefix_, result.rows_, result.privatePoses_) != result.source_)
             throw Error("Native class-animation sections are not in their declared allocation");
     }
     return result;
@@ -329,8 +334,8 @@ void AnimationRoutes::apply(const QJsonObject &object) {
     }
     *this = std::move(next);
 }
-QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows) {
-    auto bytes = prefix;
+QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows, const QByteArray &poses) {
+    auto bytes = prefix + poses;
     const int count = int(rows.size());
     auto append = [&](int header, int size) {
         if (bytes.size() % 2)
@@ -370,6 +375,29 @@ QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> 
     put16(bytes, 30, quint16(bytes.size()));
     return bytes;
 }
+void AnimationRoutes::setPrivatePoses(const QByteArray &bytes) {
+    if (bytes.size() % 8 || bytes.size() > 256 * 8)
+        throw Error("Invalid private pose mapping size");
+    quint32 previous = 0;
+    for (int at = 0; at < bytes.size(); at += 8) {
+        const auto key = u32(bytes, at);
+        const int secondary = qint16(u16(bytes, at + 4));
+        if ((at && key <= previous) || !u8(bytes, at) || u8(bytes, at + 2) > 3 ||
+            u8(bytes, at + 3) < 50 || secondary < -1 || u16(bytes, at + 6))
+            throw Error("Invalid private pose mapping record");
+        previous = key;
+    }
+    privatePoses_ = bytes;
+}
+int AnimationRoutes::privatePose(int source, int owner, int flags, int state) const {
+    if (source < 0 || source > 255 || owner < 0 || owner > 255 || flags < 0 || flags > 3 ||
+        state < 0 || state > 255) return -2;
+    const quint32 key = (quint32(source) << 24) | (quint32(owner) << 16) |
+                        (quint32(flags) << 8) | quint32(state);
+    for (int at = 0; at < privatePoses_.size(); at += 8)
+        if (u32(privatePoses_, at) == key) return qint16(u16(privatePoses_, at + 4));
+    return -2;
+}
 QByteArray AnimationRoutes::decodedResource() const {
     if (!pending_.isEmpty())
         throw Error(QString("Class %1 needs an explicit animation source assignment before export")
@@ -380,7 +408,7 @@ QByteArray AnimationRoutes::decodedResource() const {
     rows.resize(rowCount());
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         rows[it.key()] = it.value();
-    return pack(prefix_, rows);
+    return pack(prefix_, rows, privatePoses_);
 }
 QByteArray AnimationRoutes::section(int index) const {
     if (index < 0 || index >= 15)
@@ -442,7 +470,7 @@ QByteArray AnimationRoutes::rebuild(const Rom &rom, const QByteArray &compiled,
     }
     QByteArray descriptor(descriptorSize, 0);
     descriptor.replace(0, 8, "LC05ARTE");
-    put32(descriptor, 8, 1);
+    put32(descriptor, 8, privatePoses_.isEmpty() ? 1 : 2);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, quint32(payload.size()));
     put32(descriptor, 20, quint32(prefix_.size()));

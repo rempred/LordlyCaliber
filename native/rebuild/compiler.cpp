@@ -2,6 +2,7 @@
 #include "rebuild/compiler.h"
 #include "rebuild/animation_overrides.h"
 #include "rebuild/body_markers.h"
+#include "rebuild/body_selection.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
@@ -902,6 +903,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         result.report<<QString("Compiled %1 private class/body animation descriptors and isolated their controls and sprites").arg(sequences.groups().size());
     }
+    if (exportAnimationRoutes && p.animationSequences())
+        exportAnimationRoutes->setPrivatePoses(p.privatePoseMappings());
     if (exportAnimationRoutes && exportAnimationRoutes->modified()) {
         const auto compiled = compiler.compileData(exportAnimationRoutes->decodedResource(),
                                                    directory, "class_animation_routes");
@@ -912,6 +915,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.report << QString("Compiled class-animation routes for %1 table rows and preserved "
                                  "the other compound-resource sections")
                              .arg(exportAnimationRoutes->rowCount());
+    }
+    if (exportAnimationRoutes) {
+        const auto beforeSelection = result.image;
+        result.image = rebuildBodySelection(Rom::fromBytes(result.image), p.rom(),
+                                            exportAnimationRoutes->privatePoses(), compiler, directory);
+        if (result.image != beforeSelection)
+            result.report << "Compiled linked-body selection from C within its original code allocation";
     }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();

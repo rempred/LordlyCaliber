@@ -1,9 +1,12 @@
 #include "engine/actor_pose.h"
 #include "engine/animation_sequences.h"
 #include "engine/body_markers.h"
+#include "engine/body_selection.h"
+#include "engine/scene_actors.h"
 #include "engine/project.h"
 #include "engine/sprite_object.h"
 #include "rebuild/body_markers.h"
+#include "rebuild/body_selection.h"
 #include "rebuild/compiler.h"
 #include <QDir>
 #include <QJsonArray>
@@ -100,6 +103,110 @@ class AnimationSequencesTests : public QObject {
         } catch (const Error &e) {
             QFAIL(e.what());
         }
+    }
+    void linkedPrivateAttacks() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAnimationRoutes();
+            auto copies = *project.animationSequences();
+            copies.create(10, 0, *project.animationRoutes());
+            project.setAnimationSequences(copies.json());
+            QCOMPARE(project.assignPrivateAttack(10, 0, 4, false, 40), 100);
+            QCOMPARE(project.assignPrivateAttack(10, 0, 4, true, 40), 101);
+            const auto group = project.animationSequences()->groups().value(40);
+            QCOMPARE(group.reservedAttackStart, 101);
+            QCOMPARE(group.pairedPoses.value(100), 256);
+            QCOMPARE(group.pairedPoses.value(101), 257);
+            QCOMPARE(group.descriptor.poses().programs().size(), 258);
+            QCOMPARE(group.descriptor.poses().effective(256).source,
+                     copies.find(10, 0)->poses().effective(90).source);
+            const auto body = project.bodyAnimationData();
+            QCOMPARE(body->routes().privatePose(10, 10, 0, 100), 256);
+            QCOMPARE(body->routes().privatePose(10, 10, 1, 100), -2);
+            QCOMPARE(body->routes().privatePose(10, 10, 0, 102), -2);
+            QVector<QByteArray> rows(28, QByteArray(248, 0));
+            put32(rows[3], 0x48, 10); put32(rows[3], 0x4c, 10); put16(rows[3], 0x36, 1);
+            SceneActors scene(rom, 2, 0x3c, {}, body);
+            scene.supplyBodyRows(rows);
+            for (int slot : {4, 8}) {
+                QByteArray actor(336, 0);
+                put32(actor, 0xe4, quint32(slot)); put32(actor, 0xe8, 10); put32(actor, 0xec, 10);
+                put8(actor, 0x147, 3); put8(actor, 0x149, slot == 8 ? 1 : 0);
+                put32(actor, 0x130, 0x3f800000);
+                scene.supplyActor(slot, actor);
+            }
+            scene.selectBody({4, 10, 10, 100, 0, 0, 0, 0, 0x3c});
+            QCOMPARE(u16(scene.actor(4)->record(), 0x134), quint16(100));
+            QCOMPARE(u16(scene.actor(8)->record(), 0x134), quint16(256));
+            QCOMPARE(scene.bodyRegistrations().size(), 2);
+            const auto secondary = scene.actor(8)->record();
+            // Unregistered high states retain the original skip policy.
+            scene.selectBody({8, 10, 10, 102, 0, 0, 0, 0, 0x3c});
+            QCOMPARE(scene.actor(8)->record(), secondary);
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationSequences()->json(), project.animationSequences()->json());
+            const auto built = rebuild(project, tools, work.path());
+            QCOMPARE(u32(built.image, AnimationSequences::descriptorOffset + 8), quint32(3));
+            QCOMPARE(BodySelectionImage::count(Rom::fromBytes(built.image)), 2);
+            QCOMPARE(built.image.mid(BodySelectionImage::offset - 16, 16), rom.bytes().mid(BodySelectionImage::offset - 16, 16));
+            QCOMPARE(built.image.mid(BodySelectionImage::offset + BodySelectionImage::size, 16),
+                     rom.bytes().mid(BodySelectionImage::offset + BodySelectionImage::size, 16));
+            QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-linked-attacks-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            auto reopened = Project::fromRom(Rom::open(output));
+            QCOMPARE(reopened.bodyAnimationData()->routes().privatePose(10, 10, 0, 101), 257);
+            QCOMPARE(reopened.animationSequences()->groups().value(40).pairedPoses, group.pairedPoses);
+            QCOMPARE(reopened.changedRecords(), 0);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            const auto run = [&](const QString &script, const QStringList &args) {
+                QProcess process;
+                process.setProcessChannelMode(QProcess::MergedChannels);
+                process.start("node", QStringList{script} + args);
+                if (!process.waitForFinished(60000) || process.exitCode())
+                    throw Error(QString::fromLocal8Bit(process.readAll()));
+                qInfo().noquote() << process.readAll();
+            };
+            run(QFINDTESTDATA("actor-body-mips.cjs"), {path, work.filePath("original.json")});
+            atomicWrite(work.filePath("body.bin"), built.image.mid(BodySelectionImage::offset, BodySelectionImage::size));
+            run(QFINDTESTDATA("body-selection-mips.cjs"),
+                {path, work.filePath("paired.json"), work.filePath("body.bin"), work.filePath("original.json")});
+            auto corrupt = built.image;
+            corrupt[BodySelectionImage::offset + 20] ^= 1;
+            auto invalid = Project::fromRom(Rom::fromBytes(corrupt));
+            QVERIFY_THROWS_EXCEPTION(Error, invalid.loadAnimationRoutes());
+            auto foreign = rom.bytes(); foreign[BodySelectionImage::offset] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, rebuildBodySelection(Rom::fromBytes(foreign), Rom::fromBytes(foreign),
+                                                                 project.privatePoseMappings(), Compiler(tools), work.path()));
+            reopened.restorePrivateAttack(10, 0, 4);
+            QVERIFY(reopened.privatePoseMappings().isEmpty());
+            const auto reset = rebuild(reopened, tools, work.path());
+            auto clean = Project::fromRom(Rom::fromBytes(reset.image));
+            QCOMPARE(BodySelectionImage::count(clean.rom()), 0);
+            atomicWrite(work.filePath("baseline.bin"), reset.image.mid(BodySelectionImage::offset, BodySelectionImage::size));
+            run(QFINDTESTDATA("body-selection-mips.cjs"),
+                {path, work.filePath("baseline.json"), work.filePath("baseline.bin"), work.filePath("original.json"), "legacy"});
+            QCOMPARE(clean.bodyAnimationData()->selector(10, 10, 4, 0, 0), 40);
+            QVERIFY(clean.privatePoseMappings().isEmpty());
+            QCOMPARE(rebuild(clean, tools, work.path()).image, reset.image);
+            // Add another paired copy after reopening a padded bank.
+            QCOMPARE(clean.assignPrivateAttack(10, 0, 4, false, 40), 102);
+            QCOMPARE(clean.bodyAnimationData()->routes().privatePose(10, 10, 0, 102), 258);
+            clean.removePrivateAnimation(10, 0);
+            const auto removed = rebuild(clean, tools, work.path());
+            auto empty = Project::fromRom(Rom::fromBytes(removed.image));
+            empty.loadAnimationRoutes(); QVERIFY(empty.animationSequences()->groups().isEmpty());
+            QCOMPARE(BodySelectionImage::count(empty.rom()), 0);
+            qInfo().noquote() << "Linked attack candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
     }
     void wideEquipmentMarkers() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

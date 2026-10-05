@@ -163,7 +163,22 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
     LordlyActorRecord raw;
     std::memcpy(raw.bytes, record.constData(), sizeof(raw.bytes));
     int advance = 0;
-    if (lordly_actor_body_select(&raw, &s, classification(record), &advance) != LORDLY_ACTOR_OK)
+    auto effective = s;
+    int kind = classification(record);
+    if (kind == 2) {
+        const int state = s.state == -1 ? qint16(u16(record, 0x138)) : s.state;
+        if (state >= 50) {
+            const int source = s.source == -1 ? qint32(u32(record, 0xe8)) : s.source,
+                      owner = s.owner == -1 ? qint32(u32(record, 0xec)) : s.owner,
+                      a = s.flag_a == -1 ? u8(record, 0x146) : s.flag_a,
+                      b = s.flag_b == -1 ? qint16(u16(record, 0x13a)) : s.flag_b;
+            const auto data = bodyData_ ? bodyData_ : BodyAnimationData::load(rom_);
+            effective.state = data->routes().privatePose(source, owner, a * 2 + b, state);
+            if (effective.state < 0) return;
+            kind = 0; // The mapped state already includes secondary selection.
+        }
+    }
+    if (lordly_actor_body_select(&raw, &effective, kind, &advance) != LORDLY_ACTOR_OK)
         throw Error("Invalid body selection");
     if (!advance)
         return;

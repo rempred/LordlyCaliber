@@ -40,7 +40,7 @@ class AnimationRoutes {
     void restore(int classId);
     int rowCount() const;
     bool modified() const {
-        return !edits_.isEmpty() || !pending_.isEmpty();
+        return !edits_.isEmpty() || !pending_.isEmpty() || privatePoses_ != loadedPrivatePoses_;
     }
     void requireAssignment(int id);
     const QSet<int> &pending() const {
@@ -52,6 +52,9 @@ class AnimationRoutes {
     QJsonObject json() const;
     void apply(const QJsonObject &);
     QByteArray decodedResource() const;
+    const QByteArray &privatePoses() const { return privatePoses_; }
+    void setPrivatePoses(const QByteArray &);
+    int privatePose(int source, int owner, int flags, int state) const;
     // Unchanged sections use the original header's physical extent.
     QByteArray section(int index) const;
     QByteArray rebuild(const Rom &, const QByteArray &compiled,
@@ -59,8 +62,8 @@ class AnimationRoutes {
 
   private:
     static QVector<Entry> parseEntries(const QByteArray &);
-    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &);
-    QByteArray source_, prefix_, descriptor_, root_;
+    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &);
+    QByteArray source_, prefix_, descriptor_, root_, privatePoses_, loadedPrivatePoses_;
     QVector<Entry> rows_;
     QMap<int, Entry> edits_;
     QSet<int> pending_;

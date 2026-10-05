@@ -1,5 +1,51 @@
 # Native Lordly Caliber
 
+## Private linked-body attacks
+
+Private attack copies for linked body owners10/25/123 now retain a primary/companion
+pair. Primary selectors remain100..255; companions append at256 or above. The first
+paired copy reserves the unused primary interval before padding the bank to256.
+Subsequent copies use unoccupied reserved states, so edited padding is never overwritten.
+Each group saves `pairedPoses` and `reservedAttackStart`, clones them with the class,
+and validates both programs. A companion self-transfer using the original one-byte
+opcode5 is currently rejected; wide state-transfer support remains active work.
+
+LC05ASEQversion3 stores group metadata at record+12: two big-endian halfwords give
+baseline-row count and reserved-primary start, followed by the existing8-byte baseline
+records and sorted4-byte primary/secondary pairs. Earlier version1/2 resources remain
+accepted. Active private assignments generate sorted8-byte runtime rows: source, owner,
+body flags, primary selector, signed-halfword companion, two zero bytes. LC05ARTEversion2
+places those rows immediately before the relocated class-handle table. Its original
+prefix size, full resource hash and repacking validation establish that extent; existing
+full-resource loaders copy the map along with the tables. No additional high-RAM hook.
+
+`game/art/body-selection.c` is a reconstruction of the complete Director body initializer,
+compiled during export into its original z64[2A9364,2A985C) allocation, live80239C04.
+The linked build occupies1260 of1272bytes, including the historical linker's leading
+NOP alignment. It preserves appearance allocation/getters, registration, immediate pose,
+and recursive unresolved arguments. Registered extended primaries select their mapped
+companions; unregistered states retain the original secondary skip. SceneActors applies
+the same mapping before its retained C record boundary. LC05BSEL at z6427C4F00 authenticates
+map count, map hash and compiled code hash. Unknown code/header owners are rejected.
+Removing all active mappings compiles the baseline C behavior in that same allocation;
+it does not claim byte-identical restoration of the retail function. No compiled game
+payload is shipped. OBSO attack overrides retain their existing Expansion Pak requirement.
+
+`animation_sequences_tests linkedPrivateAttacks` passed11212ms. It checks project folders,
+paired preview, export/reopen, unchanged export, altered-code rejection, neighboring code
+conservation, assignment restoration and further copies after reopening. Its instruction
+fixture compares both mapped and baseline C against675 original body-selection cases,
+then compares100/256 and101/257 against original40/90 including before/after Actor bytes,
+appearance rows and registration calls. Unregistered102 leaves its secondary unchanged.
+Candidate: parent Test ROMs/native-linked-attacks-GFliUt/masterfilename.
+The four existing sequence regressions passed42935ms; original body initialization and
+command atomicity passed912ms. `sequence_editor_tests` passed2493ms, including independent
+companion timing, selection, undo and removal. A final229ms companion-only check and inspected
+1400x1000 image verify the shortened assignment summary and actual companion frame preview.
+These are instruction-model/desktop checks, not full-game heap or hardware validation.
+Fixed-pose sources135/136/161, their new-class template policy, wide self-transfers and browser
+sequence import remain in progress.
+
 ## Private attack assignments
 
 Private sequences can duplicate the selected pose into an independent Normal or Blocked
