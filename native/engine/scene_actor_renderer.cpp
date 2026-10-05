@@ -53,6 +53,7 @@ SceneActorFrame SceneActorRenderer::draw(SceneActors &actors,
                                          const ObjectRender &objects,
                                          const std::optional<std::array<quint8, 6>> &gradient) {
     auto next = actors;
+    auto images = context.effects ? context.effects->images() : SceneImageCache{};
     SceneActorFrame result{QImage(320, 240, QImage::Format_RGBA8888), {}, context.environment};
     if (result.image.isNull())
         throw Error("Unable to allocate the scene Actor frame");
@@ -77,14 +78,19 @@ SceneActorFrame SceneActorRenderer::draw(SceneActors &actors,
                                        std::bit_cast<float>(u32(record, 0x124)), *gradient);
             }
         }
-        const auto layers =
-            renderer_.project(*next.actor(pass.index), shadow, context.camera, context.globalRgb,
-                              context.sepia, shadow ? pass.shadow : 0, pass.alpha, &state);
+        const auto layers = renderer_.project(
+            *next.actor(pass.index), shadow, context.camera, context.globalRgb,
+            context.effects && !next.actor(pass.index)->pose().art().isBody()
+                ? context.effects->processActorImage(pass.index)
+                : context.sepia,
+            shadow ? pass.shadow : 0, pass.alpha, &state, context.effects ? &images : nullptr);
         ActorRenderer::paint(result.image, layers);
         result.layers += layers;
     }
     result.environment = state.environment();
     actors = std::move(next);
+    if (context.effects)
+        context.effects->images() = std::move(images);
     return result;
 }
 } // namespace lordly

@@ -68,8 +68,8 @@ class ActorArt {
     PoseRecord poseRecord(int state, int cursor) const;
     QVector<ActorPoseSelection> selections() const;
     QVector<ActorLayer> layers(int token) const;
-    QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant,
-                                   bool sepia = false) const;
+    QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant, int sepia = 0,
+                                   const QVector<quint8> &perLayer = {}) const;
 
   private:
     static ActorArt descriptor(const Rom &rom, quint32 key);

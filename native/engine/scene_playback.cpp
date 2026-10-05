@@ -108,6 +108,11 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
             schedule_.alternate = 1;
         return true;
     }
+    if (opcode == 0x80) {
+        if (args.size() != 1) throw Error("Actor color selection command is truncated");
+        effects_.selectColorActor(args[0], actors_.actorRecords());
+        return true;
+    }
     if (opcode == 0x39 && args.size() == 1 && args[0] != 0) {
         schedule_.alternate = 0;
         return true;

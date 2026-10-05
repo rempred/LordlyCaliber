@@ -1687,3 +1687,33 @@ real body rendering check verifies main geometry, two layersets, immutable Actor
 and tint state and repeatability. Desktop checks verify60-update black-fade
 completion, crossfade acceptance and backward seeking. Build and focused checks
 pass; cache lifetime and RDP rasterization remain the limits stated above.
+
+Ordinary Actor image-processing decisions now live in the scene snapshot, apart
+from the renderer's pixel LRU. They are keyed by source, variant and art index.
+Access resets age to0; each completed draw increments it and expires an unused
+image at3, following2A2718/2A2AD0. Expiry can therefore change visible color.
+The desktop reclaims empty metadata owners; target allocation bookkeeping is not
+emulated. At most40 source variants are retained.
+
+Opcode73 now converts backgrounds, enables image processing and recreates focus
+at-1. Its parser2857EC calls29AF24 only; it does not call the separate2A2BC8
+ordinary-image converter. Previously loaded ordinary images retain their color.
+Capture selector2 additionally converts retained ordinary images, including
+repeated conversions. RGBA16/32 processing preserves the separate alpha lanes.
+Counts saturate at64 because the monotone conversion has already mapped even
+white to black; both pixel formats' bounds are checked. Stage/body/sprite cache
+lifetimes and repeated conversions remain separate approximations.
+
+Opcode80 is dispatched by ScenePlayback. It narrows the selector to a byte,
+requires the focus controller and a valid0..27 slot, and invalidates the selected
+Actor's source/variant. An empty slot is safe. Other previously full-color images
+remain cached. New loads suppress processing for the selected slot and during
+selector3. No focus controller suppresses ordinary Actor processing. Shared
+source/variant images keep the first request's decoding until invalidated/expired.
+The selected slot and cache decisions persist through backward seeking.
+
+The original loader/aging/refresh routines pass240 flag-and-hit cases plus a
+conversion/expiry/focus sequence with decompression/allocation/pixel conversion
+controlled. Rendering checks retain a previous focus, reload it after expiry,
+restore a snapshot, and preserve alpha during repeated conversion. Desktop
+focus changes, checkpoint seeking and earlier capture/black/color checks pass.

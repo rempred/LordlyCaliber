@@ -205,10 +205,14 @@ QVector<ActorLayer> ActorArt::layers(int token) const {
     }
     return result;
 }
-QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant, bool sepia) const {
+QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant, int sepia,
+                                         const QVector<quint8> &perLayer) const {
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
-    for (const auto &layer : layers(token)) {
+    const auto metadata = layers(token);
+    if (!perLayer.isEmpty() && perLayer.size() != metadata.size())
+        throw Error("Actor processing decisions do not match its layers");
+    for (const auto &layer : metadata) {
         const auto bytes = resource(rom, artKeys_[layer.art], true);
         SpriteFrame pixels;
         if (u16(bytes, 0) == 0x3634) {
@@ -227,7 +231,8 @@ QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant,
         } else {
             const auto sprite = SpriteObject::decode(bytes);
             const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
-            pixels = sprite.frame(variant, palette, sepia);
+            pixels = sprite.frame(variant, palette,
+                                  perLayer.isEmpty() ? sepia : perLayer[result.size()]);
         }
         pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);
         if ((retained += pixels.image.rgba.size() + pixels.colorAlpha.size()) > 64 * 1024 * 1024)

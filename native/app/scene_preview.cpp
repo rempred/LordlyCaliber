@@ -158,6 +158,14 @@ void ScenePreview::restart() {
     }
 }
 bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
+    if (opcode == 0x73 && args.isEmpty()) {
+        if (next.backgrounds)
+            next.backgrounds->convertToSepia();
+        // The installer resets the Stage caches, but does not run2A2BC8 on the
+        // separate ordinary Actor cache. Existing Actor images keep their color.
+        next.playback.effects().setSepia(true);
+        return true;
+    }
     if (opcode == 0x80000008U && args.size() == 2) {
         const int kind = quint8(args[0]);
         auto capture = next.playback.effects().capture();
@@ -166,6 +174,7 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
             if (next.backgrounds)
                 next.backgrounds->convertToSepia();
             next.playback.effects().setSepia(true);
+            next.playback.effects().images().convertAll();
         } else if (kind == 3) {
             next.playback.effects().setSepia(false);
             if (next.environmentSelector >= 0)
@@ -265,9 +274,12 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 }
                 if (!drawing.sprites().draws(channel, 0).isEmpty())
                     environment = {0, 0, 0, 1};
-                auto rendered = renderer_.layered(
-                    drawing.actors(), queue, 0, quint8(channel),
-                    {drawing.cameras().actor(), {255, 255, 255}, environment, sepia});
+                auto rendered = renderer_.layered(drawing.actors(), queue, 0, quint8(channel),
+                                                  {drawing.cameras().actor(),
+                                                   {255, 255, 255},
+                                                   environment,
+                                                   sepia,
+                                                   &drawing.effects()});
                 painter.drawImage(0, 0, rendered.image);
                 environment = rendered.environment;
             }
@@ -308,7 +320,11 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             drawFlat(0);
             const auto rendered = renderer_.world(
                 drawing.actors(), queue, objects, {96, 96}, {0, 0, 0, 0, 0, 0},
-                {drawing.cameras().actor(), {255, 255, 255}, environment, sepia},
+                {drawing.cameras().actor(),
+                 {255, 255, 255},
+                 environment,
+                 sepia,
+                 &drawing.effects()},
                 [&](int, int index, QImage &image, ActorRenderState &state) {
                     if (!next.worldProps || index < 0 || index >= next.worldProps->props().size())
                         throw Error("Stage drawing refers to an unavailable object");
@@ -354,6 +370,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     next.frame = std::move(frame);
     if (commitDraw && mode_ == 2)
         ++next.texturePhase;
+    if (commitDraw)
+        drawing.effects().images().finishDraw();
     if (commitDraw)
         next.playback = std::move(drawing);
 }

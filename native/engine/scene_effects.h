@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/rom.h"
 #include "engine/scene_capture.h"
+#include "engine/scene_image_cache.h"
 #include <QVector>
 #include <array>
 #include <optional>
@@ -32,6 +33,22 @@ class SceneEffects {
     }
     void setSepia(bool value) {
         sepia_ = vignette_ = value;
+        selectedColorActor_ = -1;
+        if (!value)
+            images_.clear();
+    }
+    SceneImageCache &images() {
+        return images_;
+    }
+    const SceneImageCache &images() const {
+        return images_;
+    }
+    int selectedColorActor() const {
+        return selectedColorActor_;
+    }
+    void selectColorActor(quint32 slot, const std::array<QByteArray, 28> &actors);
+    bool processActorImage(int slot) const {
+        return vignette_ && sepia_ && selectedColorActor_ != slot && capture_.selector() != 3;
     }
     void setImageProcessing(bool value) {
         sepia_ = value;
@@ -62,6 +79,8 @@ class SceneEffects {
 
   private:
     SceneCapture capture_;
+    SceneImageCache images_;
+    int selectedColorActor_ = -1;
     bool sepia_ = false;
     bool vignette_ = false;
     static void checkSlot(int slot);

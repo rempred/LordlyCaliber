@@ -148,7 +148,9 @@ SpriteLanes SpriteObject::materialize(int child) const {
     return materialize(child, visiting, cache, retained);
 }
 SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette,
-                                bool sepia) const {
+                                int sepia) const {
+    if (sepia < 0 || sepia > 64)
+        throw Error("Sprite image-processing count exceeds its bounded domain");
     const int child = requestedChild < 0 || requestedChild >= children_.size() ? 0 : requestedChild;
     const auto lanes = materialize(child);
     if (lanes.color.isEmpty())
@@ -162,14 +164,15 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
         for (int x = 0; x < width_; ++x) {
             const int out = (y * width_ + x) * 4, at = y * colorStride_;
             if (colorFormat_ == 3) {
-                const quint32 color = sepia ? lordly_sepia_rgba32(u32(lanes.color, at + x * 4))
-                                            : u32(lanes.color, at + x * 4);
+                quint32 color = u32(lanes.color, at + x * 4);
+                for (int n = 0; n < sepia; ++n)
+                    color = lordly_sepia_rgba32(color);
                 for (int c = 0; c < 4; ++c)
                     put8(image.rgba, out + c, quint8(color >> (24 - c * 8)));
             } else {
                 auto word = colorFormat_ == 1 ? u16(palette, u8(lanes.color, at + x) * 2)
                                               : u16(lanes.color, at + x * 2);
-                if (sepia)
+                for (int n = 0; n < sepia; ++n)
                     word = lordly_sepia_rgba16(word);
                 put8(image.rgba, out, quint8((((word >> 11) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 1, quint8((((word >> 6) & 31) * 255 + 15) / 31));

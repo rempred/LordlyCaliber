@@ -45,7 +45,7 @@ class SpriteObject {
     }
     SpriteLanes materialize(int child) const;
     SpriteFrame frame(int requestedChild, const QByteArray &externalPalette = {},
-                      bool sepia = false) const;
+                      int sepia = 0) const;
 
   private:
     SpriteLanes materialize(int child, QVector<bool> &visiting,

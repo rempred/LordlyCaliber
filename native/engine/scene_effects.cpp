@@ -1,5 +1,18 @@
 #include "engine/scene_effects.h"
 namespace lordly {
+void SceneEffects::selectColorActor(quint32 slot, const std::array<QByteArray, 28> &actors) {
+    slot = quint8(slot);
+    if (!vignette_)
+        throw Error("Actor color restoration requires the sepia focus controller");
+    if (slot >= 28)
+        throw Error("Actor color selection is outside0..27");
+    const auto &record = actors[slot];
+    if (!record.isEmpty() && record.size() != 336)
+        throw Error("Actor color selection requires a complete record");
+    if (!record.isEmpty())
+        images_.invalidate(qint32(u32(record, 0xe8)), u8(record, 0x146));
+    selectedColorActor_ = int(slot);
+}
 QVector<SceneSpecialActorPass>
 SceneEffects::specialActorPasses(const std::array<QByteArray, 28> &actors) const {
     if (special_.isEmpty())

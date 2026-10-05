@@ -240,6 +240,25 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), hall);
         QVERIFY(preview.grab().save("world-scene-pan.png"));
     }
+    void actorColorFocusPlayback() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); auto scenes=ScenePrograms::load(rom);
+        const auto source=scenes.original().entries().first(); const auto id=scenes.createScene("Actor color focus",source.key,false);
+        QVector<quint32> words{0x80000006U,2,0x73,0x14,0,30,1,2,quint32(-40000),0,0,0,0,0x1c,0,6,0x14,1,31,1,2,40000,0,0,0,0,0x1c,1,6,0,0x80000000U,0x80,0,0,0x80000000U,0x80,1};
+        for(int i=0;i<130;++i) words<<0<<0x80000000U;
+        words<<0x80000001U<<(0xff000000U|quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size()*4,0); for(int i=0;i<words.size();++i) put32(bytes,i*4,words[i]); scenes.replace(id,bytes);
+        ScenePreview preview(rom); preview.resize(1100,800); preview.show(); preview.selectScene(scenes,id,0);
+        auto next=preview.findChild<QPushButton*>("sceneStep"); auto position=preview.findChild<QSpinBox*>("scenePosition");
+        next->click(); const auto sepia=preview.renderedFrame(); next->click(); const auto first=preview.renderedFrame(); QVERIFY(first!=sepia);
+        next->click(); const auto second=preview.renderedFrame(); QVERIFY(second!=first);
+        position->setValue(124); QTRY_COMPARE(preview.property("sceneTick").toInt(),124);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(preview.findChild<QLabel*>("scenePlaybackStatus")->text()));
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(),1); QCOMPARE(preview.renderedFrame(),sepia);
+        position->setValue(2); QTRY_COMPARE(preview.property("sceneTick").toInt(),2); QCOMPARE(preview.renderedFrame(),first);
+        position->setValue(3); QTRY_COMPARE(preview.property("sceneTick").toInt(),3); QCOMPARE(preview.renderedFrame(),second);
+        QVERIFY(preview.grab().save("actor-color-focus.png"));
+    }
     void specialBlackPlayback() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         const auto rom=Rom::open(path); auto scenes=ScenePrograms::load(rom);

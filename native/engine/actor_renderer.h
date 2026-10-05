@@ -2,6 +2,7 @@
 #include "engine/actor_instance.h"
 #include "engine/actor_render_state.h"
 #include "engine/class_data.h"
+#include "engine/scene_image_cache.h"
 #include <QCache>
 #include <QImage>
 namespace lordly {
@@ -29,12 +30,14 @@ class ActorRenderer {
     QVector<ActorRasterLayer> project(const ActorInstance &, bool shadow, const SceneCamera &,
                                       const std::array<qint16, 3> &globalRgb, bool sepia = false,
                                       int shadowIndex = 0, quint8 alpha = 255,
-                                      ActorRenderState *state = nullptr);
+                                      ActorRenderState *state = nullptr,
+                                      SceneImageCache *images = nullptr);
     QVector<ActorRasterLayer> projectRecord(const ActorArt &, const QByteArray &, bool shadow,
                                             const SceneCamera &,
                                             const std::array<qint16, 3> &globalRgb,
                                             bool sepia = false, int shadowIndex = 0,
-                                            quint8 alpha = 255, ActorRenderState *state = nullptr);
+                                            quint8 alpha = 255, ActorRenderState *state = nullptr,
+                                            SceneImageCache *images = nullptr);
     // Stage callers retain their own combiner. Flat props bind color then mask;
     // drawable objects and Actors bind mask then color.
     static ActorRasterLayer projectLayer(const ActorFrameLayer &, const QByteArray &actor,

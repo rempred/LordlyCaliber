@@ -1387,6 +1387,70 @@ class SceneRuntimeTests : public QObject {
         }
         QVERIFY(pauses > 0);
     }
+    void imageCacheAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work; QProcess reference;
+        reference.start("node",{QFINDTESTDATA("scene-image-cache-mips.cjs"),path,work.filePath("images.json")});
+        QVERIFY(reference.waitForFinished(60000)); QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("images.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(data["decisions"].toArray().size(),240);
+        for(const auto &value:data["decisions"].toArray()) {
+            const auto row=value.toObject(); SceneEffects effects;
+            if(!row["focus"].isNull()) {
+                effects.setSepia(true);
+                if(row["focus"].toInt()>=0) effects.selectColorActor(row["focus"].toInt(),{});
+            }
+            effects.setImageProcessing(row["processing"].toInt()&1);
+            if(!row["selector"].isNull()) effects.capture().start(row["selector"].toInt(),4);
+            const auto processed=effects.processActorImage(row["slot"].toInt());
+            QCOMPARE(processed,row["flag"].toInt()!=0);
+            QCOMPARE(effects.images().touch(30,2,0,processed),quint8(row["flag"].toInt()));
+            QCOMPARE(effects.images().touch(30,2,0,!processed),quint8(row["flag"].toInt()));
+        }
+        SceneImageCache images;
+        int conversions=0;
+        for(const auto &value:data["sequence"].toArray()) {
+            const auto row=value.toObject(); const auto action=row["action"].toString();
+            if(action=="convert") { images.convertAll(); ++conversions; }
+            else if(action=="age") images.finishDraw();
+            else if(action=="focus") images.invalidate(30,2);
+            else {
+                const int decoded=row["decodes"].toArray().last().toInt();
+                const bool newlyDecoded=action=="normal"||action=="miss"||action=="focused miss";
+                const int expected=newlyDecoded ? decoded : action=="hit" ? decoded+conversions : decoded;
+                QCOMPARE(images.touch(30,2,0,action!= "normal" && action!="focused miss"),quint8(expected));
+            }
+            // Probe a copy so checking expiry cannot keep the original entry alive.
+            if(action=="age") { auto copy=images; QCOMPARE(copy.touch(30,2,0,false),quint8(row["present"].toBool()?1:0)); }
+        }
+        SceneEffects effects; QVERIFY_THROWS_EXCEPTION(Error,effects.selectColorActor(0,{}));
+        effects.setSepia(true); effects.selectColorActor(257,{}); QCOMPARE(effects.selectedColorActor(),1);
+        QVERIFY_THROWS_EXCEPTION(Error,effects.selectColorActor(28,{})); QCOMPARE(effects.selectedColorActor(),1);
+    }
+    void focusRenderingKeepsPriorImages() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); SceneActors actors(rom,0,255); int value=0;
+        QVERIFY(actors.service(0x14,{0,30,1,2,quint32(-40000),0,0,0,0},value));
+        QVERIFY(actors.service(0x14,{1,31,1,2,40000,0,0,0,0},value));
+        QByteArray bank(56,0); const float values[]{90,4.f/3,1,20000,1,0,0,120,0,0,0,0,1,0};
+        for(int i=0;i<14;++i) put32(bank,i*4,std::bit_cast<quint32>(values[i]));
+        const auto camera=SceneCamera(bank,1); SceneTransforms transforms;
+        transforms.prepareMatrices(rom,camera,20); actors.prepareModeZeroMatrices(camera,transforms);
+        const auto queue=SceneDrawQueue::build(actors.actorRecords(),{},camera,{0x80300000,0x80310000});
+        SceneEffects effects; effects.setSepia(true); SceneActorRenderer renderer(rom);
+        auto render=[&] { return renderer.layered(actors,queue,0,0,{camera,{255,255,255},{},true,&effects}).image; };
+        const auto sepia=render(); effects.selectColorActor(0,actors.actorRecords()); const auto one=render(); QVERIFY(one!=sepia);
+        const auto prior=effects;
+        effects.selectColorActor(1,actors.actorRecords()); const auto both=render(); QVERIFY(both!=one);
+        const auto bothState=effects;
+        auto normalActors=actors; const auto normal=renderer.layered(normalActors,queue,0,0,{camera,{255,255,255},{}}).image;
+        QCOMPARE(both,normal);
+        effects=prior; QCOMPARE(render(),one);
+        effects=bothState;
+        for(int i=0;i<3;++i) effects.images().finishDraw();
+        QVERIFY(render()!=both); // The previous non-selected owner's expired art reloads with sepia.
+    }
     void specialPassAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
         QTemporaryDir work; QProcess reference;

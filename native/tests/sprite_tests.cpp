@@ -1,6 +1,7 @@
 #include "engine/actor_art.h"
 #include "engine/sprite_object.h"
 #include "game/director/actor_state.h"
+#include "game/images/sepia.h"
 #include <QDir>
 #include <QFile>
 #include <QImage>
@@ -14,6 +15,23 @@ using namespace lordly;
 class SpriteTests : public QObject {
     Q_OBJECT
   private slots:
+    void repeatedSepiaKeepsAlpha() {
+        const auto bytes=QByteArray::fromHex("55540101000200015554000300020001f800003f000000008f00000000000000");
+        const auto sprite=SpriteObject::decode(bytes);
+        auto red=quint16(0xf800),blue=quint16(0x003f);
+        for(int count=0;count<=64;++count) {
+            const auto frame=sprite.frame(0,{},count);
+            const quint16 colors[]{red,blue};
+            for(int x=0;x<2;++x) for(int c=0;c<3;++c)
+                QCOMPARE(u8(frame.image.rgba,x*4+c),quint8((((colors[x]>>(11-c*5))&31)*255+15)/31));
+            QCOMPARE(u8(frame.image.rgba,3),136); QCOMPARE(u8(frame.image.rgba,7),255);
+            red=lordly_sepia_rgba16(red); blue=lordly_sepia_rgba16(blue);
+        }
+        quint32 white=0xffffffffU; quint16 shortWhite=0xffff;
+        for(int i=0;i<64;++i) { white=lordly_sepia_rgba32(white); shortWhite=lordly_sepia_rgba16(shortWhite); }
+        QCOMPARE(white,255U); QCOMPARE(shortWhite,quint16(1));
+        QVERIFY_THROWS_EXCEPTION(Error,sprite.frame(0,{},65));
+    }
     void separateTextureAlphaAndOrientation() {
         // Two direct RGBA16 pixels have alpha0/1, independently of mask8/15.
         const auto bytes = QByteArray::fromHex(

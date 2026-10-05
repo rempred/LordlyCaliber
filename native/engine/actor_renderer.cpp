@@ -108,28 +108,38 @@ QVector<ActorRasterLayer> ActorRenderer::project(const ActorInstance &actor, boo
                                                  const SceneCamera &camera,
                                                  const std::array<qint16, 3> &globalRgb, bool sepia,
                                                  int shadowIndex, quint8 alpha,
-                                                 ActorRenderState *state) {
+                                                 ActorRenderState *state, SceneImageCache *images) {
     return projectRecord(actor.pose().art(), actor.record(), shadow, camera, globalRgb, sepia,
-                         shadowIndex, alpha, state);
+                         shadowIndex, alpha, state, images);
 }
 QVector<ActorRasterLayer>
 ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool shadow,
                              const SceneCamera &camera, const std::array<qint16, 3> &globalRgb,
-                             bool sepia, int shadowIndex, quint8 alpha, ActorRenderState *state) {
+                             bool sepia, int shadowIndex, quint8 alpha, ActorRenderState *state,
+                             SceneImageCache *images) {
     if (record.size() != 336)
         throw Error("Actor rendering requires a complete record");
     const auto token = qint32(u32(record, 0xf8));
     const auto variant = art.isBody() ? art.bodyVariant() : u8(record, 0x146);
-    const QString key = QString("%1/%2/%3/%4/%5")
-                            .arg(art.descriptorKey())
-                            .arg(art.bodyHandle())
-                            .arg(token)
-                            .arg(variant)
-                            .arg(sepia);
+    QString key = QString("%1/%2/%3/%4/%5")
+                      .arg(art.descriptorKey())
+                      .arg(art.bodyHandle())
+                      .arg(token)
+                      .arg(variant)
+                      .arg(sepia);
+    QVector<quint8> conversions;
+    if (images && !art.isBody()) {
+        for (const auto &layer : art.layers(token)) {
+            const auto count =
+                images->touch(qint32(u32(record, 0xe8)), u8(record, 0x146), layer.art, sepia);
+            conversions << count;
+            key += QString("/%1").arg(count);
+        }
+    }
     auto cached = frames_.object(key);
     if (!cached) {
-        auto frame =
-            std::make_unique<QVector<ActorFrameLayer>>(art.frame(rom_, token, variant, sepia));
+        auto frame = std::make_unique<QVector<ActorFrameLayer>>(
+            art.frame(rom_, token, variant, sepia, conversions));
         qsizetype bytes = 0;
         for (const auto &layer : *frame)
             bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;
