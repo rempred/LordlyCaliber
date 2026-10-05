@@ -8,9 +8,17 @@
       "Widgets",
       "Concurrent",
       "Test",
-      "Qml"
+      "Qml",
+      "ZlibPrivate"
     ],
     "source": "https://www.qt.io/blog/qt-6.12-released",
+    "bundledZlib": {
+      "version": "1.3.2",
+      "checkedOn": "2026-10-05",
+      "source": "https://zlib.net/",
+      "qtAttribution": "https://doc.qt.io/qt-6/qtcore-attribution-zlib.html",
+      "use": "Bounded RZIP inflation through the zlib headers and prefixed symbols shipped with pinned Qt Core; no additional download. Recheck the private header target when changing Qt versions."
+    },
     "archives": [
       {
         "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",

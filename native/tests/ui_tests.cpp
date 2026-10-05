@@ -7,6 +7,9 @@
 #include "app/dialogue_preview.h"
 #include "app/encounter_editor.h"
 #include "app/main_window.h"
+#include "app/save_editor.h"
+#include "game/classes/save_format.h"
+#include <QUndoGroup>
 #include "app/promotion_editor.h"
 #include "app/record_model.h"
 #include "app/scenario_editor.h"
@@ -209,6 +212,122 @@ class UiTests : public QObject {
         ToolsEditor held(&foreign, &foreignUndo, [] {});
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
+    }
+    void saveWorkspaceEditing() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QFile file(QFileInfo(path).dir().filePath("tools/pj64_golden.sra"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto original = file.readAll();
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 700);
+            editor.show();
+            editor.loadBytes(original, file.fileName());
+            auto grid = editor.findChild<QTableView *>("saveCharacters");
+            auto model = grid->model();
+            QVERIFY(model->rowCount() > 0);
+            int hpColumn = -1;
+            for (int i = 0; i < model->columnCount(); ++i)
+                if (model->headerData(i, Qt::Horizontal).toString() == "Current HP")
+                    hpColumn = i;
+            QVERIFY(hpColumn > 0);
+            const auto hpIndex = model->index(0, hpColumn);
+            grid->setCurrentIndex(hpIndex);
+            grid->scrollTo(hpIndex);
+            grid->edit(hpIndex);
+            QTRY_VERIFY(grid->findChild<QSpinBox *>() != nullptr);
+            auto hpEditor = grid->findChild<QSpinBox *>();
+            hpEditor->setValue(0);
+            QTest::keyClick(hpEditor, Qt::Key_Return);
+            QTRY_VERIFY(editor.modified());
+            QCOMPARE(editor.document()->value(SaveTable::Characters, 1, "hpCur").toUInt(), 0U);
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), original);
+            QVERIFY(!editor.modified());
+            editor.undoStack()->redo();
+            QVERIFY(!editor.edit(SaveTable::Characters, 1, "element", 5));
+            QVERIFY(!editor.findChild<QLabel *>("saveError")->text().isEmpty());
+            QTemporaryDir work;
+            const auto output = work.filePath("edited.sra");
+            editor.exportFile(output);
+            QVERIFY(!editor.modified());
+            QFile saved(output);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, saved.readAll())
+                         .value(SaveTable::Characters, 1, "hpCur")
+                         .toUInt(),
+                     0U);
+            QVERIFY_THROWS_EXCEPTION(Error, editor.exportFile(file.fileName()));
+            editor.findChild<QPushButton *>("restoreSave")->click();
+            QCOMPARE(editor.document()->serialize(), original);
+            QVERIFY(editor.modified()); // The last export contains the zero-HP edit.
+            QVERIFY(editor.grab().save("save-workspace.png"));
+            auto twoSlots = original;
+            auto swap = [](QByteArray &bytes) {
+                for (int i = 0; i < bytes.size(); i += 4) {
+                    std::swap(bytes[i], bytes[i + 3]);
+                    std::swap(bytes[i + 1], bytes[i + 2]);
+                }
+            };
+            swap(twoSlots);
+            twoSlots.replace(0x1860, 0x1850, twoSlots.mid(0x10, 0x1850));
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(twoSlots.data() + 0x1860),
+                                        0x1850, 1, 0));
+            swap(twoSlots);
+            editor.loadBytes(twoSlots);
+            auto slotPicker = editor.findChild<QComboBox *>("saveSlot");
+            slotPicker->setCurrentIndex(slotPicker->findData(1));
+            QCOMPARE(editor.document()->selectedSlot(), 1);
+            QVERIFY(editor.edit(SaveTable::Game, 0, "goth", 12345));
+            slotPicker->setCurrentIndex(slotPicker->findData(0));
+            QVERIFY(editor.edit(SaveTable::Game, 0, "goth", 23456));
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->selectedSlot(), 1);
+            QCOMPARE(editor.document()->serialize(), twoSlots);
+            const auto beforeClass = project;
+            QCOMPARE(project.appendClass(1,"Save Knight"),165);
+            QVERIFY(editor.edit(SaveTable::Characters,1,"class",165));
+            editor.exportFile(work.filePath("new-class.sra"));
+            project = beforeClass;
+            QVERIFY_THROWS_EXCEPTION(Error,editor.exportFile(work.filePath("missing-class.sra")));
+            editor.undoStack()->undo();
+            editor.exportFile(work.filePath("restored-class.sra"));
+            // Opening and confirming an unknown encoded name must not truncate it.
+            auto raw = SaveDocument::open(rom,original).memory();
+            raw.replace(0x193bf8,17,QByteArray(17,char(1)));
+            editor.loadBytes(raw);
+            grid->setCurrentIndex(model->index(0,1)); grid->scrollTo(model->index(0,1)); grid->edit(model->index(0,1));
+            QTRY_VERIFY(grid->findChild<QLineEdit *>() != nullptr);
+            auto unknownName = grid->findChild<QLineEdit *>();
+            QCOMPARE(unknownName->text(),QString("{01}").repeated(17));
+            QTest::keyClick(unknownName,Qt::Key_Return);
+            QCoreApplication::processEvents();
+            QCOMPARE(editor.document()->serialize(),raw);
+            MainWindow window;
+            window.show();
+            window.loadRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SaveEditor *>() != nullptr, 20000);
+            auto integrated = window.findChild<SaveEditor *>();
+            integrated->loadBytes(original);
+            auto group = window.findChild<QUndoGroup *>();
+            QVERIFY(group);
+            auto tabs = window.findChild<QTabWidget *>();
+            tabs->setCurrentWidget(integrated);
+            QCOMPARE(group->activeStack(), integrated->undoStack());
+            QVERIFY(integrated->edit(SaveTable::Game, 0, "goth", 12345));
+            QVERIFY(window.isWindowModified());
+            group->undo();
+            QVERIFY(!integrated->modified());
+            tabs->setCurrentIndex(0);
+            QVERIFY(group->activeStack() != integrated->undoStack());
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
     }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));

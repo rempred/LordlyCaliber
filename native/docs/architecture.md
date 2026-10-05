@@ -1,5 +1,83 @@
 # Native Lordly Caliber
 
+## Save workspace
+
+The native Save workspace owns a separate document and undo stack. It opens
+native/word-swapped 32/64 KiB SRAM, 4/8 MiB native RDRAM, raw libretro states and
+RetroArch RZIP states. It preserves input byte order/container and returns the
+exact original file for no-op/fully undone edits. Export requires a different
+path, validates reopening and writes atomically. Save contents are independent
+of ROM project files. MainWindow routes Undo/Redo to the active workspace and
+includes unexported save edits in its discard check.
+
+The current ROM supplies the 21-group, 49433-bit packing descriptor at z64
+0x5D344/live RAM 0x80187444. Its placement is proven by the resident boot DMA
+0x40E80 -> 0x8016AF80, not the early-boot address mapping. Parsing bounds group
+counts, fields, widths, pointers and total payload size. Every edit changes only
+the affected descriptor bits and record checksum. Unmapped bytes, unused final
+bits, unknown name tokens and other records remain intact. The maintained
+`game/classes/save-format.c` supplies checksums and legacy/expanded image rules
+to the desktop as well as the exported game runtime. Two normal records and the
+larger suspend record have distinct sizes, offsets and checksum seeds.
+
+The verified character model supersedes the browser's old field assumptions:
+all 99 character IDs are visible; classes at +0x11/+0x12 stay independent;
+HP/attributes and equipment IDs are full halfwords; Element is +0x1A. HP/attributes
+use the supported 0..999 bounds, with maximum HP positive and current HP no
+higher than maximum; zero current HP remains zero. Equipment extends through
+ID 277, class IDs through the loaded project catalog. Body code, fatigue, status,
+table index and unknown bytes are preserved. Names have 16 visible ASCII bytes
+in runtime RAM and 12 plus terminator in the 13 descriptor-backed battery bytes.
+Unchanged token names retain their original bytes. New roster entries/removal
+remain unavailable because unit membership is not yet fully mapped.
+
+Inventory grids edit quantities and permit adding a nonduplicate ID in the next
+empty record. Existing identities remain fixed. Native equipment uses the
+descriptor-backed 0x196B00 list; raw runtime input retains the browser's 0x196CCC
+list contract. Consumables use 0x193AC0. The tracked parent golden SRAM confirms
+21 equipment entries and four consumable entries; it does not independently
+validate the raw runtime list address. Unknown values remain readable and are
+not normalized merely by opening a cell. Goth and Chaos Frame edit independently.
+
+Calendar correction: accepted `func_0019BD14.c` and original `func_000424bc.s`
+identify year at RAM 0x80196A30 (halfword), month at +2 and day at +3. The older
+parent `docs/game-state.md` and browser day/month labels on the two year bytes
+are incorrect. The increment routine consumes 15 month lengths from live
+0x80187000 (z64 0x5CF00); month 3 gains a day when `(year+1748)&65535` satisfies
+the Gregorian leap rule. Editors offer years 0..998, months 1..15 and only days
+valid in that month/year. Existing terminal year 999 remains untouched. The old
+12-month name list is not reused. Mission/progression, time and location controls
+still need their own qualified semantics; they are not mislabeled as calendar
+fields or current scenario. Parent domain files have other uncommitted work,
+so this correction is recorded here without absorbing those edits.
+
+RZIP decompression uses bounded `uncompress2` from Qt's bundled zlib 1.3.2,
+verified against the official release on 2026-10-05. Each chunk must consume
+exactly its declared compressed bytes and produce exactly its bounded output.
+The pinned Qt6::ZlibPrivate header interface and Qt Core prefixed symbols are
+used; no separate dependency is downloaded. Existing Qt notices include zlib.
+
+Build93945 succeeded. `save_document_tests` passed in 3588 ms: fixtures packed by
+the original MIPS encoder; 10 edited values decoded by its original decoder;
+240 calendar increment boundaries; 99 records, multiple slots/layouts/orders,
+16-bit HP/items, zero HP, name limits, unknown bytes/unused bits, inventory edits,
+exact undo, import/reopen and malformed checksum/RZIP rejection. Node zlib
+independently reads exported compressed states. The parent golden `.sra` is read
+only and its edited copy reopens. `ui_tests saveWorkspaceEditing
+loadDesktopWorkspace dialogueInvalidInputBlocksSave` passed in 2683 ms, including
+actual cell commit, cross-slot undo, file export, source-overwrite rejection,
+active Undo routing and destruction. The Save screenshot was inspected.
+These are offline engine/UI checks, not emulator loads or a complete Save
+feature audit. No source save or master ROM was modified.
+
+Build61894 adds current-project class limits to an already-open save and rejects
+export when a newly changed class reference no longer exists after a project
+undo. Unchanged unknown references remain preserved. The final
+`save_document_tests` passed in 4331 ms and `ui_tests saveWorkspaceEditing`
+passed in 1744 ms, including late class creation, missing-class rejection,
+restoration and opening/confirming an unknown long name without truncation.
+The earlier desktop/dialogue regression results remain applicable.
+
 ## Tools: High Attack stream split
 
 The experimental High Attack setting now has independent undo/restore, native

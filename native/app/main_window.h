@@ -5,11 +5,13 @@
 #include <memory>
 class QTabWidget;
 class QLabel;
+class QUndoGroup;
 namespace lordly {
 class MainWindow : public QMainWindow {
     Q_OBJECT
   public:
     explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
     void loadRom(const QString &path);
 
   protected:
@@ -28,6 +30,7 @@ class MainWindow : public QMainWindow {
     QJsonObject catalog_;
     std::unique_ptr<Project> project_;
     QUndoStack *undo_;
+    QUndoGroup *undoGroup_;
     QTabWidget *workspaces_;
     QLabel *summary_;
     bool loading_ = false;

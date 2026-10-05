@@ -3,6 +3,7 @@
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
 #include "app/promotion_editor.h"
+#include "app/save_editor.h"
 #include "app/scenario_editor.h"
 #include "app/shop_editor.h"
 #include "app/text_workspace.h"
@@ -38,6 +39,7 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QToolBar>
+#include <QUndoGroup>
 #include <QVBoxLayout>
 #include <QtConcurrent>
 #include <optional>
@@ -50,6 +52,13 @@ MainWindow::MainWindow(QWidget *parent)
     resize(1440, 900);
     setMinimumSize(900, 600);
     setCentralWidget(workspaces_);
+    undoGroup_ = new QUndoGroup(this);
+    undoGroup_->addStack(undo_);
+    undoGroup_->setActiveStack(undo_);
+    connect(workspaces_, &QTabWidget::currentChanged, this, [this] {
+        const auto save = qobject_cast<SaveEditor *>(workspaces_->currentWidget());
+        undoGroup_->setActiveStack(save ? save->undoStack() : undo_);
+    });
     QFile catalog(":/catalog.json");
     if (catalog.open(QIODevice::ReadOnly))
         catalog_ = QJsonDocument::fromJson(catalog.readAll()).object();
@@ -71,10 +80,10 @@ MainWindow::MainWindow(QWidget *parent)
     file->addSeparator();
     file->addAction("E&xit", this, &QWidget::close);
     auto edit = menuBar()->addMenu("&Edit");
-    auto undoAction = undo_->createUndoAction(this, "&Undo");
+    auto undoAction = undoGroup_->createUndoAction(this, "&Undo");
     undoAction->setShortcut(QKeySequence::Undo);
     edit->addAction(undoAction);
-    auto redoAction = undo_->createRedoAction(this, "&Redo");
+    auto redoAction = undoGroup_->createRedoAction(this, "&Redo");
     redoAction->setShortcut(QKeySequence::Redo);
     edit->addAction(redoAction);
     auto toolbar = addToolBar("Project");
@@ -93,11 +102,25 @@ MainWindow::MainWindow(QWidget *parent)
     updateStatus();
 }
 bool MainWindow::confirmDiscard() {
-    if (undo_->isClean() && !invalidEdits())
+    const auto save = workspaces_->findChild<SaveEditor *>();
+    if (undo_->isClean() && !invalidEdits() && (!save || !save->modified()))
         return true;
     return QMessageBox::question(this, "Unsaved edits", "Discard unsaved edits?",
                                  QMessageBox::Discard | QMessageBox::Cancel,
                                  QMessageBox::Cancel) == QMessageBox::Discard;
+}
+MainWindow::~MainWindow() {
+    // Workspaces reference project_, whose C++ member lifetime otherwise ends
+    // before QWidget deletes its children.
+    disconnect(undo_, nullptr, this, nullptr);
+    disconnect(workspaces_, nullptr, this, nullptr);
+    undoGroup_->setActiveStack(nullptr);
+    undo_->clear();
+    while (workspaces_->count()) {
+        auto page = workspaces_->widget(0);
+        workspaces_->removeTab(0);
+        delete page;
+    }
 }
 void MainWindow::closeEvent(QCloseEvent *e) {
     if (loading_ || !confirmDiscard())
@@ -178,7 +201,14 @@ void MainWindow::installProject(Project project) {
         workspaces_->addTab(new CutsceneEditor(project_->rom(), nullptr, project_.get(), undo_,
                                                [this] { updateStatus(); }),
                             "Cutscenes");
-    workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }), "Tools");
+    workspaces_->addTab(new ToolsEditor(project_.get(), undo_, [this] { updateStatus(); }),
+                        "Tools");
+    if (project_->rom().revision() == 0) {
+        auto save = new SaveEditor(project_.get());
+        undoGroup_->addStack(save->undoStack());
+        connect(save, &SaveEditor::changed, this, &MainWindow::updateStatus);
+        workspaces_->addTab(save, "Save");
+    }
     updateStatus();
 }
 void MainWindow::addRecordWorkspace(Table table, const QString &title) {
@@ -454,7 +484,8 @@ void MainWindow::updateStatus() {
                                      .arg(project_->rom().revision())
                                      .arg(project_->changedRecords())
                                : "  No ROM loaded");
-    setWindowModified(!undo_->isClean() || invalidEdits());
+    const auto save = workspaces_->findChild<SaveEditor *>();
+    setWindowModified(!undo_->isClean() || invalidEdits() || (save && save->modified()));
     setWindowTitle(QString("Lordly Caliber[*] · %1")
                        .arg(project_ ? project_->rom().title() : "Native Editor"));
 }
