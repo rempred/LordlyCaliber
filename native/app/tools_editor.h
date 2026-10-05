@@ -6,6 +6,7 @@
 class QSpinBox;
 class QLabel;
 class QPushButton;
+class QCheckBox;
 namespace lordly {
 class ToolsEditor : public QWidget {
     Q_OBJECT
@@ -15,11 +16,15 @@ class ToolsEditor : public QWidget {
   private:
     void refresh();
     void setPercent(int);
+    void setChaos(bool);
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
     QSpinBox *percent_;
     QLabel *weights_, *notice_;
     QPushButton *restore_, *retail_;
+    QCheckBox *chaos_;
+    QPushButton *chaosRestore_;
+    QLabel *chaosNotice_;
 };
 } // namespace lordly

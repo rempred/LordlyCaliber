@@ -1,5 +1,54 @@
 # Native Lordly Caliber
 
+## Tools: Chaos Frame counter
+
+The Army Management counter now has a native toggle, loaded-value restoration,
+undo/redo, folder/archive persistence, and imports for both browser
+`patches.tools.cf-army-counter` and `rebuild_owners.chaos_frame_counter`.
+Tools snapshots use version 2; version 1 experience-only snapshots remain readable.
+Unknown counter instructions or occupied allocations disable this setting without
+disabling experience editing or changing the unknown bytes.
+
+Export assembles maintained hook, bootstrap, cache/PI continuation, insertion
+routine and display-list sources. The routine is transcribed from committed
+Decomp `e50fe500` `tools/lordly_phase3_native_payload.py`, retaining its Army owner,
+relocatable graphics-buffer, trailer and roster-marker guards. No external Decomp
+checkout or compiled game module is required by users. The historical assembler
+needs named linker symbols for absolute jumps; numeric operands produced zero
+jump targets and were caught by the compiled-owner comparison.
+
+Qualified placements are ROM `23F7C` / RAM `80093B7C` (hook), ROM `3078C` /
+RAM `800A038C` (continuation), ROM `34E78` / RAM `800A4A78` (bootstrap), and
+ROM `27C1000..27C2000` / RAM `80420000..80421000` (module reservation).
+This optional feature retains the existing Expansion Pak requirement, shown next
+to its checkbox and in the export report. Class expansion still fits within 4 MiB.
+The current browser source module and packed legacy version 3 are recognized;
+earlier or foreign variants remain preserved and unavailable. Version 3 migrates
+from its authenticated ROM `2790000` module when enabled, or can be removed.
+
+New installation derives the 48x16 CI4 title from the current ROM's shared Army
+texture resource. The loader's LUI/ORI operands at ROM `AED4C` / `AED54` select
+the resource; the retail key `01DC873E` resolves to ROM `235C9BE`. Decoded offsets
+`2828` and `40F8` hold the War Funds and header lettering. The recovered composition
+recipe selects letter bodies, creates M by flipping W, and regenerates shadows.
+It does not ship captured game artwork. A recognized installed counter's bounded
+title texture is preserved when rebuilding its code.
+
+`tool_settings_tests chaosArtworkFromCurrentRom` passed in 377 ms: exact existing
+title bytes, relocated resource, edited glyph, malformed size/instructions and
+missing glyphs. Its initial synthetic relocation omitted four-byte ROM alignment;
+the fixture was corrected. `chaosProjectPersistenceAndImport` and the existing
+experience persistence/export cases pass, including conflicting imports and
+atomic validation. `ui_tests chaosToolsEditing experienceToolsEditing` passed in
+222 ms, covering independent controls, memory-requirement wording, undo/redo and
+restore; the screenshot was inspected. The export test checks compiled bytes,
+checksums, physical exports and reopening, removal, legacy migration, foreign
+allocation preservation, and combined class/experience/counter rebuilds.
+The final `chaosSourceExportAndReopen` run passed in 17,465 ms, including custom
+label preservation and removing a legacy counter while leaving an occupied new
+module slot intact. Candidates are in parent `Test ROMs/native-chaos-ePlxTs`.
+Full-game cold-boot validation remains pending.
+
 ## Tools: experience size-weight scale
 
 The Tools workspace now edits the shared0..300% multiplier with undo/redo,

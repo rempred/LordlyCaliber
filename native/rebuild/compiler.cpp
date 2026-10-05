@@ -4,6 +4,7 @@
 #include "engine/scene_program_resources.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
+#include "rebuild/chaos_counter.h"
 #include "rebuild/creature_rewards.h"
 #include "rebuild/custom_encounters.h"
 #include "rebuild/elf_references.h"
@@ -601,7 +602,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                               p.encounters()->rewards(), compiler, directory);
         result.report << "Rebuilt class reward rows alongside custom encounter rewards";
     }
-    if (p.tools() && p.tools()->modified()) {
+    if (p.tools() && p.tools()->experienceModified()) {
         if (!ToolSettings::load(p.rom()).available())
             throw Error("Experience source code changed outside its supported model");
         const auto sites = ToolSettings::experienceSites();
@@ -795,6 +796,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             << QString("Compiled and rebuilt %1 dialogue archives through original resource links")
                    .arg(plan.size());
     }
+    rebuildChaosCounter(p, compiler, directory, result);
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());

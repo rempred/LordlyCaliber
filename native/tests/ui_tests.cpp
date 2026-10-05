@@ -95,6 +95,45 @@ class UiTests : public QObject {
         QVERIFY(!disabled.findChild<QSpinBox *>("experienceScale")->isEnabled());
         QVERIFY(disabled.findChild<QLabel *>("toolsNotice")->text().contains("unrecognized"));
     }
+    void chaosToolsEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        QUndoStack undo;
+        ToolsEditor editor(&project, &undo, [] {});
+        editor.resize(850, 440);
+        editor.show();
+        auto box = editor.findChild<QCheckBox *>("chaosCounter");
+        auto restore = editor.findChild<QPushButton *>("chaosRestore");
+        QVERIFY(box->isEnabled());
+        QVERIFY(!box->isChecked());
+        QVERIFY(editor.findChild<QLabel *>("chaosNotice")->text().contains("8 MiB"));
+        box->click();
+        QVERIFY(project.tools()->chaosCounter().enabled());
+        QVERIFY(restore->isEnabled());
+        QVERIFY(!editor.findChild<QPushButton *>("experienceRestore")->isEnabled());
+        editor.findChild<QSpinBox *>("experienceScale")->setValue(137);
+        undo.undo();
+        QVERIFY(box->isChecked());
+        QCOMPARE(project.tools()->experiencePercent(), 100);
+        undo.undo();
+        QVERIFY(!box->isChecked());
+        undo.redo();
+        QVERIFY(box->isChecked());
+        restore->click();
+        QVERIFY(!box->isChecked());
+        undo.undo();
+        QVERIFY(box->isChecked());
+        QVERIFY(editor.grab().save("chaos-tools.png"));
+        auto bytes = rom.bytes();
+        bytes[0x3078c] ^= 1;
+        auto foreign = Project::fromRom(Rom::fromBytes(bytes));
+        QUndoStack foreignUndo;
+        ToolsEditor disabled(&foreign, &foreignUndo, [] {});
+        QVERIFY(!disabled.findChild<QCheckBox *>("chaosCounter")->isEnabled());
+        QVERIFY(disabled.findChild<QSpinBox *>("experienceScale")->isEnabled());
+    }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));
         put32(data, 0, 0x80371240);

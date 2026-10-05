@@ -1,4 +1,6 @@
 #include "engine/project.h"
+#include "engine/resource.h"
+#include "engine/tool_artwork.h"
 #include "rebuild/compiler.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -9,6 +11,249 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void chaosProjectPersistenceAndImport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        project.loadTools();
+        QVERIFY(project.tools()->chaosCounter().available());
+        QVERIFY(!project.tools()->chaosCounter().enabled());
+        auto settings = project.tools()->json();
+        settings["chaosFrameCounter"] = true;
+        project.setTools(settings);
+        QCOMPARE(project.changedRecords(), 1);
+        QTemporaryDir directory;
+        project.saveFolder(directory.path());
+        project.saveArchive(directory.filePath("counter.lcproject"));
+        for (const auto &location : {directory.path(), directory.filePath("counter.lcproject")}) {
+            auto reopened = Project::fromRom(rom);
+            reopened.applyManifest(Project::readProject(location));
+            QVERIFY(reopened.tools()->chaosCounter().enabled());
+        }
+        const QJsonObject patch{
+            {"format", "ob64-patch"},
+            {"version", 36},
+            {"patches", QJsonObject{{"tools", QJsonObject{{"cf-army-counter", true}}}}}};
+        project.importLegacy(patch);
+        QVERIFY(project.tools()->chaosCounter().enabled());
+        QVERIFY(project.pendingLegacySections().isEmpty());
+        settings = project.tools()->json();
+        settings["chaosFrameCounter"] = false;
+        project.setTools(settings);
+        auto reset = Project::fromRom(rom);
+        reset.applyManifest(project.manifest());
+        QVERIFY(!reset.tools()->chaosCounter().enabled());
+        auto owner = patch;
+        owner["patches"] = QJsonObject{};
+        owner["rebuild_owners"] = QJsonObject{{"schema", 1}, {"chaos_frame_counter", true}};
+        project.importLegacy(owner);
+        QVERIFY(project.tools()->chaosCounter().enabled());
+        QVERIFY(project.pendingLegacySections().isEmpty());
+        auto conflict = patch;
+        conflict["rebuild_owners"] = QJsonObject{{"chaos_frame_counter", false}};
+        const auto before = project.manifest();
+        QVERIFY_THROWS_EXCEPTION(Error, project.importLegacy(conflict));
+        QCOMPARE(project.manifest(), before);
+        for (const QJsonValue invalid : {QJsonValue(1), QJsonValue("true"), QJsonValue()}) {
+            auto bad = project.tools()->json();
+            bad["experienceScalePercent"] = 75;
+            bad["chaosFrameCounter"] = invalid;
+            QVERIFY_THROWS_EXCEPTION(Error, project.setTools(bad));
+            QCOMPARE(project.manifest(), before);
+        }
+        // Older native experience-only snapshots leave the counter intact.
+        project.setTools({{"version", 1}, {"experienceScalePercent", 137}});
+        QVERIFY(project.tools()->chaosCounter().enabled());
+        QCOMPARE(project.tools()->experiencePercent(), 137);
+    }
+    void chaosSourceExportAndReopen() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("chaos-browser-reference.cjs"),
+                                     work.filePath("reference.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("reference.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto data = QJsonDocument::fromJson(file.readAll()).object();
+            auto expected = rom.bytes();
+            for (const auto &v : data["components"].toArray()) {
+                const auto row = v.toObject();
+                const auto bytes = QByteArray::fromHex(row["dataHex"].toString().toLatin1());
+                expected.replace(row["romStart"].toInt(), bytes.size(), bytes);
+            }
+            Rom::updateChecksum(expected);
+            auto project = Project::fromRom(rom);
+            project.loadTools();
+            auto settings = project.tools()->json();
+            settings["chaosFrameCounter"] = true;
+            project.setTools(settings);
+            const auto built = rebuild(project, tools, work.path());
+            QCOMPARE(built.image, expected);
+            QVERIFY(built.report.join(" ").contains("Expansion Pak"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() + "/Test ROMs/native-chaos-XXXXXX");
+            QVERIFY(output.isValid());
+            auto save = [&](const BuildResult &build, const QString &name) {
+                const auto folder = output.filePath(name);
+                QDir().mkpath(folder);
+                const auto candidate = QDir(folder).filePath(QFileInfo(path).fileName());
+                exportRom(project, build, candidate);
+                return Rom::open(candidate);
+            };
+            auto enabled = save(built, "enabled");
+            project = Project::fromRom(enabled);
+            project.loadTools();
+            QVERIFY(project.tools()->chaosCounter().enabled());
+            QVERIFY(!project.tools()->modified());
+            QCOMPARE(rebuild(project, tools, work.path()).image, expected);
+            settings = project.tools()->json();
+            settings["chaosFrameCounter"] = false;
+            project.setTools(settings);
+            const auto disabled = rebuild(project, tools, work.path());
+            QCOMPARE(disabled.image, rom.bytes());
+            QVERIFY(!ChaosCounter::load(save(disabled, "disabled")).enabled());
+            auto legacy = rom.bytes();
+            for (const auto &v : data["legacy"].toArray()) {
+                const auto row = v.toObject();
+                const auto bytes = QByteArray::fromHex(row["patched"].toString().toLatin1());
+                legacy.replace(row["offset"].toInt(), bytes.size(), bytes);
+            }
+            Rom::updateChecksum(legacy);
+            project = Project::fromRom(Rom::fromBytes(legacy));
+            project.loadTools();
+            QCOMPARE(project.tools()->chaosCounter().installation(),
+                     ChaosCounter::Installation::Legacy);
+            const auto migrated = rebuild(project, tools, work.path());
+            QCOMPARE(migrated.image, expected);
+            QVERIFY(ChaosCounter::load(save(migrated, "migrated")).enabled());
+            auto customLabel = expected;
+            customLabel[0x27c1700] ^= 1;
+            auto customized = Project::fromRom(Rom::fromBytes(customLabel));
+            customized.loadTools();
+            QVERIFY(customized.tools()->chaosCounter().available());
+            QCOMPARE(rebuild(customized, tools, work.path()).image, customLabel);
+            auto occupied = legacy;
+            occupied[0x27c1000] = 42;
+            auto removable = Project::fromRom(Rom::fromBytes(occupied));
+            removable.loadTools();
+            QVERIFY(removable.tools()->chaosCounter().enabled());
+            QVERIFY_THROWS_EXCEPTION(Error, rebuild(removable, tools, work.path()));
+            auto remove = removable.tools()->json();
+            remove["chaosFrameCounter"] = false;
+            removable.setTools(remove);
+            auto restoredOccupied = rom.bytes();
+            restoredOccupied[0x27c1000] = 42;
+            QCOMPARE(rebuild(removable, tools, work.path()).image, restoredOccupied);
+            for (const int at : {0x23f7c, 0x3078c, 0x34e78, 0x27c1000}) {
+                auto foreign = rom.bytes();
+                foreign[at] ^= 1;
+                auto held = Project::fromRom(Rom::fromBytes(foreign));
+                held.loadTools();
+                QVERIFY(!held.tools()->chaosCounter().available());
+                QVERIFY(held.tools()->available());
+                auto invalid = held.tools()->json();
+                invalid["chaosFrameCounter"] = true;
+                QVERIFY_THROWS_EXCEPTION(Error, held.setTools(invalid));
+                QCOMPARE(rebuild(held, tools, work.path()).image, foreign);
+            }
+            // Class additions and experience edits coexist with the counter's owners.
+            project = Project::fromRom(rom);
+            project.loadTools();
+            settings = project.tools()->json();
+            settings["chaosFrameCounter"] = true;
+            settings["experienceScalePercent"] = 137;
+            project.setTools(settings);
+            project.appendClass(1, "Counter Knight");
+            const auto combined = rebuild(project, tools, work.path());
+            auto combinedProject = Project::fromRom(save(combined, "combined"));
+            combinedProject.loadTools();
+            QCOMPARE(combinedProject.records(Table::Classes).size(), 166);
+            QVERIFY(combinedProject.tools()->chaosCounter().enabled());
+            QCOMPARE(combinedProject.tools()->experiencePercent(), 137);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Chaos Frame export/reopen candidates:" << output.path();
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
+    void chaosArtworkFromCurrentRom() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("chaos-browser-reference.cjs"),
+                                     work.filePath("reference.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("reference.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto expected = QByteArray::fromHex(
+                QJsonDocument::fromJson(file.readAll()).object()["title"].toString().toLatin1());
+            QCOMPARE(expected.size(), 384);
+            QCOMPARE(chaosFrameTitle(rom), expected);
+            const auto resource = Resource::load(rom, 0x235c9be, u32(rom.bytes(), 0x235c9be) + 4);
+            auto bytes = rom.bytes();
+            const int offset = bytes.size(), key = offset - 0x594280;
+            bytes += resource.originalSlot;
+            while (bytes.size() % 4)
+                bytes.append(char(0));
+            put16(bytes, 0xaed4e, quint16(key >> 16));
+            put16(bytes, 0xaed56, quint16(key));
+            QCOMPARE(chaosFrameTitle(Rom::fromBytes(bytes)), expected);
+            auto changed = resource.decoded;
+            // Change one interior cream texel of C to outline. The glyph retains
+            // its column span but its body must reach the generated title.
+            bool altered = false;
+            for (int y = 17; y < 21 && !altered; ++y)
+                for (int x = 2; x < 6 && !altered; ++x) {
+                    const int at = 0x40f8 + y * 32 + x / 2, shift = (x & 1) ? 0 : 4;
+                    if (((u8(changed, at) >> shift) & 15) == 12) {
+                        put8(changed, at, u8(changed, at) | (1 << shift));
+                        altered = true;
+                    }
+                }
+            QVERIFY(altered);
+            const auto compressed = encodeLzss(changed);
+            QByteArray relocated(8, 0);
+            put32(relocated, 0, compressed.size() + 4);
+            put32(relocated, 4, changed.size());
+            relocated += compressed;
+            bytes.resize(offset);
+            bytes += relocated;
+            while (bytes.size() % 4)
+                bytes.append(char(0));
+            QVERIFY(chaosFrameTitle(Rom::fromBytes(bytes)) != expected);
+            put32(bytes, offset + 4, 100);
+            QVERIFY_THROWS_EXCEPTION(Error, chaosFrameTitle(Rom::fromBytes(bytes)));
+            bytes = rom.bytes();
+            put32(bytes, 0xaed4c, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, chaosFrameTitle(Rom::fromBytes(bytes)));
+            changed.fill(0);
+            const auto blank = encodeLzss(changed);
+            bytes = rom.bytes();
+            QByteArray empty(8, 0);
+            put32(empty, 0, blank.size() + 4);
+            put32(empty, 4, changed.size());
+            empty += blank;
+            bytes.replace(0x235c9be, empty.size(), empty);
+            QVERIFY_THROWS_EXCEPTION(Error, chaosFrameTitle(Rom::fromBytes(bytes)));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void projectPersistenceAndImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

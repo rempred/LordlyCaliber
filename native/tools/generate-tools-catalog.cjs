@@ -10,3 +10,21 @@ const catalog={generatedBy:'native/tools/generate-tools-catalog.cjs',
   label:w.label,retailSha256:hash(w.original),patchedSha256:hash(w.patched)}))};
 fs.mkdirSync(path.join(root,'native/game/tools'),{recursive:true});
 fs.writeFileSync(path.join(root,'native/game/tools/experience.json'),JSON.stringify(catalog,null,2)+'\n');
+vm.runInThisContext(fs.readFileSync(path.join(root,'native-rebuild-data.js'),'utf8'));
+const chaos=OB64.TOOLS_FEATURES.find(f=>f.id==='cf-army-counter');
+const components=OB64_NATIVE_REBUILD_DATA.payload.phase3.components.filter(c=>c.owner==='tool.chaos-frame-counter');
+const names={'native-hook':'chaos-hook.s','source-loader-bootstrap':'chaos-bootstrap.s',
+ 'source-loader-cache-continuation':'chaos-continuation.s','source-module':'chaos-module.s'};
+const cf={generatedBy:'native/tools/generate-tools-catalog.cjs',
+ inputs:['native-rebuild-data.js phase3; tools-data.js cf-army-counter'],
+ sites:components.map(c=>{
+  const legacy=chaos.writes.find(w=>w.offset===(c.name==='source-module'?0x2790000:c.romStart));
+  const canonical=Buffer.from(c.dataHex,'hex');if(c.name==='source-module')canonical.fill(0,0x700,0x880);
+  const old=Buffer.from(legacy.patched,'hex');
+  const padded=Buffer.concat([old,Buffer.alloc(c.name==='source-module'?0:c.budget-old.length,0)]);
+  return {name:c.name,source:names[c.name],rom:c.romStart,ram:c.ramStart,size:c.budget,
+   payloadBytes:c.payloadBytes,retailSha256:hash(c.retailHex),
+   normalizedSha256:hash(canonical.toString('hex')),legacyRom:legacy.offset,
+   legacyBytes:padded.length,legacySha256:hash(padded.toString('hex'))};
+ })};
+fs.writeFileSync(path.join(root,'native/game/tools/chaos.json'),JSON.stringify(cf,null,2)+'\n');

@@ -436,8 +436,23 @@ void Project::importLegacyTools(const QJsonObject &object) {
             throw Error("Imported experience settings disagree");
         percent = owner["experience_scale_percent"];
     }
-    if (!percent.isUndefined())
-        setTools({{"version", 1}, {"experienceScalePercent", percent}});
+    QJsonValue chaos(QJsonValue::Undefined);
+    if (tools.contains("cf-army-counter"))
+        chaos = tools["cf-army-counter"];
+    if (owner.contains("chaos_frame_counter")) {
+        if (!chaos.isUndefined() && chaos != owner["chaos_frame_counter"])
+            throw Error("Imported Chaos Frame settings disagree");
+        chaos = owner["chaos_frame_counter"];
+    }
+    if (!percent.isUndefined() || !chaos.isUndefined()) {
+        loadTools();
+        auto settings = tools_->json();
+        if (!percent.isUndefined())
+            settings["experienceScalePercent"] = percent;
+        if (!chaos.isUndefined())
+            settings["chaosFrameCounter"] = chaos;
+        setTools(settings);
+    }
 }
 void Project::loadEncounters() {
     if (!encounters_)
@@ -573,7 +588,9 @@ QJsonObject Project::manifest() const {
     if (tools_ &&
         (tools_->modified() ||
          legacy_["patches"].toObject()["tools"].toObject().contains("experience-size-scale") ||
-         legacy_["rebuild_owners"].toObject().contains("experience_scale_percent")))
+         legacy_["rebuild_owners"].toObject().contains("experience_scale_percent") ||
+         legacy_["patches"].toObject()["tools"].toObject().contains("cf-army-counter") ||
+         legacy_["rebuild_owners"].toObject().contains("chaos_frame_counter")))
         result["tools"] = tools_->json();
     else
         result.remove("tools");
@@ -1213,7 +1230,8 @@ QStringList Project::pendingLegacySections() const {
         if (it.key() == "tools" && tools_) {
             const auto values = it.value().toObject();
             for (auto setting = values.begin(); setting != values.end(); ++setting)
-                if (setting.key() != "experience-size-scale" && changed(setting.value()))
+                if (setting.key() != "experience-size-scale" &&
+                    setting.key() != "cf-army-counter" && changed(setting.value()))
                     pending << "tools." + setting.key();
             continue;
         }
@@ -1261,6 +1279,8 @@ QStringList Project::pendingLegacySections() const {
         if (it.key() == "shop_memberships" && it.value().isBool() && shops_)
             continue;
         if (it.key() == "experience_scale_percent" && (tools_ || it.value().toInt() == 100))
+            continue;
+        if (it.key() == "chaos_frame_counter" && tools_)
             continue;
         if (it.value().isBool() && !it.value().toBool())
             continue;

@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/chaos_counter.h"
 #include "engine/rom.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -20,11 +21,19 @@ class ToolSettings {
         return original_;
     }
     bool modified() const {
+        return experienceModified() || chaos_.modified();
+    }
+    bool experienceModified() const {
         return percent_ != original_;
+    }
+    const ChaosCounter &chaosCounter() const {
+        return chaos_;
     }
     void setExperiencePercent(int);
     QJsonObject json() const {
-        return {{"version", 1}, {"experienceScalePercent", percent_}};
+        return {{"version", 2},
+                {"experienceScalePercent", percent_},
+                {"chaosFrameCounter", chaos_.enabled()}};
     }
     void apply(const QJsonObject &);
     QByteArray assemblyDefinitions(int part) const;
@@ -33,5 +42,6 @@ class ToolSettings {
   private:
     int percent_ = 100, original_ = 100;
     QString unavailable_;
+    ChaosCounter chaos_;
 };
 } // namespace lordly

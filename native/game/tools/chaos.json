@@ -1,0 +1,60 @@
+{
+  "generatedBy": "native/tools/generate-tools-catalog.cjs",
+  "inputs": [
+    "native-rebuild-data.js phase3; tools-data.js cf-army-counter"
+  ],
+  "sites": [
+    {
+      "name": "native-hook",
+      "source": "chaos-hook.s",
+      "rom": 147324,
+      "ram": 2148088700,
+      "size": 8,
+      "payloadBytes": 8,
+      "retailSha256": "9adaded31f25fd6de649e939839f6ac146aef89acf8388015dcb58d7091b74aa",
+      "normalizedSha256": "1c4f57251aeae48961608ec082dfe77dc7bbcfd3f72ff3f911b41b0c5127eeab",
+      "legacyRom": 147324,
+      "legacyBytes": 8,
+      "legacySha256": "1c4f57251aeae48961608ec082dfe77dc7bbcfd3f72ff3f911b41b0c5127eeab"
+    },
+    {
+      "name": "source-loader-cache-continuation",
+      "source": "chaos-continuation.s",
+      "rom": 198540,
+      "ram": 2148139916,
+      "size": 192,
+      "payloadBytes": 124,
+      "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
+      "normalizedSha256": "dece46b4fe35372cda624801ad3b98413ffefc122ffd8c76145a25e634248c55",
+      "legacyRom": 198540,
+      "legacyBytes": 192,
+      "legacySha256": "71b20c805fbf77c37d48014bf289f3c15b4248161d62dd9b35a7848d55e39c7e"
+    },
+    {
+      "name": "source-loader-bootstrap",
+      "source": "chaos-bootstrap.s",
+      "rom": 216696,
+      "ram": 2148158072,
+      "size": 136,
+      "payloadBytes": 44,
+      "retailSha256": "b707241545a346265aab1ffb32ff64b55bf8f8dc1b56a46ef33ce3d15db11d33",
+      "normalizedSha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b",
+      "legacyRom": 216696,
+      "legacyBytes": 136,
+      "legacySha256": "f5065b2a3fc23ee3cbab73d0201b2dce043166500d54d04400c92b06f467c84b"
+    },
+    {
+      "name": "source-module",
+      "source": "chaos-module.s",
+      "rom": 41684992,
+      "ram": 2151809024,
+      "size": 4096,
+      "payloadBytes": 2560,
+      "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
+      "normalizedSha256": "3379f4b180d418525180d34210ae28914f15e6b0725a4db55b76d41a86d12a41",
+      "legacyRom": 41484288,
+      "legacyBytes": 2560,
+      "legacySha256": "e2e78113be22bccfb57809fff874c7e5126064e96c83c6865e3f5bdab19f65cf"
+    }
+  ]
+}

@@ -31,6 +31,7 @@ QJsonArray ToolSettings::experienceSites() {
 }
 ToolSettings ToolSettings::load(const Rom &rom) {
     ToolSettings result;
+    result.chaos_ = ChaosCounter::load(rom);
     try {
         rom.requireSupported();
         if (rom.revision())
@@ -72,10 +73,18 @@ void ToolSettings::setExperiencePercent(int value) {
 void ToolSettings::apply(const QJsonObject &object) {
     const auto value = object["experienceScalePercent"];
     const auto number = value.toDouble(-1);
-    if (object.size() != 2 || object["version"] != 1 || !value.isDouble() ||
-        !std::isfinite(number) || number != std::floor(number) || number < 0 || number > 300)
-        throw Error("Invalid experience scale project value");
-    setExperiencePercent(int(number));
+    const bool old = object["version"] == 1 && object.size() == 2;
+    const bool current =
+        object["version"] == 2 && object.size() == 3 && object["chaosFrameCounter"].isBool();
+    if ((!old && !current) || !value.isDouble() || !std::isfinite(number) ||
+        number != std::floor(number) || number < 0 || number > 300)
+        throw Error("Invalid Tools project settings");
+    auto candidate = *this;
+    if (candidate.percent_ != int(number))
+        candidate.setExperiencePercent(int(number));
+    if (current && object["chaosFrameCounter"].toBool() != candidate.chaos_.enabled())
+        candidate.chaos_.setEnabled(object["chaosFrameCounter"].toBool());
+    *this = candidate;
 }
 QByteArray ToolSettings::assemblyDefinitions(int part) const {
     if (!available() || part < 0 || part > 2)
