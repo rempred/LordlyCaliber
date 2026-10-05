@@ -8,7 +8,7 @@ static int32_t signed_word(uint32_t value) {
 }
 static int signed_byte(uint8_t value) { return value < 128 ? value : (int)value - 256; }
 int lordly_actor_advance_pose_mapped(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
-    int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context, LordlyPoseRegistered registered) {
+    int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context, LordlyPoseRegistered registered, LordlyPoseFixed fixed) {
     int i;
     if (!actor || !invocation || !lookup || budget < 0) return LORDLY_POSE_INVALID;
     if (!isfinite(actor->position.x) || !isfinite(actor->position.y) || !isfinite(actor->position.z))
@@ -23,7 +23,7 @@ int lordly_actor_advance_pose_mapped(LordlyActorPose *actor, LordlyPoseInvocatio
         next.cursor = signed_word((uint32_t)next.cursor + 1U);
         if (next.decoder_mode) {
             uint32_t bank = (uint32_t)next.bank & 65535U;
-            if ((bank == 135 || bank == 136 || bank == 161 || bank == 65535) &&
+            if ((fixed ? fixed(context, &next) : bank == 135 || bank == 136 || bank == 161 || bank == 65535) &&
                 (!registered || !registered(context, &next)))
                 next.state = next.state < 50 ? 0 : 50;
         }
@@ -75,5 +75,5 @@ int lordly_actor_advance_pose_mapped(LordlyActorPose *actor, LordlyPoseInvocatio
 
 int lordly_actor_advance_pose(LordlyActorPose *actor, LordlyPoseInvocation *invocation,
     int budget, LordlyPoseLookup lookup, LordlyPoseShared shared, void *context) {
-    return lordly_actor_advance_pose_mapped(actor, invocation, budget, lookup, shared, context, 0);
+    return lordly_actor_advance_pose_mapped(actor, invocation, budget, lookup, shared, context, 0, 0);
 }

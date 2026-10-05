@@ -129,6 +129,7 @@ class SceneActors {
     bool rosterMemberUnavailable(const QByteArray &, const PresentationRoster &) const;
     std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial, int direction = -1);
     Rom rom_;
+    int bodyConstruction(int source) const;
     BodyAnimationData::Pointer bodyData_;
     ActorMaterials materials_;
     ActorDivider divider_;

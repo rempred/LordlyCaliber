@@ -7,6 +7,7 @@ assert.equal(candidate.subarray(0x27c5000,0x27c5008).toString(),'LC05POSE');
 const mapCount=candidate.readUInt32BE(0x27c500c),query=candidate.readUInt32BE(0x27c5014);
 const baseline=process.argv[4]==='baseline';
 const wide=candidate.readUInt32BE(0x27c5010)!==0;
+const bodyPolicies=candidate.readUInt32BE(0x27c5018)!==0;
 assert.ok(baseline?mapCount===0:mapCount>=2&&mapCount<=256);
 m.load(0x8022e9e8,candidate.subarray(0x29e218,0x29e70c));
 m.load(0x801c1aa4,candidate.subarray(0x204f34,0x2050ac));m.load(0x801ceee0,candidate.subarray(0x212370,0x2123a0));
@@ -18,6 +19,10 @@ const mapping=Buffer.alloc(mapCount*8);
 if(!baseline)Buffer.from('8787006401000000a1130064ffff0000','hex').copy(mapping);
 for(let i=2;i<mapCount;i++){mapping.writeUInt32BE(((200<<24)|((i&255)<<16)|100)>>>0,i*8);mapping.writeUInt16BE(65535,i*8+4);}
 m.load(table-mapping.length,mapping);
+// Supply a declared policy table for this isolated interpreter/query fixture.
+// Constructor/export checks separately execute the actual exported table.
+const policies=Buffer.alloc(512);for(let i=0;i<256;i++)policies.writeUInt16BE(511+([135,136,161,165].includes(i)?1024:0),i*2);
+if(bodyPolicies){m.load(0x801c4218,candidate.subarray(0x2076a8,0x20772c));m.load(table-mapping.length-512,policies);}
 m.trap(0x801be138,c=>c.set('v0',1));m.trap(0x801c2ce4,c=>c.set('v0',program));
 const rows=Array.from({length:258},(_,i)=>Buffer.from([1,1,i&255,2]));
 rows[100]=Buffer.from([2,1,9,4,5,100]);rows[256]=Buffer.from([2,1,42,2,22,0,1]);rows[257]=Buffer.from([2,22,0,1,0]);
@@ -32,6 +37,19 @@ for(const start of baseline?[]:wide?[256,257]:[256]){reset(10,10,start);for(let 
 for(const flags of [0,1]){reset(135,135,256,flags);for(let i=0;i<9;i++){tick();assert.equal(m.r16(actor+0x134),!baseline&&!flags?256:50);assert.equal(m.r32(actor+0xf8),!baseline&&!flags?42:50);}}
 for(const tuple of [[135,135,0,100],[161,19,0,100],[135,135,0,101],[135,135,1,100],[-1,135,0,100],[135,256,0,100],[135,135,0,256],[135,135,-1,100],[135,135,0,65535]]){tuple.forEach((v,i)=>m.set('a'+i,v));m.set('sp',sp);m.call(query);assert.equal(m.get('v0'),!baseline&&(tuple[0]===135&&tuple[1]===135&&tuple[2]===0&&[100,256].includes(tuple[3])||tuple[0]===161&&tuple[1]===19&&tuple[2]===0&&tuple[3]===100)?1:0);cases++;}
 console.log((baseline?'Restored pose policy: ':'Private pose extension: ')+cases+' fixed-policy, transfer and registration-domain cases passed in 4 MiB modeled RAM.');
+if(bodyPolicies){
+ // New IDs obey the table; invalid sources retain their original halfword domain
+ // without wrapping onto a valid class, and -1 still has fixed-body behavior.
+ for(const [source,state,want] of [[165,40,0],[165,100,50],[421,40,40],[-91,40,40],[65535,40,0],[0x100a5,40,0]]){
+  reset(source,source,state);tick();assert.equal(m.r16(actor+0x134),want,'policy source '+source);
+ }
+ policies.writeUInt16BE(511,165*2);m.load(table-mapping.length-512,policies);
+ reset(165,165,40);tick();assert.equal(m.r16(actor+0x134),40);
+ policies.writeUInt16BE(1535,165*2);m.load(table-mapping.length-512,policies);
+ const extended=Buffer.from(mapping);extended.writeUInt32BE(0xa5a50064,8);extended.writeUInt16BE(65535,12);m.load(table-mapping.length,extended);
+ reset(165,165,100);for(let i=0;i<9;i++){tick();assert.equal(m.r16(actor+0x134),100);assert.equal(m.r32(actor+0xf8),9);}
+ console.log('New class policy: 16 cloned, toggled, registered and out-of-range source invocations passed.');
+}
 
 // The record getter also serves callers which request only some operands.
 const instructions=[];

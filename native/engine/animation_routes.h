@@ -17,6 +17,8 @@ class AnimationRoutes {
         quint8 kind = 0;
         qint16 equipmentArt = -1; // -1: equipped item; otherwise fixed item-art lookup.
         bool equipmentChildArt = false; // Use equipment children for kind-two images.
+        bool fixedPose = false;
+        quint8 construction = 0; // 0 ordinary, 1 Danika body, 2 Danika tendril.
         QByteArray selectors; // Empty: unavailable; otherwise 4-byte records + FF.
         bool operator==(const Entry &) const = default;
     };
@@ -59,6 +61,7 @@ class AnimationRoutes {
     int privatePose(int source, int owner, int flags, int state) const;
     bool registeredPose(int source, int owner, int flags, int state) const;
     bool hasVisualPolicies() const;
+    bool hasBodyPolicies() const;
     QByteArray visualPolicies() const;
     int equipmentArt(int source, int equipped) const;
     // Unchanged sections use the original header's physical extent.
@@ -68,7 +71,7 @@ class AnimationRoutes {
 
   private:
     static QVector<Entry> parseEntries(const QByteArray &);
-    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &, bool policies = false);
+    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &, bool policies = false, bool bodies = false);
     QByteArray source_, prefix_, descriptor_, root_, privatePoses_, loadedPrivatePoses_;
     QVector<Entry> rows_;
     QMap<int, Entry> edits_;
@@ -76,5 +79,6 @@ class AnimationRoutes {
     QMap<int, quint32> ownerWords_;
     quint32 allocationOffset_ = 0, allocationSize_ = 0;
     bool loadedVisualPolicies_ = false;
+    bool loadedBodyPolicies_ = false;
 };
 } // namespace lordly

@@ -163,6 +163,11 @@ bool SceneActors::rosterMemberUnavailable(const QByteArray &row,
         throw Error("Actor entrance requires the selected army member's current state");
     return !found->value || (found->flags & 4);
 }
+int SceneActors::bodyConstruction(int source) const {
+    if (source < 0 || source > 255) return 0;
+    const auto data = bodyData_ ? bodyData_ : BodyAnimationData::load(rom_);
+    return source < data->routes().rowCount() ? data->routes().entry(source).construction : 0;
+}
 std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial, int direction) {
     // ROM 2AB810. Three row pointers, not just the primary/paired-secondary two.
     const auto row = bodyRow(identity);
@@ -172,9 +177,9 @@ std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial,
         type = 1;
     else if (owner == 10 || owner == 25 || owner == 123)
         type = 2;
-    else if (source == 0x87)
+    else if (bodyConstruction(source) == 1)
         type = previousSpecial ? 4 : 0;
-    else if (source == 0xa1 || source == 0x88)
+    else if (bodyConstruction(source) == 2)
         type = 2;
     const int side = direction == -1 ? int((u32(row, 0x40) >> 8) & 1) : direction;
     std::array<int, 4> created{-1, -1, -1, -1};
@@ -265,7 +270,7 @@ void SceneActors::startEntrance() {
             continue;
         const auto row = next.bodyRow(u8(actor, 0x147));
         const int offset = secondaryPose(row, actor), source = qint32(u32(row, 0x48));
-        if (!offset && (source == 0x87 || source == 0xa1 || source == 0x88)) {
+        if (!offset && next.bodyConstruction(source)) {
             next.presentationRecord_[slot] = 4;
             continue;
         }
@@ -301,7 +306,7 @@ void SceneActors::startEntrance() {
             continue;
         const int side = (u32(row, 0x40) >> 8) & 1;
         const auto created = next.spawnBodyRow(identity, previousSpecial);
-        if (source == 0x87)
+        if (next.bodyConstruction(source) == 1)
             previousSpecial = true;
         // The native result list retains holes; its caller stops at the first -1.
         for (const int slot : created) {

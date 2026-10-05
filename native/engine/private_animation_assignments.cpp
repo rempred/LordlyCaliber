@@ -162,7 +162,9 @@ int Project::assignPrivateAttack(int id, int flags, int action, bool blocked, in
         throw Error("Attack assignments require a one-byte selector");
     if (linked && selected >= 50 && group.pairedPoses.value(selected, -1) < 256)
         throw Error("This private attack has no linked secondary program");
-    if ((id == 135 || id == 136 || id == 161) && !group.pairedPoses.contains(selected))
+    // Keep explicit primary identity even while fixed-pose policy is disabled.
+    // A later policy edit must not clamp an already assigned private attack.
+    if (!group.pairedPoses.contains(selected))
         group.pairedPoses[selected] = -1;
     descriptor.setPoses(bank);
     auto sequences = *animationSequences_;
@@ -196,11 +198,16 @@ QByteArray Project::privatePoseMappings() {
                     .toObject();
             for (const auto *lane : {"normalSelector", "blockedSelector"}) {
                 const int primary = pair[lane].toInt();
-                if (!it->pairedPoses.contains(primary))
+                const bool fixed = animationRoutes_->entry(id).fixedPose;
+                const int companion = it->pairedPoses.value(primary, -1);
+                // Older ordinary-copy metadata predates explicit primary markers;
+                // its appended selectors start at 100. Preserve untouched stock lanes.
+                if ((!it->pairedPoses.contains(primary) && !(fixed && primary >= 100)) ||
+                    (companion < 0 && !fixed))
                     continue;
                 const quint32 key = (quint32(id) << 24) | (quint32(owner) << 16) |
                                     (quint32(flags) << 8) | quint32(primary);
-                mappings[key] = quint16(it->pairedPoses.value(primary));
+                mappings[key] = quint16(companion);
             }
         }
     }

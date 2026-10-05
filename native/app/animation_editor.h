@@ -33,6 +33,8 @@ class AnimationEditor : public QWidget {
     QComboBox *classes_ = nullptr, *sources_ = nullptr, *action_ = nullptr;
     QComboBox *equipmentArt_ = nullptr;
     QCheckBox *equipmentChildren_ = nullptr;
+    QComboBox *construction_ = nullptr;
+    QCheckBox *fixedPose_ = nullptr;
     std::array<QSpinBox *, 4> handles_{};
     std::array<QSpinBox *, 2> speeds_{};
     std::array<QSpinBox *, 3> selectors_{};

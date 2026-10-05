@@ -150,7 +150,7 @@ class SequenceEditorTests : public QObject {
                 undo.undo();
                 QVERIFY(project.animationSequences()->groups().value(id * 4).pairedPoses.isEmpty());
                 undo.redo();
-                QCOMPARE(project.animationSequences()->groups().value(id * 4).pairedPoses.value(100, -2), id == 160 ? -2 : -1);
+                QCOMPARE(project.animationSequences()->groups().value(id * 4).pairedPoses.value(100, -2), -1);
             }
             editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
             QApplication::processEvents();

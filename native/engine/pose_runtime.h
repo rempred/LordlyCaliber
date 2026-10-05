@@ -10,6 +10,7 @@ class PoseRuntimeImage {
     static constexpr int widthsOffset = 0x212370, widthsSize = 48;
     static constexpr int descriptorOffset = 0x27c5000, descriptorSize = 160;
     static int count(const Rom &);
-    static void validate(const Rom &, const QByteArray &mappings, bool wideRequired = false);
+    static void validate(const Rom &, const QByteArray &mappings, bool wideRequired = false,
+                         bool bodyPolicies = false);
 };
 } // namespace lordly

@@ -63,6 +63,38 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void bodyConstructionPolicies() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); QUndoStack undo;
+            AnimationEditor editor(&project, &undo, [] {}); editor.selectClass(135);
+            auto construction = editor.findChild<QComboBox *>("animationConstruction");
+            auto fixed = editor.findChild<QCheckBox *>("animationFixedPose");
+            QVERIFY(construction); QVERIFY(fixed);
+            QCOMPARE(construction->currentIndex(), 1); QVERIFY(fixed->isChecked());
+            construction->setCurrentIndex(2); fixed->setChecked(false);
+            QCOMPARE(project.animationRoutes()->entry(135).construction, 2);
+            QVERIFY(!project.animationRoutes()->entry(135).fixedPose);
+            undo.undo(); QVERIFY(fixed->isChecked()); undo.undo(); QCOMPARE(construction->currentIndex(), 1);
+            undo.redo(); undo.redo();
+            const int id = project.appendClass(135, "Body policy clone");
+            editor.selectClass(id); QCOMPARE(construction->currentIndex(), 2); QVERIFY(!fixed->isChecked());
+            auto source = editor.findChild<QComboBox *>("animationSource");
+            source->setCurrentIndex(source->findData(135));
+            // Copying an ordinary set clears both inherited special policies.
+            source->setCurrentIndex(source->findData(30));
+            editor.findChild<QPushButton *>("animationCopySource")->click();
+            QCOMPARE(construction->currentIndex(), 0); QVERIFY(!fixed->isChecked());
+            undo.undo(); QCOMPARE(construction->currentIndex(), 2);
+            QTemporaryDir work; project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(Rom::open(path)); restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationRoutes()->entry(id).construction, 2);
+            QVERIFY(!restored.animationRoutes()->entry(id).fixedPose);
+            editor.resize(1250, 850); editor.show();
+            QVERIFY(editor.grab().save("body-construction-policies.png"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void equipmentArtworkPolicies() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

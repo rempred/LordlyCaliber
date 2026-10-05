@@ -13,11 +13,14 @@ int originalEquipmentArt(int id) {
     }
     return -1;
 }
-quint16 policy(const AnimationRoutes::Entry &entry) {
+int originalConstruction(int id) { return id == 135 ? 1 : id == 136 || id == 161 ? 2 : 0; }
+quint16 policy(const AnimationRoutes::Entry &entry, bool bodies = false) {
     if (entry.equipmentArt < -1 || entry.equipmentArt >= 278)
         throw Error("Equipment artwork source is outside the item table");
+    if (entry.construction > 2) throw Error("Unknown class body construction policy");
     return quint16((entry.equipmentArt < 0 ? 511 : entry.equipmentArt) |
-                   (entry.equipmentChildArt ? 512 : 0));
+                   (entry.equipmentChildArt ? 512 : 0) |
+                   (bodies ? (entry.fixedPose ? 1024 : 0) | (entry.construction << 11) : 0));
 }
 quint32 keyWords(quint32 high, quint32 low) {
     const auto reg = (high >> 16) & 31;
@@ -140,6 +143,8 @@ QVector<AnimationRoutes::Entry> AnimationRoutes::parseEntries(const QByteArray &
         Entry entry;
         entry.equipmentArt = qint16(originalEquipmentArt(id));
         entry.equipmentChildArt = id == 0x39 || id == 0x3f;
+        entry.construction = quint8(originalConstruction(id));
+        entry.fixedPose = entry.construction != 0;
         for (int flag = 0; flag < 4; ++flag)
             entry.handles[flag] = u16(bytes, begin + id * 8 + flag * 2);
         entry.speeds = {u8(bytes, speed + id * 2), u8(bytes, speed + id * 2 + 1)};
@@ -194,7 +199,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
     }
     if (result.descriptor_.startsWith("LC05ARTE")) {
         const auto &d = result.descriptor_;
-        if (d.size() != descriptorSize || u32(d, 8) < 1 || u32(d, 8) > 3)
+        if (d.size() != descriptorSize || u32(d, 8) < 1 || u32(d, 8) > 4)
             throw Error("Invalid native class-animation allocation header");
         result.allocationOffset_ = u32(d, 12);
         result.allocationSize_ = u32(d, 16);
@@ -215,6 +220,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
                 QByteArray(payload.size() - result.source_.size() - 4, char(-1)))
             throw Error("Native class-animation allocation differs from its stored identity");
         result.loadedVisualPolicies_ = u32(d, 8) >= 3;
+        result.loadedBodyPolicies_ = u32(d, 8) >= 4;
         const int policySize = result.loadedVisualPolicies_ ? 512 : 0;
         const int mapSize = u16(result.source_, 0) - int(prefix) - policySize;
         if (mapSize < 0) throw Error("Visual policies exceed their animation allocation");
@@ -222,12 +228,17 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
             for (int id = 0; id < 256; ++id) {
                 const auto word = u16(result.source_, prefix + id * 2);
                 const int item = word & 511;
-                if ((word & ~1023) || (item != 511 && item >= 278) ||
+                if ((word & ~(result.loadedBodyPolicies_ ? 8191 : 1023)) ||
+                    ((word >> 11) & 3) > 2 || (item != 511 && item >= 278) ||
                     (id >= result.rows_.size() && word != 511))
                     throw Error("Invalid class visual policy data");
                 if (id < result.rows_.size()) {
                     result.rows_[id].equipmentArt = qint16(item == 511 ? -1 : item);
                     result.rows_[id].equipmentChildArt = (word & 512) != 0;
+                    if (result.loadedBodyPolicies_) {
+                        result.rows_[id].fixedPose = (word & 1024) != 0;
+                        result.rows_[id].construction = quint8((word >> 11) & 3);
+                    }
                 }
             }
         }
@@ -238,7 +249,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
         result.prefix_ = result.source_.left(prefix);
         result.prefix_.replace(0, 36, d.mid(28, 36));
         parseEntries(result.prefix_);
-        if (pack(result.prefix_, result.rows_, result.privatePoses_, result.loadedVisualPolicies_) != result.source_)
+        if (pack(result.prefix_, result.rows_, result.privatePoses_, result.loadedVisualPolicies_, result.loadedBodyPolicies_) != result.source_)
             throw Error("Native class-animation sections are not in their declared allocation");
     }
     return result;
@@ -311,6 +322,7 @@ QJsonObject AnimationRoutes::json() const {
                         {"kind", it->kind},
                         {"equipmentArt", it->equipmentArt},
                         {"equipmentChildArt", it->equipmentChildArt},
+                        {"fixedPose", it->fixedPose}, {"construction", it->construction},
                         {"attributes", QString::fromLatin1(extra.toHex())},
                         {"selectors", QString::fromLatin1(it->selectors.toHex())}};
     }
@@ -343,6 +355,18 @@ void AnimationRoutes::apply(const QJsonObject &object) {
         Entry entry;
         entry.equipmentArt = qint16(originalEquipmentArt(id));
         entry.equipmentChildArt = id == 0x39 || id == 0x3f;
+        entry.construction = quint8(originalConstruction(id));
+        entry.fixedPose = entry.construction != 0;
+        if (value.contains("fixedPose")) {
+            if (!value["fixedPose"].isBool()) throw Error("Invalid saved fixed-pose policy");
+            entry.fixedPose = value["fixedPose"].toBool();
+        }
+        if (value.contains("construction")) {
+            const int kind = value["construction"].toInt(-1);
+            if (kind < 0 || kind > 2 || value["construction"].toDouble() != double(kind))
+                throw Error("Invalid saved body construction policy");
+            entry.construction = quint8(kind);
+        }
         if (value.contains("equipmentArt")) {
             const int item = value["equipmentArt"].toInt(-2);
             if (item < -1 || item >= 278 || value["equipmentArt"].toDouble() != double(item))
@@ -382,11 +406,11 @@ void AnimationRoutes::apply(const QJsonObject &object) {
     }
     *this = std::move(next);
 }
-QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows, const QByteArray &poses, bool policies) {
+QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows, const QByteArray &poses, bool policies, bool bodies) {
     auto bytes = prefix;
     if (policies) {
         QByteArray table(512, 0);
-        for (int id = 0; id < 256; ++id) put16(table, id * 2, id < rows.size() ? policy(rows[id]) : 511);
+        for (int id = 0; id < 256; ++id) put16(table, id * 2, id < rows.size() ? policy(rows[id], bodies) : 511);
         bytes += table;
     }
     bytes += poses;
@@ -471,19 +495,26 @@ QByteArray AnimationRoutes::decodedResource() const {
     rows.resize(rowCount());
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         rows[it.key()] = it.value();
-    return pack(prefix_, rows, privatePoses_, hasVisualPolicies());
+    return pack(prefix_, rows, privatePoses_, hasVisualPolicies(), hasBodyPolicies());
 }
 bool AnimationRoutes::hasVisualPolicies() const {
-    if (loadedVisualPolicies_) return true;
+    if (loadedVisualPolicies_ || hasBodyPolicies()) return true;
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         if (it->equipmentArt != originalEquipmentArt(it.key()) ||
             it->equipmentChildArt != (it.key() == 0x39 || it.key() == 0x3f)) return true;
     return false;
 }
+bool AnimationRoutes::hasBodyPolicies() const {
+    if (loadedBodyPolicies_) return true;
+    for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
+        if (it->fixedPose != (originalConstruction(it.key()) != 0) ||
+            it->construction != originalConstruction(it.key())) return true;
+    return false;
+}
 QByteArray AnimationRoutes::visualPolicies() const {
     QByteArray bytes(512, 0);
     for (int id = 0; id < 256; ++id)
-        put16(bytes, id * 2, id < rowCount() ? policy(entry(id)) : 511);
+        put16(bytes, id * 2, id < rowCount() ? policy(entry(id), hasBodyPolicies()) : 511);
     return bytes;
 }
 int AnimationRoutes::equipmentArt(int source, int equipped) const {
@@ -550,7 +581,7 @@ QByteArray AnimationRoutes::rebuild(const Rom &rom, const QByteArray &compiled,
     }
     QByteArray descriptor(descriptorSize, 0);
     descriptor.replace(0, 8, "LC05ARTE");
-    put32(descriptor, 8, hasVisualPolicies() ? 3 : privatePoses_.isEmpty() ? 1 : 2);
+    put32(descriptor, 8, hasBodyPolicies() ? 4 : hasVisualPolicies() ? 3 : privatePoses_.isEmpty() ? 1 : 2);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, quint32(payload.size()));
     put32(descriptor, 20, quint32(prefix_.size()));

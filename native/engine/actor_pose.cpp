@@ -33,6 +33,13 @@ int ActorPosePlayer::registered(void *context, const LordlyActorPose *actor) {
                                                actor->variant * 2 + actor->flag_b,
                                                actor->state);
 }
+int ActorPosePlayer::fixed(void *context, const LordlyActorPose *actor) {
+    const auto &self = *static_cast<ActorPosePlayer *>(context);
+    const auto &data = self.art_.bodyAnimations();
+    const auto source = quint16(actor->bank);
+    return source == 65535 ||
+           (data && source < data->routes().rowCount() && data->routes().entry(source).fixedPose);
+}
 int ActorPosePlayer::lookup(void *context, const LordlyActorPose *actor, LordlyPoseRecord *record) {
     auto &self = *static_cast<ActorPosePlayer *>(context);
     try {
@@ -102,7 +109,7 @@ int ActorPosePlayer::advance(int budget) {
         linkedAudio_.clear();
     }
     const int result =
-        lordly_actor_advance_pose_mapped(&actor_, &invocation_, budget, lookup, shared, this, registered);
+        lordly_actor_advance_pose_mapped(&actor_, &invocation_, budget, lookup, shared, this, registered, fixed);
     if (result == LORDLY_POSE_BUDGET)
         error_ = "Pose command limit reached; the invocation can resume";
     else if (result == LORDLY_POSE_INVALID)

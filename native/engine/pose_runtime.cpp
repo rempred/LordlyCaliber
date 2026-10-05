@@ -15,28 +15,31 @@ int PoseRuntimeImage::count(const Rom &rom) {
                        !u8(widths, 22)
                    ? 0
                    : -1;
-    if (header.size() != descriptorSize || !header.startsWith("LC05POSE") || u32(header, 8) != 1 ||
-        u32(header, 12) > 256 || u32(header, 16) > 1 || u32(header, 20) < readerAddress ||
-        u32(header, 20) >= readerAddress + readerSize || u32(header, 20) % 4 ||
-        header.mid(24, 8) != QByteArray(8, 0) || u8(widths, 22) != (u32(header, 16) ? 3 : 0) ||
+    if (header.size() != descriptorSize || !header.startsWith("LC05POSE") || u32(header, 8) < 1 ||
+        u32(header, 8) > 2 || u32(header, 12) > 256 || u32(header, 16) > 1 ||
+        u32(header, 20) < readerAddress || u32(header, 20) >= readerAddress + readerSize ||
+        u32(header, 20) % 4 || u32(header, 24) > (u32(header, 8) == 2 ? 1U : 0U) ||
+        u32(header, 28) || u8(widths, 22) != (u32(header, 16) ? 3 : 0) ||
         header.mid(64, 32) != QByteArray::fromHex(sha256(pose)) ||
         header.mid(96, 32) != QByteArray::fromHex(sha256(reader)) ||
         header.mid(128, 32) != QByteArray::fromHex(sha256(widths)))
         return -1;
     return int(u32(header, 12));
 }
-void PoseRuntimeImage::validate(const Rom &rom, const QByteArray &mappings, bool wideRequired) {
+void PoseRuntimeImage::validate(const Rom &rom, const QByteArray &mappings, bool wideRequired,
+                                bool bodyPolicies) {
     const auto header = rom.bytes().mid(descriptorOffset, descriptorSize);
     // Paired mappings alone remain compatible with earlier LC05BSEL exports.
     bool fixed = false;
     for (int at = 0; at < mappings.size(); at += 8) {
         const auto source = u8(mappings, at);
-        fixed |= source == 135 || source == 136 || source == 161 ||
-                 qint16(u16(mappings, at + 4)) == -1;
+        fixed |=
+            source == 135 || source == 136 || source == 161 || qint16(u16(mappings, at + 4)) == -1;
     }
-    if (!fixed && !wideRequired && !header.startsWith("LC05POSE"))
+    if (!fixed && !wideRequired && !bodyPolicies && !header.startsWith("LC05POSE"))
         return;
     if (count(rom) < 0 || u32(header, 12) * 8 != mappings.size() ||
+        u32(header, 24) != quint32(bodyPolicies) ||
         header.mid(32, 32) != QByteArray::fromHex(sha256(mappings)) ||
         (wideRequired && !u32(header, 16)))
         throw Error("Private pose programs need matching source-built execution and width data");

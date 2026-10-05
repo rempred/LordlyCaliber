@@ -3,11 +3,14 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const {FloatMips}=require('./float-mips.cjs');
 global.window=global;global.OB64={};vm.runInThisContext(fs.readFileSync(path.resolve(__dirname,'../../art.js'),'utf8'));
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+const fixture=process.argv[4]?JSON.parse(fs.readFileSync(process.argv[4],'utf8')):{};
+const mapped=id=>fixture.classes?.[id]??id;
 const raw=k=>Buffer.from(OB64.art.readResource(rom,k).stored),decode=k=>Buffer.from(OB64.art.readCompressedResource(rom,k).decoded);
-const handles=raw(0x315736),directory=raw(0x3b6cd0);
+const handles=raw(fixture.key||0x315736),directory=raw(fixture.directory||0x3b6cd0);
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
 m.load(0x8022d7d0,rom.subarray(0x29d000,0x2a8d00));m.load(0x802395c0,rom.subarray(0x2a8d20,0x2ae338));
 m.load(0x801bdb70,rom.subarray(0x201000,0x212f00));m.load(0x8016af80,rom.subarray(0x40e80,0x66e10));
+if(fixture.classSize)m.load(fixture.classAddress,rom.subarray(fixture.classOffset,fixture.classOffset+fixture.classSize));
 m.load(0x801d0458,rom.subarray(0x2138e8,0x213990));
 m.load(0x8009c970,rom.subarray(0x2cd70,0x2cda0));
 m.trap(0x80093380,c=>m.load(c.get('a0'),Buffer.alloc(c.get('a1'))));
@@ -27,6 +30,7 @@ m.trap(0x801c5938,()=>{}); // Deferred linked audio sink.
 m.trap(0x801bc35c,c=>c.setSingle(0,0)); // Explicit flat terrain.
 const read=(p,n)=>Buffer.from(m.ram.subarray(m.phys(p),m.phys(p)+n)).toString('hex');
 function record(slot,source,member,identity,x,z){
+ source=mapped(source);
  const b=Buffer.alloc(336,0xa7);b.writeInt32BE(slot,0xe4);b.writeInt32BE(source,0xe8);b.writeInt32BE(source,0xec);
  b.writeInt32BE(0,0xf0);b.writeInt32BE(0,0xf4);b.writeInt16BE(0,0x134);b.writeInt16BE(0,0x138);b.writeInt16BE(0,0x13a);
  b[0x13d]=1;b[0x145]=0;b[0x146]=0;b[0x147]=identity;b[0x149]=member;
@@ -50,7 +54,7 @@ function run(group,kind){
  // Unlinked ordinary actor must be ignored by filtered selection.
  const extra=record(12,30,0,255,99,99);extra[0x13d]=0;extra.writeInt32BE(1000,0xf4);initial.push({slot:12,record:extra.toString('hex')});
  m.load(scene,Buffer.alloc(0x1cc0));m.load(pool,Buffer.alloc(20*0xb0));allocations=[];
- rows.forEach((r,i)=>m.load(cast+0x1c4+i*248,r));objs.forEach(o=>m.load(o.address,Buffer.from(o.record,'hex')));
+ rows.forEach((r,i)=>{for(const at of [0x48,0x4c])r.writeUInt32BE(mapped(r.readUInt32BE(at)),at);m.load(cast+0x1c4+i*248,r);});objs.forEach(o=>m.load(o.address,Buffer.from(o.record,'hex')));
  initial.forEach(a=>{const p=actors+a.slot*512;m.load(p-16,Buffer.alloc(368,0xa7));m.load(p,Buffer.from(a.record,'hex'));m.w32(scene+24+a.slot*4,p);});
  m.w8(0x8018fc19,2);m.w32(0x80197b14,8);m.set('sp',sp);
  m.set('a0',group);try{m.call(0x8023d878);}catch(e){throw Error(`group=${group} kind=${kind} args=${['a0','a1','a2','ra','sp'].map(r=>m.get(r).toString(16))}: ${e.message}`);}
@@ -83,7 +87,7 @@ for(const phase of [0,1,2,3,4,5,255])for(const variant of [0,1,255])for(const ow
  boundaries.push({initial:r.toString('hex'),row:row.toString('hex'),object:obj.toString('hex'),address:objects,vector:vector.toString('hex'),states});
 }
 const speeds=[];
-for(let source=0;source<165;source++)for(const owner of new Set([source,30,rom[0x5db14+source*72+69]]))for(let direction=0;direction<2;direction++){
+for(let source=0;source<165;source++)for(const owner of new Set([source,30,fixture.owners?.[source]??rom[0x5db14+source*72+69]]))for(let direction=0;direction<2;direction++){
  if(owner>=172)continue;
  m.set('a0',source);m.set('a1',owner);m.call(direction?0x801be264:0x801be1e0);speeds.push({source,owner,direction,value:m.single(0)});
 }
@@ -113,7 +117,7 @@ for(const preset of [0,1,7,63])for(let kind=0;kind<5;kind++){
  }
  if(kind===1){initial.push({slot:12,record:record(12,30,0,0,190,20).toString('hex')});initial.push({slot:26,record:record(26,135,0,2,100,100).toString('hex')});}
  m.load(scene,Buffer.alloc(0x1cc0));m.load(pool,Buffer.alloc(20*0xb0));allocations=[];
- rows.forEach((r,i)=>m.load(cast+0x1c4+i*248,r));objs.forEach(o=>m.load(o.address,Buffer.from(o.record,'hex')));
+ rows.forEach((r,i)=>{for(const at of [0x48,0x4c])r.writeUInt32BE(mapped(r.readUInt32BE(at)),at);m.load(cast+0x1c4+i*248,r);});objs.forEach(o=>m.load(o.address,Buffer.from(o.record,'hex')));
  initial.forEach(a=>{const p=actors+a.slot*512;m.load(p,Buffer.from(a.record,'hex'));m.w32(scene+24+a.slot*4,p);});
  const variant=kind===3?-3:kind===4?-10:0;
  m.w32(0x801ceab0,preset);m.w8(0x8022ac80,variant);m.w8(0x8022a7f0,overrideFlag);m.w8(0x801976dc,sideGroups[0]);m.w8(0x801976e8,sideGroups[1]);

@@ -610,7 +610,7 @@ void Project::loadAnimationRoutes() {
         const auto routes = AnimationRoutes::load(rom_);
         BodyVisualPolicyImage::validate(rom_, routes);
         BodySelectionImage::validate(rom_, routes.privatePoses());
-        PoseRuntimeImage::validate(rom_, routes.privatePoses(), animationSequences_->sourceRequiresWideStates());
+        PoseRuntimeImage::validate(rom_, routes.privatePoses(), animationSequences_->sourceRequiresWideStates(), routes.hasBodyPolicies());
         animationRoutes_ = animationSequences_->baseRoutes(routes);
     }
 }

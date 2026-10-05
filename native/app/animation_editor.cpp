@@ -134,6 +134,24 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
             changeEntry("Change equipment image selection", [&](auto &entry) { entry.equipmentChildArt = value; });
         });
     });
+    construction_ = new QComboBox;
+    construction_->setObjectName("animationConstruction");
+    construction_->addItems({"Ordinary", "Danika body", "Danika tendril"});
+    bodyForm->addRow("Body construction", construction_);
+    fixedPose_ = new QCheckBox("Use fixed base poses (Danika)");
+    fixedPose_->setObjectName("animationFixedPose");
+    fixedPose_->setToolTip("Use the base primary or secondary pose for ordinary requests. Assigned private attack copies keep their own poses.");
+    bodyForm->addRow(fixedPose_);
+    connect(construction_, &QComboBox::currentIndexChanged, this, [this](int value) {
+        if (!refreshing_) guarded([&] {
+            changeEntry("Change body construction", [&](auto &entry) { entry.construction = quint8(value); });
+        });
+    });
+    connect(fixedPose_, &QCheckBox::toggled, this, [this](bool value) {
+        if (!refreshing_) guarded([&] {
+            changeEntry("Change fixed base poses", [&](auto &entry) { entry.fixedPose = value; });
+        });
+    });
     auto movement = new QGroupBox("Movement");
     auto speedForm = new QFormLayout(movement);
     top->addWidget(movement);
@@ -360,6 +378,8 @@ void AnimationEditor::refreshEntry() {
     const auto entry = project_->animationRoutes()->entry(selected_);
     equipmentArt_->setCurrentIndex(equipmentArt_->findData(entry.equipmentArt));
     equipmentChildren_->setChecked(entry.equipmentChildArt);
+    construction_->setCurrentIndex(entry.construction);
+    fixedPose_->setChecked(entry.fixedPose);
     for (int flag = 0; flag < 4; ++flag)
         handles_[flag]->setValue(entry.handles[flag]);
     for (int dir = 0; dir < 2; ++dir)

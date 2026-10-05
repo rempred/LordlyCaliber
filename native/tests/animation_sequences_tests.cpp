@@ -64,7 +64,7 @@ class AnimationSequencesTests : public QObject {
             QCOMPARE(restored.animationSequences()->json(), project.animationSequences()->json());
             QCOMPARE(restored.animationOverrides()->json(), project.animationOverrides()->json());
             const auto built = rebuild(project, tools, work.path());
-            QCOMPARE(u32(built.image, AnimationSequences::descriptorOffset + 8), quint32(2));
+            QCOMPARE(u32(built.image, AnimationSequences::descriptorOffset + 8), quint32(3));
             QTemporaryDir candidates(
                 QFileInfo(path).dir().filePath("Test ROMs/native-private-attacks-XXXXXX"));
             QVERIFY(candidates.isValid());

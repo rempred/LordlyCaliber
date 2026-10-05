@@ -26,7 +26,7 @@ void SceneActors::materializeRoster(qint32 first, qint32 second, int variant) {
         }
         const int depth = qint32(u32(row, 0x58));
         const auto created = next.spawnBodyRow(identity, seenSpecial, depth < 4);
-        if (source == 0x87)
+        if (next.bodyConstruction(source) == 1)
             seenSpecial = true;
         const int offset =
             lordly_roster_pose_offset(flags, depth, launch.context, launch.scenario, variant);

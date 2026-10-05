@@ -28,7 +28,7 @@ BodyAnimationData::Pointer BodyAnimationData::load(const Rom &rom) {
     auto routes = AnimationRoutes::load(rom);
     BodyVisualPolicyImage::validate(rom, routes);
     BodySelectionImage::validate(rom, routes.privatePoses());
-    PoseRuntimeImage::validate(rom, routes.privatePoses());
+    PoseRuntimeImage::validate(rom, routes.privatePoses(), false, routes.hasBodyPolicies());
     auto overrides = AnimationOverrides::load(rom, classes, routes);
     return std::make_shared<const BodyAnimationData>(std::move(classes), std::move(routes),
                                                      std::move(overrides));

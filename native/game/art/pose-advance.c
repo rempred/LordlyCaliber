@@ -15,6 +15,7 @@ typedef signed int s32;
 #define S(p, n) (*(s32 *)((u8 *)(p) + (n)))
 #define F(p, n) (*(float *)((u8 *)(p) + (n)))
 extern int lc_registered_pose(s32, s32, s32, u16);
+extern int lc_visual_policy(s32);
 extern int lc_plain_record(s32, s16, s32, u8, u8 *, u8 *, u8 *);
 extern int lc_body_record(s32, s32, u8, s16, s16, s32, u8 *, u8 *, u8 *);
 extern void lc_fill(void *, int, int);
@@ -38,7 +39,12 @@ int lc_advance_pose(u8 *actor) {
                                  &a, &b, &c);
         else {
             s16 source = H(actor, 0xea);
-            if (((u16)(source - 135) < 2 || source == 161 || source == -1) &&
+            if (
+#if LC_BODY_POLICY
+                (source == -1 || (lc_visual_policy(source) & 1024)) &&
+#else
+                ((u16)(source - 135) < 2 || source == 161 || source == -1) &&
+#endif
                 (!LC_PRIVATE_POSE_COUNT ||
                  !lc_registered_pose(S(actor, 0xe8), S(actor, 0xec),
                                      B(actor, 0x146) * 2 + H(actor, 0x13a), H(actor, 0x134))))

@@ -927,7 +927,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         const auto beforePose = result.image;
         result.image = rebuildPoseRuntime(Rom::fromBytes(result.image), p.rom(),
             exportAnimationRoutes->privatePoses(), p.animationSequences() && p.animationSequences()->requiresWideStates(),
-            compiler, directory);
+            exportAnimationRoutes->hasBodyPolicies(), compiler, directory);
         if (result.image != beforePose)
             result.report << "Compiled private-pose execution and class record lookup within their original allocations";
         const auto beforeVisual = result.image;

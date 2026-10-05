@@ -1,5 +1,59 @@
 # Native Lordly Caliber
 
+## Inheritable body construction and fixed poses
+
+Animation sets now carry independent body-construction and fixed-pose policies.
+Stock class 135 uses Danika-body construction; 136 and 161 use tendril construction.
+All three retain the fixed 0/50 base poses, except explicitly assigned private
+primaries and companions. Creating a class or copying its animation set carries
+these policies. The native controls support editing, undo and project persistence.
+Ordinary private assignments now remember their primary identity even while the
+fixed-pose policy is disabled, so enabling it later preserves those assignments.
+
+LC05ARTE version 4 extends the existing 512-byte policy table with bit 10 for fixed
+poses and bits 11..12 for construction (0 ordinary, 1 body, 2 tendril). Version 3
+remains byte-compatible and derives stock construction from the class ID. Older
+saved project rows likewise retain stock defaults. The shared query is at live
+801C425C, within the existing equipment-registration allocation; it preserves
+inputs and temporaries except v0/v1. The maintained C pose interpreter calls this
+query while retaining the original signed-halfword source domain and -1 sentinel.
+Invalid sources cannot wrap onto a valid policy. LC05POSE version 2 records this
+dependency at header +24. No new tail-code allocation or high-RAM requirement is
+introduced by these policies.
+
+Four maintained symbolic assembly fragments replace original class-ID predicates
+inside their existing second-Director allocations: z64 [2AB884,2AB8BC) construction,
+[2ABD68,2ABD80) roster sticky state, [2AADC8,2AADF0) entrance skip, and
+[2AAFA4,2AAFBC) entrance sticky state. The earlier owner-one/linked-owner priorities,
+repeated-body behavior and unavailable-member handling stay intact. LC05VPOL
+version 2 authenticates these four blocks alongside the five equipment blocks.
+Version-one exports upgrade the shared query before any new caller uses it.
+Native roster/entrance preview reads the same staged policies.
+
+`body_policy_tests` passed in 88104 ms: three stock templates cloned into new IDs,
+folder persistence, source compilation, export/reopen/no-op, neighboring bytes,
+altered-code rejection, and upgrade from an equipment-only export with the old
+zero-padded helper area. Original, rebuilt stock and cloned-ID executions agree
+across 50 complete roster constructions, 3520 return-presentation snapshots, 168
+boundary sequences, 964 speed samples and 2000 entrance snapshots per image.
+Only the class identity fields are normalized for cloned-ID comparison. Native
+preview replays all cloned rosters and entrances. Private-pose checks include
+toggle-after-assignment, explicit existing poses, persistence/export, 90 synthetic
+interpreter cases, 16 new-ID/domain cases and 432 original reader comparisons.
+Candidates are in parent Test ROMs/native-body-policies-hTeAFC,
+native-private-body-policy-VJyoBx and native-body-policy-upgrade-BfIWpt.
+
+`ui_tests bodyConstructionPolicies equipmentArtworkPolicies` passed in 1445 ms;
+the 1250x850 control capture was inspected. `presentation_runtime_tests` passed
+all four behavior cases in 2772 ms. `animation_sequences_tests
+fixedPosesAndWideTransfers privateAttackAssignments` passed in 56564 ms, retaining
+195664 original pose-invocation comparisons. Resource allocation/terrain/audio
+services are controlled in instruction fixtures; this is not full-game validation.
+The final whole-tree build also passed. `animation_routes_tests
+equipmentPolicyInheritance` passed in 50870 ms, including the moved private-map
+table and all 400 image/100 full registration cases per image. `sequence_editor_tests
+fixedOwnerPreview attackAssignmentsAndUndo linkedCompanionEditing` passed in 816 ms.
+
 ## Per-class equipment artwork policy
 
 Animation sets now carry independent equipment artwork selection: use the equipped
