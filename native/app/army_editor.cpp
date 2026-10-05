@@ -137,6 +137,52 @@ ArmyEditor::ArmyEditor(Project *project, QUndoStack *undo, std::function<void()>
     consumers_->setObjectName("armyConsumers");
     consumers_->setWordWrap(true);
     edit->addWidget(consumers_);
+    auto routeRow = new QHBoxLayout;
+    edit->addLayout(routeRow);
+    routeClass_ = new QComboBox;
+    routeClass_->setObjectName("armyRouteClass");
+    routeRow->addWidget(routeClass_, 1);
+    assignRoute_ = new QPushButton("Assign selected model");
+    assignRoute_->setObjectName("armyAssignRoute");
+    routeRow->addWidget(assignRoute_);
+    auto showRoute = new QPushButton("Show assigned");
+    showRoute->setObjectName("armyShowRoute");
+    routeRow->addWidget(showRoute);
+    restoreRoute_ = new QPushButton("Restore class route");
+    restoreRoute_->setObjectName("armyRestoreRoute");
+    routeRow->addWidget(restoreRoute_);
+    routeInfo_ = new QLabel;
+    routeInfo_->setObjectName("armyRouteInfo");
+    routeInfo_->setWordWrap(true);
+    edit->addWidget(routeInfo_);
+    connect(routeClass_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!refreshing_)
+            refreshRoute();
+    });
+    connect(assignRoute_, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            auto next = *project_->armyArtwork();
+            next.setRoute(project_->classData(), routeClass_->currentData().toInt(), atlas_ / 2,
+                          model_);
+            if (next.json() != project_->armyArtwork()->json())
+                undo_->push(new ArmyCommand(project_, "Assign Army model to class", next.json()));
+        });
+    });
+    connect(restoreRoute_, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            auto next = *project_->armyArtwork();
+            next.restoreRoute(routeClass_->currentData().toInt());
+            if (next.json() != project_->armyArtwork()->json())
+                undo_->push(new ArmyCommand(project_, "Restore Army class route", next.json()));
+        });
+    });
+    connect(showRoute, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            const auto asset = project_->classData().entries()[routeClass_->currentData().toInt()];
+            selectModel(ArmyArtwork::classLane(asset) * 2 + atlas_ % 2,
+                        ArmyArtwork::classModel(asset), paletteOrdinal_);
+        });
+    });
     auto tools = new QHBoxLayout;
     edit->addLayout(tools);
     paletteSelect_ = new QComboBox;
@@ -348,6 +394,15 @@ void ArmyEditor::refresh() {
         if (model == model_)
             models_->setCurrentItem(item);
     }
+    const auto selectedClass =
+        routeClass_->currentData().isValid() ? routeClass_->currentData().toInt() : 1;
+    {
+        QSignalBlocker blocker(routeClass_);
+        routeClass_->clear();
+        for (const auto &row : project_->records(Table::Classes))
+            routeClass_->addItem(QString("%1 · %2").arg(row.id).arg(row.name), row.id);
+        routeClass_->setCurrentIndex(std::max(0, routeClass_->findData(selectedClass)));
+    }
     const auto old = library_->currentData().toString();
     {
         QSignalBlocker blocker(library_);
@@ -412,8 +467,30 @@ void ArmyEditor::refreshPlane() {
     notice_->setText(
         present
             ? "Paint indices to retain both palette appearances. Edits affect every listed class."
-            : "This player-facing plane is absent in the loaded ROM. Create a plane or import "
+            : "This plane is absent in the loaded ROM. Create a plane or import "
               "artwork to author it.");
+    refreshRoute();
+}
+void ArmyEditor::refreshRoute() {
+    if (routeClass_->currentIndex() < 0)
+        return;
+    const auto id = routeClass_->currentData().toInt();
+    const auto asset = project_->classData().entries()[id];
+    const auto lane = ArmyArtwork::classLane(asset), model = ArmyArtwork::classModel(asset);
+    const bool compatible = (u8(asset.record, ClassData::unitSizeOffset) == 2) == (atlas_ / 2 == 2);
+    assignRoute_->setEnabled(compatible);
+    restoreRoute_->setEnabled(project_->armyArtwork()->routes().contains(id));
+    QString info = QString("Assigned: %1 · Model 0x%2. ")
+                       .arg(QStringList{"Ordinary", "Special", "Large"}[lane])
+                       .arg(model, 2, 16, QChar('0'));
+    if (!compatible)
+        info += "Choose a model group matching this class's unit size.";
+    else
+        info += "An assignment selects both the front and player-facing model.";
+    if (!project_->armyArtwork()->present(lane * 2, model) ||
+        !project_->armyArtwork()->present(lane * 2 + 1, model))
+        info += " A facing is missing; create or import it before exporting a new assignment.";
+    routeInfo_->setText(info);
 }
 void ArmyEditor::apply(const QByteArray &pixels, const QString &label) {
     auto next = *project_->armyArtwork();

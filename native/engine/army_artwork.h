@@ -10,6 +10,9 @@ struct ArmyAtlasSpec {
     QVector<int> transparent;
     QVector<QPair<int, int>> sites;
 };
+struct ArmyClassRoute {
+    int lane = 0, model = 0;
+};
 class ArmyArtwork {
   public:
     static constexpr int descriptorOffset = 0x27c4a00, descriptorSize = 160;
@@ -21,6 +24,15 @@ class ArmyArtwork {
     static int classLane(const ClassAsset &);
     static int classModel(const ClassAsset &);
     QVector<int> consumers(const ClassData &, int atlas, int model) const;
+    const QMap<int, ArmyClassRoute> &routes() const {
+        return routes_;
+    }
+    void setRoute(const ClassData &, int classId, int lane, int model);
+    void restoreRoute(int classId) {
+        routes_.remove(classId);
+    }
+    void applyRoutes(ClassData &) const;
+    void validateRoutes(const ClassData &) const;
     int sourceCount(int atlas) const;
     bool present(int atlas, int model) const;
     QByteArray indices(int atlas, int model) const;
@@ -32,6 +44,9 @@ class ArmyArtwork {
     void setIndices(int atlas, int model, const QByteArray &);
     void restore(int atlas, int model);
     bool modified() const {
+        return pixelsModified() || !routes_.isEmpty();
+    }
+    bool pixelsModified() const {
         return !edits_.isEmpty();
     }
     bool modified(int atlas, int model) const {
@@ -59,6 +74,7 @@ class ArmyArtwork {
     std::array<Pack, 6> packs_;
     std::optional<Placement> placement_;
     QMap<int, QByteArray> edits_;
+    QMap<int, ArmyClassRoute> routes_;
     QMap<int, quint32> ownerWords_;
     QByteArray descriptor_;
 };

@@ -351,6 +351,8 @@ ClassData Project::classData() const {
         entry.name = classNameBytes(id);
         result.set(id, entry);
     }
+    if (army_)
+        army_->applyRoutes(result);
     return result;
 }
 int Project::classDescriptionIndex(int classId) {
@@ -395,6 +397,18 @@ int Project::appendClass(int templateId, const QString &name) {
     if (sourceText >= bank.entries.size())
         throw Error("The template class description is missing");
     candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
+    if (candidate.army_ && candidate.army_->routes().contains(templateId)) {
+        const auto route = candidate.army_->routes()[templateId];
+        candidate.army_->setRoute(candidate.classData(), id, route.lane, route.model);
+    }
+    if (candidate.avatars_) {
+        const auto current = candidate.classData();
+        for (int selector = 0; selector < 2; ++selector) {
+            const auto words = candidate.avatars_->words(current, templateId, selector);
+            if (!words.isEmpty())
+                candidate.avatars_->setWords(current, id, selector, words);
+        }
+    }
     *this = std::move(candidate);
     return id;
 }
@@ -555,12 +569,19 @@ void Project::loadArmyArtwork() {
     if(!army_)army_=ArmyArtwork::load(rom_);
 }
 void Project::setArmyArtwork(const QJsonObject &value) {
-    loadArmyArtwork();army_->apply(value);
+    loadArmyArtwork();
+    auto next = *army_;
+    next.apply(value);
+    auto classes = classData();
+    next.applyRoutes(classes);
+    army_ = std::move(next);
 }
 void Project::importLegacyArmyArtwork(const QJsonObject &object) {
-    const auto art=object["patches"].toObject().value("art");
-    if(art.isNull() || art.isUndefined())return;
-    if(!art.isObject())throw Error("Invalid imported art");
+    const auto art = object["patches"].toObject().value("art");
+    if (art.isNull() || art.isUndefined())
+        return;
+    if (!art.isObject())
+        throw Error("Invalid imported art");
     if(art.toObject().contains("armySprites")) {loadArmyArtwork();army_->importLegacy(art.toObject());}
 }
 void Project::loadAvatarArtwork() {

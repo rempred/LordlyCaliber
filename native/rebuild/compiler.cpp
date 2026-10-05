@@ -491,6 +491,30 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
     if (p.scenarios())
         p.scenarios()->validateForExport(p.classData());
+    if (p.rom().revision() == 0) {
+        QVector<int> changedLanes;
+        for (const auto &row : p.records(Table::Classes))
+            if ((u8(row.bytes, ClassData::unitSizeOffset) == 2) !=
+                (u8(row.original, ClassData::unitSizeOffset) == 2))
+                changedLanes.append(row.id);
+        if (!changedLanes.isEmpty()) {
+            p.loadArmyArtwork();
+            const auto classes = p.classData();
+            for (const auto id : changedLanes) {
+                const auto &asset = classes.entries()[id];
+                const auto lane = ArmyArtwork::classLane(asset),
+                           model = ArmyArtwork::classModel(asset);
+                for (int side = 0; side < 2; ++side)
+                    if (!p.armyArtwork()->present(lane * 2 + side, model))
+                        throw Error(
+                            QString("Class %1's new unit size selects a missing %2 Army model "
+                                    "0x%3; assign a compatible model or create that plane")
+                                .arg(id)
+                                .arg(side ? "player-facing" : "front-facing")
+                                .arg(model, 2, 16, QChar('0')));
+            }
+        }
+    }
     const auto priorClassPlacement = ClassPlacement::read(p.rom());
     const auto priorShopPlacement = ShopPlacement::read(p.rom());
     const auto priorCustom = CustomPlacement::read(p.rom());
@@ -516,8 +540,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                         "matching counts");
     }
     const bool avatarEdits = p.avatarArtwork() && p.avatarArtwork()->modified();
+    const bool armyRoutes = p.armyArtwork() && !p.armyArtwork()->routes().isEmpty();
+    if (armyRoutes)
+        p.armyArtwork()->validateRoutes(p.classData());
     const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified() ||
-                                 expandedClasses || customSquads || avatarEdits;
+                                 expandedClasses || customSquads || avatarEdits || armyRoutes;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -819,7 +846,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=p.iconArtwork()->rebuild(Rom::fromBytes(result.image),packs);
         result.report << "Compiled and rebuilt both shared item-icon packs through their original resource loaders";
     }
-    if(p.armyArtwork() && p.armyArtwork()->modified()) {
+    if(p.armyArtwork() && p.armyArtwork()->pixelsModified()) {
         auto packs=p.armyArtwork()->decodedPacks();
         for(int i=0;i<6;++i)packs[i]=compiler.compileData(packs[i],directory,QString("army_atlas_%1").arg(i));
         result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
@@ -887,6 +914,13 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                     p.avatarArtwork()->words(intended, id, selector))
                     throw Error("Reopened portrait selector differs from the project");
         }
+    }
+    if (armyRoutes) {
+        const auto actual = reopened.classData(), intended = p.classData();
+        for (int id = 0; id < intended.entries().size(); ++id)
+            if (actual.entries()[id].appearance.mid(4) != intended.entries()[id].appearance.mid(4))
+                throw Error("Reopened Army class selectors differ from the project");
+        result.report << "Rebuilt Army class selectors with the source-built appearance table";
     }
     result.report << "Reopened every class, equipment and consumable record; CIC-6102 checksum "
                      "updated when required";

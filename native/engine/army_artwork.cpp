@@ -10,7 +10,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           16,
           24,
           56,
-          56,
+          64,
           0,
           0x1dbb2ac,
           {0},
@@ -26,7 +26,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           16,
           24,
           56,
-          56,
+          64,
           0x200,
           0x1dbef10,
           {70},
@@ -36,7 +36,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           16,
           24,
           38,
-          38,
+          64,
           0,
           0x1dc3320,
           {255},
@@ -52,7 +52,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           16,
           24,
           24,
-          38,
+          64,
           0,
           0x1dc5e6c,
           {255},
@@ -62,7 +62,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           32,
           28,
           26,
-          26,
+          64,
           0,
           0x1db47a0,
           {0},
@@ -77,7 +77,7 @@ const std::array<ArmyAtlasSpec, 6> &ArmyArtwork::specs() {
           32,
           28,
           25,
-          26,
+          64,
           0,
           0x1db7f5c,
           {0, 177, 178, 179, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255},
@@ -221,7 +221,9 @@ ArmyArtwork ArmyArtwork::load(const Rom &rom) {
     return result;
 }
 int ArmyArtwork::classLane(const ClassAsset &asset) {
-    return u8(asset.record, ClassData::unitSizeOffset) == 2 ? 2 : (u8(asset.appearance, 4) & 128) ? 1 : 0;
+    return u8(asset.record, ClassData::unitSizeOffset) == 2 ? 2
+           : (u8(asset.appearance, 4) & 128)                ? 1
+                                                            : 0;
 }
 int ArmyArtwork::classModel(const ClassAsset &asset) {
     return u8(asset.appearance, 4) & 63;
@@ -233,6 +235,41 @@ QVector<int> ArmyArtwork::consumers(const ClassData &data, int atlas, int model)
         if (classLane(data.entries()[id]) == atlas / 2 && classModel(data.entries()[id]) == model)
             result.append(id);
     return result;
+}
+void ArmyArtwork::setRoute(const ClassData &classes, int id, int lane, int model) {
+    if (id < 0 || id >= classes.entries().size() || lane < 0 || lane > 2 || model < 0 || model > 63)
+        throw Error("Army class route is outside the native selector domain");
+    if ((u8(classes.entries()[id].record, ClassData::unitSizeOffset) == 2) != (lane == 2))
+        throw Error("The selected model group does not match this class's unit size");
+    routes_[id] = {lane, model};
+}
+void ArmyArtwork::applyRoutes(ClassData &classes) const {
+    for (auto it = routes_.cbegin(); it != routes_.cend(); ++it) {
+        if (it.key() < 0 || it.key() >= classes.entries().size())
+            throw Error("Army route names an unavailable class");
+        auto asset = classes.entries()[it.key()];
+        const auto original = u8(asset.appearance, 4);
+        const auto high = it->lane == 2 ? (original & 0x80) : it->lane == 1 ? 0x80 : 0;
+        put8(asset.appearance, 4, quint8((original & 0x40) | high | it->model));
+        classes.set(it.key(), asset);
+    }
+}
+void ArmyArtwork::validateRoutes(const ClassData &classes) const {
+    for (auto it = routes_.cbegin(); it != routes_.cend(); ++it) {
+        if (it.key() < 0 || it.key() >= classes.entries().size() ||
+            classLane(classes.entries()[it.key()]) != it->lane ||
+            classModel(classes.entries()[it.key()]) != it->model)
+            throw Error(QString("Class %1's Army route no longer matches its unit size; choose a "
+                                "compatible model")
+                            .arg(it.key()));
+        for (int side = 0; side < 2; ++side)
+            if (!present(it->lane * 2 + side, it->model))
+                throw Error(QString("Class %1 needs its %2 Army sprite (model 0x%3); create or "
+                                    "import that plane before export")
+                                .arg(it.key())
+                                .arg(side ? "player-facing" : "front-facing")
+                                .arg(it->model, 2, 16, QChar('0')));
+    }
 }
 int ArmyArtwork::sourceCount(int atlas) const {
     validate(atlas);
@@ -347,13 +384,30 @@ QJsonObject ArmyArtwork::json() const {
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         planes[specs()[it.key() / 64].slug + ":" + QString::number(it.key() % 64)] =
             QString::fromLatin1(it.value().toBase64());
-    return {{"version", 1}, {"planes", planes}};
+    QJsonObject routes;
+    for (auto it = routes_.cbegin(); it != routes_.cend(); ++it)
+        routes[QString::number(it.key())] = QJsonObject{{"lane", it->lane}, {"model", it->model}};
+    return {{"version", 1}, {"planes", planes}, {"routes", routes}};
 }
 void ArmyArtwork::apply(const QJsonObject &value) {
     if (value["version"].toInt() != 1 || !value["planes"].isObject())
         throw Error("Unsupported Army artwork project");
     auto next = *this;
     next.edits_.clear();
+    next.routes_.clear();
+    if (value.contains("routes") && !value["routes"].isObject())
+        throw Error("Invalid saved Army class routes");
+    const auto routes = value["routes"].toObject();
+    for (auto it = routes.begin(); it != routes.end(); ++it) {
+        bool ok = false;
+        const auto id = it.key().toInt(&ok);
+        const auto row = it.value().toObject();
+        const auto lane = row["lane"].toInt(-1), model = row["model"].toInt(-1);
+        if (!ok || id < 0 || id > 255 || it.key() != QString::number(id) || lane < 0 || lane > 2 ||
+            model < 0 || model > 63)
+            throw Error("Invalid saved Army class route");
+        next.routes_[id] = {lane, model};
+    }
     const auto planes = value["planes"].toObject();
     for (auto it = planes.begin(); it != planes.end(); ++it) {
         const auto split = it.key().lastIndexOf(':');
@@ -409,15 +463,15 @@ std::array<QByteArray, 6> ArmyArtwork::decodedPacks() const {
         const auto &spec = specs()[atlas];
         const auto &pack = packs_[atlas];
         const auto plane = spec.width * spec.height;
-        bool expand = false;
+        int count = pack.count;
         for (int model = pack.count; model < spec.capacity; ++model)
-            expand |= modified(atlas, model);
+            if (modified(atlas, model))
+                count = model + 1;
         auto data = pack.source;
-        if (expand) {
-            data =
-                pack.source.first(1024 + pack.count * plane) +
-                QByteArray((spec.capacity - pack.count) * plane, char(spec.transparent.first())) +
-                pack.source.last(spec.tail);
+        if (count > pack.count) {
+            data = pack.source.first(1024 + pack.count * plane) +
+                   QByteArray((count - pack.count) * plane, char(spec.transparent.first())) +
+                   pack.source.last(spec.tail);
         }
         for (int model = 0; model < spec.capacity; ++model)
             if (modified(atlas, model))

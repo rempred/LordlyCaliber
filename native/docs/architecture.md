@@ -1,5 +1,51 @@
 # Native Lordly Caliber
 
+## Dynamic Army models and class assignments
+
+All six atlas lanes now expose model IDs 0–63, the native six-bit selector domain.
+Each pack grows only through its highest authored new plane. Gaps become transparent;
+unselected existing planes and both fixed palettes remain intact. Paired allocation
+still retains the shared upper operand and refuses a pair that cannot fit that
+constraint. New model data increases decoded atlas storage; no Expansion Pak
+requirement is imposed automatically, and full-game heap behavior remains unverified.
+
+The Army page assigns the selected model to a current class, shows that class's
+assignment, and restores it with undo. Large models require unit size 2; ordinary
+and special groups use other sizes. Assignments apply to both facings. The model
+retains unknown appearance bit 6, byte 5 and both portrait words. New assignments
+require both facing planes before export. Existing retail missing back planes are
+preserved unless an edit introduces a new assignment or switches the class's size
+into a missing reference. The UI can retain a pending assignment while its images
+are being authored; export reports the missing side.
+
+Native Army JSON version 1 adds an optional routes map with class ID, lane and
+model. Project.classData applies these assignments. They force the maintained class
+rebuild and enter its generated appearance array; an assignment alone leaves the
+six atlas resources untouched. Class cloning now carries an authored Army assignment
+and current per-class portrait edits, rather than silently reverting to ROM artwork.
+All changes remain project-owned and undoable. A later unit-size change that makes
+an assignment incompatible is rejected at export while the project stays editable.
+
+Build 31252 and the complete army_artwork_tests passed 86,523 ms. New checks cover
+route-only source rebuild, no unrelated atlas allocation, added classes 165–167,
+models 56/63, dynamic 57/64-plane packs, preserved unknown appearance fields,
+portrait/route inheritance, project round trips, export/CRC/reopen and original
+MIPS/browser readback. Maximum-size high-entropy large packs fit the shared-upper
+operand constraint in the checked samples; allocation bounds also guard all exports.
+Candidates are parent Test ROMs/native-army-routes-yrdbBf and native-army-MprRtN.
+The earlier missing-plane case now yields 454 images instead of 480 because growth
+stops at the requested plane; its 450 original images remain unchanged.
+
+UI Army assignment/restore/undo/compatibility, portrait and desktop checks passed
+2342 ms; the new controls screenshot was inspected. After build 32325, existing
+engine_tests addedClassProjects addedClassPublicExport passed 24,175 ms. The
+unit-size reference test initially encountered the existing formation-capacity
+validator; it was isolated with an unused added class. After build 35643,
+army_artwork_tests changedClassSizeNeedsValidModels passed 6295 ms: the actual
+missing-reference error is required, then a compatible Large assignment exports
+and reopens while retaining portraits and unknown appearance data. No full-game
+or hardware validation is claimed.
+
 ## Army workspace and indexed pixel tools
 
 Art now includes an Army sprites page with all six front/back atlases, shared-class

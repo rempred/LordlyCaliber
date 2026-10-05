@@ -21,6 +21,173 @@ class ArmyArtworkTests : public QObject {
         return QJsonDocument::fromJson(file.readAll()).object()["atlases"].toArray();
     }
   private slots:
+    void changedClassSizeNeedsValidModels() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadArmyArtwork();
+            const auto original = project.classData();
+            int selected = -1;
+            for (int id = 1; id < original.entries().size(); ++id)
+                if (ArmyArtwork::classLane(original.entries()[id]) != 2 &&
+                    ArmyArtwork::classModel(original.entries()[id]) >=
+                        project.armyArtwork()->sourceCount(4)) {
+                    selected = id;
+                    break;
+                }
+            QVERIFY(selected > 0);
+            const auto templateId = selected;
+            selected = project.appendClass(templateId, "Size validation");
+            auto record = project.record(Table::Classes, selected).bytes;
+            put8(record, ClassData::unitSizeOffset, 2);
+            project.replaceBytes(Table::Classes, selected, record);
+            QTemporaryDir work;
+            QString reason;
+            try {
+                rebuild(project, tools, work.path());
+            } catch (const Error &e) {
+                reason = QString::fromUtf8(e.what());
+            }
+            QVERIFY2(reason.contains("new unit size selects a missing"), qPrintable(reason));
+            auto army = *project.armyArtwork();
+            army.setRoute(project.classData(), selected, 2, 16);
+            project.setArmyArtwork(army.json());
+            const auto result = rebuild(project, tools, work.path());
+            const auto exported = ClassData::load(Rom::fromBytes(result.image));
+            QCOMPARE(ArmyArtwork::classLane(exported.entries()[selected]), 2);
+            QCOMPARE(ArmyArtwork::classModel(exported.entries()[selected]), 16);
+            QCOMPARE(exported.entries()[selected].appearance.first(4),
+                     original.entries()[templateId].appearance.first(4));
+            QCOMPARE(exported.entries()[selected].appearance[5],
+                     original.entries()[templateId].appearance[5]);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void dynamicClassRoutesAndPortraitClone() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            const auto original = ArmyArtwork::load(rom);
+            auto routeOnly = Project::fromRom(rom);
+            routeOnly.loadArmyArtwork();
+            auto routed = *routeOnly.armyArtwork();
+            routed.setRoute(routeOnly.classData(), 1, 1, 0);
+            routeOnly.setArmyArtwork(routed.json());
+            QVERIFY(!routed.pixelsModified());
+            const auto first = rebuild(routeOnly, tools, work.path());
+            QCOMPARE(first.image.mid(ArmyArtwork::descriptorOffset, ArmyArtwork::descriptorSize),
+                     rom.bytes().mid(ArmyArtwork::descriptorOffset, ArmyArtwork::descriptorSize));
+            const auto firstRom = Rom::fromBytes(first.image);
+            QVERIFY(ClassPlacement::read(firstRom));
+            QCOMPARE(ArmyArtwork::load(firstRom).decodedPacks(), original.decodedPacks());
+            QCOMPARE(ArmyArtwork::classLane(ClassData::load(firstRom).entries()[1]), 1);
+            auto project = Project::fromRom(rom);
+            project.loadArmyArtwork();
+            QCOMPARE(project.appendClass(1, "Independent model"), 165);
+            QCOMPARE(project.appendClass(71, "Independent large"), 166);
+            auto army = *project.armyArtwork();
+            army.setRoute(project.classData(), 165, 0, 56);
+            army.setRoute(project.classData(), 166, 2, 63);
+            project.setArmyArtwork(army.json());
+            QVERIFY_THROWS_EXCEPTION(Error, army.validateRoutes(project.classData()));
+            for (int atlas = 0; atlas < 2; ++atlas)
+                army.setIndices(atlas, 56, original.indices(atlas, 1));
+            for (int atlas = 4; atlas < 6; ++atlas)
+                army.setIndices(atlas, 63, original.indices(atlas, 16));
+            project.setArmyArtwork(army.json());
+            army.validateRoutes(project.classData());
+            auto preserved = project.classData();
+            auto asset = preserved.entries()[165];
+            const auto firstWords = asset.appearance.first(4);
+            put8(asset.appearance, 4, u8(asset.appearance, 4) | 0x40);
+            put8(asset.appearance, 5, 0xa7);
+            preserved.set(165, asset);
+            army.applyRoutes(preserved);
+            QCOMPARE(preserved.entries()[165].appearance.first(4), firstWords);
+            QCOMPARE(u8(preserved.entries()[165].appearance, 4) & 0x40, 0x40);
+            QCOMPARE(u8(preserved.entries()[165].appearance, 5), quint8(0xa7));
+            const auto packs = army.decodedPacks();
+            QCOMPARE(packs[0].size(), 1024 + 57 * 384);
+            QCOMPARE(packs[1].size(), 1024 + 57 * 384 + 512);
+            QCOMPARE(packs[4].size(), 1024 + 64 * 896);
+            QCOMPARE(packs[5].size(), 1024 + 64 * 896);
+            project.loadAvatarArtwork();
+            auto portraits = *project.avatarArtwork();
+            const auto words = portraits.words(project.classData(), 2, 0);
+            portraits.setWords(project.classData(), 165, 0, words);
+            project.setAvatarArtwork(portraits.json());
+            QCOMPARE(project.appendClass(165, "Inherited artwork"), 167);
+            QCOMPARE(project.armyArtwork()->routes()[167].model, 56);
+            QCOMPARE(project.avatarArtwork()->words(project.classData(), 167, 0), words);
+            auto roundtrip = Project::fromRom(rom);
+            roundtrip.applyManifest(project.manifest());
+            QCOMPARE(roundtrip.armyArtwork()->json(), project.armyArtwork()->json());
+            QCOMPARE(roundtrip.avatarArtwork()->json(), project.avatarArtwork()->json());
+            const auto built = rebuild(project, tools, work.path());
+            const auto actualRom = Rom::fromBytes(built.image);
+            const auto actual = ArmyArtwork::load(actualRom);
+            const auto classes = ClassData::load(actualRom);
+            QCOMPARE(actual.sourceCount(0), 57);
+            QCOMPARE(actual.sourceCount(1), 57);
+            QCOMPARE(actual.sourceCount(4), 64);
+            QCOMPARE(actual.sourceCount(5), 64);
+            QCOMPARE(ArmyArtwork::classModel(classes.entries()[165]), 56);
+            QCOMPARE(ArmyArtwork::classModel(classes.entries()[166]), 63);
+            QCOMPARE(ArmyArtwork::classModel(classes.entries()[167]), 56);
+            QCOMPARE(
+                AvatarLibrary::load(actualRom).words(u16(classes.entries()[167].appearance, 0)),
+                words);
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, built.image);
+            auto reopened = Project::fromRom(actualRom);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            QTemporaryDir candidates(
+                QFileInfo(path).dir().filePath("Test ROMs/native-army-routes-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto candidate = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            qInfo().noquote() << "Army routes candidate:" << candidate;
+            const auto checked = reference(candidate, work.filePath("routed-reference.json"));
+            for (int atlas = 0; atlas < 6; ++atlas)
+                QCOMPARE(QByteArray::fromBase64(
+                             checked[atlas].toObject()["decoded"].toString().toLatin1()),
+                         actual.decodedPacks()[atlas]);
+            // Maximum-size, high-entropy planes exercise the shared-upper-operand bound.
+            auto dense = original;
+            quint32 random = 0x93af04d9;
+            for (int atlas = 4; atlas < 6; ++atlas)
+                for (int model = 0; model < 64; ++model) {
+                    QByteArray pixels(896, 0);
+                    for (auto &pixel : pixels) {
+                        random = random * 1664525U + 1013904223U;
+                        pixel = char(random >> 24);
+                    }
+                    dense.setIndices(atlas, model, pixels);
+                }
+            const auto large = dense.decodedPacks();
+            for (int atlas = 4; atlas < 6; ++atlas)
+                QVERIFY(encodeLzss(large[atlas]).size() + 8 < 65536);
+            auto bad = project.classData();
+            asset = bad.entries()[165];
+            put8(asset.record, ClassData::unitSizeOffset, 2);
+            bad.set(165, asset);
+            QVERIFY_THROWS_EXCEPTION(Error, project.armyArtwork()->validateRoutes(bad));
+            QVERIFY_THROWS_EXCEPTION(Error, army.setRoute(project.classData(), 165, 2, 10));
+            QVERIFY_THROWS_EXCEPTION(Error, army.setRoute(project.classData(), 165, 0, 64));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void pairedAtlasExportAndGrowth() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
@@ -135,7 +302,7 @@ class ArmyArtworkTests : public QObject {
                              expected[atlas - 1].toObject()["key"].toInteger() >> 16);
                 expandedImages += row["images"].toArray().size();
             }
-            QCOMPARE(expandedImages, 480);
+            QCOMPARE(expandedImages, 454);
             auto preserved = rom.bytes();
             preserved.replace(
                 ArmyArtwork::descriptorOffset, ArmyArtwork::descriptorSize,
@@ -216,7 +383,7 @@ class ArmyArtworkTests : public QObject {
             put32(bad, 0x83810, 0x34a5b2ac);
             QVERIFY_THROWS_EXCEPTION(Error, ArmyArtwork::load(Rom::fromBytes(bad)));
             QVERIFY_THROWS_EXCEPTION(Error, original.indices(0, -1));
-            QVERIFY_THROWS_EXCEPTION(Error, edited.setIndices(5, 26, QByteArray(896, 0)));
+            QVERIFY_THROWS_EXCEPTION(Error, edited.setIndices(5, 64, QByteArray(896, 0)));
         } catch (const Error &e) {
             QFAIL(e.what());
         }

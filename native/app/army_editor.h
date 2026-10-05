@@ -26,6 +26,7 @@ class ArmyEditor : public QWidget {
   private:
     void refresh();
     void refreshPlane();
+    void refreshRoute();
     void prepareImage(const QImage &);
     void apply(const QByteArray &, const QString &);
     void guarded(const std::function<void()> &);
@@ -35,13 +36,13 @@ class ArmyEditor : public QWidget {
     std::function<void()> changed_;
     int atlas_ = 0, model_ = 0, paletteOrdinal_ = 0;
     bool refreshing_ = false;
-    QComboBox *atlasSelect_, *paletteSelect_, *library_;
+    QComboBox *atlasSelect_, *paletteSelect_, *library_, *routeClass_;
     QSpinBox *frame_, *ink_;
     QListWidget *models_;
     QLineEdit *search_;
     QTableWidget *colors_;
     SpriteCanvas *canvas_;
-    QLabel *title_, *consumers_, *alternate_, *notice_;
-    QPushButton *create_;
+    QLabel *title_, *consumers_, *alternate_, *notice_, *routeInfo_;
+    QPushButton *create_, *assignRoute_, *restoreRoute_;
 };
 } // namespace lordly

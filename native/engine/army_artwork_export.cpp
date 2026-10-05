@@ -17,7 +17,7 @@ quint32 bankStart(quint32 offset) {
 QByteArray ArmyArtwork::rebuild(const Rom &rom, const std::array<QByteArray, 6> &compiled) const {
     if (compiled != decodedPacks())
         throw Error("Compiled Army artwork differs from the project");
-    if (!modified())
+    if (!pixelsModified())
         return rom.bytes();
     if (rom.bytes().mid(descriptorOffset, descriptorSize) != descriptor_)
         throw Error("Another export owner changed the Army artwork descriptor");

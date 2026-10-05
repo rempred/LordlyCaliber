@@ -64,8 +64,8 @@ class UiTests : public QObject {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
             auto project=Project::fromRom(Rom::open(path));QUndoStack undo;ArmyEditor editor(&project,&undo,[]{});editor.resize(1300,820);editor.show();
-            auto models=editor.findChild<QListWidget *>("armyModels");QVERIFY(models);QCOMPARE(models->count(),56);
-            editor.selectModel(3,24);QCOMPARE(models->count(),38);auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");QVERIFY(canvas);QVERIFY(!canvas->isEnabled());
+            auto models=editor.findChild<QListWidget *>("armyModels");QVERIFY(models);QCOMPARE(models->count(),64);
+            editor.selectModel(3,24);QCOMPARE(models->count(),64);auto canvas=editor.findChild<SpriteCanvas *>("armyCanvas");QVERIFY(canvas);QVERIFY(!canvas->isEnabled());
             auto create=editor.findChild<QPushButton *>("armyCreate");QVERIFY(create->isEnabled());create->click();QVERIFY(canvas->isEnabled());QVERIFY(project.armyArtwork()->present(3,24));QCOMPARE(project.armyArtwork()->indices(3,24),QByteArray(384,char(-1)));
             editor.findChild<QSpinBox *>("armyInk")->setValue(1);QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(2,3)*canvas->zoom()+QPoint(2,2));
             QCOMPARE(u8(project.armyArtwork()->indices(3,24),3*16+2),quint8(1));QCOMPARE(undo.count(),2);
@@ -81,7 +81,11 @@ class UiTests : public QObject {
             editor.findChild<QPushButton *>("armyRestore")->click();QVERIFY(!project.armyArtwork()->present(3,26));undo.undo();QCOMPARE(project.armyArtwork()->json(),saved);
             QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("army-artwork-workspace.png"));
             QCOMPARE(project.appendClass(1,"New Army class"),165);const auto added=project.classData().entries()[165];editor.selectModel(ArmyArtwork::classLane(added)*2,ArmyArtwork::classModel(added));QVERIFY(editor.findChild<QLabel *>("armyConsumers")->text().contains("New Army class (165)"));
-            editor.selectModel(4,16,0);QVERIFY(editor.grab().save("army-artwork-loaded-workspace.png"));
+            editor.selectModel(0,56);editor.findChild<QPushButton *>("armyCreate")->click();editor.selectModel(1,56);editor.findChild<QPushButton *>("armyCreate")->click();
+            auto targetClass=editor.findChild<QComboBox *>("armyRouteClass");targetClass->setCurrentIndex(targetClass->findData(165));editor.findChild<QPushButton *>("armyAssignRoute")->click();QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[165]),56);QVERIFY(project.armyArtwork()->routes().contains(165));
+            undo.undo();QVERIFY(!project.armyArtwork()->routes().contains(165));undo.redo();QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[165]),56);
+            editor.findChild<QPushButton *>("armyRestoreRoute")->click();QVERIFY(!project.armyArtwork()->routes().contains(165));undo.undo();QCOMPARE(ArmyArtwork::classModel(project.classData().entries()[165]),56);
+            editor.selectModel(4,16,0);QVERIFY(!editor.findChild<QPushButton *>("armyAssignRoute")->isEnabled());QVERIFY(editor.grab().save("army-artwork-loaded-workspace.png"));
         }catch(const Error &e){QFAIL(e.what());}
     }
     void indexedPixelTools() {
