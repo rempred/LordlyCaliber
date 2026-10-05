@@ -32,7 +32,7 @@ target_sources(lordly_engine PRIVATE engine/animation_routes.cpp engine/body_ani
 target_sources(lordly_engine PRIVATE engine/animation_override_image.cpp)
 target_sources(lordly_engine PRIVATE engine/private_animation_assignments.cpp)
 target_sources(lordly_engine PRIVATE engine/body_markers.cpp rebuild/body_markers.cpp engine/body_selection.cpp rebuild/body_selection.cpp engine/pose_runtime.cpp rebuild/pose_runtime.cpp)
-qt_add_resources(lordly_engine body_marker_sources PREFIX "/" BASE . FILES game/art/body-markers.s game/art/body-selection.c game/art/body-record.c game/art/pose-advance.c)
+qt_add_resources(lordly_engine body_marker_sources PREFIX "/" BASE . FILES game/art/body-markers.s game/art/body-selection.c game/art/body-record.c game/art/pose-advance.c game/art/leader-slots.c)
 target_sources(lordly_engine PRIVATE engine/animation_overrides.cpp)
 target_sources(lordly_engine PRIVATE rebuild/animation_overrides.cpp)
 qt_add_resources(lordly_engine animation_override_sources PREFIX "/" BASE . FILES game/art/animation-overrides.json game/art/animation-override-bootstrap.s game/art/animation-override-lookup.s game/art/animation-override-mode-return.s game/art/animation-override-entry.s game/art/animation-override-hook.s game/art/animation-override-return.s game/art/animation-override-carriers.s)

@@ -55,8 +55,13 @@ void SceneActors::materializeRoster(qint32 first, qint32 second, int variant) {
             continue;
         const auto actor = next.actors_[slot]->record();
         const auto row = next.bodyRow(u8(actor, 0x147));
+        const bool privatePrimary =
+            next.bodyData_ &&
+            next.bodyData_->routes().privatePose(qint32(u32(actor, 0xe8)), qint32(u32(actor, 0xec)),
+                                                 u8(actor, 0x146) * 2 + qint16(u16(actor, 0x13a)),
+                                                 qint16(u16(actor, 0x138))) >= 0;
         const int target = lordly_roster_leader_slot(u32(row, 0x40), qint32(u32(row, 0x4c)),
-                                                     qint16(u16(actor, 0x138)));
+                                                     qint16(u16(actor, 0x138)), privatePrimary);
         if (target < 0 || target == slot)
             continue;
         std::swap(next.actors_[slot], next.actors_[target]);

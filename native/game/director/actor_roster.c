@@ -43,8 +43,8 @@ int lordly_roster_pose_offset(uint32_t flags, int32_t depth, int context, int sc
         return 26;
     return -1;
 }
-int lordly_roster_leader_slot(uint32_t flags, int32_t owner, int pose) {
-    if ((owner == 10 || owner == 25 || owner == 123) && pose >= 50)
+int lordly_roster_leader_slot(uint32_t flags, int32_t owner, int pose, int private_primary) {
+    if ((owner == 10 || owner == 25 || owner == 123) && pose >= 50 && !private_primary)
         return -1;
     if (!(flags & 0x200))
         return -1;

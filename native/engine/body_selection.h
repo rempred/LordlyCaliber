@@ -10,4 +10,12 @@ class BodySelectionImage {
     static int count(const Rom &);
     static void validate(const Rom &, const QByteArray &mappings);
 };
+class LeaderSelectionImage {
+  public:
+    static constexpr int offset = 0x2ab574, size = 328;
+    static constexpr quint32 address = 0x8023be14;
+    static constexpr int descriptorOffset = 0x27c50a0, descriptorSize = 96;
+    static int count(const Rom &);
+    static void validate(const Rom &, const QByteArray &mappings);
+};
 } // namespace lordly

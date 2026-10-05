@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Private attack leader slots
+
+The complete leader normalizer now rebuilds from `game/art/leader-slots.c` in
+z64 [2AB574,2AB6BC), live 8023BE14. Its extended function and leading alignment
+use 324 of 328 bytes. It calls the primary-only lookup in the body initializer,
+which shares the same resident Director slab. Registered linked primaries can
+move to persistent/deployed leader slots 0/1; companions and unregistered high
+poses remain excluded. Each iteration reads the current slot after previous
+swaps, and both moved Actors receive corrected slot fields. Native preview uses
+the same eligibility and mutable scan. The pose interpreter's broader
+primary-or-companion registration query is deliberately not used here.
+
+LC05LEAD at z64 27C50A0 (96 bytes) stores version/count, mapping and code hashes,
+and the compiled primary-query address. Export installs or restores body and
+leader code together, guards ownership and preserves their neighbors. Earlier
+LC05BSEL exports load and acquire the missing normalizer during export. The new
+routine adds no RAM allocation or hook.
+
+`animation_sequences_tests linkedPrivateAttacks` passed in 16107 ms: each of the
+extended and restored normalizers matches 48 complete original slot scans and
+16 explicit primary/companion cases; native preview matches all 128 results,
+including whole Actor records. The existing 675 body-initialization comparisons,
+export/reopen/no-op, restoration and corrupt-code checks also pass. Candidate:
+parent `Test ROMs/native-linked-attacks-dNAyre/`. `presentation_runtime_tests
+rosterMaterializationAgainstMips rosterMutableLeaderScan` passed in 401 ms (50
+original materializations and three mutable-scan cases). The combined fixed-pose
+export regression passed again in 23486 ms, candidate `native-private-pose-runtime-EyuYaw`.
+No full-game or hardware claim follows from these controlled instruction checks.
+
+Correction to the parent command reference's older wording: the original
+normalizer skips linked-owner poses **at or above 50**, not below 50. Original
+instructions at live 8023BE80..8023BE8C and the comparisons above establish this.
+
 ## Fixed private poses and wide transfers
 
 Fixed sources 135/136/161 now accept registered private attack poses while retaining
@@ -40,8 +73,8 @@ operand pointers. Candidate: parent `Test ROMs/native-private-pose-runtime-FQoDk
 body/Actor regressions in 8422/2571 ms. Existing UI cases passed, and the corrected
 `sequence_editor_tests fixedOwnerPreview` passed in 271 ms. Its 1400x1000 capture
 was inspected. Full builds succeeded without new warnings. These checks do not
-establish full-game heap or hardware behavior. Leader normalization, fixed-ID
-template inheritance and browser sequence import remain active work.
+establish full-game heap or hardware behavior. Leader normalization is completed
+above; fixed-ID template inheritance and browser sequence import remain active work.
 
 ## Private linked-body attacks
 

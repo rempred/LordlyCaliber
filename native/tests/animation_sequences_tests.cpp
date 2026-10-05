@@ -181,6 +181,37 @@ class AnimationSequencesTests : public QObject {
             atomicWrite(work.filePath("body.bin"), built.image.mid(BodySelectionImage::offset, BodySelectionImage::size));
             run(QFINDTESTDATA("body-selection-mips.cjs"),
                 {path, work.filePath("paired.json"), work.filePath("body.bin"), work.filePath("original.json")});
+            const auto leaderChecks = [&](Project &p, const QByteArray &image, const QString &candidate, bool baseline) {
+                QCOMPARE(LeaderSelectionImage::count(Rom::fromBytes(image)), baseline ? 0 : 2);
+                QCOMPARE(image.mid(LeaderSelectionImage::offset - 16, 16), rom.bytes().mid(LeaderSelectionImage::offset - 16, 16));
+                QCOMPARE(image.mid(LeaderSelectionImage::offset + LeaderSelectionImage::size, 16),
+                         rom.bytes().mid(LeaderSelectionImage::offset + LeaderSelectionImage::size, 16));
+                atomicWrite(work.filePath("leader-map.bin"), p.privatePoseMappings());
+                run(QFINDTESTDATA("leader-slots-mips.cjs"), {path, candidate, work.filePath("leader-map.bin"),
+                    baseline ? "baseline" : "private", work.filePath("leaders.json")});
+                QFile file(work.filePath("leaders.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+                const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+                QCOMPARE(cases.size(), 64);
+                for (const auto &value : cases) {
+                    const auto c = value.toObject();
+                    SceneActors actors(p.rom(), 2, 0, {}, p.bodyAnimationData());
+                    QVector<QByteArray> appearance;
+                    for (const auto &r : c["rows"].toArray()) appearance << QByteArray::fromHex(r.toString().toLatin1());
+                    actors.supplyBodyRows(appearance); actors.supplyRosterLaunch({});
+                    const auto before = c["before"].toArray(), after = c["after"].toArray();
+                    for (int i = 0; i < 28; ++i)
+                        if (!before[i].isNull()) actors.supplyActor(i, QByteArray::fromHex(before[i].toString().toLatin1()));
+                    actors.materializeRoster(0, 0, 0);
+                    for (int i = 0; i < 28; ++i) {
+                        QCOMPARE(actors.actor(i).has_value(), !after[i].isNull());
+                        if (!after[i].isNull()) QCOMPARE(actors.actor(i)->record(), QByteArray::fromHex(after[i].toString().toLatin1()));
+                    }
+                }
+            };
+            leaderChecks(reopened, built.image, output, false);
+            auto leaderCorrupt = built.image; leaderCorrupt[LeaderSelectionImage::offset + 20] ^= 1;
+            auto badLeader = Project::fromRom(Rom::fromBytes(leaderCorrupt));
+            QVERIFY_THROWS_EXCEPTION(Error, badLeader.loadAnimationRoutes());
             auto corrupt = built.image;
             corrupt[BodySelectionImage::offset + 20] ^= 1;
             auto invalid = Project::fromRom(Rom::fromBytes(corrupt));
@@ -192,6 +223,10 @@ class AnimationSequencesTests : public QObject {
             QVERIFY(reopened.privatePoseMappings().isEmpty());
             const auto reset = rebuild(reopened, tools, work.path());
             auto clean = Project::fromRom(Rom::fromBytes(reset.image));
+            QVERIFY(QDir(candidates.path()).mkpath("restored"));
+            const auto resetPath = candidates.filePath("restored/" + QFileInfo(path).fileName());
+            exportRom(reopened, reset, resetPath);
+            leaderChecks(clean, reset.image, resetPath, true);
             QCOMPARE(BodySelectionImage::count(clean.rom()), 0);
             atomicWrite(work.filePath("baseline.bin"), reset.image.mid(BodySelectionImage::offset, BodySelectionImage::size));
             run(QFINDTESTDATA("body-selection-mips.cjs"),

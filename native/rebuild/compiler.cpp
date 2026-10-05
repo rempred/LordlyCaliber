@@ -922,7 +922,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image = rebuildBodySelection(Rom::fromBytes(result.image), p.rom(),
                                             exportAnimationRoutes->privatePoses(), compiler, directory);
         if (result.image != beforeSelection)
-            result.report << "Compiled linked-body selection from C within its original code allocation";
+            result.report << "Compiled linked-body and leader selection from C within their original code allocations";
         const auto beforePose = result.image;
         result.image = rebuildPoseRuntime(Rom::fromBytes(result.image), p.rom(),
             exportAnimationRoutes->privatePoses(), p.animationSequences() && p.animationSequences()->requiresWideStates(),

@@ -11,7 +11,7 @@ int lordly_roster_pose_offset(uint32_t flags, int32_t depth, int context, int sc
                               int variant);
 /* Reconstructed ROM2AB574 leader normalizer predicate; caller walks the
  * mutable slot table and swaps Actor identities, leaving slot-owned jobs. */
-int lordly_roster_leader_slot(uint32_t flags, int32_t owner, int pose);
+int lordly_roster_leader_slot(uint32_t flags, int32_t owner, int pose, int private_primary);
 #ifdef __cplusplus
 }
 #endif
