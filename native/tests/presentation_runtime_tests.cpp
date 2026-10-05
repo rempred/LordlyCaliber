@@ -26,6 +26,126 @@ QByteArray motionBytes(const LordlyActorMotion &m) {
 class PresentationRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void rosterMaterializationAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("actor-roster-mips.cjs"), path, work.filePath("roster.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile f(work.filePath("roster.json"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const auto results = QJsonDocument::fromJson(f.readAll()).object()["results"].toArray();
+        QCOMPARE(results.size(), 50);
+        const auto rom = Rom::open(path);
+        int index = 0;
+        try {
+            for (const auto &v : results) {
+                const auto c = v.toObject();
+                SceneActors scene(rom, 2, 60, [](int, float, float) { return 123.75f; });
+                QVector<QByteArray> rows;
+                for (const auto &r : c["rows"].toArray())
+                    rows << bytes(r);
+                scene.supplyBodyRows(rows);
+                for (const auto &o : c["objects"].toArray()) {
+                    const auto r = o.toObject();
+                    scene.supplyBodyObject(quint32(r["address"].toInteger()), bytes(r["record"]));
+                }
+                PresentationRoster roster;
+                roster.sideGroups = {0, 30};
+                for (int bank = 0; bank < 2; ++bank)
+                    for (int member = 0; member < 100; ++member)
+                        roster.members[bank].insert(member, {quint16(member == 9 ? 0 : 1), 0});
+                scene.supplyRosterLaunch(
+                    {qint8(c["context"].toInt()), qint16(c["scenario"].toInt()), roster});
+                int unused = -100;
+                QVERIFY(scene.service(c["variant"].toInt() ? 0xab : 0x45,
+                                      {quint32(c["first"].toInt()), quint32(c["second"].toInt())},
+                                      unused));
+                QCOMPARE(unused, -100);
+                int count = 0;
+                for (int i = 0; i < 28; ++i)
+                    count += scene.actor(i).has_value();
+                QCOMPARE(count, c["actors"].toArray().size());
+                for (const auto &a : c["actors"].toArray()) {
+                    const auto r = a.toObject();
+                    const int slot = r["slot"].toInt();
+                    QVERIFY(scene.actor(slot));
+                    const auto actual = scene.actor(slot)->record(), expected = bytes(r["record"]);
+                    if (actual != expected) {
+                        int at = 0;
+                        while (at < actual.size() && actual[at] == expected[at])
+                            ++at;
+                        QFAIL(qPrintable(
+                            QString("case%1 slot%2 byte%3 actual%4 expected%5")
+                                .arg(index)
+                                .arg(slot)
+                                .arg(at, 0, 16)
+                                .arg(actual.mid(at, 16).toHex(), expected.mid(at, 16).toHex())));
+                    }
+                }
+                QVector<int> draws;
+                for (const auto &d : c["draws"].toArray())
+                    draws << d.toInt();
+                QCOMPARE(scene.immediateRosterDraws(), draws);
+                ++index;
+            }
+        } catch (const std::exception &e) {
+            QFAIL(qPrintable(QString("case%1: %2").arg(index).arg(e.what())));
+        }
+    }
+    void rosterMutableLeaderScan() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QFile f(QFINDTESTDATA("../../tests/fixtures/cutscene-roster-construction.json"));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(f.readAll()).object()["finalizers"].toArray();
+        QCOMPARE(cases.size(), 3);
+        for (const auto &v : cases) {
+            const auto c = v.toObject();
+            SceneActors scene(rom, 2, 0);
+            QVector<QByteArray> rows(20, QByteArray(248, 0));
+            const auto inputRows = c["rows"].toObject();
+            for (auto it = inputRows.begin(); it != inputRows.end(); ++it) {
+                const auto row = it.value().toObject();
+                put32(rows[it.key().toInt()], 0x40, quint32(row["flags"].toInteger()));
+                put32(rows[it.key().toInt()], 0x4c, quint32(row["context"].toInteger()));
+            }
+            scene.supplyBodyRows(rows);
+            scene.supplyRosterLaunch({});
+            QMap<QString, QByteArray> identities;
+            const auto before = c["before"].toArray(), after = c["after"].toArray();
+            for (int slot = 0; slot < 28; ++slot) {
+                if (before[slot].isNull())
+                    continue;
+                const auto name = before[slot].toString();
+                const auto a = c["actors"].toObject()[name].toObject();
+                QByteArray record(336, 0);
+                put32(record, 0xe4, slot);
+                put32(record, 0xe8, 30);
+                put8(record, 0x147, a["row"].toInt());
+                put16(record, 0x138, a["state"].toInt());
+                // Identity marker outside fields touched by the normalizer.
+                put32(record, 0xdc, quint32(slot + 1));
+                scene.supplyActor(slot, record);
+                identities[name] = record;
+            }
+            scene.materializeRoster(0, 0, 0);
+            for (int slot = 0; slot < 28; ++slot) {
+                QCOMPARE(scene.actor(slot).has_value(), !after[slot].isNull());
+                if (after[slot].isNull())
+                    continue;
+                auto expected = identities[after[slot].toString()];
+                put32(expected, 0xe4, slot);
+                QCOMPARE(scene.actor(slot)->record(), expected);
+            }
+        }
+    }
     void lifecycleAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -312,6 +432,12 @@ class PresentationRuntimeTests : public QObject {
         QVERIFY(crowded.presentationRecord().isEmpty());
         QVERIFY(!crowded.presentationOpacity());
         QCOMPARE(crowded.actor(0)->record(), occupiedBefore);
+        QVERIFY_THROWS_EXCEPTION(Error, crowded.materializeRoster(-1,-1,0));
+        crowded.supplyRosterLaunch({});
+        QVERIFY_THROWS_EXCEPTION(Error, crowded.materializeRoster(-1,-1,0));
+        QVERIFY(!crowded.actor(27));
+        QCOMPARE(crowded.actor(0)->record(),occupiedBefore);
+        QVERIFY(crowded.immediateRosterDraws().isEmpty());
         SceneActors empty(rom, 2, 0);
         empty.advancePresentation();
         QVERIFY(empty.presentationRecord().isEmpty());

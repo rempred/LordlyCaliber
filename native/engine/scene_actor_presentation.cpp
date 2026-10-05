@@ -156,7 +156,10 @@ bool SceneActors::presentationMemberUnavailable(const QByteArray &row) const {
     // launch extraction supplies their two observed fields without aliasing RAM.
     if (!presentationLaunch_ || !presentationLaunch_->roster)
         throw Error("Actor entrance variant requires its current army roster state");
-    const auto &roster = *presentationLaunch_->roster;
+    return rosterMemberUnavailable(row, *presentationLaunch_->roster);
+}
+bool SceneActors::rosterMemberUnavailable(const QByteArray &row,
+                                          const PresentationRoster &roster) const {
     if (roster.overrideFlag == 1)
         return false;
     const int side = (u32(row, 0x40) >> 8) & 1;
@@ -166,7 +169,7 @@ bool SceneActors::presentationMemberUnavailable(const QByteArray &row) const {
         throw Error("Actor entrance requires the selected army member's current state");
     return !found->value || (found->flags & 4);
 }
-std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial) {
+std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial, int direction) {
     // ROM 2AB810. Three row pointers, not just the primary/paired-secondary two.
     const auto row = bodyRow(identity);
     const int source = qint32(u32(row, 0x48)), owner = qint32(u32(row, 0x4c));
@@ -179,7 +182,7 @@ std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial)
         type = previousSpecial ? 4 : 0;
     else if (source == 0xa1 || source == 0x88)
         type = 2;
-    const int side = (u32(row, 0x40) >> 8) & 1;
+    const int side = direction == -1 ? int((u32(row, 0x40) >> 8) & 1) : direction;
     std::array<int, 4> created{-1, -1, -1, -1};
     for (int member = 0; member < 3; ++member) {
         const auto pointer = u32(row, member * 4);

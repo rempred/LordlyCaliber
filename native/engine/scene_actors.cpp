@@ -228,6 +228,12 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x45 || opcode == 0xab) {
+        if (args.size() != 2)
+            throw Error("Actor roster materialization requires two operands");
+        materializeRoster(qint32(args[0]), qint32(args[1]), opcode == 0xab);
+        return true;
+    }
     if (opcode == 0x1c) {
         if (args.size() != 2)
             throw Error("Actor channel assignment is truncated");

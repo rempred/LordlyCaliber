@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Actor roster materialization
+
+45/AB now materialize supplied twenty-row army contexts through SceneActors.
+The selector and pose policy are adapted from accepted PURE_C func_002ABB3C at
+Decomp8012b84aec7c04dd61e383cbf40d5b2ae5dcd2a8; its unchanged source is retained
+under game/director. Host code owns the target pointer graph, capacity checks,
+resource binding, construction, pose execution and mutable leader-slot scan.
+The existing constructor now accepts its native direction argument independently
+of roster-source flags. Command failure leaves the scene unchanged.
+
+Build99357 presentation_runtime_tests rosterMaterializationAgainstMips passed261ms:
+50 cases execute original selection, construction, pose and leader normalization.
+The test controls resource allocations, terrain123.75, availability, and draw/audio
+sinks. Every Actor record and immediate draw request matches; cases cover the two
+command variants, both sources, consumable/family selectors, paired and special
+bodies, context filters, and six scenario depth inversions. It does not establish
+Stage construction, terrain correctness, final audio or immediate-draw pixels.
+An invalid synthetic second87 selected a46-pose resource then requested pose50;
+the port correctly rejected it. The fixture now uses the valid special-body depth
+route. Existing entrance/return and missing-context tests passed within the2222ms
+Build5534 suite. Build43897 rosterMutableLeaderScan and missingContextIsAtomic
+passed195ms: three retained original mutable-scan cases and capacity rollback.
+
+The original normalizer skips paired-owner Actors when pose>=50. An older parent
+command-reference paragraph says below50; the original2AB574 branch and corrected
+retained finalizer fixtures establish the opposite. This note corrects that
+interpretation without rewriting another owner's domain document.
+
+UI party selection and native upstream row/linked-object construction remain
+unfinished. The engine requires explicit launch context/scenario and roster state
+where the game reads it. No guessed actor records or historical party claims are
+introduced. Immediate draw requests are retained as pre-normalization slot events.
+
 ## Map help and briefing panels
 
 ScenePanels owns the fourteen script handles and the separate animated entity

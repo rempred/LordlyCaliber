@@ -39,7 +39,10 @@ endpoint, reveal and release timing; strip texture/edge drawing is approximate.
 Map help, briefing choices and confirmation panels now execute with native
 animation, input, handle lifetimes and current-ROM text, including deterministic
 seek/replay. Desktop frame/glyph drawing is approximate. Other panel services
-and automatic event/army launch context remain unfinished.
+and automatic event/army launch context remain unfinished. Roster materialization
+now uses adapted accepted C for class/source selection and pose policy, with
+native construction and leader normalization; upstream party/Stage building is
+still required before the UI can supply these inputs.
 Iris close/open transitions now retain captured frames and background layers,
 move and release Actor/sprite owners, render the native mask mesh, and replay
 across checkpoints. Desktop capture timing and edge blending remain explicit

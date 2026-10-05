@@ -33,6 +33,11 @@ struct PresentationLaunch {
     qint8 variant = 0;
     std::optional<PresentationRoster> roster;
 };
+struct ActorRosterLaunch {
+    qint8 context = 0;
+    qint16 scenario = 0;
+    std::optional<PresentationRoster> roster;
+};
 class SceneActors {
   public:
     SceneActors(const Rom &rom, int mode, quint8 presentation, ActorInstance::Height height = {});
@@ -59,6 +64,13 @@ class SceneActors {
         presentationLaunch_ = std::move(launch);
     }
     void startEntrance();
+    void supplyRosterLaunch(ActorRosterLaunch launch) {
+        rosterLaunch_ = std::move(launch);
+    }
+    void materializeRoster(qint32 first, qint32 second, int variant);
+    const QVector<int> &immediateRosterDraws() const {
+        return rosterDraws_;
+    }
     std::optional<quint8> presentationOpacity() const {
         return presentationOpacity_;
     }
@@ -112,7 +124,8 @@ class SceneActors {
     std::array<float, 2> presentationTarget(const QByteArray &actor) const;
     void returnToBodyPosition(int slot);
     bool presentationMemberUnavailable(const QByteArray &row) const;
-    std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial);
+    bool rosterMemberUnavailable(const QByteArray &, const PresentationRoster &) const;
+    std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial, int direction = -1);
     Rom rom_;
     ActorMaterials materials_;
     ActorDivider divider_;
@@ -134,6 +147,8 @@ class SceneActors {
     QHash<quint32, QByteArray> bodyObjects_;
     QByteArray presentationRecord_;
     std::optional<PresentationLaunch> presentationLaunch_;
+    std::optional<ActorRosterLaunch> rosterLaunch_;
+    QVector<int> rosterDraws_;
     std::optional<quint8> presentationOpacity_;
 };
 } // namespace lordly
