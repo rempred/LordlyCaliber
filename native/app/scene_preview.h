@@ -64,6 +64,7 @@ class ScenePreview : public QWidget {
     void imageInput(LordlyImageInput);
     void branchInput();
     void skipScene();
+    void panelButton(quint16);
     Rom rom_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
@@ -86,6 +87,7 @@ class ScenePreview : public QWidget {
     QGraphicsScene *canvas_;
     QGraphicsView *view_;
     QWidget *imageControlsUi_;
+    QWidget *panelControlsUi_;
     QWidget *launchImageUi_;
     QComboBox *launchImage_;
 };

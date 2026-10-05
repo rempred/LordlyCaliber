@@ -5,7 +5,8 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
       rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
-      cameras_(std::move(cameras)), imageMotion_(rom), ribbons_(rom), lighting_(start.lighting) {
+      cameras_(std::move(cameras)), panels_(rom), imageMotion_(rom), ribbons_(rom),
+      lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
     screenVariant_ = selector;
     schedule_.alternate = start.alternate;
@@ -104,6 +105,28 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x62) {
+        if (args.size() != 2)
+            throw Error("Panel creation requires two operands");
+        if (args[1] == 33 && !imageView_)
+            throw Error("Map help requires its launch image dimensions");
+        panels_.create(qint32(args[0]), qint32(args[1]),
+                       imageView_ ? qint16(u16(*imageView_, 0x834)) : 320,
+                       imageView_ ? qint16(u16(*imageView_, 0x836)) : 240);
+        return true;
+    }
+    if (opcode == 0x6a) {
+        if (args.size() != 3)
+            throw Error("Panel query requires three operands");
+        value = panels_.query(qint32(args[2]));
+        return true;
+    }
+    if (opcode == 0x6b) {
+        if (args.size() != 1)
+            throw Error("Panel release requires one operand");
+        panels_.release(qint32(args[0]));
+        return true;
+    }
     if (opcode == 0x3b || opcode == 0x3c) {
         if (screenVariant_ == 0)
             throw Error("Title-card edge reveal requires its title-scene renderer");
@@ -455,6 +478,9 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     supplemental_ = nullptr;
     commands_ = nullptr;
     if (status == LORDLY_SCENE_COMPLETE) {
+        // Scene wrapper ROM281A8C calls the menu updater after the complete
+        // Actor/Director scheduler, including its alternate path.
+        panels_.advance(pressed_, pressed_ & 0x0c00);
         ++completed_;
         released_ = releaseRequested_;
         return released_ ? Released : Advanced;

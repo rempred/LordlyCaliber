@@ -36,7 +36,10 @@ indicators. Keyboard/button input is recorded for deterministic seeking and can
 be changed after rewinding. Image scenes can select an external launch image for
 preview. Map-path ribbons read current-ROM paths and preserve native curve,
 endpoint, reveal and release timing; strip texture/edge drawing is approximate.
-Remaining panel services and automatic event/army launch context are unfinished.
+Map help, briefing choices and confirmation panels now execute with native
+animation, input, handle lifetimes and current-ROM text, including deterministic
+seek/replay. Desktop frame/glyph drawing is approximate. Other panel services
+and automatic event/army launch context remain unfinished.
 Iris close/open transitions now retain captured frames and background layers,
 move and release Actor/sprite owners, render the native mask mesh, and replay
 across checkpoints. Desktop capture timing and edge blending remain explicit

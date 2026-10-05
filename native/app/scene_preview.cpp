@@ -88,6 +88,28 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     imageButtons->addStretch();
     imageControlsUi_->hide();
     layout->addWidget(imageControlsUi_);
+    panelControlsUi_ = new QWidget;
+    auto panelButtons = new QHBoxLayout(panelControlsUi_);
+    panelButtons->setContentsMargins(0, 0, 0, 0);
+    panelButtons->addWidget(new QLabel("Panel controls"));
+    const struct {
+        const char *label;
+        const char *name;
+        quint16 bit;
+    } panelSpecs[]{{"Up", "panelUp", 0x800},
+                   {"Down", "panelDown", 0x400},
+                   {"Confirm (A)", "panelConfirm", 0x8000},
+                   {"Cancel (B)", "panelCancel", 0x4000}};
+    for (const auto &spec : panelSpecs) {
+        auto button = new QPushButton(QString::fromLatin1(spec.label));
+        button->setObjectName(QString::fromLatin1(spec.name));
+        panelButtons->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, bit = spec.bit] { panelButton(bit); });
+    }
+    panelButtons->addWidget(new QLabel("Arrow keys · A / B"));
+    panelButtons->addStretch();
+    panelControlsUi_->hide();
+    layout->addWidget(panelControlsUi_);
     canvas_ = new QGraphicsScene(this);
     view_ = new QGraphicsView(canvas_);
     view_->setObjectName("sceneCanvas");
@@ -173,6 +195,14 @@ void ScenePreview::skipScene() {
     if (!timer_->isActive())
         step();
 }
+void ScenePreview::panelButton(quint16 bit) {
+    if (!current_ || current_->stopped || current_->playback.panels().empty())
+        return;
+    branchInput();
+    pendingPressed_ |= bit;
+    if (!timer_->isActive())
+        step();
+}
 void ScenePreview::imageButton(quint16 bit, bool down) {
     auto input = liveInput_;
     input.digital = down ? quint16(input.digital | bit) : quint16(input.digital & ~bit);
@@ -182,6 +212,20 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
+        !current_->playback.panels().empty()) {
+        const auto key = static_cast<QKeyEvent *>(event);
+        const quint16 bit = key->key() == Qt::Key_A      ? 0x8000
+                            : key->key() == Qt::Key_B    ? 0x4000
+                            : key->key() == Qt::Key_Up   ? 0x800
+                            : key->key() == Qt::Key_Down ? 0x400
+                                                         : 0;
+        if (bit) {
+            if (!key->isAutoRepeat())
+                panelButton(bit);
+            return true;
+        }
+    }
     if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
         current_->playback.skipArmed()) {
         const auto key = static_cast<QKeyEvent *>(event);
@@ -626,6 +670,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         painter.setClipRegion(QRegion(frame.rect()).subtracted(QRegion(clip)));
         painter.fillRect(frame.rect(), Qt::black);
         painter.restore();
+        if (!drawing.panels().empty())
+            painter.drawImage(0, 0, drawing.panels().render());
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));
@@ -749,6 +795,8 @@ void ScenePreview::present() {
     skip_->setEnabled(play_->isEnabled());
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
     imageControlsUi_->setEnabled(play_->isEnabled());
+    panelControlsUi_->setVisible(current_ && !current_->playback.panels().empty());
+    panelControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
@@ -776,5 +824,9 @@ void ScenePreview::present() {
     if (current_->playback.iris() && !current_->playback.iris()->record().isEmpty())
         status_->setText(status_->text() + "\nIris: native layers, timing and mesh; desktop "
                                            "capture and approximate edge blending.");
+    if (!current_->playback.panels().empty())
+        status_->setText(
+            status_->text() +
+            "\nPanels: native timing and layout; approximate frame and glyph rendering.");
 }
 } // namespace lordly

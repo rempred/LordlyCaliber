@@ -11,6 +11,7 @@
 #include "engine/scene_image_motion.h"
 #include "engine/scene_image_presentation.h"
 #include "engine/scene_iris.h"
+#include "engine/scene_panels.h"
 #include "engine/scene_projection.h"
 #include "engine/scene_ribbons.h"
 #include "engine/scene_sprites.h"
@@ -123,6 +124,9 @@ class ScenePlayback {
     const SceneCrop &crop() const {
         return crop_;
     }
+    const ScenePanels &panels() const {
+        return panels_;
+    }
     const SceneEffects &effects() const {
         return effects_;
     }
@@ -197,6 +201,7 @@ class ScenePlayback {
     SceneFade fade_;
     SceneEffects effects_;
     SceneCrop crop_;
+    ScenePanels panels_;
     int screenVariant_ = -1;
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;

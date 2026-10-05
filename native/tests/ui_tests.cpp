@@ -219,6 +219,89 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
     }
+    void panelPreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 source = 0;
+        for (const auto &entry : scenes.original().entries())
+            if (entry.program.resourceClass() == 4) {
+                source = entry.key;
+                break;
+            }
+        QVERIFY(source);
+        for (quint32 preset : {33U, 3U, 1U}) {
+            const auto id =
+                scenes.createScene(QString("Panel %1 replay").arg(preset), source, false);
+            QVector<quint32> words{0x80000007U, 47, 0x80000006U, 0,  0x3a, 2, 0,
+                                   0,           0,  70,          70, 130,  8};
+            for (int i = 0; i < 4; ++i)
+                words << 0 << 0x80000000U;
+            // Open only when the native owner query reports this slot absent.
+            words << 0x56 << 0x6a << 0 << 0xfffffffbU << 4 << 0x62 << 4 << preset << 0x80000002U;
+            for (int i = 0; i < 150; ++i)
+                words << 0 << 0x80000000U;
+            words << 0x6b << 4;
+            for (int i = 0; i < 30; ++i)
+                words << 0 << 0x80000000U;
+            words << 0x80000001U << 0xff000004U;
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            scenes.replace(id, bytes);
+            ScenePreview preview(rom);
+            preview.resize(1200, 800);
+            preview.show();
+            preview.selectScene(scenes, id, 0);
+            auto position = preview.findChild<QSpinBox *>("scenePosition");
+            auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+            const auto seek = [&](int tick) {
+                position->setValue(tick);
+                QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+                QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+            };
+            seek(4);
+            const auto before = preview.renderedFrame();
+            seek(12);
+            const auto opening = preview.renderedFrame();
+            QVERIFY(opening != before);
+            seek(20);
+            const auto ready = preview.renderedFrame();
+            QVERIFY(ready != opening);
+            QVERIFY(status->text().contains("approximate frame"));
+            if (preset != 33) {
+                preview.findChild<QPushButton *>("panelDown")->click();
+                QCOMPARE(preview.property("sceneTick").toInt(), 21);
+                QVERIFY(preview.renderedFrame() != ready);
+            }
+            preview.findChild<QPushButton *>("panelConfirm")->click();
+            const int acceptedTick = preview.property("sceneTick").toInt();
+            const auto accepted = preview.renderedFrame();
+            if (preset == 3)
+                QVERIFY(preview.grab().save("scene-briefing-panel.png"));
+            seek(40);
+            QCOMPARE(preview.renderedFrame(), before);
+            QVERIFY(!preview.findChild<QPushButton *>("panelConfirm")->isVisible());
+            seek(124);
+            QCOMPARE(preview.renderedFrame(), before);
+            seek(12);
+            QCOMPARE(preview.renderedFrame(), opening);
+            seek(acceptedTick);
+            QCOMPARE(preview.renderedFrame(), accepted);
+            seek(160);
+            QCOMPARE(preview.renderedFrame(), before);
+            preview.findChild<QPushButton *>("sceneRestart")->click();
+            seek(acceptedTick);
+            QCOMPARE(preview.renderedFrame(), accepted);
+            // A new input after rewinding replaces the recorded future.
+            seek(20);
+            preview.findChild<QPushButton *>("panelCancel")->click();
+            seek(40);
+            QCOMPARE(preview.renderedFrame(), before);
+        }
+    }
     void irisPreviewSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

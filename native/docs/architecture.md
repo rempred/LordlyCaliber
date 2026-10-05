@@ -1,5 +1,41 @@
 # Native Lordly Caliber
 
+## Map help and briefing panels
+
+ScenePanels owns the fourteen script handles and the separate animated entity
+list. Presets33(help),3(briefing choices),1(confirmation with a Yes/No child) now
+execute through62/6A/6B. Reconstructed portable C implements the shared native
+opening/closing geometry, float increments, alpha delays and detach timing.
+This is a source reconstruction, not an accepted matching-C claim.
+
+Text is decoded from the current-ROM18855FE directory's first member, with
+native section delimiters, line offsets, control bytes and image-size selection.
+Host identities replace pointers; snapshots retain copy-on-write records. Script
+handle release does not remove an attached shared entity. Preset3 replacement
+explicitly unlinks its previous entity, following the constructor. The wrapper
+at ROM281A8C invokes menu updates after the complete scene scheduler, including
+the alternate path; this is separate from the dialogue-placement service.
+
+Reference functions: ROM51EB0/51F74/52284/5A0F4(entity animation),2A6150(creation),
+2A47C0(text),2A6E50(update),2A6BE4(options),55014(child),283748(handle release).
+Qualified overlay placements and original traces are retained in browser
+cutscene-map-menu-data.js and tests/fixtures/cutscene-map-{menu,option-menu}.json.
+
+Build80132: scene_runtime_tests panelsNativeReference passed112ms, comparing788
+original state snapshots, child records, text payloads and audio requests.
+The first comparison caught premature entity removal on handle release; the
+port now preserves native independent lifetimes. Pointer fields are normalized.
+Build77110: ui_tests panelPreviewSeek manualImageInputReplay imageSkipInputReplay
+screenCropPreviewSeek irisPreviewSeek passed7284ms. The new UI check exercises
+all three presets through scripts (including absent-owner query), visible
+opening/selection/dismissal, recorded input, backward seek, checkpoints,restart
+and branching after rewind. scene-briefing-panel.png was inspected.
+
+Desktop frame/font rendering and composition are approximate and labeled. The
+native glyphs, frame texture, exact hardware clipping and final audio playback
+are not established here. Other menu presets remain explicit unsupported services.
+No ROM writes or live emulator operations were performed.
+
 ## Draw-driven screen crop
 
 SceneCrop handles3B/3C for the non-title launch variant using reconstructed C.

@@ -7,6 +7,7 @@
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
+#include "engine/scene_panels.h"
 #include "engine/scene_programs.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
@@ -23,6 +24,90 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void panelsNativeReference() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        int snapshots = 0;
+        auto normalized = [](QByteArray r) {
+            for (int at : {0, 4, 0xd0})
+                put32(r, at, 0);
+            return r;
+        };
+        for (const auto name : {"cutscene-map-menu.json", "cutscene-map-option-menu.json"}) {
+            QFile f(QFINDTESTDATA(QString("../../tests/fixtures/") + name));
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const auto rows = QJsonDocument::fromJson(f.readAll()).object()["cases"].toArray();
+            for (const auto &v : rows) {
+                const auto row = v.toObject();
+                ScenePanels panels(rom);
+                const int preset = row["preset"].toInt(QString(name).contains("option") ? 3 : 33);
+                panels.create(4, preset, row["width"].toInt(), row["height"].toInt());
+                if (row["replacement"].toBool())
+                    panels.create(4, 3, row["width"].toInt(), row["height"].toInt());
+                QVector<int> audio;
+                const auto states = row["states"].toArray();
+                for (int i = 0; i < states.size(); ++i) {
+                    if (i == states.size() - 1)
+                        panels.release(4);
+                    else if (i) {
+                        panels.advance(
+                            i - 1 == row["press"].toInt() ? row["mask"].toInt() : 0,
+                            row["directions"].toObject()[QString::number(i - 1)].toInt());
+                        audio += panels.audioRequests();
+                    }
+                    const auto s = states[i].toObject();
+                    QCOMPARE(panels.query(4), qint32(quint32(s["query"].toInteger())));
+                    QCOMPARE(panels.query(5), -5);
+                    QCOMPARE(!panels.empty(), s["attached"].toBool());
+                    if (!panels.empty()) {
+                        const auto expected =
+                            QByteArray::fromHex(s["entityHex"].toString().toLatin1());
+                        QVERIFY2(normalized(panels.entities().first().record) ==
+                                     normalized(expected),
+                                 qPrintable(
+                                     QString("%1 preset%2 state%3 actual%4 expected%5")
+                                         .arg(name)
+                                         .arg(preset)
+                                         .arg(i)
+                                         .arg(normalized(panels.entities().first().record).toHex(),
+                                              normalized(expected).toHex())));
+                        auto payload = QByteArray::fromHex(s["payloadHex"].toString().toLatin1());
+                        for (int at = 0x530; at < 0x5f0; at += 4)
+                            if (u32(payload, at))
+                                put32(payload, at,
+                                      u32(payload, at) - quint32(s["payload"].toInteger()));
+                        QCOMPARE(panels.entities().first().payload, payload);
+                    }
+                    if (s.contains("entities")) {
+                        const auto entities = s["entities"].toArray();
+                        QCOMPARE(panels.entities().size(), entities.size());
+                        for (int j = 0; j < entities.size(); ++j)
+                            QCOMPARE(
+                                normalized(panels.entities()[j].record),
+                                normalized(QByteArray::fromHex(
+                                    entities[j].toObject()["recordHex"].toString().toLatin1())));
+                    }
+                    ++snapshots;
+                }
+                QVector<int> expectedAudio;
+                for (const auto &a : row["audio"].toArray())
+                    expectedAudio << a.toInt();
+                QCOMPARE(audio, expectedAudio);
+            }
+        }
+        ScenePanels panels(rom);
+        panels.create(0, 33, 240, 144);
+        const auto before = panels.entities().first().record;
+        QVERIFY_THROWS_EXCEPTION(Error, panels.create(0, 99, 240, 144));
+        QCOMPARE(panels.entities().first().record, before);
+        auto copy = panels;
+        copy.advance(0, 0);
+        QCOMPARE(panels.entities().first().record, before);
+        QVERIFY(copy.entities().first().record != before);
+        qInfo() << snapshots << "original panel snapshots and audio requests agree";
+    }
     void screenCropAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
