@@ -1,5 +1,25 @@
 # Native Lordly Caliber
 
+## Expanded equipment-marker frames
+
+Private marker poses38/88 now accept opcode21 frame tokens. Export compiles maintained
+assembly into z64 [00205FD8,002060B4), live [801C2B48,801C2C24), the original220-byte
+scan allocation. No tail hook or additional RAM is needed. The scan retains the last two
+frame tokens and native instruction widths, and checks pose-table bounds for counts below39
+and exactly88. Export authenticates code ownership; removing the need restores the original
+loops from source. This supersedes the temporary rejection described in the earlier entry.
+
+Staged and reopened previews use the same substitution behavior. The layer dialog applies
+its proposed marker change before rendering, and identifies substitution poses in the UI.
+`animation_sequences_tests` passed29855ms:137 original descriptors,390 instruction fixtures
+in4MiB modeled RAM, frame256/88-entry source export, pixels after reopen, no-op export,
+class165 cloning, code restoration, ownership/corruption guards, and existing private-resource
+checks. Candidate: parent Test ROMs/native-wide-markers-oSWByq/masterfilename.
+`sequence_editor_tests` passed1117ms: marker draft pixels/positions and undo, plus normal
+layer/timing controls. The first new UI check needed the same Qt premultiplication conversion
+on both images; the missing test include was also corrected. Final build26229 passed.
+These are file, instruction and desktop checks, not full-game heap/hardware validation.
+
 ## Private frame layer authoring
 
 Private sequences now open a frame-layer dialog with live native body-image composition,

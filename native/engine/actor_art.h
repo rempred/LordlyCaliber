@@ -92,6 +92,7 @@ class ActorArt {
     QMap<int,QByteArray> privateArtwork_;
     QByteArray contentIdentity_;
     bool isolated_=false;
+    bool wideBodyMarkers_=false;
     int bank_ = 0;
     bool body_ = false;
     int sourceClass_ = 0, ownerClass_ = 0, flagA_ = 0, flagB_ = 0;

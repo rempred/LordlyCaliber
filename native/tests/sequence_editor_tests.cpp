@@ -1,4 +1,5 @@
 #include "app/animation_sequence_editor.h"
+#include "engine/actor_art.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -7,6 +8,8 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFontDatabase>
+#include <QGraphicsPixmapItem>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QLabel>
 #include <QPushButton>
@@ -20,6 +23,93 @@ using namespace lordly;
 class SequenceEditorTests : public QObject {
     Q_OBJECT
   private slots:
+    void markerLayerPreviewAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadAnimationRoutes();
+            auto sequences = *project.animationSequences();
+            sequences.create(2, 0, *project.animationRoutes());
+            auto snapshot = *sequences.find(2, 0);
+            auto bank = snapshot.poses();
+            bank.setProgram(38, PoseBank::encodeProgram({{1, QByteArray::fromHex("0002")},
+                                                         {1, QByteArray::fromHex("1102")}}));
+            snapshot.setPoses(bank);
+            sequences.setDescriptor(2, 0, snapshot);
+            project.setAnimationSequences(sequences.json());
+            const auto art =
+                ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto expected =
+                art.bodyFrame(project.rom(), 17, art.defaultAppearance(project.rom()));
+            QVERIFY(!expected.isEmpty());
+            const auto before = sequences.json();
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1300, 880);
+            editor.show();
+            auto poses = editor.findChild<QComboBox *>("sequencePose");
+            poses->setCurrentIndex(poses->findData(38));
+            QVERIFY(editor.findChild<QLabel *>("sequenceSummary")->text().contains("warm tint"));
+            editor.findChild<QTableWidget *>("sequenceRecords")->selectRow(1);
+            QString error;
+            QTimer::singleShot(50, [&] {
+                auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dialog) {
+                    error = "Missing substitution-layer dialog";
+                    return;
+                }
+                try {
+                    auto x = dialog->findChild<QSpinBox *>("layerField0_1");
+                    x->setValue(x->value() + 7);
+                    auto scene = dialog->findChild<QGraphicsView *>("layerPreview")->scene();
+                    int layer = 0;
+                    for (auto item : scene->items(Qt::AscendingOrder)) {
+                        auto pixels = qgraphicsitem_cast<QGraphicsPixmapItem *>(item);
+                        if (!pixels)
+                            continue;
+                        if (layer >= expected.size())
+                            throw Error("Unexpected substituted layer");
+                        const auto &want = expected[layer++];
+                        const auto &image = want.pixels.image;
+                        const QImage expectedImage(
+                            reinterpret_cast<const uchar *>(image.rgba.constData()), image.width,
+                            image.height, image.width * 4, QImage::Format_RGBA8888);
+                        if (pixels->pixmap().toImage() != QPixmap::fromImage(expectedImage).toImage())
+                            throw Error("Draft pixels differ from the substituted body frame");
+                        if (pixels->pos() !=
+                                QPointF(want.metadata.origin.x() * want.metadata.scaleX / 1024.,
+                                        want.metadata.origin.y() * want.metadata.scaleY / 1024.))
+                            throw Error("Draft position differs from the substituted body frame");
+                    }
+                    if (layer != expected.size())
+                        throw Error("Missing substituted layer");
+                    dialog->findChild<QDialogButtonBox *>("layerDialogButtons")
+                        ->button(QDialogButtonBox::Ok)
+                        ->click();
+                } catch (const std::exception &e) {
+                    error = QString::fromUtf8(e.what());
+                    dialog->reject();
+                }
+            });
+            editor.findChild<QPushButton *>("sequenceEditLayers")->click();
+            QVERIFY2(error.isEmpty(), qPrintable(error));
+            QCOMPARE(undo.count(), 1);
+            const auto *edited = project.animationSequences()->find(2, 0);
+            QCOMPARE(edited->poses().effective(38).records.last().operands,
+                     QByteArray::fromHex("2002"));
+            const auto updated = art.withDescriptor(*edited);
+            QCOMPARE(updated.bodyFrame(project.rom(), 32, updated.defaultAppearance(project.rom()))
+                         .first()
+                         .pixels.image.rgba,
+                     expected.first().pixels.image.rgba);
+            undo.undo();
+            QCOMPARE(project.animationSequences()->json(), before);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void editPreviewAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

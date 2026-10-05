@@ -1,6 +1,7 @@
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
 #include "rebuild/animation_overrides.h"
+#include "rebuild/body_markers.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
@@ -880,6 +881,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         p.loadAnimationRoutes();
         const auto &sequences=*p.animationSequences();
         sequences.validate(*p.animationRoutes(),p.records(Table::Classes).size());
+        const auto beforeMarkers=result.image;
+        result.image=rebuildBodyMarkers(Rom::fromBytes(result.image),p.rom(),sequences.requiresMarkerRuntime(),compiler,directory);
+        if(result.image!=beforeMarkers)result.report<<(sequences.requiresMarkerRuntime()?"Compiled wide-frame equipment marker scans within the original code allocation":"Restored source-built original equipment marker scans");
         const auto plan=sequences.plan(Rom::fromBytes(result.image));
         const auto compiled=plan.payload.isEmpty()?QByteArray{}:compiler.compileData(plan.payload,directory,"private_animation_resources");
         result.image=sequences.materialize(Rom::fromBytes(result.image),plan,compiled);

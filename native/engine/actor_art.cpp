@@ -1,5 +1,6 @@
 #include "engine/direct_descriptors.h"
 #include "engine/actor_art.h"
+#include "engine/body_markers.h"
 #include "engine/class_data.h"
 #include "engine/animation_routes.h"
 #include "game/director/actor_body.h"
@@ -66,6 +67,7 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     result.flagA_ = flagA;
     result.flagB_ = flagB;
     result.bodyHandle_ = handle;
+    result.wideBodyMarkers_=BodyMarkerImage::mode(rom)==1;
     result.prepareBodyFrames();
     if(const auto *privateDescriptor=result.bodyData_->descriptor(source,owner,flagA,flagB))
         return result.withDescriptor(*privateDescriptor);
@@ -81,9 +83,9 @@ void ActorArt::prepareBodyFrames() {
         if (state >= poses_.size())
             continue;
         for (const auto &command : poses_[state].records) {
-            if (command.opcode == 1) {
+            if (command.opcode == 1 || (wideBodyMarkers_&&command.opcode==21)) {
                 bodyReplacements_[pair * 2 + 1] = bodyReplacements_[pair * 2];
-                bodyReplacements_[pair * 2] = u8(command.operands, 0);
+                bodyReplacements_[pair * 2] = u8(command.operands, 0)+(command.opcode==21?256*u8(command.operands,1):0);
             }
         }
     }
@@ -102,6 +104,7 @@ ActorArt ActorArt::withDescriptor(const AnimationDescriptor &descriptor)const {
     result.privateArtwork_=descriptor.artwork();
     result.contentIdentity_=descriptor.identity();
     result.isolated_=true;
+    result.wideBodyMarkers_=true;
     if(result.body_)result.prepareBodyFrames();
     return result;
 }

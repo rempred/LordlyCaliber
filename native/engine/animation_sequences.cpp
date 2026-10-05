@@ -1,4 +1,5 @@
 #include "engine/animation_sequences.h"
+#include "engine/body_markers.h"
 #include <QJsonArray>
 namespace lordly {
 namespace {
@@ -98,6 +99,9 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
     if (cursor != result.size_)
         throw Error("Private animation allocation has an unclaimed tail");
     result.loaded_ = result.groups_;
+    if (result.requiresMarkerRuntime() && BodyMarkerImage::mode(rom) != 1)
+        throw Error("Private wide-frame equipment markers need their source-built runtime; its "
+                    "code is absent or changed");
     result.original_ = result.json();
     return result;
 }
@@ -177,29 +181,28 @@ void AnimationSequences::validate(const AnimationRoutes &routes, int count) cons
                 throw Error(
                     "A private animation handle cannot be shared through another body assignment");
     }
+    if (requiresMarkerRuntime() && BodyMarkerImage::mode(rom_) < 0)
+        throw Error(
+            "The equipment marker code is not recognized and cannot accept these marker edits");
+}
+bool AnimationSequences::requiresMarkerRuntime() const {
     for (const auto &group : groups_) {
-        const auto original = AnimationDescriptor::load(rom_, group.descriptor.key()).poses();
-        const auto current = group.descriptor.poses();
+        const auto bank = group.descriptor.poses();
+        if (bank.programs().size() < 39 || bank.programs().size() == 88)
+            return true;
         for (int state : {38, 88}) {
-            if (state >= current.programs().size())
+            if (state >= bank.programs().size())
                 continue;
-            const auto program = [](const PoseBank &bank, int state) {
-                try {
-                    return bank.effective(state).source;
-                } catch (const Error &) {
-                    return QByteArray{};
-                }
-            };
-            const auto edited = program(current, state), before = program(original, state);
-            if (edited == before)
+            while (state < bank.programs().size() && bank.programs()[state].source.isEmpty())
+                ++state;
+            if (state >= bank.programs().size())
                 continue;
-            for (const auto &record : PoseBank::parseProgram(edited).records)
+            for (const auto &record : bank.programs()[state].records)
                 if (record.opcode == 21)
-                    throw Error(
-                        "Equipment marker poses 38 and 88 require narrow frame instructions; their "
-                        "native consumer does not read wide frame tokens");
+                    return true;
         }
     }
+    return false;
 }
 QJsonObject AnimationSequences::json() const {
     QJsonArray rows;

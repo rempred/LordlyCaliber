@@ -34,7 +34,12 @@ class SequenceCommand final : public QUndoCommand {
     QJsonObject before_, after_;
 };
 QString poseName(int id) {
-    const QMap<int, QString> names{{0, "Idle"}, {5, "Advance"}, {11, "Return"}, {17, "Hit"}};
+    const QMap<int, QString> names{{0, "Idle"},
+                                   {5, "Advance"},
+                                   {11, "Return"},
+                                   {17, "Hit"},
+                                   {38, "Frame substitutions A"},
+                                   {88, "Frame substitutions B"}};
     return names.contains(id) ? QString("%1 · %2").arg(id).arg(names[id])
                               : QString("Pose %1").arg(id);
 }
@@ -285,6 +290,9 @@ void AnimationSequenceEditor::editLayers() {
     const auto render = [&, art](const QByteArray &draft) {
         auto copy = snapshot;
         const int token = copy.appendFrame(draft);
+        auto draftBank = bank;
+        draftBank.setFrame(state, index, token, u8(record.operands, record.operands.size() - 1));
+        copy.setPoses(draftBank);
         const auto updated = art.withDescriptor(copy);
         return updated.bodyFrame(project_->rom(), token,
                                  updated.defaultAppearance(project_->rom()));
@@ -346,6 +354,11 @@ void AnimationSequenceEditor::refresh() {
                               .arg(owned ? "Private copy" : "Shared original")
                               .arg(records.size())
                               .arg(data.frameCount()));
+        if (poses_->currentData().toInt() == 38 || poses_->currentData().toInt() == 88)
+            summary_->setText(
+                summary_->text() +
+                "\nFrame substitution: the last frame token displays the preceding "
+                "frame's artwork with a warm tint. This affects that token in all poses.");
         preview_->setBodyAnimations(project_->bodyAnimationData());
         if (project_->combatArtwork())
             preview_->setArtwork(project_->combatArtwork()->previewEdits());

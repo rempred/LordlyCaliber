@@ -30,8 +30,9 @@ class FrameLayerDialog final : public QDialog {
             layers_ << frame.mid(2 + i * 16, 16);
         auto layout = new QVBoxLayout(this);
         auto note = new QLabel(
-            "Edit this frame's layers. Other poses that use the original frame keep their existing "
-            "artwork. Sound and motion commands are not played in this frame preview.");
+            "Edit this frame's layers. The original frame is retained. Frame-substitution poses "
+            "can also change artwork used in other poses. Sound and motion commands are not "
+            "played in this frame preview.");
         note->setWordWrap(true);
         layout->addWidget(note);
         table_ = new QTableWidget(0, 9);

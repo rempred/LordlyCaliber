@@ -29,6 +29,7 @@ class AnimationSequences {
     void cloneClass(int source, int target);
     AnimationRoutes baseRoutes(AnimationRoutes) const;
     void validate(const AnimationRoutes &, int classCount) const;
+    bool requiresMarkerRuntime() const;
     bool modified() const {
         return json() != original_;
     }

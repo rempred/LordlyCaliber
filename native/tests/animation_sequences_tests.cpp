@@ -1,15 +1,115 @@
 #include "engine/actor_pose.h"
 #include "engine/animation_sequences.h"
+#include "engine/body_markers.h"
 #include "engine/project.h"
+#include "rebuild/body_markers.h"
 #include "rebuild/compiler.h"
 #include <QDir>
 #include <QJsonArray>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace lordly;
 class AnimationSequencesTests : public QObject {
     Q_OBJECT
   private slots:
+    void wideEquipmentMarkers() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            QCOMPARE(BodyMarkerImage::mode(rom), 0);
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("body-markers-mips.cjs"), path,
+                                     work.filePath("markers.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            qInfo().noquote() << reference.readAllStandardOutput();
+            auto project = Project::fromRom(rom);
+            project.loadAnimationRoutes();
+            auto sequences = *project.animationSequences();
+            sequences.create(2, 0, *project.animationRoutes());
+            auto descriptor = *sequences.find(2, 0);
+            const auto row = descriptor.frame(0);
+            while (descriptor.frameCount() <= 256)
+                descriptor.appendFrame(row);
+            auto bank = descriptor.poses();
+            QByteArray extended(88 * 4, 0);
+            for (int state = 0; state < 88; ++state) {
+                put32(extended, state * 4, quint32(extended.size()));
+                extended += state < bank.programs().size() ? bank.programs()[state].source
+                                                           : QByteArray(1, 0);
+            }
+            bank = PoseBank::parse(extended);
+            bank.setProgram(
+                38, PoseBank::encodeProgram({PoseRecord{1, QByteArray::fromHex("0002")},
+                                             PoseRecord{21, QByteArray::fromHex("000102")}}));
+            descriptor.setPoses(bank);
+            sequences.setDescriptor(2, 0, descriptor);
+            QVERIFY(sequences.requiresMarkerRuntime());
+            project.setAnimationSequences(sequences.json());
+            const auto preview = ActorArt::loadBody(rom, 2, 2, 0, 0, project.bodyAnimationData());
+            const auto layers = preview.bodyFrame(rom, 256, preview.defaultAppearance(rom));
+            QVERIFY(!layers.isEmpty());
+            QCOMPARE(layers.first().metadata.art, preview.layers(0).first().art);
+            QVERIFY(layers.first().metadata.flags & 0x40);
+            const auto built = rebuild(project, tools, work.path());
+            const auto expanded = Rom::fromBytes(built.image);
+            QCOMPARE(BodyMarkerImage::mode(expanded), 1);
+            const auto body = ActorArt::loadBody(expanded, 2, 2, 0, 0);
+            const auto actual = body.bodyFrame(expanded, 256, body.defaultAppearance(expanded));
+            QCOMPARE(actual.size(), layers.size());
+            for (int i = 0; i < layers.size(); ++i) {
+                QCOMPARE(actual[i].metadata.flags, layers[i].metadata.flags);
+                QCOMPARE(actual[i].pixels.image.rgba, layers[i].pixels.image.rgba);
+            }
+            auto reopened = Project::fromRom(expanded);
+            reopened.loadAnimationRoutes();
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            QCOMPARE(reopened.appendClass(2, "Wide marker clone"), 165);
+            const auto clone = rebuild(reopened, tools, work.path());
+            const auto cloneRom = Rom::fromBytes(clone.image);
+            QCOMPARE(BodyMarkerImage::mode(cloneRom), 1);
+            const auto cloned = ActorArt::loadBody(cloneRom, 165, 165, 0, 0);
+            QCOMPARE(cloned.bodyFrame(cloneRom, 256, cloned.defaultAppearance(cloneRom))
+                         .first()
+                         .pixels.image.rgba,
+                     layers.first().pixels.image.rgba);
+            QTemporaryDir candidates(
+                QFileInfo(path).dir().filePath("Test ROMs/native-wide-markers-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            QCOMPARE(BodyMarkerImage::mode(Rom::open(output)), 1);
+            qInfo().noquote() << "Wide marker candidate:" << output;
+            auto reset = Project::fromRom(expanded);
+            reset.loadAnimationRoutes();
+            auto empty = *reset.animationSequences();
+            empty.remove(2, 0);
+            reset.setAnimationSequences(empty.json());
+            const auto restored = rebuild(reset, tools, work.path());
+            QCOMPARE(BodyMarkerImage::mode(Rom::fromBytes(restored.image)), 0);
+            QCOMPARE(restored.image.mid(BodyMarkerImage::offset, BodyMarkerImage::size),
+                     rom.bytes().mid(BodyMarkerImage::offset, BodyMarkerImage::size));
+            auto foreign = rom.bytes();
+            foreign[BodyMarkerImage::offset] ^= 1;
+            auto blocked = Project::fromRom(Rom::fromBytes(foreign));
+            blocked.loadAnimationRoutes();
+            QVERIFY_THROWS_EXCEPTION(Error, blocked.setAnimationSequences(sequences.json()));
+            auto broken = built.image;
+            broken[BodyMarkerImage::offset] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, AnimationSequences::load(Rom::fromBytes(broken)));
+            Compiler compiler(tools);
+            QVERIFY_THROWS_EXCEPTION(Error, rebuildBodyMarkers(Rom::fromBytes(foreign), rom, true,
+                                                               compiler, work.path()));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void unchangedClassRouteCoverage() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -79,14 +179,17 @@ class AnimationSequencesTests : public QObject {
             routes.setEntry(2, originalRoutes.entry(3));
             QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationRoutes(routes.json()));
             QCOMPARE(project.animationRoutes()->json(), originalRoutes.json());
-            auto invalidMarkers = sequences;
-            auto marker = *invalidMarkers.find(2, 0);
+            auto wideMarkers = sequences;
+            auto marker = *wideMarkers.find(2, 0);
             auto markerPoses = marker.poses();
             markerPoses.setProgram(
-                38, PoseBank::encodeProgram({PoseRecord{21, QByteArray::fromHex("200002")}}));
+                38, PoseBank::encodeProgram({PoseRecord{1, QByteArray::fromHex("0002")},
+                                             PoseRecord{21, QByteArray::fromHex("200002")}}));
             marker.setPoses(markerPoses);
-            invalidMarkers.setDescriptor(2, 0, marker);
-            QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationSequences(invalidMarkers.json()));
+            wideMarkers.setDescriptor(2, 0, marker);
+            auto compatible = project;
+            compatible.setAnimationSequences(wideMarkers.json());
+            QVERIFY(compatible.animationSequences()->requiresMarkerRuntime());
             QCOMPARE(project.animationSequences()->json(), sequences.json());
             QTemporaryDir work;
             project.saveFolder(work.filePath("folder"));
