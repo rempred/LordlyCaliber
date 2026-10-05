@@ -15,6 +15,8 @@ class AnimationRoutes {
         Row handles{};
         std::array<quint8, 2> speeds{}, attributes{};
         quint8 kind = 0;
+        qint16 equipmentArt = -1; // -1: equipped item; otherwise fixed item-art lookup.
+        bool equipmentChildArt = false; // Use equipment children for kind-two images.
         QByteArray selectors; // Empty: unavailable; otherwise 4-byte records + FF.
         bool operator==(const Entry &) const = default;
     };
@@ -56,6 +58,9 @@ class AnimationRoutes {
     void setPrivatePoses(const QByteArray &);
     int privatePose(int source, int owner, int flags, int state) const;
     bool registeredPose(int source, int owner, int flags, int state) const;
+    bool hasVisualPolicies() const;
+    QByteArray visualPolicies() const;
+    int equipmentArt(int source, int equipped) const;
     // Unchanged sections use the original header's physical extent.
     QByteArray section(int index) const;
     QByteArray rebuild(const Rom &, const QByteArray &compiled,
@@ -63,12 +68,13 @@ class AnimationRoutes {
 
   private:
     static QVector<Entry> parseEntries(const QByteArray &);
-    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &);
+    static QByteArray pack(const QByteArray &prefix, const QVector<Entry> &, const QByteArray &, bool policies = false);
     QByteArray source_, prefix_, descriptor_, root_, privatePoses_, loadedPrivatePoses_;
     QVector<Entry> rows_;
     QMap<int, Entry> edits_;
     QSet<int> pending_;
     QMap<int, quint32> ownerWords_;
     quint32 allocationOffset_ = 0, allocationSize_ = 0;
+    bool loadedVisualPolicies_ = false;
 };
 } // namespace lordly

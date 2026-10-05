@@ -1,5 +1,6 @@
 #include "app/animation_editor.h"
 #include <QComboBox>
+#include <QCheckBox>
 #include <QCompleter>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -55,7 +56,7 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
     layout->addWidget(new QLabel("<b>Class animation sets</b>"));
     auto explanation =
         new QLabel("Copy an animation set from another class, or edit its body routes, movement "
-                   "speeds and default action poses. Each class keeps its own assignment.");
+                   "speeds, equipment artwork and default action poses. Each class keeps its own assignment.");
     explanation->setWordWrap(true);
     layout->addWidget(explanation);
     notice_ = new QLabel;
@@ -111,6 +112,28 @@ AnimationEditor::AnimationEditor(Project *project, QUndoStack *undo, std::functi
                 });
         });
     }
+    equipmentArt_ = new QComboBox;
+    equipmentArt_->setObjectName("animationEquipmentArt");
+    searchable(equipmentArt_);
+    equipmentArt_->addItem("Use equipped item", -1);
+    for (const auto &record : project_->records(Table::Items))
+        equipmentArt_->addItem(QString("%1 · %2").arg(record.id).arg(record.name), record.id);
+    bodyForm->addRow("Equipment artwork", equipmentArt_);
+    equipmentChildren_ = new QCheckBox("Use equipment variants for item-colored layers");
+    equipmentChildren_->setObjectName("animationEquipmentChildren");
+    equipmentChildren_->setToolTip("Select equipment sprite variants for layers that normally use the item's palette.");
+    bodyForm->addRow(equipmentChildren_);
+    connect(equipmentArt_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!refreshing_) guarded([&] {
+            const int item = selectedId(equipmentArt_, "equipment artwork");
+            changeEntry("Change equipment artwork source", [&](auto &entry) { entry.equipmentArt = qint16(item); });
+        });
+    });
+    connect(equipmentChildren_, &QCheckBox::toggled, this, [this](bool value) {
+        if (!refreshing_) guarded([&] {
+            changeEntry("Change equipment image selection", [&](auto &entry) { entry.equipmentChildArt = value; });
+        });
+    });
     auto movement = new QGroupBox("Movement");
     auto speedForm = new QFormLayout(movement);
     top->addWidget(movement);
@@ -335,6 +358,8 @@ void AnimationEditor::refreshEntry() {
         return;
     }
     const auto entry = project_->animationRoutes()->entry(selected_);
+    equipmentArt_->setCurrentIndex(equipmentArt_->findData(entry.equipmentArt));
+    equipmentChildren_->setChecked(entry.equipmentChildArt);
     for (int flag = 0; flag < 4; ++flag)
         handles_[flag]->setValue(entry.handles[flag]);
     for (int dir = 0; dir < 2; ++dir)

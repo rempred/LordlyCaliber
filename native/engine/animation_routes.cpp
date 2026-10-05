@@ -4,6 +4,21 @@
 #include <algorithm>
 namespace lordly {
 namespace {
+int originalEquipmentArt(int id) {
+    switch (id) {
+    case 0x3b: return 11; case 0x3c: return 13; case 0x3d: return 15; case 0x3e: return 18;
+    case 0x39: case 0x3f: case 0x40: return 2;
+    case 0x41: return 3; case 0x42: return 4; case 0x43: return 5; case 0x44: return 6;
+    case 0x3a: case 0x46: return 8;
+    }
+    return -1;
+}
+quint16 policy(const AnimationRoutes::Entry &entry) {
+    if (entry.equipmentArt < -1 || entry.equipmentArt >= 278)
+        throw Error("Equipment artwork source is outside the item table");
+    return quint16((entry.equipmentArt < 0 ? 511 : entry.equipmentArt) |
+                   (entry.equipmentChildArt ? 512 : 0));
+}
 quint32 keyWords(quint32 high, quint32 low) {
     const auto reg = (high >> 16) & 31;
     if ((high & 0xffe00000U) != 0x3c000000U || (reg != 4 && reg != 5) || low >> 26 != 13 ||
@@ -123,6 +138,8 @@ QVector<AnimationRoutes::Entry> AnimationRoutes::parseEntries(const QByteArray &
     QVector<Entry> result;
     for (int id = 0; id < count; ++id) {
         Entry entry;
+        entry.equipmentArt = qint16(originalEquipmentArt(id));
+        entry.equipmentChildArt = id == 0x39 || id == 0x3f;
         for (int flag = 0; flag < 4; ++flag)
             entry.handles[flag] = u16(bytes, begin + id * 8 + flag * 2);
         entry.speeds = {u8(bytes, speed + id * 2), u8(bytes, speed + id * 2 + 1)};
@@ -177,7 +194,7 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
     }
     if (result.descriptor_.startsWith("LC05ARTE")) {
         const auto &d = result.descriptor_;
-        if (d.size() != descriptorSize || (u32(d, 8) != 1 && u32(d, 8) != 2))
+        if (d.size() != descriptorSize || u32(d, 8) < 1 || u32(d, 8) > 3)
             throw Error("Invalid native class-animation allocation header");
         result.allocationOffset_ = u32(d, 12);
         result.allocationSize_ = u32(d, 16);
@@ -197,15 +214,31 @@ AnimationRoutes AnimationRoutes::load(const Rom &rom) {
             payload.mid(result.source_.size() + 4) !=
                 QByteArray(payload.size() - result.source_.size() - 4, char(-1)))
             throw Error("Native class-animation allocation differs from its stored identity");
-        const int mapSize = u16(result.source_, 0) - int(prefix);
+        result.loadedVisualPolicies_ = u32(d, 8) >= 3;
+        const int policySize = result.loadedVisualPolicies_ ? 512 : 0;
+        const int mapSize = u16(result.source_, 0) - int(prefix) - policySize;
+        if (mapSize < 0) throw Error("Visual policies exceed their animation allocation");
+        if (policySize) {
+            for (int id = 0; id < 256; ++id) {
+                const auto word = u16(result.source_, prefix + id * 2);
+                const int item = word & 511;
+                if ((word & ~1023) || (item != 511 && item >= 278) ||
+                    (id >= result.rows_.size() && word != 511))
+                    throw Error("Invalid class visual policy data");
+                if (id < result.rows_.size()) {
+                    result.rows_[id].equipmentArt = qint16(item == 511 ? -1 : item);
+                    result.rows_[id].equipmentChildArt = (word & 512) != 0;
+                }
+            }
+        }
         if (u32(d, 8) == 1 && mapSize)
             throw Error("Unexpected private pose mapping in version one animation data");
-        result.setPrivatePoses(result.source_.mid(prefix, mapSize));
+        result.setPrivatePoses(result.source_.mid(prefix + policySize, mapSize));
         result.loadedPrivatePoses_ = result.privatePoses_;
         result.prefix_ = result.source_.left(prefix);
         result.prefix_.replace(0, 36, d.mid(28, 36));
         parseEntries(result.prefix_);
-        if (pack(result.prefix_, result.rows_, result.privatePoses_) != result.source_)
+        if (pack(result.prefix_, result.rows_, result.privatePoses_, result.loadedVisualPolicies_) != result.source_)
             throw Error("Native class-animation sections are not in their declared allocation");
     }
     return result;
@@ -230,6 +263,7 @@ void AnimationRoutes::setEntry(int id, const Entry &entry) {
             throw Error("A class-animation handle selects a missing descriptor");
     }
     selectorsValid(entry.selectors);
+    policy(entry);
     pending_.remove(id);
     if (id < rows_.size() && entry == rows_[id])
         edits_.remove(id);
@@ -275,6 +309,8 @@ QJsonObject AnimationRoutes::json() const {
             QJsonObject{{"handles", handles},
                         {"speeds", QString::fromLatin1(speed.toHex())},
                         {"kind", it->kind},
+                        {"equipmentArt", it->equipmentArt},
+                        {"equipmentChildArt", it->equipmentChildArt},
                         {"attributes", QString::fromLatin1(extra.toHex())},
                         {"selectors", QString::fromLatin1(it->selectors.toHex())}};
     }
@@ -305,6 +341,18 @@ void AnimationRoutes::apply(const QJsonObject &object) {
         if (!ok || QString::number(id) != it.key() || !it.value().isObject() || handles.size() != 4)
             throw Error("Invalid saved class-animation route");
         Entry entry;
+        entry.equipmentArt = qint16(originalEquipmentArt(id));
+        entry.equipmentChildArt = id == 0x39 || id == 0x3f;
+        if (value.contains("equipmentArt")) {
+            const int item = value["equipmentArt"].toInt(-2);
+            if (item < -1 || item >= 278 || value["equipmentArt"].toDouble() != double(item))
+                throw Error("Invalid saved equipment artwork source");
+            entry.equipmentArt = qint16(item);
+        }
+        if (value.contains("equipmentChildArt")) {
+            if (!value["equipmentChildArt"].isBool()) throw Error("Invalid saved equipment image policy");
+            entry.equipmentChildArt = value["equipmentChildArt"].toBool();
+        }
         for (int flag = 0; flag < 4; ++flag) {
             const auto number = handles[flag].toInteger(-1);
             if (number < 0 || number > 65535 || handles[flag].toDouble() != double(number))
@@ -334,8 +382,14 @@ void AnimationRoutes::apply(const QJsonObject &object) {
     }
     *this = std::move(next);
 }
-QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows, const QByteArray &poses) {
-    auto bytes = prefix + poses;
+QByteArray AnimationRoutes::pack(const QByteArray &prefix, const QVector<Entry> &rows, const QByteArray &poses, bool policies) {
+    auto bytes = prefix;
+    if (policies) {
+        QByteArray table(512, 0);
+        for (int id = 0; id < 256; ++id) put16(table, id * 2, id < rows.size() ? policy(rows[id]) : 511);
+        bytes += table;
+    }
+    bytes += poses;
     const int count = int(rows.size());
     auto append = [&](int header, int size) {
         if (bytes.size() % 2)
@@ -417,7 +471,24 @@ QByteArray AnimationRoutes::decodedResource() const {
     rows.resize(rowCount());
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
         rows[it.key()] = it.value();
-    return pack(prefix_, rows, privatePoses_);
+    return pack(prefix_, rows, privatePoses_, hasVisualPolicies());
+}
+bool AnimationRoutes::hasVisualPolicies() const {
+    if (loadedVisualPolicies_) return true;
+    for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)
+        if (it->equipmentArt != originalEquipmentArt(it.key()) ||
+            it->equipmentChildArt != (it.key() == 0x39 || it.key() == 0x3f)) return true;
+    return false;
+}
+QByteArray AnimationRoutes::visualPolicies() const {
+    QByteArray bytes(512, 0);
+    for (int id = 0; id < 256; ++id)
+        put16(bytes, id * 2, id < rowCount() ? policy(entry(id)) : 511);
+    return bytes;
+}
+int AnimationRoutes::equipmentArt(int source, int equipped) const {
+    const int selected = entry(source).equipmentArt;
+    return selected < 0 ? equipped : selected;
 }
 QByteArray AnimationRoutes::section(int index) const {
     if (index < 0 || index >= 15)
@@ -479,7 +550,7 @@ QByteArray AnimationRoutes::rebuild(const Rom &rom, const QByteArray &compiled,
     }
     QByteArray descriptor(descriptorSize, 0);
     descriptor.replace(0, 8, "LC05ARTE");
-    put32(descriptor, 8, privatePoses_.isEmpty() ? 1 : 2);
+    put32(descriptor, 8, hasVisualPolicies() ? 3 : privatePoses_.isEmpty() ? 1 : 2);
     put32(descriptor, 12, offset);
     put32(descriptor, 16, quint32(payload.size()));
     put32(descriptor, 20, quint32(prefix_.size()));

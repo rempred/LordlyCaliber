@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <functional>
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QPushButton;
 class QSpinBox;
@@ -30,6 +31,8 @@ class AnimationEditor : public QWidget {
     int selected_ = 1, actionRow_ = -1;
     bool refreshing_ = false;
     QComboBox *classes_ = nullptr, *sources_ = nullptr, *action_ = nullptr;
+    QComboBox *equipmentArt_ = nullptr;
+    QCheckBox *equipmentChildren_ = nullptr;
     std::array<QSpinBox *, 4> handles_{};
     std::array<QSpinBox *, 2> speeds_{};
     std::array<QSpinBox *, 3> selectors_{};

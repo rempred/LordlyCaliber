@@ -5,11 +5,13 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const {FloatMips}=require('./float-mips.cjs');
 global.window=global;global.OB64={};vm.runInThisContext(fs.readFileSync(path.resolve(__dirname,'../../art.js'),'utf8'));
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+const fixture=process.argv[4]?JSON.parse(fs.readFileSync(process.argv[4],'utf8')):{};
 const raw=k=>Buffer.from(OB64.art.readResource(rom,k).stored),decoded=new Map();
 const decode=k=>{if(!decoded.has(k))decoded.set(k,Buffer.from(OB64.art.readCompressedResource(rom,k).decoded));return decoded.get(k);};
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
 m.load(0x801bdb70,rom.subarray(0x201000,0x213a00));m.load(0x8016af80,rom.subarray(0x40e80,0x66e10));
-const handles=raw(0x315736),tables=0x80280000,pool=0x80300010,request=0x80302010,sp=0x803ffe00;
+if(fixture.classSize)m.load(fixture.classAddress,rom.subarray(fixture.classOffset,fixture.classOffset+fixture.classSize));
+const handles=raw(fixture.key||0x315736),tables=0x80280000,pool=0x80300010,request=0x80302010,sp=0x803ffe00;
 m.load(tables,handles);m.w32(0x801d0690,tables+handles.readUInt16BE(0));m.w32(0x801d0680,tables+handles.readUInt16BE(4));m.w32(0x801d0728,pool);
 m.load(0x801ceee0,Buffer.from([1,3,3,2,2,2,1,1,1,1,1,1,4,3,3,2,3,3,3,3,3,4]));
 let heap=0,resourceKeys=new Map(),conversion;
@@ -27,12 +29,18 @@ for(const p of [0x801c15e0,0x801c0f50])m.trap(p,c=>{
  assert(conversion.key);c.set('v0',0x80270000);
 });
 const call=(p,args)=>{m.set('sp',sp);args.forEach((v,i)=>i<4?m.set('a'+i,v):m.w32(sp+16+(i-4)*4,v));m.call(p,0x80000100,500000);assert.equal(m.get('sp'),sp);return m.get('v0');};
-const rows=[];let replacements=0;
-for(let source=1;source<165;source++)for(let flags=0;flags<4;flags++) {
+const rows=[],prepared=[];let replacements=0;
+for(const source of fixture.sources||Array.from({length:164},(_,i)=>i+1))for(let flags=0;flags<4;flags++) {
  const a=flags>>1,b=flags&1;
- const items=[2,32,57,63,81,123,164].includes(source)?Array.from({length:278},(_,i)=>i):[0,1,20];
+ const items=fixture.items||([2,32,57,63,81,123,164].includes(source)?Array.from({length:278},(_,i)=>i):[0,1,20]);
  for(const item of items) {
   heap=0x80310000;resourceKeys=new Map();m.load(pool-16,Buffer.alloc(20*176+32,0));m.w8(0x80193c12,3);
+  if(fixture.prepare){
+   const p=0x80270010;[source,source,b,a,item].forEach((v,i)=>m.w32(p+i*4,v));
+   call(0x801c41c8,[p,p+4,p+8,p+12,p+16,1]);
+   prepared.push([source,flags,item,m.r32(p+16)]);
+   heap=0x80310000;resourceKeys=new Map();m.load(pool-16,Buffer.alloc(20*176+32,0));
+  }
   assert.equal(call(0x801c27f8,[pool,source,source,a,b,item]),pool);
   const metadata=m.r32(pool+0x48),frameCount=m.r32(pool+0x50),baseHeap=heap;
   const tokens=new Set([0]);for(const off of [0xa8,0xac]){const token=m.r16(pool+off);if(token!==65535){tokens.add(token);replacements++;}}
@@ -57,6 +65,6 @@ for(let source=1;source<165;source++)for(let flags=0;flags<4;flags++) {
  }
 }
 // Conversion itself has no resource dependencies. Compare every 16-bit input.
-const warm=Buffer.alloc(65536*2);for(let color=0;color<65536;color++)warm.writeUInt16BE(call(0x801bedc8,[color]),color*2);
-fs.writeFileSync(process.argv[3],JSON.stringify({rows,warm16:warm.toString('hex')}));
-console.log(`${rows.length} original body image selections; ${replacements} substitution routes; all 65536 warm-tone RGBA16 values. Allocation/resource transfer/pixel expansion controlled.`);
+const warm=Buffer.alloc(fixture.warm===false?0:65536*2);for(let color=0;color<warm.length/2;color++)warm.writeUInt16BE(call(0x801bedc8,[color]),color*2);
+fs.writeFileSync(process.argv[3],JSON.stringify({rows,warm16:warm.toString('hex'),prepared}));
+console.log(`${rows.length} body image selections; ${replacements} substitution routes; ${prepared.length} full parameter registrations; ${warm.length/2} warm-tone RGBA16 values. Allocation/resource transfer/pixel expansion controlled.`);

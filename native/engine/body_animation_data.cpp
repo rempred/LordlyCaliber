@@ -1,6 +1,7 @@
 #include "engine/body_animation_data.h"
 #include "engine/body_selection.h"
 #include "engine/pose_runtime.h"
+#include "engine/body_visual_policy.h"
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
                                      std::optional<AnimationOverrides> overrides,
@@ -25,6 +26,7 @@ BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
 BodyAnimationData::Pointer BodyAnimationData::load(const Rom &rom) {
     auto classes = ClassData::load(rom);
     auto routes = AnimationRoutes::load(rom);
+    BodyVisualPolicyImage::validate(rom, routes);
     BodySelectionImage::validate(rom, routes.privatePoses());
     PoseRuntimeImage::validate(rom, routes.privatePoses());
     auto overrides = AnimationOverrides::load(rom, classes, routes);

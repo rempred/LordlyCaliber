@@ -255,7 +255,8 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
         token = bodyReplacements_[3];
         extraFlags = 0x80;
     }
-    const int item = lordly_body_equipment_variant(sourceClass_, appearance.equipment);
+    const auto visual = bodyData_->routes().entry(sourceClass_);
+    const int item = visual.equipmentArt < 0 ? appearance.equipment : visual.equipmentArt;
     if (item < 0 || item >= 278)
         throw Error("Body equipment exceeds the current item table");
     const auto variants = bodyData_->routes().section(2);
@@ -265,7 +266,7 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
     for (auto layer : layers(token)) {
         layer.flags |= extraFlags;
         int kind = u8(imageKinds_, layer.art);
-        if ((sourceClass_ == 0x39 || sourceClass_ == 0x3f) && kind == 2)
+        if (visual.equipmentChildArt && kind == 2)
             kind = 1;
         int child = bodyVariant(), palette = u8(paletteMap_, layer.art) * 512;
         if (kind == 1)

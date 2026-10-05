@@ -227,9 +227,10 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
     ActorInstance replacement(rom_, record, bodyData_);
     configureLinkedPose(replacement);
     const auto &p = replacement.pose().actor();
+    const auto data = bodyData_ ? bodyData_ : BodyAnimationData::load(rom_);
     registrations_ << BodyRegistration{s.slot,   p.bank,
                                        p.owner,  p.variant,
-                                       p.flag_b, lordly_body_equipment_variant(p.bank, equipment)};
+                                       p.flag_b, data->routes().equipmentArt(p.bank, equipment)};
     if (replacement.pose().advance() != LORDLY_POSE_OK)
         throw Error(replacement.pose().error());
     actors_[s.slot] = std::move(replacement);

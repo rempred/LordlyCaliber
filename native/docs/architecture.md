@@ -1,5 +1,46 @@
 # Native Lordly Caliber
 
+## Per-class equipment artwork policy
+
+Animation sets now carry independent equipment artwork selection: use the equipped
+item, use a fixed item-art lookup, and optionally treat item-colored layers as
+equipment-child variants. Stock policies reproduce the existing class57..70 switches
+and the kind-two exceptions for57/63. Copying a set or creating a class copies these
+policies. The native controls edit and undo them; preview uses them for image layers
+and body registrations. Older project rows without these fields keep their original
+class-ID defaults.
+
+LC05ARTEversion3 adds a512-byte policy table immediately after its preserved original
+prefix and before private pose mappings. The mappings still directly precede class
+handles. Each big-endian halfword stores the item-art index in bits0..8 (511 means
+equipped) and equipment-child mode in bit9. Reserved bits and missing-row values are
+validated. Existing loaders copy this bounded table with the complete resource.
+Version1/2 data remain supported. Once loaded, a version3 table remains owned even
+after individual policies are restored.
+
+Three existing selection switches and two small image-context/predicate blocks are
+assembled from maintained symbolic sources at user export, within their original
+allocations. The blocks are z64[2076A8,20772C), [205CBC,205D38), [206370,206400),
+[206470,206484), and[2064EC,206510); their source names begin `game/art/equipment-`.
+They preserve the interleaved callee-save stores and the image routine's live cache
+return paths. Reads use live class-handle pointer801D0690 minus mapping bytes and512,
+with a source-domain guard. LC05VPOL at z6427C5100/96 authenticates map count, policy
+hash and aggregate code hash. No tail-code hook or new high-RAM requirement is added.
+
+`animation_routes_tests equipmentPolicyInheritance` passed53386ms: five templates
+and added classes, all four body flags, five items, normal/sepia selection, folder
+persistence, export/reopen/no-op, adjacent code and altered-owner checks. Original,
+rebuilt and mapping-coexistent images each execute400 image selections and100 full
+parameter registrations; outputs agree after normalizing only the source class ID.
+Heap/resource transfer and final pixel expansion are controlled. Native frame pixels
+also match templates. Candidate: parent `Test ROMs/native-visual-policies-kqCvPg/`.
+`ui_tests equipmentArtworkPolicies` passed719ms, including undo, cloning and persistence;
+its1250x800 capture was inspected. Body image/initialization regressions passed16192ms
+(62,316 original image layers and all65,536 warm-color inputs); older route/import/export
+checks passed30183ms, including4,800 selectors and complete loader copies. Assignment
+and staged-preview UI regressions passed15427ms. Full-game/hardware validation remains
+separate. Fixed-pose constructor inheritance and browser sequence import remain open.
+
 ## Linked class inheritance
 
 Creating a class from linked templates 10/25/123 now preserves the template owner
@@ -18,7 +59,8 @@ and unchanged export. Candidate: parent `Test ROMs/native-linked-class-clones-oR
 The existing `inheritanceAndLegacyProjects` case also passed. The first new test
 fixture incorrectly marked class Actors as ordinary art; setting their real body
 decoder mode corrected the fixture. Full and targeted builds pass. These checks
-do not complete the separate fixed-ID equipment/image/constructor policy audit.
+do not complete the separate fixed-pose constructor policy audit; equipment/image
+inheritance is completed above.
 
 ## Private attack leader slots
 

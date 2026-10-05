@@ -63,6 +63,31 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void equipmentArtworkPolicies() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); QUndoStack undo;
+            AnimationEditor editor(&project, &undo, [] {}); editor.selectClass(57);
+            auto items = editor.findChild<QComboBox *>("animationEquipmentArt");
+            auto children = editor.findChild<QCheckBox *>("animationEquipmentChildren");
+            QVERIFY(items); QVERIFY(children);
+            QCOMPARE(items->currentData().toInt(), 2); QVERIFY(children->isChecked());
+            items->setCurrentIndex(items->findData(11)); children->setChecked(false);
+            QCOMPARE(project.animationRoutes()->entry(57).equipmentArt, qint16(11));
+            QVERIFY(!project.animationRoutes()->entry(57).equipmentChildArt);
+            undo.undo(); QVERIFY(children->isChecked()); undo.undo(); QCOMPARE(items->currentData().toInt(), 2);
+            undo.redo(); undo.redo();
+            const int id = project.appendClass(57, "Equipment art clone");
+            editor.selectClass(id); QCOMPARE(items->currentData().toInt(), 11); QVERIFY(!children->isChecked());
+            QTemporaryDir work; project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(Rom::open(path)); restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationRoutes()->entry(id).equipmentArt, qint16(11));
+            QVERIFY(!restored.animationRoutes()->entry(id).equipmentChildArt);
+            editor.resize(1250, 800); editor.show();
+            QVERIFY(editor.grab().save("equipment-artwork-policies.png"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void stagedAnimationPreviewAndUndo() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

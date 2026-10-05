@@ -4,6 +4,7 @@
 #include "rebuild/body_markers.h"
 #include "rebuild/body_selection.h"
 #include "rebuild/pose_runtime.h"
+#include "rebuild/body_visual_policy.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
@@ -929,6 +930,11 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             compiler, directory);
         if (result.image != beforePose)
             result.report << "Compiled private-pose execution and class record lookup within their original allocations";
+        const auto beforeVisual = result.image;
+        result.image = rebuildBodyVisualPolicy(Rom::fromBytes(result.image), p.rom(),
+            *exportAnimationRoutes, compiler, directory);
+        if (result.image != beforeVisual)
+            result.report << "Compiled per-class equipment artwork policies within the original readers";
     }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();
