@@ -53,7 +53,8 @@ preview. Map-path ribbons read current-ROM paths and preserve native curve,
 endpoint, reveal and release timing; strip texture/edge drawing is approximate.
 Reward panels accept an explicit preview item and execute native dismissal/query
 behavior with current-ROM names. The unchanged dynamic story01FA8BF4 now runs
-through scene release and checkpoint replay. Reward icons remain undrawn.
+through scene release and checkpoint replay. Reward icons now use the current
+ROM equipment/consumable packs and native content placement.
 Map help, briefing choices and confirmation panels now execute with native
 animation, input, handle lifetimes and current-ROM text, including deterministic
 seek/replay. Desktop frame/glyph drawing is approximate. Other panel services

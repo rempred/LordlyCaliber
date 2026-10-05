@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/item_icons.h"
 #include <QImage>
 #include <QVector>
 #include <array>
@@ -14,7 +15,7 @@ class ScenePanels {
         QByteArray record, payload;
         std::optional<quint16> reward;
     };
-    explicit ScenePanels(Rom rom) : rom_(std::move(rom)) {}
+    explicit ScenePanels(Rom rom) : rom_(rom), icons_(std::move(rom)) {}
     void create(int slot, int preset, int width, int height);
     static QString rewardName(const Rom &, quint16 item);
     void supplyReward(quint16 item) {
@@ -48,6 +49,7 @@ class ScenePanels {
     QByteArray textPayload(quint32 selector, QByteArray &entity) const;
     void child(Entity &parent);
     Rom rom_;
+    ItemIcons icons_;
     std::array<std::optional<Owner>, 14> owners_{};
     QVector<Entity> entities_;
     QVector<int> audio_;

@@ -1,5 +1,20 @@
 # Native Lordly Caliber
 
+## Reward artwork
+
+ItemIcons decodes shared CI8/RGBA5551 equipment and consumable packs, following
+the reward constructor's current LUI/ORI resource keys. Relocated packs remain
+readable. The reward panel uses the native16x16 icon at left+4/top+4 and the name
+at left+26; frame and text rasterization remain approximate. The content offsets
+and index formula come from ROM2A54A8..2A5CA0, live80235C78..80236470.
+
+Build18170 image_tests itemIconsFromCurrentRom passed542ms: all321 current-ROM
+icons match the existing browser decoder, including transparency. Both packs
+also pass relocated-pointer checks; invalid IDs, sizes and instruction layouts
+are rejected. ui_tests panelPreviewSeek storyCompleteReplay passed14579ms and
+the updated reward screenshot was inspected. The full story still releases at
+step1349 with deterministic replay. No ROM was written.
+
 ## Automatic Actor portraits
 
 SceneActors now supplies the default BF portrait callback from current Actor

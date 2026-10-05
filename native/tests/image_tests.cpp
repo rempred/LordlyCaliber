@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/image.h"
+#include "engine/item_icons.h"
 #include "engine/scene_images.h"
 #include "engine/scene_image_presentation.h"
 #include "engine/color_combiner.h"
@@ -20,6 +21,51 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void itemIconsFromCurrentRom() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("item-icons-reference.cjs"), path, work.filePath("icons.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("icons.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["icons"].toArray();
+        QCOMPARE(rows.size(), 321);
+        ItemIcons icons(rom);
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            const auto image = icons.image(quint16(row["item"].toInt()));
+            QCOMPARE(image.width, 16);
+            QCOMPARE(image.height, 16);
+            QCOMPARE(image.rgba.toHex(), row["rgba"].toString().toLatin1());
+        }
+        QCOMPARE(icons.image(0).rgba, QByteArray(1024, 0));
+        QCOMPARE(icons.image(0x200).rgba, QByteArray(1024, 0));
+        for (quint16 invalid : {278, 0x22d, 0x400, 0xffff})
+            QVERIFY_THROWS_EXCEPTION(Error, icons.image(invalid));
+        for (bool consumable : {false, true}) {
+            auto bytes = rom.bytes();
+            const qsizetype source = 0x594280 + (consumable ? 0x1df7bf8 : 0x1dee82c);
+            const quint32 length = u32(bytes, source) + 4;
+            const quint32 key = 0x2700000 - 0x594280;
+            const auto high = consumable ? 0x2a6624 : 0x2a6640;
+            const auto low = consumable ? 0x2a6634 : 0x2a664c;
+            bytes.replace(0x2700000, length, bytes.mid(source, length));
+            put32(bytes, high, 0x3c040000U | (key >> 16));
+            put32(bytes, low, 0x34840000U | (key & 0xffff));
+            const quint16 item = consumable ? 0x201 : 1;
+            QCOMPARE(ItemIcons(Rom::fromBytes(bytes)).image(item).rgba, icons.image(item).rgba);
+            put32(bytes, 0x2700004, 0x7fffffff);
+            QVERIFY_THROWS_EXCEPTION(Error, ItemIcons(Rom::fromBytes(bytes)).image(item));
+            put32(bytes, high, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, ItemIcons(Rom::fromBytes(bytes)).image(item));
+        }
+    }
     void irisMaskCoverage() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

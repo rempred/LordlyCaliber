@@ -315,8 +315,13 @@ QImage ScenePanels::render() const {
             painter.drawText(QPoint(x, y + 10), label(text));
         };
         if (e.reward) {
-            painter.drawText(QRect(left + 5, top + 3, right - left - 10, bottom - top - 6),
-                             Qt::AlignCenter, rewardName(rom_, *e.reward));
+            const auto icon = icons_.image(*e.reward);
+            painter.drawImage(QPoint(left + 4, top + 4),
+                              QImage(reinterpret_cast<const uchar *>(icon.rgba.constData()),
+                                     16, 16, QImage::Format_RGBA8888));
+            // Native content callback2A54A8 places the text22 pixels after the icon.
+            painter.drawText(QRect(left + 26, top + 4, right - left - 30, 16),
+                             Qt::AlignLeft | Qt::AlignVCenter, rewardName(rom_, *e.reward));
         } else if (e.parent) {
             for (int i = 0; i < 2; ++i) {
                 const int at = 0x66710 + (i ? 4 : 0);
