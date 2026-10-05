@@ -24,41 +24,6 @@ QByteArray resource(const Rom &rom, quint32 key, bool compressed) {
         throw Error("Actor resource leaves unread compressed data");
     return data;
 }
-QVector<PoseProgram> poseTable(const QByteArray &bytes) {
-    const auto first = u32(bytes, 0);
-    if (!first || first % 4 || first > quint32(bytes.size()) || first / 4 > 32768)
-        throw Error("Invalid actor pose directory extent");
-    const int count = int(first / 4);
-    QVector<quint32> offsets;
-    for (int i = 0; i < count; ++i) {
-        const auto offset = u32(bytes, i * 4);
-        if (offset < first || offset > quint32(bytes.size()) || (i && offset < offsets.last()))
-            throw Error("Invalid actor pose directory pointer");
-        offsets << offset;
-    }
-    offsets << quint32(bytes.size());
-    constexpr int widths[] = {1, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 4, 3, 3, 2, 3, 3, 3, 3, 3, 4};
-    QVector<PoseProgram> result;
-    for (int i = 0; i < count; ++i) {
-        PoseProgram pose{bytes.mid(offsets[i], offsets[i + 1] - offsets[i]), {}};
-        if (!pose.source.isEmpty()) {
-            const int records = u8(pose.source, 0);
-            int cursor = 1;
-            for (int r = 0; r < records; ++r) {
-                const int opcode = u8(pose.source, cursor);
-                if (opcode >= int(std::size(widths)) ||
-                    cursor + widths[opcode] > pose.source.size())
-                    throw Error("Actor pose opcode exceeds its program");
-                pose.records << PoseRecord{opcode, pose.source.mid(cursor + 1, widths[opcode] - 1)};
-                cursor += widths[opcode];
-            }
-            if (cursor != pose.source.size())
-                throw Error("Actor pose has unaccounted bytes");
-        }
-        result << std::move(pose);
-    }
-    return result;
-}
 } // namespace
 int ActorArt::bankCount(const Rom &rom) {
     rom.requireSupported();
@@ -134,7 +99,7 @@ ActorArt ActorArt::descriptor(const Rom &rom, quint32 key) {
     if (descriptor.size() < 16 || descriptor.size() % 4 || descriptor.size() > 65540 * 4)
         throw Error("Invalid actor art descriptor");
     result.metadata_ = resource(rom, u32(descriptor, 0), true);
-    result.poses_ = poseTable(resource(rom, u32(descriptor, 4), true));
+    result.poses_ = PoseBank::parse(resource(rom, u32(descriptor, 4), true)).programs();
     const auto config = resource(rom, u32(descriptor, 8), true);
     result.palettes_ = resource(rom, u32(descriptor, 12), true);
     if (result.palettes_.size() % 512)

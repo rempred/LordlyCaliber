@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Editable counted pose programs
+
+PoseBank now owns the counted-program codec used by ActorArt. It preserves physical
+empty slices (forward aliases), count-zero programs, every instruction byte and existing
+wide-frame encodings. Editing a shared program materializes the last preceding alias,
+so the other states retain their previous behavior. Frame token/timing edits, insertion,
+removal and reordering preserve non-frame records and remap record-index jumps. Removal
+retargets a deleted frame to its next instruction or the implicit end. Opcode21 stores
+the low token byte first, unlike ordinary ROM halfwords; smaller replacements keep an
+existing wide opcode. Programs remain bounded to255 instructions.
+
+Candidate edits follow deterministic control flow from the edited entry, including
+state changes and continuations after delays. A reachable cycle with no delay, or a
+transition to an absent state, fails atomically. Unreachable original instructions are
+retained. Zero-duration frames remain allowed when execution reaches a delay/end.
+Caller layers still need to validate metadata/art references and class-specific pose
+policy. This codec is the sequence editing foundation, not the finished private-sequence
+project/export/UI workflow.
+
+`pose_bank_tests` passed107ms. Explicit programs executed by the native pose interpreter
+establish expected frame order/timing, wide token300, alias isolation, loop remapping,
+invalid edit atomicity, cross-state cycles and the255-instruction boundary. Across234
+current-ROM descriptors,8790 pose-table entries and42274 instructions re-encode exactly.
+Existing `body_art_tests bodyProgramsAndFrames` passed10511ms; desktop staged-animation
+and equipment previews passed1096ms after replacing the original parser. No ROM export
+or full-game behavior for authored private sequences is claimed by these codec checks.
+
 ## Expandable direct descriptor directory
 
 DirectDescriptors owns the twelve-bit direct-handle directory used by class bodies,

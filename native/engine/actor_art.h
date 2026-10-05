@@ -2,18 +2,11 @@
 #include "engine/artwork_edits.h"
 #include "engine/body_animation_data.h"
 #include "engine/sprite_object.h"
+#include "engine/pose_bank.h"
 #include <QMap>
 #include <QPoint>
 #include <array>
 namespace lordly {
-struct PoseRecord {
-    int opcode = 0;
-    QByteArray operands;
-};
-struct PoseProgram {
-    QByteArray source;
-    QVector<PoseRecord> records;
-};
 struct ActorPoseSelection {
     int animation = 0, facing = 0, state = 0;
 };
