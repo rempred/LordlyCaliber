@@ -5,6 +5,7 @@
 #include "app/combat_editor.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
+#include "app/animation_sequence_editor.h"
 #include "app/consumable_editor.h"
 #include "app/cutscene_editor.h"
 #include "app/encounter_editor.h"
@@ -220,6 +221,7 @@ void MainWindow::installProject(Project project) {
         artwork->addTab(new CombatEditor(project_.get(),undo_,[this]{updateStatus();}),"Combat artwork");
         artwork->addTab(new AnimationEditor(project_.get(),undo_,[this]{updateStatus();}),"Class animations");
         artwork->addTab(new AnimationOverrideEditor(project_.get(),undo_,[this]{updateStatus();}),"Attack overrides");
+        artwork->addTab(new AnimationSequenceEditor(project_.get(),undo_,[this]{updateStatus();}),"Private sequences");
         workspaces_->addTab(artwork,"Art");
     }
     if (project_->rom().revision() == 0) {

@@ -78,12 +78,15 @@ class PoseView : public QGraphicsView {
 ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     : QWidget(parent), rom_(rom), bodyAnimations_(BodyAnimationData::load(rom)), renderer_(rom) {
     auto layout = new QVBoxLayout(this);
+    sourceControls_=new QWidget;
+    auto sourceLayout=new QVBoxLayout(sourceControls_);
+    sourceLayout->setContentsMargins(0,0,0,0);
     auto note = new QLabel(
         "Pose inspection with per-layer opacity and optional sepia. Playback speed is adjustable; "
         "full-scene timing, cameras and lighting are separate. Sound requests are recorded without "
         "audio output. Class bodies include their equipment appearance.");
     note->setWordWrap(true);
-    layout->addWidget(note);
+    sourceLayout->addWidget(note);
     auto selectors = new QHBoxLayout;
     kinds_ = new QComboBox;
     kinds_->setObjectName("actorSourceKind");
@@ -113,14 +116,14 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     selectors->addWidget(owners_, 1);
     selectors->addWidget(new QLabel("Body flags"));
     selectors->addWidget(flags_);
-    layout->addLayout(selectors);
+    sourceLayout->addLayout(selectors);
     auto poseSelectors = new QHBoxLayout;
     poseSelectors->addWidget(new QLabel("Pose"));
     poseSelectors->addWidget(poses_, 1);
     poseSelectors->addWidget(new QLabel("Image variant"));
     poseSelectors->addWidget(variant_);
-    poseSelectors->addWidget(sepia_);
-    layout->addLayout(poseSelectors);
+    sourceLayout->addLayout(poseSelectors);
+    layout->addWidget(sourceControls_);
     actionControls_ = new QWidget;
     auto actionRow = new QHBoxLayout(actionControls_);
     actionRow->setContentsMargins(0,0,0,0);
@@ -190,6 +193,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     controls->addWidget(new QLabel("Step"));
     controls->addWidget(position_);
     controls->addWidget(speed_);
+    controls->addWidget(sepia_);
     controls->addStretch();
     controls->addWidget(fit);
     controls->addWidget(actual);
@@ -442,6 +446,24 @@ void ActorPoseEditor::selectCommand(const DirectorProgram &program, int command)
 void ActorPoseEditor::stop() {
     play_->setChecked(false);
     timer_->stop();
+}
+void ActorPoseEditor::selectPrivateSequence(int classId,int flags,int state) {
+    sourceControls_->hide();actionControls_->hide();
+    kinds_->setEnabled(false);banks_->setEnabled(false);owners_->setEnabled(false);
+    flags_->setEnabled(false);poses_->setEnabled(false);actions_->setEnabled(false);actionModes_->setEnabled(false);
+    if(kinds_->currentIndex()==1&&banks_->currentData().toInt()==classId&&
+       owners_->currentData().toInt()==-1&&flags_->currentIndex()==flags&&poses_->currentData().toInt()==state)return;
+    if(kinds_->currentIndex()!=1)kinds_->setCurrentIndex(1);
+    {
+        const QSignalBlocker a(banks_),b(owners_),c(flags_),d(actions_);
+        banks_->setCurrentIndex(banks_->findData(classId));owners_->setCurrentIndex(0);flags_->setCurrentIndex(flags);actions_->setCurrentIndex(0);
+    }
+    loadBank();
+    if(poses_->findData(state)<0)throw Error("The selected pose is absent from this body route");
+    {const QSignalBlocker block(poses_);poses_->setCurrentIndex(poses_->findData(state));}
+    owners_->setEnabled(false);flags_->setEnabled(false);
+    actionControls_->hide();
+    restart();
 }
 void ActorPoseEditor::loadSources() {
     stop();

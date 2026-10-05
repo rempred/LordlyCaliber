@@ -25,6 +25,7 @@ class ActorPoseEditor : public QWidget {
     void selectCommand(const DirectorProgram &, int command);
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
+    void selectPrivateSequence(int classId,int flags,int state);
 
   private:
     void loadSources();
@@ -43,6 +44,7 @@ class ActorPoseEditor : public QWidget {
     Rom rom_;
     BodyAnimationData::Pointer bodyAnimations_;
     QWidget *actionControls_;
+    QWidget *sourceControls_;
     QComboBox *actions_, *actionModes_;
     ActorRenderer renderer_;
     ActorArtworkEdits artwork_;

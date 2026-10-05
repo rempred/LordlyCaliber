@@ -1,5 +1,22 @@
 # Native Lordly Caliber
 
+## Private sequence authoring controls
+
+The Art workspace includes Private sequences: searchable class/body-route/pose selection,
+make/remove copy, frame token and duration, insert/duplicate/remove, reorder and shared undo.
+Control records remain visible and retained. Commands validate a candidate before publishing
+it. The embedded ActorPoseEditor follows the selected route/pose and keeps its current step
+across edits and undo. It retains equipment, palette, sepia, playback and projection controls;
+redundant source selectors are hidden in this context. The standalone inspector keeps them.
+
+`sequence_editor_tests editPreviewAndUndo` passed752ms: actual controls alter current pose
+bytes, duplicate/reorder/remove frames, preserve preview step2 through edits/undo/redo, reject
+control-record removal and unmatched class search without changing undo/model, remove/restore
+private copies, switch body routes, persist and inherit into class165. Its1300x880 screenshot
+was inspected. `ui_tests loadDesktopWorkspace stagedAnimationPreviewAndUndo
+ equipmentBodyPreview` passed1898ms after the layout changes. Build47940 has no compiler warnings.
+Structural layer/frame authoring, private attack selectors and browser sequence import remain.
+
 ## Private class sequence storage and export
 
 AnimationSequences owns one private descriptor per class/body route. Project snapshots,
