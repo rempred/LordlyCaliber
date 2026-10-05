@@ -2,6 +2,7 @@
 #include "engine/image.h"
 #include "engine/scene_images.h"
 #include "engine/scene_image_presentation.h"
+#include "engine/color_combiner.h"
 #include "game/director/image_presentation.h"
 #include <bit>
 #include <QImage>
@@ -14,6 +15,82 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageDrawingAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QTemporaryDir work;QProcess reference;
+        reference.start("node",{QFINDTESTDATA("image-drawing-mips.cjs"),path,work.filePath("drawing.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("drawing.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();QCOMPARE(data["cases"].toArray().size(),112);
+        for(const auto &v:data["cases"].toArray()) {
+            const auto row=v.toObject();const auto context=QByteArray::fromHex(row["context"].toString().toLatin1());
+            LordlyImageEcho echo{};for(int i=0;i<3;++i){echo.live[i]=(row["mask"].toInt()>>i)&1;
+                const auto b=QByteArray::fromHex(row["saved"].toArray()[i].toString().toLatin1());memcpy(echo.matrix[i],b.constData(),64);}
+            const auto plan=SceneImagePresentation::drawPlan(context,echo);
+            const auto expected=row["draws"].toArray();
+            QCOMPARE(plan.size(),expected.size());
+            for(int i=0;i<plan.size();++i) {
+                const auto draw=expected[i].toObject();const auto stack=draw["stack"].toArray();
+                QCOMPARE(plan[i].matrix,QByteArray::fromHex(stack[1].toString().toLatin1()));
+                QCOMPARE(plan[i].alpha,quint8(draw["primitive"].toInteger()));
+                QCOMPARE(stack.size(),plan[i].current&&row["selected"].toString()=="processed"?3:2);
+                const auto combine=draw["combine"].toArray();const ColorCombiner combiner(quint32(combine[0].toInteger()),quint32(combine[1].toInteger()),false);
+                for(const quint8 alpha:{quint8(0),quint8(37),quint8(255)}) {
+                    CombineInputs inputs;inputs.texel0={31,87,129,alpha};inputs.primitive={255,255,255,plan[i].alpha};
+                    const auto color=combiner.evaluate(inputs);QCOMPARE(color[0],31);QCOMPARE(color[1],87);QCOMPARE(color[2],129);
+                    QCOMPARE(int(color[3]),plan[i].current?qMin(255,int(alpha)+1):int(plan[i].alpha));
+                }
+            }
+            const auto special=row["special"].toObject();QCOMPARE(special["pass"].toInt(),1);QCOMPARE(special["special"].toInt(),1);
+            QCOMPARE(special["stack"].toArray(),QJsonArray{data["parent"]});
+        }
+    }
+    void imageEchoAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;
+        reference.start("node",{QFINDTESTDATA("image-echo-mips.cjs"),path,work.filePath("echo.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("echo.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();
+        const auto settled=std::bit_cast<double>(quint64(u32(rom.bytes(),0x2b8ac0))<<32|u32(rom.bytes(),0x2b8ac4));
+        auto bytes=[](const QJsonObject &row,const char *key){return QByteArray::fromHex(row[key].toString().toLatin1());};
+        QCOMPARE(data["rows"].toArray().size(),96);int checked=0;
+        for(const auto &value:data["rows"].toArray()) {
+            const auto row=value.toObject(),initial=row["initial"].toObject();
+            QByteArray context(0x848,0);context.replace(0,0x54,bytes(initial,"head"));context.replace(0x798,0xb0,bytes(initial,"tail"));
+            auto channel=bytes(initial,"channel");LordlyImageEcho echo{};
+            for(const auto &step:row["steps"].toArray()) {
+                const auto entry=step.toObject(),expected=entry["after"].toObject();
+                if(entry.contains("start")) {
+                    uint32_t args[3];for(int i=0;i<3;++i)args[i]=quint32(entry["start"].toArray()[i].toInteger());
+                    QVERIFY(lordly_image_echo_start(reinterpret_cast<uint8_t *>(context.data()),reinterpret_cast<uint8_t *>(channel.data()),args));
+                } else QVERIFY(lordly_image_echo_advance(&echo,reinterpret_cast<uint8_t *>(context.data()),settled));
+                QCOMPARE(context.first(0x54),bytes(expected,"head"));QCOMPARE(context.mid(0x798),bytes(expected,"tail"));
+                QCOMPARE(channel,bytes(expected,"channel"));
+                QCOMPARE(lordly_image_echo_query(reinterpret_cast<const uint8_t *>(context.constData())),quint32(expected["query"].toInteger()));
+                for(int i=0;i<3;++i) {
+                    const auto matrix=expected["matrices"].toArray()[i];QCOMPARE(bool(echo.live[i]),!matrix.isNull());
+                    if(echo.live[i])QCOMPARE(QByteArray(reinterpret_cast<const char *>(echo.matrix[i]),64),QByteArray::fromHex(matrix.toString().toLatin1()));
+                }
+                ++checked;
+            }
+        }
+        QCOMPARE(checked,4299);
+        QCOMPARE(data["fades"].toArray().size(),1008);
+        for(const auto &value:data["fades"].toArray()) {
+            const auto row=value.toObject(),initial=row["initial"].toObject();QByteArray context(0x848,0);
+            context.replace(0,0x54,bytes(initial,"head"));context.replace(0x798,0xb0,bytes(initial,"tail"));
+            LordlyImageEcho echo{};for(int i=0;i<3;++i)echo.live[i]=(row["mask"].toInt()>>i)&1;
+            for(const auto &step:row["steps"].toArray()) {
+                lordly_image_echo_fade(reinterpret_cast<uint8_t *>(context.data()),&echo,quint16(row["pressed"].toInt()));
+                QCOMPARE(context.first(0x54),bytes(step.toObject(),"head"));QCOMPARE(context.mid(0x798),bytes(step.toObject(),"tail"));
+            }
+        }
+        QByteArray context(0x848,0),channel(88,0);put32(channel,0x54,0x7fc00000);
+        const auto before=context,view=channel;const uint32_t args[]{1,30,4};
+        QVERIFY(!lordly_image_echo_start(reinterpret_cast<uint8_t *>(context.data()),reinterpret_cast<uint8_t *>(channel.data()),args));
+        QCOMPARE(context,before);QCOMPARE(channel,view);
+    }
     void imagePresentationAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;

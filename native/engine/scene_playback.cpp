@@ -31,6 +31,20 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x50) {
+        if (!imagePresentation_ || !imageView_)
+            throw Error("Image transition requires its launch image presentation");
+        auto channel = transforms_.channel(1);
+        imagePresentation_->startEcho(args, *imageView_, channel);
+        transforms_.supplyChannel(1, channel);
+        return true;
+    }
+    if (opcode == 0x54) {
+        if (!imageView_)
+            throw Error("Image transition query requires its launch image presentation");
+        value = qint32(lordly_image_echo_query(reinterpret_cast<const uint8_t *>(imageView_->constData())));
+        return true;
+    }
     if (opcode == 0x3a) {
         if (!imagePresentation_ || !imageView_)
             throw Error("Scene vignette requires its launch image presentation");
@@ -173,6 +187,20 @@ bool ScenePlayback::update(LordlySceneService service) {
     case LORDLY_SCENE_MODE_ZERO_1:
         transforms_.advance();
         return true;
+    case LORDLY_SCENE_MODE_ZERO_2:
+        if (imagePresentation_ && imageView_)
+            imagePresentation_->advanceEcho(rom_, *imageView_);
+        return true;
+    case LORDLY_SCENE_MODE_ZERO_6: {
+        //2B529C also owns a separate image-caption pool. Require its caller to
+        // acknowledge that domain; commit our alpha update only on success.
+        if (!supplemental_ || !*supplemental_ || !(*supplemental_)(service))
+            return false;
+        if (imagePresentation_ && imageView_)
+            lordly_image_echo_fade(reinterpret_cast<uint8_t *>(imageView_->data()),
+                                    &imagePresentation_->echo(), 0);
+        return true;
+    }
     case LORDLY_SCENE_MODE_ZERO_4:
         if (imageMotion_.active()) {
             if (!imageView_)

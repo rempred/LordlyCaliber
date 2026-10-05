@@ -1,6 +1,7 @@
 #include "engine/scene_sprites.h"
 #include "engine/sprite_pose.h"
 #include "engine/sprite_renderer.h"
+#include "engine/scene_image_presentation.h"
 #include "game/director/scene_matrix.h"
 #include "game/images/sepia.h"
 #include <QDir>
@@ -15,6 +16,42 @@ using namespace lordly;
 class SpriteRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void specialImageComposition() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);SceneSprites sprites(rom);SpriteRenderer renderer(rom);
+        QByteArray record(80,0);for(int i=0;i<16;++i)put8(record,i,255);
+        put32(record,0x30,30);put32(record,0x3c,35);put16(record,0x40,180);put16(record,0x48,100);put8(record,0x4a,1);
+        QByteArray bank(56,0),parent(64,0);const float values[]{90,4.f/3,1,20000,1,0,0,120,0,0,0,0,1,0};
+        for(int i=0;i<14;++i)put32(bank,i*4,std::bit_cast<quint32>(values[i]));
+        const SceneCamera camera(bank,1);float identity[16];lordly_matrix_identity(identity);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(parent.data()),identity));
+        auto image=SceneImagePresentation::load(rom,1);auto context=image.initialContext();
+        auto registeredBank=bank;put32(registeredBank,20,std::bit_cast<quint32>(272.f));
+        put32(registeredBank,24,std::bit_cast<quint32>(80.f));put32(registeredBank,28,std::bit_cast<quint32>(127.f));
+        image.construct(rom,{1,0,0,0,70,70,130,8},SceneCamera(registeredBank,1),context);
+        QImage background(320,240,QImage::Format_RGBA8888);background.fill(Qt::transparent);
+        ActorRenderer::paint(background,image.project(1,context,camera,parent));
+        int visible=0;for(int y=0;y<240;++y)for(int x=0;x<320;++x)visible+=background.pixelColor(x,y).alpha()>16;
+        QVERIFY(visible>1000);
+        for(const int animation:{800,801}) {
+            put16(record,0x44,quint16(animation));sprites.supplyRecord(0,record);
+            QVERIFY(renderer.project(sprites,1,0,camera,parent,{255,255,255}).isEmpty());
+            QVERIFY(renderer.project(sprites,0,1,camera,parent,{255,255,255}).isEmpty());
+            const auto layers=renderer.project(sprites,1,1,camera,parent,{255,255,255});QVERIFY(!layers.isEmpty());
+            auto composed=background;ActorRenderer::paint(composed,layers);QVERIFY(composed!=background);
+            auto panned=parent;lordly_matrix_translate(identity,20,-10,0);
+            QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(panned.data()),identity));
+            const auto moved=renderer.project(sprites,1,1,camera,panned,{255,255,255});QCOMPARE(moved.size(),layers.size());
+            for(int i=0;i<layers.size();++i) {
+                QCOMPARE(moved[i].image,layers[i].image);QCOMPARE(moved[i].plane.clip.size(),layers[i].plane.clip.size());
+                for(int j=0;j<layers[i].plane.clip.size();++j) {
+                    const auto delta=moved[i].plane.clip[j]-layers[i].plane.clip[j];
+                    QVERIFY(qAbs(delta.x()-20)<.001);QVERIFY(qAbs(delta.y()-10)<.001);
+                }
+            }
+            QVERIFY(composed.save(QString("image-special-sprite-%1.png").arg(animation)));
+        }
+    }
     void packedMatricesAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

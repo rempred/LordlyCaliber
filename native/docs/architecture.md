@@ -1,5 +1,62 @@
 # Native Lordly Caliber
 
+## Scene image presentation and trails
+
+Class-four previews resolve the image from the edited launch stream and current
+ROM evolution/root tables. The raw-word pre-scan matches117 retail streams and
+ten boundary cases; all69 table rows and edited selectors/pointers are checked.
+Missing event-row fallbacks remain explicit. SceneImagePresentation retains the
+original and half-resolution image; ScenePlayback owns their shared0x848-byte
+context with the existing pan/zoom service.
+
+Opcode3A reconstructs the camera-angle, packed-matrix and floating-endpoint
+sequence, five-bit RGB shifts, ellipse and edge feather. The latter scans
+sixteen distances but only writes below eight, correcting the older prose
+summary that implied a full sixteen-pixel applied feather. Repeated construction
+rejects safely rather than recreating the target's lost source and format error.
+Slot zero has a separate drawing owner and currently pauses explicitly.
+
+Opcode50 retains three reusable trail matrices, five-update sampling, the extra
+counter increment while draining, low-byte operands and retargeting. Query54
+returns1 during interpolation, signed-1 during the tail, then0. The separate
+2B529C scheduler service decreases eligible trail alpha by20, including a
+repeated cyclic slot in reverse mode. Its caption pool remains separately owned;
+ScenePlayback requires the supplemental service to acknowledge that domain.
+
+The drawing plan follows complete2B2868 instruction traces. Forward mode draws
+up to three trails before the current image; reverse mode can visit four trails
+after it, repeating a slot. Trails use primitive alpha directly; current-image
+alpha adds one to texture alpha. Only the current processed image doubles its
+geometry. Special sprite markers800/801 draw afterward with pass1 and the
+enclosing channel matrix, after the image/trail matrices have been popped.
+Their retail pose vocabulary has no authored800/801 entries; supplying real
+sprite records verifies drawing, not their still-unimplemented launch creation.
+
+Build17973: image_tests imagePresentationAgainstMips passed3032ms, comparing24
+complete original pixel constructions and96 matrix constructors, source retention
+and failed-input rollback. Allocation and host libm are controlled. Desktop
+imagePresentationPlayback/sceneRoomComposition/worldScenePanAndSeek passed1273ms.
+The launch check passed1075ms and groupCoverageAndFixedOrigin passed1384ms.
+
+Build15662: image_tests imageDrawingAgainstMips passed218ms across112 complete
+original draw invocations, matrix stacks, alpha and combiner commands. Its
+special-sprite stack observation is independent of the desktop renderer.
+The attempted authored800/801 UI cases failed on absent pose vocabulary; those
+invalid fixture assumptions were replaced with explicit native records.
+
+Build11127: image_tests imageEchoAgainstMips passed894ms:96 complete original
+sequences/4299 snapshots plus1008 three-step fade/input sequences. Native
+allocation/free/copy and libm are controlled; the caption pool is empty. The
+fixture adds bounded aligned-word-pair support already used by other original
+instruction checks. sprite_runtime_tests specialImageComposition passed166ms
+with real decoded art, visible pixels and independent20/10-pixel movement.
+ui_tests imagePresentationPlayback passed1956ms for pan, forward and reverse
+transitions,124 updates, backward checkpoints, repaint and restart.
+
+These checks establish owner state, source pixels and desktop composition.
+Qt filtering, coverage, blending and combined projection remain approximations.
+Manual image controls, caption owners and dynamic launch creation remain open.
+
 ## Equipment-dependent body layers
 
 Body drawing now adapts accepted205C88/205484/206340 selection from Decomp

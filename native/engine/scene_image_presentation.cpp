@@ -74,42 +74,96 @@ void SceneImagePresentation::construct(const Rom &rom, const QVector<quint32> &a
     context = std::move(next);
     processed_ = std::move(processed);
     slot_ = int(args[0]);
+    images_[slot_] = true;
 }
-QVector<ActorRasterLayer> SceneImagePresentation::project(const QByteArray &context,
+void SceneImagePresentation::startEcho(const QVector<quint32> &args, QByteArray &context,
+                                       QByteArray &channel) {
+    if (slot_ < 0 || args.size() != 3 || context.size() != 0x848 || channel.size() != 88)
+        throw Error("Image transition requires its constructed image and view channel");
+    if (!lordly_image_echo_start(reinterpret_cast<uint8_t *>(context.data()),
+                                 reinterpret_cast<uint8_t *>(channel.data()), args.constData()))
+        throw Error("Image transition exceeds fixed-point bounds");
+    images_[1] = false;
+}
+void SceneImagePresentation::advanceEcho(const Rom &rom, QByteArray &context) {
+    if (context.size() != 0x848)
+        throw Error("Image transition lost its presentation context");
+    const auto settled = std::bit_cast<double>(quint64(u32(rom.bytes(), 0x2b8ac0)) << 32 |
+                                               u32(rom.bytes(), 0x2b8ac4));
+    if (!lordly_image_echo_advance(&echo_, reinterpret_cast<uint8_t *>(context.data()), settled))
+        throw Error("Image transition exceeds its matrix or counter domain");
+}
+QVector<SceneImageDraw> SceneImagePresentation::drawPlan(const QByteArray &context,
+                                                         const LordlyImageEcho &echo) {
+    if (context.size() != 0x848)
+        throw Error("Scene image drawing requires its complete context");
+    QVector<SceneImageDraw> result;
+    const auto sample = qint32(u32(context, 0x824));
+    auto trail = [&](int n) {
+        const int slot = n % 3;
+        if (echo.live[slot])
+            result << SceneImageDraw{
+                QByteArray(reinterpret_cast<const char *>(echo.matrix[slot]), 64),
+                u8(context, 0x820 + slot), false};
+    };
+    const bool reverse = u8(context, 0x83b) != 0;
+    if (!reverse && sample > 0)
+        for (int n = qMax(0, sample - 3); n < sample; ++n)
+            trail(n);
+    result << SceneImageDraw{context.first(64), 1, true};
+    // The native reverse sweep visits four samples and repeats a cyclic slot.
+    if (reverse && sample > 0)
+        for (int n = sample; n > qMax(-1, sample - 4); --n)
+            trail(n);
+    return result;
+}
+QVector<ActorRasterLayer> SceneImagePresentation::project(int channel, const QByteArray &context,
                                                           const SceneCamera &camera,
                                                           const QByteArray &parent) const {
-    if (slot_ < 0)
+    if (!images_.contains(channel))
         return {};
+    if (channel == 0)
+        throw Error("Presentation in image slot zero requires its separate drawing owner");
     if (context.size() != 0x848 || parent.size() != 64)
         throw Error("Scene image drawing lost its matrices");
-    if (u32(context, 0x824) || u32(context, 0x82c))
-        throw Error("Scene image transition requires its echo drawing state");
     if (u32(context, 0x4c) != 2)
         throw Error("Scene image drawing requires its selected image resource");
-    float model[16], outer[16], scale[16];
-    uint8_t packed[64];
-    lordly_matrix_unpack(model, reinterpret_cast<const uint8_t *>(context.constData()));
-    lordly_matrix_unpack(outer, reinterpret_cast<const uint8_t *>(parent.constData()));
-    lordly_matrix_scale(scale, 2, 2,
-                        2); // Current processed image compensates its half-size pixels.
-    lordly_matrix_multiply(model, scale, model);
-    lordly_matrix_multiply(model, model, outer);
-    if (!lordly_matrix_pack(packed, model))
-        throw Error("Scene image drawing exceeds fixed-point bounds");
-    ActorRasterLayer layer;
-    layer.slot = slot_;
-    layer.image = processed_;
-    layer.primitive = {255, 255, 255, 1};
-    // Original current-image combiner saturates texture alpha + primitive alpha1.
-    for (int y = 0; y < layer.image.height(); ++y) {
-        auto p = layer.image.scanLine(y);
-        for (int x = 0; x < layer.image.width(); ++x)
-            p[x * 4 + 3] = quint8(qMin(255, int(p[x * 4 + 3]) + 1));
-    }
-    const int width = layer.image.width(), height = layer.image.height();
-    layer.plane = camera.projectPackedPlane(QByteArray(reinterpret_cast<const char *>(packed), 64),
-                                            {double(-(width / 2)), double(height / 2), 0},
-                                            {1, 0, 0}, {0, -1, 0}, QSizeF(width, height));
-    return {layer};
+    QVector<ActorRasterLayer> result;
+    const bool processed = images_[channel];
+    auto append = [&](const uint8_t *matrix, bool current, quint8 alpha) {
+        float model[16], outer[16], scale[16];
+        uint8_t packed[64];
+        lordly_matrix_unpack(model, matrix);
+        lordly_matrix_unpack(outer, reinterpret_cast<const uint8_t *>(parent.constData()));
+        if (current && processed) {
+            lordly_matrix_scale(scale, 2, 2, 2);
+            lordly_matrix_multiply(model, scale, model);
+        }
+        lordly_matrix_multiply(model, model, outer);
+        if (!lordly_matrix_pack(packed, model))
+            throw Error("Scene image drawing exceeds fixed-point bounds");
+        ActorRasterLayer layer;
+        layer.slot = channel;
+        layer.layer = result.size();
+        layer.image = processed ? processed_ : source_;
+        layer.primitive = {255, 255, 255, alpha};
+        for (int y = 0; y < layer.image.height(); ++y) {
+            auto p = layer.image.scanLine(y);
+            for (int x = 0; x < layer.image.width(); ++x)
+                // Trail combiner emits primitive alpha directly. It does not
+                // multiply the vignette's alpha. Current adds one to the texel.
+                p[x * 4 + 3] = quint8(current ? qMin(255, int(p[x * 4 + 3]) + 1) : alpha);
+        }
+        const int width = layer.image.width(), height = layer.image.height();
+        layer.plane =
+            camera.projectPackedPlane(QByteArray(reinterpret_cast<const char *>(packed), 64),
+                                      {double(-(width / 2)), double(height / 2), 0}, {1, 0, 0},
+                                      {0, -1, 0}, QSizeF(width, height));
+        result << std::move(layer);
+    };
+    for (const auto &draw : drawPlan(context, echo_))
+        append(reinterpret_cast<const uint8_t *>(draw.matrix.constData()), draw.current,
+               draw.alpha);
+    return result;
 }
 } // namespace lordly

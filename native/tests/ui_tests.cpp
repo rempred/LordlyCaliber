@@ -155,13 +155,21 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void imagePresentationPlayback_data() {
+        QTest::addColumn<int>("transition");
+        QTest::newRow("scripted-pan")<<-1;
+        QTest::newRow("echo-forward")<<0;
+        QTest::newRow("echo-reverse")<<1;
+    }
     void imagePresentationPlayback() {
+        QFETCH(int,transition);
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
         for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
         QVERIFY(source);const auto id=scenes.createScene("Image presentation playback",source,false);
-        QVector<quint32> words{0x80000007U,1,0x3a,1,0,0,0,70,70,130,8,
-                              0x76,quint32(-1),quint32(-1),0,50,0,0,20};
+        QVector<quint32> words{0x80000007U,1,0x3a,1,0,0,0,70,70,130,8};
+        if(transition<0)words<<0x76<<quint32(-1)<<quint32(-1)<<0<<50<<0<<0<<20;
+        else words<<0<<0x80000000U<<0x50<<quint32(transition)<<20<<4;
         for(int i=0;i<140;++i)words<<0<<0x80000000U;
         words<<0x80000001U<<0xff000004U;
         QByteArray bytes(words.size()*4,0);for(int i=0;i<words.size();++i)put32(bytes,i*4,words[i]);
@@ -175,12 +183,13 @@ class UiTests : public QObject {
         position->setValue(12);QTRY_COMPARE(preview.property("sceneTick").toInt(),12);
         QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(preview.renderedFrame()!=first);
         const auto moved=preview.renderedFrame();
+        QVERIFY(preview.grab().save(QString("scene-image-transition-%1.png").arg(transition)));
         position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
         QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));
         position->setValue(12);QTRY_COMPARE(preview.property("sceneTick").toInt(),12);QCOMPARE(preview.renderedFrame(),moved);
         position->setValue(1);QTRY_COMPARE(preview.property("sceneTick").toInt(),1);QCOMPARE(preview.renderedFrame(),first);
         preview.update();QCoreApplication::processEvents();QCOMPARE(preview.renderedFrame(),first);
-        QVERIFY(preview.grab().save("scene-image-presentation.png"));
+        QVERIFY(preview.grab().save(QString("scene-image-presentation-%1.png").arg(transition)));
         preview.findChild<QPushButton *>("sceneRestart")->click();preview.findChild<QPushButton *>("sceneStep")->click();QCOMPARE(preview.renderedFrame(),first);
     }
     void scatteredPropsSeek_data() {

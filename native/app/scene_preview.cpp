@@ -107,7 +107,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Scattered props use a fixed preview seed. Special sprites and audio remain "
+            "Scattered props use a fixed preview seed. Launch bindings, manual image controls and audio remain "
             "unfinished.");
         restart();
     } catch (const std::exception &e) {
@@ -235,7 +235,9 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     for (int slot = 0; slot < 30; ++slot)
         if (const auto sprite = drawing.sprites().sprite(slot)) {
             const auto animation = u16(sprite->record(), 0x44);
-            if (animation == 800 || animation == 801)
+            if ((animation == 800 || animation == 801) &&
+                (mode_ != 0 || !drawing.imagePresentation() ||
+                 drawing.imagePresentation()->slot() < 0))
                 throw Error("Special sprites require their effect projection owner");
         }
     const auto objects = next.worldProps ? next.worldProps->records() : QVector<QByteArray>{};
@@ -244,7 +246,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     frame.fill(Qt::transparent);
     int channelCount = next.backgrounds ? next.backgrounds->channelCount() : 20;
     if (drawing.imagePresentation())
-        channelCount = qMax(channelCount, drawing.imagePresentation()->slot() + 1);
+        channelCount = qMax(channelCount, drawing.imagePresentation()->channelCount());
     if (mode_ == 0)
         drawing.prepareModeZeroDrawing(channelCount);
     else
@@ -262,16 +264,26 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     for (int c = 0; c < 3; ++c)
                         backgroundColor[c] = u8(color, 4 + c);
                 const bool presentation = drawing.imagePresentation() &&
-                    drawing.imagePresentation()->slot() == channel;
+                    drawing.imagePresentation()->contains(channel);
                 if (presentation || (next.backgrounds && channel < next.backgrounds->channelCount())) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
                     const auto layers = presentation
-                        ? drawing.imagePresentation()->project(*drawing.imageView(),
+                        ? drawing.imagePresentation()->project(channel, *drawing.imageView(),
                                                               drawing.cameras().actor(), parent)
                         : next.backgrounds->project(channel, drawing.cameras().actor(), parent,
                                                     backgroundColor);
                     ActorRenderer::paint(background, layers);
+                    if (presentation) {
+                        // ROM2B2868 pops the image/last trail matrix before
+                        // calling29A930(1,1). Special sprites inherit this
+                        // channel's parent, independently of image geometry.
+                        ActorRenderer::paint(background, spriteRenderer_.project(
+                            drawing.sprites(),1,1,drawing.cameras().actor(),parent,
+                            {255,255,255},drawing.effects().colorRecord(1),sepia));
+                        if (!drawing.sprites().draws(1,1).isEmpty())
+                            environment = {0,0,0,1};
+                    }
                     painter.drawImage(0, 0, background);
                 }
                 const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,
