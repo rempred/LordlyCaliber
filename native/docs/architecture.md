@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Sprite video export
+
+Sprite studio exports MP4/H.264 through Windows Media Foundation. Video entry
+points load from the Windows system directory only during export, so unavailable
+media components do not prevent the editor from starting. No codec executable or
+Qt Multimedia package is shipped. The Windows SDK GUID library and COM are linked.
+Implementation references: [Microsoft sink writer](https://learn.microsoft.com/en-us/windows/win32/medfound/tutorial--using-the-sink-writer-to-encode-video)
+and [H.264 encoder](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-encoder).
+
+The export worker snapshots the asset, composites visible layers over a chosen
+opaque background, scales with nearest sampling and encodes 30 samples per second.
+Each frame lasts max(1, ticks), matching Sprite studio playback. Integer scale and
+repeat count are configurable; output is bounded to 4096 pixels per side and ten
+minutes. Each side is padded to at least 64 pixels and even dimensions, preserving
+the selected artwork scale. The Windows pipeline rejected tiny test frames; this
+compatibility padding is displayed before export. RGB32 positive stride passed
+independent orientation checks. H.264 is lossy; native assets/PNG retain exact art.
+
+A cancellable background job writes into an owned temporary directory, finalizes
+and closes the encoder, then copies into QSaveFile for atomic replacement. Failure
+or cancellation preserves the previous destination, including during final copy.
+`sprite_video_tests` passed in 2545 ms. An independent
+installed FFmpeg decoder verified 12 frames, 0.4-second duration, zero-tick handling,
+repetition, 36 color/orientation samples and padded odd-size output. Separate checks
+verified cancellation, temporary cleanup and invalid-option destination preservation.
+FFmpeg is only a development verifier and is not an application dependency.
+`ui_tests spriteVideoExport` passed in 252 ms: export menu/options, background job,
+finished dialog, output and unchanged project/undo history. The options screenshot
+was inspected. Other Windows installations and missing-media-component systems have
+not yet received clean-machine validation.
+
 ## Prepared sprite layer images
 
 Sprite studio can import PNG/JPEG into the selected layer through the shared

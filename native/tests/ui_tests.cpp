@@ -49,6 +49,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -64,6 +65,36 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void spriteVideoExport() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); QUndoStack undo;
+            SpriteEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 900); editor.show();
+            auto asset = SpriteAsset::blank("Video export", {32, 32});
+            asset.frames[0].layers[0].image.fill(Qt::red); asset.frames[0].ticks = 3;
+            editor.addAsset(asset);
+            const auto original = project.sprites().json(); const int commands = undo.count();
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("spriteVideoOptions"); QVERIFY(dialog);
+                dialog->findChild<QSpinBox *>("spriteVideoScale")->setValue(2);
+                dialog->findChild<QSpinBox *>("spriteVideoRepeats")->setValue(2);
+                QVERIFY(dialog->grab().save("sprite-video-options.png"));
+                dialog->reject();
+            });
+            auto menu = editor.findChild<QPushButton *>("spriteExport")->menu();
+            const auto actions = menu->actions();
+            const auto action = std::find_if(actions.cbegin(), actions.cend(),
+                                              [](QAction *a) { return a->text().startsWith("MP4 video"); });
+            QVERIFY(action != actions.cend()); (*action)->trigger();
+            QTemporaryDir work;
+            QVERIFY(editor.exportVideo(work.filePath("sprite.mp4"), {2, 2, Qt::black}));
+            QVERIFY(QFileInfo(work.filePath("sprite.mp4")).size() > 100);
+            QCOMPARE(project.sprites().json(), original); QCOMPARE(undo.count(), commands);
+            QVERIFY(!editor.findChild<QDialog *>("spriteVideoProgress"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void spriteLayerImagePreparation() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

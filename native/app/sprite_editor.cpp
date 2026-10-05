@@ -11,6 +11,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFutureWatcher>
 #include <QGroupBox>
 #include <QImageReader>
 #include <QJsonDocument>
@@ -19,6 +20,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -28,8 +30,32 @@
 #include <QToolBar>
 #include <QUndoStack>
 #include <QVBoxLayout>
+#include <QtConcurrent>
+#include <atomic>
 namespace lordly {
 namespace {
+class VideoProgress final : public QDialog {
+  public:
+    VideoProgress(QWidget *parent, std::atomic_bool &cancel) : QDialog(parent), cancel_(cancel) {
+        setObjectName("spriteVideoProgress");
+        setWindowTitle("Export sprite video");
+        auto layout = new QVBoxLayout(this);
+        label_ = new QLabel("Encoding sprite frames…"); layout->addWidget(label_);
+        bar = new QProgressBar; layout->addWidget(bar);
+        cancelButton_ = new QPushButton("Cancel"); layout->addWidget(cancelButton_);
+        connect(cancelButton_, &QPushButton::clicked, this, &VideoProgress::reject);
+    }
+    void reject() override {
+        cancel_ = true;
+        label_->setText("Cancelling export…");
+        cancelButton_->setEnabled(false);
+    }
+    QProgressBar *bar;
+  private:
+    std::atomic_bool &cancel_;
+    QLabel *label_;
+    QPushButton *cancelButton_;
+};
 class SpriteCommand final : public QUndoCommand {
   public:
     SpriteCommand(Project *project, const QString &label, SpriteLibrary after)
@@ -96,6 +122,7 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
     auto exportButton = button(actions, "Export", "spriteExport");
     auto exports = new QMenu(exportButton);
     exportButton->setMenu(exports);
+    exports->addAction("MP4 video…", this, [this] { guarded([this] { chooseVideoExport(); }); });
     for (const auto &format : {QByteArray("PNG"), QByteArray("JPEG")})
         exports->addAction(QString::fromLatin1(format) + " image…", this, [this, format] {
             if (!current())
@@ -819,5 +846,76 @@ void SpriteEditor::exportImage(const QString &path, const QByteArray &format) co
     if (!image.save(&buffer, format.constData(), 100))
         throw Error("Cannot encode sprite image");
     atomicWrite(path, bytes);
+}
+void SpriteEditor::chooseVideoExport() {
+    if (!current()) throw Error("Select a sprite asset first");
+    play_->setChecked(false);
+    const auto asset = *current();
+    QDialog dialog(this); dialog.setObjectName("spriteVideoOptions"); dialog.setWindowTitle("Export sprite video");
+    auto layout = new QVBoxLayout(&dialog);
+    auto note = new QLabel("MP4 video uses the frame timing shown in Sprite studio at 30 ticks per "
+                          "second. Transparent pixels use the selected background. Video compression "
+                          "can change colors slightly; sprite assets and PNG retain exact pixels.");
+    note->setWordWrap(true); layout->addWidget(note);
+    auto form = new QFormLayout; layout->addLayout(form);
+    QSpinBox scale, repeats;
+    scale.setObjectName("spriteVideoScale"); scale.setRange(1, 16); scale.setValue(4);
+    repeats.setObjectName("spriteVideoRepeats"); repeats.setRange(1, 100); repeats.setValue(1);
+    form->addRow("Pixel scale", &scale); form->addRow("Repeats", &repeats);
+    QColor background = Qt::black;
+    QPushButton color("Black"); form->addRow("Background", &color);
+    connect(&color, &QPushButton::clicked, &dialog, [&] {
+        const auto selected = QColorDialog::getColor(background, &dialog, "Video background");
+        if (selected.isValid()) { background = selected; color.setText(background.name()); }
+    });
+    QLabel summary; summary.setWordWrap(true); layout->addWidget(&summary);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel); layout->addWidget(&buttons);
+    buttons.button(QDialogButtonBox::Ok)->setText("Choose destination…");
+    auto update = [&] {
+        try {
+            const auto plan = spriteVideoPlan(asset, {scale.value(), repeats.value(), background});
+            summary.setText(QString("%1 × %2 pixels · %3 seconds. Background padding makes each "
+                                    "side at least 64 pixels and rounds odd dimensions up by one.")
+                                .arg(plan.size.width()).arg(plan.size.height()).arg(plan.ticks / 30., 0, 'f', 2));
+            buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
+        } catch (const Error &e) {
+            summary.setText(QString::fromUtf8(e.what())); buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
+        }
+    };
+    connect(&scale, &QSpinBox::valueChanged, &dialog, update);
+    connect(&repeats, &QSpinBox::valueChanged, &dialog, update);
+    connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    update();
+    if (dialog.exec() != QDialog::Accepted) return;
+    const auto path = QFileDialog::getSaveFileName(this, "Export sprite video", asset.name + ".mp4", "MP4 video (*.mp4)");
+    if (!path.isEmpty()) exportVideo(path, {scale.value(), repeats.value(), background});
+}
+bool SpriteEditor::exportVideo(const QString &path, const SpriteVideoOptions &options) {
+    if (!current()) throw Error("Select a sprite asset first");
+    play_->setChecked(false); canvas_->cancelStroke();
+    const auto asset = *current();
+    const auto plan = spriteVideoPlan(asset, options);
+    std::atomic_bool cancelled = false;
+    std::atomic_int completed = 0;
+    VideoProgress dialog(this, cancelled); dialog.bar->setRange(0, plan.ticks);
+    struct Result { bool saved; QString error; };
+    QFutureWatcher<Result> watcher;
+    connect(&watcher, &QFutureWatcher<Result>::finished, &dialog, &QDialog::accept);
+    QTimer timer;
+    connect(&timer, &QTimer::timeout, &dialog, [&] { dialog.bar->setValue(completed.load()); });
+    timer.start(50);
+    watcher.setFuture(QtConcurrent::run([asset, path, options, &cancelled, &completed] {
+        try {
+            return Result{exportSpriteVideo(asset, path, options, [&](int value, int) {
+                              completed = value; return !cancelled.load();
+                          }), {}};
+        } catch (const std::exception &e) { return Result{false, QString::fromUtf8(e.what())}; }
+    }));
+    dialog.exec();
+    if (!watcher.isFinished()) { cancelled = true; watcher.waitForFinished(); }
+    const auto result = watcher.result();
+    if (!result.error.isEmpty()) throw Error(result.error);
+    return result.saved;
 }
 } // namespace lordly

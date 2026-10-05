@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/project.h"
+#include "engine/sprite_video.h"
 #include <QElapsedTimer>
 #include <QWidget>
 #include <functional>
@@ -84,6 +85,7 @@ class SpriteEditor : public QWidget {
     void importLayerImage(const QString &);
     void exportAsset(const QString &, bool browserCompatible) const;
     void exportImage(const QString &, const QByteArray &format) const;
+    bool exportVideo(const QString &, const SpriteVideoOptions &);
     QString selectedAsset() const {
         return selected_;
     }
@@ -96,6 +98,7 @@ class SpriteEditor : public QWidget {
     void commit(const QString &, SpriteLibrary);
     void guarded(const std::function<void()> &);
     void createAsset();
+    void chooseVideoExport();
     void resizeAsset();
     void copyPixels(bool cut);
     void pastePixels();
