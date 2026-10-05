@@ -1,5 +1,6 @@
 #include "app/scene_preview.h"
 #include "engine/scene_images.h"
+#include <QComboBox>
 #include <QElapsedTimer>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
@@ -22,6 +23,17 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     context_ = new QLabel("Select a scene to preview its current commands.");
     context_->setWordWrap(true);
     layout->addWidget(context_);
+    launchImageUi_ = new QWidget;
+    auto launchRow = new QHBoxLayout(launchImageUi_);
+    launchRow->setContentsMargins(0, 0, 0, 0);
+    launchRow->addWidget(new QLabel("Launch image"));
+    launchImage_ = new QComboBox;
+    launchImage_->setObjectName("sceneLaunchImage");
+    launchImage_->setToolTip(
+        "Preview the image supplied by the launch event. This choice does not edit the scene.");
+    launchRow->addWidget(launchImage_, 1);
+    launchImageUi_->hide();
+    layout->addWidget(launchImageUi_);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setCheckable(true);
@@ -102,6 +114,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     });
     connect(reset, &QPushButton::clicked, this, &ScenePreview::restart);
     connect(position_, &QSpinBox::valueChanged, this, &ScenePreview::seek);
+    connect(launchImage_, &QComboBox::currentIndexChanged, this, [this] {
+        inputHistory_.clear();
+        restart();
+    });
     connect(rate_, &QSpinBox::valueChanged, this, [this] {
         if (timer_->isActive())
             timer_->start(qMax(1, qRound(1000. / rate_->value())));
@@ -187,6 +203,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     stop();
     inputHistory_.clear();
     liveInput_ = {};
+    launchImageUi_->hide();
     try {
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
@@ -194,6 +211,29 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         resources_ = programs.runtimeDirectors();
         selector_ = resource.selectors.first();
         mode_ = mode;
+        const auto launch = SceneImages::launch(programs.program(id));
+        {
+            const QSignalBlocker block(launchImage_);
+            launchImage_->clear();
+            launchImage_->addItem(
+                launch.image_row < 0
+                    ? "Choose the event's launch image…"
+                    : QString("Use scene selection (row %1)").arg(launch.image_row),
+                -1);
+            if (launch.resource_class == 4) {
+                for (int row = 0; row < 69; ++row) {
+                    try {
+                        const auto image = SceneImages::presentationImage(rom_, row);
+                        launchImage_->addItem(
+                            QString("%1 · %2").arg(row).arg(SceneImages::catalog()[image].name),
+                            row);
+                    } catch (const Error &) {
+                        // Some evolution rows select no supported image resource.
+                    }
+                }
+                launchImageUi_->show();
+            }
+        }
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
@@ -239,8 +279,14 @@ void ScenePreview::restart() {
                                [](int, float, float) { return 0.f; });
         const auto launch =
             SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
-        if (launch.resource_class == 4 && launch.image_row >= 0)
-            playback.loadImagePresentation(launch.image_row);
+        if (launch.resource_class == 4) {
+            const int overrideRow = launchImage_->currentData().toInt();
+            const int row = overrideRow >= 0 ? overrideRow : launch.image_row;
+            if (row < 0)
+                throw Error("Choose the event's launch image to preview this scene. The scene does "
+                            "not select an image itself.");
+            playback.loadImagePresentation(row);
+        }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
         render(*current_, false);
         checkpoints_.insert(0, *current_);

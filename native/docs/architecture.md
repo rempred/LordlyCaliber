@@ -1,5 +1,19 @@
 # Native Lordly Caliber
 
+## Preview launch-image selection
+
+Class-four scenes expose a preview-only launch-image choice resolved through the
+current ROM's evolution and image-root tables. The scene's own selection remains
+the default. Streams requiring an external event image wait for an explicit
+choice. Changing it restarts playback and clears input history; selecting another
+scene resets the choice. Neither action edits Director commands or project data.
+
+Build43830: ui_tests launchImageSelection manualImageInputReplay passed2085ms.
+The new check covers missing event input, two distinct rendered sources, reset
+to an explicit scene selection, unsupported-row omission and unchanged scene
+JSON. The existing manual-input/seek check still passes. This supplies preview
+context; automatic event-state resolution remains unfinished.
+
 ## Manual scene-image controls and reproducible input
 
 SceneImageMotion::manual reconstructs opcode55's input and zoom behavior. It

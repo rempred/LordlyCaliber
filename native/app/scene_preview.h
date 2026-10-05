@@ -15,6 +15,7 @@ class QSpinBox;
 class QTimer;
 class QGraphicsView;
 class QGraphicsScene;
+class QComboBox;
 namespace lordly {
 // Interactive PC reference stage. Unknown game services stop the preview.
 // Completed draw snapshots keep ordinary UI repaints from advancing tint.
@@ -75,5 +76,7 @@ class ScenePreview : public QWidget {
     QGraphicsScene *canvas_;
     QGraphicsView *view_;
     QWidget *imageControlsUi_;
+    QWidget *launchImageUi_;
+    QComboBox *launchImage_;
 };
 } // namespace lordly

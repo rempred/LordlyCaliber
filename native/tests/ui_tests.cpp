@@ -161,6 +161,70 @@ class UiTests : public QObject {
         QTest::newRow("echo-forward")<<0;
         QTest::newRow("echo-reverse")<<1;
     }
+    void launchImageSelection() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 source = 0;
+        for (const auto &entry : scenes.original().entries())
+            if (entry.program.resourceClass() == 4) {
+                source = entry.key;
+                break;
+            }
+        QVERIFY(source);
+        const auto missing = scenes.createScene("Event-selected image", source, false);
+        const auto explicitImage = scenes.createScene("Scene-selected image", source, false);
+        QVector<quint32> words{0x3a, 1, 0, 0, 0, 70, 70, 130, 8,
+                               0, 0x80000000U, 0, 0x80000000U, 0x80000001U, 0xff000004U};
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(missing, bytes);
+        QByteArray selected(8, 0);
+        put32(selected, 0, 0x80000007U);
+        put32(selected, 4, 47);
+        selected += bytes;
+        scenes.replace(explicitImage, selected);
+        const auto before = scenes.json();
+        ScenePreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        preview.selectScene(scenes, missing, 0);
+        auto choice = preview.findChild<QComboBox *>("sceneLaunchImage");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        QVERIFY(choice->isVisible());
+        QVERIFY(!step->isEnabled());
+        QVERIFY(status->text().contains("Choose the event's launch image"));
+        QVERIFY(choice->findData(47) > 0);
+        QCOMPARE(choice->findData(10), -1); // This retail row has no image selection.
+        choice->setCurrentIndex(choice->findData(47));
+        QVERIFY2(step->isEnabled(), qPrintable(status->text()));
+        step->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto first = preview.renderedFrame();
+        QVERIFY(!first.isNull());
+        int visible = 0;
+        for (int y = 0; y < first.height(); ++y)
+            for (int x = 0; x < first.width(); ++x)
+                visible += first.pixelColor(x, y).alpha() > 16;
+        QVERIFY(visible > 1000);
+        choice->setCurrentIndex(choice->findData(1));
+        QCOMPARE(preview.property("sceneTick").toInt(), 0);
+        step->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QVERIFY(preview.renderedFrame() != first);
+        preview.selectScene(scenes, explicitImage, 0);
+        QCOMPARE(choice->currentData().toInt(), -1);
+        step->click();
+        QCOMPARE(preview.renderedFrame(), first);
+        preview.selectScene(scenes, missing, 0);
+        QVERIFY(!step->isEnabled());
+        QCOMPARE(choice->currentData().toInt(), -1);
+        QCOMPARE(scenes.json(), before);
+    }
     void manualImageInputReplay() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
