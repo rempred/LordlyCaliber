@@ -5,6 +5,8 @@
 #include "engine/color_combiner.h"
 #include "game/director/image_presentation.h"
 #include "engine/scene_image_motion.h"
+#include "engine/scene_ribbons.h"
+#include "game/director/path_curve.h"
 #include <bit>
 #include <QImage>
 #include <QJsonArray>
@@ -16,6 +18,63 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void pathRibbonsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work; QProcess reference;
+        reference.start("node", {QFINDTESTDATA("path-ribbon-mips.cjs"), path, work.filePath("paths.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("paths.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QCOMPARE(rows.size(), 121);
+        const auto timeScale = std::bit_cast<double>((quint64(u32(rom.bytes(),0x2a8b90))<<32)|u32(rom.bytes(),0x2a8b94));
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            QVector<float> x,y,sx(400),sy(400);
+            for (const auto &p : row["points"].toArray()) {x << float(p.toArray()[0].toDouble()); y << float(p.toArray()[1].toDouble());}
+            QVERIFY(lordly_path_sample(sx.data(),sy.data(),400,int(x.size()),x.constData(),y.constData(),timeScale));
+            for (int axis=0;axis<2;++axis) {
+                QByteArray actual(1600,0);
+                for(int i=0;i<400;++i) put32(actual,i*4,std::bit_cast<quint32>(axis?sy[i]:sx[i]));
+                QCOMPARE(actual,QByteArray::fromHex(row["sampled"].toArray()[axis].toString().toLatin1()));
+            }
+            SceneRibbons ribbons(rom); QMap<int,QPointF> markers;
+            const auto supplied = row["markers"].toObject();
+            for(auto it=supplied.begin();it!=supplied.end();++it) markers[it.key().toInt()]={it.value().toArray()[0].toDouble(),it.value().toArray()[1].toDouble()};
+            QVector<quint32> args;for(const auto &a:row["args"].toArray())args<<quint32(a.toInteger());
+            int result=0;QVERIFY(ribbons.service(0x49,args,result,markers));
+            const auto &r=*ribbons.ribbons()[0];QCOMPARE(r.key,quint32(row["key"].toInteger()));
+            QCOMPARE(r.points.size(),x.size());for(int i=0;i<x.size();++i)QCOMPARE(r.points[i],QPointF(x[i],y[i]));
+            auto compare=[](const QByteArray &actual,const QByteArray &expected){
+                QCOMPARE(actual.mid(0xc,0x50),expected.mid(0xc,0x50));
+                QCOMPARE(actual.mid(0x64,8),expected.mid(0x64,8));
+                QCOMPARE(actual.mid(0x80),expected.mid(0x80));
+            };
+            compare(r.record,QByteArray::fromHex(row["initial"].toString().toLatin1()));
+            for(const auto &stepValue:row["steps"].toArray()) {
+                const auto step=stepValue.toObject();
+                if(step["set"].isArray()) {const auto set=step["set"].toArray();QVERIFY(ribbons.service(0x4a,{0,quint32(set[0].toInteger()),quint32(set[1].toInteger())},result));}
+                if(!step["release"].isNull())QVERIFY(ribbons.service(0x4b,{0,1},result));
+                ribbons.advance();QVERIFY(ribbons.ribbons()[0]);
+                const auto expected=QByteArray::fromHex(step["record"].toString().toLatin1());
+                compare(ribbons.ribbons()[0]->record,expected);
+                QVERIFY(ribbons.service(0x4c,{0,0,0},result));QCOMPARE(result,int(u8(expected,0x85)));
+            }
+            for(int i=0;i<9;++i)ribbons.advance();QVERIFY(ribbons.empty());
+            QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4c,{0,0,0},result));
+        }
+        SceneRibbons ribbons(rom);int result=0;
+        const QVector<quint32> args{0,3,0,90,0xffffffffU,3,0,0,1};
+        QVERIFY(ribbons.service(0x49,args,result));const auto before=ribbons.ribbons()[0]->record;
+        QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4a,{0,101,0xffffffffU},result));
+        QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x4a,{0,0,99},result));
+        auto invalid=args;invalid[1]=1000;QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x49,invalid,result));
+        invalid=args;invalid[6]=0xffffffffU;QVERIFY_THROWS_EXCEPTION(Error,ribbons.service(0x49,invalid,result));
+        QCOMPARE(ribbons.ribbons()[0]->record,before);
+        QVERIFY(ribbons.service(0x4b,{0xffffffffU,0},result));QVERIFY(ribbons.empty());
+    }
     void imageManualAgainstMips() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);QTemporaryDir work;QProcess reference;

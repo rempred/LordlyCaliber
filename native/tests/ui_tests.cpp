@@ -161,6 +161,37 @@ class UiTests : public QObject {
         QTest::newRow("echo-forward")<<0;
         QTest::newRow("echo-reverse")<<1;
     }
+    void pathRibbonPreviewSeek() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
+        for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
+        QVERIFY(source);const auto id=scenes.createScene("Path ribbon playback",source,false);
+        QVector<quint32> words{0x80000007U,47,0x3a,1,0,0,0,70,70,130,8,0,0x80000000U,
+                               0x49,0,3,0,90,0xffffffffU,3,0,0,1};
+        for(int i=0;i<140;++i)words<<0<<0x80000000U;
+        words<<0x4b<<0<<1;
+        for(int i=0;i<35;++i)words<<0<<0x80000000U;
+        words<<0x80000001U<<0xff000004U;
+        QByteArray bytes(words.size()*4,0);for(int i=0;i<words.size();++i)put32(bytes,i*4,words[i]);scenes.replace(id,bytes);
+        ScenePreview preview(rom);preview.resize(1200,800);preview.show();preview.selectScene(scenes,id,0);
+        auto position=preview.findChild<QSpinBox *>("scenePosition");auto status=preview.findChild<QLabel *>("scenePlaybackStatus");
+        preview.findChild<QPushButton *>("sceneStep")->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));const auto background=preview.renderedFrame();
+        position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));const auto revealed=preview.renderedFrame();
+        int changed=0;for(int y=0;y<240;++y)for(int x=0;x<320;++x)changed+=revealed.pixel(x,y)!=background.pixel(x,y);
+        QVERIFY(changed>50);QVERIFY(status->text().contains("approximate strip"));
+        position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
+        const auto complete=preview.renderedFrame();QVERIFY(complete!=revealed);
+        QVERIFY(preview.grab().save("scene-path-ribbon.png"));
+        position->setValue(35);QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
+        position->setValue(150);QTRY_COMPARE(preview.property("sceneTick").toInt(),150);QVERIFY(preview.renderedFrame()!=complete);
+        position->setValue(174);QTRY_COMPARE(preview.property("sceneTick").toInt(),174);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QCOMPARE(preview.renderedFrame(),background);
+        position->setValue(124);QTRY_COMPARE(preview.property("sceneTick").toInt(),124);QCOMPARE(preview.renderedFrame(),complete);
+        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
+    }
     void launchImageSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

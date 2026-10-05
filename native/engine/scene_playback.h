@@ -10,6 +10,7 @@
 #include "engine/scene_image_motion.h"
 #include "engine/scene_image_presentation.h"
 #include "engine/scene_projection.h"
+#include "engine/scene_ribbons.h"
 #include "engine/scene_sprites.h"
 #include "engine/scene_transforms.h"
 #include "game/director/scene_schedule.h"
@@ -141,6 +142,9 @@ class ScenePlayback {
     const SceneImageMotion &imageMotion() const {
         return imageMotion_;
     }
+    const SceneRibbons &ribbons() const {
+        return ribbons_;
+    }
     const SceneTransforms &transforms() const {
         return transforms_;
     }
@@ -172,6 +176,7 @@ class ScenePlayback {
     SceneEffects effects_;
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;
+    SceneRibbons ribbons_;
     std::optional<QByteArray> imageView_;
     std::optional<SceneImagePresentation> imagePresentation_;
     SceneImageControls imageControls_;

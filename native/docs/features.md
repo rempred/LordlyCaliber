@@ -33,8 +33,10 @@ rejected by the promotion loader; it does not silently show retail requirements.
 Scene images support native vignette construction, scripted pan/zoom, forward
 and reverse trails, and manual direction/zoom controls with animated boundary
 indicators. Keyboard/button input is recorded for deterministic seeking and can
-be changed after rewinding. Native-image caption services and external launch
-context remain separate unfinished work.
+be changed after rewinding. Image scenes can select an external launch image for
+preview. Map-path ribbons read current-ROM paths and preserve native curve,
+endpoint, reveal and release timing; strip texture/edge drawing is approximate.
+Remaining panel services and automatic event/army launch context are unfinished.
 
 Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic

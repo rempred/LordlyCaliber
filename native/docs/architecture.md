@@ -1,5 +1,40 @@
 # Native Lordly Caliber
 
+## Map-path ribbons
+
+Correction to the earlier image sections: the twenty owners at scene-root19F4
+updated by ROM2B529C and drawn by2B555C are animated path ribbons, not captions.
+The previously recorded empty-pool echo results are unchanged. The49..4C parser
+handlers, nested path directory1A8D7A6 and geometry builder establish this identity.
+
+SceneRibbons decodes current-ROM paths and resolves dynamic points from supplied
+map-marker positions. Reconstructed C preserves the native distance-parameterized
+cubic curve, mixed single/double arithmetic, excluded final sample, endpoint
+precedence, forward-only reveal, activity flag and thirty-count removal. The
+normal mode-zero scheduler updates ribbons before the Director; the alternate
+path skips that update. Failed path/style/endpoint changes leave existing owners
+intact. Qt paints the sampled strip with an explicit approximation label; native
+vertex texturing, draw-driven alpha and framebuffer equivalence remain unqualified.
+
+Build35406: image_tests pathRibbonsAgainstMips passed1182ms. All121 retail paths
+match400 original samples per axis, generated count/length, milestone lookup and
+45 retarget/reveal/fade snapshots each. Original constructor and curve/reveal code
+execute with browser-decoded resources, explicit synthetic marker positions,
+controlled allocation/libm and vertex packing. Geometry buffers, endpoint-angle
+fields and draw pixels are outside these comparisons. The two existing scheduler
+composition/image-motion checks passed281ms. Build48657 retained that comparison
+with an additional invalid-palette rejection, passing974ms.
+
+Build48657: ui_tests pathRibbonPreviewSeek passed1367ms: visible path over the
+current image, reveal, checkpoint124/back35 replay, fade removal restoring the
+underlying image, and restart. The resulting frame and approximation label were
+inspected. These checks do not establish live-event marker reconstruction.
+
+Retained opening RAM qualifies628 bytes80232030 at ROM2A1860 and796 bytes80232694
+at2A1EC4. A40-byte data window80239340 uniquely matches2A8B70 and includes the
+sampler time constant at2A8B90. The shorter sampler prefix has another ROM match;
+it alone cannot establish placement. The width margins at2B8B00 are7/9/11/13/15.
+
 ## Preview launch-image selection
 
 Class-four scenes expose a preview-only launch-image choice resolved through the

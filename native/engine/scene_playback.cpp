@@ -5,7 +5,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
       rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
-      cameras_(std::move(cameras)), imageMotion_(rom), lighting_(start.lighting) {
+      cameras_(std::move(cameras)), imageMotion_(rom), ribbons_(rom), lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
@@ -31,6 +31,18 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode >= 0x49 && opcode <= 0x4c) {
+        if (!imageView_)
+            throw Error("Map ribbons require their launch image presentation");
+        QMap<int, QPointF> markers;
+        if (opcode == 0x49)
+            for (int i = 0; i < 30; ++i)
+                if (const auto &sprite = sprites_.sprite(i)) {
+                    const auto &r = sprite->record();
+                    markers[i] = QPointF(float(qint32(u32(r, 0x24))), float(qint32(u32(r, 0x28))));
+                }
+        return ribbons_.service(opcode, args, value, markers);
+    }
     if (opcode == 0x55 || opcode == 0x6c || opcode == 0x6d) {
         if (!imageView_ || !imagePresentation_)
             throw Error("Image controls require the launch image presentation");
@@ -209,10 +221,10 @@ bool ScenePlayback::update(LordlySceneService service) {
             imagePresentation_->advanceEcho(rom_, *imageView_);
         return true;
     case LORDLY_SCENE_MODE_ZERO_6: {
-        // 2B529C also owns a separate image-caption pool. Require its caller to
-        //  acknowledge that domain; commit our alpha update only on success.
-        if (!supplemental_ || !*supplemental_ || !(*supplemental_)(service))
-            return false;
+        // 2B529C updates the image trails and twenty path ribbons. It returns
+        // immediately when the oversized-image owner is absent.
+        if (imageView_)
+            ribbons_.advance();
         if (imagePresentation_ && imageView_)
             lordly_image_echo_fade(reinterpret_cast<uint8_t *>(imageView_->data()),
                                    &imagePresentation_->echo(), 0);

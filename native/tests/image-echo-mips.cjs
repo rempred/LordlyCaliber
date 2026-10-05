@@ -57,8 +57,8 @@ for(const first of [0,1])for(const second of [0,1,2]) {
  }
  assert.equal(live.size,0);rows.push({initial,steps});
 }
-// The separate scheduler helper also visits twenty caption owners. They are
-// explicitly absent here; its copied caption lookup constant is never used.
+// The separate scheduler helper also visits twenty path-ribbon owners. They are
+// explicitly absent here; its copied ribbon-width lookup is never used.
 const fades=[];
 for(const mode of [0,1,2])for(const sample of [0,1,2,3,4,5,20])for(const mask of [0,1,5,7])
 for(const alphas of [[0,20,21],[40,70,255]])for(const pressed of [0,0x1000])for(const prompt of [0,1,2]) {
@@ -68,4 +68,4 @@ for(const alphas of [[0,20,21],[40,70,255]])for(const pressed of [0,0x1000])for(
  for(let i=0;i<3;i++){call(0x8024049c);steps.push(snap());}
  fades.push({mask,pressed,initial,steps});
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({rows,fades}));console.log(`${rows.length} complete original echo sequences, ${rows.reduce((n,r)=>n+r.steps.length,0)} snapshots, ${fades.length} three-step fade/input sequences; allocator, copying, prior pixel construction and libm controlled; caption pool absent.`);
+fs.writeFileSync(process.argv[3],JSON.stringify({rows,fades}));console.log(`${rows.length} complete original echo sequences, ${rows.reduce((n,r)=>n+r.steps.length,0)} snapshots, ${fades.length} three-step fade/input sequences; allocator, copying, prior pixel construction and libm controlled; ribbon pool absent.`);

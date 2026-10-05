@@ -505,6 +505,9 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             environment = rendered.environment;
             drawFlat(1);
         }
+        if (mode_ == 0 && !drawing.ribbons().empty())
+            painter.drawImage(
+                0, 0, drawing.ribbons().render(drawing.cameras().actor(), *drawing.imageView()));
         if (drawing.effects().vignette()) {
             const auto camera = mode_ == 2
                                     ? SceneCamera::orthographic(SceneWorldDrawing::clipMatrix())
@@ -657,5 +660,9 @@ void ScenePreview::present() {
                          .arg(current_->backgroundName.isEmpty()
                                   ? QString{}
                                   : "\nBackground channels: " + current_->backgroundName));
+    if (!current_->playback.ribbons().empty())
+        status_->setText(
+            status_->text() +
+            "\nPath ribbons: native curve and timing; approximate strip texture and edge drawing.");
 }
 } // namespace lordly
