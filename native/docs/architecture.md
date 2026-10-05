@@ -1,5 +1,30 @@
 # Native Lordly Caliber
 
+## Iris transition state and geometry
+
+SceneIris owns the24-byte transition, twenty opaque resource/channel records,
+saved layer stack and captured image. Reconstructed C handles field widths,
+progress/query timing, signed interpolation and93-vertex mesh generation.
+Closing moves the selected image to the last active layer; Actor and sprite
+layer comparisons differ at equality. Completion saves current layers, installs
+the frozen frame, requests Actor/sprite release and retains the closed state.
+Opening restores that saved stack; final cleanup reverses the selected-layer
+move. Invalid phase/lifecycle/geometry changes leave the previous state intact.
+
+Build19550: image_tests irisNativeReference passed111ms against the28 original
+snapshots and three complete packed meshes retained in the browser fixture.
+Its generator is parent docs/reviews/cutscene-framebuffer-effects-20260916/native-iris.py;
+it executes the original functions with uniquely matched retained-RAM placement
+and verifies the two frozen-frame copies. The new check additionally preserves
+current channel edits at close completion and rejects invalid transitions.
+Native desktop composition is the next integration step, not established by this
+state/geometry check. Existing framebuffer quantization is reused.
+
+The32-byte RAM80243D10 constant block uniquely matches ROM2B8B10. Mesh geometry
+has three rings: base radius with zero alpha,1.3 times radius with mask alpha,
+then fixed640/480 outer radii with mask alpha. This corrects the two-edge prose
+summary in the parent command reference; the retained original mesh agrees.
+
 ## Recorded Start-skip input
 
 ScenePlayback now connectsB2/B3, image-owner840 and the existing Director barrier

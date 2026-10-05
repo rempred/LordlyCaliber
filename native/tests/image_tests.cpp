@@ -7,6 +7,8 @@
 #include "engine/scene_image_motion.h"
 #include "engine/scene_ribbons.h"
 #include "game/director/path_curve.h"
+#include "engine/scene_iris.h"
+#include "game/director/iris.h"
 #include <bit>
 #include <QImage>
 #include <QJsonArray>
@@ -18,6 +20,57 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void irisNativeReference() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);
+        QFile file(QFINDTESTDATA("../../tests/fixtures/cutscene-framebuffer.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto fixture=QJsonDocument::fromJson(file.readAll()).object();
+        QImage image(320,240,QImage::Format_RGBA8888);image.fill(QColor(31,79,123));int snapshots=0;
+        for(const auto &v:fixture["cases"].toArray()){
+            const auto c=v.toObject();SceneIris::Layers layers;
+            for(int i=0;i<20;++i){layers[i].resource=0x10000000U+i;layers[i].record=QByteArray(88,0);for(int j=0;j<88;++j)layers[i].record[j]=char(i*7+j);}
+            SceneIris iris(c["count"].toInt(),c["selected"].toInt(),layers);
+            QVector<quint8> actors,sprites;for(const auto &a:c["layers"].toArray()){actors<<quint8(a.toInt());sprites<<quint8(a.toInt());}
+            QVector<quint32> args;for(const auto &a:c["args"].toArray())args<<quint32(a.toInteger());
+            bool released=false;
+            for(const auto &s:c["states"].toArray()){
+                const auto state=s.toObject();const auto tag=state["tag"].toString();
+                if(tag=="close-create")iris.start(args,image,actors,sprites);
+                else if(tag=="open-create"){auto open=args;open[7]=1;iris.start(open,{},actors,sprites);}
+                else released=iris.advance()||released;
+                QCOMPARE(iris.record(),QByteArray::fromHex(state["recordHex"].toString().toLatin1()));
+                QCOMPARE(int(iris.active()),state["query"].toInt());QCOMPARE(iris.selected(),state["layerIndex"].toInt());
+                QCOMPARE(!iris.frame().isNull(),state["framePresent"].toBool());
+                QByteArray records;for(int i=0;i<20;++i){records+=iris.layers()[i].record;
+                    if(iris.layers()[i].resource!=SceneIris::CapturedFrame)QCOMPARE(iris.layers()[i].resource,quint32(state["layerResources"].toArray()[i].toInteger()));
+                    else QVERIFY(state["layerResources"].toArray()[i].toInteger()!=0);
+                }
+                QCOMPARE(records,QByteArray::fromHex(state["recordsHex"].toString().toLatin1()));
+                for(int i=0;i<actors.size();++i){if(released){QVERIFY(state["actors"].toArray()[i].isNull());QVERIFY(state["effects"].toArray()[i].isNull());}
+                    else{QCOMPARE(int(actors[i]),state["actors"].toArray()[i].toInt());QCOMPARE(int(sprites[i]),state["effects"].toArray()[i].toInt());}}
+                ++snapshots;
+            }
+        }
+        QCOMPARE(snapshots,28);
+        double constants[3];for(int i=0;i<3;++i)constants[i]=std::bit_cast<double>((quint64(u32(rom.bytes(),0x2b8b10+i*8))<<32)|u32(rom.bytes(),0x2b8b14+i*8));
+        for(const auto &v:fixture["meshes"].toArray()){
+            const auto mesh=v.toObject();int32_t terms[5];for(int i=0;i<5;++i)terms[i]=mesh["args"].toArray()[i].toInt();
+            QByteArray vertices(1488,0);const int count=lordly_iris_mesh(reinterpret_cast<uint8_t *>(vertices.data()),terms,0,constants);
+            QCOMPARE(count,mesh["vertices"].toInt());QCOMPARE(vertices,QByteArray::fromHex(mesh["vertexHex"].toString().toLatin1()));
+        }
+        SceneIris::Layers layers;for(auto &layer:layers)layer.record=QByteArray(88,0);
+        SceneIris iris(7,2,layers);QVector<quint8> actors{1,2,3},sprites=actors;
+        const QVector<quint32> args{320,240,quint32(-110),44,0,200,3,0,1};auto opening=args;opening[7]=1;
+        QVERIFY_THROWS_EXCEPTION(Error,iris.start(opening,{},actors,sprites));
+        iris.start(args,image,actors,sprites);const auto before=iris.record();
+        auto invalid=args;invalid[6]=0;QVERIFY_THROWS_EXCEPTION(Error,iris.start(invalid,image,actors,sprites));QCOMPARE(iris.record(),before);
+        QVERIFY_THROWS_EXCEPTION(Error,iris.start(args,image,actors,sprites));
+        put32(iris.layers()[3].record,72,std::bit_cast<quint32>(123.5f));
+        QCOMPARE(SceneIris::mesh(rom,iris.record()).size(),1488);
+        while(iris.active())iris.advance();QCOMPARE(SceneIris::mesh(rom,iris.record()).size(),64);
+        iris.start(opening,{},actors,sprites);QCOMPARE(u32(iris.layers()[3].record,72),std::bit_cast<quint32>(123.5f));
+        while(iris.active())iris.advance();QVERIFY(iris.record().isEmpty());QVERIFY(iris.frame().isNull());
+    }
     void pathRibbonsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
