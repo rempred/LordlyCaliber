@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+## Automatic Actor portraits
+
+SceneActors now supplies the default BF portrait callback from current Actor
+identity. Missing Actors return -1; body rows use the full-word zero test and
+signed low halfword at row48. Ordinary Actors execute the bounded bank/variant
+route from original ROM29FF74..2A0088, live80230744..80230858.
+
+The original raw loader ROM2DFB8..2E128 (live8009DBB8) was included in the reference
+execution. Its DMA reads332 stored bytes from key1A8E7AE; it does not decompress
+those bytes. Many ordinary bank/variant lookups exceed this allocation. The host
+rejects those reads and requests an explicit dialogue portrait. It does not
+substitute the plausible decompressed338-byte table or read unrelated heap data.
+
+Build51691 actor_runtime_tests automaticPortraitAgainstMips passed232ms:288 cases
+with valid Actor art banks, including current-ROM unsafe reads, signed body IDs,
+empty slots and unchanged Actor records. The generator executes296 cases (also
+including absent art banks0/69);197 attempted out-of-allocation reads are rejected.
+Only DMA/heap services are controlled. Existing dialogue_runtime_tests
+creationResumesWithCurrentContext passed87ms. This establishes lookup behavior,
+not a valid portrait assignment for every ordinary Actor.
+
 ## Reward panels and complete dynamic story playback
 
 Preset34 now takes an explicit parent-event reward item, preserves the native

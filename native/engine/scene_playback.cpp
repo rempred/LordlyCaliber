@@ -247,18 +247,7 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
             next.context->prepare(schedule_.mode, record, row);
             auto portrait = next.portrait;
             if (!portrait)
-                portrait = [this](int slot) -> qint32 {
-                    const auto &owner = actors_.actor(slot);
-                    if (!owner)
-                        return -1;
-                    const auto bytes = owner->record();
-                    const auto identity = u8(bytes, 0x147);
-                    if (identity == 255)
-                        throw Error("Automatic ordinary-actor portraits require a qualified "
-                                    "current lookup table");
-                    const auto value = u32(actors_.bodyRow(identity), 0x48);
-                    return value ? qint16(value) : -1;
-                };
+                portrait = [this](int slot) { return actors_.dialoguePortrait(slot); };
             next.windows.create(args, next.resources, next.project, portrait);
             state = std::move(next);
             return true;

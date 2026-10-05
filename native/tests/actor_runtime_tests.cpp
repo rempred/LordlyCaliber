@@ -325,6 +325,50 @@ class ActorRuntimeTests : public QObject {
         QVERIFY(!scene.motion(0).present);
         QVERIFY(!scene.service(0xdead, {}, value));
     }
+    void automaticPortraitAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFINDTESTDATA("actor-portrait-mips.cjs"), path,
+                                 work.filePath("portraits.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("portraits.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 296);
+        int checked = 0;
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            const int identity = row["identity"].toInt(), bank = row["bank"].toInt();
+            if (identity == 255 && (bank < 1 || bank > 68))
+                continue; // ActorInstance rejects these absent art banks before lookup.
+            SceneActors actors(rom, 2, 0);
+            if (identity >= 0) {
+                QByteArray record(336, 0);
+                put32(record, 0xe8, quint32(bank));
+                put8(record, 0x146, quint8(row["variant"].toInt()));
+                put8(record, 0x147, quint8(identity));
+                actors.supplyActor(7, record);
+                if (identity != 255) {
+                    QVector<QByteArray> rows(28, QByteArray(248, 0));
+                    put32(rows[identity], 0x48, quint32(row["portrait"].toInteger()));
+                    actors.supplyBodyRows(rows);
+                }
+            }
+            const auto before = actors.actor(7) ? actors.actor(7)->record() : QByteArray{};
+            if (row["error"].toBool())
+                QVERIFY_THROWS_EXCEPTION(Error, actors.dialoguePortrait(7));
+            else
+                QCOMPARE(actors.dialoguePortrait(7), row["value"].toInt());
+            QCOMPARE(actors.actor(7) ? actors.actor(7)->record() : QByteArray{}, before);
+            ++checked;
+        }
+        QCOMPARE(checked, 288);
+    }
     void scriptActorRelease() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

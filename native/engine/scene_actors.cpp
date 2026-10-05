@@ -30,6 +30,41 @@ const std::optional<ActorInstance> &SceneActors::actor(int slot) const {
     checkSlot(slot);
     return actors_[slot];
 }
+qint32 SceneActors::dialoguePortrait(int slot) const {
+    const auto &owner = actor(slot);
+    if (!owner)
+        return -1;
+    const auto record = owner->record();
+    const int identity = u8(record, 0x147);
+    if (identity != 255) {
+        const auto value = u32(bodyRow(identity), 0x48);
+        return value ? qint16(value) : -1;
+    }
+    rom_.requireSupported();
+    if (rom_.revision())
+        throw Error("Automatic Actor portraits currently require US revision zero");
+    // ROM29FF74 uses raw loader8009DBB8, not the decompression loader. Preserve
+    // that distinction even where stored bytes resemble a compressed resource.
+    constexpr qsizetype at = 0x594280 + 0x1a8e7ae;
+    const quint32 size = u32(rom_.bytes(), at);
+    if (!size || size > 65536 || quint64(at) + 4 + size > quint64(rom_.bytes().size()))
+        throw Error("Actor portrait resource exceeds its envelope");
+    const auto table = rom_.bytes().mid(at + 4, size);
+    const quint32 bank = u32(record, 0xe8) - 1U;
+    for (qsizetype i = 0; i + 1 < table.size(); i += 2) {
+        const auto offset = u16(table, i);
+        if (offset == 0xffff)
+            return 0;
+        if (quint32(i / 2) == bank) {
+            const qsizetype entry = (quint32(offset) + u8(record, 0x146)) * 2;
+            if (entry + 2 > table.size())
+                throw Error("Native automatic portrait lookup exceeds its resource; choose an "
+                            "explicit dialogue portrait");
+            return qint16(u16(table, entry));
+        }
+    }
+    throw Error("Actor portrait directory has no bounded terminator");
+}
 const LordlyActorMotion &SceneActors::motion(int slot) const {
     checkSlot(slot);
     return motions_[slot];

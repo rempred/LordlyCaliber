@@ -37,7 +37,9 @@ Scene playback now displays edited dialogue with native text/window execution,
 current-ROM artwork, explicit preview names and recorded confirm/choice input.
 Window state and input survive seeking and checkpoints. Actor anchors use current
 packed drawing matrices; shared-pass cadence and composition remain desktop
-assumptions. Automatic ordinary portraits and audible playback remain unfinished.
+assumptions. Automatic Actor portraits now use the recovered lookup with bounds
+checks; unsafe ordinary-Actor resource reads require an explicit portrait. Audible
+playback remains unfinished.
 Scene audio commands now emit native service requests, including deferred program
 replacement, gain envelopes and controller writes. The silent preview preserves
 these requests with deterministic seeking; it assumes no resident voices. The
