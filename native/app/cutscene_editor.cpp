@@ -1,4 +1,5 @@
 #include "app/cutscene_editor.h"
+#include <QUndoStack>
 #include "app/actor_pose_editor.h"
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
@@ -218,6 +219,25 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     } else
         pages->addTab(commands_, "Source commands");
     scenePreview_ = new ScenePreview(rom_);
+    if (project_) {
+        scenePreview_->setPortraitProvider([project](int id, bool variant) {
+            project->loadAvatarArtwork();
+            return project->avatarArtwork()->words(project->classData(), id, variant ? 1 : 0);
+        });
+        auto signature = [project] {
+            return QJsonObject{{"classes", project->records(Table::Classes).size()},
+                               {"art", project->avatarArtwork() ? project->avatarArtwork()->json()
+                                                                : QJsonObject{}}};
+        };
+        connect(undo_, &QUndoStack::indexChanged, this,
+                [this, signature, previous = signature()]() mutable {
+                    const auto next = signature();
+                    if (next != previous) {
+                        previous = next;
+                        scenePreview_->refreshPortraits();
+                    }
+                });
+    }
     pages->addTab(scenePreview_, "Scene playback");
     auto actorInspector = new ActorPoseEditor(rom_);
     pages->addTab(actorInspector, "Pose inspector");

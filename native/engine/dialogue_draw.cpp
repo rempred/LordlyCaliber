@@ -1,4 +1,5 @@
 #include "engine/dialogue_draw.h"
+#include "engine/avatar_artwork.h"
 #include "engine/archive.h"
 #include "game/director/dialogue_draw_plan.h"
 #include <algorithm>
@@ -76,16 +77,30 @@ DialogueTexture DialogueDrawing::frame(int index) {
     return texture;
 }
 DialogueTexture DialogueDrawing::portrait(int identity, bool variant) const {
-    if(!classes_)classes_=ClassData::load(rom_);
-    if(!avatars_)avatars_=AvatarLibrary::load(rom_);
-    const int id=identity&255;
-    if(id>=classes_->entries().size())throw Error("Dialogue portrait class is outside the current class table");
-    const auto token=u16(classes_->entries()[id].appearance,variant?2:0);
+    if (portraits_) {
+        const auto words = portraits_(identity & 255, variant);
+        DialogueTexture result{40, 48, 40, 8, QByteArray(1920, 0), QVector<quint16>(80, 0)};
+        if (words.isEmpty())
+            return result;
+        const auto packed = AvatarArtwork::pack(words);
+        result.indices = packed.first(1920);
+        for (int i = 0; i < 80; ++i)
+            result.palette[i] = u16(packed, 1920 + i * 2);
+        return result;
+    }
+    if (!classes_)
+        classes_ = ClassData::load(rom_);
+    if (!avatars_)
+        avatars_ = AvatarLibrary::load(rom_);
+    const int id = identity & 255;
+    if (id >= classes_->entries().size())
+        throw Error("Dialogue portrait class is outside the current class table");
+    const auto token = u16(classes_->entries()[id].appearance, variant ? 2 : 0);
     DialogueTexture texture{40, 48, 40, 8, QByteArray(1920, 0), QVector<quint16>(80, 0)};
     if (!token)
         return texture;
-    const auto &bundle=avatars_->bundle(token>>3);
-    const auto palette=avatars_->palette(token);
+    const auto &bundle = avatars_->bundle(token >> 3);
+    const auto palette = avatars_->palette(token);
     texture.indices = bundle.indices;
     for (int i = 0; i < 80; ++i)
         texture.palette[i] = u16(palette, i * 2);

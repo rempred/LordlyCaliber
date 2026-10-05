@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QVector>
 #include <array>
+#include <functional>
 namespace lordly {
 struct DialogueTexture {
     int width, height, stride, bits;
@@ -23,7 +24,9 @@ struct DialogueRectangle {
 // Artwork comes from the supplied ROM; no captured drawing answers are used.
 class DialogueDrawing {
   public:
+    using PortraitProvider = std::function<QByteArray(int,bool)>;
     explicit DialogueDrawing(Rom rom);
+    void setPortraitProvider(PortraitProvider provider) { portraits_=std::move(provider); }
     QVector<DialogueRectangle> compose(const QByteArray &window, const QByteArray &payload);
     static void paint(RasterImage &, const QVector<DialogueRectangle> &);
     DialogueTexture portrait(int identity, bool variant) const;
@@ -34,6 +37,7 @@ class DialogueDrawing {
     DialogueTexture frame(int index);
     DialogueTexture glyph(int index, int color) const;
     Rom rom_;
+    PortraitProvider portraits_;
     QHash<quint64, QByteArray> members_;
     mutable std::optional<ClassData> classes_;
     mutable std::optional<AvatarLibrary> avatars_;

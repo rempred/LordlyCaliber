@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Portrait workspace and edited-art previews
+
+Art now contains Item icons and Portraits pages. Portraits lists every current
+class, with independent A/B selection, optional assignment to both, thumbnails,
+search, an 80-color swatch grid, custom opaque colors, brush/fill/pick/selection/
+move, zoom/grid, restoration and project undo. PNG and sprite-library transfers
+preserve provenance. Image preparation offers fit/crop/stretch/original-size,
+zoom, output offsets, nearest/smooth sampling and an opaque background, with the
+actual final game colors visible before assignment. Source-ROM overwrites reject.
+
+Existing images within 80 RGB555 colors are exact; larger palettes use deterministic
+weighted median cuts and nearest-color assignment. Transparency composites onto
+an explicit opaque background. Direct painting rejects excess colors rather than
+quietly changing other pixels. The export still uses the source-built path below.
+
+DialogueDrawing accepts a pixel provider independent of Widgets. Dialogue and
+scene previews supply the current project's class/portrait model, including added
+classes, without compiling a preview ROM. Scene portrait changes invalidate earlier
+render snapshots and replay to the current tick with recorded inputs retained.
+
+Build 97644 succeeded after fixing a missing QUndoStack include. The new
+`avatar_artwork_tests imageMappingAndLivePreview` passed 96 ms: exact original
+colors, deterministic gradient reduction, opacity/background arithmetic and live
+edit/restore/new-class dialogue textures. `ui_tests portraitArtworkEditing
+iconArtworkEditing loadDesktopWorkspace` passed 2199 ms: real palette/pixel input,
+undo, independent/both selectors, library assignment dialog, PNG transfers,
+restoration, project reopening and source-file guard. The portrait workspace
+screenshot was inspected. Existing `dialogue_runtime_tests ordinaryDrawingCommands`
+passed 109 ms. Export checks below remain applicable; no emulated-game claim.
+
 ## Portrait authoring and source-built export
 
 `AvatarArtwork` stores independent class/selector pixel edits as 40 by 48 opaque
@@ -33,7 +63,7 @@ and folder/archive/browser persistence. The candidate is under parent
 `Test ROMs/native-portraits-fnjoxs`. Original-library/dialogue checks also pass.
 Build 73366 includes recognition of a stale native descriptor even when resource
 operands have been reset to retail. No emulator or hardware validation is claimed.
-Painting/image preparation and project-aware playback are the next integration.
+Painting/image preparation and project-aware playback are now integrated above.
 
 ## Current-ROM portrait resources
 
@@ -50,7 +80,7 @@ the current avatar directory, replacing its hardcoded retail route table and
 resource key. It caches both readers per supplied ROM and rejects an identity
 outside that ROM's class count. Null routes retain blank portraits. This fixes
 portrait previews for added classes and already-relocated portrait directories;
-project-authored portrait export is described above; the desktop authoring UI is next.
+project-authored portrait export and desktop authoring are described above.
 
 Build74285 succeeded. `avatar_artwork_tests` passed in 7710 ms: 140 distinct
 bundles/208 palette variants compared byte-for-byte with the browser resource

@@ -12,6 +12,10 @@
 #include <QVBoxLayout>
 #include <algorithm>
 namespace lordly {
+void DialoguePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provider) {
+    portraits_=std::move(provider);
+    if(drawing_)drawing_->setPortraitProvider(portraits_);
+}
 DialoguePreview::DialoguePreview(const Rom &rom, QWidget *parent) : QWidget(parent), rom_(rom) {
     auto layout = new QVBoxLayout(this);
     auto note = new QLabel("Standalone dialogue window. The fields below supply preview names; "
@@ -167,8 +171,10 @@ void DialoguePreview::restart() {
         environment.longNameSuffix = text(suffix_->text());
         session_.emplace(rom_, archive_, entry_, std::move(environment), dialogues_);
         play_->setEnabled(true);
-        if (!drawing_)
+        if (!drawing_) {
             drawing_.emplace(rom_);
+            drawing_->setPortraitProvider(portraits_);
+        }
         advance();
     } catch (const std::exception &error) {
         fail(error);

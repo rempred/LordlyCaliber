@@ -15,6 +15,7 @@ class DialoguePreview : public QWidget {
     ~DialoguePreview() override;
     void selectEntry(int archive, quint16 entry, std::optional<Dialogues> dialogues = {});
     void clear();
+    void setPortraitProvider(DialogueDrawing::PortraitProvider provider);
 
   private:
     void restart();
@@ -22,6 +23,7 @@ class DialoguePreview : public QWidget {
     void refresh();
     void fail(const std::exception &);
     Rom rom_;
+    DialogueDrawing::PortraitProvider portraits_;
     std::optional<Dialogues> dialogues_;
     int archive_ = -1;
     quint16 entry_ = 0;

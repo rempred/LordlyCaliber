@@ -10,6 +10,7 @@
 #include "app/save_editor.h"
 #include "app/sprite_editor.h"
 #include "app/art_editor.h"
+#include "app/portrait_editor.h"
 #include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
@@ -58,6 +59,40 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void portraitArtworkEditing() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            auto project=Project::fromRom(Rom::open(path));QUndoStack undo;
+            PortraitEditor editor(&project,&undo,[]{});editor.resize(1250,790);editor.show();
+            auto list=editor.findChild<QListWidget *>("portraitClasses");QVERIFY(list);QCOMPARE(list->count(),165);
+            const auto classes=project.classData();const auto before=project.avatarArtwork()->words(classes,1,0);
+            const auto variant=project.avatarArtwork()->words(classes,1,1);
+            auto palette=editor.findChild<QTableWidget *>("portraitPalette");QVERIFY(palette);const auto cell=palette->item(0,0);QVERIFY(cell);
+            const auto color=cell->data(Qt::UserRole).value<QColor>();
+            QTest::mouseClick(palette->viewport(),Qt::LeftButton,Qt::NoModifier,palette->visualItemRect(cell).center());
+            const auto image=project.avatarArtwork()->image(classes,1,0);QPoint target;bool found=false;
+            for(int y=0;y<48 && !found;++y)for(int x=0;x<40;++x)if(image.pixelColor(x,y)!=color){target={x,y};found=true;break;}QVERIFY(found);
+            auto canvas=editor.findChild<SpriteCanvas *>("portraitCanvas");QVERIFY(canvas);
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,target*canvas->zoom()+QPoint(2,2));
+            QVERIFY(project.avatarArtwork()->modified(1,0));QCOMPARE(project.avatarArtwork()->image(classes,1,0).pixelColor(target),color);
+            QCOMPARE(project.avatarArtwork()->words(classes,1,1),variant);QCOMPARE(undo.count(),1);
+            undo.undo();QCOMPARE(project.avatarArtwork()->words(classes,1,0),before);undo.redo();
+            const auto copied=editor.copyToLibrary();QCOMPARE(project.sprites().asset(copied).composite(0),project.avatarArtwork()->image(classes,1,0));
+            const auto edited=project.avatarArtwork()->words(classes,1,0);editor.selectPortrait(2,1);
+            editor.findChild<QCheckBox *>("portraitBoth")->setChecked(true);
+            auto library=editor.findChild<QComboBox *>("portraitLibrary");library->setCurrentIndex(library->findData(copied));
+            QTimer::singleShot(0,&editor,[&]{auto dialog=editor.findChild<QDialog *>("portraitImagePreparation");QVERIFY(dialog);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();});
+            editor.findChild<QPushButton *>("portraitAssignLibrary")->click();
+            for(int selector=0;selector<2;++selector)QCOMPARE(project.avatarArtwork()->words(classes,2,selector),edited);
+            QTemporaryDir work;editor.exportImage(work.filePath("portrait.png"));
+            QCOMPARE(QImage(work.filePath("portrait.png")).convertToFormat(QImage::Format_RGBA8888),AvatarArtwork::render(edited));
+            editor.selectPortrait(3,0);editor.findChild<QCheckBox *>("portraitBoth")->setChecked(false);editor.importImage(work.filePath("portrait.png"));
+            QCOMPARE(project.avatarArtwork()->words(classes,3,0),edited);
+            const auto saved=project.avatarArtwork()->json();project.saveFolder(work.filePath("project"));auto loaded=Project::fromRom(project.rom());loaded.applyManifest(Project::readProject(work.filePath("project")));QCOMPARE(loaded.avatarArtwork()->json(),saved);
+            editor.findChild<QPushButton *>("portraitRestore")->click();QVERIFY(!project.avatarArtwork()->modified(3,0));undo.undo();QCOMPARE(project.avatarArtwork()->json(),saved);
+            QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));QVERIFY(editor.grab().save("portrait-artwork-workspace.png"));
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void iconArtworkEditing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

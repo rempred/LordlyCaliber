@@ -23,6 +23,8 @@ class AvatarArtwork {
     QByteArray rebuild(const Rom &, ClassData &, const QMap<int, QByteArray> &compiled) const;
     static QByteArray pack(const QByteArray &words);
     static QImage render(const QByteArray &words);
+    static QByteArray mapImage(const QImage &, bool reduceColors = false,
+                               QColor background = Qt::black);
 
   private:
     AvatarLibrary library_;

@@ -280,6 +280,18 @@ ScenePreview::~ScenePreview() {
     for (auto field : dialogueNames_)
         disconnect(field, nullptr, this, nullptr);
 }
+void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provider) {
+    portraits_=std::move(provider);
+    if(dialogueDrawing_)dialogueDrawing_->setPortraitProvider(portraits_);
+    refreshPortraits();
+}
+void ScenePreview::refreshPortraits() {
+    if(current_) {
+        const auto target=tick_;
+        restart();
+        seek(target);
+    }
+}
 void ScenePreview::setDialogues(std::optional<Dialogues> dialogues) {
     if (dialogues.has_value() == dialogues_.has_value() &&
         (!dialogues || dialogues->json() == dialogues_->json()))
@@ -524,8 +536,10 @@ void ScenePreview::restart() {
         }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
         current_->dialogue.emplace(rom_, dialogues_);
-        if (!dialogueDrawing_)
+        if (!dialogueDrawing_) {
             dialogueDrawing_.emplace(rom_);
+            dialogueDrawing_->setPortraitProvider(portraits_);
+        }
         render(*current_, false);
         checkpoints_.insert(0, *current_);
         present();

@@ -28,6 +28,8 @@ class ScenePreview : public QWidget {
     ~ScenePreview() override;
     void selectScene(const ScenePrograms &, SceneId, int mode, std::optional<Dialogues> = {});
     void setDialogues(std::optional<Dialogues>);
+    void setPortraitProvider(DialogueDrawing::PortraitProvider);
+    void refreshPortraits();
     const QImage &renderedFrame() const {
         return frame_;
     }
@@ -73,6 +75,7 @@ class ScenePreview : public QWidget {
     bool hasDialogue() const;
     std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
+    DialogueDrawing::PortraitProvider portraits_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
     StageFlatRenderer stageRenderer_;

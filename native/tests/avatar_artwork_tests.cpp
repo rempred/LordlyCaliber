@@ -12,6 +12,63 @@ using namespace lordly;
 class AvatarArtworkTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageMappingAndLivePreview() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAvatarArtwork();
+            const auto data = project.classData();
+            const auto original = project.avatarArtwork()->words(data, 1, 0);
+            QCOMPARE(AvatarArtwork::mapImage(AvatarArtwork::render(original)), original);
+            QImage ramp(40, 48, QImage::Format_RGBA8888);
+            for (int y = 0; y < 48; ++y)
+                for (int x = 0; x < 40; ++x)
+                    ramp.setPixelColor(x, y, {x * 255 / 39, y * 255 / 47, (x * 7 + y * 3) % 256});
+            QVERIFY_THROWS_EXCEPTION(Error, AvatarArtwork::mapImage(ramp));
+            const auto reduced = AvatarArtwork::mapImage(ramp, true);
+            QVERIFY(!AvatarArtwork::pack(reduced).isEmpty());
+            QCOMPARE(AvatarArtwork::mapImage(ramp, true), reduced);
+            QSet<quint16> colors;
+            for (int i = 0; i < 1920; ++i) {
+                const auto word = u16(reduced, i * 2);
+                QVERIFY(word & 1);
+                colors.insert(word);
+            }
+            QVERIFY(colors.size() <= 80);
+            QVERIFY(colors.size() > 60);
+            ramp.fill(Qt::transparent);
+            const auto flat = AvatarArtwork::mapImage(ramp, false, Qt::red);
+            for (int i = 0; i < 1920; ++i)
+                QCOMPARE(u16(flat, i * 2), quint16(0xf801));
+            ramp.fill(QColor(255, 255, 255, 128));
+            const auto mixed = AvatarArtwork::mapImage(ramp);
+            QCOMPARE(u16(mixed, 0), quint16(0x8421));
+            auto edit = *project.avatarArtwork();
+            edit.setWords(data, 1, 0, reduced);
+            project.setAvatarArtwork(edit.json());
+            DialogueDrawing drawing(rom);
+            drawing.setPortraitProvider([&](int id, bool variant) {
+                return project.avatarArtwork()->words(project.classData(), id, variant ? 1 : 0);
+            });
+            auto decoded = [](const DialogueTexture &texture) {
+                QByteArray words(3840, 0);
+                for (int i = 0; i < 1920; ++i)
+                    put16(words, i * 2, texture.palette[u8(texture.indices, i)]);
+                return words;
+            };
+            QCOMPARE(decoded(drawing.portrait(1, false)), reduced);
+            edit.restore(1, 0);
+            project.setAvatarArtwork(edit.json());
+            QCOMPARE(decoded(drawing.portrait(1, false)), original);
+            QCOMPARE(project.appendClass(1, "Preview portrait"), 165);
+            QCOMPARE(decoded(drawing.portrait(165, false)), original);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void portraitEditingAndExport() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
