@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/background_image.h"
 #include "engine/director.h"
+#include "game/director/scene_launch.h"
 #include <QJsonObject>
 namespace lordly {
 struct DecodedImage {
@@ -35,6 +36,10 @@ struct SceneBackgrounds {
 class SceneImages {
   public:
     static const QMap<QString, SceneImage> &catalog();
+    static LordlySceneLaunch launch(const DirectorProgram &);
+    // Current-ROM evolution row and image-root selection. A negative pre-scan
+    // row requires an explicit event fallback from the caller.
+    static QString presentationImage(const Rom &, int row);
     static DecodedImage decode(const Rom &rom, const QString &id, bool compound = true);
     // Resource selectors are read from the current ROM, never substituted from metadata.
     static QStringList environment(const Rom &rom, int selector);

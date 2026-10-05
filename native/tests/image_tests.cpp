@@ -1,5 +1,6 @@
 #include "engine/archive.h"
 #include "engine/image.h"
+#include "engine/scene_images.h"
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -10,6 +11,50 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageLaunchAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        QTemporaryDir work;QProcess reference;
+        reference.start("node",{QFINDTESTDATA("image-launch-mips.cjs"),path,work.filePath("launch.json")});
+        QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("launch.json"));QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(data["cases"].toArray().size(),127);
+        const auto rom=Rom::open(path);const auto directors=Directors::load(rom);
+        for(const auto &value:data["cases"].toArray()) {
+            const auto row=value.toObject();QVector<uint32_t> words;
+            for(const auto &word:row["words"].toArray())words<<quint32(word.toInteger());
+            LordlySceneLaunch launch{0,-1,-1,0};QVERIFY(lordly_scene_launch_scan(words.constData(),int(words.size()),&launch));
+            const auto expected=QByteArray::fromHex(row["record"].toString().toLatin1());
+            QCOMPARE(launch.resource_class,qint16(u16(expected,0)));QCOMPARE(launch.environment,qint16(u16(expected,2)));
+            QCOMPARE(launch.image_row,qint16(u16(expected,4)));QCOMPARE(launch.capture,qint16(u16(expected,6)));
+            const auto key=quint32(row["key"].toInteger());
+            if(key) {
+                QVERIFY(directors.entries().contains(key));
+                const auto actual=SceneImages::launch(directors.entries()[key].program);
+                QCOMPARE(actual.resource_class,launch.resource_class);QCOMPARE(actual.environment,launch.environment);
+                QCOMPARE(actual.image_row,launch.image_row);QCOMPARE(actual.capture,launch.capture);
+            }
+        }
+        QCOMPARE(data["rows"].toArray().size(),69);
+        for(const auto &value:data["rows"].toArray()) {
+            const auto row=value.toObject();
+            if(row["image"].isNull())QVERIFY_THROWS_EXCEPTION(Error,SceneImages::presentationImage(rom,row["row"].toInt()));
+            else QCOMPARE(SceneImages::presentationImage(rom,row["row"].toInt()),row["image"].toString());
+        }
+        auto changed=rom.bytes();put8(changed,0x654a0+9+3,40);
+        QCOMPARE(SceneImages::presentationImage(Rom::fromBytes(changed),1),QString("archive:154"));
+        auto pointerChange=rom.bytes();const auto root=0x18bd022+0x594280+4;
+        put32(pointerChange,root+5*4,u32(pointerChange,root+36*4));
+        QCOMPARE(SceneImages::presentationImage(Rom::fromBytes(pointerChange),1),QString("archive:154"));
+        QVERIFY_THROWS_EXCEPTION(Error,SceneImages::presentationImage(rom,-1));
+        QVERIFY_THROWS_EXCEPTION(Error,SceneImages::presentationImage(rom,69));
+        QByteArray script(16,0);put32(script,0,0x80000007);put32(script,4,65538);
+        put32(script,8,0x80000001);put32(script,12,0xff000004);
+        const auto edited=SceneImages::launch(DirectorProgram::decode(script));QCOMPARE(edited.image_row,2);
+        put32(script,4,65535);QCOMPARE(SceneImages::launch(DirectorProgram::decode(script)).image_row,-1);
+        LordlySceneLaunch preserved{4,5,6,7};const uint32_t invalid=0x80000007;
+        QVERIFY(!lordly_scene_launch_scan(&invalid,1,&preserved));QCOMPARE(preserved.image_row,6);QCOMPARE(preserved.resource_class,4);
+    }
     void indexedPaddingAndBounds() {
         // 3x2 CI4, 8-byte storage rows. Padding deliberately selects another
         // palette entry; expected visible pixels are specified independently.

@@ -142,6 +142,31 @@ DecodedImage SceneImages::decode(const Rom &rom, const QString &id, bool compoun
 QStringList SceneImages::environment(const Rom &rom, int selector) {
     return knownKey(selectedKey(rom, 4, selector), true);
 }
+LordlySceneLaunch SceneImages::launch(const DirectorProgram &program) {
+    const auto encoded = program.encode();
+    QVector<uint32_t> words;
+    for (int i = 0; i < encoded.size(); i += 4)
+        words << u32(encoded, i);
+    LordlySceneLaunch result{0, -1, -1, 0};
+    if (!lordly_scene_launch_scan(words.constData(), int(words.size()), &result))
+        throw Error("Scene launch pre-scan reads past its stream");
+    return result;
+}
+QString SceneImages::presentationImage(const Rom &rom, int row) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Image launch selection currently requires US revision zero");
+    if (row < 0)
+        throw Error("Image launch requires the event's image row");
+    if (row >= 69)
+        throw Error("Image launch row exceeds the evolution table");
+    const int media = qint8(u8(rom.bytes(), 0x654a0 + row * 9 + 3));
+    const auto key = selectedKey(rom, 0x018bd022, media - 4);
+    const auto images = knownKey(key, true);
+    if (images.size() != 1)
+        throw Error("Image launch row does not select one available image");
+    return images.first();
+}
 QStringList SceneImages::foreground(const Rom &rom, int selector) {
     return knownKey(selectedKey(rom, 0x2938c8, selector), true);
 }
