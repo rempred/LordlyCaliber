@@ -78,7 +78,8 @@ const SceneBackgroundChannel &SceneBackgroundRenderer::channel(int index) const 
     return channels_[index];
 }
 QVector<ActorRasterLayer> SceneBackgroundRenderer::project(int index, const SceneCamera &camera,
-                                                           const QByteArray &parent) const {
+                                                           const QByteArray &parent,
+                                                           RenderColor primitive) const {
     const auto &source = channel(index);
     if (parent.size() != 64)
         throw Error("Background projection requires a packed parent matrix");
@@ -89,11 +90,21 @@ QVector<ActorRasterLayer> SceneBackgroundRenderer::project(int index, const Scen
         layer.slot = index;
         layer.layer = result.size();
         // Native B5 records describe full extents, unlike inclusive Actor vertices.
-        const double x = record.origin.x(), y = -record.origin.y();
+        const double originX = record.origin.x(), originY = -record.origin.y();
         layer.plane = camera.projectPackedPlane(
-            parent, {x, y, 0}, {double(record.extent.width()) / r.width(), 0, 0},
+            parent, {originX, originY, 0}, {double(record.extent.width()) / r.width(), 0, 0},
             {0, -double(record.extent.height()) / r.height(), 0}, QSizeF(r.width(), r.height()));
         layer.image = r; // Implicitly shared with immutable group/snapshot storage.
+        layer.primitive = primitive;
+        if (primitive != RenderColor{255, 255, 255, 255}) {
+            layer.image = r.convertToFormat(QImage::Format_RGBA8888);
+            for (int y = 0; y < layer.image.height(); ++y) {
+                auto pixels = layer.image.scanLine(y); // Detaches before mutation.
+                for (int x = 0; x < layer.image.width(); ++x)
+                    for (int c = 0; c < 4; ++c)
+                        pixels[x * 4 + c] = quint8(int(pixels[x * 4 + c]) * primitive[c] / 255);
+            }
+        }
         result << std::move(layer);
     }
     return result;

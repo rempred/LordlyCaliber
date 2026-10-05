@@ -1,5 +1,33 @@
 # Native Lordly Caliber
 
+## Scene color commands reach the preview
+
+The existing SceneEffects opcode33 execution now feeds rendering. Mode-zero
+background channels take their record's current RGB directly; sprites consume
+the matching pass record, including the native callback's use of its red byte
+for all three channels. Actor materials remain independently owned. World
+shared masks select background image1, background props2, pre-foreground props4,
+foreground image8, post-foreground props10 and direct Stage objects40 (hex).
+Background multiplication detaches the image before changing RGBA, retaining
+immutable decoded/snapshot images. Existing color timing and snapshots own the
+transition; repainting does not advance it.
+
+After build98573, `stage_props_tests passSelectionAndWrapping` passed874ms:
+nine masks executed through both original image owners agree on18 background
+primitive words and prop-transition routing. `background_tests
+backgroundColorPixels` passed128ms, checking RGBA arithmetic and source retention.
+`ui_tests sceneColorPlayback worldScenePanAndSeek sceneRoomComposition
+sceneSpriteComposition` passed1730ms. Four new rows cover a four-update world
+transition, layered backgrounds, sprite channel color, Actor material independence
+and exact backward seeking. The green hall result was inspected. Subsequent
+changes only rename local coordinates to clear shadowing warnings and format
+engine files; these do not invalidate the behavior checks.
+
+References: mode-zero image owner2B04FC, sprite driver29A930/callback29F5E8,
+world image owners1FEA1C/1FED0C and object callback1F3C00. This connects authored
+scene colors, not the separate gameplay/global lighting interpolation or complete
+launch context. Qt filtering/coverage/blending qualifications still apply.
+
 ## Stage objects sharing Actor depth order
 
 StagePerspective retains the248-byte owner and192-byte drawable as separate

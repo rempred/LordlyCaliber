@@ -240,6 +240,62 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), hall);
         QVERIFY(preview.grab().save("world-scene-pan.png"));
     }
+    void sceneColorPlayback_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("world-background-and-props") << 0;
+        QTest::newRow("layered-background") << 1;
+        QTest::newRow("sprite-channel-color") << 2;
+        QTest::newRow("actor-material-independent") << 3;
+    }
+    void sceneColorPlayback() {
+        QFETCH(int, kind);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Scene color playback", source.key, false);
+        ScenePreview preview(rom); preview.resize(1100, 800); preview.show();
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto next = preview.findChild<QPushButton *>("sceneStep");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const QVector<quint32> setup = kind < 2 ? QVector<quint32>{0x80000006U, kind ? 2U : 34U}
+            : kind == 2 ? QVector<quint32>{0x46, 0, 30, 1, 2, 6, 0, 0, 100, 0}
+            : QVector<quint32>{0x14, 0, 30, 1, 2, 0, 0, 0, 0, 0};
+        auto select = [&](bool tint) {
+            auto words = setup;
+            if (tint) words << 0x33 << 255 << 255 << 255 << 0 << 255 << 0 << 4 << 0xffffffffU;
+            for (int i = 0; i < 8; ++i) words << 0 << 0x80000000U;
+            words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            scenes.replace(id, bytes); preview.selectScene(scenes, id, kind == 0 ? 2 : 0);
+            next->click();
+        };
+        select(false); position->setValue(5); QTRY_COMPARE(preview.property("sceneTick").toInt(), 5);
+        const auto untinted = preview.renderedFrame();
+        select(true); const auto first = preview.renderedFrame();
+        position->setValue(5); QTRY_COMPARE(preview.property("sceneTick").toInt(), 5);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto last = preview.renderedFrame();
+        if (kind == 3) QCOMPARE(last, untinted);
+        else {
+            QVERIFY(last != untinted);
+            int visible = 0;
+            for (int y = 0; y < 240; ++y) for (int x = 0; x < 320; ++x) {
+                const auto c = last.pixelColor(x, y);
+                if (!c.alpha()) continue;
+                ++visible; QCOMPARE(c.red(), 0); QCOMPARE(c.blue(), 0);
+                if (kind == 2) QCOMPARE(c.green(), 0);
+            }
+            QVERIFY(visible > 30);
+        }
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), first);
+        position->setValue(5); QTRY_COMPARE(preview.property("sceneTick").toInt(), 5);
+        QCOMPARE(preview.renderedFrame(), last);
+        if (kind == 0) QVERIFY(preview.grab().save("scene-color-preview.png"));
+    }
     void sceneRoomComposition() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

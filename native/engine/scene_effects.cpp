@@ -1,5 +1,15 @@
 #include "engine/scene_effects.h"
 namespace lordly {
+std::optional<std::array<quint8, 4>> SceneEffects::worldColor(WorldColorPass pass) const {
+    // Original image owners1FEA1C/1FED0C and direct object callback1F3C00.
+    constexpr quint8 masks[]{1, 2, 4, 8, 16, 64};
+    const int index = int(pass);
+    if (index < 0 || index >= 6)
+        throw Error("Unknown world color pass");
+    if (!(shared_[4] & masks[index]))
+        return {};
+    return std::array<quint8, 4>{shared_[0], shared_[1], shared_[2], shared_[3]};
+}
 void SceneEffects::checkSlot(int slot) {
     if (slot < 0 || slot >= 20)
         throw Error("Scene color slot is outside 0..19");

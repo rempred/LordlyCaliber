@@ -218,17 +218,21 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             const int count = next.backgrounds ? next.backgrounds->channelCount() : 20;
             for (int channel = 0; channel < count; ++channel) {
                 const auto parent = drawing.transforms().layerMatrix(channel);
+                const auto &color = drawing.effects().colorRecord(channel);
+                RenderColor backgroundColor{255, 255, 255, 255};
+                if (!color.isEmpty())
+                    for (int c = 0; c < 3; ++c) backgroundColor[c] = u8(color, 4 + c);
                 if (next.backgrounds) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
                     ActorRenderer::paint(
                         background,
-                        next.backgrounds->project(channel, drawing.cameras().actor(), parent));
+                        next.backgrounds->project(channel, drawing.cameras().actor(), parent, backgroundColor));
                     painter.drawImage(0, 0, background);
                 }
                 const auto sprites =
                     spriteRenderer_.project(drawing.sprites(), channel, 0,
-                                            drawing.cameras().actor(), parent, {255, 255, 255});
+                                            drawing.cameras().actor(), parent, {255, 255, 255}, color);
                 if (!sprites.isEmpty()) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);
@@ -246,24 +250,26 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         } else {
             const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
             const auto parent = SceneWorldDrawing::modelMatrix(drawing.projection());
+            auto tint = [&](WorldColorPass pass) { return drawing.effects().worldColor(pass); };
             auto drawFlat = [&](int pass) {
                 QImage flat(320, 240, QImage::Format_RGBA8888);
                 flat.fill(Qt::transparent);
                 if (pass == 1 && next.flatProps)
                     ActorRenderer::paint(
                         flat, stageRenderer_.project(*next.flatProps, 1, camera, parent,
-                                                     next.foregroundSelector, {255, 255, 255}, {},
+                                                     next.foregroundSelector, {255, 255, 255}, tint(WorldColorPass::BeforeForegroundProps),
                                                      false, environment));
                 if (next.backgrounds)
-                    ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent));
+                    ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent,
+                        tint(pass ? WorldColorPass::Foreground : WorldColorPass::Background).value_or(RenderColor{255, 255, 255, 255})));
                 if (next.flatProps)
                     ActorRenderer::paint(
                         flat, stageRenderer_.project(*next.flatProps, pass ? 2 : 0, camera, parent,
-                                                     next.foregroundSelector, {255, 255, 255}, {},
+                                                     next.foregroundSelector, {255, 255, 255}, tint(pass ? WorldColorPass::AfterForegroundProps : WorldColorPass::BackgroundProps),
                                                      false, environment));
                 ActorRenderer::paint(flat,
                                      spriteRenderer_.project(drawing.sprites(), pass, 0, camera,
-                                                             parent, {255, 255, 255}));
+                                                             parent, {255, 255, 255}, drawing.effects().colorRecord(pass)));
                 painter.drawImage(0, 0, flat);
                 if (!drawing.sprites().draws(pass, 0).isEmpty())
                     environment = {0, 0, 0, 1};
@@ -278,7 +284,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     ActorRenderer::paint(image, objectRenderer_.project(
                                                     next.worldProps->props()[index], index,
                                                     drawing.cameras().actor(), camera, parent,
-                                                    {255, 255, 255}, state, {}, next.texturePhase));
+                                                    {255, 255, 255}, state, tint(WorldColorPass::Objects), next.texturePhase));
                 });
             painter.drawImage(0, 0, rendered.image);
             environment = rendered.environment;

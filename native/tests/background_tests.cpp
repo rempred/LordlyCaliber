@@ -15,6 +15,33 @@ using namespace lordly;
 class BackgroundTests : public QObject {
     Q_OBJECT
   private slots:
+    void backgroundColorPixels() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto backgrounds = SceneBackgroundRenderer::world(rom, 34, 34);
+        const auto camera = SceneCameras::freshModeTwo(rom).actor();
+        auto transform = SceneTransforms();
+        transform.prepareMatrices(rom, camera, 1);
+        const auto parent = transform.layerMatrix(0);
+        const RenderColor color{31, 97, 201, 77};
+        for (int pass = 0; pass < backgrounds.channelCount(); ++pass) {
+            const auto original = backgrounds.project(pass, camera, parent);
+            const auto tinted = backgrounds.project(pass, camera, parent, color);
+            QCOMPARE(tinted.size(), original.size());
+            for (int i = 0; i < original.size(); ++i)
+                for (int y = 0; y < original[i].image.height(); ++y)
+                    for (int x = 0; x < original[i].image.width(); ++x) {
+                        const auto a = original[i].image.pixelColor(x, y), b = tinted[i].image.pixelColor(x, y);
+                        QCOMPARE(b.red(), a.red() * color[0] / 255);
+                        QCOMPARE(b.green(), a.green() * color[1] / 255);
+                        QCOMPARE(b.blue(), a.blue() * color[2] / 255);
+                        QCOMPARE(b.alpha(), a.alpha() * color[3] / 255);
+                    }
+            const auto retained = backgrounds.project(pass, camera, parent);
+            for (int i = 0; i < original.size(); ++i) QCOMPARE(retained[i].image, original[i].image);
+        }
+    }
     void groupCoverageAndFixedOrigin() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -2,7 +2,16 @@
 #include "engine/rom.h"
 #include <QVector>
 #include <array>
+#include <optional>
 namespace lordly {
+enum class WorldColorPass {
+    Background,
+    BackgroundProps,
+    BeforeForegroundProps,
+    Foreground,
+    AfterForegroundProps,
+    Objects
+};
 // Scene-owned color transitions and the independent special-actor black pass.
 class SceneEffects {
   public:
@@ -14,6 +23,7 @@ class SceneEffects {
     const std::array<quint8, 5> &sharedColor() const {
         return shared_;
     }
+    std::optional<std::array<quint8, 4>> worldColor(WorldColorPass) const;
     void startColor(const QVector<quint32> &operands);
     void advanceColors();
     void supplySpecialBlack(QByteArray record);

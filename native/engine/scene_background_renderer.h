@@ -20,8 +20,8 @@ class SceneBackgroundRenderer {
         return channels_.size();
     }
     const SceneBackgroundChannel &channel(int index) const;
-    QVector<ActorRasterLayer> project(int channel, const SceneCamera &,
-                                      const QByteArray &parent) const;
+    QVector<ActorRasterLayer> project(int channel, const SceneCamera &, const QByteArray &parent,
+                                      RenderColor primitive = {255, 255, 255, 255}) const;
     QString description() const;
 
   private:

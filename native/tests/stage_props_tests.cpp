@@ -1,6 +1,7 @@
 #include "engine/direct_pose.h"
 #include "engine/scene_world_drawing.h"
 #include "engine/stage_object_renderer.h"
+#include "engine/scene_effects.h"
 #include "engine/stage_orthographic.h"
 #include "engine/stage_perspective.h"
 #include "engine/stage_placements.h"
@@ -255,8 +256,8 @@ class StagePropsTests : public QObject {
         QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
         QFile file(work.filePath("passes.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
-        for (const auto &value :
-             QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray()) {
+        const auto referenceColors = QJsonDocument::fromJson(file.readAll()).object();
+        for (const auto &value : referenceColors["cases"].toArray()) {
             const auto row = value.toObject();
             const auto z = row["z"].toArray();
             for (int i = 0; i < z.size(); ++i) {
@@ -269,6 +270,23 @@ class StagePropsTests : public QObject {
                 QCOMPARE(StageOrthographic::drawPass(record, float(row["base"].toDouble()),
                                                      float(row["foreground"].toDouble())),
                          expected);
+            }
+        }
+        for (const auto &value : referenceColors["colors"].toArray()) {
+            const auto row = value.toObject();
+            SceneEffects colors;
+            colors.setSharedColor({41,127,203,77,quint8(row["mask"].toInt())});
+            for (int pass = 0; pass < 2; ++pass) {
+                const auto tint = colors.worldColor(pass ? WorldColorPass::Foreground : WorldColorPass::Background);
+                RenderColor primitive{17,35,66,255};
+                if (tint) for(int c = 0; c < 4; ++c) primitive[c] = quint8(int(primitive[c]) * (*tint)[c] / 255);
+                quint32 packed = 0; for(const auto c : primitive) packed = (packed << 8) | c;
+                QCOMPARE(packed, quint32(row["primitives"].toArray()[pass].toInteger()));
+            }
+            for (const auto &sample : row["transitions"].toArray()) {
+                const auto entry = sample.toObject();
+                const WorldColorPass phases[]{WorldColorPass::BackgroundProps, WorldColorPass::BeforeForegroundProps, WorldColorPass::AfterForegroundProps};
+                QCOMPARE(colors.worldColor(phases[entry["phase"].toInt()]).has_value(), entry["enabled"].toBool());
             }
         }
         for (const auto &value : reference_["wrapping"].toArray()) {
