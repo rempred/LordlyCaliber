@@ -23,6 +23,7 @@ class PoseBank {
     QByteArray encoded() const;
     void validateEntry(int state)const { validateProgress(state); }
     void setProgram(int state, const QByteArray &);
+    int appendProgram(const QByteArray &);
     void setFrame(int state, int record, int token, int ticks);
     void insertFrame(int state, int before, int token, int ticks);
     void removeFrame(int state, int record);

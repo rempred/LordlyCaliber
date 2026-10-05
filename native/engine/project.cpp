@@ -587,6 +587,7 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
 }
 BodyAnimationData::Pointer Project::bodyAnimationData() {
     loadAnimationRoutes(); loadAnimationOverrides();
+    validateAnimationAssignments();
     QMap<int,AnimationDescriptor> descriptors;
     for(auto it=animationSequences_->groups().cbegin();it!=animationSequences_->groups().cend();++it)descriptors[it.key()]=it->descriptor;
     return std::make_shared<const BodyAnimationData>(classData(),*animationRoutes_,*animationOverrides_,std::move(descriptors));
@@ -595,8 +596,8 @@ void Project::loadAnimationSequences() {
     if(!animationSequences_)animationSequences_=AnimationSequences::load(rom_);
 }
 void Project::setAnimationSequences(const QJsonObject &object) {
-    loadAnimationRoutes();auto next=*animationSequences_;next.apply(object);
-    next.validate(*animationRoutes_,records(Table::Classes).size());animationSequences_=std::move(next);
+    loadAnimationOverrides();
+    setPrivateAnimationState(object, animationOverrides_->json());
 }
 void Project::loadAnimationRoutes() {
     if (!animationRoutes_) {
@@ -627,8 +628,8 @@ void Project::loadAnimationOverrides() {
         animationOverrides_=AnimationOverrides::load(rom_,originalClasses_.value_or(ClassData{}),AnimationRoutes::load(rom_));
 }
 void Project::setAnimationOverrides(const QJsonObject &object) {
-    loadAnimationOverrides();loadAnimationRoutes();auto next=*animationOverrides_;
-    next.apply(object,rom_,classData(),*animationRoutes_);animationOverrides_=std::move(next);
+    loadAnimationRoutes();
+    setPrivateAnimationState(animationSequences_->json(), object);
 }
 void Project::importLegacyAnimationOverrides(const QJsonObject &object) {
     const auto payload=object["patches"].toObject().value("combatAnimationOverrides");
@@ -1040,6 +1041,7 @@ void Project::applyManifest(const QJsonObject &object) {
         if(!object["animationOverrides"].isObject())throw Error("Invalid saved animation overrides");
         candidate.setAnimationOverrides(object["animationOverrides"].toObject());
     } else candidate.importLegacyAnimationOverrides(candidate.legacy_);
+    candidate.validateAnimationAssignments();
     const auto spriteLibrary = object.contains("spriteLibrary")
                                    ? object["spriteLibrary"]
                                    : candidate.legacy_["patches"].toObject().value("spriteLibrary");

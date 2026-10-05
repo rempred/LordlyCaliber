@@ -47,6 +47,29 @@ QByteArray resource(const Rom &rom, quint32 key, bool compressed) {
 class PoseBankTests : public QObject {
     Q_OBJECT
   private slots:
+    void appendPrograms() {
+        const auto original = QByteArray::fromHex("02010a020400");
+        auto poses = PoseBank::parse(bank({{}, original, QByteArray::fromHex("0100")}));
+        const auto before = poses;
+        QCOMPARE(poses.appendProgram(QByteArray::fromHex("02152c01020400")), 3);
+        QCOMPARE(frames(poses, 3, 3), (QVector<int>{300, 300, 300}));
+        for (int i = 0; i < before.programs().size(); ++i) {
+            QCOMPARE(poses.programs()[i].source, before.programs()[i].source);
+            QCOMPARE(frames(poses, i, 3), frames(before, i, 3));
+        }
+        QCOMPARE(PoseBank::parse(poses.encoded()).encoded(), poses.encoded());
+        const auto safe = poses.encoded();
+        for (const auto &bad : {QByteArray{}, QByteArray::fromHex("010400"),
+                               QByteArray::fromHex("0105ff"), QByteArray::fromHex("0116")})
+            QVERIFY_THROWS_EXCEPTION(Error, poses.appendProgram(bad));
+        QCOMPARE(poses.encoded(), safe);
+        auto trailing = PoseBank::parse(bank({original, {}}));
+        const auto untouched = trailing.encoded();
+        QVERIFY_THROWS_EXCEPTION(Error, trailing.appendProgram(original));
+        QCOMPARE(trailing.encoded(), untouched);
+        auto limit = PoseBank::parse(bank(QVector<QByteArray>(32768, QByteArray(1, 0))));
+        QVERIFY_THROWS_EXCEPTION(Error, limit.appendProgram(original));
+    }
     void frameEditingAndAliases() {
         const auto original = QByteArray::fromHex("040c010000010a040114020401");
         const auto bytes = bank({{}, original, QByteArray::fromHex("0100")});

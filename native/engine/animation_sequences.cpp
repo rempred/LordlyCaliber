@@ -18,6 +18,55 @@ QByteArray container(const QByteArray &decoded) {
 void pad(QByteArray &bytes) {
     bytes += QByteArray((16 - bytes.size() % 16) % 16, char(-1));
 }
+QByteArray baselineBytes(const QJsonObject &baselines) {
+    if (baselines.size() > 128)
+        throw Error("Too many private attack assignments");
+    QMap<int, QJsonValue> sorted;
+    for (auto it = baselines.begin(); it != baselines.end(); ++it) {
+        bool ok = false;
+        const int action = it.key().toInt(&ok);
+        if (!ok || action < 0 || action > 255 || QString::number(action) != it.key())
+            throw Error("Invalid private attack identity");
+        sorted[action] = it.value();
+    }
+    QByteArray bytes;
+    for (auto it = sorted.begin(); it != sorted.end(); ++it) {
+        QByteArray row(8, 0);
+        put8(row, 0, quint8(it.key()));
+        if (!it->isNull()) {
+            const auto value = it->toObject();
+            if (!it->isObject() || value.size() != 2)
+                throw Error("Invalid prior private attack assignment");
+            put8(row, 1, 1);
+            for (const auto &[key, at] :
+                 {QPair<const char *, int>{"normalSelector", 2}, {"blockedSelector", 3}}) {
+                const auto number = value[key].toInteger(-1);
+                if (number < 0 || number > 255 || value[key].toDouble() != double(number))
+                    throw Error("Invalid prior private attack selector");
+                put8(row, at, quint8(number));
+            }
+        }
+        bytes += row;
+    }
+    return bytes;
+}
+QJsonObject readBaselines(const QByteArray &bytes) {
+    if (bytes.isEmpty() || bytes.size() % 8 || bytes.size() > 128 * 8)
+        throw Error("Invalid private attack baseline resource");
+    QJsonObject result;
+    int previous = -1;
+    for (int at = 0; at < bytes.size(); at += 8) {
+        const int action = u8(bytes, at), exact = u8(bytes, at + 1);
+        if (action <= previous || exact > 1 || u32(bytes, at + 4) || (!exact && u16(bytes, at + 2)))
+            throw Error("Invalid private attack baseline record");
+        previous = action;
+        result[QString::number(action)] =
+            exact ? QJsonValue(QJsonObject{{"normalSelector", u8(bytes, at + 2)},
+                                           {"blockedSelector", u8(bytes, at + 3)}})
+                  : QJsonValue(QJsonValue::Null);
+    }
+    return result;
+}
 } // namespace
 AnimationSequences AnimationSequences::load(const Rom &rom) {
     AnimationSequences result;
@@ -28,7 +77,8 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
         result.original_ = result.json();
         return result;
     }
-    if (d.size() != descriptorSize || u32(d, 8) != 1 || d.mid(24, 40) != QByteArray(40, 0))
+    if (d.size() != descriptorSize || (u32(d, 8) != 1 && u32(d, 8) != 2) ||
+        d.mid(24, 40) != QByteArray(40, 0))
         throw Error("Invalid private animation allocation header");
     result.offset_ = u32(d, 12);
     result.size_ = u32(d, 16);
@@ -63,14 +113,19 @@ AnimationSequences AnimationSequences::load(const Rom &rom) {
         group.privateHandle = u16(data, i * 16 + 6);
         const auto key = u32(data, i * 16 + 8);
         const int slot = (group.privateHandle & 4095) - 1, base = (group.baselineHandle & 4095) - 1;
-        if (id <= previous || u32(data, i * 16 + 12) || slot < 0 || slot >= directory.size() ||
-            base < 0 || base >= directory.size() || !directory[base] || directory[slot] != key ||
-            handles.contains(slot) ||
+        if (id <= previous || (u32(d, 8) == 1 && u32(data, i * 16 + 12)) || slot < 0 ||
+            slot >= directory.size() || base < 0 || base >= directory.size() || !directory[base] ||
+            directory[slot] != key || handles.contains(slot) ||
             (group.privateHandle & 0xf000) != (group.baselineHandle & 0xf000))
             throw Error("Private animation class, handle or descriptor references differ");
         previous = id;
         handles.insert(slot);
         span(key);
+        if (const auto baseline = u32(data, i * 16 + 12)) {
+            span(baseline);
+            const auto at = baseline + DirectDescriptors::resourceBase;
+            group.attackBaselines = readBaselines(rom.bytes().mid(at + 4, u32(rom.bytes(), at)));
+        }
         group.descriptor = AnimationDescriptor::load(rom, key);
         for (int m = 0; m < group.descriptor.members().size(); ++m) {
             const auto member = group.descriptor.members()[m];
@@ -137,6 +192,25 @@ void AnimationSequences::setDescriptor(int classId, int flags, const AnimationDe
     if (it == groups_.end() || it->descriptor.key() != value.key())
         throw Error("Create a private copy before editing its descriptor");
     it->descriptor = value;
+}
+void AnimationSequences::rememberAttackBaseline(int classId, int flags, int action,
+                                                const QJsonValue &baseline) {
+    const int id = groupId(classId, flags);
+    auto it = groups_.find(id);
+    if (it == groups_.end())
+        throw Error("Create a private copy before assigning its attacks");
+    auto values = it->attackBaselines;
+    const auto key = QString::number(action);
+    if (values.contains(key))
+        return;
+    values[key] = baseline;
+    baselineBytes(values);
+    it->attackBaselines = values;
+}
+void AnimationSequences::clearAttackBaseline(int classId, int flags, int action) {
+    auto it = groups_.find(groupId(classId, flags));
+    if (it != groups_.end())
+        it->attackBaselines.remove(QString::number(action));
 }
 void AnimationSequences::remove(int classId, int flags) {
     groups_.remove(groupId(classId, flags));
@@ -206,11 +280,15 @@ bool AnimationSequences::requiresMarkerRuntime() const {
 }
 QJsonObject AnimationSequences::json() const {
     QJsonArray rows;
-    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        rows << QJsonObject{{"classId", it.key() / 4},
-                            {"bodyFlags", it.key() % 4},
-                            {"baselineHandle", it->baselineHandle},
-                            {"descriptor", it->descriptor.json()}};
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        QJsonObject row{{"classId", it.key() / 4},
+                        {"bodyFlags", it.key() % 4},
+                        {"baselineHandle", it->baselineHandle},
+                        {"descriptor", it->descriptor.json()}};
+        if (!it->attackBaselines.isEmpty())
+            row["attackBaselines"] = it->attackBaselines;
+        rows << row;
+    }
     return {{"version", 1}, {"groups", rows}};
 }
 void AnimationSequences::apply(const QJsonObject &object) {
@@ -220,7 +298,9 @@ void AnimationSequences::apply(const QJsonObject &object) {
     QMap<int, Group> groups;
     for (const auto &value : object["groups"].toArray()) {
         const auto row = value.toObject();
-        if (!value.isObject() || row.size() != 4 || !row["descriptor"].isObject())
+        if (!value.isObject() || (row.size() != 4 && row.size() != 5) ||
+            (row.size() == 5 && !row["attackBaselines"].isObject()) ||
+            !row["descriptor"].isObject())
             throw Error("Invalid saved private sequence");
         const auto integer = [&](const char *key) {
             const auto number = row[key].toInteger(-1);
@@ -234,6 +314,8 @@ void AnimationSequences::apply(const QJsonObject &object) {
             throw Error("Duplicate private sequence or absent base handle");
         groups[id] = {quint16(base), loaded_.contains(id) ? loaded_[id].privateHandle : quint16(0),
                       AnimationDescriptor::fromJson(rom_, row["descriptor"].toObject())};
+        groups[id].attackBaselines = row["attackBaselines"].toObject();
+        baselineBytes(groups[id].attackBaselines);
     }
     groups_ = std::move(groups);
 }
@@ -330,6 +412,13 @@ AnimationSequences::Plan AnimationSequences::plan(const Rom &rom) const {
             put16(bytes, row * 16 + 4, it->baselineHandle);
             put16(bytes, row * 16 + 6, result.handles[it.key()]);
             put32(bytes, row * 16 + 8, key);
+            const auto baselines = baselineBytes(it->attackBaselines);
+            if (!baselines.isEmpty()) {
+                QByteArray resource(4, 0);
+                put32(resource, 0, quint32(baselines.size()));
+                resource += baselines;
+                put32(bytes, row * 16 + 12, append(resource));
+            }
             result.directory.set(result.handles[it.key()] & 4095, key);
             if (bytes.size() > 0x1800000)
                 throw Error("Private animation payload exceeds cartridge capacity");
@@ -377,7 +466,10 @@ QByteArray AnimationSequences::materialize(const Rom &rom, const Plan &plan,
         image.replace(plan.offset, compiled.size(), compiled);
         header.fill(0);
         header.replace(0, 8, "LC05ASEQ");
-        put32(header, 8, 1);
+        bool extended = false;
+        for (const auto &group : groups_)
+            extended |= !group.attackBaselines.isEmpty();
+        put32(header, 8, extended ? 2 : 1);
         put32(header, 12, plan.offset);
         put32(header, 16, quint32(compiled.size()));
         put32(header, 20, quint32(groups_.size()));

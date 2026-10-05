@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Private attack assignments
+
+Private sequences can duplicate the selected pose into an independent Normal or Blocked
+attack selector. The other lane retains its effective assignment. PoseBank.appendProgram
+preserves prior programs and aliases, validates progress, and rejects trailing end-of-resource
+pointers whose meaning would change. New ordinary attack copies begin at100, retaining the
+original primary/secondary ranges. The existing override patch still has one-byte selectors
+and128 rows and requires an Expansion Pak; no new execution hook is added by this change.
+
+Project publishes sequence/override changes atomically. Each private class/body route retains
+its prior exact-body override (or absence), once per action. Restore assignment and Remove
+private copy restore that state; bypassing restoration or deleting a managed override rejects.
+Undo restores both models and the selected appended pose. The native controls show current
+Normal/Blocked selectors. Saved groups carry optional attackBaselines; runtime LC05ASEQversion2
+uses record+12 for a raw length-prefixed baseline resource. Its sorted8-byte records contain
+action0, exact1, priorNormal2, priorBlocked3, zero4..7. Standard allocation/reference/hash checks
+include this resource. Version1 remains used when no baselines exist, preserving earlier ROMs.
+
+`pose_bank_tests` passed111ms with appended wide-token playback and all234existing descriptor
+roundtrips. Full `animation_sequences_tests` passed31029ms, including version2 export/reopen,
+no-op, restoration, prior/default assignments, marker cases and imported-sprite conversion.
+A subsequent privateAttackAssignments run passed10677ms with class165 export/reopen and
+baseline inheritance added. Candidate: parent Test ROMs/native-private-attacks-JMnTrT/masterfilename.
+`sequence_editor_tests` passed2172ms, including assignment controls, atomic undo, pose selection
+restoration, private-copy removal and all frame-import/layer regressions. The1400x1000 capture
+was inspected. Build37833 passed without compiler warnings after renaming a shadowed local.
+
+This completes ordinary-body assignment, not extended linked-body routing. Owners10/25/123
+still reject newly assigned selectors>=50 because native secondary setup skips those requests.
+Classes135/136/161 still reject non0/50 assignments because native playback clamps those states.
+Both runtime paths remain active implementation work, along with browser sequence import and
+fixed-class template policies. No full-game heap/hardware validation is claimed.
+
 ## Private frame image imports
 
 Private sequences import PNG/JPEG or a sprite-library frame through image preparation,

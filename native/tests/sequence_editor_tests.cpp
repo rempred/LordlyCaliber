@@ -28,6 +28,54 @@ class SequenceEditorTests : public QObject {
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
     }
+    void attackAssignmentsAndUndo() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 1000);
+            editor.show();
+            const auto button = [&](const char *key) {
+                return editor.findChild<QPushButton *>(key);
+            };
+            button("sequenceCreate")->click();
+            auto actions = editor.findChild<QComboBox *>("sequenceAttack");
+            actions->setCurrentIndex(actions->findData(4));
+            const auto before = project.animationOverrides()->json();
+            button("sequenceAssignAttack")->click();
+            auto notice = editor.findChild<QLabel *>("sequenceNotice");
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QCOMPARE(editor.findChild<QComboBox *>("sequencePose")->currentData().toInt(), 100);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 0, 0), 100);
+            undo.undo();
+            QCOMPARE(project.animationOverrides()->json(), before);
+            undo.redo();
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 0, 0), 100);
+            editor.findChild<QComboBox *>("sequenceAttackMode")->setCurrentIndex(1);
+            button("sequenceAssignAttack")->click();
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 2, 0), 101);
+            const auto assigned = project.animationSequences()->json(),
+                       overrides = project.animationOverrides()->json();
+            button("sequenceRestoreAttack")->click();
+            QCOMPARE(project.animationOverrides()->json(), before);
+            undo.undo();
+            QCOMPARE(project.animationOverrides()->json(), overrides);
+            button("sequenceRemoveCopy")->click();
+            QVERIFY(!project.animationSequences()->find(2, 0));
+            QCOMPARE(project.animationOverrides()->json(), before);
+            undo.undo();
+            QCOMPARE(project.animationSequences()->json(), assigned);
+            QCOMPARE(project.animationOverrides()->json(), overrides);
+            QCOMPARE(editor.findChild<QComboBox *>("sequencePose")->currentData().toInt(), 101);
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QVERIFY(editor.grab().save(QDir::current().filePath("private-attack-assignment.png")));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void importedFrameAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -880,6 +880,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if(p.animationSequences()&&(p.animationSequences()->modified()||!p.animationSequences()->groups().isEmpty())) {
         p.loadAnimationRoutes();
         const auto &sequences=*p.animationSequences();
+        p.validateAnimationAssignments();
         sequences.validate(*p.animationRoutes(),p.records(Table::Classes).size());
         const auto beforeMarkers=result.image;
         result.image=rebuildBodyMarkers(Rom::fromBytes(result.image),p.rom(),sequences.requiresMarkerRuntime(),compiler,directory);

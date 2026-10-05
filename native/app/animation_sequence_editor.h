@@ -24,6 +24,8 @@ class AnimationSequenceEditor : public QWidget {
     void prepareImage(const QImage &);
     void guarded(const std::function<void()> &);
     void apply(AnimationSequences, const QString &);
+    void publish(const Project &, const QString &);
+    void refreshAssignments();
     void edit(const QString &, const std::function<void(PoseBank &, int, int)> &);
     int selectedClass() const;
     AnimationDescriptor descriptor() const;
@@ -31,8 +33,11 @@ class AnimationSequenceEditor : public QWidget {
     QUndoStack *undo_;
     std::function<void()> changed_;
     bool refreshing_ = false;
+    int preferredPose_ = 40;
     QComboBox *classes_ = nullptr, *routes_ = nullptr, *poses_ = nullptr;
     QComboBox *library_ = nullptr;
+    QComboBox *actions_ = nullptr, *attackModes_ = nullptr;
+    QLabel *assignmentSummary_ = nullptr;
     QSpinBox *libraryFrame_ = nullptr;
     QTableWidget *records_ = nullptr;
     QSpinBox *frame_ = nullptr, *ticks_ = nullptr;

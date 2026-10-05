@@ -73,6 +73,12 @@ class Project {
     void loadAnimationSequences();
     const std::optional<AnimationSequences> &animationSequences()const{return animationSequences_;}
     void setAnimationSequences(const QJsonObject &);
+    void setPrivateAnimationState(const QJsonObject &sequences, const QJsonObject &overrides);
+    void validateAnimationAssignments();
+    int assignPrivateAttack(int classId, int flags, int action, bool blocked, int pose,
+                            bool duplicate = true);
+    void restorePrivateAttack(int classId, int flags, int action);
+    void removePrivateAnimation(int classId, int flags);
     void loadAnimationRoutes();
     const std::optional<AnimationRoutes> &animationRoutes() const {return animationRoutes_;}
     void setAnimationRoutes(const QJsonObject &);

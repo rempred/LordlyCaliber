@@ -117,6 +117,18 @@ void PoseBank::setProgram(int state, const QByteArray &source) {
     candidate.validateProgress(state);
     *this = std::move(candidate);
 }
+int PoseBank::appendProgram(const QByteArray &source) {
+    if (programs_.size() >= 32768 || source.isEmpty())
+        throw Error("A new pose needs a counted program within the signed state range");
+    if (!programs_.isEmpty() && programs_.last().source.isEmpty())
+        throw Error("Resolve the original trailing pose pointer before extending this table");
+    auto candidate = *this;
+    const int state = int(programs_.size());
+    candidate.programs_ << parseProgram(source);
+    candidate.validateProgress(state);
+    *this = std::move(candidate);
+    return state;
+}
 void PoseBank::validateProgress(int state) const {
     // Control flow is deterministic. Follow the authored entry, including what
     // executes after a delay; untouched unreachable instructions remain intact.

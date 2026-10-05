@@ -9,6 +9,7 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QLabel>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -22,19 +23,21 @@ namespace lordly {
 namespace {
 class SequenceCommand final : public QUndoCommand {
   public:
-    SequenceCommand(Project *project, QString label, QJsonObject after)
+    SequenceCommand(Project *project, QString label, QJsonObject after, QJsonObject overrides)
         : QUndoCommand(label), project_(project), before_(project->animationSequences()->json()),
-          after_(std::move(after)) {}
+          after_(std::move(after)), beforeOverrides_(project->animationOverrides()->json()),
+          afterOverrides_(std::move(overrides)) {}
     void undo() override {
-        project_->setAnimationSequences(before_);
+        project_->setPrivateAnimationState(before_, beforeOverrides_);
     }
     void redo() override {
-        project_->setAnimationSequences(after_);
+        project_->setPrivateAnimationState(after_, afterOverrides_);
     }
 
   private:
     Project *project_;
     QJsonObject before_, after_;
+    QJsonObject beforeOverrides_, afterOverrides_;
 };
 QString poseName(int id) {
     const QMap<int, QString> names{{0, "Idle"},
@@ -197,6 +200,50 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
                              .composite(libraryFrame_->value() - 1));
         });
     });
+    auto attackRow = new QHBoxLayout;
+    actions_ = new QComboBox;
+    actions_->setObjectName("sequenceAttack");
+    for (const auto &value : AnimationOverrideImage::definition()["actions"].toArray()) {
+        const auto action = value.toObject();
+        actions_->addItem(action["name"].toString(), action["id"].toInt());
+    }
+    attackModes_ = new QComboBox;
+    attackModes_->setObjectName("sequenceAttackMode");
+    attackModes_->addItems({"Normal", "Blocked"});
+    attackRow->addWidget(actions_, 1);
+    attackRow->addWidget(attackModes_);
+    form->addRow("Attack", attackRow);
+    auto assignmentButtons = new QHBoxLayout;
+    auto assign = new QPushButton("Copy pose to attack");
+    assign->setObjectName("sequenceAssignAttack");
+    auto restore = new QPushButton("Restore attack assignment");
+    restore->setObjectName("sequenceRestoreAttack");
+    assignmentButtons->addWidget(assign);
+    assignmentButtons->addWidget(restore);
+    form->addRow(assignmentButtons);
+    assignmentSummary_ = new QLabel;
+    assignmentSummary_->setObjectName("sequenceAssignmentSummary");
+    assignmentSummary_->setWordWrap(true);
+    form->addRow(assignmentSummary_);
+    connect(actions_, &QComboBox::currentIndexChanged, this, [this] { refreshAssignments(); });
+    connect(assign, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            auto candidate = *project_;
+            const int pose = candidate.assignPrivateAttack(
+                selectedClass(), routes_->currentIndex(), actions_->currentData().toInt(),
+                attackModes_->currentIndex() == 1, poses_->currentData().toInt());
+            publish(candidate, "Create private attack sequence");
+            poses_->setCurrentIndex(poses_->findData(pose));
+        });
+    });
+    connect(restore, &QPushButton::clicked, this, [this] {
+        guarded([this] {
+            auto candidate = *project_;
+            candidate.restorePrivateAttack(selectedClass(), routes_->currentIndex(),
+                                           actions_->currentData().toInt());
+            publish(candidate, "Restore attack assignment");
+        });
+    });
     panel->addWidget(edits_);
     summary_ = new QLabel;
     summary_->setObjectName("sequenceSummary");
@@ -218,8 +265,10 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
             refresh();
     });
     connect(poses_, &QComboBox::currentIndexChanged, this, [this] {
-        if (!refreshing_)
+        if (!refreshing_) {
+            preferredPose_ = poses_->currentData().toInt();
             refresh();
+        }
     });
     connect(records_, &QTableWidget::currentCellChanged, this, [this] {
         if (!refreshing_)
@@ -236,9 +285,9 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     });
     connect(remove_, &QPushButton::clicked, this, [this] {
         guarded([this] {
-            auto next = *project_->animationSequences();
-            next.remove(selectedClass(), routes_->currentIndex());
-            apply(std::move(next), "Remove private animation copy");
+            auto candidate = *project_;
+            candidate.removePrivateAnimation(selectedClass(), routes_->currentIndex());
+            publish(candidate, "Remove private animation copy");
         });
     });
     connect(undo_, &QUndoStack::indexChanged, this, [this] { refresh(); });
@@ -271,8 +320,39 @@ void AnimationSequenceEditor::apply(AnimationSequences next, const QString &labe
         return;
     auto candidate = *project_;
     candidate.setAnimationSequences(next.json());
-    undo_->push(new SequenceCommand(project_, label, next.json()));
+    publish(candidate, label);
+}
+void AnimationSequenceEditor::publish(const Project &candidate, const QString &label) {
+    project_->loadAnimationOverrides();
+    if (candidate.animationSequences()->json() == project_->animationSequences()->json() &&
+        candidate.animationOverrides()->json() == project_->animationOverrides()->json())
+        return;
+    undo_->push(new SequenceCommand(project_, label, candidate.animationSequences()->json(),
+                                    candidate.animationOverrides()->json()));
     changed_();
+}
+void AnimationSequenceEditor::refreshAssignments() {
+    if (!assignmentSummary_ || !classes_ || classes_->currentIndex() < 0)
+        return;
+    try {
+        const int id = selectedClass(), flags = routes_->currentIndex(),
+                  action = actions_->currentData().toInt();
+        const int field = u8(project_->record(Table::Classes, id).bytes, 69),
+                  owner = field ? field : id;
+        const auto animations = project_->bodyAnimationData();
+        const bool assigned = project_->animationSequences()
+                                  ->groups()
+                                  .value(id * 4 + flags)
+                                  .attackBaselines.contains(QString::number(action));
+        assignmentSummary_->setText(
+            QString("%1 · Normal: pose %2 · Blocked: pose %3\nAttack assignments use the existing "
+                    "animation patch and require an Expansion Pak.")
+                .arg(assigned ? "Private assignment" : "Current assignment")
+                .arg(animations->selector(id, owner, action, 0, flags))
+                .arg(animations->selector(id, owner, action, 2, flags)));
+    } catch (const std::exception &e) {
+        assignmentSummary_->setText(QString::fromUtf8(e.what()));
+    }
 }
 void AnimationSequenceEditor::edit(const QString &label,
                                    const std::function<void(PoseBank &, int, int)> &action) {
@@ -416,7 +496,7 @@ void AnimationSequenceEditor::refresh() {
         if (const int at = library_->findData(selectedLibrary); at >= 0)
             library_->setCurrentIndex(at);
         const int selected = classes_->currentIndex() < 0 ? 2 : classes_->currentData().toInt(),
-                  pose = poses_->currentIndex() < 0 ? 40 : poses_->currentData().toInt(),
+                  pose = preferredPose_,
                   row = records_->currentRow();
         classes_->clear();
         for (const auto &value : project_->records(Table::Classes))
@@ -466,6 +546,7 @@ void AnimationSequenceEditor::refresh() {
             preview_->setArtwork(project_->combatArtwork()->previewEdits());
         preview_->selectPrivateSequence(selectedClass(), routes_->currentIndex(),
                                         poses_->currentData().toInt());
+        refreshAssignments();
     });
 }
 } // namespace lordly

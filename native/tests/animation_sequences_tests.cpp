@@ -14,6 +14,93 @@ using namespace lordly;
 class AnimationSequencesTests : public QObject {
     Q_OBJECT
   private slots:
+    void privateAttackAssignments() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAnimationRoutes();
+            project.loadAnimationOverrides();
+            auto overrides = project.animationOverrides()->json();
+            overrides["entries"] = QJsonArray{QJsonObject{{"classId", 2},
+                                                          {"bodyFlags", 0},
+                                                          {"actionId", 4},
+                                                          {"normalSelector", 40},
+                                                          {"blockedSelector", 40}}};
+            project.setAnimationOverrides(overrides);
+            auto copies = *project.animationSequences();
+            copies.create(2, 0, *project.animationRoutes());
+            project.setAnimationSequences(copies.json());
+            const auto oldPoses = copies.find(2, 0)->poses();
+            QCOMPARE(project.assignPrivateAttack(2, 0, 4, false, 40), 100);
+            QCOMPARE(project.assignPrivateAttack(2, 0, 4, true, 40), 101);
+            QCOMPARE(project.assignPrivateAttack(2, 0, 1, false, 40), 102);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 0, 0), 100);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 1, 0), 100);
+            QCOMPARE(project.bodyAnimationData()->selector(2, 2, 4, 2, 0), 101);
+            const auto descriptor = *project.animationSequences()->find(2, 0);
+            for (int i = 0; i < oldPoses.programs().size(); ++i)
+                QCOMPARE(descriptor.poses().programs()[i].source, oldPoses.programs()[i].source);
+            const auto safe = project.animationSequences()->json();
+            auto erased = *project.animationSequences();
+            erased.remove(2, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationSequences(erased.json()));
+            QCOMPARE(project.animationSequences()->json(), safe);
+            auto badOverrides = project.animationOverrides()->json();
+            badOverrides["entries"] = QJsonArray{};
+            QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationOverrides(badOverrides));
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom);
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.animationSequences()->json(), project.animationSequences()->json());
+            QCOMPARE(restored.animationOverrides()->json(), project.animationOverrides()->json());
+            const auto built = rebuild(project, tools, work.path());
+            QCOMPARE(u32(built.image, AnimationSequences::descriptorOffset + 8), quint32(2));
+            QTemporaryDir candidates(
+                QFileInfo(path).dir().filePath("Test ROMs/native-private-attacks-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            auto reopened = Project::fromRom(Rom::open(output));
+            const auto body = reopened.bodyAnimationData();
+            QCOMPARE(body->selector(2, 2, 4, 0, 0), 100);
+            QCOMPARE(body->selector(2, 2, 4, 2, 0), 101);
+            ActorPosePlayer player(reopened.rom(),
+                                   ActorArt::loadBody(reopened.rom(), 2, 2, 0, 0, body), 100);
+            player.setLinkedObjectKnownAbsent(true);
+            QCOMPARE(player.advance(), int(LORDLY_POSE_OK));
+            QCOMPARE(player.actor().frame, 17);
+            QCOMPARE(reopened.changedRecords(), 0);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            auto cloned = reopened;
+            QCOMPARE(cloned.appendClass(2, "Private attack clone"), 165);
+            QCOMPARE(cloned.bodyAnimationData()->selector(165, 165, 4, 0, 0), 100);
+            const auto cloneBuild = rebuild(cloned, tools, work.path());
+            auto cloneReopened = Project::fromRom(Rom::fromBytes(cloneBuild.image));
+            QCOMPARE(cloneReopened.bodyAnimationData()->selector(165, 165, 4, 0, 0), 100);
+            QCOMPARE(cloneReopened.animationSequences()->groups().value(165 * 4).attackBaselines,
+                     cloned.animationSequences()->groups().value(165 * 4).attackBaselines);
+            cloned.removePrivateAnimation(165, 0);
+            QCOMPARE(cloned.bodyAnimationData()->selector(165, 165, 4, 0, 0), 40);
+            reopened.restorePrivateAttack(2, 0, 4);
+            QCOMPARE(reopened.bodyAnimationData()->selector(2, 2, 4, 0, 0), 40);
+            QVERIFY(reopened.animationSequences()->groups().value(8).attackBaselines.contains("1"));
+            reopened.removePrivateAnimation(2, 0);
+            QCOMPARE(reopened.animationOverrides()->entries(), overrides["entries"].toArray());
+            const auto reset = rebuild(reopened, tools, work.path());
+            auto resetProject = Project::fromRom(Rom::fromBytes(reset.image));
+            QCOMPARE(resetProject.bodyAnimationData()->selector(2, 2, 4, 0, 0), 40);
+            QVERIFY(resetProject.animationSequences()->groups().isEmpty());
+            qInfo().noquote() << "Private attack candidate:" << output;
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void wideEquipmentMarkers() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");

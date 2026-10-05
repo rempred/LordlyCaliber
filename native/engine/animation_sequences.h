@@ -9,6 +9,7 @@ class AnimationSequences {
     struct Group {
         quint16 baselineHandle = 0, privateHandle = 0;
         AnimationDescriptor descriptor;
+        QJsonObject attackBaselines;
     };
     struct Plan {
         quint32 offset = 0;
@@ -25,6 +26,8 @@ class AnimationSequences {
     const AnimationDescriptor *find(int classId, int flags) const;
     void create(int classId, int flags, const AnimationRoutes &, const ActorArtworkEdits & = {});
     void setDescriptor(int classId, int flags, const AnimationDescriptor &);
+    void rememberAttackBaseline(int classId, int flags, int action, const QJsonValue &);
+    void clearAttackBaseline(int classId, int flags, int action);
     void remove(int classId, int flags);
     void cloneClass(int source, int target);
     AnimationRoutes baseRoutes(AnimationRoutes) const;
