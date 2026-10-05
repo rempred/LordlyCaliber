@@ -177,6 +177,29 @@ void AnimationSequences::validate(const AnimationRoutes &routes, int count) cons
                 throw Error(
                     "A private animation handle cannot be shared through another body assignment");
     }
+    for (const auto &group : groups_) {
+        const auto original = AnimationDescriptor::load(rom_, group.descriptor.key()).poses();
+        const auto current = group.descriptor.poses();
+        for (int state : {38, 88}) {
+            if (state >= current.programs().size())
+                continue;
+            const auto program = [](const PoseBank &bank, int state) {
+                try {
+                    return bank.effective(state).source;
+                } catch (const Error &) {
+                    return QByteArray{};
+                }
+            };
+            const auto edited = program(current, state), before = program(original, state);
+            if (edited == before)
+                continue;
+            for (const auto &record : PoseBank::parseProgram(edited).records)
+                if (record.opcode == 21)
+                    throw Error(
+                        "Equipment marker poses 38 and 88 require narrow frame instructions; their "
+                        "native consumer does not read wide frame tokens");
+        }
+    }
 }
 QJsonObject AnimationSequences::json() const {
     QJsonArray rows;

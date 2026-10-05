@@ -1,5 +1,28 @@
 # Native Lordly Caliber
 
+## Private frame layer authoring
+
+Private sequences now open a frame-layer dialog with live native body-image composition,
+an origin marker, sprite ordinal, signed position, dimensions, flips and fixed-point scale.
+Layers can be added, duplicated, removed and reordered. Other flag bits survive edits.
+The dialog validates its draft, cancellation changes nothing, and acceptance appends a frame
+and redirects only the selected pose instruction in one shared undo command. Unknown original
+metadata and other poses using the source frame remain intact.
+
+The native equipment-marker consumer scans only opcode1 in poses38/88. New edits introducing
+opcode21 there currently reject before publication/export, even when its token fits a byte.
+Unchanged absent marker programs remain allowed. This guard still needs the consumer update
+for full wide-marker authoring; it is not a completion claim for that runtime path.
+
+`sequence_editor_tests` passed967ms: modal controls, live pixel redraw, positions/flips/scale,
+layer insertion/removal/order, original-frame isolation, appended pose reference, oversized
+layer rejection, cancellation and undo/redo. The1040x760 dialog screenshot was inspected.
+`animation_sequences_tests` passed14247ms, including all656 unchanged class/body copies,
+wide-marker rejection and the complete source-export/reopen/ownership regression. Candidate:
+parent Test ROMs/native-private-animations-NRyJAM/masterfilename. Desktop load passed937ms.
+Build86866 passed without compiler warnings. Sprite creation/import, private attack-selector
+assignment, browser sequence import and the fixed-class visual-policy audit remain.
+
 ## Appended frame metadata
 
 AnimationDescriptor can append validated layer records and expand the relative-offset frame

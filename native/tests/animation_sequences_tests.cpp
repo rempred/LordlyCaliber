@@ -10,6 +10,34 @@ using namespace lordly;
 class AnimationSequencesTests : public QObject {
     Q_OBJECT
   private slots:
+    void unchangedClassRouteCoverage() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto routes = AnimationRoutes::load(rom);
+        const auto classes = ClassData::load(rom);
+        int copied = 0;
+        for (int id = 1; id < classes.entries().size(); ++id)
+            for (int flags = 0; flags < 4; ++flags) {
+                try {
+                    auto sequences = AnimationSequences::load(rom);
+                    sequences.create(id, flags, routes);
+                    sequences.validate(routes, classes.entries().size());
+                    const auto source = ActorArt::loadBody(rom, id, id, flags >> 1, flags & 1);
+                    QCOMPARE(
+                        sequences.find(id, flags)->poses().encoded(),
+                        AnimationDescriptor::load(rom, source.descriptorKey()).poses().encoded());
+                    ++copied;
+                } catch (const Error &e) {
+                    QFAIL(qPrintable(QString("Class %1 route %2: %3")
+                                         .arg(id)
+                                         .arg(flags)
+                                         .arg(QString::fromUtf8(e.what()))));
+                }
+            }
+        QCOMPARE(copied, 656);
+    }
     void projectExportAndOwnership() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
                    tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
@@ -51,6 +79,15 @@ class AnimationSequencesTests : public QObject {
             routes.setEntry(2, originalRoutes.entry(3));
             QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationRoutes(routes.json()));
             QCOMPARE(project.animationRoutes()->json(), originalRoutes.json());
+            auto invalidMarkers = sequences;
+            auto marker = *invalidMarkers.find(2, 0);
+            auto markerPoses = marker.poses();
+            markerPoses.setProgram(
+                38, PoseBank::encodeProgram({PoseRecord{21, QByteArray::fromHex("200002")}}));
+            marker.setPoses(markerPoses);
+            invalidMarkers.setDescriptor(2, 0, marker);
+            QVERIFY_THROWS_EXCEPTION(Error, project.setAnimationSequences(invalidMarkers.json()));
+            QCOMPARE(project.animationSequences()->json(), sequences.json());
             QTemporaryDir work;
             project.saveFolder(work.filePath("folder"));
             project.saveArchive(work.filePath("project.lcpack"));

@@ -19,6 +19,7 @@ class AnimationSequenceEditor : public QWidget {
   private:
     void refresh();
     void selectRecord();
+    void editLayers();
     void guarded(const std::function<void()> &);
     void apply(AnimationSequences, const QString &);
     void edit(const QString &, const std::function<void(PoseBank &, int, int)> &);

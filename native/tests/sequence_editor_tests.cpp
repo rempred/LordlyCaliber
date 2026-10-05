@@ -1,12 +1,19 @@
 #include "app/animation_sequence_editor.h"
+#include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFontDatabase>
+#include <QGraphicsView>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QUndoStack>
 #include <QtTest>
 using namespace lordly;
@@ -109,6 +116,82 @@ class SequenceEditorTests : public QObject {
                      project.animationSequences()->find(2, 0)->controls());
             QVERIFY(changes >= 6);
             QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            rows->selectRow(0);
+            const auto sourceFrame = project.animationSequences()->find(2, 0)->frame(17);
+            const int x = qint16(u16(sourceFrame, 4)), oldFlags = u16(sourceFrame, 12);
+            QString dialogError;
+            QTimer::singleShot(50, [&] {
+                auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dialog) {
+                    dialogError = "Missing layer dialog";
+                    return;
+                }
+                try {
+                    auto table = dialog->findChild<QTableWidget *>("frameLayers");
+                    auto view = dialog->findChild<QGraphicsView *>("layerPreview");
+                    if (!table || !view)
+                        throw Error("Missing layer controls");
+                    const auto image = view->grab().toImage();
+                    dialog->findChild<QSpinBox *>("layerField0_1")->setValue(x + 9);
+                    dialog->findChild<QCheckBox *>("layerFlip0_0")->toggle();
+                    dialog->findChild<QDoubleSpinBox *>("layerScale0_0")->setValue(.5);
+                    if (image == view->grab().toImage())
+                        throw Error("Layer preview did not change");
+                    const int count = table->rowCount();
+                    for (const char *name : {"layerDuplicate", "layerMoveDown", "layerRemove",
+                                             "layerAdd", "layerMoveUp", "layerRemove"})
+                        dialog->findChild<QPushButton *>(name)->click();
+                    if (table->rowCount() != count)
+                        throw Error("Layer editing lost an original layer");
+                    if (!dialog->findChild<QLabel *>("layerNotice")->text().isEmpty())
+                        throw Error(dialog->findChild<QLabel *>("layerNotice")->text());
+                    if (!dialog->grab().save(QDir::current().filePath("private-frame-layers.png")))
+                        throw Error("Layer screenshot failed");
+                    dialog->findChild<QDialogButtonBox *>("layerDialogButtons")
+                        ->button(QDialogButtonBox::Ok)
+                        ->click();
+                } catch (const std::exception &e) {
+                    dialogError = QString::fromUtf8(e.what());
+                    dialog->reject();
+                }
+            });
+            QTest::mouseClick(button("sequenceEditLayers"), Qt::LeftButton);
+            QVERIFY2(dialogError.isEmpty(), qPrintable(dialogError));
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            const auto *edited = project.animationSequences()->find(2, 0);
+            QCOMPARE(edited->frame(17), sourceFrame);
+            QCOMPARE(edited->poses().effective(40).records.first().operands,
+                     QByteArray::fromHex("2002"));
+            const auto privateFrame = edited->frame(32);
+            QCOMPARE(qint16(u16(privateFrame, 4)), x + 9);
+            QCOMPARE(u16(privateFrame, 12), oldFlags ^ 1);
+            QCOMPARE(u16(privateFrame, 14), 512);
+            const auto afterLayers = project.animationSequences()->json();
+            const int afterCount = undo.count();
+            QTimer::singleShot(50, [&] {
+                auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dialog) {
+                    dialogError = "Missing validation dialog";
+                    return;
+                }
+                dialog->findChild<QSpinBox *>("layerField0_3")->setValue(65535);
+                dialog->findChild<QSpinBox *>("layerField0_4")->setValue(65535);
+                dialog->findChild<QDialogButtonBox *>("layerDialogButtons")
+                    ->button(QDialogButtonBox::Ok)
+                    ->click();
+                if (!dialog->isVisible() ||
+                    dialog->findChild<QLabel *>("layerNotice")->text().isEmpty())
+                    dialogError = "Oversized layer was accepted";
+                dialog->reject();
+            });
+            QTest::mouseClick(button("sequenceEditLayers"), Qt::LeftButton);
+            QVERIFY2(dialogError.isEmpty(), qPrintable(dialogError));
+            QCOMPARE(project.animationSequences()->json(), afterLayers);
+            QCOMPARE(undo.count(), afterCount);
+            undo.undo();
+            QCOMPARE(project.animationSequences()->find(2, 0)->frameCount(), 32);
+            undo.redo();
+            QCOMPARE(project.animationSequences()->json(), afterLayers);
             QVERIFY(editor.grab().save(QDir::current().filePath("private-sequence-editor.png")));
         } catch (const Error &e) {
             QFAIL(e.what());

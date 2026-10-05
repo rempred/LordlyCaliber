@@ -1,5 +1,6 @@
 #include "app/animation_sequence_editor.h"
 #include "app/actor_pose_editor.h"
+#include "app/frame_layer_editor.h"
 #include <QComboBox>
 #include <QCompleter>
 #include <QFormLayout>
@@ -152,6 +153,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
         edit("Move sequence frame",
              [](PoseBank &bank, int state, int row) { bank.moveFrame(state, row, row + 1); });
     });
+    add("Edit frame layers", "sequenceEditLayers", 3, 0, [this] { editLayers(); });
     form->addRow(editButtons);
     panel->addWidget(edits_);
     summary_ = new QLabel;
@@ -252,6 +254,51 @@ void AnimationSequenceEditor::selectRecord() {
         return;
     frame_->setValue(token(records[row]));
     ticks_->setValue(u8(records[row].operands, records[row].operands.size() - 1));
+}
+void AnimationSequenceEditor::editLayers() {
+    const int id = selectedClass(), flags = routes_->currentIndex(),
+              state = poses_->currentData().toInt(), index = records_->currentRow();
+    const auto *original = project_->animationSequences()->find(id, flags);
+    if (!original)
+        throw Error("Make a private copy before editing frame layers");
+    auto snapshot = *original;
+    auto bank = snapshot.poses();
+    const auto &program = bank.effective(state);
+    if (index < 0 || index >= program.records.size() || !isFrame(program.records[index]))
+        throw Error("Choose a frame instruction");
+    const auto record = program.records[index];
+    const auto frame = snapshot.frame(token(record));
+    QByteArray newLayer(16, 0);
+    put16(newLayer, 6, 1);
+    put16(newLayer, 8, 1);
+    put16(newLayer, 12, 1024);
+    put16(newLayer, 14, 1024);
+    for (int i = 0; i < snapshot.frameCount(); ++i) {
+        const auto source = snapshot.frame(i);
+        if (u16(source, 0)) {
+            newLayer = source.mid(2, 16);
+            break;
+        }
+    }
+    const auto art = ActorArt::loadBody(project_->rom(), id, id, flags >> 1, flags & 1,
+                                        project_->bodyAnimationData());
+    const auto render = [&, art](const QByteArray &draft) {
+        auto copy = snapshot;
+        const int token = copy.appendFrame(draft);
+        const auto updated = art.withDescriptor(copy);
+        return updated.bodyFrame(project_->rom(), token,
+                                 updated.defaultAppearance(project_->rom()));
+    };
+    const auto result =
+        editFrameLayers(frame, newLayer, snapshot.members().size() - 4, render, this);
+    if (!result || *result == frame)
+        return;
+    const int replacement = snapshot.appendFrame(*result);
+    bank.setFrame(state, index, replacement, u8(record.operands, record.operands.size() - 1));
+    snapshot.setPoses(bank);
+    auto next = *project_->animationSequences();
+    next.setDescriptor(id, flags, snapshot);
+    apply(std::move(next), "Edit private frame layers");
 }
 void AnimationSequenceEditor::refresh() {
     if (refreshing_ || !classes_)
