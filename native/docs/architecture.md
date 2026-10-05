@@ -1,5 +1,37 @@
 # Native Lordly Caliber
 
+## Equipment-dependent body layers
+
+Body drawing now adapts accepted205C88/205484/206340 selection from Decomp
+main62cc7ef4. Configuration byte kinds choose body child, equipment child or
+item palette; sources57/63 reroute kind2 to equipment children. Special-class
+item overrides reuse the maintained registration resolver. Item palette16
+requires an explicit launch replacement. Scene draws read the actor's actual
+248-byte appearance row; standalone projected draws use class defaults.
+
+Pose38/88 supply the native last-two-frame substitutions. Their replacement
+metadata retains flags40/80 and applies the recovered warm-tone conversion after
+optional sepia, preserving alpha. The image cache distinguishes source class,
+equipment and dynamic palette input. Ordinary/direct raw asset inspection stays
+available separately. Body cache aging remains approximate; target allocation
+waits and exact RDP rasterization are not emulated.
+
+`body_art_tests bodyImagesAgainstMips equipmentRenderingAndRollback` passed
+10959ms after build63774:23094 original metadata/loader cases,62316 selected
+layers, all65536 RGBA16 warm inputs, visible equipment changes, repeated rendering
+and rollback. Original205C88 registration/205484 metadata/206340 loader execute;
+allocation/resource transfer/final pixel expansion are controlled. Every route
+and278 items across seven representative classes are covered. The first test
+run exposed an incorrect reference entry for202258; correcting the16-byte fixture
+offset resolved it without changing the conversion implementation.
+
+The existing raw body corpus passed after build94605. Scene special/material/
+projection regressions passed165ms; desktop focus/capture/black/world-seek checks
+passed3138ms. The final source-class cache key change retained the focused body
+checks. These establish selected resources and desktop behavior, not original
+framebuffer equivalence or complete dynamic army launch context.
+
+
 ## Linked secondary placement before depth sorting
 
 World matrix preparation now follows ROM2AA3B0: a linked secondary body searches

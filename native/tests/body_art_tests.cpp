@@ -2,6 +2,8 @@
 #include "engine/actor_pose.h"
 #include "engine/class_data.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_actor_renderer.h"
+#include "game/images/sepia.h"
 #include "game/director/actor_body.h"
 #include "game/director/actor_state.h"
 #include <QDir>
@@ -30,6 +32,87 @@ class BodyArtTests : public QObject {
         return QJsonDocument::fromJson(file.readAll()).object();
     }
   private slots:
+    void bodyImagesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto data = fixture("body-images-mips.cjs", path);
+        const auto rows = data["rows"].toArray();
+        QCOMPARE(rows.size(), 23094);
+        const auto rom = Rom::open(path);
+        QMap<int, ActorArt> arts;
+        int checked = 0;
+        for (const auto &value : rows) {
+            const auto row = value.toObject();
+            const int source = row["source"].toInt(), flags = row["flags"].toInt();
+            const int key = source * 4 + flags;
+            if (!arts.contains(key))
+                arts.insert(key, ActorArt::loadBody(rom, source, source, flags >> 1, flags & 1));
+            const auto &art = arts[key];
+            const BodyAppearance appearance{quint16(row["item"].toInt()), quint8(3)};
+            const auto selections = art.bodyLayers(rom, row["token"].toInt(), appearance);
+            const auto frames = art.bodyFrame(rom, row["token"].toInt(), appearance, row["sepia"].toInt());
+            const auto expected = row["layers"].toArray();
+            QCOMPARE(selections.size(), expected.size());
+            QCOMPARE(frames.size(), expected.size());
+            for (int i = 0; i < expected.size(); ++i) {
+                const auto e = expected[i].toObject();
+                const auto record = QByteArray::fromHex(e["record"].toString().toLatin1());
+                const auto &s = selections[i];
+                QCOMPARE(s.metadata.art, int(u32(record, 0)));
+                QCOMPARE(s.metadata.origin, QPoint(qint32(u32(record, 4)), qint32(u32(record, 8))));
+                QCOMPARE(s.metadata.width, int(u32(record, 12)));
+                QCOMPARE(s.metadata.height, int(u32(record, 16)));
+                QCOMPARE(s.metadata.flags, u32(record, 20));
+                QCOMPARE(float(s.metadata.scaleX) / 1024.f, std::bit_cast<float>(u32(record, 24)));
+                QCOMPARE(float(s.metadata.scaleY) / 1024.f, std::bit_cast<float>(u32(record, 28)));
+                QCOMPARE(s.paletteOffset, e["paletteOffset"].toInt());
+                QCOMPARE(art.artKeys()[s.metadata.art], quint32(e["key"].toInteger()));
+                QCOMPARE(frames[i].pixels.child, e["child"].toInt());
+                QCOMPARE(e["flags"].toInt(), 2 | row["sepia"].toInt() | (s.metadata.flags & 0xc0 ? 4 : 0));
+                QVERIFY(e["sixteen"].toBool());
+                ++checked;
+            }
+        }
+        const auto warm = QByteArray::fromHex(data["warm16"].toString().toLatin1());
+        QCOMPARE(warm.size(), 131072);
+        for (int value = 0; value < 65536; ++value)
+            QCOMPARE(lordly_warm_rgba16(quint16(value)), u16(warm, value * 2));
+        qInfo() << checked << "original body image layers and all RGBA16 warm-tone inputs agree";
+    }
+    void equipmentRenderingAndRollback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        SceneActors actors(rom, 2, 255, [](int, float, float) { return 0.f; });
+        actors.supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+        int value = 0;
+        QVERIFY(actors.service(0x14, {0,30,0,0,0,0,0,0,0}, value));
+        QVERIFY(actors.service(0x2a, {0,2,0,0,0,2}, value));
+        const auto camera = SceneCameras::freshModeTwo(rom).actor();
+        actors.prepareModeTwoMatrices(camera, {{0,0,0},{{200,-200,50},{-200,200,75}}});
+        const auto queue = SceneDrawQueue::build(actors.actorRecords(), {}, camera,
+                                                {0x80300000,0x80310000});
+        SceneActorRenderer renderer(rom);
+        const auto draw = [&] { return renderer.world(actors, queue, {}, {64,64}, {0,0,0,0,0,0}, {camera,{255,255,255},{}}); };
+        QVector<QByteArray> rows(28,QByteArray(248,0));
+        const int identity = u8(actors.actor(0)->record(),0x147);
+        put16(rows[identity],0x36,1); actors.supplyBodyRows(rows);
+        QCOMPARE(actors.bodyEquipment(0),quint16(1));
+        const auto first = draw();
+        bool changed = false;
+        for (int item : {2,6,11,20,50,100}) {
+            put16(rows[identity],0x36,quint16(item)); actors.supplyBodyRows(rows);
+            const auto other = draw();
+            if (first.image != other.image) { changed = true; break; }
+        }
+        QVERIFY(changed);
+        put16(rows[identity],0x36,1); actors.supplyBodyRows(rows);
+        QCOMPARE(draw().image,first.image);
+        const auto records = actors.actorRecords();
+        put16(rows[identity],0x36,278); actors.supplyBodyRows(rows);
+        QVERIFY_THROWS_EXCEPTION(Error,draw());
+        QCOMPARE(actors.actorRecords(),records);
+    }
     void bodyInitializationAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -47,6 +47,7 @@ class SceneActors {
     // Explicit launch state: absent rows remain unknown, never silently zero-filled.
     void supplyBodyRows(const QVector<QByteArray> &rows);
     const QByteArray &bodyRow(int identity) const;
+    quint16 bodyEquipment(int slot) const;
     // Native pointers identify launch objects; they are never dereferenced on PC.
     void supplyBodyObject(quint32 address, QByteArray record);
     const QByteArray &presentationRecord() const {

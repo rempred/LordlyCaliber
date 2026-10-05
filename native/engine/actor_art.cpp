@@ -1,5 +1,6 @@
 #include "engine/actor_art.h"
 #include "engine/class_data.h"
+#include "game/director/actor_body.h"
 #include "game/director/actor_state.h"
 #include <iterator>
 namespace lordly {
@@ -110,6 +111,20 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     result.flagA_ = flagA;
     result.flagB_ = flagB;
     result.bodyHandle_ = handle;
+    // Accepted 205C88 scans pose 38/88 for the last two frame commands.
+    for (int pair = 0; pair < 2; ++pair) {
+        int state = pair ? 88 : 38;
+        while (state < result.poses_.size() && result.poses_[state].source.isEmpty())
+            ++state;
+        if (state >= result.poses_.size())
+            continue;
+        for (const auto &command : result.poses_[state].records) {
+            if (command.opcode == 1) {
+                result.bodyReplacements_[pair * 2 + 1] = result.bodyReplacements_[pair * 2];
+                result.bodyReplacements_[pair * 2] = u8(command.operands, 0);
+            }
+        }
+    }
     return result;
 }
 ActorArt ActorArt::loadDirect(const Rom &rom, quint16 handle) {
@@ -141,6 +156,9 @@ ActorArt ActorArt::descriptor(const Rom &rom, quint32 key) {
         quint64(map) + result.artKeys_.size() > quint64(config.size()))
         throw Error("Actor palette map does not match its art count");
     result.paletteMap_ = config.mid(map, result.artKeys_.size());
+    if (quint64(0x20) + result.artKeys_.size() > quint64(config.size()))
+        throw Error("Actor image-kind map is truncated");
+    result.imageKinds_ = config.mid(0x20, result.artKeys_.size());
     return result;
 }
 int ActorArt::resolve(int animation, int facing, int option) const {
@@ -237,6 +255,66 @@ QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant,
         pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);
         if ((retained += pixels.image.rgba.size() + pixels.colorAlpha.size()) > 64 * 1024 * 1024)
             throw Error("Actor frame exceeds the pixel budget");
+        result << ActorFrameLayer{layer, std::move(pixels)};
+    }
+    return result;
+}
+QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
+                                                 BodyAppearance appearance) const {
+    if (!body_)
+        throw Error("Equipment image selection requires class-body art");
+    quint16 extraFlags = 0;
+    if (token == bodyReplacements_[0]) {
+        token = bodyReplacements_[1];
+        extraFlags = 0x40;
+    } else if (token == bodyReplacements_[2]) {
+        token = bodyReplacements_[3];
+        extraFlags = 0x80;
+    }
+    const int item = lordly_body_equipment_variant(sourceClass_, appearance.equipment);
+    if (item < 0 || item >= 278)
+        throw Error("Body equipment exceeds the current item table");
+    const auto handles = resource(rom, 0x315736, false);
+    const int begin = u16(handles, 4), end = u16(handles, 6);
+    if (begin > end || end > handles.size() || item >= end - begin)
+        throw Error("Body equipment image variant exceeds its table");
+    QVector<BodyLayerSelection> result;
+    for (auto layer : layers(token)) {
+        layer.flags |= extraFlags;
+        int kind = u8(imageKinds_, layer.art);
+        if ((sourceClass_ == 0x39 || sourceClass_ == 0x3f) && kind == 2)
+            kind = 1;
+        int child = bodyVariant(), palette = u8(paletteMap_, layer.art) * 512;
+        if (kind == 1)
+            child = u8(handles, begin + item);
+        else if (kind >= 2) {
+            int selected = u8(rom.bytes(), 0x62300 + item * 32 + 0x11);
+            if (selected == 16) {
+                if (!appearance.paletteReplacement)
+                    throw Error("Body equipment needs the launch palette replacement");
+                selected = *appearance.paletteReplacement;
+            }
+            child = 0;
+            palette += selected * 32;
+        }
+        if (palette < 0 || palette >= palettes_.size())
+            throw Error("Body equipment palette exceeds its resource");
+        result << BodyLayerSelection{layer, child, palette};
+    }
+    return result;
+}
+QVector<ActorFrameLayer> ActorArt::bodyFrame(const Rom &rom, int token, BodyAppearance appearance,
+                                             int sepia) const {
+    QVector<ActorFrameLayer> result;
+    qsizetype retained = 0;
+    for (const auto &selected : bodyLayers(rom, token, appearance)) {
+        const auto &layer = selected.metadata;
+        const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
+        auto pixels = sprite.frame(selected.child, palettes_.mid(selected.paletteOffset, 512),
+                                   sepia, (layer.flags & 0xc0) != 0);
+        pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);
+        if ((retained += pixels.image.rgba.size() + pixels.colorAlpha.size()) > 64 * 1024 * 1024)
+            throw Error("Body frame exceeds the pixel budget");
         result << ActorFrameLayer{layer, std::move(pixels)};
     }
     return result;

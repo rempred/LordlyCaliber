@@ -23,7 +23,7 @@ struct ActorRasterLayer {
 // primitive-color and geometry rules are retained; Qt samples and blends pixels.
 // An explicit state preserves material commands and texture changes across draws.
 // Convenience calls start a reference preset with transparent black environment.
-// Linked equipment remains a separate render owner.
+// Scene callers supply equipment appearance; standalone calls use class defaults.
 class ActorRenderer {
   public:
     explicit ActorRenderer(Rom rom) : rom_(std::move(rom)), frames_(64 * 1024) {}
@@ -31,13 +31,13 @@ class ActorRenderer {
                                       const std::array<qint16, 3> &globalRgb, bool sepia = false,
                                       int shadowIndex = 0, quint8 alpha = 255,
                                       ActorRenderState *state = nullptr,
-                                      SceneImageCache *images = nullptr);
-    QVector<ActorRasterLayer> projectRecord(const ActorArt &, const QByteArray &, bool shadow,
-                                            const SceneCamera &,
-                                            const std::array<qint16, 3> &globalRgb,
-                                            bool sepia = false, int shadowIndex = 0,
-                                            quint8 alpha = 255, ActorRenderState *state = nullptr,
-                                            SceneImageCache *images = nullptr);
+                                      SceneImageCache *images = nullptr,
+                                      std::optional<BodyAppearance> appearance = {});
+    QVector<ActorRasterLayer>
+    projectRecord(const ActorArt &, const QByteArray &, bool shadow, const SceneCamera &,
+                  const std::array<qint16, 3> &globalRgb, bool sepia = false, int shadowIndex = 0,
+                  quint8 alpha = 255, ActorRenderState *state = nullptr,
+                  SceneImageCache *images = nullptr, std::optional<BodyAppearance> appearance = {});
     // Stage callers retain their own combiner. Flat props bind color then mask;
     // drawable objects and Actors bind mask then color.
     static ActorRasterLayer projectLayer(const ActorFrameLayer &, const QByteArray &actor,

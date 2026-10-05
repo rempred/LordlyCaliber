@@ -17,8 +17,13 @@ SceneActorFrame SceneActorRenderer::special(const SceneActors &actors, SceneEffe
     for (const auto &pass : passes) {
         // a2=1 multiplies presentation opacity but does not choose geometry.
         // The native owner overrides opacity; pass.alpha is that resulting factor.
-        const auto layers = renderer_.project(actor, false, context.camera, context.globalRgb,
-                                              pass.sepia, 0, pass.alpha, &state);
+        const auto layers =
+            renderer_.project(actor, false, context.camera, context.globalRgb, pass.sepia, 0,
+                              pass.alpha, &state, nullptr,
+                              actor.pose().art().isBody()
+                                  ? std::optional<BodyAppearance>{{actors.bodyEquipment(pass.slot),
+                                                                   context.bodyPaletteReplacement}}
+                                  : std::nullopt);
         ActorRenderer::paint(result.image, layers);
         result.layers += layers;
     }
@@ -83,7 +88,11 @@ SceneActorFrame SceneActorRenderer::draw(SceneActors &actors,
             context.effects && !next.actor(pass.index)->pose().art().isBody()
                 ? context.effects->processActorImage(pass.index)
                 : context.sepia,
-            shadow ? pass.shadow : 0, pass.alpha, &state, context.effects ? &images : nullptr);
+            shadow ? pass.shadow : 0, pass.alpha, &state, context.effects ? &images : nullptr,
+            next.actor(pass.index)->pose().art().isBody()
+                ? std::optional<BodyAppearance>{{next.bodyEquipment(pass.index),
+                                                 context.bodyPaletteReplacement}}
+                : std::nullopt);
         ActorRenderer::paint(result.image, layers);
         result.layers += layers;
     }

@@ -9,6 +9,7 @@ struct SceneActorRenderContext {
     RenderColor environment;
     bool sepia = false;
     SceneEffects *effects = nullptr;
+    std::optional<quint8> bodyPaletteReplacement;
 };
 struct SceneActorFrame {
     QImage image;

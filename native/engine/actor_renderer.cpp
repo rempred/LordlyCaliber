@@ -1,4 +1,5 @@
 #include "engine/actor_renderer.h"
+#include "game/director/actor_body.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
 #include <QPainter>
@@ -108,25 +109,47 @@ QVector<ActorRasterLayer> ActorRenderer::project(const ActorInstance &actor, boo
                                                  const SceneCamera &camera,
                                                  const std::array<qint16, 3> &globalRgb, bool sepia,
                                                  int shadowIndex, quint8 alpha,
-                                                 ActorRenderState *state, SceneImageCache *images) {
+                                                 ActorRenderState *state, SceneImageCache *images,
+                                                 std::optional<BodyAppearance> appearance) {
     return projectRecord(actor.pose().art(), actor.record(), shadow, camera, globalRgb, sepia,
-                         shadowIndex, alpha, state, images);
+                         shadowIndex, alpha, state, images, appearance);
 }
 QVector<ActorRasterLayer>
 ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool shadow,
                              const SceneCamera &camera, const std::array<qint16, 3> &globalRgb,
                              bool sepia, int shadowIndex, quint8 alpha, ActorRenderState *state,
-                             SceneImageCache *images) {
+                             SceneImageCache *images, std::optional<BodyAppearance> appearance) {
     if (record.size() != 336)
         throw Error("Actor rendering requires a complete record");
     const auto token = qint32(u32(record, 0xf8));
     const auto variant = art.isBody() ? art.bodyVariant() : u8(record, 0x146);
+    if (art.isBody() && !appearance) {
+        if (!classes_)
+            classes_ = ClassData::load(rom_);
+        QByteArray classes;
+        for (const auto &entry : classes_->entries())
+            classes += entry.record;
+        const auto items = rom_.bytes().mid(0x62300, 278 * 32);
+        uint16_t carried[4], equipment;
+        if (lordly_body_appearance(reinterpret_cast<const uint8_t *>(classes.constData()),
+                                   int(classes_->entries().size()), art.sourceClass(),
+                                   art.ownerClass(), carried) ||
+            lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278,
+                                  carried, &equipment))
+            throw Error("Standalone body equipment exceeds the current tables");
+        appearance = BodyAppearance{equipment, {}};
+    }
     QString key = QString("%1/%2/%3/%4/%5")
                       .arg(art.descriptorKey())
                       .arg(art.bodyHandle())
                       .arg(token)
                       .arg(variant)
                       .arg(sepia);
+    if (appearance)
+        key += QString("/body/%1/%2/%3")
+                   .arg(appearance->equipment)
+                   .arg(appearance->paletteReplacement ? int(*appearance->paletteReplacement) : -1)
+                   .arg(art.sourceClass());
     QVector<quint8> conversions;
     if (images && !art.isBody()) {
         for (const auto &layer : art.layers(token)) {
@@ -139,7 +162,8 @@ ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool
     auto cached = frames_.object(key);
     if (!cached) {
         auto frame = std::make_unique<QVector<ActorFrameLayer>>(
-            art.frame(rom_, token, variant, sepia, conversions));
+            art.isBody() ? art.bodyFrame(rom_, token, *appearance, sepia)
+                         : art.frame(rom_, token, variant, sepia, conversions));
         qsizetype bytes = 0;
         for (const auto &layer : *frame)
             bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;

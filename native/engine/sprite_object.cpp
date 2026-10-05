@@ -147,8 +147,8 @@ SpriteLanes SpriteObject::materialize(int child) const {
     qsizetype retained = 0;
     return materialize(child, visiting, cache, retained);
 }
-SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette,
-                                int sepia) const {
+SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette, int sepia,
+                                bool warmTone) const {
     if (sepia < 0 || sepia > 64)
         throw Error("Sprite image-processing count exceeds its bounded domain");
     const int child = requestedChild < 0 || requestedChild >= children_.size() ? 0 : requestedChild;
@@ -156,7 +156,7 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
     if (lanes.color.isEmpty())
         throw Error("Selected sprite child has no color lane");
     const auto &palette = lanes.palette.isEmpty() ? externalPalette : lanes.palette;
-    if (colorFormat_ == 1 && palette.size() != 512)
+    if (colorFormat_ == 1 && (palette.isEmpty() || palette.size() % 2))
         throw Error("Indexed sprite requires a complete palette");
     RasterImage image{width_, height_, QByteArray(width_ * height_ * 4, 0)};
     QByteArray colorAlpha(width_ * height_, 0);
@@ -167,6 +167,8 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
                 quint32 color = u32(lanes.color, at + x * 4);
                 for (int n = 0; n < sepia; ++n)
                     color = lordly_sepia_rgba32(color);
+                if (warmTone)
+                    color = lordly_warm_rgba32(color);
                 for (int c = 0; c < 4; ++c)
                     put8(image.rgba, out + c, quint8(color >> (24 - c * 8)));
             } else {
@@ -174,6 +176,8 @@ SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPa
                                               : u16(lanes.color, at + x * 2);
                 for (int n = 0; n < sepia; ++n)
                     word = lordly_sepia_rgba16(word);
+                if (warmTone)
+                    word = lordly_warm_rgba16(word);
                 put8(image.rgba, out, quint8((((word >> 11) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 1, quint8((((word >> 6) & 31) * 255 + 15) / 31));
                 put8(image.rgba, out + 2, quint8((((word >> 1) & 31) * 255 + 15) / 31));

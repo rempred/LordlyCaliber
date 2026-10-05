@@ -72,6 +72,21 @@ const QByteArray &SceneActors::bodyRow(int identity) const {
         throw Error("Body command requires its caller appearance row");
     return bodyRows_[identity];
 }
+quint16 SceneActors::bodyEquipment(int slot) const {
+    const auto &instance = actor(slot);
+    if (!instance || !instance->pose().art().isBody())
+        throw Error("Equipment appearance requires an occupied body Actor");
+    const auto &row = bodyRow(u8(instance->record(), 0x147));
+    uint16_t carried[4], equipment;
+    for (int i = 0; i < 4; ++i)
+        carried[i] = u16(row, 0x36 + i * 2);
+    const auto items = rom_.bytes().mid(0x62300, 278 * 32);
+    if (items.size() != 278 * 32 ||
+        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, carried,
+                              &equipment))
+        throw Error("Body appearance item exceeds the current item table");
+    return equipment;
+}
 int SceneActors::classification(const QByteArray &record) const {
     const int identity = u8(record, 0x147);
     if (identity == 255)
