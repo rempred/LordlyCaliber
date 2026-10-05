@@ -13,6 +13,67 @@ using namespace lordly;
 class AnimationRoutesTests : public QObject {
     Q_OBJECT
   private slots:
+    void linkedClassInheritance() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            QMap<int, int> owners;
+            for (int source : {10, 25, 123}) {
+                const int id = project.appendClass(source, QString("Linked %1").arg(source));
+                owners[id] = source;
+                QCOMPARE(u8(project.record(Table::Classes, id).bytes, 69), quint8(source));
+            }
+            const int inherited = project.appendClass(165, "Linked descendant");
+            owners[inherited] = 10;
+            QCOMPARE(u8(project.record(Table::Classes, inherited).bytes, 69), quint8(10));
+            // User-selected owner values are inherited as supplied.
+            auto edited = project.record(Table::Classes, 10).bytes; put8(edited, 69, 3);
+            project.replaceBytes(Table::Classes, 10, edited);
+            const int explicitOwner = project.appendClass(10, "Edited owner");
+            QCOMPARE(u8(project.record(Table::Classes, explicitOwner).bytes, 69), quint8(3));
+            const auto check = [&](Project &p) {
+                const auto data = p.bodyAnimationData();
+                for (auto it = owners.cbegin(); it != owners.cend(); ++it) {
+                    const int id = it.key(), owner = it.value();
+                    QCOMPARE(u8(p.record(Table::Classes, id).bytes, 69), quint8(owner));
+                    for (int flags = 0; flags < 4; ++flags)
+                        QCOMPARE(ActorArt::loadBody(p.rom(), id, owner, flags >> 1, flags & 1, data).bodyHandle(),
+                                 data->routes().row(id)[flags]);
+                    QVector<QByteArray> rows(20, QByteArray(248, 0));
+                    put32(rows[3], 0x48, id); put32(rows[3], 0x4c, owner); put16(rows[3], 0x36, 1);
+                    SceneActors scene(p.rom(), 2, 0x3c, {}, data); scene.supplyBodyRows(rows);
+                    for (int slot : {4, 8}) {
+                        QByteArray actor(336, 0);
+                        put32(actor, 0xe4, slot); put32(actor, 0xe8, id); put32(actor, 0xec, owner);
+                        put8(actor, 0x13d, 1);
+                        put8(actor, 0x147, 3); put8(actor, 0x149, slot == 8 ? 1 : 0);
+                        put32(actor, 0x130, 0x3f800000); scene.supplyActor(slot, actor);
+                    }
+                    scene.selectBody({4, id, owner, 40, 0, 0, 0, 0, 0x3c});
+                    QCOMPARE(u16(scene.actor(4)->record(), 0x138), quint16(40));
+                    QCOMPARE(u16(scene.actor(8)->record(), 0x138), quint16(90));
+                    QCOMPARE(scene.bodyRegistrations().size(), 2);
+                }
+            };
+            check(project);
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(rom); restored.applyManifest(Project::readProject(work.filePath("project")));
+            check(restored);
+            const auto built = rebuild(project, tools, work.path());
+            QTemporaryDir candidates(QFileInfo(path).dir().filePath("Test ROMs/native-linked-class-clones-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            auto reopened = Project::fromRom(Rom::open(output)); check(reopened);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            const int later = reopened.appendClass(inherited, "Later descendant");
+            QCOMPARE(u8(reopened.record(Table::Classes, later).bytes, 69), quint8(10));
+            qInfo().noquote() << "Linked class inheritance candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void inheritanceAndLegacyProjects() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

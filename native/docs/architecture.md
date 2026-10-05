@@ -1,5 +1,25 @@
 # Native Lordly Caliber
 
+## Linked class inheritance
+
+Creating a class from linked templates 10/25/123 now preserves the template owner
+in full-record byte 69 when the template stored zero. Zero would otherwise make
+the new character's secondary class use its new ID, losing linked-body behavior.
+The existing class-copy match then selects the new class's independent data and
+animation routes while retaining the linked owner. Explicit nonzero edits remain
+unchanged; further clones inherit the established value. This uses existing class
+data and adds no new game code. The persistent-to-battle importer at z64 20D870
+copies character primary/secondary class bytes to appearance row +48/+4C.
+
+`animation_routes_tests linkedClassInheritance` passed in 12501 ms for all three
+families, a second-generation clone, an explicit changed owner, all four body
+routes, primary/secondary setup at poses 40/90, folder save/load, export/reopen
+and unchanged export. Candidate: parent `Test ROMs/native-linked-class-clones-oRWQIM/`.
+The existing `inheritanceAndLegacyProjects` case also passed. The first new test
+fixture incorrectly marked class Actors as ordinary art; setting their real body
+decoder mode corrected the fixture. Full and targeted builds pass. These checks
+do not complete the separate fixed-ID equipment/image/constructor policy audit.
+
 ## Private attack leader slots
 
 The complete leader normalizer now rebuilds from `game/art/leader-slots.c` in

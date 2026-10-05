@@ -311,6 +311,11 @@ int ClassData::append(int templateId, const QByteArray &encodedName) {
         throw Error("Class IDs exceed the one-byte record format");
     auto entry = entries_[templateId];
     entry.name = encodedName;
+    // Zero means that a character's secondary class defaults to its own ID.
+    // A new ID must retain the linked template's owner for body construction;
+    // the class-copy match still selects the new class's independent records.
+    if (!u8(entry.record, 69) && (templateId == 10 || templateId == 25 || templateId == 123))
+        put8(entry.record, 69, quint8(templateId));
     // A new ordinary class does not inherit a unique character's alias rule.
     entry.namedAlias = 0;
     validate(entry);
