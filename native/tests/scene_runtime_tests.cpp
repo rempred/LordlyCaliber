@@ -25,6 +25,53 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void rewardPanelAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("reward-panel-mips.cjs"), path, work.filePath("reward.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("reward.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QCOMPARE(cases.size(), 32);
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            ScenePanels panels(rom);
+            QVERIFY_THROWS_EXCEPTION(Error, panels.create(6, 34, 320, 240));
+            QVERIFY(panels.empty());
+            panels.supplyReward(quint16(row["item"].toInt()));
+            panels.create(6, 34, 320, 240);
+            QCOMPARE(panels.ownerData(6).toHex(), row["data"].toString().toLatin1());
+            int tick = 0;
+            for (const auto &s : row["states"].toArray()) {
+                const auto state = s.toObject();
+                if (tick++)
+                    panels.advance(quint16(state["input"].toInt()), 0);
+                QCOMPARE(panels.query(6), state["status"].toInt());
+                QCOMPARE(panels.empty(), state["record"].isNull());
+                if (!panels.empty()) {
+                    auto record = panels.entities().first().record;
+                    for (int at : {0, 4, 0xd0})
+                        put32(record, at, 0);
+                    QCOMPARE(record.toHex(), state["record"].toString().toLatin1());
+                    QCOMPARE(panels.entities().first().payload.toHex(),
+                             state["payload"].toString().toLatin1());
+                }
+                QVector<int> sounds;
+                for (const auto &a : state["audio"].toArray())
+                    sounds << a.toInt();
+                QCOMPARE(panels.audioRequests(), sounds);
+            }
+        }
+        QCOMPARE(ScenePanels::rewardName(rom, 1), QString("Short Sword"));
+        QCOMPARE(ScenePanels::rewardName(rom, 0x201), QString("Heal Leaf"));
+    }
     void audioRequestsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

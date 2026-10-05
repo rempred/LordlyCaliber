@@ -1,4 +1,5 @@
 #include "engine/scene_panels.h"
+#include "engine/text.h"
 #include "game/director/panel_animation.h"
 #include <QPainter>
 #include <algorithm>
@@ -26,6 +27,33 @@ QString label(const QByteArray &b) {
     return out;
 }
 } // namespace
+QString ScenePanels::rewardName(const Rom &rom, quint16 item) {
+    rom.requireSupported();
+    if (rom.revision())
+        throw Error("Reward names currently require US revision zero");
+    const bool consumable = (item & 0x200) != 0;
+    const int index = item & 0x1ff;
+    if ((item & ~0x3ff) || index >= (consumable ? 45 : 278))
+        throw Error("Reward item is outside the current native table");
+    const quint32 pointer =
+        u32(rom.bytes(), (consumable ? 0x645cc : 0x6230c) + index * (consumable ? 12 : 32));
+    // Qualified resident item-name storage, not the early-boot ROM/RAM mapping.
+    const quint32 lower = consumable ? 0x80190380U : 0x8018b4b0U;
+    const quint32 upper = consumable ? 0x801906c4U : 0x8018c40cU;
+    if ((pointer < lower || pointer >= upper) && (consumable || pointer != 0x8019037cU))
+        throw Error("Reward name uses an unsupported relocated string pool");
+    const qsizetype at = 0x613b0 + (pointer - 0x8018b4b0U);
+    const auto end = rom.bytes().indexOf('\0', at);
+    if (end < at || end - at > 96)
+        throw Error("Reward name has no bounded terminator");
+    return decodeText(rom.bytes().mid(at, end - at));
+}
+const QByteArray &ScenePanels::ownerData(int slot) const {
+    checkSlot(slot);
+    if (!owners_[slot])
+        throw Error("Panel owner is absent");
+    return owners_[slot]->data;
+}
 QByteArray ScenePanels::resource(quint32 key) const {
     if (!key || (key & 1) || key >= 0x10000000)
         throw Error("Invalid panel resource key");
@@ -85,13 +113,39 @@ QByteArray ScenePanels::textPayload(quint32 selector, QByteArray &entity) const 
 }
 void ScenePanels::create(int slot, int preset, int width, int height) {
     checkSlot(slot);
-    if (preset != 33 && preset != 3 && preset != 1)
+    if (preset != 33 && preset != 3 && preset != 1 && preset != 34)
         throw Error("This panel preset is not implemented");
+    if (preset == 34 && !reward_)
+        throw Error("Reward panel requires the parent event's item selection");
     if (width < 1 || height < 1 || width > 2048 || height > 2048)
         throw Error("Invalid panel image dimensions");
     rom_.requireSupported();
     if (rom_.revision())
         throw Error("Map panels currently require US revision zero");
+    if (preset == 34) {
+        Entity e;
+        e.identity = nextIdentity_;
+        e.record = QByteArray(232, 0);
+        const int32_t initial[4]{100, 155, 220, 155}, target[4]{100, 130, 220, 155};
+        lordly_panel_initialize(bytes(e.record), 0x100, 0x802364cc, initial, target);
+        e.reward = reward_;
+        e.payload = QByteArray(0x604, 0);
+        put8(e.payload, 0x5f3, 23);
+        put8(e.payload, 0x5fe, 2);
+        put32(e.payload, 0x600, 0x100);
+        for (int at : {0x5f4, 0x5f5, 0x5f6})
+            put8(e.payload, at, 1);
+        put8(e.record, 0x25, 1);
+        QByteArray data(56, 0);
+        put16(data, 0, *reward_);
+        put16(data, 2, 0xffff);
+        rewardName(rom_, *reward_);
+        release(slot);
+        owners_[slot] = Owner{0x100, e.identity, 0, std::move(data)};
+        entities_.push_back(std::move(e));
+        ++nextIdentity_;
+        return;
+    }
     Entity e;
     e.identity = nextIdentity_;
     e.record = QByteArray(232, 0);
@@ -179,7 +233,16 @@ void ScenePanels::advance(quint16 action, quint16 direction) {
     auto &status = (*owner)->status;
     status = -1;
     const int state = u8(parent.payload, 0x5f0);
-    if ((u32(parent.payload, 0x600) & 255) == 33) {
+    if (parent.reward) {
+        if (!state && !u16(parent.record, 0x28) && (action & 0xc000)) {
+            audio_ << 0x19;
+            put8(parent.payload, 0x5f0, 3);
+            status = -2;
+        } else if (state == 3) {
+            lordly_panel_close(bytes(parent.record));
+            put8(parent.payload, 0x5f0, 4);
+        }
+    } else if ((u32(parent.payload, 0x600) & 255) == 33) {
         if (!state && u16(parent.record, 0x18) == 255 && (action & 0xff3f)) {
             audio_ << 3;
             put8(parent.payload, 0x5f0, 3);
@@ -251,7 +314,10 @@ QImage ScenePanels::render() const {
         auto drawLine = [&](const QByteArray &text, int x, int y) {
             painter.drawText(QPoint(x, y + 10), label(text));
         };
-        if (e.parent) {
+        if (e.reward) {
+            painter.drawText(QRect(left + 5, top + 3, right - left - 10, bottom - top - 6),
+                             Qt::AlignCenter, rewardName(rom_, *e.reward));
+        } else if (e.parent) {
             for (int i = 0; i < 2; ++i) {
                 const int at = 0x66710 + (i ? 4 : 0);
                 int end = at;

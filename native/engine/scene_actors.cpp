@@ -228,6 +228,18 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x13) {
+        if (args.size() != 1)
+            throw Error("Actor release requires one selector");
+        // ROM 2A05EC: the exact full-word -1 selects all Actors. Parallel jobs
+        // have independent lifetimes and are deliberately retained.
+        if (args[0] == 0xffffffffU) {
+            for (auto &actor : actors_)
+                actor.reset();
+        } else
+            vacate(qint32(args[0]));
+        return true;
+    }
     if (opcode == 0x45 || opcode == 0xab) {
         if (args.size() != 2)
             throw Error("Actor roster materialization requires two operands");

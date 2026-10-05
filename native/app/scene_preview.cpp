@@ -85,6 +85,26 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     }
     dialogueNamesUi_->hide();
     layout->addWidget(dialogueNamesUi_);
+    rewardUi_ = new QWidget;
+    auto rewardRow = new QHBoxLayout(rewardUi_);
+    rewardRow->setContentsMargins(0, 0, 0, 0);
+    rewardRow->addWidget(new QLabel("Preview reward"));
+    reward_ = new QComboBox;
+    reward_->setObjectName("sceneReward");
+    reward_->setToolTip(
+        "Declared sample reward; the game supplies this item from the parent event.");
+    for (int i = 1; i < 278; ++i)
+        reward_->addItem(ScenePanels::rewardName(rom_, quint16(i)), i);
+    for (int i = 1; i < 45; ++i)
+        reward_->addItem(ScenePanels::rewardName(rom_, quint16(0x200 | i)), 0x200 | i);
+    rewardRow->addWidget(reward_, 1);
+    rewardUi_->hide();
+    layout->addWidget(rewardUi_);
+    connect(reward_, &QComboBox::currentIndexChanged, this, [this] {
+        inputHistory_.clear();
+        pressedHistory_.clear();
+        restart();
+    });
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setCheckable(true);
@@ -379,6 +399,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     storyCastEnabled_ = false;
     storyCastUi_->hide();
     dialogueNamesUi_->hide();
+    rewardUi_->hide();
     try {
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
@@ -392,6 +413,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         const auto &commands = programs.program(id).commands;
         dialogueNamesUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(),
                                                  [](const auto &c) { return c.opcode == 0xbf; }));
+        rewardUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
+            return c.opcode == 0x62 && c.operands.size() == 2 && c.operands[1] == 34;
+        }));
         {
             const QSignalBlocker block(launchImage_);
             launchImage_->clear();
@@ -487,6 +511,7 @@ void ScenePreview::restart() {
         // Silent preview has no resident voices and starts on route zero with unity buses.
         // Preserve typed requests for an eventual backend; never invent voice lifetimes.
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767}));
+        playback.panels().supplyReward(quint16(reward_->currentData().toUInt()));
         const auto launch =
             SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
         if (launch.resource_class == 4) {

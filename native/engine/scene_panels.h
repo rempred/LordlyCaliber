@@ -12,9 +12,16 @@ class ScenePanels {
     struct Entity {
         quint64 identity = 0, parent = 0;
         QByteArray record, payload;
+        std::optional<quint16> reward;
     };
     explicit ScenePanels(Rom rom) : rom_(std::move(rom)) {}
     void create(int slot, int preset, int width, int height);
+    static QString rewardName(const Rom &, quint16 item);
+    void supplyReward(quint16 item) {
+        rewardName(rom_, item);
+        reward_ = item;
+    }
+    const QByteArray &ownerData(int slot) const;
     void release(int slot);
     int query(int slot) const;
     void advance(quint16 action, quint16 direction);
@@ -35,6 +42,7 @@ class ScenePanels {
         quint32 selector;
         quint64 entity;
         int status = 0;
+        QByteArray data;
     };
     QByteArray resource(quint32 key) const;
     QByteArray textPayload(quint32 selector, QByteArray &entity) const;
@@ -44,5 +52,6 @@ class ScenePanels {
     QVector<Entity> entities_;
     QVector<int> audio_;
     quint64 nextIdentity_ = 1;
+    std::optional<quint16> reward_;
 };
 } // namespace lordly

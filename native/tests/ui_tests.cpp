@@ -266,6 +266,48 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), room);
         QCOMPARE(preview.property("sceneAudioRequests").toULongLong(), qulonglong(2));
     }
+    void storyCompleteReplay() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto scenes = ScenePrograms::load(rom);
+        const auto savedScenes = scenes.json();
+        ScenePreview preview(rom);
+        preview.resize(1250, 950);
+        preview.show();
+        preview.selectScene(scenes, 0x1fa8bf4 - 0x594284, 2);
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QMap<int, QImage> frames;
+        for (int i = 0; i < 5000 && !preview.property("sceneStopped").toBool(); ++i) {
+            if (i % 45 == 0 && confirm->isVisible())
+                confirm->click();
+            else
+                step->click();
+            if (i % 500 == 499)
+                frames.insert(preview.property("sceneTick").toInt(), preview.renderedFrame());
+        }
+        QVERIFY2(status->text().contains("Scene released."), qPrintable(status->text()));
+        const int end = preview.property("sceneTick").toInt();
+        QVERIFY(end > 250);
+        const auto finalFrame = preview.renderedFrame();
+        const auto audioCount = preview.property("sceneAudioRequests").toULongLong();
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        for (auto it = frames.cbegin(); it != frames.cend(); ++it) {
+            position->setValue(it.key());
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), it.key(), 20000);
+            QCOMPARE(preview.renderedFrame(), it.value());
+        }
+        position->setValue(end);
+        QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), end, 20000);
+        QCOMPARE(preview.renderedFrame(), finalFrame);
+        QCOMPARE(preview.property("sceneAudioRequests").toULongLong(), audioCount);
+        QCOMPARE(scenes.json(), savedScenes);
+        qInfo() << "Full story scene released at step" << end << "with" << audioCount
+                << "audio requests;" << frames.size() << "replay samples";
+    }
     void sceneDialogueReplay() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -398,7 +440,7 @@ class UiTests : public QObject {
                 break;
             }
         QVERIFY(source);
-        for (quint32 preset : {33U, 3U, 1U}) {
+        for (quint32 preset : {33U, 3U, 1U, 34U}) {
             const auto id =
                 scenes.createScene(QString("Panel %1 replay").arg(preset), source, false);
             QVector<quint32> words{0x80000007U, 47, 0x80000006U, 0,  0x3a, 2, 0,
@@ -417,12 +459,15 @@ class UiTests : public QObject {
             for (int i = 0; i < words.size(); ++i)
                 put32(bytes, i * 4, words[i]);
             scenes.replace(id, bytes);
+            const auto savedScenes = scenes.json();
             ScenePreview preview(rom);
             preview.resize(1200, 800);
             preview.show();
             preview.selectScene(scenes, id, 0);
             auto position = preview.findChild<QSpinBox *>("scenePosition");
             auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+            auto reward = preview.findChild<QComboBox *>("sceneReward");
+            QCOMPARE(reward->isVisible(), preset == 34);
             const auto seek = [&](int tick) {
                 position->setValue(tick);
                 QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
@@ -437,7 +482,7 @@ class UiTests : public QObject {
             const auto ready = preview.renderedFrame();
             QVERIFY(ready != opening);
             QVERIFY(status->text().contains("approximate frame"));
-            if (preset != 33) {
+            if (preset == 3 || preset == 1) {
                 preview.findChild<QPushButton *>("panelDown")->click();
                 QCOMPARE(preview.property("sceneTick").toInt(), 21);
                 QVERIFY(preview.renderedFrame() != ready);
@@ -466,6 +511,25 @@ class UiTests : public QObject {
             preview.findChild<QPushButton *>("panelCancel")->click();
             seek(40);
             QCOMPARE(preview.renderedFrame(), before);
+            if (preset == 34) {
+                reward->setCurrentIndex(reward->findData(0x201));
+                QCOMPARE(preview.property("sceneTick").toInt(), 0);
+                seek(20);
+                const auto changed = preview.renderedFrame();
+                QVERIFY(changed != ready);
+                QVERIFY(preview.grab().save("scene-reward-panel.png"));
+                seek(124);
+                QCOMPARE(preview.renderedFrame(), changed); // Changing reward clears prior input.
+                seek(20);
+                QCOMPARE(preview.renderedFrame(), changed);
+                preview.findChild<QPushButton *>("panelConfirm")->click();
+                seek(40);
+                QCOMPARE(preview.renderedFrame(), before);
+                preview.findChild<QPushButton *>("sceneRestart")->click();
+                seek(40);
+                QCOMPARE(preview.renderedFrame(), before);
+            }
+            QCOMPARE(scenes.json(), savedScenes);
         }
     }
     void irisPreviewSeek() {

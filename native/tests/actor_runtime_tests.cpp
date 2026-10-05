@@ -325,6 +325,40 @@ class ActorRuntimeTests : public QObject {
         QVERIFY(!scene.motion(0).present);
         QVERIFY(!scene.service(0xdead, {}, value));
     }
+    void scriptActorRelease() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        for (int mode : {0, 1, 2}) {
+            SceneActors scene(rom, mode, 0);
+            int result = 17;
+            for (int slot : {0, 14, 27}) {
+                QVERIFY(scene.service(0x14, {quint32(slot), 30, 1, 2, 0, 0, 0, 0, 0}, result));
+                scene.supplyMotion(slot, {2, 0, 0, 3, 0, 0, 1});
+            }
+            const auto survivor = scene.actor(14)->record();
+            for (quint32 invalid : {28U, 0x10000U, 0xfffffffeU}) {
+                QVERIFY_THROWS_EXCEPTION(Error, scene.service(0x13, {invalid}, result));
+                QVERIFY(scene.actor(0) && scene.actor(14) && scene.actor(27));
+            }
+            QVERIFY_THROWS_EXCEPTION(Error, scene.service(0x13, {}, result));
+            for (quint32 slot : {0U, 0U, 27U, 1U}) {
+                QVERIFY(scene.service(0x13, {slot}, result));
+                QVERIFY(!scene.actor(slot));
+                QCOMPARE(scene.actor(14)->record(), survivor);
+            }
+            QVERIFY(scene.service(0x13, {0xffffffffU}, result));
+            for (int slot = 0; slot < 28; ++slot)
+                QVERIFY(!scene.actor(slot));
+            for (int slot : {0, 14, 27}) {
+                QCOMPARE(scene.motion(slot).remaining, 3);
+                QCOMPARE(scene.motion(slot).vx, 2.f);
+                QCOMPARE(scene.motion(slot).present, 1);
+            }
+            QCOMPARE(result, 17);
+        }
+    }
     void recordsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

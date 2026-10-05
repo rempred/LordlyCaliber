@@ -104,6 +104,8 @@ class ScenePreview : public QWidget {
     std::array<QComboBox *, 5> storyCast_{};
     bool storyCastEnabled_ = false;
     QWidget *dialogueNamesUi_;
+    QWidget *rewardUi_;
+    QComboBox *reward_;
     std::array<QLineEdit *, 4> dialogueNames_{};
 };
 } // namespace lordly

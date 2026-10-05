@@ -128,6 +128,9 @@ class ScenePlayback {
     const ScenePanels &panels() const {
         return panels_;
     }
+    ScenePanels &panels() {
+        return panels_;
+    }
     void supplyAudio(SceneAudio audio) {
         audio_ = std::move(audio);
     }

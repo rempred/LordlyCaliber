@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Reward panels and complete dynamic story playback
+
+Preset34 now takes an explicit parent-event reward item, preserves the native
+56-byte owner and604-byte payload, and executes opening, A/B dismissal, query
+and audio-request behavior. The preview selects equipment or consumables from
+current-ROM names without changing the scene. Frame/glyph drawing is approximate;
+the reward icon is not yet drawn. Item-name pointers use the qualified resident
+pool mapping, not the early-boot address delta.
+
+scene_runtime_tests rewardPanelAgainstMips passed255ms:32 original constructor/
+controller cases and1408 full entity/payload/status/audio snapshots. Resource
+artwork decoding is an opaque handle in this check. Build37737 ui_tests
+panelPreviewSeek storyOpeningDialogue passed7606ms, including reward changes,
+input-history reset, dismissal, checkpoint replay and unchanged project data.
+The reward screenshot was inspected.
+
+The full unchanged01FA8BF4 integration initially stopped at word580 because Actor
+release13 lacked dispatch. It now calls the existing record-only vacancy path,
+with exact full-word -1 for all28 slots and bounded individual selectors. Parallel
+jobs retain their own lifetimes, matching original ROM2A05EC..2A0680 (qualified
+live placement80230DBC..80230E50). Build15309 actor_runtime_tests scriptActorRelease
+passed94ms: occupied/empty/all slots, three modes, invalid-selector preservation,
+and retained motion jobs. ui_tests storyCompleteReplay passed10145ms: release at
+step1349, three audio requests, two intermediate checkpoint replay samples and
+identical final frame/request count. This is deterministic desktop integration,
+not a claim of full-game timing, audio synthesis or pixel-identical rendering.
+
 ## Scene audio requests
 
 SceneAudio adapts ROM28308C..28364C into portable C with a typed downstream sink.
