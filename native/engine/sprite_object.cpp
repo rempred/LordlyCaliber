@@ -147,6 +147,85 @@ SpriteLanes SpriteObject::materialize(int child) const {
     qsizetype retained = 0;
     return materialize(child, visiting, cache, retained);
 }
+SpritePixels SpriteObject::pixels(int child) const {
+    const auto lanes = materialize(child);
+    if (lanes.color.isEmpty())
+        throw Error("Selected sprite child has no color lane");
+    const int bytes = colorFormat_ == 1 ? 1 : colorFormat_ == 2 ? 2 : 4;
+    SpritePixels result;
+    result.color.reserve(width_ * height_ * bytes);
+    if (!lanes.alpha.isEmpty())
+        result.alpha.reserve(width_ * height_);
+    for (int y = 0; y < height_; ++y) {
+        result.color += lanes.color.mid(y * colorStride_, width_ * bytes);
+        if (!lanes.alpha.isEmpty())
+            for (int x = 0; x < width_; ++x) {
+                const auto value = u8(lanes.alpha, y * alphaStride_ + (alphaFormat_ ? x : x / 2));
+                result.alpha += char(alphaFormat_ ? value : (x & 1 ? value & 15 : value >> 4));
+            }
+    }
+    return result;
+}
+QByteArray SpriteObject::rebuild(const QMap<int, SpritePixels> &edits) const {
+    if (edits.isEmpty())
+        return source_;
+    QVector<bool> visiting(children_.size(), false);
+    QVector<std::optional<SpriteLanes>> cache(children_.size());
+    qsizetype retained = 0;
+    QVector<SpriteLanes> targets;
+    for (int child = 0; child < children_.size(); ++child)
+        targets << materialize(child, visiting, cache, retained);
+    const int bytes = colorFormat_ == 1 ? 1 : colorFormat_ == 2 ? 2 : 4;
+    for (auto it = edits.cbegin(); it != edits.cend(); ++it) {
+        if (it.key() < 0 || it.key() >= children_.size())
+            throw Error("Edited sprite child is outside its container");
+        auto &target = targets[it.key()];
+        if (target.color.isEmpty() || it->color.size() != width_ * height_ * bytes ||
+            it->alpha.size() != (target.alpha.isEmpty() ? 0 : width_ * height_))
+            throw Error("Edited sprite pixels do not match their native lanes");
+        for (int y = 0; y < height_; ++y) {
+            target.color.replace(y * colorStride_, width_ * bytes,
+                                 it->color.mid(y * width_ * bytes, width_ * bytes));
+            if (!target.alpha.isEmpty())
+                for (int x = 0; x < width_; ++x) {
+                    const auto value = u8(it->alpha, y * width_ + x);
+                    const int at = y * alphaStride_ + (alphaFormat_ ? x : x / 2);
+                    if (!alphaFormat_ && value > 15)
+                        throw Error("Sprite I4 alpha exceeds 15");
+                    put8(target.alpha, at,
+                         alphaFormat_
+                             ? value
+                             : quint8(x & 1 ? (u8(target.alpha, at) & 0xf0) | value
+                                            : (u8(target.alpha, at) & 0x0f) | (value << 4)));
+                }
+        }
+    }
+    auto output = source_;
+    for (int i = 0; i < children_.size(); ++i) {
+        const auto &child = children_[i];
+        const auto &target = targets[i], &base = targets[child.discriminator];
+        auto write = [&](qsizetype at, const QByteArray &lane, const QByteArray &baseLane,
+                         int format) {
+            if (at < 0)
+                return;
+            const auto encoded = child.discriminator == i || (child.flags & 8)
+                                     ? lane
+                                     : combine(baseLane, lane, format);
+            output.replace(at, encoded.size(), encoded);
+        };
+        write(child.colorOffset, target.color, base.color, colorFormat_);
+        write(child.alphaOffset, target.alpha, base.alpha, alphaFormat_);
+        write(child.paletteOffset, target.palette, base.palette, 2);
+    }
+    const auto reopened = decode(output);
+    for (int i = 0; i < children_.size(); ++i) {
+        const auto actual = reopened.materialize(i);
+        if (actual.color != targets[i].color || actual.alpha != targets[i].alpha ||
+            actual.palette != targets[i].palette)
+            throw Error("Sprite delta rebuild changed a materialized child");
+    }
+    return output;
+}
 SpriteFrame SpriteObject::frame(int requestedChild, const QByteArray &externalPalette, int sepia,
                                 bool warmTone) const {
     if (sepia < 0 || sepia > 64)

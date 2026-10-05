@@ -852,6 +852,14 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
         result.report << "Compiled all six Army/formation atlases and retained shared front/back resource operands";
     }
+    if (p.combatArtwork() && p.combatArtwork()->modified()) {
+        auto resources = p.combatArtwork()->decodedResources();
+        int ordinal = 0;
+        for (auto it = resources.begin(); it != resources.end(); ++it)
+            it.value() = compiler.compileData(it.value(), directory, QString("combat_art_%1").arg(ordinal++));
+        result.image = p.combatArtwork()->rebuild(Rom::fromBytes(result.image), resources);
+        result.report << QString("Compiled %1 combat artwork resources and preserved descriptor-local sharing").arg(resources.size());
+    }
     rebuildChaosCounter(p, compiler, directory, result);
     rebuildDisplayTools(p, compiler, directory, result);
     rebuildHighAttack(p, compiler, directory, result);

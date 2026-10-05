@@ -1,8 +1,14 @@
 #pragma once
 #include "engine/image.h"
+#include <QMap>
 #include <QVector>
 #include <optional>
 namespace lordly {
+// Visible pixels retain native channel values; I4 alpha is 0..15, I8 is 0..255.
+struct SpritePixels {
+    QByteArray color, alpha;
+    bool operator==(const SpritePixels &) const = default;
+};
 struct SpriteLanes {
     QByteArray color, alpha, palette;
 };
@@ -44,6 +50,8 @@ class SpriteObject {
         return children_;
     }
     SpriteLanes materialize(int child) const;
+    SpritePixels pixels(int child) const;
+    QByteArray rebuild(const QMap<int, SpritePixels> &edits) const;
     SpriteFrame frame(int requestedChild, const QByteArray &externalPalette = {}, int sepia = 0,
                       bool warmTone = false) const;
 

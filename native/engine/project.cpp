@@ -565,6 +565,18 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
         throw Error("Invalid description record");
     texts_[kind].entries[id].bytes = bytes;
 }
+void Project::loadCombatArtwork() {
+    if (!combat_) combat_ = CombatArtwork::load(rom_);
+}
+void Project::setCombatArtwork(const QJsonObject &value) {
+    loadCombatArtwork(); combat_->apply(value);
+}
+void Project::importLegacyCombatArtwork(const QJsonObject &object) {
+    const auto art = object["patches"].toObject().value("art");
+    if (art.isNull() || art.isUndefined()) return;
+    if (!art.isObject()) throw Error("Invalid imported art");
+    if (art.toObject().contains("animations")) {loadCombatArtwork(); combat_->importLegacy(art.toObject());}
+}
 void Project::loadArmyArtwork() {
     if(!army_)army_=ArmyArtwork::load(rom_);
 }
@@ -637,6 +649,9 @@ QJsonObject Project::manifest() const {
     if(army_ && (army_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("armySprites")))
         result["armyArtwork"]=army_->json();
     else result.remove("armyArtwork");
+    if (combat_ && (combat_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("animations")))
+        result["combatArtwork"] = combat_->json();
+    else result.remove("combatArtwork");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -899,6 +914,10 @@ void Project::applyManifest(const QJsonObject &object) {
         if(!object["armyArtwork"].isObject())throw Error("Invalid saved Army artwork");
         candidate.setArmyArtwork(object["armyArtwork"].toObject());
     } else candidate.importLegacyArmyArtwork(candidate.legacy_);
+    if (object.contains("combatArtwork")) {
+        if (!object["combatArtwork"].isObject()) throw Error("Invalid saved combat artwork");
+        candidate.setCombatArtwork(object["combatArtwork"].toObject());
+    } else candidate.importLegacyCombatArtwork(candidate.legacy_);
     const auto spriteLibrary = object.contains("spriteLibrary") ? object["spriteLibrary"] :
         candidate.legacy_["patches"].toObject().value("spriteLibrary");
     if (!spriteLibrary.isUndefined() && !spriteLibrary.isNull()) {
@@ -1278,6 +1297,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyIconArtwork(object);
     candidate.importLegacyAvatarArtwork(object);
     candidate.importLegacyArmyArtwork(object);
+    candidate.importLegacyCombatArtwork(object);
     if (patch.contains("spriteLibrary") && !patch["spriteLibrary"].isNull()) {
         if (!patch["spriteLibrary"].isObject()) throw Error("Invalid imported sprite library");
         candidate.sprites_.merge(SpriteLibrary::fromJson(patch["spriteLibrary"].toObject()));
@@ -1367,10 +1387,10 @@ QStringList Project::pendingLegacySections() const {
     for (auto it = patches.begin(); it != patches.end(); ++it) {
         if (it.key() == "spriteLibrary")
             continue;
-        if(it.key()=="art" && (icons_ || avatars_ || army_)) {
+        if(it.key()=="art" && (icons_ || avatars_ || army_ || combat_)) {
             const auto sections=it.value().toObject();
             for(auto section=sections.begin();section!=sections.end();++section)
-                if(section.key()!="schemaVersion" && !(section.key()=="icons" && icons_) && !(section.key()=="avatars" && avatars_) && !(section.key()=="armySprites" && army_) && changed(section.value()))
+                if(section.key()!="schemaVersion" && !(section.key()=="icons" && icons_) && !(section.key()=="avatars" && avatars_) && !(section.key()=="armySprites" && army_) && !(section.key()=="animations" && combat_) && changed(section.value()))
                     pending << "art."+section.key();
             continue;
         }
