@@ -23,6 +23,78 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageMotionAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work; QProcess reference;
+        reference.start("node", {QFINDTESTDATA("image-motion-mips.cjs"),path,work.filePath("motion.json")});
+        QVERIFY(reference.waitForFinished(60000)); QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("motion.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data=QJsonDocument::fromJson(file.readAll()).object();
+        const auto rom=Rom::open(path);
+        auto bytes=[](const QJsonObject &row,const char *key) { return QByteArray::fromHex(row[key].toString().toLatin1()); };
+        auto compare=[&](const SceneImageMotion &motion,const QByteArray &context,const QByteArray &channel,const QJsonObject &row) {
+            QCOMPARE(motion.record(),bytes(row,"job")); QCOMPARE(context,bytes(row,"context")); QCOMPARE(channel,bytes(row,"channel"));
+            QCOMPARE(int(motion.active()),row["query"].toInt());
+        };
+        QCOMPARE(data["rows"].toArray().size(),288);
+        int updates=0;
+        for (const auto &value:data["rows"].toArray()) {
+            const auto row=value.toObject(),initial=row["initial"].toObject();
+            auto context=bytes(initial,"context"),channel=bytes(initial,"channel"); SceneImageMotion motion(rom);
+            for (const auto &step:row["steps"].toArray()) {
+                const auto entry=step.toObject();
+                if (entry.contains("start")) {
+                    QVector<quint32> args;for(const auto &a:entry["start"].toArray())args<<quint32(a.toInteger());
+                    motion.start(args,context,channel);
+                } else { motion.advance(context,channel); ++updates; }
+                compare(motion,context,channel,entry["after"].toObject());
+            }
+        }
+        QCOMPARE(data["boundaries"].toArray().size(),5);
+        for(const auto &value:data["boundaries"].toArray()) {
+            const auto row=value.toObject(),initial=row["initial"].toObject();
+            auto context=bytes(initial,"context"),channel=bytes(initial,"channel");SceneImageMotion motion(rom);
+            motion.supplyRecord(bytes(initial,"job"));
+            for(const auto &step:row["steps"].toArray()) { motion.advance(context,channel);compare(motion,context,channel,step.toObject());++updates; }
+        }
+        SceneImageMotion motion(rom);QByteArray context(0x848,0);SceneTransforms transforms;auto channel=transforms.channel(1);
+        const auto beforeContext=context,beforeChannel=channel;
+        QVERIFY_THROWS_EXCEPTION(Error,motion.start({0,0,0,9,2,1,0},context,channel));
+        QVERIFY(!motion.active());QCOMPARE(context,beforeContext);QCOMPARE(channel,beforeChannel);
+        motion.start({0,0,0,1,1,0,0},context,channel);QVERIFY(motion.active());motion.advance(context,channel);QVERIFY(!motion.active());
+        put8(context,0x83c,3);motion.start({0,0,0,1,1,0,0},context,channel);
+        const auto beforeJob=motion.record(),invalidContext=context;
+        QVERIFY_THROWS_EXCEPTION(Error,motion.advance(context,channel));
+        QCOMPARE(motion.record(),beforeJob);QCOMPARE(context,invalidContext);QCOMPARE(channel,beforeChannel);
+        qInfo()<<updates<<"original image-motion update snapshots agree";
+    }
+    void imageMotionPlayback() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);const auto source=scenes.original().entries().first();
+        const QVector<quint32> words{0x76,0,0,99,12,6,1,3,0,0x80000000U,0x80000001U,0xff000000U|quint32(source.program.resourceClass())};
+        QByteArray script(words.size()*4,0);for(int i=0;i<words.size();++i)put32(script,i*4,words[i]);scenes.replace(source.key,script);
+        ScenePlaybackStart start;start.mode=0;
+        ScenePlayback scene(rom,scenes.runtimeDirectors(),source.selectors.first(),start,SceneCameras::freshModeTwo(rom));
+        const auto empty=[](LordlySceneService){return true;};
+        QCOMPARE(scene.advance(empty),ScenePlayback::Suspended);
+        QVERIFY(scene.reason().contains("launch image"));QVERIFY(!scene.imageMotion().active());
+        QByteArray context(0x848,0);put8(context,0x83c,4);scene.supplyImageView(context);
+        QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);
+        QCOMPARE(u32(scene.transforms().channel(1),0x40),0U); // Constructor does not move.
+        const auto checkpoint=scene;
+        for(int i=1;i<=3;++i) {
+            QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);
+            QCOMPARE(std::bit_cast<float>(u32(scene.transforms().channel(1),0x40)),float(i*4));
+            QVERIFY(scene.imageMotion().active());
+        }
+        QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);QVERIFY(!scene.imageMotion().active());
+        QCOMPARE(std::bit_cast<float>(u32(scene.transforms().channel(1),0x54)),.7f);
+        auto replay=checkpoint;for(int i=0;i<4;++i)QCOMPARE(replay.advance(empty),ScenePlayback::Advanced);
+        QCOMPARE(replay.transforms().channel(1),scene.transforms().channel(1));QCOMPARE(replay.imageView(),scene.imageView());
+        auto alternate=checkpoint;alternate.setAlternate(1);const auto job=alternate.imageMotion().record();
+        QCOMPARE(alternate.advance(empty),ScenePlayback::Advanced);QCOMPARE(alternate.imageMotion().record(),job);
+    }
     void colorCombinerPrograms() {
         const CombineInputs inputs{{10, 20, 30, 160}, {200, 100, 50, 240},
                                    {128, 64, 255, 128}, {0, 0, 0, 1}, {255, 255, 255, 255}};
@@ -634,8 +706,12 @@ class SceneRuntimeTests : public QObject {
             ActorArt art = ActorArt::loadBody(rom, source, source, 0, 0);
             if (!art.bodyVariant())
                 continue;
-            const auto frame = art.frame(rom, 0, art.bodyVariant()), wrong = art.frame(rom, 0, 0);
+            // Final body drawing now includes the original replacement-frame
+            // and equipment rules, independently covered by bodyImagesAgainstMips.
+            const auto frame = art.bodyFrame(rom, 0, art.defaultAppearance(rom));
+            const auto wrong = art.frame(rom, 0, 0);
             if (frame.isEmpty() || wrong.isEmpty() ||
+                frame[0].pixels.requestedChild != art.bodyVariant() ||
                 frame[0].pixels.image.rgba == wrong[0].pixels.image.rgba)
                 continue;
             QByteArray record(336, 0);

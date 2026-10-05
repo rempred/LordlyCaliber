@@ -15,6 +15,7 @@ target_sources(lordly_engine PRIVATE engine/scene_images.cpp engine/raw_image.cp
 target_sources(lordly_engine PRIVATE engine/sprite_object.cpp)
 target_sources(lordly_engine PRIVATE game/images/sepia.c)
 target_sources(lordly_engine PRIVATE engine/actor_art.cpp)
+target_sources(lordly_engine PRIVATE game/director/image_motion.c engine/scene_image_motion.cpp)
 qt_add_resources(lordly_engine scene_images PREFIX "/" BASE . FILES game/director/images.json)
 target_sources(lordly_engine PRIVATE engine/director.cpp engine/scene_programs.cpp engine/scene_events.cpp engine/scene_program_resources.cpp engine/legacy_scene_arena.cpp)
 target_sources(lordly_engine PRIVATE engine/director_session.cpp)

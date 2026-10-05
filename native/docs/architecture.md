@@ -1782,3 +1782,37 @@ A layout-only adjustment made the launch-palette placeholder fully readable;
 build66264 and equipmentBodyPreview passed200ms. The complete equipment inspector
 screenshot was inspected. These controls preview appearance, not persistent
 inventory edits or automatic dynamic-army launch selection.
+
+
+## Scripted oversized-image motion
+
+SceneImageMotion retains the16-byte pan job and updates the explicitly supplied
+848-byte image context and channel-one88-byte transform. The compiled C starter
+adapts accepted2B4D58; update functions reconstruct2B3FE4/2B4FB4. Both start words
+must equal-1 to use current coordinates. The inclusive one-unit deadband produces
+zero rate. Starting/retargeting derives rates without changing current position.
+Zoom reversals retain the original counter complement. Signed interpretation and
+unsigned counter increments preserve word wrap; nonfinite PC arithmetic rejects
+atomically. Native constants0.3/1/0.3/0.7 come from current ROM2B8AC8.
+
+The pan updater advances zoom first, moves exactlyN times for positive durationN,
+and releases on the following update. ScenePlayback handles76/77 and scheduled
+MODE_ZERO_4 before Director dispatch; alternate updates omit it. Image context
+must be supplied by its owner, so an absent launch image suspends76 explicitly.
+Snapshots retain the job, context and channel. This component does not yet create
+or draw the image presentation itself.
+
+After build82953, imageMotionAgainstMips/imageMotionPlayback and existing playback
+composition/suspension checks passed:288 original sequences with retargeting,
+5271 updates and five counter-boundary sequences. Complete records, queries,
+untouched bytes, guarded allocations, missing-context resume, delayed release,
+alternate omission and snapshot replay are checked. Only allocation/free are
+controlled in the original-instruction fixture. The same run found an older body
+variant test expected raw frames; it now includes the independently qualified
+body/equipment substitution. Build39118 and actorRendererUsesBodyVariant passed
+114ms, retaining class19's body variant2 across cached redraw. No production image
+motion code changed after its passing check.
+
+Original code2B3FE4..2B4104 and2B4FB4..2B5044 match retained opening RAM at
+8023F1E4 and802401B4. The constants' whole80-byte blockRAM80243C98..80243CE8
+uniquely matchesROM2B8A98..2B8AE8. Data placement is not inferred from code offsets.

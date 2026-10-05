@@ -5,12 +5,17 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
       rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
-      cameras_(std::move(cameras)), lighting_(start.lighting) {
+      cameras_(std::move(cameras)), imageMotion_(rom), lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);
     schedule_.alternate = start.alternate;
     schedule_.delayed_counter = start.delayedCounter;
     if (start.sceneFlags)
         actors_.supplySceneFlags(*start.sceneFlags);
+}
+void ScenePlayback::supplyImageView(QByteArray context) {
+    if (context.size() != 0x848)
+        throw Error("Image presentation requires its complete context");
+    imageView_ = std::move(context);
 }
 void ScenePlayback::setMode(int mode) {
     if (mode < 0 || mode > 2)
@@ -20,6 +25,16 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x76) {
+        if (!imageView_)
+            throw Error("Scripted image motion requires its launch image presentation");
+        imageMotion_.start(args, *imageView_, transforms_.channel(1));
+        return true;
+    }
+    if (opcode == 0x77) {
+        value = imageMotion_.active();
+        return true;
+    }
     if (opcode == 0x47 && lighting_) {
         if (args.size() != 3)
             throw Error("Scene lighting command is truncated");
@@ -109,7 +124,8 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         return true;
     }
     if (opcode == 0x80) {
-        if (args.size() != 1) throw Error("Actor color selection command is truncated");
+        if (args.size() != 1)
+            throw Error("Actor color selection command is truncated");
         effects_.selectColorActor(args[0], actors_.actorRecords());
         return true;
     }
@@ -144,6 +160,15 @@ bool ScenePlayback::update(LordlySceneService service) {
         return true;
     case LORDLY_SCENE_MODE_ZERO_1:
         transforms_.advance();
+        return true;
+    case LORDLY_SCENE_MODE_ZERO_4:
+        if (imageMotion_.active()) {
+            if (!imageView_)
+                throw Error("Image motion lost its presentation context");
+            auto channel = transforms_.channel(1);
+            imageMotion_.advance(*imageView_, channel);
+            transforms_.supplyChannel(1, channel);
+        }
         return true;
     case LORDLY_SCENE_RESOURCE_CACHE:
         // Recovered func_002071F4 (5ae68e14) only ages/releases native allocation
