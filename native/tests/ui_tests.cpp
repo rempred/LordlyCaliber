@@ -13,6 +13,7 @@
 #include "app/portrait_editor.h"
 #include "app/army_editor.h"
 #include "app/combat_editor.h"
+#include "app/animation_editor.h"
 #include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
@@ -61,6 +62,107 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void classAnimationAssignments() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            const auto original = AnimationRoutes::load(rom);
+            auto project = Project::fromRom(rom);
+            const int id = project.appendClass(2, "Animation test");
+            auto missing = *project.animationRoutes();
+            missing.requireAssignment(id);
+            project.setAnimationRoutes(missing.json());
+            QUndoStack undo;
+            AnimationEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 820);
+            editor.show();
+            editor.selectClass(id);
+            auto sources = editor.findChild<QComboBox *>("animationSource");
+            auto copy = editor.findChild<QPushButton *>("animationCopySource");
+            auto handle = editor.findChild<QSpinBox *>("animationHandle0");
+            auto speed = editor.findChild<QSpinBox *>("animationSpeed0");
+            auto action = editor.findChild<QComboBox *>("animationAction");
+            auto actions = editor.findChild<QTableWidget *>("animationActions");
+            auto add = editor.findChild<QPushButton *>("animationAddAction");
+            auto update = editor.findChild<QPushButton *>("animationUpdateAction");
+            auto remove = editor.findChild<QPushButton *>("animationRemoveAction");
+            auto notice = editor.findChild<QLabel *>("animationNotice");
+            QVERIFY(sources && copy && handle && speed && action && actions && add && update &&
+                    remove && notice);
+            QVERIFY(!handle->isEnabled());
+            QVERIFY(notice->text().contains("needs an animation source"));
+            sources->setEditText("No such animation source");
+            copy->click();
+            QVERIFY(project.animationRoutes()->pending().contains(id));
+            QVERIFY(notice->text().contains("search results"));
+            sources->setCurrentIndex(sources->findData(3));
+            copy->click();
+            QVERIFY(project.animationRoutes()->entry(id) == original.entry(3));
+            QVERIFY(handle->isEnabled());
+            undo.undo();
+            QVERIFY(project.animationRoutes()->pending().contains(id));
+            QVERIFY(!handle->isEnabled());
+            undo.redo();
+            QVERIFY(project.animationRoutes()->entry(id) == original.entry(3));
+            handle->setValue(original.row(2)[0]);
+            speed->setValue(37);
+            QCOMPARE(project.animationRoutes()->row(id)[0], original.row(2)[0]);
+            QCOMPARE(project.animationRoutes()->entry(id).speeds[0], 37);
+            const auto beforeBad = project.animationRoutes()->json();
+            handle->setValue(65535);
+            QCOMPARE(project.animationRoutes()->json(), beforeBad);
+            QVERIFY(notice->text().contains("missing descriptor"));
+            QCOMPARE(handle->value(), int(original.row(2)[0]));
+            action->setCurrentIndex(action->findData(200));
+            for (int mode = 0; mode < 3; ++mode) {
+                auto input = editor.findChild<QSpinBox *>(QString("animationSelector%1").arg(mode));
+                QVERIFY(input);
+                input->setValue(40 + mode);
+            }
+            const int priorRows = actions->rowCount();
+            add->click();
+            QCOMPARE(actions->rowCount(), priorRows + 1);
+            QCOMPARE(project.animationRoutes()->entry(id).selectors.right(5),
+                     QByteArray::fromHex("c828292aff"));
+            const auto added = project.animationRoutes()->json();
+            add->click();
+            QCOMPARE(project.animationRoutes()->json(), added);
+            QVERIFY(notice->text().contains("already has"));
+            editor.findChild<QSpinBox *>("animationSelector1")->setValue(38);
+            update->click();
+            QCOMPARE(project.animationRoutes()->entry(id).selectors.right(5),
+                     QByteArray::fromHex("c828262aff"));
+            remove->click();
+            QCOMPARE(actions->rowCount(), priorRows);
+            undo.undo();
+            QCOMPARE(actions->rowCount(), priorRows + 1);
+            const auto edited = project.animationRoutes()->entry(id);
+            QCOMPARE(edited.kind, original.entry(3).kind);
+            QCOMPARE(edited.attributes, original.entry(3).attributes);
+            QVERIFY(project.animationRoutes()->entry(2) == original.entry(2));
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto reopened = Project::fromRom(rom);
+            reopened.applyManifest(Project::readProject(work.filePath("project")));
+            QVERIFY(reopened.animationRoutes()->entry(id) == edited);
+            const auto built = rebuild(reopened, tools, work.path());
+            QTemporaryDir candidates(
+                QFileInfo(path).dir().filePath("Test ROMs/native-animation-ui-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(reopened, built, output);
+            QVERIFY(AnimationRoutes::load(Rom::open(output)).entry(id) == edited);
+            qInfo().noquote() << "Animation assignment candidate:" << output;
+            QVERIFY(editor.grab().save("animation-assignments-workspace.png"));
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+
     void editedCombatPreviewAndUndo() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
