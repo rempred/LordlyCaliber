@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/artwork_edits.h"
 #include "engine/sprite_object.h"
 #include <QMap>
 #include <QPoint>
@@ -78,10 +79,12 @@ class ActorArt {
     QVector<ActorPoseSelection> selections() const;
     QVector<ActorLayer> layers(int token) const;
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant, int sepia = 0,
-                                   const QVector<quint8> &perLayer = {}) const;
+                                   const QVector<quint8> &perLayer = {},
+                                   const QMap<int, QByteArray> &artwork = {}) const;
     QVector<BodyLayerSelection> bodyLayers(const Rom &, int token, BodyAppearance) const;
     BodyAppearance defaultAppearance(const Rom &) const;
-    QVector<ActorFrameLayer> bodyFrame(const Rom &, int token, BodyAppearance, int sepia = 0) const;
+    QVector<ActorFrameLayer> bodyFrame(const Rom &, int token, BodyAppearance, int sepia = 0,
+                                       const QMap<int, QByteArray> &artwork = {}) const;
 
   private:
     static ActorArt descriptor(const Rom &rom, quint32 key);

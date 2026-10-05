@@ -1,3 +1,4 @@
+#include "engine/actor_art.h"
 #include "engine/combat_artwork.h"
 #include "engine/project.h"
 #include "rebuild/compiler.h"
@@ -35,6 +36,48 @@ class CombatArtworkTests : public QObject {
         return pixels;
     }
   private slots:
+    void composedPreviewPixels() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            auto artwork = CombatArtwork::load(rom);
+            const auto body = ActorArt::loadBody(rom, 1, 1, 0, 0);
+            const auto appearance = body.defaultAppearance(rom);
+            const auto before = body.bodyFrame(rom, 0, appearance);
+            QVERIFY(!before.isEmpty());
+            const auto selected = body.bodyLayers(rom, 0, appearance).first();
+            const auto id = CombatArtwork::identity(body.descriptorKey(), selected.metadata.art);
+            const auto sprite = artwork.original(id);
+            const int child = selected.child < sprite.children().size() ? selected.child : 0;
+            auto pixels = artwork.pixels(id, child);
+            QVERIFY(!pixels.alpha.isEmpty());
+            pixels.alpha.fill(0);
+            artwork.setPixels(id, child, pixels);
+            const auto edits = artwork.previewEdits();
+            QCOMPARE(edits.size(), 1);
+            const auto after =
+                body.bodyFrame(rom, 0, appearance, 0, edits.value(body.descriptorKey()));
+            QCOMPARE(after.size(), before.size());
+            QVERIFY(after.first().pixels.image.rgba != before.first().pixels.image.rgba);
+            for (int i = 0; i < after.size(); ++i) {
+                QCOMPARE(after[i].metadata.art, before[i].metadata.art);
+                QCOMPARE(after[i].metadata.origin, before[i].metadata.origin);
+                if (after[i].metadata.art != selected.metadata.art)
+                    QCOMPARE(after[i].pixels.image.rgba, before[i].pixels.image.rgba);
+            }
+            const auto direct = ActorArt::loadDirect(rom, body.bodyHandle());
+            QCOMPARE(direct.frame(rom, 0, child, 0, {}, edits.value(body.descriptorKey()))
+                         .first()
+                         .pixels.image.rgba,
+                     after.first().pixels.image.rgba);
+            QCOMPARE(body.bodyFrame(rom, 0, appearance).first().pixels.image.rgba,
+                     before.first().pixels.image.rgba);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void browserDeltaPreservation() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

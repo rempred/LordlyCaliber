@@ -236,6 +236,15 @@ void CombatArtwork::apply(const QJsonObject &object) {
     }
     *this = std::move(next);
 }
+ActorArtworkEdits CombatArtwork::previewEdits() const {
+    ActorArtworkEdits result;
+    const auto resources = decodedResources();
+    for (auto it = resources.cbegin(); it != resources.cend(); ++it) {
+        const auto &row = binding(it.key());
+        result[row.descriptorKey][row.art] = it.value();
+    }
+    return result;
+}
 QMap<QString, QByteArray> CombatArtwork::decodedResources() const {
     QMap<QString, QByteArray> result;
     for (auto it = edits_.cbegin(); it != edits_.cend(); ++it)

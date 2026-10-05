@@ -224,14 +224,16 @@ QVector<ActorLayer> ActorArt::layers(int token) const {
     return result;
 }
 QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant, int sepia,
-                                         const QVector<quint8> &perLayer) const {
+                                         const QVector<quint8> &perLayer,
+                                         const QMap<int, QByteArray> &artwork) const {
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     const auto metadata = layers(token);
     if (!perLayer.isEmpty() && perLayer.size() != metadata.size())
         throw Error("Actor processing decisions do not match its layers");
     for (const auto &layer : metadata) {
-        const auto bytes = resource(rom, artKeys_[layer.art], true);
+        const auto bytes = artwork.contains(layer.art) ? artwork.value(layer.art)
+                                                       : resource(rom, artKeys_[layer.art], true);
         SpriteFrame pixels;
         if (u16(bytes, 0) == 0x3634) {
             if (u8(bytes, 2) != 4)
@@ -321,12 +323,15 @@ BodyAppearance ActorArt::defaultAppearance(const Rom &rom) const {
     return {equipment, {}};
 }
 QVector<ActorFrameLayer> ActorArt::bodyFrame(const Rom &rom, int token, BodyAppearance appearance,
-                                             int sepia) const {
+                                             int sepia,
+                                             const QMap<int, QByteArray> &artwork) const {
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     for (const auto &selected : bodyLayers(rom, token, appearance)) {
         const auto &layer = selected.metadata;
-        const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
+        const auto sprite = SpriteObject::decode(artwork.contains(layer.art)
+                                                     ? artwork.value(layer.art)
+                                                     : resource(rom, artKeys_[layer.art], true));
         auto pixels = sprite.frame(selected.child, palettes_.mid(selected.paletteOffset, 512),
                                    sepia, (layer.flags & 0xc0) != 0);
         pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);

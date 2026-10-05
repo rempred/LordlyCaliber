@@ -218,28 +218,40 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         });
     } else
         pages->addTab(commands_, "Source commands");
+    auto actorInspector = new ActorPoseEditor(rom_);
     scenePreview_ = new ScenePreview(rom_);
     if (project_) {
         scenePreview_->setPortraitProvider([project](int id, bool variant) {
             project->loadAvatarArtwork();
             return project->avatarArtwork()->words(project->classData(), id, variant ? 1 : 0);
         });
+        auto artwork = [project] {
+            return project->combatArtwork() ? project->combatArtwork()->previewEdits()
+                                            : ActorArtworkEdits{};
+        };
+        const auto initialArtwork = artwork();
+        scenePreview_->setArtwork(initialArtwork);
+        actorInspector->setArtwork(initialArtwork);
         auto signature = [project] {
             return QJsonObject{{"classes", project->records(Table::Classes).size()},
                                {"art", project->avatarArtwork() ? project->avatarArtwork()->json()
-                                                                : QJsonObject{}}};
+                                                                : QJsonObject{}},
+                               {"combat", project->combatArtwork()
+                                              ? project->combatArtwork()->json()
+                                              : QJsonObject{}}};
         };
         connect(undo_, &QUndoStack::indexChanged, this,
-                [this, signature, previous = signature()]() mutable {
+                [this, signature, artwork, actorInspector, previous = signature()]() mutable {
                     const auto next = signature();
                     if (next != previous) {
                         previous = next;
-                        scenePreview_->refreshPortraits();
+                        const auto edits = artwork();
+                        scenePreview_->setArtwork(edits);
+                        actorInspector->setArtwork(edits);
                     }
                 });
     }
     pages->addTab(scenePreview_, "Scene playback");
-    auto actorInspector = new ActorPoseEditor(rom_);
     pages->addTab(actorInspector, "Pose inspector");
     transformPreview_ = new TransformPreview(rom_);
     pages->addTab(transformPreview_, "Transform preview");

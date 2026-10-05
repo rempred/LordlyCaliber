@@ -21,6 +21,9 @@ struct SceneActorFrame {
 class SceneActorRenderer {
   public:
     explicit SceneActorRenderer(Rom rom) : renderer_(std::move(rom)) {}
+    void setArtwork(const ActorArtworkEdits &edits) {
+        renderer_.setArtwork(edits);
+    }
     // Object callbacks paint into a private frame and retain their material state.
     // They must not mutate external state; an error discards the frame and Actor edits.
     using ObjectRender = std::function<void(int kind, int index, QImage &, ActorRenderState &)>;

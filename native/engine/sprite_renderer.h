@@ -11,6 +11,9 @@ struct SpriteMatrices {
 class SpriteRenderer {
   public:
     explicit SpriteRenderer(Rom rom) : rom_(rom), renderer_(rom) {}
+    void setArtwork(const ActorArtworkEdits &edits) {
+        renderer_.setArtwork(edits);
+    }
     QVector<ActorRasterLayer> project(const SceneSprites &, qint32 pass, quint8 special,
                                       const SceneCamera &, const QByteArray &parent,
                                       const std::array<qint16, 3> &globalRgb,

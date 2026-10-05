@@ -105,12 +105,11 @@ QByteArray StageOrthographic::modelMatrix(const QByteArray &record, const QByteA
         throw Error("Stage model exceeds fixed-point range");
     return QByteArray(reinterpret_cast<const char *>(packed), 64);
 }
-QVector<ActorRasterLayer>
-StageFlatRenderer::project(const StageOrthographic &stage, int pass, const SceneCamera &camera,
-                           const QByteArray &parent, int foregroundSelector,
-                           const std::array<qint16, 3> &globalRgb,
-                           std::optional<RenderColor> transition, bool warmTint,
-                           RenderColor environment, float backgroundZ, float foregroundZ, bool sepia) {
+QVector<ActorRasterLayer> StageFlatRenderer::project(
+    const StageOrthographic &stage, int pass, const SceneCamera &camera, const QByteArray &parent,
+    int foregroundSelector, const std::array<qint16, 3> &globalRgb,
+    std::optional<RenderColor> transition, bool warmTint, RenderColor environment,
+    float backgroundZ, float foregroundZ, bool sepia) {
     if (pass < 0 || pass > 2)
         throw Error("Stage prop pass must be in 0..2");
     QVector<ActorRasterLayer> output;
@@ -122,12 +121,15 @@ StageFlatRenderer::project(const StageOrthographic &stage, int pass, const Scene
             continue;
         const auto &pose = prop.pose.record();
         const int frame = qint16(u16(pose, 10)), variant = u16(prop.header, 6);
-        const auto key =
-            QString("%1/%2/%3/%4").arg(prop.pose.art().descriptorKey()).arg(frame).arg(variant).arg(sepia);
+        const auto key = QString("%1/%2/%3/%4")
+                             .arg(prop.pose.art().descriptorKey())
+                             .arg(frame)
+                             .arg(variant)
+                             .arg(sepia);
         auto frames = frames_.object(key);
         if (!frames) {
-            auto decoded = std::make_unique<QVector<ActorFrameLayer>>(
-                prop.pose.art().frame(rom_, frame, variant, sepia));
+            auto decoded = std::make_unique<QVector<ActorFrameLayer>>(prop.pose.art().frame(
+                rom_, frame, variant, sepia, {}, artwork_.value(prop.pose.art().descriptorKey())));
             qsizetype bytes = 0;
             for (const auto &layer : *decoded)
                 bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;

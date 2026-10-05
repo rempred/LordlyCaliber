@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/artwork_edits.h"
 #include "engine/rom.h"
 #include "engine/sprite_object.h"
 #include <QImage>
@@ -40,6 +41,7 @@ class CombatArtwork {
     void apply(const QJsonObject &);
     void importLegacy(const QJsonObject &);
     QMap<QString, QByteArray> decodedResources() const;
+    ActorArtworkEdits previewEdits() const;
     QByteArray rebuild(const Rom &, const QMap<QString, QByteArray> &) const;
     static QString identity(quint32 descriptor, int art);
 

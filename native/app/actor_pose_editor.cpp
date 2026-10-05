@@ -561,6 +561,13 @@ void ActorPoseEditor::step() {
     }
     draw();
 }
+void ActorPoseEditor::setArtwork(const ActorArtworkEdits &edits) {
+    if (artwork_ == edits)
+        return;
+    artwork_ = edits;
+    renderer_.setArtwork(edits);
+    draw();
+}
 void ActorPoseEditor::draw() {
     // Drop observers before deleting selected scene items (selectionChanged is synchronous).
     items_.clear();
@@ -577,9 +584,10 @@ void ActorPoseEditor::draw() {
         }
         const auto a = preview(*player_);
         const auto body = appearance();
-        const auto frame = body
-                               ? art_->bodyFrame(rom_, a.frame, *body, sepia_->isChecked())
-                               : art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked());
+        const auto frame = body ? art_->bodyFrame(rom_, a.frame, *body, sepia_->isChecked(),
+                                                  artwork_.value(art_->descriptorKey()))
+                                : art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked(),
+                                              {}, artwork_.value(art_->descriptorKey()));
         QRectF bounds;
         int fallbacks = 0;
         for (int i = 0; i < frame.size(); ++i) {

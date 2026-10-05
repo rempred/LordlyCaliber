@@ -50,11 +50,10 @@ QByteArray StageObjectRenderer::modelMatrix(const Rom &rom, const QByteArray &dr
         throw Error("Stage object matrix exceeds fixed-point bounds");
     return QByteArray(reinterpret_cast<const char *>(packed), 64);
 }
-QVector<ActorRasterLayer>
-StageObjectRenderer::project(const StageWorldProp &prop, int slot, const SceneCamera &world,
-                             const SceneCamera &screen, const QByteArray &parent,
-                             const std::array<qint16, 3> &globalRgb, ActorRenderState &state,
-                             std::optional<RenderColor> transition, quint32 texturePhase, bool sepia) {
+QVector<ActorRasterLayer> StageObjectRenderer::project(
+    const StageWorldProp &prop, int slot, const SceneCamera &world, const SceneCamera &screen,
+    const QByteArray &parent, const std::array<qint16, 3> &globalRgb, ActorRenderState &state,
+    std::optional<RenderColor> transition, quint32 texturePhase, bool sepia) {
     const auto drawing = prop.record();
     if (u32(drawing, 0x94) & 2 || u8(drawing, 0x37) || u32(prop.owner, 0xa0))
         throw Error("Stage object requires its additional color owner");
@@ -81,11 +80,12 @@ StageObjectRenderer::project(const StageWorldProp &prop, int slot, const SceneCa
                          .arg(prop.pose.art().descriptorKey())
                          .arg(frame)
                          .arg(variant)
-                         .arg(optional).arg(sepia);
+                         .arg(optional)
+                         .arg(sepia);
     auto cached = frames_.object(key);
     if (!cached) {
-        auto layers =
-            std::make_unique<QVector<ActorFrameLayer>>(prop.pose.art().frame(rom_, frame, variant, sepia));
+        auto layers = std::make_unique<QVector<ActorFrameLayer>>(prop.pose.art().frame(
+            rom_, frame, variant, sepia, {}, artwork_.value(prop.pose.art().descriptorKey())));
         qsizetype bytes = 0;
         for (auto &layer : *layers) {
             if (optional && layer.pixels.sourceColorFormat != 4) {

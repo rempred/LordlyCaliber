@@ -27,6 +27,12 @@ struct ActorRasterLayer {
 class ActorRenderer {
   public:
     explicit ActorRenderer(Rom rom) : rom_(std::move(rom)), frames_(64 * 1024) {}
+    void setArtwork(const ActorArtworkEdits &edits) {
+        if (artwork_ != edits) {
+            artwork_ = edits;
+            frames_.clear();
+        }
+    }
     QVector<ActorRasterLayer> project(const ActorInstance &, bool shadow, const SceneCamera &,
                                       const std::array<qint16, 3> &globalRgb, bool sepia = false,
                                       int shadowIndex = 0, quint8 alpha = 255,
@@ -52,6 +58,7 @@ class ActorRenderer {
   private:
     Rom rom_;
     QCache<QString, QVector<ActorFrameLayer>> frames_;
+    ActorArtworkEdits artwork_;
     std::optional<ClassData> classes_;
 };
 } // namespace lordly

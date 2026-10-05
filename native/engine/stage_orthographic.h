@@ -30,6 +30,12 @@ class StageOrthographic {
 class StageFlatRenderer {
   public:
     explicit StageFlatRenderer(Rom rom) : rom_(std::move(rom)), frames_(64 * 1024) {}
+    void setArtwork(const ActorArtworkEdits &edits) {
+        if (artwork_ != edits) {
+            artwork_ = edits;
+            frames_.clear();
+        }
+    }
     QVector<ActorRasterLayer> project(const StageOrthographic &, int pass, const SceneCamera &,
                                       const QByteArray &parent, int foregroundSelector,
                                       const std::array<qint16, 3> &globalRgb,
@@ -41,5 +47,6 @@ class StageFlatRenderer {
   private:
     Rom rom_;
     QCache<QString, QVector<ActorFrameLayer>> frames_;
+    ActorArtworkEdits artwork_;
 };
 } // namespace lordly

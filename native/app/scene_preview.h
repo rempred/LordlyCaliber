@@ -30,6 +30,7 @@ class ScenePreview : public QWidget {
     void setDialogues(std::optional<Dialogues>);
     void setPortraitProvider(DialogueDrawing::PortraitProvider);
     void refreshPortraits();
+    void setArtwork(const ActorArtworkEdits &);
     const QImage &renderedFrame() const {
         return frame_;
     }

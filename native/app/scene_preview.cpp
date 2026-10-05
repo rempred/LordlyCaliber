@@ -285,6 +285,13 @@ void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provide
     if(dialogueDrawing_)dialogueDrawing_->setPortraitProvider(portraits_);
     refreshPortraits();
 }
+void ScenePreview::setArtwork(const ActorArtworkEdits &edits) {
+    renderer_.setArtwork(edits);
+    spriteRenderer_.setArtwork(edits);
+    stageRenderer_.setArtwork(edits);
+    objectRenderer_.setArtwork(edits);
+    refreshPortraits();
+}
 void ScenePreview::refreshPortraits() {
     if(current_) {
         const auto target=tick_;

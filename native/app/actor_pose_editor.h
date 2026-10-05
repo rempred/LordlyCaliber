@@ -23,6 +23,7 @@ class ActorPoseEditor : public QWidget {
   public:
     explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
     void selectCommand(const DirectorProgram &, int command);
+    void setArtwork(const ActorArtworkEdits &);
 
   private:
     void loadSources();
@@ -39,6 +40,7 @@ class ActorPoseEditor : public QWidget {
     QString poseError() const;
     Rom rom_;
     ActorRenderer renderer_;
+    ActorArtworkEdits artwork_;
     QCheckBox *projected_, *shadows_;
     QComboBox *placementMode_, *materialMode_;
     std::array<QSpinBox *, 3> actorRgb_, environmentRgb_;

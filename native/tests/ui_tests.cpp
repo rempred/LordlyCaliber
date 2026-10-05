@@ -61,6 +61,43 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void editedCombatPreviewAndUndo() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);project.loadCombatArtwork();QUndoStack undo;
+            CutsceneEditor editor(rom,nullptr,&project,&undo,[]{});editor.resize(1300,900);editor.show();
+            auto inspector=editor.findChild<ActorPoseEditor *>();QVERIFY(inspector);
+            auto kind=inspector->findChild<QComboBox *>("actorSourceKind"),bank=inspector->findChild<QComboBox *>("actorBank");
+            kind->setCurrentIndex(1);bank->setCurrentIndex(bank->findData(1));
+            auto position=inspector->findChild<QSpinBox *>("actorPosition");position->setValue(1);
+            auto projected=inspector->findChild<QCheckBox *>("actorProjected");auto view=inspector->findChild<QGraphicsView *>("actorCanvas");
+            auto flat=[&]{QImage image(320,240,QImage::Format_RGBA8888);image.fill(Qt::transparent);QPainter painter(&image);view->scene()->render(&painter);return image;};
+            const auto original=flat();const auto cursor=inspector->property("poseCursor");
+            projected->setChecked(true);const auto projectedOriginal=inspector->property("placementFrame").value<QImage>();QVERIFY(!projectedOriginal.isNull());projected->setChecked(false);
+            const auto body=ActorArt::loadBody(rom,1,1,0,0);const auto layer=body.bodyLayers(rom,inspector->property("frameToken").toInt(),body.defaultAppearance(rom)).first();
+            const auto id=CombatArtwork::identity(body.descriptorKey(),layer.metadata.art);const auto sprite=project.combatArtwork()->original(id);const int child=layer.child<sprite.children().size()?layer.child:0;
+            CombatEditor artEditor(&project,&undo,[]{});artEditor.selectBinding(id,child);auto blank=project.combatArtwork()->image(id,child);blank.fill(Qt::transparent);artEditor.assignImage(blank);
+            const auto edited=flat();QVERIFY(edited!=original);QCOMPARE(position->value(),1);QCOMPARE(inspector->property("poseCursor"),cursor);
+            projected->setChecked(true);const auto projectedEdited=inspector->property("placementFrame").value<QImage>();QVERIFY(projectedEdited!=projectedOriginal);
+            position->setValue(18);position->setValue(1);QCOMPARE(inspector->property("placementFrame").value<QImage>(),projectedEdited);
+            undo.undo();QCOMPARE(inspector->property("placementFrame").value<QImage>(),projectedOriginal);undo.redo();QCOMPARE(inspector->property("placementFrame").value<QImage>(),projectedEdited);
+            projected->setChecked(false);QCOMPARE(flat(),edited);undo.undo();QCOMPARE(flat(),original);
+            // The dynamic scene rebuilds captured/checkpoint frames at the same tick.
+            auto scenes=ScenePrograms::load(rom);const quint32 key=0x1fa8bf4-0x594284;auto program=scenes.program(key);
+            for(auto &command:program.commands)if(command.opcode==0x1b){command.operands[4]=0;command.operands[5]=0;break;}
+            scenes.replace(key,program.encode());ScenePreview preview(rom);preview.resize(1200,850);preview.show();preview.selectScene(scenes,key,2);
+            auto scenePosition=preview.findChild<QSpinBox *>("scenePosition");scenePosition->setValue(3);QTRY_COMPARE(preview.property("sceneTick").toInt(),3);const auto sceneOriginal=preview.renderedFrame();
+            auto staged=CombatArtwork::load(rom);QSet<quint32> descriptors;
+            for(int flags=0;flags<4;++flags)descriptors.insert(ActorArt::loadBody(rom,0x58,0x58,flags/2,flags%2).descriptorKey());
+            for(const auto &binding:staged.bindings())if(descriptors.contains(binding.descriptorKey)){
+                const auto object=staged.original(binding.id);
+                for(int variant=0;variant<object.children().size();++variant)if(object.children()[variant].colorOffset>=0&&object.children()[variant].alphaOffset>=0){auto pixels=object.pixels(variant);pixels.alpha.fill(0);staged.setPixels(binding.id,variant,pixels);}
+            }
+            QVERIFY(staged.modified());preview.setArtwork(staged.previewEdits());QTRY_COMPARE(preview.property("sceneTick").toInt(),3);const auto sceneEdited=preview.renderedFrame();QVERIFY(sceneEdited!=sceneOriginal);
+            scenePosition->setValue(1);QTRY_COMPARE(preview.property("sceneTick").toInt(),1);scenePosition->setValue(3);QTRY_COMPARE(preview.property("sceneTick").toInt(),3);QCOMPARE(preview.renderedFrame(),sceneEdited);
+            preview.setArtwork({});QTRY_COMPARE(preview.property("sceneTick").toInt(),3);QCOMPARE(preview.renderedFrame(),sceneOriginal);
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void combatArtworkEditing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

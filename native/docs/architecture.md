@@ -38,8 +38,17 @@ painting, preview, restore/undo, PNG and sprite-library transfers, and image
 preparation with continuous alpha quantization. Raw channel erasure writes index
 zero even when its display palette is opaque. Empty encoded deltas remain editable
 when the materialized child has valid planes. The separate 3634 intensity image
-remains read-only. Reference class names aid discovery; current-project composed
-preview integration remains the next step. ui_tests combatArtworkEditing passed
+remains read-only. Reference class names aid discovery. Staged pixel resources now feed ordinary/body
+frame composition, the flat/projected pose inspector, scene Actors, 2D sprites and
+flat/perspective props. Renderers clear their frame caches on artwork changes;
+CutsceneEditor observes the shared project undo stack. Scene preview invalidates
+captured/checkpoint frames and replays to the current tick with recorded input.
+Pose inspection redraws without advancing its cursor. Runtime pose and metadata
+selection stay intact. combat_artwork_tests composedPreviewPixels passed (107 ms);
+ui_tests editedCombatPreviewAndUndo, equipmentBodyPreview and storyCastPreview
+passed (968 ms), including immediate flat/projected changes, undo/redo and exact
+backward/forward replay of dynamic scene 01FA8BF4. Animation assignment and sequence
+authoring remain in progress. ui_tests combatArtworkEditing passed
 (662 ms); indexedPixelTools, Army/icon/portrait workflows and loadDesktopWorkspace
 also passed after the shared canvas/image-preparation changes. The desktop screenshot
 was inspected. These are offscreen Qt checks, not emulator operation. Full-game visual

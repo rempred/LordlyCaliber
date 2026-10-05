@@ -147,8 +147,10 @@ ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool
     auto cached = frames_.object(key);
     if (!cached) {
         auto frame = std::make_unique<QVector<ActorFrameLayer>>(
-            art.isBody() ? art.bodyFrame(rom_, token, *appearance, sepia)
-                         : art.frame(rom_, token, variant, sepia, conversions));
+            art.isBody() ? art.bodyFrame(rom_, token, *appearance, sepia,
+                                         artwork_.value(art.descriptorKey()))
+                         : art.frame(rom_, token, variant, sepia, conversions,
+                                     artwork_.value(art.descriptorKey())));
         qsizetype bytes = 0;
         for (const auto &layer : *frame)
             bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;
