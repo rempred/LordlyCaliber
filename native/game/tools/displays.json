@@ -1,0 +1,102 @@
+{
+  "generatedBy": "native/tools/generate-tools-catalog.cjs",
+  "inputs": [
+    "native-rebuild-data.js; parent tools/luck_alignment_display_patch.py (Luck 6, Alignment 10)"
+  ],
+  "features": [
+    {
+      "id": "character-card-luck",
+      "name": "luck",
+      "setting": "characterCardLuck",
+      "nativeDraw": 2149167312,
+      "sites": [
+        {
+          "name": "source-loader",
+          "source": "luck-bootstrap.s",
+          "rom": 217344,
+          "ram": 2148158720,
+          "size": 192,
+          "payloadBytes": 192,
+          "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
+          "normalizedSha256": "91bd6be695c6b6d1fdebe4602b91f5539caefeebabf0326de1e3e955a6dcd611",
+          "legacyRom": 217344,
+          "legacyBytes": 192,
+          "legacySha256": "7597230d878ed453b9eea0fd75007b4a4add63bc19744de5aad2952a96904f30"
+        },
+        {
+          "name": "native-hook",
+          "source": "display-hook.s",
+          "rom": 588268,
+          "ram": 2149199756,
+          "size": 8,
+          "payloadBytes": 8,
+          "retailSha256": "e08b33bb995e0437f2fcbbf70a01fc177aa309bcdd85e6186a301ee36b1bdb94",
+          "normalizedSha256": "011791854ba4d17947feb9a86b349b697fad214ee2cbb03f653ba4147e4cbe85",
+          "legacyRom": 588268,
+          "legacyBytes": 8,
+          "legacySha256": "011791854ba4d17947feb9a86b349b697fad214ee2cbb03f653ba4147e4cbe85"
+        },
+        {
+          "name": "source-module",
+          "source": "luck-module.s",
+          "rom": 41689088,
+          "ram": 2152202240,
+          "size": 4096,
+          "payloadBytes": 3072,
+          "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
+          "normalizedSha256": "82bd8d99962528a2238b5dede427f82531b3f41110e77598b4d90575310ee8b0",
+          "legacyRom": 41877504,
+          "legacyBytes": 3072,
+          "legacySha256": "be37c8a78ce4de4b761e44c4dab9c6dc30168d6d8697494ac43f1600c85b9497"
+        }
+      ]
+    },
+    {
+      "id": "squad-menu-alignment",
+      "name": "alignment",
+      "setting": "squadMenuAlignment",
+      "nativeDraw": 2149018732,
+      "sites": [
+        {
+          "name": "source-loader",
+          "source": "alignment-bootstrap.s",
+          "rom": 217536,
+          "ram": 2148158912,
+          "size": 192,
+          "payloadBytes": 192,
+          "retailSha256": "5d89f056865052bcb89c910d2d62872e029fb273c3db03f8968a52a41593c1b5",
+          "normalizedSha256": "32917c8b0b4b70551c5af40f5ef5639ec654fefa02e18a420cd40e2babf1bb14",
+          "legacyRom": 217536,
+          "legacyBytes": 192,
+          "legacySha256": "76d49a9b7b895d9107a8ef03b8f6356123f163fd081676e18217067f5a99ffe3"
+        },
+        {
+          "name": "native-hook",
+          "source": "display-hook.s",
+          "rom": 1423148,
+          "ram": 2149623228,
+          "size": 8,
+          "payloadBytes": 8,
+          "retailSha256": "4c9d5a59a35315b4cfdf0a43762e56d36b54a1a3b43189c018591ba4fda5d9bf",
+          "normalizedSha256": "7fefa4cd48404449866d1e1e80260b845fcd2cf36895902917def6c213395e1b",
+          "legacyRom": 1423148,
+          "legacyBytes": 8,
+          "legacySha256": "7fefa4cd48404449866d1e1e80260b845fcd2cf36895902917def6c213395e1b"
+        },
+        {
+          "name": "source-module",
+          "source": "alignment-module.s",
+          "rom": 41693184,
+          "ram": 2152333312,
+          "size": 4096,
+          "payloadBytes": 3328,
+          "retailSha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6",
+          "normalizedSha256": "9488470270d778e0a12bf3758a40e6a414c8c60a5735e9a19de11fff2caf8c5f",
+          "legacyRom": 41881600,
+          "legacyBytes": 3328,
+          "legacySha256": "8d12eb43820821c0ca9251ef1a253fb43aac4a6b5cc20e1b0e9eeb492cfcbd83"
+        }
+      ]
+    }
+  ]
+}

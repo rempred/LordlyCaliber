@@ -1,3 +1,4 @@
+#include "engine/archive.h"
 #include "engine/project.h"
 #include "engine/resource.h"
 #include "engine/tool_artwork.h"
@@ -11,6 +12,247 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void displayProjectsAndExports() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("display-browser-reference.cjs"),
+                                     work.filePath("reference.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("reference.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+            QCOMPARE(cases.size(), 2);
+            const QStringList keys{"characterCardLuck", "squadMenuAlignment"};
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-displays-XXXXXX");
+            QVERIFY(output.isValid());
+            auto save = [&](const Project &project, const BuildResult &build, const QString &name) {
+                const auto folder = output.filePath(name);
+                QDir().mkpath(folder);
+                const auto candidate = QDir(folder).filePath(QFileInfo(path).fileName());
+                exportRom(project, build, candidate);
+                return Rom::open(candidate);
+            };
+            for (int mask : {1, 2, 3}) {
+                auto project = Project::fromRom(rom);
+                project.loadTools();
+                auto settings = project.tools()->json();
+                for (int i = 0; i < 2; ++i)
+                    settings[keys[i]] = bool(mask & (1 << i));
+                project.setTools(settings);
+                project.saveFolder(work.filePath("project"));
+                project.saveArchive(work.filePath("project.lcproject"));
+                for (const auto &location :
+                     {work.filePath("project"), work.filePath("project.lcproject")}) {
+                    auto restored = Project::fromRom(rom);
+                    restored.applyManifest(Project::readProject(location));
+                    QCOMPARE(restored.tools()->json(), settings);
+                }
+                auto expected = rom.bytes();
+                for (int i = 0; i < 2; ++i)
+                    if (mask & (1 << i))
+                        for (const auto &v : cases[i].toObject()["components"].toArray()) {
+                            const auto row = v.toObject();
+                            const auto bytes =
+                                QByteArray::fromHex(row["dataHex"].toString().toLatin1());
+                            expected.replace(row["romStart"].toInt(), bytes.size(), bytes);
+                        }
+                Rom::updateChecksum(expected);
+                const auto built = rebuild(project, tools, work.path());
+                QCOMPARE(built.image, expected);
+                auto reopened = Project::fromRom(save(project, built, QString::number(mask)));
+                reopened.loadTools();
+                QCOMPARE(reopened.tools()->json(), settings);
+                QCOMPARE(rebuild(reopened, tools, work.path()).image, expected);
+                settings["characterCardLuck"] = false;
+                settings["squadMenuAlignment"] = false;
+                reopened.setTools(settings);
+                const auto disabled = rebuild(reopened, tools, work.path());
+                QCOMPARE(disabled.image, rom.bytes());
+                QCOMPARE(save(reopened, disabled, QString("%1-disabled").arg(mask)).bytes(),
+                         rom.bytes());
+            }
+            for (int i = 0; i < 2; ++i) {
+                const auto kind = i ? ToolLabel::Alignment : ToolLabel::Luck;
+                const auto definition = DisplayTool::definition(kind);
+                const auto id = definition["id"].toString();
+                const QString ownerKey = i ? "squad_menu_alignment" : "character_card_luck";
+                const QJsonObject patch{
+                    {"format", "ob64-patch"},
+                    {"version", 36},
+                    {"patches", QJsonObject{{"tools", QJsonObject{{id, true}}}}}};
+                auto imported = Project::fromRom(rom);
+                imported.importLegacy(patch);
+                QVERIFY(imported.tools()->displayTool(kind).enabled());
+                QVERIFY(imported.pendingLegacySections().isEmpty());
+                auto reset = imported.tools()->json();
+                reset[keys[i]] = false;
+                imported.setTools(reset);
+                auto reopened = Project::fromRom(rom);
+                reopened.applyManifest(imported.manifest());
+                QVERIFY(!reopened.tools()->displayTool(kind).enabled());
+                auto owner = patch;
+                owner["patches"] = QJsonObject{};
+                owner["rebuild_owners"] = QJsonObject{{"schema", 1}, {ownerKey, true}};
+                imported.importLegacy(owner);
+                QVERIFY(imported.tools()->displayTool(kind).enabled());
+                QVERIFY(imported.pendingLegacySections().isEmpty());
+                auto bad = imported.tools()->json();
+                bad[keys[i]] = 1;
+                const auto before = imported.manifest();
+                QVERIFY_THROWS_EXCEPTION(Error, imported.setTools(bad));
+                auto conflict = patch;
+                conflict["rebuild_owners"] = QJsonObject{{ownerKey, false}};
+                QVERIFY_THROWS_EXCEPTION(Error, imported.importLegacy(conflict));
+                QCOMPARE(imported.manifest(), before);
+                auto legacy = rom.bytes();
+                for (const auto &v : cases[i].toObject()["legacy"].toArray()) {
+                    const auto row = v.toObject();
+                    const auto bytes = QByteArray::fromHex(row["patched"].toString().toLatin1());
+                    legacy.replace(row["offset"].toInt(), bytes.size(), bytes);
+                }
+                Rom::updateChecksum(legacy);
+                auto project = Project::fromRom(Rom::fromBytes(legacy));
+                project.loadTools();
+                QCOMPARE(project.tools()->displayTool(kind).installation(),
+                         DisplayTool::Installation::Legacy);
+                const auto migrated = rebuild(project, tools, work.path());
+                QVERIFY(
+                    DisplayTool::load(save(project, migrated, id + "-migrated"), kind).enabled());
+                for (const auto &v : definition["sites"].toArray()) {
+                    const auto site = v.toObject();
+                    const int at = site["rom"].toInt();
+                    auto foreign = rom.bytes();
+                    foreign[at] ^= 1;
+                    auto held = Project::fromRom(Rom::fromBytes(foreign));
+                    held.loadTools();
+                    QVERIFY(!held.tools()->displayTool(kind).available());
+                    QCOMPARE(rebuild(held, tools, work.path()).image, foreign);
+                    if (site["name"] != "source-module")
+                        continue;
+                    auto custom = migrated.image;
+                    custom[at + 0x520] ^= 1;
+                    auto customized = Project::fromRom(Rom::fromBytes(custom));
+                    customized.loadTools();
+                    QCOMPARE(rebuild(customized, tools, work.path()).image, custom);
+                    auto occupied = legacy;
+                    occupied[at] = 42;
+                    auto removable = Project::fromRom(Rom::fromBytes(occupied));
+                    removable.loadTools();
+                    QVERIFY_THROWS_EXCEPTION(Error, rebuild(removable, tools, work.path()));
+                    auto off = removable.tools()->json();
+                    off[keys[i]] = false;
+                    removable.setTools(off);
+                    auto expected = rom.bytes();
+                    expected[at] = 42;
+                    QCOMPARE(rebuild(removable, tools, work.path()).image, expected);
+                }
+            }
+            auto combined = Project::fromRom(rom);
+            combined.loadTools();
+            auto settings = combined.tools()->json();
+            settings["characterCardLuck"] = settings["squadMenuAlignment"] =
+                settings["chaosFrameCounter"] = true;
+            settings["experienceScalePercent"] = 75;
+            combined.setTools(settings);
+            combined.appendClass(1, "Display Knight");
+            const auto built = rebuild(combined, tools, work.path());
+            auto reopened = Project::fromRom(save(combined, built, "combined"));
+            reopened.loadTools();
+            QCOMPARE(reopened.tools()->json(), settings);
+            QCOMPARE(reopened.records(Table::Classes).size(), 166);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "Luck/Alignment export candidates:" << output.path();
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
+    void displayArtworkFromCurrentRom() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("display-browser-reference.cjs"),
+                                     work.filePath("reference.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("reference.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+            QCOMPARE(cases.size(), 2);
+            const auto archive = LhaMember::find(rom, "suujifont2.k64");
+            const auto font = archive.decode(rom);
+            auto relocate = [&](const QByteArray &value) {
+                auto bytes = rom.bytes();
+                bytes.replace(archive.offset, archive.headerSize + archive.storedSize,
+                              QByteArray(archive.headerSize + archive.storedSize, 0));
+                bytes += archive.rebuild(rom, value);
+                while (bytes.size() % 4)
+                    bytes.append(char(0));
+                return Rom::fromBytes(bytes);
+            };
+            auto edited = font;
+            bool altered = false;
+            for (int x = 0; x < 80 && !altered; ++x) {
+                const int shift = (x & 1) ? 0 : 4;
+                int count = 0;
+                for (int y = 0; y < 9; ++y)
+                    count += ((u8(font, 8 + y * 40 + x / 2) >> shift) & 15) == 1;
+                if (count < 2)
+                    continue;
+                for (int y = 0; y < 8 && !altered; ++y) {
+                    const int at = 8 + y * 40 + x / 2;
+                    if (((u8(font, at) >> shift) & 15) == 1) {
+                        put8(edited, at, u8(edited, at) & ~(15 << shift));
+                        altered = true;
+                    }
+                }
+            }
+            QVERIFY(altered);
+            for (int i = 0; i < 2; ++i) {
+                const auto label = i ? ToolLabel::Alignment : ToolLabel::Luck;
+                const auto expected =
+                    QByteArray::fromHex(cases[i].toObject()["texture"].toString().toLatin1());
+                QCOMPARE(expected.size(), 512);
+                QCOMPARE(displayToolTexture(rom, label), expected);
+                QCOMPARE(displayToolTexture(relocate(font), label), expected);
+                QVERIFY(displayToolTexture(relocate(edited), label) != expected);
+            }
+            auto malformed = font;
+            put16(malformed, 4, 79);
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     displayToolTexture(relocate(malformed), ToolLabel::Luck));
+            malformed = font;
+            malformed.replace(8, 360, QByteArray(360, 0));
+            QVERIFY_THROWS_EXCEPTION(Error,
+                                     displayToolTexture(relocate(malformed), ToolLabel::Luck));
+            auto duplicate = rom.bytes();
+            duplicate += archive.rebuild(rom, font);
+            while (duplicate.size() % 4)
+                duplicate.append(char(0));
+            QVERIFY_THROWS_EXCEPTION(
+                Error, displayToolTexture(Rom::fromBytes(duplicate), ToolLabel::Luck));
+            auto badCrc = rom.bytes();
+            QCOMPARE(archive.level, 2);
+            badCrc[archive.offset + 21] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(
+                Error, displayToolTexture(Rom::fromBytes(badCrc), ToolLabel::Alignment));
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void chaosProjectPersistenceAndImport() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -307,11 +549,11 @@ class ToolSettingsTests : public QObject {
         auto other = patch;
         auto values = other["patches"].toObject();
         auto settings = values["tools"].toObject();
-        settings["character-card-luck"] = true;
+        settings["high-attack-streamsplit"] = true;
         values["tools"] = settings;
         other["patches"] = values;
         imported.importLegacy(other);
-        QCOMPARE(imported.pendingLegacySections(), QStringList{"tools.character-card-luck"});
+        QCOMPARE(imported.pendingLegacySections(), QStringList{"tools.high-attack-streamsplit"});
         auto conflict = patch;
         conflict["rebuild_owners"] = QJsonObject{{"experience_scale_percent", 137}};
         const auto before = imported.manifest();

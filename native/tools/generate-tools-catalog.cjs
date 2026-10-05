@@ -28,3 +28,22 @@ const cf={generatedBy:'native/tools/generate-tools-catalog.cjs',
    legacyBytes:padded.length,legacySha256:hash(padded.toString('hex'))};
  })};
 fs.writeFileSync(path.join(root,'native/game/tools/chaos.json'),JSON.stringify(cf,null,2)+'\n');
+const displays={generatedBy:'native/tools/generate-tools-catalog.cjs',
+ inputs:['native-rebuild-data.js; parent tools/luck_alignment_display_patch.py (Luck 6, Alignment 10)'],
+ features:['character-card-luck','squad-menu-alignment'].map((id,index)=>{
+  const feature=OB64.TOOLS_FEATURES.find(f=>f.id===id),name=index?'alignment':'luck';
+  const sites=OB64_NATIVE_REBUILD_DATA.payload.phase3.components.filter(c=>c.owner==='tool.'+id).map(c=>{
+   const module=c.name==='source-module';
+   const legacy=feature.writes.find(w=>w.offset===(module?(index?0x27f1000:0x27f0000):c.romStart));
+   const normal=Buffer.from(c.dataHex,'hex');if(module)normal.fill(0,0x520,0x720);
+   const old=Buffer.from(legacy.patched,'hex');
+   const padded=Buffer.concat([old,Buffer.alloc(module?0:c.budget-old.length,0)]);
+   return {name:c.name,source:c.name==='native-hook'?'display-hook.s':name+(module?'-module.s':'-bootstrap.s'),
+    rom:c.romStart,ram:c.ramStart,size:c.budget,payloadBytes:c.payloadBytes,
+    retailSha256:hash(c.retailHex),normalizedSha256:hash(normal.toString('hex')),
+    legacyRom:legacy.offset,legacyBytes:padded.length,legacySha256:hash(padded.toString('hex'))};
+  });
+  return {id,name,setting:index?'squadMenuAlignment':'characterCardLuck',
+   nativeDraw:index?0x80176c6c:0x8019b0d0,sites};
+ })};
+fs.writeFileSync(path.join(root,'native/game/tools/displays.json'),JSON.stringify(displays,null,2)+'\n');

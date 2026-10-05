@@ -134,6 +134,42 @@ class UiTests : public QObject {
         QVERIFY(!disabled.findChild<QCheckBox *>("chaosCounter")->isEnabled());
         QVERIFY(disabled.findChild<QSpinBox *>("experienceScale")->isEnabled());
     }
+    void displayToolsEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        QUndoStack undo;
+        ToolsEditor editor(&project, &undo, [] {});
+        editor.resize(850, 700);
+        editor.show();
+        auto luck = editor.findChild<QCheckBox *>("luckDisplay");
+        auto alignment = editor.findChild<QCheckBox *>("alignmentDisplay");
+        QVERIFY(luck->isEnabled());
+        QVERIFY(alignment->isEnabled());
+        luck->click();
+        alignment->click();
+        QVERIFY(project.tools()->displayTool(ToolLabel::Luck).enabled());
+        QVERIFY(project.tools()->displayTool(ToolLabel::Alignment).enabled());
+        undo.undo();
+        QVERIFY(luck->isChecked());
+        QVERIFY(!alignment->isChecked());
+        undo.redo();
+        QVERIFY(alignment->isChecked());
+        editor.findChild<QPushButton *>("luckRestore")->click();
+        QVERIFY(!luck->isChecked());
+        QVERIFY(alignment->isChecked());
+        undo.undo();
+        QVERIFY(luck->isChecked());
+        QVERIFY(editor.grab().save("display-tools.png"));
+        auto bytes = rom.bytes();
+        bytes[0x351c0] ^= 1;
+        auto foreign = Project::fromRom(Rom::fromBytes(bytes));
+        QUndoStack foreignUndo;
+        ToolsEditor held(&foreign, &foreignUndo, [] {});
+        QVERIFY(!held.findChild<QCheckBox *>("alignmentDisplay")->isEnabled());
+        QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
+    }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));
         put32(data, 0, 0x80371240);

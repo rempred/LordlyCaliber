@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -52,13 +53,44 @@ class ChaosCommand final : public QUndoCommand {
     Project *project_;
     bool before_, after_;
 };
+class DisplayCommand final : public QUndoCommand {
+  public:
+    DisplayCommand(Project *project, ToolLabel kind, bool value)
+        : QUndoCommand(kind == ToolLabel::Alignment ? "Change squad alignment display"
+                                                    : "Change character luck display"),
+          project_(project), key_(DisplayTool::definition(kind)["setting"].toString()),
+          before_(project->tools()->displayTool(kind).enabled()), after_(value) {}
+    void undo() override {
+        apply(before_);
+    }
+    void redo() override {
+        apply(after_);
+    }
+
+  private:
+    void apply(bool value) {
+        auto settings = project_->tools()->json();
+        settings[key_] = value;
+        project_->setTools(settings);
+    }
+    Project *project_;
+    QString key_;
+    bool before_, after_;
+};
 } // namespace
 ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void()> changed,
                          QWidget *parent)
     : QWidget(parent), project_(project), undo_(undo), changed_(std::move(changed)) {
     setObjectName("toolsEditor");
     project_->loadTools();
-    auto layout = new QVBoxLayout(this);
+    auto outer = new QVBoxLayout(this);
+    auto scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto content = new QWidget;
+    scroll->setWidget(content);
+    outer->addWidget(scroll);
+    auto layout = new QVBoxLayout(content);
     auto box = new QGroupBox("Battle experience");
     auto fields = new QVBoxLayout(box);
     auto description = new QLabel("Scale the size weight applied to every reward source. "
@@ -104,6 +136,29 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     chaosRestore_->setObjectName("chaosRestore");
     chaosLayout->addWidget(chaosRestore_, 0, Qt::AlignLeft);
     layout->addWidget(chaosBox);
+    auto displayBox = new QGroupBox("Additional values — Expansion Pak required (8 MiB RAM)");
+    auto displayLayout = new QVBoxLayout(displayBox);
+    for (int i = 0; i < 2; ++i) {
+        const auto kind = i ? ToolLabel::Alignment : ToolLabel::Luck;
+        const QString name = i ? "alignment" : "luck";
+        displayBoxes_[i] = new QCheckBox(i ? "Show average Alignment for visible squads"
+                                           : "Show Luck on character cards");
+        displayBoxes_[i]->setObjectName(name + "Display");
+        displayNotices_[i] = new QLabel;
+        displayNotices_[i]->setObjectName(name + "Notice");
+        displayNotices_[i]->setWordWrap(true);
+        displayRestores_[i] = new QPushButton("Restore loaded setting");
+        displayRestores_[i]->setObjectName(name + "Restore");
+        displayLayout->addWidget(displayBoxes_[i]);
+        displayLayout->addWidget(displayNotices_[i]);
+        displayLayout->addWidget(displayRestores_[i], 0, Qt::AlignLeft);
+        connect(displayBoxes_[i], &QCheckBox::toggled, this,
+                [this, kind](bool value) { setDisplay(kind, value); });
+        connect(displayRestores_[i], &QPushButton::clicked, this, [this, kind] {
+            setDisplay(kind, project_->tools()->displayTool(kind).loadedEnabled());
+        });
+    }
+    layout->addWidget(displayBox);
     layout->addStretch();
     connect(percent_, &QSpinBox::valueChanged, this, &ToolsEditor::setPercent);
     connect(restore_, &QPushButton::clicked, this,
@@ -147,13 +202,32 @@ void ToolsEditor::refresh() {
     chaosNotice_->setText(counter.available()
                               ? "Display the current Chaos Frame on the Army roster. Requires an "
                                 "Expansion Pak (8 MiB RAM). "
-                                "Turning this off restores the original task-submit call."
+                                "Turning this off removes the counter."
                               : counter.unavailableReason());
+    for (int i = 0; i < 2; ++i) {
+        const auto &display = settings.displayTool(i ? ToolLabel::Alignment : ToolLabel::Luck);
+        const QSignalBlocker guard(displayBoxes_[i]);
+        displayBoxes_[i]->setChecked(display.enabled());
+        displayBoxes_[i]->setEnabled(display.available());
+        displayRestores_[i]->setEnabled(display.available() && display.modified());
+        displayNotices_[i]->setText(
+            display.available()
+                ? (i ? "Displays the average of occupied squad members for up to six visible rows. "
+                       "Empty squads display 50."
+                     : "Displays the selected character's Luck beside the native card details.")
+                : display.unavailableReason());
+    }
 }
 void ToolsEditor::setChaos(bool enabled) {
     const auto &counter = project_->tools()->chaosCounter();
     if (!counter.available() || counter.enabled() == enabled)
         return;
     undo_->push(new ChaosCommand(project_, enabled));
+}
+void ToolsEditor::setDisplay(ToolLabel kind, bool enabled) {
+    const auto &setting = project_->tools()->displayTool(kind);
+    if (!setting.available() || setting.enabled() == enabled)
+        return;
+    undo_->push(new DisplayCommand(project_, kind, enabled));
 }
 } // namespace lordly

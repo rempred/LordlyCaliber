@@ -1,4 +1,5 @@
 #include "engine/tool_artwork.h"
+#include "engine/archive.h"
 #include "engine/resource.h"
 #include <QMap>
 #include <QPoint>
@@ -105,11 +106,10 @@ Grid compose(const QString &text, const QMap<QChar, Grid> &letters, QPoint shado
         }
     return result;
 }
-} // namespace
-QByteArray chaosFrameTitle(const Rom &rom) {
+QByteArray armyTexturePack(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision())
-        throw Error("Chaos Frame artwork requires US revision zero");
+        throw Error("Tool artwork requires US revision zero");
     // Army UI loader: LUI a0 / JAL resource loader / ORI a0,a0 delay slot.
     // Retail key 01DC873E identifies the 23496-byte shared UI texture pack.
     const auto high = u32(rom.bytes(), 0xaed4c), low = u32(rom.bytes(), 0xaed54);
@@ -122,7 +122,11 @@ QByteArray chaosFrameTitle(const Rom &rom) {
     const auto stored = u32(rom.bytes(), at), decoded = u32(rom.bytes(), at + 4);
     if (stored > 1024 * 1024 || decoded != 23496)
         throw Error("Army UI texture pack has an unsupported size");
-    const auto pack = Resource::load(rom, at, qsizetype(stored) + 4).decoded;
+    return Resource::load(rom, at, qsizetype(stored) + 4).decoded;
+}
+} // namespace
+QByteArray chaosFrameTitle(const Rom &rom) {
+    const auto pack = armyTexturePack(rom);
     const auto war = word(pack, 0x2828, 48, 0, 23, false);
     const auto funds = word(pack, 0x2828, 48, 8, 34, false);
     const auto character = word(pack, 0x40f8, 64, 16, 58, true);
@@ -154,6 +158,87 @@ QByteArray chaosFrameTitle(const Rom &rom) {
             result[pixel] =
                 char(quint8(result[pixel]) | (quint8(line[x]) << ((column & 1) ? 0 : 4)));
         }
+    }
+    return result;
+}
+QByteArray displayToolTexture(const Rom &rom, ToolLabel kind) {
+    const auto pack = armyTexturePack(rom);
+    const auto character = word(pack, 0x40f8, 64, 16, 58, true);
+    const auto soldier = word(pack, 0x40f8, 64, 24, 43, true);
+    QMap<QChar, Grid> letters;
+    letters['L'] = letter(soldier, 2, 7);
+    QString label;
+    if (kind == ToolLabel::Alignment) {
+        label = "ALI";
+        letters['A'] = letter(character, 2, 9);
+        letters['I'] = letter(soldier, 4, 7);
+    } else {
+        label = "LCK";
+        letters['C'] = letter(character, 0, 9);
+        // Authored K in the original tool's measured font metrics; the native
+        // source words do not contain K. Build its outline around the body.
+        const QVector<QByteArray> strokes{"......", ".##.#.", ".####.", ".###..",
+                                          ".####.", ".##.#.", "......", "......"};
+        Grid k(8, QByteArray(6, 0));
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 6; ++x)
+                if (strokes[y][x] == '#')
+                    k[y][x] = 13;
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 6; ++x)
+                if (strokes[y][x] == '#')
+                    for (int sy = std::max(0, y - 1); sy < std::min(8, y + 2); ++sy)
+                        for (int sx = std::max(0, x - 1); sx < std::min(6, x + 2); ++sx)
+                            if (!k[sy][sx])
+                                k[sy][sx] = 12;
+        letters['K'] = k;
+    }
+    const auto composed = compose(label, letters, {1, 1});
+    if (composed[0].size() != 18)
+        throw Error("Tool label exceeds its native 18-pixel field");
+    QByteArray result(512, 0);
+    auto pixel = [&](int x, int y, int value) {
+        const int at = y * 32 + x / 2;
+        result[at] = char(quint8(result[at]) | (value << ((x & 1) ? 0 : 4)));
+    };
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 18; ++x)
+            pixel(x, y, composed[y][x] ? composed[y][x] - 11 : 0);
+    const auto font = LhaMember::find(rom, "suujifont2.k64").decode(rom);
+    if (font.size() != 374 || u32(font, 0) != 0x4b020200 || u16(font, 4) != 80 || u16(font, 6) != 9)
+        throw Error("Tool digit font has an unsupported format or dimensions");
+    auto foreground = [&](int x, int y) {
+        const auto packed = u8(font, 8 + y * 40 + x / 2);
+        return ((packed >> ((x & 1) ? 0 : 4)) & 15) == 1;
+    };
+    auto column = [&](int x) {
+        for (int y = 0; y < 9; ++y)
+            if (foreground(x, y))
+                return true;
+        return false;
+    };
+    QVector<QPair<int, int>> runs;
+    for (int x = 0; x < 80;) {
+        if (!column(x)) {
+            ++x;
+            continue;
+        }
+        const int start = x++;
+        while (x < 80 && column(x))
+            ++x;
+        if (x - start > 6)
+            throw Error("Tool digit font contains a glyph wider than six pixels");
+        runs.append({start, x});
+    }
+    if (runs.size() != 10)
+        throw Error("Tool digit font must contain ten separate digits");
+    // Native source order is 1..9,0; display cells use 0..9 and crop the ninth row.
+    for (int digit = 0; digit < 10; ++digit) {
+        const auto [start, end] = runs[(digit + 9) % 10];
+        for (int y = 0; y < 8; ++y)
+            for (int x = start; x < end; ++x)
+                if (foreground(x, y))
+                    pixel(digit * 6 + x - start, y + 8, 1);
     }
     return result;
 }

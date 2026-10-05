@@ -5,6 +5,7 @@
 #include "engine/shop_runtime.h"
 #include "rebuild/class_runtime.h"
 #include "rebuild/chaos_counter.h"
+#include "rebuild/display_tools.h"
 #include "rebuild/creature_rewards.h"
 #include "rebuild/custom_encounters.h"
 #include "rebuild/elf_references.h"
@@ -797,6 +798,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                    .arg(plan.size());
     }
     rebuildChaosCounter(p, compiler, directory, result);
+    rebuildDisplayTools(p, compiler, directory, result);
     if (result.image != p.rom().bytes())
         Rom::updateChecksum(result.image);
     auto reopened = Project::fromRom(Rom::fromBytes(result.image), p.catalog());

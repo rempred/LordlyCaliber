@@ -10,6 +10,7 @@
 #include <QSet>
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace lordly {
 QString tableKey(Table t) {
@@ -444,13 +445,30 @@ void Project::importLegacyTools(const QJsonObject &object) {
             throw Error("Imported Chaos Frame settings disagree");
         chaos = owner["chaos_frame_counter"];
     }
-    if (!percent.isUndefined() || !chaos.isUndefined()) {
+    QJsonObject displays;
+    for (const auto &[id, ownerKey, field] :
+         {std::tuple{"character-card-luck", "character_card_luck", "characterCardLuck"},
+          std::tuple{"squad-menu-alignment", "squad_menu_alignment", "squadMenuAlignment"}}) {
+        QJsonValue value(QJsonValue::Undefined);
+        if (tools.contains(id))
+            value = tools[id];
+        if (owner.contains(ownerKey)) {
+            if (!value.isUndefined() && value != owner[ownerKey])
+                throw Error("Imported display settings disagree: " + QString(id));
+            value = owner[ownerKey];
+        }
+        if (!value.isUndefined())
+            displays[field] = value;
+    }
+    if (!percent.isUndefined() || !chaos.isUndefined() || !displays.isEmpty()) {
         loadTools();
         auto settings = tools_->json();
         if (!percent.isUndefined())
             settings["experienceScalePercent"] = percent;
         if (!chaos.isUndefined())
             settings["chaosFrameCounter"] = chaos;
+        for (auto it = displays.begin(); it != displays.end(); ++it)
+            settings[it.key()] = it.value();
         setTools(settings);
     }
 }
@@ -590,7 +608,11 @@ QJsonObject Project::manifest() const {
          legacy_["patches"].toObject()["tools"].toObject().contains("experience-size-scale") ||
          legacy_["rebuild_owners"].toObject().contains("experience_scale_percent") ||
          legacy_["patches"].toObject()["tools"].toObject().contains("cf-army-counter") ||
-         legacy_["rebuild_owners"].toObject().contains("chaos_frame_counter")))
+         legacy_["rebuild_owners"].toObject().contains("chaos_frame_counter") ||
+         legacy_["patches"].toObject()["tools"].toObject().contains("character-card-luck") ||
+         legacy_["patches"].toObject()["tools"].toObject().contains("squad-menu-alignment") ||
+         legacy_["rebuild_owners"].toObject().contains("character_card_luck") ||
+         legacy_["rebuild_owners"].toObject().contains("squad_menu_alignment")))
         result["tools"] = tools_->json();
     else
         result.remove("tools");
@@ -1231,7 +1253,8 @@ QStringList Project::pendingLegacySections() const {
             const auto values = it.value().toObject();
             for (auto setting = values.begin(); setting != values.end(); ++setting)
                 if (setting.key() != "experience-size-scale" &&
-                    setting.key() != "cf-army-counter" && changed(setting.value()))
+                    setting.key() != "cf-army-counter" && setting.key() != "character-card-luck" &&
+                    setting.key() != "squad-menu-alignment" && changed(setting.value()))
                     pending << "tools." + setting.key();
             continue;
         }
@@ -1281,6 +1304,8 @@ QStringList Project::pendingLegacySections() const {
         if (it.key() == "experience_scale_percent" && (tools_ || it.value().toInt() == 100))
             continue;
         if (it.key() == "chaos_frame_counter" && tools_)
+            continue;
+        if ((it.key() == "character_card_luck" || it.key() == "squad_menu_alignment") && tools_)
             continue;
         if (it.value().isBool() && !it.value().toBool())
             continue;

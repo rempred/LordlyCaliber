@@ -1,5 +1,48 @@
 # Native Lordly Caliber
 
+## Tools: Luck and squad Alignment
+
+Both displays now have independent native controls, loaded-setting restoration,
+undo/redo, project folder/archive persistence, and browser patch/rebuild-owner
+imports. Tools snapshots use version 3 and accept versions 1 and 2. The workspace
+scrolls on smaller windows. Each feature retains its existing Expansion Pak
+requirement; foreign code disables only the affected setting and remains intact.
+
+Export assembles the maintained sources adapted from parent
+`tools/luck_alignment_display_patch.py`: Luck version 6 and Alignment version 10.
+The current Alignment correction is independently identified by committed Decomp
+`1641ccb6:tools/build_squad_alignment_correction.py`; the older Phase 3 generator
+is not used for its behavior. Alignment replays native drawing, waits for the
+final ordinary visible squad row (including the six-row cap), and then appends
+the averages as a batch. Its occupied-member average, empty fallback 50, displayed
+value clamp and original call arguments are retained. Luck reads the selected
+character and replays the displaced card helper with its original arguments.
+
+The loaders verify module sentinel and version before cache invalidation and PI
+DMA. Source module reservations are ROM `27C2000..27C3000` / RAM
+`80480000..80481000` for Luck and ROM `27C3000..27C4000` / RAM
+`804A0000..804A1000` for Alignment. Recognized current legacy modules migrate
+from ROM `27F0000` and `27F1000`; older/foreign versions remain unavailable.
+Installed bounded textures are preserved during source rebuilding. New installs
+derive labels from the current Army UI pack and digits from the CRC-checked named
+`suujifont2.k64` archive, including relocated archives. LCK uses native L/C and
+the original tool's authored K recipe; ALI uses native A/L/I. No captured texture
+or precompiled game module is shipped.
+
+`tool_settings_tests displayArtworkFromCurrentRom chaosArtworkFromCurrentRom`
+passed in 1,416 ms: both complete 512-byte sheets match the current browser
+modules; relocated and edited digits work; malformed dimensions, missing glyphs,
+duplicate archives and bad CRCs are rejected. The shared Chaos title still matches.
+`displayProjectsAndExports chaosProjectPersistenceAndImport projectPersistenceAndImport`
+passed in 37,945 ms. It checks the three enabled combinations against full browser
+ROM bytes, project round trips, physical export/reopen, repeat builds, removal,
+current legacy migration, custom textures, occupied allocations, import conflicts,
+and combined Luck/Alignment/Chaos/experience/new-class export. Candidates:
+parent `Test ROMs/native-displays-hrHulg`. The master ROM is unchanged.
+`ui_tests displayToolsEditing chaosToolsEditing experienceToolsEditing` passed
+in 322 ms; the complete workspace screenshot was inspected. No in-game cold-boot
+validation was performed, and that release check remains pending.
+
 ## Tools: Chaos Frame counter
 
 The Army Management counter now has a native toggle, loaded-value restoration,
