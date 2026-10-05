@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+## Prepared sprite layer images
+
+Sprite studio can import PNG/JPEG into the selected layer through the shared
+fit/crop/stretch/pixel-size preparation dialog, with sampling, zoom and offsets.
+The result retains the layer identity, position and dimensions, all other frames
+and layers, and partial transparency. Cancel does not edit; accepting is one undo
+command. A changed asset invalidates a stale open preparation dialog.
+
+Nearest placement now shares an explicit pixel-center sampler with game-pose
+library transfer. It preserves hidden RGB under zero alpha; Qt composition had
+removed those editable values. Smooth sampling remains an explicit filtered option.
+`ui_tests spriteLayerImagePreparation` passed in 657 ms: known RGBA placement,
+cancel/accept, undo/redo, unchanged neighbors, folder reopening and stale-dialog
+rejection. Existing spriteWorkspaceEditing, iconArtworkEditing,
+portraitArtworkEditing, armyArtworkEditing and combatArtworkEditing passed after
+the shared change. Sprite source placement/ROM comparisons passed in 134 ms.
+The preparation screenshot was inspected. No ROM data changes until an asset is
+explicitly assigned through an artwork editor.
+
 ## Game pose artwork in the sprite library
 
 Class sequence editing and the cutscene pose inspector can copy authored frame

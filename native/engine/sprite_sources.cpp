@@ -1,7 +1,5 @@
 #include "engine/sprite_sources.h"
 #include <QRectF>
-#include <cmath>
-#include <cstring>
 namespace lordly {
 SpriteAsset spriteAssetFromFrames(const QString &name, const QVector<SpriteSourceFrame> &frames) {
     if (frames.isEmpty() || frames.size() > 1024)
@@ -32,23 +30,9 @@ SpriteAsset spriteAssetFromFrames(const QString &name, const QVector<SpriteSourc
                 rect.height() > SpriteLibrary::dimensionLimit ||
                 (pixels += quint64(rect.width()) * rect.height()) > SpriteLibrary::pixelLimit)
                 throw Error("Scaled sprite layers exceed the library pixel budget");
-            QImage image(rect.size(), QImage::Format_RGBA8888);
-            image.fill(Qt::transparent);
-            if (!target.isEmpty()) {
-                // Sample destination pixel centers. Copy RGBA verbatim: painting
-                // would premultiply away hidden RGB and round partial opacity.
-                for (int y = 0; y < image.height(); ++y) {
-                    const int sourceY = int(std::floor((rect.y() + y + .5 - target.y()) / sy));
-                    if (sourceY < 0 || sourceY >= r.height)
-                        continue;
-                    for (int x = 0; x < image.width(); ++x) {
-                        const int sourceX = int(std::floor((rect.x() + x + .5 - target.x()) / sx));
-                        if (sourceX >= 0 && sourceX < r.width)
-                            std::memcpy(image.scanLine(y) + x * 4,
-                                        r.rgba.constData() + (sourceY * r.width + sourceX) * 4, 4);
-                    }
-                }
-            }
+            const QImage sourceImage(reinterpret_cast<const uchar *>(r.rgba.constData()),
+                                     r.width, r.height, r.width * 4, QImage::Format_RGBA8888);
+            auto image = spritePlaceNearest(sourceImage, rect.size(), target.translated(-rect.topLeft()));
             frame.layers << SpriteLayer{
                 SpriteLibrary::newId(),
                 QString("Layer %1 · art %2").arg(frame.layers.size() + 1).arg(m.art), true,

@@ -1,4 +1,5 @@
 #include "app/sprite_editor.h"
+#include "app/art_image_assignment.h"
 #include <QApplication>
 #include <QBuffer>
 #include <QCheckBox>
@@ -294,6 +295,14 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
     layerY_ = spin("spriteLayerY", -32768, 32767);
     layerForm->addRow("Offset X", layerX_);
     layerForm->addRow("Offset Y", layerY_);
+    auto importLayer = new QPushButton("Import layer image…");
+    importLayer->setObjectName("spriteImportLayer");
+    sideLayout->addWidget(importLayer);
+    connect(importLayer, &QPushButton::clicked, this, [this] {
+        const auto path = QFileDialog::getOpenFileName(this, "Import selected layer image", {},
+                                                       "Images (*.png *.jpg *.jpeg)");
+        if (!path.isEmpty()) guarded([&] { importLayerImage(path); });
+    });
     auto transforms = new QHBoxLayout;
     sideLayout->addLayout(transforms);
     for (bool horizontal : {true, false})
@@ -749,6 +758,35 @@ void SpriteEditor::importFile(const QString &path) {
     library.replace(asset);
     selected_ = asset.id;
     commit("Import sprite asset", std::move(library));
+}
+void SpriteEditor::importLayerImage(const QString &path) {
+    if (!current() || frames_->currentRow() < 0 || layers_->currentRow() < 0)
+        throw Error("Select a sprite layer before importing an image");
+    play_->setChecked(false);
+    canvas_->cancelStroke();
+    const auto before = *current();
+    const int frame = frames_->currentRow();
+    const int layer = int(before.frames[frame].layers.size()) - 1 - layers_->currentRow();
+    const auto size = before.frames[frame].layers[layer].image.size();
+    const auto prepared = prepareArtworkImage(
+        this, loadArtworkImage(path),
+        {size, "spriteLayer", "Prepare layer image",
+         "Replace the selected layer's pixels. Its size and position stay the same; fit, crop or "
+         "place the image below. Color and partial transparency are retained.", false, false},
+        [](const QImage &image, int) {
+            const auto rgba = image.convertToFormat(QImage::Format_RGBA8888);
+            return ArtImageMapping{QByteArray(reinterpret_cast<const char *>(rgba.constBits()),
+                                               rgba.sizeInBytes()), rgba};
+        });
+    if (!prepared) return;
+    if (!current() || *current() != before)
+        throw Error("The sprite changed while image preparation was open; import again");
+    const auto image = QImage(reinterpret_cast<const uchar *>(prepared->constData()),
+                               size.width(), size.height(), size.width() * 4,
+                               QImage::Format_RGBA8888).copy();
+    change("Import sprite layer image", [&](SpriteAsset &asset) {
+        asset.frames[frame].layers[layer].image = image;
+    });
 }
 void SpriteEditor::exportAsset(const QString &path, bool browser) const {
     if (!current())

@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QPoint>
 #include <QRect>
+#include <QRectF>
 #include <QVector>
 namespace lordly {
 struct SpriteLayer {
@@ -64,5 +65,6 @@ QImage spriteLine(QImage, QPoint from, QPoint to, const QColor &, int brush = 1,
 QImage spriteFill(QImage, QPoint start, const QColor &, QRect selection = {});
 QImage spriteShift(const QImage &, QPoint offset, bool wrap = false);
 QImage spriteScale(const QImage &, QSize);
+QImage spritePlaceNearest(const QImage &, QSize canvas, QRectF placement);
 QImage spriteMoveSelection(const QImage &, QRect, QPoint);
 } // namespace lordly

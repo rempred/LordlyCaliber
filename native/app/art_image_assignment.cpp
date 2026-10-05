@@ -1,5 +1,6 @@
 #include "app/art_image_assignment.h"
 #include "engine/rom.h"
+#include "engine/sprite_library.h"
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
@@ -18,7 +19,7 @@ QImage loadArtworkImage(const QString &path) {
     QImageReader reader(path);
     const auto size = reader.size();
     if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096)
-        throw Error("Image dimensions must be 1â€“4096 pixels");
+        throw Error("Image dimensions must be 1–4096 pixels");
     const auto image = reader.read();
     if (image.isNull())
         throw Error("Cannot read image: " + reader.errorString());
@@ -54,14 +55,18 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
     fit.addItems({"Fit inside", "Fill and crop", "Stretch", "Keep pixel size"});
     form->addRow("Placement", &fit);
     QComboBox sampling;
+    sampling.setObjectName(options.objectPrefix + "ImportSampling");
     sampling.addItems({"Nearest pixel", "Smooth"});
     form->addRow("Sampling", &sampling);
     QDoubleSpinBox zoom;
+    zoom.setObjectName(options.objectPrefix + "ImportZoom");
     zoom.setRange(.125, 8);
     zoom.setValue(1);
     zoom.setSingleStep(.125);
     form->addRow("Zoom", &zoom);
     QSpinBox x, y, alpha;
+    x.setObjectName(options.objectPrefix + "ImportX");
+    y.setObjectName(options.objectPrefix + "ImportY");
     for (auto spin : {&x, &y})
         spin->setRange(-4096, 4096);
     form->addRow("Offset X (output pixels)", &x);
@@ -93,16 +98,18 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
             sy *= zoom.value();
             QImage target(options.target, QImage::Format_RGBA8888);
             target.fill(options.opaque ? background : QColor(Qt::transparent));
-            QPainter painter(&target);
-            if (!options.opaque)
-                painter.setCompositionMode(QPainter::CompositionMode_Source);
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, sampling.currentIndex() == 1);
             const QSizeF size(source.width() * sx, source.height() * sy);
-            painter.drawImage(QRectF((target.width() - size.width()) / 2 + x.value(),
-                                     (target.height() - size.height()) / 2 + y.value(),
-                                     size.width(), size.height()),
-                              source);
-            painter.end();
+            const QRectF placement((target.width() - size.width()) / 2 + x.value(),
+                                    (target.height() - size.height()) / 2 + y.value(),
+                                    size.width(), size.height());
+            if (!options.opaque && sampling.currentIndex() == 0)
+                target = spritePlaceNearest(source, options.target, placement);
+            else {
+                QPainter painter(&target);
+                if (!options.opaque) painter.setCompositionMode(QPainter::CompositionMode_Source);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform, sampling.currentIndex() == 1);
+                painter.drawImage(placement, source);
+            }
             const auto mapped = convert(target, alpha.value());
             if (mapped.image.size() != options.target || mapped.data.isEmpty())
                 throw Error("Artwork conversion returned an invalid preview");
@@ -111,7 +118,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
                 std::max(1, std::min(224 / mapped.image.width(), 256 / mapped.image.height()));
             output->setPixmap(QPixmap::fromImage(mapped.image.scaled(
                 mapped.image.size() * scale, Qt::IgnoreAspectRatio, Qt::FastTransformation)));
-            status->setText(QString("Left: source Â· Right: exact %1 Ã— %2 game image")
+            status->setText(QString("Left: source · Right: prepared %1 × %2 image")
                                 .arg(target.width())
                                 .arg(target.height()));
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);

@@ -91,6 +91,28 @@ QByteArray decodeBase64(const QJsonValue &value, qsizetype maximum) {
 QString SpriteLibrary::newId() {
     return QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
+QImage spritePlaceNearest(const QImage &source, QSize canvas, QRectF placement) {
+    sizeValid(source.size());
+    if (!std::isfinite(placement.x()) || !std::isfinite(placement.y()) ||
+        !std::isfinite(placement.width()) || !std::isfinite(placement.height()))
+        throw Error("Invalid sprite placement");
+    auto result = transparent(canvas);
+    if (placement.isEmpty()) return result;
+    const auto rgba = source.convertToFormat(QImage::Format_RGBA8888);
+    const double sx = placement.width() / source.width(), sy = placement.height() / source.height();
+    // Copy nearest pixel-center samples without premultiplication. Hidden RGB
+    // and fractional alpha are editable data, even where they are not visible.
+    for (int y = 0; y < result.height(); ++y) {
+        const double sourceY = std::floor((y + .5 - placement.y()) / sy);
+        if (sourceY < 0 || sourceY >= source.height()) continue;
+        for (int x = 0; x < result.width(); ++x) {
+            const double sourceX = std::floor((x + .5 - placement.x()) / sx);
+            if (sourceX >= 0 && sourceX < source.width())
+                writePixel(result, x, y, readPixel(rgba, int(sourceX), int(sourceY)));
+        }
+    }
+    return result;
+}
 SpriteAsset SpriteAsset::blank(const QString &name, QSize size) {
     return fromImage(name, transparent(size));
 }

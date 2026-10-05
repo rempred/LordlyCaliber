@@ -81,6 +81,7 @@ class SpriteEditor : public QWidget {
     void addAsset(SpriteAsset);
     void selectAsset(const QString &);
     void importFile(const QString &);
+    void importLayerImage(const QString &);
     void exportAsset(const QString &, bool browserCompatible) const;
     void exportImage(const QString &, const QByteArray &format) const;
     QString selectedAsset() const {

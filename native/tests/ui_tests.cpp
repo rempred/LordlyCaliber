@@ -64,6 +64,65 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void spriteLayerImagePreparation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path)); QUndoStack undo;
+            SpriteEditor editor(&project, &undo, [] {}); editor.resize(1400, 900); editor.show();
+            auto original = SpriteAsset::blank("Prepared layer", {6, 4});
+            original.kind = "sequence";
+            auto &first = original.frames.first();
+            first.layers.first().position = {-2, 3};
+            auto other = first.layers.first(); other.id = SpriteLibrary::newId(); other.image.fill(Qt::blue);
+            first.layers << other;
+            auto second = first; second.id = SpriteLibrary::newId(); original.frames << second;
+            editor.addAsset(original);
+            editor.findChild<QListWidget *>("spriteLayers")->setCurrentRow(1);
+            QImage source(2, 2, QImage::Format_RGBA8888);
+            source.setPixelColor(0, 0, QColor(120, 40, 20, 128)); source.setPixelColor(1, 0, Qt::green);
+            source.setPixelColor(0, 1, QColor(9, 8, 7, 0)); source.setPixelColor(1, 1, Qt::red);
+            QTemporaryDir work; const auto imagePath = work.filePath("source.png"); QVERIFY(source.save(imagePath));
+            const int initialCommands = undo.count();
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("spriteLayerImagePreparation"); QVERIFY(dialog);
+                dialog->reject();
+            });
+            editor.importLayerImage(imagePath);
+            QCOMPARE(undo.count(), initialCommands); QCOMPARE(project.sprites().asset(original.id), original);
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("spriteLayerImagePreparation"); QVERIFY(dialog);
+                dialog->findChild<QComboBox *>("spriteLayerImportFit")->setCurrentIndex(3);
+                dialog->findChild<QSpinBox *>("spriteLayerImportX")->setValue(1);
+                QVERIFY(dialog->grab().save("sprite-layer-preparation.png"));
+                dialog->accept();
+            });
+            editor.importLayerImage(imagePath);
+            QCOMPARE(undo.count(), initialCommands + 1);
+            const auto changed = project.sprites().asset(original.id);
+            QCOMPARE(changed.frames[1], original.frames[1]);
+            QCOMPARE(changed.frames[0].layers[1], original.frames[0].layers[1]);
+            QCOMPARE(changed.frames[0].layers[0].position, QPoint(-2, 3));
+            QCOMPARE(changed.frames[0].layers[0].id, original.frames[0].layers[0].id);
+            const auto result = changed.frames[0].layers[0].image;
+            QCOMPARE(result.size(), QSize(6, 4));
+            for (int y = 0; y < 2; ++y) for (int x = 0; x < 2; ++x)
+                QCOMPARE(result.pixelColor(3 + x, 1 + y), source.pixelColor(x, y));
+            QCOMPARE(result.pixelColor(0, 0), QColor(Qt::transparent));
+            undo.undo(); QCOMPARE(project.sprites().asset(original.id), original);
+            undo.redo(); QCOMPARE(project.sprites().asset(original.id), changed);
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.sprites().asset(original.id), changed);
+            QTimer::singleShot(0, &editor, [&] {
+                auto dialog = editor.findChild<QDialog *>("spriteLayerImagePreparation"); QVERIFY(dialog);
+                undo.undo(); dialog->accept();
+            });
+            QVERIFY_THROWS_EXCEPTION(Error, editor.importLayerImage(imagePath));
+            QCOMPARE(project.sprites().asset(original.id), original);
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void actorPoseLibraryTransfer() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
