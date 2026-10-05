@@ -33,11 +33,13 @@ m.trap(0x801bb58c,c=>capture("background",c));m.trap(0x8023aecc,c=>capture("acto
 m.trap(0x801bb87c,c=>capture("foreground",c));
 m.trap(0x8022b100,c=>{assert.equal(c.get("a1"),0);capture("sprites"+c.get("a0"),c);});
 const cases=[];
+m.w32(0x801ce8bc,0x80370000);
 for(const [sx,sy] of [[1,1],[.7,1.3],[-1,2],[0,0],[12.345,-.125]])
 for(const [x,y] of [[0,0],[25.375,-90.125],[-160,120]]){
  m.writeFloat(record+0x24,sx);m.writeFloat(record+0x28,sy);m.writeFloat(record+0x30,x);m.writeFloat(record+0x34,y);
  m.w32(0x800e9ba0,dl);m.w16(0x800c4be4,0);m.w16(0x800e79e0,0);
  m.set("sp",sp);events=[];m.call(0x8023c9ec);
+ assert.equal(m.r32(0x80376080),cases.length+1);
  assert.equal(m.get("sp"),sp);
  assert.deepEqual(events.map(e=>e.kind),["background","sprites0","actors","foreground","sprites1"]);
  cases.push({sx,sy,x,y,events});

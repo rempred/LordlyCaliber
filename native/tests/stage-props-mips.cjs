@@ -84,5 +84,43 @@ for(const [x,y,dx,dy] of [[0,0,-32768,32767],[0,0,-101,51],[100,50,1,1],[-100,-5
  for(let i=0;i<8;i++){call(0x801bc9f0,[]);calls.push(bytes(record,100).toString('hex'));}
  wrapping.push({initial:start,calls});
 }
-fs.writeFileSync(process.argv[3],JSON.stringify({placements,initializations,rows,custom,wrapping,steps}));
+// Perspective construction section, ROM1FBF00..1FC374. Background setup before
+// this section and the shared final color reset are separate owners. Complete
+// section+epilogue1212 bytes uniquely match saved RAM801B8A70; initializer172
+// bytes match801CBD6C. Allocation, registration, cache warming and RGB controlled.
+m.load(0x801b8a70,rom.subarray(0x1fbf00,0x1fc3bc));
+m.load(0x801cbd6c,rom.subarray(0x20f1fc,0x20f2a8));
+m.load(payload,raw);m.w32(0x801d06a0,payload+raw.readUInt16BE(20));
+let heap=0x80380000;
+m.trap(0x80070f30,c=>{c.set('v0',heap);heap=(heap+c.get('a0')+15)&~15;assert.ok(heap<0x803f0000);});
+m.trap(0x801adadc,()=>{});m.trap(0x801c3f3c,()=>{});
+[0x801bc76c,0x801bc838,0x801bc914].forEach((at,i)=>m.trap(at,c=>c.set('v0',[31,97,203][i])));
+const programs=new Map();
+m.trap(0x801c2ce4,c=>{
+ const handle=c.get('a0');
+ if(!programs.has(handle)){
+  const d=rom.readUInt32BE(directory+((handle&4095)-1)*4)+0x594284;
+  programs.set(handle,Buffer.from(OB64.art.readCompressedResource(rom,rom.readUInt32BE(d+4)).decoded));
+ }
+ m.load(program,programs.get(handle));c.set('v0',program);
+});
+function worldRecords(){
+ const count=m.r32(0x801d07e0),owners=[],drawings=[];
+ for(let i=0;i<count;i++){
+  const owner=bytes(m.r32(0x801d07d8)+i*248,248),draw=bytes(m.r32(0x801d07dc)+i*192,192);
+  owner.writeUInt32BE(i+1,0);draw.writeUInt32BE(0,0);draw.writeUInt32BE(i+1,0x40);draw.writeUInt32BE(i+1,0x90);
+  owners.push(owner.toString('hex'));drawings.push(draw.toString('hex'));
+ }
+ return {owners,drawings};
+}
+const perspective=[];
+for(let selector=0;selector<80;selector++){
+ heap=0x80380000;rng=0;m.w32(0x801ceab0,selector);m.set('v0',0x801d07e0);m.set('sp',sp);
+ m.call(0x801b8a70,0x801b8ee4,1000000);assert.equal(m.get('sp'),sp);
+ const initial=worldRecords(),randomCount=rng,calls=[];
+ m.w32(0x801d07d4,0);
+ for(let tick=0;tick<(selector===35?128:2);tick++){call(0x801bc9f0,[]);calls.push(worldRecords().drawings);}
+ perspective.push({selector,initial,randomCount,calls});
+}
+fs.writeFileSync(process.argv[3],JSON.stringify({placements,initializations,rows,custom,wrapping,perspective,steps}));
 console.log(`${placements.length} resolver outputs; ${initializations.length} initializations; ${rows.length*64+custom.length*32} pose updates; ${steps} original instructions.`);

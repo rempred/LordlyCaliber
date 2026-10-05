@@ -22,6 +22,13 @@ DirectPosePlayer::DirectPosePlayer(const Rom &rom, QByteArray record)
 }
 DirectPosePlayer::DirectPosePlayer(const Rom &rom, quint16 handle, quint16 selector)
     : DirectPosePlayer(rom, initialized(handle, selector)) {}
+void DirectPosePlayer::initialize(quint32 selector) {
+    auto next = record_;
+    if (invocation_.active || lordly_direct_initialize(reinterpret_cast<uint8_t *>(next.data()),
+                                                       selector, nullptr, nullptr))
+        throw Error("Direct pose cannot initialize while suspended or requiring randomness");
+    record_ = std::move(next);
+}
 int DirectPosePlayer::lookup(void *context, const uint8_t *bytes, LordlyPoseRecord *out) {
     auto &self = *static_cast<Invocation *>(context)->player;
     try {

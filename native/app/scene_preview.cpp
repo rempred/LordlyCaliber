@@ -15,7 +15,8 @@
 #include <bit>
 namespace lordly {
 ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
-    : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom), stageRenderer_(rom) {
+    : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom), stageRenderer_(rom),
+      objectRenderer_(rom) {
     auto layout = new QVBoxLayout(this);
     context_ = new QLabel("Select a scene to preview its current commands.");
     context_->setWordWrap(true);
@@ -106,7 +107,8 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Scattered props use a fixed preview seed. Perspective props, equipment, special sprites and audio remain unfinished.");
+            "Scattered props use a fixed preview seed. Equipment, special sprites and audio remain "
+            "unfinished.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -172,16 +174,19 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     auto backgrounds = SceneBackgroundRenderer::world(rom_, selector, selector);
     const auto placements = StagePlacements::load(rom_, selector);
     auto randomState = next.previewRandom;
-    auto props = StageOrthographic::load(rom_, placements, [&] {
+    auto random = [&] {
         // Stable desktop launch input, not a claim to reproduce the game's RNG state.
         randomState ^= randomState << 13;
         randomState ^= randomState >> 17;
         randomState ^= randomState << 5;
         return randomState & 0x7fffU;
-    });
+    };
+    auto props = StageOrthographic::load(rom_, placements, random);
+    auto objects = StagePerspective::load(rom_, placements, {255, 255, 255}, random);
     next.backgroundName = backgrounds.description();
     next.backgrounds = std::move(backgrounds);
     next.flatProps = std::move(props);
+    next.worldProps = std::move(objects);
     next.foregroundSelector = selector;
     next.previewRandom = randomState;
     return true;
@@ -190,13 +195,16 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
     if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.flatProps)
         next.flatProps->advance();
+    if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.worldProps)
+        next.worldProps->advance();
     for (int slot = 0; slot < 30; ++slot)
         if (const auto sprite = drawing.sprites().sprite(slot)) {
             const auto animation = u16(sprite->record(), 0x44);
             if (animation == 800 || animation == 801)
                 throw Error("Special sprites require their effect projection owner");
         }
-    const auto queue = drawing.drawQueue({}, {0x80300000, 0x80310000});
+    const auto objects = next.worldProps ? next.worldProps->records() : QVector<QByteArray>{};
+    const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
@@ -242,15 +250,17 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 QImage flat(320, 240, QImage::Format_RGBA8888);
                 flat.fill(Qt::transparent);
                 if (pass == 1 && next.flatProps)
-                    ActorRenderer::paint(flat, stageRenderer_.project(*next.flatProps, 1, camera,
-                                            parent, next.foregroundSelector, {255, 255, 255}, {},
-                                            false, environment));
+                    ActorRenderer::paint(
+                        flat, stageRenderer_.project(*next.flatProps, 1, camera, parent,
+                                                     next.foregroundSelector, {255, 255, 255}, {},
+                                                     false, environment));
                 if (next.backgrounds)
                     ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent));
                 if (next.flatProps)
-                    ActorRenderer::paint(flat, stageRenderer_.project(*next.flatProps, pass ? 2 : 0, camera,
-                                            parent, next.foregroundSelector, {255, 255, 255}, {},
-                                            false, environment));
+                    ActorRenderer::paint(
+                        flat, stageRenderer_.project(*next.flatProps, pass ? 2 : 0, camera, parent,
+                                                     next.foregroundSelector, {255, 255, 255}, {},
+                                                     false, environment));
                 ActorRenderer::paint(flat,
                                      spriteRenderer_.project(drawing.sprites(), pass, 0, camera,
                                                              parent, {255, 255, 255}));
@@ -259,10 +269,19 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     environment = {0, 0, 0, 1};
             };
             drawFlat(0);
-            const auto rendered =
-                renderer_.world(drawing.actors(), queue, {}, {96, 96}, {0, 0, 0, 0, 0, 0},
-                                {drawing.cameras().actor(), {255, 255, 255}, environment});
+            const auto rendered = renderer_.world(
+                drawing.actors(), queue, objects, {96, 96}, {0, 0, 0, 0, 0, 0},
+                {drawing.cameras().actor(), {255, 255, 255}, environment},
+                [&](int, int index, QImage &image, ActorRenderState &state) {
+                    if (!next.worldProps || index < 0 || index >= next.worldProps->props().size())
+                        throw Error("Stage drawing refers to an unavailable object");
+                    ActorRenderer::paint(image, objectRenderer_.project(
+                                                    next.worldProps->props()[index], index,
+                                                    drawing.cameras().actor(), camera, parent,
+                                                    {255, 255, 255}, state, {}, next.texturePhase));
+                });
             painter.drawImage(0, 0, rendered.image);
+            environment = rendered.environment;
             drawFlat(1);
         }
         if (drawing.fade().present()) {
@@ -271,6 +290,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         }
     }
     next.frame = std::move(frame);
+    if (commitDraw && mode_ == 2)
+        ++next.texturePhase;
     if (commitDraw)
         next.playback = std::move(drawing);
 }

@@ -1,6 +1,8 @@
 #include "engine/direct_pose.h"
 #include "engine/scene_world_drawing.h"
+#include "engine/stage_object_renderer.h"
 #include "engine/stage_orthographic.h"
+#include "engine/stage_perspective.h"
 #include "engine/stage_placements.h"
 #include "game/director/scene_matrix.h"
 #include <QDir>
@@ -47,6 +49,147 @@ class StagePropsTests : public QObject {
         return QByteArray::fromHex(value.toString().toLatin1());
     }
   private slots:
+    void objectMatricesAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                     .absoluteDir()
+                                     .filePath("stage-object-matrix-mips.cjs"),
+                                 path, work.filePath("matrices.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("matrices.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        float identity[16];
+        uint8_t packed[64];
+        lordly_matrix_identity(identity);
+        QVERIFY(lordly_matrix_pack(packed, identity));
+        const QByteArray parent(reinterpret_cast<const char *>(packed), 64);
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 40);
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            QCOMPARE(StageObjectRenderer::modelMatrix(rom, unhex(row["drawing"]),
+                                                      SceneCamera(unhex(row["camera"]), 1.f),
+                                                      parent),
+                     unhex(row["matrix"]));
+        }
+    }
+    void perspectivePixels() {
+        const auto rom = Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
+        const auto world = SceneCameras::freshModeTwo(rom).actor();
+        const auto screen = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
+        const auto parent = SceneWorldDrawing::modelMatrix(SceneProjection{});
+        StageObjectRenderer renderer(rom);
+        constexpr int auxiliaryAt = 0x3224ba + 0x594280;
+        const auto auxiliary =
+            decodeLzss(rom.bytes().mid(auxiliaryAt + 8, u32(rom.bytes(), auxiliaryAt) - 4),
+                       u32(rom.bytes(), auxiliaryAt + 4));
+        QCOMPARE(auxiliary.left(8).toHex(), QByteArray("3634040100200020"));
+        int count = 0, visible = 0;
+        for (int selector = 0; selector < 80; ++selector) {
+            auto stage = StagePerspective::load(rom, StagePlacements::load(rom, selector),
+                                                {255, 255, 255}, [] { return 1234U; });
+            stage.advance();
+            QImage image(320, 240, QImage::Format_RGBA8888);
+            image.fill(Qt::transparent);
+            for (int i = 0; i < stage.props().size(); ++i) {
+                const auto &prop = stage.props()[i];
+                const bool optional = u32(prop.drawing, 0x94) & 4;
+                auto state = ActorRenderState::main({31, 61, 91, 1});
+                const auto layers =
+                    renderer.project(prop, i, world, screen, parent, {255, 255, 255}, state);
+                const auto frames = prop.pose.art().frame(rom, qint16(u16(prop.pose.record(), 10)),
+                                                          u32(prop.owner, 0x4c));
+                for (const auto &layer : layers) {
+                    const auto &pixels = frames[layer.layer].pixels;
+                    for (int y = 0; y < layer.image.height(); ++y)
+                        for (int x = 0; x < layer.image.width(); ++x) {
+                            const auto pixel = layer.image.pixelColor(x, y);
+                            const int at = (y * layer.image.width() + x) * 4;
+                            if (!optional) {
+                                QVERIFY(qAbs(pixel.alpha() - u8(pixels.image.rgba, at + 3) *
+                                                                 layer.primitive[3] / 255) <= 1);
+                                if (pixel.alpha())
+                                    QCOMPARE(pixel.red(), int(u8(pixels.image.rgba, at)));
+                            } else {
+                                const auto flags = frames[layer.layer].metadata.flags;
+                                const int tx = (flags & 1 ? layer.image.width() - 1 - x : x) & 31;
+                                const int ty = (flags & 2 ? layer.image.height() - 1 - y : y) & 31;
+                                const auto intensity = u8(auxiliary, 8 + ty * 32 + tx);
+                                const int expected =
+                                    int(double(u8(pixels.image.rgba, at + 3)) * intensity *
+                                        layer.primitive[3] / (255. * 255.));
+                                QVERIFY(qAbs(pixel.alpha() - expected) <= 1);
+                                const auto red = u8(pixels.image.rgba, at);
+                                QCOMPARE(pixel.red(), pixels.sourceColorFormat == 4
+                                                          ? int(red)
+                                                          : ((red * 31 + 127) / 255) * 8);
+                            }
+                        }
+                }
+                if (optional) {
+                    const auto moved = renderer.project(prop, i, world, screen, parent,
+                                                        {255, 255, 255}, state, {}, 4);
+                    const auto wrapped = renderer.project(prop, i, world, screen, parent,
+                                                          {255, 255, 255}, state, {}, 128);
+                    QCOMPARE(moved.size(), layers.size());
+                    QCOMPARE(wrapped.size(), layers.size());
+                    bool changed = false;
+                    for (int j = 0; j < layers.size(); ++j) {
+                        changed |= moved[j].image != layers[j].image;
+                        QCOMPARE(wrapped[j].image, layers[j].image);
+                    }
+                    QVERIFY(changed);
+                }
+                ActorRenderer::paint(image, layers);
+                ++count;
+            }
+            if (selector == 34 || selector == 35 || selector == 57) {
+                int painted = 0;
+                for (int y = 0; y < 240; ++y)
+                    for (int x = 0; x < 320; ++x)
+                        painted += image.pixelColor(x, y).alpha() != 0;
+                QVERIFY2(
+                    painted > 100,
+                    qPrintable(QString("Environment%1 only%2 pixels").arg(selector).arg(painted)));
+                visible += painted;
+                QVERIFY(image.save(QString("stage-objects-%1.png").arg(selector)));
+            }
+        }
+        QCOMPARE(count, 102);
+        QVERIFY(visible > 1000);
+    }
+    void perspectivePlacementAndUpdates() {
+        const auto rom = Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
+        int count = 0, updates = 0;
+        for (const auto &value : reference_["perspective"].toArray()) {
+            const auto row = value.toObject();
+            const int selector = row["selector"].toInt();
+            CustomContext rng;
+            auto stage = StagePerspective::load(rom, StagePlacements::load(rom, selector),
+                                                {31, 97, 203}, [&] { return random(&rng); });
+            QCOMPARE(rng.random, row["randomCount"].toInt());
+            const auto initial = row["initial"].toObject();
+            QCOMPARE(stage.props().size(), initial["owners"].toArray().size());
+            count += int(stage.props().size());
+            for (int i = 0; i < stage.props().size(); ++i) {
+                QCOMPARE(stage.props()[i].owner, unhex(initial["owners"].toArray()[i]));
+                QCOMPARE(stage.props()[i].record(), unhex(initial["drawings"].toArray()[i]));
+            }
+            for (const auto &call : row["calls"].toArray()) {
+                stage.advance();
+                for (int i = 0; i < stage.props().size(); ++i) {
+                    QCOMPARE(stage.props()[i].record(), unhex(call.toArray()[i]));
+                    ++updates;
+                }
+            }
+        }
+        QCOMPARE(count, 102);
+        qInfo() << count << "perspective objects;" << updates << "record updates";
+    }
     void allOrthographicProps() {
         const auto rom = Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
         float identity[16];

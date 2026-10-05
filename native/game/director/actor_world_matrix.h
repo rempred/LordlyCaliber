@@ -21,6 +21,8 @@ typedef struct {
 /* Reconstructs ROM2AA1EC's camera basis and ROM2A9AD0's entire per-Actor
  * matrix producer. Terrain height is supplied by its separate scene owner.
  * Output commits only after all three matrices can be packed. */
+int lordly_world_billboard(float basis[16], const float camera[14],
+                           const LordlyActorWorldConstants *constants);
 int lordly_actor_world_matrices(LordlyActorWorldMatrices *out, const uint8_t actor[336],
                                 const float camera[14], float world_scale, int16_t depth,
                                 float terrain_height, const LordlyActorLighting *lighting,

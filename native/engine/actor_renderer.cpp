@@ -10,7 +10,8 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
                                              int layer, bool shadow, const SceneCamera &camera,
                                              const std::array<qint16, 3> &globalRgb,
                                              double bodyMultiplier, int shadowIndex, quint8 alpha,
-                                             ActorRenderState *state, bool bindActorTexture) {
+                                             ActorRenderState *state, LayerBinding binding,
+                                             const LayerAuxTexture *auxiliary) {
     if (actor.size() != 336)
         throw Error("Actor rendering requires a complete record");
     if (shadowIndex < 0 || shadowIndex > 1)
@@ -47,14 +48,19 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
     result.image = QImage(m.width, m.height, QImage::Format_RGBA8888);
     if (result.image.isNull())
         throw Error("Unable to allocate an Actor layer image");
-    if (frame.pixels.sourceColorFormat == 3)
+    if (frame.pixels.sourceColorFormat == 3 && !auxiliary)
         throw Error("Actor RGBA32 source expansion requires its native layout conversion");
+    if (auxiliary && (binding != LayerBinding::StageObject || !auxiliary->image ||
+                      auxiliary->image->width <= 0 || auxiliary->image->height <= 0 ||
+                      auxiliary->image->rgba.size() !=
+                          qint64(auxiliary->image->width) * auxiliary->image->height * 4))
+        throw Error("Invalid Stage auxiliary texture");
     if (frame.pixels.dualTexture && frame.pixels.colorAlpha.size() != m.width * m.height)
         throw Error("Actor color texture has no matching alpha lane");
     auto next = state    ? *state
                 : shadow ? ActorRenderState::shadow({0, 0, 0, 0})
                          : ActorRenderState::main({0, 0, 0, 0});
-    if (bindActorTexture)
+    if (binding == LayerBinding::Actor)
         next.bindTexture(frame.pixels.dualTexture);
     const auto combiner = next.combiner();
     CombineInputs inputs;
@@ -68,13 +74,26 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
             for (int c = 0; c < 4; ++c)
                 inputs.texel0[c] = inputs.texel1[c] = source[x * 4 + c];
             if (frame.pixels.dualTexture) {
-                if (bindActorTexture) {
+                if (binding != LayerBinding::StageFlat) {
                     inputs.texel0.fill(source[x * 4 + 3]);
                     inputs.texel1[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
                 } else {
                     inputs.texel1.fill(source[x * 4 + 3]);
                     inputs.texel0[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
                 }
+            }
+            if (auxiliary) {
+                const auto &texture = *auxiliary->image;
+                // Point sampling approximates the RDP's quarter-texel filtering.
+                const auto phase = auxiliary->quarterTexelPhase / 4;
+                const int tx =
+                    int((quint32(auxiliary->orientation & 1 ? m.width - 1 - x : x) + phase) %
+                        quint32(texture.width));
+                const int ty =
+                    int((quint32(auxiliary->orientation & 2 ? m.height - 1 - y : y) + phase) %
+                        quint32(texture.height));
+                for (int c = 0; c < 4; ++c)
+                    inputs.texel0[c] = u8(texture.rgba, (ty * texture.width + tx) * 4 + c);
             }
             const auto color = combiner.evaluate(inputs);
             for (int c = 0; c < 4; ++c)

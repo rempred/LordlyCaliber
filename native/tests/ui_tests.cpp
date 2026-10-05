@@ -155,14 +155,21 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void scatteredPropsSeek_data() {
+        QTest::addColumn<int>("environmentSelector");
+        QTest::newRow("snow") << 35;
+        QTest::newRow("scrolling-texture") << 31;
+        QTest::newRow("dynamic-hall-props") << 34;
+    }
     void scatteredPropsSeek() {
+        QFETCH(int, environmentSelector);
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
         auto scenes = ScenePrograms::load(rom);
         const auto source = scenes.original().entries().first();
         const auto id = scenes.createScene("Scattered props playback", source.key, false);
-        QVector<quint32> words{0x80000006U, 35};
+        QVector<quint32> words{0x80000006U, quint32(environmentSelector)};
         for (int i = 0; i < 140; ++i) words << 0 << 0x80000000U;
         words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
         QByteArray bytes(words.size() * 4, 0);
@@ -183,7 +190,7 @@ class UiTests : public QObject {
         preview.update(); QCoreApplication::processEvents(); QCOMPARE(preview.renderedFrame(), first);
         preview.findChild<QPushButton *>("sceneRestart")->click();
         preview.findChild<QPushButton *>("sceneStep")->click(); QCOMPARE(preview.renderedFrame(), first);
-        QVERIFY(preview.grab().save("scattered-props-preview.png"));
+        QVERIFY(preview.grab().save(QString("scattered-props-preview-%1.png").arg(environmentSelector)));
     }
     void worldScenePanAndSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

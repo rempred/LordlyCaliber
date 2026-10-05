@@ -5,6 +5,12 @@
 #include <QCache>
 #include <QImage>
 namespace lordly {
+enum class LayerBinding { Actor, StageFlat, StageObject };
+struct LayerAuxTexture {
+    const RasterImage *image;
+    quint32 quarterTexelPhase;
+    quint8 orientation;
+};
 struct ActorRasterLayer {
     int slot = 0, layer = 0, shadowIndex = 0;
     bool shadow = false;
@@ -29,14 +35,15 @@ class ActorRenderer {
                                             const std::array<qint16, 3> &globalRgb,
                                             bool sepia = false, int shadowIndex = 0,
                                             quint8 alpha = 255, ActorRenderState *state = nullptr);
-    // Stage callers retain their own combiner and bind color before mask by
-    // setting bindActorTexture=false; ordinary Actors bind mask before color.
+    // Stage callers retain their own combiner. Flat props bind color then mask;
+    // drawable objects and Actors bind mask then color.
     static ActorRasterLayer projectLayer(const ActorFrameLayer &, const QByteArray &actor,
                                          int layer, bool shadow, const SceneCamera &,
                                          const std::array<qint16, 3> &globalRgb,
                                          double bodyMultiplier = 1., int shadowIndex = 0,
                                          quint8 alpha = 255, ActorRenderState *state = nullptr,
-                                         bool bindActorTexture = true);
+                                         LayerBinding binding = LayerBinding::Actor,
+                                         const LayerAuxTexture *auxiliary = nullptr);
     static void paint(QImage &destination, const QVector<ActorRasterLayer> &);
 
   private:

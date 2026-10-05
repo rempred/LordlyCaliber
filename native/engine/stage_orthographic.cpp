@@ -173,7 +173,7 @@ StageFlatRenderer::project(const StageOrthographic &stage, int pass, const Scene
             put32(commands, 4, 0xfffffe38);
             material.apply(commands);
             output << ActorRenderer::projectLayer(layer, adapter, i, false, camera, {255, 255, 255},
-                                                  1, 0, 255, &material, false);
+                                                  1, 0, 255, &material, LayerBinding::StageFlat);
         }
     }
     return output;

@@ -38,27 +38,13 @@ static float planar_angle(float x, float z, const float light[3],
         angle += 360.f;
     return angle;
 }
-int lordly_actor_world_matrices(LordlyActorWorldMatrices *out, const uint8_t actor[336],
-                                const float camera[14], float world_scale, int16_t depth,
-                                float terrain_height, const LordlyActorLighting *lighting,
-                                const LordlyActorWorldConstants *c) {
-    LordlyActorWorldMatrices result;
-    float basis[16], model[16], ground[16], temporary[16], scale[16];
-    float x = real(actor + 0x11c), y = real(actor + 0x120), z = real(actor + 0x124);
-    float ground_y, angle, ratio, dx, dy, dz, tilt, yaw;
-    int i, count;
+int lordly_world_billboard(float basis[16], const float camera[14],
+                           const LordlyActorWorldConstants *c) {
+    float dx, dy, dz, angle, tilt, yaw;
+    int i;
     for (i = 0; i < 14; ++i)
         if (!isfinite(camera[i]))
             return 0;
-    for (i = 0x104; i <= 0x130; i += 4)
-        if (!isfinite(real(actor + i)))
-            return 0;
-    for (i = 0; i < 3; ++i)
-        if (!isfinite(lighting->point[i]) || !isfinite(lighting->planar[0][i]) ||
-            !isfinite(lighting->planar[1][i]))
-            return 0;
-    if (!isfinite(world_scale) || !isfinite(terrain_height))
-        return 0;
     /* Camera owner branches on eye Z, preserving its float operation order. */
     if (camera[7] < 0.f) {
         dx = camera[8] - camera[5];
@@ -78,6 +64,31 @@ int lordly_actor_world_matrices(LordlyActorWorldMatrices *out, const uint8_t act
         yaw = (float)((double)angle / c->camera_pi[1]);
     }
     lordly_matrix_rotation(basis, tilt, yaw, 0.f, c->radians);
+    return 1;
+}
+int lordly_actor_world_matrices(LordlyActorWorldMatrices *out, const uint8_t actor[336],
+                                const float camera[14], float world_scale, int16_t depth,
+                                float terrain_height, const LordlyActorLighting *lighting,
+                                const LordlyActorWorldConstants *c) {
+    LordlyActorWorldMatrices result;
+    float basis[16], model[16], ground[16], temporary[16], scale[16];
+    float x = real(actor + 0x11c), y = real(actor + 0x120), z = real(actor + 0x124);
+    float ground_y, angle, ratio, dx, dz;
+    int i, count;
+    for (i = 0; i < 14; ++i)
+        if (!isfinite(camera[i]))
+            return 0;
+    for (i = 0x104; i <= 0x130; i += 4)
+        if (!isfinite(real(actor + i)))
+            return 0;
+    for (i = 0; i < 3; ++i)
+        if (!isfinite(lighting->point[i]) || !isfinite(lighting->planar[0][i]) ||
+            !isfinite(lighting->planar[1][i]))
+            return 0;
+    if (!isfinite(world_scale) || !isfinite(terrain_height))
+        return 0;
+    if (!lordly_world_billboard(basis, camera, c))
+        return 0;
     ground_y = actor[0x145] & 1   ? terrain_height
                : actor[0x145] & 4 ? real(actor + 0x128) + y
                : actor[0x145] & 2 ? real(actor + 0x128)

@@ -1,5 +1,55 @@
 # Native Lordly Caliber
 
+## Stage objects sharing Actor depth order
+
+StagePerspective retains the248-byte owner and192-byte drawable as separate
+records. Queue coordinates remain signed32 world coordinates times30; type3
+objects use independent signed16 screen positions for drawing. Their80-byte
+direct pose retains its linked object identity, call stacks and offsets. Host
+slot identities replace pointers explicitly. Randomized placements preserve the
+original PRNG call order and below-ground pose-switch/reset behavior. The update
+uses the accepted1FFE80 C as its reference; constructors follow original1FB32C
+and20F1FC instructions. These host adaptations are not accepted matching C.
+
+StageObjectRenderer shares the world camera basis and layer raster with Actors,
+but retains the Stage callback's geometry, size lookup, independent layer alpha
+and material presets. The1F3C00 reference is HYBRID_C; its compiler constraints
+are not copied into the host. Stage objects bind mask then color; flat props
+bind color then mask. Three environment selections use compressed intensity
+resource3224BA, RGBA32 expansion with5-bit RGB left shifts, and wrapping texture
+coordinates. The outer world drawing owner advances its phase once after each
+completed draw. Qt uses point sampling for that texture's quarter-texel phase;
+filtering, coverage, blending and RSP intermediate precision remain approximate.
+
+ScenePreview now feeds these objects into the same depth queue as Actors, and
+snapshots their poses and texture phase. Snow, scrolling light and environment34
+(the background used by scene01FA8BF4) restore identical frames after seeking
+past the120-step checkpoint and back, repainting and restarting. Army bindings,
+terrain, equipment, scene-color integration, special sprites and final audio
+remain incomplete; this does not establish complete dynamic-scene playback.
+
+After build43888, `stage_props_tests -o stage-props-report.txt,txt` passed2617ms:
+all102 perspective instances/80 selectors,6126 original update comparisons,
+40 original callback matrices, all116 flat props and prior placement/pose/pass
+checks. `ui_tests scatteredPropsSeek worldScenePanAndSeek sceneRoomComposition
+sceneSpriteComposition` passed3384ms, including three data rows for the first
+check. Snow/light/hall images were inspected. `scene_runtime_tests
+worldDrawingAgainstMips actorLayerProjectionAndComposition actorMaterialPixelsAndState`
+passed164ms. After build90134 the added per-pixel optional-texture RGB/alpha
+assertions passed1846ms (`stage_props_tests perspectivePixels`). Texture changes
+and a128-quarter-texel wrap match; no original framebuffer comparison is claimed.
+The shared-basis extraction separately retained all2196 matrices in732 original
+Actor cases, passing with its raster regression in1700ms after build80905.
+
+Construction tests execute the original placement section with controlled
+allocation, registration, cache warming, colors and PRNG; updates execute the
+original pose decoder/sequencer with controlled resource registry/audio sinks.
+The render-matrix reference executes the full callback with empty art and host
+libm. Complete bytes uniquely match retained opening RAM:
+ROM1FBF00/1212 ->801B8A70;20F1FC/172 ->801CBD6C;
+1F3C00/6740 ->801B0770;213270/64 ->801CFDE0;
+211EC8/112 ->801CEA38. No emulator input or source-ROM writes occurred.
+
 ## Orthographic Stage prop composition
 
 StageOrthographic expands normal and randomized foreground-owned placements into
