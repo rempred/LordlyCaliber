@@ -28,7 +28,7 @@ target_sources(lordly_engine PRIVATE engine/background_image.cpp engine/huff_ima
 target_sources(lordly_engine PRIVATE engine/scene_images.cpp engine/raw_image.cpp)
 target_sources(lordly_engine PRIVATE engine/sprite_object.cpp)
 target_sources(lordly_engine PRIVATE engine/combat_artwork.cpp engine/combat_artwork_export.cpp)
-target_sources(lordly_engine PRIVATE engine/animation_routes.cpp)
+target_sources(lordly_engine PRIVATE engine/animation_routes.cpp engine/body_animation_data.cpp)
 target_sources(lordly_engine PRIVATE engine/animation_override_image.cpp)
 target_sources(lordly_engine PRIVATE engine/animation_overrides.cpp)
 target_sources(lordly_engine PRIVATE rebuild/animation_overrides.cpp)

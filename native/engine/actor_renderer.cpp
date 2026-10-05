@@ -162,14 +162,13 @@ ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool
     }
     double multiplier = 1.;
     if (art.isBody()) {
-        if (!classes_)
-            classes_ = ClassData::load(rom_);
+        const auto &classes = art.bodyAnimations()->classes();
         QByteArray records;
-        for (const auto &entry : classes_->entries())
+        for (const auto &entry : classes.entries())
             records += entry.record;
         uint8_t size = 0;
         if (!lordly_actor_render_class_size(reinterpret_cast<const uint8_t *>(records.constData()),
-                                            int(classes_->entries().size()), art.sourceClass(),
+                                            int(classes.entries().size()), art.sourceClass(),
                                             art.ownerClass(), &size))
             throw Error("Actor body refers to an unavailable class");
         if (size == 2)

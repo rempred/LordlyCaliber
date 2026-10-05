@@ -109,3 +109,29 @@ function bootstrap(selectorReturn,preloaded){
 }
 for(const selectorReturn of [false,true])for(const preloaded of [false,true])bootstrap(selectorReturn,preloaded);
 console.log(`Seven maintained sources match the accepted patch; ${cases} lookup cases, 16 mode-return cases, null actors and four bootstrap paths passed. Existing OBSO uses 8 MiB model memory; no full-game/hardware timing claim.`);
+
+// Optional current-project snapshot: compare the desktop selector with the
+// cartridge selector followed by the freshly assembled override lookup.
+if(process.argv[2]) {
+  const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+  const rom=fs.readFileSync(input.rom);
+  if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
+  else if(rom.readUInt32BE(0)===0x40123780)rom.swap32();
+  const data=Buffer.from(input.resource,'hex');
+  cpu.load(0x801BE308,rom.subarray(0x201798,0x201838));
+  cpu.load(0x80187C14,Buffer.from(input.classes,'hex'));
+  cpu.load(0x802C0000,data);
+  cpu.w32(0x801D0694,0x802C0000+data.readUInt16BE(14));
+  const nativeTable=Buffer.from(input.table,'hex');
+  cpu.load(L.moduleRam+0x400,nativeTable);cpu.w16(L.moduleRam+12,input.count);
+  for(const row of input.cases) {
+    const [source,owner,action,mode,flags,want]=row;
+    cpu.set('sp',stack);cpu.set('a0',source);cpu.set('a1',owner);cpu.set('a2',action);cpu.set('a3',mode);
+    cpu.call(0x801BE308);
+    const original=cpu.get('v0');
+    const slot=setup(cpu,6,source,owner,action,original,mode,flags);
+    cpu.call(L.moduleRam+0x40,0x801D98FC);
+    assert.equal(cpu.r8(slot),want,'desktop preview '+row.join('/'));
+  }
+  console.log(`${input.cases.length} project action previews match the original selector and compiled override patch.`);
+}

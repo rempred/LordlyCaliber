@@ -3,6 +3,7 @@
 #include "engine/animation_overrides.h"
 #include "engine/class_data.h"
 #include "engine/project.h"
+#include "engine/scene_actors.h"
 #include "rebuild/compiler.h"
 #include <QFile>
 #include <QJsonArray>
@@ -14,6 +15,72 @@ using namespace lordly;
 class AnimationOverrideTests : public QObject {
     Q_OBJECT
   private slots:
+    void stagedBodyAnimations() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+            if(path.isEmpty()) QSKIP("Private ROM required");
+            auto project=Project::fromRom(Rom::open(path));
+            const auto original=project.bodyAnimationData();
+            auto overrides=*project.animationOverrides();
+            overrides.setEntries({QJsonObject{{"classId",2},{"actionId",5},{"normalSelector",40},{"blockedSelector",41}}},project.rom(),project.classData(),*project.animationRoutes());
+            project.setAnimationOverrides(overrides.json());
+            const int id=project.appendClass(2,"Preview body"); QCOMPARE(id,165);
+            auto routes=*project.animationRoutes(); auto changed=routes.entry(3);
+            changed.speeds[0]=37; changed.selectors=QByteArray::fromHex("05282b2cff");
+            routes.setEntry(id,changed); project.setAnimationRoutes(routes.json());
+            auto extra=*project.animationOverrides(); auto rows=extra.entries();
+            rows<<QJsonObject{{"classId",id},{"actionId",5},{"bodyFlags",1},{"normalSelector",42},{"blockedSelector",43}};
+            extra.setEntries(rows,project.rom(),project.classData(),routes);project.setAnimationOverrides(extra.json());
+            QCOMPARE(project.appendClass(id,"Owner fallback"),166);
+            auto record=project.record(Table::Classes,166).bytes;put8(record,69,2);project.replaceBytes(Table::Classes,166,record);
+            routes=*project.animationRoutes();
+            const auto data=project.bodyAnimationData();
+            QCOMPARE(original->classes().entries().size(),165);QCOMPARE(data->classes().entries().size(),167);
+            QCOMPARE(data->selector(id,id,5,0,0),40);QCOMPARE(data->selector(id,id,5,2,1),43);
+            QCOMPARE(data->selector(id,id,5,1,1),42);QCOMPARE(data->selector(166,2,5,2,1),43);
+            QCOMPARE(data->selector(166,3,5,0,0),original->selector(3,3,5,0,0));
+            for(int flags=0;flags<4;++flags) {
+                const auto art=ActorArt::loadBody(project.rom(),id,id,flags/2,flags%2,data);
+                QCOMPARE(art.bodyHandle(),changed.handles[flags]);
+                QCOMPARE(art.descriptorKey(),ActorArt::loadDirect(project.rom(),changed.handles[flags]).descriptorKey());
+                art.defaultAppearance(project.rom());
+            }
+            SceneActors actors(project.rom(),2,255,[](int,float,float){return 0.f;},data);
+            actors.supplyBodyRows(QVector<QByteArray>(28,QByteArray(248,0)));int value=0;
+            QVERIFY(actors.service(0x14,{0,30,0,0,0,0,0,0,0},value));
+            QVERIFY(actors.service(0x2a,{0,quint32(id),0,0,0,quint32(id)},value));
+            QCOMPARE(actors.actor(0)->pose().art().bodyHandle(),changed.handles[0]);
+            QCOMPARE(actors.bodySpeed(id,id,0),37.f/16);
+            // Snapshot lifetime is independent of later authoring and pending assignments.
+            auto pending=routes;pending.requireAssignment(id);project.setAnimationRoutes(pending.json());
+            const auto missing=project.bodyAnimationData();
+            QVERIFY_THROWS_EXCEPTION(Error,ActorArt::loadBody(project.rom(),id,id,0,0,missing));
+            QCOMPARE(data->handle(id,id,0,0),changed.handles[0]);
+            project.setAnimationRoutes(routes.json());
+            QJsonArray cases;
+            for(int source=1;source<data->classes().entries().size();++source) {
+                QVector<int> owners{source};
+                if(source>=165 || source==2 || source==85) owners<<2<<3;
+                for(int owner:owners) {
+                    const auto sourceRow=routes.entry(source).selectors;
+                    const int selected=u8(data->classes().entries()[source].record,69)==owner&&!sourceRow.isEmpty()?source:owner;
+                    if(routes.entry(selected).selectors.isEmpty()) continue;
+                    for(int action:{0,5,11,17,30,124,125,254}) for(int mode=0;mode<3;++mode)
+                        for(int flags=0;flags<(source>=165||source==2?4:1);++flags)
+                            cases<<QJsonArray{source,owner,action,mode,flags,data->selector(source,owner,action,mode,flags)};
+                }
+            }
+            QByteArray classes;for(const auto &entry:data->classes().entries())classes+=entry.record;
+            QTemporaryDir work;QFile fixture(work.filePath("preview.json"));QVERIFY(fixture.open(QIODevice::WriteOnly));
+            fixture.write(QJsonDocument(QJsonObject{{"rom",path},{"classes",QString::fromLatin1(classes.toHex())},
+                {"resource",QString::fromLatin1(routes.decodedResource().toHex())},
+                {"table",QString::fromLatin1(project.animationOverrides()->table(data->classes()).toHex())},
+                {"count",project.animationOverrides()->entries().size()},{"cases",cases}}).toJson());fixture.close();
+            QProcess reference;reference.start("node",{QFINDTESTDATA("animation-override-source.cjs"),fixture.fileName()});
+            QVERIFY(reference.waitForFinished(60000));QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+            qInfo().noquote()<<reference.readAllStandardOutput();
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void sourceExportImportAndReset() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

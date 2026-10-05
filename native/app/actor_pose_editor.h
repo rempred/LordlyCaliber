@@ -24,10 +24,12 @@ class ActorPoseEditor : public QWidget {
     explicit ActorPoseEditor(const Rom &rom, QWidget *parent = nullptr);
     void selectCommand(const DirectorProgram &, int command);
     void setArtwork(const ActorArtworkEdits &);
+    void setBodyAnimations(BodyAnimationData::Pointer);
 
   private:
     void loadSources();
     void loadBank();
+    void resolveAction();
     void restart();
     void seek(int step);
     void step();
@@ -39,6 +41,9 @@ class ActorPoseEditor : public QWidget {
     bool suspendedPose() const;
     QString poseError() const;
     Rom rom_;
+    BodyAnimationData::Pointer bodyAnimations_;
+    QWidget *actionControls_;
+    QComboBox *actions_, *actionModes_;
     ActorRenderer renderer_;
     ActorArtworkEdits artwork_;
     QCheckBox *projected_, *shadows_;

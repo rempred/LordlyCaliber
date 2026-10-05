@@ -59,6 +59,5 @@ class ActorRenderer {
     Rom rom_;
     QCache<QString, QVector<ActorFrameLayer>> frames_;
     ActorArtworkEdits artwork_;
-    std::optional<ClassData> classes_;
 };
 } // namespace lordly

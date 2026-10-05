@@ -51,12 +51,12 @@ void require(int result, const Context &context) {
         throw Error(context.error.isEmpty() ? "Invalid actor construction or State request"
                                             : context.error);
 }
-ActorPosePlayer player(const Rom &rom, const QByteArray &record) {
+ActorPosePlayer player(const Rom &rom, const QByteArray &record, BodyAnimationData::Pointer data) {
     const auto r = raw(record);
     LordlyActorPose fields{};
     lordly_actor_read_pose(&r, &fields);
     auto art = fields.decoder_mode ? ActorArt::loadBody(rom, fields.bank, fields.owner,
-                                                        fields.variant, fields.flag_b)
+                                                        fields.variant, fields.flag_b, data)
                                    : ActorArt::load(rom, fields.bank);
     // Special body classes clamp the state at their next native invocation.
     // Use a valid constructor state, then restore every native field below.
@@ -65,14 +65,14 @@ ActorPosePlayer player(const Rom &rom, const QByteArray &record) {
     return result;
 }
 } // namespace
-ActorInstance::ActorInstance(const Rom &rom, const QByteArray &record)
-    : rom_(rom), record_(record), pose_(player(rom, record)) {}
+ActorInstance::ActorInstance(const Rom &rom, const QByteArray &record, BodyAnimationData::Pointer data)
+    : rom_(rom), bodyData_(std::move(data)), record_(record), pose_(player(rom, record, bodyData_)) {}
 ActorInstance ActorInstance::create(const Rom &rom, const LordlyActorSelection &selection, int mode,
-                                    const Height &terrain) {
+                                    const Height &terrain, BodyAnimationData::Pointer data) {
     Context context{rom, terrain, {}, {}};
     LordlyActorRecord record{};
     require(lordly_actor_construct(&record, &selection, mode, resolve, height, &context), context);
-    ActorInstance result(rom, bytes(record));
+    ActorInstance result(rom, bytes(record), std::move(data));
     if (result.pose_.advance() != LORDLY_POSE_OK)
         throw Error(result.pose_.error());
     return result;
@@ -86,7 +86,7 @@ void ActorInstance::select(const LordlyActorSelection &selection) {
     require(lordly_actor_select(&next, &selection, resolve, &context, &advance), context);
     if (!advance)
         return;
-    ActorInstance replacement(rom_, bytes(next));
+    ActorInstance replacement(rom_, bytes(next), bodyData_);
     if (replacement.pose_.advance() != LORDLY_POSE_OK)
         throw Error(replacement.pose_.error());
     *this = std::move(replacement);

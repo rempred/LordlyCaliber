@@ -76,7 +76,7 @@ class PoseView : public QGraphicsView {
 };
 } // namespace
 ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
-    : QWidget(parent), rom_(rom), renderer_(rom) {
+    : QWidget(parent), rom_(rom), bodyAnimations_(BodyAnimationData::load(rom)), renderer_(rom) {
     auto layout = new QVBoxLayout(this);
     auto note = new QLabel(
         "Pose inspection with per-layer opacity and optional sepia. Playback speed is adjustable; "
@@ -121,6 +121,23 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     poseSelectors->addWidget(variant_);
     poseSelectors->addWidget(sepia_);
     layout->addLayout(poseSelectors);
+    actionControls_ = new QWidget;
+    auto actionRow = new QHBoxLayout(actionControls_);
+    actionRow->setContentsMargins(0,0,0,0);
+    actionRow->addWidget(new QLabel("Attack action"));
+    actions_ = new QComboBox; actions_->setObjectName("actorAttackAction");
+    actions_->addItem("Manual pose", -1);
+    QMap<int,QString> actionNames;
+    for (const auto &value : AnimationOverrideImage::definition()["actions"].toArray()) {
+        const auto row=value.toObject(); actionNames[row["id"].toInt()]=row["name"].toString();
+    }
+    for (int id=0;id<255;++id) actions_->addItem(QString("0x%1 · %2").arg(id,2,16,QChar('0')).arg(actionNames.value(id,"Action")),id);
+    actionRow->addWidget(actions_,1);
+    actionModes_ = new QComboBox; actionModes_->setObjectName("actorAttackMode");
+    actionModes_->addItems({"Normal · mode 0","Normal · mode 1","Attack blocked · mode 2"});
+    actionRow->addWidget(actionModes_);
+    actionControls_->setToolTip("Resolves current class defaults and attack overrides for the selected source, owner and body flags. Scene commands that directly select a pose keep that pose.");
+    layout->addWidget(actionControls_);
     bodyControls_ = new QWidget;
     auto bodyLayout = new QHBoxLayout(bodyControls_);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -331,7 +348,11 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     connect(kinds_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadSources);
     connect(owners_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
     connect(flags_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::loadBank);
-    connect(poses_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::restart);
+    connect(poses_, &QComboBox::currentIndexChanged, this, [this] {
+        const QSignalBlocker block(actions_); actions_->setCurrentIndex(0); restart();
+    });
+    connect(actions_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::resolveAction);
+    connect(actionModes_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::resolveAction);
     connect(variant_, &QSpinBox::valueChanged, this, &ActorPoseEditor::restart);
     connect(sepia_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
     connect(equipment_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::draw);
@@ -430,6 +451,7 @@ void ActorPoseEditor::loadSources() {
         projected_->setChecked(false);
     variant_->setEnabled(!body);
     bodyControls_->setVisible(body);
+    actionControls_->setVisible(body);
     owners_->setEnabled(body);
     flags_->setEnabled(body);
     try {
@@ -438,7 +460,7 @@ void ActorPoseEditor::loadSources() {
         owners_->clear();
         owners_->addItem("Same as source", -1);
         if (body) {
-            const auto classes = ClassData::load(rom_);
+            const auto &classes = bodyAnimations_->classes();
             for (int i = 0; i < classes.entries().size(); ++i) {
                 const auto label =
                     QString("%1 · %2").arg(i).arg(decodeText(classes.entries()[i].name));
@@ -464,7 +486,7 @@ void ActorPoseEditor::loadBank() {
         const int source = banks_->currentData().toInt(), owner = owners_->currentData().toInt();
         const bool body = kinds_->currentIndex() == 1;
         art_ = body ? ActorArt::loadBody(rom_, source, owner < 0 ? source : owner,
-                                         flags_->currentIndex() >> 1, flags_->currentIndex() & 1)
+                                         flags_->currentIndex() >> 1, flags_->currentIndex() & 1, bodyAnimations_)
                     : ActorArt::load(rom_, source);
         if (body) {
             defaultAppearance_ = art_->defaultAppearance(rom_);
@@ -486,13 +508,11 @@ void ActorPoseEditor::loadBank() {
                                 state);
         fit_ = true;
     } catch (const Error &e) {
+        draw();
         status_->setText(QString::fromUtf8(e.what()));
-        items_.clear();
-        canvas_->clear();
-        layers_->clear();
         return;
     }
-    restart();
+    resolveAction();
 }
 void ActorPoseEditor::restart() {
     stop();
@@ -560,6 +580,40 @@ void ActorPoseEditor::step() {
         position_->setValue(step_);
     }
     draw();
+}
+void ActorPoseEditor::resolveAction() {
+    if (kinds_->currentIndex()!=1 || actions_->currentData().toInt()<0) { restart(); return; }
+    try {
+        const int source=banks_->currentData().toInt(), owner=owners_->currentData().toInt();
+        const int state=bodyAnimations_->selector(source,owner<0?source:owner,actions_->currentData().toInt(),actionModes_->currentIndex(),flags_->currentIndex());
+        const int index=poses_->findData(state);
+        if (index<0) throw Error("The selected action refers to an absent pose in this body");
+        const QSignalBlocker block(poses_); poses_->setCurrentIndex(index); restart();
+    } catch (const Error &e) {
+        stop(); player_.reset(); draw(); status_->setText(QString::fromUtf8(e.what()));
+    }
+}
+void ActorPoseEditor::setBodyAnimations(BodyAnimationData::Pointer animations) {
+    if (!animations) throw Error("Animation preview requires class data");
+    bodyAnimations_=std::move(animations);
+    if (kinds_->currentIndex()!=1) return;
+    const int source=banks_->currentData().toInt(),owner=owners_->currentData().toInt(),state=poses_->currentData().toInt(),target=step_;
+    {
+        const QSignalBlocker bankBlock(banks_),ownerBlock(owners_);
+        banks_->clear(); owners_->clear(); owners_->addItem("Same as source",-1);
+        const auto &entries=bodyAnimations_->classes().entries();
+        for(int id=0;id<entries.size();++id) {
+            const auto label=QString("%1 · %2").arg(id).arg(decodeText(entries[id].name));
+            banks_->addItem(label,id); owners_->addItem(label,id);
+        }
+        banks_->setCurrentIndex((banks_->findData(source)>=0?banks_->findData(source):banks_->findData(1)));
+        owners_->setCurrentIndex(std::max(0,owners_->findData(owner)));
+    }
+    loadBank();
+    if (art_ && actions_->currentData().toInt()<0) {
+        const QSignalBlocker block(poses_); poses_->setCurrentIndex(std::max(0,poses_->findData(state))); restart();
+    }
+    seek(target);
 }
 void ActorPoseEditor::setArtwork(const ActorArtworkEdits &edits) {
     if (artwork_ == edits)

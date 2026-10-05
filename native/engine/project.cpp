@@ -582,6 +582,10 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
         throw Error("Invalid description record");
     texts_[kind].entries[id].bytes = bytes;
 }
+BodyAnimationData::Pointer Project::bodyAnimationData() {
+    loadAnimationRoutes(); loadAnimationOverrides();
+    return std::make_shared<const BodyAnimationData>(classData(),*animationRoutes_,*animationOverrides_);
+}
 void Project::loadAnimationRoutes() {
     if (!animationRoutes_)
         animationRoutes_ = AnimationRoutes::load(rom_);

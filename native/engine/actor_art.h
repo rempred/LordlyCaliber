@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/artwork_edits.h"
+#include "engine/body_animation_data.h"
 #include "engine/sprite_object.h"
 #include <QMap>
 #include <QPoint>
@@ -37,13 +38,15 @@ struct BodyLayerSelection {
 class ActorArt {
   public:
     static ActorArt load(const Rom &rom, int bank);
-    static ActorArt loadBody(const Rom &rom, int source, int owner, int flagA, int flagB);
+    static ActorArt loadBody(const Rom &rom, int source, int owner, int flagA, int flagB,
+                             BodyAnimationData::Pointer data = {});
     // Direct descriptor handles used by Stage props; no class or cutscene vocabulary.
     static ActorArt loadDirect(const Rom &rom, quint16 handle);
     static int bankCount(const Rom &rom);
     bool isBody() const {
         return body_;
     }
+    const BodyAnimationData::Pointer &bodyAnimations() const { return bodyData_; }
     int sourceClass() const {
         return sourceClass_;
     }
@@ -88,6 +91,7 @@ class ActorArt {
 
   private:
     static ActorArt descriptor(const Rom &rom, quint32 key);
+    BodyAnimationData::Pointer bodyData_;
     int bank_ = 0;
     bool body_ = false;
     int sourceClass_ = 0, ownerClass_ = 0, flagA_ = 0, flagB_ = 0;

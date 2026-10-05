@@ -40,7 +40,8 @@ struct ActorRosterLaunch {
 };
 class SceneActors {
   public:
-    SceneActors(const Rom &rom, int mode, quint8 presentation, ActorInstance::Height height = {});
+    SceneActors(const Rom &rom, int mode, quint8 presentation, ActorInstance::Height height = {},
+                BodyAnimationData::Pointer data = {});
     void setMode(int mode);
     const std::optional<ActorInstance> &actor(int slot) const;
     qint32 dialoguePortrait(int slot) const;
@@ -128,6 +129,7 @@ class SceneActors {
     bool rosterMemberUnavailable(const QByteArray &, const PresentationRoster &) const;
     std::array<int, 4> spawnBodyRow(int identity, bool previousSpecial, int direction = -1);
     Rom rom_;
+    BodyAnimationData::Pointer bodyData_;
     ActorMaterials materials_;
     ActorDivider divider_;
     quint8 defaultChannel_ = 0;

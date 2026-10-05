@@ -104,14 +104,16 @@ SceneCommandEditor::SceneCommandEditor(Project *project, QUndoStack *undo,
     actions->addWidget(discard_);
     actions->addStretch();
     layout->addLayout(actions);
-    connect(undo_, &QUndoStack::indexChanged, this, [this] {
-        if (!editing_) {
-            if (!property("invalidEdits").toBool())
-                refresh();
+    connect(undo_, &QUndoStack::indexChanged, this,
+            [this, previous = project_->scenePrograms()->json()]() mutable {
+        const auto next = project_->scenePrograms()->json();
+        const bool changedProgram = next != previous;
+        previous = next;
+        if (!editing_ && changedProgram) {
+            if (!property("invalidEdits").toBool()) refresh();
             emit programChanged();
         }
-        if (changed_)
-            changed_();
+        if (changed_) changed_();
     });
     connect(insert_, &QPushButton::clicked, this, [this] {
         try {

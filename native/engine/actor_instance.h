@@ -9,9 +9,9 @@ namespace lordly {
 class ActorInstance {
   public:
     using Height = std::function<float(int mode, float x, float z)>;
-    ActorInstance(const Rom &rom, const QByteArray &record);
+    ActorInstance(const Rom &rom, const QByteArray &record, BodyAnimationData::Pointer data = {});
     static ActorInstance create(const Rom &rom, const LordlyActorSelection &selection, int mode,
-                                const Height &height = {});
+                                const Height &height = {}, BodyAnimationData::Pointer data = {});
     void select(const LordlyActorSelection &selection);
     QByteArray record() const;
     void setSlot(int slot);
@@ -31,6 +31,7 @@ class ActorInstance {
 
   private:
     Rom rom_;
+    BodyAnimationData::Pointer bodyData_;
     QByteArray record_;
     ActorPosePlayer pose_;
 };

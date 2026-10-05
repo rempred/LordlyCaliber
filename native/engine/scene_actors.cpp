@@ -11,8 +11,8 @@ float coordinate(quint32 word) {
 }
 } // namespace
 SceneActors::SceneActors(const Rom &rom, int mode, quint8 presentation,
-                         ActorInstance::Height height)
-    : rom_(rom), mode_(mode), presentation_(presentation), height_(std::move(height)),
+                         ActorInstance::Height height, BodyAnimationData::Pointer data)
+    : rom_(rom), bodyData_(std::move(data)), mode_(mode), presentation_(presentation), height_(std::move(height)),
       constants_(actorMotionConstants(rom)) {
     if (mode < 0 || mode > 2)
         throw Error("Actor scene mode is unknown");
@@ -71,7 +71,7 @@ const LordlyActorMotion &SceneActors::motion(int slot) const {
 }
 void SceneActors::supplyActor(int slot, const QByteArray &record) {
     checkSlot(slot);
-    actors_[slot] = ActorInstance(rom_, record);
+    actors_[slot] = ActorInstance(rom_, record, bodyData_);
 }
 void SceneActors::supplyMotion(int slot, const LordlyActorMotion &motion) {
     checkSlot(slot);
@@ -188,7 +188,7 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
         bodyRow(identity); // Validate before replacing appearance fields.
         put8(record, 0x147, quint8(identity));
         put8(record, 0x148, 1);
-        const auto classes = ClassData::load(rom_);
+        const auto classes = bodyData_ ? bodyData_->classes() : ClassData::load(rom_);
         QByteArray records;
         for (const auto &entry : classes.entries())
             records += entry.record;
@@ -209,7 +209,7 @@ void SceneActors::selectBodyInternal(const LordlyActorBodySelection &s) {
         lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, appearance,
                               &equipment))
         throw Error("Body appearance item exceeds the current item table");
-    ActorInstance replacement(rom_, record);
+    ActorInstance replacement(rom_, record, bodyData_);
     configureLinkedPose(replacement);
     const auto &p = replacement.pose().actor();
     registrations_ << BodyRegistration{s.slot,   p.bank,
@@ -460,7 +460,7 @@ bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &val
             quint8(create ? args[7] : 0),
             presentation_};
         if (create)
-            actors_[slot] = ActorInstance::create(rom_, selection, mode_, height_);
+            actors_[slot] = ActorInstance::create(rom_, selection, mode_, height_, bodyData_);
         else {
             if (!actors_[slot])
                 throw Error("Actor State requires an occupied slot");

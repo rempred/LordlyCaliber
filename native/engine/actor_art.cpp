@@ -88,24 +88,12 @@ ActorArt ActorArt::load(const Rom &rom, int bank) {
         result.stateTable_ << qint16(u16(states, at));
     return result;
 }
-ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, int flagB) {
-    const auto classes = ClassData::load(rom);
-    if (source < 0 || source >= classes.entries().size() || owner < 0 || flagA < 0 || flagA > 1 ||
-        flagB < 0 || flagB > 1)
-        throw Error("Invalid class body source, owner or flags");
-    // func_002015C8: byte at RAM index-base + 0x45, not modder body byte B45.
-    const auto handles = AnimationRoutes::resourceBytes(rom);
-    const quint32 begin = u16(handles, 0), end = u16(handles, 2);
-    if (begin > end || end > quint32(handles.size()) || (end - begin) % 2)
-        throw Error("Class body route exceeds its current ROM handle table");
-    QVector<unsigned short> table;
-    for (quint32 at = begin; at < end; at += 2)
-        table << u16(handles, at);
-    unsigned short handle = 0;
-    if (lordly_actor_body_handle(table.constData(), int(table.size()), source, owner,
-                                 u8(classes.entries()[source].record, 0x45), flagA, flagB, &handle))
-        throw Error("Class body route exceeds its current ROM handle table");
+ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, int flagB,
+                            BodyAnimationData::Pointer data) {
+    if (!data) data = BodyAnimationData::load(rom);
+    const auto handle = data->handle(source, owner, flagA, flagB);
     auto result = loadDirect(rom, handle);
+    result.bodyData_ = std::move(data);
     result.body_ = true;
     result.sourceClass_ = source;
     result.ownerClass_ = owner;
@@ -277,7 +265,7 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
     const int item = lordly_body_equipment_variant(sourceClass_, appearance.equipment);
     if (item < 0 || item >= 278)
         throw Error("Body equipment exceeds the current item table");
-    const auto variants = AnimationRoutes::load(rom).section(2);
+    const auto variants = bodyData_->routes().section(2);
     if (item >= variants.size())
         throw Error("Body equipment image variant exceeds its table");
     QVector<BodyLayerSelection> result;
@@ -308,7 +296,7 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
 BodyAppearance ActorArt::defaultAppearance(const Rom &rom) const {
     if (!body_)
         throw Error("Class appearance requires body art");
-    const auto classes = ClassData::load(rom);
+    const auto &classes = bodyData_->classes();
     QByteArray records;
     for (const auto &entry : classes.entries())
         records += entry.record;

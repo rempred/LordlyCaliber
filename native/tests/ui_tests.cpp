@@ -63,6 +63,58 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void stagedAnimationPreviewAndUndo() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            const auto rom=Rom::open(path);auto project=Project::fromRom(rom);QUndoStack undo;
+            CutsceneEditor cutscenes(rom,nullptr,&project,&undo,[]{});
+            QTRY_VERIFY(cutscenes.findChild<QListWidget *>("cutsceneScenes")->count()>0);
+            AnimationEditor edits(&project,&undo,[]{});
+            AnimationOverrideEditor overrides(&project,&undo,[]{});
+            RecordModel classEditor(&project,Table::Classes,&undo);
+            auto inspector=cutscenes.findChild<ActorPoseEditor *>();QVERIFY(inspector);
+            auto kind=inspector->findChild<QComboBox *>("actorSourceKind"),bank=inspector->findChild<QComboBox *>("actorBank");
+            kind->setCurrentIndex(1);bank->setCurrentIndex(bank->findData(2));
+            auto position=inspector->findChild<QSpinBox *>("actorPosition");position->setValue(1);
+            auto view=inspector->findChild<QGraphicsView *>("actorCanvas");
+            auto flat=[&]{QImage image(320,240,QImage::Format_RGBA8888);image.fill(Qt::transparent);QPainter painter(&image);view->scene()->render(&painter);return image;};
+            const auto original=flat();
+            edits.selectClass(2);auto source=edits.findChild<QComboBox *>("animationSource");
+            source->setCurrentIndex(source->findData(3));edits.findChild<QPushButton *>("animationCopySource")->click();
+            QCOMPARE(position->value(),1);const auto changed=flat();QVERIFY(changed!=original);
+            undo.undo();QCOMPARE(flat(),original);QCOMPARE(position->value(),1);undo.redo();QCOMPARE(flat(),changed);
+            undo.undo();
+            auto cls=overrides.findChild<QComboBox *>("overrideClass"),action=overrides.findChild<QComboBox *>("overrideAction");
+            cls->setCurrentIndex(cls->findData(2));action->setCurrentIndex(action->findData(5));
+            auto normal=overrides.findChild<QComboBox *>("overrideNormal"),blocked=overrides.findChild<QComboBox *>("overrideBlocked");
+            normal->setCurrentIndex(normal->findData(40));blocked->setCurrentIndex(blocked->findData(41));
+            overrides.findChild<QPushButton *>("overrideAdd")->click();
+            QCOMPARE(project.animationOverrides()->entries().size(),1);QVERIFY2(overrides.findChild<QLabel *>("overrideNotice")->text().isEmpty(),qPrintable(overrides.findChild<QLabel *>("overrideNotice")->text()));
+            auto previewAction=inspector->findChild<QComboBox *>("actorAttackAction"),mode=inspector->findChild<QComboBox *>("actorAttackMode"),pose=inspector->findChild<QComboBox *>("actorPose");
+            previewAction->setCurrentIndex(previewAction->findData(5));QCOMPARE(pose->currentData().toInt(),40);
+            mode->setCurrentIndex(2);QCOMPARE(pose->currentData().toInt(),41);position->setValue(1);const auto blockedFrame=flat();
+            undo.undo();QCOMPARE(pose->currentData().toInt(),project.bodyAnimationData()->selector(2,2,5,2,0));QCOMPARE(position->value(),1);
+            undo.redo();QCOMPARE(pose->currentData().toInt(),41);QCOMPARE(flat(),blockedFrame);
+            const int id=classEditor.appendClass(2,"Preview class");QCOMPARE(id,165);
+            bank->setCurrentIndex(bank->findData(id));QCOMPARE(bank->currentData().toInt(),id);QCOMPARE(pose->currentData().toInt(),41);
+            position->setValue(1);auto projected=inspector->findChild<QCheckBox *>("actorProjected");projected->setChecked(true);
+            QVERIFY(!inspector->property("placementFrame").value<QImage>().isNull());
+            undo.undo();QVERIFY(bank->findData(id)<0);undo.redo();QVERIFY(bank->findData(id)>=0);
+            // A body-route edit must invalidate captured scene frames and replay to the same tick.
+            auto scenes=ScenePrograms::load(rom);const quint32 key=0x1fa8bf4-0x594284;auto program=scenes.program(key);
+            for(auto &command:program.commands)if(command.opcode==0x1b){command.operands[4]=0;command.operands[5]=0;break;}
+            scenes.replace(key,program.encode());auto preview=cutscenes.findChild<ScenePreview *>();QVERIFY(preview);
+            preview->selectScene(scenes,key,2);auto scenePosition=preview->findChild<QSpinBox *>("scenePosition");
+            scenePosition->setValue(3);QTRY_COMPARE(preview->property("sceneTick").toInt(),3);const auto sceneOriginal=preview->renderedFrame();
+            edits.selectClass(0x58);source->setCurrentIndex(source->findData(2));edits.findChild<QPushButton *>("animationCopySource")->click();
+            QTRY_COMPARE(preview->property("sceneTick").toInt(),3);const auto sceneChanged=preview->renderedFrame();QVERIFY(sceneChanged!=sceneOriginal);
+            scenePosition->setValue(1);QTRY_COMPARE(preview->property("sceneTick").toInt(),1);scenePosition->setValue(3);QTRY_COMPARE(preview->property("sceneTick").toInt(),3);QCOMPARE(preview->renderedFrame(),sceneChanged);
+            undo.undo();QTRY_COMPARE(preview->property("sceneTick").toInt(),3);QCOMPARE(preview->renderedFrame(),sceneOriginal);
+            undo.redo();QTRY_COMPARE(preview->property("sceneTick").toInt(),3);QCOMPARE(preview->renderedFrame(),sceneChanged);
+            bank->setCurrentIndex(bank->findData(id));position->setValue(1);inspector->resize(1280,850);inspector->show();QVERIFY(inspector->grab().save("staged-animation-preview.png"));
+        }catch(const Error &e){QFAIL(e.what());}
+    }
+
     void attackAnimationOverrides() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

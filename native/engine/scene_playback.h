@@ -20,6 +20,7 @@
 #include "game/director/scene_schedule.h"
 namespace lordly {
 struct ScenePlaybackStart {
+    BodyAnimationData::Pointer bodyAnimations;
     int mode = 2;
     quint8 presentation = 0, alternate = 0, delayedCounter = 0;
     DirectorLaunchTranslations translations;

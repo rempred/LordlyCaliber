@@ -19,6 +19,7 @@
 #include "engine/combat_artwork.h"
 #include "engine/animation_routes.h"
 #include "engine/animation_overrides.h"
+#include "engine/body_animation_data.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -67,6 +68,7 @@ class Project {
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
+    BodyAnimationData::Pointer bodyAnimationData();
     void loadAnimationRoutes();
     const std::optional<AnimationRoutes> &animationRoutes() const {return animationRoutes_;}
     void setAnimationRoutes(const QJsonObject &);

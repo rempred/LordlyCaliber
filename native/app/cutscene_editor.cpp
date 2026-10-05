@@ -229,11 +229,19 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             return project->combatArtwork() ? project->combatArtwork()->previewEdits()
                                             : ActorArtworkEdits{};
         };
+        const auto initialAnimations = project->bodyAnimationData();
+        scenePreview_->setBodyAnimations(initialAnimations);
+        actorInspector->setBodyAnimations(initialAnimations);
         const auto initialArtwork = artwork();
         scenePreview_->setArtwork(initialArtwork);
         actorInspector->setArtwork(initialArtwork);
         auto signature = [project] {
-            return QJsonObject{{"classes", project->records(Table::Classes).size()},
+            QJsonArray classes;
+            for (const auto &record : project->records(Table::Classes))
+                classes << QJsonArray{record.name,QString::fromLatin1(record.bytes.toHex())};
+            return QJsonObject{{"classes", classes},
+                               {"routes", project->animationRoutes() ? project->animationRoutes()->json() : QJsonObject{}},
+                               {"overrides", project->animationOverrides() ? project->animationOverrides()->json() : QJsonObject{}},
                                {"art", project->avatarArtwork() ? project->avatarArtwork()->json()
                                                                 : QJsonObject{}},
                                {"combat", project->combatArtwork()
@@ -244,6 +252,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 [this, signature, artwork, actorInspector, previous = signature()]() mutable {
                     const auto next = signature();
                     if (next != previous) {
+                        if (next["classes"] != previous["classes"] || next["routes"] != previous["routes"] || next["overrides"] != previous["overrides"]) {
+                            const auto animations = project_->bodyAnimationData();
+                            scenePreview_->setBodyAnimations(animations);
+                            actorInspector->setBodyAnimations(animations);
+                        }
                         previous = next;
                         const auto edits = artwork();
                         scenePreview_->setArtwork(edits);

@@ -4,7 +4,7 @@ ScenePlayback::ScenePlayback(const Rom &rom, Directors resources, int selector,
                              ScenePlaybackStart start, SceneCameras cameras,
                              ActorInstance::Height height)
     : director_(std::move(resources), selector, start.mode, std::move(start.translations)),
-      rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height)), sprites_(rom),
+      rom_(rom), actors_(rom, start.mode, start.presentation, std::move(height), std::move(start.bodyAnimations)), sprites_(rom),
       cameras_(std::move(cameras)), panels_(rom), imageMotion_(rom), ribbons_(rom),
       lighting_(start.lighting) {
     schedule_.mode = quint8(start.mode);

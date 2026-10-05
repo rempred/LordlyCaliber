@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Staged class animation previews
+
+BodyAnimationData is an immutable snapshot shared by Actors and playback checkpoints.
+It holds current class records, compound animation assignments and authenticated
+Normal/Blocked override rows. ActorArt and ActorInstance bind the snapshot, SceneActors
+uses its equipment defaults and movement speeds, and drawing uses its class-size
+fields. New class IDs therefore preview before export. Unknown override ownership
+prevents action resolution; explicit pose inspection remains available. Pending body
+assignments fail visibly rather than displaying an unrelated template.
+
+The pose inspector can resolve an action for the selected source, owner, body flags
+and raw mode0/1/2. Its default selector matches original ROM201798, followed by the
+existing OBSO first-match rules, including exact original selectors and body flags.
+Direct cutscene pose requests retain their explicit states. Class/animation undo reloads
+the inspector at its current step and replays scene snapshots to their current target
+with recorded input. Pure artwork changes do not rebuild animation snapshots.
+SceneCommandEditor now emits a program-change signal on undo only if scene data changed;
+unrelated edits had previously reset scene selection/playback through catalog refresh.
+
+`animation_override_tests stagedBodyAnimations` passed3561ms:4824 current-project
+selector cases match original instructions followed by the freshly assembled patch,
+including new IDs, owner fallback, all raw modes and exact body routes. Snapshot lifetime,
+pending assignments, body creation and speeds also pass. The9216 patch lookup checks
+remain successful. Body equipment/atomicity/all programs and frames passed11215ms;
+presentation lifecycle/missing-context checks passed2339ms. `ui_tests
+stagedAnimationPreviewAndUndo sceneCommandEditingAndPreview sceneDraftSurvivesEventUndo
+authoredSceneCreationControls` passed2140ms: panel edits, Normal/Blocked resolution,
+new-class projected rendering, undo and identical scene replay at the same tick.
+Earlier artwork/equipment/story-cast regressions passed1397ms. The1280x850 screenshot
+was inspected. These are instruction/resource and offscreen Qt checks, not full-game
+or hardware validation. Sequence authoring and fixed-ID visual-template behavior still
+need their own implementation/audit.
+
 ## Existing combat override compatibility
 
 AnimationOverrideImage authenticates retail and OBSO-v1/v2/v3 independently of
@@ -66,7 +99,7 @@ unmatched search input and duplicate keys leave the model/undo stack unchanged.
 loadDesktopWorkspace` passed18,788ms: actual controls, class-template inheritance,
 shared undo between both animation panels, project persistence and the existing class
 animation source-export regression. The1100x820 screenshot was inspected. Staged
-animation previews and sequence authoring remain outstanding.
+animation previews are integrated as described above; sequence authoring remains outstanding.
 
 ## Expandable class animation data
 

@@ -31,6 +31,7 @@ class ScenePreview : public QWidget {
     void setPortraitProvider(DialogueDrawing::PortraitProvider);
     void refreshPortraits();
     void setArtwork(const ActorArtworkEdits &);
+    void setBodyAnimations(BodyAnimationData::Pointer);
     const QImage &renderedFrame() const {
         return frame_;
     }
@@ -76,6 +77,7 @@ class ScenePreview : public QWidget {
     bool hasDialogue() const;
     std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
+    BodyAnimationData::Pointer bodyAnimations_;
     DialogueDrawing::PortraitProvider portraits_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;

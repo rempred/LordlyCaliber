@@ -285,6 +285,10 @@ void ScenePreview::setPortraitProvider(DialogueDrawing::PortraitProvider provide
     if(dialogueDrawing_)dialogueDrawing_->setPortraitProvider(portraits_);
     refreshPortraits();
 }
+void ScenePreview::setBodyAnimations(BodyAnimationData::Pointer animations) {
+    bodyAnimations_=std::move(animations);
+    refreshPortraits();
+}
 void ScenePreview::setArtwork(const ActorArtworkEdits &edits) {
     renderer_.setArtwork(edits);
     spriteRenderer_.setArtwork(edits);
@@ -294,7 +298,7 @@ void ScenePreview::setArtwork(const ActorArtworkEdits &edits) {
 }
 void ScenePreview::refreshPortraits() {
     if(current_) {
-        const auto target=tick_;
+        const auto target=seekTarget_>=0?seekTarget_:tick_;
         restart();
         seek(target);
     }
@@ -503,6 +507,7 @@ void ScenePreview::restart() {
         auto cameras = mode_ ? SceneCameras::freshModeTwo(rom_)
                              : SceneCameras(camera(90, 0, 0, 120), world, world);
         ScenePlaybackStart start;
+        start.bodyAnimations = bodyAnimations_;
         start.mode = mode_;
         start.sceneFlags = 0;
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};

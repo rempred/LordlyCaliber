@@ -39,11 +39,11 @@ std::array<float, 2> SceneActors::presentationTarget(const QByteArray &actor) co
     return {float(qint16(u16(*found, 0x28))), float(qint16(u16(*found, 0x2c)))};
 }
 float SceneActors::bodySpeed(int source, int owner, int direction) const {
-    const auto classes = ClassData::load(rom_);
+    const auto classes = bodyData_ ? bodyData_->classes() : ClassData::load(rom_);
     if (source < 0 || source >= classes.entries().size() || owner < 0 || direction < 0 ||
         direction > 1)
         throw Error("Invalid actor movement source, owner or direction");
-    const auto routes = AnimationRoutes::load(rom_);
+    const auto routes = bodyData_ ? bodyData_->routes() : AnimationRoutes::load(rom_);
     return lordly_body_speed(u8(classes.entries()[source].record, 69), owner,
                              routes.entry(source).speeds[direction],
                              routes.entry(owner).speeds[direction]);
@@ -228,7 +228,7 @@ std::array<int, 4> SceneActors::spawnBodyRow(int identity, bool previousSpecial,
         put8(record, 0x13d, 1);
         put8(record, 0x145, 1);
         put8(record, 0x146, quint8(side));
-        actors_[slot] = ActorInstance(rom_, record);
+        actors_[slot] = ActorInstance(rom_, record, bodyData_);
         created[member] = slot;
     }
     return created;
