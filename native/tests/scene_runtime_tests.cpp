@@ -25,6 +25,75 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void audioRequestsAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("scene-audio-mips.cjs"),
+             path, work.filePath("audio.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("audio.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto sequences =
+            QJsonDocument::fromJson(file.readAll()).object()["results"].toArray();
+        QVERIFY(sequences.size() > 300);
+        for (int index = 0; index < sequences.size(); ++index) {
+            const auto sequence = sequences[index].toObject();
+            LordlyAudioInputs inputs{};
+            inputs.route = qint16(sequence["route"].toInt());
+            inputs.controller_suppressed = sequence["suppressed"].toInt();
+            inputs.scene_present = 1;
+            SceneAudio audio(inputs, {6000, 14000});
+            for (const auto &value : sequence["steps"].toArray()) {
+                const auto step = value.toObject();
+                for (int i = 0; i < 7; ++i)
+                    inputs.voices[i] = quint32(step["voices"].toArray()[i].toInt());
+                audio.supplyInputs(inputs);
+                audio.clearRequests();
+                QVector<quint32> args;
+                for (const auto &a : step["args"].toArray())
+                    args << quint32(a.toDouble());
+                const auto op = quint32(step["op"].toInt());
+                if (op)
+                    QVERIFY(audio.service(op, args));
+                else
+                    audio.advance();
+                QVector<SceneAudioRequest> expected;
+                for (const auto &c : step["calls"].toArray()) {
+                    const auto call = c.toObject();
+                    expected << SceneAudioRequest{call["kind"].toInt(), call["context"].toInt(),
+                                                  quint32(call["value"].toDouble()),
+                                                  quint32(call["extra"].toDouble())};
+                }
+                QVERIFY2(audio.requests() == expected,
+                         qPrintable(QString("Audio sequence %1 opcode %2").arg(index).arg(op)));
+                const auto &state = audio.state();
+                for (int i = 0; i < 3; ++i)
+                    QCOMPARE(state.pending[i], quint8(step["pending"].toArray()[i].toInt()));
+                QCOMPARE(bool(state.envelope_present), !step["envelope"].isNull());
+                if (state.envelope_present) {
+                    QByteArray bytes(8, 0);
+                    put16(bytes, 0, quint16(state.step));
+                    put16(bytes, 2, quint16(state.level));
+                    put16(bytes, 4, quint16(state.remaining));
+                    put16(bytes, 6, quint16(state.group));
+                    QVERIFY2(
+                        bytes.toHex() == step["envelope"].toString().toLatin1(),
+                        qPrintable(QString("Envelope sequence %1 opcode %2").arg(index).arg(op)));
+                }
+                for (int i = 0; i < 2; ++i)
+                    QCOMPARE(state.gains[i], quint32(step["gains"].toArray()[i].toDouble()));
+            }
+            const auto before = audio.requests();
+            QVERIFY_THROWS_EXCEPTION(Error, audio.service(0x6e, {8, 0, 1}));
+            QCOMPARE(audio.requests(), before);
+        }
+    }
     void storyCastLaunch() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -38,6 +38,10 @@ current-ROM artwork, explicit preview names and recorded confirm/choice input.
 Window state and input survive seeking and checkpoints. Actor anchors use current
 packed drawing matrices; shared-pass cadence and composition remain desktop
 assumptions. Automatic ordinary portraits and audible playback remain unfinished.
+Scene audio commands now emit native service requests, including deferred program
+replacement, gain envelopes and controller writes. The silent preview preserves
+these requests with deterministic seeking; it assumes no resident voices. The
+resident audio consumer and synthesis remain unfinished.
 
 Scene images support native vignette construction, scripted pan/zoom, forward
 and reverse trails, and manual direction/zoom controls with animated boundary

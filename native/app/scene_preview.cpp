@@ -306,9 +306,8 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
     if (object == view_ && event->type() == QEvent::Resize)
-        QTimer::singleShot(0, this, [this] {
-            view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
-        });
+        QTimer::singleShot(0, this,
+                           [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
     if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
         (!current_->playback.panels().empty() || hasDialogue())) {
         const auto key = static_cast<QKeyEvent *>(event);
@@ -485,6 +484,9 @@ void ScenePreview::restart() {
         dialogueEnvironment_ = DialoguePlayback::environment(rom_);
         playback.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
         playback.dialogue()->context = SceneDialogueContext::preview(std::move(names));
+        // Silent preview has no resident voices and starts on route zero with unity buses.
+        // Preserve typed requests for an eventual backend; never invent voice lifetimes.
+        playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767}));
         const auto launch =
             SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
         if (launch.resource_class == 4) {
@@ -855,6 +857,8 @@ void ScenePreview::step() {
         next.playback.setImageInput(inputHistory_.value(tick_), pressedHistory_.value(tick_));
         pendingPressed_ = 0;
         next.playback.advanceFade();
+        next.playback.audio()->clearRequests();
+        next.playback.audio()->advance();
         // This reference stage starts these job/object pools empty. Commands
         // needing an unimplemented owner stop rather than adding hidden jobs.
         auto empty = [](LordlySceneService service) {
@@ -963,6 +967,9 @@ void ScenePreview::present() {
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
     setProperty("sceneStopped", !current_ || current_->stopped);
+    setProperty("sceneAudioRequests", current_ && current_->playback.audio()
+                                          ? qulonglong(current_->playback.audio()->requestCount())
+                                          : qulonglong(0));
     setProperty("sceneDialogueState",
                 current_ && current_->dialogue
                     ? current_->dialogue->state(0, current_->playback.dialogue()->resources)
@@ -994,5 +1001,10 @@ void ScenePreview::present() {
         status_->setText(
             status_->text() +
             "\nPanels: native timing and layout; approximate frame and glyph rendering.");
+    if (current_->playback.audio()->requestCount())
+        status_->setText(
+            status_->text() +
+            QString("\nSilent audio preview: %1 native service requests; no resident voices.")
+                .arg(current_->playback.audio()->requestCount()));
 }
 } // namespace lordly

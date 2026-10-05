@@ -305,7 +305,8 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         schedule_.alternate = 0;
         return true;
     }
-    if (actors_.service(opcode, args, value) || sprites_.service(opcode, args, value) ||
+    if ((audio_ && audio_->service(opcode, args)) || actors_.service(opcode, args, value) ||
+        sprites_.service(opcode, args, value) ||
         projection_.service(schedule_.mode, opcode, args) ||
         cameras_.service(schedule_.mode, opcode, args) || fade_.service(opcode, args, value) ||
         effects_.service(opcode, args))

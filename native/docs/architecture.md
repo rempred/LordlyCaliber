@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Scene audio requests
+
+SceneAudio adapts ROM28308C..28364C into portable C with a typed downstream sink.
+It handles6E/6F/70/71/B4, deferred replacement bytes, signed gain envelopes and
+ordered controller writes. Voice counts, scene route, suppression flag and initial
+gain buses are explicit inputs. Services retain full words until the native route
+narrows them; envelopes retain signed halfwords and clamp only during updates.
+Pending-controller overwrite and voice synthesis belong to the future resident
+consumer, not this request layer. This is reconstructed C, not accepted matching C.
+
+The desktop explicitly starts silent, with no voices, route zero, clear suppression
+and unity gain buses. It records service requests and runs the separate audio
+update once before each scene step. It does not manufacture voice lifetimes or
+claim original global scheduler cadence. Audible playback remains unfinished.
+
+Build78913 scene_runtime_tests audioRequestsAgainstMips passed121ms:331 original
+sequences/951 snapshots match ordered requests, deferred bytes, gain state and full
+eight-byte envelopes. Resident services, allocation, voice counts and flag reads
+are controlled. The original constructor requests four allocation bytes but writes
+eight; the host owns the complete eight-byte state rather than copying that size.
+Build26343 ui_tests storyOpeningDialogue sceneDialogueReplay imageSkipInputReplay
+passed5284ms. The unchanged01FA8BF4 passes both audio requests, reveals its room,
+and seeks backward/forward with identical frames and request counts. The screenshot
+scene-story-revealed.png was inspected. Later panel preset34 still needs its owner.
+
+Correction to the older parent cutscene-director-command-reference.md audio-program
+paragraph: action5 is not a release alias. Original283190 compares context s0 with5,
+after action1's branch; context5 uses direct start and other contexts use pending10.
+The original-instruction cases include action5 for every context and both routes.
+
 ## Dialogue in scene playback
 
 DialoguePlayback now owns the shared resource pass used by both standalone

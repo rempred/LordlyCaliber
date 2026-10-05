@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/director_session.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_audio.h"
 #include "engine/scene_camera.h"
 #include "engine/scene_crop.h"
 #include "engine/scene_dialogue.h"
@@ -127,6 +128,15 @@ class ScenePlayback {
     const ScenePanels &panels() const {
         return panels_;
     }
+    void supplyAudio(SceneAudio audio) {
+        audio_ = std::move(audio);
+    }
+    std::optional<SceneAudio> &audio() {
+        return audio_;
+    }
+    const std::optional<SceneAudio> &audio() const {
+        return audio_;
+    }
     const SceneEffects &effects() const {
         return effects_;
     }
@@ -202,6 +212,7 @@ class ScenePlayback {
     SceneEffects effects_;
     SceneCrop crop_;
     ScenePanels panels_;
+    std::optional<SceneAudio> audio_;
     int screenVariant_ = -1;
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;

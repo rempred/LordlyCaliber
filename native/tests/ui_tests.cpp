@@ -252,6 +252,19 @@ class UiTests : public QObject {
         position->setValue(tick);
         QTRY_COMPARE(preview.property("sceneTick").toInt(), tick);
         QCOMPARE(preview.renderedFrame(), frame);
+        position->setValue(250);
+        QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 250, 20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QCOMPARE(preview.property("sceneAudioRequests").toULongLong(), qulonglong(2));
+        const auto room = preview.renderedFrame();
+        QVERIFY(room != frame);
+        QVERIFY(preview.grab().save("scene-story-revealed.png"));
+        position->setValue(tick);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), tick);
+        position->setValue(250);
+        QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 250, 20000);
+        QCOMPARE(preview.renderedFrame(), room);
+        QCOMPARE(preview.property("sceneAudioRequests").toULongLong(), qulonglong(2));
     }
     void sceneDialogueReplay() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
