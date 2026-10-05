@@ -160,8 +160,6 @@ void ScenePreview::restart() {
 bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
     if (opcode == 0x80000008U && args.size() == 2) {
         const int kind = quint8(args[0]);
-        if (kind == 4)
-            throw Error("Actor crossfade requires its two-pass effect renderer");
         auto capture = next.playback.effects().capture();
         capture.start(args[0], args[1], next.frame);
         if (kind == 2) {
@@ -324,7 +322,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             environment = rendered.environment;
             drawFlat(1);
         }
-        if (sepia) {
+        if (drawing.effects().vignette()) {
             const auto camera = mode_ == 2
                                     ? SceneCamera::orthographic(SceneWorldDrawing::clipMatrix())
                                     : drawing.cameras().actor();
@@ -334,6 +332,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     : drawing.transforms().layerMatrix(
                           (next.backgrounds ? qMax(1, next.backgrounds->channelCount()) : 20) - 1);
             painter.drawImage(0, 0, SceneCapture::vignette(camera, parent));
+        }
+        if (mode_ == 2 && !drawing.effects().specialBlackRecord().isEmpty()) {
+            const auto special =
+                renderer_.special(drawing.actors(), drawing.effects(), {0, 0, 0, 0, 0, 0},
+                                  {drawing.cameras().actor(), {255, 255, 255}, environment, sepia});
+            painter.drawImage(0, 0, special.image);
+            environment = special.environment;
         }
         const auto &capture = drawing.effects().capture();
         if ((capture.selector() == 2 || capture.selector() == 3) && !capture.frame().isNull()) {

@@ -13,13 +13,33 @@ enum class WorldColorPass {
     AfterForegroundProps,
     Objects
 };
+struct SceneSpecialActorPass {
+    int slot;
+    bool sepia;
+    quint8 alpha;
+};
 // Scene-owned color transitions and the independent special-actor black pass.
 class SceneEffects {
   public:
-    SceneCapture &capture() { return capture_; }
-    const SceneCapture &capture() const { return capture_; }
-    bool sepia() const { return sepia_; }
-    void setSepia(bool value) { sepia_ = value; }
+    SceneCapture &capture() {
+        return capture_;
+    }
+    const SceneCapture &capture() const {
+        return capture_;
+    }
+    bool sepia() const {
+        return sepia_;
+    }
+    void setSepia(bool value) {
+        sepia_ = vignette_ = value;
+    }
+    void setImageProcessing(bool value) {
+        sepia_ = value;
+    }
+    bool vignette() const {
+        return vignette_;
+    }
+    QVector<SceneSpecialActorPass> specialActorPasses(const std::array<QByteArray, 28> &) const;
     void supplyColor(int slot, QByteArray record);
     const QByteArray &colorRecord(int slot) const;
     void setSharedColor(std::array<quint8, 5> rgbaAndMask) {
@@ -43,6 +63,7 @@ class SceneEffects {
   private:
     SceneCapture capture_;
     bool sepia_ = false;
+    bool vignette_ = false;
     static void checkSlot(int slot);
     std::array<QByteArray, 20> colors_;
     std::array<quint8, 5> shared_{255, 255, 255, 255, 0};

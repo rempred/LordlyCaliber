@@ -240,6 +240,24 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), hall);
         QVERIFY(preview.grab().save("world-scene-pan.png"));
     }
+    void specialBlackPlayback() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); auto scenes=ScenePrograms::load(rom);
+        const auto source=scenes.original().entries().first(); const auto id=scenes.createScene("Special black fade",source.key,false);
+        QVector<quint32> words{0x80000006U,34,0x14,0,30,1,2,0,0,0,0,0,0xa9,0x80000008U,4,4};
+        for(int i=0;i<130;++i) words<<0<<0x80000000U;
+        words<<0x80000001U<<(0xff000000U|quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size()*4,0); for(int i=0;i<words.size();++i) put32(bytes,i*4,words[i]); scenes.replace(id,bytes);
+        ScenePreview preview(rom); preview.selectScene(scenes,id,2); preview.findChild<QPushButton*>("sceneStep")->click();
+        const auto first=preview.renderedFrame(); auto position=preview.findChild<QSpinBox*>("scenePosition");
+        position->setValue(31); QTRY_COMPARE(preview.property("sceneTick").toInt(),31); const auto half=preview.renderedFrame(); QVERIFY(half!=first);
+        position->setValue(61); QTRY_COMPARE(preview.property("sceneTick").toInt(),61);
+        const auto black=preview.renderedFrame();
+        for(int y=0;y<240;++y) for(int x=0;x<320;++x) QCOMPARE(black.pixelColor(x,y),QColor(Qt::black));
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(),1); QCOMPARE(preview.renderedFrame(),first);
+        position->setValue(31); QTRY_COMPARE(preview.property("sceneTick").toInt(),31); QCOMPARE(preview.renderedFrame(),half);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(preview.findChild<QLabel*>("scenePlaybackStatus")->text()));
+    }
     void capturedScenePlayback_data() {
         QTest::addColumn<int>("mode");
         QTest::newRow("world") << 2; QTest::newRow("layered") << 0;

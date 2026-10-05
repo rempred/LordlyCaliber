@@ -1669,3 +1669,21 @@ calls are controlled. Pixel tests check storage quantization, immutable snapshot
 RGBA16 sepia arithmetic and vignette intensity. Desktop tests enter and restore
 both scene modes, cross a120-step checkpoint and reproduce earlier frames exactly.
 These are not original-framebuffer equivalence tests.
+
+The special black pass now composes after the vignette and before the captured
+frame in world scenes. Original2ADAF4 exits after the first eligible Actor
+(source81..83 or163) in slot order;2ADF00 jumps directly to the epilogue. This
+corrects the broader all-Actor interpretation in the parent command reference.
+Without root1CAC the entire pass is absent, including transition selector4.
+The callback always uses main geometry. Selector4 adds an image-processed full
+opacity pass, then a normal pass at255-floor(progress*255/duration). Otherwise
+the normal pass overrides presentation opacity to255. Tint/material jobs do not
+advance in this pass. Processing bit0 clears afterward; vignette presence is
+separate and persists. Actor record opacity remains unchanged.
+
+The126 original-driver cases check first-match selection, hidden flags, opacity
+restoration and callback arguments with graphics/image services controlled. A
+real body rendering check verifies main geometry, two layersets, immutable Actor
+and tint state and repeatability. Desktop checks verify60-update black-fade
+completion, crossfade acceptance and backward seeking. Build and focused checks
+pass; cache lifetime and RDP rasterization remain the limits stated above.

@@ -1387,6 +1387,58 @@ class SceneRuntimeTests : public QObject {
         }
         QVERIFY(pauses > 0);
     }
+    void specialPassAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work; QProcess reference;
+        reference.start("node", {QFINDTESTDATA("scene-special-mips.cjs"),path,work.filePath("special.json")});
+        QVERIFY(reference.waitForFinished(60000)); QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("special.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows=QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray(); QCOMPARE(rows.size(),126);
+        for(const auto &value:rows) {
+            const auto row=value.toObject(); SceneEffects effects;
+            if(row["enabled"].toBool()) effects.service(0xa9,{});
+            if(row["selector"].toInt()>=0) {
+                effects.capture().start(row["selector"].toInt(),4);
+                for(int i=0;i<row["progress"].toInt();++i) effects.capture().advance();
+            }
+            std::array<QByteArray,28> records;
+            const auto sources=row["sources"].toArray();
+            for(int i=0;i<sources.size();++i) { records[i]=QByteArray(336,0); put32(records[i],0xe8,sources[i].toInt()); put8(records[i],0x13c,quint8(17+i)); put8(records[i],0x141,quint8(i%4)); }
+            const auto passes=effects.specialActorPasses(records);
+            const auto expected=row["calls"].toArray();
+            QCOMPARE(passes.size(),expected.size());
+            for(int i=0;i<passes.size();++i) {
+                const auto call=expected[i].toObject(); QCOMPARE(passes[i].slot,call["slot"].toInt());
+                QCOMPARE(passes[i].sepia,call["processing"].toInt()!=0);
+                QCOMPARE(passes[i].alpha,call["pass"].toInt() ? call["opacity"].toInt() : call["alpha"].toInt());
+            }
+        }
+    }
+    void specialActorRendering() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); SceneActors actors(rom,2,17,[](int,float,float){return 0.f;}); int value=0;
+        actors.supplyBodyRows(QVector<QByteArray>(28,QByteArray(248,0)));
+        for(int slot=0;slot<2;++slot) {
+            QVERIFY(actors.service(0x14,{quint32(slot),30,1,2,0,0,0,0,0},value));
+            QVERIFY(actors.service(0x2a,{quint32(slot),81,10,1,0,81},value));
+        }
+        QVERIFY(actors.service(0x1e,{0,255,255,255,0,0,0,30,0},value));
+        const auto camera=SceneCameras::freshModeTwo(rom).actor();
+        actors.prepareModeTwoMatrices(camera,{{0,0,0},{{200,-200,50},{-200,200,75}}});
+        const auto before=actors.actorRecords();
+        const auto tint=actors.materials().tint(0);
+        SceneEffects effects; effects.service(0xa9,{}); SceneActorRenderer renderer(rom);
+        const auto normal=renderer.special(actors,effects,{0,0,0,0,0,0},{camera,{255,255,255},{}});
+        QVERIFY(!normal.layers.isEmpty());
+        for(const auto &layer:normal.layers) { QCOMPARE(layer.slot,0); QVERIFY(!layer.shadow); }
+        effects.capture().start(4,4); effects.capture().advance();
+        const auto blended=renderer.special(actors,effects,{0,0,0,0,0,0},{camera,{255,255,255},{}});
+        QCOMPARE(blended.layers.size(),normal.layers.size()*2);
+        QVERIFY(blended.image!=normal.image);
+        QCOMPARE(actors.actorRecords(),before); QCOMPARE(actors.materials().tint(0),tint);
+        QVERIFY(!effects.sepia());
+        QCOMPARE(renderer.special(actors,effects,{0,0,0,0,0,0},{camera,{255,255,255},{}}).image,blended.image);
+    }
     void captureAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

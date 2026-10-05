@@ -1,6 +1,32 @@
 #include "engine/scene_actor_renderer.h"
 #include <bit>
 namespace lordly {
+SceneActorFrame SceneActorRenderer::special(const SceneActors &actors, SceneEffects &effects,
+                                            const std::array<quint8, 6> &gradient,
+                                            const SceneActorRenderContext &context) {
+    SceneActorFrame result{QImage(320, 240, QImage::Format_RGBA8888), {}, context.environment};
+    result.image.fill(QColor(0, 0, 0, effects.specialBlackAlpha()));
+    const auto passes = effects.specialActorPasses(actors.actorRecords());
+    if (passes.isEmpty())
+        return result;
+    auto state = ActorRenderState::main(context.environment);
+    const auto &actor = *actors.actor(passes.first().slot);
+    const auto record = actor.record();
+    state.worldEnvironment(std::bit_cast<float>(u32(record, 0x11c)),
+                           std::bit_cast<float>(u32(record, 0x124)), gradient);
+    for (const auto &pass : passes) {
+        // a2=1 multiplies presentation opacity but does not choose geometry.
+        // The native owner overrides opacity; pass.alpha is that resulting factor.
+        const auto layers = renderer_.project(actor, false, context.camera, context.globalRgb,
+                                              pass.sepia, 0, pass.alpha, &state);
+        ActorRenderer::paint(result.image, layers);
+        result.layers += layers;
+    }
+    result.environment = state.environment();
+    if (effects.capture().selector() == 4)
+        effects.setImageProcessing(false);
+    return result;
+}
 SceneActorFrame SceneActorRenderer::layered(SceneActors &actors, const SceneDrawQueue &queue,
                                             quint8 objectChannel, quint8 channel,
                                             const SceneActorRenderContext &context,

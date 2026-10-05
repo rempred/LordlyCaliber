@@ -1,5 +1,23 @@
 #include "engine/scene_effects.h"
 namespace lordly {
+QVector<SceneSpecialActorPass>
+SceneEffects::specialActorPasses(const std::array<QByteArray, 28> &actors) const {
+    if (special_.isEmpty())
+        return {};
+    for (int slot = 0; slot < 28; ++slot) {
+        if (actors[slot].isEmpty())
+            continue;
+        if (actors[slot].size() != 336)
+            throw Error("Special pass requires complete Actor records");
+        if (!visibleAboveSpecialBlack(qint32(u32(actors[slot], 0xe8))))
+            continue;
+        // 2ADF00 jumps to the epilogue: this owner returns after its first match.
+        if (capture_.selector() == 4)
+            return {{slot, true, 255}, {slot, false, capture_.alpha()}};
+        return {{slot, sepia_, 255}};
+    }
+    return {};
+}
 std::optional<std::array<quint8, 4>> SceneEffects::worldColor(WorldColorPass pass) const {
     // Original image owners1FEA1C/1FED0C and direct object callback1F3C00.
     constexpr quint8 masks[]{1, 2, 4, 8, 16, 64};

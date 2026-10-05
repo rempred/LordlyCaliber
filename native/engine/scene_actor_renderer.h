@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/actor_renderer.h"
 #include "engine/scene_actors.h"
+#include "engine/scene_effects.h"
 namespace lordly {
 struct SceneActorRenderContext {
     SceneCamera camera;
@@ -28,6 +29,10 @@ class SceneActorRenderer {
                           const std::array<qint16, 2> &shadowAlpha,
                           const std::array<quint8, 6> &gradient, const SceneActorRenderContext &,
                           const ObjectRender &drawObject = {});
+    // ROM2ADAF4: black rectangle, then first eligible Actor in slot order.
+    // Its callbacks retain main geometry and do not advance tint/material jobs.
+    SceneActorFrame special(const SceneActors &, SceneEffects &,
+                            const std::array<quint8, 6> &gradient, const SceneActorRenderContext &);
 
   private:
     SceneActorFrame draw(SceneActors &, const QVector<LordlySceneWorldDrawPass> &,
