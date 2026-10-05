@@ -12,6 +12,157 @@ using namespace lordly;
 class AvatarArtworkTests : public QObject {
     Q_OBJECT
   private slots:
+    void portraitEditingAndExport() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            project.loadAvatarArtwork();
+            const auto original = *project.avatarArtwork();
+            auto edits = original;
+            auto classes = project.classData();
+            const auto desired = original.words(classes, 2, 0);
+            QVERIFY(!desired.isEmpty());
+            QVERIFY(desired != original.words(classes, 1, 0));
+            edits.setWords(classes, 1, 0, desired);
+            QCOMPARE(project.appendClass(1, "Portrait knight"), 165);
+            classes = project.classData(); // Art was opened before the new class existed.
+            edits.setWords(classes, 165, 1, desired);
+            project.setAvatarArtwork(edits.json());
+            QTemporaryDir work;
+            auto saved = Project::fromRom(rom);
+            saved.applyManifest(project.manifest());
+            QCOMPARE(saved.avatarArtwork()->json(), edits.json());
+            project.saveFolder(work.filePath("folder"));
+            project.saveArchive(work.filePath("project.lcpack"));
+            for (const auto &file : {work.filePath("folder"), work.filePath("project.lcpack")}) {
+                auto reopened = Project::fromRom(rom);
+                reopened.applyManifest(Project::readProject(file));
+                QCOMPARE(reopened.avatarArtwork()->json(), edits.json());
+            }
+            const auto built = rebuild(project, tools, work.path());
+            QTemporaryDir candidates(
+                QFileInfo(path).dir().filePath("Test ROMs/native-portraits-XXXXXX"));
+            QVERIFY(candidates.isValid());
+            candidates.setAutoRemove(false);
+            const auto candidate = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, candidate);
+            qInfo().noquote() << "Portrait candidate:" << candidate;
+            const auto reopenedRom = Rom::open(candidate);
+            const auto actual = AvatarLibrary::load(reopenedRom);
+            const auto actualClasses = ClassData::load(reopenedRom);
+            QCOMPARE(actual.members().size(), 144);
+            QVERIFY(actual.placement());
+            for (int id = 0; id < classes.entries().size(); ++id) {
+                QCOMPARE(actualClasses.entries()[id].appearance.mid(4),
+                         classes.entries()[id].appearance.mid(4));
+                for (int selector = 0; selector < 2; ++selector) {
+                    const auto token = u16(actualClasses.entries()[id].appearance, selector * 2);
+                    QCOMPARE(actual.words(token), edits.words(classes, id, selector));
+                    if (!edits.modified(id, selector))
+                        QCOMPARE(token, u16(classes.entries()[id].appearance, selector * 2));
+                }
+            }
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("avatar-library-reference.cjs"), candidate,
+                                     work.filePath("reference.json")});
+            QVERIFY(reference.waitForFinished(30000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("reference.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto decoded = QJsonDocument::fromJson(file.readAll()).object();
+            QCOMPARE(decoded["variants"].toArray().size(), 210);
+            for (const auto &value : decoded["variants"].toArray()) {
+                const auto row = value.toObject();
+                QCOMPARE(actual.words(quint16(row["token"].toInt())).toBase64(),
+                         row["words"].toString().toLatin1());
+            }
+            auto checksum = built.image;
+            Rom::updateChecksum(checksum);
+            QCOMPARE(checksum, built.image);
+            QCOMPARE(rebuild(project, tools, work.path()).image, built.image);
+            auto again = Project::fromRom(reopenedRom);
+            QCOMPARE(rebuild(again, tools, work.path()).image, built.image);
+            // Both the class data and portrait allocation grow after reopening.
+            again.loadAvatarArtwork();
+            auto later = *again.avatarArtwork();
+            QCOMPARE(again.appendClass(165, "Portrait mage"), 166);
+            const auto nextClasses = again.classData();
+            later.setWords(nextClasses, 166, 0, original.words(classes, 3, 0));
+            again.setAvatarArtwork(later.json());
+            const auto second = rebuild(again, tools, work.path());
+            const auto secondRom = Rom::fromBytes(second.image);
+            const auto secondLibrary = AvatarLibrary::load(secondRom);
+            const auto secondClasses = ClassData::load(secondRom);
+            QCOMPARE(secondLibrary.members().size(), 145);
+            for (int id = 0; id < nextClasses.entries().size(); ++id)
+                for (int selector = 0; selector < 2; ++selector)
+                    QCOMPARE(secondLibrary.words(
+                                 u16(secondClasses.entries()[id].appearance, selector * 2)),
+                             later.words(nextClasses, id, selector));
+            // Old allocation must be cleared only after every retained owned member moves.
+            QVERIFY(secondLibrary.placement()->offset != actual.placement()->offset);
+            QCOMPARE(second.image.mid(actual.placement()->offset, actual.placement()->allocation),
+                     QByteArray(actual.placement()->allocation, char(-1)));
+            auto classFirst = Project::fromRom(rom);
+            classFirst.appendClass(1, "Earlier class");
+            auto classFirstRom = Rom::fromBytes(rebuild(classFirst, tools, work.path()).image);
+            classFirst = Project::fromRom(classFirstRom);
+            classFirst.loadAvatarArtwork();
+            auto late = *classFirst.avatarArtwork();
+            late.setWords(classFirst.classData(), 165, 0, desired);
+            classFirst.setAvatarArtwork(late.json());
+            const auto classThenArt = Rom::fromBytes(rebuild(classFirst, tools, work.path()).image);
+            QCOMPARE(AvatarLibrary::load(classThenArt)
+                         .words(u16(ClassData::load(classThenArt).entries()[165].appearance, 0)),
+                     desired);
+            auto corrupt = built.image;
+            corrupt[actual.placement()->offset + actual.placement()->allocation - 1] ^= 1;
+            QVERIFY_THROWS_EXCEPTION(Error, AvatarLibrary::load(Rom::fromBytes(corrupt)));
+            corrupt = rom.bytes();
+            corrupt[AvatarLibrary::descriptorOffset] = 0;
+            auto held = AvatarArtwork::load(Rom::fromBytes(corrupt));
+            held.setWords(classes, 1, 0, desired);
+            auto copy = classes;
+            QVERIFY_THROWS_EXCEPTION(
+                Error, held.rebuild(Rom::fromBytes(corrupt), copy, held.decodedBundles()));
+            corrupt = rom.bytes();
+            corrupt[0x45b00 + 3] ^= 2;
+            copy = classes;
+            QVERIFY_THROWS_EXCEPTION(
+                Error, edits.rebuild(Rom::fromBytes(corrupt), copy, edits.decodedBundles()));
+            auto invalid = desired;
+            for (int i = 0; i < 81; ++i)
+                put16(invalid, i * 2, quint16(i * 2 + 1));
+            QVERIFY_THROWS_EXCEPTION(Error, edits.setWords(classes, 1, 0, invalid));
+            invalid = desired;
+            put16(invalid, 0, 0);
+            QVERIFY_THROWS_EXCEPTION(Error, edits.setWords(classes, 1, 0, invalid));
+            QJsonObject art{
+                {"schemaVersion", 5},
+                {"avatars",
+                 QJsonObject{{"1:0-1", QJsonObject{{"classId", 1},
+                                                   {"selectorIndices", QJsonArray{0, 1}},
+                                                   {"pixelsRgba5551BeBase64",
+                                                    QString::fromLatin1(desired.toBase64())}}}}}};
+            auto legacy = Project::fromRom(rom);
+            legacy.importLegacy({{"format", "ob64-patch"},
+                                 {"version", 36},
+                                 {"patches", QJsonObject{{"art", art}}}});
+            QVERIFY(legacy.pendingLegacySections().isEmpty());
+            for (int selector = 0; selector < 2; ++selector)
+                QCOMPARE(legacy.avatarArtwork()->words(legacy.classData(), 1, selector), desired);
+            legacy.setAvatarArtwork(original.json());
+            auto empty = Project::fromRom(rom);
+            empty.applyManifest(legacy.manifest());
+            QVERIFY(!empty.avatarArtwork()->modified());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void currentRomLibraryAndDialogue() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),

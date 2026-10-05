@@ -1,5 +1,7 @@
 #include "engine/avatar_library.h"
 #include "engine/resource.h"
+#include <QSet>
+#include <algorithm>
 namespace lordly {
 const QVector<QPair<int, int>> &AvatarLibrary::sites() {
     static const QVector<QPair<int, int>> result{
@@ -31,6 +33,10 @@ QByteArray AvatarLibrary::canonicalOwner(QByteArray code, qsizetype start) {
 void AvatarLibrary::validateRelocations(const Rom &rom) {
     if (rom.revision())
         return;
+    if (rom.bytes().mid(descriptorOffset, 8) == "LC05AVTR") {
+        load(rom);
+        return;
+    }
     for (const auto &[hi, lo] : sites())
         if ((((u32(rom.bytes(), hi) & 65535) << 16) | (u32(rom.bytes(), lo) & 65535)) !=
             retailKey) {
@@ -62,7 +68,57 @@ AvatarLibrary AvatarLibrary::load(const Rom &rom) {
             throw Error("Invalid avatar bundle resource key");
         result.members_.append(key);
     }
+    const auto descriptor = rom.bytes().mid(descriptorOffset, descriptorSize);
+    if (descriptor.startsWith("LC05AVTR")) {
+        if (descriptor.size() != descriptorSize || u32(descriptor, 8) != 1 ||
+            u32(descriptor, 20) != result.members_.size() ||
+            descriptor.mid(24, 40) != QByteArray(40, 0))
+            throw Error("Unsupported native avatar descriptor");
+        AvatarPlacement placement{u32(descriptor, 12), u32(descriptor, 16), descriptor.mid(64, 32)};
+        if (placement.offset < 0x2800000 || placement.offset % 16 || !placement.allocation ||
+            placement.allocation % 16 ||
+            quint64(placement.offset) + placement.allocation > quint64(rom.bytes().size()) ||
+            quint64(placement.offset) + placement.allocation > 0x4000000 ||
+            at != placement.offset ||
+            QByteArray::fromHex(sha256(rom.bytes().mid(placement.offset, placement.allocation))) !=
+                placement.hash)
+            throw Error("Native avatar allocation or hash is invalid");
+        quint32 cursor = placement.offset + 4 + size;
+        auto padding = [&] {
+            const auto next = (cursor + 15U) & ~15U;
+            if (next > placement.offset + placement.allocation ||
+                rom.bytes().mid(cursor, next - cursor) != QByteArray(next - cursor, char(-1)))
+                throw Error("Native avatar padding was modified");
+            cursor = next;
+        };
+        padding();
+        QSet<quint32> owned;
+        for (const auto key : result.members_) {
+            const auto address = resourceBase + key;
+            if (address >= placement.offset && address < placement.offset + placement.allocation)
+                owned.insert(address);
+        }
+        auto addresses = owned.values();
+        std::sort(addresses.begin(), addresses.end());
+        for (const auto address : addresses) {
+            const auto stored = u32(rom.bytes(), address);
+            if (address != cursor || stored < 4 || stored > 8192 ||
+                quint64(address) + 4 + stored > quint64(placement.offset) + placement.allocation)
+                throw Error("Native avatar resources overlap or leave unclaimed data");
+            result.bundle(result.members_.indexOf(address - resourceBase));
+            cursor += 4 + stored;
+            padding();
+        }
+        if (cursor != placement.offset + placement.allocation)
+            throw Error("Native avatar allocation contains unreferenced data");
+        result.placement_ = placement;
+    }
     return result;
+}
+QByteArray AvatarLibrary::storedBundle(int member) const {
+    bundle(member);
+    const auto at = resourceBase + members_[member];
+    return rom_.bytes().mid(at, u32(rom_.bytes(), at) + 4);
 }
 const AvatarBundle &AvatarLibrary::bundle(int member) const {
     if (member < 1 || member >= members_.size())

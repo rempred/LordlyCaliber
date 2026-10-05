@@ -1,3 +1,4 @@
+#include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
@@ -313,7 +314,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
             auto original = bytes.mid(start, size);
             if (classPlacement)
                 original = classPlacement->canonicalReferences(original, start);
-            auto hash = QString::fromLatin1(sha256(IconArtwork::canonicalOwner(original,start)));
+            auto hash = QString::fromLatin1(sha256(canonicalArtOwner(original,start)));
             if (hash != owner["retailSha256"].toString() &&
                 hash != owner["familySha256"].toString() &&
                 !(owner.contains("cSourceSha256") && hash == owner["cSourceSha256"].toString()) &&
@@ -416,7 +417,7 @@ static void rebuildPromotion(const Project &p, const Compiler &compiler, const Q
                 built.replace(offset, length, code);
                 fragmentEnd = offset + length;
             }
-            if (built.size() != size || sha256(IconArtwork::canonicalOwner(built,start)) != expected)
+            if (built.size() != size || sha256(canonicalArtOwner(built,start)) != expected)
                 throw Error("Compiled promotion owner differs from validated source: " +
                             owner["name"].toString());
             if (classPlacement)
@@ -514,8 +515,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
             throw Error("Expanded class records, promotion data and descriptions must have "
                         "matching counts");
     }
+    const bool avatarEdits = p.avatarArtwork() && p.avatarArtwork()->modified();
     const bool relocateClasses = priorClassPlacement.has_value() || p.classNamesModified() ||
-                                 expandedClasses || customSquads;
+                                 expandedClasses || customSquads || avatarEdits;
     // Retained sections must become actual native owners before they can enter an export.
     const auto pending = p.pendingLegacySections();
     if (!pending.isEmpty())
@@ -650,9 +652,22 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     if (!expandedClasses)
         rebuildPromotion(p, compiler, directory, result);
     if (relocateClasses) {
+        auto classData = p.classData();
+        if (avatarEdits) {
+            auto bundles = p.avatarArtwork()->decodedBundles();
+            for (auto it = bundles.begin(); it != bundles.end(); ++it)
+                it.value() = compiler.compileData(it.value(), directory,
+                                                  QString("portrait_%1").arg(it.key()));
+            result.image =
+                p.avatarArtwork()->rebuild(Rom::fromBytes(result.image), classData, bundles);
+            result.report << QString(
+                                 "Compiled %1 independent portraits and rebuilt their directory "
+                                 "and class selectors")
+                                 .arg(bundles.size());
+        }
         auto offset = priorClassPlacement ? priorClassPlacement->dataRomOffset
                                           : quint32((result.image.size() + 15) & ~qsizetype(15));
-        const auto data = p.classData();
+        const auto &data = classData;
         if (priorClassPlacement &&
             data.build(0x80243db0).bytes.size() >
                 priorClassPlacement->layout.end - priorClassPlacement->layout.indexBase &&
@@ -854,6 +869,19 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                        reopened.classNameBytes(row) != p.classNameBytes(row))
                     : reopened.record(table, row).bytes != p.record(table, row).bytes)
                 throw Error("Export reopen differs from the project");
+    if (avatarEdits) {
+        const auto actual = AvatarLibrary::load(reopened.rom());
+        const auto actualClasses = reopened.classData(), intended = p.classData();
+        for (int id = 0; id < intended.entries().size(); ++id) {
+            if (actualClasses.entries()[id].appearance.mid(4) !=
+                intended.entries()[id].appearance.mid(4))
+                throw Error("Portrait export changed the Army appearance bytes");
+            for (int selector = 0; selector < 2; ++selector)
+                if (actual.words(u16(actualClasses.entries()[id].appearance, selector * 2)) !=
+                    p.avatarArtwork()->words(intended, id, selector))
+                    throw Error("Reopened portrait selector differs from the project");
+        }
+    }
     result.report << "Reopened every class, equipment and consumable record; CIC-6102 checksum "
                      "updated when required";
     return result;

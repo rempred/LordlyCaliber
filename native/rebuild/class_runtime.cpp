@@ -1,6 +1,6 @@
 #include "rebuild/class_runtime.h"
 #include "engine/class_text.h"
-#include "engine/icon_artwork.h"
+#include "engine/art_resource_links.h"
 #include "engine/promotion.h"
 #include "engine/shop_runtime.h"
 #include "rebuild/promotion_runtime.h"
@@ -221,7 +221,8 @@ QByteArray linkClassRuntime(const Rom &rom, const ClassRuntimeBuild &build,
             canonical = textPlacement->canonicalReferences(canonical, start);
         if (shopPlacement)
             canonical = shopPlacement->canonicalReferences(canonical, start);
-        const auto hash = QString::fromLatin1(sha256(IconArtwork::canonicalOwner(canonical,start)));
+        validateArtOwnerLinks(rom,start,size);
+        const auto hash = QString::fromLatin1(sha256(canonicalArtOwner(canonical,start)));
         bool recognized = hash == owner["retailSha256"].toString();
         for (const auto item : promotion) {
             const auto compatible = item.toObject();

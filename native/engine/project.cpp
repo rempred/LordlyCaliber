@@ -267,6 +267,8 @@ int Project::changedRecords() const {
         ++count;
     if (icons_ && icons_->modified())
         ++count;
+    if (avatars_ && avatars_->modified())
+        ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)
@@ -547,6 +549,20 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
         throw Error("Invalid description record");
     texts_[kind].entries[id].bytes = bytes;
 }
+void Project::loadAvatarArtwork() {
+    if(!avatars_)avatars_=AvatarArtwork::load(rom_);
+}
+void Project::setAvatarArtwork(const QJsonObject &value) {
+    loadAvatarArtwork();avatars_->apply(classData(),value);
+}
+void Project::importLegacyAvatarArtwork(const QJsonObject &object) {
+    const auto art=object["patches"].toObject().value("art");
+    if(art.isNull() || art.isUndefined())return;
+    if(!art.isObject())throw Error("Invalid imported art");
+    if(art.toObject().contains("avatars")) {
+        loadAvatarArtwork();avatars_->importLegacy(classData(),art.toObject());
+    }
+}
 void Project::loadIconArtwork() {
     if(!icons_)icons_=IconArtwork::load(rom_);
 }
@@ -580,6 +596,9 @@ QJsonObject Project::manifest() const {
     if(icons_ && (icons_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("icons")))
         result["iconArtwork"]=icons_->json();
     else result.remove("iconArtwork");
+    if(avatars_ && (avatars_->modified() || legacy_["patches"].toObject()["art"].toObject().contains("avatars")))
+        result["avatarArtwork"]=avatars_->json();
+    else result.remove("avatarArtwork");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -742,6 +761,7 @@ void Project::applyManifest(const QJsonObject &object) {
     if (tools_)
         candidate.loadTools();
     if(icons_)candidate.loadIconArtwork();
+    if(avatars_)candidate.loadAvatarArtwork();
     if (encounters_)
         candidate.loadEncounters();
     if (scenarios_)
@@ -832,6 +852,10 @@ void Project::applyManifest(const QJsonObject &object) {
         if(!object["iconArtwork"].isObject())throw Error("Invalid saved icon artwork");
         candidate.setIconArtwork(object["iconArtwork"].toObject());
     } else candidate.importLegacyIconArtwork(candidate.legacy_);
+    if(object.contains("avatarArtwork")) {
+        if(!object["avatarArtwork"].isObject())throw Error("Invalid saved portrait artwork");
+        candidate.setAvatarArtwork(object["avatarArtwork"].toObject());
+    } else candidate.importLegacyAvatarArtwork(candidate.legacy_);
     const auto spriteLibrary = object.contains("spriteLibrary") ? object["spriteLibrary"] :
         candidate.legacy_["patches"].toObject().value("spriteLibrary");
     if (!spriteLibrary.isUndefined() && !spriteLibrary.isNull()) {
@@ -1209,6 +1233,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyConsumableEffects(object);
     candidate.importLegacyTools(object);
     candidate.importLegacyIconArtwork(object);
+    candidate.importLegacyAvatarArtwork(object);
     if (patch.contains("spriteLibrary") && !patch["spriteLibrary"].isNull()) {
         if (!patch["spriteLibrary"].isObject()) throw Error("Invalid imported sprite library");
         candidate.sprites_.merge(SpriteLibrary::fromJson(patch["spriteLibrary"].toObject()));
@@ -1298,10 +1323,10 @@ QStringList Project::pendingLegacySections() const {
     for (auto it = patches.begin(); it != patches.end(); ++it) {
         if (it.key() == "spriteLibrary")
             continue;
-        if(it.key()=="art" && icons_) {
+        if(it.key()=="art" && (icons_ || avatars_)) {
             const auto sections=it.value().toObject();
             for(auto section=sections.begin();section!=sections.end();++section)
-                if(section.key()!="schemaVersion" && section.key()!="icons" && changed(section.value()))
+                if(section.key()!="schemaVersion" && !(section.key()=="icons" && icons_) && !(section.key()=="avatars" && avatars_) && changed(section.value()))
                     pending << "art."+section.key();
             continue;
         }

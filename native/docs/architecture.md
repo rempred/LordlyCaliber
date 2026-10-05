@@ -1,5 +1,40 @@
 # Native Lordly Caliber
 
+## Portrait authoring and source-built export
+
+`AvatarArtwork` stores independent class/selector pixel edits as 40 by 48 opaque
+RGBA5551 words, with an 80-color limit per image. Both selectors are supported,
+including classes added after the artwork model was opened. Native project folders
+and archives persist the edits; browser art versions 1–5 convert grouped selectors.
+An explicit empty native section prevents restored browser edits from reappearing.
+
+At user export, each edited image compiles from generated C, compresses into a
+native CI8 bundle, and receives a new directory member. Unselected member indices
+and original resources remain intact. The current class data compiles with its
+new selectors; the final two Army appearance bytes remain unchanged. The existing
+portrait loaders and fixed decoded image buffers are retained; no Expansion Pak
+requirement is added.
+
+The `LC05AVTR` version-1 descriptor occupies z64 ROM 0x27C4900 (96 bytes): payload
+offset/size at 12/16, directory count at 20, zero reserved bytes 24–63, and raw
+SHA256 at 64. The 16-byte-aligned payload begins with the raw directory and contains
+its owned compressed bundles. Loading validates the hash, bounds, links, padding,
+unique resource spans and absence of unclaimed data. A subsequent export copies
+every still-referenced owned bundle before clearing its earlier allocation.
+Unknown descriptor/code/payload owners are rejected. Cartridge growth is bounded
+to 64 MiB. Class owner hashes normalize only validated icon/portrait key operands;
+the emitted code retains actual resource keys.
+
+`avatar_artwork_tests` passed after build 19513 (54,359 ms): all untouched selectors
+and Army bytes, independently decoded 210 palette variants after two edits,
+source-built export/reopen/checksum, deterministic repeated export, both class/art
+editing orders, later class and portrait growth, ownership refusal, palette limits,
+and folder/archive/browser persistence. The candidate is under parent
+`Test ROMs/native-portraits-fnjoxs`. Original-library/dialogue checks also pass.
+Build 73366 includes recognition of a stale native descriptor even when resource
+operands have been reset to retail. No emulator or hardware validation is claimed.
+Painting/image preparation and project-aware playback are the next integration.
+
 ## Current-ROM portrait resources
 
 `AvatarLibrary` follows all three guarded directory-reference pairs in the
@@ -15,7 +50,7 @@ the current avatar directory, replacing its hardcoded retail route table and
 resource key. It caches both readers per supplied ROM and rejects an identity
 outside that ROM's class count. Null routes retain blank portraits. This fixes
 portrait previews for added classes and already-relocated portrait directories;
-project-authored portrait editing/export is still being implemented.
+project-authored portrait export is described above; the desktop authoring UI is next.
 
 Build74285 succeeded. `avatar_artwork_tests` passed in 7710 ms: 140 distinct
 bundles/208 palette variants compared byte-for-byte with the browser resource

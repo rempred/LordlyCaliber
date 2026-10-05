@@ -216,10 +216,10 @@ class IconArtworkTests : public QObject {
             auto reopened = Project::fromRom(rom);
             reopened.applyManifest(project.manifest());
             QVERIFY(!reopened.iconArtwork()->modified());
-            art["avatars"] = QJsonObject{{"future", 1}};
+            art["futureArtwork"] = QJsonObject{{"future", 1}};
             legacy["patches"] = QJsonObject{{"art", art}};
             project.importLegacy(legacy);
-            QCOMPARE(project.pendingLegacySections(), QStringList{"art.avatars"});
+            QCOMPARE(project.pendingLegacySections(), QStringList{"art.futureArtwork"});
             const auto before = project.iconArtwork()->json();
             art["icons"] = QJsonObject{
                 {"equipment:1",
