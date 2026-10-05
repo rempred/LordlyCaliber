@@ -448,13 +448,14 @@ void Project::importLegacyTools(const QJsonObject &object) {
     QJsonObject displays;
     for (const auto &[id, ownerKey, field] :
          {std::tuple{"character-card-luck", "character_card_luck", "characterCardLuck"},
-          std::tuple{"squad-menu-alignment", "squad_menu_alignment", "squadMenuAlignment"}}) {
+          std::tuple{"squad-menu-alignment", "squad_menu_alignment", "squadMenuAlignment"},
+          std::tuple{"high-attack-streamsplit", "high_attack_streamsplit", "highAttackStreamSplit"}}) {
         QJsonValue value(QJsonValue::Undefined);
         if (tools.contains(id))
             value = tools[id];
         if (owner.contains(ownerKey)) {
             if (!value.isUndefined() && value != owner[ownerKey])
-                throw Error("Imported display settings disagree: " + QString(id));
+                throw Error("Imported Tools settings disagree: " + QString(id));
             value = owner[ownerKey];
         }
         if (!value.isUndefined())
@@ -612,7 +613,9 @@ QJsonObject Project::manifest() const {
          legacy_["patches"].toObject()["tools"].toObject().contains("character-card-luck") ||
          legacy_["patches"].toObject()["tools"].toObject().contains("squad-menu-alignment") ||
          legacy_["rebuild_owners"].toObject().contains("character_card_luck") ||
-         legacy_["rebuild_owners"].toObject().contains("squad_menu_alignment")))
+         legacy_["rebuild_owners"].toObject().contains("squad_menu_alignment") ||
+         legacy_["patches"].toObject()["tools"].toObject().contains("high-attack-streamsplit") ||
+         legacy_["rebuild_owners"].toObject().contains("high_attack_streamsplit")))
         result["tools"] = tools_->json();
     else
         result.remove("tools");
@@ -1254,7 +1257,8 @@ QStringList Project::pendingLegacySections() const {
             for (auto setting = values.begin(); setting != values.end(); ++setting)
                 if (setting.key() != "experience-size-scale" &&
                     setting.key() != "cf-army-counter" && setting.key() != "character-card-luck" &&
-                    setting.key() != "squad-menu-alignment" && changed(setting.value()))
+                    setting.key() != "squad-menu-alignment" &&
+                    setting.key() != "high-attack-streamsplit" && changed(setting.value()))
                     pending << "tools." + setting.key();
             continue;
         }
@@ -1305,7 +1309,8 @@ QStringList Project::pendingLegacySections() const {
             continue;
         if (it.key() == "chaos_frame_counter" && tools_)
             continue;
-        if ((it.key() == "character_card_luck" || it.key() == "squad_menu_alignment") && tools_)
+        if ((it.key() == "character_card_luck" || it.key() == "squad_menu_alignment" ||
+             it.key() == "high_attack_streamsplit") && tools_)
             continue;
         if (it.value().isBool() && !it.value().toBool())
             continue;

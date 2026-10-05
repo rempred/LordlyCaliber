@@ -12,6 +12,174 @@ using namespace lordly;
 class ToolSettingsTests : public QObject {
     Q_OBJECT
   private slots:
+    void highAttackProjectsAndExports() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and compiler required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-high-attack-XXXXXX");
+            QVERIFY(output.isValid());
+            auto save = [&](const Project &project, const BuildResult &build, const QString &name) {
+                const auto folder = output.filePath(name);
+                QDir().mkpath(folder);
+                const auto candidate = QDir(folder).filePath(QFileInfo(path).fileName());
+                exportRom(project, build, candidate);
+                return Rom::open(candidate);
+            };
+            auto project = Project::fromRom(rom);
+            project.loadTools();
+            QVERIFY(project.tools()->highAttack().available());
+            QVERIFY(!project.tools()->highAttack().enabled());
+            QCOMPARE(rebuild(project, tools, work.path()).image, rom.bytes());
+            auto settings = project.tools()->json();
+            settings["highAttackStreamSplit"] = true;
+            project.setTools(settings);
+            project.saveFolder(work.filePath("project"));
+            project.saveArchive(work.filePath("project.lcproject"));
+            for (const auto &location :
+                 {work.filePath("project"), work.filePath("project.lcproject")}) {
+                auto restored = Project::fromRom(rom);
+                restored.applyManifest(Project::readProject(location));
+                QCOMPARE(restored.tools()->json(), settings);
+            }
+            // Old native schemas must not reset a newer feature.
+            for (int version : {1, 2, 3}) {
+                auto old = settings;
+                old["version"] = version;
+                old.remove("highAttackStreamSplit");
+                if (version < 3) {
+                    old.remove("characterCardLuck");
+                    old.remove("squadMenuAlignment");
+                }
+                if (version < 2)
+                    old.remove("chaosFrameCounter");
+                project.setTools(old);
+                QCOMPARE(project.tools()->json(), settings);
+            }
+            auto invalid = settings;
+            invalid["highAttackStreamSplit"] = 1;
+            invalid["experienceScalePercent"] = 75;
+            QVERIFY_THROWS_EXCEPTION(Error, project.setTools(invalid));
+            QCOMPARE(project.tools()->json(), settings);
+            const QJsonObject patch{
+                {"format", "ob64-patch"},
+                {"version", 36},
+                {"patches",
+                 QJsonObject{{"tools", QJsonObject{{"high-attack-streamsplit", true}}}}}};
+            auto imported = Project::fromRom(rom);
+            imported.importLegacy(patch);
+            QVERIFY(imported.tools()->highAttack().enabled());
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            auto off = settings;
+            off["highAttackStreamSplit"] = false;
+            imported.setTools(off);
+            auto reset = Project::fromRom(rom);
+            reset.applyManifest(imported.manifest());
+            QVERIFY(!reset.tools()->highAttack().enabled());
+            auto owner = patch;
+            owner["patches"] = QJsonObject{};
+            owner["rebuild_owners"] = QJsonObject{{"schema", 1}, {"high_attack_streamsplit", true}};
+            imported.importLegacy(owner);
+            QVERIFY(imported.tools()->highAttack().enabled());
+            QVERIFY(imported.pendingLegacySections().isEmpty());
+            auto conflict = patch;
+            conflict["rebuild_owners"] = QJsonObject{{"high_attack_streamsplit", false}};
+            const auto before = imported.manifest();
+            QVERIFY_THROWS_EXCEPTION(Error, imported.importLegacy(conflict));
+            QCOMPARE(imported.manifest(), before);
+            const auto built = rebuild(project, tools, work.path());
+            auto reopened = Project::fromRom(save(project, built, "enabled"));
+            reopened.loadTools();
+            QCOMPARE(reopened.tools()->json(), settings);
+            QCOMPARE(reopened.tools()->highAttack().installation(),
+                     HighAttack::Installation::Native);
+            QCOMPARE(rebuild(reopened, tools, work.path()).image, built.image);
+            QJsonArray execution;
+            auto untouched = built.image;
+            const auto sites = HighAttack::definition()["sites"].toArray();
+            for (const auto &value : sites) {
+                const auto site = value.toObject();
+                const int at = site["rom"].toInt(), size = site["size"].toInt();
+                execution.append(QJsonObject{
+                    {"name", site["name"]},
+                    {"ram", site["ram"]},
+                    {"dataHex", QString::fromLatin1(built.image.mid(at, size).toHex())}});
+                untouched.replace(at, size, rom.bytes().mid(at, size));
+                // Each foreign owner is independently recognized and preserved.
+                auto foreign = rom.bytes();
+                foreign[at] ^= 1;
+                auto held = Project::fromRom(Rom::fromBytes(foreign));
+                held.loadTools();
+                QVERIFY(!held.tools()->highAttack().available());
+                QVERIFY_THROWS_EXCEPTION(Error, held.setTools(settings));
+                QCOMPARE(rebuild(held, tools, work.path()).image, foreign);
+            }
+            Rom::updateChecksum(untouched);
+            QCOMPARE(untouched, rom.bytes());
+            atomicWrite(work.filePath("execution.json"), QJsonDocument(execution).toJson());
+            QProcess runner;
+            runner.start("node", {QFINDTESTDATA("high-attack-execution.cjs"),
+                                  work.filePath("execution.json")});
+            QVERIFY(runner.waitForFinished(60000));
+            QVERIFY2(runner.exitCode() == 0, runner.readAllStandardError().constData());
+            qInfo().noquote() << runner.readAllStandardOutput();
+            reopened.setTools(off);
+            QCOMPARE(save(reopened, rebuild(reopened, tools, work.path()), "disabled").bytes(),
+                     rom.bytes());
+            QProcess reference;
+            reference.start("node", {QFINDTESTDATA("high-attack-browser-reference.cjs"),
+                                     work.filePath("legacy.json")});
+            QVERIFY(reference.waitForFinished(60000));
+            QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+            QFile file(work.filePath("legacy.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            auto legacy = rom.bytes();
+            for (const auto &value : QJsonDocument::fromJson(file.readAll()).array()) {
+                const auto row = value.toObject();
+                const auto bytes = QByteArray::fromHex(row["patched"].toString().toLatin1());
+                legacy.replace(row["offset"].toInt(), bytes.size(), bytes);
+            }
+            auto migrated = Project::fromRom(Rom::fromBytes(legacy));
+            migrated.loadTools();
+            QCOMPARE(migrated.tools()->highAttack().installation(),
+                     HighAttack::Installation::Legacy);
+            QCOMPARE(save(migrated, rebuild(migrated, tools, work.path()), "migrated").bytes(),
+                     built.image);
+            migrated.setTools(off);
+            QCOMPARE(
+                save(migrated, rebuild(migrated, tools, work.path()), "legacy-disabled").bytes(),
+                rom.bytes());
+            // Existing unrelated Rev1 continuation reservation is not owned by Rev0.
+            auto slot2 = rom.bytes();
+            slot2[0x306cc] = 42;
+            auto shared = Project::fromRom(Rom::fromBytes(slot2));
+            shared.loadTools();
+            shared.setTools(settings);
+            const auto sharedBuild = rebuild(shared, tools, work.path());
+            QCOMPARE(quint8(sharedBuild.image[0x306cc]), quint8(42));
+            auto combined = Project::fromRom(rom);
+            combined.loadTools();
+            settings["characterCardLuck"] = settings["squadMenuAlignment"] =
+                settings["chaosFrameCounter"] = true;
+            settings["experienceScalePercent"] = 75;
+            combined.setTools(settings);
+            combined.appendClass(1, "Stream Knight");
+            const auto joined = rebuild(combined, tools, work.path());
+            auto combinedOpen = Project::fromRom(save(combined, joined, "combined"));
+            combinedOpen.loadTools();
+            QCOMPARE(combinedOpen.tools()->json(), settings);
+            QCOMPARE(combinedOpen.records(Table::Classes).size(), 166);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+            output.setAutoRemove(false);
+            qInfo().noquote() << "High Attack candidates:" << output.path();
+        } catch (const Error &error) {
+            QFAIL(error.what());
+        }
+    }
     void displayProjectsAndExports() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
@@ -549,11 +717,11 @@ class ToolSettingsTests : public QObject {
         auto other = patch;
         auto values = other["patches"].toObject();
         auto settings = values["tools"].toObject();
-        settings["high-attack-streamsplit"] = true;
+        settings["unknown-future-tool"] = true;
         values["tools"] = settings;
         other["patches"] = values;
         imported.importLegacy(other);
-        QCOMPARE(imported.pendingLegacySections(), QStringList{"tools.high-attack-streamsplit"});
+        QCOMPARE(imported.pendingLegacySections(), QStringList{"tools.unknown-future-tool"});
         auto conflict = patch;
         conflict["rebuild_owners"] = QJsonObject{{"experience_scale_percent", 137}};
         const auto before = imported.manifest();

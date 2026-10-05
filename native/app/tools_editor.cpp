@@ -53,6 +53,27 @@ class ChaosCommand final : public QUndoCommand {
     Project *project_;
     bool before_, after_;
 };
+class HighAttackCommand final : public QUndoCommand {
+  public:
+    HighAttackCommand(Project *project, bool value)
+        : QUndoCommand("Change High Attack stream split"), project_(project),
+          before_(project->tools()->highAttack().enabled()), after_(value) {}
+    void undo() override {
+        apply(before_);
+    }
+    void redo() override {
+        apply(after_);
+    }
+
+  private:
+    void apply(bool value) {
+        auto settings = project_->tools()->json();
+        settings["highAttackStreamSplit"] = value;
+        project_->setTools(settings);
+    }
+    Project *project_;
+    bool before_, after_;
+};
 class DisplayCommand final : public QUndoCommand {
   public:
     DisplayCommand(Project *project, ToolLabel kind, bool value)
@@ -159,6 +180,22 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
         });
     }
     layout->addWidget(displayBox);
+    auto highBox = new QGroupBox("High Attack — experimental");
+    auto highLayout = new QVBoxLayout(highBox);
+    highAttack_ = new QCheckBox("Expand battle action streams");
+    highAttack_->setObjectName("highAttack");
+    highAttackNotice_ = new QLabel;
+    highAttackNotice_->setObjectName("highAttackNotice");
+    highAttackNotice_->setWordWrap(true);
+    highAttackRestore_ = new QPushButton("Restore loaded setting");
+    highAttackRestore_->setObjectName("highAttackRestore");
+    highLayout->addWidget(highAttack_);
+    highLayout->addWidget(highAttackNotice_);
+    highLayout->addWidget(highAttackRestore_, 0, Qt::AlignLeft);
+    layout->addWidget(highBox);
+    connect(highAttack_, &QCheckBox::toggled, this, &ToolsEditor::setHighAttack);
+    connect(highAttackRestore_, &QPushButton::clicked, this,
+            [this] { setHighAttack(project_->tools()->highAttack().loadedEnabled()); });
     layout->addStretch();
     connect(percent_, &QSpinBox::valueChanged, this, &ToolsEditor::setPercent);
     connect(restore_, &QPushButton::clicked, this,
@@ -180,6 +217,17 @@ void ToolsEditor::setPercent(int value) {
 }
 void ToolsEditor::refresh() {
     const auto &settings = *project_->tools();
+    const auto &high = settings.highAttack();
+    const QSignalBlocker highBlock(highAttack_);
+    highAttack_->setChecked(high.enabled());
+    highAttack_->setEnabled(high.available());
+    highAttackRestore_->setEnabled(high.available() && high.modified());
+    highAttackNotice_->setText(
+        high.available()
+            ? "Requires an Expansion Pak (8 MiB RAM) and Project64's Interpreter CPU core. "
+              "The default recompiler is unsupported. Full-battle validation remains pending. "
+              "Edit per-class attack counts in Classes."
+            : high.unavailableReason());
     const QSignalBlocker block(percent_);
     percent_->setValue(settings.experiencePercent());
     percent_->setEnabled(settings.available());
@@ -223,6 +271,12 @@ void ToolsEditor::setChaos(bool enabled) {
     if (!counter.available() || counter.enabled() == enabled)
         return;
     undo_->push(new ChaosCommand(project_, enabled));
+}
+void ToolsEditor::setHighAttack(bool enabled) {
+    const auto &setting = project_->tools()->highAttack();
+    if (!setting.available() || setting.enabled() == enabled)
+        return;
+    undo_->push(new HighAttackCommand(project_, enabled));
 }
 void ToolsEditor::setDisplay(ToolLabel kind, bool enabled) {
     const auto &setting = project_->tools()->displayTool(kind);

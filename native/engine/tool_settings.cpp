@@ -34,6 +34,7 @@ ToolSettings ToolSettings::load(const Rom &rom) {
     result.chaos_ = ChaosCounter::load(rom);
     result.luck_ = DisplayTool::load(rom, ToolLabel::Luck);
     result.alignment_ = DisplayTool::load(rom, ToolLabel::Alignment);
+    result.highAttack_ = HighAttack::load(rom);
     try {
         rom.requireSupported();
         if (rom.revision())
@@ -79,20 +80,25 @@ void ToolSettings::apply(const QJsonObject &object) {
     const bool counter =
         object["version"] == 2 && object.size() == 3 && object["chaosFrameCounter"].isBool();
     const bool current =
-        object["version"] == 3 && object.size() == 5 && object["chaosFrameCounter"].isBool() &&
-        object["characterCardLuck"].isBool() && object["squadMenuAlignment"].isBool();
-    if ((!old && !counter && !current) || !value.isDouble() || !std::isfinite(number) ||
+        object["version"] == 4 && object.size() == 6 && object["highAttackStreamSplit"].isBool();
+    const bool displays = ((object["version"] == 3 && object.size() == 5) || current) &&
+                          object["chaosFrameCounter"].isBool() &&
+                          object["characterCardLuck"].isBool() &&
+                          object["squadMenuAlignment"].isBool();
+    if ((!old && !counter && !displays) || !value.isDouble() || !std::isfinite(number) ||
         number != std::floor(number) || number < 0 || number > 300)
         throw Error("Invalid Tools project settings");
     auto candidate = *this;
     if (candidate.percent_ != int(number))
         candidate.setExperiencePercent(int(number));
-    if ((counter || current) && object["chaosFrameCounter"].toBool() != candidate.chaos_.enabled())
+    if ((counter || displays) && object["chaosFrameCounter"].toBool() != candidate.chaos_.enabled())
         candidate.chaos_.setEnabled(object["chaosFrameCounter"].toBool());
-    if (current && object["characterCardLuck"].toBool() != candidate.luck_.enabled())
+    if (displays && object["characterCardLuck"].toBool() != candidate.luck_.enabled())
         candidate.luck_.setEnabled(object["characterCardLuck"].toBool());
-    if (current && object["squadMenuAlignment"].toBool() != candidate.alignment_.enabled())
+    if (displays && object["squadMenuAlignment"].toBool() != candidate.alignment_.enabled())
         candidate.alignment_.setEnabled(object["squadMenuAlignment"].toBool());
+    if (current && object["highAttackStreamSplit"].toBool() != candidate.highAttack_.enabled())
+        candidate.highAttack_.setEnabled(object["highAttackStreamSplit"].toBool());
     *this = candidate;
 }
 QByteArray ToolSettings::assemblyDefinitions(int part) const {

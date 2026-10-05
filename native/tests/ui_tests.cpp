@@ -170,6 +170,46 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("alignmentDisplay")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void highAttackToolsEditing() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto project = Project::fromRom(rom);
+        QUndoStack undo;
+        ToolsEditor editor(&project, &undo, [] {});
+        editor.resize(900, 900);
+        editor.show();
+        auto box = editor.findChild<QCheckBox *>("highAttack");
+        auto restore = editor.findChild<QPushButton *>("highAttackRestore");
+        QVERIFY(box->isEnabled());
+        QVERIFY(!box->isChecked());
+        const auto notice = editor.findChild<QLabel *>("highAttackNotice")->text();
+        QVERIFY(notice.contains("8 MiB"));
+        QVERIFY(notice.contains("Interpreter"));
+        QVERIFY(notice.contains("pending"));
+        box->click();
+        QVERIFY(project.tools()->highAttack().enabled());
+        editor.findChild<QCheckBox *>("luckDisplay")->click();
+        undo.undo();
+        QVERIFY(box->isChecked());
+        undo.undo();
+        QVERIFY(!box->isChecked());
+        undo.redo();
+        QVERIFY(box->isChecked());
+        restore->click();
+        QVERIFY(!box->isChecked());
+        undo.undo();
+        QVERIFY(box->isChecked());
+        QVERIFY(editor.grab().save("high-attack-tools.png"));
+        auto bytes = rom.bytes();
+        bytes[0x34f00] ^= 1;
+        auto foreign = Project::fromRom(Rom::fromBytes(bytes));
+        QUndoStack foreignUndo;
+        ToolsEditor held(&foreign, &foreignUndo, [] {});
+        QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
+        QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
+    }
     void editUndoRedoPreservesRecord() {
         QByteArray data(0x2800000, char(0));
         put32(data, 0, 0x80371240);

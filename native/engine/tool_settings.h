@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/chaos_counter.h"
 #include "engine/display_tool.h"
+#include "engine/high_attack.h"
 #include "engine/rom.h"
 #include <QJsonArray>
 #include <QJsonObject>
@@ -23,7 +24,7 @@ class ToolSettings {
     }
     bool modified() const {
         return experienceModified() || chaos_.modified() || luck_.modified() ||
-               alignment_.modified();
+               alignment_.modified() || highAttack_.modified();
     }
     bool experienceModified() const {
         return percent_ != original_;
@@ -34,13 +35,17 @@ class ToolSettings {
     const DisplayTool &displayTool(ToolLabel kind) const {
         return kind == ToolLabel::Alignment ? alignment_ : luck_;
     }
+    const HighAttack &highAttack() const {
+        return highAttack_;
+    }
     void setExperiencePercent(int);
     QJsonObject json() const {
-        return {{"version", 3},
+        return {{"version", 4},
                 {"experienceScalePercent", percent_},
                 {"chaosFrameCounter", chaos_.enabled()},
                 {"characterCardLuck", luck_.enabled()},
-                {"squadMenuAlignment", alignment_.enabled()}};
+                {"squadMenuAlignment", alignment_.enabled()},
+                {"highAttackStreamSplit", highAttack_.enabled()}};
     }
     void apply(const QJsonObject &);
     QByteArray assemblyDefinitions(int part) const;
@@ -51,5 +56,6 @@ class ToolSettings {
     QString unavailable_;
     ChaosCounter chaos_;
     DisplayTool luck_, alignment_;
+    HighAttack highAttack_;
 };
 } // namespace lordly

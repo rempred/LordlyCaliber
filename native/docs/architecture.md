@@ -1,5 +1,52 @@
 # Native Lordly Caliber
 
+## Tools: High Attack stream split
+
+The experimental High Attack setting now has independent undo/restore, native
+project folders/archives, browser patch and rebuild-owner imports, source-built
+export, v21 migration and exact retail restoration. Tools schema 4 reads schemas
+1–3 without resetting newer settings. All eleven owned regions must match a
+complete recognized installation. Foreign code/allocation bytes are preserved,
+and overlapping rebuild owners fail before publication. Rev0 does not claim the
+Rev1 continuation at z64 0x306CC. The UI and export report retain the existing
+Expansion Pak and Project64 Interpreter requirements; full-battle validation is
+still pending. This does not change the 4 MiB Classes allocation policy.
+
+Maintained ASM is adapted from parent `tools/build_high_attack_stream_shift_rom.py`
+v21 and its qualified 546-entry context-reference inventory. The inventory's
+words are comparison data, never executed as instructions. No compiled game
+payload ships. Version 23 corrects the loader's uncached marker address from
+0xA0400000 to 0xA0440000, checks both marker and version, and preserves a0/a1/ra
+across the resident cache helpers. Valid warm entry retains install/high-water
+metadata; stale modules reload. The module remains at RAM 0x80440000, context at
+0x80450000 and trailer at 0x80449810; ROM placement remains z64 0x27A0000.
+
+At each active insert, exact original-word guards recheck the known references
+and advance-helper entry. An already relocated context is not copied again.
+A fresh context relocates if the retained flag, any known shifted reference,
+or the shifted helper indicates that consumers already use the split layout.
+Otherwise the original proposed-length threshold (>0x800) remains in force.
+This handles modeled complete/partial overlay reloads without assuming a stable
+overlay generation. Foreign words remain untouched. Recovery helpers at module
+offset 0x400 onward are unchanged from v21. The rejected v22 per-site cache
+experiment is not used; this change does not establish recompiler support or
+prove the cause of the historical v22 endless-growth failure.
+
+Build42919 succeeded. `tool_settings_tests highAttackProjectsAndExports
+projectPersistenceAndImport chaosProjectPersistenceAndImport` passed in 34894 ms:
+folder/archive/import/reset/rollback, old schemas, 11 independent foreign-owner
+cases, complete-image conservation/checksum, physical exports/reopens, stable
+repeat export, v21 migration and removal, unowned continuation preservation,
+and all five Tools with a new class. Candidates: parent
+`Test ROMs/native-high-attack-FBdtKT`. The master ROM remained unchanged.
+The export-compiled source passes 10 loader and 80 layout instruction cases,
+including threshold boundaries, partial reloads, helper-only reloads, foreign
+words, argument preservation, owner/head/trailer copying and high-water lifetime.
+The longest modeled insert executes 70743 instructions; this is not a hardware
+performance measurement. DMA/cache services are modeled, not game execution.
+`ui_tests highAttackToolsEditing displayToolsEditing chaosToolsEditing
+experienceToolsEditing` passed in 444 ms; the screenshot was inspected.
+
 ## Tools: Luck and squad Alignment
 
 Both displays now have independent native controls, loaded-setting restoration,

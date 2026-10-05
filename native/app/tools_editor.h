@@ -18,6 +18,7 @@ class ToolsEditor : public QWidget {
     void setPercent(int);
     void setChaos(bool);
     void setDisplay(ToolLabel, bool);
+    void setHighAttack(bool);
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;
@@ -30,5 +31,8 @@ class ToolsEditor : public QWidget {
     QCheckBox *displayBoxes_[2];
     QPushButton *displayRestores_[2];
     QLabel *displayNotices_[2];
+    QCheckBox *highAttack_;
+    QPushButton *highAttackRestore_;
+    QLabel *highAttackNotice_;
 };
 } // namespace lordly
