@@ -1646,6 +1646,61 @@ class UiTests : public QObject {
         seek(8);
         QCOMPARE(preview.renderedFrame(), closed);
     }
+    void displayControlPreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Display blackout playback", source.key, false);
+        QVector<quint32> words{0x80000006U, 0};
+        for (int i = 0; i < 3; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x84;
+        for (int i = 0; i < 140; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x85;
+        for (int i = 0; i < 10; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        ScenePreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        preview.selectScene(scenes, id, 0);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const auto seek = [&](int tick) {
+            position->setValue(tick);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        };
+        seek(3);
+        const auto visible = preview.renderedFrame();
+        QVERIFY(visible.pixelColor(160, 120) != QColor(Qt::black));
+        seek(4);
+        const auto hidden = preview.renderedFrame();
+        QCOMPARE(hidden.pixelColor(160, 120), QColor(Qt::black));
+        QVERIFY(status->text().contains("blacked out"));
+        preview.repaint();
+        QCOMPARE(preview.renderedFrame(), hidden);
+        preview.grab().save("display-blackout-preview.png");
+        seek(140);
+        QCOMPARE(preview.renderedFrame(), hidden);
+        seek(144);
+        QCOMPARE(preview.renderedFrame(), visible);
+        seek(100);
+        QCOMPARE(preview.renderedFrame(), hidden);
+        seek(145);
+        QCOMPARE(preview.renderedFrame(), visible);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        seek(4);
+        QCOMPARE(preview.renderedFrame(), hidden);
+    }
     void titleRevealPreviewSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

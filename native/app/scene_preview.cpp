@@ -676,6 +676,8 @@ void ScenePreview::convertBackgrounds(Snapshot &next) {
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
+    if (commitDraw)
+        drawing.display().submit();
     if (commitDraw && !drawing.titleScene())
         drawing.crop().draw();
     const bool sepia = drawing.effects().sepia();
@@ -898,6 +900,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     if (commitDraw) {
         if (mode_ == 0)
             drawing.finishImageDraw();
+        drawing.display().complete();
         next.playback = std::move(drawing);
     }
 }
@@ -1037,8 +1040,9 @@ void ScenePreview::present() {
         status_->setText("No active scene.");
         return;
     }
-    frame_ = current_->frame;
+    frame_ = current_->playback.display().present(current_->frame);
     canvas_->addPixmap(QPixmap::fromImage(frame_));
+
     const auto &director = current_->playback.director();
     status_->setText(QString("Step %1 · selector %2 · word %3%4%5")
                          .arg(tick_)
@@ -1048,6 +1052,8 @@ void ScenePreview::present() {
                          .arg(current_->backgroundName.isEmpty()
                                   ? QString{}
                                   : "\nBackground channels: " + current_->backgroundName));
+    if (current_->playback.display().black())
+        status_->setText(status_->text() + "\nDisplay blacked out by scene command.");
     if (!current_->playback.ribbons().empty())
         status_->setText(
             status_->text() +

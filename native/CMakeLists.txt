@@ -53,6 +53,8 @@ target_sources(lordly_engine PRIVATE game/director/image_manual.c)
 target_sources(lordly_engine PRIVATE engine/scene_image_controls.cpp)
 target_sources(lordly_engine PRIVATE game/director/path_curve.c engine/scene_ribbons.cpp)
 target_sources(lordly_engine PRIVATE game/director/iris.c engine/scene_iris.cpp)
+target_sources(lordly_engine PRIVATE game/director/display_state.c engine/scene_display.cpp)
+
 target_sources(lordly_engine PRIVATE game/director/screen_crop.c engine/scene_crop.cpp game/director/title_reveal.c engine/scene_title_reveal.cpp)
 target_sources(lordly_engine PRIVATE game/director/panel_animation.c engine/scene_panels.cpp)
 target_sources(lordly_engine PRIVATE game/director/actor_roster.c engine/scene_actor_roster.cpp)

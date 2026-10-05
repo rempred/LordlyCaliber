@@ -1,5 +1,28 @@
 # Native Lordly Caliber
 
+## Display blackout and deferred reveal
+
+Director commands84/85 now use a shared display-state owner. Blackout waits for
+submitted graphics work to finish before clearing a pending reveal and selecting
+black output. Reveal sets a request that only a type-four graphics completion
+consumes; type-eight/sixteen completions leave it pending. The preview submits and
+completes one task per committed render. It hides only the presented image, leaving
+the framebuffer available for rendering and capture. State copies preserve pending
+requests and task counts through checkpoints. The status line identifies blackout.
+
+Maintained C follows the resident drain19E10, blackout19FC0, reveal1A050 and completion
+19974..19A50 paths. NTSC display state is modeled; actual GPU/VI queue latency and
+PAL scaling are outside the desktop renderer. `scene_runtime_tests
+displayControlAgainstMips displayControlPlayback` passed in248ms:516 original
+request/count/VI-bit snapshots, suspended dispatch without duplicated counter
+updates, explicit completion, independent copies and unchanged input image pixels.
+The instruction fixture controls queue receipt, callbacks and interrupt masks;
+original drain/request/completion routing and the VI black-bit setter execute.
+`ui_tests displayControlPreviewSeek titleRevealPreviewSeek` passed in1505ms,
+covering blackout, reveal, status, repaint, restart and checkpoint restoration,
+plus the title-reveal regression. The blackout capture was inspected.
+
+
 ## Title-scene edge reveal
 
 Selector zero now uses the early title wrapper's counter/Director/reveal update

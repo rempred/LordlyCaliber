@@ -74,3 +74,9 @@ Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic
 runtime snapshots, and performance measurements on representative workloads.
 Unknown game behavior remains identified rather than silently approximated.
+
+Display blackout/reveal commands now use an explicit graphics-completion boundary.
+The preview hides displayed output while retaining the underlying scene, reports
+blackout in the status line and restores pending state when seeking. Original
+request/task/VI-bit comparisons and desktop blackout/reveal checks pass. Hardware
+queue latency and PAL scaling remain outside the NTSC desktop preview.

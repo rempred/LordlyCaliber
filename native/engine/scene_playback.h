@@ -6,6 +6,7 @@
 #include "engine/scene_crop.h"
 #include "engine/scene_dialogue.h"
 #include "engine/scene_dialogue_context.h"
+#include "engine/scene_display.h"
 #include "engine/scene_effects.h"
 #include "engine/scene_fade.h"
 #include "engine/scene_image_controls.h"
@@ -121,6 +122,12 @@ class ScenePlayback {
     SceneEffects &effects() {
         return effects_;
     }
+    SceneDisplay &display() {
+        return display_;
+    }
+    const SceneDisplay &display() const {
+        return display_;
+    }
     SceneCrop &crop() {
         return crop_;
     }
@@ -225,6 +232,7 @@ class ScenePlayback {
     SceneFade fade_;
     SceneEffects effects_;
     SceneCrop crop_;
+    SceneDisplay display_;
     SceneTitleReveal titleReveal_;
     bool highResolution_ = false;
     int titlePhase_ = 0;

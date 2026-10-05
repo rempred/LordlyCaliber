@@ -105,6 +105,15 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x84) {
+        if (!display_.blackout())
+            throw Error("Display blackout is waiting for submitted graphics tasks to finish");
+        return true;
+    }
+    if (opcode == 0x85) {
+        display_.requestReveal();
+        return true;
+    }
     if (titleScene() && (opcode == 0x62 || opcode == 0x6a || opcode == 0x6b))
         throw Error("Title menu panels require their separate early-overlay owner");
     if (opcode == 0x62) {
