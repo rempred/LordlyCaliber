@@ -76,18 +76,19 @@ DialogueTexture DialogueDrawing::frame(int index) {
     return texture;
 }
 DialogueTexture DialogueDrawing::portrait(int identity, bool variant) const {
-    const auto token = u16(rom_.bytes(), 0x64be0 + (identity & 255) * 6 + (variant ? 2 : 0));
+    if(!classes_)classes_=ClassData::load(rom_);
+    if(!avatars_)avatars_=AvatarLibrary::load(rom_);
+    const int id=identity&255;
+    if(id>=classes_->entries().size())throw Error("Dialogue portrait class is outside the current class table");
+    const auto token=u16(classes_->entries()[id].appearance,variant?2:0);
     DialogueTexture texture{40, 48, 40, 8, QByteArray(1920, 0), QVector<quint16>(80, 0)};
     if (!token)
         return texture;
-    const auto directory = resource(0x1dfb6ea);
-    const auto bytes = resource(u32(directory, (token >> 3) * 4), true);
-    const int palette = 1920 + (token & 7) * 160;
-    if (palette + 160 > bytes.size())
-        throw Error("Dialogue portrait palette is unavailable");
-    texture.indices = bytes.first(1920);
+    const auto &bundle=avatars_->bundle(token>>3);
+    const auto palette=avatars_->palette(token);
+    texture.indices = bundle.indices;
     for (int i = 0; i < 80; ++i)
-        texture.palette[i] = u16(bytes, palette + i * 2);
+        texture.palette[i] = u16(palette, i * 2);
     return texture;
 }
 DialogueTexture DialogueDrawing::glyph(int index, int color) const {

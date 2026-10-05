@@ -1,5 +1,7 @@
 #pragma once
 #include "engine/image.h"
+#include "engine/avatar_library.h"
+#include "engine/class_data.h"
 #include <QHash>
 #include <QVector>
 #include <array>
@@ -24,14 +26,16 @@ class DialogueDrawing {
     explicit DialogueDrawing(Rom rom);
     QVector<DialogueRectangle> compose(const QByteArray &window, const QByteArray &payload);
     static void paint(RasterImage &, const QVector<DialogueRectangle> &);
+    DialogueTexture portrait(int identity, bool variant) const;
 
   private:
     QByteArray resource(quint32 key, bool compressed = false) const;
     QByteArray member(quint32 key, int index);
     DialogueTexture frame(int index);
-    DialogueTexture portrait(int identity, bool variant) const;
     DialogueTexture glyph(int index, int color) const;
     Rom rom_;
     QHash<quint64, QByteArray> members_;
+    mutable std::optional<ClassData> classes_;
+    mutable std::optional<AvatarLibrary> avatars_;
 };
 } // namespace lordly

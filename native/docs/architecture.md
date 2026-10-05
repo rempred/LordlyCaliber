@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Current-ROM portrait resources
+
+`AvatarLibrary` follows all three guarded directory-reference pairs in the
+current ROM. It retains the 13-bit member/3-bit palette token and reads raw
+resource directories plus boot-LZ 40×48 CI8 bundles with up to eight 80-color
+RGBA5551 palettes. Geometry, indices, opaque palette words, reference agreement
+and ROM extents are bounded. Bundles are cached by resource key, retaining
+intentional duplicate directory entries. This reader is independent of class
+placement, so resource validation does not recurse into class-runtime metadata.
+
+DialogueDrawing now reads appearance words from `ClassData::load` and follows
+the current avatar directory, replacing its hardcoded retail route table and
+resource key. It caches both readers per supplied ROM and rejects an identity
+outside that ROM's class count. Null routes retain blank portraits. This fixes
+portrait previews for added classes and already-relocated portrait directories;
+project-authored portrait editing/export is still being implemented.
+
+Build74285 succeeded. `avatar_artwork_tests` passed in 7710 ms: 140 distinct
+bundles/208 palette variants compared byte-for-byte with the browser resource
+decoder, all 330 class/variant dialogue selections, a relocated directory with
+a replaced member, malformed references/extents, and the source-built class
+165 portrait with out-of-range rejection. `dialogue_runtime_tests
+ordinaryDrawingCommands` passed in 113 ms against its existing 93 drawing
+rectangles and palette/index expectations. ROM changes in this reader test are
+in-memory only; it is not a game-load test. The parent narrow reference is
+`docs/class-card-avatar-rom-research-20260813.md`.
+
 ## Item-icon rebuild engine
 
 `IconArtwork` loads all 277 equipment and 44 consumable CI8 icons through the
