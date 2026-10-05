@@ -16,6 +16,7 @@ class AnimationSequenceEditor : public QWidget {
     AnimationSequenceEditor(Project *, QUndoStack *, std::function<void()> changed,
                             QWidget *parent = nullptr);
     void importImage(const QString &);
+    void copyToLibrary();
 
   private:
     void refresh();

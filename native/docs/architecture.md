@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Game pose artwork in the sprite library
+
+Class sequence editing and the cutscene pose inspector can copy authored frame
+lists into independent Sprite studio assets. The shared engine conversion retains
+frame timing, layer order and RGBA values, the selected body/equipment or actor
+variant, staged private artwork, and a common canvas anchor across frames.
+Flips arrive from the existing decoder; scale and fractional placement use explicit
+nearest pixel-center sampling. Hidden RGB and partial alpha survive copying.
+Empty/invisible frames retain transparent layers; library size/pixel limits apply.
+The inspector uses its selected equipment/palette; the class shortcut uses defaults.
+
+This transfers artwork instructions once in authored order. It does not bake runtime
+loops, movement, audio, lighting, sepia or material programs. The UI states that
+limit. Copying is one independent library undo command; it does not change the
+ROM resource or assign a new game animation. Existing assignment controls remain
+available for explicit transfers back into the game.
+
+`sprite_library_tests gameFramePlacement gamePoseFrames` passed in 144 ms: hand-specified scale/placement/alpha pixels, fractional
+sampling, empty/invisible frames, limits, exact decoded stock layer pixels, body
+variants, cutscene art and asset-file roundtrips. `sequence_editor_tests
+copyFramesToLibrary` passed in 870 ms after integration: retail and edited private
+frames, unchanged game data, undo/redo, distinct identities and folder reopening.
+`ui_tests actorPoseLibraryTransfer equipmentBodyPreview` passed in 1247 ms: selected
+actor variant and equipment appearance against engine output, undo, persistence
+and existing equipment preview regression. Both transfer screenshots were inspected.
+These checks establish editable artwork transfer, not game execution equivalence.
+
 ## Browser private-sequence conversion
 
 Browser `art.separations` documents from schemas one through four convert into native private

@@ -3,6 +3,8 @@
 #include "engine/actor_renderer.h"
 #include "engine/director.h"
 #include "engine/sprite_pose.h"
+#include "engine/sprite_library.h"
+#include <functional>
 #include <QWidget>
 #include <optional>
 #include <variant>
@@ -26,6 +28,8 @@ class ActorPoseEditor : public QWidget {
     void setArtwork(const ActorArtworkEdits &);
     void setBodyAnimations(BodyAnimationData::Pointer);
     void selectPrivateSequence(int classId,int flags,int state);
+    void setSpriteLibrary(std::function<void(SpriteAsset)>);
+    SpriteAsset poseAsset() const;
 
   private:
     void loadSources();
@@ -67,6 +71,8 @@ class ActorPoseEditor : public QWidget {
     BodyAppearance defaultAppearance_;
     QSpinBox *variant_, *position_, *speed_;
     QPushButton *play_;
+    QPushButton *copyToLibrary_;
+    std::function<void(SpriteAsset)> librarySink_;
     QLabel *status_, *selection_;
     QListWidget *layers_;
     QGraphicsView *view_;

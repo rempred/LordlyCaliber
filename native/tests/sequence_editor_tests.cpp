@@ -28,6 +28,54 @@ class SequenceEditorTests : public QObject {
     void initTestCase() {
         QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf");
     }
+    void copyFramesToLibrary() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            editor.resize(1400, 1000); editor.show();
+            const auto copy = editor.findChild<QPushButton *>("sequenceCopyToLibrary");
+            QVERIFY(copy && copy->isEnabled());
+            const auto sequences = project.animationSequences()->json();
+            copy->click();
+            auto notice = editor.findChild<QLabel *>("sequenceNotice");
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QCOMPARE(project.sprites().assets().size(), 1);
+            const auto retail = project.sprites().assets().first();
+            QVERIFY(retail.frames.size() > 1);
+            QCOMPARE(project.animationSequences()->json(), sequences);
+            undo.undo(); QVERIFY(project.sprites().assets().isEmpty());
+            undo.redo(); QCOMPARE(project.sprites().assets().first(), retail);
+            editor.findChild<QPushButton *>("sequenceCreate")->click();
+            auto changed = *project.animationSequences();
+            auto descriptor = *changed.find(2, 0);
+            auto bank = descriptor.poses();
+            const auto records = bank.effective(40).records;
+            for (int i = 0; i < records.size(); ++i) if (records[i].opcode == 1) {
+                bank.setFrame(40, i, u8(records[i].operands, 0), 37); break;
+            }
+            descriptor.setPoses(bank); changed.setDescriptor(2, 0, descriptor);
+            project.setAnimationSequences(changed.json());
+            copy->click();
+            QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            QCOMPARE(project.sprites().assets().size(), 2);
+            const auto edited = project.sprites().assets().last();
+            QCOMPARE(edited.frames.first().ticks, 37);
+            QCOMPARE(edited.composite(0), retail.composite(0));
+            QVERIFY(edited.id != retail.id);
+            QCOMPARE(editor.findChild<QComboBox *>("sequenceLibrary")->currentData().toString(), edited.id);
+            undo.undo(); QCOMPARE(project.sprites().assets().size(), 1);
+            QCOMPARE(project.animationSequences()->json(), changed.json());
+            undo.redo();
+            QTemporaryDir work; project.saveFolder(work.path());
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(restored.sprites().json(), project.sprites().json());
+            QVERIFY(editor.grab().save(QDir::current().filePath("sequence-library-copy.png")));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void attackAssignmentsAndUndo() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

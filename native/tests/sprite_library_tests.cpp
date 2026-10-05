@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QtTest>
+#include "engine/sprite_sources.h"
 using namespace lordly;
 namespace {
 QByteArray pixels(const QImage &image) {
@@ -59,6 +60,80 @@ QVector<SpriteAsset> examples() {
 class SpriteLibraryTests : public QObject {
     Q_OBJECT
   private slots:
+    void gameFramePlacement() {
+        ActorFrameLayer first;
+        first.metadata = {7, {-1, -1}, 2, 1, 0, 2048, 1024};
+        first.pixels.image = {2, 1, QByteArray::fromHex("ff0000ff0000ffff")};
+        ActorFrameLayer second;
+        second.metadata = {8, {1, 0}, 1, 1, 0, 1024, 1024};
+        second.pixels.image = {1, 1, QByteArray::fromHex("00ff0080")};
+        auto last = second;
+        last.metadata.origin = {0, 2};
+        auto asset = spriteAssetFromFrames("Placed layers", {{0, {first, second}}, {23, {last}}});
+        QCOMPARE(asset.size, QSize(4, 4));
+        QCOMPARE(asset.anchor, QPoint(2, 1));
+        QCOMPARE(asset.frames[0].ticks, 0);
+        QCOMPARE(asset.frames[1].ticks, 23);
+        QCOMPARE(asset.frames[0].layers[0].position, QPoint(0, 0));
+        QCOMPARE(asset.frames[0].layers[1].position, QPoint(3, 1));
+        QCOMPARE(asset.frames[1].layers[0].position, QPoint(2, 3));
+        QCOMPARE(pixels(asset.frames[0].layers[0].image), QByteArray::fromHex("ff0000ffff0000ff0000ffff0000ffff"));
+        QCOMPARE(asset.composite(0).pixelColor(3, 1), QColor(0, 255, 0, 128));
+        QCOMPARE(asset.composite(1).pixelColor(0, 0), QColor(0, 0, 0, 0));
+        QCOMPARE(SpriteAsset::fromAssetFile(asset.assetFile()), asset);
+        first.metadata.scaleX = 512;
+        first.metadata.origin = {-3, -1};
+        const auto fractional = spriteAssetFromFrames("Fractional", {{8, {first}}});
+        QCOMPARE(fractional.size, QSize(2, 1));
+        QCOMPARE(fractional.anchor, QPoint(2, 1));
+        QCOMPARE(fractional.composite(0).pixelColor(0, 0), QColor(255, 0, 0));
+        QCOMPARE(fractional.composite(0).pixelColor(1, 0), QColor(0, 0, 0, 0));
+        first.metadata.scaleX = 0;
+        const auto invisible = spriteAssetFromFrames("Invisible", {{8, {first}}, {8, {}}});
+        QCOMPARE(invisible.composite(0).pixelColor(0, 0), QColor(0, 0, 0, 0));
+        QCOMPARE(invisible.frames.size(), 2);
+        first.metadata.scaleX = 65535;
+        first.pixels.image = {128, 1, QByteArray(512, '\0')};
+        QVERIFY_THROWS_EXCEPTION(Error, spriteAssetFromFrames("Oversized", {{8, {first}}}));
+        QVERIFY_THROWS_EXCEPTION(Error, spriteAssetFromFrames("Empty", {}));
+    }
+    void gamePoseFrames() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto body = BodyAnimationData::load(rom);
+            int checked = 0;
+            for (int id : {1, 2, 10}) {
+                const int field = u8(ClassData::load(rom).entries()[id].record, 69);
+                const auto art = ActorArt::loadBody(rom, id, field ? field : id, 0, 0, body);
+                const auto asset = spriteAssetFromPose(rom, art, 40, "ROM pose");
+                int frame = 0;
+                for (const auto &record : art.poses()[40].records) {
+                    if (record.opcode != 1) continue;
+                    const auto layers = art.bodyFrame(rom, u8(record.operands, 0), art.defaultAppearance(rom));
+                    const auto &copy = asset.frames[frame++];
+                    QCOMPARE(copy.ticks, int(u8(record.operands, 1)));
+                    QCOMPARE(copy.layers.size(), layers.size());
+                    for (int l = 0; l < layers.size(); ++l) {
+                        const auto &original = layers[l];
+                        if (original.metadata.scaleX == 1024 && original.metadata.scaleY == 1024) {
+                            QCOMPARE(copy.layers[l].position - asset.anchor, original.metadata.origin);
+                            QCOMPARE(pixels(copy.layers[l].image), original.pixels.image.rgba);
+                            ++checked;
+                        }
+                    }
+                }
+                QCOMPARE(asset.frames.size(), frame);
+                QCOMPARE(SpriteAsset::fromAssetFile(asset.assetFile(true)), asset);
+            }
+            QVERIFY(checked > 5);
+            const auto actor = ActorArt::load(rom, 1);
+            const auto asset = spriteAssetFromPose(rom, actor, 0, "Cutscene actor");
+            QVERIFY(!asset.frames.isEmpty());
+            QVERIFY_THROWS_EXCEPTION(Error, spriteAssetFromPose(rom, actor, -1, "Invalid"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void browserCompatibility() {
         try {
             QTemporaryDir work;

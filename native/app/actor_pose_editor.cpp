@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include "engine/sprite_sources.h"
 #include "engine/actor_materials.h"
 #include "engine/class_data.h"
 #include "engine/scene_transforms.h"
@@ -318,6 +319,23 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     selection_ = new QLabel;
     selection_->setWordWrap(true);
     layerLayout->addWidget(selection_);
+    copyToLibrary_ = new QPushButton("Copy pose frames to library");
+    copyToLibrary_->setObjectName("actorCopyToLibrary");
+    copyToLibrary_->setToolTip("Copy authored frame artwork and timing with the selected image variant "
+                             "and equipment appearance. Movement, loops, lighting, sepia and sound "
+                             "remain in the game sequence.");
+    copyToLibrary_->hide();
+    layerLayout->addWidget(copyToLibrary_);
+    connect(copyToLibrary_, &QPushButton::clicked, this, [this] {
+        try {
+            if (!librarySink_) return;
+            stop();
+            librarySink_(poseAsset());
+            status_->setText("Copied pose frames to Sprite studio.");
+        } catch (const std::exception &e) {
+            status_->setText(QString::fromUtf8(e.what()));
+        }
+    });
     split->addWidget(layerPanel);
     split->setStretchFactor(0, 4);
     split->setStretchFactor(1, 1);
@@ -446,6 +464,17 @@ void ActorPoseEditor::selectCommand(const DirectorProgram &program, int command)
 void ActorPoseEditor::stop() {
     play_->setChecked(false);
     timer_->stop();
+}
+void ActorPoseEditor::setSpriteLibrary(std::function<void(SpriteAsset)> sink) {
+    librarySink_ = std::move(sink);
+    copyToLibrary_->setVisible(bool(librarySink_));
+}
+SpriteAsset ActorPoseEditor::poseAsset() const {
+    if (!art_ || poses_->currentIndex() < 0)
+        throw Error("Choose an available actor and pose");
+    return spriteAssetFromPose(rom_, *art_, poses_->currentData().toInt(),
+                                (banks_->currentText() + " · pose " + poses_->currentData().toString()).left(120),
+                                variant_->value(), appearance(), artwork_.value(art_->descriptorKey()));
 }
 void ActorPoseEditor::selectPrivateSequence(int classId,int flags,int state) {
     const auto classes = bodyAnimations_ ? bodyAnimations_->classes() : ClassData::load(rom_);

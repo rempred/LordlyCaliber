@@ -28,6 +28,7 @@
 #include "app/transform_preview.h"
 #include "app/value_editor.h"
 #include "engine/scene_import.h"
+#include "engine/sprite_sources.h"
 #include "rebuild/compiler.h"
 #include <QAction>
 #include <QApplication>
@@ -63,6 +64,54 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void actorPoseLibraryTransfer() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            auto project = Project::fromRom(rom);
+            QUndoStack undo;
+            CutsceneEditor editor(rom, nullptr, &project, &undo, [] {});
+            editor.resize(1500, 1050); editor.show();
+            auto inspector = editor.findChild<ActorPoseEditor *>(); QVERIFY(inspector);
+            for (auto tabs : editor.findChildren<QTabWidget *>())
+                if (tabs->indexOf(inspector) >= 0) tabs->setCurrentWidget(inspector);
+            auto kind = inspector->findChild<QComboBox *>("actorSourceKind");
+            auto bank = inspector->findChild<QComboBox *>("actorBank");
+            auto pose = inspector->findChild<QComboBox *>("actorPose");
+            auto copy = inspector->findChild<QPushButton *>("actorCopyToLibrary");
+            QVERIFY(copy && copy->isVisible());
+            bank->setCurrentIndex(bank->findData(30));
+            pose->setCurrentIndex(pose->findData(12));
+            inspector->findChild<QSpinBox *>("actorVariant")->setValue(3);
+            copy->click();
+            QCOMPARE(project.sprites().assets().size(), 1);
+            const auto first = project.sprites().assets().first();
+            const auto expected = spriteAssetFromPose(rom, ActorArt::load(rom, 30), 12, "Expected", 3);
+            QCOMPARE(first.provenance["variant"].toInt(), 3);
+            QCOMPARE(first.frames.size(), expected.frames.size());
+            for (int f = 0; f < first.frames.size(); ++f) QCOMPARE(first.composite(f), expected.composite(f));
+            kind->setCurrentIndex(1); bank->setCurrentIndex(bank->findData(2));
+            pose->setCurrentIndex(pose->findData(40));
+            auto equipment = inspector->findChild<QComboBox *>("actorEquipment");
+            equipment->setCurrentIndex(equipment->findData(11));
+            copy->click();
+            QCOMPARE(project.sprites().assets().size(), 2);
+            const auto second = project.sprites().assets().last();
+            QCOMPARE(second.provenance["equipment"].toInt(), 11);
+            const auto art = ActorArt::loadBody(rom, 2, 2, 0, 0, project.bodyAnimationData());
+            const auto body = spriteAssetFromPose(rom, art, 40, "Expected", 0, BodyAppearance{11, {}});
+            QCOMPARE(second.frames.size(), body.frames.size());
+            for (int f = 0; f < second.frames.size(); ++f) QCOMPARE(second.composite(f), body.composite(f));
+            undo.undo(); QCOMPARE(project.sprites().assets().size(), 1);
+            QCOMPARE(project.sprites().assets().first(), first);
+            undo.redo(); QCOMPARE(project.sprites().assets().last(), second);
+            QTemporaryDir work; project.saveFolder(work.path());
+            auto restored = Project::fromRom(rom); restored.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(restored.sprites().json(), project.sprites().json());
+            QVERIFY(inspector->grab().save("actor-library-transfer.png"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
     void bodyConstructionPolicies() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

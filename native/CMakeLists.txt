@@ -19,7 +19,7 @@ target_sources(lordly_engine PRIVATE engine/tool_settings.cpp engine/tool_artwor
 target_sources(lordly_engine PRIVATE engine/display_tool.cpp rebuild/display_tools.cpp)
 target_sources(lordly_engine PRIVATE engine/high_attack.cpp rebuild/high_attack.cpp)
 target_sources(lordly_engine PRIVATE engine/save_document.cpp)
-target_sources(lordly_engine PRIVATE engine/sprite_library.cpp)
+target_sources(lordly_engine PRIVATE engine/sprite_library.cpp engine/sprite_sources.cpp)
 qt_add_resources(lordly_engine high_attack_sources PREFIX "/" BASE . FILES game/tools/high-attack.json game/tools/high-attack-hooks.s game/tools/high-attack-bootstrap.s game/tools/high-attack-continuation.s game/tools/high-attack-module.s)
 qt_add_resources(lordly_engine display_sources PREFIX "/" BASE . FILES game/tools/displays.json game/tools/display-hook.s game/tools/luck-bootstrap.s game/tools/luck-module.s game/tools/luck-templates.s game/tools/alignment-bootstrap.s game/tools/alignment-module.s game/tools/alignment-templates.s)
 qt_add_resources(lordly_engine tools_sources PREFIX "/" BASE . FILES game/tools/experience.json game/tools/experience.s)

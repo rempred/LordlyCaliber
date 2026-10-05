@@ -1,6 +1,7 @@
 #include "app/cutscene_editor.h"
 #include <QUndoStack>
 #include "app/actor_pose_editor.h"
+#include "app/sprite_library_command.h"
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
@@ -224,6 +225,12 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
         scenePreview_->setPortraitProvider([project](int id, bool variant) {
             project->loadAvatarArtwork();
             return project->avatarArtwork()->words(project->classData(), id, variant ? 1 : 0);
+        });
+        actorInspector->setSpriteLibrary([project, undo, changed](SpriteAsset asset) {
+            auto library = project->sprites();
+            library.replace(asset);
+            undo->push(new SpriteLibraryCommand(project, "Copy actor pose to sprite library", std::move(library)));
+            if (changed) changed();
         });
         auto artwork = [project] {
             return project->combatArtwork() ? project->combatArtwork()->previewEdits()

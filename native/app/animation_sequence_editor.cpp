@@ -2,7 +2,9 @@
 #include "app/actor_pose_editor.h"
 #include "app/art_image_assignment.h"
 #include "app/frame_layer_editor.h"
+#include "app/sprite_library_command.h"
 #include "engine/sprite_object.h"
+#include "engine/sprite_sources.h"
 #include <QComboBox>
 #include <QCompleter>
 #include <QFileDialog>
@@ -100,6 +102,13 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     remove_->setObjectName("sequenceRemoveCopy");
     buttons->addWidget(create_);
     buttons->addWidget(remove_);
+    auto copy = new QPushButton("Copy pose frames to library");
+    copy->setObjectName("sequenceCopyToLibrary");
+    copy->setToolTip("Copy the authored frames, layers and timing into Sprite studio. Uses class "
+                    "equipment defaults. Loops, movement, material changes and sound remain in "
+                    "the game sequence.");
+    buttons->addWidget(copy);
+    connect(copy, &QPushButton::clicked, this, [this] { guarded([this] { copyToLibrary(); }); });
     buttons->addStretch();
     layout->addLayout(buttons);
     auto split = new QSplitter;
@@ -436,6 +445,20 @@ void AnimationSequenceEditor::editLayers() {
 }
 void AnimationSequenceEditor::importImage(const QString &path) {
     prepareImage(loadArtworkImage(path));
+}
+void AnimationSequenceEditor::copyToLibrary() {
+    const int id = selectedClass(), flags = routes_->currentIndex(), state = poses_->currentData().toInt();
+    project_->loadCombatArtwork();
+    const auto art = ActorArt::loadBody(project_->rom(), id, owner(id), flags >> 1, flags & 1,
+                                       project_->bodyAnimationData());
+    auto asset = spriteAssetFromPose(project_->rom(), art, state,
+                                     (project_->record(Table::Classes, id).name + " · " + poseName(state)).left(120),
+                                     0, {}, project_->combatArtwork()->previewEdits().value(art.descriptorKey()));
+    auto library = project_->sprites();
+    library.replace(asset);
+    undo_->push(new SpriteLibraryCommand(project_, "Copy pose frames to sprite library", std::move(library)));
+    changed_();
+    library_->setCurrentIndex(library_->findData(asset.id));
 }
 void AnimationSequenceEditor::prepareImage(const QImage &image) {
     const int id = selectedClass(), flags = routes_->currentIndex(),
