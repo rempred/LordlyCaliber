@@ -33,6 +33,7 @@ class AnimationRoutes {
     }
     void setEntry(int classId, const Entry &);
     void setRow(int classId, const Row &);
+    AnimationRoutes withDirectory(const QByteArray &) const;
     void cloneClass(int source, int target) {
         setEntry(target, entry(source));
     }

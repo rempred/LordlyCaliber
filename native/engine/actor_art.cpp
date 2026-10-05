@@ -67,6 +67,8 @@ ActorArt ActorArt::loadBody(const Rom &rom, int source, int owner, int flagA, in
     result.flagB_ = flagB;
     result.bodyHandle_ = handle;
     result.prepareBodyFrames();
+    if(const auto *privateDescriptor=result.bodyData_->descriptor(source,owner,flagA,flagB))
+        return result.withDescriptor(*privateDescriptor);
     return result;
 }
 void ActorArt::prepareBodyFrames() {

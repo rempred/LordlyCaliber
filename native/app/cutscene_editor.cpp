@@ -242,6 +242,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
             return QJsonObject{{"classes", classes},
                                {"routes", project->animationRoutes() ? project->animationRoutes()->json() : QJsonObject{}},
                                {"overrides", project->animationOverrides() ? project->animationOverrides()->json() : QJsonObject{}},
+                               {"sequences", project->animationSequences() ? project->animationSequences()->json() : QJsonObject{}},
                                {"art", project->avatarArtwork() ? project->avatarArtwork()->json()
                                                                 : QJsonObject{}},
                                {"combat", project->combatArtwork()
@@ -252,7 +253,7 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 [this, signature, artwork, actorInspector, previous = signature()]() mutable {
                     const auto next = signature();
                     if (next != previous) {
-                        if (next["classes"] != previous["classes"] || next["routes"] != previous["routes"] || next["overrides"] != previous["overrides"]) {
+                        if (next["classes"] != previous["classes"] || next["routes"] != previous["routes"] || next["overrides"] != previous["overrides"] || next["sequences"] != previous["sequences"]) {
                             const auto animations = project_->bodyAnimationData();
                             scenePreview_->setBodyAnimations(animations);
                             actorInspector->setBodyAnimations(animations);

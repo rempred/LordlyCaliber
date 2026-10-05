@@ -1,5 +1,38 @@
 # Native Lordly Caliber
 
+## Private class sequence storage and export
+
+AnimationSequences owns one private descriptor per class/body route. Project snapshots,
+folders/archives, class-template copying and BodyAnimationData preserve private poses and
+pixels independently. The editor retains baseline route assignments; exported ROMs point
+to expanded direct handles. Recognized private descriptors are excluded from CombatArtwork
+so two allocation owners cannot modify the same members. Preview undo observes the sequence
+snapshot. Changing the underlying route requires removing its private copy first.
+
+LC05ASEQ v1 at z64 027C4E00 is96bytes: allocation offset12,size16,count20,reserved24..63,
+SHA-25664..95. Sorted16-byte records hold class/body flags, baseline/private handles and a
+runtime descriptor key. Each descriptor owns all controls and sprites. Identical resource
+containers share allocation storage; descriptor identities remain separate. Loading checks
+bounds, references, hashes, full coverage and FF padding. Export preserves unchanged compressed
+containers, recompresses changed resources, compiles the complete generated C payload and
+directory, and then compiles the effective class routes. No new execution hook is introduced.
+Cleared expansion handles are reused; the directory grows when needed. Removal clears only
+owned data and restores baseline routes. Readback compares every control resource and sprite.
+
+`animation_sequences_tests` passed15322ms: private-route timing versus the actual unchanged
+alternate route, native folder/archive restoration, rejected route conflicts, source-built
+export/reopen/no-op, newclass165 inheritance with an independent handle, all private sprites,
+original-byte conservation/CIC-6102, relocation around a later marker, removal, handle reuse,
+corruption/occupied-region/destination guards and duplicate-record atomicity. Candidate:
+parent Test ROMs/native-private-animations-gxhrDa/masterfilename. An initial fixture assumed
+the alternate Fighter route used the same frames; it now compares its actual original pose.
+An earlier run was stopped because unchanged sprites were needlessly recompressed; the
+container-preservation change eliminated that cost. Existing route tests passed18954ms,
+combat artwork13695ms, descriptor preview107ms, and staged-animation/class-assignment/override/
+new-class UI regressions15787ms. No full-game heap or hardware execution claim is made.
+Sequence authoring UI, structural layer/frame edits, private attack selectors and browser
+sequence-project import still need integration.
+
 ## Private descriptor snapshots
 
 AnimationDescriptor captures descriptor controls and staged sprite edits without changing

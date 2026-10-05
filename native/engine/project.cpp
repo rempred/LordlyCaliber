@@ -272,8 +272,10 @@ int Project::changedRecords() const {
     if (army_ && army_->modified())
         ++count;
     if (combat_ && combat_->modified()) ++count;
-    if (animationRoutes_ && animationRoutes_->modified()) ++count;
+    if (animationRoutes_ && animationRoutes_->modified() &&
+        (!animationSequences_ || animationRoutes_->json()!=animationSequences_->baseRoutes(AnimationRoutes::load(rom_)).json())) ++count;
     if (animationOverrides_ && animationOverrides_->modified()) ++count;
+    if (animationSequences_ && animationSequences_->modified()) ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)
@@ -402,6 +404,7 @@ int Project::appendClass(int templateId, const QString &name) {
     candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
     candidate.loadAnimationRoutes();
     candidate.animationRoutes_->cloneClass(templateId,id);
+    candidate.animationSequences_->cloneClass(templateId,id);
     candidate.loadAnimationOverrides();
     if(candidate.animationOverrides_->available()) {
         auto entries=candidate.animationOverrides_->entries();
@@ -584,11 +587,22 @@ void Project::replaceTextBytes(const QString &kind, int id, const QByteArray &by
 }
 BodyAnimationData::Pointer Project::bodyAnimationData() {
     loadAnimationRoutes(); loadAnimationOverrides();
-    return std::make_shared<const BodyAnimationData>(classData(),*animationRoutes_,*animationOverrides_);
+    QMap<int,AnimationDescriptor> descriptors;
+    for(auto it=animationSequences_->groups().cbegin();it!=animationSequences_->groups().cend();++it)descriptors[it.key()]=it->descriptor;
+    return std::make_shared<const BodyAnimationData>(classData(),*animationRoutes_,*animationOverrides_,std::move(descriptors));
+}
+void Project::loadAnimationSequences() {
+    if(!animationSequences_)animationSequences_=AnimationSequences::load(rom_);
+}
+void Project::setAnimationSequences(const QJsonObject &object) {
+    loadAnimationRoutes();auto next=*animationSequences_;next.apply(object);
+    next.validate(*animationRoutes_,records(Table::Classes).size());animationSequences_=std::move(next);
 }
 void Project::loadAnimationRoutes() {
-    if (!animationRoutes_)
-        animationRoutes_ = AnimationRoutes::load(rom_);
+    if (!animationRoutes_) {
+        loadAnimationSequences();
+        animationRoutes_ = animationSequences_->baseRoutes(AnimationRoutes::load(rom_));
+    }
 }
 void Project::setAnimationRoutes(const QJsonObject &object) {
     loadAnimationRoutes();
@@ -605,6 +619,7 @@ void Project::setAnimationRoutes(const QJsonObject &object) {
          ++id)
         if (!next.pending().contains(id))
             next.entry(id);
+    animationSequences_->validate(next,count);
     animationRoutes_ = std::move(next);
 }
 void Project::loadAnimationOverrides() {
@@ -716,6 +731,8 @@ QJsonObject Project::manifest() const {
     else result.remove("animationRoutes");
     if(animationOverrides_&&(animationOverrides_->modified()||legacy_["patches"].toObject().contains("combatAnimationOverrides")))result["animationOverrides"]=animationOverrides_->json();
     else result.remove("animationOverrides");
+    if(animationSequences_&&animationSequences_->modified())result["animationSequences"]=animationSequences_->json();
+    else result.remove("animationSequences");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -983,6 +1000,10 @@ void Project::applyManifest(const QJsonObject &object) {
         candidate.setCombatArtwork(object["combatArtwork"].toObject());
     } else
         candidate.importLegacyCombatArtwork(candidate.legacy_);
+    if(object.contains("animationSequences")) {
+        if(!object["animationSequences"].isObject())throw Error("Invalid saved private animation sequences");
+        candidate.loadAnimationSequences();candidate.animationSequences_->apply(object["animationSequences"].toObject());
+    }
     if (object.contains("animationRoutes")) {
         if (!object["animationRoutes"].isObject())
             throw Error("Invalid saved animation routes");
@@ -1014,6 +1035,7 @@ void Project::applyManifest(const QJsonObject &object) {
             }
         }
     }
+    if(candidate.animationSequences_){candidate.loadAnimationRoutes();candidate.animationSequences_->validate(*candidate.animationRoutes_,candidate.records(Table::Classes).size());}
     if(object.contains("animationOverrides")) {
         if(!object["animationOverrides"].isObject())throw Error("Invalid saved animation overrides");
         candidate.setAnimationOverrides(object["animationOverrides"].toObject());

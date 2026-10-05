@@ -1,5 +1,6 @@
 #include "engine/direct_descriptors.h"
 #include "engine/combat_artwork.h"
+#include "engine/animation_sequences.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QRegularExpression>
@@ -65,8 +66,9 @@ CombatArtwork CombatArtwork::load(const Rom &rom) {
     if (directory.isEmpty() || directory.size() % 4 || directory.size() > 4095 * 4)
         throw Error("Invalid combat artwork directory");
     QMap<quint32, QVector<int>> handles;
+    const auto privateDescriptors=AnimationSequences::ownedDescriptors(rom);
     for (int at = 0; at < directory.size(); at += 4)
-        if (u32(directory, at))
+        if (u32(directory, at)&&!privateDescriptors.contains(u32(directory,at)))
             handles[u32(directory, at)] << at / 4 + 1;
     for (auto it = handles.cbegin(); it != handles.cend(); ++it) {
         const auto key = it.key();

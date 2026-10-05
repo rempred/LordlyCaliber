@@ -20,6 +20,7 @@
 #include "engine/animation_routes.h"
 #include "engine/animation_overrides.h"
 #include "engine/body_animation_data.h"
+#include "engine/animation_sequences.h"
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -69,6 +70,9 @@ class Project {
     const SpriteLibrary &sprites() const { return sprites_; }
     void setSprites(const SpriteLibrary &library) { sprites_ = library; }
     BodyAnimationData::Pointer bodyAnimationData();
+    void loadAnimationSequences();
+    const std::optional<AnimationSequences> &animationSequences()const{return animationSequences_;}
+    void setAnimationSequences(const QJsonObject &);
     void loadAnimationRoutes();
     const std::optional<AnimationRoutes> &animationRoutes() const {return animationRoutes_;}
     void setAnimationRoutes(const QJsonObject &);
@@ -206,6 +210,7 @@ class Project {
     std::optional<CombatArtwork> combat_;
     std::optional<AnimationRoutes> animationRoutes_;
     std::optional<AnimationOverrides> animationOverrides_;
+    std::optional<AnimationSequences> animationSequences_;
     std::optional<Encounters> encounters_;
     std::optional<Scenarios> scenarios_;
     std::optional<ScenarioWorld> world_;

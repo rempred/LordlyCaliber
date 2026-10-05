@@ -1,8 +1,9 @@
 #include "engine/body_animation_data.h"
 namespace lordly {
 BodyAnimationData::BodyAnimationData(ClassData classes, AnimationRoutes routes,
-                                     std::optional<AnimationOverrides> overrides)
-    : classes_(std::move(classes)), routes_(std::move(routes)) {
+                                     std::optional<AnimationOverrides> overrides,
+                                     QMap<int,AnimationDescriptor> privateDescriptors)
+    : classes_(std::move(classes)), routes_(std::move(routes)),privateDescriptors_(std::move(privateDescriptors)) {
     if (!overrides)
         return;
     if (!overrides->available()) {
@@ -58,5 +59,11 @@ int BodyAnimationData::selector(int source, int owner, int action, int mode, int
             (!(entry[3] & 1) || entry[4] == original) && (!(entry[3] & 2) || entry[7] == bodyFlags))
             return entry[mode == 2 ? 6 : 5];
     return original;
+}
+const AnimationDescriptor *BodyAnimationData::descriptor(int source,int owner,int flagA,int flagB)const {
+    handle(source,owner,flagA,flagB);
+    const int selected=u8(classes_.entries()[source].record,69)==owner?source:owner;
+    const auto it=privateDescriptors_.constFind(selected*4+flagA*2+flagB);
+    return it==privateDescriptors_.cend()?nullptr:&it.value();
 }
 } // namespace lordly

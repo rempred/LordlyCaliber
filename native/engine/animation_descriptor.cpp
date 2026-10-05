@@ -69,6 +69,8 @@ QByteArray AnimationDescriptor::frame(int token) const {
 }
 void AnimationDescriptor::setPoses(const PoseBank &bank) {
     const auto before = poses();
+    if (bank.programs().size() < before.programs().size())
+        throw Error("Private animations must retain existing pose selectors");
     for (int state = 0; state < bank.programs().size(); ++state) {
         if (state < before.programs().size() &&
             bank.programs()[state].source == before.programs()[state].source)
@@ -129,5 +131,40 @@ QByteArray AnimationDescriptor::identity() const {
         bytes += header + it.value();
     }
     return sha256(bytes);
+}
+QJsonObject AnimationDescriptor::json() const {
+    QJsonObject artwork;
+    for (auto it = artwork_.cbegin(); it != artwork_.cend(); ++it)
+        artwork[QString::number(it.key())] = QString::fromLatin1(it->toBase64());
+    return {{"key", double(key_)},
+            {"poses", QString::fromLatin1(controls_[1].toBase64())},
+            {"artwork", artwork}};
+}
+AnimationDescriptor AnimationDescriptor::fromJson(const Rom &rom, const QJsonObject &object) {
+    if (object.size() != 3 || !object["poses"].isString() || !object["artwork"].isObject())
+        throw Error("Invalid saved private animation descriptor");
+    const auto key = object["key"].toInteger(-1);
+    if (key <= 0 || key >= 0x4000000 - 0x594280 || object["key"].toDouble() != double(key))
+        throw Error("Invalid saved private descriptor identity");
+    auto result = load(rom, quint32(key));
+    const auto decode = [](const QJsonValue &value) {
+        if (!value.isString() || value.toString().size() > 24 * 1024 * 1024)
+            throw Error("Private animation exceeds its saved data budget");
+        const auto text = value.toString().toLatin1();
+        const auto bytes = QByteArray::fromBase64(text, QByteArray::AbortOnBase64DecodingErrors);
+        if (bytes.toBase64() != text)
+            throw Error("Invalid private animation encoding");
+        return bytes;
+    };
+    result.setPoses(PoseBank::parse(decode(object["poses"])));
+    const auto edits = object["artwork"].toObject();
+    for (auto it = edits.begin(); it != edits.end(); ++it) {
+        bool ok = false;
+        const int art = it.key().toInt(&ok);
+        if (!ok || QString::number(art) != it.key())
+            throw Error("Invalid private sprite ordinal");
+        result.setSprite(art, decode(it.value()));
+    }
+    return result;
 }
 } // namespace lordly

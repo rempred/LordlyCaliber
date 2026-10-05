@@ -874,16 +874,39 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                                         .arg(overrides.entries().size()));
         }
     }
-    if (p.animationRoutes() && p.animationRoutes()->modified()) {
-        const auto compiled = compiler.compileData(p.animationRoutes()->decodedResource(),
+    if(p.rom().bytes().mid(AnimationSequences::descriptorOffset,8)=="LC05ASEQ")p.loadAnimationRoutes();
+    auto exportAnimationRoutes=p.animationRoutes();
+    if(p.animationSequences()&&(p.animationSequences()->modified()||!p.animationSequences()->groups().isEmpty())) {
+        p.loadAnimationRoutes();
+        const auto &sequences=*p.animationSequences();
+        sequences.validate(*p.animationRoutes(),p.records(Table::Classes).size());
+        const auto plan=sequences.plan(Rom::fromBytes(result.image));
+        const auto compiled=plan.payload.isEmpty()?QByteArray{}:compiler.compileData(plan.payload,directory,"private_animation_resources");
+        result.image=sequences.materialize(Rom::fromBytes(result.image),plan,compiled);
+        const auto root=compiler.compileData(plan.directory.decoded(),directory,"private_animation_directory");
+        result.image=plan.directory.rebuild(Rom::fromBytes(result.image),root);
+        exportAnimationRoutes=sequences.exportRoutes(*p.animationRoutes(),plan);
+        const auto actual=AnimationSequences::load(Rom::fromBytes(result.image));
+        if(actual.groups().size()!=sequences.groups().size())throw Error("Private sequence count differs after export");
+        for(auto it=sequences.groups().cbegin();it!=sequences.groups().cend();++it){
+            const auto *reopened=actual.find(it.key()/4,it.key()%4);
+            if(!reopened||reopened->controls()!=it->descriptor.controls()||reopened->members().size()!=it->descriptor.members().size())
+                throw Error("Private animation controls differ after export");
+            for(int art=0;art<reopened->members().size()-4;++art)
+                if(it->descriptor.members()[art+4]&&reopened->sprite(art)!=it->descriptor.sprite(art))throw Error("Private animation pixels differ after export");
+        }
+        result.report<<QString("Compiled %1 private class/body animation descriptors and isolated their controls and sprites").arg(sequences.groups().size());
+    }
+    if (exportAnimationRoutes && exportAnimationRoutes->modified()) {
+        const auto compiled = compiler.compileData(exportAnimationRoutes->decodedResource(),
                                                    directory, "class_animation_routes");
         const auto copyLoads = compiler.assembleOwner(
             readFile(":/game/art/animation-copy.s"), directory, "class_animation_copy", 0x80000000);
         result.image =
-            p.animationRoutes()->rebuild(Rom::fromBytes(result.image), compiled, copyLoads);
+            exportAnimationRoutes->rebuild(Rom::fromBytes(result.image), compiled, copyLoads);
         result.report << QString("Compiled class-animation routes for %1 table rows and preserved "
                                  "the other compound-resource sections")
-                             .arg(p.animationRoutes()->rowCount());
+                             .arg(exportAnimationRoutes->rowCount());
     }
     if (p.combatArtwork() && p.combatArtwork()->modified()) {
         auto resources = p.combatArtwork()->decodedResources();

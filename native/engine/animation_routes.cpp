@@ -236,6 +236,10 @@ void AnimationRoutes::setRow(int id, const Row &row) {
     value.handles = row;
     setEntry(id, value);
 }
+AnimationRoutes AnimationRoutes::withDirectory(const QByteArray &directory)const {
+    if(directory.isEmpty()||directory.size()%4||directory.size()>4095*4)throw Error("Invalid replacement animation descriptor directory");
+    auto result=*this;result.root_=directory;return result;
+}
 void AnimationRoutes::requireAssignment(int id) {
     if (id < 0 || id > 255)
         throw Error("Class animation ID exceeds the one-byte class domain");

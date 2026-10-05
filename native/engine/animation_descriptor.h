@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/artwork_edits.h"
 #include "engine/pose_bank.h"
+#include <QJsonObject>
 #include <array>
 namespace lordly {
 // A private, immutable-source descriptor snapshot. Original resource bytes remain
@@ -30,6 +31,8 @@ class AnimationDescriptor {
     QByteArray sprite(int art) const;
     void setSprite(int art, const QByteArray &);
     QByteArray identity() const;
+    QJsonObject json() const;
+    static AnimationDescriptor fromJson(const Rom &, const QJsonObject &);
 
   private:
     Rom rom_;
