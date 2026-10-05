@@ -1,5 +1,39 @@
 # Native Lordly Caliber
 
+## Iris playback and composition
+
+ScenePlayback now advances the iris in MODE_ZERO5 and exposes the4E query.
+Starting4D moves actual Actor/sprite channels without replacing sprite identities;
+close completion releases the live pools. Image assignments and all twenty
+transform records follow the saved/reordered stack. A finished transition no
+longer constrains the channel count of a later background group.
+
+ScenePreview retains background resources referenced by current or saved iris
+layers, and prunes older unreferenced groups. Frozen frames use the channel's
+background projection. ROM2B04FC restores the enclosing channel matrix and calls
+2B616C after its Actor pass; the desktop mask follows that position. Ring and
+quad triangle indices follow2B5F8C..5FA8 and2B6394..63D0. Coverage and alpha
+interpolation are desktop approximations. Capture timing is explicitly the last
+completed desktop frame supplied to4D, not a claim about N64 framebuffer timing.
+Manual indicators actually released from the live pool cannot be resurrected by
+the image owner; attempting to reuse a freed indicator pauses with an error.
+
+Build94006 ui_tests irisPreviewSeek sceneRoomComposition sceneSpriteComposition
+sceneColorPlayback capturedScenePlayback manualImageInputReplay passed12 checks
+in5024ms. Closing/opening, saved checkpoint124/back11/forward151, unchanged closed
+draw and exact desktop restoration/restart pass; scene-iris.png was inspected.
+Build24913 image_tests irisMaskCoverage passed104ms: transparent center,
+interpolated edge, opaque outer region, full-quad corners and opening symmetry.
+Build17604 scene_runtime_tests irisPlaybackLifecycle passed149ms; Build7752's
+added finished-iris/smaller-group boundary passed202ms. Engine checks cover layer
+movement, stable sprite identity, invalid-start rollback, release timing,
+quantized capture, restoration and independent checkpoints.
+
+The initial new mask fixture placed z=0 outside its orthographic near plane;
+the initial Actor fixture selected an absent bank. Correcting those fixture
+inputs required no product change. These checks do not establish pixel-equivalent
+N64 blending, live event inputs or full-game execution.
+
 ## Iris transition state and geometry
 
 SceneIris owns the24-byte transition, twenty opaque resource/channel records,

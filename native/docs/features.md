@@ -37,6 +37,10 @@ be changed after rewinding. Image scenes can select an external launch image for
 preview. Map-path ribbons read current-ROM paths and preserve native curve,
 endpoint, reveal and release timing; strip texture/edge drawing is approximate.
 Remaining panel services and automatic event/army launch context are unfinished.
+Iris close/open transitions now retain captured frames and background layers,
+move and release Actor/sprite owners, render the native mask mesh, and replay
+across checkpoints. Desktop capture timing and edge blending remain explicit
+approximations.
 
 Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic

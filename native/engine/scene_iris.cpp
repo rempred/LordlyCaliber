@@ -1,6 +1,7 @@
 #include "engine/scene_iris.h"
 #include "game/director/iris.h"
 #include <bit>
+#include <cmath>
 namespace lordly {
 namespace {
 uint8_t *raw(QByteArray &b) {
@@ -101,5 +102,79 @@ QByteArray SceneIris::mesh(const Rom &rom, const QByteArray &record) {
     const int count = lordly_iris_mesh(raw(vertices), terms, quad, constants);
     vertices.resize(count * 16);
     return vertices;
+}
+QSet<quint32> SceneIris::resources() const {
+    QSet<quint32> result;
+    for (const auto &layer : layers_)
+        result.insert(layer.resource);
+    if (saved_)
+        for (const auto &layer : *saved_)
+            result.insert(layer.resource);
+    return result;
+}
+void SceneIris::replaceBackgrounds(const std::array<quint32, 20> &handles, int count) {
+    if (count < 2 || count > 20 || selected_ >= count)
+        throw Error("Background replacement invalidates the iris channel selection");
+    for (const auto handle : handles)
+        if ((handle && handle < 3) || handle == CapturedFrame)
+            throw Error("Background handle overlaps an image identity");
+    count_ = count;
+    for (int i = 0; i < 20; ++i)
+        layers_[i].resource = handles[i];
+}
+QImage SceneIris::render(const Rom &rom, const SceneCamera &camera,
+                         const QByteArray &parent) const {
+    QImage result(320, 240, QImage::Format_RGBA8888);
+    result.fill(Qt::transparent);
+    if (record_.isEmpty())
+        return result;
+    const auto vertices = mesh(rom, record_);
+    QVector<QPointF> points;
+    for (int i = 0; i < vertices.size() / 16; ++i) {
+        const auto point =
+            camera.projectPackedPoint(parent, {double(qint16(u16(vertices, i * 16))),
+                                               double(qint16(u16(vertices, i * 16 + 2))), 0});
+        if (!point.visible)
+            throw Error("Iris projection crosses the camera clipping plane");
+        points << point.screen;
+    }
+    const auto edge = [](QPointF a, QPointF b, QPointF p) {
+        return (b.x() - a.x()) * (p.y() - a.y()) - (b.y() - a.y()) * (p.x() - a.x());
+    };
+    const auto triangle = [&](int a, int b, int c) {
+        const auto p = points[a], q = points[b], r = points[c];
+        const double area = edge(p, q, r);
+        if (std::abs(area) < 1e-9)
+            return;
+        const int x0 = int(qBound(0., std::floor(qMin(p.x(), qMin(q.x(), r.x()))), 320.));
+        const int x1 = int(qBound(0., std::ceil(qMax(p.x(), qMax(q.x(), r.x()))), 320.));
+        const int y0 = int(qBound(0., std::floor(qMin(p.y(), qMin(q.y(), r.y()))), 240.));
+        const int y1 = int(qBound(0., std::ceil(qMax(p.y(), qMax(q.y(), r.y()))), 240.));
+        for (int y = y0; y < y1; ++y)
+            for (int x = x0; x < x1; ++x) {
+                const QPointF pixel(x + .5, y + .5);
+                const double wa = edge(q, r, pixel) / area, wb = edge(r, p, pixel) / area,
+                             wc = 1 - wa - wb;
+                if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9)
+                    continue;
+                result.scanLine(y)[x * 4 + 3] = quint8(
+                    qBound(0,
+                           qRound(wa * u8(vertices, a * 16 + 15) + wb * u8(vertices, b * 16 + 15) +
+                                  wc * u8(vertices, c * 16 + 15)),
+                           255));
+            }
+    };
+    if (points.size() == 4) {
+        triangle(0, 3, 1);
+        triangle(3, 2, 1);
+    } else
+        for (int i = 0; i < 90; i += 3) {
+            // ROM2B5F8C..5FA8 emits these four triangles for six ring vertices.
+            triangle(i, i + 1, i + 4);
+            triangle(i, i + 4, i + 3);
+            triangle(i + 1, i + 2, i + 4);
+            triangle(i + 2, i + 5, i + 4);
+        }
+    return result;
 }
 } // namespace lordly

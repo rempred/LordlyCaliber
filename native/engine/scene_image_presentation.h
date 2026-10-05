@@ -23,6 +23,10 @@ class SceneImagePresentation {
     int channelCount() const {
         return images_.isEmpty() ? 0 : images_.lastKey() + 1;
     }
+    const QMap<int, bool> &channels() const {
+        return images_;
+    }
+    void assignChannels(QMap<int, bool> channels);
     const LordlyImageEcho &echo() const {
         return echo_;
     }

@@ -8,6 +8,7 @@ class SceneImageControls {
     void enable(quint32 bank, QByteArray &context, SceneSprites &);
     void disable(QByteArray &context, SceneSprites &);
     void finishDraw(const QByteArray &context, SceneSprites &);
+    void releaseAttached(const SceneSprites &);
     bool enabled() const {
         return enabled_;
     }

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/scene_capture.h"
+#include <QSet>
 #include <optional>
 namespace lordly {
 struct SceneIrisLayer {
@@ -35,6 +36,10 @@ class SceneIris {
         return layers_;
     }
     static QByteArray mesh(const Rom &, const QByteArray &record);
+    // Desktop triangle coverage/alpha interpolation; native vertices and topology.
+    QImage render(const Rom &, const SceneCamera &, const QByteArray &parent) const;
+    QSet<quint32> resources() const;
+    void replaceBackgrounds(const std::array<quint32, 20> &, int count);
 
   private:
     int count_, selected_, savedIndex_ = -1;

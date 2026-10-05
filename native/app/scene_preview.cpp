@@ -329,10 +329,41 @@ void ScenePreview::restart() {
         status_->setText(QString::fromUtf8(e.what()));
     }
 }
+int ScenePreview::activeChannels(const Snapshot &next) const {
+    if (next.playback.iris())
+        return next.playback.iris()->count();
+    int count = next.backgrounds ? next.backgrounds->channelCount() : 0;
+    if (next.playback.imagePresentation())
+        count = qMax(count, next.playback.imagePresentation()->channelCount());
+    if (next.playback.imageControlsEnabled())
+        count = qMax(count, 3);
+    return count;
+}
+void ScenePreview::retainBackgrounds(Snapshot &next) {
+    next.backgroundHandles = {};
+    if (!next.backgrounds)
+        return;
+    for (int i = 0; i < next.backgrounds->channelCount(); ++i) {
+        const auto &source = next.backgrounds->channel(i);
+        if (source.records.isEmpty())
+            continue;
+        if (next.nextBackgroundHandle >= SceneIris::CapturedFrame)
+            throw Error("Scene background resource identities are exhausted");
+        const auto handle = next.nextBackgroundHandle++;
+        next.backgroundResources.insert(handle, source);
+        next.backgroundHandles[i] = handle;
+    }
+    next.playback.replaceIrisBackgrounds(next.backgroundHandles, next.backgrounds->channelCount());
+}
 bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
+    if (opcode == 0x4d) {
+        // Product capture timing: the current completed desktop draw, matching
+        // the separate captured-frame transition's explicit framebuffer input.
+        next.playback.startIris(args, next.frame, next.backgroundHandles, activeChannels(next));
+        return true;
+    }
     if (opcode == 0x73 && args.isEmpty()) {
-        if (next.backgrounds)
-            next.backgrounds->convertToSepia();
+        convertBackgrounds(next);
         // The installer resets the Stage caches, but does not run2A2BC8 on the
         // separate ordinary Actor cache. Existing Actor images keep their color.
         next.playback.effects().setSepia(true);
@@ -343,8 +374,7 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         auto capture = next.playback.effects().capture();
         capture.start(args[0], args[1], next.frame);
         if (kind == 2) {
-            if (next.backgrounds)
-                next.backgrounds->convertToSepia();
+            convertBackgrounds(next);
             next.playback.effects().setSepia(true);
             next.playback.effects().images().convertAll();
         } else if (kind == 3) {
@@ -366,6 +396,7 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
             backgrounds.convertToSepia();
         next.backgroundName = backgrounds.description();
         next.backgrounds = std::move(backgrounds);
+        retainBackgrounds(next);
         next.environmentSelector = selector;
         return true;
     }
@@ -394,6 +425,17 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     next.previewRandom = randomState;
     return true;
 }
+void ScenePreview::convertBackgrounds(Snapshot &next) {
+    if (next.backgrounds)
+        next.backgrounds->convertToSepia();
+    QSet<quint32> current;
+    for (int i = 0; i < 20; ++i)
+        current.insert(next.playback.iris() ? next.playback.iris()->layers()[i].resource
+                                            : next.backgroundHandles[i]);
+    for (const auto handle : current)
+        if (next.backgroundResources.contains(handle))
+            SceneBackgroundRenderer::convertToSepia(next.backgroundResources[handle]);
+}
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
     const bool sepia = drawing.effects().sepia();
@@ -413,11 +455,10 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
-    int channelCount = next.backgrounds ? next.backgrounds->channelCount() : 20;
-    if (drawing.imagePresentation())
-        channelCount = qMax(channelCount, drawing.imagePresentation()->channelCount());
-    if (drawing.imageControlsEnabled())
-        channelCount = qMax(channelCount, 3);
+    const int channelCount =
+        drawing.iris()
+            ? drawing.iris()->count()
+            : qMax(next.backgrounds ? next.backgrounds->channelCount() : 20, activeChannels(next));
     if (mode_ == 0)
         drawing.prepareModeZeroDrawing(channelCount);
     else
@@ -436,16 +477,27 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                         backgroundColor[c] = u8(color, 4 + c);
                 const bool presentation =
                     drawing.imagePresentation() && drawing.imagePresentation()->contains(channel);
-                if (presentation ||
-                    (next.backgrounds && channel < next.backgrounds->channelCount())) {
+                const auto resource = drawing.iris() ? drawing.iris()->layers()[channel].resource
+                                                     : next.backgroundHandles[channel];
+                const bool frozen = resource == SceneIris::CapturedFrame;
+                if (presentation || frozen || next.backgroundResources.contains(resource)) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
-                    const auto layers =
-                        presentation
-                            ? drawing.imagePresentation()->project(
-                                  channel, *drawing.imageView(), drawing.cameras().actor(), parent)
-                            : next.backgrounds->project(channel, drawing.cameras().actor(), parent,
-                                                        backgroundColor);
+                    QVector<ActorRasterLayer> layers;
+                    if (presentation)
+                        layers = drawing.imagePresentation()->project(
+                            channel, *drawing.imageView(), drawing.cameras().actor(), parent);
+                    else {
+                        const auto source = frozen
+                                                ? SceneBackgroundChannel{"Captured frame",
+                                                                         {{{-160, -120},
+                                                                           drawing.iris()->frame(),
+                                                                           {320, 240},
+                                                                           2}}}
+                                                : next.backgroundResources.value(resource);
+                        layers = SceneBackgroundRenderer::project(
+                            source, channel, drawing.cameras().actor(), parent, backgroundColor);
+                    }
                     ActorRenderer::paint(background, layers);
                     if (presentation) {
                         // ROM2B2868 pops the image/last trail matrix before
@@ -480,6 +532,10 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                                                    &drawing.effects()});
                 painter.drawImage(0, 0, rendered.image);
                 environment = rendered.environment;
+                if (drawing.iris() && !drawing.iris()->record().isEmpty() &&
+                    u8(drawing.iris()->record(), 21) == channel)
+                    painter.drawImage(
+                        0, 0, drawing.iris()->render(rom_, drawing.cameras().actor(), parent));
             }
         } else {
             const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
@@ -569,6 +625,16 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         }
     }
     next.frame = std::move(frame);
+    QSet<quint32> retained;
+    for (const auto handle : next.backgroundHandles)
+        retained.insert(handle);
+    if (drawing.iris())
+        retained.unite(drawing.iris()->resources());
+    for (auto it = next.backgroundResources.begin(); it != next.backgroundResources.end();)
+        if (!retained.contains(it.key()))
+            it = next.backgroundResources.erase(it);
+        else
+            ++it;
     if (commitDraw && mode_ == 2)
         ++next.texturePhase;
     if (commitDraw)
@@ -700,5 +766,8 @@ void ScenePreview::present() {
         status_->setText(
             status_->text() +
             "\nPath ribbons: native curve and timing; approximate strip texture and edge drawing.");
+    if (current_->playback.iris() && !current_->playback.iris()->record().isEmpty())
+        status_->setText(status_->text() + "\nIris: native layers, timing and mesh; desktop "
+                                           "capture and approximate edge blending.");
 }
 } // namespace lordly

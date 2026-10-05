@@ -47,6 +47,11 @@ void SceneSprites::supplySprite(int slot, const SpritePosePlayer &sprite) {
     sprites_[slot] = sprite;
     identities_[slot] = ++nextIdentity_;
 }
+void SceneSprites::setPass(int slot, quint8 pass) {
+    checkSlot(slot);
+    if (sprites_[slot])
+        sprites_[slot]->setPass(pass);
+}
 SpritePosePlayer SceneSprites::create(const QVector<quint32> &args) const {
     const int slot = quint8(args[0]);
     checkSlot(slot);

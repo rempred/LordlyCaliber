@@ -53,6 +53,13 @@ void SceneImageControls::disable(QByteArray &context, SceneSprites &sprites) {
     // The target leaves stale retained pointers. Keep their opaque identity
     // bytes, but release host ownership rather than retaining dangling objects.
 }
+void SceneImageControls::releaseAttached(const SceneSprites &sprites) {
+    // Native close completion frees the live sprite pool. Detached indicators
+    // still belong to the image owner; attached indicators must not resurrect.
+    for (int i = 0; i < 4; ++i)
+        if (sprites.sprite(29 - i) && sprites.identity(29 - i) == identities_[i])
+            arrows_[i].reset();
+}
 void SceneImageControls::finishDraw(const QByteArray &context, SceneSprites &sprites) {
     if (context.size() != 0x848)
         throw Error("Image controls require their launch context");
@@ -76,6 +83,8 @@ void SceneImageControls::finishDraw(const QByteArray &context, SceneSprites &spr
         if (u8(context, 0x83e) & bits[i]) {
             if (!pool.sprite(slot)) {
                 if (!next.arrows_[i]) {
+                    if (next.identities_[i])
+                        throw Error("Image controls refer to an indicator released by the iris");
                     if (last)
                         throw Error("Image direction mask refers to an absent retained arrow");
                     continue;

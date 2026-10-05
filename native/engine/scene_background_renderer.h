@@ -23,9 +23,13 @@ class SceneBackgroundRenderer {
     const SceneBackgroundChannel &channel(int index) const;
     QVector<ActorRasterLayer> project(int channel, const SceneCamera &, const QByteArray &parent,
                                       RenderColor primitive = {255, 255, 255, 255}) const;
+    static QVector<ActorRasterLayer> project(const SceneBackgroundChannel &, int channel,
+                                             const SceneCamera &, const QByteArray &parent,
+                                             RenderColor primitive = {255, 255, 255, 255});
     QString description() const;
     // Mutates only this snapshot's retained images, as the native installer does.
     void convertToSepia();
+    static void convertToSepia(SceneBackgroundChannel &);
 
   private:
     QVector<SceneBackgroundChannel> channels_;

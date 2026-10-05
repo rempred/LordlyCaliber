@@ -30,7 +30,83 @@ void ScenePlayback::setMode(int mode) {
     actors_.setMode(mode);
     schedule_.mode = quint8(mode);
 }
+void ScenePlayback::syncIris() {
+    if (!iris_)
+        return;
+    for (int i = 0; i < 20; ++i) {
+        auto &layer = iris_->layers()[i];
+        layer.record = transforms_.channel(i);
+        const auto &images = imagePresentation_->channels();
+        if (images.contains(i))
+            layer.resource = images[i] ? 2 : 1;
+        else if (layer.resource == 1 || layer.resource == 2)
+            layer.resource = 0;
+    }
+}
+void ScenePlayback::applyIris() {
+    QMap<int, bool> images;
+    for (int i = 0; i < 20; ++i) {
+        const auto &layer = iris_->layers()[i];
+        transforms_.supplyChannel(i, layer.record);
+        if (layer.resource == 1 || layer.resource == 2)
+            images[i] = layer.resource == 2;
+    }
+    imagePresentation_->assignChannels(std::move(images));
+    put8(*imageView_, 0x838, quint8(iris_->selected()));
+}
+void ScenePlayback::startIris(const QVector<quint32> &args, const QImage &frame,
+                              const std::array<quint32, 20> &backgrounds, int channelCount) {
+    if (schedule_.mode != 0 || !imagePresentation_ || !imageView_ || imagePresentation_->slot() < 0)
+        throw Error("Iris requires a constructed layered image presentation");
+    auto next = *this;
+    if (!next.iris_ || next.iris_->record().isEmpty()) {
+        SceneIris::Layers layers;
+        for (int i = 0; i < 20; ++i) {
+            if ((backgrounds[i] && backgrounds[i] < 3) ||
+                backgrounds[i] == SceneIris::CapturedFrame)
+                throw Error("Background handle overlaps an image identity");
+            layers[i] = {backgrounds[i], transforms_.channel(i)};
+        }
+        next.iris_.emplace(channelCount, u8(*imageView_, 0x838), std::move(layers));
+    }
+    next.syncIris();
+    QVector<quint8> actors(28, 0), sprites(30, 0);
+    for (int i = 0; i < 28; ++i)
+        if (const auto &actor = actors_.actor(i))
+            actors[i] = u8(actor->record(), 0x13e);
+    for (int i = 0; i < 30; ++i)
+        if (const auto *sprite = sprites_.sprite(i))
+            sprites[i] = u8(sprite->record(), 0x4a);
+    next.iris_->start(args, frame, actors, sprites);
+    int value = 0;
+    for (int i = 0; i < 28; ++i)
+        if (actors_.actor(i))
+            next.actors_.service(0x1c, {quint32(i), actors[i]}, value);
+    for (int i = 0; i < 30; ++i)
+        next.sprites_.setPass(i, sprites[i]);
+    next.applyIris();
+    actors_ = std::move(next.actors_);
+    sprites_ = std::move(next.sprites_);
+    transforms_ = std::move(next.transforms_);
+    iris_ = std::move(next.iris_);
+    imagePresentation_ = std::move(next.imagePresentation_);
+    imageView_ = std::move(next.imageView_);
+}
+void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handles, int count) {
+    if (!iris_)
+        return;
+    if (iris_->record().isEmpty()) {
+        iris_.reset();
+        return;
+    }
+    iris_->replaceBackgrounds(handles, count);
+    applyIris();
+}
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x4e) {
+        value = iris_ && iris_->active();
+        return true;
+    }
     if (opcode == 0xb2 || opcode == 0xb3) {
         if (imageView_) {
             const quint8 state = opcode == 0xb2 ? 1 : 0;
@@ -240,6 +316,19 @@ bool ScenePlayback::update(LordlySceneService service) {
         }
         return true;
     }
+    case LORDLY_SCENE_MODE_ZERO_5:
+        if (iris_) {
+            syncIris();
+            if (iris_->advance()) {
+                for (int i = 0; i < 28; ++i)
+                    actors_.vacate(i);
+                imageControls_.releaseAttached(sprites_);
+                int unused = 0;
+                sprites_.service(0x66, {0xffffffffU}, unused);
+            }
+            applyIris();
+        }
+        return true;
     case LORDLY_SCENE_MODE_ZERO_4:
         if (imageMotion_.active()) {
             if (!imageView_)

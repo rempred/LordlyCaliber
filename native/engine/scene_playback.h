@@ -9,6 +9,7 @@
 #include "engine/scene_image_controls.h"
 #include "engine/scene_image_motion.h"
 #include "engine/scene_image_presentation.h"
+#include "engine/scene_iris.h"
 #include "engine/scene_projection.h"
 #include "engine/scene_ribbons.h"
 #include "engine/scene_sprites.h"
@@ -149,6 +150,14 @@ class ScenePlayback {
     const SceneRibbons &ribbons() const {
         return ribbons_;
     }
+    // Background handles are caller-owned and must remain valid across snapshots.
+    // Handles1/2 identify original/processed presentation images; zero is empty.
+    void startIris(const QVector<quint32> &, const QImage &,
+                   const std::array<quint32, 20> &backgrounds, int channelCount);
+    void replaceIrisBackgrounds(const std::array<quint32, 20> &, int channelCount);
+    const std::optional<SceneIris> &iris() const {
+        return iris_;
+    }
     const SceneTransforms &transforms() const {
         return transforms_;
     }
@@ -170,6 +179,8 @@ class ScenePlayback {
     static int invoke(void *, LordlySceneService);
     bool update(LordlySceneService);
     bool command(quint32, const QVector<quint32> &, int &);
+    void syncIris();
+    void applyIris();
     DirectorSession director_;
     Rom rom_;
     SceneActors actors_;
@@ -181,6 +192,7 @@ class ScenePlayback {
     SceneTransforms transforms_;
     SceneImageMotion imageMotion_;
     SceneRibbons ribbons_;
+    std::optional<SceneIris> iris_;
     std::optional<QByteArray> imageView_;
     std::optional<SceneImagePresentation> imagePresentation_;
     SceneImageControls imageControls_;

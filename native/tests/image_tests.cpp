@@ -20,6 +20,53 @@ using namespace lordly;
 class ImageTests : public QObject {
     Q_OBJECT
   private slots:
+    void irisMaskCoverage() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QByteArray identity(64, 0);
+            for (int i = 0; i < 4; ++i)
+                put16(identity, i * 10, 1);
+            SceneIris::Layers layers;
+            for (auto &layer : layers) {
+                layer.record = QByteArray(88, 0);
+                layer.record.replace(0, 64, identity);
+            }
+            SceneIris iris(4, 1, layers);
+            QImage source(320, 240, QImage::Format_RGBA8888);
+            source.fill(Qt::white);
+            QVector<quint8> actors, sprites;
+            iris.start({80, 60, 0, 0, 0, 220, 4, 0, 0}, source, actors, sprites);
+            QByteArray bank(56, 0);
+            const float values[]{90, 4.f / 3, 1, 20000, 1, 0, 0, 120, 0, 0, 0, 0, 1, 0};
+            for (int i = 0; i < 14; ++i)
+                put32(bank, i * 4, std::bit_cast<quint32>(values[i]));
+            const SceneCamera camera(bank, 1);
+            const auto first = iris.render(rom, camera, identity);
+            QCOMPARE(first.pixelColor(160, 120).alpha(), 0);
+            QCOMPARE(first.pixelColor(300, 120).alpha(), 220);
+            const int edgeAlpha = first.pixelColor(252, 120).alpha();
+            QVERIFY(edgeAlpha > 40 && edgeAlpha < 200);
+            for (int i = 0; i < 4; ++i)
+                iris.advance();
+            const auto closed = iris.render(rom, camera, identity);
+            for (const auto point :
+                 {QPoint(1, 1), QPoint(318, 1), QPoint(1, 238), QPoint(318, 238), QPoint(160, 120)})
+                QCOMPARE(closed.pixelColor(point), QColor(0, 0, 0, 220));
+            QVERIFY(iris.advance());
+            iris.start({80, 60, 0, 0, 0, 220, 4, 1, 0}, {}, actors, sprites);
+            QCOMPARE(iris.render(rom, camera, identity), closed);
+            for (int i = 0; i < 4; ++i)
+                iris.advance();
+            QCOMPARE(iris.render(rom, camera, identity), first);
+            iris.advance();
+            QCOMPARE(iris.render(rom, camera, identity).pixelColor(300, 120).alpha(), 0);
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void irisNativeReference() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);

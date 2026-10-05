@@ -33,6 +33,9 @@ class SpritePosePlayer {
         return invocation_.active != 0;
     }
     void setRotation(qint16 rotation);
+    void setPass(quint8 pass) {
+        put8(record_, 0x4a, pass);
+    }
 
   private:
     static int lookup(void *, const LordlySpritePose *, LordlyPoseRecord *);

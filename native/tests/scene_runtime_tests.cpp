@@ -23,6 +23,94 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void irisPlaybackLifecycle() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            auto scenes = ScenePrograms::load(rom);
+            const auto source = scenes.original().entries().first();
+            QVector<quint32> words{0x3a, 2, 0, 0, 0, 70, 70, 130, 8};
+            for (int i = 0; i < 40; ++i)
+                words << 0 << 0x80000000U;
+            words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+            QByteArray script(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(script, i * 4, words[i]);
+            scenes.replace(source.key, script);
+            ScenePlaybackStart start;
+            start.mode = 0;
+            start.sceneFlags = 0;
+            ScenePlayback scene(rom, scenes.runtimeDirectors(), source.selectors.first(), start,
+                                SceneCameras::freshModeTwo(rom));
+            const auto empty = [](LordlySceneService) { return true; };
+            scene.loadImagePresentation(47);
+            QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+            QByteArray actor(336, 0);
+            put32(actor, 0xe8, 30);
+            put8(actor, 0x13e, 2);
+            scene.actors().supplyActor(0, actor);
+            int unused = 0;
+            QVERIFY(scene.sprites().service(0x46, {0, 56, 700, 0, 0, 0, 2, 100, 0}, unused));
+            const auto spriteIdentity = scene.sprites().identity(0);
+            const auto spriteBefore = scene.sprites().sprite(0)->record();
+            std::array<quint32, 20> backgrounds{};
+            backgrounds[0] = 3;
+            backgrounds[3] = 4;
+            QImage frame(320, 240, QImage::Format_RGBA8888);
+            frame.fill(QColor(93, 151, 201));
+            const QVector<quint32> close{320, 240, 0, 0, 0, 255, 3, 0, 0};
+            scene.startIris(close, frame, backgrounds, 6);
+            QCOMPARE(u8(scene.actors().actor(0)->record(), 0x13e), quint8(1));
+            QCOMPARE(scene.sprites().sprite(0)->record(), spriteBefore);
+            QCOMPARE(scene.sprites().identity(0), spriteIdentity);
+            QCOMPARE(scene.iris()->layers()[2].resource, 4U);
+            QCOMPARE(scene.iris()->layers()[5].resource, 2U);
+            QCOMPARE(u8(*scene.imageView(), 0x838), quint8(5));
+            QVERIFY(scene.imagePresentation()->contains(5));
+            const auto checkpoint = scene;
+            auto invalid = close;
+            invalid[6] = 0;
+            QVERIFY_THROWS_EXCEPTION(Error, scene.startIris(invalid, frame, backgrounds, 6));
+            QCOMPARE(scene.iris()->record(), checkpoint.iris()->record());
+            QCOMPARE(scene.sprites().sprite(0)->record(), spriteBefore);
+            // Remove the intentionally minimal Actor before ordinary pose updates.
+            scene.actors().vacate(0);
+            for (int i = 0; i < 3; ++i)
+                QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+            QVERIFY(scene.iris()->active());
+            QVERIFY(scene.sprites().sprite(0));
+            scene.actors().supplyActor(0, actor);
+            // The final close releases owners before later stages reach their poses.
+            QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+            QVERIFY(!scene.iris()->active());
+            QVERIFY(!scene.sprites().sprite(0));
+            QVERIFY(!scene.actors().actor(0));
+            QCOMPARE(scene.iris()->layers()[0].resource, SceneIris::CapturedFrame);
+            QCOMPARE(scene.iris()->frame(), SceneCapture::framebuffer(frame));
+            QVERIFY(scene.imagePresentation()->contains(1));
+            auto opening = close;
+            opening[7] = 1;
+            scene.startIris(opening, {}, backgrounds, 6);
+            QVERIFY(scene.iris()->frame().isNull());
+            QVERIFY(scene.imagePresentation()->contains(5));
+            for (int i = 0; i < 4; ++i)
+                QCOMPARE(scene.advance(empty), ScenePlayback::Advanced);
+            QVERIFY(scene.iris()->record().isEmpty());
+            QCOMPARE(u8(*scene.imageView(), 0x838), quint8(2));
+            QVERIFY(scene.imagePresentation()->contains(2));
+            QCOMPARE(scene.iris()->layers()[3].resource, 4U);
+            QVERIFY(checkpoint.iris()->active());
+            QVERIFY(checkpoint.sprites().sprite(0));
+            QVERIFY(checkpoint.actors().actor(0));
+            // A later group with fewer layers is independent of the finished iris.
+            scene.replaceIrisBackgrounds(backgrounds, 1);
+            QVERIFY(!scene.iris());
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void imageSkipHandoff() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);const auto source=scenes.original().entries().first();

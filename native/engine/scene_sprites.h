@@ -20,6 +20,7 @@ class SceneSprites {
     const SpritePosePlayer *sprite(int slot) const;
     void supplyRecord(int slot, const QByteArray &record);
     void supplySprite(int slot, const SpritePosePlayer &);
+    void setPass(int slot, quint8 pass);
     quint64 identity(int slot) const {
         checkSlot(slot);
         return identities_[slot];

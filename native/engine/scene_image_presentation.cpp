@@ -3,6 +3,12 @@
 #include "game/director/scene_matrix.h"
 #include <bit>
 namespace lordly {
+void SceneImagePresentation::assignChannels(QMap<int, bool> channels) {
+    for (auto i = channels.begin(); i != channels.end(); ++i)
+        if (i.key() < 0 || i.key() >= 20)
+            throw Error("Image channel is outside zero through 19");
+    images_ = std::move(channels);
+}
 SceneImagePresentation SceneImagePresentation::load(const Rom &rom, int row) {
     SceneImagePresentation result;
     result.imageId_ = SceneImages::presentationImage(rom, row);

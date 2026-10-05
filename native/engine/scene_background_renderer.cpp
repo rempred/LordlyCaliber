@@ -82,6 +82,12 @@ QVector<ActorRasterLayer> SceneBackgroundRenderer::project(int index, const Scen
                                                            const QByteArray &parent,
                                                            RenderColor primitive) const {
     const auto &source = channel(index);
+    return project(source, index, camera, parent, primitive);
+}
+QVector<ActorRasterLayer> SceneBackgroundRenderer::project(const SceneBackgroundChannel &source,
+                                                           int index, const SceneCamera &camera,
+                                                           const QByteArray &parent,
+                                                           RenderColor primitive) {
     if (parent.size() != 64)
         throw Error("Background projection requires a packed parent matrix");
     QVector<ActorRasterLayer> result;
@@ -119,26 +125,29 @@ QString SceneBackgroundRenderer::description() const {
 }
 void SceneBackgroundRenderer::convertToSepia() {
     for (auto &channel : channels_)
-        for (auto &record : channel.records) {
-            if (record.colorFormat != 2 && record.colorFormat != 3)
-                continue;
-            for (int y = 0; y < record.image.height(); ++y) {
-                auto p = record.image.scanLine(y);
-                for (int x = 0; x < record.image.width(); ++x, p += 4) {
-                    if (record.colorFormat == 3) {
-                        const auto word = lordly_sepia_rgba32(
-                            quint32(p[0]) << 24 | quint32(p[1]) << 16 | quint32(p[2]) << 8 | p[3]);
-                        p[0] = quint8(word >> 24);
-                        p[1] = quint8(word >> 16);
-                        p[2] = quint8(word >> 8);
-                    } else {
-                        const auto word = lordly_sepia_rgba16(
-                            quint16((p[0] >> 3) << 11 | (p[1] >> 3) << 6 | (p[2] >> 3) << 1 | 1));
-                        for (int c = 0; c < 3; ++c)
-                            p[c] = quint8((((word >> (11 - c * 5)) & 31) * 255 + 15) / 31);
-                    }
+        convertToSepia(channel);
+}
+void SceneBackgroundRenderer::convertToSepia(SceneBackgroundChannel &channel) {
+    for (auto &record : channel.records) {
+        if (record.colorFormat != 2 && record.colorFormat != 3)
+            continue;
+        for (int y = 0; y < record.image.height(); ++y) {
+            auto p = record.image.scanLine(y);
+            for (int x = 0; x < record.image.width(); ++x, p += 4) {
+                if (record.colorFormat == 3) {
+                    const auto word = lordly_sepia_rgba32(
+                        quint32(p[0]) << 24 | quint32(p[1]) << 16 | quint32(p[2]) << 8 | p[3]);
+                    p[0] = quint8(word >> 24);
+                    p[1] = quint8(word >> 16);
+                    p[2] = quint8(word >> 8);
+                } else {
+                    const auto word = lordly_sepia_rgba16(
+                        quint16((p[0] >> 3) << 11 | (p[1] >> 3) << 6 | (p[2] >> 3) << 1 | 1));
+                    for (int c = 0; c < 3; ++c)
+                        p[c] = quint8((((word >> (11 - c * 5)) & 31) * 255 + 15) / 31);
                 }
             }
         }
+    }
 }
 } // namespace lordly

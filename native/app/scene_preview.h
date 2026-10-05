@@ -39,6 +39,9 @@ class ScenePreview : public QWidget {
         QString reason, backgroundName;
         bool stopped = false;
         std::optional<SceneBackgroundRenderer> backgrounds;
+        QMap<quint32, SceneBackgroundChannel> backgroundResources;
+        std::array<quint32, 20> backgroundHandles{};
+        quint32 nextBackgroundHandle = 3;
         std::optional<StageOrthographic> flatProps;
         std::optional<StagePerspective> worldProps;
         int foregroundSelector = -1;
@@ -54,6 +57,9 @@ class ScenePreview : public QWidget {
     void stop();
     void render(Snapshot &, bool commitDraw);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
+    void retainBackgrounds(Snapshot &);
+    void convertBackgrounds(Snapshot &);
+    int activeChannels(const Snapshot &) const;
     void imageButton(quint16 bit, bool down);
     void imageInput(LordlyImageInput);
     void branchInput();

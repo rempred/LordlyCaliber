@@ -219,6 +219,70 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
     }
+    void irisPreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        quint32 source = 0;
+        for (const auto &entry : scenes.original().entries())
+            if (entry.program.resourceClass() == 4) {
+                source = entry.key;
+                break;
+            }
+        QVERIFY(source);
+        const auto id = scenes.createScene("Iris close and open", source, false);
+        QVector<quint32> words{0x80000007U, 47, 0x80000006U, 0, 0x3a, 2, 0, 0, 0, 70, 70, 130, 8};
+        for (int i = 0; i < 4; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x4d << 320 << 240 << 0 << 0 << 0 << 255 << 12 << 0 << 0;
+        for (int i = 0; i < 140; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x4d << 320 << 240 << 0 << 0 << 0 << 255 << 12 << 1 << 0;
+        for (int i = 0; i < 30; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x80000001U << 0xff000004U;
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        ScenePreview preview(rom);
+        preview.resize(1200, 800);
+        preview.show();
+        preview.selectScene(scenes, id, 0);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const auto seek = [&](int tick) {
+            position->setValue(tick);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        };
+        seek(4);
+        const auto before = preview.renderedFrame();
+        seek(11);
+        const auto middle = preview.renderedFrame();
+        QVERIFY(middle != before);
+        QVERIFY(status->text().contains("Iris: native layers"));
+        QVERIFY(preview.grab().save("scene-iris.png"));
+        seek(25);
+        const auto closed = preview.renderedFrame();
+        QVERIFY(closed != middle);
+        seek(124);
+        QCOMPARE(preview.renderedFrame(), closed);
+        seek(151);
+        const auto opening = preview.renderedFrame();
+        QVERIFY(opening != closed);
+        seek(160);
+        QCOMPARE(preview.renderedFrame(), before);
+        seek(11);
+        QCOMPARE(preview.renderedFrame(), middle);
+        seek(151);
+        QCOMPARE(preview.renderedFrame(), opening);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        seek(25);
+        QCOMPARE(preview.renderedFrame(), closed);
+    }
     void launchImageSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
