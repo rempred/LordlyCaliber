@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+## Linked secondary placement before depth sorting
+
+World matrix preparation now follows ROM2AA3B0: a linked secondary body searches
+slot order for the first primary sharing its body-row identity, copies its height,
+and offsets X/Z by opposite eight-unit amounts. Signed facing1 chooses +X/-Z;
+other values choose -X/+Z. Missing primaries retain the existing coordinates.
+The original body-row predicate controls classification. Missing required rows
+reject atomically, retaining the previous Actor pool. Drawing builds its depth
+queue after this preparation, as the original world driver does.
+
+`scene_runtime_tests linkedPlacementAgainstMips actorWorldDrawingIsAtomic
+specialActorRendering` passed779ms after build99789. The new fixture executes
+240 full original prepasses and their classification predicate, with camera and
+final matrix callbacks controlled; it compares the positions at each callback.
+Existing full matrix comparisons remain applicable. The desktop world/room/
+capture regressions passed1774ms after build40005, before a test-only sentinel
+correction. Linked equipment artwork and full army launch context remain separate
+unfinished work; this establishes placement, not complete dynamic playback.
+
 ## Scene color commands reach the preview
 
 The existing SceneEffects opcode33 execution now feeds rendering. Mode-zero

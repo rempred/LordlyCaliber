@@ -328,6 +328,29 @@ class SceneRuntimeTests : public QObject {
         }
         qInfo() << "732 original world Actor cases: all 2196 packed matrices match exactly";
     }
+    void linkedPlacementAgainstMips() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work; QProcess reference;
+        reference.start("node",{QFINDTESTDATA("linked-placement-mips.cjs"),path,work.filePath("linked.json")});
+        QVERIFY(reference.waitForFinished(60000)); QVERIFY2(reference.exitCode()==0,reference.readAllStandardError().constData());
+        QFile file(work.filePath("linked.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases=QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray(); QCOMPARE(cases.size(),240);
+        const auto rom=Rom::open(path); const auto camera=SceneCameras::freshModeTwo(rom).actor();
+        const LordlyActorLighting lights{{0,0,0},{{200,-200,50},{-200,200,75}}};
+        for(const auto &value:cases) {
+            const auto row=value.toObject(); SceneActors actors(rom,2,255);
+            QVector<QByteArray> body;
+            for(const auto &entry:row["rows"].toArray()) body<<QByteArray::fromHex(entry.toString().toLatin1());
+            actors.supplyBodyRows(body);
+            for(const auto &entry:row["initial"].toArray()) { const auto a=entry.toObject(); actors.supplyActor(a["slot"].toInt(),QByteArray::fromHex(a["record"].toString().toLatin1())); }
+            actors.prepareModeTwoMatrices(camera,lights);
+            for(const auto &entry:row["calls"].toArray()) { const auto a=entry.toObject(); QCOMPARE(actors.actor(a["slot"].toInt())->record().mid(0x11c,12).toHex(),a["position"].toString().toLatin1()); }
+            const auto prepared=actors.actorRecords(); actors.prepareModeTwoMatrices(camera,lights); QCOMPARE(actors.actorRecords(),prepared);
+            if(!row["initial"].toArray().isEmpty()) {
+                actors.supplyBodyRows({}); QVERIFY_THROWS_EXCEPTION(Error,actors.prepareModeTwoMatrices(camera,lights)); QCOMPARE(actors.actorRecords(),prepared);
+            }
+        }
+    }
     void actorWorldDrawingIsAtomic() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -338,6 +361,7 @@ class SceneRuntimeTests : public QObject {
         QByteArray record(336, 0);
         put32(record, 0xe4, 4);
         put32(record, 0xe8, 30);
+        put8(record, 0x147, 255); // Explicitly unbound, as in ordinary Actor construction.
         for (int i = 0; i < 3; ++i)
             put32(record, 0x104 + i * 4, std::bit_cast<quint32>(1.f));
         put32(record, 0x130, std::bit_cast<quint32>(1.f));

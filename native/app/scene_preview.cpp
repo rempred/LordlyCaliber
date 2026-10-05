@@ -236,7 +236,6 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 throw Error("Special sprites require their effect projection owner");
         }
     const auto objects = next.worldProps ? next.worldProps->records() : QVector<QByteArray>{};
-    const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     RenderColor environment{0, 0, 0, 0};
     QImage frame(320, 240, QImage::Format_RGBA8888);
     frame.fill(Qt::transparent);
@@ -244,6 +243,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         drawing.prepareModeZeroDrawing(next.backgrounds ? next.backgrounds->channelCount() : 20);
     else
         drawing.prepareModeTwoDrawing(*drawing.lighting());
+    const auto queue = drawing.drawQueue(objects, {0x80300000, 0x80310000});
     {
         QPainter painter(&frame);
         if (mode_ == 0) {

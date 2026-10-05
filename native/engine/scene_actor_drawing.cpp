@@ -26,7 +26,29 @@ void SceneActors::prepareModeTwoMatrices(const SceneCamera &camera,
         auto &actor = next[slot];
         if (!actor)
             continue;
-        const auto record = actor->record();
+        auto record = actor->record();
+        // ROM2AA3B0 prepares linked secondary bodies before their matrices and
+        // before the depth queue. Search slot order for the same row's primary.
+        if (classification(record) == 2) {
+            const auto identity = u8(record, 0x147);
+            for (const auto &primary : next) {
+                if (!primary)
+                    continue;
+                const auto candidate = primary->record();
+                if (u8(candidate, 0x147) != identity || classification(candidate) != 1)
+                    continue;
+                auto position = primary->pose().actor().position;
+                const float offset = qint16(u16(record, 0x13a)) == 1 ? 8.f : -8.f;
+                position.x += offset;
+                position.z -= offset;
+                if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+                    !std::isfinite(position.z))
+                    throw Error("Linked Actor placement produced a nonfinite coordinate");
+                actor->pose().actor().position = position;
+                record = actor->record();
+                break;
+            }
+        }
         float ground = 0;
         if (u8(record, 0x145) & 1) {
             if (!height_)
