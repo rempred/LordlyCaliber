@@ -6,9 +6,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QListWidget>
 #include <QPainter>
@@ -79,7 +81,7 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     auto note = new QLabel(
         "Pose inspection with per-layer opacity and optional sepia. Playback speed is adjustable; "
         "full-scene timing, cameras and lighting are separate. Sound requests are recorded without "
-        "audio output. Class-body inspection uses no linked equipment actors.");
+        "audio output. Class bodies include their equipment appearance.");
     note->setWordWrap(true);
     layout->addWidget(note);
     auto selectors = new QHBoxLayout;
@@ -119,6 +121,37 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     poseSelectors->addWidget(variant_);
     poseSelectors->addWidget(sepia_);
     layout->addLayout(poseSelectors);
+    bodyControls_ = new QWidget;
+    auto bodyLayout = new QHBoxLayout(bodyControls_);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    equipment_ = new QComboBox;
+    equipment_->setObjectName("actorEquipment");
+    equipment_->addItem("Class default", -1);
+    equipment_->addItem("0 · None", 0);
+    QFile catalog(":/catalog.json");
+    QJsonObject names;
+    if (catalog.open(QIODevice::ReadOnly))
+        names = QJsonDocument::fromJson(catalog.readAll()).object()["ITEM_NAMES"].toObject();
+    for (int id = 1; id < 278; ++id)
+        equipment_->addItem(
+            QString("%1 · %2").arg(id).arg(
+                names.value(QString::number(id)).toString("Equipment").replace('\n', ' ')),
+            id);
+    equipment_->setToolTip(
+        "Preview equipment appearance. The game's class-specific substitutions still apply.");
+    bodyPalette_ = new QSpinBox;
+    bodyPalette_->setObjectName("actorEquipmentPalette");
+    bodyPalette_->setRange(-1, 255);
+    bodyPalette_->setValue(-1);
+    bodyPalette_->setSpecialValueText("Unspecified");
+    bodyPalette_->setMinimumWidth(bodyPalette_->fontMetrics().horizontalAdvance("Unspecified") + 45);
+    bodyPalette_->setToolTip("Some equipment uses a palette supplied by the scene launch. Set that "
+                             "value here when required.");
+    bodyLayout->addWidget(new QLabel("Equipment"));
+    bodyLayout->addWidget(equipment_, 1);
+    bodyLayout->addWidget(new QLabel("Launch palette"));
+    bodyLayout->addWidget(bodyPalette_);
+    layout->addWidget(bodyControls_);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setObjectName("actorPlay");
@@ -216,15 +249,14 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     auto placementNote = new QLabel(
         "Reference camera and preview position. World view uses two reference lights and flat "
         "terrain. Material previews use the game’s texture inputs and color formulas; Qt sampling "
-        "and blending approximate the N64 output. Scene lighting and linked equipment are "
-        "separate.");
+        "and blending approximate the N64 output. Scene lighting remains separate.");
     placementNote->setWordWrap(true);
     placementLayout->addWidget(placementNote);
     layout->addWidget(placementControls_);
     placementControls_->hide();
     connect(projected_, &QCheckBox::toggled, this, [this](bool enabled) {
         placementControls_->setVisible(enabled);
-        variant_->setEnabled(!(enabled && kinds_->currentIndex() == 1));
+        variant_->setEnabled(kinds_->currentIndex() != 1);
         fit_ = true;
         draw();
     });
@@ -302,6 +334,8 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     connect(poses_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::restart);
     connect(variant_, &QSpinBox::valueChanged, this, &ActorPoseEditor::restart);
     connect(sepia_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
+    connect(equipment_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::draw);
+    connect(bodyPalette_, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
     connect(fit, &QPushButton::clicked, this,
             [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
     connect(actual, &QPushButton::clicked, this, [this] { view_->resetTransform(); });
@@ -394,7 +428,8 @@ void ActorPoseEditor::loadSources() {
     projected_->setEnabled(kinds_->currentIndex() != 2);
     if (kinds_->currentIndex() == 2)
         projected_->setChecked(false);
-    variant_->setEnabled(!(projected_->isChecked() && body));
+    variant_->setEnabled(!body);
+    bodyControls_->setVisible(body);
     owners_->setEnabled(body);
     flags_->setEnabled(body);
     try {
@@ -432,6 +467,7 @@ void ActorPoseEditor::loadBank() {
                                          flags_->currentIndex() >> 1, flags_->currentIndex() & 1)
                     : ActorArt::load(rom_, source);
         if (body) {
+            defaultAppearance_ = art_->defaultAppearance(rom_);
             QSignalBlocker variantBlock(variant_);
             variant_->setValue(art_->bodyVariant());
         }
@@ -540,7 +576,10 @@ void ActorPoseEditor::draw() {
             return;
         }
         const auto a = preview(*player_);
-        const auto frame = art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked());
+        const auto body = appearance();
+        const auto frame = body
+                               ? art_->bodyFrame(rom_, a.frame, *body, sepia_->isChecked())
+                               : art_->frame(rom_, a.frame, variant_->value(), sepia_->isChecked());
         QRectF bounds;
         int fallbacks = 0;
         for (int i = 0; i < frame.size(); ++i) {
@@ -610,6 +649,16 @@ void ActorPoseEditor::draw() {
         status_->setText(QString::fromUtf8(e.what()));
     }
 }
+std::optional<BodyAppearance> ActorPoseEditor::appearance() const {
+    if (!art_ || !art_->isBody())
+        return {};
+    auto result = defaultAppearance_;
+    if (equipment_->currentData().toInt() >= 0)
+        result.equipment = quint16(equipment_->currentData().toInt());
+    if (bodyPalette_->value() >= 0)
+        result.paletteReplacement = quint8(bodyPalette_->value());
+    return result;
+}
 void ActorPoseEditor::drawProjected() {
     const auto &runtime = std::get<ActorPosePlayer>(*player_);
     auto pose = runtime.actor();
@@ -659,7 +708,8 @@ void ActorPoseEditor::drawProjected() {
     if (shadows_->isChecked())
         for (int i = 0; i < (world ? 2 : 1); ++i)
             projected += renderer_.projectRecord(*art_, record, true, actorCamera, {255, 255, 255},
-                                                 sepia_->isChecked(), i, world ? 96 : 255);
+                                                 sepia_->isChecked(), i, world ? 96 : 255, nullptr,
+                                                 nullptr, appearance());
     auto materialState = ActorRenderState::main({0, 0, 0, 0});
     ActorMaterials material;
     const int mode = materialMode_->currentIndex();
@@ -679,8 +729,9 @@ void ActorPoseEditor::drawProjected() {
         material.supplyMaterial(0, entry);
     }
     materialState.apply(material.render(record));
-    projected += renderer_.projectRecord(*art_, record, false, actorCamera, {255, 255, 255},
-                                         sepia_->isChecked(), 0, 255, &materialState);
+    projected +=
+        renderer_.projectRecord(*art_, record, false, actorCamera, {255, 255, 255},
+                                sepia_->isChecked(), 0, 255, &materialState, nullptr, appearance());
     QImage combined(320, 240, QImage::Format_RGBA8888);
     combined.fill(Qt::transparent);
     ActorRenderer::paint(combined, projected);

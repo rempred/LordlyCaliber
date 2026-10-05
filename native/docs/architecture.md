@@ -1768,3 +1768,17 @@ conversion/expiry/focus sequence with decompression/allocation/pixel conversion
 controlled. Rendering checks retain a previous focus, reload it after expiry,
 restore a snapshot, and preserve alpha during repeated conversion. Desktop
 focus changes, checkpoint seeking and earlier capture/black/color checks pass.
+
+
+The standalone Actor inspector now offers named equipment and explicit launch
+palette selection. Class defaults initialize both flat and projected body art;
+equipment changes redraw without restarting the pose. The ordinary image-variant
+control stays available for ordinary Actors/sprites and is disabled for bodies.
+`ui_tests equipmentBodyPreview projectedActorPreview actorPosePreview
+spritePosePreview` passed1027ms after build56484; equipment changes in both views,
+class-default restoration, pose preservation and seeking agree. The engine
+render/rollback check passed107ms after extracting shared default appearance.
+A layout-only adjustment made the launch-palette placeholder fully readable;
+build66264 and equipmentBodyPreview passed200ms. The complete equipment inspector
+screenshot was inspected. These controls preview appearance, not persistent
+inventory edits or automatic dynamic-army launch selection.

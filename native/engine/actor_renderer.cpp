@@ -1,5 +1,4 @@
 #include "engine/actor_renderer.h"
-#include "game/director/actor_body.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
 #include <QPainter>
@@ -123,22 +122,8 @@ ActorRenderer::projectRecord(const ActorArt &art, const QByteArray &record, bool
         throw Error("Actor rendering requires a complete record");
     const auto token = qint32(u32(record, 0xf8));
     const auto variant = art.isBody() ? art.bodyVariant() : u8(record, 0x146);
-    if (art.isBody() && !appearance) {
-        if (!classes_)
-            classes_ = ClassData::load(rom_);
-        QByteArray classes;
-        for (const auto &entry : classes_->entries())
-            classes += entry.record;
-        const auto items = rom_.bytes().mid(0x62300, 278 * 32);
-        uint16_t carried[4], equipment;
-        if (lordly_body_appearance(reinterpret_cast<const uint8_t *>(classes.constData()),
-                                   int(classes_->entries().size()), art.sourceClass(),
-                                   art.ownerClass(), carried) ||
-            lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278,
-                                  carried, &equipment))
-            throw Error("Standalone body equipment exceeds the current tables");
-        appearance = BodyAppearance{equipment, {}};
-    }
+    if (art.isBody() && !appearance)
+        appearance = art.defaultAppearance(rom_);
     QString key = QString("%1/%2/%3/%4/%5")
                       .arg(art.descriptorKey())
                       .arg(art.bodyHandle())

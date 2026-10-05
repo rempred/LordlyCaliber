@@ -80,6 +80,7 @@ class ActorArt {
     QVector<ActorFrameLayer> frame(const Rom &rom, int token, int variant, int sepia = 0,
                                    const QVector<quint8> &perLayer = {}) const;
     QVector<BodyLayerSelection> bodyLayers(const Rom &, int token, BodyAppearance) const;
+    BodyAppearance defaultAppearance(const Rom &) const;
     QVector<ActorFrameLayer> bodyFrame(const Rom &, int token, BodyAppearance, int sepia = 0) const;
 
   private:

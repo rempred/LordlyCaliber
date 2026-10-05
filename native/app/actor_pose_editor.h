@@ -32,6 +32,7 @@ class ActorPoseEditor : public QWidget {
     void step();
     void draw();
     void drawProjected();
+    std::optional<BodyAppearance> appearance() const;
     void stop();
     int advancePose();
     bool suspendedPose() const;
@@ -51,6 +52,10 @@ class ActorPoseEditor : public QWidget {
     std::optional<std::variant<ActorPosePlayer, SpritePosePlayer>> player_;
     QCheckBox *sepia_;
     QComboBox *kinds_, *banks_, *poses_, *owners_, *flags_;
+    QComboBox *equipment_;
+    QSpinBox *bodyPalette_;
+    QWidget *bodyControls_;
+    BodyAppearance defaultAppearance_;
     QSpinBox *variant_, *position_, *speed_;
     QPushButton *play_;
     QLabel *status_, *selection_;

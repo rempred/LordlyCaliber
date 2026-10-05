@@ -303,6 +303,23 @@ QVector<BodyLayerSelection> ActorArt::bodyLayers(const Rom &rom, int token,
     }
     return result;
 }
+BodyAppearance ActorArt::defaultAppearance(const Rom &rom) const {
+    if (!body_)
+        throw Error("Class appearance requires body art");
+    const auto classes = ClassData::load(rom);
+    QByteArray records;
+    for (const auto &entry : classes.entries())
+        records += entry.record;
+    const auto items = rom.bytes().mid(0x62300, 278 * 32);
+    uint16_t carried[4], equipment;
+    if (items.size() != 278 * 32 ||
+        lordly_body_appearance(reinterpret_cast<const uint8_t *>(records.constData()),
+                               int(classes.entries().size()), sourceClass_, ownerClass_, carried) ||
+        lordly_body_equipment(reinterpret_cast<const uint8_t *>(items.constData()), 278, carried,
+                              &equipment))
+        throw Error("Standalone body equipment exceeds the current tables");
+    return {equipment, {}};
+}
 QVector<ActorFrameLayer> ActorArt::bodyFrame(const Rom &rom, int token, BodyAppearance appearance,
                                              int sepia) const {
     QVector<ActorFrameLayer> result;

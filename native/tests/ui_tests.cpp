@@ -629,6 +629,55 @@ class UiTests : public QObject {
         projected->setChecked(false);
         QVERIFY(layers->count() > 0);
     }
+    void equipmentBodyPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        ActorPoseEditor editor(Rom::open(path));
+        editor.resize(1250,950); editor.show();
+        auto kind = editor.findChild<QComboBox *>("actorSourceKind");
+        auto bank = editor.findChild<QComboBox *>("actorBank");
+        auto equipment = editor.findChild<QComboBox *>("actorEquipment");
+        auto projected = editor.findChild<QCheckBox *>("actorProjected");
+        auto view = editor.findChild<QGraphicsView *>("actorCanvas");
+        auto position = editor.findChild<QSpinBox *>("actorPosition");
+        QVERIFY(kind && bank && equipment && projected && view && position);
+        QVERIFY(!equipment->isVisible());
+        kind->setCurrentIndex(1); bank->setCurrentIndex(bank->findData(2));
+        QVERIFY(equipment->isVisible());
+        QCOMPARE(equipment->currentData().toInt(),-1);
+        QVERIFY(!editor.findChild<QSpinBox *>("actorVariant")->isEnabled());
+        auto flat = [&] {
+            QImage image(320,240,QImage::Format_RGBA8888); image.fill(Qt::transparent);
+            QPainter painter(&image); view->scene()->render(&painter); return image;
+        };
+        position->setValue(1);
+        const auto defaultImage = flat();
+        equipment->setCurrentIndex(equipment->findData(1));
+        const auto first = flat(); const auto cursor = editor.property("poseCursor");
+        int changedItem = -1;
+        for (int item : {2,6,11,20,50,100}) {
+            equipment->setCurrentIndex(equipment->findData(item));
+            if (flat() != first) { changedItem = item; break; }
+        }
+        QVERIFY(changedItem >= 0);
+        QCOMPARE(position->value(),1); QCOMPARE(editor.property("poseCursor"),cursor);
+        equipment->setCurrentIndex(equipment->findData(1)); QCOMPARE(flat(),first);
+        equipment->setCurrentIndex(0); QCOMPARE(flat(),defaultImage);
+        equipment->setCurrentIndex(equipment->findData(1));
+        projected->setChecked(true);
+        const auto projectedFirst = editor.property("placementFrame").value<QImage>();
+        QVERIFY(!projectedFirst.isNull());
+        equipment->setCurrentIndex(equipment->findData(changedItem));
+        QVERIFY(editor.property("placementFrame").value<QImage>() != projectedFirst);
+        equipment->setCurrentIndex(equipment->findData(1));
+        QCOMPARE(editor.property("placementFrame").value<QImage>(),projectedFirst);
+        position->setValue(18); position->setValue(1);
+        QCOMPARE(editor.property("placementFrame").value<QImage>(),projectedFirst);
+        QTest::qWait(25);
+        QVERIFY(editor.grab().save("body-equipment-preview.png"));
+        kind->setCurrentIndex(0); QVERIFY(!equipment->isVisible());
+        QVERIFY(editor.findChild<QSpinBox *>("actorVariant")->isEnabled());
+    }
     void actorPosePreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
