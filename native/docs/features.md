@@ -68,7 +68,7 @@ across checkpoints. Desktop capture timing and edge blending remain explicit
 approximations.
 Authored screen crops now advance with native draw timing, retain or release their
 final edges, and replay through seeking. The default game scissor is also visible.
-The title-card variant's separate textured reveal is still pending.
+The title variant now uses its separate updater and both resolution paths, with original-instruction and desktop seek comparisons. The original primitive-only combiner makes its edge rectangles opaque black even when a texture is loaded. Desktop rectangle coverage is approximate; title menus and the People board remain unfinished.
 
 Dockable workspaces, searchable model-based tables, independent engine API,
 background jobs with useful failures, explicit allocation ownership, deterministic

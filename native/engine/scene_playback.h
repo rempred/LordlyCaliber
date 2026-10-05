@@ -16,6 +16,7 @@
 #include "engine/scene_projection.h"
 #include "engine/scene_ribbons.h"
 #include "engine/scene_sprites.h"
+#include "engine/scene_title_reveal.h"
 #include "engine/scene_transforms.h"
 #include "game/director/scene_schedule.h"
 namespace lordly {
@@ -129,6 +130,15 @@ class ScenePlayback {
     const ScenePanels &panels() const {
         return panels_;
     }
+    const SceneTitleReveal &titleReveal() const {
+        return titleReveal_;
+    }
+    bool titleScene() const {
+        return screenVariant_ == 0;
+    }
+    bool highResolution() const {
+        return highResolution_;
+    }
     ScenePanels &panels() {
         return panels_;
     }
@@ -215,6 +225,9 @@ class ScenePlayback {
     SceneFade fade_;
     SceneEffects effects_;
     SceneCrop crop_;
+    SceneTitleReveal titleReveal_;
+    bool highResolution_ = false;
+    int titlePhase_ = 0;
     ScenePanels panels_;
     std::optional<SceneAudio> audio_;
     int screenVariant_ = -1;

@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Title-scene edge reveal
+
+Selector zero now uses the early title wrapper's counter/Director/reveal update
+order instead of the Actor scheduler. Its two-edge record advances only during
+update, supports replacement and final-state retention, and survives desktop
+checkpoints. B7/B8 select the reveal's standard/high-resolution geometry. The
+preview draws this overlay separately from the main cutscene scissor.
+
+Maintained portable C reconstructs ROM290C50..291130. DMA setup at z64
+2829BC..2829D8 loads ROM286BD0..29A4C0 into live8022AC90; this qualifies both
+code and display-list data. The prefix at ROM299EF8/live8023DFB8 selects opaque
+black primitive color and a primitive-only combiner. High resolution loads a CI4
+board tile, but its texel cannot affect that combiner. Desktop rectangle coverage
+and high-resolution downsampling remain approximate. Zero-duration retained draws
+report the native interpolation division fault instead of inventing an instant
+transition. No ROM/export data or new dependency is introduced.
+
+`scene_runtime_tests titleRevealAgainstMips titleRevealPlayback screenCropAgainstMips`
+passed in 509 ms: 2944 original title record/query/rectangle snapshots over 256
+sequences, phased scheduler budgets, state copying and both resolution switches,
+plus 1472 existing main-crop comparisons. Heap allocation, resolution lookup and
+the independent board texture loader are controlled in the instruction fixture;
+the constructor, update, query, interpolation and rectangle emission execute.
+`ui_tests titleRevealPreviewSeek screenCropPreviewSeek` passed in 1632 ms:
+edge positions, release, resolution, redraw stability, restart and checkpoint
+seeking. The preview capture was inspected. Title menus and the People board still
+require their own owners; their launch commands remain explicitly unavailable.
+This establishes the reveal, not complete retail title-menu playback.
+
+
 ## Transparent animation export
 
 Sprite studio also exports animated PNG with full RGBA pixels, authored durations,

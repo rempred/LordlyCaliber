@@ -1646,6 +1646,67 @@ class UiTests : public QObject {
         seek(8);
         QCOMPARE(preview.renderedFrame(), closed);
     }
+    void titleRevealPreviewSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const SceneId id(scenes.original().selectors()[0]);
+        QVector<quint32> words{0x3b, 0, 240, 80, 160, 4, 1};
+        for (int i = 0; i < 140; ++i)
+            words << 0 << 0x80000000U;
+        words << 0xb8 << 0x3b << 160 << 320 << 0 << 480 << 4 << 0;
+        for (int i = 0; i < 10; ++i)
+            words << 0 << 0x80000000U;
+        words << 0xb7 << 0 << 0x80000000U << 0x80000001U << 0xff000006U;
+        QByteArray source(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(source, i * 4, words[i]);
+        scenes.replace(id, source);
+        ScenePreview preview(rom);
+        preview.resize(1100, 800);
+        preview.show();
+        preview.selectScene(scenes, id, 2);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const auto seek = [&](int tick) {
+            position->setValue(tick);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        };
+        seek(1);
+        const auto first = preview.renderedFrame();
+        QCOMPARE(first.pixelColor(160, 19), QColor(Qt::black));
+        QCOMPARE(first.pixelColor(160, 20).alpha(), 0);
+        seek(4);
+        const auto closed = preview.renderedFrame();
+        QCOMPARE(closed.pixelColor(160, 79), QColor(Qt::black));
+        QCOMPARE(closed.pixelColor(160, 80).alpha(), 0);
+        QCOMPARE(closed.pixelColor(160, 159).alpha(), 0);
+        QCOMPARE(closed.pixelColor(160, 160), QColor(Qt::black));
+        preview.repaint();
+        QCOMPARE(preview.renderedFrame(), closed);
+        seek(125);
+        QCOMPARE(preview.renderedFrame(), closed);
+        seek(141);
+        const auto high = preview.renderedFrame();
+        QCOMPARE(high.pixelColor(160, 59), QColor(Qt::black));
+        QCOMPARE(high.pixelColor(160, 60).alpha(), 0);
+        QCOMPARE(high.pixelColor(319, 200), QColor(Qt::black));
+        seek(145);
+        const auto released = preview.renderedFrame();
+        QCOMPARE(released.pixelColor(160, 0).alpha(), 0);
+        QCOMPARE(released.pixelColor(160, 239).alpha(), 0);
+        seek(1);
+        QCOMPARE(preview.renderedFrame(), first);
+        seek(141);
+        QCOMPARE(preview.renderedFrame(), high);
+        preview.grab().save("title-reveal-preview.png");
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        seek(145);
+        QCOMPARE(preview.renderedFrame(), released);
+    }
     void launchImageSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

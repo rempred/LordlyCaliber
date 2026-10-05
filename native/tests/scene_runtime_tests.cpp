@@ -325,6 +325,109 @@ class SceneRuntimeTests : public QObject {
         QVERIFY(copy.record() != record);
         qInfo() << snapshots << "original crop records, queries and scissor commands agree";
     }
+    void titleRevealAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node", {QFINDTESTDATA("title-reveal-mips.cjs"), path, work.filePath("title.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("title.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto rows = QJsonDocument::fromJson(file.readAll()).object()["rows"].toArray();
+        QCOMPARE(rows.size(), 256);
+        int snapshots = 0;
+        for (const auto &v : rows) {
+            const auto row = v.toObject();
+            SceneTitleReveal reveal;
+            for (const auto &s : row["steps"].toArray()) {
+                const auto step = s.toObject();
+                if (step.contains("start")) {
+                    QVector<quint32> args;
+                    for (const auto &a : step["start"].toArray())
+                        args << quint32(a.toInteger());
+                    reveal.start(args);
+                } else
+                    reveal.advance();
+                QCOMPARE(reveal.record(),
+                         QByteArray::fromHex(step["record"].toString().toLatin1()));
+                QCOMPARE(int(reveal.active()), step["query"].toInt());
+                const bool high = row["high"].toInt() != 0;
+                if (step["fault"].toBool()) {
+                    QVERIFY_THROWS_EXCEPTION(Error, reveal.rectangles(high));
+                } else {
+                    const auto expected = step["words"].toArray();
+                    const auto actual = reveal.rectangles(high);
+                    for (int i = 0; i < expected.size(); ++i)
+                        QCOMPARE(actual[i], quint32(expected[i].toInteger()));
+                    const auto before = reveal.record();
+                    QCOMPARE(reveal.rectangles(high), actual);
+                    QCOMPARE(reveal.record(), before);
+                }
+                ++snapshots;
+            }
+        }
+        SceneTitleReveal reveal;
+        reveal.start({0, 240, 80, 160, 4, 1});
+        reveal.advance();
+        const auto before = reveal.record();
+        QVERIFY_THROWS_EXCEPTION(Error, reveal.start({1, 2}));
+        QCOMPARE(reveal.record(), before);
+        auto copy = reveal;
+        copy.advance();
+        QCOMPARE(reveal.record(), before);
+        QVERIFY(copy.record() != before);
+        const auto image = reveal.render(false);
+        QCOMPARE(image.pixelColor(160, 19), QColor(Qt::black));
+        QCOMPARE(image.pixelColor(160, 20).alpha(), 0);
+        QCOMPARE(image.pixelColor(160, 219).alpha(), 0);
+        QCOMPARE(image.pixelColor(160, 220), QColor(Qt::black));
+        QCOMPARE(image.pixelColor(319, 0).alpha(), 0);
+        QCOMPARE(image.pixelColor(160, 239).alpha(), 0);
+        qInfo() << snapshots << "original title records, queries and rectangle packets agree";
+    }
+    void titleRevealPlayback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const SceneId id(scenes.original().selectors()[0]);
+        QVector<quint32> words{0x3b, 0, 240,         80,          160,        4,
+                               1,    0, 0x80000000U, 0xb8,        0,          0x80000000U,
+                               0xb7, 0, 0x80000000U, 0x80000001U, 0xff000006U};
+        QByteArray source(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(source, i * 4, words[i]);
+        scenes.replace(id, source);
+        ScenePlaybackStart start;
+        start.mode = 2;
+        ScenePlayback scene(rom, scenes.runtimeDirectors(), 0, start,
+                            SceneCameras::freshModeTwo(rom));
+        scene.director().setCounter(1);
+        QCOMPARE(scene.advance({}, {}, 10000, 1), ScenePlayback::Budget);
+        QCOMPARE(scene.director().state().counter, 2U);
+        QVERIFY(scene.titleReveal().record().isEmpty());
+        QCOMPARE(scene.advance({}, {}, 10000, 1), ScenePlayback::Budget);
+        QCOMPARE(scene.director().state().counter, 2U);
+        QCOMPARE(u16(scene.titleReveal().record(), 8), quint16(0));
+        QCOMPARE(scene.advance({}, {}, 10000, 1), ScenePlayback::Advanced);
+        QCOMPARE(u16(scene.titleReveal().record(), 8), quint16(1));
+        QVERIFY(!scene.highResolution());
+        auto checkpoint = scene;
+        QCOMPARE(scene.advance(), ScenePlayback::Advanced);
+        QVERIFY(scene.highResolution());
+        QCOMPARE(u16(scene.titleReveal().record(), 8), quint16(2));
+        QCOMPARE(checkpoint.advance(), ScenePlayback::Advanced);
+        QCOMPARE(checkpoint.titleReveal().record(), scene.titleReveal().record());
+        QCOMPARE(checkpoint.highResolution(), scene.highResolution());
+        QCOMPARE(scene.advance(), ScenePlayback::Advanced);
+        QVERIFY(!scene.highResolution());
+        QCOMPARE(u16(scene.titleReveal().record(), 8), quint16(3));
+    }
     void irisPlaybackLifecycle() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

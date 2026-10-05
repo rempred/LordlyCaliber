@@ -473,6 +473,11 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             context_->text() +
             "\nDialogue uses the preview names and current Actor "
             "matrices. Desktop cadence: one resource pass per step, drawn over the scene.");
+        if (selector_ == 0)
+            context_->setText(
+                context_->text() +
+                "\nTitle reveal uses its separate update timing and resolution. Rectangle edge "
+                "coverage is approximate; title menus and the People board remain unfinished.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -671,7 +676,7 @@ void ScenePreview::convertBackgrounds(Snapshot &next) {
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
-    if (commitDraw)
+    if (commitDraw && !drawing.titleScene())
         drawing.crop().draw();
     const bool sepia = drawing.effects().sepia();
     if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.flatProps)
@@ -854,13 +859,15 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             painter.drawImage(0, 0, capture.frame());
             painter.setOpacity(1);
         }
-        const auto clip = drawing.crop().clip();
+        const auto clip = drawing.titleScene() ? frame.rect() : drawing.crop().clip();
         painter.save();
         painter.setClipRegion(QRegion(frame.rect()).subtracted(QRegion(clip)));
         painter.fillRect(frame.rect(), Qt::black);
         painter.restore();
         if (!drawing.panels().empty())
             painter.drawImage(0, 0, drawing.panels().render());
+        if (drawing.titleScene())
+            painter.drawImage(0, 0, drawing.titleReveal().render(drawing.highResolution()));
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));

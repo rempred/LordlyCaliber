@@ -105,6 +105,8 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (titleScene() && (opcode == 0x62 || opcode == 0x6a || opcode == 0x6b))
+        throw Error("Title menu panels require their separate early-overlay owner");
     if (opcode == 0x62) {
         if (args.size() != 2)
             throw Error("Panel creation requires two operands");
@@ -128,12 +130,21 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
         return true;
     }
     if (opcode == 0x3b || opcode == 0x3c) {
-        if (screenVariant_ == 0)
-            throw Error("Title-card edge reveal requires its title-scene renderer");
+        if (titleScene()) {
+            if (opcode == 0x3b)
+                titleReveal_.start(args);
+            else
+                value = titleReveal_.active();
+            return true;
+        }
         if (opcode == 0x3b)
             crop_.start(args);
         else
             value = crop_.active();
+        return true;
+    }
+    if (titleScene() && (opcode == 0xb7 || opcode == 0xb8)) {
+        highResolution_ = opcode == 0xb8;
         return true;
     }
     if (opcode == 0x4e) {
@@ -464,13 +475,40 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     supplemental_ = &supplemental;
     commands_ = &commands;
     instructionBudget_ = instructionBudget;
-    const int status = lordly_scene_schedule(&schedule_, invoke, this, stageBudget);
+    int status;
+    if (titleScene()) {
+        // Early wrapper ROM281C78..281CE4 updates counter, Director, title menu,
+        // People board, then this reveal. Its scheduler is not the Actor sweep.
+        // The two independent menu owners still reject their launch commands;
+        // neither exists in this playback until its domain is implemented.
+        status = LORDLY_SCENE_COMPLETE;
+        int stages = 0;
+        while (titlePhase_ < 3) {
+            if (stages == stageBudget) {
+                status = LORDLY_SCENE_BUDGET;
+                break;
+            }
+            if (titlePhase_ == 2)
+                titleReveal_.advance();
+            else if (!invoke(this,
+                             titlePhase_ == 0 ? LORDLY_SCENE_COUNTER : LORDLY_SCENE_DIRECTOR)) {
+                status = LORDLY_SCENE_UNAVAILABLE;
+                break;
+            }
+            ++titlePhase_;
+            ++stages;
+        }
+        if (status == LORDLY_SCENE_COMPLETE)
+            titlePhase_ = 0;
+    } else
+        status = lordly_scene_schedule(&schedule_, invoke, this, stageBudget);
     supplemental_ = nullptr;
     commands_ = nullptr;
     if (status == LORDLY_SCENE_COMPLETE) {
         // Scene wrapper ROM281A8C calls the menu updater after the complete
         // Actor/Director scheduler, including its alternate path.
-        panels_.advance(pressed_, pressed_ & 0x0c00);
+        if (!titleScene())
+            panels_.advance(pressed_, pressed_ & 0x0c00);
         ++completed_;
         released_ = releaseRequested_;
         return released_ ? Released : Advanced;
