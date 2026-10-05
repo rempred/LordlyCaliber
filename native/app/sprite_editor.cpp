@@ -123,6 +123,9 @@ SpriteEditor::SpriteEditor(Project *project, QUndoStack *undo, std::function<voi
     auto exports = new QMenu(exportButton);
     exportButton->setMenu(exports);
     exports->addAction("MP4 video…", this, [this] { guarded([this] { chooseVideoExport(); }); });
+    exports->addAction("Animated PNG with transparency…", this, [this] {
+        guarded([this] { chooseVideoExport(SpriteVideoFormat::AnimatedPng); });
+    });
     for (const auto &format : {QByteArray("PNG"), QByteArray("JPEG")})
         exports->addAction(QString::fromLatin1(format) + " image…", this, [this, format] {
             if (!current())
@@ -847,23 +850,27 @@ void SpriteEditor::exportImage(const QString &path, const QByteArray &format) co
         throw Error("Cannot encode sprite image");
     atomicWrite(path, bytes);
 }
-void SpriteEditor::chooseVideoExport() {
+void SpriteEditor::chooseVideoExport(SpriteVideoFormat format) {
     if (!current()) throw Error("Select a sprite asset first");
     play_->setChecked(false);
     const auto asset = *current();
-    QDialog dialog(this); dialog.setObjectName("spriteVideoOptions"); dialog.setWindowTitle("Export sprite video");
+    const bool alpha = format == SpriteVideoFormat::AnimatedPng;
+    QDialog dialog(this); dialog.setObjectName("spriteVideoOptions"); dialog.setWindowTitle("Export sprite animation");
     auto layout = new QVBoxLayout(&dialog);
-    auto note = new QLabel("MP4 video uses the frame timing shown in Sprite studio at 30 ticks per "
+    auto note = new QLabel(alpha ? "Animated PNG preserves exact colors and partial transparency. "
+                                  "Frame timing follows Sprite studio at 30 ticks per second."
+                                : "MP4 video uses the frame timing shown in Sprite studio at 30 ticks per "
                           "second. Transparent pixels use the selected background. Video compression "
                           "can change colors slightly; sprite assets and PNG retain exact pixels.");
     note->setWordWrap(true); layout->addWidget(note);
     auto form = new QFormLayout; layout->addLayout(form);
     QSpinBox scale, repeats;
     scale.setObjectName("spriteVideoScale"); scale.setRange(1, 16); scale.setValue(4);
-    repeats.setObjectName("spriteVideoRepeats"); repeats.setRange(1, 100); repeats.setValue(1);
-    form->addRow("Pixel scale", &scale); form->addRow("Repeats", &repeats);
+    repeats.setObjectName("spriteVideoRepeats"); repeats.setRange(alpha ? 0 : 1, 100); repeats.setValue(alpha ? 0 : 1);
+    if (alpha) repeats.setSpecialValueText("Loop forever");
+    form->addRow("Pixel scale", &scale); form->addRow("Play count", &repeats);
     QColor background = Qt::black;
-    QPushButton color("Black"); form->addRow("Background", &color);
+    QPushButton color("Black"); if (!alpha) form->addRow("Background", &color);
     connect(&color, &QPushButton::clicked, &dialog, [&] {
         const auto selected = QColorDialog::getColor(background, &dialog, "Video background");
         if (selected.isValid()) { background = selected; color.setText(background.name()); }
@@ -873,10 +880,12 @@ void SpriteEditor::chooseVideoExport() {
     buttons.button(QDialogButtonBox::Ok)->setText("Choose destination…");
     auto update = [&] {
         try {
-            const auto plan = spriteVideoPlan(asset, {scale.value(), repeats.value(), background});
-            summary.setText(QString("%1 × %2 pixels · %3 seconds. Background padding makes each "
-                                    "side at least 64 pixels and rounds odd dimensions up by one.")
-                                .arg(plan.size.width()).arg(plan.size.height()).arg(plan.ticks / 30., 0, 'f', 2));
+            const auto plan = spriteVideoPlan(asset, {scale.value(), repeats.value(), background, format});
+            const auto dimensions = QString("%1 × %2 pixels · %3 seconds")
+                                        .arg(plan.size.width()).arg(plan.size.height()).arg(plan.ticks / 30., 0, 'f', 2);
+            summary.setText(alpha ? dimensions + (repeats.value() ? "." : " per loop.")
+                                 : dimensions + ". Background padding makes each side at least 64 pixels "
+                                                "and rounds odd dimensions up by one.");
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);
         } catch (const Error &e) {
             summary.setText(QString::fromUtf8(e.what())); buttons.button(QDialogButtonBox::Ok)->setEnabled(false);
@@ -888,8 +897,12 @@ void SpriteEditor::chooseVideoExport() {
     connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     update();
     if (dialog.exec() != QDialog::Accepted) return;
-    const auto path = QFileDialog::getSaveFileName(this, "Export sprite video", asset.name + ".mp4", "MP4 video (*.mp4)");
-    if (!path.isEmpty()) exportVideo(path, {scale.value(), repeats.value(), background});
+    const auto path = QFileDialog::getSaveFileName(this, "Export sprite animation", asset.name + (alpha ? ".apng" : ".mp4"),
+                                                   alpha ? "Animated PNG (*.apng *.png)" : "MP4 video (*.mp4)");
+    if (!path.isEmpty()) {
+        if (!current() || *current() != asset) throw Error("The sprite changed while export options were open; export again");
+        exportVideo(path, {scale.value(), repeats.value(), background, format});
+    }
 }
 bool SpriteEditor::exportVideo(const QString &path, const SpriteVideoOptions &options) {
     if (!current()) throw Error("Select a sprite asset first");

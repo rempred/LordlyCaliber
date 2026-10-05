@@ -20,19 +20,23 @@
 namespace lordly {
 SpriteVideoPlan spriteVideoPlan(const SpriteAsset &asset, const SpriteVideoOptions &options) {
     asset.validate();
-    if (options.scale < 1 || options.scale > 16 || options.repeats < 1 || options.repeats > 100 ||
-        !options.background.isValid() || options.background.alpha() != 255)
-        throw Error("Choose a scale of 1–16, 1–100 repeats and an opaque video background");
+    const bool alpha = options.format == SpriteVideoFormat::AnimatedPng;
+    if ((!alpha && options.format != SpriteVideoFormat::Mp4) || options.scale < 1 ||
+        options.scale > 16 || options.repeats < (alpha ? 0 : 1) || options.repeats > 100 ||
+        (!alpha && (!options.background.isValid() || options.background.alpha() != 255)))
+        throw Error("Invalid animation export scale, play count, format or background");
     SpriteVideoPlan plan;
     // Use a small compatible video canvas, retaining source scale. The Windows
     // pipeline rejects tiny frames; larger odd dimensions need chroma padding.
     plan.size = {std::max(64, (asset.size.width() * options.scale + 1) & ~1),
                  std::max(64, (asset.size.height() * options.scale + 1) & ~1)};
+    if (alpha)
+        plan.size = asset.size * options.scale;
     if (plan.size.width() > 4096 || plan.size.height() > 4096)
         throw Error("Video dimensions must not exceed 4096 pixels per side");
     for (const auto &frame : asset.frames)
         plan.ticks += std::max(1, frame.ticks);
-    plan.ticks *= options.repeats;
+    plan.ticks *= std::max(1, options.repeats);
     if (plan.ticks > 30 * 60 * 10)
         throw Error("Sprite video exports are limited to ten minutes");
     return plan;
@@ -117,6 +121,8 @@ bool exportSpriteVideo(const SpriteAsset &asset, const QString &path,
         throw Error("Choose a video destination");
     if (progress && !progress(0, plan.ticks))
         return false;
+    if (options.format == SpriteVideoFormat::AnimatedPng)
+        return exportSpriteAnimatedPng(asset, path, options, progress);
 #ifdef Q_OS_WIN
     ComSession com;
     MediaApi api;

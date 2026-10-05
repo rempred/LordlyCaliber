@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+## Transparent animation export
+
+Sprite studio also exports animated PNG with full RGBA pixels, authored durations,
+integer scaling and finite play counts or continuous looping. The PNG writer uses
+Qt's existing encoder and the animation chunks in the published
+[W3C PNG Third Edition](https://www.w3.org/TR/png-3/#animation-information).
+Each complete frame replaces the canvas, preserving transparent regions without
+trails. Animated PNG keeps exact scaled dimensions, including tiny/odd images;
+MP4 retains its separate opaque background and compatibility padding. No additional
+codec or runtime dependency is installed. Cancellation preserves an existing file.
+
+`sprite_video_tests` passed in 1165 ms, including the existing MP4 checks. The new
+independent FFmpeg decode compares every RGBA byte in three frames with partial
+alpha and a mostly transparent replacement frame, verifies all frame durations,
+checks continuous/finite loop metadata, tiny scaled output and cancellation.
+`ui_tests spriteVideoExport` passed in 271 ms for both formats, including static
+PNG decoding of the first APNG frame and unchanged project/undo history. The static
+comparison checks dimensions and RGBA bytes independently of color-space metadata;
+the APNG explicitly declares sRGB. Transparent animation export uses APNG; the
+native app does not currently emit WebM.
+
 ## Sprite video export
 
 Sprite studio exports MP4/H.264 through Windows Media Foundation. Video entry

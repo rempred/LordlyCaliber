@@ -98,7 +98,7 @@ class SpriteEditor : public QWidget {
     void commit(const QString &, SpriteLibrary);
     void guarded(const std::function<void()> &);
     void createAsset();
-    void chooseVideoExport();
+    void chooseVideoExport(SpriteVideoFormat = SpriteVideoFormat::Mp4);
     void resizeAsset();
     void copyPixels(bool cut);
     void pastePixels();

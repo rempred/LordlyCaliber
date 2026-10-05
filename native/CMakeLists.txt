@@ -20,7 +20,7 @@ target_sources(lordly_engine PRIVATE engine/display_tool.cpp rebuild/display_too
 target_sources(lordly_engine PRIVATE engine/high_attack.cpp rebuild/high_attack.cpp)
 target_sources(lordly_engine PRIVATE engine/save_document.cpp)
 target_sources(lordly_engine PRIVATE engine/sprite_library.cpp engine/sprite_sources.cpp)
-target_sources(lordly_engine PRIVATE engine/sprite_video.cpp)
+target_sources(lordly_engine PRIVATE engine/sprite_video.cpp engine/sprite_apng.cpp)
 if(WIN32)
   target_link_libraries(lordly_engine PRIVATE mfuuid ole32)
 endif()

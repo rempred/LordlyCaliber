@@ -93,6 +93,13 @@ class UiTests : public QObject {
             QVERIFY(QFileInfo(work.filePath("sprite.mp4")).size() > 100);
             QCOMPARE(project.sprites().json(), original); QCOMPARE(undo.count(), commands);
             QVERIFY(!editor.findChild<QDialog *>("spriteVideoProgress"));
+            QVERIFY(editor.exportVideo(work.filePath("sprite.apng"), {1, 0, Qt::black, SpriteVideoFormat::AnimatedPng}));
+            const auto preview = QImage(work.filePath("sprite.apng")).convertToFormat(QImage::Format_RGBA8888);
+            QCOMPARE(preview.size(), asset.size);
+            const auto expected = asset.composite(0);
+            QCOMPARE(QByteArray(reinterpret_cast<const char *>(preview.constBits()), preview.sizeInBytes()),
+                     QByteArray(reinterpret_cast<const char *>(expected.constBits()), expected.sizeInBytes()));
+            QCOMPARE(project.sprites().json(), original); QCOMPARE(undo.count(), commands);
         } catch (const Error &e) { QFAIL(e.what()); }
     }
     void spriteLayerImagePreparation() {
