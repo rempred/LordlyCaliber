@@ -219,6 +219,52 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
     }
+    void storyCastPreview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const quint32 key = 0x1fa8bf4 - 0x594284;
+        auto program = scenes.program(key);
+        for (auto &command : program.commands)
+            if (command.opcode == 0x1b) {
+                command.operands[4] = 0;
+                command.operands[5] = 0;
+                break;
+            }
+        scenes.replace(key, program.encode());
+        const auto before = scenes.json();
+        ScenePreview preview(rom);
+        preview.resize(1200, 900);
+        preview.show();
+        preview.selectScene(scenes, key, 2);
+        auto first = preview.findChild<QComboBox *>("sceneCast0");
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QVERIFY(first->isVisible());
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        position->setValue(3);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 3);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto original = preview.renderedFrame();
+        first->setCurrentIndex(first->findData(0x54));
+        QCOMPARE(preview.property("sceneTick").toInt(), 0);
+        position->setValue(3);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 3);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto changed = preview.renderedFrame();
+        QVERIFY(changed != original);
+        QVERIFY(preview.grab().save("scene-story-cast.png"));
+        position->setValue(1);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        position->setValue(3);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 3);
+        QCOMPARE(preview.renderedFrame(), changed);
+        QCOMPARE(scenes.json(), before);
+        preview.selectScene(scenes, scenes.original().entries().first().key, 2);
+        QVERIFY(!first->isVisible());
+    }
     void panelPreviewSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -90,5 +90,8 @@ class ScenePreview : public QWidget {
     QWidget *panelControlsUi_;
     QWidget *launchImageUi_;
     QComboBox *launchImage_;
+    QWidget *storyCastUi_;
+    std::array<QComboBox *, 5> storyCast_{};
+    bool storyCastEnabled_ = false;
 };
 } // namespace lordly

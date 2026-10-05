@@ -1,5 +1,8 @@
 #include "app/scene_preview.h"
+#include "engine/class_data.h"
 #include "engine/scene_images.h"
+#include "engine/scene_story_cast.h"
+#include "engine/text.h"
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QGraphicsPixmapItem>
@@ -34,6 +37,32 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     launchRow->addWidget(launchImage_, 1);
     launchImageUi_->hide();
     layout->addWidget(launchImageUi_);
+    storyCastUi_ = new QWidget;
+    auto castRow = new QHBoxLayout(storyCastUi_);
+    castRow->setContentsMargins(0, 0, 0, 0);
+    castRow->addWidget(new QLabel("Preview cast"));
+    const auto classes = ClassData::load(rom_);
+    const auto sample = SceneStoryCast::sample();
+    for (int i = 0; i < 5; ++i) {
+        auto choice = storyCast_[i] = new QComboBox;
+        choice->setObjectName(QString("sceneCast%1").arg(i));
+        choice->setToolTip(
+            "Declared sample cast for this preview; the game selects from the player's army.");
+        for (int id : SceneStoryCast::choices())
+            if (id < classes.entries().size())
+                choice->addItem(decodeText(classes.entries()[id].name), id);
+        choice->setCurrentIndex(choice->findData(sample[i].primary));
+        castRow->addWidget(choice, 1);
+        connect(choice, &QComboBox::currentIndexChanged, this, [this] {
+            if (!storyCastEnabled_)
+                return;
+            inputHistory_.clear();
+            pressedHistory_.clear();
+            restart();
+        });
+    }
+    storyCastUi_->hide();
+    layout->addWidget(storyCastUi_);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setCheckable(true);
@@ -278,6 +307,8 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     liveInput_ = {};
     pendingPressed_ = 0;
     launchImageUi_->hide();
+    storyCastEnabled_ = false;
+    storyCastUi_->hide();
     try {
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
@@ -286,6 +317,8 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         selector_ = resource.selectors.first();
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
+        storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
+        storyCastUi_->setVisible(storyCastEnabled_);
         {
             const QSignalBlocker block(launchImage_);
             launchImage_->clear();
@@ -313,6 +346,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
             "Scattered props use a fixed preview seed. Launch bindings and audio remain "
             "unfinished.");
+        if (storyCastEnabled_)
+            context_->setText(context_->text() + "\nThis scene uses the selected sample cast. Its "
+                                                 "authored positions stay unchanged.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -350,8 +386,17 @@ void ScenePreview::restart() {
         start.mode = mode_;
         start.sceneFlags = 0;
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
+        if (storyCastEnabled_) {
+            auto cast = SceneStoryCast::sample();
+            for (int i = 0; i < 5; ++i)
+                cast[i] = {quint8(storyCast_[i]->currentData().toInt()),
+                           quint8(storyCast_[i]->currentData().toInt())};
+            start.translations = SceneStoryCast::translations(cast);
+        }
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
+        if (storyCastEnabled_)
+            playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
         const auto launch =
             SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
         if (launch.resource_class == 4) {

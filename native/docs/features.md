@@ -30,6 +30,10 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+Dynamic event66/67 scenes expose five preview cast selectors. Launch translations
+change bodies and dialogue branches while preserving authored coordinates; these
+sample choices do not edit the game army or scene source.
+
 Scene images support native vignette construction, scripted pan/zoom, forward
 and reverse trails, and manual direction/zoom controls with animated boundary
 indicators. Keyboard/button input is recorded for deterministic seeking and can

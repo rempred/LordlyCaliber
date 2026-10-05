@@ -1,5 +1,24 @@
 # Native Lordly Caliber
 
+## Dynamic story preview cast
+
+SceneStoryCast recognizes the five paired class replacements and seventeen launch
+translations used by event66/67. Eighteen retail streams, including01FA8BF4, use
+this contract. Five preview selectors supply primary/secondary class pairs and
+the recovered dialogue classifier without rewriting script operands. The UI uses
+matching primary/secondary classes; the engine retains independent pairs. These
+are declared sample inputs, not inferred historical army membership.
+
+Build44366 scene_runtime_tests storyCastLaunch passed138ms: two casts execute the
+actual01FA8BF4 script, retain every literal Actor coordinate and resolve the chosen
+body identities. It also checks recognition, source preservation and invalid input.
+Build42720 ui_tests storyCastPreview panelPreviewSeek launchImageSelection passed
+3623ms. The cast check changes a body, rewinds/replays exactly, preserves project
+JSON and hides the controls on unrelated scenes. Its visual fixture makes only
+the initial authored fade transparent so bodies can be compared. Production
+playback retains that black fade. scene-story-cast.png was inspected. Full dialogue
+integration is still needed to advance this scene through its opening sequence.
+
 ## Actor roster materialization
 
 45/AB now materialize supplied twenty-row army contexts through SceneActors.

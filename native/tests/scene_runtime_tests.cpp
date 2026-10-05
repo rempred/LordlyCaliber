@@ -8,6 +8,7 @@
 #include "engine/scene_draw_queue.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_panels.h"
+#include "engine/scene_story_cast.h"
 #include "engine/scene_programs.h"
 #include "game/director/actor_render.h"
 #include "game/director/scene_matrix.h"
@@ -24,8 +25,62 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void storyCastLaunch() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto directors = Directors::load(rom);
+        int supported = 0;
+        for (const auto &r : directors.entries())
+            supported += SceneStoryCast::supports(r.program);
+        QCOMPARE(supported, 18);
+        const auto resource = directors.entries().value(0x1fa8bf4 - 0x594284);
+        QVERIFY(SceneStoryCast::supports(resource.program));
+        const auto source = resource.program.encode();
+        const std::array<StoryCastMember, 5> casts[]{
+            SceneStoryCast::sample(), {{{0x54, 0x54}, {0x56, 0x56}, {0x61, 0x61}, {4, 4}, {2, 2}}}};
+        for (const auto &cast : casts) {
+            ScenePlaybackStart start;
+            start.mode = 2;
+            start.sceneFlags = 0;
+            start.translations = SceneStoryCast::translations(cast);
+            ScenePlayback scene(rom, directors, resource.selectors.first(), start,
+                                SceneCameras::freshModeTwo(rom),
+                                [](int, float, float) { return 0.f; });
+            scene.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+            for (int tick = 0; tick < 5; ++tick) {
+                const auto result = scene.advance(
+                    [](LordlySceneService) { return true; },
+                    [](quint32 op, const QVector<quint32> &, int &) { return op == 0x80000006U; });
+                QVERIFY2(result == ScenePlayback::Advanced, qPrintable(scene.reason()));
+                if (scene.actors().actor(0) &&
+                    u32(scene.actors().actor(0)->record(), 0xe8) == cast[0].primary)
+                    break;
+            }
+            for (int slot = 0; slot < 5; ++slot) {
+                QVERIFY(scene.actors().actor(slot));
+                const auto actor = scene.actors().actor(slot)->record();
+                QCOMPARE(u32(actor, 0xe8), quint32(cast[slot].primary));
+                QCOMPARE(u32(actor, 0xec), quint32(cast[slot].secondary));
+                const auto command =
+                    std::find_if(resource.program.commands.cbegin(),
+                                 resource.program.commands.cend(), [&](const DirectorCommand &c) {
+                                     return c.opcode == 0x14 && c.operands[0] == quint32(slot);
+                                 });
+                QVERIFY(command != resource.program.commands.cend());
+                for (int i = 0; i < 3; ++i)
+                    QCOMPARE(std::bit_cast<float>(u32(actor, 0x11c + i * 4)),
+                             float(qint32(command->operands[4 + i])) / 1000.f);
+            }
+        }
+        QCOMPARE(resource.program.encode(), source);
+        auto invalid = SceneStoryCast::sample();
+        invalid[0].primary = 0x33;
+        QVERIFY_THROWS_EXCEPTION(Error, SceneStoryCast::translations(invalid));
+    }
     void panelsNativeReference() {
-        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
             QSKIP("Private ROM required");
         const auto rom = Rom::open(path);
