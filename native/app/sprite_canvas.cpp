@@ -30,8 +30,7 @@ void SpriteCanvas::setAsset(const SpriteAsset *asset, int frame, int layer, bool
 void SpriteCanvas::setIndexedAsset(const QString &identity, QSize size, const QByteArray &indices,
                                    const QVector<QColor> &palette, quint8 transparent) {
     if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096 ||
-        indices.size() != qsizetype(size.width()) * size.height() || palette.size() != 256 ||
-        palette[transparent].alpha() != 0)
+        indices.size() != qsizetype(size.width()) * size.height() || palette.size() != 256)
         throw Error("Invalid indexed canvas dimensions or palette");
     // Keep indices as opaque channel values while reusing the exact pixel tools.
     // Color resolution happens only at presentation; equal palette colors stay distinct.
@@ -43,6 +42,7 @@ void SpriteCanvas::setIndexedAsset(const QString &identity, QSize size, const QB
     asset.id = identity;
     setAsset(&asset, 0, 0);
     indexedPalette_ = palette;
+    // Erasing writes this index; a raw color/opacity plane may have no transparent color.
     transparentIndex_ = transparent;
     setIndexColor(indexColor_);
     update();

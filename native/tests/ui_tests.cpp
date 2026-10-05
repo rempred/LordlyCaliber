@@ -12,6 +12,7 @@
 #include "app/art_editor.h"
 #include "app/portrait_editor.h"
 #include "app/army_editor.h"
+#include "app/combat_editor.h"
 #include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
@@ -60,6 +61,37 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void combatArtworkEditing() {
+        try {
+            const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+            auto project=Project::fromRom(Rom::open(path));QUndoStack undo;CombatEditor editor(&project,&undo,[]{});editor.resize(1340,850);editor.show();
+            const auto id=CombatArtwork::identity(0x3bac1c,0);editor.selectBinding(id,0);
+            auto descriptor=editor.findChild<QComboBox *>("combatDescriptor");QVERIFY(descriptor);QCOMPARE(descriptor->count(),166);QVERIFY(descriptor->currentText().contains("Soldier"));
+            auto canvas=editor.findChild<SpriteCanvas *>("combatCanvas");QVERIFY(canvas);QVERIFY2(canvas->isEnabled(),qPrintable(editor.findChild<QLabel *>("combatNotice")->text()));
+            const auto original=project.combatArtwork()->pixels(id,0);const int width=project.combatArtwork()->original(id).width(),pixel=width+1;
+            const int index=(u8(original.color,pixel)+7)&255;editor.findChild<QSpinBox *>("combatInk")->setValue(index);
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(1,1)*canvas->zoom()+QPoint(2,2));
+            QCOMPARE(u8(project.combatArtwork()->pixels(id,0).color,pixel),quint8(index));QCOMPARE(project.combatArtwork()->pixels(id,0).alpha,original.alpha);QCOMPARE(undo.count(),1);
+            auto channel=editor.findChild<QComboBox *>("combatChannel");channel->setCurrentIndex(1);const int alpha=(u8(original.alpha,pixel)+3)&15;editor.findChild<QSpinBox *>("combatInk")->setValue(alpha);
+            QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(1,1)*canvas->zoom()+QPoint(2,2));
+            QCOMPARE(u8(project.combatArtwork()->pixels(id,0).alpha,pixel),quint8(alpha));const auto painted=project.combatArtwork()->pixels(id,0);
+            undo.undo();QCOMPARE(project.combatArtwork()->pixels(id,0).alpha,original.alpha);undo.redo();QCOMPARE(project.combatArtwork()->pixels(id,0),painted);
+            const auto image=project.combatArtwork()->image(id,0);
+            const auto copied=editor.copyToLibrary();QCOMPARE(project.sprites().asset(copied).frames[0].layers[0].image,image);
+            editor.findChild<QPushButton *>("combatRestore")->click();QCOMPARE(project.combatArtwork()->pixels(id,0),original);
+            auto library=editor.findChild<QComboBox *>("combatLibrary");library->setCurrentIndex(library->findData(copied));
+            QTimer::singleShot(0,&editor,[&]{auto dialog=editor.findChild<QDialog *>("combatImagePreparation");QVERIFY(dialog);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();});editor.findChild<QPushButton *>("combatAssignLibrary")->click();
+            QCOMPARE(project.combatArtwork()->image(id,0),image);
+            QTemporaryDir work;editor.exportImage(work.filePath("combat.png"));QCOMPARE(QImage(work.filePath("combat.png")).convertToFormat(QImage::Format_RGBA8888),image);
+            undo.undo();editor.importImage(work.filePath("combat.png"));QCOMPARE(project.combatArtwork()->image(id,0),image);QVERIFY_THROWS_EXCEPTION(Error,editor.exportImage(path));
+            project.saveFolder(work.filePath("folder"));auto loaded=Project::fromRom(project.rom());loaded.applyManifest(Project::readProject(work.filePath("folder")));QCOMPARE(loaded.combatArtwork()->json(),project.combatArtwork()->json());
+            editor.selectBinding(id,1);QVERIFY(canvas->isEnabled());
+            QCOMPARE(project.combatArtwork()->pixels(id,1),project.combatArtwork()->original(id).pixels(1));
+            descriptor->setCurrentIndex(descriptor->findData(0x100ad4cU));QVERIFY(!canvas->isEnabled());
+            editor.selectBinding(id,0);channel->setCurrentIndex(2);QVERIFY(canvas->isEnabled());
+            QVERIFY(editor.grab().save("combat-artwork-workspace.png"));
+        }catch(const Error &e){QFAIL(e.what());}
+    }
     void armyArtworkEditing() {
         try {
             const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");

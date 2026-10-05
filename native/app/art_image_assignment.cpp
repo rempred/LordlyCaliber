@@ -18,7 +18,7 @@ QImage loadArtworkImage(const QString &path) {
     QImageReader reader(path);
     const auto size = reader.size();
     if (size.width() < 1 || size.height() < 1 || size.width() > 4096 || size.height() > 4096)
-        throw Error("Image dimensions must be 1–4096 pixels");
+        throw Error("Image dimensions must be 1â€“4096 pixels");
     const auto image = reader.read();
     if (image.isNull())
         throw Error("Cannot read image: " + reader.errorString());
@@ -72,7 +72,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
     QPushButton fill("Black");
     if (options.opaque)
         form->addRow("Opaque background", &fill);
-    else
+    else if (options.binaryAlpha)
         form->addRow("Opaque from alpha", &alpha);
     auto status = new QLabel;
     status->setWordWrap(true);
@@ -111,7 +111,7 @@ prepareArtworkImage(QWidget *parent, const QImage &source, const ArtImageAssignm
                 std::max(1, std::min(224 / mapped.image.width(), 256 / mapped.image.height()));
             output->setPixmap(QPixmap::fromImage(mapped.image.scaled(
                 mapped.image.size() * scale, Qt::IgnoreAspectRatio, Qt::FastTransformation)));
-            status->setText(QString("Left: source · Right: exact %1 × %2 game image")
+            status->setText(QString("Left: source Â· Right: exact %1 Ã— %2 game image")
                                 .arg(target.width())
                                 .arg(target.height()));
             buttons.button(QDialogButtonBox::Ok)->setEnabled(true);

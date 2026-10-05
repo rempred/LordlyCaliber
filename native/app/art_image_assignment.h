@@ -13,6 +13,7 @@ struct ArtImageAssignment {
     QSize target;
     QString objectPrefix, title, description;
     bool opaque = false;
+    bool binaryAlpha = true;
 };
 QImage loadArtworkImage(const QString &path);
 std::optional<QByteArray>

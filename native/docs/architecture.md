@@ -32,8 +32,17 @@ combat_artwork_tests passed against the private Rev0 ROM (12,695 ms): 38 browser
 encoding/materialization comparisons, unchanged children/palettes/padding, exact
 image remapping, malformed pixels, native/browser persistence, source compilation,
 shared-source isolation, byte conservation, CRC, browser compressed readback,
-reopening, repeat no-op export and owned allocation growth/relocation. The UI and
-current-project composed previews are the next integration step. Full-game visual
+reopening, repeat no-op export and owned allocation growth/relocation. The Art workspace now has a searchable combat descriptor/member browser,
+child selection, exact color-index and opacity-plane painting, combined image
+painting, preview, restore/undo, PNG and sprite-library transfers, and image
+preparation with continuous alpha quantization. Raw channel erasure writes index
+zero even when its display palette is opaque. Empty encoded deltas remain editable
+when the materialized child has valid planes. The separate 3634 intensity image
+remains read-only. Reference class names aid discovery; current-project composed
+preview integration remains the next step. ui_tests combatArtworkEditing passed
+(662 ms); indexedPixelTools, Army/icon/portrait workflows and loadDesktopWorkspace
+also passed after the shared canvas/image-preparation changes. The desktop screenshot
+was inspected. These are offscreen Qt checks, not emulator operation. Full-game visual
 correctness is not claimed by these file-level checks.
 
 ## Dynamic Army models and class assignments
