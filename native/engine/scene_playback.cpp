@@ -31,6 +31,14 @@ void ScenePlayback::setMode(int mode) {
     schedule_.mode = quint8(mode);
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0xb2 || opcode == 0xb3) {
+        if (imageView_) {
+            const quint8 state = opcode == 0xb2 ? 1 : 0;
+            put8(*imageView_, 0x840, state);
+            director_.setBarrierState(state);
+        }
+        return true;
+    }
     if (opcode >= 0x49 && opcode <= 0x4c) {
         if (!imageView_)
             throw Error("Map ribbons require their launch image presentation");
@@ -223,11 +231,13 @@ bool ScenePlayback::update(LordlySceneService service) {
     case LORDLY_SCENE_MODE_ZERO_6: {
         // 2B529C updates the image trails and twenty path ribbons. It returns
         // immediately when the oversized-image owner is absent.
-        if (imageView_)
+        if (imageView_) {
             ribbons_.advance();
-        if (imagePresentation_ && imageView_)
+            const LordlyImageEcho empty{};
             lordly_image_echo_fade(reinterpret_cast<uint8_t *>(imageView_->data()),
-                                   &imagePresentation_->echo(), 0);
+                                   imagePresentation_ ? &imagePresentation_->echo() : &empty,
+                                   pressed_);
+        }
         return true;
     }
     case LORDLY_SCENE_MODE_ZERO_4:
@@ -292,10 +302,14 @@ bool ScenePlayback::update(LordlySceneService service) {
         poseSweepStarted_ = false;
         return true;
     case LORDLY_SCENE_DIRECTOR:
+        director_.setBarrierState(imageView_ ? u8(*imageView_, 0x840) : 0);
+        director_.setController(pressed_);
         directorResult_ =
             director_.dispatch([this](quint32 op, const QVector<quint32> &args,
                                       int &value) { return command(op, args, value); },
                                instructionBudget_);
+        if (imageView_)
+            put8(*imageView_, 0x840, director_.state().barrier_state);
         if (directorResult_ == LORDLY_DIRECTOR_RELEASE)
             releaseRequested_ = true;
         if (directorResult_ == LORDLY_DIRECTOR_YIELD || directorResult_ == LORDLY_DIRECTOR_END ||

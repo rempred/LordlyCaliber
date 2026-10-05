@@ -123,8 +123,12 @@ class ScenePlayback {
     }
     void supplyImageView(QByteArray context);
     void loadImagePresentation(int row);
-    void setImageInput(LordlyImageInput input) {
+    void setImageInput(LordlyImageInput input, quint16 pressed = 0) {
         imageInput_ = input;
+        pressed_ = pressed;
+    }
+    bool skipArmed() const {
+        return imageView_ && u8(*imageView_, 0x840) != 0;
     }
     bool imageControlsEnabled() const {
         return imageControls_.enabled();
@@ -181,6 +185,7 @@ class ScenePlayback {
     std::optional<SceneImagePresentation> imagePresentation_;
     SceneImageControls imageControls_;
     LordlyImageInput imageInput_{};
+    quint16 pressed_ = 0;
     std::optional<LordlyActorLighting> lighting_;
     std::optional<SceneDialogueState> dialogue_;
     LordlySceneSchedule schedule_{};

@@ -56,6 +56,8 @@ class ScenePreview : public QWidget {
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &);
     void imageButton(quint16 bit, bool down);
     void imageInput(LordlyImageInput);
+    void branchInput();
+    void skipScene();
     Rom rom_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
@@ -65,11 +67,13 @@ class ScenePreview : public QWidget {
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;
     QMap<int, LordlyImageInput> inputHistory_;
+    QMap<int, quint16> pressedHistory_;
     LordlyImageInput liveInput_{};
+    quint16 pendingPressed_ = 0;
     QImage frame_;
     int selector_ = -1, mode_ = -1, tick_ = 0;
     QSpinBox *position_, *rate_;
-    QPushButton *play_, *step_;
+    QPushButton *play_, *step_, *skip_;
     QLabel *status_, *context_;
     QTimer *timer_, *seekTimer_;
     int seekTarget_ = -1;

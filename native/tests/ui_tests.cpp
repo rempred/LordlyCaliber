@@ -161,6 +161,33 @@ class UiTests : public QObject {
         QTest::newRow("echo-forward")<<0;
         QTest::newRow("echo-reverse")<<1;
     }
+    void imageSkipInputReplay() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;
+        for(const auto &entry:scenes.original().entries())if(entry.program.resourceClass()==4){source=entry.key;break;}
+        QVERIFY(source);const auto id=scenes.createScene("Start-skip playback",source,false);
+        QVector<quint32> words{0x80000007U,47,0x3a,1,0,0,0,70,70,130,8,0xb2};
+        for(int i=0;i<140;++i)words<<0<<0x80000000U;
+        words<<0xb3<<0x80000005U<<12345<<0x50<<0<<1<<0;
+        for(int i=0;i<150;++i)words<<0<<0x80000000U;
+        words<<0x80000001U<<0xff000004U;
+        QByteArray bytes(words.size()*4,0);for(int i=0;i<words.size();++i)put32(bytes,i*4,words[i]);scenes.replace(id,bytes);
+        ScenePreview preview(rom);preview.resize(1200,800);preview.show();preview.selectScene(scenes,id,0);
+        auto position=preview.findChild<QSpinBox *>("scenePosition");auto status=preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto skip=preview.findChild<QPushButton *>("sceneSkip");auto view=preview.findChild<QGraphicsView *>("sceneCanvas");
+        QVERIFY(!skip->isVisible());position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));QVERIFY(skip->isVisible());
+        const auto before=preview.renderedFrame();QTest::keyClick(view,Qt::Key_Return);
+        QCOMPARE(preview.property("sceneTick").toInt(),11);QVERIFY(!skip->isVisible());
+        position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(status->text()));const auto skipped=preview.renderedFrame();QVERIFY(skipped!=before);
+        position->setValue(124);QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(),124,20000);
+        position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
+        preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(14);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
+        preview.selectScene(scenes,id,0);position->setValue(10);QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
+        skip->click();position->setValue(14);QTRY_COMPARE(preview.property("sceneTick").toInt(),14);QCOMPARE(preview.renderedFrame(),skipped);
+    }
     void pathRibbonPreviewSeek() {
         const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
         const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);quint32 source=0;

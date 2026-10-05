@@ -52,6 +52,10 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     rate_->setSuffix(" steps/s");
     controls->addWidget(play_);
     controls->addWidget(step_);
+    skip_ = new QPushButton("Skip scene (Enter)");
+    skip_->setObjectName("sceneSkip");
+    controls->addWidget(skip_);
+    connect(skip_, &QPushButton::clicked, this, &ScenePreview::skipScene);
     controls->addWidget(reset);
     controls->addWidget(new QLabel("Step"));
     controls->addWidget(position_);
@@ -116,6 +120,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     connect(position_, &QSpinBox::valueChanged, this, &ScenePreview::seek);
     connect(launchImage_, &QComboBox::currentIndexChanged, this, [this] {
         inputHistory_.clear();
+        pressedHistory_.clear();
         restart();
     });
     connect(rate_, &QSpinBox::valueChanged, this, [this] {
@@ -144,15 +149,29 @@ void ScenePreview::imageInput(LordlyImageInput input) {
         input.stick_y == liveInput_.stick_y &&
         input.controller_present == liveInput_.controller_present)
         return;
+    branchInput();
+    liveInput_ = input;
+}
+void ScenePreview::branchInput() {
     if (seekTarget_ >= 0)
         stop();
-    liveInput_ = input;
     auto inputs = inputHistory_.lowerBound(tick_);
     while (inputs != inputHistory_.end())
         inputs = inputHistory_.erase(inputs);
+    auto presses = pressedHistory_.lowerBound(tick_);
+    while (presses != pressedHistory_.end())
+        presses = pressedHistory_.erase(presses);
     auto snapshots = checkpoints_.upperBound(tick_);
     while (snapshots != checkpoints_.end())
         snapshots = checkpoints_.erase(snapshots);
+}
+void ScenePreview::skipScene() {
+    if (!current_ || current_->stopped || !current_->playback.skipArmed())
+        return;
+    branchInput();
+    pendingPressed_ |= 0x1000;
+    if (!timer_->isActive())
+        step();
 }
 void ScenePreview::imageButton(quint16 bit, bool down) {
     auto input = liveInput_;
@@ -163,6 +182,15 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
+        current_->playback.skipArmed()) {
+        const auto key = static_cast<QKeyEvent *>(event);
+        if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) {
+            if (!key->isAutoRepeat())
+                skipScene();
+            return true;
+        }
+    }
     if (object == view_ &&
         (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) && current_ &&
         current_->playback.imageControlsEnabled()) {
@@ -202,7 +230,9 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
 void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode) {
     stop();
     inputHistory_.clear();
+    pressedHistory_.clear();
     liveInput_ = {};
+    pendingPressed_ = 0;
     launchImageUi_->hide();
     try {
         const auto resource = programs.resource(id);
@@ -255,6 +285,7 @@ void ScenePreview::restart() {
     checkpoints_.clear();
     tick_ = 0;
     liveInput_ = {};
+    pendingPressed_ = 0;
     frame_ = {};
     if (!resources_) {
         present();
@@ -557,7 +588,10 @@ void ScenePreview::step() {
     try {
         if (!inputHistory_.contains(tick_))
             inputHistory_.insert(tick_, liveInput_);
-        next.playback.setImageInput(inputHistory_.value(tick_));
+        if (!pressedHistory_.contains(tick_))
+            pressedHistory_.insert(tick_, pendingPressed_);
+        next.playback.setImageInput(inputHistory_.value(tick_), pressedHistory_.value(tick_));
+        pendingPressed_ = 0;
         next.playback.advanceFade();
         // This reference stage starts these job/object pools empty. Commands
         // needing an unimplemented owner stop rather than adding hidden jobs.
@@ -638,6 +672,8 @@ void ScenePreview::present() {
     position_->setValue(tick_);
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
     step_->setEnabled(play_->isEnabled());
+    skip_->setVisible(current_ && current_->playback.skipArmed());
+    skip_->setEnabled(play_->isEnabled());
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
     imageControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();

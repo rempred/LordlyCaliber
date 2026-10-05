@@ -23,6 +23,36 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void imageSkipHandoff() {
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM");if(path.isEmpty())QSKIP("Private ROM required");
+        const auto rom=Rom::open(path);auto scenes=ScenePrograms::load(rom);const auto source=scenes.original().entries().first();
+        const auto empty=[](LordlySceneService){return true;};
+        for(const bool cancel:{false,true}) {
+            QVector<quint32> words{0xb2,0,0x80000000U};if(cancel)words<<0xb3;
+            for(int i=0;i<3;++i)words<<0<<0x80000000U;
+            const int destination=int(words.size());words<<0x80000005U<<12345<<2<<0<<0x80000000U<<0x80000001U<<(0xff000000U|quint32(source.program.resourceClass()));
+            QByteArray script(words.size()*4,0);for(int i=0;i<words.size();++i)put32(script,i*4,words[i]);scenes.replace(source.key,script);
+            ScenePlaybackStart start;start.mode=0;
+            ScenePlayback scene(rom,scenes.runtimeDirectors(),source.selectors.first(),start,SceneCameras::freshModeTwo(rom));
+            auto absent=scene;QCOMPARE(absent.advance(empty),ScenePlayback::Advanced);QVERIFY(!absent.skipArmed());
+            scene.supplyImageView(QByteArray(0x848,0));
+            scene.director().setCounter(10);
+            scene.setImageInput({},0x1000); // A press before B2 cannot latch.
+            QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);QVERIFY(scene.skipArmed());QCOMPARE(u8(*scene.imageView(),0x840),quint8(1));
+            auto normal=scene;normal.setImageInput({});QCOMPARE(normal.advance(empty),ScenePlayback::Advanced);
+            QVERIFY(normal.director().state().resume_cursor<destination);
+            auto alternate=scene;alternate.setAlternate(1);alternate.setImageInput({},0x1000);
+            QCOMPARE(alternate.advance(empty),ScenePlayback::Advanced);QVERIFY(alternate.director().state().resume_cursor<destination);
+            scene.setImageInput({},0x1000);QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);
+            if(cancel){QVERIFY(scene.director().state().resume_cursor<destination);QVERIFY(!scene.skipArmed());}
+            else {
+                QCOMPARE(scene.director().state().resume_cursor,destination);QVERIFY(!scene.skipArmed());
+                QVERIFY(scene.director().state().counter!=0);scene.setImageInput({});
+                QCOMPARE(scene.advance(empty),ScenePlayback::Advanced);QCOMPARE(scene.director().state().counter,0U);
+            }
+            QCOMPARE(u8(*scene.imageView(),0x840),quint8(0));
+        }
+    }
     void imageMotionAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

@@ -1,5 +1,26 @@
 # Native Lordly Caliber
 
+## Recorded Start-skip input
+
+ScenePlayback now connectsB2/B3, image-owner840 and the existing Director barrier
+redirect. The normal image update latches Start before Director execution; an
+executed handoff consumes state2 and selects label3039. The next dispatch runs
+the destination. B3 cancels a pending request. Absent image owners safely ignore
+arming, and alternate updates do not run the input latch. Pressed-button input
+is separate from held pan/zoom controls and also supplies the Director's B5 input.
+
+The preview exposes Skip scene and Enter while armed. One-shot press history is
+saved alongside held-input history for seeking and restart. New input after a
+rewind invalidates both future input maps and later checkpoints.
+
+Build80637: ui_tests imageSkipInputReplay manualImageInputReplay passed2942ms.
+Keyboard and button skipping,124-step/backward replay, restart and manual controls
+agree. Build97262: scene_runtime_tests imageSkipHandoff passed164ms, checking
+arming order, null owner, alternate path, cancellation and bridge/destination
+timing. Its first fixture incorrectly expected an unarmed counter to increment;
+the counter is now explicitly initialized to distinguish destination execution.
+Original input-latch and Director-control instruction checks are reused unchanged.
+
 ## Map-path ribbons
 
 Correction to the earlier image sections: the twenty owners at scene-root19F4
