@@ -155,6 +155,54 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void worldScenePanAndSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("World projection pan", source.key, false);
+        QVector<quint32> words{0x46, 0, 30, 1, 2, 40, 20, 0, 100, 0,
+                              0, 0x80000000U, 0x2c, 25000, quint32(-10000), 1000, 1000, 2};
+        for (int i = 0; i < 6; ++i) words << 0 << 0x80000000U;
+        words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+        auto save = [&] {
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+            scenes.replace(id, bytes);
+        };
+        save();
+        ScenePreview preview(rom);
+        preview.resize(1100, 700); preview.show(); preview.selectScene(scenes, id, 2);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        preview.findChild<QPushButton *>("sceneStep")->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(preview.findChild<QLabel *>("scenePlaybackStatus")->text()));
+        const auto first = preview.renderedFrame();
+        auto center = [](const QImage &image) {
+            QPointF sum; double weight = 0;
+            for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x) {
+                const auto a = image.pixelColor(x,y).alpha(); sum += QPointF(x,y)*a; weight += a;
+            }
+            return weight ? sum / weight : QPointF(-10000,-10000);
+        };
+        QVERIFY(center(first).x() > 180);
+        position->setValue(4);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 4);
+        const auto delta = center(preview.renderedFrame()) - center(first);
+        QVERIFY(qAbs(delta.x()-25) < 1.1); QVERIFY(qAbs(delta.y()-10) < 1.1);
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), first);
+        words.prepend(57); words.prepend(0x80000006U); save();
+        preview.selectScene(scenes, id, 2); preview.findChild<QPushButton *>("sceneStep")->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(preview.findChild<QLabel *>("scenePlaybackStatus")->text()));
+        const auto hall = preview.renderedFrame();
+        QVERIFY(hall != first);
+        position->setValue(4); QTRY_COMPARE(preview.property("sceneTick").toInt(), 4);
+        QVERIFY(preview.renderedFrame() != hall);
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), hall);
+        QVERIFY(preview.grab().save("world-scene-pan.png"));
+    }
     void sceneRoomComposition() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

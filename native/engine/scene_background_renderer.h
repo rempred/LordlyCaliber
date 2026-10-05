@@ -5,6 +5,7 @@ namespace lordly {
 struct SceneBackgroundRecord {
     QPoint origin;
     QImage image;
+    QSize extent;
 };
 struct SceneBackgroundChannel {
     QString imageId;
@@ -13,6 +14,8 @@ struct SceneBackgroundChannel {
 class SceneBackgroundRenderer {
   public:
     static SceneBackgroundRenderer group(const Rom &, int selector);
+    // Independent selectors; channels zero/one are the base/foreground passes.
+    static SceneBackgroundRenderer world(const Rom &, int environment, int foreground);
     int channelCount() const {
         return channels_.size();
     }

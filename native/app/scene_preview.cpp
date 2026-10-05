@@ -104,10 +104,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         selector_ = resource.selectors.first();
         mode_ = mode;
         context_->setText(
-            "Reference launch: flat terrain and no army roster. Missing services pause playback.\n"
-            "Layered backgrounds and sprites use native placement. World backgrounds are fitted "
-            "references.\n"
-            "Equipment, world/special sprites and audio remain unfinished.");
+            "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
+            "World scenes use the common fresh-launch camera and paired background selectors.\n"
+            "Stage props, equipment, special sprites and audio remain unfinished.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -137,14 +136,15 @@ void ScenePreview::restart() {
             return SceneCamera(data, 1.f);
         };
         auto world = camera(45, 272, 80, 127);
-        SceneCameras cameras(mode_ ? world : camera(90, 0, 0, 120), world, world);
+        auto cameras = mode_ ? SceneCameras::freshModeTwo(rom_)
+                             : SceneCameras(camera(90, 0, 0, 120), world, world);
         ScenePlaybackStart start;
         start.mode = mode_;
         start.sceneFlags = 0;
         start.lighting = LordlyActorLighting{{0, 0, 0}, {{200, -200, 50}, {-200, 200, 75}}};
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
-        current_.emplace(Snapshot{std::move(playback), {}, {}, {}, {}, false});
+        current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
         render(*current_, false);
         checkpoints_.insert(0, *current_);
         present();
@@ -163,22 +163,15 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         throw Error("This environment selector requires gameplay launch context");
     if (mode_ == 0) {
         auto backgrounds = SceneBackgroundRenderer::group(rom_, selector);
-        next.backdropName = backgrounds.description();
+        next.backgroundName = backgrounds.description();
         next.backgrounds = std::move(backgrounds);
-        next.backdrop = {};
         return true;
     }
-    const auto images = SceneImages::environment(rom_, selector);
-    if (images.isEmpty())
-        throw Error("This scene resource has no supported reference backdrop");
-    const auto decoded = SceneImages::decode(rom_, images.first());
-    const auto &r = decoded.composite;
-    next.backdrop = QImage(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width, r.height,
-                           r.width * 4, QImage::Format_RGBA8888)
-                        .copy();
-    next.backdropName = images.join(", ");
-    if (images.size() > 1)
-        next.backdropName += " (first image shown; native placement pending)";
+    // Common fresh mode-two launch copies environment into foreground selection.
+    // Other launch paths must supply their separate foreground owner.
+    auto backgrounds = SceneBackgroundRenderer::world(rom_, selector, selector);
+    next.backgroundName = backgrounds.description();
+    next.backgrounds = std::move(backgrounds);
     return true;
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
@@ -186,8 +179,8 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
     for (int slot = 0; slot < 30; ++slot)
         if (const auto sprite = drawing.sprites().sprite(slot)) {
             const auto animation = u16(sprite->record(), 0x44);
-            if (mode_ != 0 || animation == 800 || animation == 801)
-                throw Error("World and special sprites require their registered projection owner");
+            if (animation == 800 || animation == 801)
+                throw Error("Special sprites require their effect projection owner");
         }
     const auto queue = drawing.drawQueue({}, {0x80300000, 0x80310000});
     RenderColor environment{0, 0, 0, 0};
@@ -199,13 +192,6 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         drawing.prepareModeTwoDrawing(*drawing.lighting());
     {
         QPainter painter(&frame);
-        if (!next.backdrop.isNull()) {
-            auto size = next.backdrop.size();
-            size.scale(frame.size(), Qt::KeepAspectRatio);
-            painter.drawImage(QRect((320 - size.width()) / 2, (240 - size.height()) / 2,
-                                    size.width(), size.height()),
-                              next.backdrop);
-        }
         if (mode_ == 0) {
             const int count = next.backgrounds ? next.backgrounds->channelCount() : 20;
             for (int channel = 0; channel < count; ++channel) {
@@ -236,10 +222,26 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 environment = rendered.environment;
             }
         } else {
+            const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
+            const auto parent = SceneWorldDrawing::modelMatrix(drawing.projection());
+            auto drawFlat = [&](int pass) {
+                QImage flat(320, 240, QImage::Format_RGBA8888);
+                flat.fill(Qt::transparent);
+                if (next.backgrounds)
+                    ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent));
+                ActorRenderer::paint(flat,
+                                     spriteRenderer_.project(drawing.sprites(), pass, 0, camera,
+                                                             parent, {255, 255, 255}));
+                painter.drawImage(0, 0, flat);
+                if (!drawing.sprites().draws(pass, 0).isEmpty())
+                    environment = {0, 0, 0, 1};
+            };
+            drawFlat(0);
             const auto rendered =
                 renderer_.world(drawing.actors(), queue, {}, {96, 96}, {0, 0, 0, 0, 0, 0},
                                 {drawing.cameras().actor(), {255, 255, 255}, environment});
             painter.drawImage(0, 0, rendered.image);
+            drawFlat(1);
         }
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
@@ -355,8 +357,8 @@ void ScenePreview::present() {
                          .arg(director.selector())
                          .arg(director.state().cursor)
                          .arg(current_->reason.isEmpty() ? QString{} : " · " + current_->reason)
-                         .arg(current_->backdropName.isEmpty()
+                         .arg(current_->backgroundName.isEmpty()
                                   ? QString{}
-                                  : "\nReference backdrop: " + current_->backdropName));
+                                  : "\nBackground channels: " + current_->backgroundName));
 }
 } // namespace lordly

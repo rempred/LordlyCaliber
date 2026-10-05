@@ -3,6 +3,7 @@
 #include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
 #include "engine/scene_programs.h"
+#include "engine/scene_world_drawing.h"
 #include "engine/sprite_renderer.h"
 #include <QMap>
 #include <QWidget>
@@ -30,8 +31,8 @@ class ScenePreview : public QWidget {
   private:
     struct Snapshot {
         ScenePlayback playback;
-        QImage frame, backdrop;
-        QString reason, backdropName;
+        QImage frame;
+        QString reason, backgroundName;
         bool stopped = false;
         std::optional<SceneBackgroundRenderer> backgrounds;
     };

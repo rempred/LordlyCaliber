@@ -1,4 +1,5 @@
 #include "engine/scene_camera.h"
+#include "game/director/scene_matrix.h"
 #include <bit>
 #include <cmath>
 #include <numbers>
@@ -19,6 +20,19 @@ double dot(SceneVector a, SceneVector b) {
 SceneVector cross(SceneVector a, SceneVector b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
+struct PlaneVertex {
+    SceneVector xyw;
+    double depth;
+    PlaneVertex operator+(PlaneVertex other) const {
+        return {xyw + other.xyw, depth + other.depth};
+    }
+    PlaneVertex operator-(PlaneVertex other) const {
+        return {xyw - other.xyw, depth - other.depth};
+    }
+    PlaneVertex operator*(double scale) const {
+        return {xyw * scale, depth * scale};
+    }
+};
 } // namespace
 double SceneVector::length() const {
     return std::sqrt(dot(*this, *this));
@@ -26,6 +40,23 @@ double SceneVector::length() const {
 SceneCamera::SceneCamera(QByteArray bank, float scale)
     : bank_(std::move(bank)), modelScale_(scale) {
     prepare();
+}
+SceneCamera SceneCamera::orthographic(const QByteArray &packed) {
+    if (packed.size() != 64)
+        throw Error("Orthographic camera requires its native packed clip matrix");
+    SceneCamera result;
+    lordly_matrix_unpack(result.clipMatrix_.data(),
+                         reinterpret_cast<const uint8_t *>(packed.constData()));
+    const auto &m = result.clipMatrix_;
+    for (int i : {1, 2, 3, 4, 6, 7, 8, 9, 11})
+        if (m[i] != 0)
+            throw Error("Orthographic clip matrix is not axis aligned");
+    if (!m[0] || !m[5] || !m[10] || m[15] != 1)
+        throw Error("Orthographic clip matrix is degenerate");
+    result.orthographic_ = true;
+    result.near_ = -1;
+    result.far_ = 1;
+    return result;
 }
 void SceneCamera::prepare() {
     if (bank_.size() != 56 || !std::isfinite(modelScale_) || modelScale_ <= 0)
@@ -50,6 +81,8 @@ void SceneCamera::prepare() {
     focal_ = float(120.0 / std::tan(double(fov) * std::numbers::pi / 360.0));
 }
 void SceneCamera::select(const QVector<quint32> &args) {
+    if (orthographic_)
+        throw Error("Perspective camera commands do not select the orthographic pass");
     if (args.size() != 7)
         throw Error("Camera command is truncated");
     auto bank = bank_;
@@ -62,6 +95,15 @@ void SceneCamera::select(const QVector<quint32> &args) {
 CameraPoint SceneCamera::projectWorld(SceneVector world) const {
     if (!finite(world))
         throw Error("Cannot project a nonfinite coordinate");
+    if (orthographic_) {
+        const auto &m = clipMatrix_;
+        const double z = world.z * m[10] + m[14];
+        const QPointF screen{160 * (world.x * m[0] + m[12] + 1),
+                             120 * (1 - world.y * m[5] - m[13])};
+        if (!std::isfinite(screen.x()) || !std::isfinite(screen.y()) || !std::isfinite(z))
+            throw Error("Orthographic projection overflow");
+        return {screen, float(-world.z), 120 * m[5], z >= -1 && z <= 1};
+    }
     const auto relative = world - eye_;
     const double depth = -dot(relative, back_);
     CameraPoint result;
@@ -110,6 +152,15 @@ CameraPlane SceneCamera::projectPackedPlane(const QByteArray &matrix, SceneVecto
             p.x * component(0) + p.y * component(4) + p.z * component(8) + component(12),
             p.x * component(1) + p.y * component(5) + p.z * component(9) + component(13),
             p.x * component(2) + p.y * component(6) + p.z * component(10) + component(14)};
+        if (orthographic_) {
+            const auto &m = clipMatrix_;
+            const PlaneVertex result{
+                {160 * (world.x * m[0] + m[12] + 1), 120 * (1 - world.y * m[5] - m[13]), 1},
+                world.z * m[10] + m[14]};
+            if (!finite(result.xyw) || !std::isfinite(result.depth))
+                throw Error("Orthographic plane projection overflow");
+            return result;
+        }
         const auto relative = world - eye_;
         const auto depth = -dot(relative, back_);
         const SceneVector result{160 * depth +
@@ -117,34 +168,36 @@ CameraPlane SceneCamera::projectPackedPlane(const QByteArray &matrix, SceneVecto
                                  120 * depth - dot(relative, up_) * focal_, depth};
         if (!finite(result))
             throw Error("Camera plane projection overflow");
-        return result;
+        return PlaneVertex{result, depth};
     };
     const auto base = homogeneous(origin), x = homogeneous(origin + across) - base,
                y = homogeneous(origin + down) - base;
-    CameraPlane result{{x.x, x.y, x.z, y.x, y.y, y.z, base.x, base.y, base.z}, {}};
-    QVector<SceneVector> polygon{base, base + x * size.width(),
+    CameraPlane result{
+        {x.xyw.x, x.xyw.y, x.xyw.z, y.xyw.x, y.xyw.y, y.xyw.z, base.xyw.x, base.xyw.y, base.xyw.z},
+        {}};
+    QVector<PlaneVertex> polygon{base, base + x * size.width(),
                                  base + x * size.width() + y * size.height(),
                                  base + y * size.height()};
     // Clip in homogeneous coordinates before division. This handles corners
     // behind the eye and bounds drawing even when a plane crosses the near plane.
     for (int plane = 0; plane < 6 && !polygon.isEmpty(); ++plane) {
-        auto distance = [&](SceneVector p) {
+        auto distance = [&](PlaneVertex p) {
             switch (plane) {
             case 0:
-                return p.z - near_;
+                return p.depth - near_;
             case 1:
-                return far_ - p.z;
+                return far_ - p.depth;
             case 2:
-                return p.x;
+                return p.xyw.x;
             case 3:
-                return 320 * p.z - p.x;
+                return 320 * p.xyw.z - p.xyw.x;
             case 4:
-                return p.y;
+                return p.xyw.y;
             default:
-                return 240 * p.z - p.y;
+                return 240 * p.xyw.z - p.xyw.y;
             }
         };
-        QVector<SceneVector> clipped;
+        QVector<PlaneVertex> clipped;
         auto previous = polygon.last();
         auto before = distance(previous);
         for (const auto current : polygon) {
@@ -162,10 +215,12 @@ CameraPlane SceneCamera::projectPackedPlane(const QByteArray &matrix, SceneVecto
         polygon = std::move(clipped);
     }
     for (const auto p : polygon)
-        result.clip << QPointF(p.x / p.z, p.y / p.z);
+        result.clip << QPointF(p.xyw.x / p.xyw.z, p.xyw.y / p.xyw.z);
     return result;
 }
 SceneVector SceneCamera::unprojectAtHeight(QPointF screen, double height) const {
+    if (orthographic_)
+        throw Error("Screen-space projection has no ray through a world-height plane");
     if (!std::isfinite(screen.x()) || !std::isfinite(screen.y()) || !std::isfinite(height))
         throw Error("Invalid screen coordinate");
     const auto direction =

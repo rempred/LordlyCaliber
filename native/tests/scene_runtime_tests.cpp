@@ -1,3 +1,4 @@
+#include "engine/scene_world_drawing.h"
 #include "engine/actor_matrices.h"
 #include "engine/actor_renderer.h"
 #include "engine/color_combiner.h"
@@ -805,6 +806,59 @@ class SceneRuntimeTests : public QObject {
         }
         qInfo() << "36 camera/count cases, 300 matrices; maximum 16.16 difference:"
                 << maxDifference;
+    }
+    void worldDrawingAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath(
+            "world-drawing-mips.cjs"), path, work.filePath("draw.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("draw.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
+        QCOMPARE(cases.size(), 15);
+        const auto clip = SceneWorldDrawing::clipMatrix();
+        const auto camera = SceneCamera::orthographic(clip);
+        for (const auto &value : cases) {
+            const auto row = value.toObject();
+            auto record = SceneProjection().record();
+            for (const auto &entry : {qMakePair("sx", 0x24), qMakePair("sy", 0x28),
+                                      qMakePair("x", 0x30), qMakePair("y", 0x34)})
+                put32(record, entry.second, std::bit_cast<quint32>(float(row[entry.first].toDouble())));
+            const auto model = SceneWorldDrawing::modelMatrix(SceneProjection(record));
+            const auto events = row["events"].toArray();
+            QCOMPARE(events.size(), 5);
+            for (const auto &event : events) {
+                const auto expected = event.toObject();
+                QCOMPARE(clip, QByteArray::fromHex(expected["clip"].toString().toLatin1()));
+                QCOMPARE(model, QByteArray::fromHex(expected["model"].toString().toLatin1()));
+            }
+            const auto center = camera.projectPackedOrigin(model);
+            const auto projected = camera.projectPackedPlane(model, {-20, 30, 0}, {1, 0, 0}, {0, -1, 0}, {40, 60});
+            QVERIFY(center.visible);
+            QCOMPARE(projected.mapping[2], 0.);
+            QCOMPARE(projected.mapping[5], 0.);
+            QCOMPARE(projected.mapping[8], 1.);
+            QVERIFY(qAbs(center.screen.x() - (160 + row["x"].toDouble())) < .25);
+            QVERIFY(qAbs(center.screen.y() - (120 - row["y"].toDouble())) < .1);
+            for (const auto &point : projected.clip) {
+                QVERIFY(point.x() >= -.001 && point.x() <= 320.001);
+                QVERIFY(point.y() >= -.001 && point.y() <= 240.001);
+            }
+        }
+        QVERIFY(!camera.project({0, 0, 1}).visible);
+        QVERIFY(!camera.project({0, 0, -3000}).visible);
+        const auto model = SceneWorldDrawing::modelMatrix(SceneProjection());
+        QVERIFY(camera.projectPackedPlane(model, {0, 0, 200}, {1, 0, 0}, {0, 1, 0}, {20, 20}).clip.isEmpty());
+        const auto crossed = camera.projectPackedPlane(model, {-20, 0, 200}, {1, 0, -20}, {0, 1, 0}, {20, 20});
+        QVERIFY(crossed.clip.size() >= 3);
+        QVERIFY_THROWS_EXCEPTION(Error, SceneCamera::orthographic({}));
+        QVERIFY_THROWS_EXCEPTION(Error, SceneCamera::orthographic(QByteArray(64, 0)));
+        auto selected = camera;
+        QVERIFY_THROWS_EXCEPTION(Error, selected.select({0, 0, 0, 0, 0, 120000, 45000}));
     }
     void sceneMatrixProjectionAndBounds() {
         float matrix[16], scale[16];

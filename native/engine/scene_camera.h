@@ -36,6 +36,9 @@ struct CameraPlane {
 class SceneCamera {
   public:
     explicit SceneCamera(QByteArray bank, float modelScale);
+    // Affine native clip matrix for the separate screen-space drawing pass.
+    // This camera has no fourteen-float perspective bank and cannot accept 35/36.
+    static SceneCamera orthographic(const QByteArray &packedProjection);
     const QByteArray &bank() const {
         return bank_;
     }
@@ -51,10 +54,13 @@ class SceneCamera {
     SceneVector unprojectAtHeight(QPointF screen, double height) const;
 
   private:
+    SceneCamera() = default;
     void prepare();
     CameraPoint projectWorld(SceneVector world) const;
     QByteArray bank_;
-    float modelScale_;
+    float modelScale_ = 1;
+    bool orthographic_ = false;
+    std::array<float, 16> clipMatrix_{};
     SceneVector eye_, back_, right_, up_;
     double aspect_ = 0;
     float near_ = 0, far_ = 0, focal_ = 0;

@@ -1,43 +1,74 @@
 #include "engine/scene_background_renderer.h"
 namespace lordly {
+namespace {
+SceneBackgroundChannel loadChannel(const Rom &rom, const QString &id, bool world) {
+    SceneBackgroundChannel channel;
+    channel.imageId = id;
+    const auto &asset = SceneImages::catalog()[id];
+    const auto decoded = SceneImages::decode(rom, id);
+    QVector<ImageLayer> records;
+    if (asset.container == "bg2")
+        records = decoded.layers;
+    else if (asset.container == "64" || (world && (asset.container == "embedded-njpg" ||
+                                                   asset.container == "section-c-njpg"))) {
+        const auto &r = decoded.composite;
+        records = {{world ? QPoint(-(r.width / 2), -(r.height / 2)) : QPoint(-160, -120), r}};
+    } else
+        throw Error("This scene background requires its native drawing owner");
+    if (records.isEmpty())
+        throw Error("Background has no native image records");
+    for (const auto &record : records) {
+        const auto &r = record.image;
+        auto image = QImage(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width, r.height,
+                            r.width * 4, QImage::Format_RGBA8888)
+                         .copy();
+        if (image.isNull())
+            throw Error("Unable to allocate a background record image");
+        // The world non-B5 vertex builder truncates half-width before mirroring.
+        const int width = world && asset.container != "bg2" ? (r.width / 2) * 2 : r.width;
+        channel.records << SceneBackgroundRecord{record.origin, std::move(image),
+                                                 QSize(width, r.height)};
+    }
+    return channel;
+}
+void checkBudget(const QVector<SceneBackgroundChannel> &channels) {
+    qsizetype retained = 0;
+    for (const auto &channel : channels)
+        for (const auto &record : channel.records)
+            retained += record.image.sizeInBytes();
+    if (retained > 64 * 1024 * 1024)
+        throw Error("Scene backgrounds exceed the image budget");
+}
+} // namespace
+
 SceneBackgroundRenderer SceneBackgroundRenderer::group(const Rom &rom, int selector) {
     const auto members = SceneImages::groupMembers(rom, selector);
     if (members.size() > 20)
         throw Error("Scene group exceeds its twenty background channels");
     SceneBackgroundRenderer result;
-    qsizetype retained = 0;
     for (const auto &member : members) {
         SceneBackgroundChannel channel;
         if (member.key) {
             if (member.images.size() != 1)
                 throw Error("Scene group member requires its native non-image owner");
             channel.imageId = member.images.first();
-            const auto &asset = SceneImages::catalog()[channel.imageId];
-            const auto decoded = SceneImages::decode(rom, channel.imageId);
-            QVector<ImageLayer> records;
-            if (asset.container == "bg2")
-                records = decoded.layers;
-            else if (asset.container == "64")
-                // ROM1FAC5C dispatch fixes the origin, regardless of image size.
-                records = {{QPoint(-160, -120), decoded.composite}};
-            else
-                throw Error("This scene background requires its native drawing owner");
-            if (records.isEmpty())
-                throw Error("Background has no native image records");
-            for (const auto &record : records) {
-                const auto &r = record.image;
-                retained += r.rgba.size();
-                if (retained > 64 * 1024 * 1024)
-                    throw Error("Scene backgrounds exceed the image budget");
-                auto image = QImage(reinterpret_cast<const uchar *>(r.rgba.constData()), r.width,
-                                    r.height, r.width * 4, QImage::Format_RGBA8888)
-                                 .copy();
-                if (image.isNull())
-                    throw Error("Unable to allocate a background record image");
-                channel.records << SceneBackgroundRecord{record.origin, std::move(image)};
-            }
+            channel = loadChannel(rom, channel.imageId, false);
         }
         result.channels_ << std::move(channel);
+        checkBudget(result.channels_);
+    }
+    return result;
+}
+SceneBackgroundRenderer SceneBackgroundRenderer::world(const Rom &rom, int environment,
+                                                       int foreground) {
+    SceneBackgroundRenderer result;
+    for (const auto &images :
+         {SceneImages::environment(rom, environment), SceneImages::foreground(rom, foreground)}) {
+        if (images.size() > 1)
+            throw Error("Ambiguous world background image");
+        result.channels_ << (images.isEmpty() ? SceneBackgroundChannel{}
+                                              : loadChannel(rom, images.first(), true));
+        checkBudget(result.channels_);
     }
     return result;
 }
@@ -59,8 +90,9 @@ QVector<ActorRasterLayer> SceneBackgroundRenderer::project(int index, const Scen
         layer.layer = result.size();
         // Native B5 records describe full extents, unlike inclusive Actor vertices.
         const double x = record.origin.x(), y = -record.origin.y();
-        layer.plane = camera.projectPackedPlane(parent, {x, y, 0}, {1, 0, 0}, {0, -1, 0},
-                                                QSizeF(r.width(), r.height()));
+        layer.plane = camera.projectPackedPlane(
+            parent, {x, y, 0}, {double(record.extent.width()) / r.width(), 0, 0},
+            {0, -double(record.extent.height()) / r.height(), 0}, QSizeF(r.width(), r.height()));
         layer.image = r; // Implicitly shared with immutable group/snapshot storage.
         result << std::move(layer);
     }

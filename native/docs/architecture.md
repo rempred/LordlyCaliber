@@ -1,5 +1,50 @@
 # Native Lordly Caliber
 
+## World drawing passes
+
+World previews now use SceneCameras::freshModeTwo's current-ROM common-launch
+camera, independent from the orthographic background/sprite camera. The latter
+consumes the game's packed clip matrix, including its16.16 quantization. Plane
+clipping retains depth separately from homogeneous division, so perspective and
+orthographic planes share bounded clipping without changing their geometry.
+SceneWorldDrawing constructs the packed scale-times-translation matrix consumed
+by the world driver (Z=-100); command2C's current projection values feed it.
+
+The observed order is background, sprite pass0, Actor/object pass, foreground,
+sprite pass1. SceneBackgroundRenderer accepts independent environment and
+foreground selectors. The preview currently uses the common fresh-launch rule
+that initializes both selectors from the explicit environment request. Other
+launch paths need their own context. Stage props, special sprites, equipment,
+terrain, dynamic army bindings and audio remain unfinished and disclosed.
+Missing command owners pause. Neutral scene colors and reference lights remain
+explicit preview inputs. No exact RDP pixels or full-scene equivalence is claimed.
+
+World non-B5 images use the centered native vertex builder ROM1F91E8, unlike
+layered images' fixed origin. Odd widths retain its truncated half-width mirrored
+on both sides. B5 records retain their signed origins. Converted HUFF backgrounds
+retain the existing decoder's rounding approximation. No fitted-image path remains
+in ScenePreview. Images are cached and snapshots retain them through Qt sharing.
+
+`worldDrawingAgainstMips` runs15 complete original drawing-driver invocations
+with scene-presence/draw callbacks, memory copying, trig and final services
+controlled. Original orthographic setup and packed matrix constructors execute;
+all recorded clip/model matrices and the pass order agree. Complete ROM2AC14C's
+1460 bytes match uniquely at saved RAM8023C9EC; ROM1FC3BC's380 bytes match
+RAM801B8F2C; ROM225D0's336 bytes match RAM800921D0. Revisions/overlays are not
+inferred from the generic early-boot mapping. Perspective/Actor projection
+regressions passed222ms after build44925; final world/camera checks passed259ms
+after build21154, including orthographic clipping and invalid inputs.
+
+After build21154, `background_tests groupCoverageAndFixedOrigin
+worldBackgroundSelectors layeredRoomGeometry` passed1987ms. This expands original
+vertex comparisons to eight builds across both image owners, loads all80 paired
+world selections, and checks differing environment/foreground selectors. The
+four UI checks `worldScenePanAndSeek sceneRoomComposition sceneSpriteComposition
+scenePlaybackPreview` passed1113ms: visible sprite movement by the pan operands,
+background pan, exact backward restoration, and prior layered composition.
+The world scene image was inspected. Full game and complete dynamic-scene
+playback validation remain outstanding.
+
 ## Layered background placement
 
 SceneImages::groupMembers retains every original table ordinal, including zero
@@ -41,8 +86,8 @@ preset and environment to black/alpha1. The caller retains that environment for
 following Actors even when the sprite clips outside the viewport.
 
 Mode-zero playback draws each channel's sprites before its Actor passes, using
-the channel's packed parent transform. World/special projection ownership remains
-explicitly unsupported in this panel. Host concatenation and Qt rasterization
+the channel's packed parent transform. Special sprite effect projection remains
+unfinished; ordinary world passes are now composed separately. Host concatenation and Qt rasterization
 are approximations to RSP intermediate precision and RDP coverage/blending.
 
 `packedMatricesAgainstMips` captures packed matrices from192 complete original
@@ -69,9 +114,9 @@ preview has a10000-update bound and stops when an owner is unavailable.
 The current stage explicitly supplies reference cameras, flat terrain, two lights,
 neutral world environment, empty external jobs and no army roster. Script camera,
 Actor and material changes execute normally. Mode-zero groups retain native
-ordinals and image geometry; world environments still show fitted reference
-backdrops. World background placement, equipment and audio remain separate. Layered scene sprites draw in
-native channel order; world/special sprites pause pending registered projection. Dynamic selectors/roster requirements
+ordinals and image geometry. World environments and ordinary sprites use their
+orthographic owner, with Actors on the native perspective camera. Equipment,
+Stage props, special sprite effects and audio remain separate. Dynamic selectors/roster requirements
 and unknown commands report their missing context. This is not complete native
 launch reconstruction or full game playback.
 

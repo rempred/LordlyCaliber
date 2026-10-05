@@ -31,7 +31,7 @@ class BackgroundTests : public QObject {
         QFile file(work.filePath("vertices.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         const auto cases = QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray();
-        QCOMPARE(cases.size(), 4);
+        QCOMPARE(cases.size(), 8);
         for (const auto &value : cases) {
             const auto row = value.toObject();
             int left = 32767, right = -32768, top = -32768, bottom = 32767;
@@ -43,10 +43,18 @@ class BackgroundTests : public QObject {
                 top = qMax(top, xyz[1].toInt());
                 bottom = qMin(bottom, xyz[1].toInt());
             }
-            QCOMPARE(left, -160);
-            QCOMPARE(top, 120);
-            QCOMPARE(right, -160 + row["width"].toInt());
-            QCOMPARE(bottom, 120 - row["height"].toInt());
+            const int w = row["width"].toInt(), h = row["height"].toInt();
+            if (row["owner"] == "world") {
+                QCOMPARE(left, -(w / 2));
+                QCOMPARE(right, w / 2);
+                QCOMPARE(top, h / 2);
+                QCOMPARE(bottom, h / 2 - h);
+            } else {
+                QCOMPARE(left, -160);
+                QCOMPARE(top, 120);
+                QCOMPARE(right, -160 + w);
+                QCOMPARE(bottom, 120 - h);
+            }
         }
         int populated = 0, empty = 0, ordinary = 0;
         for (int selector = 0; selector < 31; ++selector) {
@@ -70,6 +78,24 @@ class BackgroundTests : public QObject {
         QCOMPARE(populated, 23);
         QCOMPARE(empty, 8);
         QCOMPARE(ordinary, 5);
+    }
+    void worldBackgroundSelectors() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        for (int selector = 0; selector < 80; ++selector) {
+            const auto world = SceneBackgroundRenderer::world(rom, selector, selector);
+            QCOMPARE(world.channelCount(), 2);
+            QCOMPARE(world.channel(0).imageId, SceneImages::environment(rom, selector).value(0));
+            QCOMPARE(world.channel(1).imageId, SceneImages::foreground(rom, selector).value(0));
+        }
+        const auto independent = SceneBackgroundRenderer::world(rom, 34, 57);
+        QCOMPARE(independent.channel(0).imageId, QString("mode2-environment:000D62F6"));
+        QCOMPARE(independent.channel(1).imageId, QString("archive:49"));
+        const auto hall = SceneBackgroundRenderer::world(rom, 57, 34);
+        QCOMPARE(hall.channel(0).records.size(), 4);
+        QVERIFY(hall.channel(1).records.isEmpty());
     }
     void layeredRoomGeometry() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
