@@ -240,6 +240,40 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), hall);
         QVERIFY(preview.grab().save("world-scene-pan.png"));
     }
+    void capturedScenePlayback_data() {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("world") << 2; QTest::newRow("layered") << 0;
+    }
+    void capturedScenePlayback() {
+        QFETCH(int,mode);
+        const auto path=qEnvironmentVariable("LORDLY_TEST_ROM"); if(path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom=Rom::open(path); auto scenes=ScenePrograms::load(rom);
+        const auto source=scenes.original().entries().first(); const auto id=scenes.createScene("Captured transitions",source.key,false);
+        ScenePreview preview(rom); preview.resize(1100,800); preview.show();
+        auto position=preview.findChild<QSpinBox*>("scenePosition"); auto next=preview.findChild<QPushButton*>("sceneStep");
+        QVector<quint32> words{0x80000006U, mode ? 34U : 2U, 0,0x80000000U,0x80000008U,2,4};
+        for(int i=0;i<5;++i) words << 0 << 0x80000000U;
+        words << 0x80000008U << 3 << 4;
+        for(int i=0;i<130;++i) words << 0 << 0x80000000U;
+        words << 0x80000001U << (0xff000000U|quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size()*4,0); for(int i=0;i<words.size();++i) put32(bytes,i*4,words[i]);
+        scenes.replace(id,bytes); preview.selectScene(scenes,id,mode); next->click();
+        const auto normal=preview.renderedFrame(); next->click(); const auto first=preview.renderedFrame();
+        QVERIFY(first!=normal);
+        position->setValue(5); QTRY_COMPARE(preview.property("sceneTick").toInt(),5);
+        const auto sepia=preview.renderedFrame(); QVERIFY(sepia!=first); QVERIFY(sepia!=normal);
+        position->setValue(7); QTRY_COMPARE(preview.property("sceneTick").toInt(),7);
+        const auto restoring=preview.renderedFrame(); QVERIFY(restoring!=sepia);
+        position->setValue(10); QTRY_COMPARE(preview.property("sceneTick").toInt(),10);
+        const auto restored=preview.renderedFrame(); QVERIFY(restored!=restoring);
+        if(!mode) QCOMPARE(restored,normal); // World props have their own draw-driven poses.
+        position->setValue(124); QTRY_COMPARE(preview.property("sceneTick").toInt(),124);
+        QVERIFY2(!preview.property("sceneStopped").toBool(),qPrintable(preview.findChild<QLabel*>("scenePlaybackStatus")->text()));
+        position->setValue(2); QTRY_COMPARE(preview.property("sceneTick").toInt(),2); QCOMPARE(preview.renderedFrame(),first);
+        position->setValue(5); QTRY_COMPARE(preview.property("sceneTick").toInt(),5); QCOMPARE(preview.renderedFrame(),sepia);
+        QVERIFY(preview.grab().save(QString("captured-scene-%1.png").arg(mode)));
+        position->setValue(10); QTRY_COMPARE(preview.property("sceneTick").toInt(),10); QCOMPARE(preview.renderedFrame(),restored);
+    }
     void sceneColorPlayback_data() {
         QTest::addColumn<int>("kind");
         QTest::newRow("world-background-and-props") << 0;

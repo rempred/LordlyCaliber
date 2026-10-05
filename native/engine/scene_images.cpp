@@ -116,14 +116,16 @@ DecodedImage SceneImages::decode(const Rom &rom, const QString &id, bool compoun
         }
     }
     DecodedImage result;
-    if (asset.container == "64")
+    if (asset.container == "64") {
         result.composite = decodeN64Image(bytes);
-    else if (asset.container == "K")
+        result.colorFormat = u8(bytes, 2) == 4 ? 4 : u8(bytes, 2) == 2 ? 2 : u8(bytes, 3);
+    } else if (asset.container == "K")
         result.composite = decodeKImage(bytes);
     else if (asset.container == "raw")
         result = decodeRawImage(bytes, asset.layout);
     else if (asset.container == "bg2") {
         auto bg = decodeBackgroundImage(bytes);
+        result.colorFormat = bg.format == 3 ? 3 : 2;
         result.composite = std::move(bg.composite);
         result.origin = bg.origin;
         result.reference = bg.reference;
@@ -131,6 +133,7 @@ DecodedImage SceneImages::decode(const Rom &rom, const QString &id, bool compoun
         result.limitations = std::move(bg.limitations);
     } else if (asset.container == "embedded-njpg" || asset.container == "section-c-njpg") {
         result.composite = decodeHuffImage(bytes, asset.container == "embedded-njpg");
+        result.colorFormat = 2;
         result.limitations << "HUFF fixed-point rounding is approximated.";
     } else
         throw Error("Unsupported scene image container");

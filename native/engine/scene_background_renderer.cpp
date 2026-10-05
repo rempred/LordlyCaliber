@@ -1,4 +1,5 @@
 #include "engine/scene_background_renderer.h"
+#include "game/images/sepia.h"
 namespace lordly {
 namespace {
 SceneBackgroundChannel loadChannel(const Rom &rom, const QString &id, bool world) {
@@ -27,7 +28,7 @@ SceneBackgroundChannel loadChannel(const Rom &rom, const QString &id, bool world
         // The world non-B5 vertex builder truncates half-width before mirroring.
         const int width = world && asset.container != "bg2" ? (r.width / 2) * 2 : r.width;
         channel.records << SceneBackgroundRecord{record.origin, std::move(image),
-                                                 QSize(width, r.height)};
+                                                 QSize(width, r.height), decoded.colorFormat};
     }
     return channel;
 }
@@ -115,5 +116,29 @@ QString SceneBackgroundRenderer::description() const {
         if (!channels_[i].imageId.isEmpty())
             names << QString("%1: %2").arg(i).arg(channels_[i].imageId);
     return names.join(", ");
+}
+void SceneBackgroundRenderer::convertToSepia() {
+    for (auto &channel : channels_)
+        for (auto &record : channel.records) {
+            if (record.colorFormat != 2 && record.colorFormat != 3)
+                continue;
+            for (int y = 0; y < record.image.height(); ++y) {
+                auto p = record.image.scanLine(y);
+                for (int x = 0; x < record.image.width(); ++x, p += 4) {
+                    if (record.colorFormat == 3) {
+                        const auto word = lordly_sepia_rgba32(
+                            quint32(p[0]) << 24 | quint32(p[1]) << 16 | quint32(p[2]) << 8 | p[3]);
+                        p[0] = quint8(word >> 24);
+                        p[1] = quint8(word >> 16);
+                        p[2] = quint8(word >> 8);
+                    } else {
+                        const auto word = lordly_sepia_rgba16(
+                            quint16((p[0] >> 3) << 11 | (p[1] >> 3) << 6 | (p[2] >> 3) << 1 | 1));
+                        for (int c = 0; c < 3; ++c)
+                            p[c] = quint8((((word >> (11 - c * 5)) & 31) * 255 + 15) / 31);
+                    }
+                }
+            }
+        }
 }
 } // namespace lordly

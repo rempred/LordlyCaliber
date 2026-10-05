@@ -15,6 +15,29 @@ using namespace lordly;
 class BackgroundTests : public QObject {
     Q_OBJECT
   private slots:
+    void backgroundSepiaPixels() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto original = SceneBackgroundRenderer::world(rom,34,34);
+        auto changed = original; changed.convertToSepia();
+        int checked=0;
+        for(int i=0;i<original.channelCount();++i) {
+            const auto &before=original.channel(i).records, &after=changed.channel(i).records;
+            QCOMPARE(before.size(),after.size());
+            for(int n=0;n<before.size();++n) for(int y=0;y<before[n].image.height();++y) for(int x=0;x<before[n].image.width();++x) {
+                const auto a=before[n].image.pixelColor(x,y), b=after[n].image.pixelColor(x,y);
+                const bool shortColor=before[n].colorFormat==2;
+                const int red=shortColor ? a.red()&248 : a.red(), green=shortColor ? a.green()&248 : a.green(), blue=shortColor ? a.blue()&248 : a.blue();
+                const int sum=red*30+green*59+blue*11;
+                auto expand=[&](int v){return shortColor ? ((v>>3)*255+15)/31 : v;};
+                QCOMPARE(b,QColor(expand(sum*255/30000),expand(sum/150),expand(sum*130/30000),a.alpha())); ++checked;
+            }
+        }
+        QVERIFY(checked>1000);
+        const auto reloaded=SceneBackgroundRenderer::world(rom,34,34);
+        QCOMPARE(original.channel(0).records.first().image,reloaded.channel(0).records.first().image);
+    }
     void backgroundColorPixels() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

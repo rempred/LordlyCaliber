@@ -40,6 +40,7 @@ class ScenePreview : public QWidget {
         std::optional<StageOrthographic> flatProps;
         std::optional<StagePerspective> worldProps;
         int foregroundSelector = -1;
+        int environmentSelector = -1;
         quint32 previewRandom = 1;
         quint32 texturePhase = 0;
     };

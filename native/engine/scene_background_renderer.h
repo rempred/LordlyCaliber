@@ -6,6 +6,7 @@ struct SceneBackgroundRecord {
     QPoint origin;
     QImage image;
     QSize extent;
+    int colorFormat = 2;
 };
 struct SceneBackgroundChannel {
     QString imageId;
@@ -23,6 +24,8 @@ class SceneBackgroundRenderer {
     QVector<ActorRasterLayer> project(int channel, const SceneCamera &, const QByteArray &parent,
                                       RenderColor primitive = {255, 255, 255, 255}) const;
     QString description() const;
+    // Mutates only this snapshot's retained images, as the native installer does.
+    void convertToSepia();
 
   private:
     QVector<SceneBackgroundChannel> channels_;

@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rom.h"
+#include "engine/scene_capture.h"
 #include <QVector>
 #include <array>
 #include <optional>
@@ -15,6 +16,10 @@ enum class WorldColorPass {
 // Scene-owned color transitions and the independent special-actor black pass.
 class SceneEffects {
   public:
+    SceneCapture &capture() { return capture_; }
+    const SceneCapture &capture() const { return capture_; }
+    bool sepia() const { return sepia_; }
+    void setSepia(bool value) { sepia_ = value; }
     void supplyColor(int slot, QByteArray record);
     const QByteArray &colorRecord(int slot) const;
     void setSharedColor(std::array<quint8, 5> rgbaAndMask) {
@@ -36,6 +41,8 @@ class SceneEffects {
     bool service(quint32 opcode, const QVector<quint32> &operands);
 
   private:
+    SceneCapture capture_;
+    bool sepia_ = false;
     static void checkSlot(int slot);
     std::array<QByteArray, 20> colors_;
     std::array<quint8, 5> shared_{255, 255, 255, 255, 0};

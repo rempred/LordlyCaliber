@@ -11,7 +11,7 @@ class StageObjectRenderer {
                                       const SceneCamera &screen, const QByteArray &screenParent,
                                       const std::array<qint16, 3> &globalRgb, ActorRenderState &,
                                       std::optional<RenderColor> transition = {},
-                                      quint32 texturePhase = 0);
+                                      quint32 texturePhase = 0, bool sepia = false);
 
   private:
     Rom rom_;

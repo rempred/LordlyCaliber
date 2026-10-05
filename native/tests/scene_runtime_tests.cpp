@@ -1387,6 +1387,61 @@ class SceneRuntimeTests : public QObject {
         }
         QVERIFY(pauses > 0);
     }
+    void captureAgainstMips() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start("node", {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("scene-capture-mips.cjs"), path, work.filePath("capture.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("capture.json")); QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto data = QJsonDocument::fromJson(file.readAll()).object();
+        auto compare = [](const SceneCapture &capture, const QJsonObject &row) {
+            QCOMPARE(capture.record().toHex(), row["record"].toString().toLatin1());
+            if (!row["alpha"].isNull()) QCOMPARE(capture.alpha(), row["alpha"].toInt());
+        };
+        QCOMPARE(data["sequences"].toArray().size(), 112);
+        for (const auto &value : data["sequences"].toArray()) {
+            const auto row = value.toObject(); SceneCapture capture;
+            capture.start(row["selector"].toInt(), row["duration"].toInt());
+            compare(capture, row["initial"].toObject());
+            for (const auto &state : row["states"].toArray()) { capture.advance(); compare(capture, state.toObject()); }
+        }
+        QCOMPARE(data["boundaries"].toArray().size(), 96);
+        for (const auto &value : data["boundaries"].toArray()) {
+            const auto row = value.toObject(); SceneCapture capture;
+            capture.supplyRecord(QByteArray::fromHex(row["input"].toString().toLatin1()));
+            capture.advance(); compare(capture, row);
+        }
+        const auto vertices = SceneCapture::vignetteVertices();
+        QCOMPARE(data["vertices"].toArray().size(), 10);
+        for (int i=0; i<10; ++i) {
+            const auto row = data["vertices"].toArray()[i].toObject();
+            QCOMPARE(vertices[i].x, row["x"].toInt()); QCOMPARE(vertices[i].y, row["y"].toInt()); QCOMPARE(vertices[i].alpha, row["alpha"].toInt());
+        }
+        SceneCapture capture; capture.start(2, 30);
+        const auto before = capture.record();
+        QVERIFY_THROWS_EXCEPTION(Error, capture.start(2, 65536)); QCOMPARE(capture.record(), before);
+        QVERIFY_THROWS_EXCEPTION(Error, capture.supplyRecord(QByteArray(15, 0))); QCOMPARE(capture.record(), before);
+    }
+    void capturedPixels() {
+        QImage original(320,240,QImage::Format_RGBA8888); original.fill(QColor(255,137,33,255));
+        auto frame = SceneCapture::framebuffer(original);
+        QCOMPARE(frame.pixelColor(0,0), QColor(255,140,33,255));
+        QCOMPARE(original.pixelColor(0,0), QColor(255,137,33,255));
+        SceneCapture capture; capture.start(2,4,original);
+        QCOMPARE(capture.alpha(), 255); capture.advance(); QCOMPARE(capture.alpha(),192);
+        const auto snapshot = capture;
+        original.fill(Qt::blue); QCOMPARE(snapshot.frame(),frame);
+        capture.advance(); capture.advance(); capture.advance(); QVERIFY(!capture.present());
+        QVERIFY(!snapshot.frame().isNull()); QCOMPARE(snapshot.alpha(),192);
+        const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
+        const auto mask = SceneCapture::vignette(camera,SceneWorldDrawing::modelMatrix(SceneProjection{}));
+        QCOMPARE(mask.pixelColor(160,120),QColor(0,0,0,10));
+        QVERIFY(mask.pixelColor(2,120).alpha()>180);
+        QCOMPARE(mask.pixelColor(160,0).alpha(),0);
+    }
     void effectsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

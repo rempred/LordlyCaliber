@@ -54,7 +54,7 @@ QVector<ActorRasterLayer>
 StageObjectRenderer::project(const StageWorldProp &prop, int slot, const SceneCamera &world,
                              const SceneCamera &screen, const QByteArray &parent,
                              const std::array<qint16, 3> &globalRgb, ActorRenderState &state,
-                             std::optional<RenderColor> transition, quint32 texturePhase) {
+                             std::optional<RenderColor> transition, quint32 texturePhase, bool sepia) {
     const auto drawing = prop.record();
     if (u32(drawing, 0x94) & 2 || u8(drawing, 0x37) || u32(prop.owner, 0xa0))
         throw Error("Stage object requires its additional color owner");
@@ -77,15 +77,15 @@ StageObjectRenderer::project(const StageWorldProp &prop, int slot, const SceneCa
         auxiliary_ = std::move(texture);
     }
     const int frame = qint16(u16(drawing, 0x4e)), variant = u32(prop.owner, 0x4c);
-    const auto key = QString("%1/%2/%3/%4")
+    const auto key = QString("%1/%2/%3/%4/%5")
                          .arg(prop.pose.art().descriptorKey())
                          .arg(frame)
                          .arg(variant)
-                         .arg(optional);
+                         .arg(optional).arg(sepia);
     auto cached = frames_.object(key);
     if (!cached) {
         auto layers =
-            std::make_unique<QVector<ActorFrameLayer>>(prop.pose.art().frame(rom_, frame, variant));
+            std::make_unique<QVector<ActorFrameLayer>>(prop.pose.art().frame(rom_, frame, variant, sepia));
         qsizetype bytes = 0;
         for (auto &layer : *layers) {
             if (optional && layer.pixels.sourceColorFormat != 4) {

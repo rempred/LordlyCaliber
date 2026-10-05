@@ -110,7 +110,7 @@ StageFlatRenderer::project(const StageOrthographic &stage, int pass, const Scene
                            const QByteArray &parent, int foregroundSelector,
                            const std::array<qint16, 3> &globalRgb,
                            std::optional<RenderColor> transition, bool warmTint,
-                           RenderColor environment, float backgroundZ, float foregroundZ) {
+                           RenderColor environment, float backgroundZ, float foregroundZ, bool sepia) {
     if (pass < 0 || pass > 2)
         throw Error("Stage prop pass must be in 0..2");
     QVector<ActorRasterLayer> output;
@@ -123,11 +123,11 @@ StageFlatRenderer::project(const StageOrthographic &stage, int pass, const Scene
         const auto &pose = prop.pose.record();
         const int frame = qint16(u16(pose, 10)), variant = u16(prop.header, 6);
         const auto key =
-            QString("%1/%2/%3").arg(prop.pose.art().descriptorKey()).arg(frame).arg(variant);
+            QString("%1/%2/%3/%4").arg(prop.pose.art().descriptorKey()).arg(frame).arg(variant).arg(sepia);
         auto frames = frames_.object(key);
         if (!frames) {
             auto decoded = std::make_unique<QVector<ActorFrameLayer>>(
-                prop.pose.art().frame(rom_, frame, variant));
+                prop.pose.art().frame(rom_, frame, variant, sepia));
             qsizetype bytes = 0;
             for (const auto &layer : *decoded)
                 bytes += layer.pixels.image.rgba.size() + layer.pixels.colorAlpha.size() + 128;

@@ -158,6 +158,24 @@ void ScenePreview::restart() {
     }
 }
 bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
+    if (opcode == 0x80000008U && args.size() == 2) {
+        const int kind = quint8(args[0]);
+        if (kind == 4)
+            throw Error("Actor crossfade requires its two-pass effect renderer");
+        auto capture = next.playback.effects().capture();
+        capture.start(args[0], args[1], next.frame);
+        if (kind == 2) {
+            if (next.backgrounds)
+                next.backgrounds->convertToSepia();
+            next.playback.effects().setSepia(true);
+        } else if (kind == 3) {
+            next.playback.effects().setSepia(false);
+            if (next.environmentSelector >= 0)
+                referenceCommand(next, 0x80000006U, {quint32(next.environmentSelector)});
+        }
+        next.playback.effects().capture() = std::move(capture);
+        return true;
+    }
     if (opcode != 0x80000006 || args.size() != 1)
         return false;
     const int selector = qint32(args[0]);
@@ -165,13 +183,18 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         throw Error("This environment selector requires gameplay launch context");
     if (mode_ == 0) {
         auto backgrounds = SceneBackgroundRenderer::group(rom_, selector);
+        if (next.playback.effects().sepia())
+            backgrounds.convertToSepia();
         next.backgroundName = backgrounds.description();
         next.backgrounds = std::move(backgrounds);
+        next.environmentSelector = selector;
         return true;
     }
     // Common fresh mode-two launch copies environment into foreground selection.
     // Other launch paths must supply their separate foreground owner.
     auto backgrounds = SceneBackgroundRenderer::world(rom_, selector, selector);
+    if (next.playback.effects().sepia())
+        backgrounds.convertToSepia();
     const auto placements = StagePlacements::load(rom_, selector);
     auto randomState = next.previewRandom;
     auto random = [&] {
@@ -188,11 +211,13 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     next.flatProps = std::move(props);
     next.worldProps = std::move(objects);
     next.foregroundSelector = selector;
+    next.environmentSelector = selector;
     next.previewRandom = randomState;
     return true;
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
+    const bool sepia = drawing.effects().sepia();
     if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.flatProps)
         next.flatProps->advance();
     if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.worldProps)
@@ -221,18 +246,19 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 const auto &color = drawing.effects().colorRecord(channel);
                 RenderColor backgroundColor{255, 255, 255, 255};
                 if (!color.isEmpty())
-                    for (int c = 0; c < 3; ++c) backgroundColor[c] = u8(color, 4 + c);
+                    for (int c = 0; c < 3; ++c)
+                        backgroundColor[c] = u8(color, 4 + c);
                 if (next.backgrounds) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
                     ActorRenderer::paint(
-                        background,
-                        next.backgrounds->project(channel, drawing.cameras().actor(), parent, backgroundColor));
+                        background, next.backgrounds->project(channel, drawing.cameras().actor(),
+                                                              parent, backgroundColor));
                     painter.drawImage(0, 0, background);
                 }
-                const auto sprites =
-                    spriteRenderer_.project(drawing.sprites(), channel, 0,
-                                            drawing.cameras().actor(), parent, {255, 255, 255}, color);
+                const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,
+                                                             drawing.cameras().actor(), parent,
+                                                             {255, 255, 255}, color, sepia);
                 if (!sprites.isEmpty()) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);
@@ -241,9 +267,9 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 }
                 if (!drawing.sprites().draws(channel, 0).isEmpty())
                     environment = {0, 0, 0, 1};
-                auto rendered =
-                    renderer_.layered(drawing.actors(), queue, 0, quint8(channel),
-                                      {drawing.cameras().actor(), {255, 255, 255}, environment});
+                auto rendered = renderer_.layered(
+                    drawing.actors(), queue, 0, quint8(channel),
+                    {drawing.cameras().actor(), {255, 255, 255}, environment, sepia});
                 painter.drawImage(0, 0, rendered.image);
                 environment = rendered.environment;
             }
@@ -257,19 +283,26 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 if (pass == 1 && next.flatProps)
                     ActorRenderer::paint(
                         flat, stageRenderer_.project(*next.flatProps, 1, camera, parent,
-                                                     next.foregroundSelector, {255, 255, 255}, tint(WorldColorPass::BeforeForegroundProps),
-                                                     false, environment));
+                                                     next.foregroundSelector, {255, 255, 255},
+                                                     tint(WorldColorPass::BeforeForegroundProps),
+                                                     false, environment, -5, -905, sepia));
                 if (next.backgrounds)
-                    ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent,
-                        tint(pass ? WorldColorPass::Foreground : WorldColorPass::Background).value_or(RenderColor{255, 255, 255, 255})));
+                    ActorRenderer::paint(flat, next.backgrounds->project(
+                                                   pass, camera, parent,
+                                                   tint(pass ? WorldColorPass::Foreground
+                                                             : WorldColorPass::Background)
+                                                       .value_or(RenderColor{255, 255, 255, 255})));
                 if (next.flatProps)
-                    ActorRenderer::paint(
-                        flat, stageRenderer_.project(*next.flatProps, pass ? 2 : 0, camera, parent,
-                                                     next.foregroundSelector, {255, 255, 255}, tint(pass ? WorldColorPass::AfterForegroundProps : WorldColorPass::BackgroundProps),
-                                                     false, environment));
-                ActorRenderer::paint(flat,
-                                     spriteRenderer_.project(drawing.sprites(), pass, 0, camera,
-                                                             parent, {255, 255, 255}, drawing.effects().colorRecord(pass)));
+                    ActorRenderer::paint(flat, stageRenderer_.project(
+                                                   *next.flatProps, pass ? 2 : 0, camera, parent,
+                                                   next.foregroundSelector, {255, 255, 255},
+                                                   tint(pass ? WorldColorPass::AfterForegroundProps
+                                                             : WorldColorPass::BackgroundProps),
+                                                   false, environment, -5, -905, sepia));
+                ActorRenderer::paint(
+                    flat, spriteRenderer_.project(drawing.sprites(), pass, 0, camera, parent,
+                                                  {255, 255, 255},
+                                                  drawing.effects().colorRecord(pass), sepia));
                 painter.drawImage(0, 0, flat);
                 if (!drawing.sprites().draws(pass, 0).isEmpty())
                     environment = {0, 0, 0, 1};
@@ -277,18 +310,36 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             drawFlat(0);
             const auto rendered = renderer_.world(
                 drawing.actors(), queue, objects, {96, 96}, {0, 0, 0, 0, 0, 0},
-                {drawing.cameras().actor(), {255, 255, 255}, environment},
+                {drawing.cameras().actor(), {255, 255, 255}, environment, sepia},
                 [&](int, int index, QImage &image, ActorRenderState &state) {
                     if (!next.worldProps || index < 0 || index >= next.worldProps->props().size())
                         throw Error("Stage drawing refers to an unavailable object");
-                    ActorRenderer::paint(image, objectRenderer_.project(
-                                                    next.worldProps->props()[index], index,
-                                                    drawing.cameras().actor(), camera, parent,
-                                                    {255, 255, 255}, state, tint(WorldColorPass::Objects), next.texturePhase));
+                    ActorRenderer::paint(
+                        image, objectRenderer_.project(
+                                   next.worldProps->props()[index], index,
+                                   drawing.cameras().actor(), camera, parent, {255, 255, 255},
+                                   state, tint(WorldColorPass::Objects), next.texturePhase, sepia));
                 });
             painter.drawImage(0, 0, rendered.image);
             environment = rendered.environment;
             drawFlat(1);
+        }
+        if (sepia) {
+            const auto camera = mode_ == 2
+                                    ? SceneCamera::orthographic(SceneWorldDrawing::clipMatrix())
+                                    : drawing.cameras().actor();
+            const auto parent =
+                mode_ == 2
+                    ? SceneWorldDrawing::modelMatrix(SceneProjection{})
+                    : drawing.transforms().layerMatrix(
+                          (next.backgrounds ? qMax(1, next.backgrounds->channelCount()) : 20) - 1);
+            painter.drawImage(0, 0, SceneCapture::vignette(camera, parent));
+        }
+        const auto &capture = drawing.effects().capture();
+        if ((capture.selector() == 2 || capture.selector() == 3) && !capture.frame().isNull()) {
+            painter.setOpacity(capture.alpha() / 255.);
+            painter.drawImage(0, 0, capture.frame());
+            painter.setOpacity(1);
         }
         if (drawing.fade().present()) {
             const auto rgba = drawing.fade().rgba();
@@ -319,7 +370,6 @@ void ScenePreview::step() {
             case LORDLY_SCENE_MODE_ZERO_6:
             case LORDLY_SCENE_AFTER_DIRECTOR:
             case LORDLY_SCENE_PATHS:
-            case LORDLY_SCENE_TRANSITION:
             case LORDLY_SCENE_DELAYED_CALLBACK:
                 return true;
             default:

@@ -1644,3 +1644,28 @@ removal with later allocations intact, corruption/collisions and composition wit
 added classes and weighted rewards. Executed instructions pass13,750 gate cases,
 300 original/rebuilt candidate draws and930 removal cases for counts1..30 in
 guarded4 MiB RAM. This does not establish PI/cache hardware or full-game timing.
+
+Captured-frame transitions now retain the original16-byte state separately from
+persistent sepia. Normal scheduling advances unsigned16 progress after parsing;
+selectors2/3 release on exact duration equality,4 holds, and other selectors keep
+their native inactive/no-progress behavior. Zero duration for2..4 is rejected.
+The desktop connects2/3 to the previous completed frame, RGBA5551 quantization,
+background conversion/reload, Actor/sprite/Stage sepia decoding, and the vignette.
+Selector4 remains unavailable in the desktop until its special Actor passes join.
+
+Vignette geometry follows29B388/29B660: ten interleaved vertices form four
+gradient strips and the inner quad, with alpha10/200. World drawing uses the
+fixed translation atZ-100; layered drawing retains the final channel matrix.
+The captured frame overlays the vignette before the independent color fade.
+Snapshots retain image and effect state; repaint does not recapture or advance.
+Source images detach before conversion. Mode2 restoration reloads Stage props
+using the continuing desktop seed. Game cache lifetimes, repeated sepia on
+already decoded Actor/prop images, RDP dithering/filtering and blending remain
+approximations. Opcode73 cleanup and80 cache-sensitive focus are not yet wired.
+
+Validation executes112 original constructor/update/render sequences,96 unsigned
+boundary updates and all10 vignette vertices. Allocation and presentation service
+calls are controlled. Pixel tests check storage quantization, immutable snapshots,
+RGBA16 sepia arithmetic and vignette intensity. Desktop tests enter and restore
+both scene modes, cross a120-step checkpoint and reproduce earlier frames exactly.
+These are not original-framebuffer equivalence tests.

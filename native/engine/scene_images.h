@@ -9,6 +9,7 @@ struct DecodedImage {
     QVector<ImageLayer> layers;
     QVector<RasterImage> frames;
     QStringList limitations;
+    int colorFormat = -1; // Decoded native background pixels:2=RGBA16,3=RGBA32,4=intensity.
 };
 DecodedImage decodeRawImage(const QByteArray &bytes, const QJsonObject &layout);
 struct SceneImage {

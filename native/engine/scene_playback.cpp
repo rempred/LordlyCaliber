@@ -121,6 +121,9 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
 }
 bool ScenePlayback::update(LordlySceneService service) {
     switch (service) {
+    case LORDLY_SCENE_TRANSITION:
+        effects_.capture().advance();
+        return true;
     case LORDLY_SCENE_COLOR:
         effects_.advanceColors();
         return true;

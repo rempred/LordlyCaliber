@@ -35,7 +35,8 @@ class StageFlatRenderer {
                                       const std::array<qint16, 3> &globalRgb,
                                       std::optional<RenderColor> transition = {},
                                       bool warmTint = false, RenderColor environment = {},
-                                      float backgroundZ = -5, float foregroundZ = -905);
+                                      float backgroundZ = -5, float foregroundZ = -905,
+                                      bool sepia = false);
 
   private:
     Rom rom_;
