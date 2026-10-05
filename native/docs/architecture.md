@@ -27,10 +27,39 @@ these checks do not establish full-game heap room or hardware timing.
 
 `animation_override_tests` passed5,763ms: retail/all historical versions, corruption,
 mixed instructions, duplicate/undeclared/malformed records, unchanged region guards,
-class readers and an added-class public export with an installed v3 patch. Native
-logical override editing, browser project import and source export of changed rows
-are the next integration step; source/owner identity must use the current full class
-record byte69 (class-copy match), not the unrelated named-alias byte.
+class readers and an added-class public export with an installed v3 patch.
+AnimationOverrides now holds logical class/action/Normal/Blocked/body-route entries.
+Project folders/archives and browser version14 single-selector or version15+ paired
+entries import into this model. Explicit native empty snapshots suppress older
+imported rows. Available pose choices come from current resource programs across
+all four routes; count-zero programs are empty. The old catalog only enumerated six
+candidate IDs. Fourteen retail classes additionally have a nonempty0x2D program;
+independent browser parsing confirms the expanded current-resource choices.
+
+The ordinary owner is full class byte69 when nonzero, otherwise the class ID. Most
+ordinary classes (including Fighter) store zero, so copying Fighter to165 gives
+owner165 by default. The unrelated named-alias byte is not this mapping. Changes
+to that class byte rebind logical overrides during export. New-class template
+copying inherits editable overrides atomically; an advanced raw override affecting
+the template prevents an incomplete copy, while unrelated templates remain usable.
+Advanced/foreign data stay preserved and read-only.
+
+The exporter compiles the module header/table from generated C and every instruction
+from the maintained assembly, authenticates the source regions, and reads back the
+result. Installation/update uses OBSO-v3; removal compiles original site instructions
+and clears only the authenticated bootstrap/module. No precompiled N64 payload is
+bundled. The existing8MiB requirement is explicit in the export report.
+
+`animation_override_tests logicalEntriesAndCurrentSelectors` passed951ms: all164
+classes against current browser resource parsing, retention of old choices, changed
+body assignments, new IDs, zero/nonzero owner contexts, native/legacy serialization,
+capacity/duplicate/compatibility failures and historical logical decoding.
+`sourceExportImportAndReset` passed13,347ms: native folder/archive and browser import,
+reset preservation, source-built installation, exact byte conservation/CRC, browser
+readback, reopen/no-op export, template inheritance and removal preserving later
+allocations. Updated historical/advanced guard checks passed13,070ms; the complete
+animation_routes_tests regression passed26,738ms. Native override controls and staged
+animation previews are the next UI work; sequence authoring remains outstanding.
 
 ## Expandable class animation data
 

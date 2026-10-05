@@ -1,5 +1,6 @@
 #include "engine/art_resource_links.h"
 #include "rebuild/compiler.h"
+#include "rebuild/animation_overrides.h"
 #include "engine/class_text.h"
 #include "engine/dialogue_resources.h"
 #include "engine/scene_program_resources.h"
@@ -482,6 +483,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
     Compiler compiler(toolsRoot);
     compiler.authenticate();
     BuildResult result{p.rom().bytes(), {}};
+    if(p.rom().revision()==0)p.loadAnimationOverrides();
     for (const auto &r : p.records(Table::Classes))
         if (r.original.size() == r.bytes.size() &&
             (r.original[ClassData::unitSizeOffset] != r.bytes[ClassData::unitSizeOffset] ||
@@ -851,6 +853,26 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         for(int i=0;i<6;++i)packs[i]=compiler.compileData(packs[i],directory,QString("army_atlas_%1").arg(i));
         result.image=p.armyArtwork()->rebuild(Rom::fromBytes(result.image),packs);
         result.report << "Compiled all six Army/formation atlases and retained shared front/back resource operands";
+    }
+    if (p.animationOverrides() && p.animationOverrides()->available() &&
+        (p.animationOverrides()->modified() || !p.animationOverrides()->entries().isEmpty())) {
+        const auto classes = p.classData();
+        auto overrides = *p.animationOverrides();
+        if (!overrides.entries().isEmpty()) {
+            p.loadAnimationRoutes();
+            overrides.setEntries(overrides.entries(), p.rom(), classes, *p.animationRoutes());
+        }
+        if (overrides.needsRebuild(classes)) {
+            result.image = rebuildAnimationOverrides(Rom::fromBytes(result.image), overrides,
+                                                     classes, compiler, directory);
+            result.report << (overrides.entries().isEmpty()
+                                  ? "Removed animation overrides and restored source-built "
+                                    "original instructions"
+                                  : QString(
+                                        "Compiled %1 Normal/Blocked animation overrides from "
+                                        "maintained sources; the existing patch requires 8 MB RAM")
+                                        .arg(overrides.entries().size()));
+        }
     }
     if (p.animationRoutes() && p.animationRoutes()->modified()) {
         const auto compiled = compiler.compileData(p.animationRoutes()->decodedResource(),

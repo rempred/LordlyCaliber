@@ -273,6 +273,7 @@ int Project::changedRecords() const {
         ++count;
     if (combat_ && combat_->modified()) ++count;
     if (animationRoutes_ && animationRoutes_->modified()) ++count;
+    if (animationOverrides_ && animationOverrides_->modified()) ++count;
     if (encounters_)
         count += encounters_->changedRows();
     if (scenarios_)
@@ -401,6 +402,18 @@ int Project::appendClass(int templateId, const QString &name) {
     candidate.appendClassAsset(classes.entries()[id], bank.entries[sourceText].bytes, templateId);
     candidate.loadAnimationRoutes();
     candidate.animationRoutes_->cloneClass(templateId,id);
+    candidate.loadAnimationOverrides();
+    if(candidate.animationOverrides_->available()) {
+        auto entries=candidate.animationOverrides_->entries();
+        for(const auto &value:candidate.animationOverrides_->entries()) {
+            auto row=value.toObject();
+            if(row["classId"].toInt()==templateId){row["classId"]=id;entries<<row;}
+        }
+        if(entries!=candidate.animationOverrides_->entries())candidate.animationOverrides_->setEntries(entries,candidate.rom_,candidate.classData(),*candidate.animationRoutes_);
+    } else {
+        for(const auto &row:candidate.animationOverrides_->image().rows())
+            if(row[0]==templateId)throw Error("This template has advanced animation overrides that cannot be copied to a new class; choose a template with an editable animation assignment");
+    }
     if (candidate.army_ && candidate.army_->routes().contains(templateId)) {
         const auto route = candidate.army_->routes()[templateId];
         candidate.army_->setRoute(candidate.classData(), id, route.lane, route.model);
@@ -590,6 +603,22 @@ void Project::setAnimationRoutes(const QJsonObject &object) {
             next.entry(id);
     animationRoutes_ = std::move(next);
 }
+void Project::loadAnimationOverrides() {
+    if(!animationOverrides_)
+        animationOverrides_=AnimationOverrides::load(rom_,originalClasses_.value_or(ClassData{}),AnimationRoutes::load(rom_));
+}
+void Project::setAnimationOverrides(const QJsonObject &object) {
+    loadAnimationOverrides();loadAnimationRoutes();auto next=*animationOverrides_;
+    next.apply(object,rom_,classData(),*animationRoutes_);animationOverrides_=std::move(next);
+}
+void Project::importLegacyAnimationOverrides(const QJsonObject &object) {
+    const auto payload=object["patches"].toObject().value("combatAnimationOverrides");
+    if(payload.isNull()||payload.isUndefined())return;
+    if(!payload.isObject())throw Error("Invalid browser combat animation overrides");
+    loadAnimationOverrides();loadAnimationRoutes();auto next=*animationOverrides_;
+    next.importLegacy(payload.toObject(),object["version"].toInt(),rom_,classData(),*animationRoutes_);
+    animationOverrides_=std::move(next);
+}
 void Project::loadCombatArtwork() {
     if (!combat_)
         combat_ = CombatArtwork::load(rom_);
@@ -681,6 +710,8 @@ QJsonObject Project::manifest() const {
     else result.remove("combatArtwork");
     if (animationRoutes_ && (animationRoutes_->modified() || !addedClasses_.isEmpty())) result["animationRoutes"]=animationRoutes_->json();
     else result.remove("animationRoutes");
+    if(animationOverrides_&&(animationOverrides_->modified()||legacy_["patches"].toObject().contains("combatAnimationOverrides")))result["animationOverrides"]=animationOverrides_->json();
+    else result.remove("animationOverrides");
     QJsonArray additions;
     for (int i = 0; i < addedClasses_.size(); ++i) {
         const auto &asset = addedClasses_[i];
@@ -979,6 +1010,10 @@ void Project::applyManifest(const QJsonObject &object) {
             }
         }
     }
+    if(object.contains("animationOverrides")) {
+        if(!object["animationOverrides"].isObject())throw Error("Invalid saved animation overrides");
+        candidate.setAnimationOverrides(object["animationOverrides"].toObject());
+    } else candidate.importLegacyAnimationOverrides(candidate.legacy_);
     const auto spriteLibrary = object.contains("spriteLibrary")
                                    ? object["spriteLibrary"]
                                    : candidate.legacy_["patches"].toObject().value("spriteLibrary");
@@ -1361,6 +1396,7 @@ void Project::importLegacy(const QJsonObject &object) {
     candidate.importLegacyAvatarArtwork(object);
     candidate.importLegacyArmyArtwork(object);
     candidate.importLegacyCombatArtwork(object);
+    candidate.importLegacyAnimationOverrides(object);
     if (patch.contains("spriteLibrary") && !patch["spriteLibrary"].isNull()) {
         if (!patch["spriteLibrary"].isObject()) throw Error("Invalid imported sprite library");
         candidate.sprites_.merge(SpriteLibrary::fromJson(patch["spriteLibrary"].toObject()));
@@ -1449,6 +1485,8 @@ QStringList Project::pendingLegacySections() const {
     const auto patches = legacy_.value("patches").toObject();
     for (auto it = patches.begin(); it != patches.end(); ++it) {
         if (it.key() == "spriteLibrary")
+            continue;
+        if(it.key()=="combatAnimationOverrides"&&animationOverrides_)
             continue;
         if(it.key()=="art" && (icons_ || avatars_ || army_ || combat_)) {
             const auto sections=it.value().toObject();

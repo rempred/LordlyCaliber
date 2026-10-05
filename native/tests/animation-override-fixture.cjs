@@ -16,4 +16,27 @@ const versions=[d.legacyV1,d.legacyV2,d].map((version,i)=>{
     ...d.carrierPatches.map(p=>({offset:p.z64,bytes:i?p.postimageHex:p.preimageHex}))];
   return {version:i+1,regions};
 });
-fs.writeFileSync(process.argv[2],JSON.stringify({versions}));
+const candidates=d.classes.map(c=>({id:c.id,owner:c.rawOwner,selectors:c.selectors.map(s=>s.id)}));
+if(process.argv[3]){
+  for(const file of ['parsers.js','cutscene-data.js','cutscene-model.js','cutscene-assets.js','art.js','animation-art.js'])
+    vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),context,{filename:file});
+  const rom=fs.readFileSync(process.argv[3]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();else if(rom.readUInt32BE(0)===0x40123780)rom.swap32();
+  const A=context.OB64.art,raw=key=>Buffer.from(A.readResource(rom,key).stored),decoded=key=>Buffer.from(A.readCompressedResource(rom,key).decoded);
+  const handles=raw(0x315736),directory=raw(0x3b6cd0),base=handles.readUInt16BE(0),cache=new Map();
+  for(const row of candidates){
+    row.currentSelectors=[];
+    for(let selector=40;selector<50;selector++){
+      let valid=true;
+      for(let flags=0;flags<4;flags++){
+        const handle=handles.readUInt16BE(base+row.id*8+flags*2),descriptor=directory.readUInt32BE(((handle&4095)-1)*4);
+        if(!cache.has(descriptor))cache.set(descriptor,decoded(raw(descriptor).readUInt32BE(4)));
+        const poses=cache.get(descriptor),count=poses.readUInt32BE(0)/4;
+        if(selector>=count){valid=false;break;}
+        const start=poses.readUInt32BE(selector*4),end=selector+1<count?poses.readUInt32BE(selector*4+4):poses.length;
+        if(start===end||!context.OB64.animationArt.parsePoseProgram(poses,selector,'body').records.length){valid=false;break;}
+      }
+      if(valid)row.currentSelectors.push(selector);
+    }
+  }
+}
+fs.writeFileSync(process.argv[2],JSON.stringify({versions,candidates}));
