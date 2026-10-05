@@ -12,6 +12,7 @@ class DialoguePreview : public QWidget {
     Q_OBJECT
   public:
     explicit DialoguePreview(const Rom &, QWidget *parent = nullptr);
+    ~DialoguePreview() override;
     void selectEntry(int archive, quint16 entry, std::optional<Dialogues> dialogues = {});
     void clear();
 

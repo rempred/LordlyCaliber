@@ -4,6 +4,26 @@
 #include "engine/scene_dialogue_runtime.h"
 #include <optional>
 namespace lordly {
+// Shared resource-pass owner for standalone and composed scene playback.
+// Pool/window state belongs to the caller so Director commands see the same pool.
+class DialoguePlayback {
+  public:
+    explicit DialoguePlayback(Rom, std::optional<Dialogues> dialogues = {});
+    static DialogueTextEnvironment environment(const Rom &);
+    QByteArray source(const QByteArray &record) const;
+    void advance(SceneResources &, SceneDialogue &, const DialogueTextEnvironment &, DialogueInput);
+    RasterImage image(const SceneResources &, DialogueDrawing &) const;
+    int state(int slot, const SceneResources &) const;
+    const QVector<DialogueSoundRequest> &sounds() const {
+        return runtime_.sounds();
+    }
+
+  private:
+    Rom rom_;
+    std::optional<Dialogues> dialogues_;
+    SceneDialogueRuntime runtime_;
+    SceneResourceDispatcher dispatcher_{SceneResourcePassState{}};
+};
 // Standalone resource-pass preview with explicitly supplied substitution context.
 // Scene playback supplies its own actor placement, roster and shared resources.
 class DialogueSession {
@@ -19,18 +39,14 @@ class DialogueSession {
     int state() const;
     int activeWindows() const;
     const QVector<DialogueSoundRequest> &sounds() const {
-        return runtime_.sounds();
+        return playback_.sounds();
     }
 
   private:
-    QByteArray source(const QByteArray &record) const;
-    Rom rom_;
-    std::optional<Dialogues> dialogues_;
     DialogueTextEnvironment environment_;
     SceneResources resources_{{1, -1, 0xffff}};
     SceneDialogue windows_{0};
-    SceneDialogueRuntime runtime_;
-    SceneResourceDispatcher dispatcher_{SceneResourcePassState{}};
+    DialoguePlayback playback_;
     quint64 updates_ = 0;
 };
 } // namespace lordly

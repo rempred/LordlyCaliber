@@ -105,6 +105,12 @@ DialoguePreview::DialoguePreview(const Rom &rom, QWidget *parent) : QWidget(pare
     });
     clear();
 }
+DialoguePreview::~DialoguePreview() {
+    timer_->stop();
+    for (auto field : names_)
+        disconnect(field, nullptr, this, nullptr);
+    disconnect(suffix_, nullptr, this, nullptr);
+}
 void DialoguePreview::clear() {
     timer_->stop();
     play_->setChecked(false);
@@ -149,11 +155,7 @@ void DialoguePreview::restart() {
     if (archive_ < 0)
         return;
     try {
-        DialogueTextEnvironment environment;
-        const quint32 at = 0x218c450 + 0x594280, size = u32(rom_.bytes(), at);
-        if (size > 65536 || quint64(at) + 4 + size > quint64(rom_.bytes().size()))
-            throw Error("Dialogue metric resource exceeds its ROM envelope");
-        environment.metrics.normal = rom_.bytes().mid(at + 4, size);
+        auto environment = DialoguePlayback::environment(rom_);
         auto text = [](const QString &value) {
             const auto bytes = value.toLatin1();
             if (QString::fromLatin1(bytes) != value)

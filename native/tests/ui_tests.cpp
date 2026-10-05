@@ -219,6 +219,113 @@ class UiTests : public QObject {
         preview.findChild<QPushButton *>("sceneRestart")->click();position->setValue(35);
         QTRY_COMPARE(preview.property("sceneTick").toInt(),35);QCOMPARE(preview.renderedFrame(),revealed);
     }
+    void storyOpeningDialogue() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto scenes = ScenePrograms::load(rom);
+        ScenePreview preview(rom);
+        preview.resize(1250, 950);
+        preview.show();
+        preview.selectScene(scenes, 0x1fa8bf4 - 0x594284, 2);
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        for (int i = 0; i < 200 && preview.property("sceneDialogueState").toInt() != 4; ++i) {
+            step->click();
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        }
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), 4);
+        const int tick = preview.property("sceneTick").toInt();
+        const auto frame = preview.renderedFrame();
+        const auto pixels = frame.convertToFormat(QImage::Format_RGB32);
+        int lit = 0;
+        for (int y = 0; y < pixels.height(); ++y)
+            for (int x = 0; x < pixels.width(); ++x)
+                lit += (pixels.pixel(x, y) & 0x00ffffffU) != 0;
+        QVERIFY(lit > 100);
+        QVERIFY(lit < 320 * 240 / 2); // Authored black fade remains behind the dialogue.
+        QVERIFY(preview.grab().save("scene-story-opening.png"));
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        position->setValue(1);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        position->setValue(tick);
+        QTRY_COMPARE(preview.property("sceneTick").toInt(), tick);
+        QCOMPARE(preview.renderedFrame(), frame);
+    }
+    void sceneDialogueReplay() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        auto dialogue = Dialogues::load(rom);
+        dialogue.setEntry(Dialogues::Table::Primary, 341, 23,
+                          "@v020@y003Edited @%0@aAfter confirm@s");
+        const auto savedText = dialogue.json();
+        const auto id = scenes.createScene("Dialogue replay", 0x1fa8bf4 - 0x594284, false);
+        QVector<quint32> words{0x80000006U, 34,  0xbf, 0, 341, 23, 0, 160,
+                               180,         192, 0,    0, 0,   0,  0, 1};
+        for (int i = 0; i < 250; ++i)
+            words << 0 << 0x80000000U;
+        words << 6 << 0;
+        for (int i = 0; i < 80; ++i)
+            words << 0 << 0x80000000U;
+        words << 0x80000001U << 0xff000001U;
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i)
+            put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        const auto savedScenes = scenes.json();
+        ScenePreview preview(rom);
+        preview.resize(1250, 900);
+        preview.show();
+        preview.selectScene(scenes, id, 2, dialogue);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        const auto seek = [&](int tick) {
+            position->setValue(tick);
+            QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), tick, 20000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        };
+        seek(60);
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), 3);
+        const auto waiting = preview.renderedFrame();
+        QVERIFY(preview.findChild<QPushButton *>("panelConfirm")->isVisible());
+        QVERIFY(preview.grab().save("scene-dialogue.png"));
+        preview.findChild<QPushButton *>("panelConfirm")->click();
+        seek(125);
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), 4);
+        const auto resumed = preview.renderedFrame();
+        QVERIFY(resumed != waiting);
+        seek(275);
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), -1);
+        QVERIFY(!preview.findChild<QPushButton *>("panelConfirm")->isVisible());
+        seek(60);
+        QCOMPARE(preview.renderedFrame(), waiting);
+        seek(125);
+        QCOMPARE(preview.renderedFrame(), resumed);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        seek(125);
+        QCOMPARE(preview.renderedFrame(), resumed);
+        auto name = preview.findChild<QLineEdit *>("sceneDialogueName0");
+        name->setText("Joe");
+        QMetaObject::invokeMethod(name, "editingFinished");
+        seek(60);
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), 3);
+        QVERIFY(preview.renderedFrame() != waiting);
+        QCOMPARE(dialogue.json(), savedText);
+        QCOMPARE(scenes.json(), savedScenes);
+        preview.setDialogues(dialogue);
+        QCOMPARE(preview.property("sceneTick").toInt(), 60); // No reset without a text change.
+        dialogue.setEntry(Dialogues::Table::Primary, 341, 23, "@v020@y003Current edit@aEnd@s");
+        preview.setDialogues(dialogue);
+        QCOMPARE(preview.property("sceneTick").toInt(), 0);
+        seek(60);
+        QCOMPARE(preview.property("sceneDialogueState").toInt(), 3);
+        QVERIFY(preview.renderedFrame() != waiting);
+        name->setFocus(); // Focus loss during widget destruction must not restart dead state.
+    }
     void storyCastPreview() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
@@ -1815,6 +1922,9 @@ class UiTests : public QObject {
         inspector.selectEntry(9, 0);
         QCOMPARE(preview->property("updateCount").toULongLong(), qulonglong(0));
         QVERIFY(canvas->pixmap().isNull());
+        auto name = preview->findChild<QLineEdit *>("dialogueName0");
+        name->setFocus();
+        name->setText("Preview teardown");
     }
     void dialogueSourceSelection() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

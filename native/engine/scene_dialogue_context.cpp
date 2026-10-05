@@ -28,6 +28,18 @@ SceneDialogueContext::SceneDialogueContext(DialogueNameInputs inputs) : inputs_(
         stringAt(override.text, 0, override.text.size());
     }
 }
+SceneDialogueContext::SceneDialogueContext(std::array<QByteArray, 4> names, quint16 parameter)
+    : previewNames_(std::move(names)) {
+    for (const auto &name : *previewNames_)
+        if (name.size() > 64 || stringAt(name, 0, name.size()).size() + 1 != name.size())
+            throw Error("Preview dialogue names require at most 63 terminated native bytes");
+    inputs_.defaultTextParameter = parameter;
+    prepare(0, {});
+}
+SceneDialogueContext SceneDialogueContext::preview(std::array<QByteArray, 4> names,
+                                                   quint16 parameter) {
+    return SceneDialogueContext(std::move(names), parameter);
+}
 const SceneDialogueContext::Reference &SceneDialogueContext::reference(int index) const {
     if (index < 0 || index >= 4)
         throw Error("Dialogue name index is outside 0..3");
@@ -48,10 +60,20 @@ QByteArray SceneDialogueContext::name(int index) const {
         return stringAt(owner_, 0, 64);
     case Kind::GroupWorkspace:
         return stringAt(group_, 0, 64);
+    case Kind::Preview:
+        return previewNames_->at(ref.index).chopped(1);
     }
     throw Error("Unknown dialogue name reference");
 }
 void SceneDialogueContext::supplyTextSources(DialogueTextEnvironment &environment) const {
+    if (previewNames_) {
+        for (int i = 0; i < 4; ++i) {
+            const quint64 identity = 0x100000000ULL + i;
+            environment.storage[identity] = previewNames_->at(i);
+            environment.references[48 + i] = identity;
+        }
+        return;
+    }
     // Qualified native addresses are stable identities here, never PC pointers.
     // Keep every roster source available even after a name is rebound elsewhere.
     for (int i = 0; i < 100; ++i) {
@@ -82,6 +104,8 @@ void SceneDialogueContext::supplyTextSources(DialogueTextEnvironment &environmen
         case Kind::Fixed:
             identity = 0x80196a58;
             break;
+        case Kind::Preview:
+            throw Error("Preview name cannot refer to native roster storage");
         }
         environment.references[48 + i] = identity;
     }
@@ -138,6 +162,12 @@ void SceneDialogueContext::prepare(int mode, const QByteArray &actor, const QByt
     auto next = *this;
     // Accepted func_0004e434 (50aed758): U16 80190F30 -> U16 800E9C0C.
     next.textParameter_ = inputs_.defaultTextParameter;
+    if (previewNames_) {
+        for (int i = 0; i < 4; ++i)
+            next.names_[i] = {Kind::Preview, i};
+        *this = std::move(next);
+        return;
+    }
     next.names_[0] = find(81);
     if (next.names_[0].kind == Kind::Absent)
         next.names_[0] = find(82);

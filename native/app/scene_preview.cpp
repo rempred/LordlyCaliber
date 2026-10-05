@@ -11,6 +11,7 @@
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPainter>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -63,6 +64,27 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     }
     storyCastUi_->hide();
     layout->addWidget(storyCastUi_);
+    dialogueNamesUi_ = new QWidget;
+    auto names = new QHBoxLayout(dialogueNamesUi_);
+    names->setContentsMargins(0, 0, 0, 0);
+    names->addWidget(new QLabel("Preview names"));
+    const QString labels[]{"Protagonist", "Speaker", "Army", "Unit leader"};
+    const QString defaults[]{"Magnus", "Magnus", "Ogre", "Magnus"};
+    for (int i = 0; i < 4; ++i) {
+        names->addWidget(new QLabel(labels[i]));
+        auto field = dialogueNames_[i] = new QLineEdit(defaults[i]);
+        field->setObjectName(QString("sceneDialogueName%1").arg(i));
+        field->setAccessibleName("Preview " + labels[i]);
+        field->setMaxLength(63);
+        names->addWidget(field, 1);
+        connect(field, &QLineEdit::editingFinished, this, [this] {
+            inputHistory_.clear();
+            pressedHistory_.clear();
+            restart();
+        });
+    }
+    dialogueNamesUi_->hide();
+    layout->addWidget(dialogueNamesUi_);
     auto controls = new QHBoxLayout;
     play_ = new QPushButton("Play");
     play_->setCheckable(true);
@@ -120,7 +142,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     panelControlsUi_ = new QWidget;
     auto panelButtons = new QHBoxLayout(panelControlsUi_);
     panelButtons->setContentsMargins(0, 0, 0, 0);
-    panelButtons->addWidget(new QLabel("Panel controls"));
+    panelButtons->addWidget(new QLabel("Dialogue / panel controls"));
     const struct {
         const char *label;
         const char *name;
@@ -225,12 +247,54 @@ void ScenePreview::skipScene() {
         step();
 }
 void ScenePreview::panelButton(quint16 bit) {
-    if (!current_ || current_->stopped || current_->playback.panels().empty())
+    if (!current_ || current_->stopped || (current_->playback.panels().empty() && !hasDialogue()))
         return;
     branchInput();
     pendingPressed_ |= bit;
     if (!timer_->isActive())
         step();
+}
+ScenePreview::~ScenePreview() {
+    stop();
+    // QWidget closes the focused child after derived members have been destroyed.
+    for (auto field : dialogueNames_)
+        disconnect(field, nullptr, this, nullptr);
+}
+void ScenePreview::setDialogues(std::optional<Dialogues> dialogues) {
+    if (dialogues.has_value() == dialogues_.has_value() &&
+        (!dialogues || dialogues->json() == dialogues_->json()))
+        return;
+    dialogues_ = std::move(dialogues);
+    inputHistory_.clear();
+    pressedHistory_.clear();
+    restart();
+}
+bool ScenePreview::hasDialogue() const {
+    if (!current_ || !current_->playback.dialogue())
+        return false;
+    for (int i = 0; i < 6; ++i)
+        if (current_->playback.dialogue()->resources.active(i))
+            return true;
+    return false;
+}
+std::optional<QPointF> ScenePreview::dialoguePoint(const Snapshot &snapshot, int slot) const {
+    const auto &playback = snapshot.playback;
+    if (!playback.actors().actor(slot))
+        return std::nullopt;
+    // Keep placement on the same current packed matrix path as the desktop Actor draw.
+    // Prepare on a copy: placement must not advance drawing or publish linked-body changes.
+    auto actors = playback.actors();
+    if (mode_ == 0)
+        actors.prepareModeZeroMatrices(playback.cameras().registered(), playback.transforms());
+    else {
+        if (!playback.lighting())
+            throw Error("Dialogue world projection requires current lighting inputs");
+        actors.prepareModeTwoMatrices(playback.cameras().actor(), *playback.lighting());
+    }
+    return playback.cameras()
+        .actor()
+        .projectPackedOrigin(actors.actor(slot)->record().mid(0xa0, 64))
+        .screen;
 }
 void ScenePreview::imageButton(quint16 bit, bool down) {
     auto input = liveInput_;
@@ -241,8 +305,12 @@ void ScenePreview::imageButton(quint16 bit, bool down) {
         step();
 }
 bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
+    if (object == view_ && event->type() == QEvent::Resize)
+        QTimer::singleShot(0, this, [this] {
+            view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
+        });
     if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
-        !current_->playback.panels().empty()) {
+        (!current_->playback.panels().empty() || hasDialogue())) {
         const auto key = static_cast<QKeyEvent *>(event);
         const quint16 bit = key->key() == Qt::Key_A      ? 0x8000
                             : key->key() == Qt::Key_B    ? 0x4000
@@ -300,8 +368,10 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
         imageInput({});
     return QWidget::eventFilter(object, event);
 }
-void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode) {
+void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode,
+                               std::optional<Dialogues> dialogues) {
     stop();
+    dialogues_ = std::move(dialogues);
     inputHistory_.clear();
     pressedHistory_.clear();
     liveInput_ = {};
@@ -309,6 +379,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     launchImageUi_->hide();
     storyCastEnabled_ = false;
     storyCastUi_->hide();
+    dialogueNamesUi_->hide();
     try {
         const auto resource = programs.resource(id);
         if (resource.selectors.isEmpty() || (mode != 0 && mode != 2))
@@ -319,6 +390,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         const auto launch = SceneImages::launch(programs.program(id));
         storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
         storyCastUi_->setVisible(storyCastEnabled_);
+        const auto &commands = programs.program(id).commands;
+        dialogueNamesUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(),
+                                                 [](const auto &c) { return c.opcode == 0xbf; }));
         {
             const QSignalBlocker block(launchImage_);
             launchImage_->clear();
@@ -349,6 +423,10 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         if (storyCastEnabled_)
             context_->setText(context_->text() + "\nThis scene uses the selected sample cast. Its "
                                                  "authored positions stay unchanged.");
+        context_->setText(
+            context_->text() +
+            "\nDialogue uses the preview names and current Actor "
+            "matrices. Desktop cadence: one resource pass per step, drawn over the scene.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -397,6 +475,16 @@ void ScenePreview::restart() {
                                [](int, float, float) { return 0.f; });
         if (storyCastEnabled_)
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+        std::array<QByteArray, 4> names;
+        for (int i = 0; i < 4; ++i) {
+            names[i] = dialogueNames_[i]->text().toLatin1();
+            if (QString::fromLatin1(names[i]) != dialogueNames_[i]->text())
+                throw Error("Preview names require supported native single-byte characters");
+            names[i].append(char(0));
+        }
+        dialogueEnvironment_ = DialoguePlayback::environment(rom_);
+        playback.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
+        playback.dialogue()->context = SceneDialogueContext::preview(std::move(names));
         const auto launch =
             SceneImages::launch(resources_->entries()[resources_->selectors()[selector_]].program);
         if (launch.resource_class == 4) {
@@ -408,6 +496,9 @@ void ScenePreview::restart() {
             playback.loadImagePresentation(row);
         }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
+        current_->dialogue.emplace(rom_, dialogues_);
+        if (!dialogueDrawing_)
+            dialogueDrawing_.emplace(rom_);
         render(*current_, false);
         checkpoints_.insert(0, *current_);
         present();
@@ -721,6 +812,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             const auto rgba = drawing.fade().rgba();
             painter.fillRect(frame.rect(), QColor(rgba[0], rgba[1], rgba[2], rgba[3]));
         }
+        if (next.dialogue && drawing.dialogue()) {
+            const auto pixels =
+                next.dialogue->image(drawing.dialogue()->resources, *dialogueDrawing_);
+            const QImage overlay(reinterpret_cast<const uchar *>(pixels.rgba.constData()),
+                                 pixels.width, pixels.height, QImage::Format_RGBA8888);
+            painter.drawImage(0, 0, overlay);
+        }
     }
     next.frame = std::move(frame);
     QSet<quint32> retained;
@@ -774,11 +872,29 @@ void ScenePreview::step() {
             }
         };
         const auto result =
-            next.playback.advance(empty, [&](quint32 op, const QVector<quint32> &args, int &) {
-                return referenceCommand(next, op, args);
-            });
+            // This callback exists only during this invocation, never in a retained snapshot.
+            [&] {
+                next.playback.dialogue()->project = [&](int slot) {
+                    return dialoguePoint(next, slot);
+                };
+                const auto result = next.playback.advance(
+                    empty, [&](quint32 op, const QVector<quint32> &args, int &) {
+                        return referenceCommand(next, op, args);
+                    });
+                next.playback.dialogue()->project = {};
+                return result;
+            }();
         const bool complete =
             result == ScenePlayback::Advanced || result == ScenePlayback::Released;
+        if (complete) {
+            auto &state = *next.playback.dialogue();
+            auto environment = dialogueEnvironment_;
+            state.context->supplyTextSources(environment);
+            const auto pressed = pressedHistory_.value(tick_);
+            next.dialogue->advance(
+                state.resources, state.windows, environment,
+                {state.context->textParameter(), pressed, quint16(pressed & 0x0c00), 0});
+        }
         render(next, complete);
         next.stopped = result != ScenePlayback::Advanced;
         next.reason =
@@ -840,12 +956,17 @@ void ScenePreview::present() {
     skip_->setEnabled(play_->isEnabled());
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
     imageControlsUi_->setEnabled(play_->isEnabled());
-    panelControlsUi_->setVisible(current_ && !current_->playback.panels().empty());
+    panelControlsUi_->setVisible(current_ &&
+                                 (!current_->playback.panels().empty() || hasDialogue()));
     panelControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
     canvas_->setSceneRect(0, 0, 320, 240);
     setProperty("sceneTick", tick_);
     setProperty("sceneStopped", !current_ || current_->stopped);
+    setProperty("sceneDialogueState",
+                current_ && current_->dialogue
+                    ? current_->dialogue->state(0, current_->playback.dialogue()->resources)
+                    : -1);
     if (!current_) {
         frame_ = {};
         status_->setText("No active scene.");

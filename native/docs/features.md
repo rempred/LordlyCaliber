@@ -33,6 +33,11 @@ rejected by the promotion loader; it does not silently show retail requirements.
 Dynamic event66/67 scenes expose five preview cast selectors. Launch translations
 change bodies and dialogue branches while preserving authored coordinates; these
 sample choices do not edit the game army or scene source.
+Scene playback now displays edited dialogue with native text/window execution,
+current-ROM artwork, explicit preview names and recorded confirm/choice input.
+Window state and input survive seeking and checkpoints. Actor anchors use current
+packed drawing matrices; shared-pass cadence and composition remain desktop
+assumptions. Automatic ordinary portraits and audible playback remain unfinished.
 
 Scene images support native vignette construction, scripted pan/zoom, forward
 and reverse trails, and manual direction/zoom controls with animated boundary

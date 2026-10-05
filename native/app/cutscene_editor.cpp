@@ -3,8 +3,8 @@
 #include "app/dialogue_inspector.h"
 #include "app/scene_command_editor.h"
 #include "app/scene_event_editor.h"
-#include "app/transform_preview.h"
 #include "app/scene_preview.h"
+#include "app/transform_preview.h"
 #include "engine/scene_import.h"
 #include <QComboBox>
 #include <QDialog>
@@ -226,6 +226,10 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     auto dialogue =
         project ? new DialogueInspector(project, undo, changed) : new DialogueInspector(rom_);
     pages->addTab(dialogue, "Dialogue");
+    connect(pages, &QTabWidget::currentChanged, this, [this, pages] {
+        if (project_ && pages->currentWidget() == scenePreview_)
+            scenePreview_->setDialogues(project_->dialogues());
+    });
     commands_->setToolTip(
         "Double-click an Actor creation, dialogue or transform command to preview it.");
     connect(commands_, &QTableWidget::cellDoubleClicked, this,
@@ -515,7 +519,8 @@ void CutsceneEditor::selectScene() {
         backgrounds_.modeEvidence =
             QString("Preview unavailable: %1").arg(QString::fromUtf8(e.what()));
     }
-    scenePreview_->selectScene(programs(), key, backgrounds_.mode);
+    scenePreview_->selectScene(programs(), key, backgrounds_.mode,
+                               project_ ? project_->dialogues() : std::optional<Dialogues>{});
     commands_->setRowCount(scene.program.commands.size());
     for (int i = 0; i < scene.program.commands.size(); ++i) {
         const auto &cmd = scene.program.commands[i];

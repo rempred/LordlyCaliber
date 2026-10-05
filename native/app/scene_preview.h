@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/dialogue_session.h"
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
@@ -16,6 +17,7 @@ class QTimer;
 class QGraphicsView;
 class QGraphicsScene;
 class QComboBox;
+class QLineEdit;
 namespace lordly {
 // Interactive PC reference stage. Unknown game services stop the preview.
 // Completed draw snapshots keep ordinary UI repaints from advancing tint.
@@ -23,7 +25,9 @@ class ScenePreview : public QWidget {
     Q_OBJECT
   public:
     explicit ScenePreview(const Rom &, QWidget *parent = nullptr);
-    void selectScene(const ScenePrograms &, SceneId, int mode);
+    ~ScenePreview() override;
+    void selectScene(const ScenePrograms &, SceneId, int mode, std::optional<Dialogues> = {});
+    void setDialogues(std::optional<Dialogues>);
     const QImage &renderedFrame() const {
         return frame_;
     }
@@ -48,6 +52,7 @@ class ScenePreview : public QWidget {
         int environmentSelector = -1;
         quint32 previewRandom = 1;
         quint32 texturePhase = 0;
+        std::optional<DialoguePlayback> dialogue;
     };
     void restart();
     void seek(int tick);
@@ -65,12 +70,17 @@ class ScenePreview : public QWidget {
     void branchInput();
     void skipScene();
     void panelButton(quint16);
+    bool hasDialogue() const;
+    std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
     StageFlatRenderer stageRenderer_;
     StageObjectRenderer objectRenderer_;
     std::optional<Directors> resources_;
+    std::optional<Dialogues> dialogues_;
+    std::optional<DialogueDrawing> dialogueDrawing_;
+    DialogueTextEnvironment dialogueEnvironment_;
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;
     QMap<int, LordlyImageInput> inputHistory_;
@@ -93,5 +103,7 @@ class ScenePreview : public QWidget {
     QWidget *storyCastUi_;
     std::array<QComboBox *, 5> storyCast_{};
     bool storyCastEnabled_ = false;
+    QWidget *dialogueNamesUi_;
+    std::array<QLineEdit *, 4> dialogueNames_{};
 };
 } // namespace lordly

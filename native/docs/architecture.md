@@ -1,5 +1,35 @@
 # Native Lordly Caliber
 
+## Dialogue in scene playback
+
+DialoguePlayback now owns the shared resource pass used by both standalone
+DialogueSession and ScenePreview. The Director and resource pass share the same
+six-window pool, controls and context. Scene snapshots retain payloads, queues and
+edited archive sources; confirm/cancel and choice input reuse the recorded input
+timeline. Returning from dialogue editing refreshes playback only when the model
+changed. Four explicitly named preview substitutions replace unavailable army
+context without constructing fictitious roster records.
+
+The desktop runs one resource pass after each completed scene step and composes
+dialogue after the scene fade. These are preview cadence/composition assumptions.
+Anchors project current packed Actor matrices on a copy, preserving drawing state.
+This does not claim exact native projector rounding, global scheduler timing or
+N64 framebuffer coverage. Automatic ordinary-Actor portraits and audio remain open.
+
+Build73370 ui_tests sceneDialogueReplay dialoguePlaybackControls panelPreviewSeek
+storyCastPreview passed5770ms. The new check covers edited source, substitutions,
+confirm, script resume/close, checkpoints, rewind/restart, changing text and names,
+and unchanged project data. It found and fixed a teardown crash: QLineEdit focus
+loss can emit editingFinished after derived members are destroyed. Both preview
+owners now disconnect their text fields before QWidget teardown.
+Build63268 storyOpeningDialogue sceneDialogueReplay dialoguePlaybackControls passed
+2893ms; the unchanged01FA8BF4 reaches its native-script wait with "Happy Birthday!"
+over the authored black fade and replays exactly. Screenshots were inspected.
+The canvas now refits when appearing controls resize the viewport. Existing
+sharedNamesAgainstMips, creationResumesWithCurrentContext, composedResourceLifecycle
+and playbackTracksWindowsAcrossSuspension passed1705ms. No ROM writes or emulator
+input occurred. Later commands in01FA8BF4 still require the audio domain.
+
 ## Dynamic story preview cast
 
 SceneStoryCast recognizes the five paired class replacements and seventeen launch
