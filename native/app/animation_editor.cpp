@@ -298,6 +298,7 @@ void AnimationEditor::selectClass(int id) {
 void AnimationEditor::refresh() {
     if (!classes_)
         return;
+    project_->loadAnimationRoutes();
     QScopedValueRollback<bool> guard(refreshing_, true);
     const auto source = sources_->currentData().toInt();
     classes_->clear();

@@ -58,8 +58,15 @@ capacity/duplicate/compatibility failures and historical logical decoding.
 reset preservation, source-built installation, exact byte conservation/CRC, browser
 readback, reopen/no-op export, template inheritance and removal preserving later
 allocations. Updated historical/advanced guard checks passed13,070ms; the complete
-animation_routes_tests regression passed26,738ms. Native override controls and staged
-animation previews are the next UI work; sequence authoring remains outstanding.
+animation_routes_tests regression passed26,738ms. The native Attack overrides panel now supports class/action/body-route selection,
+Normal/Blocked choices, add/update/remove/remove all, shared undo and advanced-row
+read-only display. Selection changes cannot reselect the previously current table row;
+unmatched search input and duplicate keys leave the model/undo stack unchanged.
+`ui_tests attackAnimationOverrides classAnimationAssignments addClassUndoRedo
+loadDesktopWorkspace` passed18,788ms: actual controls, class-template inheritance,
+shared undo between both animation panels, project persistence and the existing class
+animation source-export regression. The1100x820 screenshot was inspected. Staged
+animation previews and sequence authoring remain outstanding.
 
 ## Expandable class animation data
 

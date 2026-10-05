@@ -14,6 +14,7 @@
 #include "app/army_editor.h"
 #include "app/combat_editor.h"
 #include "app/animation_editor.h"
+#include "app/animation_override_editor.h"
 #include <QDialogButtonBox>
 #include "game/classes/save_format.h"
 #include <QUndoGroup>
@@ -62,6 +63,74 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void attackAnimationOverrides() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty()) QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationEditor animations(&project, &undo, []{});
+            AnimationOverrideEditor editor(&project, &undo, []{});
+            RecordModel classes(&project, Table::Classes, &undo);
+            editor.resize(1100, 820); editor.show();
+            auto cls = editor.findChild<QComboBox *>("overrideClass");
+            auto action = editor.findChild<QComboBox *>("overrideAction");
+            auto route = editor.findChild<QComboBox *>("overrideRoute");
+            auto normal = editor.findChild<QComboBox *>("overrideNormal");
+            auto blocked = editor.findChild<QComboBox *>("overrideBlocked");
+            auto rows = editor.findChild<QTableWidget *>("overrideRows");
+            auto add = editor.findChild<QPushButton *>("overrideAdd");
+            auto update = editor.findChild<QPushButton *>("overrideUpdate");
+            auto remove = editor.findChild<QPushButton *>("overrideRemove");
+            auto clear = editor.findChild<QPushButton *>("overrideClear");
+            auto notice = editor.findChild<QLabel *>("overrideNotice");
+            QVERIFY(cls && action && route && normal && blocked && rows && add && update && remove && clear && notice);
+            cls->setCurrentIndex(cls->findData(2));
+            action->setCurrentIndex(action->findData(5));
+            QVERIFY(normal->findData(40) >= 0); QVERIFY(blocked->findData(41) >= 0);
+            normal->setCurrentIndex(normal->findData(40));
+            blocked->setCurrentIndex(blocked->findData(41));
+            add->click(); QCOMPARE(rows->rowCount(), 1); QCOMPARE(undo.count(), 1);
+            QJsonObject expected{{"classId",2},{"actionId",5},{"normalSelector",40},{"blockedSelector",41}};
+            QCOMPARE(project.animationOverrides()->entries()[0].toObject(), expected);
+            normal->setCurrentIndex(normal->findData(41)); update->click();
+            expected["normalSelector"] = 41;
+            QCOMPARE(project.animationOverrides()->entries()[0].toObject(), expected);
+            undo.undo(); QCOMPARE(normal->currentData().toInt(), 40);
+            undo.redo(); QCOMPARE(normal->currentData().toInt(), 41);
+            const auto beforeBad = project.animationOverrides()->json(); const int count = undo.count();
+            add->click(); QCOMPARE(project.animationOverrides()->json(), beforeBad); QCOMPARE(undo.count(), count);
+            QVERIFY(!notice->text().isEmpty());
+            action->setEditText("No such action"); update->click();
+            QCOMPARE(project.animationOverrides()->json(), beforeBad); QVERIFY(notice->text().contains("search results"));
+            action->setCurrentIndex(action->findData(5));
+            // Clearing a selection must not reselect its still-current table row.
+            cls->setCurrentIndex(cls->findData(1)); QCOMPARE(cls->currentData().toInt(), 1);
+            QVERIFY(rows->selectedItems().isEmpty()); update->click();
+            QCOMPARE(project.animationOverrides()->json(), beforeBad);
+            cls->setCurrentIndex(cls->findData(2)); route->setCurrentIndex(route->findData(0));
+            QCOMPARE(route->currentData().toInt(), 0); normal->setCurrentIndex(normal->findData(40));
+            blocked->setCurrentIndex(blocked->findData(41)); add->click();
+            QCOMPARE(rows->rowCount(), 2); QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            const auto twoRows = project.animationOverrides()->json();
+            remove->click(); QCOMPARE(rows->rowCount(), 1); undo.undo();
+            QCOMPARE(project.animationOverrides()->json(), twoRows);
+            const int id = classes.appendClass(2, "Override test"); QCOMPARE(id, 165);
+            QCOMPARE(rows->rowCount(), 4); QVERIFY(cls->findData(id) >= 0);
+            animations.selectClass(id); cls->setCurrentIndex(cls->findData(id));
+            undo.undo(); QCOMPARE(rows->rowCount(), 2); QCOMPARE(cls->findData(id), -1);
+            QVERIFY(animations.findChild<QComboBox *>("animationClass")->findData(id) < 0);
+            undo.redo(); QCOMPARE(rows->rowCount(), 4); QVERIFY(cls->findData(id) >= 0);
+            const auto fourRows = project.animationOverrides()->json();
+            clear->click(); QCOMPARE(rows->rowCount(), 0); undo.undo();
+            QCOMPARE(project.animationOverrides()->json(), fourRows); QCOMPARE(rows->rowCount(), 4);
+            QTemporaryDir work; project.saveFolder(work.filePath("project"));
+            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopened.animationOverrides()->json(), fourRows);
+            rows->selectRow(0); QVERIFY(editor.grab().save("attack-overrides-workspace.png"));
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
+
     void classAnimationAssignments() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
