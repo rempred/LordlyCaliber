@@ -29,11 +29,14 @@ class ActorRenderer {
                                             const std::array<qint16, 3> &globalRgb,
                                             bool sepia = false, int shadowIndex = 0,
                                             quint8 alpha = 255, ActorRenderState *state = nullptr);
+    // Stage callers retain their own combiner and bind color before mask by
+    // setting bindActorTexture=false; ordinary Actors bind mask before color.
     static ActorRasterLayer projectLayer(const ActorFrameLayer &, const QByteArray &actor,
                                          int layer, bool shadow, const SceneCamera &,
                                          const std::array<qint16, 3> &globalRgb,
                                          double bodyMultiplier = 1., int shadowIndex = 0,
-                                         quint8 alpha = 255, ActorRenderState *state = nullptr);
+                                         quint8 alpha = 255, ActorRenderState *state = nullptr,
+                                         bool bindActorTexture = true);
     static void paint(QImage &destination, const QVector<ActorRasterLayer> &);
 
   private:

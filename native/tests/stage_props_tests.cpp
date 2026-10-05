@@ -1,5 +1,8 @@
 #include "engine/direct_pose.h"
+#include "engine/scene_world_drawing.h"
+#include "engine/stage_orthographic.h"
 #include "engine/stage_placements.h"
+#include "game/director/scene_matrix.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -44,6 +47,96 @@ class StagePropsTests : public QObject {
         return QByteArray::fromHex(value.toString().toLatin1());
     }
   private slots:
+    void allOrthographicProps() {
+        const auto rom = Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
+        float identity[16];
+        lordly_matrix_identity(identity);
+        QByteArray parent(64, 0);
+        QVERIFY(lordly_matrix_pack(reinterpret_cast<uint8_t *>(parent.data()), identity));
+        const auto camera = SceneCamera::orthographic(SceneWorldDrawing::clipMatrix());
+        StageFlatRenderer renderer(rom);
+        int count = 0, visible = 0;
+        for (int selector = 0; selector < 80; ++selector) {
+            auto stage = StageOrthographic::load(rom, StagePlacements::load(rom, selector),
+                                                 [] { return 1234U; });
+            count += int(stage.props().size());
+            stage.advance();
+            try {
+                for (int pass = 0; pass < 3; ++pass) {
+                    const auto layers =
+                        renderer.project(stage, pass, camera, parent, selector, {255, 255, 255});
+                    for (const auto &layer : layers) {
+                        const auto &prop = stage.props()[layer.slot];
+                        const auto pixels = prop.pose.art()
+                                                .frame(rom, qint16(u16(prop.pose.record(), 10)),
+                                                       u16(prop.header, 6))[layer.layer]
+                                                .pixels;
+                        // Stage mux is color*primitive, mask*primitive-alpha.
+                        // Check texture values independently of screen clipping.
+                        for (int y = 0; y < layer.image.height(); ++y)
+                            for (int x = 0; x < layer.image.width(); ++x) {
+                                const int at = (y * layer.image.width() + x) * 4;
+                                const auto color = layer.image.pixelColor(x, y);
+                                const int expected =
+                                    u8(pixels.image.rgba, at + 3) * layer.primitive[3] / 255;
+                                QVERIFY(qAbs(color.alpha() - expected) <= 1);
+                            }
+                    }
+                    QImage image(320, 240, QImage::Format_RGBA8888);
+                    image.fill(Qt::transparent);
+                    ActorRenderer::paint(image, layers);
+                    if (selector == 57) {
+                        for (int y = 0; y < 240; ++y)
+                            for (int x = 0; x < 320; ++x)
+                                visible += image.pixelColor(x, y).alpha() != 0;
+                        QVERIFY(image.save(QString("stage-hall-pass-%1.png").arg(pass)));
+                    }
+                }
+            } catch (const Error &e) {
+                QFAIL(qPrintable(QString("Selector%1: %2").arg(selector).arg(e.what())));
+            }
+        }
+        QCOMPARE(count, 116);
+        QVERIFY(visible > 100);
+    }
+    void passSelectionAndWrapping() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto rom = Rom::open(path);
+        QTemporaryDir work;
+        QProcess reference;
+        reference.start(
+            "node",
+            {QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().filePath("stage-flat-mips.cjs"),
+             path, work.filePath("passes.json")});
+        QVERIFY(reference.waitForFinished(60000));
+        QVERIFY2(reference.exitCode() == 0, reference.readAllStandardError().constData());
+        QFile file(work.filePath("passes.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        for (const auto &value :
+             QJsonDocument::fromJson(file.readAll()).object()["cases"].toArray()) {
+            const auto row = value.toObject();
+            const auto z = row["z"].toArray();
+            for (int i = 0; i < z.size(); ++i) {
+                QByteArray record(100, 0);
+                put16(record, 4, quint16(z[i].toInt()));
+                int expected = -1;
+                for (int pass = 0; pass < 3; ++pass)
+                    if (row["passes"].toArray()[pass].toArray().contains(i))
+                        expected = pass;
+                QCOMPARE(StageOrthographic::drawPass(record, float(row["base"].toDouble()),
+                                                     float(row["foreground"].toDouble())),
+                         expected);
+            }
+        }
+        for (const auto &value : reference_["wrapping"].toArray()) {
+            const auto row = value.toObject();
+            auto stage = StageOrthographic::fromRecords(rom, {unhex(row["initial"])});
+            for (const auto &call : row["calls"].toArray()) {
+                stage.advance();
+                QCOMPARE(stage.props()[0].record(), unhex(call));
+            }
+        }
+    }
     void initTestCase() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

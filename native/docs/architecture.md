@@ -1,5 +1,46 @@
 # Native Lordly Caliber
 
+## Orthographic Stage prop composition
+
+StageOrthographic expands normal and randomized foreground-owned placements into
+their native100-byte records. The world drawing prepass advances direct poses
+and performs the original signed16 boundary correction. ScenePreview commits
+this once per drawing snapshot, respecting alternate mode; repaint and backward
+seek retain the completed state. Scattered placements use an explicit fixed
+desktop seed, not the current game's random state. Perspective Stage objects
+remain a separate owner and are still disclosed as incomplete.
+
+The original drawing order has three prop phases: after the background image,
+before the foreground image, and after the foreground image. Base-distance ties
+belong to the background. Among foreground-nearest props, headerZ greater than
+the foreground anchor draws before its image; the remainder draws after it.
+Pose Z offsets affect projection but not this pass selection. This corrects the
+earlier task-note interpretation of the latter comparison as a visibility cutoff;
+reading only the final sweep omitted the foreground owner's first sweep.
+
+StageFlatRenderer caches decoded frames, retains packed translation and layer
+scales, and uses the Stage material presets. Their color-before-mask texture
+binding differs from Actors' mask-before-color binding. Layer opacity accumulates
+across a prop's layers. Native I4/I8 descriptor images now supply intensity in all
+four texture lanes; background-image decoding keeps its separate opacity rules.
+Colors/transitions/tint have explicit render inputs; the current preview still
+uses neutral scene colors. Qt sampling, coverage, blending and combined matrix
+precision remain approximations, not a complete RDP implementation.
+
+After build73533, `stage_props_tests -o stage-props-report.txt,txt` passed1190ms.
+It loads/advances/renders all116 orthographic instances across80 selectors,
+checks texture alpha numerically, compares75 depth classifications with both
+complete original image owners, and compares48 wrapping updates with the original
+Stage updater. Existing334 placement,32 initialization and10,880 direct pose
+comparisons also pass. Image payloads/final callbacks are controlled in the pass
+reference; these checks do not establish original framebuffer equivalence.
+
+`ui_tests scatteredPropsSeek worldScenePanAndSeek sceneRoomComposition
+sceneSpriteComposition` passed1288ms: visible animation, seeking beyond a120-step
+checkpoint and back, exact restart/repaint, pan and prior layering. Hall candles
+and snowy-scene images were inspected. `scene_runtime_tests
+actorLayerProjectionAndComposition` passed3ms for the shared raster regression.
+
 ## Direct Stage placement and pose records
 
 StagePlacements reads the foreground selector's two lists from current-ROM resource

@@ -155,6 +155,36 @@ class UiTests : public QObject {
         QCOMPARE(preview.renderedFrame(), first);
         QVERIFY(preview.grab().save("transform-preview-ui.png"));
     }
+    void scatteredPropsSeek() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        const auto source = scenes.original().entries().first();
+        const auto id = scenes.createScene("Scattered props playback", source.key, false);
+        QVector<quint32> words{0x80000006U, 35};
+        for (int i = 0; i < 140; ++i) words << 0 << 0x80000000U;
+        words << 0x80000001U << (0xff000000U | quint32(source.program.resourceClass()));
+        QByteArray bytes(words.size() * 4, 0);
+        for (int i = 0; i < words.size(); ++i) put32(bytes, i * 4, words[i]);
+        scenes.replace(id, bytes);
+        ScenePreview preview(rom); preview.resize(1100, 800); preview.show();
+        preview.selectScene(scenes, id, 2);
+        auto position = preview.findChild<QSpinBox *>("scenePosition");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        preview.findChild<QPushButton *>("sceneStep")->click();
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        const auto first = preview.renderedFrame(); QVERIFY(!first.isNull());
+        position->setValue(124); QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 124, 20000);
+        QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+        QVERIFY(preview.renderedFrame() != first);
+        position->setValue(1); QTRY_COMPARE(preview.property("sceneTick").toInt(), 1);
+        QCOMPARE(preview.renderedFrame(), first);
+        preview.update(); QCoreApplication::processEvents(); QCOMPARE(preview.renderedFrame(), first);
+        preview.findChild<QPushButton *>("sceneRestart")->click();
+        preview.findChild<QPushButton *>("sceneStep")->click(); QCOMPARE(preview.renderedFrame(), first);
+        QVERIFY(preview.grab().save("scattered-props-preview.png"));
+    }
     void worldScenePanAndSeek() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

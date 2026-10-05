@@ -15,7 +15,7 @@
 #include <bit>
 namespace lordly {
 ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
-    : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom) {
+    : QWidget(parent), rom_(rom), renderer_(rom), spriteRenderer_(rom), stageRenderer_(rom) {
     auto layout = new QVBoxLayout(this);
     context_ = new QLabel("Select a scene to preview its current commands.");
     context_->setWordWrap(true);
@@ -106,7 +106,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain and no army roster. Missing services pause playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Stage props, equipment, special sprites and audio remain unfinished.");
+            "Scattered props use a fixed preview seed. Perspective props, equipment, special sprites and audio remain unfinished.");
         restart();
     } catch (const std::exception &e) {
         resources_.reset();
@@ -170,12 +170,26 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     // Common fresh mode-two launch copies environment into foreground selection.
     // Other launch paths must supply their separate foreground owner.
     auto backgrounds = SceneBackgroundRenderer::world(rom_, selector, selector);
+    const auto placements = StagePlacements::load(rom_, selector);
+    auto randomState = next.previewRandom;
+    auto props = StageOrthographic::load(rom_, placements, [&] {
+        // Stable desktop launch input, not a claim to reproduce the game's RNG state.
+        randomState ^= randomState << 13;
+        randomState ^= randomState >> 17;
+        randomState ^= randomState << 5;
+        return randomState & 0x7fffU;
+    });
     next.backgroundName = backgrounds.description();
     next.backgrounds = std::move(backgrounds);
+    next.flatProps = std::move(props);
+    next.foregroundSelector = selector;
+    next.previewRandom = randomState;
     return true;
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
+    if (mode_ == 2 && commitDraw && !drawing.schedule().alternate && next.flatProps)
+        next.flatProps->advance();
     for (int slot = 0; slot < 30; ++slot)
         if (const auto sprite = drawing.sprites().sprite(slot)) {
             const auto animation = u16(sprite->record(), 0x44);
@@ -227,8 +241,16 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             auto drawFlat = [&](int pass) {
                 QImage flat(320, 240, QImage::Format_RGBA8888);
                 flat.fill(Qt::transparent);
+                if (pass == 1 && next.flatProps)
+                    ActorRenderer::paint(flat, stageRenderer_.project(*next.flatProps, 1, camera,
+                                            parent, next.foregroundSelector, {255, 255, 255}, {},
+                                            false, environment));
                 if (next.backgrounds)
                     ActorRenderer::paint(flat, next.backgrounds->project(pass, camera, parent));
+                if (next.flatProps)
+                    ActorRenderer::paint(flat, stageRenderer_.project(*next.flatProps, pass ? 2 : 0, camera,
+                                            parent, next.foregroundSelector, {255, 255, 255}, {},
+                                            false, environment));
                 ActorRenderer::paint(flat,
                                      spriteRenderer_.project(drawing.sprites(), pass, 0, camera,
                                                              parent, {255, 255, 255}));

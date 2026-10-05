@@ -5,6 +5,7 @@
 #include "engine/scene_programs.h"
 #include "engine/scene_world_drawing.h"
 #include "engine/sprite_renderer.h"
+#include "engine/stage_orthographic.h"
 #include <QMap>
 #include <QWidget>
 class QLabel;
@@ -35,6 +36,9 @@ class ScenePreview : public QWidget {
         QString reason, backgroundName;
         bool stopped = false;
         std::optional<SceneBackgroundRenderer> backgrounds;
+        std::optional<StageOrthographic> flatProps;
+        int foregroundSelector = -1;
+        quint32 previewRandom = 1;
     };
     void restart();
     void seek(int tick);
@@ -47,6 +51,7 @@ class ScenePreview : public QWidget {
     Rom rom_;
     SceneActorRenderer renderer_;
     SpriteRenderer spriteRenderer_;
+    StageFlatRenderer stageRenderer_;
     std::optional<Directors> resources_;
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;

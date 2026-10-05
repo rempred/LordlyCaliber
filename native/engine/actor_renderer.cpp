@@ -10,7 +10,7 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
                                              int layer, bool shadow, const SceneCamera &camera,
                                              const std::array<qint16, 3> &globalRgb,
                                              double bodyMultiplier, int shadowIndex, quint8 alpha,
-                                             ActorRenderState *state) {
+                                             ActorRenderState *state, bool bindActorTexture) {
     if (actor.size() != 336)
         throw Error("Actor rendering requires a complete record");
     if (shadowIndex < 0 || shadowIndex > 1)
@@ -54,7 +54,8 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
     auto next = state    ? *state
                 : shadow ? ActorRenderState::shadow({0, 0, 0, 0})
                          : ActorRenderState::main({0, 0, 0, 0});
-    next.bindTexture(frame.pixels.dualTexture);
+    if (bindActorTexture)
+        next.bindTexture(frame.pixels.dualTexture);
     const auto combiner = next.combiner();
     CombineInputs inputs;
     inputs.primitive = result.primitive;
@@ -67,8 +68,13 @@ ActorRasterLayer ActorRenderer::projectLayer(const ActorFrameLayer &frame, const
             for (int c = 0; c < 4; ++c)
                 inputs.texel0[c] = inputs.texel1[c] = source[x * 4 + c];
             if (frame.pixels.dualTexture) {
-                inputs.texel0.fill(source[x * 4 + 3]);
-                inputs.texel1[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
+                if (bindActorTexture) {
+                    inputs.texel0.fill(source[x * 4 + 3]);
+                    inputs.texel1[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
+                } else {
+                    inputs.texel1.fill(source[x * 4 + 3]);
+                    inputs.texel0[3] = u8(frame.pixels.colorAlpha, y * m.width + x);
+                }
             }
             const auto color = combiner.evaluate(inputs);
             for (int c = 0; c < 4; ++c)

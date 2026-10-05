@@ -209,9 +209,26 @@ QVector<ActorFrameLayer> ActorArt::frame(const Rom &rom, int token, int variant,
     QVector<ActorFrameLayer> result;
     qsizetype retained = 0;
     for (const auto &layer : layers(token)) {
-        const auto sprite = SpriteObject::decode(resource(rom, artKeys_[layer.art], true));
-        const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
-        auto pixels = sprite.frame(variant, palette, sepia);
+        const auto bytes = resource(rom, artKeys_[layer.art], true);
+        SpriteFrame pixels;
+        if (u16(bytes, 0) == 0x3634) {
+            if (u8(bytes, 2) != 4)
+                throw Error("Direct native image needs its texture layout conversion");
+            pixels.image = decodeN64Image(bytes);
+            pixels.sourceColorFormat = 4;
+            pixels.requestedChild = variant;
+            pixels.colorAlpha.resize(pixels.image.width * pixels.image.height);
+            for (int i = 0; i < pixels.colorAlpha.size(); ++i) {
+                // N64 I4/I8 supplies intensity in all four texture lanes.
+                const auto intensity = u8(pixels.image.rgba, i * 4);
+                put8(pixels.image.rgba, i * 4 + 3, intensity);
+                put8(pixels.colorAlpha, i, intensity);
+            }
+        } else {
+            const auto sprite = SpriteObject::decode(bytes);
+            const auto palette = palettes_.mid(u8(paletteMap_, layer.art) * 512, 512);
+            pixels = sprite.frame(variant, palette, sepia);
+        }
         pixels = pixels.oriented(layer.width, layer.height, layer.flags & 1, layer.flags & 2);
         if ((retained += pixels.image.rgba.size() + pixels.colorAlpha.size()) > 64 * 1024 * 1024)
             throw Error("Actor frame exceeds the pixel budget");
