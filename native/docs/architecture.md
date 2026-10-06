@@ -4909,3 +4909,16 @@ Undo/Redo and removal also pass. Capture inspected. These checks reuse the
 qualified image runtime and do not establish natural game load or full emulation.
 
 The complete native build passed (image-completion-wait-final-build.log).
+
+
+## Checked image-workflow portable package
+
+native/dist/LordlyCaliber-0.5-dev-20261006-043726.zip includes12adcbd: path ribbons,
+image construction, transitions, pan/zoom and completion waits. The isolated
+check-package.ps1 passed startup, bundled user-time compilation/export, independent
+record readback, reopen and source preservation (2.34 s). The isolated
+check-scene-import-package.ps1 passed browser conversion, compilation/export and
+2648 expected scene bytes (6.95 s). Evidence remains in parent Test ROMs/
+native-portable-e439ee443334426b8cb77fdf5e8c0d6b and portable-scene-import-
+b72432fc9fd3417d8139cdb123d5ca2c. These local checks are not clean-machine or
+natural-game validation and this package is not a published release.
