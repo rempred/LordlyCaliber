@@ -5371,3 +5371,14 @@ No natural Army-menu execution or full Save completion is claimed.
 
 The strengthened original-order assertion passed `legionCreation` in3967ms.
 The complete native build passed (legion-create-final-build.log).
+
+
+Portable development package LordlyCaliber-0.5-dev-20261006-065800 contains the
+legion workflows through137b67b. Isolated startup, bundled user-time compilation,
+export, independent class-record readback, reopening and master-ROM preservation
+passed (2.42s). Packaged scene import/compile/export/reopen also passed (6.96s),
+matching2648 expected scene-program bytes. Evidence directories in parent
+Test ROMs: native-portable-bd9e5fc08ec94424a00b3365cc4ae11a and
+portable-scene-import-9ab40efedc624d31a9b571b823b063ea. Package and logs remain
+local development artifacts; no release, clean-machine or natural game test
+is claimed.
