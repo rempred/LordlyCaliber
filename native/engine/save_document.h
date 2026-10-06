@@ -29,6 +29,10 @@ struct SaveUnit {
     int index = 0, label = 0, unity = 0, tactic = 0;
     QVector<int> members, cells, supplies;
 };
+struct SaveLegion {
+    int index = 0, label = 0;
+    QVector<int> units;
+};
 class SaveDocument {
   public:
     static SaveDocument open(const Rom &, const QByteArray &, int classCount = 165);
@@ -50,6 +54,8 @@ class SaveDocument {
     QVariant value(SaveTable, int row, const QString &key) const;
     SaveChange planEdit(SaveTable, int row, const QString &key, const QVariant &) const;
     QVector<SaveUnit> units() const;
+    QVector<SaveLegion> legions() const;
+    SaveChange planDisbandLegion(int index) const;
     QVector<int> reserveMembers() const;
     QVector<int> newUnitLeaders(const ClassData &) const;
     SaveChange planCreateUnit(int leader, int cell, const ClassData &) const;

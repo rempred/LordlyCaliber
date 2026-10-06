@@ -58,6 +58,16 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     members_->setObjectName("saveUnitMembers");
     members_->setMaximumHeight(150);
     body->addWidget(members_);
+    legion_ = new QLabel;
+    legion_->setObjectName("saveUnitLegion");
+    body->addWidget(legion_);
+    disbandLegion_ = new QPushButton("Disband legion, keep its squads");
+    disbandLegion_->setObjectName("saveDisbandLegion");
+    body->addWidget(disbandLegion_);
+    connect(disbandLegion_, &QPushButton::clicked, this, [this] {
+        if (shownLegion_ >= 0)
+            editor_->disbandLegion(shownLegion_);
+    });
     leader_ = new QPushButton("Make selected member the squad leader");
     leader_->setObjectName("saveChangeLeader");
     body->addWidget(leader_);
@@ -430,6 +440,23 @@ void SaveUnitEditor::refreshSwapTargets() {
     draftNote_->setVisible(pending);
     refreshSupplies(pending);
     refreshCreation(pending);
+    shownLegion_ = -1;
+    legion_->setText("Independent squad");
+    if (editor_->document() && units_->currentItem())
+        for (const auto &legion : editor_->document()->legions())
+            if (legion.units.contains(units_->currentItem()->data(Qt::UserRole).toInt())) {
+                shownLegion_ = legion.index;
+                const int count = int(std::count_if(legion.units.begin(), legion.units.end(),
+                                                    [](int id) { return id != 255; }));
+                legion_->setText(QString("Legion %1 · %2 squads").arg(legion.label).arg(count));
+                break;
+            }
+    disbandLegion_->setEnabled(shownLegion_ >= 0 && editor_->document()->canEditUnits() &&
+                               !pending);
+    disbandLegion_->setToolTip(pending
+                                   ? "Apply squad edits before changing legion membership"
+                                   : "Makes all squads independent, retaining their leaders, "
+                                     "formations, Unity and supplies; Undo restores the legion");
     disband_->setEnabled(editor_->document() && editor_->document()->canEditUnits() &&
                          units_->currentItem() && !pending);
     disband_->setToolTip(

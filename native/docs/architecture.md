@@ -5178,3 +5178,49 @@ browser scene import,2648 expected program bytes, compile/export and reopening
 passed (6.72 s). Evidence is parent Test ROMs/native-portable-
 6f1bdcc4af5e4583a8f84c2661b278d5 and portable-scene-import-
 a1d3cb2aa03c4ebfaaeba5e0f4c1ab1e. No clean-machine or natural-game claim.
+
+
+## Disbanding saved legions and correcting command restrictions
+
+Regular battery saves can disband a legion while retaining every squad, leader,
+formation, Unity value, Soldier group and carried item. The saved legion loses
+flag1 and its order entry is removed; the six saved order fields compact and
+fill with7. One Undo restores the exact original save. The Squads page shows
+legion membership and offers this operation with pending-draft protection.
+Malformed order, missing/duplicate/shared squads, absent commanders and
+unrepresentable order indexes refuse. Active runtime and suspend copies remain
+outside the editing path.
+
+The earlier leader/disband notes treated saved squad flag2 as current legion
+command authority. The full original path disproves that assumption: C1D68
+zeroes a record only when allocating a new saved index, so existing records
+retain prior commander/deployment bits. B7164 clears active membership but does
+not clear those persistent bits. The editor now retains them and checks actual
+flag1 legion references for commander/disband restrictions. Original mode5
+selection C01DC..C0A30 confirms that a command-type1 candidate becomes eligible
+after disbanding its legion; it remains ineligible if another legion is removed.
+The old commander fixtures now contain actual legion references.
+
+Ten11-byte legion records serialize, but order contains only six3-bit fields;
+255 runtime empties encode as7. Existing records bypass C2090's new-record order
+mapping, so native disband+store preserves the compacted saved index sequence.
+Whole original disband B7164..B726C (264 bytes), order refresh BB0CC..BB1EC
+(288 bytes), writer C1D68..C2328 (1472 bytes) and selection C01DC..C0A30
+(2132 bytes) match the existing Army snapshot under delta801135A0. Tests execute
+these user-ROM instructions with synthetic Army allocation, not a live menu.
+
+`save_document_tests legionDisbanding squadDisbanding squadLeaderChanges` passed
+in10497ms. The new check covers24 edits across both slots/three layouts, four
+whole original disband/store comparisons, eight original eligibility decisions
+and four original save decodes. Whole-memory preservation, last/first/middle
+removal, retained deployed flags, former commander changes and subsequent squad
+disbanding, exact Undo and malformed input refusal pass. The initial reference
+failure exposed the persistent-flag behavior above; the comparison now retains
+all bytes and passes without masking flags.
+
+`ui_tests saveLegionDisbandControls saveSquadDisbandControls saveLeaderControls
+saveSquadDraftProtection` passed in5262ms. Actual controls, membership labels,
+drafts, Undo/Redo, subsequent leader/squad actions and export/reopen pass. The
+capture was inspected. Legion creation and individual follower changes remain.
+
+The complete native build passed (legion-disband-final-build.log).

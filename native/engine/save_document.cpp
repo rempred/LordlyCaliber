@@ -540,6 +540,74 @@ SaveChange SaveDocument::difference(const QByteArray &next, int first, int size)
     }
     return result;
 }
+QVector<SaveLegion> SaveDocument::legions() const {
+    QVector<SaveLegion> result;
+    for (int i = 0; i < 10; ++i) {
+        const int at = 0x1969b8 + i * 11;
+        if ((u8(ram_, at + 1) & 0x81) != 1)
+            continue;
+        SaveLegion legion;
+        legion.index = i;
+        legion.label = u8(ram_, at);
+        for (int slot = 0; slot < 5; ++slot)
+            legion.units << u8(ram_, at + 2 + slot);
+        result << legion;
+    }
+    return result;
+}
+SaveChange SaveDocument::planDisbandLegion(int index) const {
+    if (!canEditUnits())
+        throw Error("Legion disbanding requires a regular battery-save slot");
+    const auto all = legions();
+    const auto found = std::find_if(all.begin(), all.end(),
+                                    [&](const auto &legion) { return legion.index == index; });
+    if (found == all.end())
+        throw Error("Choose an existing saved legion");
+    const auto squads = units();
+    QSet<int> present, ordered, members;
+    for (const auto &legion : all)
+        present << legion.index;
+    QVector<int> order;
+    // Normal-save descriptor stores six three-bit Legion order entries, empty7.
+    // Army runtime uses ten byte entries, emptyFF; its general record table has ten rows.
+    for (int slot = 0; slot < 6; ++slot) {
+        const int id = u8(ram_, 0x193ab0 + slot);
+        if (id == 7)
+            continue;
+        if (!present.contains(id) || ordered.contains(id))
+            throw Error("Saved legion order is inconsistent");
+        ordered << id;
+        if (id != index)
+            order << id;
+    }
+    if (ordered != present)
+        throw Error("Saved legion order cannot represent every active legion");
+    for (int id : found->units)
+        if (id != 255) {
+            if (id < 0 || id >= 30 || members.contains(id) ||
+                std::none_of(
+                    squads.begin(), squads.end(),
+                    [&](const auto &unit) { return unit.index == id; }))
+                throw Error("The legion has an invalid or duplicate squad reference");
+            for (const auto &legion : all)
+                if (legion.index != index && legion.units.contains(id))
+                    throw Error("A squad is assigned to more than one legion");
+            members << id;
+        }
+    if (found->units[0] == 255 || members.isEmpty())
+        throw Error("The legion has no command squad");
+    auto candidate = *this;
+    const int flag = 0x1969b8 + index * 11 + 1;
+    candidate.apply(candidate.planBytes(flag, QByteArray(1, char(u8(ram_, flag) & ~1))), true);
+    // B7164 clears active membership. C1D68 retains prior saved squad flag bits;
+    // command restrictions must therefore use live legion references, not bit2.
+    QByteArray bytes(6, 7);
+    for (int i = 0; i < order.size(); ++i)
+        bytes[i] = char(order[i]);
+    candidate.apply(candidate.planBytes(0x193ab0, bytes), true);
+    return difference(candidate.data_, recordOffset(slot_, expanded_),
+                      recordSize(slot_, expanded_));
+}
 QVector<SaveUnit> SaveDocument::units() const {
     QVector<SaveUnit> result;
     for (int i = 0; i < 30; ++i) {
@@ -755,7 +823,7 @@ SaveChange SaveDocument::planDisbandUnit(int index) const {
         throw Error("The squad needs a valid ordinary leader before disbanding");
     if (lordly_army_fixed_leader(quint8(leader), quint8(memberClasses(leader).first)))
         throw Error("The game keeps this character's class as a fixed squad leader");
-    bool legion = u8(ram_, at + 1) & 2;
+    bool legion = false;
     for (int row = 0; row < 10; ++row) {
         const int base = 0x1969b8 + row * 11;
         if (u8(ram_, base + 1) & 1)
@@ -979,7 +1047,12 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     if (u8(ram_, newAt) & 2)
         throw Error("The selected member already has a conflicting leader flag");
     const int at = 0x1971f0 + index * 25;
-    if ((u8(ram_, at + 1) & 2) && classes.commandType(newClasses.first, newClasses.second) != 2)
+    bool commander = false;
+    for (int row = 0; row < 10; ++row) {
+        const int legion = 0x1969b8 + row * 11;
+        commander |= (u8(ram_, legion + 1) & 1) && u8(ram_, legion + 2) == index;
+    }
+    if (commander && classes.commandType(newClasses.first, newClasses.second) != 2)
         throw Error(
             "This squad commands a legion; its replacement leader must have command type 2");
     validateFormation(unit, classes);
