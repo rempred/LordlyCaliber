@@ -27,6 +27,7 @@ class SceneActionEditor : public QWidget {
     void refresh(int command);
     void showAction();
     void publishFields();
+    void refreshClassChoices();
     void validity(bool valid);
     void updateStructureControls();
     enum class Change { Add, Remove, Move };

@@ -39,6 +39,12 @@ and depth are editable; ordinary initializer words and independent body flags
 remain intact. Symbolic and noncanonical fields remain read-only. New class edits
 must refer to the current project; unrelated edits preserve existing opaque values.
 
+Class fields also offer named choices from the current project beside the numeric
+ID. Additions, renames and undo refresh the choices without replacing incomplete
+field input. Existing body selections include the native retain-current option;
+symbolic launch fields keep their read-only labels. Hexadecimal numeric entry
+and named selection share the same encoded field and undo path.
+
 Scene playback declares class-default equipment for these explicit fresh bodies
 and supplies its preview appearance rows at restart. This reuses the existing
 native class appearance and body initializer. It supplies no army roster, member

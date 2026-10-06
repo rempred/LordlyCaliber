@@ -101,6 +101,7 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
         if (changed_)
             changed_();
     });
+    connect(undo_, &QUndoStack::indexChanged, this, [this] { refreshClassChoices(); });
 }
 void SceneActionEditor::validity(bool valid) {
     const bool wasInvalid = property("invalidEdits").toBool();
@@ -268,10 +269,71 @@ void SceneActionEditor::showAction() {
         if (action.name == "Turn Actor" && i == 4)
             input->setToolTip("The game rounds this budget to its turning steps. Start and target "
                               "facings must differ; very short budgets can wrap the native timer.");
-        fields_->addRow(f.name, input);
+        const bool classField = (action.name == "Set Actor class and pose" ||
+                                 action.name == "Create class Actor") && (i == 1 || i == 2);
+        if (classField && !input->isReadOnly()) {
+            auto classRow = new QWidget;
+            auto layout = new QHBoxLayout(classRow);
+            layout->setContentsMargins(0, 0, 0, 0);
+            input->setMaximumWidth(100);
+            layout->addWidget(input);
+            auto choice = new QComboBox;
+            choice->setObjectName(QString("sceneActionClassChoice%1").arg(i));
+            choice->setProperty("actionField", i);
+            choice->setProperty("minimumClass", f.minimum);
+            choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            choice->setMinimumContentsLength(18);
+            choice->setToolTip("Choose a class from the current project. The adjacent field keeps its numeric ID.");
+            layout->addWidget(choice, 1);
+            fields_->addRow(f.name, classRow);
+            connect(choice, &QComboBox::activated, input, [choice, input] {
+                if (choice->currentIndex() >= 0)
+                    input->setText(QString::number(choice->currentData().toInt()));
+            });
+        } else
+            fields_->addRow(f.name, input);
         connect(input, &QLineEdit::textChanged, this, [this] { publishFields(); });
+        if (classField)
+            connect(input, &QLineEdit::textChanged, this, [this] { refreshClassChoices(); });
     }
+    refreshClassChoices();
     notice_->setText("Complete values enter the project immediately and share Undo with Commands.");
+}
+void SceneActionEditor::refreshClassChoices() {
+    const auto &classes = project_->records(Table::Classes);
+    for (auto choice : findChildren<QComboBox *>()) {
+        if (!choice->objectName().startsWith("sceneActionClassChoice"))
+            continue;
+        const auto input = findChild<QLineEdit *>(QString("sceneActionField%1").arg(choice->property("actionField").toInt()));
+        if (!input)
+            continue;
+        QStringList labels;
+        QVector<int> ids;
+        const int minimum = choice->property("minimumClass").toInt();
+        if (minimum < 0) {
+            labels << "Keep current class";
+            ids << -1;
+        }
+        for (int i = qMax(0, minimum); i < classes.size(); ++i) {
+            labels << QString("%1 · %2").arg(i).arg(classes[i].name);
+            ids << i;
+        }
+        bool changed = choice->count() != labels.size();
+        for (int i = 0; !changed && i < labels.size(); ++i)
+            changed = choice->itemText(i) != labels[i] || choice->itemData(i).toInt() != ids[i];
+        const QSignalBlocker block(choice);
+        if (changed) {
+            choice->clear();
+            for (int i = 0; i < labels.size(); ++i)
+                choice->addItem(labels[i], ids[i]);
+        }
+        bool valid = false;
+        const auto text = input->text().trimmed();
+        const int value = text.toInt(&valid, text.startsWith("0x", Qt::CaseInsensitive) ? 16 : 10);
+        const int index = valid ? choice->findData(value) : -1;
+        if (choice->currentIndex() != index)
+            choice->setCurrentIndex(index);
+    }
 }
 void SceneActionEditor::publishFields() {
     const int row = list_->currentRow();

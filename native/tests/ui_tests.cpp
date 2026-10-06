@@ -71,6 +71,90 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void sceneActorClassChoices() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenePrograms();
+        auto programs = *project.scenePrograms();
+        const auto id = programs.createScene("Named Actor choices", 0x1fa8bf4 - 0x594284, true);
+        programs.replace(id, SceneActions::insert(programs.program(id), 1, 0x2a).source);
+        project.setScenePrograms(programs.json());
+        QUndoStack undo;
+        RecordModel classes(&project, Table::Classes, &undo);
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+        editor.resize(1300, 900);
+        editor.show();
+        auto list = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1499, 10000);
+        for (int i = 0; i < list->count(); ++i)
+            if (list->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId)
+                list->setCurrentRow(i);
+        auto actions = editor.findChild<SceneActionEditor *>();
+        editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
+        actions->findChild<QListWidget *>("sceneActionList")->setCurrentRow(0);
+        auto field = [&](int i) { return actions->findChild<QLineEdit *>(QString("sceneActionField%1").arg(i)); };
+        auto choice = [&](int i) { return actions->findChild<QComboBox *>(QString("sceneActionClassChoice%1").arg(i)); };
+        QVERIFY(choice(1) && choice(2));
+        QCOMPARE(choice(1)->currentData().toInt(), 2);
+        QVERIFY(choice(1)->currentText().contains(project.record(Table::Classes, 2).name));
+        QVERIFY(classes.setData(classes.index(2, 1), "Scene Fighter", Qt::EditRole));
+        QVERIFY(choice(1)->currentText().contains("Scene Fighter"));
+        undo.undo();
+        QVERIFY(choice(1)->currentText().contains(project.record(Table::Classes, 2).name));
+        const int added = classes.appendClass(2, "New Actor");
+        QVERIFY(added >= 0);
+        QVERIFY(choice(1)->findData(added) >= 0);
+        choice(1)->setFocus();
+        QTest::keyClick(choice(1), Qt::Key_End);
+        QCOMPARE(choice(1)->currentData().toInt(), added);
+        QCOMPARE(field(1)->text(), QString::number(added));
+        QCOMPARE(project.scenePrograms()->program(id).commands[2].operands[1], quint32(added));
+        undo.undo();
+        QVERIFY(choice(1));
+        QCOMPARE(choice(1)->currentData().toInt(), 2);
+        undo.undo();
+        QCOMPARE(choice(1)->findData(added), -1);
+        undo.redo();
+        QVERIFY(choice(1)->findData(added) >= 0);
+        undo.redo();
+        QCOMPARE(choice(1)->currentData().toInt(), added);
+        const auto beforeDraft = project.scenePrograms()->program(id).source;
+        field(4)->setText("-");
+        QVERIFY(actions->property("invalidEdits").toBool());
+        QVERIFY(classes.setData(classes.index(added, 1), "Renamed Actor", Qt::EditRole));
+        QCOMPARE(field(4)->text(), QString("-"));
+        QVERIFY(actions->property("invalidEdits").toBool());
+        QVERIFY(choice(1)->currentText().contains("Renamed Actor"));
+        QCOMPARE(project.scenePrograms()->program(id).source, beforeDraft);
+        undo.undo();
+        QCOMPARE(field(4)->text(), QString("-"));
+        QVERIFY(choice(1)->currentText().contains("New Actor"));
+        actions->findChild<QPushButton *>("sceneActionDiscard")->click();
+        field(2)->setText("0x54");
+        QCOMPARE(choice(2)->currentData().toInt(), 84);
+        QCoreApplication::processEvents();
+        QVERIFY(choice(1)->isVisible());
+        QVERIFY(editor.grab().save("native-action-class-choices.png"));
+        auto symbolic = *project.scenePrograms();
+        symbolic.setOperand(id, 2, 1, 0x08880001);
+        pushSceneProgramChange(&project, &undo, "Use launch class", symbolic);
+        actions->selectCommand(1);
+        QVERIFY(field(1)->isReadOnly());
+        QCOMPARE(field(1)->text(), QString("Launch value 1"));
+        QVERIFY(!choice(1));
+        auto separated = *project.scenePrograms();
+        separated.insertCommand(id, 2, 0);
+        pushSceneProgramChange(&project, &undo, "Separate Actor body action", separated);
+        actions->selectCommand(3);
+        QVERIFY(!choice(1));
+        QVERIFY(choice(2)->findData(-1) >= 0);
+        choice(2)->setFocus();
+        QTest::keyClick(choice(2), Qt::Key_Home);
+        QCOMPARE(project.scenePrograms()->program(id).commands[3].operands[5], quint32(-1));
+        QCOMPARE(project.scenePrograms()->program(id).commands[3].operands[1], quint32(0x08880001));
+    }
     void classActorCreationControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())
