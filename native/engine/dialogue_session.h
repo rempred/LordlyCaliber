@@ -14,6 +14,10 @@ class DialoguePlayback {
     void advance(SceneResources &, SceneDialogue &, const DialogueTextEnvironment &, DialogueInput);
     RasterImage image(const SceneResources &, DialogueDrawing &) const;
     int state(int slot, const SceneResources &) const;
+    int focusedState(const SceneResources &resources) const {
+        const auto &queue = dispatcher_.state().queue;
+        return queue.count ? state(queue.entries[0], resources) : -1;
+    }
     const QVector<DialogueSoundRequest> &sounds() const {
         return runtime_.sounds();
     }

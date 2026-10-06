@@ -233,6 +233,11 @@ void ScenePlayback::replaceIrisBackgrounds(const std::array<quint32, 20> &handle
     applyIris();
 }
 bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x57) {
+        if (args.size() != 3) throw Error("Controller mask query requires three operands");
+        value = (pressed_ & quint16(args[2])) != 0;
+        return true;
+    }
     if (opcode == 0xbe && activeContext_ >= 0 && contexts_[activeContext_].chaosBand) {
         value = *contexts_[activeContext_].chaosBand;
         return true;
@@ -677,7 +682,7 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
         // Scene wrapper ROM281A8C calls the menu updater after the complete
         // Actor/Director scheduler, including its alternate path.
         if (!titleScene())
-            panels_.advance(pressed_, pressed_ & 0x0c00);
+            panels_.advance(pressed_, direction_);
         ++completed_;
         released_ = releaseRequested_;
         return released_ ? Released : Advanced;

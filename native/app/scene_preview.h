@@ -91,6 +91,8 @@ class ScenePreview : public QWidget {
         int exitWord = -1, unfinishedPan = 0;
         QSet<int> unfinishedActors;
         bool unfinishedFade = false, pausedMovement = false;
+        bool automaticInputLastUpdate = false, automaticChoiceMoved = false;
+        int automaticChoices = 0;
     };
     void restart();
     void seek(int tick);
@@ -113,6 +115,7 @@ class ScenePreview : public QWidget {
     void skipScene();
     void panelButton(quint16);
     bool hasDialogue() const;
+    bool scriptInputControls_ = false;
     std::optional<QPointF> dialoguePoint(const Snapshot &, int slot) const;
     Rom rom_;
     BodyAnimationData::Pointer bodyAnimations_;

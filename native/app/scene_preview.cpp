@@ -239,7 +239,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     reset->setObjectName("sceneRestart");
     position_ = new QSpinBox;
     position_->setObjectName("scenePosition");
-    position_->setRange(0, 10000);
+    position_->setRange(0, 30000);
     position_->setKeyboardTracking(false);
     rate_ = new QSpinBox;
     rate_->setRange(1, 120);
@@ -286,7 +286,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
     panelControlsUi_ = new QWidget;
     auto panelButtons = new QHBoxLayout(panelControlsUi_);
     panelButtons->setContentsMargins(0, 0, 0, 0);
-    panelButtons->addWidget(new QLabel("Dialogue / panel controls"));
+    panelButtons->addWidget(new QLabel("Scene / dialogue controls"));
     const struct {
         const char *label;
         const char *name;
@@ -448,7 +448,7 @@ void ScenePreview::skipScene() {
         step();
 }
 void ScenePreview::panelButton(quint16 bit) {
-    if (!current_ || current_->stopped || (current_->playback.panels().empty() && !hasDialogue()))
+    if (!current_ || current_->stopped || (current_->playback.panels().empty() && !hasDialogue() && !scriptInputControls_))
         return;
     branchInput();
     pendingPressed_ |= bit;
@@ -681,7 +681,7 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
         QTimer::singleShot(0, this,
                            [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
     if (object == view_ && event->type() == QEvent::KeyPress && current_ &&
-        (!current_->playback.panels().empty() || hasDialogue())) {
+        (!current_->playback.panels().empty() || hasDialogue() || scriptInputControls_)) {
         const auto key = static_cast<QKeyEvent *>(event);
         const quint16 bit = key->key() == Qt::Key_A      ? 0x8000
                             : key->key() == Qt::Key_B    ? 0x4000
@@ -763,6 +763,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     launchContextUi_->hide();
     storyCastEnabled_ = false;
     classDefaultsEnabled_ = false;
+    scriptInputControls_ = false;
     party_.reset();
     storyCastUi_->hide();
     dialogueNamesUi_->hide();
@@ -799,6 +800,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
             [](const auto &action) { return action.name == "Create class Actor"; });
         storyCastUi_->setVisible(storyCastEnabled_);
         const auto &commands = programs.program(id).commands;
+        scriptInputControls_ = std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
+            return c.opcode == 0x57;
+        });
         dialogueNamesUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(),
                                                  [](const auto &c) { return c.opcode == 0xbf; }));
         rewardUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(), [](const auto &c) {
@@ -917,6 +921,11 @@ void ScenePreview::restart() {
         if (inputs && inputs->captured())
             context_->setText("Captured preview uses the supplied Actor state and qualified update window. "
                               "Artwork comes from the current ROM/project; lighting and rasterization use the desktop renderer.");
+        else if (inputs)
+            context_->setText("Imported launch inputs supply the scene's cast, cameras, tint and controller state. "
+                              "Dialogue names use the editable preview fields. Audio is silent; rendering uses the desktop engine.");
+        launchContext_->setEnabled(!inputs);
+        storyCastUi_->setEnabled(!inputs);
         for (quint32 opcode : {0x8fU, 0xbdU, 0xbeU}) {
             const bool used =
                 std::any_of(plan.steps.cbegin(), plan.steps.cend(), [&](const auto &step) {
@@ -932,12 +941,13 @@ void ScenePreview::restart() {
                     context_->text() +
                     (opcode == 0x8f ? "\nSaved story flags are clear in this preview; a saved game "
                                       "may choose different dialogue."
-                     : opcode == 0xbd ? "\nAlternate presentation is inactive in this preview."
+                     : opcode == 0xbd ? (inputs ? "\nAlternate presentation follows the imported launch context."
+                                                               : "\nAlternate presentation is inactive in this preview.")
                      : plan.tailCall >= 0
                          ? "\nThe ending branch is selected to reach this scene."
                          : "\nChaos Frame uses the middle ending band for this preview."));
         }
-        if (launchPlans_.isEmpty() && !SceneLaunchPlan::fresh(selectedProgram) &&
+        if (!inputs && launchPlans_.isEmpty() && !SceneLaunchPlan::fresh(selectedProgram) &&
             (selectedProgram.resourceClass() == 1 || selectedProgram.resourceClass() == 8 ||
              selectedProgram.resourceClass() == 4 || selectedProgram.resourceClass() == 5))
             throw Error("No event predecessor supplies this scene's starting state. Assign it to "
@@ -1075,6 +1085,8 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     // Declared isolated preview inputs. The gameplay owner is absent here.
     if (value && args.size() == 2 && (opcode == 0xbd || opcode == 0xbe)) {
         *value = opcode == 0xbe ? 1 : 0;
+        if (opcode == 0xbd && activeInputs())
+            *value = activeInputs()->services()["directorLaunch"].toObject()["world"].toObject()["alternateContextPointer"].toInteger() != 0;
         return true;
     }
     if (opcode == 0x96 && args.size() == 1 && mode_ == 2 && party_ && !activeInputs()) {
@@ -1141,7 +1153,8 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
         return randomState & 0x7fffU;
     };
     auto props = StageOrthographic::load(rom_, placements, random);
-    auto objects = StagePerspective::load(rom_, placements, {255, 255, 255}, random);
+    const auto color = activeInputs() ? activeInputs()->globalColor() : std::array<qint16,3>{255,255,255};
+    auto objects = StagePerspective::load(rom_, placements, {quint8(color[0]), quint8(color[1]), quint8(color[2])}, random);
     next.backgroundName = backgrounds.description();
     next.backgrounds = std::move(backgrounds);
     next.flatProps = std::move(props);
@@ -1164,6 +1177,8 @@ void ScenePreview::convertBackgrounds(Snapshot &next) {
 }
 void ScenePreview::render(Snapshot &next, bool commitDraw) {
     auto drawing = next.playback;
+    const auto globalColor = activeInputs() ? activeInputs()->globalColor() : std::array<qint16,3>{255,255,255};
+    const bool omitBackground = activeInputs() && activeInputs()->omitBackground();
     if (commitDraw)
         drawing.display().submit();
     if (commitDraw && !drawing.titleScene())
@@ -1219,7 +1234,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 const auto resource = drawing.iris() ? drawing.iris()->layers()[channel].resource
                                                      : next.backgroundHandles[channel];
                 const bool frozen = resource == SceneIris::CapturedFrame;
-                if (presentation || frozen || next.backgroundResources.contains(resource)) {
+                if (presentation || frozen || (!omitBackground && next.backgroundResources.contains(resource))) {
                     QImage background(320, 240, QImage::Format_RGBA8888);
                     background.fill(Qt::transparent);
                     QVector<ActorRasterLayer> layers;
@@ -1245,7 +1260,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                         // channel's parent, independently of image geometry.
                         const auto specialSprites = spriteRenderer_.project(
                             drawing.sprites(), 1, 1, drawing.cameras().actor(), parent,
-                            {255, 255, 255}, drawing.effects().colorRecord(1), sepia);
+                            globalColor, drawing.effects().colorRecord(1), sepia);
                         ActorRenderer::paint(background, specialSprites);
                         selection.sprites(specialSprites);
                         if (!drawing.sprites().draws(1, 1).isEmpty())
@@ -1255,7 +1270,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 }
                 const auto sprites = spriteRenderer_.project(drawing.sprites(), channel, 0,
                                                              drawing.cameras().actor(), parent,
-                                                             {255, 255, 255}, color, sepia);
+                                                             globalColor, color, sepia);
                 if (!sprites.isEmpty()) {
                     QImage spriteFrame(320, 240, QImage::Format_RGBA8888);
                     spriteFrame.fill(Qt::transparent);
@@ -1267,7 +1282,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                     environment = {0, 0, 0, 1};
                 auto rendered = renderer_.layered(drawing.actors(), queue, 0, quint8(channel),
                                                   {drawing.cameras().actor(),
-                                                   {255, 255, 255},
+                                                   globalColor,
                                                    environment,
                                                    sepia,
                                                    &drawing.effects(),
@@ -1289,10 +1304,10 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 if (pass == 1 && next.flatProps)
                     ActorRenderer::paint(
                         flat, stageRenderer_.project(*next.flatProps, 1, camera, parent,
-                                                     next.foregroundSelector, {255, 255, 255},
+                                                     next.foregroundSelector, globalColor,
                                                      tint(WorldColorPass::BeforeForegroundProps),
                                                      false, environment, -5, -905, sepia));
-                if (next.backgrounds)
+                if (next.backgrounds && !omitBackground)
                     ActorRenderer::paint(flat, next.backgrounds->project(
                                                    pass, camera, parent,
                                                    tint(pass ? WorldColorPass::Foreground
@@ -1301,13 +1316,13 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                 if (next.flatProps)
                     ActorRenderer::paint(flat, stageRenderer_.project(
                                                    *next.flatProps, pass ? 2 : 0, camera, parent,
-                                                   next.foregroundSelector, {255, 255, 255},
+                                                   next.foregroundSelector, globalColor,
                                                    tint(pass ? WorldColorPass::AfterForegroundProps
                                                              : WorldColorPass::BackgroundProps),
                                                    false, environment, -5, -905, sepia));
                 selection.cover(flat);
                 const auto sprites = spriteRenderer_.project(
-                    drawing.sprites(), pass, 0, camera, parent, {255, 255, 255},
+                    drawing.sprites(), pass, 0, camera, parent, globalColor,
                     drawing.effects().colorRecord(pass), sepia);
                 ActorRenderer::paint(flat, sprites);
                 selection.sprites(sprites);
@@ -1319,7 +1334,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
             const auto rendered = renderer_.world(
                 drawing.actors(), queue, objects, {96, 96}, {0, 0, 0, 0, 0, 0},
                 {drawing.cameras().actor(),
-                 {255, 255, 255},
+                 globalColor,
                  environment,
                  sepia,
                  &drawing.effects(),
@@ -1330,7 +1345,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
                         throw Error("Stage drawing refers to an unavailable object");
                     const auto layers = objectRenderer_.project(
                                    next.worldProps->props()[index], index,
-                                   drawing.cameras().actor(), camera, parent, {255, 255, 255},
+                                   drawing.cameras().actor(), camera, parent, globalColor,
                                    state, tint(WorldColorPass::Objects), next.texturePhase, sepia);
                     ActorRenderer::paint(image, layers);
                     selection.cover(layers);
@@ -1355,7 +1370,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
         if (mode_ == 2 && !drawing.effects().specialBlackRecord().isEmpty()) {
             const auto special =
                 renderer_.special(drawing.actors(), drawing.effects(), {0, 0, 0, 0, 0, 0},
-                                  {drawing.cameras().actor(), {255, 255, 255}, environment, sepia,
+                                  {drawing.cameras().actor(), globalColor, environment, sepia,
                                    nullptr, {}, &selection});
             painter.drawImage(0, 0, special.image);
             environment = special.environment;
@@ -1412,7 +1427,7 @@ void ScenePreview::render(Snapshot &next, bool commitDraw) {
 }
 void ScenePreview::step() {
     if (placementCommand_ >= 0) cancelPositionPick();
-    if (!current_ || current_->stopped || tick_ >= 10000) {
+    if (!current_ || current_->stopped || tick_ >= 30000) {
         stop();
         return;
     }
@@ -1421,17 +1436,35 @@ void ScenePreview::step() {
     try {
         if (preparing_ && tick_ % 45 == 0)
             pendingPressed_ |= 0x8000;
-        quint16 pageAdvance = 0;
-        if (const auto inputs = activeInputs(); inputs && inputs->automaticPages() && next.dialogue)
-            for (int slot = 0; slot < 6; ++slot) {
-                const int state = next.dialogue->state(slot, next.playback.dialogue()->resources);
-                if (state == 3 || state == 6) { pageAdvance = 0x8000; break; }
+        quint16 pageAdvance = 0, choiceDirection = 0;
+        const auto inputs = activeInputs();
+        if (inputs && inputs->automaticPages() && next.dialogue) {
+            const int state = next.dialogue->focusedState(next.playback.dialogue()->resources);
+            if (!next.automaticInputLastUpdate) {
+                if (state == 3 || state == 6) pageAdvance = 0x8000;
+                else if (state == 7 && !inputs->controller(tick_).value_or(0) &&
+                         !inputs->direction(tick_) && !inputs->history(tick_)) {
+                    const int wanted = inputs->choice(next.automaticChoices);
+                    if (wanted == 2 && !next.automaticChoiceMoved) {
+                        choiceDirection = 0x400;
+                        next.automaticChoiceMoved = true;
+                    } else if (wanted) {
+                        pageAdvance = 0x8000;
+                        next.automaticChoiceMoved = false;
+                        ++next.automaticChoices;
+                    }
+                }
             }
+        }
+        next.automaticInputLastUpdate = pageAdvance || choiceDirection;
         if (!inputHistory_.contains(tick_))
             inputHistory_.insert(tick_, liveInput_);
         if (!pressedHistory_.contains(tick_))
             pressedHistory_.insert(tick_, pendingPressed_ | (activeInputs() ? activeInputs()->controller(tick_).value_or(0) : 0));
-        next.playback.setImageInput(inputHistory_.value(tick_), pressedHistory_.value(tick_));
+        auto imageInput = inputHistory_.value(tick_);
+        if (inputs) imageInput.digital |= inputs->direction(tick_);
+        next.playback.setImageInput(imageInput, pressedHistory_.value(tick_),
+            quint16((pressedHistory_.value(tick_) & 0x0c00) | (inputs ? inputs->direction(tick_) : 0)));
         pendingPressed_ = 0;
         next.playback.advanceFade();
         next.playback.audio()->clearRequests();
@@ -1491,7 +1524,9 @@ void ScenePreview::step() {
             const auto pressed = pressedHistory_.value(tick_);
             next.dialogue->advance(
                 state.resources, state.windows, environment,
-                {state.context->textParameter(), quint16(pressed | pageAdvance), quint16(pressed & 0x0c00), 0});
+                {state.context->textParameter(), quint16(pressed | pageAdvance),
+                 quint16((pressed & 0x0c00) | choiceDirection | (inputs ? inputs->direction(tick_) : 0)),
+                 quint16(pageAdvance | (inputs ? inputs->history(tick_) : 0))});
         }
         render(next, complete);
         next.stopped = result != ScenePlayback::Advanced;
@@ -1500,10 +1535,10 @@ void ScenePreview::step() {
         current_ = std::move(next);
         commandTimes_ = std::move(observedTimes);
         ++tick_;
-        if (const auto inputs = activeInputs(); inputs && inputs->resumeLimit() >= 0 &&
-            tick_ >= inputs->resumeLimit() && !current_->stopped) {
+        if (inputs && inputs->updateLimit() >= 0 &&
+            tick_ >= inputs->updateLimit() && !current_->stopped) {
             current_->stopped = true;
-            current_->reason = QString("Captured resume completed its declared %1 updates.").arg(inputs->resumeLimit());
+            current_->reason = QString("Playback input completed its declared %1 updates.").arg(inputs->updateLimit());
         }
         if (tick_ % 120 == 0)
             checkpoints_.insert(tick_, *current_);
@@ -1511,7 +1546,7 @@ void ScenePreview::step() {
         current_->stopped = true;
         current_->reason = QString::fromUtf8(e.what());
     }
-    if (current_->stopped || tick_ == 10000)
+    if (current_->stopped || tick_ == 30000)
         stop();
     present();
 }
@@ -1531,14 +1566,14 @@ void ScenePreview::seekToCommand(int word) {
         return;
     }
     if (commandTimes_.contains(word)) beginSeek(commandTimes_[word], -1);
-    else beginSeek(10000, word);
+    else beginSeek(30000, word);
 }
 void ScenePreview::beginSeek(int tick, int commandWord) {
     if (preparing_)
         return;
     cancelPositionPick();
     stop();
-    if (!current_ || tick < 0 || tick > 10000)
+    if (!current_ || tick < 0 || tick > 30000)
         return;
     if (tick < tick_) {
         auto found = checkpoints_.upperBound(tick);
@@ -1586,7 +1621,7 @@ void ScenePreview::continueSeek() {
             checkpoints_.insert(0, *current_);
             if (pendingCommand >= 0) { seekToCommand(pendingCommand); return; }
             if (pendingTick >= 0) { seekToUpdate(pendingTick); return; }
-        } else if (current_->stopped || tick_ >= 10000) {
+        } else if (current_->stopped || tick_ >= 30000) {
             preparing_ = false;
             current_->stopped = true;
             if (current_->reason.isEmpty())
@@ -1784,7 +1819,7 @@ void ScenePreview::present() {
     reportExit();
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
-    play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
+    play_->setEnabled(current_ && !current_->stopped && tick_ < 30000);
     step_->setEnabled(play_->isEnabled() && !preparing_);
     position_->setEnabled(!preparing_);
     skip_->setVisible(current_ && current_->playback.skipArmed());
@@ -1792,7 +1827,7 @@ void ScenePreview::present() {
     imageControlsUi_->setVisible(current_ && current_->playback.imageControlsEnabled());
     imageControlsUi_->setEnabled(play_->isEnabled());
     panelControlsUi_->setVisible(current_ &&
-                                 (!current_->playback.panels().empty() || hasDialogue()));
+                                 (!current_->playback.panels().empty() || hasDialogue() || scriptInputControls_));
     panelControlsUi_->setEnabled(play_->isEnabled());
     canvas_->clear();
     selectionOutline_ = nullptr;
@@ -1870,6 +1905,9 @@ void ScenePreview::importPlaybackInputs(const QByteArray &bytes) {
     const auto times = commandTimes_;
     const auto inputHistory = inputHistory_;
     const auto pressedHistory = pressedHistory_;
+    const auto context = context_->text();
+    const auto liveInput = liveInput_;
+    const auto pendingPressed = pendingPressed_;
     const int tick = tick_, mode = mode_;
     const bool preparing = preparing_;
     playbackInputs_.insert(playbackAssetId_, candidate);
@@ -1880,6 +1918,10 @@ void ScenePreview::importPlaybackInputs(const QByteArray &bytes) {
         playbackInputs_ = previousInputs; current_ = previous; checkpoints_ = checkpoints;
         commandTimes_ = times; inputHistory_ = inputHistory; pressedHistory_ = pressedHistory;
         tick_ = tick; mode_ = mode; preparing_ = preparing;
+        context_->setText(context);
+        liveInput_ = liveInput; pendingPressed_ = pendingPressed;
+        launchContext_->setEnabled(!activeInputs());
+        storyCastUi_->setEnabled(!activeInputs());
         inputsStatus_->setText(activeInputs() ? activeInputs()->description() : QString{});
         clearInputs_->setEnabled(activeInputs() != nullptr);
         present();

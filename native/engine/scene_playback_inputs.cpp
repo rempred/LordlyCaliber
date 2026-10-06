@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <bit>
 #include <cmath>
+#include <algorithm>
 namespace lordly {
 namespace {
 QByteArray bytes(const QJsonValue &v, int size) {
@@ -62,6 +63,29 @@ ScenePlaybackInputs ScenePlaybackInputs::parse(const QByteArray &data, const QSt
     const auto problem = check(validate.call({QString::fromUtf8(data), assetId})).toString();
     if (!problem.isEmpty()) throw Error(problem);
     ScenePlaybackInputs result; result.json_ = document.object();
+    const auto schedule = result.services()["resourceSchedule"].toObject();
+    if (!schedule.isEmpty()) {
+        const auto controller = schedule["controller"].toObject();
+        const auto limit = controller["throughPass"].toInt(-1);
+        if (schedule["kind"] != "resident-resource-pass-v1" || limit < 0 || limit > 29999)
+            throw Error("Playback input requires a bounded resource controller");
+        int previous = -1;
+        for (const auto &value : controller["changes"].toArray()) {
+            const auto row = value.toObject();
+            const int at = row["pass"].toInt(-1);
+            if (at <= previous || at > limit || (previous < 0 && at != 0))
+                throw Error("Playback controller changes must start at zero and increase");
+            for (const auto field : {"actionMask", "directionMask", "historyMask", "dummyMask"}) {
+                const double mask = row[field].toDouble(-1);
+                if (mask < 0 || mask > 65535 || mask != std::floor(mask))
+                    throw Error("Playback controller masks require unsigned halfwords");
+            }
+            result.controls_.append({at, quint16(row["actionMask"].toInt()),
+                quint16(row["directionMask"].toInt()), quint16(row["historyMask"].toInt())});
+            previous = at;
+        }
+        if (result.controls_.isEmpty()) throw Error("Playback controller history is empty");
+    }
     return result;
 }
 QJsonValue ScenePlaybackInputs::known(const QString &name) const {
@@ -78,6 +102,29 @@ quint16 ScenePlaybackInputs::textSpeed(quint16 fallback) const {
 }
 bool ScenePlaybackInputs::automaticPages() const {
     return services()["resourceSchedule"].toObject()["pageAdvancePolicy"] == "automatic";
+}
+int ScenePlaybackInputs::choice(int index) const {
+    const auto schedule = services()["resourceSchedule"].toObject();
+    const auto policy = schedule["dialogueChoicePolicy"].toString();
+    if (policy == "first") return 1;
+    if (policy == "second") return 2;
+    if (policy == "sequence") {
+        const auto choices = schedule["dialogueChoiceSequence"].toArray();
+        return index < choices.size() ? choices[index].toInt(1) : 1;
+    }
+    return 0;
+}
+std::array<qint16, 3> ScenePlaybackInputs::globalColor() const {
+    const auto world = services()["directorLaunch"].toObject()["world"].toObject();
+    return {qint16(world["red"].toInt(255)), qint16(world["green"].toInt(255)), qint16(world["blue"].toInt(255))};
+}
+bool ScenePlaybackInputs::omitBackground() const {
+    return services()["framebuffer"].toObject()["backgroundPolicy"] == "omit";
+}
+int ScenePlaybackInputs::updateLimit() const {
+    if (resumeLimit() >= 0) return resumeLimit();
+    const auto controller = services()["resourceSchedule"].toObject()["controller"].toObject();
+    return controller.isEmpty() ? -1 : controller["throughPass"].toInt() + 1;
 }
 QString ScenePlaybackInputs::description() const {
     auto result = QString("Playback inputs: %1\nSource: %2 · declared %3")
@@ -109,6 +156,16 @@ void ScenePlaybackInputs::configure(ScenePlaybackStart &start, SceneCameras &cam
     }
     const auto launch = known("externalProducers").toObject()["directorLaunch"].toObject();
     if (!launch.isEmpty()) {
+        const auto kind = launch["kind"].toString();
+        if (!((start.mode == 0 && (kind == "mode-zero-director-v1" || kind == "rom-mode-zero-director-v1")) ||
+              (start.mode == 2 && kind == "rom-mode-two-director-v1")))
+            throw Error("Playback launch requires a supported Director mode");
+        const auto world = launch["world"].toObject();
+        for (const auto field : {"mapKind", "scenarioByte", "red", "green", "blue"}) {
+            const double value = world[field].toDouble(-1);
+            if (value < 0 || value > 255 || value != std::floor(value))
+                throw Error("Playback world inputs require unsigned bytes");
+        }
         start.presentation = quint8(launch["actorPresentationWord"].toInteger());
         const auto translations = launch["operandTranslations"].toObject();
         for (auto it = translations.begin(); it != translations.end(); ++it) {
@@ -119,10 +176,26 @@ void ScenePlaybackInputs::configure(ScenePlaybackStart &start, SceneCameras &cam
             start.translations.set(index, quint16(value));
         }
         if (launch.contains("cameraBaseHex")) {
-            const auto bank = bytes(launch["cameraBaseHex"], 144);
-            const float scale = float(known("externalProducers").toObject()["sharedActor"].toObject()["worldScale"].toDouble(.1));
+            auto bank = bytes(launch["cameraBaseHex"], 144);
+            const float scale = start.mode == 2 ? cameras.actor().modelScale() :
+                float(known("externalProducers").toObject()["sharedActor"].toObject()["worldScale"].toDouble(.1));
+            // Mode-zero initializer ROM2819EC resets these seven fields in each
+            // bank, preserving the caller's aspect, clipping and up vector.
+            if (start.mode == 0) {
+                for (int base : {0, 88}) {
+                    put32(bank, base, std::bit_cast<quint32>(38.f));
+                    for (int field = 20; field <= 40; field += 4) put32(bank, base + field, 0);
+                    put32(bank, base + (base ? 28 : 20), std::bit_cast<quint32>(360.f));
+                }
+            } else {
+                // The caller's clipping/up fields survive the mode-two reset.
+                for (int field : {0, 20, 24, 28, 32, 36, 40})
+                    put32(bank, field, u32(cameras.actor().bank(), field));
+            }
             // The input contains the screen bank at0 and independent world bank at88.
-            cameras = SceneCameras(SceneCamera(bank.first(56), 1), SceneCamera(bank.mid(88,56), scale), SceneCamera(bank.mid(88,56), scale));
+            const auto actor = SceneCamera(bank.first(56), start.mode == 0 ? 1 : scale);
+            const auto registered = SceneCamera(bank.mid(88,56), scale);
+            cameras = SceneCameras(actor, registered, start.mode == 0 ? registered : actor);
         }
     }
     const auto presentation = known("capturedPresentation").toObject();
@@ -255,15 +328,19 @@ void ScenePlaybackInputs::supply(ScenePlayback &playback) const {
     }
 }
 std::optional<quint16> ScenePlaybackInputs::controller(int update) const {
-    const auto controller = services()["resourceSchedule"].toObject()["controller"].toObject();
-    if (controller.isEmpty() || update > controller["throughPass"].toInt(-1)) return {};
-    quint16 result = 0;
-    for (const auto &entry : controller["changes"].toArray()) {
-        const auto row = entry.toObject();
-        if (row["pass"].toInt() > update) break;
-        result = quint16(row["actionMask"].toInt() | row["directionMask"].toInt());
-    }
-    return result;
+    const auto found = control(update);
+    return found ? std::optional<quint16>(found->action) : std::nullopt;
+}
+const ScenePlaybackInputs::Control *ScenePlaybackInputs::control(int update) const {
+    const auto found = std::upper_bound(controls_.cbegin(), controls_.cend(), update,
+        [](int at, const Control &row) { return at < row.update; });
+    return found == controls_.cbegin() ? nullptr : &*std::prev(found);
+}
+quint16 ScenePlaybackInputs::direction(int update) const {
+    const auto found = control(update); return found ? found->direction : 0;
+}
+quint16 ScenePlaybackInputs::history(int update) const {
+    const auto found = control(update); return found ? found->history : 0;
 }
 QString ScenePlaybackInputs::boundary() const {
     if (captured() && resumeLimit() < 0) return "Captured Actor snapshot: no elapsed updates. Parser cursor is an observation; resume state is unknown.";
@@ -271,8 +348,6 @@ QString ScenePlaybackInputs::boundary() const {
     for (const auto name : {"bodyPoseSetups", "subordinateServices", "rosterConstruction", "rosterResets", "rosterStateServices", "directActorCreates"})
         if (!known(name).isNull() && !known(name).isUndefined()) unsupported << QString::fromLatin1(name);
     const auto external = services();
-    for (const auto name : {"directorLaunch"})
-        if (external.contains(name)) unsupported << "externalProducers." + QString::fromLatin1(name);
     for (const auto name : {"menuCreates", "colorCreates", "poseCalls", "dialogueCreates"})
         if (!external[name].toArray().isEmpty()) unsupported << "externalProducers." + QString::fromLatin1(name);
     const auto events = external["events"];

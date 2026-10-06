@@ -432,6 +432,24 @@ class UiTests : public QObject {
                     step->click();
                 QVERIFY2(status->text().contains("Scene released"), qPrintable(status->text()));
                 outcomes[option - 1] = preview.renderedFrame();
+                // Imported automatic selection must reach the same visible branch as manual input.
+                QFile inputFile(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath("../../tests/fixtures/cutscene-room-input.json"));
+                QVERIFY(inputFile.open(QIODevice::ReadOnly));
+                auto input = QJsonDocument::fromJson(inputFile.readAll()).object();
+                input["assetId"] = preview.playbackAssetId(); input.remove("actorInputRows");
+                auto group = input["externalProducers"].toObject(); auto services = group["value"].toObject();
+                for (const auto key : {"directorLaunch", "sharedActor", "mapMenu", "imageEcho", "framebuffer"}) services.remove(key);
+                auto schedule = services["resourceSchedule"].toObject();
+                schedule["pageAdvancePolicy"] = "automatic";
+                schedule["dialogueChoicePolicy"] = option == 1 ? "first" : "second";
+                schedule["controller"] = QJsonObject{{"throughPass", 3999}, {"changes", QJsonArray{
+                    QJsonObject{{"pass",0},{"actionMask",0},{"directionMask",0},{"historyMask",0},{"dummyMask",0}}}}};
+                services["resourceSchedule"] = schedule; group["value"] = services; input["externalProducers"] = group;
+                preview.importPlaybackInputs(QJsonDocument(input).toJson(QJsonDocument::Compact));
+                preview.seekToUpdate(500);
+                QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 10000);
+                QVERIFY2(status->text().contains("Scene released"), qPrintable(status->text()));
+                QCOMPARE(preview.renderedFrame(), outcomes[option - 1]);
             }
             QVERIFY(outcomes[0] != outcomes[1]);
             QCOMPARE(project.scenePrograms()->program(id).source, complete);
@@ -585,7 +603,62 @@ class UiTests : public QObject {
             preview->findChild<QPushButton *>("sceneClearPlaybackInputs")->click();
             QVERIFY(!preview->property("sceneStopped").toBool());
             QCOMPARE(preview->findChild<QComboBox *>("sceneLiveActors")->count(), 0);
+            const auto context = preview->findChild<QLabel *>("scenePreviewContext")->text();
+            QVERIFY_THROWS_EXCEPTION(Error, preview->importPlaybackInputs(QJsonDocument(unresolved).toJson()));
+            QCOMPARE(preview->findChild<QLabel *>("scenePreviewContext")->text(), context);
             QCOMPARE(project.manifest(), unchanged); QCOMPARE(undo.count(), 0);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
+    void importedRoomLaunch() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            const auto rom = Rom::open(path);
+            const auto programs = ScenePrograms::load(rom);
+            QFile file(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath("../../tests/fixtures/cutscene-room-input.json"));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const auto data = file.readAll();
+            ScenePreview preview(rom); preview.resize(1000, 900); preview.show();
+            preview.selectScene(programs, programs.original().selectors()[39], 0);
+            QCOMPARE(preview.playbackAssetId(), QString("rom-director:01F4558C"));
+            const auto inputs = ScenePlaybackInputs::parse(data, preview.playbackAssetId());
+            ScenePlaybackStart start; start.mode = 0;
+            auto cameras = SceneCameras::freshModeTwo(rom);
+            inputs.configure(start, cameras);
+            QFile expected(QDir(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath()).filePath("../../tests/fixtures/cutscene-director-launch.json"));
+            QVERIFY(expected.open(QIODevice::ReadOnly));
+            const auto prefix = QByteArray::fromHex(QJsonDocument::fromJson(expected.readAll()).object()["prefix"].toObject()["cameraHex"].toString().toLatin1());
+            QCOMPARE(cameras.actor().bank(), prefix.first(56));
+            QCOMPARE(cameras.registered().bank(), prefix.mid(88, 56));
+            preview.importPlaybackInputs(data);
+            auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+            preview.seekToUpdate(600);
+            QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneTick").toInt() == 600 || preview.property("sceneStopped").toBool(), 30000);
+            QVERIFY2(!preview.property("sceneStopped").toBool(), qPrintable(status->text()));
+            QVERIFY(preview.findChild<QComboBox *>("sceneLiveActors")->count() > 0);
+            const auto frame = preview.renderedFrame();
+            preview.seekToUpdate(500); QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 500, 30000);
+            preview.seekToUpdate(600); QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 600, 30000);
+            QCOMPARE(preview.renderedFrame(), frame);
+            QApplication::processEvents();
+            QVERIFY2(preview.rect().contains(preview.findChild<QComboBox *>("sceneLiveActors")->geometry()), "Live Actor controls must remain within the preview");
+            QVERIFY(preview.grab().save("native-imported-room.png"));
+            preview.seekToUpdate(4000);
+            QTRY_VERIFY_WITH_TIMEOUT(preview.property("sceneStopped").toBool(), 60000);
+            QVERIFY2(status->text().contains("Scene released"), qPrintable(status->text()));
+            qInfo() << "Imported room released at update" << preview.property("sceneTick").toInt();
+            auto omitted = QJsonDocument::fromJson(data).object();
+            auto group = omitted["externalProducers"].toObject(); auto services = group["value"].toObject();
+            auto drawing = services["framebuffer"].toObject(); drawing["backgroundPolicy"] = "omit";
+            services["framebuffer"] = drawing; group["value"] = services; omitted["externalProducers"] = group;
+            preview.importPlaybackInputs(QJsonDocument(omitted).toJson(QJsonDocument::Compact));
+            preview.seekToUpdate(600); QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), 600, 30000);
+            QVERIFY(preview.renderedFrame() != frame);
+            auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+            QVERIFY(confirm->isVisible() && confirm->isEnabled());
+            confirm->click();
+            QCOMPARE(preview.property("sceneTick").toInt(), 601);
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void importedGraduationCapture_data() {

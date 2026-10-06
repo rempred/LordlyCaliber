@@ -90,6 +90,26 @@ Audio requests remain silent, terrain is flat, and unsupported gameplay services
 show a boundary instead of modifying the source. Full-game menus are outside the
 cutscene preview.
 
+Animation sequences can be replaced from the Sprite workspace, copied between
+classes, compared at a shared origin, and translated in batches. Single-frame
+copy offers art only or art and duration. Prepared imports retain animation
+controls and create independent artwork where needed.
+
+Cutscene Actions display their executed times and seek from action selection.
+Drag an Actor to insert placement at the playhead; Control-drag pans the view.
+Add at playhead retains supported timed waits. If a scene exits with movement,
+fade or camera work pending, Hold until finished inserts completion waits.
+Use as template names an existing replacement while preserving its game triggers.
+
+Import playback inputs accepts browser input JSON for the selected scene. These
+are transient preview inputs, separate from project edits. Fresh room launches,
+Actor rows, paired cameras, recorded controller inputs and qualified captured
+movement resumes are supported, including Graduation's continuous capture with
+dialogue. Clear playback inputs returns to the normal editor startup. Specialized
+files containing recorded external callback outcomes or active inherited dialogue
+payloads currently report that unsupported context. Normal native scene playback
+computes its own callbacks; it does not require those research captures.
+
 For scripting:
 
 ```powershell
