@@ -153,6 +153,8 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x15, "Turn Actor"},
             {0x1c, "Room Actor channel"},
             {0x46, "Create scene sprite"},
+            {0x63, "Create rotated scene sprite"},
+            {RotateSprite, "Rotate scene sprite"},
             {0x64, "Set scene sprite pose"},
             {0x66, "Release scene sprite"}};
 }
@@ -260,7 +262,8 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         }
         QVector<quint32> operands;
         switch (kind) {
-        case 0x46: {
+        case 0x46:
+        case 0x63: {
             QSet<quint32> used;
             for (const auto &c : p.commands)
                 if (const auto reference = spriteReference(c)) {
@@ -275,9 +278,16 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
             if (spriteSlot == 30)
                 throw Error("All 30 sprite slots are already referenced; select an existing sprite "
                             "action to edit.");
-            operands = {spriteSlot, 30, 1, 2, 0, 0, 0, 100, 0};
+            operands = kind == 0x46
+                           ? QVector<quint32>{spriteSlot, 30, 1, 2, 0, 0, 0, 100, 0}
+                           : QVector<quint32>{spriteSlot,  30,          1,          0, 0, 0, 180,
+                                              quint32(-1), quint32(-1), quint32(-1)};
             break;
         }
+        case RotateSprite:
+            operands = {spriteSlot, quint32(-1), quint32(-1), 0,           0,
+                        0,          180,         quint32(-1), quint32(-1), 0};
+            break;
         case 0x64:
             operands = {spriteSlot, quint32(-1), quint32(-1), 0};
             break;
@@ -340,7 +350,7 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         if (kind == 0x2a)
             added << command(0x14, operands) << command(0x2a, {slot, 2, 0, 0, 0, 2});
         else
-            added << command(kind, operands);
+            added << command(kind == RotateSprite ? 0x63 : kind, operands);
     }
     for (int i = 0; i < added.size(); ++i)
         result.commands.insert(before + i, added[i]);

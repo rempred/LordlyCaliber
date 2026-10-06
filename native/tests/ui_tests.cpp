@@ -3524,7 +3524,7 @@ class UiTests : public QObject {
             pages->setCurrentWidget(preview);
             QCoreApplication::processEvents();
             QVERIFY(editor.grab().save("scene-sprite-selection.png"));
-            // Extended placement has no Actions fields yet: navigate to its exact source command.
+            // Direct extended placement now navigates to its rotation Actions fields.
             auto extended = *project.scenePrograms();
             auto raw = extended.program(id);
             raw.commands[point + 1].opcode = 0x63;
@@ -3541,10 +3541,120 @@ class UiTests : public QObject {
             QCoreApplication::processEvents();
             QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
                                view->mapFromScene(QPointF(rawPixel) + QPointF(.5, .5)));
+            QCOMPARE(pages->currentWidget(), actions);
+            QVERIFY(actions->findChild<QListWidget *>("sceneActionList")
+                        ->currentItem()
+                        ->text()
+                        .contains("Create rotated scene sprite"));
+            QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField6")->text(), QString("180"));
+            QCOMPARE(project.scenePrograms()->program(id).source, raw.encode());
+            // Path-oriented placement still belongs to Commands. Test routing without
+            // pretending that the preview has the unresolved path-owner context.
+            raw.commands[point + 1].operands[8] = 0;
+            extended.replace(id, raw.encode());
+            pushSceneProgramChange(&project, &undo, "Use path orientation", extended);
+            preview->findSpriteAction(extended.resource(id).selectors.first(), 0);
             auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
             QCOMPARE(commands->currentRow(), point + 1);
             QVERIFY(pages->currentWidget()->isAncestorOf(commands));
             QCOMPARE(project.scenePrograms()->program(id).source, raw.encode());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void rotatedSpriteActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 5 && scenes.canCreateBlank(entry.key)) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Rotated sprite actions", source, true);
+            auto base = scenes.program(id);
+            const int point = SceneActions::positions(base).first().command;
+            base = SceneActions::insert(base, point, 0xe, 30);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 800);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            kind->setCurrentIndex(kind->findData(0x63));
+            QVERIFY(insert->isEnabled());
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[point].opcode, quint32(0x63));
+            QCOMPARE(editor.findChild<QLineEdit *>("sceneActionField6")->text(), QString("180"));
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto unrotated = frame();
+            editor.findChild<QLineEdit *>("sceneActionField6")->setText("270");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto rotated = frame();
+            QVERIFY(rotated != unrotated);
+            undo.undo();
+            QCOMPARE(frame(), unrotated);
+            undo.redo();
+            QCOMPARE(frame(), rotated);
+            editor.selectScene(id, point);
+            const auto accepted = project.scenePrograms()->program(id).source;
+            editor.findChild<QLineEdit *>("sceneActionField2")->setText("800");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            editor.findChild<QLineEdit *>("sceneActionField6")->setText("32768");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            kind->setCurrentIndex(kind->findData(SceneActions::RotateSprite));
+            auto position = editor.findChild<QComboBox *>("sceneActionPosition");
+            position->setCurrentIndex(position->findData(point + 1));
+            insert->click();
+            QCOMPARE(project.scenePrograms()->program(id).commands[point + 1].operands[9],
+                     quint32(0));
+            QVERIFY(!editor.findChild<QLineEdit *>("sceneActionField2"));
+            editor.findChild<QLineEdit *>("sceneActionField1")->setText("90");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto reusedFrame = frame();
+            QVERIFY(reusedFrame != rotated);
+            undo.undo();
+            QCOMPARE(frame(), unrotated); // Undo only the reuse angle; default reuse is180.
+            undo.redo();
+            QCOMPARE(frame(), reusedFrame);
+            editor.selectScene(id, point + 1);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-sprite-rotation.png"));
+            // Preserve symbolic position when changing an unrelated direct rotation.
+            auto symbolic = *project.scenePrograms();
+            auto p = symbolic.program(id);
+            p.commands[point].operands[4] = 0x08880004;
+            symbolic.replace(id, p.encode());
+            pushSceneProgramChange(&project, &undo, "Use launch position", symbolic);
+            editor.selectScene(id, point);
+            auto x = editor.findChild<QLineEdit *>("sceneActionField4");
+            QVERIFY(x->isReadOnly());
+            QCOMPARE(x->text(), QString("Launch value 4"));
+            editor.findChild<QLineEdit *>("sceneActionField6")->setText("90");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).commands[point].operands[4],
+                     quint32(0x08880004));
         } catch (const Error &e) {
             QFAIL(e.what());
         }

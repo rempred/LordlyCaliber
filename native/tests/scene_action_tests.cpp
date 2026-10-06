@@ -21,6 +21,120 @@ class SceneActionTests : public QObject {
         }
         return DirectorProgram::decode(bytes);
     }
+    void rotatedSpriteActions() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 5 && scenes.canCreateBlank(entry.key)) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Rotated sprites", source, true);
+            const auto base = scenes.program(id);
+            const int point = SceneActions::positions(base).first().command;
+            auto stream = SceneActions::insert(base, point, 0x63);
+            QCOMPARE(
+                stream.commands[point].operands,
+                QVector<quint32>({0, 30, 1, 0, 0, 0, 180, quint32(-1), quint32(-1), quint32(-1)}));
+            QCOMPARE(SceneActions::remove(stream, point).source, base.source);
+            QCOMPARE(SceneActions::insert(stream, point + 1, 0x46).commands[point + 1].operands[0],
+                     quint32(1));
+            for (const auto &[field, text] : QVector<QPair<int, QString>>{
+                     {0, "29"}, {3, "3"}, {4, "-17"}, {5, "23"}, {6, "270"}})
+                stream = SceneActions::edit(stream, point, field, text);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(stream, point, 6, "32768"));
+            auto reused = SceneActions::insert(stream, point + 1, SceneActions::RotateSprite);
+            QCOMPARE(reused.commands[point + 1].opcode, quint32(0x63));
+            QCOMPARE(reused.commands[point + 1].operands[0], quint32(29));
+            QCOMPARE(reused.commands[point + 1].operands[9], quint32(0));
+            reused = SceneActions::edit(reused, point + 1, 1, "90");
+            auto opaque = reused;
+            opaque.commands[point + 1].operands[1] = 0x12345678;
+            opaque.commands[point + 1].operands[4] = 0x87654321;
+            opaque.commands[point + 1].operands[7] = 0x7ffffffe;
+            opaque.commands[point + 1].operands[9] = 7; // Every non-minus-one literal reuses.
+            opaque = DirectorProgram::decode(opaque.encode());
+            const auto edited = SceneActions::edit(opaque, point + 1, 1, "-90");
+            auto expected = opaque;
+            expected.commands[point + 1].operands[6] = quint32(-90);
+            QCOMPARE(edited.source, expected.encode());
+            auto symbolic = stream;
+            symbolic.commands[point].operands[4] = 0x08880001;
+            symbolic = DirectorProgram::decode(symbolic.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(symbolic, point, 4, "12"));
+            QCOMPARE(SceneActions::edit(symbolic, point, 6, "90").commands[point].operands[4],
+                     quint32(0x08880001));
+            auto pathDriven = stream;
+            pathDriven.commands[point].operands[8] = 0;
+            pathDriven = DirectorProgram::decode(pathDriven.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(pathDriven, point, 6, "90"));
+            const auto moved = SceneActions::move(reused, point + 1, point);
+            QCOMPARE(SceneActions::move(moved, point, point + 2).source, reused.source);
+            auto exercise = [&](const Rom &rom, const DirectorProgram &p) {
+                SceneSprites sprites(rom);
+                int value = 0;
+                QVERIFY(sprites.service(0x63, p.commands[point].operands, value));
+                const auto initial = sprites.sprite(29)->record();
+                QCOMPARE(qint32(u32(initial, 0x24)), -17);
+                QCOMPARE(qint32(u32(initial, 0x28)), -23);
+                QCOMPARE(u8(initial, 0x4b), quint8(0));
+                QCOMPARE(u8(initial, 0x4a), quint8(1));
+                QCOMPARE(u16(initial, 0x48), quint16(100));
+                QCOMPARE(u16(initial, 0x40), quint16(270));
+                QCOMPARE(u8(initial, 0x4c), quint8(3));
+                const auto identity = sprites.identity(29);
+                const auto reuse = std::find_if(p.commands.begin() + point + 1, p.commands.end(),
+                                                [](const auto &c) { return c.opcode == 0x63; });
+                QVERIFY(reuse != p.commands.end());
+                QVERIFY(sprites.service(0x63, reuse->operands, value));
+                auto rotated = initial;
+                put16(rotated, 0x40, 90);
+                QCOMPARE(sprites.sprite(29)->record(), rotated);
+                QCOMPARE(sprites.identity(29), identity);
+                SceneSprites missing(rom);
+                QVERIFY_THROWS_EXCEPTION(Error, missing.service(0x63, reuse->operands, value));
+            };
+            exercise(project.rom(), reused);
+            const auto outputProgram = SceneActions::insert(reused, point + 1, 0xe, 30);
+            scenes.replace(id, outputProgram.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, outputProgram.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-rotated-sprites-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, outputProgram.source);
+            exercise(reopened.rom(), reopened.scenePrograms()->program(id));
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Rotated sprite export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneSpriteActions() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

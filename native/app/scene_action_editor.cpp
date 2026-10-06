@@ -126,7 +126,8 @@ bool SceneActionEditor::selectSprite(int slot) {
     int selected = -1;
     for (int row = 0; row < actions_.size(); ++row) {
         const auto &command = program.commands[actions_[row].command];
-        if (command.opcode != 0x46 && command.opcode != 0x64 && command.opcode != 0x66)
+        if (command.opcode != 0x46 && command.opcode != 0x63 && command.opcode != 0x64 &&
+            command.opcode != 0x66)
             continue;
         const auto value = command.operands[0];
         if ((value & 0xffffff00U) == 0x08880000U)
@@ -135,7 +136,8 @@ bool SceneActionEditor::selectSprite(int slot) {
             continue;
         if (selected < 0)
             selected = row;
-        if (command.opcode == 0x46) {
+        if (command.opcode == 0x46 ||
+            (command.opcode == 0x63 && command.operands[9] == quint32(-1))) {
             selected = row;
             break;
         }
@@ -281,12 +283,13 @@ void SceneActionEditor::showAction() {
             input->setToolTip(i >= 4 && i <= 6 ? "X and Y both -1 keep all coordinates. Otherwise "
                                                  "X, Y and Z replace the position together."
                                                : "Use -1 to keep the Actor's current value.");
-        if (action.name == "Set Actor class and pose" || action.name == "Create class Actor") {
-            if ((word & 0xffffff00U) == 0x08880000U) {
-                input->setText(QString("Launch value %1").arg(word & 255));
-                input->setToolTip(
-                    "The launch event supplies this value. Its symbolic source remains unchanged.");
-            } else if (f.canonical(word) && action.name == "Set Actor class and pose") {
+        if ((word & 0xffffff00U) == 0x08880000U) {
+            input->setText(QString("Launch value %1").arg(word & 255));
+            input->setToolTip(
+                "The launch event supplies this value. Its symbolic source remains unchanged.");
+        } else if (action.name == "Set Actor class and pose" ||
+                   action.name == "Create class Actor") {
+            if (f.canonical(word) && action.name == "Set Actor class and pose") {
                 input->setToolTip(
                     "World scenes apply this to an existing Actor. -1 retains the current "
                     "value (or skips the command for the slot). Positions are retained; "
@@ -299,8 +302,14 @@ void SceneActionEditor::showAction() {
         if (action.name == "Turn Actor" && i == 4)
             input->setToolTip("The game rounds this budget to its turning steps. Start and target "
                               "facings must differ; very short budgets can wrap the native timer.");
-        const bool classField = (action.name == "Set Actor class and pose" ||
-                                 action.name == "Create class Actor") && (i == 1 || i == 2);
+        if ((action.name == "Create rotated scene sprite" ||
+             action.name == "Rotate scene sprite") &&
+            f.operand == 6 && f.canonical(word))
+            input->setToolTip("Native rotation: 180 is unrotated; 270 turns a quarter turn. "
+                              "Reusing a sprite retains its position, pose, scale and channel.");
+        const bool classField =
+            (action.name == "Set Actor class and pose" || action.name == "Create class Actor") &&
+            (i == 1 || i == 2);
         if (classField && !input->isReadOnly()) {
             auto classRow = new QWidget;
             auto layout = new QHBoxLayout(classRow);
@@ -313,7 +322,8 @@ void SceneActionEditor::showAction() {
             choice->setProperty("minimumClass", f.minimum);
             choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
             choice->setMinimumContentsLength(18);
-            choice->setToolTip("Choose a class from the current project. The adjacent field keeps its numeric ID.");
+            choice->setToolTip("Choose a class from the current project. The adjacent field keeps "
+                               "its numeric ID.");
             layout->addWidget(choice, 1);
             fields_->addRow(f.name, classRow);
             connect(choice, &QComboBox::activated, input, [choice, input] {
@@ -327,14 +337,22 @@ void SceneActionEditor::showAction() {
             connect(input, &QLineEdit::textChanged, this, [this] { refreshClassChoices(); });
     }
     refreshClassChoices();
-    notice_->setText("Complete values enter the project immediately and share Undo with Commands.");
+    notice_->setText(
+        action.name == "Create rotated scene sprite"
+            ? "Creates with facing 0, drawing channel 1 and scale 100%. "
+              "Complete values enter the project immediately and share Undo with Commands."
+        : action.name == "Rotate scene sprite"
+            ? "Reuses an existing sprite and changes only its rotation. "
+              "Complete values enter the project immediately and share Undo with Commands."
+            : "Complete values enter the project immediately and share Undo with Commands.");
 }
 void SceneActionEditor::refreshClassChoices() {
     const auto &classes = project_->records(Table::Classes);
     for (auto choice : findChildren<QComboBox *>()) {
         if (!choice->objectName().startsWith("sceneActionClassChoice"))
             continue;
-        const auto input = findChild<QLineEdit *>(QString("sceneActionField%1").arg(choice->property("actionField").toInt()));
+        const auto input = findChild<QLineEdit *>(
+            QString("sceneActionField%1").arg(choice->property("actionField").toInt()));
         if (!input)
             continue;
         QStringList labels;
@@ -386,16 +404,18 @@ void SceneActionEditor::publishFields() {
                     body[operand] >= quint32(project_->records(Table::Classes).size()))
                     throw Error("Choose a class that exists in the current project.");
         }
-        if (action.name == "Create scene sprite" || action.name == "Set scene sprite pose") {
+        if (action.name == "Create scene sprite" || action.name == "Create rotated scene sprite" ||
+            action.name == "Set scene sprite pose") {
             const auto &args = program.commands[action.command].operands;
             const auto &prior = original.commands[action.command].operands;
-            const bool create = action.name == "Create scene sprite";
+            const bool ordinary = action.name == "Create scene sprite";
+            const bool create = ordinary || action.name == "Create rotated scene sprite";
             const bool changedPose =
-                args[1] != prior[1] || args[2] != prior[2] || (create && args[3] != prior[3]);
+                args[1] != prior[1] || args[2] != prior[2] || (ordinary && args[3] != prior[3]);
             if (changedPose && qint32(args[1]) >= 0) {
                 const auto art = ActorArt::load(project_->rom(), int(args[1]));
                 if (qint32(args[2]) >= 0 &&
-                    art.resolve(qint16(args[2]), create ? int(args[3]) : 0) < 0)
+                    art.resolve(qint16(args[2]), ordinary ? int(args[3]) : 0) < 0)
                     throw Error("Choose an animation and facing present in this art bank.");
             }
             if (create && (args[4] != prior[4] || args[5] != prior[5]) && args[4] == 0xffffffffU &&
@@ -434,8 +454,8 @@ void SceneActionEditor::updateStructureControls() {
                          (!body || type == 1 || type == 8);
     insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
     insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
-                        : body ? "Create class Actor requires a fresh environment scene."
-                               : position_->currentData(Qt::ToolTipRole).toString());
+                        : body  ? "Create class Actor requires a fresh environment scene."
+                                : position_->currentData(Qt::ToolTipRole).toString());
     bool canRemove = false;
     QString reason;
     const int row = list_->currentRow();

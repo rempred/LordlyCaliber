@@ -4,6 +4,8 @@
 #include <limits>
 namespace lordly {
 bool SceneActionField::canonical(quint32 word) const {
+    if ((word & 0xffffff00U) == 0x08880000U)
+        return false; // A launch translation is not an editable literal.
     const auto value = qint64(qint32(word)) - bias;
     return value >= minimum && value <= maximum && (choices.isEmpty() || choices.contains(value));
 }
@@ -146,6 +148,23 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Drawing channel", 6, 1, 0, 255);
             field("Scale (%)", 7, 1, -32768, 32767);
             field("Variant", 8, 1, 0, 255);
+            break;
+        case 0x63:
+            // Path headings need their own context; retain those commands in
+            // the source inspector. Unknown launch-selected creation stays there too.
+            if (c.operands[8] != quint32(-1) || (c.operands[9] & 0xffffff00U) == 0x08880000U)
+                continue;
+            action.name = c.operands[9] == quint32(-1) ? "Create rotated scene sprite"
+                                                       : "Rotate scene sprite";
+            field("Sprite slot", 0, 1, 0, 29);
+            if (c.operands[9] == quint32(-1)) {
+                field("Art bank", 1, 1, 1, 32767);
+                field("Animation", 2, 1, 0, 32767);
+                field("Variant", 3, 1, 0, 255);
+                field("X", 4);
+                field("Y", 5);
+            }
+            field("Rotation (180 = unrotated)", 6, 1, -32768, 32767);
             break;
         case 0x64:
             action.name = "Set scene sprite pose";

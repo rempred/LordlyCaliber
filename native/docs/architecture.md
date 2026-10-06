@@ -4643,3 +4643,35 @@ Actual Actor0/Sprite0 click and double-click routing, readback, absent-step/repl
 raw extended-command navigation and exact project/frame preservation pass. The
 captured sprite selection was inspected. This checks desktop picking and interaction;
 no new game-code or natural-launch qualification is claimed.
+
+
+## Direct sprite rotation Actions
+
+Director63's direct-angle form now has Create rotated scene sprite and Rotate
+scene sprite Actions. Creation allocates an unused independent sprite slot and
+exposes art, animation, variant, XY and signed16-bit rotation. Native defaults
+remain facing0, channel1 and scale100. Reuse changes only rotation and retains
+all other record state; inactive source words and unusual non-minus-one reuse
+sentinels remain byte-exact. Native rotation180 is unrotated. Path-oriented or
+launch-selected creation forms remain in Commands pending their path context.
+
+Changed explicit creation poses validate at facing0. Missing poses, invalid
+angles and uninitialized coordinates refuse without publishing invalid input.
+The common action field reader now also treats088800xx launch translations as
+read-only, including full-width coordinates; unrelated edits preserve them.
+Visible-sprite navigation recognizes direct63 creations and reuse, retaining the
+raw Commands fallback for path-oriented forms.
+
+`scene_action_tests rotatedSpriteActions sceneSpriteActions authoringBoundaries
+exactFields bodyActionFields` passed4997ms. Direct-create records, reuse identity
+and whole-record preservation, native field widths, symbolic/ignored operands,
+ordering/removal, project folders and compiled export/reopening pass. References,
+allocation bounds, CIC CRC and master preservation pass for the rotated candidate
+in parent Test ROMs/native-rotated-sprites-QixZnr. Existing ordinary-sprite and
+Actor-action regressions pass. `ui_tests rotatedSpriteActionControls
+spritePreviewSelection sceneSpriteActionControls bodyActionEditing` passed3358ms:
+actual creation and rotation fields change the rendered frame; exact Undo/Redo,
+invalid input, read-only launch values, selection routing and raw-path fallback
+pass. Capture inspected. The underlying sprite runtime and source remain unchanged,
+so their existing original-instruction comparisons apply. Natural event launch is
+not established by these authoring/export checks.
