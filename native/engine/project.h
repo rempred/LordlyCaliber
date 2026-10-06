@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/class_data.h"
+#include "engine/change_report.h"
 #include "engine/consumable_effects.h"
 #include "engine/dialogues.h"
 #include "engine/encounters.h"
@@ -64,6 +65,7 @@ class Project {
     void setValue(Table table, int row, int field, int value);
     void replaceBytes(Table table, int row, const QByteArray &bytes);
     int changedRecords() const;
+    ChangeReport changeReport() const;
     QJsonObject manifest() const;
     void applyManifest(const QJsonObject &object);
     void importLegacy(const QJsonObject &object);

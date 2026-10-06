@@ -1,5 +1,32 @@
 # Native Lordly Caliber
 
+## Project change review
+
+`Project::changeReport` compares the current project with its loaded source ROM,
+not the last project save. Record fields retain their signed values, packed growth
+lanes and catalog labels. Class additions, names/descriptions, promotion families,
+shops, consumable effects and optional tools show readable settings. Encounters,
+scenarios, scenes, dialogue and artwork identify their changed entries; binary
+scene/artwork bodies are summarized rather than dumped. Private animation removal
+is compared with source-owned groups. Sprite-library assets are listed separately
+from their game assignments. Pending imported sections are explicitly unverified.
+
+The File menu and toolbar open an asynchronous snapshot with find, copy and UTF-8
+text export. Reviewing never changes the live project. The report states its
+source-ROM baseline and excludes unapplied form inputs and the separate Save
+workspace. Export rejects the source ROM, including equivalent canonical paths.
+
+`change_report_tests recordsAndPersistence` passed: signed and packed fields,
+restore-to-empty, class/family additions, consumable shop/icon identities, no binary
+payload dump, no project mutation and identical folder/archive reopening reports.
+`otherEditingAreas` passed in1518ms after correcting a one-based encounter-pool
+iteration; the last pool is covered. It checks untouched loaded models, tools,
+terrain/pools, scenarios/sites, authored scenes, dialogue, routes and persistence.
+`ui_tests projectChangeReview` passed in1940ms: asynchronous menu entry, find/copy,
+exact text export, unchanged project and refusal to overwrite a temporary source
+ROM. The existing `loadDesktopWorkspace` check passed too. The capture was inspected and the complete native build passed without compiler
+warnings. These are change-report checks, not additional game execution or export validation.
+
 ## Atomic saved-member swaps
 
 The Squads page can swap ordinary nonleader characters between two existing

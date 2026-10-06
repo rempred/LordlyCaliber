@@ -8,7 +8,7 @@ preview behavior work; a visible tab alone does not count.
 
 | Area | Required capabilities | Native status |
 |---|---|---|
-| Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | In progress |
+| Workspace | ROM byte orders/revisions, project folders/archive/import, undo, validation, changelog, safe export | Readable project change review now supports background generation, search, copy and text export relative to the loaded source ROM, with persistence and source-preservation checks. Remaining workspace audit in progress |
 | Classes | Complete records, names/descriptions, growth, attacks, equipment, promotion requirements, family selection/creation, new class IDs, dynamic rebuild allocation | Record fields, names/descriptions, promotion, compatibility, equipment-list availability, families and class creation through ID 255 now persist, undo and export through coordinated source rebuilds. Dynamic allocations and reopened-ROM growth verified; full-game validation and remaining feature audit pending |
 | Items | Equipment stats/prices/resistances, packed growth, descriptions, preserved raw fields | Fields and description editing/export implemented; integrated workflow polish remains |
 | Shops | All 35 shops, equipment/consumable inventories, expanded capacity and reopen | Search, add/remove/reorder, copy/restore, undo, project persistence/import and source-built export implemented. Supports 50 equipment/30 consumables in the original RAM arrays. Export/reopen and instruction checks pass, including empty stock; full-game validation remains |

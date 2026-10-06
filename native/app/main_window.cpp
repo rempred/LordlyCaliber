@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/change_report_dialog.h"
 #include "app/art_editor.h"
 #include "app/portrait_editor.h"
 #include "app/army_editor.h"
@@ -84,6 +85,13 @@ MainWindow::MainWindow(QWidget *parent)
     auto save = file->addAction("Save project &folder…", this, [this] { saveProject(false); });
     save->setShortcut(QKeySequence::Save);
     file->addAction("Save sharing &archive…", this, [this] { saveProject(true); });
+    auto review = file->addAction("Review project &changes…", this, [this] {
+        if (project_) {
+            ChangeReportDialog dialog(*project_, this);
+            dialog.exec();
+        }
+    });
+    review->setObjectName("reviewProjectChanges");
     auto build = file->addAction("Build and &export ROM…", this, &MainWindow::buildRom);
     file->addSeparator();
     file->addAction("E&xit", this, &QWidget::close);
@@ -99,6 +107,7 @@ MainWindow::MainWindow(QWidget *parent)
     toolbar->addAction(open);
     toolbar->addAction(save);
     toolbar->addAction(build);
+    toolbar->addAction(review);
     toolbar->addSeparator();
     toolbar->addWidget(summary_);
     auto welcome =
@@ -501,6 +510,7 @@ void MainWindow::buildRom() {
     }));
 }
 void MainWindow::updateStatus() {
+    findChild<QAction *>("reviewProjectChanges")->setEnabled(bool(project_));
     summary_->setText(project_ ? QString("  US Rev %1  ·  %2 changed records")
                                      .arg(project_->rom().revision())
                                      .arg(project_->changedRecords())

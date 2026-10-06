@@ -1,4 +1,5 @@
 #include "app/actor_pose_editor.h"
+#include "app/change_report_dialog.h"
 #include "app/animation_editor.h"
 #include "app/animation_override_editor.h"
 #include "app/army_editor.h"
@@ -31,6 +32,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -67,6 +69,52 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void projectChangeReview() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        try {
+            QTemporaryDir dir;
+            const auto source = dir.filePath("source.v64");
+            QVERIFY(QFile::copy(path, source));
+            auto project = Project::fromRom(Rom::open(source));
+            project.setClassNameBytes(2, encodeClassName("Review Fighter"));
+            const auto before = project.manifest();
+            const auto expected = project.changeReport().text();
+            ChangeReportDialog dialog(project);
+            dialog.show();
+            auto copy = dialog.findChild<QPushButton *>("copyChangeReport");
+            QTRY_VERIFY_WITH_TIMEOUT(copy->isEnabled(), 30000);
+            auto text = dialog.findChild<QPlainTextEdit *>("changeReportText");
+            QCOMPARE(text->toPlainText(), expected);
+            copy->click();
+            QCOMPARE(QApplication::clipboard()->text(), expected);
+            auto search = dialog.findChild<QLineEdit *>("changeReportSearch");
+            search->setText("Review Fighter");
+            QCOMPARE(text->textCursor().selectedText(), QString("Review Fighter"));
+            const auto output = dir.filePath("changes.txt");
+            QVERIFY_THROWS_EXCEPTION(Error, dialog.saveReport(source));
+            QCOMPARE(Rom::open(source).bytes(), project.rom().bytes());
+            dialog.saveReport(output);
+            QFile saved(output); QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(saved.readAll(), expected.toUtf8());
+            QCOMPARE(project.manifest(), before);
+            QVERIFY(dialog.grab().save("project-changes.png"));
+            dialog.close();
+            MainWindow window;
+            auto action = window.findChild<QAction *>("reviewProjectChanges");
+            QVERIFY(action); QVERIFY(!action->isEnabled());
+            window.loadRom(source);
+            QTRY_VERIFY_WITH_TIMEOUT(action->isEnabled(), 10000);
+            bool opened = false;
+            QTimer::singleShot(0, &window, [&] {
+                const auto review = window.findChild<ChangeReportDialog *>("projectChanges");
+                opened = review != nullptr;
+                if (review) review->reject();
+            });
+            action->trigger();
+            QVERIFY(opened);
+        } catch (const std::exception &e) { QFAIL(e.what()); }
+    }
     void portraitDitherAssignment() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

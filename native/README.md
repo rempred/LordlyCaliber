@@ -13,14 +13,21 @@ creation, compatibility masks, and new classes through ID 255. Select a class an
 choose Add class from selected to copy its records, appearance, requirements and
 description. Rebuilds grow the owned tables and description resources, rebuild
 their game readers, and install compatible save conversion within the 4 MB RAM
-layout. Animation changes and the remaining browser workspaces still need native
-workflows. Full-game boot and hardware memory/device behavior remain unverified
+layout. Scenarios, Cutscenes, Art, Sprites, Tools and Save workspaces are also
+available. Cutscene playback and some save operations remain incomplete; see
+`docs/features.md` for current coverage. Full-game boot and hardware memory/device behavior remain unverified
 by the isolated instruction and simulated save tests. Imported unsupported sections remain
 in the project and block export so they cannot be silently dropped.
 
 Projects are folders containing `project.json`. Sharing archives use
 `.lcproject` and omit the ROM. Existing browser Editor JSON projects can be
 imported through Open project after opening the matching source ROM.
+
+Choose Review project changes from the File menu or toolbar to inspect the current
+changes, find text, copy the report or save a text changelog. The comparison uses
+the loaded source ROM, so project saves retain the changelog. It includes project
+assets and summarizes binary scene/artwork changes. Apply pending form edits first;
+the independent Save workspace is outside this project report.
 
 Shops supports all 35 shops with up to 50 equipment items and 30 consumables,
 including empty stock, search, reordering and undo. Consumables provides prices,
@@ -41,7 +48,8 @@ also fits its original function and uses temporary stack space for one ROM row.
 Scenario rates provide independent overrides for Area Investigation and missions,
 or inherit the corresponding global setting. Shared creature pools do not force
 shared rates. Removing every override restores the global-only dispatcher.
-Custom neutral squads and other encounter battle controls are still being migrated.
+Custom neutral squads support independent members, equipment, formation, card text,
+persuasion, retreat and weighted rewards, including added classes.
 
 For scripting:
 
