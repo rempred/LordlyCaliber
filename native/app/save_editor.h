@@ -26,8 +26,12 @@ class SaveEditor : public QWidget {
         return undo_;
     }
     bool modified() const {
-        return !undo_->isClean();
+        return !undo_->isClean() || pendingUnitEdits_;
     }
+    bool hasPendingUnitEdits() const {
+        return pendingUnitEdits_;
+    }
+    void setUnitDraftPending(bool);
     bool edit(SaveTable, int row, const QString &key, const QVariant &);
     bool editUnitSupplies(int index, const QVector<int> &);
     bool editUnit(int index, const QVector<int> &cells, int unity, int tactic);
@@ -43,6 +47,8 @@ class SaveEditor : public QWidget {
   private:
     void refresh();
     bool confirmDiscard();
+    bool allowImmediateEdit();
+    void updateActions();
     Project *project_;
     std::optional<SaveDocument> document_;
     QString sourcePath_;
@@ -50,6 +56,7 @@ class SaveEditor : public QWidget {
     QComboBox *slots_;
     QLabel *status_, *error_;
     QTabWidget *tables_;
-    QPushButton *export_, *restore_;
+    QPushButton *export_, *restore_, *undoButton_, *redoButton_;
+    bool pendingUnitEdits_ = false;
 };
 } // namespace lordly

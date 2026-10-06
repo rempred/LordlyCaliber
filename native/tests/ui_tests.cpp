@@ -1852,7 +1852,8 @@ class UiTests : public QObject {
             editor.exportFile(reserveOutput);
             QFile reserveFile(reserveOutput);
             QVERIFY(reserveFile.open(QIODevice::ReadOnly));
-            QCOMPARE(SaveDocument::open(rom, reserveFile.readAll()).memory(), editor.document()->memory());
+            QCOMPARE(SaveDocument::open(rom, reserveFile.readAll()).memory(),
+                     editor.document()->memory());
             editor.undoStack()->undo();
             editor.undoStack()->undo();
             QCOMPARE(editor.document()->serialize(), expected);
@@ -1880,6 +1881,122 @@ class UiTests : public QObject {
             QVERIFY(!fromReserve->isEnabled());
             QVERIFY(!supply->isEnabled());
             QVERIFY(!editor.findChild<QPushButton *>("saveUnitCell0")->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void saveSquadDraftProtection() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("save-unit-mips.cjs"),
+                                     work.path()});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(generator.exitCode() == 0, generator.readAllStandardError().constData());
+            QFile payload(work.filePath("unit-payload.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            const auto packed = payload.readAll();
+            QByteArray input(0x10000, 0);
+            for (int slot : {0, 1}) {
+                const int at = int(lc_save_record_offset(slot, 0));
+                input.replace(at + 0x2a, 6180, packed);
+                QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + at),
+                                            lc_save_record_size(slot, 0), slot, 0));
+            }
+            MainWindow window;
+            window.show();
+            window.loadRom(path);
+            QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SaveEditor *>() != nullptr, 20000);
+            auto editor = window.findChild<SaveEditor *>();
+            editor->loadBytes(input);
+            auto workspace = window.findChild<QTabWidget *>();
+            workspace->setCurrentWidget(editor);
+            auto panel = editor->findChild<QWidget *>("saveSquads");
+            editor->findChild<QTabWidget *>()->setCurrentWidget(panel);
+            auto units = editor->findChild<QListWidget *>("saveUnitList");
+            auto members = editor->findChild<QListWidget *>("saveUnitMembers");
+            auto unity = editor->findChild<QSpinBox *>("saveUnitUnity");
+            auto apply = editor->findChild<QPushButton *>("saveUnitApply");
+            auto discard = editor->findChild<QPushButton *>("saveUnitDiscard");
+            auto undo = editor->findChild<QPushButton *>("saveUndo");
+            auto slotPicker = editor->findChild<QComboBox *>("saveSlot");
+            auto group = window.findChild<QUndoGroup *>();
+            QVERIFY(discard && undo && group);
+            QVERIFY(!editor->modified());
+            unity->setValue(99);
+            members->setCurrentRow(1);
+            editor->findChild<QPushButton *>("saveUnitCell5")->click();
+            QVERIFY(editor->hasPendingUnitEdits());
+            QVERIFY(editor->modified());
+            QVERIFY(window.isWindowModified());
+            QVERIFY(!units->isEnabled());
+            QVERIFY(!slotPicker->isEnabled());
+            QVERIFY(!undo->isEnabled());
+            QVERIFY(!editor->findChild<QPushButton *>("exportSave")->isEnabled());
+            QVERIFY(group->activeStack() == nullptr);
+            units->setCurrentRow(1);
+            QCOMPARE(units->currentRow(), 0);
+            QCOMPARE(unity->value(), 99);
+            slotPicker->setCurrentIndex(slotPicker->findData(1));
+            QCOMPARE(editor->document()->selectedSlot(), 0);
+            QCOMPARE(slotPicker->currentData().toInt(), 0);
+            QVERIFY(!editor->edit(SaveTable::Game, 0, "goth", 12345));
+            const auto output = work.filePath("draft.SaveRAM");
+            QVERIFY_THROWS_EXCEPTION(Error, editor->exportFile(output));
+            QVERIFY(!QFileInfo::exists(output));
+            group->undo();
+            QCOMPARE(editor->document()->serialize(), input);
+            workspace->setCurrentIndex(0);
+            QVERIFY(group->activeStack() != nullptr);
+            workspace->setCurrentWidget(editor);
+            QVERIFY(group->activeStack() == nullptr);
+            QCOMPARE(unity->value(), 99);
+            QVERIFY(editor->findChild<QLabel *>("saveUnitDraftNote")->isVisible());
+            QCoreApplication::processEvents();
+            QVERIFY(window.grab().save("save-squad-pending-draft.png"));
+            apply->click();
+            QVERIFY(!editor->hasPendingUnitEdits());
+            QVERIFY(!discard->isEnabled());
+            QCOMPARE(editor->document()->units()[0].unity, 99);
+            QCOMPARE(editor->document()->units()[0].cells[1], 5);
+            QCOMPARE(editor->undoStack()->count(), 1);
+            QCOMPARE(group->activeStack(), editor->undoStack());
+            group->undo();
+            QCOMPARE(editor->document()->serialize(), input);
+            QVERIFY(!editor->modified());
+            unity->setValue(98);
+            QVERIFY(!editor->findChild<QPushButton *>("saveRedo")->isEnabled());
+            group->redo();
+            QCOMPARE(editor->document()->serialize(), input);
+            discard->click();
+            QCOMPARE(unity->value(), 23);
+            QVERIFY(!editor->hasPendingUnitEdits());
+            QVERIFY(!editor->modified());
+            QVERIFY(!window.isWindowModified());
+            QVERIFY(editor->findChild<QPushButton *>("saveRedo")->isEnabled());
+            editor->exportFile(output);
+            QFile exported(output);
+            QVERIFY(exported.open(QIODevice::ReadOnly));
+            QCOMPARE(exported.readAll(), input);
+            units->setCurrentRow(3); // Existing unqualified member220 cannot be repositioned.
+            members->setCurrentRow(1);
+            editor->findChild<QPushButton *>("saveUnitCell8")->click();
+            apply->click();
+            QVERIFY(editor->hasPendingUnitEdits());
+            QVERIFY(discard->isEnabled());
+            QVERIFY(editor->findChild<QLabel *>("saveError")->text().contains("unknown member"));
+            QCOMPARE(editor->document()->serialize(), input);
+            units->setCurrentRow(0);
+            QCOMPARE(units->currentRow(), 3);
+            discard->click();
+            QVERIFY(!editor->hasPendingUnitEdits());
+            units->setCurrentRow(0);
+            QCOMPARE(units->currentRow(), 0);
         } catch (const Error &e) {
             QFAIL(e.what());
         }

@@ -195,15 +195,20 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
     actions->addWidget(export_);
     actions->addWidget(restore_);
     actions->addStretch();
-    auto undoButton = new QPushButton("Undo"), redoButton = new QPushButton("Redo");
-    connect(undoButton, &QPushButton::clicked, undo_, &QUndoStack::undo);
-    connect(redoButton, &QPushButton::clicked, undo_, &QUndoStack::redo);
-    connect(undo_, &QUndoStack::canUndoChanged, undoButton, &QPushButton::setEnabled);
-    connect(undo_, &QUndoStack::canRedoChanged, redoButton, &QPushButton::setEnabled);
-    undoButton->setEnabled(false);
-    redoButton->setEnabled(false);
-    actions->addWidget(undoButton);
-    actions->addWidget(redoButton);
+    undoButton_ = new QPushButton("Undo");
+    redoButton_ = new QPushButton("Redo");
+    undoButton_->setObjectName("saveUndo");
+    redoButton_->setObjectName("saveRedo");
+    connect(undoButton_, &QPushButton::clicked, this, [this] {
+        if (!pendingUnitEdits_)
+            undo_->undo();
+    });
+    connect(redoButton_, &QPushButton::clicked, this, [this] {
+        if (!pendingUnitEdits_)
+            undo_->redo();
+    });
+    actions->addWidget(undoButton_);
+    actions->addWidget(redoButton_);
     layout->addLayout(actions);
     status_ = new QLabel;
     status_->setWordWrap(true);
@@ -288,6 +293,11 @@ SaveEditor::SaveEditor(Project *project, QWidget *parent)
     connect(slots_, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (!document_ || index < 0)
             return;
+        if (!allowImmediateEdit()) {
+            const QSignalBlocker guard(slots_);
+            slots_->setCurrentIndex(slots_->findData(document_->selectedSlot()));
+            return;
+        }
         try {
             document_->selectSlot(slots_->itemData(index).toInt());
             refresh();
@@ -323,6 +333,7 @@ SaveEditor::~SaveEditor() {
 void SaveEditor::loadBytes(const QByteArray &bytes, const QString &sourcePath) {
     auto candidate =
         SaveDocument::open(project_->rom(), bytes, int(project_->records(Table::Classes).size()));
+    pendingUnitEdits_ = false; // The caller has already handled replacing the loaded document.
     undo_->clear();
     document_ = std::move(candidate);
     sourcePath_ = sourcePath;
@@ -333,6 +344,8 @@ void SaveEditor::loadBytes(const QByteArray &bytes, const QString &sourcePath) {
 void SaveEditor::exportFile(const QString &path) {
     if (!document_)
         throw Error("No save loaded");
+    if (pendingUnitEdits_)
+        throw Error("Apply or discard the pending squad changes before exporting this save");
     if (!sourcePath_.isEmpty() &&
         QFileInfo(path).absoluteFilePath().compare(QFileInfo(sourcePath_).absoluteFilePath(),
                                                    Qt::CaseInsensitive) == 0)
@@ -349,7 +362,7 @@ void SaveEditor::exportFile(const QString &path) {
     error_->setText("Exported " + QFileInfo(path).fileName());
 }
 bool SaveEditor::edit(SaveTable table, int row, const QString &key, const QVariant &value) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         document_->setClassCount(int(project_->records(Table::Classes).size()));
@@ -367,7 +380,7 @@ void SaveEditor::apply(const SaveChange &change, bool forward) {
     document_->apply(change, forward);
 }
 bool SaveEditor::editUnitSupplies(int index, const QVector<int> &supplies) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         auto change = document_->planUnitSupplies(index, supplies, *project_);
@@ -395,7 +408,7 @@ bool SaveEditor::editUnit(int index, const QVector<int> &cells, int unity, int t
     }
 }
 bool SaveEditor::swapUnitMembers(int fromUnit, int fromMember, int toUnit, int toMember) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         auto change =
@@ -410,7 +423,7 @@ bool SaveEditor::swapUnitMembers(int fromUnit, int fromMember, int toUnit, int t
     }
 }
 bool SaveEditor::transferUnitMember(int fromUnit, int fromMember, int toUnit, int cell) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         auto change =
@@ -425,7 +438,7 @@ bool SaveEditor::transferUnitMember(int fromUnit, int fromMember, int toUnit, in
     }
 }
 bool SaveEditor::moveToReserve(int fromUnit, int fromMember) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         auto change = document_->planToReserve(fromUnit, fromMember, project_->classData());
@@ -439,7 +452,7 @@ bool SaveEditor::moveToReserve(int fromUnit, int fromMember) {
     }
 }
 bool SaveEditor::addFromReserve(int member, int toUnit, int cell) {
-    if (!document_)
+    if (!document_ || !allowImmediateEdit())
         return false;
     try {
         auto change = document_->planFromReserve(member, toUnit, cell, project_->classData());
@@ -452,6 +465,32 @@ bool SaveEditor::addFromReserve(int member, int toUnit, int cell) {
         return false;
     }
 }
+bool SaveEditor::allowImmediateEdit() {
+    if (!pendingUnitEdits_)
+        return true;
+    error_->setText("Apply or discard the pending squad changes first");
+    return false;
+}
+void SaveEditor::setUnitDraftPending(bool pending) {
+    if (pendingUnitEdits_ == pending)
+        return;
+    pendingUnitEdits_ = pending;
+    if (!pending)
+        error_->clear();
+    updateActions();
+    emit changed();
+}
+void SaveEditor::updateActions() {
+    export_->setEnabled(bool(document_) && !pendingUnitEdits_);
+    restore_->setEnabled(undo_->index() > 0 && !pendingUnitEdits_);
+    slots_->setEnabled(document_ && document_->battery() && !pendingUnitEdits_);
+    undoButton_->setEnabled(undo_->canUndo() && !pendingUnitEdits_);
+    redoButton_->setEnabled(undo_->canRedo() && !pendingUnitEdits_);
+    tables_->setEnabled(bool(document_));
+    for (int i = 0; i < tables_->count(); ++i)
+        tables_->setTabEnabled(i, !pendingUnitEdits_ ||
+                                      tables_->widget(i)->objectName() == "saveSquads");
+}
 void SaveEditor::refresh() {
     const QSignalBlocker guard(slots_);
     slots_->clear();
@@ -463,10 +502,7 @@ void SaveEditor::refresh() {
         }
         slots_->setCurrentIndex(slots_->findData(document_->selectedSlot()));
     }
-    export_->setEnabled(bool(document_));
-    restore_->setEnabled(undo_->index() > 0);
-    slots_->setEnabled(document_ && document_->battery());
-    tables_->setEnabled(bool(document_));
+    updateActions();
     status_->setText(
         document_
             ? QString("%1 · %2%3")

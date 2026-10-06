@@ -69,7 +69,18 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     body->addLayout(form);
     apply_ = new QPushButton("Apply squad changes");
     apply_->setObjectName("saveUnitApply");
-    body->addWidget(apply_);
+    auto draftActions = new QHBoxLayout;
+    draftActions->addWidget(apply_);
+    discard_ = new QPushButton("Discard squad changes");
+    discard_->setObjectName("saveUnitDiscard");
+    draftActions->addWidget(discard_);
+    body->addLayout(draftActions);
+    draftNote_ = new QLabel("Unapplied changes. Apply or discard them before changing squads, "
+                            "save slots, other save fields, exporting, or using Undo.");
+    draftNote_->setObjectName("saveUnitDraftNote");
+    draftNote_->setWordWrap(true);
+    body->addWidget(draftNote_);
+    connect(discard_, &QPushButton::clicked, this, [this] { showUnit(); });
     auto transfers = new QFormLayout;
     targetUnit_ = new QComboBox;
     targetUnit_->setObjectName("saveSwapUnit");
@@ -133,7 +144,16 @@ SaveUnitEditor::SaveUnitEditor(SaveEditor *editor) : QWidget(editor), editor_(ed
     detailArea->setWidget(detail);
     split->addWidget(detailArea);
     split->setStretchFactor(1, 2);
-    connect(units_, &QListWidget::currentRowChanged, this, [this] { showUnit(); });
+    connect(units_, &QListWidget::currentRowChanged, this, [this] {
+        if (!loading_ && editor_->hasPendingUnitEdits()) {
+            const QSignalBlocker guard(units_);
+            for (int i = 0; i < units_->count(); ++i)
+                if (units_->item(i)->data(Qt::UserRole).toInt() == shownUnit_)
+                    units_->setCurrentRow(i);
+            return;
+        }
+        showUnit();
+    });
     connect(members_, &QListWidget::currentRowChanged, this, [this] { drawFormation(); });
     connect(apply_, &QPushButton::clicked, this, [this] {
         if (units_->currentItem())
@@ -215,6 +235,7 @@ void SaveUnitEditor::showUnit() {
     ids_.clear();
     cells_.clear();
     tactic_->clear();
+    shownUnit_ = -1;
     for (const auto &label : {"Autonomous", "Attack Strongest", "Attack Leader", "Attack Weakest"})
         tactic_->addItem(label, tactic_->count());
     if (editor_->document() && units_->currentItem()) {
@@ -222,6 +243,7 @@ void SaveUnitEditor::showUnit() {
         for (const auto &unit : editor_->document()->units()) {
             if (unit.index != index)
                 continue;
+            shownUnit_ = index;
             ids_ = unit.members;
             cells_ = unit.cells;
             for (int i = 0; i < 5; ++i) {
@@ -345,6 +367,10 @@ void SaveUnitEditor::refreshSwapTargets() {
         ready = doc.canEditUnits() && member > 0 && member < ids_.size() && ids_[member] > 0 &&
                 ids_[member] < 100;
     }
+    editor_->setUnitDraftPending(pending);
+    units_->setEnabled(!pending);
+    discard_->setEnabled(pending);
+    draftNote_->setVisible(pending);
     refreshSupplies(pending);
     const bool enabled = ready && !pending && targetMember_->currentIndex() >= 0;
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"

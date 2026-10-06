@@ -66,7 +66,8 @@ MainWindow::MainWindow(QWidget *parent)
     undoGroup_->setActiveStack(undo_);
     connect(workspaces_, &QTabWidget::currentChanged, this, [this] {
         const auto save = qobject_cast<SaveEditor *>(workspaces_->currentWidget());
-        undoGroup_->setActiveStack(save ? save->undoStack() : undo_);
+        undoGroup_->setActiveStack(
+            save ? (save->hasPendingUnitEdits() ? nullptr : save->undoStack()) : undo_);
     });
     QFile catalog(":/catalog.json");
     if (catalog.open(QIODevice::ReadOnly))
@@ -520,6 +521,8 @@ void MainWindow::updateStatus() {
                                      .arg(project_->changedRecords())
                                : "  No ROM loaded");
     const auto save = workspaces_->findChild<SaveEditor *>();
+    if (save && workspaces_->currentWidget() == save)
+        undoGroup_->setActiveStack(save->hasPendingUnitEdits() ? nullptr : save->undoStack());
     setWindowModified(!undo_->isClean() || invalidEdits() || (save && save->modified()));
     setWindowTitle(QString("Lordly Caliber[*] · %1")
                        .arg(project_ ? project_->rom().title() : "Native Editor"));

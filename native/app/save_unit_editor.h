@@ -30,7 +30,9 @@ class SaveUnitEditor final : public QWidget {
     QComboBox *reserveMember_, *reserveCell_;
     QPushButton *toReserve_, *fromReserve_;
     QPushButton *swap_;
-    QPushButton *apply_;
+    QPushButton *apply_, *discard_;
+    QLabel *draftNote_;
+    int shownUnit_ = -1;
     QLabel *note_, *capacity_;
     QVector<QComboBox *> supplies_;
     void refreshSupplies(bool pending);

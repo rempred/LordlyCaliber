@@ -4529,3 +4529,30 @@ reopening and read-only runtime controls. The supplies capture was inspected.
 These are offline checks; no natural Army load, item-use behavior or emulator
 operation is claimed. Parent save-squad-layout-20261005.md records exact code/RAM
 identity and the corrected five-bit storage limit.
+
+
+## Unapplied saved squad drafts
+
+Formation/Unity/tactic fields retain explicit Apply and now offer Discard squad
+changes. A pending draft counts as unsaved save work even before an undo command
+exists. It remains visible when leaving and revisiting the Save workspace. While
+pending, squad and save-slot selection, other save edits, export, restore and save
+Undo/Redo are disabled; direct export/edit/slot/squad-selection paths also refuse
+without discarding the draft. Apply remains available after invalid input is
+rejected, and Discard reloads the stored squad. MainWindow's global Undo group
+suspends the Save stack while that workspace has a pending draft; project Undo in
+another workspace stays independent. Existing open/close discard handling uses
+SaveEditor::modified(), so it also includes unapplied squad changes.
+
+The new `ui_tests saveSquadDraftProtection` uses an original-encoder two-slot save
+and the actual MainWindow. It checks unchanged bytes while pending, dirty state,
+selection/slot/export guards, no output file on refusal, local/global Undo routing,
+workspace revisit, Apply as one command, explicit Discard, and a rejected unknown-
+member formation retaining its draft for correction. Together with existing
+`saveSquadEditing saveWorkspaceEditing`, it passed4346ms. Save engine results from
+the carried-item change remain applicable; this is an application workflow change.
+
+The full application build passed without compiler warnings. The final capture
+and `saveSquadDraftProtection loadDesktopWorkspace` check passed2271ms; the
+pending-state screenshot was inspected. Existing squad/save checks above remain
+passing. No game-code, save codec, dependencies or ROM rebuild code changed here.
