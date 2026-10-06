@@ -1442,6 +1442,39 @@ class UiTests : public QObject {
             QVERIFY(editor.grab().save("save-member-swap.png"));
             editor.undoStack()->undo();
             QCOMPARE(editor.document()->serialize(), expected);
+            members->setCurrentRow(1);
+            targetUnit->setCurrentIndex(targetUnit->findData(5));
+            targetMember->setCurrentIndex(
+                targetMember->findData(-3)); // Empty cell2, shown as cell3.
+            QCOMPARE(swap->text(), QString("Move selected member"));
+            QVERIFY(swap->isEnabled());
+            unity->setValue(98);
+            QVERIFY(!swap->isEnabled());
+            unity->setValue(99);
+            QVERIFY(swap->isEnabled());
+            swap->click();
+            QCOMPARE(editor.document()->units()[0].members[1], 0);
+            QCOMPARE(editor.document()->units()[0].cells[1], 0);
+            QCOMPARE(editor.document()->units().last().members[3], 2);
+            QCOMPARE(editor.document()->units().last().cells[3], 2);
+            QCOMPARE(editor.document()->units()[0].unity, 0);
+            QCOMPARE(editor.document()->units().last().unity, 0);
+            const auto moved = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), expected);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), moved);
+            const auto movedOutput = work.filePath("moved.SaveRAM");
+            editor.exportFile(movedOutput);
+            QFile movedFile(movedOutput);
+            QVERIFY(movedFile.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, movedFile.readAll()).memory(),
+                     editor.document()->memory());
+            units->setCurrentRow(4);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("save-member-transfer.png"));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), expected);
             units->setCurrentRow(1);
             QCOMPARE(members->item(1)->text(), QString("Soldiers 1"));
             members->setCurrentRow(1);

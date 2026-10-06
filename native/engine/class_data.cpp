@@ -264,6 +264,26 @@ int ClassData::carryingCapacity(int primary, int secondary) const {
     const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
     return u8(entries_[selected].record, itemCapacityOffset);
 }
+int ClassData::movementType(int primary, int secondary) const {
+    if (primary < 0 || secondary < 0 || primary >= entries_.size() || secondary >= entries_.size())
+        throw Error("Character movement type refers to an unavailable class");
+    // Resident ROM43AD8..43B2C: full-record offset44 is body byte32.
+    const int selected = u8(entries_[primary].record, 69) == secondary ? primary : secondary;
+    return u8(entries_[selected].record, movementTypeOffset);
+}
+int ClassData::unitMovementType(const QVector<QPair<int, int>> &members,
+                                const QByteArray &priority) const {
+    if (members.size() > 5 || priority.size() != 7)
+        throw Error("Unit movement requires up to five members and the ROM priority table");
+    QVector<int> types(5, 0);
+    for (int i = 0; i < members.size(); ++i)
+        types[i] = movementType(members[i].first, members[i].second);
+    // Resident ROM40F88..40FF0 searches the table in order and falls back to7.
+    for (auto type : priority)
+        if (types.contains(quint8(type)))
+            return quint8(type);
+    return 7;
+}
 ClassData ClassData::loadRetail(const Rom &rom) {
     rom.requireSupported();
     if (rom.revision() != 0)

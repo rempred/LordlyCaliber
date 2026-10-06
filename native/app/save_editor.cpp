@@ -394,6 +394,21 @@ bool SaveEditor::swapUnitMembers(int fromUnit, int fromMember, int toUnit, int t
         return false;
     }
 }
+bool SaveEditor::transferUnitMember(int fromUnit, int fromMember, int toUnit, int cell) {
+    if (!document_)
+        return false;
+    try {
+        auto change =
+            document_->planUnitTransfer(fromUnit, fromMember, toUnit, cell, project_->classData());
+        if (!change.spans.isEmpty())
+            undo_->push(new SaveCommand(this, std::move(change), "squad member move"));
+        error_->clear();
+        return true;
+    } catch (const Error &e) {
+        error_->setText(QString::fromUtf8(e.what()));
+        return false;
+    }
+}
 void SaveEditor::refresh() {
     const QSignalBlocker guard(slots_);
     slots_->clear();

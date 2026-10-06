@@ -1,8 +1,8 @@
 #include "engine/save_document.h"
 #include "engine/class_data.h"
 #include "game/classes/save_format.h"
-#include <QtEndian>
 #include <QSet>
+#include <QtEndian>
 #include <QtZlib/zlib.h>
 #include <algorithm>
 #include <cmath>
@@ -97,6 +97,8 @@ void SaveDocument::readCodec(const Rom &rom) {
         throw Error("Unrecognized packed-save layout");
     // The same boot-loaded resident region holds the increment routine's table
     // at live 80187000. Month indexes are 1..15, not the old browser's 1..12.
+    // Resident movement-type aggregation ROM40F88 reads seven priority bytes.
+    movementOrder_ = rom.bytes().mid(0x5cebc, 7);
     monthLengths_ = rom.bytes().mid(0x5cf00, 15);
     for (auto day : monthLengths_)
         if (quint8(day) < 1 || quint8(day) > 30)
@@ -512,6 +514,14 @@ QPair<int, int> SaveDocument::memberClasses(int id) const {
         throw Error("Squad member refers to an unavailable character");
     return {primary, u8(ram_, at + 18)};
 }
+QPair<int, int> SaveDocument::memberRuntimeClasses(int id) const {
+    if (id < 100)
+        return memberClasses(id);
+    if (id >= 220)
+        throw Error("Unknown special member classes are not supported");
+    // Army movement uses character record0 for Soldiers; capacity uses pair1/1.
+    return {u8(ram_, roster + 17), u8(ram_, roster + 18)};
+}
 void SaveDocument::validateFormation(const SaveUnit &unit, const ClassData &classes) const {
     if (unit.members.size() != 5 || unit.cells.size() != 5 || unit.members[0] < 1 ||
         unit.members[0] >= 100)
@@ -601,8 +611,59 @@ SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, 
             throw Error("Selected character has conflicting squad or leader membership");
     }
     std::swap(from.members[fromMember], to.members[toMember]);
+    return planMembershipChange({from, to}, classes);
+}
+SaveChange SaveDocument::planUnitTransfer(int fromUnit, int fromMember, int toUnit, int cell,
+                                          const ClassData &classes) const {
+    if (!canEditUnits())
+        throw Error("Member moves require a regular battery-save slot");
+    if (fromUnit == toUnit || fromMember < 1 || fromMember > 4 || cell < 0 || cell > 8)
+        throw Error("Choose a nonleader member and an empty cell in another squad");
+    const auto list = units();
+    auto find = [&](int index) {
+        const auto it =
+            std::find_if(list.begin(), list.end(), [&](const auto &u) { return u.index == index; });
+        if (it == list.end())
+            throw Error("Choose an existing saved squad");
+        return *it;
+    };
+    auto from = find(fromUnit), to = find(toUnit);
+    const int id = from.members[fromMember];
+    if (id < 1 || id >= 100)
+        throw Error("Choose an existing ordinary character");
+    int references = 0;
+    for (const auto &unit : list)
+        references += int(std::count(unit.members.begin(), unit.members.end(), id));
+    if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
+        throw Error("Selected character has conflicting squad or leader membership");
+    int empty = -1;
+    for (int i = 0; i < 5; ++i) {
+        if (to.members[i] && to.cells[i] == cell)
+            throw Error("The destination formation cell is occupied");
+        if (i > 0 && !to.members[i] && empty < 0)
+            empty = i;
+    }
+    if (empty < 0)
+        throw Error("The destination squad has no free member slot");
+    from.members[fromMember] = 0;
+    from.cells[fromMember] = 0;
+    to.members[empty] = id;
+    to.cells[empty] = cell;
+    return planMembershipChange({from, to}, classes);
+}
+int SaveDocument::unitMovementType(const SaveUnit &unit, const ClassData &classes) const {
+    // Army ROMBD154..BD268 obtains five class-derived types; Soldiers use
+    // character record0 here, distinct from their formation size pair1/1.
+    QVector<QPair<int, int>> members;
+    for (int id : unit.members)
+        if (id)
+            members << memberRuntimeClasses(id);
+    return classes.unitMovementType(members, movementOrder_);
+}
+SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
+                                              const ClassData &classes) const {
     auto candidate = *this;
-    for (const auto &unit : {from, to}) {
+    for (const auto &unit : changed) {
         validateFormation(unit, classes);
         int capacity = 0, carried = 0;
         for (int id : unit.members)
@@ -615,12 +676,15 @@ SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, 
         for (int i = 13; i < 23; ++i)
             carried += u8(record, i) != 0;
         if (carried > capacity)
-            throw Error("The swapped squad would not have room for its carried items");
-        for (int i = 0; i < 5; ++i)
+            throw Error("The changed squad would not have room for its carried items");
+        for (int i = 0; i < 5; ++i) {
             put8(record, 2 + i, quint8(unit.members[i]));
-        // Both squads lose an ordinary nonleader: original removal B7FC8..B7FD0
-        // clears their Unity. No leader/status, supply, order or activation change.
+            put8(record, 7 + i, quint8(unit.cells[i]));
+        }
+        // Ordinary removal B7FC8 and normal placement B8294..B82A8 clear Unity.
+        // The membership finalizer then recalculates active+29 -> saved+24.
         put8(record, 12, 0);
+        put8(record, 24, quint8(unitMovementType(unit, classes)));
         candidate.apply(candidate.planBytes(at, record), true);
     }
     return difference(candidate.data_, recordOffset(slot_, expanded_),

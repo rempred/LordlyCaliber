@@ -1,5 +1,30 @@
 # Native Lordly Caliber
 
+## Saved nonleader transfers
+
+The Save Squads page now moves ordinary nonleaders to empty cells in another
+existing regular battery-save squad, alongside occupied-member swaps. Both
+resulting formations and carrying capacities validate before one atomic undo
+change. Pending formation/Unity/tactic inputs disable membership operations.
+Leaders, roster/status data, items and order/activation arrays stay intact.
+
+Both operations now recalculate saved movement byte24. The current-ROM priority
+bytes select among five class-derived types. Soldiers use saved character record0
+for movement, but pair1/1 for capacity and formation size; these distinct original
+rules are retained. A move that would require returning carried items is refused.
+Reserve/Soldier transfers, leader changes, creation/removal and runtime copies
+remain separate unfinished operations.
+
+`save_document_tests squadFormation squadTransfers editsPreserveNativeSaves` passed
+in5493ms:27225 original class pairs,32768 movement tuples,12 removal/24 placement
+Unity cases,217 formation conversions, original save decode, all three battery
+layouts, exact whole-RAM preservation, undo/reopen and refusal cases. A stronger
+Soldier record0 pair44/44 case passed `squadTransfers` in813ms: movement7 and
+pair1/1 capacity3 agree with the original finalizers. Desktop `ui_tests
+saveSquadEditing saveWorkspaceEditing` passed in2556ms, including move/undo/redo,
+pending-input protection and export/reopen. The transfer capture was inspected, and the full native build passed without
+compiler warnings. No natural Army-menu execution or active-state coherence claim is made.
+
 ## Actor action controls
 
 The Actions inspector supports Turn Actor, Room Actor Channel and Release Actor.

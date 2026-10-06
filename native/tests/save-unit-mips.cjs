@@ -9,6 +9,8 @@ m.load(0x8016af80, rom.subarray(0x40e80, 0x66e10));
 m.set('sp', 0x803f0000);
 const descriptor = 0x80187444, payload = 0x80350000;
 if (process.argv[3] !== 'verify') {
+    // Explicit saved Soldier base, matching the captured Army's class pair1/1.
+    m.w8(0x80193bd1, 1); m.w8(0x80193bd2, 1);
     for (let id = 1; id <= 9; ++id) {
         const at = 0x80193bc0 + id * 56, name = Buffer.alloc(13);
         Buffer.from('Member' + id).forEach((c, i) => name[i] = c + 16);
@@ -40,6 +42,26 @@ if (process.argv[3] !== 'verify') {
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x80074494, 0x80000100, 5000000);
     fs.writeFileSync(path.join(dir, 'unit-payload.bin'), Buffer.from(m.ram.slice(m.phys(payload), m.phys(payload) + 6180)));
     fs.writeFileSync(path.join(dir, 'unit-ram.bin'), Buffer.from(m.ram));
+    const variant = name => {
+        m.set('a0', payload); m.set('a1', descriptor); m.call(0x80074494, 0x80000100, 5000000);
+        fs.writeFileSync(path.join(dir, name), Buffer.from(m.ram.slice(m.phys(payload), m.phys(payload) + 6180)));
+    };
+    for (let i=14;i<=17;++i) m.w8(0x801971f0+i,9); // Six capacity, five carried; losing one member is unsafe.
+    variant('unit-capacity-payload.bin');
+    for (let i=14;i<=17;++i) m.w8(0x801971f0+i,0);
+    m.w8(0x80193bd1,44); m.w8(0x80193bd2,44); // Type7 overrides the ordinary members, unlike Soldier pair1/1.
+    for (let i=14;i<=16;++i) m.w8(0x801971f0+2*25+i,9);
+    variant('unit-soldier-overload-payload.bin');
+    m.w8(0x801971f0+2*25+16,0);
+    variant('unit-soldier-base-payload.bin');
+    m.w8(0x80193bc0+10*56+17,2); m.w8(0x80193bc0+10*56+18,2); m.w8(0x80193bc0+10*56+19,10);
+    m.w8(0x801971f0+2*25+4,10); m.w8(0x801971f0+2*25+9,0);
+    for (const [member,id,cell] of [[3,2,1],[4,3,2]]) {
+        m.w8(0x801971f0+5*25+2+member,id); m.w8(0x801971f0+5*25+7+member,cell);
+    }
+    m.w8(0x801971f3,0); m.w8(0x801971f4,0); m.w8(0x801971f8,0); m.w8(0x801971f9,0);
+    variant('unit-full-payload.bin');
+
 } else {
     const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'unit-verify.json')));
     for (const row of fixture.sizes) {
@@ -49,6 +71,16 @@ if (process.argv[3] !== 'verify') {
         m.set('a0', row.primary); m.set('a1', row.secondary);
         m.call(0x8016d200);
         assert.equal(m.get('v0'), row.capacity, `carrying capacity for ${row.primary}/${row.secondary}`);
+        if (row.movement !== undefined) {
+            m.set('a0', row.primary); m.set('a1', row.secondary); m.call(0x8016dbd8);
+            assert.equal(m.get('v0'), row.movement, `movement type for ${row.primary}/${row.secondary}`);
+        }
+    }
+    for (const [bits, expected] of fixture.movementCases || []) {
+        for (let i=0;i<4;++i) m.set('a'+i, (bits >>> (i*3)) & 7);
+        m.w32(m.get('sp')+16, (bits >>> 12) & 7);
+        m.call(0x8016b088);
+        assert.equal(m.get('v0'), expected, `movement priority tuple ${bits}`);
     }
     m.load(payload, Buffer.from(fixture.payload, 'hex'));
     m.set('a0', payload); m.set('a1', descriptor); m.call(0x800742f4, 0x80000100, 5000000);
@@ -64,6 +96,17 @@ if (process.argv[3] !== 'verify') {
         m.set('v1', base); m.set('v0', 1); // The original ordinary nonleader removal flag.
         m.call(live(0xb7fc8), live(0xb82ac));
         assert.equal(m.r8(at), 0); assert.equal(m.r8(at - 1), 0xa7); assert.equal(m.r8(at + 1), 0xa7);
+    }
+    m.load(live(0xb8258), rom.subarray(0xb8258, 0xb82b0));
+    for (const unit of [0,5]) for (const mode of [0,1,2,3]) for (const unity of [0,23,100]) {
+        const root=0x80260000, active=root+0x117c+unit*54, metadata=0x80320000;
+        m.w32(0x80196af8,root); m.w16(root+386,mode); m.w8(active+31,unity);
+        m.w8(active+30,0xa7); m.w8(active+32,0xa7);
+        m.set('v1',unit); m.set('s4',2); m.set('s5',1); m.set('s1',metadata); m.set('s7',0);
+        m.call(live(0xb8258),live(0xb82b0));
+        assert.equal(m.r8(active+5),2); assert.equal(m.r8(metadata),130);
+        assert.equal(m.r8(active+31),mode===2 ? 0 : unity);
+        assert.equal(m.r8(active+30),0xa7); assert.equal(m.r8(active+32),0xa7);
     }
     m.load(live(0xc2fec), rom.subarray(0xc2fec, 0xc3044));
     for (const id of [100, 101, 219]) {
@@ -93,5 +136,21 @@ if (process.argv[3] !== 'verify') {
         const expected = row.grid.flatMap((id, cell) => id === 255 ? [] : [[id, cell]]);
         assert.deepEqual(pairs.sort((a,b) => a[0]-b[0]), expected.sort((a,b) => a[0]-b[0]));
     }
-    console.log(`PASS ${fixture.sizes.length} original class-size/capacity pairs, 12 ordinary-removal Unity resets, original save decoder and ${fixture.cases.length} Army formation materialize/store comparisons; ordinary/special IDs and leader pairing. No natural game launch or menu-allocation claim.`);
+    m.load(live(0xbd154),rom.subarray(0xbd154,0xbd26c));
+    m.load(live(0xbcee4),rom.subarray(0xbcee4,0xbd0d8));
+    for (const row of fixture.unitMovements || []) {
+        const record=Buffer.from(fixture.units,'hex').subarray(row.index*25,row.index*25+25);
+        const dest=root+0x117c+row.index*54;
+        m.load(saved,record); m.load(dest,Buffer.alloc(54,0xff)); m.w8(dest+1,0);
+        m.set('s4',saved);m.set('s2',dest);m.set('s8',8);m.call(live(0xc188c),live(0xc192c));
+        m.set('a0',row.index);m.call(live(0xbd154));
+        assert.equal(m.get('v0'),row.expected,`derived movement for squad ${row.index}`);
+        if(row.carried!==undefined) {
+            for(let i=0;i<10;++i)m.w16(dest+34+i*2,i<row.carried?9:0);
+            m.set('a0',row.index);m.call(live(0xbcee4));
+            assert.equal(m.r8(dest+32),row.capacity,`native carrying capacity for squad ${row.index}`);
+            for(let i=0;i<row.carried;++i)assert.equal(m.r16(dest+34+i*2),9);
+        }
+    }
+    console.log(`PASS ${fixture.sizes.length} original class pairs, ${(fixture.movementCases||[]).length} movement tuples, 12 removal/24 placement Unity cases, save decoder, ${fixture.cases.length} formation conversions and ${(fixture.unitMovements||[]).length} unit finalizers. No natural game launch or complete menu claim.`);
 }

@@ -54,6 +54,8 @@ class SaveDocument {
                             const ClassData &) const;
     SaveChange planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
                             const ClassData &) const;
+    SaveChange planUnitTransfer(int fromUnit, int fromMember, int toUnit, int cell,
+                                const ClassData &) const;
     void apply(const SaveChange &, bool forward);
     QByteArray serialize() const;
     void setClassCount(int);
@@ -74,7 +76,7 @@ class SaveDocument {
     int address(SaveTable, int row) const;
     Format format_ = Format::Ram;
     QByteArray original_, data_, originalData_, ram_, blob_;
-    QByteArray monthLengths_;
+    QByteArray monthLengths_, movementOrder_;
     QVector<Cell> codec_;
     int classCount_ = 165, slot_ = -1, chunkSize_ = 0x20000;
     bool swapped_ = false, expanded_ = false;
@@ -82,6 +84,9 @@ class SaveDocument {
     SaveChange planBytes(int address, const QByteArray &replacement) const;
     SaveChange difference(const QByteArray &next, int first, int size) const;
     QPair<int, int> memberClasses(int id) const;
+    QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;
+    int unitMovementType(const SaveUnit &, const ClassData &) const;
+    SaveChange planMembershipChange(const QVector<SaveUnit> &, const ClassData &) const;
 };
 } // namespace lordly

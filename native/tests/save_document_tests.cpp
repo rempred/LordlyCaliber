@@ -155,11 +155,27 @@ class SaveDocumentTests : public QObject {
             QJsonArray sizes;
             for (int primary = 0; primary < classes.entries().size(); ++primary)
                 for (int secondary = 0; secondary < classes.entries().size(); ++secondary)
-                    sizes << QJsonObject{
-                        {"primary", primary},
-                        {"secondary", secondary},
-                        {"expected", classes.unitSize(primary, secondary)},
-                        {"capacity", classes.carryingCapacity(primary, secondary)}};
+                    sizes << QJsonObject{{"primary", primary},
+                                         {"secondary", secondary},
+                                         {"expected", classes.unitSize(primary, secondary)},
+                                         {"capacity", classes.carryingCapacity(primary, secondary)},
+                                         {"movement", classes.movementType(primary, secondary)}};
+            auto movementClasses = classes;
+            for (int type = 0; type < 8; ++type) {
+                auto asset = movementClasses.entries()[type + 1];
+                asset.record[ClassData::movementTypeOffset] = char(type);
+                movementClasses.set(type + 1, asset);
+            }
+            QJsonArray movementCases;
+            for (int bits = 0; bits < 32768; ++bits) {
+                QVector<QPair<int, int>> pairs;
+                for (int i = 0; i < 5; ++i) {
+                    const int id = ((bits >> (i * 3)) & 7) + 1;
+                    pairs << qMakePair(id, int(u8(movementClasses.entries()[id].record, 69)));
+                }
+                movementCases << QJsonArray{
+                    bits, movementClasses.unitMovementType(pairs, rom.bytes().mid(0x5cebc, 7))};
+            }
             doc.apply(doc.planUnitEdit(0, {1, 2, 8, 0, 0}, 99, 3, classes), true);
             for (int index : {2, 3})
                 doc.apply(doc.planUnitEdit(index, {0, 8, 0, 0, 0}, 23, 2, classes), true);
@@ -194,9 +210,178 @@ class SaveDocumentTests : public QObject {
                         {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 150).toHex())},
                         {"cases", cases},
                         {"soldierSize", std::max(1, classes.unitSize(1, 1))},
-                        {"sizes", sizes}})
+                        {"sizes", sizes},
+                        {"movementCases", movementCases},
+                        {"unitMovements", QJsonArray{QJsonObject{{"index", 0}, {"expected", 2}},
+                                                     QJsonObject{{"index", 5}, {"expected", 2}}}}})
                     .toJson());
             run(true);
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void squadTransfers() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](bool verify) {
+                QProcess process;
+                QStringList args{QFINDTESTDATA("save-unit-mips.cjs"), work.path()};
+                if (verify)
+                    args << "verify";
+                process.start("node", args);
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            auto read = [&](const QString &name) {
+                QFile f(work.filePath(name));
+                if (!f.open(QIODevice::ReadOnly))
+                    throw Error("Missing squad fixture");
+                return f.readAll();
+            };
+            run(false);
+            auto batteryFor = [&](const QString &name) {
+                QByteArray result(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    result[at + 12] = 0;
+                    result.replace(at + 0x2a, 6180, read(name));
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(result.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Could not seal squad fixture");
+                }
+                return result;
+            };
+            const auto battery = batteryFor("unit-payload.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            auto verifyNative = [&](const SaveDocument &doc, const QJsonArray &unitMovements) {
+                atomicWrite(
+                    work.filePath("unit-verify.json"),
+                    QJsonDocument(
+                        QJsonObject{
+                            {"payload",
+                             QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                            {"units", QString::fromLatin1(doc.memory().mid(0x1971f0, 150).toHex())},
+                            {"sizes", QJsonArray{}},
+                            {"cases", QJsonArray{}},
+                            {"soldierSize", std::max(1, classes.unitSize(1, 1))},
+                            {"unitMovements", unitMovements}})
+                        .toJson());
+                run(true);
+            };
+            for (const auto &input : {battery, swapped, expanded}) {
+                auto doc = SaveDocument::open(rom, input);
+                const auto before = doc.memory();
+                const auto move = doc.planUnitTransfer(0, 1, 5, 2, classes);
+                doc.apply(move, true);
+                auto expected = before;
+                for (int offset : {3, 8, 12})
+                    expected[0x1971f0 + offset] = 0;
+                const int dest = 0x1971f0 + 5 * 25;
+                expected[dest + 5] = 2;
+                expected[dest + 10] = 2;
+                expected[dest + 12] = 0;
+                QCOMPARE(doc.memory(),
+                         expected); // Every other decoded byte, including all Soldier data.
+                QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
+                if (input == battery)
+                    verifyNative(doc, {QJsonObject{{"index", 0}, {"expected", 2}},
+                                       QJsonObject{{"index", 5}, {"expected", 2}}});
+                const auto exported = doc.serialize();
+                doc.apply(move, false);
+                QCOMPARE(doc.serialize(), input);
+                doc.apply(move, true);
+                QCOMPARE(doc.serialize(), exported);
+                doc.apply(move, false);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 0, 5, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 0, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 5, 4, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 5, 9, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 1, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 4, 5, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 5, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(4, 1, 5, 2, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 4, 2, classes));
+                QCOMPARE(doc.serialize(), input);
+                auto changedClasses = classes;
+                auto fighter = changedClasses.entries()[2];
+                fighter.record[ClassData::movementTypeOffset] = 6;
+                changedClasses.set(2, fighter);
+                const auto swap = doc.planUnitSwap(0, 1, 5, 1, changedClasses);
+                doc.apply(swap, true);
+                auto swapExpected = before;
+                swapExpected[0x1971f3] = 8;
+                swapExpected[dest + 3] = 2;
+                swapExpected[0x1971fc] = 0;
+                swapExpected[dest + 12] = 0;
+                swapExpected[0x1971f0 + 24] = 6;
+                swapExpected[dest + 24] = 6;
+                QCOMPARE(doc.memory(), swapExpected);
+                doc.apply(swap, false);
+                doc.selectSlot(1);
+                QCOMPARE(doc.memory(), before);
+                doc.selectSlot(15);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 5, 2, classes));
+                QCOMPARE(doc.serialize(), input);
+            }
+            auto raw = SaveDocument::open(rom, read("unit-ram.bin"));
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitTransfer(0, 1, 5, 2, classes));
+            auto capacity = SaveDocument::open(rom, batteryFor("unit-capacity-payload.bin"));
+            const auto capacityBefore = capacity.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, capacity.planUnitTransfer(0, 1, 5, 2, classes));
+            QCOMPARE(capacity.serialize(), capacityBefore);
+            auto full = SaveDocument::open(rom, batteryFor("unit-full-payload.bin"));
+            const auto fullBefore = full.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, full.planUnitTransfer(2, 2, 5, 3, classes));
+            QCOMPARE(full.serialize(), fullBefore);
+            auto soldiers = SaveDocument::open(rom, batteryFor("unit-soldier-base-payload.bin"));
+            const auto soldierBefore = soldiers.serialize();
+            const auto into = soldiers.planUnitTransfer(0, 1, 2, 0, classes);
+            soldiers.apply(into, true);
+            const auto out = soldiers.planUnitTransfer(2, 2, 0, 4, classes);
+            soldiers.apply(out, true);
+            QCOMPARE(u8(soldiers.memory(), 0x1971f0 + 2 * 25 + 24), quint8(7));
+            // Capacity uses Soldier pair1/1 even though its saved base record is pair44/44.
+            QCOMPARE(soldiers.units()[1].members, QVector<int>({4, 100, 0, 0, 0}));
+            QCOMPARE(soldiers.memory().mid(0x1971f0 + 2 * 25 + 13, 3), QByteArray(3, char(9)));
+            verifyNative(
+                soldiers,
+                {QJsonObject{{"index", 2}, {"expected", 7}, {"carried", 3}, {"capacity", 3}}});
+            QCOMPARE(SaveDocument::open(rom, soldiers.serialize()).memory(), soldiers.memory());
+            soldiers.apply(out, false);
+            soldiers.apply(into, false);
+            QCOMPARE(soldiers.serialize(), soldierBefore);
+            auto overloaded =
+                SaveDocument::open(rom, batteryFor("unit-soldier-overload-payload.bin"));
+            overloaded.apply(overloaded.planUnitTransfer(0, 1, 2, 0, classes), true);
+            const auto overloadBefore = overloaded.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, overloaded.planUnitTransfer(2, 2, 0, 4, classes));
+            QCOMPARE(overloaded.serialize(), overloadBefore);
+            auto larger = SaveDocument::open(rom, battery);
+            int large = -1;
+            for (int id = 1; id < classes.entries().size(); ++id)
+                if (classes.unitSize(id, id) == 2) {
+                    large = id;
+                    break;
+                }
+            QVERIFY(large > 0);
+            larger.apply(larger.planEdit(SaveTable::Characters, 2, "class", large), true);
+            larger.apply(larger.planEdit(SaveTable::Characters, 2, "secondaryClass", large), true);
+            const auto largeBefore = larger.serialize();
+            QVERIFY_THROWS_EXCEPTION(Error, larger.planUnitTransfer(0, 1, 5, 1, classes));
+            QCOMPARE(larger.serialize(), largeBefore);
             QCOMPARE(Rom::open(path).bytes(), rom.bytes());
         } catch (const Error &e) {
             QFAIL(e.what());
