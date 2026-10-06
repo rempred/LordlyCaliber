@@ -718,6 +718,26 @@ SaveChange SaveDocument::planLegionMembers(const SaveLegion &legion) const {
     put8(record, 10, quint8((11 - count) & 7));
     return planBytes(at, record);
 }
+void SaveDocument::updateLegionsForUnits(const QVector<int> &changed, const ClassData &classes) {
+    const auto squads = units();
+    for (const auto &legion : legions()) {
+        if (std::none_of(changed.begin(), changed.end(),
+                         [&](int id) { return legion.units.contains(id); }))
+            continue;
+        const int count = int(std::count_if(legion.units.begin(), legion.units.end(),
+                                            [](int id) { return id != 255; }));
+        if (count > legionCapacity(legion.index))
+            throw Error("This change would leave the legion without enough Soldier groups; detach "
+                        "a follower squad first");
+        const auto commander = std::find_if(squads.begin(), squads.end(), [&](const auto &row) {
+            return row.index == legion.units[0];
+        });
+        const auto pair = memberClasses(commander->members[0]);
+        if (classes.commandType(pair.first, pair.second) != 2)
+            throw Error("The legion's command squad requires a leader with command type 2");
+        apply(planLegionMembers(legion), true);
+    }
+}
 QVector<SaveUnit> SaveDocument::units() const {
     QVector<SaveUnit> result;
     for (int i = 0; i < 30; ++i) {
@@ -1036,13 +1056,13 @@ SaveChange SaveDocument::planSoldierGroup(int toUnit, int cell, const ClassData 
     to.members[empty] = id;
     to.cells[empty] = cell;
     auto candidate = *this;
-    candidate.apply(candidate.planMembershipChange({to}, classes, false), true);
     QByteArray health(2, 0);
     put16(health, 0, newHp);
     candidate.apply(candidate.planBytes(0x190f84 + (id - 100) * 2, health), true);
     candidate.apply(candidate.planBytes(0x191074 + id - 100, QByteArray(1, 0)), true);
     candidate.apply(candidate.planBytes(0x190f81, QByteArray(1, char(reserveSoldiers() - count))),
                     true);
+    candidate.apply(candidate.planMembershipChange({to}, classes, false), true);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }
@@ -1188,6 +1208,7 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     candidate.apply(candidate.planBytes(at, record), true);
     candidate.apply(candidate.planBytes(oldAt, QByteArray(1, char(u8(ram_, oldAt) & ~2))), true);
     candidate.apply(candidate.planBytes(newAt, QByteArray(1, char(u8(ram_, newAt) | 2))), true);
+    candidate.updateLegionsForUnits({index}, classes);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }
@@ -1356,6 +1377,10 @@ SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
         put8(record, 24, quint8(unitMovementType(unit, classes)));
         candidate.apply(candidate.planBytes(at, record), true);
     }
+    QVector<int> affected;
+    for (const auto &unit : changed)
+        affected << unit.index;
+    candidate.updateLegionsForUnits(affected, classes);
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }

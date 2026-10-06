@@ -14,6 +14,166 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void legionSquadCoordination() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto project = Project::fromRom(rom);
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess p;
+                p.start("node", {QFINDTESTDATA("army-legion-mips.cjs"), work.path(), mode});
+                if (!p.waitForFinished(30000) || p.exitCode())
+                    throw Error(QString::fromUtf8(p.readAllStandardError()));
+                qInfo().noquote() << p.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing legion fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 42, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal legion fixture");
+                }
+                return out;
+            };
+            QJsonArray cases, saves;
+            for (const auto &operation : {"remove", "transfer", "swap", "create", "leader",
+                                          "add-reserve", "remove-reserve"}) {
+                const QString op = QString::fromLatin1(operation);
+                const auto battery = batteryFor(op == "swap"     ? "legion-coordinate-swap.bin"
+                                                : op == "leader" ? "legion-coordinate-leader.bin"
+                                                                 : "legion-coordinate.bin");
+                auto swapped = battery, expanded = battery;
+                for (int i = 0; i < swapped.size(); i += 4) {
+                    std::swap(swapped[i], swapped[i + 3]);
+                    std::swap(swapped[i + 1], swapped[i + 2]);
+                }
+                QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                             unsigned(expanded.size())));
+                for (const auto &input : {battery, swapped, expanded})
+                    for (int slot : {0, 1}) {
+                        auto doc = SaveDocument::open(rom, input);
+                        doc.selectSlot(slot);
+                        if (op == "create")
+                            doc.apply(doc.planToReserve(0, 1, project.classData()), true);
+                        if (op == "remove-reserve")
+                            doc.apply(doc.planFromReserve(18, 2, 8, project.classData()), true);
+                        const auto before = doc.memory(), original = doc.serialize();
+                        SaveChange change;
+                        QVector<int> affected{0};
+                        if (op == "remove")
+                            change = doc.planToReserve(0, 1, project.classData());
+                        if (op == "create")
+                            change = doc.planSoldierGroup(0, 0, project.classData());
+                        if (op == "transfer") {
+                            change = doc.planUnitTransfer(0, 1, 15, 0, project.classData());
+                            affected << 15;
+                        }
+                        if (op == "swap") {
+                            change = doc.planUnitSwap(0, 1, 15, 1, project.classData());
+                            affected << 15;
+                        }
+                        if (op == "leader")
+                            change = doc.planUnitLeader(0, 4, project.classData());
+                        if (op == "add-reserve") {
+                            change = doc.planFromReserve(18, 2, 8, project.classData());
+                            affected = {2};
+                        }
+                        if (op == "remove-reserve") {
+                            change = doc.planToReserve(2, 1, project.classData());
+                            affected = {2};
+                        }
+                        doc.apply(change, true);
+                        const auto after = doc.memory();
+                        auto expected = before;
+                        for (int id : affected)
+                            expected.replace(0x1971f0 + id * 25, 25,
+                                             after.mid(0x1971f0 + id * 25, 25));
+                        expected.replace(0x1969b8, 11, after.mid(0x1969b8, 11));
+                        if (op == "remove" || op == "create") {
+                            expected[0x190f81] = after[0x190f81];
+                            expected.replace(0x190f84, 2, after.mid(0x190f84, 2));
+                            expected[0x191074] = after[0x191074];
+                            QCOMPARE(doc.legionCapacity(0), op == "remove" ? 4 : 5);
+                        }
+                        if (op == "leader") {
+                            expected[0x193bc0 + 56 + 51] = after[0x193bc0 + 56 + 51];
+                            expected[0x193bc0 + 18 * 56 + 51] = after[0x193bc0 + 18 * 56 + 51];
+                            QCOMPARE(doc.units()[0].members[0], 18);
+                        }
+                        QCOMPARE(after, expected);
+                        QCOMPARE(after.mid(0x1969ba, 5), before.mid(0x1969ba, 5));
+                        QCOMPARE(u8(after, 0x1969c2), quint8(7));
+                        if (affected.contains(0))
+                            QCOMPARE(u8(after, 0x1969c1), quint8(7));
+                        auto reopened = SaveDocument::open(rom, doc.serialize());
+                        reopened.selectSlot(slot);
+                        QCOMPARE(reopened.memory(), after);
+                        if (input == battery && slot == 0) {
+                            QJsonArray changed;
+                            for (int id : affected)
+                                changed << id;
+                            cases << QJsonObject{
+                                {"index", 0},
+                                {"changed", changed},
+                                {"units", QString::fromLatin1(after.mid(0x1971f0, 750).toHex())},
+                                {"legions", QString::fromLatin1(before.mid(0x1969b8, 110).toHex())},
+                                {"order", QString::fromLatin1(before.mid(0x193ab0, 6).toHex())},
+                                {"unitOrder",
+                                 QString::fromLatin1(before.mid(0x1977d8, 30).toHex())},
+                                {"afterUnits",
+                                 QString::fromLatin1(after.mid(0x1971f0, 750).toHex())},
+                                {"afterLegions",
+                                 QString::fromLatin1(after.mid(0x1969b8, 110).toHex())},
+                                {"afterOrder", QString::fromLatin1(after.mid(0x193ab0, 6).toHex())},
+                                {"characters",
+                                 QString::fromLatin1(after.mid(0x193bc0, 5600).toHex())},
+                                {"soldiers", QString::fromLatin1(after.mid(0x190f80, 364).toHex())},
+                                {"inventory",
+                                 QString::fromLatin1(after.mid(0x193ac0, 160).toHex())}};
+                            saves << QJsonObject{
+                                {"payload",
+                                 QString::fromLatin1(doc.serialize().mid(0x3a, 6180).toHex())},
+                                {"units", QString::fromLatin1(after.mid(0x1971f0, 750).toHex())},
+                                {"legions", QString::fromLatin1(after.mid(0x1969b8, 110).toHex())},
+                                {"order", QString::fromLatin1(after.mid(0x193ab0, 6).toHex())}};
+                        }
+                        const auto saved = doc.serialize();
+                        doc.apply(change, false);
+                        QCOMPARE(doc.serialize(), original);
+                        doc.apply(change, true);
+                        QCOMPARE(doc.serialize(), saved);
+                    }
+            }
+            const auto input = batteryFor("legion-coordinate-full.bin");
+            auto doc = SaveDocument::open(rom, input);
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planToReserve(0, 1, project.classData()));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 15, 0, project.classData()));
+            QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 15, 1, project.classData()));
+            QCOMPARE(doc.serialize(), input);
+            const auto detached = doc.planDetachLegionUnit(0, 4);
+            doc.apply(detached, true);
+            doc.apply(doc.planToReserve(0, 1, project.classData()), true);
+            QCOMPARE(doc.legionCapacity(0), 4);
+            QCOMPARE(doc.legions()[0].units, QVector<int>({0, 1, 2, 3, 255}));
+            atomicWrite(work.filePath("legion-coordination-verify.json"),
+                        QJsonDocument(QJsonObject{{"cases", cases}, {"saves", saves}}).toJson());
+            run("verify-coordination");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void legionJoining() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

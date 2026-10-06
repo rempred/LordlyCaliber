@@ -5295,3 +5295,38 @@ Capture inspected. Coordination when changing a command squad's Soldiers and
 new legion creation remain the next integration work.
 
 The complete native build passed (legion-join-final-build.log).
+
+
+## Coordinating squad edits with their legions
+
+Member exchanges/transfers, ordinary reserve changes, Soldier creation/disband
+and leader changes now update affected legion movement/count values inside the
+same save Undo action. Every affected legion retains its membership and other
+records. If the command squad would have too few Soldier groups for its current
+followers, the edit refuses with an instruction to detach a follower first.
+It does not silently eject another squad. The commander's new class pair must
+retain command type2. New Soldier HP is initialized in the private candidate
+before membership validation; only the final combined save change is exposed.
+
+Original B8300..B848C finalization (already qualified396 bytes) updates unit
+movement, its legion's movement/count and commander capacity. Seven new
+references materialize edited unit records, execute that whole finalizer for
+changed squads, run the complete writer and original packed codec, and compare
+all legion bytes and affected movement values. Existing original membership
+references continue covering the underlying exchange/reserve/leader operations.
+
+`save_document_tests legionSquadCoordination legionJoining squadLeaderChanges
+soldierReserveLifecycle directMemberExchanges` passed in13237ms. New coverage
+checks42 edits (seven operation forms, both slots, three layouts), seven native
+finalizer/store/codec sequences and seven original save decodes. Changes to
+unrelated memory, legion membership and order are excluded; Undo/reopen pass.
+Supporting-group removal, transfer and swap refuse when full; detaching a
+follower then removing/recreating a supporting group succeeds.
+
+`ui_tests saveLegionSquadCoordination saveLegionJoinControls saveLeaderControls`
+passed in3051ms. The new actual-button workflow verifies refusal without an Undo
+entry, follower detach, Soldier removal/recreation, updated capacity/movement,
+export/reopen and exact Undo/Redo. This changes behavior without adding controls.
+No natural Army-menu run is claimed. New legion creation remains next.
+
+The complete native build passed (legion-coordination-final-build.log).

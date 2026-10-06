@@ -1632,6 +1632,80 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveLegionSquadCoordination() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-legion-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("legion-coordinate-full.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1200);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
+            auto remove = editor.findChild<QPushButton *>("saveMoveToReserve");
+            auto detach = editor.findChild<QPushButton *>("saveDetachLegionUnit");
+            auto add = editor.findChild<QPushButton *>("saveAddSoldierGroup");
+            auto error = editor.findChild<QLabel *>("saveError");
+            auto cell = editor.findChild<QComboBox *>("saveReserveCell");
+            QVERIFY(units && members && remove && detach && add && error && cell);
+            units->setCurrentRow(0);
+            members->setCurrentRow(1);
+            QVERIFY(remove->isEnabled());
+            remove->click();
+            QCOMPARE(editor.document()->serialize(), input);
+            QVERIFY(error->text().contains("detach a follower"));
+            QCOMPARE(editor.undoStack()->count(), 0);
+            units->setCurrentRow(4);
+            detach->click();
+            units->setCurrentRow(0);
+            members->setCurrentRow(1);
+            remove->click();
+            QCOMPARE(editor.document()->legionCapacity(0), 4);
+            QCOMPARE(editor.document()->reserveSoldiers(), 10);
+            QCOMPARE(u8(editor.document()->memory(), 0x1969c1), quint8(7));
+            const auto removed = editor.document()->serialize();
+            cell->setCurrentIndex(cell->findData(0));
+            QVERIFY(add->isEnabled());
+            add->click();
+            QCOMPARE(editor.document()->legionCapacity(0), 5);
+            QCOMPARE(editor.document()->reserveSoldiers(), 7);
+            const auto created = editor.document()->serialize();
+            const auto filename = work.filePath("coordinated-legion.SaveRAM");
+            editor.exportFile(filename);
+            QFile file(filename);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, file.readAll()).memory(), editor.document()->memory());
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), removed);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), created);
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveLegionJoinControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

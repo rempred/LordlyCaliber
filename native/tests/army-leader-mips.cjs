@@ -10,7 +10,7 @@ if(mode==='generate'){
   m.call(0x80074494,0x80000100,5000000);fs.writeFileSync(path.join(dir,name),Buffer.from(m.ram.slice(m.phys(payload),m.phys(payload)+6180)));};
  for(const primary of [81,82,83,163])variant(`fixed-leader-${primary}.bin`,()=>m.w8(0x80193bc0+56+17,primary));
  for(const [name,primary,secondary]of[['commander-good',33,33],['commander-bad',2,2],['commander-pair',33,2],['commander-new',165,165]])
-  variant(`${name}.bin`,()=>{m.w8(0x801971f1,3);m.load(0x801969b8,Buffer.from([1,1,0,255,255,255,255,0,0,0,0]));m.w8(0x80193bc0+112+17,primary);m.w8(0x80193bc0+112+18,secondary);});
+  variant(`${name}.bin`,()=>{m.w8(0x801971f1,3);m.load(0x801969b8,Buffer.from([1,1,0,255,255,255,255,0,0,2,2]));m.w8(0x80193bc0+112+17,primary);m.w8(0x80193bc0+112+18,secondary);});
  variant('leader-conflict.bin',()=>m.w8(0x80193bc0+112+51,2));
  variant('leader-duplicate.bin',()=>m.w8(0x801971f0+5*25+3,2));
  variant('leader-missing.bin',()=>m.w8(0x80193bc0+112+17,0));

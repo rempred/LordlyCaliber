@@ -111,6 +111,7 @@ class SaveDocument {
     SaveChange difference(const QByteArray &next, int first, int size) const;
     SaveLegion editableLegion(int index) const;
     SaveChange planLegionMembers(const SaveLegion &) const;
+    void updateLegionsForUnits(const QVector<int> &, const ClassData &);
     QPair<int, int> memberClasses(int id) const;
     QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;
