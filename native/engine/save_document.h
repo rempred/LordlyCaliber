@@ -99,6 +99,7 @@ class SaveDocument {
     QPair<int, int> memberClasses(int id) const;
     QPair<int, int> memberRuntimeClasses(int id) const;
     void validateFormation(const SaveUnit &, const ClassData &) const;
+    void validateTransferMember(int, const QVector<SaveUnit> &) const;
     int unitMovementType(const SaveUnit &, const ClassData &) const;
     SaveChange planMembershipChange(const QVector<SaveUnit> &, const ClassData &,
                                     bool resetUnity = true) const;

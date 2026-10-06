@@ -283,9 +283,9 @@ void SaveUnitEditor::showUnit() {
     const bool editable = editor_->document() && editor_->document()->canEditUnits();
     note_->setText(
         editable
-            ? "Edit formations, Unity, tactics and carried items. Move ordinary nonleaders "
-              "between squads or reserve, or create/disband Soldier groups. Ordinary "
-              "membership changes reset Unity; Soldier reserve changes retain it. "
+            ? "Edit formations, Unity, tactics and carried items. Move nonleaders between "
+              "squads, or manage reserve characters and Soldier groups. Direct moves/swaps "
+              "and Soldier reserve changes retain Unity; ordinary reserve moves reset it. "
               "Leader changes retain Unity and formation positions. Movement type is recalculated."
             : "Squads are read-only in suspend saves and runtime states. Formation "
               "edits require a regular battery-save slot.");
@@ -356,7 +356,7 @@ void SaveUnitEditor::refreshSwapTargets() {
             }
             bool eligible = false;
             for (int i = 1; i < 5; ++i)
-                eligible |= unit.members[i] < 100;
+                eligible |= unit.members[i] < 220;
             if (eligible)
                 targetUnit_->addItem(
                     QString("Squad %1 · %2").arg(unit.index + 1).arg(memberName(unit.members[0])),
@@ -374,7 +374,7 @@ void SaveUnitEditor::refreshSwapTargets() {
                             occupied << unit.cells[i];
                         if (i > 0 && !unit.members[i])
                             empty = true;
-                        if (i > 0 && unit.members[i] > 0 && unit.members[i] < 100)
+                        if (i > 0 && unit.members[i] > 0 && unit.members[i] < 220)
                             targetMember_->addItem(memberName(unit.members[i]), i);
                     }
                     if (empty)
@@ -389,7 +389,7 @@ void SaveUnitEditor::refreshSwapTargets() {
         returnReady = doc.canEditUnits() && member > 0 && member < ids_.size() &&
                       ids_[member] > 0 && ids_[member] < 220;
         soldier = returnReady && ids_[member] >= 100;
-        ready = returnReady && !soldier;
+        ready = returnReady;
         if (soldier)
             returning = doc.soldiersInGroup(ids_[member]);
     }
@@ -402,7 +402,7 @@ void SaveUnitEditor::refreshSwapTargets() {
     swap_->setText(targetMember_->currentData().toInt() < 0 ? "Move selected member"
                                                             : "Swap selected members");
     swap_->setEnabled(enabled);
-    leader_->setEnabled(ready && !pending);
+    leader_->setEnabled(ready && !soldier && !pending);
     leader_->setToolTip(
         pending ? "Apply squad edits before changing the leader"
                 : "Keeps formation positions, Unity and legion membership; updates both character "
@@ -441,9 +441,9 @@ void SaveUnitEditor::refreshSwapTargets() {
         pending
             ? "Apply squad edits before moving members"
             : "Add the selected reserve character to an empty cell; formation limits still apply");
-    swap_->setToolTip(pending
-                          ? "Apply squad edits before moving members"
-                          : "Move or swap ordinary nonleader members and reset both squads' Unity");
+    swap_->setToolTip(pending ? "Apply squad edits before moving members"
+                              : "Move or swap nonleaders, retaining Unity and Soldier HP/state; "
+                                "carried items must fit");
 }
 void SaveUnitEditor::refreshSupplies(bool pending) {
     QVector<int> values(10, 0);

@@ -5001,3 +5001,41 @@ save reopening. Capture inspected. These are controlled instruction and file
 checks, not natural Army-menu or active-state validation.
 
 The complete native build passed (squad-leader-final-build.log).
+
+
+## Direct member exchange and Unity correction
+
+The squad UI now moves and swaps ordinary nonleaders and known Soldier groups
+between existing squads. Group IDs, HP, companion state and reserve count remain
+intact; each exchange is atomic and undoable. Both formations and carrying
+capacities must fit, movement is recalculated, and zero-HP groups, duplicate
+assignments, missing characters, leader flags and unknown IDs refuse. Runtime
+and suspend saves remain read-only for these operations.
+
+This corrects the earlier ordinary-transfer interpretation: direct exchanges
+retain both squads' Unity. The earlier tests had established the reset for
+ordinary removal/placement through reserve, then applied it too broadly. The
+original direct exchange is a separate function at z64 ROM B7978..B7B5C (484
+bytes), called at D6B84. It exchanges cells in scratch squads30/31 and preserves
+Unity. The actual commit D6FA8..D7030 (136 bytes) copies both complete54-byte
+squads and calls B8300..B848C (396-byte finalizer). That finalizer updates movement,
+capacity and formation metadata without clearing Unity. Ordinary reserve changes
+still clear Unity; Soldier reserve changes still retain it.
+
+All those ranges, the D6B70..D6B8C call block, and the552-byte formation metadata
+helper B3210..B3438 match the existing read-only Army snapshot using delta
+801135A0. The new reference test executes the whole exchange, real scratch-copy
+commit and finalizers, then compares persistent member/cell pairs and complete
+Soldier/character state. It also runs the original packed-save decoder.
+
+`save_document_tests directMemberExchanges squadFormation squadTransfers
+reserveMembership soldierReserveLifecycle squadLeaderChanges` passed (8644 ms).
+New coverage includes16 original exchange/commit sequences,16 original save
+decodes, eight operation forms across both normal slots and three battery layouts,
+exact whole-memory preservation, undo/reopen and invalid-state refusal.
+`ui_tests saveDirectExchangeControls saveSoldierReserveControls saveSquadEditing
+saveLeaderControls saveSquadDraftProtection` passed (5411 ms). The actual Soldier
+and mixed-member choices, pending drafts, Undo/Redo, file export and reopen work;
+the capture was inspected. No natural Army-menu or active-state behavior is claimed.
+
+The complete native build passed (direct-exchange-final-build.log).

@@ -1632,6 +1632,104 @@ class UiTests : public QObject {
         QVERIFY(!held.findChild<QCheckBox *>("highAttack")->isEnabled());
         QVERIFY(held.findChild<QCheckBox *>("luckDisplay")->isEnabled());
     }
+    void saveDirectExchangeControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            QTemporaryDir work;
+            QProcess generator;
+            generator.start("node", {QFileInfo(QString::fromUtf8(__FILE__))
+                                         .absoluteDir()
+                                         .filePath("army-exchange-mips.cjs"),
+                                     work.path(), "generate"});
+            QVERIFY(generator.waitForFinished(30000));
+            QVERIFY2(!generator.exitCode(), generator.readAllStandardError().constData());
+            QFile payload(work.filePath("exchange.bin"));
+            QVERIFY(payload.open(QIODevice::ReadOnly));
+            QByteArray input(0x10000, 0);
+            input.replace(0x3a, 6180, payload.readAll());
+            QVERIFY(lc_save_record_seal(reinterpret_cast<unsigned char *>(input.data() + 0x10),
+                                        0x1850, 0, 0));
+            auto project = Project::fromRom(rom);
+            SaveEditor editor(&project);
+            editor.resize(1250, 1150);
+            editor.show();
+            editor.loadBytes(input);
+            editor.findChild<QTabWidget *>()->setCurrentWidget(
+                editor.findChild<QWidget *>("saveSquads"));
+            auto units = editor.findChild<QListWidget *>("saveUnitList");
+            auto members = editor.findChild<QListWidget *>("saveUnitMembers");
+            auto target = editor.findChild<QComboBox *>("saveSwapUnit");
+            auto member = editor.findChild<QComboBox *>("saveSwapMember");
+            auto apply = editor.findChild<QPushButton *>("saveSwapApply");
+            auto unity = editor.findChild<QSpinBox *>("saveUnitUnity");
+            auto leader = editor.findChild<QPushButton *>("saveChangeLeader");
+            QVERIFY(units && members && target && member && apply && unity && leader);
+            const auto before = editor.document()->memory();
+            units->setCurrentRow(1);
+            members->setCurrentRow(1);
+            QVERIFY(!leader->isEnabled());
+            target->setCurrentIndex(target->findData(3));
+            member->setCurrentIndex(member->findData(1));
+            QVERIFY(member->currentText().contains("Soldier group 120"));
+            QVERIFY(apply->isEnabled());
+            unity->setValue(22);
+            QVERIFY(!apply->isEnabled());
+            unity->setValue(23);
+            QVERIFY(apply->isEnabled());
+            apply->click();
+            QCOMPARE(editor.document()->units()[1].members[1], 219);
+            QCOMPARE(editor.document()->units()[2].members[1], 100);
+            QCOMPARE(editor.document()->units()[1].unity, 23);
+            QCOMPARE(editor.document()->memory().mid(0x190f80, 364), before.mid(0x190f80, 364));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            members->setCurrentRow(1);
+            target->setCurrentIndex(target->findData(0));
+            member->setCurrentIndex(member->findData(-3));
+            QVERIFY(apply->isEnabled());
+            apply->click();
+            QCOMPARE(editor.document()->units()[1].members[1], 0);
+            QCOMPARE(editor.document()->units()[0].members[3], 100);
+            QCOMPARE(editor.document()->units()[0].cells[3], 2);
+            QCOMPARE(int(u8(editor.document()->memory(), 0x1971f0 + 2 * 25 + 24)), 2);
+            QCOMPARE(int(u8(editor.document()->memory(), 0x1971f0 + 24)), 7);
+            QCOMPARE(editor.document()->units()[0].unity, 23);
+            const auto moved = editor.document()->serialize();
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.undoStack()->redo();
+            QCOMPARE(editor.document()->serialize(), moved);
+            const auto filename = work.filePath("direct-exchange.SaveRAM");
+            editor.exportFile(filename);
+            QFile saved(filename);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QCOMPARE(SaveDocument::open(rom, saved.readAll()).memory(),
+                     editor.document()->memory());
+            units->setCurrentRow(0);
+            members->setCurrentRow(3);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("save-direct-exchange.png"));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            units->setCurrentRow(0);
+            members->setCurrentRow(1);
+            target->setCurrentIndex(target->findData(2));
+            member->setCurrentIndex(member->findData(1));
+            apply->click();
+            QCOMPARE(editor.document()->units()[0].members[1], 100);
+            QCOMPARE(editor.document()->units()[1].members[1], 2);
+            QCOMPARE(editor.document()->memory().mid(0x190f80, 364), before.mid(0x190f80, 364));
+            editor.undoStack()->undo();
+            QCOMPARE(editor.document()->serialize(), input);
+            editor.loadBytes(editor.document()->memory());
+            QVERIFY(!apply->isEnabled());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void saveLeaderControls() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -1773,7 +1871,7 @@ class UiTests : public QObject {
             members->setCurrentRow(3);
             QVERIFY(disband->isEnabled());
             QVERIFY(disband->text().contains("Disband"));
-            QVERIFY(!editor.findChild<QPushButton *>("saveSwapApply")->isEnabled());
+            QVERIFY(editor.findChild<QPushButton *>("saveSwapApply")->isEnabled());
             disband->click();
             QCOMPARE(editor.document()->serialize(), input);
             QVERIFY(pool->text().endsWith("9"));
@@ -1942,8 +2040,8 @@ class UiTests : public QObject {
             swap->click();
             QCOMPARE(editor.document()->units()[0].members[1], 8);
             QCOMPARE(editor.document()->units().last().members[1], 2);
-            QCOMPARE(editor.document()->units()[0].unity, 0);
-            QCOMPARE(editor.document()->units().last().unity, 0);
+            QCOMPARE(editor.document()->units()[0].unity, 99);
+            QCOMPARE(editor.document()->units().last().unity, 23);
             editor.undoStack()->undo();
             QCOMPARE(editor.document()->serialize(), expected);
             editor.undoStack()->redo();
@@ -1971,8 +2069,8 @@ class UiTests : public QObject {
             QCOMPARE(editor.document()->units()[0].cells[1], 0);
             QCOMPARE(editor.document()->units().last().members[3], 2);
             QCOMPARE(editor.document()->units().last().cells[3], 2);
-            QCOMPARE(editor.document()->units()[0].unity, 0);
-            QCOMPARE(editor.document()->units().last().unity, 0);
+            QCOMPARE(editor.document()->units()[0].unity, 99);
+            QCOMPARE(editor.document()->units().last().unity, 23);
             const auto moved = editor.document()->serialize();
             editor.undoStack()->undo();
             QCOMPARE(editor.document()->serialize(), expected);
@@ -2015,7 +2113,11 @@ class UiTests : public QObject {
             QVERIFY(!fromReserve->isEnabled());
             unity->setValue(23);
             fromReserve->click();
-            QCOMPARE(editor.document()->serialize(), moved);
+            auto reserveExpected = SaveDocument::open(rom, moved).memory();
+            reserveExpected[0x1971f0 + 12] = 0;
+            reserveExpected[0x1971f0 + 5 * 25 + 12] = 0;
+            QCOMPARE(editor.document()->memory(), reserveExpected);
+            const auto reserveMoved = editor.document()->serialize();
             QVERIFY(editor.document()->reserveMembers().isEmpty());
             QVERIFY(!fromReserve->isEnabled());
             editor.undoStack()->undo();
@@ -2028,7 +2130,7 @@ class UiTests : public QObject {
             QCOMPARE(editor.document()->serialize(), expected);
             editor.undoStack()->redo();
             editor.undoStack()->redo();
-            QCOMPARE(editor.document()->serialize(), moved);
+            QCOMPARE(editor.document()->serialize(), reserveMoved);
             const auto reserveOutput = work.filePath("reserve-transfer.SaveRAM");
             editor.exportFile(reserveOutput);
             QFile reserveFile(reserveOutput);

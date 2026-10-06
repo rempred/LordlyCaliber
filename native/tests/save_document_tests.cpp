@@ -14,6 +14,156 @@ using namespace lordly;
 class SaveDocumentTests : public QObject {
     Q_OBJECT
   private slots:
+    void directMemberExchanges() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            const auto rom = Rom::open(path);
+            const auto classes = Project::fromRom(rom).classData();
+            QTemporaryDir work;
+            auto run = [&](const QString &mode) {
+                QProcess process;
+                process.start("node", {QFINDTESTDATA("army-exchange-mips.cjs"), work.path(), mode});
+                if (!process.waitForFinished(30000) || process.exitCode())
+                    throw Error(QString::fromUtf8(process.readAllStandardError()));
+                qInfo().noquote() << process.readAllStandardOutput();
+            };
+            run("generate");
+            auto batteryFor = [&](const QString &name) {
+                QFile file(work.filePath(name));
+                if (!file.open(QIODevice::ReadOnly))
+                    throw Error("Missing exchange fixture");
+                const auto payload = file.readAll();
+                QByteArray out(0x10000, char(0x6d));
+                for (int slot : {0, 1, 15}) {
+                    const int at = int(lc_save_record_offset(slot, 0));
+                    out[at + 12] = 0;
+                    out.replace(at + 0x2a, 6180, payload);
+                    if (!lc_save_record_seal(reinterpret_cast<unsigned char *>(out.data() + at),
+                                             lc_save_record_size(slot, 0), slot, 0))
+                        throw Error("Cannot seal exchange fixture");
+                }
+                return out;
+            };
+            const auto battery = batteryFor("exchange.bin");
+            auto swapped = battery, expanded = battery;
+            for (int i = 0; i < swapped.size(); i += 4) {
+                std::swap(swapped[i], swapped[i + 3]);
+                std::swap(swapped[i + 1], swapped[i + 2]);
+            }
+            QVERIFY(lc_save_expand_image(reinterpret_cast<unsigned char *>(expanded.data()),
+                                         unsigned(expanded.size())));
+            QJsonArray cases, saves;
+            const QVector<QVector<int>> operations{{2, 1, 0, -3}, {3, 1, 0, -2}, {2, 1, 3, 1},
+                                                   {0, 1, 2, 1},  {3, 1, 0, 1},  {0, 1, 5, 1},
+                                                   {0, 1, 5, -3}, {2, 1, 5, -7}};
+            for (const auto &input : {battery, swapped, expanded})
+                for (int slot : {0, 1}) {
+                    auto doc = SaveDocument::open(rom, input);
+                    doc.selectSlot(slot);
+                    const auto before = doc.memory();
+                    for (const auto &op : operations) {
+                        const int from = op[0], member = op[1], to = op[2], target = op[3];
+                        const int a = 0x1971f0 + from * 25, b = 0x1971f0 + to * 25;
+                        const auto change =
+                            target < 0
+                                ? doc.planUnitTransfer(from, member, to, -target - 1, classes)
+                                : doc.planUnitSwap(from, member, to, target, classes);
+                        auto expected = before;
+                        int toCell;
+                        if (target < 0) {
+                            int free = 1;
+                            while (u8(before, b + 2 + free))
+                                ++free;
+                            toCell = -target - 1;
+                            expected[b + 2 + free] = before[a + 2 + member];
+                            expected[b + 7 + free] = char(toCell);
+                            expected[a + 2 + member] = 0;
+                            expected[a + 7 + member] = 0;
+                        } else {
+                            toCell = u8(before, b + 7 + target);
+                            expected[a + 2 + member] = before[b + 2 + target];
+                            expected[b + 2 + target] = before[a + 2 + member];
+                        }
+                        for (int base : {a, b}) {
+                            int movement = 2;
+                            for (int i = 0; i < 5; ++i)
+                                if (u8(expected, base + 2 + i) >= 100)
+                                    movement = 7;
+                            expected[base + 24] = char(movement);
+                        }
+                        doc.apply(change, true);
+                        QCOMPARE(doc.memory(), expected); // Includes every Soldier, roster,
+                                                          // inventory and unknown byte.
+                        auto reopened = SaveDocument::open(rom, doc.serialize());
+                        reopened.selectSlot(slot);
+                        QCOMPARE(reopened.memory(), expected);
+                        if (input == battery) {
+                            cases << QJsonObject{
+                                {"from", from},
+                                {"to", to},
+                                {"fromCell", u8(before, a + 7 + member)},
+                                {"toCell", toCell},
+                                {"before", QString::fromLatin1(before.mid(0x1971f0, 750).toHex())},
+                                {"after", QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                {"characters",
+                                 QString::fromLatin1(before.mid(0x193bc0, 5600).toHex())},
+                                {"soldiers",
+                                 QString::fromLatin1(before.mid(0x190f80, 364).toHex())}};
+                            saves << QJsonObject{
+                                {"payload",
+                                 QString::fromLatin1(
+                                     doc.serialize()
+                                         .mid(int(lc_save_record_offset(slot, 0)) + 42, 6180)
+                                         .toHex())},
+                                {"units", QString::fromLatin1(expected.mid(0x1971f0, 750).toHex())},
+                                {"characters",
+                                 QString::fromLatin1(expected.mid(0x193bc0, 5600).toHex())},
+                                {"soldiers",
+                                 QString::fromLatin1(expected.mid(0x190f80, 364).toHex())}};
+                        }
+                        const auto output = doc.serialize();
+                        doc.apply(change, false);
+                        QCOMPARE(doc.serialize(), input);
+                        doc.apply(change, true);
+                        QCOMPARE(doc.serialize(), output);
+                        doc.apply(change, false);
+                    }
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(2, 0, 0, 1, classes));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(2, 1, 4, 1, classes));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 0, 0, classes));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 4, 0, classes));
+                    doc.selectSlot(15);
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(2, 1, 0, 1, classes));
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 0, 2, classes));
+                    QCOMPARE(doc.serialize(), input);
+                }
+            for (const auto &name :
+                 {"exchange-duplicate.bin", "exchange-zero-hp.bin", "exchange-overload.bin"}) {
+                const auto input = batteryFor(name);
+                auto doc = SaveDocument::open(rom, input);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 0, 2, classes));
+                if (QString::fromLatin1(name) != "exchange-overload.bin")
+                    QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(2, 1, 0, 1, classes));
+                QCOMPARE(doc.serialize(), input);
+            }
+            for (const auto &name : {"exchange-missing.bin", "exchange-leader-flag.bin"}) {
+                const auto input = batteryFor(name);
+                auto doc = SaveDocument::open(rom, input);
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(2, 1, 0, 1, classes));
+                QCOMPARE(doc.serialize(), input);
+            }
+            auto raw = SaveDocument::open(rom, SaveDocument::open(rom, battery).memory());
+            QVERIFY_THROWS_EXCEPTION(Error, raw.planUnitTransfer(2, 1, 0, 2, classes));
+            atomicWrite(work.filePath("exchange-verify.json"),
+                        QJsonDocument(QJsonObject{{"cases", cases}, {"saves", saves}}).toJson());
+            run("verify");
+            QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
     void squadLeaderChanges() {
         try {
             const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
@@ -591,8 +741,6 @@ class SaveDocumentTests : public QObject {
                 auto swappedMemory = before;
                 swappedMemory[0x1971f3] = 8;
                 swappedMemory[0x1971f0 + 5 * 25 + 3] = 2;
-                swappedMemory[0x1971fc] = 0;
-                swappedMemory[0x1971f0 + 5 * 25 + 12] = 0;
                 QCOMPARE(doc.memory(), swappedMemory);
                 QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), swappedMemory);
                 doc.apply(swap, false);
@@ -600,7 +748,7 @@ class SaveDocumentTests : public QObject {
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 0, 5, 1, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 0, 2, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 5, 4, classes));
-                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 2, 1, classes));
+                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitSwap(0, 1, 4, 1, classes));
                 auto noCapacity = classes;
                 auto fighter = noCapacity.entries()[2];
                 fighter.record[ClassData::itemCapacityOffset] = 0;
@@ -958,12 +1106,11 @@ class SaveDocumentTests : public QObject {
                 const auto move = doc.planUnitTransfer(0, 1, 5, 2, classes);
                 doc.apply(move, true);
                 auto expected = before;
-                for (int offset : {3, 8, 12})
+                for (int offset : {3, 8})
                     expected[0x1971f0 + offset] = 0;
                 const int dest = 0x1971f0 + 5 * 25;
                 expected[dest + 5] = 2;
                 expected[dest + 10] = 2;
-                expected[dest + 12] = 0;
                 QCOMPARE(doc.memory(),
                          expected); // Every other decoded byte, including all Soldier data.
                 QCOMPARE(SaveDocument::open(rom, doc.serialize()).memory(), expected);
@@ -982,7 +1129,6 @@ class SaveDocumentTests : public QObject {
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 5, 9, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 1, 2, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 4, 5, 2, classes));
-                QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(2, 1, 5, 2, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(4, 1, 5, 2, classes));
                 QVERIFY_THROWS_EXCEPTION(Error, doc.planUnitTransfer(0, 1, 4, 2, classes));
                 QCOMPARE(doc.serialize(), input);
@@ -995,8 +1141,6 @@ class SaveDocumentTests : public QObject {
                 auto swapExpected = before;
                 swapExpected[0x1971f3] = 8;
                 swapExpected[dest + 3] = 2;
-                swapExpected[0x1971fc] = 0;
-                swapExpected[dest + 12] = 0;
                 swapExpected[0x1971f0 + 24] = 6;
                 swapExpected[dest + 24] = 6;
                 QCOMPARE(doc.memory(), swapExpected);

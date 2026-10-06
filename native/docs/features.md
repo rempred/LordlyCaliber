@@ -138,3 +138,11 @@ Direct Soldier transfer/swap and active/suspend lifecycle work remain open.
 Normal battery squad leaders can now change with coordinated saved order and
 character flags, Unity/position preservation, original fixed-leader and legion
 command-type checks, atomic Undo and save export. Legion demotion remains guarded.
+
+
+Direct saved-squad moves and swaps now include Soldier groups and retain both
+squads' Unity, matching the original exchange/commit path. Ordinary reserve
+moves still reset Unity. HP, companion state, group IDs and the Soldier reserve
+are preserved by direct exchange; native instruction, save roundtrip, UI and
+Undo checks pass. Squad creation/deletion, legion coordination and active-state
+membership edits remain unfinished.

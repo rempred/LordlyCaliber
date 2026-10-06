@@ -813,6 +813,18 @@ SaveChange SaveDocument::planUnitLeader(int index, int member, const ClassData &
     return difference(candidate.data_, recordOffset(slot_, expanded_),
                       recordSize(slot_, expanded_));
 }
+void SaveDocument::validateTransferMember(int id, const QVector<SaveUnit> &list) const {
+    if (id < 1 || id >= 220)
+        throw Error("Choose an ordinary character or known Soldier group");
+    memberClasses(id);
+    int references = 0;
+    for (const auto &unit : list)
+        references += int(std::count(unit.members.begin(), unit.members.end(), id));
+    if (references != 1 || (id < 100 && (u8(ram_, roster + id * stride + 51) & 2)))
+        throw Error("Selected member has conflicting squad or leader membership");
+    if (id >= 100 && !u16(ram_, 0x190f84 + (id - 100) * 2))
+        throw Error("The selected Soldier group has no saved HP; resolve its assignment first");
+}
 SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, int toMember,
                                       const ClassData &classes) const {
     if (!canEditUnits())
@@ -829,17 +841,11 @@ SaveChange SaveDocument::planUnitSwap(int fromUnit, int fromMember, int toUnit, 
     };
     auto from = find(fromUnit), to = find(toUnit);
     const int firstId = from.members[fromMember], secondId = to.members[toMember];
-    for (int id : {firstId, secondId}) {
-        if (id < 1 || id >= 100)
-            throw Error("Choose two existing ordinary characters");
-        int references = 0;
-        for (const auto &unit : list)
-            references += int(std::count(unit.members.begin(), unit.members.end(), id));
-        if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
-            throw Error("Selected character has conflicting squad or leader membership");
-    }
+    for (int id : {firstId, secondId})
+        validateTransferMember(id, list);
     std::swap(from.members[fromMember], to.members[toMember]);
-    return planMembershipChange({from, to}, classes);
+    // Direct Army exchange B7978..B7B5C and commit D6FA8..D7030 retain Unity.
+    return planMembershipChange({from, to}, classes, false);
 }
 SaveChange SaveDocument::planUnitTransfer(int fromUnit, int fromMember, int toUnit, int cell,
                                           const ClassData &classes) const {
@@ -857,13 +863,7 @@ SaveChange SaveDocument::planUnitTransfer(int fromUnit, int fromMember, int toUn
     };
     auto from = find(fromUnit), to = find(toUnit);
     const int id = from.members[fromMember];
-    if (id < 1 || id >= 100)
-        throw Error("Choose an existing ordinary character");
-    int references = 0;
-    for (const auto &unit : list)
-        references += int(std::count(unit.members.begin(), unit.members.end(), id));
-    if (references != 1 || (u8(ram_, roster + id * stride + 51) & 2))
-        throw Error("Selected character has conflicting squad or leader membership");
+    validateTransferMember(id, list);
     int empty = -1;
     for (int i = 0; i < 5; ++i) {
         if (to.members[i] && to.cells[i] == cell)
@@ -877,7 +877,8 @@ SaveChange SaveDocument::planUnitTransfer(int fromUnit, int fromMember, int toUn
     from.cells[fromMember] = 0;
     to.members[empty] = id;
     to.cells[empty] = cell;
-    return planMembershipChange({from, to}, classes);
+    // Direct Army exchange B7978..B7B5C and commit D6FA8..D7030 retain Unity.
+    return planMembershipChange({from, to}, classes, false);
 }
 SaveChange SaveDocument::planToReserve(int fromUnit, int fromMember,
                                        const ClassData &classes) const {
@@ -970,7 +971,7 @@ SaveChange SaveDocument::planMembershipChange(const QVector<SaveUnit> &changed,
             put8(record, 2 + i, quint8(unit.members[i]));
             put8(record, 7 + i, quint8(unit.cells[i]));
         }
-        // Ordinary removal B7FC8 and normal placement B8294..B82A8 clear Unity.
+        // Ordinary reserve removal B7FC8 and placement B8294..B82A8 clear Unity.
         // The membership finalizer then recalculates active+29 -> saved+24.
         if (resetUnity)
             put8(record, 12, 0);
