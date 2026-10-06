@@ -1,5 +1,23 @@
 # Native Lordly Caliber
 
+## Portable check without interactive command-line dialogs
+
+The isolated package check sets Qt's documented
+`QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES` option, captures the exact GUI version
+response and bounds that startup wait to30seconds. It restores the caller's
+previous environment afterward. This changes verification only; the application
+retains its normal command-line behavior. Qt documents the Windows dialog fallback
+at https://doc.qt.io/qt-6.12/qcommandlineparser.html.
+
+Portable ZIP20261006-004218 contains native commita9a935c. Its isolated browser
+import check passed2648 exact scene bytes (parent Test ROMs/
+portable-scene-import-92e574a6843247fa95edd380e2ed7677). The corrected general check
+passed startup, bundled user-time compilation, independent Knight STR300 readback,
+export/reopen and master preservation (native-portable-1843cac354654d45b549137ec3524e9d).
+The first startup invocation remained in Qt's version dialog without a console;
+automatic approval review rejected process termination, so it was left intact.
+These are isolated-environment checks on this machine, not a clean-machine claim.
+
 ## Saved story-cast preview inputs
 
 The five-person story preview now has independent primary/secondary selectors and

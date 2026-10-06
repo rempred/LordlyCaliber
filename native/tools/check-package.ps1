@@ -17,14 +17,26 @@ $inspection = Join-Path $runDirectory 'reopen-report.json'
     patches = @{ classDefs = @{ '5' = @{ record_index = 6; bytes = @{ '0' = 1; '1' = 44 } } } }
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $project -Encoding utf8
 $saved = @{}
-foreach ($key in @('PATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QTDIR', 'LORDLY_N64_TOOLCHAIN')) {
+foreach ($key in @('PATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QTDIR', 'LORDLY_N64_TOOLCHAIN', 'QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES')) {
     $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
     [Environment]::SetEnvironmentVariable($key, $null, 'Process')
 }
 try {
     $env:PATH = "$env:WINDIR\System32;$env:WINDIR"
-    $gui = Start-Process -FilePath (Join-Path $Package 'LordlyCaliber.exe') -ArgumentList '--version' -WorkingDirectory $Package -WindowStyle Hidden -PassThru -Wait
-    if ($gui.ExitCode -ne 0) { throw "Packaged Qt application failed: $($gui.ExitCode)" }
+    # Qt otherwise displays --version in a Windows message box without a console.
+    # https://doc.qt.io/qt-6.12/qcommandlineparser.html
+    $env:QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES = '1'
+    $versionOutput = Join-Path $runDirectory 'gui-version.txt'
+    $versionErrors = Join-Path $runDirectory 'gui-startup-errors.txt'
+    $gui = Start-Process -FilePath (Join-Path $Package 'LordlyCaliber.exe') -ArgumentList '--version' -WorkingDirectory $Package -WindowStyle Hidden -PassThru -RedirectStandardOutput $versionOutput -RedirectStandardError $versionErrors
+    if (!$gui.WaitForExit(30000)) {
+        throw "Packaged Qt application did not report its version within 30 seconds (process $($gui.Id)); see $versionErrors"
+    }
+    $gui.WaitForExit()
+    if ($gui.ExitCode -ne 0) { throw "Packaged Qt application failed: $($gui.ExitCode); see $versionErrors" }
+    if ((Get-Content -LiteralPath $versionOutput -Raw).Trim() -ne 'LordlyCaliber 0.5.0-dev') {
+        throw 'Packaged Qt application did not report the expected version.'
+    }
     & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $RomPath --project $project --output $output --report $report
     if ($LASTEXITCODE -ne 0) { throw 'Packaged export failed.' }
     & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $output --report $inspection
