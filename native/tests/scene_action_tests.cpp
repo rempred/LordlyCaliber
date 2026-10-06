@@ -6,6 +6,7 @@
 #include "rebuild/compiler.h"
 #include <QTemporaryDir>
 #include <QtTest>
+#include <bit>
 using namespace lordly;
 class SceneActionTests : public QObject {
     Q_OBJECT
@@ -29,6 +30,10 @@ class SceneActionTests : public QObject {
         QCOMPARE(points[0].command, 3);
         QVERIFY(points[0].canWait);
         for (auto kind : SceneActions::kinds().keys()) {
+            if (kind == 0x2a) {
+                QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(source, 3, kind));
+                continue;
+            }
             const auto inserted = SceneActions::insert(source, 3, kind);
             QCOMPARE(inserted.source.first(72), source.source.first(72));
             QCOMPARE(inserted.source.last(20), source.source.last(20));
@@ -504,6 +509,112 @@ class SceneActionTests : public QObject {
             QCOMPARE(crc, reopened.rom().bytes());
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             qInfo().noquote() << "Rebuilt Actor controls" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void classActorCreation() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            const auto id = scenes.createScene("Class Actor scene", 0x1fa8bf4 - 0x594284, true);
+            const auto blank = scenes.program(id);
+            auto created = SceneActions::insert(blank, 1, 0x2a);
+            QCOMPARE(created.commands[1].opcode, quint32(0x14));
+            QCOMPARE(created.commands[2].opcode, quint32(0x2a));
+            QCOMPARE(SceneActions::inspect(created).first().commandCount, 2);
+            QCOMPARE(SceneActions::remove(created, 1).source, blank.source);
+            for (const auto &point : SceneActions::positions(created))
+                QVERIFY(point.command != 2);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(created, 2, 7));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::remove(created, 2));
+            const auto opaqueInitializer = created.commands[1].operands.mid(1, 2);
+            created = SceneActions::edit(created, 1, 0, "5");
+            created = SceneActions::edit(created, 1, 1, "84");
+            created = SceneActions::edit(created, 1, 2, "85");
+            created = SceneActions::edit(created, 1, 4, "12.375");
+            created = SceneActions::edit(created, 1, 6, "-2.500");
+            QCOMPARE(created.commands[1].operands[0], quint32(5));
+            QCOMPARE(created.commands[2].operands[0], quint32(5));
+            QCOMPARE(created.commands[1].operands.mid(1, 2), opaqueInitializer);
+            QCOMPARE(created.commands[2].operands.mid(3, 2), (QVector<quint32>{0, 0}));
+            auto unusual = created;
+            unusual.commands[2].operands = {5, 0x08880001, quint32(-1), 0x12340000, 0xabcd0001, quint32(-1)};
+            unusual = DirectorProgram::decode(unusual.encode());
+            auto expectedUnusual = unusual.source;
+            put32(expectedUnusual, (unusual.commands[1].word + 5) * 4, 2500);
+            QCOMPARE(SceneActions::edit(unusual, 1, 4, "2.500").source, expectedUnusual);
+            auto exercise = [&](const Rom &rom, BodyAnimationData::Pointer data,
+                                const DirectorProgram &stream, int primary, int secondary) {
+                SceneActors actors(rom, 2, 0, [](int, float, float) { return 0.f; }, data);
+                int value = 0;
+                QVERIFY(actors.service(0x14, stream.commands[1].operands, value));
+                const auto before = actors.actor(5)->record();
+                QVERIFY_THROWS_EXCEPTION(Error,
+                                         actors.service(0x2a, stream.commands[2].operands, value));
+                QCOMPARE(actors.actor(5)->record(), before);
+                actors.supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+                QVERIFY(actors.service(0x2a, stream.commands[2].operands, value));
+                const auto record = actors.actor(5)->record();
+                QCOMPARE(u32(record, 0xe8), quint32(primary));
+                QCOMPARE(u32(record, 0xec), quint32(secondary));
+                QCOMPARE(u16(record, 0x138), quint16(0));
+                QCOMPARE(std::bit_cast<float>(u32(record, 0x11c)), 12.375f);
+                QCOMPARE(std::bit_cast<float>(u32(record, 0x124)), -2.5f);
+                QVERIFY(actors.actor(5)->pose().art().isBody());
+            };
+            exercise(project.rom(), project.bodyAnimationData(), created, 84, 85);
+            auto two = SceneActions::insert(created, 3, 0x2a);
+            QCOMPARE(two.commands[3].operands[0], quint32(0));
+            QCOMPARE(two.commands[4].operands[0], quint32(0));
+            auto reordered = SceneActions::move(two, 1, 5);
+            QCOMPARE(reordered.commands[1].operands[0], quint32(0));
+            QCOMPARE(reordered.commands[3].operands[0], quint32(5));
+            QCOMPARE(SceneActions::move(reordered, 3, 1).source, two.source);
+            QCOMPARE(SceneActions::remove(two, 3).source, created.source);
+            auto mismatch = created;
+            mismatch.commands[2].operands[0] = 6;
+            QCOMPARE(SceneActions::inspect(DirectorProgram::decode(mismatch.encode()))
+                         .first()
+                         .commandCount,
+                     1);
+            const int newClass = project.appendClass(2, "Scene Actor");
+            created = SceneActions::edit(created, 1, 1, QString::number(newClass));
+            created = SceneActions::edit(created, 1, 2, QString::number(newClass));
+            exercise(project.rom(), project.bodyAnimationData(), created, newClass, newClass);
+            scenes.replace(id, created.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, created.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-class-actor-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, created.source);
+            exercise(reopened.rom(), reopened.bodyAnimationData(),
+                     reopened.scenePrograms()->program(id), newClass, newClass);
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Created class Actor candidate:" << destination;
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

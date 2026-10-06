@@ -71,6 +71,118 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void classActorCreationControls() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            const auto id = programs.createScene("Class Actor preview", 0x1fa8bf4 - 0x594284, true);
+            project.setScenePrograms(programs.json());
+            const auto blank = programs.program(id);
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 1000);
+            editor.show();
+            auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+            QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+            for (int i = 0; i < scenes->count(); ++i)
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId)
+                    scenes->setCurrentRow(i);
+            auto actions = editor.findChild<SceneActionEditor *>();
+            auto kind = actions->findChild<QComboBox *>("sceneActionKind");
+            auto position = actions->findChild<QComboBox *>("sceneActionPosition");
+            auto add = actions->findChild<QPushButton *>("sceneActionInsert");
+            kind->setCurrentIndex(kind->findData(0x2a));
+            QVERIFY(add->isEnabled());
+            add->click();
+            QCOMPARE(
+                SceneActions::inspect(project.scenePrograms()->program(id)).first().commandCount,
+                2);
+            auto field = [&](int i) {
+                return actions->findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            QVERIFY(field(8));
+            field(0)->setText("5");
+            field(1)->setText("84");
+            field(2)->setText("85");
+            field(4)->setText("40.000");
+            field(6)->setText("10.000");
+            const auto created = project.scenePrograms()->program(id);
+            QCOMPARE(created.commands[1].operands[0], quint32(5));
+            QCOMPARE(created.commands[2].operands[0], quint32(5));
+            field(1)->setText(QString::number(project.records(Table::Classes).size()));
+            QVERIFY(actions->property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, created.source);
+            actions->findChild<QPushButton *>("sceneActionDiscard")->click();
+            auto remove = actions->findChild<QPushButton *>("sceneActionRemove");
+            remove->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, created.source);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo();
+            kind->setCurrentIndex(kind->findData(0xe));
+            position->setCurrentIndex(position->count() - 1);
+            add->click();
+            auto preview = editor.findChild<ScenePreview *>();
+            auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
+            pages->setCurrentWidget(preview);
+            QVERIFY(preview->findChild<QLabel *>("scenePreviewContext")
+                        ->text()
+                        .contains("class-default equipment"));
+            auto step = preview->findChild<QPushButton *>("sceneStep");
+            auto status = preview->findChild<QLabel *>("scenePlaybackStatus");
+            step->click();
+            QVERIFY2(!preview->property("sceneStopped").toBool(), qPrintable(status->text()));
+            auto actors = preview->findChild<QComboBox *>("sceneLiveActors");
+            QCOMPARE(actors->count(), 1);
+            QCOMPARE(actors->currentData().toInt(), 5);
+            const auto expectedState =
+                QString("Class pair 84 / 85 · X 40.000 · Y 0.000 · Z 10.000");
+            auto actorState = preview->findChild<QLabel *>("sceneActorState");
+            QCOMPARE(actorState->text(), expectedState);
+            step->click();
+            const auto frame = preview->renderedFrame();
+            QVERIFY(!frame.isNull());
+            auto seek = preview->findChild<QSpinBox *>("scenePosition");
+            seek->setValue(0);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 0);
+            QCOMPARE(actors->count(), 0);
+            seek->setValue(2);
+            QTRY_COMPARE(preview->property("sceneTick").toInt(), 2);
+            QCOMPARE(actorState->text(), expectedState);
+            QCOMPARE(preview->renderedFrame(), frame);
+            QCoreApplication::processEvents();
+            QVERIFY(preview->isVisible());
+            QVERIFY(editor.grab().save("native-created-class-actor.png"));
+            preview->findChild<QPushButton *>("sceneFindActorAction")->click();
+            QCOMPARE(pages->currentWidget(), actions);
+            QCOMPARE(field(0)->text(), QString("5"));
+            QCOMPARE(field(1)->text(), QString("84"));
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(reopened.scenePrograms()->program(id).source,
+                     project.scenePrograms()->program(id).source);
+            // A pre-existing native retain sentinel stays opaque when placement changes.
+            auto retained = *project.scenePrograms();
+            retained.setOperand(id, 2, 5, quint32(-1));
+            pushSceneProgramChange(&project, &undo, "Retain Actor body source", retained);
+            actions->selectCommand(1);
+            QVERIFY(field(2)->isReadOnly());
+            field(4)->setText("41.000");
+            QVERIFY(!actions->property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).commands[1].operands[4], quint32(41000));
+            QCOMPARE(project.scenePrograms()->program(id).commands[2].operands[5], quint32(-1));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void sceneActionInsertion() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty()) QSKIP("Private ROM required");

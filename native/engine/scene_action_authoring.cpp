@@ -127,6 +127,7 @@ DirectorCommand command(quint32 op, QVector<quint32> operands = {}) {
 QMap<quint32, QString> SceneActions::kinds() {
     return {{3, "Set Actor pose and position"},
             {0x14, "Create Actor"},
+            {0x2a, "Create class Actor"},
             {7, "Move Actor"},
             {0x35, "Background camera"},
             {0x36, "Actor camera"},
@@ -170,6 +171,8 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                                     [before](const auto &v) { return v.command == before; });
     if (point == points.end() || !kinds().contains(kind))
         throw Error("Choose a supported action and insertion position.");
+    if (kind == 0x2a && p.resourceClass() != 1 && p.resourceClass() != 8)
+        throw Error("Create class Actor requires a fresh environment scene (class 1 or 8).");
     auto result = p;
     QVector<DirectorCommand> added;
     if (kind == 0xbf) {
@@ -248,7 +251,8 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
             operands = {slot,           quint32(-1),    quint32(-1),    quint32(-1),
                         quint32(-1000), quint32(-1000), quint32(-1000), quint32(-1)};
             break;
-        case 0x14: {
+        case 0x14:
+        case 0x2a: {
             QSet<quint32> used;
             for (const auto &c : p.commands) {
                 const auto names = Directors::grammar()[c.opcode].operands;
@@ -287,7 +291,10 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
                     operands = p.commands[i].operands;
             break;
         }
-        added << command(kind, operands);
+        if (kind == 0x2a)
+            added << command(0x14, operands) << command(0x2a, {slot, 2, 0, 0, 0, 2});
+        else
+            added << command(kind, operands);
     }
     for (int i = 0; i < added.size(); ++i)
         result.commands.insert(before + i, added[i]);

@@ -113,6 +113,27 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
         default:
             break;
         }
+        if (c.opcode == 0x14 && i + 1 < commands.size() &&
+            (program.resourceClass() == 1 || program.resourceClass() == 8) &&
+            commands[i + 1].opcode == 0x2a && c.operands[0] < 28 &&
+            commands[i + 1].operands[0] == c.operands[0]) {
+            action.name = "Create class Actor";
+            action.commandCount = 2;
+            field("Actor slot", 0, 1, 0, 27);
+            action.fields.last().mirrors = {{1, 0}};
+            field("Primary class", 1, 1, 1, 255, 1);
+            field("Secondary class", 5, 1, 1, 255, 1);
+            field("Pose ID", 2, 1, 0, 32767, 1);
+            field("X", 4, 1000);
+            field("Y", 5, 1000);
+            field("Z", 6, 1000);
+            field("Facing", 3, 1, 0, 4);
+            field("Depth flag", 7, 1, 0, 255);
+            // The temporary ordinary pose and independent body flags are retained.
+            result << action;
+            ++i;
+            continue;
+        }
         switch (c.opcode) {
         case 0x2a:
             action.name = "Set Actor class and pose";

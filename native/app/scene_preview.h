@@ -127,6 +127,7 @@ class ScenePreview : public QWidget {
     QLabel *castSource_;
     int classCount_ = 0;
     bool storyCastEnabled_ = false;
+    bool classDefaultsEnabled_ = false;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
     QComboBox *reward_;

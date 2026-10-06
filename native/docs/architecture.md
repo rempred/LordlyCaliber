@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Creating class Actors
+
+The Actions inspector now offers Create class Actor for fresh environment resource
+classes 1 and 8. It emits native Actor allocation (0x14) immediately followed by
+body selection (0x2A), recognizes that same layout in existing streams, and treats
+the pair as one action for editing, insertion boundaries, ordering and removal.
+The slot field updates both commands. Primary/secondary class, pose, XYZ, facing
+and depth are editable; ordinary initializer words and independent body flags
+remain intact. Symbolic and noncanonical fields remain read-only. New class edits
+must refer to the current project; unrelated edits preserve existing opaque values.
+
+Scene playback declares class-default equipment for these explicit fresh bodies
+and supplies its preview appearance rows at restart. This reuses the existing
+native class appearance and body initializer. It supplies no army roster, member
+binding or event translation. Those services still require their explicit inputs.
+The existing story-cast launch path remains unchanged.
+
+`scene_action_tests classActorCreation authoringBoundaries bodyActionFields exactFields`
+passed in 8144ms. The strengthened `classActorCreation` passed in 6746ms, covering
+paired slots, indivisible commands, reordered/removed pairs, preserved opaque words,
+native class pair/XYZ readback, missing-context atomicity and a newly added class.
+The project saves, compiles game source, exports and reopens with that new class
+still executable through the native body path; allocation bounds, references, CRC
+and master preservation pass. Candidate: parent `Test ROMs/native-class-actor-cVGAwm`.
+UI creation, existing body fields, saved cast and action insertion passed in 6272ms;
+the final creation/sentinel regression passed in 1165ms. It covers shared undo,
+invalid-class input, exact backward seek, visible rendering and action navigation.
+The rendered capture was inspected. Existing body-initializer instruction evidence
+is reused because its maintained C/runtime implementation is unchanged. Natural
+game event launch and arbitrary caller army context are not claimed.
+
 ## Blank environment scenes
 
 New scene now offers qualified environment templates as well as the existing room

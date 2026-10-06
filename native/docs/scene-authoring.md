@@ -48,10 +48,18 @@ camera editing coverage uses a class-five stream that defines its own camera.
 
 ## New scenes
 
-The UI creates blank class-five scenes from a selected current-ROM setup template,
-duplicates complete scenes, renames them and removes authored scenes with undo.
-A blank scene retains the template's group, both cameras and native exit sequence;
-it does not manufacture actor or army context. Users edit its subsequent commands.
+The UI creates blank room or qualified fresh environment scenes from current-ROM
+setup templates, duplicates complete scenes, renames them and removes authored
+scenes with undo. Room templates retain their group, both cameras and native exit;
+environment templates retain their explicit background request and release exit.
+Inherited scenery and unresolved handoffs are not offered as blank templates.
+Users edit subsequent commands or add supported actions in the Actions page.
+
+Create class Actor adds allocation and body selection together in fresh environment
+scenes. Its slot, independent class pair, pose and placement edit as one action;
+removal and ordering also keep both commands together. Preview equipment comes from
+the class defaults, as stated in the preview context. Army member bindings and
+event-selected cast still need their own launch data.
 Typed SceneId values distinguish native resource keys from authored UUIDs. No
 fabricated ROM key is assigned to a scene before it has an exported allocation.
 

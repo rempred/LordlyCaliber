@@ -2,6 +2,7 @@
 #include "engine/class_data.h"
 #include "engine/save_document.h"
 #include "engine/scene_images.h"
+#include "engine/scene_actions.h"
 #include "engine/scene_story_cast.h"
 #include "engine/text.h"
 #include <QComboBox>
@@ -27,6 +28,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
       objectRenderer_(rom) {
     auto layout = new QVBoxLayout(this);
     context_ = new QLabel("Select a scene to preview its current commands.");
+    context_->setObjectName("scenePreviewContext");
     context_->setWordWrap(true);
     layout->addWidget(context_);
     launchImageUi_ = new QWidget;
@@ -535,6 +537,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     pendingPressed_ = 0;
     launchImageUi_->hide();
     storyCastEnabled_ = false;
+    classDefaultsEnabled_ = false;
     storyCastUi_->hide();
     dialogueNamesUi_->hide();
     rewardUi_->hide();
@@ -548,6 +551,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
         storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
+        const auto actions = SceneActions::inspect(programs.program(id));
+        classDefaultsEnabled_ = mode == 2 && std::any_of(actions.cbegin(), actions.cend(),
+            [](const auto &action) { return action.name == "Create class Actor"; });
         storyCastUi_->setVisible(storyCastEnabled_);
         const auto &commands = programs.program(id).commands;
         dialogueNamesUi_->setVisible(std::any_of(commands.cbegin(), commands.cend(),
@@ -585,6 +591,9 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         if (storyCastEnabled_)
             context_->setText(context_->text() + "\nThis scene uses the selected preview class pairs. Its "
                                                  "authored positions stay unchanged.");
+        if (classDefaultsEnabled_)
+            context_->setText(context_->text() +
+                "\nClass Actors preview with class-default equipment. Army bindings still require launch data.");
         context_->setText(
             context_->text() +
             "\nDialogue uses the preview names and current Actor "
@@ -645,7 +654,7 @@ void ScenePreview::restart() {
         }
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
-        if (storyCastEnabled_)
+        if (storyCastEnabled_ || classDefaultsEnabled_)
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
         std::array<QByteArray, 4> names;
         for (int i = 0; i < 4; ++i) {

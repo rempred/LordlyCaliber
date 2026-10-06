@@ -250,12 +250,12 @@ void SceneActionEditor::showAction() {
             input->setToolTip(i >= 4 && i <= 6 ? "X and Y both -1 keep all coordinates. Otherwise "
                                                  "X, Y and Z replace the position together."
                                                : "Use -1 to keep the Actor's current value.");
-        if (action.name == "Set Actor class and pose") {
+        if (action.name == "Set Actor class and pose" || action.name == "Create class Actor") {
             if ((word & 0xffffff00U) == 0x08880000U) {
                 input->setText(QString("Launch value %1").arg(word & 255));
                 input->setToolTip(
                     "The launch event supplies this value. Its symbolic source remains unchanged.");
-            } else if (f.canonical(word)) {
+            } else if (f.canonical(word) && action.name == "Set Actor class and pose") {
                 input->setToolTip(
                     "World scenes apply this to an existing Actor. -1 retains the current "
                     "value (or skips the command for the slot). Positions are retained; "
@@ -280,11 +280,19 @@ void SceneActionEditor::publishFields() {
     try {
         const auto action = actions_[row];
         auto program = project_->scenePrograms()->program(key_);
+        const auto original = program;
         for (auto input : findChildren<QLineEdit *>()) {
             if (!input->objectName().startsWith("sceneActionField") || input->isReadOnly())
                 continue;
             program = SceneActions::edit(program, action.command,
                                          input->property("actionField").toInt(), input->text());
+        }
+        if (action.name == "Create class Actor") {
+            const auto &body = program.commands[action.command + 1].operands;
+            for (int operand : {1, 5})
+                if (body[operand] != original.commands[action.command + 1].operands[operand] &&
+                    body[operand] >= quint32(project_->records(Table::Classes).size()))
+                    throw Error("Choose a class that exists in the current project.");
         }
         auto next = *project_->scenePrograms();
         next.replace(key_, program.source);
@@ -312,10 +320,14 @@ void SceneActionEditor::updateStructureControls() {
     const bool wait = kind_->currentData().toUInt() == 0xe ||
                       kind_->currentData().toUInt() == 0xb5 ||
                       kind_->currentData().toUInt() == 0xbf;
-    const bool allowed = !wait || position_->currentData(Qt::UserRole + 1).toBool();
+    const bool body = kind_->currentData().toUInt() == 0x2a;
+    const int type = valid ? project_->scenePrograms()->program(key_).resourceClass() : -1;
+    const bool allowed = (!wait || position_->currentData(Qt::UserRole + 1).toBool()) &&
+                         (!body || type == 1 || type == 8);
     insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
     insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
-                                : position_->currentData(Qt::ToolTipRole).toString());
+                        : body ? "Create class Actor requires a fresh environment scene."
+                               : position_->currentData(Qt::ToolTipRole).toString());
     bool canRemove = false;
     QString reason;
     const int row = list_->currentRow();
