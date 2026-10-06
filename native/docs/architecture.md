@@ -5168,3 +5168,13 @@ army, protected/legion refusal and export/reopen. Capture inspected. This does
 not claim natural Army-menu or legion-disband behavior.
 
 The complete native build passed (squad-disband-final-build.log).
+
+
+Portable development package LordlyCaliber-0.5-dev-20261006-060436 includes squad
+creation, shared stock checks and nonlegion squad disbanding through8f4ccbe.
+Isolated package startup, bundled user-time compilation/export, independent
+record readback, reopening and source preservation passed (2.37 s). Packaged
+browser scene import,2648 expected program bytes, compile/export and reopening
+passed (6.72 s). Evidence is parent Test ROMs/native-portable-
+6f1bdcc4af5e4583a8f84c2661b278d5 and portable-scene-import-
+a1d3cb2aa03c4ebfaaeba5e0f4c1ab1e. No clean-machine or natural-game claim.
