@@ -174,6 +174,8 @@ class UiTests : public QObject {
                         ->currentItem()
                         ->text()
                         .startsWith("Option 1"));
+            QApplication::processEvents();
+            QVERIFY(editor.findChild<QLineEdit *>("sceneActionField0")->isVisible());
             QVERIFY(editor.grab().save("native-choice-authoring.png"));
             QTemporaryDir work;
             project.saveFolder(work.path());
@@ -438,68 +440,155 @@ class UiTests : public QObject {
     }
     void sceneActionInsertion() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
-        if (path.isEmpty()) QSKIP("Private ROM required");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
         try {
-            auto project = Project::fromRom(Rom::open(path)); project.loadScenePrograms();
-            auto programs = *project.scenePrograms(); SceneId source;
-            for (auto id : programs.scenes()) if (programs.canCreateBlank(id)) { source = id; break; }
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto programs = *project.scenePrograms();
+            SceneId source;
+            for (auto id : programs.scenes())
+                if (programs.canCreateBlank(id)) {
+                    source = id;
+                    break;
+                }
             QVERIFY(source);
             const auto id = programs.createScene("Desktop action authoring", source, true);
-            project.setScenePrograms(programs.json()); const auto blank = programs.program(id);
-            QUndoStack undo; CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
-            editor.resize(1400, 850); editor.show();
+            project.setScenePrograms(programs.json());
+            const auto blank = programs.program(id);
+            QUndoStack undo;
+            CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+            editor.resize(1400, 850);
+            editor.show();
             auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
             QTRY_VERIFY_WITH_TIMEOUT(scenes->count() > 1000, 10000);
             for (int i = 0; i < scenes->count(); ++i)
-                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) { scenes->setCurrentRow(i); break; }
+                if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) {
+                    scenes->setCurrentRow(i);
+                    break;
+                }
             auto actions = editor.findChild<SceneActionEditor *>("sceneActionEditor");
             auto kind = actions->findChild<QComboBox *>("sceneActionKind");
             auto position = actions->findChild<QComboBox *>("sceneActionPosition");
             auto add = actions->findChild<QPushButton *>("sceneActionInsert");
             auto remove = actions->findChild<QPushButton *>("sceneActionRemove");
-            QCOMPARE(position->count(), 1); QCOMPARE(position->currentData().toInt(), 3);
-            kind->setCurrentIndex(kind->findData(0xe)); QVERIFY(add->isEnabled()); add->click();
-            QCOMPARE(project.scenePrograms()->program(id).source, SceneActions::insert(blank, 3, 0xe).source);
+            QCOMPARE(position->count(), 1);
+            QCOMPARE(position->currentData().toInt(), 3);
+            kind->setCurrentIndex(kind->findData(0xe));
+            QVERIFY(add->isEnabled());
+            add->click();
+            QCOMPARE(project.scenePrograms()->program(id).source,
+                     SceneActions::insert(blank, 3, 0xe).source);
             auto duration = actions->findChild<QLineEdit *>("sceneActionField0");
-            QVERIFY(duration); duration->setText("7");
+            QVERIFY(duration);
+            duration->setText("7");
             const auto expected = SceneActions::insert(blank, 3, 0xe, 7).source;
             QCOMPARE(project.scenePrograms()->program(id).source, expected);
-            duration->setText("-"); QVERIFY(!add->isEnabled()); QVERIFY(!remove->isEnabled());
+            duration->setText("-");
+            QVERIFY(!add->isEnabled());
+            QVERIFY(!remove->isEnabled());
             actions->findChild<QPushButton *>("sceneActionDiscard")->click();
-            QVERIFY(remove->isEnabled()); remove->click();
+            QVERIFY(remove->isEnabled());
+            remove->click();
             QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
-            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, expected);
-            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
-            undo.undo(); QTemporaryDir work; project.saveFolder(work.path());
-            auto reopened = Project::fromRom(project.rom()); reopened.applyManifest(Project::readProject(work.path()));
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, expected);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, blank.source);
+            undo.undo();
+            QTemporaryDir work;
+            project.saveFolder(work.path());
+            auto reopened = Project::fromRom(project.rom());
+            reopened.applyManifest(Project::readProject(work.path()));
             QCOMPARE(reopened.scenePrograms()->program(id).source, expected);
             editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
             QVERIFY(editor.grab().save("native-action-insertion.png"));
             position->setCurrentIndex(position->count() - 1);
-            kind->setCurrentIndex(kind->findData(0xbf)); QVERIFY(add->isEnabled()); add->click();
+            project.loadDialogues();
+            const auto originalText = project.dialogues()->json();
+            const auto sharedLine = project.dialogues()->entry(Dialogues::Table::Primary, 5, 0);
+            const auto priorScene = project.scenePrograms()->program(id).source;
+            const auto undoCount = undo.index();
+            kind->setCurrentIndex(kind->findData(0xbf));
+            QVERIFY(add->isEnabled());
+            QTimer::singleShot(0, actions, [&] {
+                auto dialog = actions->findChild<QDialog *>("sceneDialogueDialog");
+                QVERIFY(dialog);
+                auto speaker = dialog->findChild<QLineEdit *>("sceneDialogueSpeaker");
+                auto text = dialog->findChild<QPlainTextEdit *>("sceneDialogueText");
+                auto buttons = dialog->findChild<QDialogButtonBox *>();
+                speaker->setText("Joe");
+                text->setPlainText("@");
+                QVERIFY(!buttons->button(QDialogButtonBox::Ok)->isEnabled());
+                text->setPlainText("A new line with its own text entry.");
+                QVERIFY(buttons->button(QDialogButtonBox::Ok)->isEnabled());
+                buttons->button(QDialogButtonBox::Ok)->click();
+            });
+            add->click();
+            QCOMPARE(undo.index(), undoCount + 1);
+            QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 5, 0), sharedLine);
+            undo.undo();
+            QCOMPARE(project.dialogues()->json(), originalText);
+            QCOMPARE(project.scenePrograms()->program(id).source, priorScene);
+            undo.redo();
             const auto beforeId = project.scenePrograms()->program(id);
             int dialogueCommand = -1;
-            for (const auto &a : SceneActions::inspect(beforeId)) if (a.name == "Dialogue") dialogueCommand = a.command;
+            for (const auto &a : SceneActions::inspect(beforeId))
+                if (a.name == "Dialogue")
+                    dialogueCommand = a.command;
             QVERIFY(dialogueCommand >= 0);
             auto windowId = actions->findChild<QLineEdit *>("sceneActionField0");
-            QVERIFY(windowId); QCOMPARE(windowId->accessibleName(), QString("Window ID"));
+            QVERIFY(windowId);
+            QCOMPARE(windowId->accessibleName(), QString("Window ID"));
             windowId->setText("7");
             const auto connected = project.scenePrograms()->program(id);
             QCOMPARE(connected.commands[dialogueCommand].operands[0], quint32(7));
             QCOMPARE(connected.commands[dialogueCommand + 4].operands[2], quint32(7));
-            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, beforeId.source);
-            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, beforeId.source);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
+            const int dialogueEntry = connected.commands[dialogueCommand].operands[2];
+            QVERIFY(dialogueEntry > 0);
+            QTimer::singleShot(0, actions, [&] {
+                auto dialog = actions->findChild<QDialog *>("sceneDialogueDialog");
+                QVERIFY(dialog);
+                QCOMPARE(dialog->findChild<QLineEdit *>("sceneDialogueSpeaker")->text(),
+                         QString("Joe"));
+                dialog->findChild<QPlainTextEdit *>("sceneDialogueText")
+                    ->setPlainText("Revised spoken dialogue.");
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            actions->findChild<QPushButton *>("sceneActionEditText")->click();
+            QCOMPARE(Dialogues::spokenFields(
+                         project.dialogues()->entry(Dialogues::Table::Primary, 5, dialogueEntry))
+                         ->second,
+                     QString("Revised spoken dialogue."));
+            undo.undo();
+            undo.redo();
+            QTimer::singleShot(0, actions, [&] {
+                auto dialog = actions->findChild<QDialog *>("sceneDialogueDialog");
+                QVERIFY(dialog);
+                dialog->findChild<QPushButton *>("sceneDialogueRaw")->click();
+            });
             actions->findChild<QPushButton *>("sceneActionEditText")->click();
             auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
-            auto dialogue = qobject_cast<DialogueInspector *>(pages->currentWidget()); QVERIFY(dialogue);
-            QCOMPARE(dialogue->findChild<QComboBox *>("dialogueArchives")->currentData().toInt(), 5);
-            QCOMPARE(dialogue->findChild<QListWidget *>("dialogueEntries")->currentRow(), 0);
-            dialogue->findChild<QPlainTextEdit *>("dialogueSource")->setPlainText("Desktop dialogue action.");
-            QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 5, 0), QByteArray("Desktop dialogue action."));
+            auto dialogue = qobject_cast<DialogueInspector *>(pages->currentWidget());
+            QVERIFY(dialogue);
+            QCOMPARE(dialogue->findChild<QComboBox *>("dialogueArchives")->currentData().toInt(),
+                     5);
+            QCOMPARE(dialogue->findChild<QListWidget *>("dialogueEntries")->currentRow(),
+                     dialogueEntry);
+            dialogue->findChild<QPlainTextEdit *>("dialogueSource")
+                ->setPlainText("Desktop dialogue action.");
+            QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 5, dialogueEntry),
+                     QByteArray("Desktop dialogue action."));
             project.saveFolder(work.path());
-            auto withDialogue = Project::fromRom(project.rom()); withDialogue.applyManifest(Project::readProject(work.path()));
+            auto withDialogue = Project::fromRom(project.rom());
+            withDialogue.applyManifest(Project::readProject(work.path()));
             QCOMPARE(withDialogue.scenePrograms()->program(id).source, connected.source);
-            QCOMPARE(withDialogue.dialogues()->entry(Dialogues::Table::Primary, 5, 0), QByteArray("Desktop dialogue action."));
+            QCOMPARE(withDialogue.dialogues()->entry(Dialogues::Table::Primary, 5, dialogueEntry),
+                     QByteArray("Desktop dialogue action."));
             pages->setCurrentWidget(actions);
             QTRY_VERIFY(actions->findChild<QLineEdit *>("sceneActionField0"));
             QTRY_VERIFY(actions->findChild<QLineEdit *>("sceneActionField0")->isVisible());
@@ -510,33 +599,57 @@ class UiTests : public QObject {
             auto move = actions->findChild<QPushButton *>("sceneActionMove");
             QVERIFY(move->isEnabled());
             const auto reordered = SceneActions::move(connected, dialogueCommand, 3);
-            move->click(); QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
-            QCOMPARE(actions->findChild<QListWidget *>("sceneActionList")->currentItem()->data(Qt::UserRole).toInt(), 3);
-            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
-            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
+            move->click();
+            QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
+            QCOMPARE(actions->findChild<QListWidget *>("sceneActionList")
+                         ->currentItem()
+                         ->data(Qt::UserRole)
+                         .toInt(),
+                     3);
+            undo.undo();
+            QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
+            undo.redo();
+            QCOMPARE(project.scenePrograms()->program(id).source, reordered.source);
             project.saveFolder(work.path());
-            auto orderedProject = Project::fromRom(project.rom()); orderedProject.applyManifest(Project::readProject(work.path()));
+            auto orderedProject = Project::fromRom(project.rom());
+            orderedProject.applyManifest(Project::readProject(work.path()));
             QCOMPARE(orderedProject.scenePrograms()->program(id).source, reordered.source);
-            QApplication::processEvents(); QVERIFY(editor.grab().save("native-action-order.png"));
-            kind->setCurrentIndex(kind->findData(0x14)); add->click();
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save("native-action-order.png"));
+            kind->setCurrentIndex(kind->findData(0x14));
+            add->click();
             QCOMPARE(project.scenePrograms()->program(id).commands[3].opcode, quint32(0x14));
-            position->setCurrentIndex(position->findData(4)); kind->setCurrentIndex(kind->findData(0x15)); add->click();
+            position->setCurrentIndex(position->findData(4));
+            kind->setCurrentIndex(kind->findData(0x15));
+            add->click();
             auto direction = actions->findChild<QLineEdit *>("sceneActionField3");
-            QVERIFY(direction); QCOMPARE(direction->accessibleName(), QString("Turn phase direction"));
+            QVERIFY(direction);
+            QCOMPARE(direction->accessibleName(), QString("Turn phase direction"));
             const auto beforeTurn = project.scenePrograms()->program(id).source;
-            direction->setText("0"); QVERIFY(actions->property("invalidEdits").toBool());
-            QVERIFY(!add->isEnabled()); QVERIFY(!move->isEnabled()); QCOMPARE(project.scenePrograms()->program(id).source, beforeTurn);
-            direction->setText("-1"); QVERIFY(!actions->property("invalidEdits").toBool());
+            direction->setText("0");
+            QVERIFY(actions->property("invalidEdits").toBool());
+            QVERIFY(!add->isEnabled());
+            QVERIFY(!move->isEnabled());
+            QCOMPARE(project.scenePrograms()->program(id).source, beforeTurn);
+            direction->setText("-1");
+            QVERIFY(!actions->property("invalidEdits").toBool());
             QCOMPARE(project.scenePrograms()->program(id).commands[4].operands[3], quint32(-1));
-            position->setCurrentIndex(position->findData(5)); kind->setCurrentIndex(kind->findData(0x1c)); add->click();
+            position->setCurrentIndex(position->findData(5));
+            kind->setCurrentIndex(kind->findData(0x1c));
+            add->click();
             auto channel = actions->findChild<QLineEdit *>("sceneActionField1");
-            QVERIFY(channel); QCOMPARE(channel->accessibleName(), QString("Drawing channel")); channel->setText("3");
+            QVERIFY(channel);
+            QCOMPARE(channel->accessibleName(), QString("Drawing channel"));
+            channel->setText("3");
             QCOMPARE(project.scenePrograms()->program(id).commands[5].operands[1], quint32(3));
             const auto actorControls = project.scenePrograms()->program(id);
             QCOMPARE(actorControls.commands[4].operands[0], actorControls.commands[3].operands[0]);
             QCOMPARE(actorControls.commands[5].operands[0], actorControls.commands[3].operands[0]);
-            QApplication::processEvents(); QVERIFY(editor.grab().save("native-actor-actions.png"));
-        } catch (const std::exception &e) { QFAIL(e.what()); }
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save("native-actor-actions.png"));
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
     }
     void bodyActionEditing() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

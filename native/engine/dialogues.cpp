@@ -1,6 +1,56 @@
 #include "engine/dialogues.h"
 #include <QJsonArray>
 namespace lordly {
+QByteArray Dialogues::spokenText(const QString &speaker, const QString &text) {
+    if (speaker.trimmed().isEmpty() || speaker.size() > 28 || text.trimmed().isEmpty() ||
+        text.size() > 4096)
+        throw Error("Enter a speaker of 1 to 28 characters and dialogue of 1 to 4096 characters.");
+    auto printable = [](const QString &value, bool multiline) {
+        for (auto ch : value)
+            if ((ch.unicode() < 32 || ch.unicode() > 126 || QString("@{}").contains(ch)) &&
+                !(multiline && (ch == '\n' || ch == '\r')))
+                throw Error("Use printable ASCII without @ or braces; line breaks are allowed in "
+                            "dialogue.");
+    };
+    printable(speaker, false);
+    printable(text, true);
+    auto normalized = text;
+    normalized.replace("\r\n", "\n").replace('\r', '\n');
+    QStringList lines;
+    for (auto rest : normalized.split('\n')) {
+        rest = rest.trimmed();
+        while (rest.size() > 30) {
+            auto cut = rest.lastIndexOf(' ', 30);
+            if (cut < 1)
+                cut = 30;
+            lines << rest.left(cut);
+            rest = rest.mid(cut).trimmed();
+        }
+        lines << rest;
+    }
+    if (lines.size() > 24)
+        throw Error("This dialogue exceeds eight pages. Split it into another dialogue action.");
+    QStringList pages;
+    for (int i = 0; i < lines.size(); i += 3)
+        pages << lines.mid(i, 3).join("@n");
+    return (speaker + "@n\"" + pages.join("@p@c") + "\"@a@s@c").toLatin1();
+}
+std::optional<QPair<QString, QString>> Dialogues::spokenFields(const QByteArray &bytes) {
+    const auto source = QString::fromLatin1(bytes);
+    const int split = source.indexOf("@n\"");
+    const QString suffix = "\"@a@s@c";
+    if (split < 1 || !source.endsWith(suffix))
+        return {};
+    const auto speaker = source.left(split);
+    auto body = source.mid(split + 3, source.size() - split - 3 - suffix.size());
+    body.replace("@p@c", "\n").replace("@n", "\n");
+    try {
+        if (spokenText(speaker, body) == bytes)
+            return QPair{speaker, body};
+    } catch (const Error &) {
+    }
+    return {};
+}
 Dialogues Dialogues::load(Rom rom) {
     DialogueArchive::directory(rom);
     DialogueArchive::directory(rom, Table::Alternate);

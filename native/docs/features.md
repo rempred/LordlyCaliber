@@ -30,6 +30,17 @@ rejected by the promotion loader; it does not silently show retail requirements.
 
 ## Additional native capabilities
 
+New Dialogue actions now create independent text entries and complete window
+lifecycles in one Undo operation. A speaker/text dialog wraps 30-character lines
+and groups three lines per page, up to eight pages, preserving the browser text
+format. Recognized authored lines reopen in this dialog; shared raw text remains
+available explicitly. `scene_action_tests dialogueActions` passed (1816ms), with
+three real A confirmations for a three-page line before and after source-built
+export/reopen. `ui_tests sceneActionInsertion sceneChoiceAuthoring` passed (3359ms):
+existing-entry preservation, atomic Undo, speaker/text edits, raw-source navigation,
+project reopening and both choice previews. Actions capture inspected after layout.
+
+
 Two-option Choices now have native Actions authoring, editable option text,
 branch insertion positions and branch-aware move/remove. Creating a choice owns
 its new dialogue entry and Director block in one Undo operation. Reopened ROMs

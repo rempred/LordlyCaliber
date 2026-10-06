@@ -1352,9 +1352,31 @@ class SceneActionTests : public QObject {
                 if (point.command == 6)
                     QVERIFY(!point.canWait);
             auto dialogues = *project.dialogues();
-            const QByteArray text("Native authored dialogue.@nOne connected window.");
+            const auto text =
+                Dialogues::spokenText("Joe", "One\nTwo\nThree\nFour\nFive\nSix\nSeven");
+            QCOMPARE(Dialogues::spokenFields(text)->second,
+                     QString("One\nTwo\nThree\nFour\nFive\nSix\nSeven"));
+            QVERIFY_THROWS_EXCEPTION(Error, Dialogues::spokenText("Joe", "@n"));
+            QCOMPARE(
+                Dialogues::spokenFields(Dialogues::spokenText("Joe", QString(61, 'x')))->second,
+                QString(30, 'x') + '\n' + QString(30, 'x') + "\nx");
             const int entry = dialogues.appendEntry(Dialogues::Table::Primary, 5, text);
             project.setDialogues(dialogues.json());
+            auto exerciseText = [&](const Project &current) {
+                DialogueSession textPreview(current.rom(), 5, quint16(entry),
+                                            DialoguePlayback::environment(current.rom()),
+                                            current.dialogues());
+                int confirms = 0;
+                for (int tick = 0; tick < 500 && textPreview.state() != 4; ++tick) {
+                    const auto state = textPreview.state();
+                    const quint16 pressed = state == 3 || state == 6 ? 0x8000 : 0;
+                    confirms += pressed != 0;
+                    textPreview.advance({8192, pressed, 0, 0});
+                }
+                QCOMPARE(textPreview.state(), 4);
+                QCOMPARE(confirms, 3); // Two page breaks and the final A prompt.
+            };
+            exerciseText(project);
             authored = SceneActions::edit(authored, 3, 2, QString::number(entry));
             authored = SceneActions::insert(authored, 10, 0xe, 3);
             scenes.replace(id, authored.source);
@@ -1424,6 +1446,7 @@ class SceneActionTests : public QObject {
             reopened.loadDialogues();
             QCOMPARE(reopened.scenePrograms()->program(id).source, authored.source);
             QCOMPARE(reopened.dialogues()->entry(Dialogues::Table::Primary, 5, entry), text);
+            exerciseText(reopened);
             const auto placement = SceneProgramResources::placement(reopened.rom());
             QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
                                      quint64(reopened.rom().bytes().size()));

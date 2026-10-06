@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -18,10 +19,10 @@
 #include <QVBoxLayout>
 namespace lordly {
 namespace {
-class ChoiceCommand final : public QUndoCommand {
+class SceneTextCommand final : public QUndoCommand {
   public:
-    ChoiceCommand(Project *project, const QString &label, const ScenePrograms &scenes,
-                  const Dialogues &dialogues)
+    SceneTextCommand(Project *project, const QString &label, const ScenePrograms &scenes,
+                     const Dialogues &dialogues)
         : QUndoCommand(label), project_(project), beforeScenes_(project->scenePrograms()->json()),
           beforeText_(project->dialogues()->json()), afterScenes_(scenes.json()),
           afterText_(dialogues.json()) {}
@@ -101,12 +102,8 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
             return;
         const auto program = project_->scenePrograms()->program(key_);
         const auto &c = program.commands[actions_[row].command];
-        if (actions_[row].name == "Choice") {
-            changeChoice(false);
-            return;
-        }
         if (c.opcode == 0xbf)
-            emit editDialogue(quint16(c.operands[1]), quint16(c.operands[2]));
+            changeDialogue(false, actions_[row].name == "Choice");
     });
     discard_ = new QPushButton("Discard incomplete input");
     discard_->setObjectName("sceneActionDiscard");
@@ -668,8 +665,9 @@ void SceneActionEditor::updateStructureControls() {
                                        : reason);
 }
 void SceneActionEditor::changeStructure(Change operation) {
-    if (operation == Change::Add && kind_->currentData().toUInt() == SceneActions::Choice) {
-        changeChoice(true);
+    if (operation == Change::Add && (kind_->currentData().toUInt() == SceneActions::Choice ||
+                                     kind_->currentData().toUInt() == 0xbf)) {
+        changeDialogue(true, kind_->currentData().toUInt() == SceneActions::Choice);
         return;
     }
     if (!key_ || property("invalidEdits").toBool())
@@ -711,7 +709,7 @@ void SceneActionEditor::changeStructure(Change operation) {
         notice_->setText(QString::fromUtf8(e.what()));
     }
 }
-void SceneActionEditor::changeChoice(bool create) {
+void SceneActionEditor::changeDialogue(bool create, bool choice) {
     if (!key_ || property("invalidEdits").toBool())
         return;
     try {
@@ -723,15 +721,22 @@ void SceneActionEditor::changeChoice(bool create) {
         const int at = create ? position_->currentData().toInt() : actions_[row].command;
         int archive = 5, entry = -1;
         auto table = Dialogues::Table::Primary;
-        QPair<QString, QString> options{"Yes", "No"};
+        QPair<QString, QString> options = choice
+                                              ? QPair<QString, QString>{"Yes", "No"}
+                                              : QPair<QString, QString>{"Speaker", "New dialogue."};
         if (!create) {
             const auto &c = program.commands[at];
             archive = quint16(c.operands[1]);
             entry = quint16(c.operands[2]);
+            if ((entry & 0xc000) != 0 && (entry & 0xc000) != 0x8000) {
+                emit editDialogue(archive, entry);
+                return;
+            }
             table = entry & 0x8000 ? Dialogues::Table::Alternate : Dialogues::Table::Primary;
             entry &= 0x3fff;
+            const auto bytes = project_->dialogues()->entry(table, archive, entry);
             const auto parsed =
-                SceneActions::choiceOptions(project_->dialogues()->entry(table, archive, entry));
+                choice ? SceneActions::choiceOptions(bytes) : Dialogues::spokenFields(bytes);
             if (!parsed) {
                 emit editDialogue(archive, quint16(c.operands[2]));
                 return;
@@ -739,22 +744,48 @@ void SceneActionEditor::changeChoice(bool create) {
             options = *parsed;
         }
         QDialog dialog(this);
-        dialog.setObjectName("sceneChoiceDialog");
-        dialog.setWindowTitle(create ? "Add choice" : "Edit choice options");
+        dialog.setObjectName(choice ? "sceneChoiceDialog" : "sceneDialogueDialog");
+        dialog.setWindowTitle(choice ? (create ? "Add choice" : "Edit choice options")
+                                     : (create ? "Add dialogue" : "Edit dialogue"));
         auto layout = new QVBoxLayout(&dialog);
         auto help =
-            new QLabel("Write two options, up to 24 characters each. Add branch actions using "
-                       "the After option 1 / After option 2 positions.");
+            new QLabel(choice ? "Write two options, up to 24 characters each. Add branch actions "
+                                "using the After option 1 / After option 2 positions."
+                              : "Write the speaker and dialogue. Lines wrap automatically, with up "
+                                "to eight pages. The player advances pages with A. Portrait and "
+                                "placement are editable in the action fields.");
         help->setWordWrap(true);
         layout->addWidget(help);
+        if (!create) {
+            auto shared = new QLabel(
+                QString("Archive %1, entry %2. Changes also affect other windows using this text.")
+                    .arg(archive)
+                    .arg(entry));
+            shared->setWordWrap(true);
+            layout->addWidget(shared);
+        }
         auto form = new QFormLayout;
-        auto first = new QLineEdit(options.first), second = new QLineEdit(options.second);
-        first->setObjectName("sceneChoiceOption1");
-        second->setObjectName("sceneChoiceOption2");
-        first->setMaxLength(24);
-        second->setMaxLength(24);
-        form->addRow("Option 1", first);
-        form->addRow("Option 2", second);
+        auto first = new QLineEdit(options.first);
+        first->setObjectName(choice ? "sceneChoiceOption1" : "sceneDialogueSpeaker");
+        first->setMaxLength(choice ? 24 : 28);
+        form->addRow(choice ? "Option 1" : "Speaker", first);
+        QLineEdit *second = nullptr;
+        QPlainTextEdit *body = nullptr;
+        if (choice) {
+            second = new QLineEdit(options.second);
+            second->setObjectName("sceneChoiceOption2");
+            second->setMaxLength(24);
+            form->addRow("Option 2", second);
+        } else {
+            body = new QPlainTextEdit(options.second);
+            body->setObjectName("sceneDialogueText");
+            body->setMinimumSize(420, 180);
+            form->addRow("Text", body);
+        }
+        auto encoded = [&] {
+            return choice ? SceneActions::choiceText(first->text(), second->text())
+                          : Dialogues::spokenText(first->text(), body->toPlainText());
+        };
         layout->addLayout(form);
         auto status = new QLabel;
         status->setWordWrap(true);
@@ -763,7 +794,7 @@ void SceneActionEditor::changeChoice(bool create) {
         layout->addWidget(buttons);
         auto validate = [&] {
             try {
-                SceneActions::choiceText(first->text(), second->text());
+                encoded();
                 status->clear();
                 buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
             } catch (const std::exception &e) {
@@ -772,18 +803,35 @@ void SceneActionEditor::changeChoice(bool create) {
             }
         };
         connect(first, &QLineEdit::textChanged, &dialog, validate);
-        connect(second, &QLineEdit::textChanged, &dialog, validate);
+        if (second)
+            connect(second, &QLineEdit::textChanged, &dialog, validate);
+        if (body)
+            connect(body, &QPlainTextEdit::textChanged, &dialog, validate);
+        bool raw = false;
+        if (!create) {
+            auto button = buttons->addButton("Edit raw source", QDialogButtonBox::ActionRole);
+            button->setObjectName("sceneDialogueRaw");
+            connect(button, &QPushButton::clicked, &dialog, [&] {
+                raw = true;
+                dialog.reject();
+            });
+        }
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        if (dialog.exec() != QDialog::Accepted)
+        const auto result = dialog.exec();
+        if (raw) {
+            emit editDialogue(archive, entry | (table == Dialogues::Table::Alternate ? 0x8000 : 0));
             return;
-        const auto text = SceneActions::choiceText(first->text(), second->text());
+        }
+        if (result != QDialog::Accepted)
+            return;
+        const auto text = encoded();
         auto dialogues = *project_->dialogues();
         if (create) {
             entry = dialogues.appendEntry(table, archive, text);
             if (entry > 0x3fff)
                 throw Error("This dialogue archive has no remaining entry IDs.");
-            program = SceneActions::insert(program, at, SceneActions::Choice);
+            program = SceneActions::insert(program, at, choice ? SceneActions::Choice : 0xbf);
             program.commands[at].operands[2] = quint32(entry);
             program = DirectorProgram::decode(program.encode());
         } else {
@@ -797,8 +845,7 @@ void SceneActionEditor::changeChoice(bool create) {
         validation.setDialogues(dialogues.json());
         validation.setScenePrograms(scenes.json());
         editing_ = true;
-        undo_->push(new ChoiceCommand(project_, create ? "Add choice" : "Edit choice options",
-                                      scenes, dialogues));
+        undo_->push(new SceneTextCommand(project_, dialog.windowTitle(), scenes, dialogues));
         editing_ = false;
         refresh(at);
         emit commandSelected(at);

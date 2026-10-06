@@ -1,11 +1,14 @@
 #pragma once
 #include "engine/dialogue_archive.h"
 #include <QJsonObject>
+#include <optional>
 namespace lordly {
 class Dialogues {
   public:
     using Table = DialogueArchive::Table;
     static Dialogues load(Rom);
+    static QByteArray spokenText(const QString &speaker, const QString &text);
+    static std::optional<QPair<QString, QString>> spokenFields(const QByteArray &);
     const DialogueArchive &original(Table, int archive) const;
     int entryCount(Table, int archive) const;
     QByteArray entry(Table, int archive, int index) const;
