@@ -1,6 +1,7 @@
 #include "app/scene_action_editor.h"
 #include "app/scene_command_editor.h"
 #include "engine/actor_art.h"
+#include "engine/scene_ribbons.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -307,6 +308,12 @@ void SceneActionEditor::showAction() {
             f.operand == 6 && f.canonical(word))
             input->setToolTip("Native rotation: 180 is unrotated; 270 turns a quarter turn. "
                               "Reusing a sprite retains its position, pose, scale and channel.");
+        if ((action.name == "Create sprite with path heading" ||
+             action.name == "Set sprite heading from path") &&
+            f.operand >= 7 && f.canonical(word))
+            input->setToolTip("A nonnegative group selects a resource path in the current ROM. "
+                              "Group -1 selects a currently active path slot, from 0 through 19. "
+                              "The sprite copies that path's starting heading.");
         const bool classField =
             (action.name == "Set Actor class and pose" || action.name == "Create class Actor") &&
             (i == 1 || i == 2);
@@ -338,7 +345,12 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Create rotated scene sprite"
+        action.name == "Create sprite with path heading" ||
+                action.name == "Set sprite heading from path"
+            ? "Copies the path's starting heading. Group -1 needs an active path when this action runs. "
+              "Creation uses facing 0, channel 1 and scale 100%; reuse retains the sprite's other "
+              "state."
+        : action.name == "Create rotated scene sprite"
             ? "Creates with facing 0, drawing channel 1 and scale 100%. "
               "Complete values enter the project immediately and share Undo with Commands."
         : action.name == "Rotate scene sprite"
@@ -404,12 +416,14 @@ void SceneActionEditor::publishFields() {
                     body[operand] >= quint32(project_->records(Table::Classes).size()))
                     throw Error("Choose a class that exists in the current project.");
         }
-        if (action.name == "Create scene sprite" || action.name == "Create rotated scene sprite" ||
-            action.name == "Set scene sprite pose") {
+        const auto opcode = program.commands[action.command].opcode;
+        const bool extendedCreate =
+            opcode == 0x63 && program.commands[action.command].operands[9] == quint32(-1);
+        if (opcode == 0x46 || extendedCreate || opcode == 0x64) {
             const auto &args = program.commands[action.command].operands;
             const auto &prior = original.commands[action.command].operands;
-            const bool ordinary = action.name == "Create scene sprite";
-            const bool create = ordinary || action.name == "Create rotated scene sprite";
+            const bool ordinary = opcode == 0x46;
+            const bool create = ordinary || extendedCreate;
             const bool changedPose =
                 args[1] != prior[1] || args[2] != prior[2] || (ordinary && args[3] != prior[3]);
             if (changedPose && qint32(args[1]) >= 0) {
@@ -421,6 +435,14 @@ void SceneActionEditor::publishFields() {
             if (create && (args[4] != prior[4] || args[5] != prior[5]) && args[4] == 0xffffffffU &&
                 args[5] == 0xffffffffU)
                 throw Error("A new sprite cannot inherit both starting coordinates; set X or Y.");
+        }
+        if (opcode == 0x63) {
+            const auto &args = program.commands[action.command].operands;
+            const auto &prior = original.commands[action.command].operands;
+            if ((args[7] != prior[7] || args[8] != prior[8]) && args[8] != quint32(-1) &&
+                (args[7] & 0xffffff00U) != 0x08880000U && (args[8] & 0xffffff00U) != 0x08880000U)
+                SceneRibbons(project_->rom())
+                    .validateRotationSource(qint32(args[7]), qint32(args[8]));
         }
         auto next = *project_->scenePrograms();
         next.replace(key_, program.source);

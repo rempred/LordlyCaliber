@@ -3661,16 +3661,122 @@ class UiTests : public QObject {
                         .contains("Create rotated scene sprite"));
             QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField6")->text(), QString("180"));
             QCOMPARE(project.scenePrograms()->program(id).source, raw.encode());
-            // Path-oriented placement still belongs to Commands. Test routing without
-            // pretending that the preview has the unresolved path-owner context.
+            // Path orientation now has its own fields; an unknown launch-selected
+            // creation mode still routes to its exact source command.
             raw.commands[point + 1].operands[8] = 0;
             extended.replace(id, raw.encode());
             pushSceneProgramChange(&project, &undo, "Use path orientation", extended);
+            preview->findSpriteAction(extended.resource(id).selectors.first(), 0);
+            QCOMPARE(pages->currentWidget(), actions);
+            QVERIFY(actions->findChild<QListWidget *>("sceneActionList")->currentItem()->text()
+                        .contains("Create sprite with path heading"));
+            raw.commands[point + 1].operands[9] = 0x08880003;
+            extended.replace(id, raw.encode());
+            pushSceneProgramChange(&project, &undo, "Use launch creation mode", extended);
             preview->findSpriteAction(extended.resource(id).selectors.first(), 0);
             auto commands = editor.findChild<QTableWidget *>("cutsceneCommands");
             QCOMPARE(commands->currentRow(), point + 1);
             QVERIFY(pages->currentWidget()->isAncestorOf(commands));
             QCOMPARE(project.scenePrograms()->program(id).source, raw.encode());
+        } catch (const Error &e) {
+            QFAIL(e.what());
+        }
+    }
+    void pathSpriteActionControls() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+            if (path.isEmpty())
+                QSKIP("Private ROM required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Path heading actions", source, false);
+            const QVector<quint32> words{
+                0x80000007U, 47, 0x3a, 1,    0,           0,           0,           70,          70,
+                130,         8,  0x49, 0,    3,           0,           90,          quint32(-1), 3,
+                0,           0,  1,    0x7d, 0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U};
+            QByteArray bytes(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i)
+                put32(bytes, i * 4, words[i]);
+            auto base = DirectorProgram::decode(bytes);
+            const int point = 3;
+            base = SceneActions::insert(base, point, 0xe, 30);
+            scenes.replace(id, base.source);
+            project.setScenePrograms(scenes.json());
+            QUndoStack undo;
+            SceneActionEditor editor(&project, &undo, [] {});
+            editor.resize(1100, 800);
+            editor.show();
+            editor.selectScene(id, point);
+            auto kind = editor.findChild<QComboBox *>("sceneActionKind");
+            auto insert = editor.findChild<QPushButton *>("sceneActionInsert");
+            kind->setCurrentIndex(kind->findData(SceneActions::CreatePathSprite));
+            insert->click();
+            auto field = [&](int i) {
+                return editor.findChild<QLineEdit *>(QString("sceneActionField%1").arg(i));
+            };
+            QCOMPARE(field(6)->text(), QString("3"));
+            QCOMPARE(field(7)->text(), QString("0"));
+            ScenePreview preview(project.rom());
+            preview.show();
+            auto frame = [&] {
+                preview.selectScene(*project.scenePrograms(), id, 0);
+                preview.findChild<QPushButton *>("sceneStep")->click();
+                if (preview.property("sceneStopped").toBool())
+                    throw Error(preview.findChild<QLabel *>("scenePlaybackStatus")->text());
+                return preview.renderedFrame();
+            };
+            const auto first = frame();
+            field(6)->setText("4");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            const auto other = frame();
+            QVERIFY(other != first);
+            undo.undo();
+            QCOMPARE(frame(), first);
+            undo.redo();
+            QCOMPARE(frame(), other);
+            editor.selectScene(id, point);
+            const auto accepted = project.scenePrograms()->program(id).source;
+            field(6)->setText("59");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            field(7)->setText("999");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, accepted);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            kind->setCurrentIndex(kind->findData(SceneActions::OrientSprite));
+            auto position = editor.findChild<QComboBox *>("sceneActionPosition");
+            position->setCurrentIndex(position->findData(point + 1));
+            insert->click();
+            field(1)->setText("-1");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            QCOMPARE(frame(), first);
+            const auto active = project.scenePrograms()->program(id).source;
+            field(2)->setText("20");
+            QVERIFY(editor.property("invalidEdits").toBool());
+            QCOMPARE(project.scenePrograms()->program(id).source, active);
+            editor.findChild<QPushButton *>("sceneActionDiscard")->click();
+            field(2)->setText("19");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            preview.selectScene(*project.scenePrograms(), id, 0);
+            preview.findChild<QPushButton *>("sceneStep")->click();
+            QVERIFY(preview.property("sceneStopped").toBool());
+            QVERIFY(preview.findChild<QLabel *>("scenePlaybackStatus")
+                        ->text()
+                        .contains("existing sampled scene path"));
+            field(2)->setText("0");
+            QVERIFY(!editor.property("invalidEdits").toBool());
+            QCOMPARE(frame(), first);
+            QCoreApplication::processEvents();
+            QVERIFY(editor.grab().save("scene-path-heading-actions.png"));
         } catch (const Error &e) {
             QFAIL(e.what());
         }

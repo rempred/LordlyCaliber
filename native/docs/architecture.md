@@ -4716,3 +4716,34 @@ first-resource selector0 ran the title scheduler and skipped the expected update
 and ribbons replay exactly through35->124->35 and restart. Earlier direct-rotation
 and sprite-selection UI regressions also pass. Capture inspected. This qualifies
 offline runtime and desktop preview, not a natural event launch or N64 rasterization.
+
+
+## Authoring sprite path headings
+
+Actions now supports Create sprite with path heading and Set sprite heading from
+path, both encoding native Director63. Creation exposes source/pose/variant/XY
+and path group/entry; reuse exposes only slot and path selection, preserving its
+other words and live state. Group-1 means an active sampled path slot0..19;
+nonnegative groups select current-ROM resources. Unknown launch-selected route or
+creation modes remain in Commands, while other symbolic operands remain read-only.
+Sprite selection navigation recognizes both forms.
+
+Edited resource references validate through the same decoder as playback, including
+nonempty directory entries, point shape and linked-slot bounds. Active-path existence
+remains a runtime condition since control flow determines which paths have been
+created. A valid but absent slot pauses clearly. The resource validator does not
+invent positions for context-dependent linked points.
+
+`scene_action_tests pathSpriteActions rotatedSpriteActions authoringBoundaries`
+passed3166ms: independent slot allocation, both native encodings, field bounds,
+ignored-word preservation, actual path-to-sprite record updates, reuse identity,
+project folders and user-time compilation/export/reopening. References, allocation
+bounds, CRC and master preservation pass. Path candidate: parent Test ROMs/
+native-path-sprite-actions-oPSqtx. `ui_tests pathSpriteActionControls
+rotatedSpriteActionControls spritePreviewSelection pathSpritePreviewSeek` passed
+3934ms: changed orientation, exact Undo/Redo, invalid group/entry/slot refusal,
+missing active-path pause and correction, selection routing and seeking. Capture
+inspected. `image_tests pathRibbonsAgainstMips` passed1343ms after the shared-reader
+refactor, and `sprite_runtime_tests lifecycleAgainstMips
+lifecycleBoundsAndMissingContext` passed352ms. These remain offline authoring,
+preview and exported-resource checks rather than a natural game load.

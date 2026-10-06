@@ -149,13 +149,16 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             field("Scale (%)", 7, 1, -32768, 32767);
             field("Variant", 8, 1, 0, 255);
             break;
-        case 0x63:
-            // Path headings need their own context; retain those commands in
-            // the source inspector. Unknown launch-selected creation stays there too.
-            if (c.operands[8] != quint32(-1) || (c.operands[9] & 0xffffff00U) == 0x08880000U)
+        case 0x63: {
+            // A launch-selected route or creation mode has no fixed field layout.
+            if ((c.operands[8] & 0xffffff00U) == 0x08880000U ||
+                (c.operands[9] & 0xffffff00U) == 0x08880000U)
                 continue;
-            action.name = c.operands[9] == quint32(-1) ? "Create rotated scene sprite"
-                                                       : "Rotate scene sprite";
+            const bool path = c.operands[8] != quint32(-1);
+            action.name =
+                c.operands[9] == quint32(-1)
+                    ? (path ? "Create sprite with path heading" : "Create rotated scene sprite")
+                    : (path ? "Set sprite heading from path" : "Rotate scene sprite");
             field("Sprite slot", 0, 1, 0, 29);
             if (c.operands[9] == quint32(-1)) {
                 field("Art bank", 1, 1, 1, 32767);
@@ -164,8 +167,13 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
                 field("X", 4);
                 field("Y", 5);
             }
-            field("Rotation (180 = unrotated)", 6, 1, -32768, 32767);
+            if (path) {
+                field("Resource group (-1 uses an active path)", 7, 1, -1);
+                field("Path entry / active path slot", 8, 1, 0);
+            } else
+                field("Rotation (180 = unrotated)", 6, 1, -32768, 32767);
             break;
+        }
         case 0x64:
             action.name = "Set scene sprite pose";
             field("Sprite slot", 0, 1, 0, 29);

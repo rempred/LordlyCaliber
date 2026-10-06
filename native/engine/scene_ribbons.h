@@ -16,6 +16,7 @@ class SceneRibbons {
   public:
     explicit SceneRibbons(const Rom &);
     SceneRibbon load(const QVector<quint32> &args, const QMap<int, QPointF> &markers = {}) const;
+    void validateRotationSource(qint32 group, qint32 entry) const;
     qint16 rotation(qint32 group, qint32 entry, const QMap<int, QPointF> &markers = {}) const;
     bool service(quint32 opcode, const QVector<quint32> &args, int &result,
                  const QMap<int, QPointF> &markers = {});

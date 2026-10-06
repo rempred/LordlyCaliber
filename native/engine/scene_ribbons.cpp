@@ -22,6 +22,28 @@ quint32 select(const Rom &rom, quint32 key, int index) {
         throw Error("Ribbon path selector is outside its current ROM table");
     return u32(table, index * 4);
 }
+struct PathSource {
+    quint32 key;
+    QByteArray points;
+};
+PathSource pathSource(const Rom &rom, qint32 group, qint32 entry) {
+    PathSource path;
+    path.key = select(rom, select(rom, 0x1a8d7a6, group), entry);
+    const auto packed = resource(rom, path.key);
+    const auto size = u32(packed, 0);
+    if (size < 24 || size > 16 * 12 || size % 12)
+        throw Error("Ribbon control-point resource has an invalid size");
+    qsizetype consumed = 0;
+    path.points = decodeLzss(packed.mid(4), size, &consumed);
+    if (consumed != packed.size() - 4)
+        throw Error("Ribbon path has unrecognized trailing compressed data");
+    for (int at = 0; at < path.points.size(); at += 12) {
+        const auto marker = qint32(u32(path.points, at));
+        if (marker < -1 || marker >= 30)
+            throw Error("A linked path point must select a sprite slot in zero through 29");
+    }
+    return path;
+}
 void endpoint(const SceneRibbon &r, qint32 percent, qint32 milestone) {
     if (milestone != -1) {
         if (milestone < 0 || milestone >= r.points.size())
@@ -90,6 +112,14 @@ qint16 SceneRibbons::rotation(qint32 group, qint32 entry, const QMap<int, QPoint
         load({19, quint32(group), quint32(entry), 100, quint32(-1), 1, 0, 0, 0}, markers);
     return heading(path.samples[0], path.samples[2], true);
 }
+void SceneRibbons::validateRotationSource(qint32 group, qint32 entry) const {
+    if (group == -1) {
+        if (entry < 0 || entry >= 20)
+            throw Error("An active path slot must be zero through 19");
+        return; // Existence depends on the branch that actually executes.
+    }
+    (void)pathSource(rom_, group, entry);
+}
 SceneRibbon SceneRibbons::load(const QVector<quint32> &args,
                                const QMap<int, QPointF> &markers) const {
     if (args.size() != 9 || args[0] >= 20)
@@ -98,15 +128,9 @@ SceneRibbon SceneRibbons::load(const QVector<quint32> &args,
     if (width < 1 || width > 5 || palette < 0 || palette > 3)
         throw Error("Ribbon width must be 1..5 and palette 0..3");
     SceneRibbon r;
-    r.key = select(rom_, select(rom_, 0x1a8d7a6, qint32(args[1])), qint32(args[2]));
-    const auto packed = resource(rom_, r.key);
-    const auto size = u32(packed, 0);
-    if (size < 24 || size > 16 * 12 || size % 12)
-        throw Error("Ribbon control-point resource has an invalid size");
-    qsizetype consumed = 0;
-    const auto bytes = decodeLzss(packed.mid(4), size, &consumed);
-    if (consumed != packed.size() - 4)
-        throw Error("Ribbon path has unrecognized trailing compressed data");
+    const auto source = pathSource(rom_, qint32(args[1]), qint32(args[2]));
+    r.key = source.key;
+    const auto &bytes = source.points;
     for (int at = 0; at < bytes.size(); at += 12) {
         const auto marker = qint32(u32(bytes, at));
         if (marker == -1)

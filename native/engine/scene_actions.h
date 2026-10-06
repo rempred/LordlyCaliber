@@ -28,6 +28,7 @@ class SceneActions {
   public:
     // Authoring choice; encodes the reuse form of Director 0x63.
     static constexpr quint32 RotateSprite = 0x10063;
+    static constexpr quint32 CreatePathSprite = 0x20063, OrientSprite = 0x30063;
     static QVector<SceneAction> inspect(const DirectorProgram &);
     static QVector<SceneActionPosition> positions(const DirectorProgram &);
     static QMap<quint32, QString> kinds();
