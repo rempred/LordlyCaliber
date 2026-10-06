@@ -6,6 +6,7 @@ struct CounterState {
     int arm = -1;
     qint64 target = 0;
 };
+bool completeDialogue(const DirectorProgram &, int command);
 QVector<CounterState> counterStates(const DirectorProgram &);
 QVector<int> remainingGates(const DirectorProgram &, int before, qint64 previous);
 void shiftGates(DirectorProgram &, const QVector<int> &, qint64 delta);

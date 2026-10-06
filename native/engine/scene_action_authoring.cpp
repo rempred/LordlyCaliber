@@ -10,19 +10,42 @@ bool uncertainControl(const DirectorCommand &c) {
            c.opcode == 0xbb || c.opcode == 0x39 || c.opcode == 0x80000003 || c.opcode == 0x80000005;
 }
 } // namespace
+bool completeDialogue(const DirectorProgram &p, int index) {
+    const auto &c = p.commands;
+    if (index < 0 || index + 6 >= c.size() || c[index].opcode != 0xbf)
+        return false;
+    const auto id = c[index].operands[0];
+    return id <= 255 && c[index + 1].opcode == 0 && c[index + 2].opcode == 0x80000002 &&
+           c[index + 3].opcode == 0x80000000 && c[index + 4].opcode == 0x10 &&
+           c[index + 4].operands == QVector<quint32>{0, 2, id} && c[index + 5].opcode == 6 &&
+           c[index + 5].operands == QVector<quint32>{id} && c[index + 6].opcode == 5 &&
+           c[index + 6].operands == QVector<quint32>{id};
+}
 QVector<CounterState> counterStates(const DirectorProgram &program) {
     QVector<CounterState> result;
     CounterState state;
+    int queriesSinceYield = 0;
     for (int i = 0; i < program.commands.size(); ++i) {
         result << state;
         const auto &c = program.commands[i];
+        if (completeDialogue(program, i)) {
+            const auto after = CounterState{state.known && state.arm < 0, state.arm, state.target};
+            for (int n = 0; n < 6; ++n)
+                result << CounterState{false, state.arm, state.target};
+            state = after;
+            queriesSinceYield = 1; // Completion query succeeds before resume/close.
+            i += 6;
+            continue;
+        }
+        if (c.opcode == 0x80000000)
+            queriesSinceYield = 0;
         if (c.opcode == 1)
             state = {state.known, i, 0};
         else if (c.opcode == 2)
             state = {state.known, -1, 0};
         else if (c.opcode == 0xe || c.opcode == 0xb5) {
-            if (state.arm < 0 || (c.operands[0] != 0 && c.operands[0] != 2) ||
-                qint32(c.operands[1]) < state.target)
+            if (++queriesSinceYield > 1 || state.arm < 0 ||
+                (c.operands[0] != 0 && c.operands[0] != 2) || qint32(c.operands[1]) < state.target)
                 state.known = false;
             state.target = qint32(c.operands[1]);
         } else if (uncertainControl(c))
@@ -44,7 +67,8 @@ QVector<int> remainingGates(const DirectorProgram &program, int before, qint64 p
             break;
         if (c.opcode == 0xe || c.opcode == 0xb5) {
             const qint64 target = qint32(c.operands[1]);
-            if ((c.operands[0] != 0 && c.operands[0] != 2) || target < previous)
+            if (i == 0 || program.commands[i - 1].opcode != 0x80000000 ||
+                (c.operands[0] != 0 && c.operands[0] != 2) || target < previous)
                 break;
             previous = target;
             gates << i;
@@ -110,7 +134,8 @@ QMap<quint32, QString> SceneActions::kinds() {
             {0x1d, "Scale Actor"},
             {0x48, "Actor opacity"},
             {0xe, "Wait"},
-            {0xb5, "Wait (A button can skip)"}};
+            {0xb5, "Wait (A button can skip)"},
+            {0xbf, "Dialogue"}};
 }
 QVector<SceneActionPosition> SceneActions::positions(const DirectorProgram &p) {
     QVector<SceneActionPosition> result;
@@ -144,7 +169,29 @@ DirectorProgram SceneActions::insert(const DirectorProgram &p, int before, quint
         throw Error("Choose a supported action and insertion position.");
     auto result = p;
     QVector<DirectorCommand> added;
-    if (kind == 0xe || kind == 0xb5) {
+    if (kind == 0xbf) {
+        if (!point->canWait)
+            throw Error(point->waitReason);
+        const auto state = action_detail::counterStates(p)[before];
+        if (state.arm >= 0)
+            throw Error(
+                "Insert dialogue outside the active counter span; input has no fixed duration.");
+        QSet<quint32> used;
+        for (const auto &c : p.commands) {
+            if (c.opcode == 0xbf || c.opcode == 5 || c.opcode == 6)
+                used << (c.operands[0] & 255);
+            if (c.opcode == 0x10)
+                used << (c.operands[2] & 255);
+        }
+        quint32 id = 0;
+        while (id < 256 && used.contains(id))
+            ++id;
+        if (id == 256)
+            throw Error("Every dialogue window ID is referenced; edit an existing window.");
+        added << command(0xbf, {id, 5, 0, 0, 7, 160, 0, 1, 0, 1, 0, 0, 1}) << command(0)
+              << command(0x80000002) << command(0x80000000) << command(0x10, {0, 2, id})
+              << command(6, {id}) << command(5, {id});
+    } else if (kind == 0xe || kind == 0xb5) {
         if (!point->canWait)
             throw Error(point->waitReason);
         if (ticks < 1)
@@ -219,11 +266,14 @@ DirectorProgram SceneActions::remove(const DirectorProgram &p, int index) {
     for (const auto &a : inspect(p))
         if (a.command == index) {
             auto result = p;
-            if (a.commandCount == 6) {
+            if (p.commands[index].opcode == 0xbf && a.commandCount != 7)
+                throw Error(
+                    "This window has a separate control layout; use Commands to remove it.");
+            if (a.commandCount == 6 || a.commandCount == 7) {
                 const auto state = action_detail::counterStates(p)[index];
                 if (!state.known || state.arm >= 0)
-                    throw Error("This complete wait replaces an earlier counter state; use "
-                                "Commands to change its structure.");
+                    throw Error("This action follows uncertain counter state; use Commands to "
+                                "change its structure.");
             }
             if (a.commandCount == 4) {
                 const auto state = action_detail::counterStates(p)[index];

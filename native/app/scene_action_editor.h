@@ -19,6 +19,7 @@ class SceneActionEditor : public QWidget {
     void selectCommand(int command);
   signals:
     void commandSelected(int command);
+    void editDialogue(int selector, int entry);
     void validityChanged();
 
   private:
@@ -29,7 +30,7 @@ class SceneActionEditor : public QWidget {
     void updateStructureControls();
     void changeStructure(bool remove);
     QComboBox *kind_, *position_;
-    QPushButton *insert_, *remove_;
+    QPushButton *insert_, *remove_, *text_;
     Project *project_;
     QUndoStack *undo_;
     std::function<void()> changed_;

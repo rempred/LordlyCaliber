@@ -1,5 +1,36 @@
 # Native Lordly Caliber
 
+## Connected dialogue actions
+
+The Actions inspector now creates a complete dialogue window/completion/resume/close
+sequence and exposes its text reference, owner, placement and portrait settings.
+Window ID changes update all four linked operands. The unused BF operand remains
+untouched. Existing windows with other control layouts expose text/presentation
+fields while retaining their separate IDs and control commands. Edit dialogue text
+opens the existing text workspace on the referenced primary or alternate entry.
+
+New dialogue uses fixed placement with a transparent portrait and an unused
+script window ID. Insertion requires a valid condition barrier outside active
+counter spans: player input cannot be represented as a fixed counter delay.
+Recognized complete dialogue outside a span allows subsequent waits. Nested
+counter queries without intervening yields are now excluded from structured timing
+because their failure scanner requires additional barriers. The maintained C
+runtime and original window-service qualification remain unchanged.
+
+`scene_action_tests` passed in 8256 ms: linked ID edits, reserved-word preservation,
+separate-layout refusal, nested-counter guards, one window creation during repeated
+pending queries, controlled ready state, one resume/close and a following three-update
+wait. An appended dialogue entry and authored scene saved, compiled, exported and
+reopened with preserved master, valid resource bounds and checksum. Candidate:
+parent Test ROMs/native-dialogue-action-knkXas. This uses a controlled readiness
+flag; it does not establish real input or full text-render timing.
+
+`ui_tests sceneActionInsertion structuredSceneActions` passed in 3127 ms, including
+window identity undo/redo, navigation to the correct text, editing and project
+reopening. The return-to-Actions visibility/value check passed in 1973 ms. Its first
+capture ran before Qt's pending layout; the completed capture was inspected and all
+fields fit. The complete native build passed without compiler warnings.
+
 ## Native action insertion and removal
 
 The Actions inspector adds placement, movement, camera, fade, scale, opacity and

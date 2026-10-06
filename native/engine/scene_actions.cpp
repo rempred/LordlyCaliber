@@ -90,6 +90,26 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0xbf:
+            action.name = "Dialogue window";
+            if (action_detail::completeDialogue(program, i)) {
+                action.name = "Dialogue";
+                action.commandCount = 7;
+                field("Window ID", 0, 1, 0, 255);
+                action.fields.last().mirrors = {{4, 2}, {5, 0}, {6, 0}};
+            }
+            field("Text archive", 1, 1, 0, 502);
+            field("Text entry (0x8000 selects alternate table)", 2, 1, 0, 65535);
+            field("Owner Actor slot", 3, 1, 0, 27);
+            field("X / horizontal preset", 4, 1, 0, 255);
+            field("Y / vertical preset", 5, 1, -32768, 32767);
+            field("Portrait side", 7, 1, 0, 1);
+            field("Mirror portrait", 8, 1, 0, 1);
+            field("Pointer edge", 9, 1, 0, 1);
+            field("Portrait class (-1 uses Actor, 0 hides)", 10, 1, -1, 255);
+            field("Portrait variant", 11, 1, 0, 1);
+            field("Placement (0 follows Actor, 1 fixed)", 12, 1, 0, 1);
+            break;
         case 3:
         case 0x14:
             action.name = c.opcode == 3 ? "Set Actor pose and position" : "Create Actor";
@@ -145,6 +165,7 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         result << action;
+        i += action.commandCount - 1;
     }
     return result;
 }
@@ -167,6 +188,8 @@ DirectorProgram SceneActions::edit(const DirectorProgram &program, int actionCom
                     qint64(qint32(replacement)) - target);
             }
             result.commands[action.command + f.commandOffset].operands[f.operand] = replacement;
+            for (const auto &[offset, operand] : f.mirrors)
+                result.commands[action.command + offset].operands[operand] = replacement;
             return DirectorProgram::decode(result.encode());
         }
     throw Error("Select a supported scene action");

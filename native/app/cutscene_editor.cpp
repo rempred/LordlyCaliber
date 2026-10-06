@@ -306,6 +306,11 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
     if (project_) {
         actionEditor_ = new SceneActionEditor(project_, undo_, changed);
         pages->addTab(actionEditor_, "Actions");
+        connect(actionEditor_, &SceneActionEditor::editDialogue, this,
+                [dialogue, pages](int selector, int entry) {
+                    dialogue->selectEntry(selector, entry);
+                    pages->setCurrentWidget(dialogue);
+                });
         connect(actionEditor_, &SceneActionEditor::commandSelected, this,
                 [this](int command) { commands_->setCurrentCell(command, 0); });
         connect(actionEditor_, &SceneActionEditor::validityChanged, this,

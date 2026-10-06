@@ -109,6 +109,37 @@ class UiTests : public QObject {
             QCOMPARE(reopened.scenePrograms()->program(id).source, expected);
             editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
             QVERIFY(editor.grab().save("native-action-insertion.png"));
+            position->setCurrentIndex(position->count() - 1);
+            kind->setCurrentIndex(kind->findData(0xbf)); QVERIFY(add->isEnabled()); add->click();
+            const auto beforeId = project.scenePrograms()->program(id);
+            int dialogueCommand = -1;
+            for (const auto &a : SceneActions::inspect(beforeId)) if (a.name == "Dialogue") dialogueCommand = a.command;
+            QVERIFY(dialogueCommand >= 0);
+            auto windowId = actions->findChild<QLineEdit *>("sceneActionField0");
+            QVERIFY(windowId); QCOMPARE(windowId->accessibleName(), QString("Window ID"));
+            windowId->setText("7");
+            const auto connected = project.scenePrograms()->program(id);
+            QCOMPARE(connected.commands[dialogueCommand].operands[0], quint32(7));
+            QCOMPARE(connected.commands[dialogueCommand + 4].operands[2], quint32(7));
+            undo.undo(); QCOMPARE(project.scenePrograms()->program(id).source, beforeId.source);
+            undo.redo(); QCOMPARE(project.scenePrograms()->program(id).source, connected.source);
+            actions->findChild<QPushButton *>("sceneActionEditText")->click();
+            auto pages = editor.findChild<QTabWidget *>("cutsceneDetailPages");
+            auto dialogue = qobject_cast<DialogueInspector *>(pages->currentWidget()); QVERIFY(dialogue);
+            QCOMPARE(dialogue->findChild<QComboBox *>("dialogueArchives")->currentData().toInt(), 5);
+            QCOMPARE(dialogue->findChild<QListWidget *>("dialogueEntries")->currentRow(), 0);
+            dialogue->findChild<QPlainTextEdit *>("dialogueSource")->setPlainText("Desktop dialogue action.");
+            QCOMPARE(project.dialogues()->entry(Dialogues::Table::Primary, 5, 0), QByteArray("Desktop dialogue action."));
+            project.saveFolder(work.path());
+            auto withDialogue = Project::fromRom(project.rom()); withDialogue.applyManifest(Project::readProject(work.path()));
+            QCOMPARE(withDialogue.scenePrograms()->program(id).source, connected.source);
+            QCOMPARE(withDialogue.dialogues()->entry(Dialogues::Table::Primary, 5, 0), QByteArray("Desktop dialogue action."));
+            pages->setCurrentWidget(actions);
+            QTRY_VERIFY(actions->findChild<QLineEdit *>("sceneActionField0"));
+            QTRY_VERIFY(actions->findChild<QLineEdit *>("sceneActionField0")->isVisible());
+            QCOMPARE(actions->findChild<QLineEdit *>("sceneActionField0")->text(), QString("7"));
+            QApplication::processEvents();
+            QVERIFY(editor.grab().save("native-dialogue-action.png"));
         } catch (const std::exception &e) { QFAIL(e.what()); }
     }
     void structuredSceneActions() {

@@ -1,6 +1,7 @@
 #include "engine/director_session.h"
 #include "engine/project.h"
 #include "engine/scene_actions.h"
+#include "engine/scene_dialogue.h"
 #include "rebuild/compiler.h"
 #include <QTemporaryDir>
 #include <QtTest>
@@ -158,6 +159,144 @@ class SceneActionTests : public QObject {
             QCOMPARE(checksum, rom.bytes());
             QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
             qInfo().noquote() << "Rebuilt and reopened" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
+    void dialogueActions() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                   tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty())
+            QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            project.loadDialogues();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (auto id : scenes.scenes())
+                if (scenes.canCreateBlank(id)) {
+                    source = id;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Authored dialogue", source, true);
+            const auto blank = scenes.program(id);
+            auto authored = SceneActions::insert(blank, 3, 0xbf);
+            auto action = SceneActions::inspect(authored).last();
+            QCOMPARE(action.commandCount, 7);
+            QCOMPARE(action.command, 3);
+            auto expected = authored.source;
+            for (auto target : {QPair{3, 0}, QPair{7, 2}, QPair{8, 0}, QPair{9, 0}})
+                put32(expected, (authored.commands[target.first].word + target.second + 1) * 4, 7);
+            authored = SceneActions::edit(authored, 3, 0, "7");
+            QCOMPARE(authored.source, expected);
+            QCOMPARE(SceneActions::remove(authored, 3).source, blank.source);
+            auto separate = authored;
+            separate.commands[7].operands[2] = 6;
+            separate = DirectorProgram::decode(separate.encode());
+            const auto partial = SceneActions::inspect(separate).last();
+            QCOMPARE(partial.commandCount, 1);
+            QVERIFY(partial.fields.first().name != "Window ID");
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::remove(separate, 3));
+            // The unused word is preserved even when all linked identity fields change.
+            auto reserved = authored;
+            reserved.commands[3].operands[6] = 0x12345678;
+            reserved = DirectorProgram::decode(reserved.encode());
+            QCOMPARE(SceneActions::edit(reserved, 3, 0, "9").commands[3].operands[6],
+                     quint32(0x12345678));
+            QVERIFY_THROWS_EXCEPTION(
+                Error, SceneActions::insert(program({1, 7, 0, 0, 0, 0, 0, 1, 0, 2, 0x7d, 0x80000002,
+                                                     0x80000000, 0x80000001, 0xff000005}),
+                                            1, 0xbf));
+            const auto nested =
+                program({1,  0,    0x80000002, 0x80000000, 0xe,        2,         10, 0xe, 2,
+                         20, 7,    0,          0,          0,          0,         0,  1,   0,
+                         2,  0x7d, 0x80000002, 0x80000000, 0x80000001, 0xff000005});
+            for (const auto &point : SceneActions::positions(nested))
+                if (point.command == 6)
+                    QVERIFY(!point.canWait);
+            auto dialogues = *project.dialogues();
+            const QByteArray text("Native authored dialogue.@nOne connected window.");
+            const int entry = dialogues.appendEntry(Dialogues::Table::Primary, 5, text);
+            project.setDialogues(dialogues.json());
+            authored = SceneActions::edit(authored, 3, 2, QString::number(entry));
+            authored = SceneActions::insert(authored, 10, 0xe, 3);
+            scenes.replace(id, authored.source);
+            project.setScenePrograms(scenes.json());
+            SceneResources resources({8, 0xffff, 13});
+            SceneDialogue windows(0);
+            DirectorSession session(scenes.runtimeDirectors(),
+                                    scenes.resource(id).selectors.first(), 0);
+            int created = 0, resumed = 0, closed = 0;
+            auto service = [&](quint32 opcode, const QVector<quint32> &args, int &value) {
+                if (opcode == 0xbf) {
+                    if (windows.create(args, resources) != 0)
+                        throw Error("Unexpected window pool slot");
+                    ++created;
+                }
+                if (opcode == 0x10)
+                    value = windows.query(args[2], resources);
+                if (opcode == 6) {
+                    windows.resume(args[0], resources);
+                    ++resumed;
+                }
+                if (opcode == 5) {
+                    windows.close(qint32(args[0]), resources);
+                    ++closed;
+                }
+                return true;
+            };
+            QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+            QCOMPARE(created, 1);
+            QCOMPARE(windows.query(7, resources), 0);
+            for (int i = 0; i < 3; ++i) {
+                QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+                QCOMPARE(created, 1);
+                QCOMPARE(resumed, 0);
+                QCOMPARE(closed, 0);
+            }
+            auto record = resources.record(0);
+            put8(record, 0x8a, u8(record, 0x8a) | 1);
+            resources.supplyRecord(
+                0, record); // Controlled ready-state input, not simulated text playback.
+            QCOMPARE(session.dispatch(service), LORDLY_DIRECTOR_YIELD);
+            QCOMPARE(created, 1);
+            QCOMPARE(resumed, 1);
+            QCOMPARE(closed, 1);
+            QVERIFY(u8(resources.record(0), 0x8a) & 2);
+            QVERIFY(u16(resources.record(0), 0) & 0x1000);
+            for (int update = 1; update <= 3; ++update) {
+                session.advanceCounter();
+                QCOMPARE(session.dispatch(service),
+                         update == 3 ? LORDLY_DIRECTOR_RELEASE : LORDLY_DIRECTOR_YIELD);
+            }
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, authored.source);
+            QCOMPARE(restored.dialogues()->entry(Dialogues::Table::Primary, 5, entry), text);
+            const auto built = rebuild(project, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-dialogue-action-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            reopened.loadDialogues();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, authored.source);
+            QCOMPARE(reopened.dialogues()->entry(Dialogues::Table::Primary, 5, entry), text);
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Rebuilt dialogue action and text" << destination;
         } catch (const std::exception &e) {
             QFAIL(e.what());
         }

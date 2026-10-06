@@ -60,6 +60,19 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
     notice_->setObjectName("sceneActionStatus");
     notice_->setWordWrap(true);
     layout->addWidget(notice_);
+    text_ = new QPushButton("Edit dialogue text");
+    text_->setObjectName("sceneActionEditText");
+    text_->setVisible(false);
+    layout->addWidget(text_);
+    connect(text_, &QPushButton::clicked, this, [this] {
+        const int row = list_->currentRow();
+        if (!key_ || row < 0 || row >= actions_.size() || property("invalidEdits").toBool())
+            return;
+        const auto program = project_->scenePrograms()->program(key_);
+        const auto &c = program.commands[actions_[row].command];
+        if (c.opcode == 0xbf)
+            emit editDialogue(quint16(c.operands[1]), quint16(c.operands[2]));
+    });
     discard_ = new QPushButton("Discard incomplete input");
     discard_->setObjectName("sceneActionDiscard");
     discard_->setEnabled(false);
@@ -160,11 +173,15 @@ void SceneActionEditor::showAction() {
             position_->setCurrentIndex(position);
     }
     updateStructureControls();
+    text_->setVisible(
+        key_ && row >= 0 && row < actions_.size() &&
+        project_->scenePrograms()->program(key_).commands[actions_[row].command].opcode == 0xbf);
     if (!key_ || row < 0 || row >= actions_.size()) {
         notice_->setText(
             actions_.isEmpty()
                 ? "This scene has no supported action fields. Its source commands remain available."
-                : "Select a movement, placement, camera, fade, scale, opacity or recognized wait "
+                : "Select a movement, placement, camera, fade, scale, opacity, dialogue or "
+                  "recognized wait "
                   "action.");
         return;
     }
@@ -231,7 +248,10 @@ void SceneActionEditor::updateStructureControls() {
     const bool valid = key_ && !property("invalidEdits").toBool();
     kind_->setEnabled(valid);
     position_->setEnabled(valid);
-    const bool wait = kind_->currentData().toUInt() == 0xe || kind_->currentData().toUInt() == 0xb5;
+    text_->setEnabled(valid);
+    const bool wait = kind_->currentData().toUInt() == 0xe ||
+                      kind_->currentData().toUInt() == 0xb5 ||
+                      kind_->currentData().toUInt() == 0xbf;
     const bool allowed = !wait || position_->currentData(Qt::UserRole + 1).toBool();
     insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
     insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
