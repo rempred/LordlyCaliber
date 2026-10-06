@@ -4481,7 +4481,7 @@ Original code2B3FE4..2B4104 and2B4FB4..2B5044 match retained opening RAM at
 8023F1E4 and802401B4. The constants' whole80-byte blockRAM80243C98..80243CE8
 uniquely matchesROM2B8A98..2B8AE8. Data placement is not inferred from code offsets.
 
-## Latest checked portable development package
+## Earlier checked portable development package
 
 The local package native/dist/LordlyCaliber-0.5-dev-20261005-234219.zip contains
 d5608b1 (action ordering), before the later Actor control additions. The isolated
@@ -4556,3 +4556,16 @@ The full application build passed without compiler warnings. The final capture
 and `saveSquadDraftProtection loadDesktopWorkspace` check passed2271ms; the
 pending-state screenshot was inspected. Existing squad/save checks above remain
 passing. No game-code, save codec, dependencies or ROM rebuild code changed here.
+
+
+## Current checked portable development package
+
+The local ZIP `native/dist/LordlyCaliber-0.5-dev-20261006-022437.zip` contains
+2152fdc, including carried-item editing and pending squad draft protection.
+`check-package.ps1` passed in2.57s: isolated startup, bundled user-time compilation,
+export, independent KnightSTR300 readback, reopening and source preservation.
+`check-scene-import-package.ps1` passed in6.91s with2648 expected scene bytes,
+browser conversion and bundled compile/export/reopen. Evidence is in parent
+Test ROMs/native-portable-cd9229aebfab43e19092d2a600b93734 and
+portable-scene-import-d5beac1f0d7e49eeb368954995d1fc16. This is a local development
+package, not a clean-machine validation or published release. No new dependency.
