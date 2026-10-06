@@ -3,6 +3,7 @@
 #include "engine/scene_actor_renderer.h"
 #include "engine/scene_background_renderer.h"
 #include "engine/scene_playback.h"
+#include "engine/scene_party.h"
 #include "engine/scene_programs.h"
 #include "engine/scene_selection.h"
 #include "engine/scene_world_drawing.h"
@@ -147,6 +148,7 @@ class ScenePreview : public QWidget {
     int classCount_ = 0;
     bool storyCastEnabled_ = false;
     bool classDefaultsEnabled_ = false;
+    std::optional<SceneParty> party_;
     QWidget *dialogueNamesUi_;
     QWidget *rewardUi_;
     QComboBox *reward_;

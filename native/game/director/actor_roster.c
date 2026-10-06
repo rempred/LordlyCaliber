@@ -1,6 +1,6 @@
 #include "actor_roster.h"
 /* ROM45E5C: byte equality followed by the five native appearance families. */
-static int same(uint8_t a, uint8_t b) {
+int lordly_roster_same(uint8_t a, uint8_t b) {
     static const uint8_t families[5][2] = {
         {0x51, 0x53}, {0x54, 0x55}, {0x56, 0x57}, {0x5f, 0x60}, {0x63, 0x64}};
     if (a == b)
@@ -21,11 +21,11 @@ int lordly_roster_select(int32_t wanted[2], uint32_t flags, int32_t source) {
         return 1;
     if ((a == 0 && deployed) || (b == 0 && !deployed))
         return 0;
-    if (same((uint8_t)a, (uint8_t)source)) {
+    if (lordly_roster_same((uint8_t)a, (uint8_t)source)) {
         wanted[0] = 0;
         return 1;
     }
-    if (same((uint8_t)b, (uint8_t)source)) {
+    if (lordly_roster_same((uint8_t)b, (uint8_t)source)) {
         wanted[1] = 0;
         return 1;
     }

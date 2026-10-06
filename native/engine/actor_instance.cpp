@@ -147,4 +147,9 @@ void ActorInstance::addHeight(float step) {
     if (secondary)
         put32(record_, 0x128, std::bit_cast<quint32>(height));
 }
+void ActorInstance::setSecondaryHeight(float value, bool addBase) {
+    if (!std::isfinite(value)) throw Error("Actor secondary height must be finite");
+    put32(record_, 0x128, std::bit_cast<quint32>(value));
+    put8(record_, 0x145, addBase ? 4 : 2);
+}
 } // namespace lordly

@@ -10,6 +10,7 @@
 #include "engine/scene_playback.h"
 #include "engine/scene_panels.h"
 #include "engine/scene_story_cast.h"
+#include "engine/scene_party.h"
 #include "engine/scene_events.h"
 #include "engine/project.h"
 #include "engine/save_document.h"
@@ -30,6 +31,69 @@ using namespace lordly;
 class SceneRuntimeTests : public QObject {
     Q_OBJECT
   private slots:
+    void partyLaunchBindings() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto classes = ClassData::load(rom);
+        auto routes = AnimationRoutes::load(rom);
+        const int added = classes.append(2, QByteArray("New Fighter"));
+        routes.cloneClass(2, added);
+        auto data = std::make_shared<BodyAnimationData>(classes, routes);
+        SceneParty party{{81, added}, {}, false, false, false};
+        SceneActors actors(rom, 2, 0, [](int, float, float) { return 0.f; }, data);
+        actors.supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+        party.supply(actors, *data);
+        // Original Stage probe: Hero/Fighter at cells 4/1 become lane 1,
+        // depths 7/8, with target X 114/152. Reset appends deployed copies.
+        QCOMPARE(u32(actors.bodyRow(0), 0x40), 0x200U);
+        QCOMPARE(u32(actors.bodyRow(0), 0x58), 7U);
+        QCOMPARE(u32(actors.bodyRow(1), 0x58), 8U);
+        const auto originalRow = actors.bodyRow(0);
+        actors.materializeRoster(-1, -1, 0);
+        QVERIFY(actors.actor(0));
+        QCOMPARE(actors.actor(0)->pose().actor().position.x, 114.f);
+        int result = 0;
+        QVERIFY(actors.service(0x92, {7, 83}, result)); // Appearance alias of Hero.
+        QCOMPARE(u32(actors.actor(7)->record(), 0xe8), 81U);
+        QVERIFY(actors.service(0x92, {8, quint32(added)}, result));
+        QCOMPARE(u32(actors.actor(8)->record(), 0xe8), quint32(added));
+        QCOMPARE(actors.actor(8)->pose().actor().position.x, 152.f);
+        party.supply(actors, *data, true);
+        QCOMPARE(actors.bodyRow(0), originalRow);
+        QCOMPARE(u32(actors.bodyRow(2), 0x40), 0x700U);
+        QCOMPARE(u32(actors.bodyRow(3), 0x40), 0x500U);
+        QCOMPARE(u32(actors.bodyRow(2), 0x58), 1U);
+        actors.materializeRoster(-1, 0, 0);
+        QVERIFY(actors.service(0xa6, {9, 1}, result));
+        QCOMPARE(u8(actors.actor(9)->record(), 0x147), 3);
+        QCOMPARE(u32(actors.actor(9)->record(), 0xe8), quint32(added));
+        QVERIFY(actors.service(0x95, {10, 5}, result)); // One-based cell5: lane1/depth1.
+        QCOMPARE(u8(actors.actor(10)->record(), 0x147), 2);
+        QCOMPARE(actors.actor(10)->pose().actor().position.x, -114.f);
+        QVERIFY(actors.actor(0)); // Materialization normalizes the current leader back to slot0.
+        QCOMPARE(u8(actors.actor(0)->record(), 0x147), 0);
+        QVERIFY(actors.service(0xa1, {0, 0, 0}, result));
+        QCOMPARE(result, 1);
+        QVERIFY(actors.service(0xa1, {0, 0, 9}, result));
+        QCOMPARE(result, 2);
+        QVERIFY(actors.service(0xa1, {0, 0, 27}, result));
+        QCOMPARE(result, 0);
+        const auto saved = actors.actorRecords();
+        QVERIFY(actors.service(0x92, {10, 164}, result));
+        QCOMPARE(actors.actorRecords(), saved); // Absent classes do not erase a slot.
+        const auto scenes = ScenePrograms::load(rom);
+        auto inferred =
+            SceneParty::infer(scenes.program(0x1f40650 - 0x594284), classes.entries().size());
+        QVERIFY(inferred);
+        QVERIFY(inferred->deployed);
+        QCOMPARE(inferred->encounter.first(), 12); // Dialogue names the Wizard member.
+        auto ordinary =
+            SceneParty::infer(scenes.program(0x1fa8bf4 - 0x594284), classes.entries().size());
+        QVERIFY(!ordinary); // Independent dynamic story-cast launch remains separate.
+        QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+    }
     void actorPlacementCoordinates() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

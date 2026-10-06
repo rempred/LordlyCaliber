@@ -37,6 +37,12 @@ void SceneProjection::advance() {
         throw Error("Projection interpolation produced nonfinite coordinates");
 }
 bool SceneProjection::service(int mode, quint32 opcode, const QVector<quint32> &args) {
+    if (opcode == 0x3d) {
+        if (args.size() != 1) throw Error("Projection reset is truncated");
+        if (lordly_projection_reset(&raw_, qint32(args[0])))
+            throw Error("Projection reset requires a nonzero duration and finite coordinates");
+        return true;
+    }
     if (opcode != 0x2c)
         return false;
     if (args.size() != 5)

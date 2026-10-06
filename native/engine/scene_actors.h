@@ -125,6 +125,7 @@ class SceneActors {
   private:
     static void checkSlot(int slot);
     void bindMember(int destination, int member);
+    void bindRow(int destination, int ordinal);
     int classification(const QByteArray &record) const;
     void selectBodyInternal(const LordlyActorBodySelection &selection);
     void configureLinkedPose(ActorInstance &actor) const;

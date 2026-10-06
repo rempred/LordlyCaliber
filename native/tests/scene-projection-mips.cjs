@@ -4,6 +4,7 @@ const {FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);if(rom.readUInt32BE(0)===0x37804012)rom.swap16();
 const m=new FloatMips();m.ram=new Uint8Array(0x400000);
 m.load(0x802395c0,rom.subarray(0x2a8d20,0x2ae338));
+m.load(0x8023ec50,rom.subarray(0x2ae3b0,0x2ae3b8)); // Reset's identity-scale double.
 const root=0x80300000,projection=0x80310010,sp=0x803ffe00;
 m.w32(0x8022a974,root);m.set('sp',sp);
 m.load(0x8022a720,rom.subarray(0x2866f0,0x2866f0+144));
@@ -26,6 +27,15 @@ for(const duration of [1,2,3,12,32767,32768,65535,65536,65537,-1,-32768,21474836
  for(let i=0;i<16;i++){assert.equal(m.r8(projection-16+i),0xa7);assert.equal(m.r8(projection+76+i),0xa7);}
  assert.equal(m.get('sp'),sp);cases.push({duration,stages});
 }
+const resets=[];
+for(const [x,y,sx,sy,duration] of [[0,0,1,1,0],[80,40,2,3,0],[0,0,3,2,0],[-35,20,.5,2,7],[10,30,2,1,65537]]) {
+ const before=Buffer.from(initialized,'hex');
+ for(const [at,v]of [[0x30,x],[0x34,y],[0x24,sx],[0x28,sy]])before.writeFloatBE(v,at);
+ m.load(projection,before);m.set('a0',duration);m.call(0x8023bb48);
+ const setup=read(),steps=[];
+ for(let i=0;i<4;i++){m.call(0x80239af8);steps.push(read());}
+ resets.push({before:before.toString('hex'),duration,setup,steps});
+}
 m.w32(root+0x19f0,0);m.call(0x80239af8);assert.equal(m.get('sp'),sp);
-fs.writeFileSync(process.argv[3],JSON.stringify({initial,initialized,actorCamera,cases}));
+fs.writeFileSync(process.argv[3],JSON.stringify({initial,initialized,actorCamera,cases,resets}));
 console.log(`Original projection: 39 changes, 585 updates, allocation controlled; no interpolation helpers doubled.`);

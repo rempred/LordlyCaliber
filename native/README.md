@@ -69,6 +69,14 @@ the Actor's position or destination while preserving its height. Cancel leaves t
 project unchanged. Complete or discard unfinished input before saving, exporting
 or choosing another scene.
 
+Party-dependent cutscenes now preview with sample members selected from class
+requests and dialogue portraits. The preview labels these inferred participants;
+they are not a claim about a player's saved formation. Class equipment and body
+routes use current project edits, including added classes. Preserved battle stages
+and caller-selected terrain use sample environment zero and flat ground. Party
+entrance, binding and return operations execute in the native engine. Returning
+to gameplay ends the preview without starting full-game emulation.
+
 For scripting:
 
 ```powershell

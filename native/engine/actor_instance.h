@@ -22,6 +22,7 @@ class ActorInstance {
     void setDrawing(const ActorWorldMatrices &);
     void setUniformScale(float value);
     void addHeight(float step);
+    void setSecondaryHeight(float value, bool addBase);
     ActorPosePlayer &pose() {
         return pose_;
     }

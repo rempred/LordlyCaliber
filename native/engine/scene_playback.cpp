@@ -304,14 +304,24 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
             schedule_.alternate = 1;
         return true;
     }
+    if (opcode == 0x3e || opcode == 0x2d) {
+        if (args.size() != 2) throw Error("Projection completion query is truncated");
+        value = projection_.remaining();
+        return true;
+    }
     if (opcode == 0x80) {
         if (args.size() != 1)
             throw Error("Actor color selection command is truncated");
         effects_.selectColorActor(args[0], actors_.actorRecords());
         return true;
     }
-    if (opcode == 0x39 && args.size() == 1 && args[0] != 0) {
-        schedule_.alternate = 0;
+    if (opcode == 0x39 && args.size() == 1) {
+        if (args[0] == 0) {
+            // ROM2AB508 requests presentation reload D7. This ends the preview;
+            // the gameplay owner outside the scene performs the actual reload.
+            releaseRequested_ = true;
+            reason_ = "Scene returned to the game (presentation reload).";
+        } else schedule_.alternate = 0;
         return true;
     }
     if (opcode == 0x63) {

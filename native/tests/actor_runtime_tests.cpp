@@ -219,6 +219,16 @@ class ActorRuntimeTests : public QObject {
                 }
             }
         }
+        for (const auto &v : fixture["resets"].toArray()) {
+            const auto reset = v.toObject();
+            SceneProjection projection(QByteArray::fromHex(reset["before"].toString().toLatin1()));
+            QVERIFY(projection.service(2, 0x3d, {quint32(reset["duration"].toInt())}));
+            QCOMPARE(projection.record().toHex(), reset["setup"].toString().toLatin1());
+            for (const auto &step : reset["steps"].toArray()) {
+                projection.advance();
+                QCOMPARE(projection.record().toHex(), step.toString().toLatin1());
+            }
+        }
         QCOMPARE(lordly_projection_advance(nullptr), 0);
         SceneProjection projection;
         QCOMPARE(projection.scaleX(), 1.f);

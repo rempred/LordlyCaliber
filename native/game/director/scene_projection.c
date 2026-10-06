@@ -55,3 +55,23 @@ int lordly_projection_advance(LordlySceneProjection *p) {
     --count; next.bytes[0x48] = (uint8_t)(count >> 8); next.bytes[0x49] = (uint8_t)count;
     *p = next; return 0;
 }
+int lordly_projection_reset(LordlySceneProjection *p, int32_t duration) {
+    float x, y, sx, sy, distance, scale;
+    int16_t count;
+    if (!p) return 1;
+    x = read_float(p, 0x30); y = read_float(p, 0x34);
+    sx = read_float(p, 0x24); sy = read_float(p, 0x28);
+    if (x == 0.f && y == 0.f && sx == 1.f && sy == 1.f) return 0;
+    count = (int16_t)duration;
+    if (!count) {
+        int16_t a, b;
+        distance = (x * x + y * y) / 80.f;
+        scale = ((sx < sy ? sy : sx) - 1.f) * 100.f;
+        if (!isfinite(distance) || !isfinite(scale) || (double)distance >= 2147483648. ||
+            (double)distance < -2147483648. || (double)scale >= 2147483648. ||
+            (double)scale < -2147483648.) return 1;
+        a = (int16_t)(int32_t)distance; b = (int16_t)(int32_t)scale;
+        count = a < b ? b : a;
+    }
+    return lordly_projection_start(p, 0.f, 0.f, 1.f, 1.f, count);
+}

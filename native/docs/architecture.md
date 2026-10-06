@@ -5498,3 +5498,37 @@ Save edits change01FA8BF4 actors, preserve coordinates and source/save bytes, an
 replay consistently. The existing complete-scene case releases at step1349 with
 three audio requests and two replay samples. Application and test builds pass.
 Initial compilation only lacked a test helper's header; corrected before execution.
+
+
+## Party scene preview launch
+
+SceneParty supplies declared sample formation rows, class-default equipment and
+opaque linked-object identities to the existing native roster/body engine. Class
+requests use the native appearance aliases; dialogue portraits infer encountered
+members. Current project Classes and animation routes also support new IDs. This
+is preview caller data, not an active saved battle. Environment zero and flat
+ground remain explicit approximations. A roster reset retains existing row IDs
+and adds the deployed sample copy; inferred encounter rows already precede the
+current unit. Class/cell/member bindings swap Actor identities without swapping
+slot-owned jobs. Original Stage probes confirmed ordinary row flags, formation
+coordinates, equipment and reset order; the Soldier row retains three bodies.
+
+The continuation now supports roster-source queries, secondary actor height,
+projection reset/countdown and the D7 presentation-reload boundary. Projection
+reset uses the larger scale when deriving its duration, as the original function
+does; the browser reference used the smaller scale. The existing projection MIPS
+check now includes five return cases and their first four updates. It passed in
+180ms, including existing interpolation cases. Member binding's existing original
+check passed in192ms. scene_runtime_tests partyLaunchBindings passed in218ms,
+covering alias/cell/member bindings, reset identity, new classes, source queries
+and source-ROM preservation. No export representation changed.
+
+ui_tests partySceneReplay checks actual step/confirm input and backward seek.
+01F450D0 and01F4C45A release at443/490 steps;01F40650 returns to gameplay at1048
+with seven Actors. Formation01F3F242 releases at2868 with eleven Actors and its
+sampled frames replay exactly; formation plus the first short-scene attempt took
+82949ms, including replay.01FA4D0A releases at236 with five Actors; its corrected
+early-frame sample passes in1253ms. The first three cases previously passed
+in12685ms. A scene completing before the original250-step sample was a test
+assumption, corrected by sampling at50 too. The final world-scene capture was
+inspected. These are native desktop playback checks, not natural-game runs.

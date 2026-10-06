@@ -1,6 +1,7 @@
 #include "engine/scene_actors.h"
 #include "engine/class_data.h"
 #include "game/director/actor_body.h"
+#include "game/director/actor_roster.h"
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -266,8 +267,12 @@ void SceneActors::bindMember(int destination, int member) {
             break;
         }
     }
-    if (ordinal < 0)
-        return;
+    bindRow(destination, ordinal);
+}
+void SceneActors::bindRow(int destination, int ordinal) {
+    destination &= 255;
+    checkSlot(destination);
+    if (ordinal < 0) return;
     for (int from = 0; from < 28; ++from) {
         if (!actors_[from] || u8(actors_[from]->record(), 0x147) != ordinal)
             continue;
@@ -279,6 +284,22 @@ void SceneActors::bindMember(int destination, int member) {
     }
 }
 bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &value) {
+    if (opcode == 0x69) {
+        if (args.size() != 3) throw Error("Actor secondary-height command is truncated");
+        const int slot = qint32(args[0]);
+        checkSlot(slot);
+        if (actors_[slot]) actors_[slot]->setSecondaryHeight(coordinate(args[1]), args[2] != 0);
+        return true;
+    }
+    if (opcode == 0xa1) {
+        // ROM2ABF64: vacant/unlinked = 0, current unit = 1, deployed unit = 2.
+        if (args.size() != 3) throw Error("Actor roster-source query is truncated");
+        const auto &instance = actor(qint32(args[2]));
+        value = 0;
+        if (instance && u8(instance->record(), 0x147) != 255)
+            value = (u32(bodyRow(u8(instance->record(), 0x147)), 0x40) & 0x100) ? 2 : 1;
+        return true;
+    }
     if (opcode == 0x13) {
         if (args.size() != 1)
             throw Error("Actor release requires one selector");
@@ -452,6 +473,23 @@ bool SceneActors::service(quint32 opcode, const QVector<quint32> &args, int &val
         if (mode_ == 2)
             selectBody({qint32(args[0]), qint32(args[1]), qint32(args[5]), qint32(args[2]),
                         qint32(args[3]), qint32(args[4]), 0, 0, presentation_});
+        return true;
+    }
+    if (opcode == 0x92 || opcode == 0x95) {
+        if (args.size() != 2) throw Error("Actor roster binding is truncated");
+        if (mode_ != 2) return true;
+        const qint32 cell = qint32(args[1] - 1U);
+        const int depth = cell / 3, lateral = cell % 3;
+        for (int row = 0; row < 20; ++row) {
+            const auto &record = bodyRow(row);
+            const auto source = u32(record, 0x48);
+            if (source && (opcode == 0x92
+                    ? lordly_roster_same(quint8(source), quint8(args[1]))
+                    : qint32(u32(record, 0x54)) == lateral && qint32(u32(record, 0x58)) == depth)) {
+                bindRow(qint32(args[0]), row);
+                break;
+            }
+        }
         return true;
     }
     if (opcode == 0xa6 && args.size() == 2) {

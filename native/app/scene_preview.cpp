@@ -634,6 +634,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
     launchImageUi_->hide();
     storyCastEnabled_ = false;
     classDefaultsEnabled_ = false;
+    party_.reset();
     storyCastUi_->hide();
     dialogueNamesUi_->hide();
     rewardUi_->hide();
@@ -647,6 +648,7 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         mode_ = mode;
         const auto launch = SceneImages::launch(programs.program(id));
         storyCastEnabled_ = SceneStoryCast::supports(programs.program(id));
+        if (mode == 2) party_ = SceneParty::infer(programs.program(id), classCount_);
         const auto actions = SceneActions::inspect(programs.program(id));
         classDefaultsEnabled_ = mode == 2 && std::any_of(actions.cbegin(), actions.cend(),
             [](const auto &action) { return action.name == "Create class Actor"; });
@@ -682,14 +684,14 @@ void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mo
         context_->setText(
             "Preview launch: flat terrain. Missing scene context pauses playback.\n"
             "World scenes use the common fresh-launch camera and paired background selectors.\n"
-            "Scattered props use a fixed preview seed. Launch bindings and audio remain "
-            "unfinished.");
+            "Scattered props use a fixed preview seed. Audio requests are displayed without sound.");
+        if (party_) context_->setText(context_->text() + "\n" + party_->description());
         if (storyCastEnabled_)
             context_->setText(context_->text() + "\nThis scene uses the selected preview class pairs. Its "
                                                  "authored positions stay unchanged; equipment uses class defaults.");
         if (classDefaultsEnabled_)
             context_->setText(context_->text() +
-                "\nClass Actors preview with class-default equipment. Army bindings still require launch data.");
+                "\nClass Actors preview with class-default equipment.");
         context_->setText(
             context_->text() +
             "\nDialogue uses the preview names and current Actor "
@@ -768,8 +770,10 @@ void ScenePreview::restart() {
         }
         ScenePlayback playback(rom_, *resources_, selector_, start, cameras,
                                [](int, float, float) { return 0.f; });
-        if (storyCastEnabled_ || classDefaultsEnabled_)
+        if (storyCastEnabled_ || classDefaultsEnabled_ || party_)
             playback.actors().supplyBodyRows(QVector<QByteArray>(28, QByteArray(248, 0)));
+        if (party_) party_->supply(playback.actors(),
+                                   *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)));
         std::array<QByteArray, 4> names;
         for (int i = 0; i < 4; ++i) {
             names[i] = dialogueNames_[i]->text().toLatin1();
@@ -795,6 +799,8 @@ void ScenePreview::restart() {
             playback.loadImagePresentation(row);
         }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
+        if (party_ && party_->preserved)
+            referenceCommand(*current_, 0x80000006U, {0});
         current_->dialogue.emplace(rom_, dialogues_);
         if (!dialogueDrawing_) {
             dialogueDrawing_.emplace(rom_);
@@ -837,6 +843,11 @@ void ScenePreview::retainBackgrounds(Snapshot &next) {
     next.playback.replaceIrisBackgrounds(next.backgroundHandles, next.backgrounds->channelCount());
 }
 bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVector<quint32> &args) {
+    if (opcode == 0x96 && args.size() == 1 && mode_ == 2 && party_) {
+        party_->supply(next.playback.actors(),
+                       *(bodyAnimations_ ? bodyAnimations_ : BodyAnimationData::load(rom_)), true);
+        return true;
+    }
     if (opcode == 0x4d) {
         // Product capture timing: the current completed desktop draw, matching
         // the separate captured-frame transition's explicit framebuffer input.
@@ -868,7 +879,7 @@ bool ScenePreview::referenceCommand(Snapshot &next, quint32 opcode, const QVecto
     }
     if (opcode != 0x80000006 || args.size() != 1)
         return false;
-    const int selector = qint32(args[0]);
+    const int selector = args[0] == 0xffffffffU && mode_ == 2 ? 0 : qint32(args[0]);
     if (selector < 0)
         throw Error("This environment selector requires gameplay launch context");
     if (mode_ == 0) {
@@ -1224,8 +1235,8 @@ void ScenePreview::step() {
         }
         render(next, complete);
         next.stopped = result != ScenePlayback::Advanced;
-        next.reason =
-            result == ScenePlayback::Released ? "Scene released." : next.playback.reason();
+        next.reason = result == ScenePlayback::Released && next.playback.reason().isEmpty()
+                          ? "Scene released." : next.playback.reason();
         current_ = std::move(next);
         ++tick_;
         if (tick_ % 120 == 0)

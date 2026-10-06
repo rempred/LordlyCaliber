@@ -71,6 +71,65 @@ using namespace lordly;
 class UiTests : public QObject {
     Q_OBJECT
   private slots:
+    void partySceneReplay_data() {
+        QTest::addColumn<quint32>("offset");
+        QTest::addColumn<quint32>("key");
+        QTest::newRow("preserved") << 0x1f450d0U << 0x19b0e4cU;
+        QTest::newRow("preserved-return") << 0x1f4c45aU << 0x19b81d6U;
+        QTest::newRow("encounter") << 0x1f40650U << 0x19ac3ccU;
+        QTest::newRow("formation") << 0x1f3f242U << 0x19aafc2U;
+        QTest::newRow("world-party") << 0x1fa4d0aU << 0x1a10a8aU;
+    }
+    void partySceneReplay() {
+        QFETCH(quint32, offset);
+        QFETCH(quint32, key);
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty())
+            QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        const auto scenes = ScenePrograms::load(rom);
+        const auto before = scenes.json();
+        ScenePreview preview(rom);
+        preview.resize(1250, 950);
+        preview.show();
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        auto objects = preview.findChild<QComboBox *>("sceneLiveActors");
+        {
+            preview.selectScene(scenes, key, 2);
+            QMap<int, QImage> frames;
+            int mostActors = 0;
+            for (int i = 0; i < 5000 && !preview.property("sceneStopped").toBool(); ++i) {
+                if (i % 45 == 0 && confirm->isVisible())
+                    confirm->click();
+                else
+                    step->click();
+                mostActors = qMax(mostActors, objects->count());
+                if (i == 49 || i % 250 == 249)
+                    frames.insert(preview.property("sceneTick").toInt(), preview.renderedFrame());
+            }
+            QVERIFY2(status->text().contains(offset == 0x1f40650U ? "Scene returned to the game"
+                                                                  : "Scene released."),
+                     qPrintable(QString("%1: %2").arg(offset, 0, 16).arg(status->text())));
+            QVERIFY(mostActors >= 2);
+            QVERIFY(!frames.isEmpty());
+            qInfo() << QString::number(offset, 16) << "released at" << preview.property("sceneTick")
+                    << "with up to" << mostActors << "Actors";
+            auto position = preview.findChild<QSpinBox *>("scenePosition");
+            for (auto it = frames.cbegin(); it != frames.cend(); ++it) {
+                position->setValue(it.key());
+                QTRY_COMPARE_WITH_TIMEOUT(preview.property("sceneTick").toInt(), it.key(), 20000);
+                QCOMPARE(preview.renderedFrame(), it.value());
+            }
+            if (offset == 0x1fa4d0aU) {
+                QApplication::processEvents();
+                preview.grab().save("native-party-preview.png");
+            }
+        }
+        QCOMPARE(scenes.json(), before);
+        QCOMPARE(Rom::open(path).bytes(), rom.bytes());
+    }
     void sceneCompletionControls() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

@@ -251,3 +251,12 @@ workspace army using native event priority, aliases, HP/status restrictions and
 fallbacks. Stored launch casts and manual choices remain available. The01FA8BF4
 coordinate/seek workflow and existing complete-scene playback check pass. This
 selects preview participants; it does not simulate the event's date/trigger gates.
+
+
+Party preview launch data now connects class/formation/member bindings and roster
+reset to the existing native body/presentation engines. Sample classes and inferred
+encounter portraits follow the browser feature, using current class equipment and
+animation routes, including new IDs. Source queries, secondary height and projection
+reset/countdown now execute; presentation reload ends at the gameplay boundary.
+Preserved and caller-selected battle stages use environment zero. Flat terrain and
+sample formations are stated approximations. Event predecessors remain separate work.
