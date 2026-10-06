@@ -30,7 +30,18 @@ control instructions. It creates a private copy when needed and commits one Undo
 step. Cancellation or rejected instruction counts leave the project untouched.
 Focused desktop/project/source-export/reopen check passes (2.3s), including exact
 two-frame colors and placement; pose alias/control-loop check passes (7ms).
-Evidence: `build/Release/sequence-batch-{ui,controls}.txt`. Other gaps above remain.
+Evidence: `build/Release/sequence-batch-{ui,controls}.txt`.
+
+Class-to-class pose copying now transfers independent layers/sprites, equipment
+selection policies and optionally source control/dependent poses. Copy art and
+Copy art and duration operate on one chosen frame. Side-by-side comparison uses
+a common origin, scale and clock; native pose preview now exposes automatic fit
+with stable origin as default. Batch translation covers selected frame rows or
+checked poses, all layers or one layer, with before/after preview and one Undo.
+`sequence_editor_tests copyCompareAndTranslate` passes (7.4s): two equipment
+choices, dependent-pose playback, source/unselected-frame preservation, Undo,
+copy-duration distinction, common origin and compiled export/reopen. Screenshot
+`build/Release/sequence-comparison.png` inspected. The cutscene gaps remain.
 
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear

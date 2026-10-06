@@ -127,6 +127,22 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     });
     buttons->addStretch();
     layout->addLayout(buttons);
+    auto tools = new QHBoxLayout;
+    for (const auto &entry : {qMakePair("Copy / replace from class…", "sequenceCopyFrom"),
+                              qMakePair("Compare sequences…", "sequenceCompare"),
+                              qMakePair("Translate frames…", "sequenceTranslate")}) {
+        auto button = new QPushButton(entry.first);
+        button->setObjectName(entry.second);
+        tools->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, button] {
+            guarded([this, button] {
+                if (button->objectName() == "sequenceTranslate") chooseTranslation();
+                else chooseSource(button->objectName() == "sequenceCompare");
+            });
+        });
+    }
+    tools->addStretch();
+    layout->addLayout(tools);
     auto split = new QSplitter;
     auto left = new QWidget;
     auto panel = new QVBoxLayout(left);
@@ -135,7 +151,7 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
     records_->setObjectName("sequenceRecords");
     records_->setHorizontalHeaderLabels({"Instruction", "Frame", "Ticks", "Control operands"});
     records_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    records_->setSelectionMode(QAbstractItemView::SingleSelection);
+    records_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     records_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     records_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     records_->horizontalHeader()->setStretchLastSection(true);
@@ -190,6 +206,14 @@ AnimationSequenceEditor::AnimationSequenceEditor(Project *project, QUndoStack *u
              [](PoseBank &bank, int state, int row) { bank.moveFrame(state, row, row + 1); });
     });
     add("Edit frame layers", "sequenceEditLayers", 3, 0, [this] { editLayers(); });
+    add("Copy frame art…", "sequenceCopyFrameArt", 4, 0, [this] {
+        if (records_->currentRow() < 0) throw Error("Choose a destination frame instruction");
+        chooseSource(false, records_->currentRow(), false);
+    });
+    add("Copy art and duration…", "sequenceCopyFrameTiming", 4, 1, [this] {
+        if (records_->currentRow() < 0) throw Error("Choose a destination frame instruction");
+        chooseSource(false, records_->currentRow(), true);
+    });
     add("Import frame image…", "sequenceImport", 3, 1, [this] {
         const auto path = QFileDialog::getOpenFileName(this, "Import private sequence frame", {},
                                                        "Images (*.png *.jpg *.jpeg)");

@@ -1,5 +1,7 @@
 #include "app/animation_sequence_editor.h"
 #include "engine/actor_art.h"
+#include "engine/actor_pose.h"
+#include "engine/animation_transfer.h"
 #include "engine/sprite_object.h"
 #include "rebuild/compiler.h"
 #include <QApplication>
@@ -17,6 +19,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QSlider>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -106,6 +109,153 @@ class SequenceEditorTests : public QObject {
             const auto exported = Rom::open(output);
             verify(exported, ActorArt::loadBody(exported, 2, 2, 0, 0));
             qInfo().noquote() << "Complete sequence candidate:" << output;
+        } catch (const Error &e) { QFAIL(e.what()); }
+    }
+    void copyCompareAndTranslate() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"), tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+        if (path.isEmpty() || tools.isEmpty()) QSKIP("Private ROM and compiler required");
+        try {
+            auto project = Project::fromRom(Rom::open(path));
+            QUndoStack undo;
+            AnimationSequenceEditor editor(&project, &undo, [] {});
+            const auto source = ActorArt::loadBody(project.rom(), 3, 3, 0, 0, project.bodyAnimationData());
+            const auto sourceBytes = source.contentIdentity();
+            editor.copySequence(3, 0, 40);
+            QCOMPARE(undo.count(), 1);
+            auto target = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto token = [](const PoseRecord &r) { return u8(r.operands, 0) + (r.opcode == 21 ? 256 * u8(r.operands, 1) : 0); };
+            const auto expectedRecords = AnimationDescriptor::load(project.rom(), source.descriptorKey()).poses().effective(40).records;
+            const auto copied = *project.animationSequences()->find(2, 0);
+            const auto records = copied.poses().effective(40).records;
+            QCOMPARE(records.size(), expectedRecords.size());
+            QSet<int> frameRows;
+            for (int row = 0; row < records.size(); ++row) {
+                if (expectedRecords[row].opcode != 1 && expectedRecords[row].opcode != 21) continue;
+                frameRows.insert(row);
+                for (int equipment : {1, 8}) {
+                    const BodyAppearance appearance{quint16(equipment), quint8(0)};
+                    const auto a = source.bodyFrame(project.rom(), token(expectedRecords[row]), appearance);
+                    const auto b = target.bodyFrame(project.rom(), token(records[row]), appearance);
+                    QCOMPARE(a.size(), b.size());
+                    for (int layer = 0; layer < a.size(); ++layer) {
+                        QCOMPARE(a[layer].pixels.image.rgba, b[layer].pixels.image.rgba);
+                        QCOMPARE(a[layer].metadata.origin, b[layer].metadata.origin);
+                    }
+                }
+            }
+            QVERIFY(frameRows.size() > 1);
+            // A donor can transfer into another pose. Copying must follow that
+            // control graph without changing an existing destination pose.
+            auto dependent = AnimationDescriptor::load(project.rom(), source.descriptorKey());
+            auto dependencyBank = dependent.poses();
+            const int child = dependencyBank.appendProgram(QByteArray(1, 0));
+            const auto shown = expectedRecords[*frameRows.cbegin()];
+            const QByteArray jump(1, char(child)), high(1, char(child >> 8));
+            dependencyBank.setProgram(child, PoseBank::encodeProgram({shown, {22, jump + high}}));
+            dependencyBank.setProgram(40, PoseBank::encodeProgram({{22, jump + high}}));
+            dependent.setPoses(dependencyBank);
+            const auto donor = source.withDescriptor(dependent);
+            const auto transferred = copyAnimationPose(project.rom(), copied, 40, dependent, donor, 40, true);
+            const auto targetArt = target.withDescriptor(transferred);
+            ActorPosePlayer sourcePlayer(project.rom(), donor, 40), targetPlayer(project.rom(), targetArt, 40);
+            sourcePlayer.setLinkedObjectKnownAbsent(true); targetPlayer.setLinkedObjectKnownAbsent(true);
+            for (int tick = 0; tick < 6; ++tick) {
+                QCOMPARE(sourcePlayer.advance(), int(LORDLY_POSE_OK)); QCOMPARE(targetPlayer.advance(), int(LORDLY_POSE_OK));
+                const BodyAppearance appearance{1, quint8(0)};
+                const auto a = donor.bodyFrame(project.rom(), sourcePlayer.actor().frame, appearance);
+                const auto b = targetArt.bodyFrame(project.rom(), targetPlayer.actor().frame, appearance);
+                QCOMPARE(a.size(), b.size());
+                for (int i = 0; i < a.size(); ++i) QCOMPARE(a[i].pixels.image.rgba, b[i].pixels.image.rgba);
+            }
+            QCOMPARE(transferred.poses().effective(0).source, copied.poses().effective(0).source);
+            auto sorted = frameRows.values(); std::sort(sorted.begin(), sorted.end());
+            const int selected = sorted.first(), untouched = sorted.last();
+            const auto before = project.animationSequences()->json();
+            editor.translateFrames({{40, {selected}}}, {5, -2});
+            QCOMPARE(undo.count(), 2);
+            const auto translated = *project.animationSequences()->find(2, 0);
+            const auto translatedRecords = translated.poses().effective(40).records;
+            QCOMPARE(token(translatedRecords[untouched]), token(records[untouched]));
+            auto expected = copied.frame(token(records[selected]));
+            for (int i = 0; i < u16(expected, 0); ++i) {
+                const int at = 2 + i * 16;
+                put16(expected, at + 2, quint16(qint16(u16(expected, at + 2)) + 5));
+                put16(expected, at + 4, quint16(qint16(u16(expected, at + 4)) - 2));
+            }
+            QCOMPARE(translated.frame(token(translatedRecords[selected])), expected);
+            QCOMPARE(ActorArt::loadBody(project.rom(), 3, 3, 0, 0, project.bodyAnimationData()).contentIdentity(), sourceBytes);
+            const auto after = project.animationSequences()->json();
+            undo.undo(); QCOMPARE(project.animationSequences()->json(), before);
+            undo.redo(); QCOMPARE(project.animationSequences()->json(), after);
+            QVERIFY_THROWS_EXCEPTION(Error, editor.translateFrames({{40, frameRows}}, {1, 1}, 4095));
+            QCOMPARE(project.animationSequences()->json(), after); QCOMPARE(undo.count(), 2);
+            auto canvas = editor.findChild<QGraphicsView *>("actorCanvas");
+            QVERIFY(!editor.findChild<QCheckBox *>("actorAutomaticFit")->isChecked());
+            editor.findChild<QSpinBox *>("actorPosition")->setValue(1);
+            const auto origin = canvas->mapFromScene(QPointF(0, 0));
+            const auto scale = canvas->transform();
+            editor.findChild<QSpinBox *>("actorPosition")->setValue(12);
+            QCOMPARE(canvas->mapFromScene(QPointF(0, 0)), origin); QCOMPARE(canvas->transform(), scale);
+            editor.findChild<QTableWidget *>("sequenceRecords")->selectRow(selected);
+            editor.findChild<QSpinBox *>("sequenceTicks")->setValue(99);
+            editor.findChild<QPushButton *>("sequenceApplyFrame")->click();
+            const auto copyOne = [&](const char *button) {
+                QTimer::singleShot(0, [] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()); QVERIFY(dialog);
+                    auto classes = dialog->findChild<QComboBox *>("sequenceSourceClass");
+                    classes->setCurrentIndex(classes->findData(3));
+                    auto frame = dialog->findChild<QComboBox *>("sequenceSourceFrame");
+                    QVERIFY(frame && frame->count() > 0); frame->setCurrentIndex(0);
+                    dialog->findChild<QDialogButtonBox *>("sequenceSourceButtons")->button(QDialogButtonBox::Ok)->click();
+                });
+                editor.findChild<QPushButton *>(button)->click();
+                const auto notice = editor.findChild<QLabel *>("sequenceNotice");
+                QVERIFY2(notice->text().isEmpty(), qPrintable(notice->text()));
+            };
+            copyOne("sequenceCopyFrameArt");
+            QCOMPARE(u8(project.animationSequences()->find(2, 0)->poses().effective(40).records[selected].operands.right(1), 0), 99);
+            copyOne("sequenceCopyFrameTiming");
+            QCOMPARE(project.animationSequences()->find(2, 0)->poses().effective(40).records[selected].operands.right(1), expectedRecords[selected].operands.right(1));
+            undo.undo(); undo.undo(); undo.undo();
+            QCOMPARE(project.animationSequences()->json(), after);
+            QTimer::singleShot(0, [] {
+                auto sourceDialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                QVERIFY(sourceDialog);
+                sourceDialog->findChild<QDialogButtonBox *>("sequenceSourceButtons")->button(QDialogButtonBox::Ok)->click();
+                QTimer::singleShot(20, [] {
+                    auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    QVERIFY(dialog); QCOMPARE(dialog->objectName(), "sequenceComparison");
+                    auto left = dialog->findChild<QGraphicsView *>("sequenceCompareLeft");
+                    auto right = dialog->findChild<QGraphicsView *>("sequenceCompareRight");
+                    QCOMPARE(left->sceneRect(), right->sceneRect()); QCOMPARE(left->transform(), right->transform());
+                    dialog->findChild<QSlider *>("sequenceCompareTick")->setValue(2);
+                    QCOMPARE(left->property("frameIndex"), right->property("frameIndex"));
+                    QVERIFY(dialog->grab().save(QDir::current().filePath("sequence-comparison.png")));
+                    dialog->reject();
+                });
+            });
+            editor.findChild<QPushButton *>("sequenceCompare")->click();
+            QVERIFY2(editor.findChild<QLabel *>("sequenceNotice")->text().isEmpty(), qPrintable(editor.findChild<QLabel *>("sequenceNotice")->text()));
+            QCOMPARE(project.animationSequences()->json(), after); QCOMPARE(undo.index(), 2);
+            QTemporaryDir work;
+            const auto built = rebuild(project, tools, work.path());
+            QTemporaryDir candidates(QDir(QFileInfo(path).absolutePath()).filePath("Test ROMs/native-sequence-copy-XXXXXX"));
+            QVERIFY(candidates.isValid()); candidates.setAutoRemove(false);
+            const auto output = candidates.filePath(QFileInfo(path).fileName());
+            exportRom(project, built, output);
+            const auto exported = Rom::open(output);
+            const auto reopened = ActorArt::loadBody(exported, 2, 2, 0, 0);
+            const auto reopenedRecords = AnimationSequences::load(exported).find(2, 0)->poses().effective(40).records;
+            QCOMPARE(reopenedRecords[selected].operands, translatedRecords[selected].operands);
+            const auto liveArt = ActorArt::loadBody(project.rom(), 2, 2, 0, 0, project.bodyAnimationData());
+            const auto live = liveArt.bodyFrame(project.rom(), token(translatedRecords[selected]), liveArt.defaultAppearance(project.rom()));
+            const auto disk = reopened.bodyFrame(exported, token(reopenedRecords[selected]), reopened.defaultAppearance(exported));
+            QCOMPARE(disk.size(), live.size());
+            for (int i = 0; i < disk.size(); ++i) {
+                QCOMPARE(disk[i].metadata.origin, live[i].metadata.origin);
+                QCOMPARE(disk[i].pixels.image.rgba, live[i].pixels.image.rgba);
+            }
+            qInfo().noquote() << "Copied sequence candidate:" << output;
         } catch (const Error &e) { QFAIL(e.what()); }
     }
     void copyFramesToLibrary() {

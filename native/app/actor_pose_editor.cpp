@@ -198,6 +198,10 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     controls->addStretch();
     controls->addWidget(fit);
     controls->addWidget(actual);
+    automaticFit_ = new QCheckBox("Automatic fit");
+    automaticFit_->setObjectName("actorAutomaticFit");
+    automaticFit_->setToolTip("Follow each frame's bounds. Leave unchecked to keep a stable sprite origin and scale.");
+    controls->addWidget(automaticFit_);
     layout->addLayout(controls);
     projected_ = new QCheckBox("Projected placement");
     projected_->setObjectName("actorProjected");
@@ -379,9 +383,9 @@ ActorPoseEditor::ActorPoseEditor(const Rom &rom, QWidget *parent)
     connect(sepia_, &QCheckBox::toggled, this, &ActorPoseEditor::draw);
     connect(equipment_, &QComboBox::currentIndexChanged, this, &ActorPoseEditor::draw);
     connect(bodyPalette_, &QSpinBox::valueChanged, this, &ActorPoseEditor::draw);
-    connect(fit, &QPushButton::clicked, this,
-            [this] { view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio); });
-    connect(actual, &QPushButton::clicked, this, [this] { view_->resetTransform(); });
+    connect(fit, &QPushButton::clicked, this, [this] { fit_ = true; draw(); });
+    connect(automaticFit_, &QCheckBox::toggled, this, [this] { fit_ = true; draw(); });
+    connect(actual, &QPushButton::clicked, this, [this] { automaticFit_->setChecked(false); view_->resetTransform(); });
     connect(layers_, &QListWidget::currentRowChanged, this, [this](int row) {
         for (int i = 0; i < items_.size(); ++i)
             items_[i]->setSelected(i == row);
@@ -735,9 +739,9 @@ void ActorPoseEditor::draw() {
                     .arg(fallback ? " (fallback)" : "")
                     .arg(i < 16 ? QString::number(u8(a.material, i)) : QString("unmapped")));
         }
-        canvas_->setSceneRect(bounds.isEmpty() ? QRectF(-32, -32, 64, 64)
-                                               : bounds.adjusted(-8, -8, 8, 8));
-        if (fit_) {
+        if (fit_ || automaticFit_->isChecked()) {
+            canvas_->setSceneRect(bounds.isEmpty() ? QRectF(-32, -32, 64, 64)
+                                                   : bounds.adjusted(-8, -8, 8, 8));
             view_->fitInView(canvas_->sceneRect(), Qt::KeepAspectRatio);
             fit_ = false;
         }

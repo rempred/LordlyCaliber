@@ -52,7 +52,7 @@ class ActorPoseEditor : public QWidget {
     QComboBox *actions_, *actionModes_;
     ActorRenderer renderer_;
     ActorArtworkEdits artwork_;
-    QCheckBox *projected_, *shadows_;
+    QCheckBox *projected_, *shadows_, *automaticFit_;
     QComboBox *placementMode_, *materialMode_;
     std::array<QSpinBox *, 3> actorRgb_, environmentRgb_;
     QWidget *placementControls_;

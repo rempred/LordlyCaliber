@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/project.h"
 #include <QWidget>
+#include <QSet>
 #include <functional>
 class QComboBox;
 class QLabel;
@@ -18,11 +19,16 @@ class AnimationSequenceEditor : public QWidget {
     void importImage(const QString &);
     void copyToLibrary();
     void importSequence(const SpriteAsset &);
+    void copySequence(int sourceClass, int sourceRoute, int sourcePose, bool controls = true);
+    void copyFrame(int sourceClass, int sourceRoute, int sourcePose, int sourceRecord, bool duration);
+    void translateFrames(const QMap<int, QSet<int>> &, QPoint, int layer = -1);
 
   private:
     void refresh();
     void selectRecord();
     void editLayers();
+    void chooseSource(bool compare, int destinationRecord = -1, bool duration = false);
+    void chooseTranslation();
     void prepareImage(const QImage &);
     void guarded(const std::function<void()> &);
     void apply(AnimationSequences, const QString &);
