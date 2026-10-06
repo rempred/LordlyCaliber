@@ -444,6 +444,52 @@ class UiTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void sceneActionExecutionTimeline() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        auto project = Project::fromRom(Rom::open(path));
+        project.loadScenePrograms();
+        auto programs = *project.scenePrograms();
+        const auto id = programs.createScene("Timed editing", 0x1fa8bf4 - 0x594284, true);
+        auto program = SceneActions::insert(programs.program(id), 1, 0xe, 5);
+        int exit = -1;
+        for (int i = 0; i < program.commands.size(); ++i) if (program.commands[i].opcode == 0x7d) { exit = i; break; }
+        QVERIFY(exit >= 0);
+        program = SceneActions::insert(program, exit, 0x1b);
+        programs.replace(id, program.source); project.setScenePrograms(programs.json());
+        const auto before = project.scenePrograms()->json();
+        QUndoStack undo;
+        CutsceneEditor editor(project.rom(), nullptr, &project, &undo);
+        editor.resize(1300, 900); editor.show();
+        auto scenes = editor.findChild<QListWidget *>("cutsceneScenes");
+        QTRY_COMPARE_WITH_TIMEOUT(scenes->count(), 1499, 10000);
+        for (int i = 0; i < scenes->count(); ++i) if (scenes->item(i)->data(Qt::UserRole + 1).toString() == id.authoredId) scenes->setCurrentRow(i);
+        auto actions = editor.findChild<SceneActionEditor *>();
+        auto list = actions->findChild<QListWidget *>("sceneActionList");
+        auto preview = editor.findChild<ScenePreview *>();
+        editor.findChild<QTabWidget *>("cutsceneDetailPages")->setCurrentWidget(actions);
+        int fade = -1, wait = -1;
+        for (int i = 0; i < list->count(); ++i) {
+            const auto opcode = program.commands[list->item(i)->data(Qt::UserRole).toInt()].opcode;
+            if (opcode == 0x1b) fade = i;
+            if (opcode == 1) wait = i;
+        }
+        QVERIFY(fade >= 0 && wait >= 0);
+        const int fadeWord = program.commands[list->item(fade)->data(Qt::UserRole).toInt()].word;
+        list->setCurrentRow(-1); list->setCurrentRow(fade);
+        QTRY_COMPARE_WITH_TIMEOUT(preview->property("sceneTick").toInt(), 6, 10000);
+        QCOMPARE(preview->commandTimes().value(fadeWord, -1), 6);
+        QVERIFY(list->item(fade)->text().contains("update 6 (0.10 s)"));
+        list->setCurrentRow(wait);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 1);
+        QVERIFY(list->item(wait)->text().startsWith("At playhead"));
+        preview->seekToCommand(fadeWord);
+        QTRY_COMPARE(preview->property("sceneTick").toInt(), 6);
+        const auto text = list->item(fade)->text();
+        actions->updateTimeline(SceneId(123), {{fadeWord, 999}}, fadeWord, 999);
+        QCOMPARE(list->item(fade)->text(), text);
+        QCOMPARE(project.scenePrograms()->json(), before); QCOMPARE(undo.count(), 0);
+    }
     void sceneActorClassChoices() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

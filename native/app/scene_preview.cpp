@@ -379,6 +379,7 @@ ScenePreview::ScenePreview(const Rom &rom, QWidget *parent)
 void ScenePreview::stop() {
     seekTimer_->stop();
     seekTarget_ = -1;
+    commandSeekWord_ = -1;
     timer_->stop();
     const QSignalBlocker block(play_);
     play_->setChecked(false);
@@ -410,6 +411,8 @@ void ScenePreview::branchInput() {
     auto snapshots = checkpoints_.upperBound(tick_);
     while (snapshots != checkpoints_.end())
         snapshots = checkpoints_.erase(snapshots);
+    for (auto it = commandTimes_.begin(); it != commandTimes_.end();)
+        if (it.value() > tick_) it = commandTimes_.erase(it); else ++it;
 }
 void ScenePreview::skipScene() {
     if (!current_ || current_->stopped || !current_->playback.skipArmed())
@@ -646,6 +649,7 @@ bool ScenePreview::eventFilter(QObject *object, QEvent *event) {
 void ScenePreview::selectScene(const ScenePrograms &programs, SceneId id, int mode,
                                std::optional<Dialogues> dialogues,
                                std::optional<SceneEvents> events) {
+    sceneId_ = programs.canonical(id);
     cancelPositionPick();
     stop();
     dialogues_ = std::move(dialogues);
@@ -774,6 +778,8 @@ void ScenePreview::restart() {
     stop();
     current_.reset();
     checkpoints_.clear();
+    commandTimes_.clear();
+    commandSeekNotice_.clear();
     tick_ = 0;
     preparing_ = false;
     liveInput_ = {};
@@ -1295,6 +1301,7 @@ void ScenePreview::step() {
         return;
     }
     auto next = *current_;
+    auto observedTimes = commandTimes_;
     try {
         if (preparing_ && tick_ % 45 == 0)
             pendingPressed_ |= 0x8000;
@@ -1332,6 +1339,10 @@ void ScenePreview::step() {
                 const auto result = next.playback.advance(
                     empty, [&](quint32 op, const QVector<quint32> &args, int &value) {
                         return referenceCommand(next, op, args, &value);
+                    }, 10000, 64, [&](quint32 key, int word, quint32) {
+                        if (selector_ < 0 || key != resources_->selectors().value(selector_)) return;
+                        if (!observedTimes.contains(word)) observedTimes[word] = preparing_ ? 0 : tick_ + 1;
+                        next.activeWord = word;
                     });
                 next.playback.dialogue()->project = {};
                 return result;
@@ -1352,6 +1363,7 @@ void ScenePreview::step() {
         next.reason = result == ScenePlayback::Released && next.playback.reason().isEmpty()
                           ? "Scene released." : next.playback.reason();
         current_ = std::move(next);
+        commandTimes_ = std::move(observedTimes);
         ++tick_;
         if (tick_ % 120 == 0)
             checkpoints_.insert(tick_, *current_);
@@ -1364,6 +1376,18 @@ void ScenePreview::step() {
     present();
 }
 void ScenePreview::seek(int tick) {
+    beginSeek(tick, -1);
+}
+void ScenePreview::seekToCommand(int word) {
+    commandSeekNotice_.clear();
+    if (preparing_) {
+        commandSeekWord_ = word;
+        return;
+    }
+    if (commandTimes_.contains(word)) beginSeek(commandTimes_[word], -1);
+    else beginSeek(10000, word);
+}
+void ScenePreview::beginSeek(int tick, int commandWord) {
     if (preparing_)
         return;
     cancelPositionPick();
@@ -1379,6 +1403,7 @@ void ScenePreview::seek(int tick) {
         tick_ = found.key();
     }
     seekTarget_ = tick;
+    commandSeekWord_ = commandWord;
     {
         const QSignalBlocker block(play_);
         play_->setChecked(true);
@@ -1403,6 +1428,7 @@ void ScenePreview::continueSeek() {
                 break;
         }
         if (current_->playback.selectedSceneEntered()) {
+            const int pendingCommand = commandSeekWord_;
             preparing_ = false;
             stop();
             tick_ = 0;
@@ -1410,6 +1436,7 @@ void ScenePreview::continueSeek() {
             pressedHistory_.clear();
             checkpoints_.clear();
             checkpoints_.insert(0, *current_);
+            if (pendingCommand >= 0) { seekToCommand(pendingCommand); return; }
         } else if (current_->stopped || tick_ >= 10000) {
             preparing_ = false;
             current_->stopped = true;
@@ -1422,16 +1449,25 @@ void ScenePreview::continueSeek() {
     }
     if (seekTarget_ < 0 || !current_)
         return;
-    const int target = seekTarget_;
+    int target = seekTarget_;
+    const int sought = commandSeekWord_;
     QElapsedTimer budget;
     budget.start();
     for (int i = 0; i < 4 && tick_ < target && !current_->stopped; ++i) {
         step();
+        if (sought >= 0 && commandTimes_.contains(sought)) {
+            target = seekTarget_ = commandTimes_[sought];
+            commandSeekWord_ = -1;
+            break;
+        }
         if (budget.elapsed() >= 8)
             break;
     }
-    if (tick_ >= target || current_->stopped)
+    if (tick_ >= target || current_->stopped) {
+        if (sought >= 0 && !commandTimes_.contains(sought))
+            commandSeekNotice_ = "That action was not reached on this playback branch.";
         stop();
+    }
     present();
 }
 void ScenePreview::setObjectNavigationEnabled(bool enabled) {
@@ -1594,6 +1630,7 @@ void ScenePreview::presentSelectionOutline() {
     selectionOutline_->setAcceptedMouseButtons(Qt::NoButton);
 }
 void ScenePreview::present() {
+    emit timelineChanged(sceneId_, commandTimes_, current_ ? current_->activeWord : -1, tick_);
     const QSignalBlocker block(position_);
     position_->setValue(tick_);
     play_->setEnabled(current_ && !current_->stopped && tick_ < 10000);
@@ -1642,6 +1679,7 @@ void ScenePreview::present() {
         status_->setText(status_->text() + "\nDisplay blacked out by scene command.");
     if (preparing_)
         status_->setText("Preparing inherited scene…\n" + status_->text());
+    if (!commandSeekNotice_.isEmpty()) status_->setText(status_->text() + "\n" + commandSeekNotice_);
     if (!current_->playback.ribbons().empty())
         status_->setText(
             status_->text() +

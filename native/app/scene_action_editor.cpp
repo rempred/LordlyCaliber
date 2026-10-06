@@ -127,8 +127,10 @@ SceneActionEditor::SceneActionEditor(Project *project, QUndoStack *undo,
         if (editing_ || property("invalidEdits").toBool())
             return;
         showAction();
-        if (row >= 0 && row < actions_.size())
+        if (row >= 0 && row < actions_.size()) {
             emit commandSelected(actions_[row].command);
+            emit actionActivated(actions_[row].command);
+        }
     });
     connect(kind_, &QComboBox::currentIndexChanged, this, [this] { updateStructureControls(); });
     connect(position_, &QComboBox::currentIndexChanged, this,
@@ -236,6 +238,7 @@ void SceneActionEditor::selectCommand(int command) {
     showAction();
 }
 void SceneActionEditor::refresh(int command) {
+    commandTimes_.clear(); activeWord_ = -2;
     const QSignalBlocker block(list_);
     list_->clear();
     actions_.clear();
@@ -266,6 +269,7 @@ void SceneActionEditor::refresh(int command) {
                                                  .arg(program.commands[action.command].word),
                                     list_);
             item->setData(Qt::UserRole, action.command);
+            item->setData(Qt::UserRole + 2, item->text());
         }
         for (int row = int(actions_.size()) - 1; row >= 0; --row)
             if (command >= actions_[row].command &&
@@ -275,6 +279,28 @@ void SceneActionEditor::refresh(int command) {
             }
     }
     showAction();
+}
+void SceneActionEditor::updateTimeline(SceneId id, const QMap<int, int> &times, int word, int tick) {
+    if (key_ != id) return;
+    previewTick_ = tick;
+    if (commandTimes_ == times && activeWord_ == word) return;
+    commandTimes_ = times; activeWord_ = word;
+    if (!key_) return;
+    const auto program = project_->scenePrograms()->program(key_);
+    const QSignalBlocker block(list_);
+    for (int row = 0; row < actions_.size(); ++row) {
+        const auto &action = actions_[row];
+        const int start = program.commands[action.command].word;
+        const int end = action.command + action.commandCount < program.commands.size()
+                            ? program.commands[action.command + action.commandCount].word : program.source.size() / 4;
+        auto item = list_->item(row);
+        QString label = item->data(Qt::UserRole + 2).toString();
+        if (times.contains(start)) label += QString(" · update %1 (%2 s)").arg(times[start]).arg(times[start] / 60., 0, 'f', 2);
+        const bool active = word >= start && word < end;
+        auto font = item->font(); font.setBold(active); item->setFont(font);
+        if (active) label.prepend("At playhead · ");
+        item->setText(label);
+    }
 }
 void SceneActionEditor::showAction() {
     positionPick_->hide();

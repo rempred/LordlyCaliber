@@ -21,8 +21,10 @@ class SceneActionEditor : public QWidget {
     bool selectActor(int slot);
     bool selectSprite(int slot);
     void applyPosition(int command, SceneVector);
+    void updateTimeline(SceneId, const QMap<int, int> &, int activeWord, int tick);
   signals:
     void commandSelected(int command);
+    void actionActivated(int command);
     void editDialogue(int selector, int entry);
     void validityChanged();
     void choosePosition(int command, int slot);
@@ -49,5 +51,7 @@ class SceneActionEditor : public QWidget {
     QLabel *notice_;
     QPushButton *discard_;
     bool editing_ = false;
+    QMap<int, int> commandTimes_;
+    int activeWord_ = -1, previewTick_ = 0;
 };
 } // namespace lordly

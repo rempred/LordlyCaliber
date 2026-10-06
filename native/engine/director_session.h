@@ -15,9 +15,10 @@ struct DirectorLaunchTranslations {
 class DirectorSession {
   public:
     using Service = std::function<bool(quint32, const QVector<quint32> &, int &)>;
+    using Observer = std::function<void(quint32 resource, int word, quint32 opcode)>;
     DirectorSession(Directors resources, int selector, int mode,
                     DirectorLaunchTranslations translations = {});
-    int dispatch(const Service &service = {}, int instructionBudget = 10000);
+    int dispatch(const Service &service = {}, int instructionBudget = 10000, const Observer &observer = {});
     const LordlyDirectorDispatch &state() const {
         return state_;
     }
@@ -69,6 +70,7 @@ class DirectorSession {
     std::optional<DirectorLaunchTranslations> requestedTranslations_;
     LordlyDirectorDispatch state_{};
     const Service *service_ = nullptr;
+    const Observer *observer_ = nullptr;
     QString reason_;
     int terminalResult_ = LORDLY_DIRECTOR_YIELD;
 };

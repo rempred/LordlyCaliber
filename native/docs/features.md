@@ -52,6 +52,19 @@ and pass (2.4s); creation/rename desktop checks pass (0.9s); browser authored/wi
 import including replacement names passes (8.4s). Logs:
 `build/Release/scene-template-{engine,ui,import}.txt`.
 
+Action selection now seeks to the actual reached command, with update/second
+labels and an At playhead marker. The PC session's optional observer leaves the
+recovered C dispatcher unchanged. Preview traces exclude other resources and
+mode-skipped instructions, survive seeking, invalidate future times on input
+branching, and respect inherited-entry time zero. Unreached actions report that
+limit. `sceneActionExecutionTimeline` passes the five-update wait/next-action at6,
+backward seeking, stale-scene rejection and unchanged project; existing
+`storyCompleteReplay` completes1349 updates with exact seek samples (17.5s total).
+Dispatcher snapshot/continuation checks pass (0.33s). Logs:
+`build/Release/scene-action-timing-replay.txt`, `scene-observer-director.txt`.
+Adding/dragging at the playhead, completion warning/hold, and playback-input
+import remain pending.
+
 Preview approximations remain explicit: sample party/terrain where gameplay
 context is unavailable, inherited event timing and setup acknowledgement, clear
 saved story flags, silent audio and desktop rasterization. Full-game emulation,

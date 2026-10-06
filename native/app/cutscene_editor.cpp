@@ -384,6 +384,13 @@ CutsceneEditor::CutsceneEditor(const Rom &rom, QWidget *parent, Project *project
                 });
         connect(actionEditor_, &SceneActionEditor::commandSelected, this,
                 [this](int command) { commands_->setCurrentCell(command, 0); });
+        connect(scenePreview_, &ScenePreview::timelineChanged, actionEditor_, &SceneActionEditor::updateTimeline);
+        connect(actionEditor_, &SceneActionEditor::actionActivated, this, [this](int command) {
+            if (invalidSceneInput()) return;
+            const auto program = programs().program(selectedScene());
+            if (command >= 0 && command < program.commands.size())
+                scenePreview_->seekToCommand(program.commands[command].word);
+        });
         connect(actionEditor_, &SceneActionEditor::choosePosition, this,
                 [this, pages](int command, int slot) {
                     if (invalidSceneInput()) return;
@@ -722,8 +729,10 @@ void CutsceneEditor::selectScene() {
                               0);
     if (commandEditor_)
         commandEditor_->selectCommand(key, commands_->currentRow());
-    if (actionEditor_)
+    if (actionEditor_) {
         actionEditor_->selectScene(key, commands_->currentRow());
+        actionEditor_->updateTimeline(key, scenePreview_->commandTimes(), scenePreview_->activeWord(), scenePreview_->property("sceneTick").toInt());
+    }
     const QSignalBlocker block(requests_);
     requests_->clear();
     for (const auto &r : backgrounds_.requests)

@@ -49,7 +49,8 @@ class ScenePlayback {
     // Missing supplemental callbacks suspend, including empty pools
     // whose absence has not been established by the owner of that domain.
     Result advance(const Update &supplemental = {}, const DirectorSession::Service &commands = {},
-                   int instructionBudget = 10000, int stageBudget = 64);
+                   int instructionBudget = 10000, int stageBudget = 64,
+                   const DirectorSession::Observer &observer = {});
     void advanceFade();
     // Render preparation is separate from update cadence. This prepares main
     // and shadow matrices; final draw ordering remains separate.
@@ -281,5 +282,6 @@ class ScenePlayback {
     QString reason_;
     const Update *supplemental_ = nullptr;
     const DirectorSession::Service *commands_ = nullptr;
+    const DirectorSession::Observer *observer_ = nullptr;
 };
 } // namespace lordly

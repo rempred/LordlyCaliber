@@ -1,4 +1,5 @@
 #include "engine/scene_playback.h"
+#include <QScopeGuard>
 namespace lordly {
 void ScenePlayback::supplyLaunchPlan(const Directors &resources, const SceneLaunchPlan &plan) {
     if (completed_ || schedule_.active || plan.steps.isEmpty() || plan.steps.size() > 8)
@@ -39,7 +40,7 @@ bool ScenePlayback::updateDirectors() {
         const int result =
             director_.dispatch([this](quint32 op, const QVector<quint32> &args,
                                       int &value) { return command(op, args, value); },
-                               instructionBudget_);
+                               instructionBudget_, observer_ ? *observer_ : DirectorSession::Observer{});
         if (imageView_)
             put8(*imageView_, 0x840, director_.state().barrier_state);
         return result;
@@ -627,7 +628,8 @@ int ScenePlayback::invoke(void *opaque, LordlySceneService service) {
 }
 ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
                                              const DirectorSession::Service &commands,
-                                             int instructionBudget, int stageBudget) {
+                                             int instructionBudget, int stageBudget,
+                                             const DirectorSession::Observer &observer) {
     if (supplemental_ || commands_)
         throw Error("A scene update is already in progress");
     if (instructionBudget < 1 || stageBudget < 1)
@@ -639,6 +641,8 @@ ScenePlayback::Result ScenePlayback::advance(const Update &supplemental,
     pending_.reset();
     supplemental_ = &supplemental;
     commands_ = &commands;
+    observer_ = &observer;
+    const auto clearObserver = qScopeGuard([this] { observer_ = nullptr; });
     instructionBudget_ = instructionBudget;
     int status;
     if (titleScene()) {

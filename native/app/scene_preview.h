@@ -40,6 +40,9 @@ class ScenePreview : public QWidget {
     void setSaveProvider(std::function<const SaveDocument *()> provider);
     void setObjectNavigationEnabled(bool enabled);
     void beginPositionPick(int command, int slot);
+    void seekToCommand(int word);
+    const QMap<int, int> &commandTimes() const { return commandTimes_; }
+    int activeWord() const { return current_ ? current_->activeWord : -1; }
     int actorAt(QPoint) const;
     int spriteAt(QPoint) const;
     SceneSelectionTarget objectAt(QPoint) const;
@@ -47,6 +50,7 @@ class ScenePreview : public QWidget {
     void findActorAction(int selector, int slot);
     void findSpriteAction(int selector, int slot);
     void positionPicked(int command, SceneVector position);
+    void timelineChanged(SceneId, const QMap<int, int> &commandTimes, int activeWord, int tick);
 
   public:
     const QImage &renderedFrame() const {
@@ -75,9 +79,11 @@ class ScenePreview : public QWidget {
         quint32 previewRandom = 1;
         quint32 texturePhase = 0;
         std::optional<DialoguePlayback> dialogue;
+        int activeWord = -1;
     };
     void restart();
     void seek(int tick);
+    void beginSeek(int tick, int commandWord);
     void continueSeek();
     void step();
     void present();
@@ -110,6 +116,10 @@ class ScenePreview : public QWidget {
     DialogueTextEnvironment dialogueEnvironment_;
     std::optional<Snapshot> current_;
     QMap<int, Snapshot> checkpoints_;
+    QMap<int, int> commandTimes_;
+    SceneId sceneId_;
+    int commandSeekWord_ = -1;
+    QString commandSeekNotice_;
     QMap<int, LordlyImageInput> inputHistory_;
     QMap<int, quint16> pressedHistory_;
     LordlyImageInput liveInput_{};

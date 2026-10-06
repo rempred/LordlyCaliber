@@ -1,5 +1,6 @@
 #include "engine/director_session.h"
 #include "game/director/stream_words.h"
+#include <QScopeGuard>
 namespace lordly {
 void DirectorSession::advanceCounter() {
     // ROM 283664: unsigned (counter - 1) <= 0x0FFFFFFD. Zero stays unarmed.
@@ -51,11 +52,14 @@ DirectorSession::load(int selector, bool continuation,
         throw Error("Invalid Director translation input");
     return result;
 }
-int DirectorSession::lookup(void *, LordlyDirectorWord word, LordlyDirectorDefinition *out) {
+int DirectorSession::lookup(void *context, LordlyDirectorWord word, LordlyDirectorDefinition *out) {
     const auto found = Directors::grammar().constFind(word);
     if (found == Directors::grammar().end())
         return 0;
     *out = {found->words, found->queryWords, found->requiredMode};
+    const auto &session = *static_cast<DirectorSession *>(context);
+    if (session.observer_ && *session.observer_ && (out->mode == -1 || out->mode == session.state_.mode))
+        (*session.observer_)(session.resourceKey(), session.state_.cursor, word);
     return 1;
 }
 int DirectorSession::invoke(void *context, LordlyDirectorWord opcode,
@@ -71,13 +75,15 @@ int DirectorSession::invoke(void *context, LordlyDirectorWord opcode,
         return 0;
     }
 }
-int DirectorSession::dispatch(const Service &service, int instructionBudget) {
+int DirectorSession::dispatch(const Service &service, int instructionBudget, const Observer &observer) {
     if (instructionBudget < 1)
         throw Error("Director instruction budget must be positive");
     if (terminalResult_ != LORDLY_DIRECTOR_YIELD)
         return terminalResult_;
     reason_.clear();
     service_ = &service;
+    observer_ = &observer;
+    const auto clearObserver = qScopeGuard([this] { observer_ = nullptr; });
     int remaining = instructionBudget;
     while (remaining > 0) {
         const int result =
