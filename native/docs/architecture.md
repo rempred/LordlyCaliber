@@ -4821,3 +4821,30 @@ zoom. This changed the fixture/help, not runtime behavior. Existing original-MIP
 motion evidence remains applicable. Natural game load remains unperformed.
 
 The complete native build passed after this change (image-motion-actions-final-build.log).
+
+
+## Image transition Actions
+
+Director50 now has direction, duration (1..255) and echo-tail (0..255) controls.
+Templates require image resource class 4/5. Existing high-byte encodings and
+symbolic inputs are retained read-only, while other fields remain editable.
+Forward interpolates toward the settled view; reverse folds current pan/zoom
+into its source matrix and resets the view channel before returning to the
+constructed transform. A nonzero tail enables the three-slot echo sampler and
+sets a drain budget in five-update units. Native drain updates can increment
+that counter twice. The action does not add an implicit wait. Runtime C and its
+96-sequence/4299-state original-instruction evidence are unchanged.
+
+`scene_action_tests imageTransitionAction imageMotionAction authoringBoundaries`
+passed (3507 ms), checking field domains, untouched encoded operands, both
+directions with/without echoes, native running/draining/finished states, project
+persistence, source-built export/reopen, references/allocation/CRC and source
+preservation. Candidate: parent Test ROMs/native-image-transition-action-IbRezf.
+`ui_tests imageTransitionActionControls imageMotionActionControls` passed
+(1027 ms): visible direction/duration changes, exact undo/redo, tail editing,
+invalid-input refusal, seek replay and removal. Capture inspected. The first
+reverse-duration fixture had identical endpoints; settling the image first
+corrected the fixture without changing the runtime. Natural game load and exact
+N64 raster output are not established by these checks.
+
+The complete native build passed (image-transition-actions-final-build.log).

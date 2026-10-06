@@ -6,6 +6,7 @@
 #include "engine/scene_sprites.h"
 #include "engine/scene_ribbons.h"
 #include "engine/scene_image_motion.h"
+#include "engine/scene_image_presentation.h"
 #include "engine/scene_transforms.h"
 #include "rebuild/compiler.h"
 #include <QTemporaryDir>
@@ -23,6 +24,141 @@ class SceneActionTests : public QObject {
             put32(bytes, at, word);
         }
         return DirectorProgram::decode(bytes);
+    }
+    void imageTransitionAction() {
+        try {
+            const auto path = qEnvironmentVariable("LORDLY_TEST_ROM"),
+                       tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
+            if (path.isEmpty() || tools.isEmpty())
+                QSKIP("Private ROM and N64 toolchain required");
+            auto project = Project::fromRom(Rom::open(path));
+            project.loadScenePrograms();
+            auto scenes = *project.scenePrograms();
+            SceneId source;
+            for (const auto &entry : scenes.original().entries())
+                if (entry.program.resourceClass() == 4) {
+                    source = entry.key;
+                    break;
+                }
+            QVERIFY(source);
+            const auto id = scenes.createScene("Image transition action", source, false);
+            const auto base = program({0x80000007U, 47, 0x3a, 1, 0, 0, 0, 70, 70, 130, 8, 0x7d,
+                                       0x80000002U, 0x80000000U, 0x80000001U, 0xff000004U});
+            const int point = 2;
+            auto p = SceneActions::insert(base, point, 0x50);
+            QCOMPARE(p.commands[point].operands, QVector<quint32>({0, 20, 4}));
+            QCOMPARE(SceneActions::remove(p, point).source, base.source);
+            p = SceneActions::edit(p, point, 0, "1");
+            for (const auto &[field, text] : QVector<QPair<int, QString>>{
+                     {0, "2"}, {1, "0"}, {1, "256"}, {2, "-1"}, {2, "256"}})
+                QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(p, point, field, text));
+            QCOMPARE(SceneActions::edit(p, point, 1, "255").commands[point].operands[1],
+                     quint32(255));
+            QCOMPARE(SceneActions::edit(p, point, 2, "255").commands[point].operands[2],
+                     quint32(255));
+            auto opaque = p;
+            opaque.commands[point].operands[1] = 0x114;
+            opaque = DirectorProgram::decode(opaque.encode());
+            QCOMPARE(SceneActions::edit(opaque, point, 2, "0").commands[point].operands[1],
+                     quint32(0x114));
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(opaque, point, 1, "20"));
+            auto symbolic = p;
+            symbolic.commands[point].operands[0] = 0x08880003;
+            symbolic = DirectorProgram::decode(symbolic.encode());
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::edit(symbolic, point, 0, "0"));
+            QCOMPARE(SceneActions::edit(symbolic, point, 2, "0").commands[point].operands[0],
+                     quint32(0x08880003));
+            auto world = base;
+            put32(world.source, world.source.size() - 4, 0xff000001U);
+            world = DirectorProgram::decode(world.source);
+            QVERIFY_THROWS_EXCEPTION(Error, SceneActions::insert(world, point, 0x50));
+            auto exercise = [&](const Rom &rom, const DirectorProgram &p) {
+                for (quint32 direction : {0U, 1U})
+                    for (quint32 tail : {0U, 4U}) {
+                        auto image = SceneImagePresentation::load(rom, 47);
+                        auto context = image.initialContext();
+                        image.construct(rom, base.commands[1].operands,
+                                        SceneCameras::freshModeTwo(rom).registered(), context);
+                        auto channel = SceneTransforms{}.channel(1);
+                        put32(channel, 0x40, std::bit_cast<quint32>(2.f));
+                        put32(channel, 0x44, std::bit_cast<quint32>(3.f));
+                        put32(channel, 0x54, std::bit_cast<quint32>(.75f));
+                        const auto before = channel;
+                        auto args = p.commands[point].operands;
+                        args[0] = direction;
+                        args[2] = tail;
+                        image.startEcho(args, context, channel);
+                        QCOMPARE(u32(context, 0x828), quint32(0));
+                        QCOMPARE(u32(context, 0x82c), quint32(20));
+                        QCOMPARE(u8(context, 0x83a), quint8(tail));
+                        QCOMPARE(u8(context, 0x83b), quint8(direction));
+                        if (direction) {
+                            QCOMPARE(u32(channel, 0x40), quint32(0));
+                            QCOMPARE(u32(channel, 0x44), quint32(0));
+                            QCOMPARE(std::bit_cast<float>(u32(channel, 0x54)), 1.f);
+                        } else
+                            QCOMPARE(channel, before);
+                        auto query = [&] {
+                            return lordly_image_echo_query(
+                                reinterpret_cast<const uint8_t *>(context.constData()));
+                        };
+                        for (int tick = 1; tick <= 20; ++tick) {
+                            image.advanceEcho(rom, context);
+                            QCOMPARE(query(), tick < 20 ? 1U : 0xffffffffU);
+                        }
+                        QCOMPARE(u32(context, 0x830), quint32(20 + tail * 5));
+                        QVERIFY(bool(image.echo().live[0] || image.echo().live[1] ||
+                                     image.echo().live[2]) == bool(tail));
+                        int drain = 0;
+                        while (query() != 0 && drain < 22) {
+                            image.advanceEcho(rom, context);
+                            ++drain;
+                        }
+                        QCOMPARE(query(), quint32(0));
+                        QCOMPARE(u8(context, 0x83c), quint8(4));
+                        for (auto live : image.echo().live)
+                            QCOMPARE(live, uint8_t(0));
+                        if (!tail)
+                            QCOMPARE(drain, 1);
+                        else
+                            QVERIFY(drain > 1 && drain <= 20);
+                        const auto settled = context;
+                        image.advanceEcho(rom, context);
+                        QCOMPARE(context, settled);
+                    }
+            };
+            exercise(project.rom(), p);
+            p = SceneActions::insert(p, point + 1, 0xe, 60);
+            scenes.replace(id, p.source);
+            project.setScenePrograms(scenes.json());
+            QTemporaryDir work;
+            project.saveFolder(work.filePath("project"));
+            auto restored = Project::fromRom(project.rom());
+            restored.applyManifest(Project::readProject(work.filePath("project")));
+            QCOMPARE(restored.scenePrograms()->program(id).source, p.source);
+            const auto built = rebuild(restored, tools, work.filePath("compile"));
+            QTemporaryDir output(QFileInfo(path).absolutePath() +
+                                 "/Test ROMs/native-image-transition-action-XXXXXX");
+            QVERIFY(output.isValid());
+            output.setAutoRemove(false);
+            const auto destination = output.filePath(QFileInfo(path).fileName());
+            exportRom(restored, built, destination);
+            auto reopened = Project::fromRom(Rom::open(destination));
+            reopened.loadScenePrograms();
+            QCOMPARE(reopened.scenePrograms()->program(id).source, p.source);
+            exercise(reopened.rom(), reopened.scenePrograms()->program(id));
+            reopened.scenePrograms()->validateReferences(reopened.rom());
+            const auto placement = SceneProgramResources::placement(reopened.rom());
+            QVERIFY(placement && quint64(placement->offset) + placement->allocation <=
+                                     quint64(reopened.rom().bytes().size()));
+            auto crc = reopened.rom().bytes();
+            Rom::updateChecksum(crc);
+            QCOMPARE(crc, reopened.rom().bytes());
+            QCOMPARE(Rom::open(path).bytes(), project.rom().bytes());
+            qInfo().noquote() << "Image transition Actions export:" << destination;
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
     }
     void imageMotionAction() {
         try {

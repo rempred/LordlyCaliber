@@ -120,3 +120,6 @@ palette/reveal edits, undo and compiled export/reopening.
 Image-scene Actions now expose native pan/zoom rates and duration, preserve unused
 and symbolic operands, and explain transition prerequisites. Editing, preview,
 Undo/Redo, project persistence and source-built ROM export/reopen are checked.
+
+Image transition Actions now expose direction, byte-sized duration and echo tail;
+editing, persistence, source-built export/reopen and preview replay are checked.

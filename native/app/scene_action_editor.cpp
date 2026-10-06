@@ -318,6 +318,19 @@ void SceneActionEditor::showAction() {
             input->setToolTip("A point other than -1 writes only the stored milestone. Otherwise "
                               "the percentage is updated. This never clears an earlier milestone, "
                               "rewinds revealed geometry or restarts the activity flag.");
+        if (action.name == "Image transition" && f.canonical(word)) {
+            if (i == 0)
+                input->setToolTip(
+                    "Forward moves from the constructed image transform to the settled "
+                    "view. Reverse captures the current pan/zoom and returns to the "
+                    "constructed transform.");
+            else if (i == 1)
+                input->setToolTip("1 through 255 native updates before the echo drain phase.");
+            else
+                input->setToolTip("0 disables echo sampling. Otherwise the three-slot echo buffer "
+                                  "drains against a tail budget of this value times five. Native "
+                                  "drain updates can advance the counter twice.");
+        }
         if (action.name == "Pan and zoom image" && f.canonical(word)) {
             if (i < 2)
                 input->setToolTip("Set both start coordinates to -1 to use the current position. "
@@ -363,7 +376,10 @@ void SceneActionEditor::showAction() {
     }
     refreshClassChoices();
     notice_->setText(
-        action.name == "Pan and zoom image"
+        action.name == "Image transition"
+            ? "Runs on the scene's constructed image. Echoes drain after the duration; this action "
+              "does not wait for them. Forward settles the image, enabling later pan/zoom."
+        : action.name == "Pan and zoom image"
             ? "Pans the scene's image and requests its zoom state. Start -1/-1 uses the current "
               "position; differences of one unit or less do not pan. Zoom becomes available after "
               "the initial image transition. Add a Wait to delay later actions."
@@ -549,14 +565,15 @@ void SceneActionEditor::updateStructureControls() {
                       kind_->currentData().toUInt() == 0xb5 ||
                       kind_->currentData().toUInt() == 0xbf;
     const bool body = kind_->currentData().toUInt() == 0x2a;
-    const bool image = kind_->currentData().toUInt() == 0x76;
+    const bool image =
+        kind_->currentData().toUInt() == 0x76 || kind_->currentData().toUInt() == 0x50;
     const int type = valid ? project_->scenePrograms()->program(key_).resourceClass() : -1;
     const bool allowed = (!wait || position_->currentData(Qt::UserRole + 1).toBool()) &&
                          (!body || type == 1 || type == 8) && (!image || type == 4 || type == 5);
     insert_->setEnabled(valid && position_->currentIndex() >= 0 && allowed);
     insert_->setToolTip(allowed ? "Insert here, then edit the action's fields."
                         : body  ? "Create class Actor requires a fresh environment scene."
-                        : image ? "Image motion requires an image scene."
+                        : image ? "This action requires an image scene."
                                 : position_->currentData(Qt::ToolTipRole).toString());
     bool canRemove = false;
     QString reason;

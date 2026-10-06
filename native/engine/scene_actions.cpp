@@ -138,6 +138,12 @@ QVector<SceneAction> SceneActions::inspect(const DirectorProgram &program) {
             continue;
         }
         switch (c.opcode) {
+        case 0x50:
+            action.name = "Image transition";
+            field("Direction (0 forward, 1 reverse)", 0, 1, 0, 1);
+            field("Duration (updates)", 1, 1, 1, 255);
+            field("Echo tail (5-update units)", 2, 1, 0, 255);
+            break;
         case 0x76:
             action.name = "Pan and zoom image";
             field("Start X", 0);
